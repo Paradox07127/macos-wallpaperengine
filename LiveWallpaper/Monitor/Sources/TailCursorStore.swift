@@ -32,9 +32,11 @@ struct SessionAggregateState: Codable, Sendable, Equatable {
     var lastApprovalClearAt: Double?
     var lastStatusEventAt: Double?
     var lastTerminalEventIsTaskComplete: Bool?
+    var activity: AgentActivityState?
     fileprivate var requiresPersistenceNormalization = false
 
     private enum CodingKeys: String, CodingKey {
+        case activity
         case provider
         case turnCount
         case tokens
@@ -54,33 +56,35 @@ struct SessionAggregateState: Codable, Sendable, Equatable {
 
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        self.provider = try container.decode(MonitorAgentProvider.self, forKey: .provider)
-        self.turnCount = try container.decodeIfPresent(Int.self, forKey: .turnCount) ?? 0
-        self.tokens = try container.decodeIfPresent(MonitorTokenTotals.self, forKey: .tokens) ?? .zero
-        self.startedAt = try container.decodeIfPresent(Double.self, forKey: .startedAt)
-        self.lastEventAt = try container.decodeIfPresent(Double.self, forKey: .lastEventAt)
+        activity = try container.decodeIfPresent(AgentActivityState.self, forKey: .activity)
+        provider = try container.decode(MonitorAgentProvider.self, forKey: .provider)
+        turnCount = try container.decodeIfPresent(Int.self, forKey: .turnCount) ?? 0
+        tokens = try container.decodeIfPresent(MonitorTokenTotals.self, forKey: .tokens) ?? .zero
+        startedAt = try container.decodeIfPresent(Double.self, forKey: .startedAt)
+        lastEventAt = try container.decodeIfPresent(Double.self, forKey: .lastEventAt)
         let decodedToolName = try container.decodeIfPresent(String.self, forKey: .lastToolName)
-        self.lastToolName = Self.boundedPersistedString(decodedToolName)
-        self.pendingToolUse = try container.decodeIfPresent(Bool.self, forKey: .pendingToolUse)
+        lastToolName = Self.boundedPersistedString(decodedToolName)
+        pendingToolUse = try container.decodeIfPresent(Bool.self, forKey: .pendingToolUse)
         let decodedStopReason = try container.decodeIfPresent(String.self, forKey: .lastAssistantStopReason)
-        self.lastAssistantStopReason = Self.boundedPersistedString(decodedStopReason)
-        self.outstandingToolIDs = try container.decodeIfPresent([String].self, forKey: .outstandingToolIDs)
-        self.outstandingAskIDs = try container.decodeIfPresent([String].self, forKey: .outstandingAskIDs)
-        self.lastInboundAwaitsModel = try container.decodeIfPresent(Bool.self, forKey: .lastInboundAwaitsModel)
-        self.pendingApprovalAt = try container.decodeIfPresent(Double.self, forKey: .pendingApprovalAt)
-        self.lastApprovalClearAt = try container.decodeIfPresent(Double.self, forKey: .lastApprovalClearAt)
-        self.lastStatusEventAt = try container.decodeIfPresent(Double.self, forKey: .lastStatusEventAt)
-        self.lastTerminalEventIsTaskComplete = try container.decodeIfPresent(Bool.self, forKey: .lastTerminalEventIsTaskComplete)
-        self.sessionId = nil
-        self.projectName = nil
-        self.gitBranch = nil
-        self.model = nil
-        self.requiresPersistenceNormalization = decodedToolName != lastToolName
+        lastAssistantStopReason = Self.boundedPersistedString(decodedStopReason)
+        outstandingToolIDs = try container.decodeIfPresent([String].self, forKey: .outstandingToolIDs)
+        outstandingAskIDs = try container.decodeIfPresent([String].self, forKey: .outstandingAskIDs)
+        lastInboundAwaitsModel = try container.decodeIfPresent(Bool.self, forKey: .lastInboundAwaitsModel)
+        pendingApprovalAt = try container.decodeIfPresent(Double.self, forKey: .pendingApprovalAt)
+        lastApprovalClearAt = try container.decodeIfPresent(Double.self, forKey: .lastApprovalClearAt)
+        lastStatusEventAt = try container.decodeIfPresent(Double.self, forKey: .lastStatusEventAt)
+        lastTerminalEventIsTaskComplete = try container.decodeIfPresent(Bool.self, forKey: .lastTerminalEventIsTaskComplete)
+        sessionId = nil
+        projectName = nil
+        gitBranch = nil
+        model = nil
+        requiresPersistenceNormalization = decodedToolName != lastToolName
             || decodedStopReason != lastAssistantStopReason
     }
 
     func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(activity, forKey: .activity)
         try container.encode(provider, forKey: .provider)
         try container.encode(turnCount, forKey: .turnCount)
         try container.encode(tokens, forKey: .tokens)
@@ -146,7 +150,8 @@ struct SessionAggregateState: Codable, Sendable, Equatable {
     /// Identity fields are intentionally memory-only, so they must not trigger
     /// a disk rewrite when the resume state encoded by `CodingKeys` is unchanged.
     fileprivate func hasSamePersistedState(as other: Self) -> Bool {
-        provider == other.provider
+        activity == other.activity
+            && provider == other.provider
             && turnCount == other.turnCount
             && tokens == other.tokens
             && startedAt == other.startedAt
@@ -154,7 +159,7 @@ struct SessionAggregateState: Codable, Sendable, Equatable {
             && Self.boundedPersistedString(lastToolName) == Self.boundedPersistedString(other.lastToolName)
             && pendingToolUse == other.pendingToolUse
             && Self.boundedPersistedString(lastAssistantStopReason)
-                == Self.boundedPersistedString(other.lastAssistantStopReason)
+            == Self.boundedPersistedString(other.lastAssistantStopReason)
             && outstandingToolIDs == other.outstandingToolIDs
             && outstandingAskIDs == other.outstandingAskIDs
             && lastInboundAwaitsModel == other.lastInboundAwaitsModel
@@ -192,7 +197,7 @@ struct SessionAggregateState: Codable, Sendable, Equatable {
 
 final class TailCursorStore: Sendable {
     private static let currentSchemaVersion = 2
-    static let defaultMaxEntryCount = 2_048
+    static let defaultMaxEntryCount = 2048
     private static let defaultRetentionAge: TimeInterval = 90 * 24 * 60 * 60
     private static let defaultTouchPersistInterval: TimeInterval = 7 * 24 * 60 * 60
     private static let defaultRetentionSweepInterval: TimeInterval = 6 * 60 * 60
@@ -217,10 +222,10 @@ final class TailCursorStore: Sendable {
 
         init(from decoder: any Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
-            self.schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
-            self.cursors = try container.decodeIfPresent([String: TailCursorState].self, forKey: .cursors) ?? [:]
-            self.aggregates = try container.decodeIfPresent([String: SessionAggregateState].self, forKey: .aggregates) ?? [:]
-            self.lastAccessedAt = try container.decodeIfPresent(
+            schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
+            cursors = try container.decodeIfPresent([String: TailCursorState].self, forKey: .cursors) ?? [:]
+            aggregates = try container.decodeIfPresent([String: SessionAggregateState].self, forKey: .aggregates) ?? [:]
+            lastAccessedAt = try container.decodeIfPresent(
                 [String: Double].self,
                 forKey: .lastAccessedAt
             ) ?? [:]
@@ -242,7 +247,7 @@ final class TailCursorStore: Sendable {
 
         init(from decoder: any Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
-            self.schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
+            schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
         }
     }
 
@@ -265,9 +270,9 @@ final class TailCursorStore: Sendable {
             permitsWrites: Bool
         ) {
             self.payload = payload
-            self.recentAccessedAt = payload.lastAccessedAt
-            self.liveKeys = Set(payload.cursors.keys).union(payload.aggregates.keys)
-            self.nextRetentionSweepAt = now + retentionSweepInterval
+            recentAccessedAt = payload.lastAccessedAt
+            liveKeys = Set(payload.cursors.keys).union(payload.aggregates.keys)
+            nextRetentionSweepAt = now + retentionSweepInterval
             self.permitsWrites = permitsWrites
         }
     }
@@ -303,12 +308,12 @@ final class TailCursorStore: Sendable {
         retentionSweepWillRun: (@Sendable () -> Void)? = nil
     ) {
         let root = directory ?? Self.defaultApplicationSupportDirectory()
-        self.fileURL = root.appendingPathComponent("MonitorTailCursors.json", isDirectory: false)
-        self.debounceNanoseconds = UInt64(max(0, debounceInterval) * 1_000_000_000)
+        fileURL = root.appendingPathComponent("MonitorTailCursors.json", isDirectory: false)
+        debounceNanoseconds = UInt64(max(0, debounceInterval) * 1_000_000_000)
         self.maxEntryCount = max(1, maxEntryCount)
         self.retentionAge = max(0, retentionAge)
         self.touchPersistInterval = min(max(0, touchPersistInterval), self.retentionAge)
-        self.retentionSweepInterval = min(Self.defaultRetentionSweepInterval, self.retentionAge)
+        retentionSweepInterval = min(Self.defaultRetentionSweepInterval, self.retentionAge)
         self.now = now
         self.writeWillBegin = writeWillBegin
         self.scheduledSaveWillFlush = scheduledSaveWillFlush
@@ -321,11 +326,11 @@ final class TailCursorStore: Sendable {
             retentionAge: self.retentionAge,
             now: loadTime
         )
-        self.lock = OSAllocatedUnfairLock(
+        lock = OSAllocatedUnfairLock(
             initialState: State(
                 payload: loaded.payload,
                 now: loadTime,
-                retentionSweepInterval: self.retentionSweepInterval,
+                retentionSweepInterval: retentionSweepInterval,
                 permitsWrites: loaded.permitsWrites
             )
         )
@@ -345,7 +350,9 @@ final class TailCursorStore: Sendable {
         let value: TailCursorState? = lock.withLock { state in
             state.payload.cursors[key]
         }
-        if value != nil { touch(key: key) }
+        if value != nil {
+            touch(key: key)
+        }
         return value
     }
 
@@ -389,7 +396,9 @@ final class TailCursorStore: Sendable {
             }
             return aggregate
         }
-        if value != nil { touch(key: key) }
+        if value != nil {
+            touch(key: key)
+        }
         return value
     }
 
@@ -672,11 +681,10 @@ final class TailCursorStore: Sendable {
                 let rhsAccess = recentAccessedAt[rhs] ?? 0
                 return lhsAccess == rhsAccess ? lhs > rhs : lhsAccess < rhsAccess
             }
-            let evicted: Set<String>
-            if overflow == 1, let oldest = candidates.min(by: olderFirst) {
-                evicted = [oldest]
+            let evicted: Set<String> = if overflow == 1, let oldest = candidates.min(by: olderFirst) {
+                [oldest]
             } else {
-                evicted = Set(candidates.sorted(by: olderFirst).prefix(overflow))
+                Set(candidates.sorted(by: olderFirst).prefix(overflow))
             }
             remove(
                 evicted,

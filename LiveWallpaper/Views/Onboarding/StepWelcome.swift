@@ -5,12 +5,6 @@ struct StepWelcome: View {
     let nextStep: () -> Void
     @Environment(\.featureCatalog) private var featureCatalog
 
-    private var tagline: LocalizedStringKey {
-        featureCatalog.isEnabled(.scene)
-            ? "Video, web, and Wallpaper Engine scenes on every display."
-            : "Local video, interactive web, and Apple Aerials on every display."
-    }
-
     var body: some View {
         VStack(spacing: 0) {
             Spacer().frame(height: DesignTokens.Spacing.xl + DesignTokens.Spacing.sm)
@@ -26,18 +20,10 @@ struct StepWelcome: View {
             Spacer().frame(height: DesignTokens.Spacing.xl)
 
             VStack(spacing: DesignTokens.Spacing.md) {
-                // Both SKUs ship under their own name (Pro "Loomscreen Pro",
-                // Lite "Loomscreen"), so the brand comes from the running
-                // bundle rather than a literal.
+                // Resolve the Pro/Lite name from the running bundle.
                 Text("Welcome to \(BundleIdentity.productDisplayName)")
                     .font(DesignTokens.Typography.hero)
                     .accessibilityAddTraits(.isHeader)
-
-                Text(tagline)
-                    .font(DesignTokens.Typography.sectionTitle)
-                    .foregroundStyle(DesignTokens.Colors.textSecondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, DesignTokens.Spacing.xl + DesignTokens.Spacing.sm)
             }
 
             Spacer().frame(height: DesignTokens.Spacing.xl)
@@ -58,8 +44,7 @@ struct StepWelcome: View {
         }
     }
 
-    /// The wallpaper kinds this SKU plays, shown before any of them is asked
-    /// for. Display only — the picker two steps later is where they're chosen.
+    /// Display-only capabilities; the source picker handles selection.
     private var typeChips: some View {
         HStack(spacing: DesignTokens.Spacing.sm) {
             typeChip(icon: "film", title: "Video")

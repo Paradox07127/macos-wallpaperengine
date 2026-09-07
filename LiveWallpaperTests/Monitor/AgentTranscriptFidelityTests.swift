@@ -1,13 +1,12 @@
 import Foundation
-import Testing
 @testable import LiveWallpaper
+import Testing
 
 /// Regressions for the transcript-parsing defects found by the 2026-08-09 review:
 /// results matched positionally instead of by id, `needsInput` keyed off a probe
 /// that never fired, and outstanding work being forgotten after 15 seconds.
 @Suite("Monitor agent transcript fidelity")
 struct AgentTranscriptFidelityTests {
-
     // MARK: - Helpers
 
     private func line(_ object: [String: Any]) -> ClaudeTranscriptLine {
@@ -208,7 +207,7 @@ struct AgentTranscriptFidelityTests {
 
     @Test("A session with no known cwd falls back to the scanner")
     func unknownCwdFallsBack() {
-        let model = CodexSessionModel(sessionId: "s")   // never saw cwd
+        let model = CodexSessionModel(sessionId: "s") // never saw cwd
         #expect(CodexAgentSource.isAlive(model: model, scannerSaysAlive: true,
                                          liveProcessDirectories: (["/somewhere/else"], true)))
         #expect(!CodexAgentSource.isAlive(model: model, scannerSaysAlive: false,
@@ -231,7 +230,7 @@ struct AgentTranscriptFidelityTests {
     @Test("A tool whose result never arrives cannot grow the outstanding set without bound")
     func outstandingToolIDsAreBounded() {
         var model = ClaudeSessionModel(sessionId: "s")
-        for i in 0..<(ClaudeSessionModel.outstandingToolCap + 40) {
+        for i in 0 ..< (ClaudeSessionModel.outstandingToolCap + 40) {
             model.ingest(assistantToolUse([(name: "Bash", id: "tu_\(i)")], at: stamp(i)))
         }
         #expect(model.outstandingToolIDs.count == ClaudeSessionModel.outstandingToolCap)
@@ -312,7 +311,7 @@ struct AgentTranscriptFidelityTests {
     }
 
     @Test("A restored session can still be retired by an id-less result")
-    func restoredSessionRetiresOnIdLessResult() {
+    func restoredSessionRetiresOnIdLessResult() throws {
         let aggregate = SessionAggregateState(
             provider: .claude, sessionId: "abc", projectName: "proj", gitBranch: "main",
             model: "claude-opus-5", turnCount: 1, tokens: .zero,
@@ -320,7 +319,7 @@ struct AgentTranscriptFidelityTests {
             lastToolName: "Bash", pendingToolUse: true, lastAssistantStopReason: "tool_use",
             outstandingToolIDs: ["tu_a"]
         )
-        var model = try! #require(ClaudeSessionModel.restore(from: aggregate, sessionId: "abc"))
+        var model = try #require(ClaudeSessionModel.restore(from: aggregate, sessionId: "abc"))
         #expect(model.pendingToolUse)
         // recentTools is empty after a restore; the fallback must still work.
         model.ingest(line([

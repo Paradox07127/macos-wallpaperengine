@@ -6,7 +6,7 @@ extension GeneralSettingsView {
     @ViewBuilder
     var generalSection: some View {
         Section {
-            SettingRow(icon: "globe", iconColor: .teal, title: "Language", subtitle: "Choose the display language used by LiveWallpaper") {
+            SettingRow(icon: "globe", iconColor: .teal, title: "Language") {
                 languagePicker
             }
 
@@ -14,8 +14,7 @@ extension GeneralSettingsView {
                 icon: "circle.righthalf.filled",
                 iconColor: .indigo,
                 title: "Appearance",
-                subtitle: "Match the system, or pin the app's windows to light or dark",
-                info: "Applies to the app's own windows. Panels that float over your wallpaper — the monitor board's controls and the media previews — stay dark whichever you pick, because following a light system appearance would make them white over your wallpaper."
+                info: "Desktop controls and media previews always use dark appearance."
             ) {
                 appearancePicker
             }
@@ -23,8 +22,7 @@ extension GeneralSettingsView {
             SettingRow(
                 icon: "square.grid.2x2",
                 iconColor: .orange,
-                title: "Library tile size",
-                subtitle: "How large wallpaper tiles are drawn in Bookmarks, Workshop and the other libraries"
+                title: "Library tile size"
             ) {
                 libraryTileSizePicker
             }
@@ -32,8 +30,7 @@ extension GeneralSettingsView {
             SettingRow(
                 icon: "power.circle.fill",
                 iconColor: loginItemShowsInlineStatus ? loginItemStatusColor : .green,
-                title: "Start at login",
-                subtitle: "Automatically launch LiveWallpaper when you log in"
+                title: "Start at login"
             ) {
                 HStack(spacing: 8) {
                     if loginItemShowsInlineStatus {
@@ -57,7 +54,6 @@ extension GeneralSettingsView {
                             scheduleSystemStatusRefresh(.loginItem)
                         }
                         .accessibilityLabel(Text("Start at login"))
-                        .accessibilityHint(Text("Automatically launch LiveWallpaper when you log in"))
                 }
             }
 
@@ -65,8 +61,7 @@ extension GeneralSettingsView {
                 icon: "arrow.triangle.2.circlepath",
                 iconColor: .purple,
                 title: "Check for updates automatically",
-                subtitle: "Look for a newer version in the background",
-                info: "Nothing is downloaded until you choose to install. When an update is found the menu bar shows an Update button instead of interrupting with a dialog."
+                info: "Checks at launch and periodically while the app is running."
             ) {
                 Toggle("", isOn: $checksUpdatesAtLaunch)
                     .labelsHidden()
@@ -75,45 +70,42 @@ extension GeneralSettingsView {
                         SparkleUpdaterController.shared.automaticallyChecksForUpdates = enabled
                     }
                     .accessibilityLabel(Text("Check for updates automatically"))
-                    .accessibilityHint(Text("Looks for a newer version in the background"))
+                    .accessibilityHint(Text("Checks at launch and periodically while the app is running."))
             }
 
             SettingRow(
                 icon: "lock.display",
                 iconColor: .blue,
                 title: "Capture video frame when locking",
-                subtitle: "Update the macOS desktop picture from enabled video displays when the screen locks",
-                info: "This is not an unlock-restore option. When the screen locks, enabled video displays capture their current frame and set it as the macOS desktop picture. The desktop picture remains changed after unlock."
+                subtitle: "On lock, sets enabled displays’ video frames as desktop pictures. These remain after unlock."
             ) {
                 Toggle("", isOn: $preservePlaybackOnLock)
                     .labelsHidden()
                     .toggleStyle(.switch)
                     .onChange(of: preservePlaybackOnLock) { _, _ in updateGlobalSettings() }
                     .accessibilityLabel(Text("Capture video frame when locking"))
-                    .accessibilityHint(Text("Updates the macOS desktop picture from enabled video displays when the screen locks"))
+                    .accessibilityHint(Text("On lock, sets enabled displays’ video frames as desktop pictures. These remain after unlock."))
             }
 
             SettingRow(
                 icon: "camera.viewfinder",
                 iconColor: .pink,
-                title: "Show wallpaper in screenshots",
-                subtitle: "Let screenshots, screen recording, and screen sharing capture the wallpaper",
-                info: "When off, captures show the static macOS desktop picture instead. Turning it off also keeps a full-screen animation out of a shared meeting stream, which can cut the bandwidth it costs. The widget overlay follows this setting too."
+                title: "Show wallpaper in screen captures",
+                info: "Applies to screenshots, recording, and sharing, including widgets. When off, shows the macOS desktop picture."
             ) {
                 Toggle("", isOn: $wallpaperVisibleInScreenCapture)
                     .labelsHidden()
                     .toggleStyle(.switch)
                     .onChange(of: wallpaperVisibleInScreenCapture) { _, _ in updateGlobalSettings() }
-                    .accessibilityLabel(Text("Show wallpaper in screenshots"))
-                    .accessibilityHint(Text("Lets screenshots, screen recording, and screen sharing capture the wallpaper"))
+                    .accessibilityLabel(Text("Show wallpaper in screen captures"))
+                    .accessibilityHint(Text("Applies to screenshots, recording, and sharing, including widgets. When off, shows the macOS desktop picture."))
             }
 
             SettingRow(
                 icon: "dock.rectangle",
                 iconColor: .indigo,
                 title: "Show in Dock",
-                subtitle: "Make the app visible in the Dock and Cmd-Tab switcher",
-                info: "When off, the app keeps running in the background — reopen this window anytime from the menu bar icon at the top-right of your screen."
+                info: "When off, hides the app from the Dock and ⌘Tab. Open it from the menu bar."
             ) {
                 Toggle("", isOn: $showInDock)
                     .labelsHidden()
@@ -136,7 +128,6 @@ extension GeneralSettingsView {
         .labelsHidden()
         .fixedSize()
         .accessibilityLabel(Text("Language"))
-        .accessibilityHint(Text("Choose the display language used by LiveWallpaper"))
     }
 
     private var libraryTileSizePicker: some View {

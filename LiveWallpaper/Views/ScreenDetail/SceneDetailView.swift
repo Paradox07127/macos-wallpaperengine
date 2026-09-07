@@ -229,7 +229,7 @@ struct SceneDetailView: View {
         case .sceneParseFailed(let detail):
             return Text(verbatim: LogPrivacyRedactor.scrub(detail))
         case .sceneShaderUnsupported:
-            return Text("A custom shader couldn't be translated. Try re-downloading the project.")
+            return Text("A custom shader could not be translated.")
         case .sceneResourceMissing:
             // Names where the files were looked for, not what to do about it —
             // `EngineAssetsBanner` at the top of the Scene page owns the recovery.
@@ -297,7 +297,7 @@ struct SceneDetailView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
-                    .accessibilityHint(Text("Re-decodes the scene with the current cache state"))
+                    .accessibilityHint(Text("Reloads the current scene."))
                 }
                 Button {
                     showLogSheet = true

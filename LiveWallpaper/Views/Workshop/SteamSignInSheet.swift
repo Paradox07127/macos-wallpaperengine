@@ -33,7 +33,7 @@ struct SteamSignInSheet: View {
                 SteamSheetHeader(
                     icon: "person.badge.key",
                     title: "Sign in to Steam",
-                    subtitle: "Lets SteamCMD download Workshop items as your account."
+                    subtitle: "SteamCMD downloads Workshop items using this account."
                 )
                 fields
                 if let errorText {
@@ -61,13 +61,11 @@ struct SteamSignInSheet: View {
                 primaryTitle: "Sign In",
                 primaryAction: submit,
                 primaryDisabled: !canSubmit,
-                primaryHelp: "Sign in to Steam through SteamCMD",
                 cancelTitle: "Cancel",
                 cancelAction: {
                     task?.cancel()
                     dismiss()
-                },
-                cancelHelp: "Close without signing in"
+                }
             )
         }
         .frame(width: SteamSheetWidth.form)
@@ -150,9 +148,7 @@ struct SteamSignInSheet: View {
             phase = .form
             errorText = String(localized: "Steam didn't confirm the sign-in in time. If Steam Guard asked on your phone, approve it and try again.", bundle: .appLanguage, comment: "In-app Steam sign-in failure.")
         case nil:
-            // No reply at all: the connector is what failed, not the sign-in,
-            // and telling the reader to check their connection sent them to
-            // look at the wrong thing entirely.
+            // A missing connector reply is distinct from rejected Steam credentials.
             phase = .form
             errorText = String(
                 localized: "Loomscreen's Steam connector did not respond.",
@@ -166,8 +162,7 @@ struct SteamSignInSheet: View {
             )
         case .failed:
             phase = .form
-            // Steam usually says why it refused; only when it does not does
-            // "check the connection" become the honest guess.
+            // Prefer Steam's rejection reason when present.
             errorText = result?.failureReason.map {
                 String(
                     localized: "Steam refused the sign-in: \($0)",

@@ -104,15 +104,14 @@ extension WPECacheManagementView {
                         openFolderIconButton(url, scopeRoot: inventory?.projectsScopeRootURL)
                     }
                     StorageInfoButton {
-                        infoNote("Your downloaded Workshop wallpapers, measured where Steam actually keeps them. Deleting a wallpaper from the Installed tab frees exactly this space.")
+                        infoNote("Downloaded files in the Steam library. Remove wallpapers from Installed to free space.")
                     }
                 }
 
                 StorageDashboardTile(
                     title: "Engine Assets",
                     systemImage: "shippingbox",
-                    accent: DesignTokens.Colors.accent,
-                    subtitle: Text("Shared Wallpaper Engine runtime assets")
+                    accent: DesignTokens.Colors.accent
                 ) {
                     storageValue(
                         bytes: inventory?.engineAssetsBytes,
@@ -123,7 +122,7 @@ extension WPECacheManagementView {
                         openFolderIconButton(url)
                     }
                     StorageInfoButton {
-                        infoNote("Materials, models, and shaders shared by every scene — downloaded once and required by scenes that reference built-in files. Not a cache.")
+                        infoNote("Shared scene materials, models, and shaders. Required by scenes that reference these files.")
                     }
                 }
 
@@ -138,7 +137,7 @@ extension WPECacheManagementView {
                     } actions: {
                         openFolderIconButton(exportService.videosDirectory)
                         StorageInfoButton {
-                            infoNote("macOS plays these copies itself, so it needs its own file for each one. Remove a video in Library › System Wallpaper to free its space.")
+                            infoNote("Video copies used by macOS. Remove videos from System Wallpaper to free space.")
                         }
                     }
                 }
@@ -147,7 +146,7 @@ extension WPECacheManagementView {
                     title: "Caches",
                     systemImage: "internaldrive",
                     accent: DesignTokens.Colors.Gauge.medium,
-                    subtitle: Text("Reclaimable files rebuilt automatically when needed")
+                    subtitle: Text("Can be cleared; rebuilt when needed.")
                 ) {
                     storageValue(bytes: totalBytes, isLoading: isAnyLoading)
                 } actions: {
@@ -162,9 +161,6 @@ extension WPECacheManagementView {
                     .disabled(totalBytes == 0)
                     .help(Text("Clear All Caches"))
                     .accessibilityLabel(Text("Clear All Caches"))
-                    StorageInfoButton {
-                        infoNote("Caches are bounded and cleared automatically — use these only to reclaim space now.")
-                    }
                 }
                 .settingsSearchAnchorTarget(.storageCaches)
 
@@ -191,7 +187,7 @@ extension WPECacheManagementView {
                     .help(Text("Clear Video Cache"))
                     .accessibilityLabel(Text("Clear Video Cache"))
                     StorageInfoButton {
-                        infoNote("Frames extracted from scene videos, reused across launches. Capped at 2 GB — the least-recently-used files are removed first, and orphaned scenes are reclaimed at startup.")
+                        infoNote("Cached scene video frames. Limited to 2 GB; older files are cleared automatically.")
                     }
                 }
             }
@@ -219,8 +215,7 @@ extension WPECacheManagementView {
         if let last = lastVideoFreedBytes, last > 0 {
             return Text("Freed \(Int64(last), format: .byteCount(style: .file)).", comment: "WPE video texture cache footer shown after a purge. Placeholder is the freed byte total.")
         }
-        // Splitting the count instead of interpolating an English "s" — the shared
-        // key put that morpheme mid-sentence in ja/zh, gluing a Latin s onto CJK.
+        // Keep singular and plural in separate localization keys.
         let count = videoStats?.fileCount ?? 0
         if count == 1 {
             return Text("Across 1 extracted video file")
@@ -228,10 +223,7 @@ extension WPECacheManagementView {
         return Text("Across \(count) extracted video files")
     }
 
-    /// The Workshop tree lives in the user's Steam library, so LaunchServices
-    /// refuses a sandboxed `open` on it ("does not have permission to open
-    /// 431960"); reveal through Finder inside the library's scope, the same way
-    /// the Installed tab does.
+    /// Reveal Steam library files in Finder while holding the library’s security scope.
     private func openFolder(_ url: URL?, scopeRoot: URL?) {
         guard let url else { return }
         let root = scopeRoot ?? url

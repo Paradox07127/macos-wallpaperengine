@@ -1,10 +1,10 @@
-import Foundation
 import Darwin
+import Foundation
 
 struct SessionFileCandidate: Equatable {
     var url: URL
-    var sessionId: String          // filename stem (the session UUID)
-    var projectDirName: String     // encoded cwd, e.g. "-Users-me-proj"
+    var sessionId: String // filename stem (the session UUID)
+    var projectDirName: String // encoded cwd, e.g. "-Users-me-proj"
     var modifiedAt: Date
     var sizeBytes: UInt64
 }
@@ -119,6 +119,20 @@ struct ClaudeSessionScanner {
         if candidates.count > limit {
             candidates = Array(candidates.prefix(limit))
         }
+        var children: [SessionFileCandidate] = []
+        for parent in candidates {
+            let folder = parent.url.deletingPathExtension().appendingPathComponent("subagents", isDirectory: true)
+            guard (try? folder.resourceValues(forKeys: [.isSymbolicLinkKey]))?.isSymbolicLink == false,
+                  (try? folder.deletingLastPathComponent().resourceValues(forKeys: [.isSymbolicLinkKey]))?.isSymbolicLink == false else { continue }
+            let files = (try? fm.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? []
+            for file in files where file.pathExtension == "jsonl" {
+                guard (try? file.resourceValues(forKeys: [.isSymbolicLinkKey]))?.isSymbolicLink == false,
+                      let status = Self.status(ofPath: file.path), status.modifiedAt >= cutoff else { continue }
+                children.append(SessionFileCandidate(url: file, sessionId: file.deletingPathExtension().lastPathComponent,
+                                                     projectDirName: parent.projectDirName, modifiedAt: status.modifiedAt, sizeBytes: status.sizeBytes))
+            }
+        }
+        candidates.append(contentsOf: children.sorted { $0.modifiedAt > $1.modifiedAt }.prefix(limit))
         return candidates
     }
 
@@ -152,7 +166,7 @@ struct ClaudeSessionScanner {
             guard
                 let data = try? Data(contentsOf: file),
                 let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                let pid = (object["pid"] as? Int).map(Int32.init) ?? (object["pid"] as? NSNumber).map({ $0.int32Value }),
+                let pid = (object["pid"] as? Int).map(Int32.init) ?? (object["pid"] as? NSNumber).map(\.int32Value),
                 let sessionId = object["sessionId"] as? String
             else { continue }
 
@@ -195,7 +209,7 @@ struct ClaudeSessionScanner {
             let recorded = descriptor.startedAt,
             let actual = Self.processStartTime(pid: descriptor.pid)
         else {
-            return true   // can't verify start time ⇒ trust kill(0).
+            return true // can't verify start time ⇒ trust kill(0).
         }
         return abs(actual.timeIntervalSince(recorded)) <= Self.pidReuseSlack
     }

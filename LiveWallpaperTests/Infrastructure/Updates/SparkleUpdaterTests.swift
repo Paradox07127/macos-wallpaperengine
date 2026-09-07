@@ -7,6 +7,72 @@ import Testing
 /// an update is pending.
 @Suite("Sparkle update surfaces share one updater")
 struct SparkleUpdaterOwnershipTests {
+    @MainActor
+    private final class StartupUpdater: SparkleUpdateStarting {
+        var automaticallyChecksForUpdates: Bool
+        var failsToStart = false
+        var events: [String] = []
+
+        init(automaticallyChecksForUpdates: Bool) {
+            self.automaticallyChecksForUpdates = automaticallyChecksForUpdates
+        }
+
+        func start() throws {
+            events.append("start")
+            if failsToStart {
+                throw CocoaError(.fileReadUnknown)
+            }
+        }
+
+        func checkForUpdatesInBackground() {
+            events.append("check")
+        }
+    }
+
+    @MainActor
+    @Test("Launch checks immediately only when automatic checks are enabled", arguments: [true, false])
+    func launchCheckRespectsAutomaticChecks(_ enabled: Bool) throws {
+        let updater = StartupUpdater(automaticallyChecksForUpdates: enabled)
+        var startup = SparkleUpdateStartup()
+
+        try startup.start(updater: updater)
+
+        #expect(startup.hasStarted)
+        // Startup still makes manual checks available when automatic checks are off.
+        #expect(updater.events == (enabled ? ["start", "check"] : ["start"]))
+        try startup.start(updater: updater)
+        #expect(updater.events == (enabled ? ["start", "check"] : ["start"]))
+    }
+
+    @MainActor
+    @Test("Launch reads the current automatic-check choice, including a migrated opt-out")
+    func launchReadsTheCurrentPreference() throws {
+        let updater = StartupUpdater(automaticallyChecksForUpdates: true)
+        var startup = SparkleUpdateStartup()
+        updater.automaticallyChecksForUpdates = false
+
+        try startup.start(updater: updater)
+
+        #expect(updater.events == ["start"])
+    }
+
+    @MainActor
+    @Test("Failed startup cannot check and can be retried")
+    func failedStartupDoesNotCheck() throws {
+        let updater = StartupUpdater(automaticallyChecksForUpdates: true)
+        updater.failsToStart = true
+        var startup = SparkleUpdateStartup()
+
+        #expect(throws: CocoaError.self) { try startup.start(updater: updater) }
+        #expect(!startup.hasStarted)
+        #expect(updater.events == ["start"])
+
+        updater.failsToStart = false
+        try startup.start(updater: updater)
+        #expect(startup.hasStarted)
+        #expect(updater.events == ["start", "start", "check"])
+    }
+
     private static let surfaces = [
         "LiveWallpaper/Views/Settings/UpdateStatusLine.swift",
         "LiveWallpaper/Views/MenuBarContent.swift",

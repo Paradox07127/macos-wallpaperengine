@@ -22,9 +22,7 @@ enum WorkshopStepState: Equatable {
         }
     }
 
-    /// Named `statusText`, not `label`: the i18n guard forbids rendering a `.label` member
-    /// directly (on most types that's a raw enum name) — a false positive here since this is
-    /// already a `LocalizedStringKey`. Renaming was cheaper than an escape hatch, and `label` was overloaded against SwiftUI's own meaning anyway.
+    /// Localized readiness status.
     var statusText: LocalizedStringKey {
         switch self {
         case .notStarted: "Not set"
@@ -36,9 +34,7 @@ enum WorkshopStepState: Equatable {
 }
 
 extension WorkshopStepState {
-    /// One reading of the Wallpaper Engine assets step, shared by the settings
-    /// status bar, the onboarding checklist and the Scene warning banner — the
-    /// same reason `connectionStepState` exists for the Steam steps.
+    /// Shared asset readiness for settings, onboarding, and scene warnings.
     @MainActor
     static func engineAssets(
         library: WPEEngineAssetsLibrary,
@@ -61,7 +57,7 @@ extension WorkshopStepState {
     }
 }
 
-/// Dot + word status (not a filled chip — three stack without looking like alerts).
+/// Combines status color with a localized name.
 struct WorkshopStateBadge: View {
     let state: WorkshopStepState
 
@@ -78,10 +74,7 @@ struct WorkshopStateBadge: View {
     }
 }
 
-/// Sheet (not popover): CJK privacy copy runs ~1.5–2× English and would clip
-/// in a tooltip. Renders `WorkshopLegalContent`, the same statements the
-/// settings page lists — onboarding has no way to reach Settings, so it needs
-/// its own presenter, not its own copy of the words.
+/// Presents shared privacy content with enough space for all supported languages.
 struct WorkshopPrivacySheet: View {
     @Environment(\.dismiss) private var dismiss
 

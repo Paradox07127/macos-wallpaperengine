@@ -315,7 +315,7 @@ struct HistoryRow: View {
                 return ("Won't run", DesignTokens.Colors.Status.warning, Text("Wallpaper bundles a Windows DLL plugin; cannot run on macOS"))
             }
             if !entry.origin.missingDependencyIDs.isEmpty {
-                return ("Needs deps", DesignTokens.Colors.Status.caution, Text("Wallpaper depends on Workshop projects you haven't subscribed to"))
+                return ("Needs deps", DesignTokens.Colors.Status.caution, Text("Required Workshop projects are missing."))
             }
             return nil
         }

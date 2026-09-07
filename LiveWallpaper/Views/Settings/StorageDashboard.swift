@@ -122,7 +122,7 @@ struct StorageDashboardTile<Value: View, Actions: View>: View {
     let title: LocalizedStringKey
     let systemImage: String
     let accent: Color
-    let subtitle: Text
+    let subtitle: Text?
     @ViewBuilder var value: () -> Value
     @ViewBuilder var actions: () -> Actions
 
@@ -130,7 +130,7 @@ struct StorageDashboardTile<Value: View, Actions: View>: View {
         title: LocalizedStringKey,
         systemImage: String,
         accent: Color,
-        subtitle: Text,
+        subtitle: Text? = nil,
         @ViewBuilder value: @escaping () -> Value,
         @ViewBuilder actions: @escaping () -> Actions
     ) {
@@ -172,11 +172,12 @@ struct StorageDashboardTile<Value: View, Actions: View>: View {
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
 
-                subtitle
-                    .font(DesignTokens.Typography.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
+                if let subtitle {
+                    subtitle
+                        .font(DesignTokens.Typography.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
         .frame(maxWidth: .infinity, minHeight: 132, alignment: .topLeading)

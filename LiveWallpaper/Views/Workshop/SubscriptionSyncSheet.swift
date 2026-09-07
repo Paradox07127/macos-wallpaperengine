@@ -2,8 +2,6 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// "Download what I'm subscribed to but don't have." Reached from the Workshop
-/// toolbar and from the Steam connection settings; both present this sheet.
 struct SubscriptionSyncSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(SteamCMDDoctorService.self) private var doctor
@@ -19,7 +17,7 @@ struct SubscriptionSyncSheet: View {
                 SteamSheetHeader(
                     icon: "arrow.down.circle",
                     title: "Sync subscribed wallpapers",
-                    subtitle: "Downloads the Wallpaper Engine items you're subscribed to on Steam but don't have on this Mac. Nothing is ever deleted or unsubscribed."
+                    subtitle: "Downloads subscribed Wallpaper Engine items missing from this Mac. No files are deleted or subscriptions removed."
                 )
                 statusArea
             }
@@ -31,10 +29,8 @@ struct SubscriptionSyncSheet: View {
                 primaryTitle: primaryTitle,
                 primaryAction: primaryAction,
                 primaryDisabled: primaryDisabled,
-                primaryHelp: primaryHelp,
                 cancelTitle: "Done",
-                cancelAction: { dismiss() },
-                cancelHelp: "Close this sheet"
+                cancelAction: { dismiss() }
             )
         }
         .frame(width: SteamSheetWidth.dense)
@@ -149,12 +145,6 @@ struct SubscriptionSyncSheet: View {
 
     private var primaryTitle: LocalizedStringKey {
         hasMissing ? "Download all" : "Check subscriptions"
-    }
-
-    private var primaryHelp: LocalizedStringKey {
-        hasMissing
-            ? "Download every subscribed wallpaper missing from this Mac"
-            : "Ask Steam which wallpapers this account is subscribed to"
     }
 
     private var primaryDisabled: Bool {

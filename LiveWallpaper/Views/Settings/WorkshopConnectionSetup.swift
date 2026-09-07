@@ -3,10 +3,7 @@ import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
-/// The three Steam connection steps as one settings section.
-/// Each step offers the same shape: the route most people want as a button, the other ways
-/// beside it. The actions live in `WorkshopSetupController`, which the onboarding step renders
-/// from too — two copies of `runManagedInstall` used to let the two surfaces disagree about whether SteamCMD was ready.
+/// Steam setup uses the same actions and readiness model as onboarding.
 struct WorkshopConnectionSetup: View {
     @Environment(SteamCMDDoctorService.self) private var service
     @Environment(WorkshopSetupController.self) private var controller
@@ -47,7 +44,7 @@ struct WorkshopConnectionSetup: View {
             title: "Steam library",
             valueSubtitle: controller.libraryDetail,
             titleBadge: attentionBadge(for: service.libraryStepState),
-            info: "Choose the Steam library folder for wallpaper files. Download sign-in is stored separately."
+            info: "Authorize access to installed Workshop wallpapers in the Steam library."
         ) {
             WorkshopSetupRoutes(
                 primary: libraryPrimaryRoute,
@@ -55,9 +52,7 @@ struct WorkshopConnectionSetup: View {
                 emphasizesPrimary: !service.isLibraryReady
             )
         }
-        // The sheets and the initial probe hang off the first row rather than
-        // the section: a modified `Section` stops being a section to `Form`,
-        // and a presenter only has to be somewhere in the hierarchy.
+        // Keep presenters on the row so Form recognizes the Section.
         .sheet(isPresented: $showingSetupSheet) {
             AppLanguageScope(defaults: .appScoped()) {
                 SteamCMDSetupSheet(onConfirmManagedInstall: { controller.runManagedInstall() })
@@ -99,9 +94,6 @@ struct WorkshopConnectionSetup: View {
             }
         }
         if controller.hasScannedLibrary {
-            // Named after the folder shown in the subtitle, not after the act
-            // of scanning: the scan already happened, and what is left is the
-            // authorization only the user can give.
             return WorkshopSetupRoute(id: "library.authorize", title: "Authorize this location") {
                 Task { await controller.authorizeSteamLibrary(startingAtScannedPath: true) }
             }
@@ -129,7 +121,7 @@ struct WorkshopConnectionSetup: View {
             title: "SteamCMD",
             valueSubtitle: controller.steamCMDDetail,
             titleBadge: attentionBadge(for: controller.steamCMDState),
-            info: "Valve's command-line downloader. Loomscreen can install its own copy, or locate an existing verified Homebrew or tarball install."
+            info: "Required to download Workshop wallpapers. Install SteamCMD or use an existing installation."
         ) {
             WorkshopSetupRoutes(
                 primary: binaryPrimaryRoute,
@@ -141,9 +133,7 @@ struct WorkshopConnectionSetup: View {
         }
     }
 
-    /// Most Macs have no SteamCMD, so for them the setup sheet is the whole
-    /// point of this row and belongs in a primary button. Once one is bound,
-    /// the common act is pointing at a different one instead.
+    /// Offer setup when unbound, or replacement when an installation is already bound.
     private var binaryPrimaryRoute: WorkshopSetupRoute {
         if service.isBinaryPresumedReady {
             return WorkshopSetupRoute(id: "steamcmd.change", title: "Change") {
@@ -155,8 +145,6 @@ struct WorkshopConnectionSetup: View {
         }
     }
 
-    /// The two verbs worth naming — find one that is already installed, or set
-    /// one up. Both used to hide behind an `⋯` that named neither.
     private var binarySecondaryRoutes: [WorkshopSetupRoute] {
         var routes = [
             WorkshopSetupRoute(id: "steamcmd.locate", title: "Locate automatically") {
@@ -175,9 +163,6 @@ struct WorkshopConnectionSetup: View {
         return routes
     }
 
-    /// Undo verbs. They stay behind the menu: neither is what this row is for,
-    /// and a destructive button beside the ordinary ones invites the click it
-    /// should be discouraging.
     private var binaryOverflowRoutes: [WorkshopSetupRoute] {
         var routes: [WorkshopSetupRoute] = []
         if controller.hasManualBinding {
@@ -206,16 +191,13 @@ struct WorkshopConnectionSetup: View {
             title: "Steam account",
             valueSubtitle: controller.accountDetail,
             titleBadge: attentionBadge(for: service.accountStepState),
-            info: "Downloads sign in as your own Steam account through SteamCMD. Loomscreen lists the accounts Steam has already signed in on this Mac; it never stores your password."
+            info: "Downloads use your Steam account. Loomscreen does not store the password."
         ) {
             accountControl
                 .fixedSize()
         }
     }
 
-    /// The switcher stays a menu rather than a `WorkshopSetupRoute`: picking
-    /// among accounts is a choice, and a button that opens a list of names is
-    /// what a menu is for.
     @ViewBuilder
     private var accountControl: some View {
         HStack(spacing: DesignTokens.Spacing.xs) {
@@ -249,15 +231,12 @@ struct WorkshopConnectionSetup: View {
 
     // MARK: - Subscribed wallpapers
 
-    /// Sits under the account row because it is the one thing the account
-    /// unlocks that the three setup steps do not already do for you.
     private var subscriptionsRow: some View {
         SettingRow(
             icon: "arrow.down.circle",
             iconColor: .green,
             title: "Subscribed wallpapers",
-            subtitle: "Download the items you're subscribed to on Steam but don't have here.",
-            info: "Loomscreen only adds wallpapers. It never deletes anything or changes your Steam subscriptions."
+            info: "Downloads missing subscribed wallpapers without deleting files or changing Steam subscriptions."
         ) {
             Button("Check subscriptions") { showingSubscriptionSync = true }
                 .fixedSize()
@@ -266,9 +245,7 @@ struct WorkshopConnectionSetup: View {
 
     // MARK: - Derived row state
 
-    /// The failing probe's own sentence under its row. The badge alone left a
-    /// user with a warning triangle beside their account name and nothing to
-    /// act on unless they found the Doctor further down the page.
+    /// Show each failing probe’s reason next to the affected setup step.
     @ViewBuilder
     private func attentionNote(_ message: String?) -> some View {
         if let message {
@@ -279,10 +256,7 @@ struct WorkshopConnectionSetup: View {
         }
     }
 
-    /// Only failures get a title badge. The page-top status bar carries the
-    /// "everything is fine" reading now, and a green seal on every row was the
-    /// noise it replaced — but a step whose probe came back red has to say so
-    /// where the step is.
+    /// Only failures get an inline badge; overall readiness appears in the overview.
     private func attentionBadge(for state: WorkshopStepState) -> SettingRowTitleBadge? {
         guard state == .attention else { return nil }
         return SettingRowTitleBadge(
@@ -308,10 +282,7 @@ extension SteamCMDDoctorService {
         hasBoundBinary && isGreen(.binaryIdentity)
     }
 
-    /// What the UI should offer as the next action, which is looser than `isBinaryReady` on purpose.
-    /// Probe results aren't persisted, so every relaunch starts at `.notRun` and a perfectly
-    /// good binding reads as unverified; gating the prominent button on the strict flag put
-    /// "Set up SteamCMD" in front of users who already had one bound. Matches `binaryStepState`, which already treats bound-but-unprobed as working.
+    /// Bindings persist across launches, probe results do not; bound-but-unprobed offers replacement, not setup.
     var isBinaryPresumedReady: Bool {
         guard hasBoundBinary else { return false }
         if case .red? = probes[.binaryIdentity]?.status { return false }
@@ -320,9 +291,7 @@ extension SteamCMDDoctorService {
 
     var libraryStepState: WorkshopStepState {
         guard workdirBookmarkData != nil else { return .notStarted }
-        // Bytes are not access: when the bookmark no longer resolves, the row
-        // subtitle already says "Not authorized", so the badge must not say
-        // Ready next to it.
+        // A stored bookmark is ready only if it currently resolves.
         if workdirResolutionFailed || workdirDisplayPath == nil { return .attention }
         if case .red? = probes[.workingDirectory]?.status { return .attention }
         return .ready
@@ -350,9 +319,7 @@ extension SteamCMDDoctorService {
         }
     }
 
-    /// Library authorization + account, which are one errand from the reader's
-    /// side: both are "point Loomscreen at the Steam you already have".
-    /// SteamCMD is reported separately because installing it is a different act.
+    /// Groups library authorization and account readiness; SteamCMD is reported separately.
     var steamLibraryAndAccountState: WorkshopStepState {
         let steps = [libraryStepState, accountStepState]
         if steps.contains(.attention) { return .attention }
@@ -379,10 +346,7 @@ extension SteamCMDDoctorService {
         }
     }
 
-    /// The three steps as one reading, for the Workshop page's status bar.
-    /// Amber means a probe came back failing — never "we haven't checked yet". Treating
-    /// unchecked as failing used to leave the bar amber after a successful Locate: `cachedLogin`
-    /// had simply never run, and only Run all checks cleared it.
+    /// Unchecked steps stay pending; configuration and probe failures retain attention status.
     var connectionStepState: WorkshopStepState {
         let steps = [libraryStepState, binaryStepState, accountStepState]
         if steps.contains(.attention) { return .attention }

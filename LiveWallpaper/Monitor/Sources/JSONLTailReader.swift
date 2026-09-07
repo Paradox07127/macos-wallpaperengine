@@ -14,11 +14,11 @@ final class JSONLTailReader {
     private let url: URL
     private let resumeState: TailCursorState?
 
-    private static let maxBytesPerPoll = 1 << 20            // ~1 MB
+    private static let maxBytesPerPoll = 1 << 20 // ~1 MB
     // Full-scan threshold: files at or below this start from offset 0.
-    private static let fullReadCeiling: UInt64 = 20 << 20   // 20 MB
-    private static let midFileTailWindow: UInt64 = 5 << 20  // 5 MB
-    private static let maxPendingBytes = 2 << 20            // 2 MB
+    private static let fullReadCeiling: UInt64 = 20 << 20 // 20 MB
+    private static let midFileTailWindow: UInt64 = 5 << 20 // 5 MB
+    private static let maxPendingBytes = 2 << 20 // 2 MB
 
     private var offset: UInt64 = 0
     private var committedOffset: UInt64 = 0
@@ -27,8 +27,8 @@ final class JSONLTailReader {
     private var pending = Data()
     private var didPrime = false
     private var didStat = false
-    // When a mid-file start lands inside a line, the leading fragment up to the
-    // first newline must be discarded exactly once before lines are trustworthy.
+    /// When a mid-file start lands inside a line, the leading fragment up to the
+    /// first newline must be discarded exactly once before lines are trustworthy.
     private var needsLeadingResync = false
 
     var cursorState: TailCursorState? {
@@ -36,12 +36,16 @@ final class JSONLTailReader {
         return TailCursorState(inode: lastInode, size: lastSize, offset: committedOffset)
     }
 
-    init(url: URL, resumeFrom state: TailCursorState?) {
-        self.url = url
-        self.resumeState = state
+    var hasUnreadBytes: Bool {
+        offset < lastSize
     }
 
-    func poll() throws -> TailPollOutcome {
+    init(url: URL, resumeFrom state: TailCursorState?) {
+        self.url = url
+        resumeState = state
+    }
+
+    func poll(byteBudget: Int = 1 << 20) throws -> TailPollOutcome {
         var outcome = TailPollOutcome()
 
         let stat: FileStat
@@ -94,7 +98,7 @@ final class JSONLTailReader {
         defer { try? handle.close() }
         try handle.seek(toOffset: offset)
 
-        var budget = Self.maxBytesPerPoll
+        var budget = min(Self.maxBytesPerPoll, max(1, byteBudget))
         while budget > 0, offset < stat.size {
             let want = min(UInt64(budget), stat.size - offset)
             guard let chunk = try handle.read(upToCount: Int(want)), !chunk.isEmpty else { break }
@@ -119,20 +123,37 @@ final class JSONLTailReader {
                 }
                 return
             }
-            pending.removeSubrange(pending.startIndex...nl)
+            pending.removeSubrange(pending.startIndex ... nl)
             needsLeadingResync = false
         }
 
-        while let nl = pending.firstIndex(of: 0x0A) {
-            let line = pending[pending.startIndex..<nl]
+        // Scan forward and compact once, instead of moving the remaining buffer
+        // for every short JSON line in a large batch.
+        var start = pending.startIndex
+        while let nl = pending[start...].firstIndex(of: 0x0A) {
+            let line = pending[start ..< nl]
             if !line.isEmpty {
                 outcome.newLines.append(Data(line))
             }
-            pending.removeSubrange(pending.startIndex...nl)
+            start = pending.index(after: nl)
+        }
+        if start != pending.startIndex {
+            pending.removeSubrange(pending.startIndex ..< start)
         }
 
         if pending.count > Self.maxPendingBytes {
             pending.removeAll(keepingCapacity: true)
+            needsLeadingResync = true
+        }
+    }
+
+    /// Bounded identity hydration, independent of a resumed tail cursor.
+    static func headerObjects(at url: URL) -> [[String: Any]] {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return [] }
+        defer { try? handle.close() }
+        guard let data = try? handle.read(upToCount: 256 * 1024) else { return [] }
+        return data.split(separator: 0x0A, omittingEmptySubsequences: true).prefix(16).compactMap {
+            (try? JSONSerialization.jsonObject(with: Data($0))) as? [String: Any]
         }
     }
 
@@ -175,7 +196,9 @@ final class JSONLTailReader {
             return statSyscall(rep, &info)
         }
         if result != 0 {
-            if errno == ENOENT { throw TailError.vanished }
+            if errno == ENOENT {
+                throw TailError.vanished
+            }
             throw TailError.statFailed(errno)
         }
         return FileStat(inode: UInt64(info.st_ino), size: UInt64(info.st_size))

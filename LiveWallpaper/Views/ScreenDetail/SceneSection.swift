@@ -76,8 +76,6 @@ struct SceneSection: View {
             VStack(spacing: 8) {
                 Text("Apply Local Project")
                     .font(.title2.bold())
-                Text("Choose a project folder to link and apply")
-                    .foregroundStyle(.secondary)
             }
 
             VStack(spacing: 12) {
@@ -92,15 +90,9 @@ struct SceneSection: View {
 
                 if featureCatalog.isEnabled(.wpeImport) {
                     browseWorkshopButton("Browse all in Workshop")
-                } else {
-                    workshopHintText
                 }
             }
             .padding(.top, 4)
-
-            Text("Supports Video / Web · Scene support varies")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(40)
@@ -178,13 +170,6 @@ struct SceneSection: View {
         } else {
             EmptyView()
         }
-    }
-
-    private var workshopHintText: some View {
-        Text("Browse and manage your whole library in the Steam Workshop tab.")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .multilineTextAlignment(.center)
     }
 
     @ViewBuilder

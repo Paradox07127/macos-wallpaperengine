@@ -723,8 +723,7 @@ struct DetailContent: View {
                     icon: "display",
                     tint: .accentColor,
                     title: "No display selected",
-                    message: "Choose one in the sidebar to set up its wallpaper.",
-                    features: []
+                    message: "Choose one in the sidebar to set up its wallpaper."
                 )
             }
         }

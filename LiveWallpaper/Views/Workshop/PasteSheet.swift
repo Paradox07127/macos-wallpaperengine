@@ -12,19 +12,11 @@ struct PasteSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Input on top, list below, actions in a bar at the bottom: the
-            // shape Safari's downloads and the App Store's updates use. Not a
-            // Form — a queue of rows with their own progress is a list, and
-            // grouped Form insets make it read as a settings page.
             VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
-                // The privacy sentence used to be the body of an illustrated
-                // empty state below the field, which cost a screenful of blank
-                // space to say two lines. It says the same thing here.
                 SteamSheetHeader(
                     icon: "tray.and.arrow.down.fill",
                     title: "Add from Steam Workshop",
-                    iconTint: .accentColor,
-                    subtitle: "Paste Workshop URLs or item IDs — no Web API key needed. Only public metadata is read; your Steam credentials stay in SteamCMD."
+                    iconTint: .accentColor
                 )
                 pasteArea
                 downloadReadinessBanner
@@ -36,14 +28,10 @@ struct PasteSheet: View {
             queueHeader
             queueArea
 
-            // Lone Done, no Cancel (HIG pairs them): queue actions commit
-            // incrementally, so there is no staged state a Cancel could
-            // discard — a Cancel here would be a second Close. Registered
-            // exemption, W3-S3 (.notes/plan/w3-s3 audit).
+            // Queue actions commit immediately; Done closes without discarding them (W3-S3).
             SheetFooterBar(
                 primaryTitle: "Done",
-                primaryAction: { dismiss() },
-                primaryHelp: "Close the Workshop paste queue"
+                primaryAction: { dismiss() }
             )
         }
         .frame(
@@ -64,10 +52,6 @@ struct PasteSheet: View {
 
     // MARK: - Queue header
 
-    /// Batch actions sit with the list they act on, not in the title bar — the
-    /// same rule the Doctor's diagnostics section follows, and what the App
-    /// Store does with "Update All". Three circular icon buttons and a Done
-    /// crowded the title before this.
     @ViewBuilder
     private var queueHeader: some View {
         if !model.rows.isEmpty {
@@ -87,7 +71,6 @@ struct PasteSheet: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
-                    .help(Text("Download every queued item with SteamCMD"))
                 }
 
                 Menu {
@@ -123,6 +106,7 @@ struct PasteSheet: View {
                     set: { model.updateRawInput($0) }
                 ))
                 .focused($textFieldIsFocused)
+                .accessibilityLabel(Text("Workshop URLs or item IDs"))
                 .font(DesignTokens.Typography.body)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
@@ -162,9 +146,6 @@ struct PasteSheet: View {
 
     // MARK: - Queue area
 
-    /// Nothing at all until something is queued. An empty queue is the state
-    /// the sheet opens in, and illustrating it just pushed Done off the bottom
-    /// of a mostly-blank window.
     @ViewBuilder
     private var queueArea: some View {
         if !model.rows.isEmpty {
@@ -190,31 +171,23 @@ struct PasteSheet: View {
             .padding(.horizontal, DesignTokens.Settings.formHorizontalMargin)
             .padding(.vertical, DesignTokens.Settings.formVerticalMargin)
         }
-        // The list owns the scrollable height; the sheet itself now shrinks to
-        // its content when the queue is empty.
         .frame(minHeight: 200, idealHeight: 280, maxHeight: 520)
     }
 
     // MARK: - Download readiness
 
-    /// Without this the Download buttons simply do not render, which reads as a
-    /// missing feature rather than a missing setup step.
+    /// Explains why row download actions are hidden until setup is ready.
     @ViewBuilder
     private var downloadReadinessBanner: some View {
-        if !doctor.isDownloadReady {
+        if let reason = doctor.downloadBlockerMessage {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: "arrow.down.circle.dotted")
                     .font(.title3)
                     .foregroundStyle(DesignTokens.Colors.Status.warning)
                     .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Set up SteamCMD to download here")
-                        .font(DesignTokens.Typography.bodyEmphasized)
-                    Text("Pasted items still preview and open in Steam. Downloading needs SteamCMD signed in to your own account.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                Text(verbatim: reason)
+                    .font(DesignTokens.Typography.bodyEmphasized)
+                    .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 8)
             }
             .padding(12)

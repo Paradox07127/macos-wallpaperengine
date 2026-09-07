@@ -15,13 +15,16 @@ struct ClaudeTranscriptLine {
     var gitBranch: String?
     var sessionId: String?
 
+    var messageID: String?
+    var customTitle: String?
+    var isMetadata: Bool
     var model: String?
     var stopReason: String?
-    var toolNames: [String]          // names of tool_use content blocks, in order
-    var toolUses: [ToolUse]          // tool_use blocks with their ids, in order
-    var toolResults: [ToolResult]    // tool_result blocks (paired back by tool_use_id)
-    var hasTextOutput: Bool          // assistant emitted a text/thinking block
-    var usage: Usage?                // flattened assistant token usage, if present
+    var toolNames: [String] // names of tool_use content blocks, in order
+    var toolUses: [ToolUse] // tool_use blocks with their ids, in order
+    var toolResults: [ToolResult] // tool_result blocks (paired back by tool_use_id)
+    var hasTextOutput: Bool // assistant emitted a text/thinking block
+    var usage: Usage? // flattened assistant token usage, if present
 
     /// One tool_use content block, name + optional id (name only — never args).
     struct ToolUse: Equatable { var name: String; var id: String? }
@@ -36,8 +39,8 @@ struct ClaudeTranscriptLine {
         var cacheWrite: Int
     }
 
-    var isToolResult: Bool           // content is a tool_result array (not a real prompt)
-    var isRealUserPrompt: Bool       // content is a plain string or text block(s)
+    var isToolResult: Bool // content is a tool_result array (not a real prompt)
+    var isRealUserPrompt: Bool // content is a plain string or text block(s)
 
     /// Parse a single JSONL line. Returns nil only when the bytes are not an
     /// object at all; unknown *types* still decode successfully.
@@ -52,21 +55,24 @@ struct ClaudeTranscriptLine {
     init(dict: [String: Any]) {
         let typeString = dict["type"] as? String ?? "other"
         switch typeString {
-        case "user": self.type = .user
-        case "assistant": self.type = .assistant
-        case "system": self.type = .system
-        default: self.type = .other(typeString)
+        case "user": type = .user
+        case "assistant": type = .assistant
+        case "system": type = .system
+        default: type = .other(typeString)
         }
 
-        self.timestamp = (dict["timestamp"] as? String).flatMap(Self.parseTimestamp)
-        self.isSidechain = dict["isSidechain"] as? Bool ?? false
-        self.cwd = dict["cwd"] as? String
-        self.gitBranch = dict["gitBranch"] as? String
-        self.sessionId = dict["sessionId"] as? String
+        timestamp = (dict["timestamp"] as? String).flatMap(Self.parseTimestamp)
+        isSidechain = dict["isSidechain"] as? Bool ?? false
+        cwd = dict["cwd"] as? String
+        gitBranch = dict["gitBranch"] as? String
+        sessionId = dict["sessionId"] as? String
 
         let message = dict["message"] as? [String: Any]
-        self.model = message?["model"] as? String
-        self.stopReason = message?["stop_reason"] as? String
+        messageID = message?["id"] as? String
+        customTitle = dict["customTitle"] as? String
+        isMetadata = dict["isMeta"] as? Bool == true || dict["isCompactSummary"] as? Bool == true
+        model = message?["model"] as? String
+        stopReason = message?["stop_reason"] as? String
 
         var tools: [String] = []
         var toolUses: [ToolUse] = []
@@ -95,25 +101,25 @@ struct ClaudeTranscriptLine {
                 }
             }
         }
-        self.toolNames = tools
+        toolNames = tools
         self.toolUses = toolUses
         self.toolResults = toolResults
-        self.hasTextOutput = sawText
+        hasTextOutput = sawText
 
-        if self.type == .assistant, let usageDict = message?["usage"] as? [String: Any] {
-            self.usage = Usage(
+        if type == .assistant, let usageDict = message?["usage"] as? [String: Any] {
+            usage = Usage(
                 input: (usageDict["input_tokens"] as? Int) ?? 0,
                 output: (usageDict["output_tokens"] as? Int) ?? 0,
                 cacheRead: (usageDict["cache_read_input_tokens"] as? Int) ?? 0,
                 cacheWrite: (usageDict["cache_creation_input_tokens"] as? Int) ?? 0
             )
         } else {
-            self.usage = nil
+            usage = nil
         }
 
         let contentIsString = message?["content"] is String
-        self.isToolResult = (self.type == .user) && sawToolResult && !contentIsString
-        self.isRealUserPrompt = (self.type == .user) && (contentIsString || (sawTextContentBlock && !sawToolResult))
+        isToolResult = (type == .user) && sawToolResult && !contentIsString
+        isRealUserPrompt = !isMetadata && (type == .user) && (contentIsString || (sawTextContentBlock && !sawToolResult))
     }
 
     static func parseTimestamp(_ string: String) -> Date? {
@@ -128,6 +134,8 @@ struct ClaudeSessionModel {
     private(set) var gitBranch: String?
     private(set) var model: String?
 
+    var activity = AgentActivityState()
+    private(set) var title: String?
     private(set) var turnCount: Int = 0
     private(set) var tokens: MonitorTokenTotals = .zero
     private(set) var lastEventAt: Date?
@@ -149,11 +157,16 @@ struct ClaudeSessionModel {
     private var anonymousToolCounter: UInt64 = 0
     private(set) var lastAssistantStopReason: String?
 
-    var pendingToolUse: Bool { !outstandingToolIDs.isEmpty }
+    var pendingToolUse: Bool {
+        !outstandingToolIDs.isEmpty
+    }
+
     /// The one tool whose outstanding call means "a human must answer".
     static let askUserToolName = "AskUserQuestion"
 
-    private static func synthesizedToolID(_ n: UInt64) -> String { "anon:\(n)" }
+    private static func synthesizedToolID(_ n: UInt64) -> String {
+        "anon:\(n)"
+    }
 
     /// A call whose result never arrives (killed CLI, crashed subprocess) would
     /// otherwise sit in `outstandingToolIDs` forever — and it is persisted.
@@ -171,31 +184,67 @@ struct ClaudeSessionModel {
         self.sessionId = sessionId
     }
 
-    mutating func ingest(_ line: ClaudeTranscriptLine) {
-        if let ts = line.timestamp {
-            if lastEventAt == nil || ts > lastEventAt! { lastEventAt = ts }
-            if startedAt == nil || ts < startedAt! { startedAt = ts }
+    mutating func hydrateMetadata(_ object: [String: Any]) {
+        if let path = object["cwd"] as? String {
+            cwd = path
+            projectName = (path as NSString).lastPathComponent
         }
-        if sessionId.isEmpty, let sid = line.sessionId { sessionId = sid }
+        if let branch = object["gitBranch"] as? String {
+            gitBranch = branch
+        }
+        if let value = object["customTitle"] as? String {
+            title = AgentSignalDeriver.displayMetadata(value)
+        }
+        if let message = object["message"] as? [String: Any], let name = message["model"] as? String {
+            model = name
+        }
+    }
+
+    mutating func ingest(_ line: ClaudeTranscriptLine) {
+        if let title = line.customTitle {
+            self.title = AgentSignalDeriver.displayMetadata(title)
+        }
         if let cwd = line.cwd, !cwd.isEmpty {
             projectName = (cwd as NSString).lastPathComponent
             self.cwd = cwd
         }
-        if let branch = line.gitBranch, !branch.isEmpty { gitBranch = branch }
-
-        if let ts = line.timestamp?.timeIntervalSince1970 {
-            AgentSignalDeriver.appendRecentEventTime(&recentEventTimes, ts)
+        if let branch = line.gitBranch, !branch.isEmpty {
+            gitBranch = branch
         }
-
-        guard !line.isSidechain else { return }
+        if sessionId.isEmpty, let sid = line.sessionId {
+            sessionId = sid
+        }
+        guard !line.isSidechain, !line.isMetadata else { return }
+        let semantic = line.type == .assistant || line.isToolResult || line.isRealUserPrompt
+        guard semantic else { return }
+        let time = line.timestamp?.timeIntervalSince1970 ?? lastEventAt?.timeIntervalSince1970 ?? 0
+        if let ts = line.timestamp {
+            if lastEventAt == nil || ts > lastEventAt! {
+                lastEventAt = ts
+            }
+            if startedAt == nil || ts < startedAt! {
+                startedAt = ts
+            }
+        }
+        AgentSignalDeriver.appendRecentEventTime(&recentEventTimes, time)
 
         switch line.type {
         case .assistant:
-            if let model = line.model { self.model = model }
+            if let model = line.model {
+                self.model = model
+            }
             accumulateTokens(from: line)
             recordLastUsage(from: line)
             recordToolUses(from: line)
-            if let stop = line.stopReason { lastAssistantStopReason = stop }
+            if let stop = line.stopReason {
+                lastAssistantStopReason = stop
+                if stop == "end_turn", !pendingToolUse {
+                    activity.finish(.completed, at: time)
+                }
+            }
+            if !pendingToolUse, line.stopReason != "end_turn" {
+                activity.transition(.responding, at: time)
+            }
             if let tool = line.toolNames.last {
                 lastToolName = AgentSignalDeriver.sanitizedToolName(tool)
             }
@@ -208,6 +257,8 @@ struct ClaudeSessionModel {
                 lastInboundAwaitsModel = true
             } else if line.isRealUserPrompt {
                 turnCount += 1
+                activity.beginTurn(id: nil, at: time)
+                lastAssistantStopReason = nil
                 // A fresh human turn supersedes anything still outstanding.
                 outstandingToolIDs.removeAll()
                 outstandingAskIDs.removeAll()
@@ -226,18 +277,19 @@ struct ClaudeSessionModel {
         guard let usage = line.usage else { return }
         // Routed through MonitorTokenTotals.+ so this shares its saturating-add guard
         // against untrusted transcript usage fields (Monitor/Types.swift).
-        tokens = tokens + MonitorTokenTotals(
-            input: usage.input,
-            output: usage.output,
-            cacheRead: usage.cacheRead,
-            cacheWrite: usage.cacheWrite
-        )
+        activity.account(MonitorTokenTotals(
+            input: max(0, usage.input),
+            output: max(0, usage.output),
+            cacheRead: max(0, usage.cacheRead),
+            cacheWrite: max(0, usage.cacheWrite)
+        ), id: line.messageID, total: &tokens)
     }
 
     private mutating func recordLastUsage(from line: ClaudeTranscriptLine) {
         guard let usage = line.usage else { return }
         lastUsageInput = usage.input
         lastUsageCacheRead = usage.cacheRead
+        activity.contextTokens = (MonitorTokenTotals(input: max(0, usage.input), output: max(0, usage.cacheRead)) + MonitorTokenTotals(input: max(0, usage.cacheWrite))).total
     }
 
     private mutating func recordToolUses(from line: ClaudeTranscriptLine) {
@@ -246,11 +298,17 @@ struct ClaudeSessionModel {
             // A tool_use without an id still occupies the model; synthesize one so
             // it is tracked like any other and an id-less result can retire it.
             let id = use.id ?? Self.synthesizedToolID(anonymousToolCounter)
-            if use.id == nil { anonymousToolCounter &+= 1 }
+            if use.id == nil {
+                anonymousToolCounter &+= 1
+            }
             // Outstanding-ness is about the call happening, not about whether its
             // name is safe to render: a tool we refuse to name is still running.
+            guard !outstandingToolIDs.contains(id) else { continue }
             outstandingToolIDs.append(id)
-            if use.name == Self.askUserToolName { outstandingAskIDs.insert(id) }
+            activity.beginTool(id: id, name: use.name, at: at)
+            if use.name == Self.askUserToolName {
+                outstandingAskIDs.insert(id)
+            }
             if outstandingToolIDs.count > Self.outstandingToolCap {
                 let dropped = outstandingToolIDs.removeFirst()
                 outstandingAskIDs.remove(dropped)
@@ -272,6 +330,9 @@ struct ClaudeSessionModel {
     /// outstanding state.
     private mutating func applyToolResults(from line: ClaudeTranscriptLine) {
         for result in line.toolResults {
+            if let id = result.toolUseID ?? outstandingToolIDs.first {
+                activity.endTool(id: id, at: line.timestamp?.timeIntervalSince1970 ?? 0, ok: !result.isError)
+            }
             if let id = result.toolUseID {
                 if let index = recentToolIDs.firstIndex(of: id), recentTools.indices.contains(index) {
                     recentTools[index].ok = !result.isError
@@ -314,6 +375,9 @@ struct ClaudeSessionModel {
         if pendingToolUse && processAlive {
             return .running
         }
+        if lastInboundAwaitsModel && processAlive {
+            return .running
+        }
         if isFresh && (pendingToolUse || lastInboundAwaitsModel) {
             return .running
         }
@@ -338,7 +402,9 @@ struct ClaudeSessionModel {
         return pendingToolUse ? lastToolName : nil
     }
 
-    var worktreeName: String? { MonitorWorktree.name(fromCwd: cwd) }
+    var worktreeName: String? {
+        MonitorWorktree.name(fromCwd: cwd)
+    }
 
     func snapshot(now: Date, processAlive: Bool, freshnessTimeout: TimeInterval = 180) -> MonitorAgentSessionState {
         let currentStatus = status(now: now, processAlive: processAlive, freshnessTimeout: freshnessTimeout)
@@ -368,11 +434,13 @@ struct ClaudeSessionModel {
         state.recentTools = tools
         state.warning = warning
         state.worktreeName = worktreeName
+        state.title = title
+        activity.apply(to: &state)
         return state
     }
 
     func snapshotState() -> SessionAggregateState {
-        SessionAggregateState(
+        var state = SessionAggregateState(
             provider: .claude,
             sessionId: sessionId,
             projectName: projectName,
@@ -389,11 +457,14 @@ struct ClaudeSessionModel {
             outstandingAskIDs: outstandingAskIDs.isEmpty ? nil : Array(outstandingAskIDs),
             lastInboundAwaitsModel: lastInboundAwaitsModel
         )
+        state.activity = activity.checkpoint()
+        return state
     }
 
     static func restore(from state: SessionAggregateState, sessionId: String) -> ClaudeSessionModel? {
         guard state.provider == .claude else { return nil }
         var model = ClaudeSessionModel(sessionId: sessionId)
+        model.activity = state.activity ?? AgentActivityState()
         model.projectName = state.projectName
         model.gitBranch = state.gitBranch
         model.model = state.model

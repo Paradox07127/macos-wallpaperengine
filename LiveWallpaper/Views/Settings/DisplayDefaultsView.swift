@@ -43,8 +43,7 @@ struct DisplayDefaultsView: View {
         )
     }
 
-    /// Read-only mirror of the macOS arrangement: it answers "which panel is
-    /// which" for every per-display control in the app, and hosts renaming.
+    /// Mirrors the macOS arrangement; context menus rename displays.
     @ViewBuilder
     private var arrangementSection: some View {
         if !screenManager.screens.isEmpty {
@@ -63,7 +62,7 @@ struct DisplayDefaultsView: View {
             } header: {
                 SettingsSearchSectionHeader("Displays", anchor: .displayDefaultsArrangement)
             } footer: {
-                Text("Mirrors your macOS display arrangement. Right-click a display to rename it.")
+                Text("Right-click a display to rename it.")
                     .font(DesignTokens.Typography.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -112,7 +111,7 @@ struct DisplayDefaultsView: View {
     private var webSection: some View {
         Section {
             audioRows(for: .html)
-            interactionRow(for: .html, subtitle: "Default pointer and click input")
+            interactionRow(for: .html)
         } header: {
             SettingsSearchSectionHeader("Web", anchor: .displayDefaultsWeb)
         }
@@ -134,8 +133,7 @@ struct DisplayDefaultsView: View {
         SettingRow(
             icon: "speaker.slash",
             iconColor: .blue,
-            title: kind == .html ? "Mute audio" : "Mute",
-            subtitle: "Default audio state"
+            title: kind == .html ? "Mute audio" : "Mute"
         ) {
             Toggle("", isOn: playbackBinding(\.muted, for: kind))
                 .labelsHidden()
@@ -146,8 +144,7 @@ struct DisplayDefaultsView: View {
         SettingRow(
             icon: "speaker.wave.2",
             iconColor: .blue,
-            title: "Volume",
-            subtitle: "Default output level"
+            title: "Volume"
         ) {
             CoalescedSlider(
                 value: playback(for: kind).videoVolume,
@@ -167,11 +164,7 @@ struct DisplayDefaultsView: View {
         }
     }
 
-    /// The cap is a target frame rate, and a display can only deliver a divisor of
-    /// its own refresh rate, so the same target reads 60 on a 240 Hz panel and 48 on
-    /// a 144 Hz one. This page is not about one display, so the menu is labelled
-    /// with what the main display would get and the subtitle says the rest land on
-    /// the closest rate they can.
+    /// Menu labels use the main display; other displays resolve the target to their own refresh-rate divisors.
     private var mainDisplayRefreshRate: Double {
         Double(NSScreen.main?.maximumFramesPerSecond ?? 60)
     }
@@ -181,9 +174,7 @@ struct DisplayDefaultsView: View {
             icon: "gauge.with.dots.needle.bottom.50percent",
             iconColor: .teal,
             title: "Frame Rate",
-            // Video divides the slower of the panel and the file, so its row says
-            // so rather than promising the panel rate the menu is labelled with.
-            subtitle: kind == .video
+            info: kind == .video
                 ? "Never faster than the video's own frame rate"
                 : "Each display uses the closest rate it can deliver"
         ) {
@@ -203,8 +194,7 @@ struct DisplayDefaultsView: View {
         SettingRow(
             icon: "aspectratio",
             iconColor: .purple,
-            title: "Scaling",
-            subtitle: "Default display scaling"
+            title: "Scaling"
         ) {
             Picker("", selection: playbackBinding(\.fitMode, for: kind)) {
                 ForEach(modes) { mode in
@@ -222,8 +212,7 @@ struct DisplayDefaultsView: View {
         SettingRow(
             icon: "circle.lefthalf.filled",
             iconColor: .pink,
-            title: "Color Space",
-            subtitle: "Default video color management"
+            title: "Color Space"
         ) {
             Picker("", selection: playbackBinding(\.videoColorSpace, for: .video)) {
                 ForEach(VideoColorSpace.allCases) { colorSpace in
@@ -237,30 +226,29 @@ struct DisplayDefaultsView: View {
         }
     }
 
+    @ViewBuilder
     private var sceneInteractionRows: some View {
-        Group {
-            SettingRow(
-                icon: "cursorarrow.rays",
-                iconColor: .cyan,
-                title: "Follow Cursor",
-                subtitle: "Default passive cursor response"
-            ) {
-                Toggle("", isOn: playbackBinding(\.sceneMouseInteractionEnabled, for: .scene))
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                    .accessibilityLabel(Text("Follow cursor by default"))
-            }
-
-            interactionRow(for: .scene, subtitle: "Default pointer and click input")
+        SettingRow(
+            icon: "cursorarrow.rays",
+            iconColor: .cyan,
+            title: "Follow Cursor",
+            info: "Responds to pointer movement without capturing clicks."
+        ) {
+            Toggle("", isOn: playbackBinding(\.sceneMouseInteractionEnabled, for: .scene))
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .accessibilityLabel(Text("Follow cursor by default"))
         }
+
+        interactionRow(for: .scene)
     }
 
-    private func interactionRow(for kind: DisplayDefaultsKind, subtitle: LocalizedStringKey) -> some View {
+    private func interactionRow(for kind: DisplayDefaultsKind) -> some View {
         SettingRow(
             icon: "cursorarrow.click.2",
             iconColor: .orange,
             title: "Interaction",
-            subtitle: subtitle
+            info: "Receives pointer movement and clicks."
         ) {
             Toggle("", isOn: playbackBinding(\.interactiveInputEnabled, for: kind))
                 .labelsHidden()

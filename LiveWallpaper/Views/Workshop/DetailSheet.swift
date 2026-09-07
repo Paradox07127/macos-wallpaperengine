@@ -43,7 +43,6 @@ struct WorkshopInspectorContent: View {
         downloadCoordinator.progressBytes[item.id]
     }
 
-    /// Uncarded: it names the thing the cards below act on.
     private var identityBlock: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
             Text(item.title)
@@ -97,9 +96,6 @@ struct WorkshopInspectorContent: View {
             VStack(alignment: .leading, spacing: DesignTokens.Spacing.lg) {
                 hero
 
-                // Same three groups as the Installed inspector — what this is,
-                // what you can do with it, what the author said — so the two
-                // Workshop tabs read as one page with two sources.
                 VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
                     identityBlock
                     actionsGroup
@@ -254,9 +250,6 @@ struct WorkshopInspectorContent: View {
     private var actionsColumn: some View {
         HStack(spacing: DesignTokens.Spacing.sm) {
             downloadControl
-            // Copy link joins its two neighbours here now that the grid card's
-            // menu carries only browse actions; it was previously reachable
-            // solely by right-clicking a card.
             secondaryActionButton("Copy link", systemImage: "link") {
                 copy(item.steamCommunityURL.absoluteString)
             }
@@ -299,18 +292,24 @@ struct WorkshopInspectorContent: View {
     }
 
     private var downloadButton: some View {
-        Button {
-            downloadCoordinator.download(itemID: item.id, title: item.title, using: doctor)
-        } label: {
-            Label(downloadButtonTitle, systemImage: "arrow.down.circle")
-                .frame(maxWidth: .infinity)
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+            Button {
+                downloadCoordinator.download(itemID: item.id, title: item.title, using: doctor)
+            } label: {
+                Label(downloadButtonTitle, systemImage: "arrow.down.circle")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.regular)
+            .disabled(!doctor.isDownloadReady || item.isBanned)
+
+            if !item.isBanned, let reason = doctor.downloadBlockerMessage {
+                Text(verbatim: reason)
+                    .font(DesignTokens.Typography.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
-        .buttonStyle(.borderedProminent)
-        .controlSize(.regular)
-        .disabled(!doctor.isDownloadReady || item.isBanned)
-        .help(Text(doctor.isDownloadReady
-                   ? "Download with SteamCMD and add it to your library"
-                   : "SteamCMD downloads need Loomscreen's background Steam connector."))
     }
 
     @ViewBuilder
