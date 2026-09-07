@@ -28,7 +28,7 @@
 
 | Type | Edition | What you get |
 |---|---|---|
-| **Wallpaper Engine scenes** | Pro | Native Metal renderer for `scene.pkg` projects — particles, shader effects, puppet-warp animation, audio-reactive layers, cursor effects. Import local project folders or download via Steam Workshop, including the presets its community publishes. |
+| **Wallpaper Engine scenes** | Pro | Native Metal renderer for `scene.pkg` projects — particles, shader effects, puppet-warp animation, audio-reactive layers, cursor effects. Import local project folders or download via Steam Workshop, including community presets. Compatibility varies by project. |
 | **Video** | Lite + Pro | `mp4` / `m4v` / `mov` / `avi`, smooth looping, HDR-aware color pipeline, per-display or spanned across all displays. |
 | **Web pages** | Lite + Pro | Sandboxed `WKWebView` with JavaScript toggle, tracker blocking, custom CSS, and auto-refresh. |
 | **Apple Aerials** | Lite + Pro | Browse and apply the Apple TV aerial videos already on your Mac. |
@@ -45,11 +45,14 @@
 - **Per-display control** — every monitor runs its own wallpaper; copy one setup to all screens, or span a single video across them.
 - **Playlists & scheduling** — shuffle, rotation intervals, time-of-day slots, and a bookmark library for one-click swaps.
 - **Menu bar first** — global on/off, per-display play/pause and prev/next, plus a live CPU / GPU / RAM / thermal strip.
-- **Overlays on any wallpaper** — nine particle effects (snow, rain, sakura, fireflies…), weather-reactive mode driven by live conditions, and a system-monitor board with CPU/GPU/network widgets and an AI-agent session tracker.
-- **Laptop-friendly by default** — auto-pauses on full-screen apps, window occlusion, battery power, Low Power Mode, and per-app rules you define.
+- **Desktop overlays** — 12 particle effects, live weather response, and a configurable board with ten widget types, including Weather and local AI-agent sessions. Arrange and resize widgets per display.
+- **Music layer** — Spotify and Apple Music, Poster/Vinyl/Aurora layouts, cover art, playback controls and optional synchronized lyrics. Pro adds system audio-driven visual effects.
+- **System Wallpaper (macOS 26+)** — publish videos to the macOS wallpaper provider so they can play with Loomscreen closed, subject to provider compatibility.
+- **Power-aware playback** — configurable full-screen, occlusion, battery and Low Power Mode rules; lock/sleep and resource-pressure handling preserve your play/pause intent.
 - **Global shortcuts** — eight bindable actions, from play/pause-all to reload.
-- **Portable settings** — export/import your whole setup as a `.lwconfig` bundle.
-- **Private by design** — no accounts, no telemetry.
+- **Saved wallpapers and schemes** — bookmarks change the content; schemes restore a display's full setup. `.lwconfig` backs up settings and references; media files and machine-specific file grants are not portable with it.
+- **Five interface languages** — English, 简体中文, 繁體中文, 日本語 and Español.
+- **Private by design** — no Loomscreen account or usage telemetry. Optional online features contact their respective services.
 
 ## Editions
 
@@ -59,9 +62,11 @@
 | Wallpaper Engine scene rendering & import | — | ✅ |
 | Steam Workshop browse & download | — | ✅ |
 | Scene presets (Workshop presets + your own saved values) | — | ✅ |
-| Audio-reactive scenes (system audio capture) | — | ✅ |
+| System audio capture for scene and music visual effects | — | ✅ |
 | Adaptive frame rate & per-display render threads | — | ✅ |
-| Update check (notification only — never auto-installs) | ✅ | ✅ |
+| Sparkle update checks, download and installation | ✅ | ✅ |
+| Music layer, weather widget and saved display schemes | ✅ | ✅ |
+| System Wallpaper video provider (macOS 26+, compatibility-gated) | ✅ | ✅ |
 
 Lite is a lighter runtime, not a crippled UI — video, web, and Aerials fidelity is identical to Pro. Full matrix: [docs/en/lite-vs-pro.md](docs/en/lite-vs-pro.md).
 
@@ -69,11 +74,13 @@ Lite is a lighter runtime, not a crippled UI — video, web, and Aerials fidelit
 
 1. Download the latest `Loomscreen-x.y.z.dmg` from [Releases](https://github.com/Paradox07127/macos-wallpaperengine/releases/latest).
 2. Drag **Loomscreen.app** into `/Applications`.
-3. Clear the Gatekeeper quarantine once (the build is ad-hoc signed):
+3. Launch it. Releases use Apple Development signing and are not notarized; if macOS refuses to open a manually downloaded copy, verify its published checksum and clear quarantine:
    ```bash
    xattr -dr com.apple.quarantine /Applications/Loomscreen.app
    ```
-4. Launch it — Loomscreen lives in your menu bar, and a short onboarding sets up your first wallpaper.
+4. Loomscreen lives in your menu bar; onboarding helps set up your first wallpaper.
+
+For Pro, download `Loomscreen-Pro-x.y.z.dmg`, install **Loomscreen Pro.app**, and use `"/Applications/Loomscreen Pro.app"` in the command above. In-app updates use Sparkle; manual replacement remains available.
 
 Details, permission prompts, and updates: [docs/en/install.md](docs/en/install.md) · First-run walkthrough: [docs/en/quick-start.md](docs/en/quick-start.md)
 
@@ -94,7 +101,7 @@ cd macos-wallpaperengine
 open LiveWallpaper.xcodeproj
 ```
 
-Schemes: `LiveWallpaperLite` (Lite) · `LiveWallpaper` (Pro). Requirements and test gates: [docs/en/building.md](docs/en/building.md).
+Schemes: `LiveWallpaperLite` (Lite) · `LiveWallpaper` (Pro). Shipping and CI use Xcode 27.0. Start validation with `make verify`; the complete release-candidate gate runs separately. [Architecture](docs/en/architecture.md) · Requirements and test gates: [docs/en/building.md](docs/en/building.md).
 
 ## Contributing & license
 

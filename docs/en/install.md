@@ -4,74 +4,72 @@
 
 ## Install (DMG)
 
-1. Download the latest `Loomscreen-x.y.z.dmg` from
-   [Releases](https://github.com/Paradox07127/macos-wallpaperengine/releases/latest).
-2. Open the DMG and drag **Loomscreen.app** into `/Applications`.
-3. Clear the Gatekeeper quarantine **once** in Terminal:
-   ```bash
-   xattr -dr com.apple.quarantine /Applications/Loomscreen.app
-   ```
-4. Launch Loomscreen — its icon appears in the menu bar.
+1. Download your edition from [Releases](https://github.com/Paradox07127/macos-wallpaperengine/releases/latest):
+   `Loomscreen-x.y.z.dmg` for Lite, or `Loomscreen-Pro-x.y.z.dmg` for Pro.
+2. Open it and drag **Loomscreen.app** or **Loomscreen Pro.app** to `/Applications`.
+3. Launch the app; it lives in the menu bar. Lite requires macOS 14.6+ and ships
+   for Apple Silicon and Intel (Intel hardware remains untested). Pro requires Apple Silicon.
 
-### Why the `xattr` step?
+### If macOS refuses to open the download
 
-Loomscreen has no paid Apple Developer ID yet, so the build is **ad-hoc signed**.
-macOS Gatekeeper quarantines ad-hoc-signed apps and reports them as "damaged";
-the one-time `xattr -dr com.apple.quarantine` clears that flag. After it, the app
-launches like any other. (The DMG's `READ ME — first launch.txt` repeats this.)
-
-You only ever do this once. Updates that Loomscreen installs for itself clear the
-quarantine flag as part of the install, so a version you updated into opens
-straight away — the command is only needed for a DMG you downloaded by hand.
-
-You can verify a download against the published `.dmg.sha256`:
+Current public packages use **Apple Development signing**, not Developer ID
+signing, and are **not notarized**. A manually downloaded copy may be blocked
+by Gatekeeper. First compare the DMG with the published checksum, in the folder
+containing both downloaded files:
 
 ```bash
 shasum -a 256 -c Loomscreen-x.y.z.dmg.sha256
 ```
 
+Use the Pro filename for its checksum. If the verified copy is still blocked,
+clear quarantine on the installed app you chose:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Loomscreen.app
+```
+
+For Pro:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/Loomscreen Pro.app"
+```
+
+Reopen the app. This is a fallback for a trusted manual download, not a repair
+for every launch failure. In-app Sparkle updates normally handle quarantine
+during installation; a fresh manual download may require this step again.
+
 ## System permission prompts
 
-macOS asks for each of these the first time the matching feature is used — none
-are requested up front, and all are optional:
+Permissions depend on the feature and macOS's existing grants. Denying one can
+leave that feature unavailable; it does not require enabling unrelated features.
 
-| Prompt | When it appears | Why |
-|---|---|---|
-| Desktop / Documents / Downloads folder access | Importing a video, web page, or scene stored there | Loomscreen reads wallpaper files from where you keep them; access is remembered via security-scoped bookmarks. |
-| Location (while using) | Weather source set to **System location** | Drives the weather-reactive overlay. Choose **Manual location** or **Off** in Settings → Weather to avoid it. |
-| System audio recording (Pro) | Enabling **Audio Response** | Lets audio-reactive scenes visualize what's playing. Lite never asks. |
+| Permission | Used for |
+|---|---|
+| Files and folders / selected directory | Importing media, local web projects, scene folders, or authorizing a Steam library; bookmarks retain selected access |
+| Location | Weather widgets and weather response with **System location**; choose manual location or Off instead |
+| System audio recording (Pro) | Audio Response for scenes and music visual effects; Lite does not capture system audio |
+| Automation: Spotify / Music | Playback control, seeking and reading a missing playhead for Now Playing; macOS may prompt when these operations first run |
+| Keychain access | Saving or reading the Steam Web API key; a signing change or an existing item can require approval |
 
 ## First-run onboarding
 
-On first launch a short onboarding opens:
-
-1. Pick a source — **Import a File** (video / web page; Pro also accepts scene folders), **Apple Aerials**, or drag & drop.
-2. With multiple displays, apply to one display or **All Displays**.
-3. Done — the display's management page opens for tuning.
-
-You can skip it and configure displays manually from the Settings window, or
-re-run it later from **Settings → About → Welcome Tour**. Steam Workshop setup
-is separate and only appears when you open the Workshop page
-(see [quick-start.md](quick-start.md#8-workshop-setup-pro)).
+Choose **Import a File**, **Apple Aerials**, or drag a supported file/project
+into the app. With multiple displays, select one or all. You can skip onboarding
+and configure displays in Settings, or reopen **About → Welcome Tour**.
+Workshop setup is separate; see [Quick Start](quick-start.md#8-workshop-setup-pro).
 
 ## Updates
 
-Both editions check the GitHub Releases API at launch and whenever you open the
-menu bar popover, throttled to 12 hours — no background polling. When a newer
-version exists, two places say so and both open the same release page:
+Both editions use **Sparkle**, with a separate HTTPS appcast for each edition.
+Sparkle checks for updates and can show its update dialog. The menu-bar
+**Update** button and **Settings → About** also open the update flow; Sparkle
+can download, verify the signed payload, install and relaunch the app.
 
-- an **Update** button in the menu bar popover, left of the on/off switch;
-- a banner in **Settings → About**, where you can also **Check Now** or
-  **Skip this version**.
+**Settings → General** controls automatic checking. Manual checking remains
+available from About. Download/install/skip choices belong to Sparkle's dialog;
+the menu-bar badge can remain while the current update session is retained.
+Updates are not limited to opening a GitHub release page, and an enabled
+check is not itself consent to install.
 
-Skipping a version there hides it in both places — they read the same check.
-Lite and Pro ship in the same release, so the page you land on carries both DMGs
-and you pick the one you're running.
-
-Updating is a manual download-and-replace: drag the new **Loomscreen.app** into
-`/Applications` and repeat the `xattr` step once. No build auto-installs updates.
-
-## Something wrong?
-
-See [troubleshooting.md](troubleshooting.md) — it covers the "damaged app"
-message, blank wallpapers, pause behavior, and Workshop issues.
+You can also download the matching edition's DMG and replace the app manually.
+See [Troubleshooting](troubleshooting.md) for launch, permission or update problems.

@@ -4,7 +4,9 @@
 
 Loomscreen is a menu-bar-first macOS live wallpaper platform: Wallpaper Engine
 scenes rendered natively with Metal (Pro), plus video, web, and Apple Aerials
-wallpapers with per-display composition, playlists, and automation.
+wallpapers with per-display settings, saved schemes, playlists and automation.
+Independent weather, widget and music overlays accompany the desktop; macOS
+26+ also has a compatibility-gated system video wallpaper provider.
 
 ## For users
 
@@ -15,13 +17,14 @@ wallpapers with per-display composition, playlists, and automation.
 
 ## For contributors
 
-- [features.md](en/features.md) — the feature ↔ code map.
+- [features.md](en/features.md) — current features and edition boundaries.
+- [architecture.md](en/architecture.md) — app/session ownership, packages, rendering, XPC and the system provider.
 - [building.md](en/building.md) — build requirements, schemes, and test gates.
 - [releasing.md](en/releasing.md) — maintainer release checklist.
 - [CONTRIBUTING.md](CONTRIBUTING.md) — how to propose a change.
 - [SECURITY.md](SECURITY.md) — reporting a vulnerability.
-- [LiveWallpaperCore DESIGN.md](../Packages/LiveWallpaperCore/DESIGN.md) — what belongs in the shared package and what does not.
-- [../CHANGELOG.md](../CHANGELOG.md) — release notes for the open-source Lite edition.
+- [LiveWallpaperCore DESIGN.md](../Packages/LiveWallpaperCore/DESIGN.md) — shared UI tokens, components and accessibility rules.
+- [../CHANGELOG.md](../CHANGELOG.md) — release history for Lite and Pro.
 
 ## Translations
 

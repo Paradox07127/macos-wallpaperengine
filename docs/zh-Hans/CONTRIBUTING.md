@@ -2,63 +2,51 @@
 
 [English](../CONTRIBUTING.md) · **简体中文**
 
-欢迎提 issue 和 pull request。这一页是简版；细节在 [building.md](building.md)。
+欢迎 issue 和 pull request。先看[构建说明](building.md)配置 Xcode 27.0 与 Metal Toolchain，
+再看[架构说明](architecture.md)了解模块职责。
 
-## 提 PR 之前
+## 验证改动
 
-1. 先看 [building.md](building.md) 里的工具链要求 —— Apple Silicon 上的 macOS 14.6+、
-   Xcode 26+，以及需要单独下载的 Metal Toolchain。
-2. 跑发版候选门禁：
+1. 通过 `scripts/app_tests.sh suites <Suite>` 跑相关行为测试。
+2. 跑仓库串行门禁：
 
    ```bash
-   scripts/release_candidate_check.sh
+   make verify
    ```
 
-   它按顺序跑 Swift 包测试、签名的 Pro 应用测试、Lite 构建。不要把 Pro 和 Lite 两半
-   并行跑——它们共用一个 `XCBuildData/build.db`。
-3. 如果你的改动必须偏离某个测试套强制的运行时不变量（本地化覆盖、粒子与渲染行为、
-   entitlement），请在 PR 描述里说清楚，而不是悄悄把测试放松。
+   覆盖结构、本地化、工具契约、改动行 lint、包测试与应用契约分片，不等于完整应用套件。
+3. 影响较广应用行为时运行 `scripts/app_tests.sh full`；发版前运行
+   `scripts/release_candidate_check.sh`，覆盖完整签名 Pro 套件、Pro/Lite 链接与 archive 矩阵、发布检查。
 
-## 格式化
+Pro/Lite 操作不要同时使用同一个 DerivedData。应用测试保留签名，核对实际 passed/failed/skipped。
+需要改变运行时不变量时在 PR 中给出理由，不要悄悄放松测试。
 
-SwiftFormat 和 SwiftLint 都**没有接进 CI** —— `.swiftformat` 与 `.swiftlint.yml`
-描述的是本项目的风格约定，不会卡你的 PR。
+## 格式与本地化
 
-**不要对整个仓库跑 SwiftFormat。** 这份代码库不是 formatter-clean 的，跑一遍全量会
-重写几千行、毁掉 `git blame`，并与正在进行的重构撞车。只格式化你动过的文件：
+CI 通过 `make lint` 检查改动行的格式和 lint，使用 `.swiftformat`、`.swiftlint.yml`
+与质量门禁，不要求无关的全库格式化。
 
 ```bash
-scripts/format-changed.sh          # 相对 HEAD 的改动 + 已暂存 + 未跟踪的文件
-scripts/format-changed.sh main     # 相对另一个基准的改动
+make lint BASE=main
+scripts/format-changed.sh
 ```
 
-`.swiftformat` 的 `--exclude` 里列出的巨石文件会被自动跳过；那份清单由
-`scripts/check_quality_exclusions.py` 与 `.swiftlint.yml` 保持同步。
+格式化辅助脚本作用于改动文件，运行后应检查 diff，剔除无关格式变化。
+`scripts/check_quality_exclusions.py` 按 owner 和预算跟踪排除项；规模 advisory 即使不阻断退出码，也仍是技术债。
 
-## 每个 PR 都会被要求的事
+用户文本写入 String Catalog，覆盖英语、简体中文、繁体中文、日语、西班牙语五种语言。
+UI 复用 [Core 设计系统](../../Packages/LiveWallpaperCore/DESIGN.md)。英文与简体中文文档同步更新。
 
-- **两个版本都要能构建。** 凡是碰到 `#if !LITE_BUILD` 的改动，`LiveWallpaper` 和
-  `LiveWallpaperLite` 两个 scheme 都要编译通过。单个 scheme 绿，对另一个什么都证明不了。
-- **字符串要本地化。** 用户可见的文本要走字符串目录，四种发布语言（英语、日语、
-  简体中文、繁体中文）都要有。没有"就这一条字符串"的例外通道。
-- **文档要同步。** 如果你改的行为在 `docs/` 里有描述，同一个 PR 里要同时更新英文页
-  **和**它在 `zh-Hans/` 下的对应文件。
-- **渲染类结论必须有证据。** "这修好了渲染器"要配上一次抓帧、一份 dump 或一个测试，
-  不能靠读代码推断。像素级 diff 在这里明确不作为验收判据（RNG、字体栅格化和浮点差异
-  会让它变成噪音）。
+## 代码与审查边界
 
-## 边界
-
-- `LiveWallpaper.xcodeproj` 及其 `.pbxproj` 由维护者编辑。新增源文件请放到磁盘上并在
-  PR 里说明，不要手改工程文件。
-- `.entitlements` 文件和 Info.plist 的权限键，只有在 PR 描述里给出明确理由时才改。
-- 新增 Swift Package 依赖需要先讨论。
+- 修改 SKU 条件后，两个应用版本都要构建。`LITE_BUILD` 是应用 target 标志，不传入 Swift 包。
+- 工程/workspace 文件由维护者修改。源文件先写到磁盘，在 PR 中说明需要的 target 注册。
+- entitlement 或 Info.plist 权限改动须明确审查功能与签名运行时边界，新增依赖先讨论。
+- 渲染改动需要定点测试与相应抓帧/trace，单元测试不能证明 Windows parity。RNG、字体和浮点输出不以像素完全相同为验收标准。
+- 审查笔记和实验计划不进入公开用户文档。PR 说明最终行为、验证和剩余限制。
 
 ## 报告 bug
 
-请用应用内的 **设置 → 关于 → 报告问题…** —— 它会自动填好一个 issue 需要的诊断信息。
-或者直接提一个
-[GitHub issue](https://github.com/Paradox07127/macos-wallpaperengine/issues)，
-附上 macOS 版本、Mac 机型和复现步骤。
-
-安全问题走 [SECURITY.md](SECURITY.md)，不要提到公开的 issue 列表里。
+可使用**设置 → 关于 → 报告问题…**生成预填报告，检查所含诊断后补充复现步骤；
+也可以直接提 [GitHub issue](https://github.com/Paradox07127/macos-wallpaperengine/issues)，
+附 macOS 版本与 Mac 机型。安全问题走[安全策略](SECURITY.md)，不走公开 issue。

@@ -19,7 +19,7 @@ Skipping onboarding is fine — everything below works from the Settings window.
 ## 2) Know the two surfaces
 
 - **Menu bar icon** — day-to-day control: add a wallpaper, global on/off, per-display play/pause and prev/next, volume, live CPU/GPU/RAM/thermal strip, reload, quit.
-- **Settings window** (menu bar → **Manage**) — sidebar lists your **Displays**, plus **Bookmarks**, **Apple Aerials**, and (Pro) **Steam Workshop** libraries; the settings tabs (General, Display Defaults, Performance, Weather, Shortcuts, Backup…) live in the same window.
+- **Settings window** (menu bar → **Manage**) — sidebar lists your **Displays**, plus **Saved** (wallpapers and schemes), **Apple Aerials**, (Pro) **Steam Workshop**, and **System Wallpaper** on macOS 26+; the settings tabs (General, Display Defaults, Performance, Weather, Shortcuts, Backup…) live in the same window.
 
 ## 3) Configure one display end-to-end
 
@@ -27,8 +27,8 @@ Skipping onboarding is fine — everything below works from the Settings window.
 2. Choose the wallpaper type: **Video / Web / Scene** (Scene is Pro-only; Lite shows only what it can render).
 3. Pick the source in the preview area — file picker or drag & drop onto the display row.
 4. Tune in the inspector:
-   - **Wallpaper** tab — volume/mute, frame-rate cap (15/24/30/60/off), fit mode, video color space (including HDR), playback speed; web pages add JavaScript, tracker blocking, custom CSS, and auto-refresh; scenes add cursor parallax, click interaction, and a **Preset** row.
-   - **Overlays** tab — particle effects (snow, rain, sakura, fireflies…), weather-reactive mode, and the Monitor board. Overlays stack on top of any wallpaper type.
+   - **Wallpaper** tab — volume/mute, frame-rate target (15/30/60/match display; labels show the effective rate), fit mode, video color space (including HDR), playback speed; web pages add JavaScript, tracker blocking, custom CSS, and auto-refresh; scenes add cursor parallax, click interaction, and a **Preset** row.
+   - **Overlays** tab — choose **Weather**, **Widgets** or **Music**. Configure 12 particle effects and weather response, arrange ten widget types including Weather, or enable a separate Now Playing layer. Each category has its own preview; drag to place widgets or the music layer.
 5. State persists as you interact — there is no separate save step.
 
 ## 4) Playlists and rotation
@@ -49,11 +49,14 @@ slots are flagged. When no slot matches, the display returns to its primary
 wallpaper. Automation sleeps whenever you're away (lock, display sleep) and
 reconciles once on wake — missed slots don't fire retroactively.
 
-## 6) Bookmarks
+## 6) Saved wallpapers and schemes
 
-Bookmark any configured wallpaper from the display header. A bookmark snapshots
-the content *and* its playback/overlay settings, so applying one restores the
-whole look — from the Bookmarks library or straight from the menu bar.
+Save a wallpaper from the display header, then find it under **Saved → Bookmarks**.
+A bookmark changes the content while preserving the target display's settings.
+Use **Saved → Schemes** for a full display setup, including playback, overlays,
+playlist and schedule. Applying a scheme replaces that display's setup after
+confirmation. Schemes reference local files; moving them to another Mac may
+require selecting those files again.
 
 ## 7) Global shortcuts
 
@@ -82,11 +85,13 @@ The Steam Workshop page needs one-time setup, guided in-app:
    - **Choose SteamCMD…** — point at a binary yourself. It goes through the same
      signature and checksum gates as everything else, on every run rather than
      only when you pick it.
-3. **Steam Web API key** — needed only for *browsing* the Workshop in-app. Get one free at [steamcommunity.com/dev/apikey](https://steamcommunity.com/dev/apikey); Loomscreen stores it in its sandboxed Application Support directory with owner-only permissions and does not intentionally sync it.
+3. **Steam Web API key** — enables API-backed browsing, creator metadata and preset lists; public browsing and download-by-link can be used without it. Get a key at [steamcommunity.com/dev/apikey](https://steamcommunity.com/dev/apikey). New keys are stored in the login Keychain; older file-based keys migrate when Keychain access succeeds.
 4. **Engine assets** — scenes reference shared Wallpaper Engine assets; Loomscreen downloads them once via SteamCMD and can check for updates on launch (**Settings → Workshop**).
 
-Then browse, filter, and download scenes directly, or link a local scene folder
-from disk — assets are read in place, not copied.
+Sign in with your Steam account through the guided flow; Steam Guard is supported.
+Downloads use the authorized Steam library and subscription sync makes your
+subscribed items available in the app. You can also link local project folders,
+which are read in place. Browse filters apply within tag/creator views as well.
 
 ## 9) Scene presets (Pro)
 
@@ -95,14 +100,31 @@ published — a preset is a saved set of that wallpaper's own settings, plus the
 colour correction and volume its author chose. Download one and it appears in
 the **Preset** row of the scene settings card.
 
+**Settings → Workshop → Show presets as wallpapers** is off by default; turn it
+on to include presets in the general browse grid. The base wallpaper's detail
+page still provides its preset list.
+
 The row separates *Saved by you* from *From the Workshop*, and its menu offers
 **Save current values as a preset…**, **Rename…**, and **Delete preset**. A
 preset is a layer over the scene's defaults, and your own tweaks are a layer on
 top of that — so anything you change afterwards stays yours, and deleting the
 preset keeps your changes.
 
-## 10) After the first day
+## 10) Music, weather and system playback
+
+- **Overlays → Music**: enable the layer, pick Poster/Vinyl/Aurora, drag it in
+  the preview and choose whether to show controls and lyrics. Lyrics are off
+  by default. Spotify/Music Automation permission enables controls and missing
+  playhead reads; Pro Audio Response enables reactive visuals.
+- **Overlays → Widgets**: add a Weather tile alongside CPU, Memory or other
+  widgets. Choose system/manual location under **Settings → Weather**.
+- **System Wallpaper** (macOS 26+): add a supported video and open macOS
+  Wallpaper settings to select it. The system provider can continue playing
+  with Loomscreen closed. This path does not include scenes, web or overlays,
+  and availability depends on the provider's compatibility check.
+
+## 11) After the first day
 
 - Revisit **Settings → Performance**: pause rules (full-screen, battery, Low Power Mode, occlusion), per-app exceptions — including **never pause** for apps that should always keep the wallpaper alive — and the video RAM preload budget.
-- Export a `.lwconfig` backup from **Settings → Backup & Restore**.
+- Export a `.lwconfig` backup from **Settings → Backup & Restore**. It saves settings and references, not the media files or secrets. Lite cannot run scene entries from a Pro backup.
 - Hit an edge case? **Settings → About → Report a Bug…** pre-fills diagnostics.

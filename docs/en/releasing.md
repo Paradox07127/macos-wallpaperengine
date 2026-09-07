@@ -11,8 +11,8 @@ and are not notarized.
 
 Installed copies check a per-SKU Sparkle appcast (`appcast-lite.xml` /
 `appcast-pro.xml` on `main`). Sparkle downloads that SKU's DMG, verifies the
-EdDSA signature, and replaces the app. First launch of a newly downloaded build
-still needs the quarantine-clear command — there is no notarization.
+EdDSA signature, and replaces the app. A manually downloaded build
+may need quarantine cleared if macOS blocks it; there is no notarization.
 
 ## Version checklist
 
@@ -32,7 +32,8 @@ still needs the quarantine-clear command — there is no notarization.
 
 ## Preflight
 
-Run the complete sequential gate before creating artifacts:
+Run `make verify` for the normal integration checks, then the complete
+sequential release gate before creating artifacts:
 
 ```sh
 scripts/release_candidate_check.sh
@@ -76,9 +77,11 @@ overwrite an existing archive.
 These ad-hoc archives are verification evidence, **not shipping entitlement
 artifacts**. Xcode's “Sign to Run Locally” path may inject
 `get-task-allow=true`, and `scripts/check_entitlements.sh --app` must reject that
-shape. Effective Pro/Lite shipping entitlement approval, Developer ID trust,
-and notarization must run on the signing Mac against the final Developer ID
-archives; do not waive that failure or substitute the link-matrix archive.
+shape. Validate effective Pro/Lite entitlements and nested signatures on the signing
+Mac against the final Apple Development-signed shipping apps. Developer ID
+trust and notarization are separate future distribution steps, not checks the
+current packaging script performs. Do not substitute the ad-hoc smoke archive
+for a shipping artifact or waive a `get-task-allow` failure.
 
 ## Manual packaging
 
@@ -138,8 +141,8 @@ stored in this repository.
 
 The public Lite asset must be named `Loomscreen-X.Y.Z.dmg`. The Pro asset must
 be named `Loomscreen-Pro-X.Y.Z.dmg`. Asset order does not affect the in-app
-check — it reads the release tag, never the asset list — but keep the Lite DMG
-first so the release page leads with the public download.
+check: Sparkle reads the edition-specific appcast enclosure and compares
+`CFBundleVersion`. Keep Lite first for a predictable download order.
 
 ## GitHub release
 
@@ -200,8 +203,8 @@ For Pro:
 xattr -dr com.apple.quarantine "/Applications/Loomscreen Pro.app"
 ```
 
-Once is enough — updates Loomscreen installs itself clear the flag, so later
-versions open straight away.
+In-app Sparkle updates normally handle the flag during installation. A fresh
+manual download may need this step again.
 
 </details>
 
@@ -232,9 +235,9 @@ Details that have bitten before:
   Pro is `arm64` only, so its row says Apple Silicon. Take the architecture claim
   from this release's `lipo -archs`, not from last release's notes.
 - **The first-launch block is a fallback, not an instruction.** Measured 2026-08-30:
-  Sparkle 2.9.6 clears `com.apple.quarantine` on what it installs, so a user who ran
-  the command once never runs it again across updates. Phrase it as "if macOS refuses
-  to open it", and say the flag is cleared by in-app updates. It cannot be dropped
+  Sparkle 2.9.6 cleared `com.apple.quarantine` in the recorded installation probe.
+  Phrase the command as "if macOS refuses to open it"; do not promise it is
+  unnecessary for every future manual download. It cannot be dropped
   entirely — a hand-downloaded DMG still arrives quarantined, and
   `release_contract_check.sh` asserts the command is present in the appcast.
 - **Leave a blank line after `</summary>`** or GitHub will not render the markdown
