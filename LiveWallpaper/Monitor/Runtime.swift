@@ -371,6 +371,8 @@ actor Runtime {
     private var leases: [UUID: Lease] = [:]
     /// Union options requested for the live pipeline (pre-resolution).
     private var activeOptions: MonitorRuntimeOptions?
+    /// The display cache survives a pause even though activeOptions becomes nil.
+    private var retainedSnapshotOptions: MonitorRuntimeOptions?
     private var resolvedRoots: (claude: URL?, codex: URL?)?
     private var rebuildTask: Task<Void, Never>?
     private var rebuildRevision: UInt64 = 0
@@ -587,13 +589,24 @@ actor Runtime {
             await releaseGrants()
             guard lifecycle == .running else { return }
         }
+        if force || leases.isEmpty {
+            broker.clear()
+            retainedSnapshotOptions = nil
+        }
         guard rebuilding else { return }
-        broker.clear()
         activeOptions = target
         guard let target else { return }
 
-        let hub = DataHub(broker: broker)
-        await hub.setModuleEnabled(agents: target.agents)
+        let retained = Self.retainedSnapshot(
+            broker.latest(after: 0)?.snapshot,
+            previous: retainedSnapshotOptions,
+            next: target
+        )
+        retainedSnapshotOptions = target
+        let hub = DataHub(broker: broker, initialSnapshot: retained, agentsEnabled: target.agents)
+        if retained == nil {
+            await hub.setModuleEnabled(agents: target.agents)
+        }
         guard lifecycle == .running else { return }
         self.hub = hub
 
@@ -677,6 +690,7 @@ actor Runtime {
         // Detach ownership before awaiting so a re-entrant lifecycle call sees the truthful target state.
         let stoppingSources = sources
         sources.removeAll()
+        await hub?.stop()
         await withTaskGroup(of: Void.self) { group in
             for source in stoppingSources {
                 group.addTask { await source.stop() }
@@ -688,6 +702,7 @@ actor Runtime {
     private func finishShutdown() async {
         await stopPipeline()
         activeOptions = nil
+        retainedSnapshotOptions = nil
         broker.clear()
         await releaseGrants()
         rebuildTask = nil

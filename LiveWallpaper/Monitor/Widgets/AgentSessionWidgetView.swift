@@ -93,7 +93,6 @@ struct AgentSessionWidgetView: View {
         let scale = AgentTypeScale(cellHeight: cellHeight)
         let cap = Self.rowCap(options, fallback: Self.largeRowCap)
         let rows = Self.largeRows(ordered, cap: cap)
-        let hiddenCount = visibleSessions.count - rows.count
         shell(scale: scale, cellHeight: cellHeight) {
             if !rows.isEmpty {
                 VStack(alignment: .leading, spacing: scale.gap) {
@@ -101,9 +100,6 @@ struct AgentSessionWidgetView: View {
                     ForEach(Array(rows.enumerated()), id: \.element.id) { index, session in
                         AgentSessionFullRow(session: session, now: now, isLead: index == 0,
                                             reduceMotion: reduceMotion, scale: scale)
-                    }
-                    if hiddenCount > 0 {
-                        moreWhisper(hiddenCount, scale: scale)
                     }
                     Spacer(minLength: 0)
                 }
