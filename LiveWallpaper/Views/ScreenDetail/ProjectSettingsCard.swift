@@ -50,14 +50,14 @@ struct WPEProjectCustomSettingsCard: View {
         if !config.allowJavaScript {
             WPEProjectNotice(
                 icon: "curlybraces",
-                text: "JavaScript is off, so project settings cannot reach this wallpaper."
+                text: "JavaScript is off. Project settings cannot be applied."
             )
             Divider()
         } else if needsMouseInput(schema), !config.allowMouseInteraction {
             HStack(spacing: 8) {
                 WPEProjectNotice(
                     icon: "cursorarrow.click",
-                    text: "Page Input is off; mouse-related project options may not react."
+                    text: "Interaction is off; mouse options may not respond."
                 )
 
                 Button("Enable") {
@@ -75,7 +75,7 @@ struct WPEProjectCustomSettingsCard: View {
         if config.muteAudio, needsAudio(schema) {
             WPEProjectNotice(
                 icon: "speaker.slash",
-                text: "Master Audio is muted; project volume options still update the wallpaper."
+                text: "Audio is muted."
             )
             Divider()
         }
@@ -179,7 +179,8 @@ struct WPEProjectCustomSettingsCard: View {
                     .accessibilityLabel(property.displayText)
             }
         case .file, .directory, .sceneTexture, .userShortcut:
-            // WPE web projects expect to load arbitrary local paths through `applyUserProperties`, but our `WKWebView` only has read access scoped to the project folder via `FolderURLSchemeHandler`.
+            // FolderURLSchemeHandler grants reads only inside the project folder;
+            // arbitrary local paths requested by WPE properties cannot be exposed.
             SettingRow(
                 icon: WPEPropertyRowIcon.symbol(for: property.type),
                 iconColor: .secondary,

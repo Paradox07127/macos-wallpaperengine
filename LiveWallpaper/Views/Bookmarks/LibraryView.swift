@@ -58,8 +58,7 @@ struct LibraryView: View {
         if filteredBookmarks.isEmpty {
             IllustratedEmptyState(
                 symbol: "magnifyingglass",
-                title: "No bookmarks match your search",
-                message: "Try a different keyword, or clear the search field to see every saved wallpaper."
+                title: "No bookmarks match your search"
             )
         } else {
             ScrollView {
@@ -116,12 +115,7 @@ struct LibraryView: View {
             icon: "bookmark",
             tint: DesignTokens.Colors.LibraryTint.bookmarks,
             title: "No bookmarks yet",
-            message: "A bookmark keeps one wallpaper — its source and the settings you gave it — ready to put back later.",
-            features: [
-                LibraryGuideFeature(icon: "bookmark.square", text: "Saved from a display's bookmark icon"),
-                LibraryGuideFeature(icon: "display.2", text: "Apply a saved wallpaper to any display, any time"),
-                LibraryGuideFeature(icon: "line.3.horizontal.decrease", text: "Search by name, filter by wallpaper type"),
-            ]
+            message: "Use the bookmark button on a display to save its wallpaper and settings."
         )
     }
 

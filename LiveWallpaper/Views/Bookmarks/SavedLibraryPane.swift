@@ -24,13 +24,7 @@ enum SavedLibraryTab: String, CaseIterable, Identifiable {
     }
 }
 
-/// One page for both saved-thing libraries, switched by a centred toolbar capsule.
-///
-/// A bookmark is one wallpaper; a scheme is a whole display's setup. They are two
-/// archives of the same kind of act — "keep this so I can put it back" — and they
-/// had identical page shapes, so two sidebar rows bought a second click and a
-/// second place to look. The capsule is this page's title: with the sidebar row
-/// selected and the segments named, a separate heading would say it a third time.
+/// Shared archive page for wallpaper bookmarks and display schemes.
 struct SavedLibraryPane: View {
     @AppStorage("loomscreen.savedLibrary.selectedTab.v1", store: .appScoped())
     private var selectedTab: SavedLibraryTab = .bookmarks

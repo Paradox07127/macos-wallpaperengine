@@ -10,8 +10,7 @@ extension GeneralSettingsView {
                 icon: "square.and.arrow.up",
                 iconColor: .blue,
                 title: "Export Configuration",
-                subtitle: "Save settings, display defaults, bookmarks, and per-display setup to a .lwconfig file",
-                info: "The bundle includes global preferences, display defaults, wallpaper library bookmarks, and per-display playback / effect setup. Wallpaper files themselves are not copied — only references to them."
+                subtitle: "Saves settings and bookmarks, without wallpaper files."
             ) {
                 Button("Export") { beginExport() }
                     .fixedSize()
@@ -22,8 +21,8 @@ extension GeneralSettingsView {
                 icon: "square.and.arrow.down",
                 iconColor: .blue,
                 title: "Import Configuration",
-                subtitle: "Restore from a previously exported .lwconfig file",
-                info: "Importing replaces the current global preferences, display defaults, and per-display setup. Bookmarks from the backup are merged into your library — existing entries with the same source are kept."
+                subtitle: "Replaces current settings and merges bookmarks.",
+                info: "Existing bookmarks with the same source are kept."
             ) {
                 Button("Import") { beginImport() }
                     .fixedSize()
@@ -31,10 +30,6 @@ extension GeneralSettingsView {
             }
         } header: {
             Text("Backup & Restore")
-        } footer: {
-            Text("Backups store settings and references to your wallpaper files, not the files themselves — the originals must exist on the Mac you restore to.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
         }
     }
 
@@ -197,7 +192,7 @@ extension GeneralSettingsView {
 
     private var localizedBookmarkPortabilityWarning: String {
         String(
-            localized: "Selected files and folders will need to be re-granted on this Mac because security bookmarks are device-specific.",
+            localized: "Original wallpaper files must be available. Selected files and folders need access granted again on this Mac.",
             bundle: .appLanguage, comment: "Import confirmation footer warning about cross-device bookmark portability."
         )
     }

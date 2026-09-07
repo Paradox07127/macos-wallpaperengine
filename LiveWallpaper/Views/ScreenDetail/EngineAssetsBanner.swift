@@ -2,10 +2,7 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// Page-level warning that Wallpaper Engine's shared `assets/` are not set up.
-/// Used to hang off the applied scene's detail card and fire only after a load failure or
-/// unresolved refs — both wrong: missing assets don't fail a scene (measured on 3558034522, an
-/// unlinked install leaves 144 references unresolved, scene still renders four passes short with no error), and a reader with no scene applied never saw the card. Missing assets are a setup state, so the banner reads it.
+/// Shows missing shared-asset setup even when a scene loads without an error.
 struct EngineAssetsBanner: View {
     @Environment(\.featureCatalog) private var featureCatalog
     /// Observed for the published flags only, not a bookmark resolve per layout pass.
@@ -38,7 +35,7 @@ struct EngineAssetsBanner: View {
                     Text("Wallpaper Engine assets aren't set up")
                         .font(.subheadline.weight(.semibold))
                         .fixedSize(horizontal: false, vertical: true)
-                    Text("Scenes reference textures, shaders and models that ship with Wallpaper Engine. Without them those layers are skipped and the scene still renders, so nothing reports an error.")
+                    Text("Missing shared assets may leave parts of a scene invisible.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)

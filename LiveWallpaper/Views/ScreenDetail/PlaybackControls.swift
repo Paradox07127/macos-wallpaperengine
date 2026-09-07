@@ -90,7 +90,7 @@ struct PlaybackControls: View {
                 setClickCapture(true)
             }
         } message: {
-            Text("This lets you click elements inside the scene, but while it's on you can't click desktop icons or right-click the desktop on this display. Turn it off here to restore desktop clicks.")
+            Text("Clicks go to the scene instead of desktop icons and the desktop context menu on this display. Turn off Interaction to restore desktop clicks.")
         }
     }
 
@@ -207,7 +207,7 @@ struct PlaybackControls: View {
                 isOn: sceneMouseInteractionEnabled,
                 binding: mouseInteractionBinding,
                 label: Text("Follow cursor"),
-                help: Text("Camera parallax and pointer-driven effects follow your cursor. Passive — safe for desktop icon clicks.")
+                help: Text("Effects follow the cursor without capturing desktop clicks.")
             )
         case .clickInteraction:
             glyphToggle(
@@ -216,7 +216,7 @@ struct PlaybackControls: View {
                 isOn: sceneClickCaptureEnabled,
                 binding: clickInteractionBinding,
                 label: Text("Interaction"),
-                help: Text("Lets the scene receive real clicks. While on, clicks go to the wallpaper instead of the desktop on this display.")
+                help: Text("Sends clicks to the scene instead of this display’s desktop.")
             )
         case .syncToLockScreen:
             lockScreenControl
@@ -228,7 +228,7 @@ struct PlaybackControls: View {
                     isOn: htmlConfig.wrappedValue.allowJavaScript,
                     binding: htmlConfigBinding(htmlConfig, keyPath: \.allowJavaScript),
                     label: Text("JavaScript"),
-                    help: Text("Turning this off stops scripted wallpapers rendering at all.")
+                    help: Text("Scripted content may not display when disabled.")
                 )
             }
         case .webInteraction:
@@ -239,7 +239,7 @@ struct PlaybackControls: View {
                     isOn: htmlConfig.wrappedValue.allowMouseInteraction,
                     binding: htmlConfigBinding(htmlConfig, keyPath: \.allowMouseInteraction),
                     label: Text("Interaction"),
-                    help: Text("When on, clicks and scrolls reach the wallpaper but desktop icons and the Dock become unclickable. Off lets you use Finder normally.")
+                    help: Text("Sends clicks and scrolls to the wallpaper; desktop icons and the Dock cannot receive clicks.")
                 )
             }
         }

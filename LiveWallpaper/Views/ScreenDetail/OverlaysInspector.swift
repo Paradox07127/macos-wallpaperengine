@@ -2,9 +2,7 @@ import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
-/// One overlay page's controls. Weather and Monitor are separate pages picked in
-/// the toolbar, so neither is wrapped in a collapsible named after itself — the
-/// page title already says which one you're looking at.
+/// Controls for the selected weather, monitor or music overlay page.
 struct OverlaysInspectorPanel: View {
     let screen: Screen
     @Binding var draft: DraftState
@@ -49,9 +47,6 @@ struct OverlaysInspectorPanel: View {
     private var weatherCard: some View {
         GroupBox {
             VStack(spacing: 8) {
-                // Leads with the on/off switch so this card and the Monitor
-                // page's first card read as siblings — Monitor's own first row
-                // is "Show on This Display".
                 weatherEnabledRow
 
                 if draft.selectedParticleEffect != .none {
@@ -84,8 +79,7 @@ struct OverlaysInspectorPanel: View {
         SettingRow(
             icon: isWeatherOn ? "cloud.sun.rain.fill" : "cloud.sun",
             iconColor: isWeatherOn ? DesignTokens.Colors.Status.active : .secondary,
-            title: "Show on This Display",
-            info: "Particles are drawn over whatever wallpaper this display is playing"
+            title: "Show on This Display"
         ) {
             Toggle("", isOn: weatherEnabledBinding)
                 .labelsHidden()
@@ -136,8 +130,7 @@ struct OverlaysInspectorPanel: View {
         SettingRow(
             icon: "sparkles",
             iconColor: .purple,
-            title: "Particles",
-            info: "Drawn over the wallpaper, whatever type it is"
+            title: "Particles"
         ) {
             Picker("", selection: particleEffectBinding) {
                 ForEach(Self.pickerEffects) { effect in
@@ -193,14 +186,13 @@ struct OverlaysInspectorPanel: View {
         SettingRow(
             icon: "cloud.heavyrain",
             iconColor: .cyan,
-            title: "Follow Intensity",
-            info: "A downpour draws more particles than a drizzle"
+            title: "Match density to weather"
         ) {
             Toggle("", isOn: weatherIntensityBinding)
                 .labelsHidden()
                 .toggleStyle(.switch)
                 .controlSize(.small)
-                .accessibilityLabel(Text("Follow weather intensity"))
+                .accessibilityLabel(Text("Match density to weather"))
         }
     }
 
@@ -208,8 +200,7 @@ struct OverlaysInspectorPanel: View {
         SettingRow(
             icon: "wind",
             iconColor: .cyan,
-            title: "Follow Wind",
-            info: "Particles lean the way the wind is blowing outside"
+            title: "Follow wind direction"
         ) {
             Toggle("", isOn: weatherWindBinding)
                 .labelsHidden()

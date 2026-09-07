@@ -1,19 +1,12 @@
 import LiveWallpaperCore
 import SwiftUI
 
-struct LibraryGuideFeature: Equatable {
-    let icon: String
-    let text: LocalizedStringKey
-}
-
-/// A library's first-run page — owns the whole page, feature list, per-library
-/// tint. `IllustratedEmptyState` stays the in-context "no matches" state.
+/// Full-page library setup or empty state. Use `IllustratedEmptyState` for no matches.
 struct LibraryGuideCard: View {
     let icon: String
     let tint: Color
     let title: LocalizedStringKey
-    let message: LocalizedStringKey
-    let features: [LibraryGuideFeature]
+    let message: LocalizedStringKey?
     let actionTitle: LocalizedStringKey?
     let actionSystemImage: String?
     let secondaryTitle: LocalizedStringKey?
@@ -27,8 +20,7 @@ struct LibraryGuideCard: View {
         icon: String,
         tint: Color,
         title: LocalizedStringKey,
-        message: LocalizedStringKey,
-        features: [LibraryGuideFeature],
+        message: LocalizedStringKey? = nil,
         actionTitle: LocalizedStringKey? = nil,
         actionSystemImage: String? = nil,
         secondaryTitle: LocalizedStringKey? = nil,
@@ -42,7 +34,6 @@ struct LibraryGuideCard: View {
         self.tint = tint
         self.title = title
         self.message = message
-        self.features = features
         self.actionTitle = actionTitle
         self.actionSystemImage = actionSystemImage
         self.secondaryTitle = secondaryTitle
@@ -64,24 +55,13 @@ struct LibraryGuideCard: View {
                     .font(DesignTokens.Typography.pageTitle.weight(.semibold))
                     .accessibilityAddTraits(.isHeader)
 
-                Text(message)
-                    .font(DesignTokens.Typography.body)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: DesignTokens.GuidedLibrary.messageWidth)
-            }
-
-            if !features.isEmpty {
-                VStack(alignment: .leading, spacing: 12) {
-                    ForEach(Array(features.enumerated()), id: \.offset) { _, feature in
-                        featureRow(feature)
-                    }
+                if let message {
+                    Text(message)
+                        .font(DesignTokens.Typography.body)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: DesignTokens.GuidedLibrary.messageWidth)
                 }
-                // No plate: this is a read-only feature list on a flat page, so
-                // a container would only draw a box around text nobody can act on.
-                .padding(.horizontal, 18)
-                .padding(.vertical, DesignTokens.Spacing.cardInset)
-                .frame(maxWidth: DesignTokens.GuidedLibrary.featureWidth)
             }
 
             actionRow
@@ -101,7 +81,6 @@ struct LibraryGuideCard: View {
         .padding(DesignTokens.GuidedLibrary.outerPadding)
     }
 
-    /// A hairline SF Symbol has nothing to sit against on a flat pane.
     private var hero: some View {
         let disc = DesignTokens.GuidedLibrary.iconSize * 2.125
         return ZStack {
@@ -159,17 +138,4 @@ struct LibraryGuideCard: View {
         }
     }
 
-    private func featureRow(_ feature: LibraryGuideFeature) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: feature.icon)
-                .font(DesignTokens.Typography.body.weight(.medium))
-                .foregroundStyle(tint)
-                .frame(width: 22)
-                .symbolRenderingMode(.hierarchical)
-
-            Text(feature.text)
-                .font(DesignTokens.Typography.body)
-                .foregroundStyle(.primary)
-        }
-    }
 }

@@ -85,10 +85,9 @@ struct ScheduleSection: View {
     private var emptyState: some View {
         IllustratedEmptyState(
             symbol: "calendar.badge.clock",
-            title: "Set up a schedule",
-            message: "Switch wallpapers automatically across different times of day.",
+            title: "No schedule",
             symbolColor: .accentColor,
-            primary: EmptyStateButtonAction("Get Started", action: enableSchedule),
+            primary: EmptyStateButtonAction("Enable Schedule", action: enableSchedule),
             variant: .compact
         )
         .frame(maxWidth: .infinity)

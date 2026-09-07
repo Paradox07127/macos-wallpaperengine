@@ -39,8 +39,6 @@ struct WidgetSettingsPopover: View {
                     RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous)
                         .fill(.quaternary.opacity(0.6))
                 )
-            // No subtitle: "Instrument settings" restated what the panel is,
-            // which the reader already knows from having opened it.
             Text(verbatim: WidgetFactory.displayName(placement.kind))
                 .font(.headline)
             Spacer(minLength: 0)
@@ -210,7 +208,7 @@ struct WidgetSettingsPopover: View {
             VStack(alignment: .leading, spacing: 4) {
                 toggleRow("Show top processes", isOn: boolBinding(key: MonitorWidgetDraft.showTopProcessesKey, default: true))
                 if placement.size != .large {
-                    Text("Top processes show on the large size only.")
+                    Text("Top processes are hidden at this size.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -228,7 +226,7 @@ struct WidgetSettingsPopover: View {
             VStack(alignment: .leading, spacing: 4) {
                 toggleRow("Show top processes", isOn: boolBinding(key: MonitorWidgetDraft.showTopProcessesKey, default: true))
                 if placement.size != .large {
-                    Text("Top processes show on the large size only.")
+                    Text("Top processes are hidden at this size.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -349,9 +347,7 @@ struct WidgetSettingsPopover: View {
         )
     }
 
-    /// Label beside its control on one line, stacked only when that line would
-    /// not fit — this panel floats over the board, so every row it saves is
-    /// board the user can still see while editing.
+    /// Stack the control below its label when localized content cannot fit inline.
     @ViewBuilder
     private func optionRow<Control: View>(
         _ title: LocalizedStringKey,

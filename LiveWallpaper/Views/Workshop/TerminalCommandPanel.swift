@@ -32,7 +32,7 @@ struct TerminalCommandPanel: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
-                .help(Text("Copy command to clipboard"))
+                .accessibilityLabel(Text("Copy command to clipboard"))
 
                 Button {
                     NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Utilities/Terminal.app"))
@@ -42,7 +42,7 @@ struct TerminalCommandPanel: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
-                .help(Text("Open Terminal.app"))
+                .accessibilityLabel(Text("Open Terminal.app"))
             }
         }
         .padding(.horizontal, DesignTokens.Spacing.md)

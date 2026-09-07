@@ -45,7 +45,7 @@ struct ReportBugSheet: View {
             icon: "ladybug.fill",
             title: "Report a Bug",
             iconTint: DesignTokens.Colors.Status.danger,
-            subtitle: "The information below will be pre-filled into a GitHub issue. **Review it before posting** — once an issue is created, anyone can read it."
+            subtitle: "This fills a GitHub issue. Review before publishing; published issues are public."
         )
     }
 

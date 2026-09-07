@@ -1,10 +1,9 @@
 import Foundation
-import Testing
 @testable import LiveWallpaper
+import Testing
 
 @Suite("ClaudeSessionModel: transcript folding + classification")
 struct ClaudeSessionModelTests {
-
     private static let base = Date(timeIntervalSince1970: 1_783_000_000)
 
     private func line(_ dict: [String: Any]) -> ClaudeTranscriptLine {
@@ -26,8 +25,8 @@ struct ClaudeSessionModelTests {
                 "role": "assistant", "model": model, "stop_reason": "tool_use",
                 "content": [["type": "tool_use", "name": tool]],
                 "usage": ["input_tokens": 100, "output_tokens": 20,
-                          "cache_read_input_tokens": 300, "cache_creation_input_tokens": 40]
-            ]
+                          "cache_read_input_tokens": 300, "cache_creation_input_tokens": 40],
+            ],
         ])
     }
 
@@ -39,22 +38,22 @@ struct ClaudeSessionModelTests {
                 "role": "assistant", "model": model, "stop_reason": "end_turn",
                 "content": [["type": "text", "text": "redacted"]],
                 "usage": ["input_tokens": 10, "output_tokens": 5,
-                          "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0]
-            ]
+                          "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0],
+            ],
         ])
     }
 
     private func toolResult(at date: Date) -> ClaudeTranscriptLine {
         line([
             "type": "user", "isSidechain": false, "timestamp": iso(date), "sessionId": "s1",
-            "message": ["role": "user", "content": [["type": "tool_result", "content": "redacted"]]]
+            "message": ["role": "user", "content": [["type": "tool_result", "content": "redacted"]]],
         ])
     }
 
     private func userPrompt(at date: Date) -> ClaudeTranscriptLine {
         line([
             "type": "user", "isSidechain": false, "timestamp": iso(date), "sessionId": "s1",
-            "message": ["role": "user", "content": "please do the thing"]
+            "message": ["role": "user", "content": "please do the thing"],
         ])
     }
 
@@ -110,14 +109,14 @@ struct ClaudeSessionModelTests {
     /// without writing a line, so an unfinished call now stays `.running` while
     /// the process lives, and the 5-minute `stale` warning flags the suspicious
     /// ones. A session with nothing outstanding still goes idle.
-    @Test("stale beyond freshnessTimeout + alive, nothing outstanding → .idle")
-    func staleAliveIsIdle() {
+    @Test("A tool result still awaits the model while its process is alive")
+    func silentModelResponseRemainsRunning() {
         var model = ClaudeSessionModel(sessionId: "s1")
         let now = Self.base
         model.ingest(assistantToolUse(tool: "Bash", at: now))
         model.ingest(toolResult(at: now.addingTimeInterval(1)))
         let farLater = now.addingTimeInterval(1000)
-        #expect(model.status(now: farLater, processAlive: true) == .idle)
+        #expect(model.status(now: farLater, processAlive: true) == .running)
     }
 
     @Test("fresh tool_result hands control to model → .running")
@@ -130,17 +129,17 @@ struct ClaudeSessionModelTests {
         #expect(model.status(now: now.addingTimeInterval(2), processAlive: true) == .running)
     }
 
-    @Test("sidechain lines excluded from turn count but update freshness")
+    @Test("Sidechain records do not change the parent activity clock")
     func sidechainExcludedFromTurns() {
         var model = ClaudeSessionModel(sessionId: "s1")
         let now = Self.base
         model.ingest(userPrompt(at: now))
         model.ingest(line([
             "type": "user", "isSidechain": true, "timestamp": iso(now.addingTimeInterval(5)),
-            "sessionId": "s1", "message": ["role": "user", "content": "subagent prompt"]
+            "sessionId": "s1", "message": ["role": "user", "content": "subagent prompt"],
         ]))
         #expect(model.turnCount == 1)
-        #expect(model.lastEventAt == now.addingTimeInterval(5))
+        #expect(model.lastEventAt == now)
     }
 
     @Test("tool_result user lines are not counted as turns")
@@ -212,7 +211,7 @@ struct ClaudeSessionModelTests {
         #expect(model.model == "claude-opus-4-8")
     }
 
-    @Test("unknown line types decode without throwing and only touch freshness")
+    @Test("Unknown metadata does not create session activity")
     func unknownLineTypesAreNoOps() {
         var model = ClaudeSessionModel(sessionId: "s1")
         let now = Self.base
@@ -221,7 +220,7 @@ struct ClaudeSessionModelTests {
         }
         #expect(model.turnCount == 0)
         #expect(model.tokens == .zero)
-        #expect(model.lastEventAt == now)
+        #expect(model.lastEventAt == nil)
     }
 
     @Test("snapshot emits id \"claude:<sessionId>\" and privacy-safe fields")

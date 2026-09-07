@@ -20,18 +20,11 @@ struct SystemWallpaperLibraryView: View {
                     systemImage: "macwindow.on.rectangle",
                     title: Text("System Wallpaper")
                 )
-                // One ToolbarItem each, never an HStack of both: macOS groups
-                // adjacent items into one capsule and spaces them itself, so a
-                // manual spacing lands on top of that and the HStack's own
-                // width leaves slack at the trailing edge.
+                // Separate items let macOS own toolbar grouping and spacing.
                 if isFunctional {
                     ToolbarItem(placement: .primaryAction) {
                         SystemWallpaperAddMenu()
                     }
-                    // Not `gearshape`: this window's toolbar already carries one
-                    // at `.navigation` for Loomscreen's own preferences.
-                    // `arrow.up.forward.app` is what the app already means by
-                    // "this leaves us for another app" (Open in Steam).
                     ToolbarItem(placement: .primaryAction) {
                         Button {
                             service.openWallpaperSettings()
@@ -101,9 +94,6 @@ struct SystemWallpaperLibraryView: View {
         }
     }
 
-    /// Flat and in-flow: this is page content, and the app reserves glass for
-    /// floating chrome. Only states that need something from the reader get a
-    /// row — "playing right now" is already legible on the tile itself.
     @ViewBuilder
     private var notice: some View {
         switch service.status {
@@ -123,8 +113,7 @@ struct SystemWallpaperLibraryView: View {
             noticeRow(
                 icon: "arrow.right.circle.fill",
                 tint: .accentColor,
-                title: Text("Ready — pick one in System Settings"),
-                detail: Text("macOS decides which wallpaper is on screen; Loomscreen only supplies them.")
+                title: Text("Choose a wallpaper in System Settings")
             ) {
                 Button("Open") { service.openWallpaperSettings() }
                     .buttonStyle(.bordered)
@@ -150,7 +139,7 @@ struct SystemWallpaperLibraryView: View {
         icon: String,
         tint: Color,
         title: Text,
-        detail: Text,
+        detail: Text? = nil,
         @ViewBuilder action: () -> Action
     ) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: DesignTokens.Spacing.md) {
@@ -158,10 +147,12 @@ struct SystemWallpaperLibraryView: View {
                 .foregroundStyle(tint)
             VStack(alignment: .leading, spacing: 2) {
                 title.font(.callout.weight(.medium))
-                detail
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                if let detail {
+                    detail
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             Spacer(minLength: DesignTokens.Spacing.sm)
             action()
@@ -175,18 +166,12 @@ struct SystemWallpaperLibraryView: View {
         .animation(.easeOut(duration: 0.2), value: service.status)
     }
 
-    /// One switch for the whole feature rather than per video: the system shows
-    /// one wallpaper at a time, and Apple's own videos behave one way for all.
+    /// Playback mode applies to the whole system library.
     private var playbackModeRow: some View {
         HStack(alignment: .firstTextBaseline, spacing: DesignTokens.Spacing.md) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("On the desktop")
-                    .font(.callout.weight(.medium))
-                Text("The lock screen plays unless low power or heat slows it. This is what happens after you unlock.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            Text("Desktop playback")
+                .font(.callout.weight(.medium))
+                .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: DesignTokens.Spacing.sm)
             GlassSegmentedPicker(
                 selection: Binding(
@@ -196,12 +181,12 @@ struct SystemWallpaperLibraryView: View {
                 values: [.always, .stillOnDesktop],
                 shell: .flat,
                 title: { (mode: SystemWallpaperPlaybackMode) in
-                    mode == .always ? "Keep playing" : "Ease to a still"
+                    mode == .always ? "Play video" : "Still image"
                 }
             )
             .frame(width: 230)
             .accessibilityElement(children: .contain)
-            .accessibilityLabel(Text("On the desktop"))
+            .accessibilityLabel(Text("Desktop playback"))
         }
         .padding(DesignTokens.Spacing.md)
         .background(
@@ -213,10 +198,8 @@ struct SystemWallpaperLibraryView: View {
     private var footnote: some View {
         VStack(alignment: .leading, spacing: 2) {
             if service.diskUsageBytes > 0 {
-                Text("Uses \(WorkshopByteFormatter.platformDefault.string(fromByteCount: service.diskUsageBytes)) on disk — the system needs its own copy of each video.")
+                Text("Disk usage: \(WorkshopByteFormatter.platformDefault.string(fromByteCount: service.diskUsageBytes))")
             }
-            // Not "deleting the app removes them" — trashing an app does not
-            // delete its container, so that claim was simply false.
             Text("Removing a video here also deletes the system's copy from disk.")
             if !service.items.isEmpty {
                 Button("Remove All from System Wallpaper", role: .destructive) {
@@ -242,21 +225,12 @@ struct SystemWallpaperLibraryView: View {
 
     // MARK: - Empty / unavailable
 
-    /// A labelled button, not the header's "+" menu: on an empty page a bare
-    /// glyph never says what it adds, and the picker is the only source that
-    /// works on a fresh install anyway — the other sources stay one click away
-    /// in the header menu.
     private var emptyState: some View {
         LibraryGuideCard(
             icon: "macwindow.on.rectangle",
             tint: DesignTokens.Colors.LibraryTint.systemWallpaper,
             title: "Let macOS play your wallpaper",
-            message: "Hand a video to the system and macOS plays it itself, so it keeps running with Loomscreen closed.",
-            features: [
-                LibraryGuideFeature(icon: "infinity", text: "Keeps playing with Loomscreen quit"),
-                LibraryGuideFeature(icon: "lock", text: "The lock screen changes with it"),
-                LibraryGuideFeature(icon: "internaldrive", text: "macOS keeps its own copy of each video"),
-            ],
+            message: "macOS keeps a copy for the desktop and lock screen, and can play it with Loomscreen closed.",
             actionTitle: "Choose Video…",
             actionSystemImage: "video.badge.plus",
             action: {
@@ -271,13 +245,8 @@ struct SystemWallpaperLibraryView: View {
         LibraryGuideCard(
             icon: "exclamationmark.triangle",
             tint: DesignTokens.Colors.LibraryTint.systemWallpaper,
-            title: "System Wallpaper is paused on this macOS build",
-            message: "Our wallpaper extension checked this build of macOS and found a layout it can't drive, so it stopped handing videos to the system.",
-            features: [
-                LibraryGuideFeature(icon: "exclamationmark.triangle", text: "The build changed what the extension reads"),
-                LibraryGuideFeature(icon: "checkmark.shield", text: "Your other Loomscreen wallpapers are unaffected"),
-                LibraryGuideFeature(icon: "arrow.triangle.2.circlepath", text: "Clears itself after a macOS or app update"),
-            ]
+            title: "System Wallpaper is unavailable on this macOS version",
+            message: "Other wallpaper features are unaffected. Try again after updating macOS or Loomscreen."
         )
     }
 
@@ -288,23 +257,17 @@ struct SystemWallpaperLibraryView: View {
 
 // MARK: - Add menu
 
-/// Adding is a menu, not a picker sheet: a sheet would stack a second list of
-/// videos on top of the grid already on screen. Import comes first because it
-/// is the only source that works on a fresh install.
+/// Opens the video selection sheet for System Wallpaper.
 @available(macOS 26.0, *)
 struct SystemWallpaperAddMenu: View {
     @State private var showingAddSheet = false
 
     var body: some View {
-        // Labelled, not a bare `plus`: the window toolbar already carries a
-        // `plus` for "pick a wallpaper for the selected display", and two
-        // identical glyphs in the same slot did different things.
         Button {
             showingAddSheet = true
         } label: {
             Label("Add Video", systemImage: "plus")
         }
-        .help(Text("Add a video to System Wallpaper"))
         .accessibilityLabel(Text("Add Video"))
         .sheet(isPresented: $showingAddSheet) {
             AppLanguageScope(defaults: .appScoped()) {
@@ -389,10 +352,6 @@ private struct SystemWallpaperTile: View {
                 .accessibilityLabel(Text("Remove from System Wallpaper"))
             }
         }
-        // The in-use state is still stated once, now inside the band. The
-        // caption that used to carry it is gone with it: its other half was the
-        // resting state of every tile on the page, so per-card it said nothing.
-        // That leaves its catalog key unreferenced — deliberately not deleted.
         .overlay(alignment: .bottom) {
             ThumbnailTitleBand(title: item.title, isHovering: isHovering) {
                 if isInUse {
@@ -411,10 +370,7 @@ private struct SystemWallpaperTile: View {
     }
 }
 
-/// Tile-sized, already-decoded posters for the System Wallpaper grid.
-/// Used to read the file off-main, then hand bytes to `NSImage(data:)` on the main actor — which
-/// doesn't decode there either, deferring pixels to whichever thread first draws the layer — with
-/// nothing cached, so scrolling a tile out and back paid for the whole thing again. Internal, not private, only so `LocalImageCacheReclaimerTests` can observe the purge.
+/// Tile-sized, decoded posters. Internal visibility lets cache-reclaimer tests observe purges.
 enum SystemWallpaperThumbnails {
     /// 220 pt (`LibraryGrid.maximumColumnWidth`) at 2×, with headroom. The tile
     /// is 16:9 and so is the poster, so `scaledToFill` never crops here.

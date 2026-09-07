@@ -3,12 +3,7 @@ import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
-/// Every Steam-side check Loomscreen can run, in one place.
-/// It used to be a `DisclosureGroup` nested inside the connection section, scoped to the three
-/// steps above it, so checks describing the scene resources or the connector had nowhere to live;
-/// as its own section it covers all of them.
-/// **Advisory only.** Downloads are blocked by `SteamCMDDoctorService.downloadBlocker` (bindings +
-/// binary-identity verdict), never these probes — a red row means "here is what looks wrong", not "you may not proceed".
+/// Advisory diagnostics. Download eligibility is owned by `SteamCMDDoctorService.downloadBlocker`.
 struct WorkshopDiagnosticsSection: View {
     @Binding var showingExportToast: Bool
 
@@ -42,14 +37,12 @@ struct WorkshopDiagnosticsSection: View {
                 .controlSize(.small)
                 .disabled(service.state == .probing)
 
-                // A button, not a link: this copies a payload to the
-                // pasteboard. Link styling is for things that open a web page.
                 Button(action: exportDiagnostics) {
-                    Text("Export")
+                    Text("Copy reports")
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
-                .help(Text("Copy all probe reports as redacted JSON to clipboard"))
+                .help(Text("Copies redacted diagnostic reports as JSON."))
 
                 Spacer(minLength: 0)
             }

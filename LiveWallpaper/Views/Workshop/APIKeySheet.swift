@@ -3,10 +3,7 @@ import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
-/// Validates the 32-hex shape, probes Valve's `GetSupportedAPIList`, and stores the key in this
-/// Mac's login keychain (never synced to iCloud).
-/// Kept for the surfaces that are genuinely modal — onboarding and the Browse pane's "you need
-/// a key to do this" prompt. Settings shows the same `SteamWebAPIKeyEditor` inline; the sheet is only a title and Done button around it, so the two can't lay the same field out differently.
+/// Shares key validation and editing with Settings; the login keychain entry does not sync to iCloud.
 struct SteamWebAPIKeyEntrySheet: View {
     let services: WorkshopServices
     let onSaved: () -> Void
@@ -25,12 +22,9 @@ struct SteamWebAPIKeyEntrySheet: View {
             VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
                 SteamSheetHeader(
                     icon: "key",
-                    title: "Set your Steam Web API key",
-                    subtitle: "Browsing works without one. A key adds ratings, authors and faster search."
+                    title: "Steam Web API key",
+                    info: "Optional. Adds ratings, authors, and faster search. Stored only on this Mac; requests go directly to Steam."
                 )
-                // No inline Save here: the sheet's footer already owns the
-                // primary action, and two Save buttons stacked in one dialog
-                // is a question about which one is real.
                 SteamWebAPIKeyEditor(model: model, showsSaveButton: false, onSubmit: save)
             }
             .padding(DesignTokens.Spacing.xl)
@@ -39,10 +33,8 @@ struct SteamWebAPIKeyEntrySheet: View {
                 primaryTitle: "Save",
                 primaryAction: { save() },
                 primaryDisabled: !model.canSave,
-                primaryHelp: "Save key and close",
                 cancelTitle: "Cancel",
-                cancelAction: { dismiss() },
-                cancelHelp: "Discard changes"
+                cancelAction: { dismiss() }
             )
         }
         .frame(width: SteamSheetWidth.form)
@@ -60,10 +52,7 @@ struct SteamWebAPIKeyEntrySheet: View {
 
 // MARK: - Shared editor
 
-/// The key field and everything that has to sit next to it.
-/// Was two cards with tinted fills and four bordered buttons, laid out twice. In a settings
-/// form the cards read as panels inside panels, and four bordered buttons read as four more
-/// chores; the sentences they carried are what matters, so they stayed and the chrome went.
+/// Shared key field, source guidance and validation status.
 struct SteamWebAPIKeyEditor: View {
     @Bindable var model: SteamWebAPIKeyEntryModel
     /// Off inside a sheet, whose footer bar carries the primary action instead.
@@ -72,9 +61,6 @@ struct SteamWebAPIKeyEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
-            // Kept as plain text rather than a warning panel: it is a standing
-            // instruction about where keys come from, not an alert about
-            // something that just happened.
             Text("Generate your key only at steamcommunity.com/dev/apikey. Never paste a key from a third-party site or installer.")
                 .font(DesignTokens.Typography.caption)
                 .foregroundStyle(.secondary)

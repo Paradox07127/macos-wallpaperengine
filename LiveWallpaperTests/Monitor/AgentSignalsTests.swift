@@ -1,21 +1,20 @@
 import Foundation
-import Testing
 @testable import LiveWallpaper
+import Testing
 
 @Suite("Monitor agent-session signals")
 struct AgentSignalsTests {
-
-    private func run(_ name: String, _ count: Int, spacing: Double = 5, base: Double = 1_000) -> [MonitorAgentToolEvent] {
-        (0..<count).map { MonitorAgentToolEvent(name: name, at: base + Double($0) * spacing, ok: true) }
+    private func run(_ name: String, _ count: Int, spacing: Double = 5, base: Double = 1000) -> [MonitorAgentToolEvent] {
+        (0 ..< count).map { MonitorAgentToolEvent(name: name, at: base + Double($0) * spacing, ok: false) }
     }
 
-    @Test("toolLoop fires on a full run of same-name tools within 10 min")
+    @Test("Repeated failing tools trigger a warning within 10 min")
     func toolLoopDetected() {
         let tools = run("Bash", AgentSignalDeriver.toolLoopRun, spacing: 5)
         #expect(AgentSignalDeriver.isToolLoop(tools))
         let warning = AgentSignalDeriver.warning(
             recentTools: tools, status: .running, processAlive: true,
-            lastEventAt: 1_200, now: 1_205
+            lastEventAt: 1200, now: 1205
         )
         #expect(warning == "toolLoop")
     }
@@ -34,8 +33,8 @@ struct AgentSignalsTests {
     @Test("no loop when names differ or the window is too wide")
     func toolLoopNegatives() {
         let n = AgentSignalDeriver.toolLoopRun
-        let mixed = (0..<n).map {
-            MonitorAgentToolEvent(name: $0 % 2 == 0 ? "Bash" : "Read", at: 1_000 + Double($0), ok: true)
+        let mixed = (0 ..< n).map {
+            MonitorAgentToolEvent(name: $0 % 2 == 0 ? "Bash" : "Read", at: 1000 + Double($0), ok: true)
         }
         #expect(!AgentSignalDeriver.isToolLoop(mixed))
         // Same run, spread past the 10-minute window.
@@ -52,7 +51,7 @@ struct AgentSignalsTests {
 
     @Test("stale fires only past the silence window")
     func staleDetected() {
-        let now = 10_000.0
+        let now = 10000.0
         func warn(silentFor seconds: Double) -> String? {
             AgentSignalDeriver.warning(
                 recentTools: [], status: .running, processAlive: true,
@@ -67,7 +66,7 @@ struct AgentSignalsTests {
 
     @Test("no stale when idle, dead, or recently active; loop precedes stale")
     func staleNegativesAndPrecedence() {
-        let now = 10_000.0
+        let now = 10000.0
         #expect(AgentSignalDeriver.warning(
             recentTools: [], status: .idle, processAlive: true,
             lastEventAt: now - AgentSignalDeriver.staleAfter - 60, now: now
@@ -128,7 +127,7 @@ struct AgentSignalsTests {
     func recentEventTimesCap() {
         var model = ClaudeSessionModel(sessionId: "s1")
         let base = Date(timeIntervalSince1970: 1_783_000_000)
-        for i in 0..<100 {
+        for i in 0 ..< 100 {
             model.ingest(assistant(tool: "Bash", at: base.addingTimeInterval(Double(i)), input: 1, cacheRead: 0))
         }
         let snap = model.snapshot(now: base.addingTimeInterval(200), processAlive: true)
@@ -142,7 +141,7 @@ struct AgentSignalsTests {
     func recentToolsCap() {
         var model = ClaudeSessionModel(sessionId: "s1")
         let base = Date(timeIntervalSince1970: 1_783_000_000)
-        for i in 0..<20 {
+        for i in 0 ..< 20 {
             model.ingest(assistant(tool: "Bash", at: base.addingTimeInterval(Double(i)), input: 1, cacheRead: 0))
         }
         let snap = model.snapshot(now: base.addingTimeInterval(30), processAlive: true)
@@ -168,8 +167,8 @@ struct AgentSignalsTests {
             "message": [
                 "role": "assistant", "model": "claude-opus-4-8", "stop_reason": "tool_use",
                 "content": [["type": "tool_use", "name": "Bash"]],
-                "usage": ["input_tokens": 10, "output_tokens": 1, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0]
-            ]
+                "usage": ["input_tokens": 10, "output_tokens": 1, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0],
+            ],
         ]))
         let snap = model.snapshot(now: base.addingTimeInterval(1), processAlive: true)
         #expect(snap.worktreeName == "monitor-v2")
@@ -193,15 +192,15 @@ struct AgentSignalsTests {
                 "role": "assistant", "model": model, "stop_reason": "tool_use",
                 "content": [["type": "tool_use", "name": tool]],
                 "usage": ["input_tokens": input, "output_tokens": 5,
-                          "cache_read_input_tokens": cacheRead, "cache_creation_input_tokens": 0]
-            ]
+                          "cache_read_input_tokens": cacheRead, "cache_creation_input_tokens": 0],
+            ],
         ])
     }
 
     private func toolResult(at date: Date, isError: Bool) -> ClaudeTranscriptLine {
         line([
             "type": "user", "isSidechain": false, "timestamp": iso(date), "sessionId": "s1",
-            "message": ["role": "user", "content": [["type": "tool_result", "content": "redacted", "is_error": isError]]]
+            "message": ["role": "user", "content": [["type": "tool_result", "content": "redacted", "is_error": isError]]],
         ])
     }
 }

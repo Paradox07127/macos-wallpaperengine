@@ -1,9 +1,7 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// The Monitor overlay as one section of the Overlays tab — a sibling of the
-/// weather overlay, not a whole right column. The enclosing panel owns the
-/// scrolling and padding so both overlays share one rhythm.
+/// The enclosing Overlays panel owns scrolling and padding.
 struct MonitorOverlaySection: View {
     let screen: Screen
     let screenManager: ScreenManager
@@ -40,8 +38,7 @@ struct MonitorOverlaySection: View {
         SettingRow(
             icon: overlay.enabled ? "gauge.with.dots.needle.67percent" : "gauge.with.dots.needle.0percent",
             iconColor: overlay.enabled ? DesignTokens.Colors.Status.active : .secondary,
-            title: "Show on This Display",
-            info: "The board floats over whatever wallpaper this display is playing"
+            title: "Show on This Display"
         ) {
             Toggle("", isOn: Binding(
                 get: { overlay.enabled },
@@ -59,7 +56,7 @@ struct MonitorOverlaySection: View {
             icon: "square.stack.3d.up",
             iconColor: .blue,
             title: "Layer",
-            info: "Desktop keeps the board under your windows; On Top floats it above everything"
+            info: "Desktop: below windows. On Top: above windows."
         ) {
             GlassSegmentedPicker(
                 selection: Binding(
@@ -81,9 +78,7 @@ struct MonitorOverlaySection: View {
 
 }
 
-/// What the board preview draws. A setting rather than a control on the preview
-/// itself: it sits with the backdrop switch because both describe the preview,
-/// and neither changes anything on the desktop.
+/// Controls preview contents without changing the desktop overlay.
 struct MonitorPreviewModeRow: View {
     @AppStorage(MonitorBoardPreviewMode.defaultsKey) private var mode: MonitorBoardPreviewMode = .snapshot
 
@@ -91,8 +86,7 @@ struct MonitorPreviewModeRow: View {
         SettingRow(
             icon: "rectangle.on.rectangle.angled",
             iconColor: .purple,
-            title: "Preview Contents",
-            info: "What the board preview draws: this display's last reading, fixed sample data, or just the instrument names"
+            title: "Preview Contents"
         ) {
             Picker("", selection: $mode) {
                 ForEach(MonitorBoardPreviewMode.allCases, id: \.self) { mode in
@@ -107,10 +101,7 @@ struct MonitorPreviewModeRow: View {
     }
 }
 
-/// The preview's wallpaper backdrop, shown on every overlay page.
-/// One switch, three places: the setting is a single `@AppStorage` key every overlay preview
-/// canvas already reads, so turning it off on the Music page makes the Monitor page follow too.
-/// It sits on each page because that's where the preview it changes is.
+/// All overlay previews share the same wallpaper backdrop preference.
 struct OverlayBackdropRow: View {
     /// Whether this display's wallpaper has a still frame to show at all.
     let available: Bool
@@ -122,9 +113,8 @@ struct OverlayBackdropRow: View {
             icon: "photo",
             iconColor: .purple,
             title: "Wallpaper Backdrop",
-            info: available
-                ? "Preview the overlay over this display's wallpaper instead of an empty canvas"
-                : "This wallpaper has no still frame to preview the overlay against"
+            subtitle: available ? nil : "No still frame is available for this wallpaper.",
+            info: available ? "Applies to all overlay previews." : nil
         ) {
             Toggle("", isOn: $showsWallpaper)
                 .labelsHidden()

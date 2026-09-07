@@ -2,14 +2,7 @@ import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
-/// Picking what to hand to macOS.
-///
-/// This was a popover listing candidate videos by filename. Choosing a wallpaper
-/// from a column of text is the one thing a wallpaper picker must not ask you to
-/// do — the whole library elsewhere in the app is a grid of posters, and this was
-/// the only place that wasn't. It is also a step with real consequences (macOS
-/// keeps playing the copy after Loomscreen quits), which a menu's one-click-and-
-/// gone shape hides.
+/// Selects videos to add to System Wallpaper in a batch.
 @available(macOS 26.0, *)
 struct SystemWallpaperAddSheet: View {
     @Environment(\.dismiss) private var dismiss
@@ -31,7 +24,7 @@ struct SystemWallpaperAddSheet: View {
                 icon: "macwindow.on.rectangle",
                 title: "Add to System Wallpaper",
                 iconTint: .accentColor,
-                subtitle: "Loomscreen hands macOS its own copy of the video, so it keeps playing after you quit the app."
+                subtitle: "macOS saves a video copy that can play with Loomscreen closed."
             )
             .padding(.horizontal, DesignTokens.Settings.formHorizontalMargin)
             .padding(.top, DesignTokens.Settings.formVerticalMargin)
@@ -70,8 +63,7 @@ struct SystemWallpaperAddSheet: View {
         if candidates.isEmpty {
             IllustratedEmptyState(
                 symbol: "film.stack",
-                title: "Nothing here to hand over yet",
-                message: "Bookmark a video and it shows up here. You can also choose a file directly."
+                title: "No saved videos"
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
@@ -93,9 +85,6 @@ struct SystemWallpaperAddSheet: View {
         }
     }
 
-    /// Kept above the grid rather than inside it: it is a different kind of act —
-    /// reaching outside the app — and a tile among posters would read as one more
-    /// wallpaper you already have.
     private var chooseFilesRow: some View {
         Button {
             SystemWallpaperVideoImport.present(publishingInto: service)
@@ -107,7 +96,6 @@ struct SystemWallpaperAddSheet: View {
         }
         .buttonStyle(.bordered)
         .controlSize(.large)
-        .help(Text("Pick a video from disk"))
     }
 
     private func toggle(_ candidate: SystemWallpaperCandidate) {
@@ -118,9 +106,7 @@ struct SystemWallpaperAddSheet: View {
         }
     }
 
-    /// Failures are collected and left on screen rather than dismissed over: a
-    /// later success clears the service's `lastError`, so a per-item `try?` loop
-    /// reported "all done" for a batch that half failed.
+    /// Accumulate per-item errors because later successes clear the service's `lastError`.
     private func publishSelection() {
         let chosen = candidates.filter { selection.contains($0.id) }
         guard !chosen.isEmpty else { return }

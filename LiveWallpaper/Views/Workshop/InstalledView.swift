@@ -80,9 +80,9 @@ struct InstalledView: View {
             Button("Cancel", role: .cancel) { model.cancelDelete() }
         } message: { entry in
             if model.deletesFiles(entry) {
-                Text("“\(entry.origin.title)” will be deleted from your Steam library on this Mac and removed from Loomscreen. This frees up disk space and can't be undone — you can download it again anytime. Your Steam subscription is unaffected.")
+                Text("Delete “\(entry.origin.title)” from this Mac’s Steam library and Loomscreen to free space. This cannot be undone; the wallpaper can be downloaded again. Steam subscriptions are unchanged.")
             } else {
-                Text("“\(entry.origin.title)” will be removed from your library. Its original files (imported from your own folder) are left untouched.")
+                Text("Remove “\(entry.origin.title)” from Loomscreen. Original files are kept.")
             }
         }
     }
@@ -271,9 +271,6 @@ struct InstalledView: View {
         IllustratedEmptyState(
             symbol: "square.stack.3d.up.slash",
             title: "No wallpapers installed yet.",
-            // The buttons below carry the two main paths; the message only
-            // teaches the alternates they don't cover.
-            message: "You can also paste a Workshop URL or add a library folder with +.",
             primary: emptyStatePrimaryAction,
             secondary: onOpenWorkshopSettings.map { openSettings in
                 EmptyStateButtonAction("Configure", action: openSettings)

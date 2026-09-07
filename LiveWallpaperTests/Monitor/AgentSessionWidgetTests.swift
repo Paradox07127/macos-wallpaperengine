@@ -1,6 +1,6 @@
-import XCTest
 @testable import LiveWallpaper
 import LiveWallpaperCore
+import XCTest
 
 final class AgentSessionWidgetTests: XCTestCase {
     private static let now: Double = 1_000_000
@@ -20,8 +20,10 @@ final class AgentSessionWidgetTests: XCTestCase {
     ) -> MonitorAgentSessionState {
         var s = MonitorAgentSessionState(
             id: id, provider: provider, projectName: name,
-            status: status, lastEventAt: lastEventAt, processAlive: status != .ended)
+            status: status, lastEventAt: lastEventAt, processAlive: status != .ended
+        )
         s.startedAt = startedAt
+        s.turnStartedAt = startedAt
         s.waitSince = waitSince
         s.warning = warning
         s.tokens = MonitorTokenTotals(input: tokensIn, output: tokensOut)
@@ -117,8 +119,9 @@ final class AgentSessionWidgetTests: XCTestCase {
         XCTAssertFalse(t.anyWarn)
     }
 
-    func testRunningTimerSourcesFromStartedAt() {
-        let s = session("r", .running, lastEventAt: Self.now - 3, startedAt: Self.now - 125)
+    func testRunningTimerUsesCurrentTurnInsteadOfSessionAge() {
+        var s = session("r", .running, lastEventAt: Self.now - 3, startedAt: Self.now - 5000)
+        s.turnStartedAt = Self.now - 125
         let timer = AgentSessionWidgetView.timerText(for: s, now: Self.now)
         XCTAssertEqual(timer?.source, .running)
         XCTAssertEqual(timer?.text, "02:05")
@@ -148,11 +151,11 @@ final class AgentSessionWidgetTests: XCTestCase {
 
     func testWarningChipMapsKnownTokens() {
         let loop = AgentSessionWidgetView.warningLabel(for: session("a", .running, warning: "toolLoop"))
-        XCTAssertEqual(loop?.text, "tool loop")
+        XCTAssertEqual(loop?.text, "Repeated failures")
         XCTAssertFalse(loop?.isStale ?? true)
 
         let stale = AgentSessionWidgetView.warningLabel(for: session("b", .running, warning: "stale"))
-        XCTAssertEqual(stale?.text, "stale")
+        XCTAssertEqual(stale?.text, "No recent activity")
         XCTAssertTrue(stale?.isStale ?? false)
     }
 

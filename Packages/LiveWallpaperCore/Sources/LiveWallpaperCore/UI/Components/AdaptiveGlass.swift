@@ -78,20 +78,8 @@ public extension View {
         modifier(ThumbnailBadgeGlassModifier(tint: tint, opacity: opacity, shape: shape))
     }
 
-    /// Chrome floating over the user's wallpaper rather than over the app's own
-    /// background — the preview's title capsule and its control bar.
-    ///
-    /// `adaptiveGlassSurface` is the wrong tool there and looked it: its tint
-    /// shifts the material's hue but not its luminance (measured on 27 — raising
-    /// a tint 0.55 → 0.82 moved median luminance 132 → 138), so over a bright
-    /// wallpaper the labels wash out. This puts an opaque scrim BETWEEN the
-    /// material and the content, which is the same fix `adaptiveGlassScrimmed`
-    /// applies to the monitor panels; the edge keeps its glass ring and
-    /// refraction while the content sits on a known floor.
-    ///
-    /// Unlike `adaptiveGlassScrimmed` this carries its own pre-26 path, because
-    /// its callers cannot simply render nothing: a bare capsule of labels over a
-    /// wallpaper is unreadable on every OS.
+    /// Chrome over wallpaper, with a scrim between material and content for legibility.
+    /// Includes a pre-macOS 26 fallback so controls remain readable on bright media.
     func adaptiveGlassOverMedia(
         _ shape: AdaptiveGlassShape = .capsule,
         scrim: Double = 0.45
@@ -99,14 +87,8 @@ public extension View {
         modifier(AdaptiveGlassOverMediaModifier(shape: shape, scrim: scrim))
     }
 
-    /// Liquid Glass behind content that is drawn light-on-dark. `.regular.tint()` shifts the
-    /// material's hue but not its luminance — measured on macOS 27, raising a tint from 0.55 to 0.82
-    /// alpha moved a card's median luminance only 132 → 138 — so a light-on-dark readout placed
-    /// straight onto the material washes out (1.16:1 against the card, where the same readout on a
-    /// painted card sits at 2.82:1). The scrim goes *between* the material and the content: the body
-    /// stays legible while the edge keeps the glass ring and its refraction. No fallback path: below
-    /// macOS 26 there is no Liquid Glass to fall back to, only an imitation. Callers gate on
-    /// `AdaptiveGlass.isAvailable` and keep their own painted treatment for everything else.
+    /// A scrim between Liquid Glass and light-on-dark content preserves contrast.
+    /// Callers gate on `AdaptiveGlass.isAvailable` and supply their own pre-macOS 26 treatment.
     func adaptiveGlassScrimmed(cornerRadius: CGFloat, scrim: Color) -> some View {
         modifier(AdaptiveGlassScrimmedModifier(cornerRadius: cornerRadius, scrim: scrim))
     }

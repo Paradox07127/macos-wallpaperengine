@@ -62,10 +62,6 @@ struct WPEInstalledInspectorContent: View {
         ScrollView {
             VStack(alignment: .leading, spacing: DesignTokens.Spacing.lg) {
                 hero
-                // Three groups under the hero instead of eight blocks separated
-                // by spacing alone: what this is, what you can do with it, what
-                // the author said. Same `GroupBox` container the settings pages
-                // use, so the inspector doesn't invent a fourth card style.
                 VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
                     identityBlock
                     actionsGroup
@@ -256,17 +252,14 @@ struct WPEInstalledInspectorContent: View {
                 .buttonStyle(.bordered)
                 .controlSize(.small)
                 .disabled(!state.canUpdate)
-                .help(state.canUpdate
-                      ? Text("Re-download the latest version from Steam")
-                      : Text("Set up SteamCMD in Settings → Workshop to enable updates."))
 
                 if case .failed(let message) = updatePhase {
                     Text(verbatim: message)
                         .font(.caption)
                         .foregroundStyle(DesignTokens.Colors.Status.danger)
                         .fixedSize(horizontal: false, vertical: true)
-                } else if !state.canUpdate {
-                    Text("Updates need Loomscreen's background Steam connector.")
+                } else if !state.canUpdate, let reason = doctor.downloadBlockerMessage {
+                    Text(verbatim: reason)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)

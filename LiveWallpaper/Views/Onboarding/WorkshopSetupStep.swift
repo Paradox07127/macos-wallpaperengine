@@ -2,13 +2,8 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// Direct-Pro first-run Workshop setup, drawn as a dependency tree — capabilities
-/// are folders, setup steps are files inside, indent = parallel groups.
-///   Download wallpapers ← SteamCMD → library folder → sign-in
-///   Scene resources     ← link a folder, or download (needs the group above + an account owning Wallpaper Engine)
-///   Steam Web API key   ← optional, last: only improves browsing
-/// Scenes PLAY without any of this (a missing install just skips layers), so nothing gates Continue. Every row acts
-/// in place; replaced a "Steam connection" sheet that stacked modal-on-modal and let its duplicate of these three steps drift.
+/// Optional Workshop setup grouped by capability. Continue remains available
+/// regardless of setup state; missing shared assets can leave scene layers invisible.
 struct OnboardingWorkshopSetupView: View {
     @Environment(WorkshopServices.self) private var services
     @Environment(SteamCMDDoctorService.self) private var doctor
@@ -27,7 +22,7 @@ struct OnboardingWorkshopSetupView: View {
                 Text("Set Up Steam Workshop")
                     .font(DesignTokens.Typography.pageTitle)
                     .accessibilityAddTraits(.isHeader)
-                Text("None of this is required to start. Set up only the parts you want — the rest can wait until Settings.")
+                Text("Setup can be completed later in Settings.")
                     .font(DesignTokens.Typography.body)
                     .foregroundStyle(DesignTokens.Colors.textSecondary)
                     .multilineTextAlignment(.center)
@@ -122,7 +117,7 @@ struct OnboardingWorkshopSetupView: View {
             detail: controller.steamCMDDetail,
             attention: doctor.attentionMessage(for: .binaryIdentity),
             state: controller.steamCMDState,
-            info: "Valve's command-line downloader. Loomscreen can install its own copy, or locate an existing verified Homebrew or tarball install."
+            info: "Required to download Workshop wallpapers. Install SteamCMD or use an existing installation."
         ) {
             WorkshopSetupRoutes(
                 // "Change" points at a different SteamCMD; it must NOT open the
@@ -154,7 +149,7 @@ struct OnboardingWorkshopSetupView: View {
             detail: controller.libraryDetail,
             attention: doctor.attentionMessage(for: .workingDirectory),
             state: doctor.libraryStepState,
-            info: "Loomscreen reads installed Workshop items directly from the official Steam library after one folder authorization. macOS only grants that through a panel you confirm, so even a folder Loomscreen already located needs one click."
+            info: "Authorize access to installed Workshop wallpapers in the Steam library."
         ) {
             WorkshopSetupRoutes(
                 primary: libraryRoute,
@@ -171,7 +166,7 @@ struct OnboardingWorkshopSetupView: View {
             detail: controller.accountDetail,
             attention: doctor.attentionMessage(for: .cachedLogin),
             state: doctor.accountStepState,
-            info: "Downloads sign in as your own Steam account through SteamCMD. Loomscreen lists the accounts Steam has already signed in on this Mac; it never stores your password."
+            info: "Downloads use your Steam account. Loomscreen does not store the password."
         ) {
             accountControl
         }
@@ -249,7 +244,7 @@ struct OnboardingWorkshopSetupView: View {
             icon: "shippingbox",
             title: "Wallpaper Engine assets",
             detail: sceneResourcesDetail,
-            info: "Scenes reference textures, shaders and models that ship with Wallpaper Engine rather than with the scene. Loomscreen bundles clean-room equivalents of the most common ones, but the rest are skipped without an install — the scene still renders, so the loss is silent. Read-only access; no files are modified."
+            info: "Shared assets required by some scenes. Linked files are read-only."
         ) {
             WorkshopSetupRoutes(
                 primary: sceneResourcesPrimaryRoute,
@@ -285,7 +280,7 @@ struct OnboardingWorkshopSetupView: View {
         ]
     }
 
-    private var sceneResourcesDetail: String {
+    private var sceneResourcesDetail: String? {
         if controller.engineInstaller.isBusy {
             return String(localized: "Downloading from Steam…", bundle: .appLanguage, comment: "Onboarding engine-assets step detail while the download runs.")
         }
@@ -298,10 +293,7 @@ struct OnboardingWorkshopSetupView: View {
         if let reason = controller.engineAssetsDownloadBlockReason {
             return reason
         }
-        return String(
-            localized: "Download the copy you own, or link an install you already have",
-            bundle: .appLanguage, comment: "Onboarding scene-resources detail naming the two routes."
-        )
+        return nil
     }
 
     // MARK: - Steam Web API key
@@ -318,7 +310,7 @@ struct OnboardingWorkshopSetupView: View {
             icon: "key",
             title: "Steam Web API key",
             detail: apiKeyDetail,
-            info: "The key belongs to your own Steam account, not Loomscreen. Calls go directly to Valve over HTTPS, and the key is stored only on this Mac (no iCloud sync). Browsing works without it; adding one brings ratings, authors and faster search."
+            info: "Optional. Adds ratings, authors, and faster search. Stored only on this Mac; requests go directly to Steam."
         ) {
             WorkshopSetupRoutes(
                 primary: WorkshopSetupRoute(
@@ -335,13 +327,9 @@ struct OnboardingWorkshopSetupView: View {
         return services.apiKeyRejected ? .attention : .ready
     }
 
-    private var apiKeyDetail: String {
-        guard services.hasWebAPIKey else {
-            return String(localized: "Optional — adds ratings, authors and faster search", bundle: .appLanguage, comment: "Workshop settings subtitle for Steam Web API key.")
-        }
-        // `apiKeyState` already turns the dot amber on rejection; saying
-        // "Ready" beside an amber dot left the reader with a contradiction and
-        // no way to tell which of the two was right.
+    private var apiKeyDetail: String? {
+        guard services.hasWebAPIKey else { return nil }
+        // Match the detail to the rejection badge.
         if services.apiKeyRejected {
             return String(localized: "Steam rejected this key — paste a new one", bundle: .appLanguage, comment: "Workshop setup status when Valve rejected the stored Steam Web API key.")
         }
@@ -385,8 +373,7 @@ private struct TreeRow<Control: View>: View {
     let icon: String
     let title: LocalizedStringKey
     let detail: String?
-    /// Why the row's badge is amber, in the probe's own words. Wraps, unlike
-    /// `detail`: a path is scannable truncated, an instruction is not.
+    /// The probe's reason for an attention state.
     var attention: String?
     /// Set on rows that carry their own signal. The group header answers "does
     /// this capability work"; a row badge answers "is this step done", which
@@ -422,8 +409,8 @@ private struct TreeRow<Control: View>: View {
                     Text(detail)
                         .font(DesignTokens.Typography.caption)
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .help(Text(verbatim: detail))
                 }
                 if let attention {
                     Text(attention)

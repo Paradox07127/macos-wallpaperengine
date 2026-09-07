@@ -10,7 +10,7 @@ extension GeneralSettingsView {
                 icon: "doc.on.doc",
                 iconColor: .blue,
                 title: "Copy Diagnostic Summary",
-                subtitle: "Copy a sanitized system and runtime summary."
+                info: "Copy a sanitized system and runtime summary."
             ) {
                 Button("Copy") { copyDiagnosticsSummary() }
                     .fixedSize()
@@ -21,7 +21,7 @@ extension GeneralSettingsView {
                 icon: "square.and.arrow.up",
                 iconColor: .blue,
                 title: "Export Diagnostics",
-                subtitle: "Save a sanitized diagnostic report as a text file."
+                info: "Save a sanitized diagnostic report as a text file."
             ) {
                 Button("Export") { beginDiagnosticsExport() }
                     .fixedSize()
@@ -31,8 +31,7 @@ extension GeneralSettingsView {
             SettingRow(
                 icon: "ladybug",
                 iconColor: .red,
-                title: "Report a Bug",
-                subtitle: "Review diagnostics before opening a GitHub issue."
+                title: "Report a Bug"
             ) {
                 Button("Open") { presentBugReport() }
                     .fixedSize()
@@ -42,13 +41,11 @@ extension GeneralSettingsView {
             SettingRow(
                 icon: "doc.text.magnifyingglass",
                 iconColor: .orange,
-                title: "Log Files",
-                subtitle: "Open the folder containing the app's diagnostic logs."
+                title: "Log Files"
             ) {
                 Button("Show in Finder") { revealLogFolder() }
                     .fixedSize()
                     .accessibilityLabel(Text("Show logs in Finder"))
-                    .accessibilityHint(Text("Opens the folder containing the app's log files"))
             }
 
             SettingRow(
@@ -72,12 +69,7 @@ extension GeneralSettingsView {
         pendingDestructive = PendingDestructive(.resetAllSettings) { performResetAllSettings() }
     }
 
-    /// Wiping the store is only half a reset: `ScreenManager` keeps its own
-    /// `screenNames` / `monitorOverlays` caches and every screen keeps its live
-    /// runtime session, so without this tail the next overlay edit writes the
-    /// pre-reset dictionary back and the old wallpapers stay on screen. Same
-    /// sequence `applyPendingImport()` runs after a .lwconfig import replaces
-    /// the store wholesale.
+    /// Clear ScreenManager caches and live sessions after resetting storage to prevent stale values being written back.
     private func performResetAllSettings() {
         SettingsManager.shared.cleanAllSettings()
 
@@ -129,9 +121,7 @@ extension GeneralSettingsView {
         BugReporter.makeReport(activeWallpapers: activeWallpapers)
     }
 
-    /// Kind alone can't identify what broke. Carry the per-screen identity the
-    /// runtime log now records, so a report and its log excerpt name the same
-    /// wallpaper.
+    /// Include per-display wallpaper identity so reports can be matched to runtime logs.
     private var activeWallpapers: [String] {
         screenManager.screens.compactMap { screen in
             guard let kind = screenManager.wallpaperSummary(for: screen).wallpaperType?.rawValue else { return nil }

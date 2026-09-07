@@ -4,10 +4,7 @@ import SwiftUI
 
 // MARK: - Section
 
-/// The Music overlay as one section of the Overlays tab — a sibling of the
-/// Weather and Monitor pages. It edits the display's own
-/// `MusicOverlayConfiguration`; the Monitor board is a separate module and this
-/// page never touches it.
+/// Edits this display's Music configuration independently of the Monitor board.
 struct MusicOverlaySection: View {
     let screen: Screen
     let screenManager: ScreenManager
@@ -30,8 +27,6 @@ struct MusicOverlaySection: View {
 
     private var isOn: Bool { music.enabled }
 
-    /// Every DIY control is dead while the layer is off, exactly as the
-    /// Style / Size / Position rows above them.
     private var isEditable: Bool { isOn }
 
     private var options: NowPlayingOptions {
@@ -83,7 +78,6 @@ struct MusicOverlaySection: View {
                 Divider()
                 sizeRow
                 Divider()
-                Divider()
                 OverlayBackdropRow(available: backdropAvailable)
                 #if !LITE_BUILD
                 // Keyed to the switch, not the live tap: demand-driven capture is
@@ -105,8 +99,7 @@ struct MusicOverlaySection: View {
         SettingRow(
             icon: isOn ? "music.note" : "music.note.list",
             iconColor: isOn ? DesignTokens.Colors.Status.active : .secondary,
-            title: "Show on This Display",
-            info: "Now Playing art floats over whatever wallpaper this display is playing"
+            title: "Show on This Display"
         ) {
             Toggle("", isOn: showBinding)
                 .labelsHidden()
@@ -131,7 +124,7 @@ struct MusicOverlaySection: View {
             icon: "square.stack.3d.up",
             iconColor: .blue,
             title: "Layer",
-            info: "Desktop keeps the layer under your windows; On Top floats it above everything"
+            info: "Desktop: below windows. On Top: above windows."
         ) {
             GlassSegmentedPicker(
                 selection: Binding(
@@ -261,8 +254,7 @@ struct MusicOverlaySection: View {
         SettingRow(
             icon: "eyedropper",
             iconColor: .pink,
-            title: "Accent",
-            info: "Tint the progress line and glow from the cover, or pick your own color"
+            title: "Accent"
         ) {
             GlassSegmentedPicker(
                 selection: optionBinding(\.accentSource),
@@ -312,9 +304,7 @@ struct MusicOverlaySection: View {
         GroupBox {
             CollapsibleSection(
                 title: "Typography",
-                // Not `textformat`: SF Symbols ships localized variants of it, rendering as the
-                // words 格式 / 書式 / Аа rather than a glyph — and following the *system* language,
-                // which need not match the app's. Abstract rules have no locale to disagree with.
+                // Avoid textformat's system-language glyph when the app uses another language.
                 systemImage: "text.alignleft",
                 isExpanded: $isTypographyExpanded
             ) {
@@ -340,9 +330,7 @@ struct MusicOverlaySection: View {
         .groupBoxStyle(ContainerGroupBoxStyle())
     }
 
-    /// Four segments do not fit beside a title at the inspector's min width, so
-    /// this picker takes its own full-width line — the refresh-rate row on the
-    /// Monitor page splits the same way for the same reason.
+    /// A separate picker line keeps all four choices readable at the minimum inspector width.
     private var titleFontRow: some View {
         VStack(alignment: .leading, spacing: 6) {
             SettingRow(icon: "character.book.closed", iconColor: .indigo, title: "Title font") {
@@ -396,14 +384,13 @@ struct MusicOverlaySection: View {
         SettingRow(
             icon: "arrow.left.arrow.right",
             iconColor: .purple,
-            title: "Marquee",
-            info: "Titles too long for the layer scroll sideways instead of being trimmed"
+            title: "Scroll long titles"
         ) {
             Toggle("", isOn: optionBinding(\.marquee))
                 .labelsHidden()
                 .toggleStyle(.switch)
                 .controlSize(.small)
-                .accessibilityLabel(Text("Marquee"))
+                .accessibilityLabel(Text("Scroll long titles"))
         }
     }
 
@@ -452,9 +439,10 @@ struct MusicOverlaySection: View {
     }
 
     private func elementToggle(
-        icon: String, color: Color, title: LocalizedStringKey, binding: Binding<Bool>
+        icon: String, color: Color, title: LocalizedStringKey, binding: Binding<Bool>,
+        info: String.LocalizationValue? = nil
     ) -> some View {
-        SettingRow(icon: icon, iconColor: color, title: title) {
+        SettingRow(icon: icon, iconColor: color, title: title, info: info) {
             Toggle("", isOn: binding)
                 .labelsHidden()
                 .toggleStyle(.switch)
@@ -499,14 +487,11 @@ struct MusicOverlaySection: View {
                 VStack(alignment: .leading, spacing: 8) {
                     elementToggle(
                         icon: "text.quote", color: .pink, title: "Show lyrics",
-                        binding: optionBinding(\.showLyrics)
+                        binding: optionBinding(\.showLyrics),
+                        info: "Lyrics use LRCLIB and require an internet connection."
                     )
                     Divider()
                     lyricsLinesRow
-                    Text("Lyrics come from LRCLIB, a public lyrics service, and need an internet connection.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .disabled(!isEditable)
             }
@@ -519,7 +504,7 @@ struct MusicOverlaySection: View {
             icon: "list.bullet",
             iconColor: .teal,
             title: "Lyric lines",
-            info: "Three lines put the previous and next line around the current one, on large layers"
+            info: "Three lines are available at the large size."
         ) {
             GlassSegmentedPicker(
                 selection: optionBinding(\.lyricsLines),
@@ -546,7 +531,8 @@ struct MusicOverlaySection: View {
                 VStack(alignment: .leading, spacing: 8) {
                     elementToggle(
                         icon: "playpause.circle", color: .green, title: "Transport controls",
-                        binding: optionBinding(\.showControls)
+                        binding: optionBinding(\.showControls),
+                        info: "Hover over the overlay to show playback controls."
                     )
                     Divider()
                     elementToggle(
@@ -634,7 +620,7 @@ struct MusicOverlaySection: View {
             icon: "waveform",
             iconColor: .green,
             title: "Audio reactive",
-            info: "Spectrum, glow and particles follow whatever is playing out loud"
+            info: "Spectrum, glow and particles respond to system audio."
         ) {
             Toggle("", isOn: optionBinding(\.audioReactive))
                 .labelsHidden()
@@ -699,10 +685,7 @@ private struct MusicOptionSlider: View {
 
 // MARK: - Playback permission caption
 
-/// Polled for the same reason as the status badge: the controller's state only
-/// moves when the wallpaper layer actually sends something, and re-reading an
-/// in-memory enum every 2 s is cheaper than threading an observation up here.
-/// The probe on appear reads the current Automation grant without prompting.
+/// Reads the cached authorization periodically; the initial refresh does not prompt.
 private struct MusicPlaybackPermissionCaption: View {
     var body: some View {
         TimelineView(.periodic(from: .now, by: 2)) { _ in
@@ -720,12 +703,15 @@ private struct MusicPlaybackPermissionCaption: View {
 
     @ViewBuilder
     private var caption: some View {
-        if NowPlayingController.shared.authorization(
+        switch NowPlayingController.shared.authorization(
             for: NowPlayingMonitor.shared.currentState.playerBundleID
-        ) == .denied {
-            Text("Control was denied. Turn it back on in System Settings → Privacy & Security → Automation.")
-        } else {
-            Text("Controls fade in when the pointer is over the layer. They only take clicks inside the layer itself — the rest of the desktop keeps working — and need a one-time permission the first time you use them.")
+        ) {
+        case .denied:
+            Text("Playback control denied. Enable access in System Settings → Privacy & Security → Automation.")
+        case .authorized:
+            EmptyView()
+        case .notDetermined:
+            Text("Playback control requires Automation permission on first use.")
         }
     }
 }
