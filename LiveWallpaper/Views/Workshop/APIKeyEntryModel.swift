@@ -24,6 +24,24 @@ final class SteamWebAPIKeyEntryModel {
         var saveAPIKey: @Sendable (String) async throws -> Void
         var deleteAPIKey: @Sendable () async throws -> Void
         var refreshAPIKeyStatus: @MainActor @Sendable () async -> Void
+        /// Told the key that was just saved: it passed Valve's validation, so
+        /// a rejection recorded for the same key is lifted (the refresh alone
+        /// cannot see that — the stored fingerprint has not changed).
+        var noteKeyAccepted: @MainActor @Sendable (_ key: String) async -> Void = { _ in }
+
+        static func live(services: WorkshopServices) -> Dependencies {
+            let queryService = services.queryService
+            let keychain = services.keychain
+            return Dependencies(
+                validateAPIKey: { try await queryService.validateAPIKey($0) },
+                saveAPIKey: { try await keychain.setWebAPIKey($0) },
+                deleteAPIKey: { try await keychain.deleteWebAPIKey() },
+                refreshAPIKeyStatus: { await services.refreshAPIKeyStatus() },
+                noteKeyAccepted: { key in
+                    await services.noteAuthVerdict(accepted: true, keyFingerprint: WorkshopQueryService.keyFingerprint(key))
+                }
+            )
+        }
     }
 
     var apiKey: String = ""
@@ -38,15 +56,8 @@ final class SteamWebAPIKeyEntryModel {
     @ObservationIgnored private var validatedAPIKey: String?
     @ObservationIgnored private var editRevision: UInt = 0
 
-    init(services: WorkshopServices) {
-        let queryService = services.queryService
-        let keychain = services.keychain
-        dependencies = Dependencies(
-            validateAPIKey: { try await queryService.validateAPIKey($0) },
-            saveAPIKey: { try await keychain.setWebAPIKey($0) },
-            deleteAPIKey: { try await keychain.deleteWebAPIKey() },
-            refreshAPIKeyStatus: { await services.refreshAPIKeyStatus() }
-        )
+    convenience init(services: WorkshopServices) {
+        self.init(dependencies: .live(services: services))
     }
 
     init(dependencies: Dependencies) {
@@ -135,6 +146,7 @@ final class SteamWebAPIKeyEntryModel {
         defer { isSaving = false }
         do {
             try await dependencies.saveAPIKey(trimmed)
+            await dependencies.noteKeyAccepted(trimmed)
             await dependencies.refreshAPIKeyStatus()
             guard editRevision == revision, stillEditing(trimmed) else { return false }
             return true

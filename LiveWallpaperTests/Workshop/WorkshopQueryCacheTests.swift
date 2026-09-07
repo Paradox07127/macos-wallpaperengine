@@ -31,7 +31,7 @@ struct WorkshopQueryCacheTests {
             items: [
                 WorkshopQueryItem(
                     id: 123,
-                    title: "Aurora",
+                    rawTitle: "Aurora",
                     shortDescription: "Test item",
                     creatorID: "76561190000000000",
                     creatorPersonaName: "Creator",
@@ -39,7 +39,10 @@ struct WorkshopQueryCacheTests {
                     fileSizeBytes: 42,
                     timeUpdated: Date(timeIntervalSince1970: 9_000),
                     subscriptionCount: 7,
-                    voteScore: 0.9,
+                    rating: .score(0.9, votesUp: 9, votesDown: 1),
+                    timeCreated: Date(timeIntervalSince1970: 8000),
+                    commentCount: 3,
+                    requiredItemIDs: [456, 789],
                     tags: ["Scene"],
                     visibility: .public,
                     isBanned: false,
@@ -47,7 +50,9 @@ struct WorkshopQueryCacheTests {
                 )
             ],
             nextCursor: "next",
-            totalAvailable: 1
+            totalAvailable: 1,
+            sourceItemCount: 2,
+            totalPages: 7
         )
     }
 
@@ -94,6 +99,125 @@ struct WorkshopQueryCacheTests {
 
         #expect(await cache.read(forKey: "test-key") == nil)
         #expect(await cache.sizeBytes() == 0)
+    }
+
+    /// Pages written before the payload carried `sourceItemCount`/`totalPages`
+    /// must miss: served, a keyless page would stay on the harvest shape for
+    /// its TTL and the pager would keep guessing.
+    @Test("A page cached under the previous payload schema is not served")
+    func previousSchemaPayloadMisses() async throws {
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("workshop-query-cache-schema-\(UUID().uuidString)", isDirectory: true)
+        defer { try? fileManager.removeItem(at: directory) }
+        let cache = WorkshopQueryCache(directoryURL: directory)
+
+        // A 64-hex key is stored as `<key>.json`; this is the pre-schema shape.
+        let key = String(repeating: "ab", count: 32)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data(#"{"items":[],"nextCursor":null,"totalAvailable":1}"#.utf8)
+            .write(to: directory.appendingPathComponent("\(key).json"))
+
+        #expect(await cache.read(forKey: key) == nil)
+
+        // Every current field but an older version number: the version check,
+        // not a missing field, is what rejects it.
+        for version in [1, 2, 3] {
+            try Data(#"{"schemaVersion":\#(version),"items":[],"nextCursor":null,"totalAvailable":1,"sourceItemCount":0,"totalPages":1}"#.utf8)
+                .write(to: directory.appendingPathComponent("\(key).json"))
+            #expect(await cache.read(forKey: key) == nil, "schema \(version) must miss")
+        }
+
+        // Control: a page written by this build round-trips under the same key,
+        // page metadata included.
+        await cache.write(Self.samplePage(), forKey: key)
+        let restored = await cache.read(forKey: key)
+        #expect(restored == Self.samplePage())
+        #expect(restored?.sourceItemCount == 2)
+        #expect(restored?.totalPages == 7)
+    }
+
+    /// Both rating units survive the disk round trip, with the fields the
+    /// detail sheet reads next to them.
+    @Test("Item ratings, creation time, comment count and children round-trip")
+    func itemFieldsRoundTrip() async throws {
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("workshop-query-cache-fields-\(UUID().uuidString)", isDirectory: true)
+        defer { try? fileManager.removeItem(at: directory) }
+        let cache = WorkshopQueryCache(directoryURL: directory)
+
+        let scored = try #require(Self.samplePage().items.first)
+        let starredURL = try #require(URL(string: "https://steamcommunity.com/sharedfiles/filedetails/?id=124"))
+        let starred = WorkshopQueryItem(
+            id: 124,
+            rawTitle: "Nebula",
+            shortDescription: "",
+            creatorID: nil,
+            creatorPersonaName: nil,
+            previewImageURL: nil,
+            fileSizeBytes: nil,
+            timeUpdated: nil,
+            subscriptionCount: nil,
+            rating: .stars(4, totalVotes: 175),
+            tags: [],
+            visibility: .public,
+            isBanned: false,
+            steamCommunityURL: starredURL
+        )
+        let page = WorkshopQueryPage(
+            items: [scored, starred], nextCursor: nil, totalAvailable: 2, sourceItemCount: 2, totalPages: 1
+        )
+        await cache.write(page, forKey: "fields")
+
+        let restored = try #require(await cache.read(forKey: "fields"))
+        #expect(restored == page)
+        #expect(restored.items[0].rating == .score(0.9, votesUp: 9, votesDown: 1))
+        #expect(restored.items[0].timeCreated == Date(timeIntervalSince1970: 8000))
+        #expect(restored.items[0].commentCount == 3)
+        #expect(restored.items[0].requiredItemIDs == [456, 789])
+        #expect(restored.items[1].rating == .stars(4, totalVotes: 175))
+        #expect(restored.items[1].timeCreated == nil)
+        #expect(restored.items[1].requiredItemIDs == [])
+    }
+
+    /// The cache stores the wire title, not the localized fallback: a page
+    /// cached under one app language must not show the other language's
+    /// "Workshop item N" after a switch.
+    @Test("An untitled item stays untitled through the cache and still falls back to its id")
+    func untitledItemRoundTripsAsUntitled() async throws {
+        let fileManager = FileManager.default
+        let directory = fileManager.temporaryDirectory
+            .appendingPathComponent("workshop-query-cache-untitled-\(UUID().uuidString)", isDirectory: true)
+        defer { try? fileManager.removeItem(at: directory) }
+        let cache = WorkshopQueryCache(directoryURL: directory)
+
+        let untitledURL = try #require(URL(string: "https://steamcommunity.com/sharedfiles/filedetails/?id=124"))
+        let untitled = WorkshopQueryItem(
+            id: 124,
+            rawTitle: nil,
+            shortDescription: "",
+            creatorID: nil,
+            creatorPersonaName: nil,
+            previewImageURL: nil,
+            fileSizeBytes: nil,
+            timeUpdated: nil,
+            subscriptionCount: nil,
+            rating: nil,
+            tags: [],
+            visibility: .public,
+            isBanned: false,
+            steamCommunityURL: untitledURL
+        )
+        await cache.write(
+            WorkshopQueryPage(items: [untitled], nextCursor: nil, totalAvailable: 1, sourceItemCount: 1, totalPages: 1),
+            forKey: "untitled"
+        )
+
+        let restored = try #require(await cache.read(forKey: "untitled")?.items.first)
+        #expect(restored.rawTitle == nil)
+        #expect(restored.title.contains("124"))
+        #expect(restored == untitled)
     }
 }
 

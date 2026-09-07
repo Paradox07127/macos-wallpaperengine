@@ -60,6 +60,7 @@ struct BrowseFilterRibbon: View {
     private var topRow: some View {
         HStack(spacing: DesignTokens.LibraryFilterBar.contentSpacing) {
             searchField
+            searchTargetMenu
 
             WorkshopFiltersToggle(
                 isExpanded: $isFilterPanelExpanded,
@@ -75,12 +76,12 @@ struct BrowseFilterRibbon: View {
     }
 
     private var sortMenu: some View {
-        Picker("Sort", selection: Binding(
+        Picker("Sort Order", selection: Binding(
             get: { viewModel.preferredSort },
             set: { viewModel.updateSort($0) }
         )) {
             ForEach(sortOptions) { option in
-                Text(Self.sortTitle(option)).tag(option)
+                Text(verbatim: sortLabel(option)).tag(option)
             }
         }
         .labelsHidden()
@@ -91,13 +92,46 @@ struct BrowseFilterRibbon: View {
         .help(Text("Sort criteria"))
     }
 
+    /// Steam's own "Specify what text fields…" menu, next to the search box.
+    /// The gear fills while a narrower target is active — a `Menu` label
+    /// ignores `foregroundStyle`, so a tint could not say it.
+    private var searchTargetMenu: some View {
+        Menu {
+            Section {
+                Picker(selection: Binding(
+                    get: { viewModel.searchTextTarget },
+                    set: { viewModel.searchTextTarget = $0 }
+                )) {
+                    ForEach(WorkshopSearchTextTarget.allCases) { target in
+                        Text(verbatim: target.title).tag(target)
+                    }
+                } label: {
+                    EmptyView()
+                }
+                .pickerStyle(.inline)
+            } header: {
+                Text(verbatim: WorkshopSearchTextTarget.menuTitle)
+            }
+        } label: {
+            Image(systemName: viewModel.searchTextTarget == .all ? "gearshape" : "gearshape.fill")
+        }
+        .menuStyle(.button)
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .fixedSize()
+        .disabled(controlsDisabled)
+        .help(Text(verbatim: WorkshopSearchTextTarget.menuTitle))
+        .accessibilityLabel(Text(verbatim: WorkshopSearchTextTarget.menuTitle))
+        .accessibilityValue(Text(verbatim: viewModel.searchTextTarget.title))
+    }
+
     private var timeFrameMenu: some View {
         Picker("Time Frame", selection: Binding(
             get: { timeFrameSelection },
             set: { viewModel.updateTimeFrame($0) }
         )) {
             ForEach(WorkshopTimeFrame.allCases) { option in
-                Text(Self.timeFrameTitle(option)).tag(option)
+                Text(verbatim: option.title).tag(option)
             }
         }
         .labelsHidden()
@@ -169,6 +203,20 @@ struct BrowseFilterRibbon: View {
                             }
                         }
                     }
+
+                    WorkshopFilterRow("Miscellaneous") {
+                        chipFlow {
+                            ForEach(WorkshopMiscellaneousFilter.allTags, id: \.self) { tag in
+                                WorkshopFilterChip(
+                                    title: Text(verbatim: WorkshopTagLocalization.displayName(tag)),
+                                    isSelected: viewModel.selectedMiscellaneous.contains(tag),
+                                    isOptIn: true
+                                ) {
+                                    viewModel.toggleMiscellaneous(tag)
+                                }
+                            }
+                        }
+                    }
                 }
                 .background(
                     GeometryReader { geo in
@@ -225,14 +273,27 @@ struct BrowseFilterRibbon: View {
         !hasWebAPIKey || viewModel.isRateLimited
     }
 
-    /// Count of categories narrowing results — non-empty AND a proper subset
-    /// (selecting all == no filter). Surfaced as the Filters badge.
-    private var activeFilterCount: Int {
+    /// Count of categories the user moved away from their default — selecting
+    /// everything is no filter, Miscellaneous starts empty, and maturity starts
+    /// at Everyone, so a fresh browse reads as zero. Surfaced as the Filters
+    /// badge, which is also what offers "Clear filters".
+    var activeFilterCount: Int {
         var count = 0
-        if WorkshopFilterMath.isNarrowing(viewModel.selectedTypes, total: WorkshopContentTypeFilter.selectableCases.count) { count += 1 }
-        if WorkshopFilterMath.isNarrowing(viewModel.selectedAgeRatings, total: WorkshopAgeRatingFilter.allCases.count) { count += 1 }
-        if WorkshopFilterMath.isNarrowing(viewModel.selectedResolutions, total: WorkshopResolutionFilter.selectableCases.count) { count += 1 }
-        if WorkshopFilterMath.isNarrowing(viewModel.selectedGenres, total: WorkshopGenre.allTags.count) { count += 1 }
+        if !viewModel.selectedMiscellaneous.isEmpty {
+            count += 1
+        }
+        if WorkshopFilterMath.isNarrowing(viewModel.selectedTypes, total: WorkshopContentTypeFilter.selectableCases.count) {
+            count += 1
+        }
+        if viewModel.selectedAgeRatings != WorkshopAgeRatingFilter.defaultSelection {
+            count += 1
+        }
+        if WorkshopFilterMath.isNarrowing(viewModel.selectedResolutions, total: WorkshopResolutionFilter.selectableCases.count) {
+            count += 1
+        }
+        if WorkshopFilterMath.isNarrowing(viewModel.selectedGenres, total: WorkshopGenre.allTags.count) {
+            count += 1
+        }
         return count
     }
 
@@ -259,26 +320,58 @@ struct BrowseFilterRibbon: View {
             : Self.browseSortOptions + [.search]
     }
 
-    private static func sortTitle(_ sort: WorkshopSortMode) -> LocalizedStringKey {
-        switch sort {
-        case .mostPopular: return "Most Popular"
-        case .topRated: return "Top Rated All Time"
-        case .newest: return "Most Recent"
-        case .lastUpdated: return "Last Updated"
-        case .mostSubscribed: return "Total Unique Subscribers"
-        case .search: return "Relevance"
+    /// The page's sort button reads "Most Popular (One Week)": the window is
+    /// part of that one sort, so it is named with it.
+    private func sortLabel(_ sort: WorkshopSortMode) -> String {
+        guard sort == .mostPopular else { return sort.title }
+        return String(
+            localized: "workshop.sort.most_popular_with_window",
+            defaultValue: "\(sort.title) (\(viewModel.preferredTimeFrame.title))",
+            bundle: .appLanguage, comment: "Workshop sort button: sort name, then the Most Popular window (Steam's Workshop_BrowseSort_Combined)."
+        )
+    }
+}
+
+/// Steam's own labels (Workshop_BrowseSort_* / SharedFiles_Browse_Trend_Option_*),
+/// so a Wallpaper Engine user recognises each option from the Workshop page.
+extension WorkshopSortMode {
+    var title: String {
+        switch self {
+        case .mostPopular: String(localized: "Most Popular", bundle: .appLanguage, comment: "Workshop sort (Steam's Workshop_BrowseSort_MostPopular).")
+        case .topRated: String(localized: "Top Rated All Time", bundle: .appLanguage, comment: "Workshop sort (Steam's Workshop_BrowseSort_TopRated).")
+        case .newest: String(localized: "Most Recent", bundle: .appLanguage, comment: "Workshop sort (Steam's Workshop_BrowseSort_MostRecent).")
+        case .lastUpdated: String(localized: "Last Updated", bundle: .appLanguage, comment: "Workshop sort (Steam's Workshop_BrowseSort_LastUpdated).")
+        case .mostSubscribed: String(localized: "Total Unique Subscribers", bundle: .appLanguage, comment: "Workshop sort (Steam's Workshop_BrowseSort_TotalUniqueSubscribers).")
+        case .search: String(localized: "Search Relevance", bundle: .appLanguage, comment: "Workshop sort offered while a search text is typed (Steam's Workshop_BrowseSort_SearchRelevance).")
         }
     }
+}
 
-    private static func timeFrameTitle(_ timeFrame: WorkshopTimeFrame) -> LocalizedStringKey {
-        switch timeFrame {
-        case .today: return "Today"
-        case .oneWeek: return "One Week"
-        case .thirtyDays: return "Thirty Days"
-        case .threeMonths: return "Three Months"
-        case .sixMonths: return "Six Months"
-        case .oneYear: return "One Year"
-        case .allTime: return "All Time"
+/// Steam's Workshop_SearchTarget_* copy.
+extension WorkshopSearchTextTarget {
+    static var menuTitle: String {
+        String(localized: "Specify what text fields of the item you want to search:", bundle: .appLanguage, comment: "Workshop search-target menu header (Steam's Workshop_SearchTarget_MenuTitle).")
+    }
+
+    var title: String {
+        switch self {
+        case .all: String(localized: "Title & Description", bundle: .appLanguage, comment: "Workshop search target: full text (Steam's Workshop_SearchTarget_All).")
+        case .titleOnly: String(localized: "Title Only", bundle: .appLanguage, comment: "Workshop search target (Steam's Workshop_SearchTarget_Title).")
+        case .descriptionOnly: String(localized: "Description Only", bundle: .appLanguage, comment: "Workshop search target (Steam's Workshop_SearchTarget_Description).")
+        }
+    }
+}
+
+extension WorkshopTimeFrame {
+    var title: String {
+        switch self {
+        case .today: String(localized: "Today", bundle: .appLanguage, comment: "Workshop Most Popular window (Steam's SharedFiles_Browse_Trend_Option_Today).")
+        case .oneWeek: String(localized: "One Week", bundle: .appLanguage, comment: "Workshop Most Popular window (Steam's SharedFiles_Browse_Trend_Option_Week).")
+        case .thirtyDays: String(localized: "Thirty Days", bundle: .appLanguage, comment: "Workshop Most Popular window (Steam's SharedFiles_Browse_Trend_Option_Month).")
+        case .threeMonths: String(localized: "Three Months", bundle: .appLanguage, comment: "Workshop Most Popular window (Steam's SharedFiles_Browse_Trend_Option_ThreeMonths).")
+        case .sixMonths: String(localized: "Six Months", bundle: .appLanguage, comment: "Workshop Most Popular window (Steam's SharedFiles_Browse_Trend_Option_SixMonths).")
+        case .oneYear: String(localized: "One Year", bundle: .appLanguage, comment: "Workshop Most Popular window (Steam's SharedFiles_Browse_Trend_Option_OneYear).")
+        case .allTime: String(localized: "All Time", bundle: .appLanguage, comment: "Workshop time menu: switches Most Popular to Top Rated (Steam's SharedFiles_Browse_Trend_Option_AllTime).")
         }
     }
 }
@@ -293,6 +386,9 @@ struct WorkshopFilterChip: View {
     /// Option-click: collapse the category to just this option. `nil` disables
     /// the shortcut (and its hint).
     var onIsolate: (() -> Void)?
+    /// Opt-in rows (Miscellaneous) start with nothing selected, so an
+    /// unselected chip is "off", not "hidden": no strike-through, no dimming.
+    var isOptIn = false
     let action: () -> Void
 
     var body: some View {
@@ -306,7 +402,7 @@ struct WorkshopFilterChip: View {
             HStack(spacing: 5) {
                 title
                     .lineLimit(1)
-                    .strikethrough(!isSelected, color: .secondary)
+                    .strikethrough(!isSelected && !isOptIn, color: .secondary)
                 if let count {
                     // The library's composition, read straight off the chips that
                     // filter by it — one place instead of a ratio in the search
@@ -318,7 +414,7 @@ struct WorkshopFilterChip: View {
             }
             .font(DesignTokens.Typography.caption)
             .foregroundStyle(isSelected ? Color.primary : Color.secondary)
-            .opacity(isSelected ? 1 : 0.5)
+            .opacity(isSelected || isOptIn ? 1 : 0.5)
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
             .filterChipBackground(isSelected: isSelected)
@@ -328,7 +424,7 @@ struct WorkshopFilterChip: View {
             ? Text("Click to show/hide · Option-click to show only this")
             : Text(verbatim: ""))
         .accessibilityAddTraits(isSelected ? .isSelected : [])
-        .accessibilityValue(isSelected ? Text("Shown") : Text("Hidden"))
+        .accessibilityValue(isOptIn ? (isSelected ? Text("On") : Text("Off")) : (isSelected ? Text("Shown") : Text("Hidden")))
     }
 }
 

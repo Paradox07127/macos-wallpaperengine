@@ -1,5 +1,6 @@
 #if !LITE_BUILD
 import Foundation
+import LiveWallpaperCore
 
 /// URL builder for Valve's public Workshop browse page — the zero-key search path. Parameters verified live against `steamcommunity.com` on 2026-08-29: `browsesort`, `days`, `searchtext`, `requiredtags[]` and `excludedtags[]` all filter server-side, `p` pages (disjoint result sets), and `numperpage` is ignored — the page returns up to 30 items.
 enum WorkshopPublicBrowseURL {
@@ -15,13 +16,17 @@ enum WorkshopPublicBrowseURL {
             components.scheme = "https"
             components.host = "steamcommunity.com"
             components.path = "/profiles/\(creator)/myworkshopfiles/"
-            components.queryItems = [
+            var items = [
                 URLQueryItem(name: "appid", value: String(appID)),
                 // This page defaults to a 9-item preview grid; unlike the
                 // browse page it does honour `numperpage`.
                 URLQueryItem(name: "numperpage", value: String(itemsPerPage)),
                 URLQueryItem(name: "p", value: String(request.page))
             ]
+            // Honoured here too, and several AND (verified live 2026-09-07:
+            // `Video` kept 4/4, `Scene` 0/4, `Video`+`Abstract` 3/4).
+            items += request.requiredTagsIncludingMiscellaneous.map { URLQueryItem(name: "requiredtags[]", value: $0) }
+            components.percentEncodedQueryItems = WorkshopQueryService.percentEncodedQueryItems(items)
             return components.url!
         }
 
@@ -33,14 +38,19 @@ enum WorkshopPublicBrowseURL {
         if !request.searchText.isEmpty {
             items.append(URLQueryItem(name: "searchtext", value: request.searchText))
         }
+        if request.searchTextTarget != .all {
+            items.append(URLQueryItem(name: "search_text_target", value: String(request.searchTextTarget.rawValue)))
+        }
         if let days = request.days {
             items.append(URLQueryItem(name: "days", value: String(days)))
         }
-        items += request.requiredTags.map { URLQueryItem(name: "requiredtags[]", value: $0) }
+        // Several `requiredtags[]` are all-of on the page, which is what the
+        // feature tags mean.
+        items += request.requiredTagsIncludingMiscellaneous.map { URLQueryItem(name: "requiredtags[]", value: $0) }
         items += request.excludedTags.map { URLQueryItem(name: "excludedtags[]", value: $0) }
 
         var components = URLComponents(string: base)!
-        components.queryItems = items
+        components.percentEncodedQueryItems = WorkshopQueryService.percentEncodedQueryItems(items)
         return components.url!
     }
 
@@ -58,9 +68,9 @@ enum WorkshopPublicBrowseURL {
     }
 }
 
-/// The page is used as an id source only. Titles, previews, authors and vote
-/// data come from `GetPublishedFileDetails`, so the whole dependency on Valve's
-/// HTML is the details-page URL shape.
+/// Fallback id source when the SSR payload is unusable. Titles, previews and
+/// counts then come from `GetPublishedFileDetails`, so this path's whole
+/// dependency on Valve's markup is the details-page URL shape.
 enum WorkshopPublicIDExtractor {
 
     static func publishedFileIDs(fromHTML html: String) -> [UInt64] {
@@ -106,9 +116,11 @@ enum WorkshopPublicNavigationPolicy {
     }
 }
 
-/// Zero-key Workshop search: one cookie-free GET of Valve's public browse page
-/// to harvest published-file ids, which are then resolved through the key-free
-/// `GetPublishedFileDetails` batch endpoint.
+/// Zero-key Workshop search: one cookie-free GET of Valve's public browse page,
+/// read through its SSR payload (`WorkshopPublicBrowsePayload`). When that
+/// payload is missing, unreadable or answers another request, the page falls
+/// back to harvesting published-file ids from the result anchors and resolving
+/// them through the key-free `GetPublishedFileDetails` batch endpoint.
 @MainActor
 final class WorkshopPublicSearchSource {
 
@@ -118,6 +130,7 @@ final class WorkshopPublicSearchSource {
     /// Same disk cache the keyed path uses: one keyless page costs ~0.7 MB of
     /// HTML plus a details POST, so paging back to page 1 must not pay it again.
     private let cache: WorkshopQueryCache
+    private let retryPolicy: WorkshopRetryPolicy
     private var inflight: [String: Task<WorkshopQueryPage, Error>] = [:]
 
     /// The browse page is ~0.7 MB of HTML; this only has to bound a hostile
@@ -128,12 +141,14 @@ final class WorkshopPublicSearchSource {
         metadata: SteamWorkshopMetadataService = SteamWorkshopMetadataService(),
         session: URLSession = WorkshopPublicSearchSource.defaultSession(),
         appID: Int = WorkshopQueryService.wallpaperEngineAppID,
-        cache: WorkshopQueryCache = WorkshopQueryCache()
+        cache: WorkshopQueryCache = WorkshopQueryCache(),
+        retryPolicy: WorkshopRetryPolicy = WorkshopRetryPolicy()
     ) {
         self.metadata = metadata
         self.session = session
         self.appID = appID
         self.cache = cache
+        self.retryPolicy = retryPolicy
     }
 
     /// Keyless pages need no per-account namespace on the cache key — there is
@@ -163,26 +178,112 @@ final class WorkshopPublicSearchSource {
     private func fetchFromNetwork(_ request: WorkshopQueryRequest) async throws -> WorkshopQueryPage {
         let url = WorkshopPublicBrowseURL.url(for: request, appID: appID)
         let html = try await loadHTML(at: url)
+        // The creator page is not the browse page: nothing in a `workshop_browse`
+        // query could be checked against the creator, so it is never adopted.
+        if request.creatorSteamID == nil {
+            do {
+                let ssr = try WorkshopPublicBrowsePayload.page(fromHTML: html, matching: request, appID: appID)
+                return WorkshopQueryPage(
+                    items: ssr.items,
+                    nextCursor: request.page < ssr.totalPages ? String(request.page + 1) : nil,
+                    totalAvailable: ssr.totalCount,
+                    sourceItemCount: ssr.sourceItemCount,
+                    totalPages: ssr.totalPages
+                )
+            } catch let failure as WorkshopPublicBrowsePayload.ParseFailure {
+                switch failure {
+                // The page answered another request: its anchors are that
+                // other page's items, so harvesting them would show and cache
+                // them under this page's number.
+                case .identityMismatch, .resultNotOK:
+                    Logger.notice(
+                        "Workshop browse page SSR payload not usable (\(failure)); not adopting this page",
+                        category: .workshop
+                    )
+                    throw WorkshopQueryError.responseParseFailure
+                case .markerNotFound, .malformedLiteral, .malformedJSON, .browseQueryNotFound:
+                    Logger.notice(
+                        "Workshop browse page SSR payload not usable (\(failure)); falling back to id harvesting",
+                        category: .workshop
+                    )
+                }
+            }
+        }
+        return try await harvestedPage(fromHTML: html, request: request)
+    }
+
+    /// The pre-SSR path: ids from the result anchors, everything else from
+    /// `GetPublishedFileDetails`.
+    private func harvestedPage(fromHTML html: String, request: WorkshopQueryRequest) async throws -> WorkshopQueryPage {
         let ids = WorkshopPublicIDExtractor.publishedFileIDs(fromHTML: html)
+        // A same-host 200 with no result anchors is a challenge or login page,
+        // not an empty result set — unless the page itself says it is empty.
         guard !ids.isEmpty else {
-            return WorkshopQueryPage(items: [], nextCursor: nil, totalAvailable: nil)
+            guard html.contains(Self.emptyCreatorPageMarker) else { throw WorkshopQueryError.responseParseFailure }
+            return WorkshopQueryPage(items: [], nextCursor: nil, totalAvailable: nil, sourceItemCount: 0, totalPages: nil)
         }
 
-        let details = await metadata.fetch(publishedFileIDs: ids)
-        let items = ids.compactMap { id -> WorkshopQueryItem? in
-            guard case .success(let entry)? = details[id] else { return nil }
-            return Self.queryItem(from: entry)
+        let details: [UInt64: Result<SteamWorkshopMetadata, SteamWorkshopMetadataError>]
+        do {
+            let response = try await retryPolicy.run(host: SteamWorkshopMetadataService.endpoint.host() ?? "") { [metadata] in
+                try await metadata.post(publishedFileIDs: ids)
+            }
+            details = SteamWorkshopMetadataService.results(from: response, requestedIDs: ids)
+        } catch let urlError as URLError {
+            throw Self.mapped(urlError)
+        } catch let error as SteamWorkshopMetadataError {
+            throw Self.mapped(error)
+        } catch is CancellationError {
+            throw WorkshopQueryError.cancelled
         }
-        // A page of ids that resolved to nothing is a failed lookup, not an
-        // empty result set — surface it instead of showing "no matches".
-        guard !items.isEmpty else { throw WorkshopQueryError.responseParseFailure }
+        var items: [WorkshopQueryItem] = []
+        for id in ids {
+            switch details[id] {
+            case let .success(entry)?:
+                items.append(Self.queryItem(from: entry))
+            // Permanently invisible on Valve's side; the page is complete
+            // without it — even when that leaves the page empty.
+            case .failure(.itemNotFound)?, .failure(.itemPrivate)?, .failure(.itemBanned)?, .failure(.schemaMismatch)?:
+                continue
+            // Transient (`.unknown` carries any other result code): an
+            // incomplete page must not be cached as a complete one.
+            case let .failure(error)?:
+                throw Self.mapped(error)
+            case nil:
+                throw WorkshopQueryError.responseParseFailure
+            }
+        }
 
         return WorkshopQueryPage(
             items: items,
             nextCursor: Self.nextCursor(after: request.page, idCount: ids.count),
-            totalAvailable: nil
+            totalAvailable: nil,
+            sourceItemCount: ids.count,
+            totalPages: nil
         )
     }
+
+    private static func mapped(_ error: SteamWorkshopMetadataError) -> WorkshopQueryError {
+        switch error {
+        case .networkUnreachable: .networkUnreachable
+        case .timeout: .timeout
+        // Not `.unauthorized`: that reads as "Steam rejected the key", and
+        // there is no key on this path.
+        case .unauthorized: .http(status: 403)
+        case let .http(status): .http(status: status)
+        case let .rateLimited(retryAfter): .rateLimited(retryAfter: retryAfter)
+        case .cancelled: .cancelled
+        case .invalidInput, .responseParseFailure, .schemaMismatch, .itemPrivate, .itemBanned, .itemNotFound, .unknown:
+            .responseParseFailure
+        }
+    }
+
+    /// The creator page (`myworkshopfiles`, legacy markup, never carries the
+    /// SSR payload) renders past its last page — or a creator with nothing
+    /// public — as this empty-state container (verified live 2026-09-07 at
+    /// `p=999`). The browse page needs no marker: its SSR payload says "no
+    /// matches" itself.
+    nonisolated static let emptyCreatorPageMarker = "id=\"no_items\""
 
     /// The page publishes no machine-readable total, so only an empty page ends
     /// the result set. Comparing the id count against 30 instead cut browsing
@@ -197,9 +298,9 @@ final class WorkshopPublicSearchSource {
     nonisolated static func queryItem(from entry: SteamWorkshopMetadata) -> WorkshopQueryItem {
         WorkshopQueryItem(
             id: entry.publishedFileID,
-            title: entry.title,
+            rawTitle: entry.title.isEmpty ? nil : entry.title,
             shortDescription: entry.shortDescription,
-            creatorID: nil,
+            creatorID: entry.creatorID,
             creatorPersonaName: nil,
             previewImageURL: entry.previewImageURL,
             fileSizeBytes: entry.fileSizeBytes,
@@ -209,7 +310,8 @@ final class WorkshopPublicSearchSource {
             favoriteCount: entry.favoriteCount,
             // Keyless `GetPublishedFileDetails` carries no vote data at all, so
             // the rating pill stays hidden rather than showing a made-up score.
-            voteScore: nil,
+            rating: nil,
+            timeCreated: entry.timeCreated,
             tags: entry.tags,
             visibility: entry.visibility,
             isBanned: entry.isBanned,
@@ -224,28 +326,34 @@ final class WorkshopPublicSearchSource {
         request.setValue("text/html", forHTTPHeaderField: "Accept")
 
         let data: Data
-        let response: URLResponse
+        let http: HTTPURLResponse
         do {
-            (data, response) = try await BoundedNetworkFetch.fetch(
-                request,
-                session: session,
-                byteCap: Self.maxResponseBytes
-            )
+            (data, http) = try await retryPolicy.run(host: url.host() ?? "") { [session, request] in
+                let body: Data
+                let response: URLResponse
+                do {
+                    (body, response) = try await BoundedNetworkFetch.fetch(request, session: session, byteCap: Self.maxResponseBytes)
+                } catch is BoundedNetworkFetch.ResponseTooLarge {
+                    throw WorkshopQueryError.responseParseFailure
+                }
+                guard let http = response as? HTTPURLResponse else {
+                    throw WorkshopQueryError.responseParseFailure
+                }
+                return (body, http)
+            }
         } catch let urlError as URLError {
             throw Self.mapped(urlError)
-        } catch is BoundedNetworkFetch.ResponseTooLarge {
-            throw WorkshopQueryError.responseParseFailure
+        } catch is CancellationError {
+            throw WorkshopQueryError.cancelled
         }
 
-        guard let http = response as? HTTPURLResponse else {
-            throw WorkshopQueryError.responseParseFailure
-        }
-        // A rate-limit or challenge response still renders as HTML with no
-        // result links, which would read as "no matches"; the status separates
-        // them. Likewise a redirect off the allow-list (login/interstitial) is
-        // a retriable failure, not an empty result set.
+        // A challenge response still renders as HTML with no result links,
+        // which would read as "no matches"; the status separates them (a 429
+        // never gets here: the policy throws it as `.rateLimited`). Likewise a
+        // redirect off the allow-list (login/interstitial) is a retriable
+        // failure, not an empty result set.
         guard (200..<300).contains(http.statusCode) else {
-            throw Self.mapped(status: http.statusCode)
+            throw WorkshopQueryError.http(status: http.statusCode)
         }
         guard WorkshopPublicNavigationPolicy.allows(http.url) else {
             throw WorkshopQueryError.responseParseFailure
@@ -254,10 +362,6 @@ final class WorkshopPublicSearchSource {
             throw WorkshopQueryError.responseParseFailure
         }
         return html
-    }
-
-    private static func mapped(status: Int) -> WorkshopQueryError {
-        status == 429 ? .rateLimited(retryAfter: nil) : .http(status: status)
     }
 
     private static func mapped(_ error: URLError) -> WorkshopQueryError {

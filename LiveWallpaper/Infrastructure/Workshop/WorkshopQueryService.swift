@@ -49,9 +49,24 @@ enum WorkshopTimeFrame: String, Sendable, Equatable, Hashable, CaseIterable, Ide
     }
 }
 
+/// Steam's `search_text_target`: which text fields a search matches. Same
+/// name and codes on the public page and the Web API (measured 2026-09-07).
+enum WorkshopSearchTextTarget: Int, Sendable, Equatable, Hashable, CaseIterable, Identifiable {
+    case all = 0
+    case titleOnly = 1
+    case descriptionOnly = 2
+
+    var id: Int {
+        rawValue
+    }
+}
+
 struct WorkshopQueryRequest: Equatable, Hashable, Sendable {
     let sort: WorkshopSortMode
     let searchText: String
+    /// `.all` whenever `searchText` is empty: the target is meaningless without
+    /// a text, and normalising it keeps the default browse on one cache key.
+    let searchTextTarget: WorkshopSearchTextTarget
     /// 1-based page index. Steam's QueryFiles supports BOTH cursor and `page`; using `page` lets us jump to an arbitrary page and show "Page N of M" (cursor can only walk forward).
     /// Steam's docs cap `page` at 1000 — beyond that it returns empty pages; deeper pagination needs the cursor, which we don't wire up.
     let page: Int
@@ -65,12 +80,16 @@ struct WorkshopQueryRequest: Equatable, Hashable, Sendable {
     /// `apiQueryItems` always states it when there are required tags.
     let matchAllTags: Bool
     let excludedTags: [String]
+    /// Steam's Miscellaneous facet (Approved, HDR, …): every one is required.
+    /// Kept apart from `requiredTags` because the genre facet there is any-of,
+    /// and the two only combine through `taggroups` — see `usesTagGroups`.
+    let miscellaneousTags: [String]
     let returnPreviews: Bool
     let returnTags: Bool
     let returnMetadata: Bool
     let returnShortDescription: Bool
     /// When set, the query lists this creator's published files via `IPublishedFileService/GetUserFiles` instead of the global `QueryFiles` browse.
-    /// GetUserFiles has `sortmethod`/`requiredtags`/`excludedtags` fields (we wire up the default sort and `excludedtags`) but no text search, so `searchText` can't apply in this mode.
+    /// GetUserFiles has `sortmethod`/`requiredtags`/`excludedtags` fields (we wire up the default sort, `requiredtags` for the Miscellaneous facet and `excludedtags`) but no text search, so `searchText` can't apply in this mode.
     let creatorSteamID: String?
     /// When set, restricts the query to published files that reference this
     /// item. Steam's own wording for `child_publishedfileid` is "Find all items
@@ -81,6 +100,7 @@ struct WorkshopQueryRequest: Equatable, Hashable, Sendable {
     init(
         sort: WorkshopSortMode,
         searchText: String = "",
+        searchTextTarget: WorkshopSearchTextTarget = .all,
         page: Int = 1,
         numPerPage: Int = 50,
         language: String? = nil,
@@ -88,6 +108,7 @@ struct WorkshopQueryRequest: Equatable, Hashable, Sendable {
         requiredTags: [String] = [],
         matchAllTags: Bool = true,
         excludedTags: [String] = [],
+        miscellaneousTags: [String] = [],
         returnPreviews: Bool = true,
         returnTags: Bool = true,
         returnMetadata: Bool = true,
@@ -101,11 +122,21 @@ struct WorkshopQueryRequest: Equatable, Hashable, Sendable {
         // against; without it (the pinned-tag path reuses the browse sort but
         // drops the search text) fall back to Top Rated.
         let effectiveSort: WorkshopSortMode = (sort == .search && normalizedSearch.isEmpty) ? .topRated : sort
-        let requestedTimeFrame = timeFrame ?? .allTime
-        let effectiveTimeFrame: WorkshopTimeFrame = effectiveSort == .mostPopular ? requestedTimeFrame : .allTime
+        // `days` only exists for the trend sort (measured 2026-09-07). There
+        // the Web API reads an omitted `days` as 1, and the page has no
+        // "trend, all time" — its menu defaults to seven days — so Most
+        // Popular always states a window and All Time becomes that default.
+        let effectiveTimeFrame: WorkshopTimeFrame
+        if effectiveSort == .mostPopular {
+            let requested = timeFrame ?? .oneWeek
+            effectiveTimeFrame = requested == .allTime ? .oneWeek : requested
+        } else {
+            effectiveTimeFrame = .allTime
+        }
 
         self.sort = effectiveSort
         self.searchText = normalizedSearch
+        self.searchTextTarget = normalizedSearch.isEmpty ? .all : searchTextTarget
         self.page = max(1, page)
         self.numPerPage = min(max(numPerPage, 1), 100)
         self.language = Self.canonicalLanguage(language)
@@ -114,6 +145,7 @@ struct WorkshopQueryRequest: Equatable, Hashable, Sendable {
         self.requiredTags = Self.canonicalTags(requiredTags)
         self.matchAllTags = matchAllTags
         self.excludedTags = Self.canonicalTags(excludedTags)
+        self.miscellaneousTags = Self.canonicalTags(miscellaneousTags)
         self.returnPreviews = returnPreviews
         self.returnTags = returnTags
         self.returnMetadata = returnMetadata
@@ -141,7 +173,28 @@ struct WorkshopQueryRequest: Equatable, Hashable, Sendable {
             .sorted()
     }
 
+    /// "Any of these genres AND each of these features" is only expressible
+    /// as `taggroups` (a group is any-of, groups are all-of), and Steam only
+    /// honours `taggroups` inside `input_json` on a keyed GET — the query-string
+    /// array forms are ignored or 400 and POST is 405 (measured 2026-09-07).
+    var usesTagGroups: Bool {
+        !miscellaneousTags.isEmpty && !requiredTags.isEmpty && !matchAllTags
+    }
+
+    /// The Miscellaneous facet as the paths without `taggroups` take it: the
+    /// public page and GetUserFiles only have `requiredtags`, where it joins
+    /// the genre tags as one all-of list.
+    var requiredTagsIncludingMiscellaneous: [String] {
+        requiredTags + miscellaneousTags
+    }
+
     func apiQueryItems(apiKey: String, appID: Int) -> [URLQueryItem] {
+        if usesTagGroups {
+            return [
+                URLQueryItem(name: "key", value: apiKey),
+                URLQueryItem(name: "input_json", value: inputJSON(appID: appID)),
+            ]
+        }
         var queryItems: [URLQueryItem] = [
             URLQueryItem(name: "key", value: apiKey),
             URLQueryItem(name: "appid", value: String(appID)),
@@ -152,10 +205,15 @@ struct WorkshopQueryRequest: Equatable, Hashable, Sendable {
             URLQueryItem(name: "return_tags", value: Self.steamBool(returnTags)),
             URLQueryItem(name: "return_metadata", value: Self.steamBool(returnMetadata)),
             URLQueryItem(name: "return_short_description", value: Self.steamBool(returnShortDescription)),
-            URLQueryItem(name: "return_vote_data", value: "true")
+            URLQueryItem(name: "return_vote_data", value: "true"),
+            // Not `return_details`: it drops `vote_data` and `short_description` (verified 2026-09-07).
+            URLQueryItem(name: "return_children", value: "true"),
         ]
         if !searchText.isEmpty {
             queryItems.append(URLQueryItem(name: "search_text", value: searchText))
+        }
+        if searchTextTarget != .all {
+            queryItems.append(URLQueryItem(name: "search_text_target", value: String(searchTextTarget.rawValue)))
         }
         if let childPublishedFileID {
             queryItems.append(URLQueryItem(
@@ -168,7 +226,9 @@ struct WorkshopQueryRequest: Equatable, Hashable, Sendable {
         if let days {
             queryItems.append(URLQueryItem(name: "days", value: String(days)))
         }
-        for (index, tag) in requiredTags.enumerated() {
+        // Feature tags alone ride on the undocumented default, which is all-of
+        // (measured 2026-09-07); with a pinned tag they join its `match_all_tags=true`.
+        for (index, tag) in (requiredTags + miscellaneousTags).enumerated() {
             queryItems.append(URLQueryItem(name: "requiredtags[\(index)]", value: tag))
         }
         if !requiredTags.isEmpty {
@@ -180,14 +240,92 @@ struct WorkshopQueryRequest: Equatable, Hashable, Sendable {
         return queryItems
     }
 
+    /// The whole query as `input_json`: the same values `apiQueryItems` would
+    /// put in the query string, plus `taggroups` in place of `requiredtags`.
+    private func inputJSON(appID: Int) -> String {
+        let input = QueryFilesInput(
+            appid: appID,
+            numperpage: numPerPage,
+            query_type: sort.queryTypeCode,
+            page: page,
+            return_previews: returnPreviews,
+            return_tags: returnTags,
+            return_metadata: returnMetadata,
+            return_short_description: returnShortDescription,
+            search_text: searchText.isEmpty ? nil : searchText,
+            search_text_target: searchTextTarget == .all ? nil : searchTextTarget.rawValue,
+            child_publishedfileid: childPublishedFileID.map(String.init),
+            language: language,
+            days: days,
+            excludedtags: excludedTags.isEmpty ? nil : excludedTags,
+            taggroups: [QueryFilesInput.TagGroup(tags: requiredTags)]
+                + miscellaneousTags.map { QueryFilesInput.TagGroup(tags: [$0]) }
+        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        return (try? encoder.encode(input)).flatMap { String(data: $0, encoding: .utf8) } ?? ""
+    }
+
+    private struct QueryFilesInput: Encodable {
+        let appid: Int
+        let numperpage: Int
+        let query_type: Int
+        let page: Int
+        let return_previews: Bool
+        let return_tags: Bool
+        let return_metadata: Bool
+        let return_short_description: Bool
+        let return_vote_data = true
+        let return_children = true
+        let search_text: String?
+        let search_text_target: Int?
+        let child_publishedfileid: String?
+        let language: String?
+        let days: Int?
+        let excludedtags: [String]?
+        let taggroups: [TagGroup]
+
+        struct TagGroup: Encodable {
+            let tags: [String]
+        }
+    }
+
     private static func steamBool(_ value: Bool) -> String {
         value ? "true" : "false"
     }
 }
 
+/// The two browse paths rate in different units: keyed `vote_data.score` is a
+/// 0–1 ratio, the keyless page's `star_rating` is already a 1–5 integer.
+enum WorkshopRating: Equatable, Sendable, Codable {
+    case score(Double, votesUp: Int, votesDown: Int)
+    case stars(Int, totalVotes: Int)
+
+    var starsOutOfFive: Double {
+        switch self {
+        case let .score(score, _, _):
+            min(max(score * 5, 0), 5)
+        case let .stars(stars, _):
+            Double(stars)
+        }
+    }
+
+    var totalVotes: Int {
+        switch self {
+        case let .score(_, votesUp, votesDown):
+            let (sum, overflow) = votesUp.addingReportingOverflow(votesDown)
+            return overflow ? Int.max : sum
+        case let .stars(_, totalVotes):
+            return totalVotes
+        }
+    }
+}
+
 struct WorkshopQueryItem: Identifiable, Sendable, Equatable {
     let id: UInt64
-    let title: String
+    /// The title as Steam sent it; `nil` when the item has none. Kept raw so
+    /// the cache never stores one app language's `title` fallback.
+    let rawTitle: String?
     let shortDescription: String
     /// Creator's SteamID64 (from the query) — resolved to `creatorPersonaName`
     /// via a batched GetPlayerSummaries lookup.
@@ -201,17 +339,43 @@ struct WorkshopQueryItem: Identifiable, Sendable, Equatable {
     let subscriptionCount: Int?
     var viewCount: Int? = nil
     var favoriteCount: Int? = nil
-    let voteScore: Double?
+    let rating: WorkshopRating?
+    var timeCreated: Date?
+    var commentCount: Int?
+    /// `children[].publishedfileid` in `sortorder`: what a Preset restyles.
+    var requiredItemIDs: [UInt64] = []
     let tags: [String]
     let visibility: SteamWorkshopMetadata.Visibility
     let isBanned: Bool
     let steamCommunityURL: URL
+
+    var title: String {
+        Self.displayTitle(rawTitle, id: id)
+    }
+
+    /// Both browse paths receive untitled items; the id is the only thing that
+    /// tells two of them apart on the grid.
+    static func displayTitle(_ title: String?, id: UInt64) -> String {
+        if let title, !title.isEmpty {
+            return title
+        }
+        return String(
+            localized: "Workshop item \(id)",
+            bundle: .appLanguage, comment: "Workshop paste row title when only a published file ID is known."
+        )
+    }
 }
 
 struct WorkshopQueryPage: Sendable, Equatable {
     let items: [WorkshopQueryItem]
     let nextCursor: String?
     let totalAvailable: Int?
+    /// Entries Steam returned for this page before any client-side drop
+    /// (shells, banned, Application/Preset): what the pager reasons about.
+    let sourceItemCount: Int
+    /// Steam's page count: `total_pages` on the keyless page, `ceil(total /
+    /// numperpage)` on QueryFiles; `nil` when the source states no total.
+    let totalPages: Int?
 }
 
 enum WorkshopQueryError: Error, Equatable, Sendable {
@@ -251,6 +415,7 @@ enum WorkshopQueryCacheKey {
             appid: WorkshopQueryService.wallpaperEngineAppID,
             queryType: request.sort.queryTypeCode,
             searchText: request.searchText,
+            searchTextTarget: request.searchTextTarget.rawValue,
             page: request.page,
             numPerPage: request.numPerPage,
             language: request.language,
@@ -259,6 +424,7 @@ enum WorkshopQueryCacheKey {
             requiredTags: request.requiredTags,
             matchAllTags: request.matchAllTags,
             excludedTags: request.excludedTags,
+            miscellaneousTags: request.miscellaneousTags,
             returnPreviews: request.returnPreviews,
             returnTags: request.returnTags,
             returnMetadata: request.returnMetadata,
@@ -279,6 +445,7 @@ enum WorkshopQueryCacheKey {
         let appid: Int
         let queryType: Int
         let searchText: String
+        let searchTextTarget: Int
         let page: Int
         let numPerPage: Int
         let language: String?
@@ -287,6 +454,7 @@ enum WorkshopQueryCacheKey {
         let requiredTags: [String]
         let matchAllTags: Bool
         let excludedTags: [String]
+        let miscellaneousTags: [String]
         let returnPreviews: Bool
         let returnTags: Bool
         let returnMetadata: Bool
@@ -298,6 +466,7 @@ enum WorkshopQueryCacheKey {
             case appid
             case queryType = "query_type"
             case searchText = "search_text"
+            case searchTextTarget = "search_text_target"
             case page
             case numPerPage = "numperpage"
             case language
@@ -306,6 +475,7 @@ enum WorkshopQueryCacheKey {
             case requiredTags = "requiredtags"
             case matchAllTags = "match_all_tags"
             case excludedTags = "excludedtags"
+            case miscellaneousTags = "miscellaneous_tags"
             case returnPreviews = "return_previews"
             case returnTags = "return_tags"
             case returnMetadata = "return_metadata"
@@ -327,7 +497,6 @@ actor WorkshopQueryService {
         /// GetUserFiles, GetPlayerSummaries, and GetSupportedAPIList — one generous
         /// cap for all four endpoints, well over their typical multi-KB payloads.
         private static let maxResponseBytes = 8 * 1024 * 1024
-    private static let maxAttempts = 3
     private static let tokenCapacity = 5.0
     private static let tokenRefillPerSecond = 1.0
     private static let apiKeyPattern = #"^[A-Fa-f0-9]{32}$"#
@@ -335,6 +504,7 @@ actor WorkshopQueryService {
     private let keychain: WorkshopKeychainStore
     private let session: URLSession
     private let cache: WorkshopQueryCache
+    private let retryPolicy: WorkshopRetryPolicy
     /// Bumps the Browse ribbon's "N API requests today" tally, once per HTTP
     /// request this actor issues. A closure rather than the `UserDefaults` it
     /// writes: that type is not `Sendable` and cannot cross into the actor.
@@ -350,11 +520,13 @@ actor WorkshopQueryService {
         keychain: WorkshopKeychainStore,
         cache: WorkshopQueryCache = WorkshopQueryCache(),
         session: URLSession = .workshopQuerySession(timeout: 20),
+        retryPolicy: WorkshopRetryPolicy = WorkshopRetryPolicy(),
         countIssuedRequest: @escaping @Sendable () -> Void = { WorkshopRequestCounter.increment() }
     ) {
         self.keychain = keychain
         self.session = session
         self.cache = cache
+        self.retryPolicy = retryPolicy
         self.countIssuedRequest = countIssuedRequest
     }
 
@@ -400,24 +572,7 @@ actor WorkshopQueryService {
         guard let url = components.url else {
             throw WorkshopQueryError.schemaMismatch
         }
-        try await acquireToken()
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.timeoutInterval = 20
-
-        let data: Data
-        let response: URLResponse
-        do {
-            countIssuedRequest()
-                (data, response) = try await BoundedNetworkFetch.fetch(request, session: session, byteCap: Self.maxResponseBytes)
-        } catch {
-            throw Self.mapNetworkError(error)
-        }
-        guard let http = response as? HTTPURLResponse else {
-            throw WorkshopQueryError.responseParseFailure
-        }
+        let (data, http) = try await get(url)
 
         switch http.statusCode {
         case 200:
@@ -427,8 +582,6 @@ actor WorkshopQueryService {
             throw WorkshopQueryError.unauthorized
         case 403:
             throw Self.bodyContainsDisabledKeyHint(data) ? WorkshopQueryError.keyDisabled : WorkshopQueryError.unauthorized
-        case 429:
-            throw WorkshopQueryError.rateLimited(retryAfter: Self.retryAfter(from: http))
         default:
             throw WorkshopQueryError.http(status: http.statusCode)
         }
@@ -474,69 +627,39 @@ actor WorkshopQueryService {
         let url = try buildQueryURL(for: request, apiKey: apiKey)
         Logger.info("Workshop query started: \(Self.redactedURLString(url))", category: .workshop)
 
-        for attempt in 0..<Self.maxAttempts {
-            try Task.checkCancellation()
-            try await acquireToken()
+        let (data, http) = try await get(url)
 
-            var urlRequest = URLRequest(url: url)
-            urlRequest.httpMethod = "GET"
-            urlRequest.setValue("application/json", forHTTPHeaderField: "Accept")
-            urlRequest.timeoutInterval = 20
-
-            let data: Data
-            let response: URLResponse
-            do {
-                countIssuedRequest()
-                    (data, response) = try await BoundedNetworkFetch.fetch(urlRequest, session: session, byteCap: Self.maxResponseBytes)
-            } catch {
-                throw Self.mapNetworkError(error)
-            }
-            guard let http = response as? HTTPURLResponse else {
-                throw WorkshopQueryError.responseParseFailure
-            }
-
-            if http.statusCode != 200 {
-                let snippet = String(decoding: data.prefix(300), as: UTF8.self)
-                Logger.error("Workshop query HTTP \(http.statusCode): \(snippet)", category: .workshop)
-            }
-
-            switch http.statusCode {
-            case 200:
-                let page: WorkshopQueryPage
-                do {
-                    page = try decodeQueryPage(data, isBrowsePage: request.childPublishedFileID == nil)
-                } catch let error as WorkshopQueryError where error == .keyDisabled {
-                    authVerdictHandler?(false, Self.keyFingerprint(apiKey))
-                    throw error
-                }
-                authVerdictHandler?(true, Self.keyFingerprint(apiKey))
-                // Pairs with "Workshop query started" above: the gap between the
-                // two lines is what the grid waits for. Creator personas are a
-                // second round trip and are resolved after this hand-off.
-                Logger.info("Workshop query page handed to caller: \(page.items.count) items", category: .workshop)
-                return page
-            case 401:
-                authVerdictHandler?(false, Self.keyFingerprint(apiKey))
-                throw WorkshopQueryError.unauthorized
-            case 403:
-                authVerdictHandler?(false, Self.keyFingerprint(apiKey))
-                throw Self.bodyContainsDisabledKeyHint(data) ? WorkshopQueryError.keyDisabled : WorkshopQueryError.unauthorized
-            case 429:
-                let retryAfter = Self.retryAfter(from: http)
-                guard attempt < Self.maxAttempts - 1 else {
-                    throw WorkshopQueryError.rateLimited(retryAfter: retryAfter)
-                }
-                try await sleepBeforeRetry(attempt: attempt, retryAfter: retryAfter)
-            case 500...599:
-                guard attempt < Self.maxAttempts - 1 else {
-                    throw WorkshopQueryError.http(status: http.statusCode)
-                }
-                try await sleepBeforeRetry(attempt: attempt, retryAfter: nil)
-            default:
-                throw WorkshopQueryError.http(status: http.statusCode)
-            }
+        if http.statusCode != 200 {
+            let snippet = String(bytes: data.prefix(300), encoding: .utf8) ?? ""
+            Logger.error("Workshop query HTTP \(http.statusCode): \(snippet)", category: .workshop)
         }
-        throw WorkshopQueryError.responseParseFailure
+
+        switch http.statusCode {
+        case 200:
+            let page: WorkshopQueryPage
+            do {
+                page = try decodeQueryPage(
+                    data, isBrowsePage: request.childPublishedFileID == nil, page: request.page, numPerPage: request.numPerPage
+                )
+            } catch let error as WorkshopQueryError where error == .keyDisabled {
+                authVerdictHandler?(false, Self.keyFingerprint(apiKey))
+                throw error
+            }
+            authVerdictHandler?(true, Self.keyFingerprint(apiKey))
+            // Pairs with "Workshop query started" above: the gap between the
+            // two lines is what the grid waits for. Creator personas are a
+            // second round trip and are resolved after this hand-off.
+            Logger.info("Workshop query page handed to caller: \(page.items.count) items", category: .workshop)
+            return page
+        case 401:
+            authVerdictHandler?(false, Self.keyFingerprint(apiKey))
+            throw WorkshopQueryError.unauthorized
+        case 403:
+            authVerdictHandler?(false, Self.keyFingerprint(apiKey))
+            throw Self.bodyContainsDisabledKeyHint(data) ? WorkshopQueryError.keyDisabled : WorkshopQueryError.unauthorized
+        default:
+            throw WorkshopQueryError.http(status: http.statusCode)
+        }
     }
 
     /// Second phase of `fetch`, called once the caller has the page: a
@@ -557,7 +680,13 @@ actor WorkshopQueryService {
             return copy
         }
         await cache.write(
-            WorkshopQueryPage(items: updated, nextCursor: page.nextCursor, totalAvailable: page.totalAvailable),
+            WorkshopQueryPage(
+                items: updated,
+                nextCursor: page.nextCursor,
+                totalAvailable: page.totalAvailable,
+                sourceItemCount: page.sourceItemCount,
+                totalPages: page.totalPages
+            ),
             forKey: Self.namespacedCacheKey(WorkshopQueryCacheKey.canonical(request), apiKey: apiKey)
         )
         return names
@@ -573,15 +702,8 @@ actor WorkshopQueryService {
         ]
         guard let url = components.url else { return [:] }
         do {
-            try Task.checkCancellation()
-            try await acquireToken()
-            var request = URLRequest(url: url)
-            request.httpMethod = "GET"
-            request.setValue("application/json", forHTTPHeaderField: "Accept")
-            request.timeoutInterval = 20
-            countIssuedRequest()
-                let (data, response) = try await BoundedNetworkFetch.fetch(request, session: session, byteCap: Self.maxResponseBytes)
-            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return [:] }
+            let (data, http) = try await get(url)
+            guard http.statusCode == 200 else { return [:] }
             let envelope = try JSONDecoder().decode(PlayerSummariesEnvelope.self, from: data)
             var map: [String: String] = [:]
             for player in envelope.response.players {
@@ -595,24 +717,84 @@ actor WorkshopQueryService {
         }
     }
 
+    /// Every GET this actor issues: through the retry policy (which owns the
+    /// per-host cooldown), the token bucket and the request counter. The
+    /// policy retries transport failures, 429 and 5xx; a 429 it cannot wait
+    /// out is thrown as `.rateLimited`, so no 429 reaches a caller's switch.
+    private func get(_ url: URL) async throws -> (data: Data, http: HTTPURLResponse) {
+        do {
+            return try await retryPolicy.run(host: url.host() ?? "") {
+                try await self.acquireToken()
+
+                var urlRequest = URLRequest(url: url)
+                urlRequest.httpMethod = "GET"
+                urlRequest.setValue("application/json", forHTTPHeaderField: "Accept")
+                urlRequest.timeoutInterval = 20
+
+                let body: Data
+                let response: URLResponse
+                do {
+                    self.countIssuedRequest()
+                    (body, response) = try await BoundedNetworkFetch.fetch(urlRequest, session: self.session, byteCap: Self.maxResponseBytes)
+                } catch let error as URLError {
+                    throw error
+                } catch {
+                    throw Self.mapNetworkError(error)
+                }
+                guard let http = response as? HTTPURLResponse else {
+                    throw WorkshopQueryError.responseParseFailure
+                }
+                return (body, http)
+            }
+        } catch let error as WorkshopQueryError {
+            throw error
+        } catch {
+            throw Self.mapNetworkError(error)
+        }
+    }
+
     private func buildQueryURL(for request: WorkshopQueryRequest, apiKey: String) throws -> URL {
         // Creator-scoped browse uses GetUserFiles: sortmethod and excludedtags
         // apply there, but it has no text search.
         if let creatorSteamID = request.creatorSteamID {
             return try Self.buildUserFilesURL(for: request, steamID: creatorSteamID, apiKey: apiKey)
         }
+        return try Self.buildQueryFilesURL(for: request, apiKey: apiKey)
+    }
+
+    /// Static (nonisolated) so tests can assert the URL without the actor.
+    static func buildQueryFilesURL(for request: WorkshopQueryRequest, apiKey: String) throws -> URL {
         var components = URLComponents(url: Self.queryFilesEndpoint, resolvingAgainstBaseURL: false)!
-        components.queryItems = request.apiQueryItems(apiKey: apiKey, appID: Self.wallpaperEngineAppID)
+        components.percentEncodedQueryItems = Self.percentEncodedQueryItems(
+            request.apiQueryItems(apiKey: apiKey, appID: Self.wallpaperEngineAppID)
+        )
         guard let url = components.url else { throw WorkshopQueryError.schemaMismatch }
         return url
     }
+
+    /// `URLComponents.queryItems` leaves `+` bare, which Steam reads as a
+    /// space (in a search text, a tag, or inside `input_json` alike); encode
+    /// everything but ASCII unreserved characters. Shared by every Workshop
+    /// URL builder so the two paths encode one search the same way.
+    static func percentEncodedQueryItems(_ items: [URLQueryItem]) -> [URLQueryItem] {
+        items.map {
+            URLQueryItem(
+                name: $0.name.addingPercentEncoding(withAllowedCharacters: unreservedQueryCharacters) ?? $0.name,
+                value: $0.value?.addingPercentEncoding(withAllowedCharacters: unreservedQueryCharacters)
+            )
+        }
+    }
+
+    private static let unreservedQueryCharacters = CharacterSet(
+        charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~"
+    )
 
     /// Response shape matches `QueryFiles` (`response.publishedfiledetails` +
     /// `total`), so `decodeQueryPage` handles both.
     /// Static (nonisolated) so tests can assert the URL without the actor.
     static func buildUserFilesURL(for request: WorkshopQueryRequest, steamID: String, apiKey: String) throws -> URL {
         var components = URLComponents(url: Self.getUserFilesEndpoint, resolvingAgainstBaseURL: false)!
-        components.queryItems = [
+        var items: [URLQueryItem] = [
             URLQueryItem(name: "key", value: apiKey),
             URLQueryItem(name: "steamid", value: steamID),
             URLQueryItem(name: "appid", value: String(Self.wallpaperEngineAppID)),
@@ -625,11 +807,16 @@ actor WorkshopQueryService {
             URLQueryItem(name: "return_tags", value: Self.steamBool(request.returnTags)),
             URLQueryItem(name: "return_metadata", value: Self.steamBool(request.returnMetadata)),
             URLQueryItem(name: "return_short_description", value: Self.steamBool(request.returnShortDescription)),
-            URLQueryItem(name: "return_vote_data", value: "true")
+            URLQueryItem(name: "return_vote_data", value: "true"),
+            URLQueryItem(name: "return_children", value: "true"),
         ]
-        for (index, tag) in request.excludedTags.enumerated() {
-            components.queryItems?.append(URLQueryItem(name: "excludedtags[\(index)]", value: tag))
+        for (index, tag) in request.requiredTagsIncludingMiscellaneous.enumerated() {
+            items.append(URLQueryItem(name: "requiredtags[\(index)]", value: tag))
         }
+        for (index, tag) in request.excludedTags.enumerated() {
+            items.append(URLQueryItem(name: "excludedtags[\(index)]", value: tag))
+        }
+        components.percentEncodedQueryItems = Self.percentEncodedQueryItems(items)
         guard let url = components.url else { throw WorkshopQueryError.schemaMismatch }
         return url
     }
@@ -654,13 +841,6 @@ actor WorkshopQueryService {
         tokenRefilledAt = now
     }
 
-    private func sleepBeforeRetry(attempt: Int, retryAfter: TimeInterval?) async throws {
-        let exponential = min(60, pow(2, Double(attempt)) + Double.random(in: 0...1))
-        let delay = retryAfter.map { min(60, max($0, exponential)) } ?? exponential
-        Logger.debug("Workshop query retry scheduled after \(delay) s", category: .workshop)
-        try await Self.sleep(seconds: delay)
-    }
-
     private static func sleep(seconds: TimeInterval) async throws {
         let clamped = max(0, min(60, seconds))
         try await Task.sleep(nanoseconds: UInt64(clamped * 1_000_000_000))
@@ -670,7 +850,7 @@ actor WorkshopQueryService {
     /// (`child_publishedfileid`), where zero results is the normal answer for
     /// most wallpapers, not a signal worth a warning-level log (misled a crash
     /// triage into treating it as a browse-query failure — GitHub #134).
-    private func decodeQueryPage(_ data: Data, isBrowsePage: Bool) throws -> WorkshopQueryPage {
+    private func decodeQueryPage(_ data: Data, isBrowsePage: Bool, page: Int, numPerPage: Int) throws -> WorkshopQueryPage {
         let envelope: QueryFilesEnvelope
         do {
             envelope = try JSONDecoder().decode(QueryFilesEnvelope.self, from: data)
@@ -682,27 +862,68 @@ actor WorkshopQueryService {
         if Self.messageIndicatesDisabled(envelope.response.resultmsg) {
             throw WorkshopQueryError.keyDisabled
         }
-        // Steam omits `publishedfiledetails` entirely when a query has zero
-        // results — treat that as an empty page, not a schema error.
+        // A failed query comes back as HTTP 200 with a response-level `result`
+        // other than 1 (k_EResultOK) and no page body; read as an empty page it
+        // would show "no results", be cached and count the key as accepted.
+        if let result = envelope.response.result?.value, result != 1 {
+            Logger.error("Workshop query failed: result=\(result) \(envelope.response.resultmsg ?? "")", category: .workshop)
+            throw WorkshopQueryError.schemaMismatch
+        }
+        let total = envelope.response.total?.value
+        let totalPages = Self.pageCount(total: total, numPerPage: numPerPage)
+        // Steam omits `publishedfiledetails` entirely when a page has no
+        // items. That is an empty page only when `total` says this page is
+        // past the end (a zero total included); with items to show it is a
+        // broken response, which read as "no results" would be cached and
+        // count the key as accepted.
         guard let details = envelope.response.publishedfiledetails else {
-            let message = "Workshop query: no publishedfiledetails (total=\(envelope.response.total?.value ?? -1)) — treating as empty page"
+            guard let totalPages, page > totalPages else {
+                Logger.error("Workshop query: no publishedfiledetails with total=\(total.map(String.init) ?? "nil") on page \(page)", category: .workshop)
+                throw WorkshopQueryError.schemaMismatch
+            }
+            let message = "Workshop query: no publishedfiledetails (total=\(total ?? -1)) — treating as empty page"
             if isBrowsePage {
                 Logger.warning(message, category: .workshop)
             } else {
                 Logger.info(message, category: .workshop)
             }
-            return WorkshopQueryPage(items: [], nextCursor: nil, totalAvailable: envelope.response.total?.value)
+            return WorkshopQueryPage(items: [], nextCursor: nil, totalAvailable: total, sourceItemCount: 0, totalPages: totalPages)
         }
         let items = details.compactMap(Self.item(from:))
         let nextCursor = envelope.response.next_cursor?
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .nilIfEmptyWorkshopQuery
-        Logger.info("Workshop query OK: \(items.count) items (total=\(envelope.response.total?.value ?? -1))", category: .workshop)
-        return WorkshopQueryPage(items: items, nextCursor: nextCursor, totalAvailable: envelope.response.total?.value)
+        Logger.info("Workshop query OK: \(items.count) items (total=\(total ?? -1))", category: .workshop)
+        return WorkshopQueryPage(
+            items: items,
+            nextCursor: nextCursor,
+            totalAvailable: total,
+            sourceItemCount: details.count,
+            totalPages: totalPages
+        )
+    }
+
+    /// `nil` for a total no Workshop has (negative, or past ten million): a
+    /// corrupt value must not become a page count — or overflow the arithmetic.
+    private static func pageCount(total: Int?, numPerPage: Int) -> Int? {
+        guard let total, (0 ... 10_000_000).contains(total) else { return nil }
+        return total / numPerPage + (total % numPerPage == 0 ? 0 : 1)
     }
 
     private static func item(from payload: QueryFilesPayload) -> WorkshopQueryItem? {
         guard let idString = payload.publishedfileid?.value, let id = UInt64(idString) else { return nil }
+        // A browse page carries private/hidden entries as three-key shells
+        // (`result` 15, no title) in the middle of the list; non-public and
+        // banned items are dropped the way `SteamWorkshopMetadata` drops them.
+        if let result = payload.result?.value, result != 1 {
+            return nil
+        }
+        if payload.banned?.value == true {
+            return nil
+        }
+        if let visibility = payload.visibility?.value, visibility != 0 {
+            return nil
+        }
 
         var previewURL: URL?
         if let candidate = payload.preview_url?.trimmingCharacters(in: .whitespacesAndNewlines), !candidate.isEmpty {
@@ -715,14 +936,10 @@ actor WorkshopQueryService {
             }
         }
 
-        let title = WorkshopDiagnosticRedactor.redact(
-            payload.title?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmptyWorkshopQuery
-                ?? "Untitled Workshop Item"
-        )
+        let rawTitle = payload.title?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmptyWorkshopQuery
+            .map(WorkshopDiagnosticRedactor.redact)
         let shortDescription = WorkshopDiagnosticRedactor.redact(
-            payload.short_description?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmptyWorkshopQuery
-                ?? payload.description?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmptyWorkshopQuery
-                ?? ""
+            payload.short_description?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         )
         let tags = (payload.tags ?? [])
             .compactMap { $0.displayName }
@@ -733,7 +950,7 @@ actor WorkshopQueryService {
 
         return WorkshopQueryItem(
             id: id,
-            title: title,
+            rawTitle: rawTitle,
             shortDescription: shortDescription,
             creatorID: payload.creator?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmptyWorkshopQuery,
             creatorPersonaName: nil,
@@ -745,7 +962,12 @@ actor WorkshopQueryService {
             subscriptionCount: payload.lifetime_subscriptions?.value ?? payload.subscriptions?.value,
             viewCount: payload.views?.value,
             favoriteCount: payload.lifetime_favorited?.value ?? payload.favorited?.value,
-            voteScore: Self.clampedScore(payload.vote_data?.score?.value ?? payload.score?.value),
+            rating: Self.rating(from: payload.vote_data),
+            timeCreated: payload.time_created?.dateValue,
+            commentCount: payload.num_comments_public?.value,
+            requiredItemIDs: (payload.children ?? [])
+                .sorted { ($0.sortorder?.value ?? 0) < ($1.sortorder?.value ?? 0) }
+                .compactMap { $0.publishedfileid.flatMap { UInt64($0.value) } },
             tags: tags,
             visibility: SteamWorkshopMetadata.Visibility(rawCode: payload.visibility?.value),
             isBanned: payload.banned?.value ?? false,
@@ -753,9 +975,13 @@ actor WorkshopQueryService {
         )
     }
 
-    private static func clampedScore(_ score: Double?) -> Double? {
-        guard let score, score.isFinite else { return nil }
-        return min(1, max(0, score))
+    private static func rating(from voteData: QueryFilesPayload.VoteData?) -> WorkshopRating? {
+        guard let score = voteData?.score?.value, score.isFinite else { return nil }
+        return .score(
+            min(1, max(0, score)),
+            votesUp: voteData?.votes_up?.value ?? 0,
+            votesDown: voteData?.votes_down?.value ?? 0
+        )
     }
 
     private static func bodyContainsDisabledKeyHint(_ data: Data) -> Bool {
@@ -766,10 +992,6 @@ actor WorkshopQueryService {
     private static func messageIndicatesDisabled(_ message: String?) -> Bool {
         guard let message else { return false }
         return message.range(of: "disabled", options: [.caseInsensitive, .diacriticInsensitive]) != nil
-    }
-
-    private static func retryAfter(from response: HTTPURLResponse) -> TimeInterval? {
-        response.value(forHTTPHeaderField: "Retry-After").flatMap(TimeInterval.init)
     }
 
     private static func steamBool(_ value: Bool) -> String {
@@ -845,12 +1067,13 @@ private struct QueryFilesEnvelope: Decodable {
 
 private struct QueryFilesPayload: Decodable {
     let publishedfileid: LossyStringWQ?
+    let result: LossyIntWQ?
     let creator: String?
     let title: String?
-    let description: String?
     let short_description: String?
     let preview_url: String?
     let file_size: LossyUInt64WQ?
+    let time_created: LossyDoubleWQ?
     let time_updated: LossyDoubleWQ?
     let visibility: LossyIntWQ?
     let banned: LossyBoolWQ?
@@ -859,12 +1082,20 @@ private struct QueryFilesPayload: Decodable {
     let favorited: LossyIntWQ?
     let lifetime_favorited: LossyIntWQ?
     let views: LossyIntWQ?
-    let score: LossyDoubleWQ?
+    let num_comments_public: LossyIntWQ?
     let vote_data: VoteData?
+    let children: [Child]?
     let tags: [WorkshopTagPayload]?
 
     struct VoteData: Decodable {
         let score: LossyDoubleWQ?
+        let votes_up: LossyIntWQ?
+        let votes_down: LossyIntWQ?
+    }
+
+    struct Child: Decodable {
+        let publishedfileid: LossyStringWQ?
+        let sortorder: LossyIntWQ?
     }
 }
 

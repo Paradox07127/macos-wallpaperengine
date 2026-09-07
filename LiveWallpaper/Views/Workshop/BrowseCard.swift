@@ -232,8 +232,8 @@ struct BrowseCard: View, Equatable {
     // MARK: - Derived values
 
     private var ratingValue: Double? {
-        guard let score = item.voteScore, score > 0 else { return nil }
-        return min(max(score * 5, 0), 5)
+        guard let stars = item.rating?.starsOutOfFive, stars > 0 else { return nil }
+        return stars
     }
 
     private var contentType: WorkshopContentTypeFilter? {
@@ -258,22 +258,26 @@ struct BrowseCard: View, Equatable {
         return nil
     }
 
-    private static let knownResolutionLabels: [String: String] = [
-        "Standard Definition": "SD",
-        "1280 x 720": "720p",
-        "1920 x 1080": "1080p",
-        "2560 x 1440": "1440p",
-        "3840 x 2160": "4K",
-        "2560 x 1080": "UW",
-        "3440 x 1440": "UW",
-        "Dual 3840 x 1080": "Dual",
-        "5120 x 1440": "Dual",
-        "7680 x 2160": "Dual",
-        "1080 x 1920": "Portrait",
-        "720 x 1280": "Portrait",
-        "1440 x 2560": "Portrait",
-        "2160 x 3840": "Portrait"
-    ]
+    /// Keyed by Steam's real Resolution tags. The layout buckets name their
+    /// badge; the single-screen buckets read it off the numbers, and the
+    /// Other/Dynamic bucket has nothing to show.
+    static let knownResolutionLabels: [String: String] = {
+        var labels: [String: String] = [:]
+        for filter in WorkshopResolutionFilter.allCases {
+            for tag in filter.tags {
+                switch filter {
+                case .any, .other: break
+                case .standardDefinition: labels[tag] = "SD"
+                case .ultrawide: labels[tag] = "UW"
+                case .dual: labels[tag] = "Dual"
+                case .triple: labels[tag] = "Triple"
+                case .portrait: labels[tag] = "Portrait"
+                case .hd, .quadHD1440, .ultraHD4K: labels[tag] = deriveResolutionLabel(from: tag)
+                }
+            }
+        }
+        return labels
+    }()
 
     /// Derive a label from any embedded "W x H" tag (covers prefixes like "Dual 3840 x 1080").
     private static func deriveResolutionLabel(from tag: String) -> String? {

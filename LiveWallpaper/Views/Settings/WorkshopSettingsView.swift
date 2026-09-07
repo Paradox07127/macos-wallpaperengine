@@ -12,6 +12,8 @@ struct WorkshopSettingsView: View {
     /// Backed by `GlobalSettings` (not `@AppStorage`): it needs to survive backup/restore
     /// the same way the rest of `GlobalSettings` does.
     @State private var showsPresetsInBrowse: Bool
+    @State private var defaultSort: WorkshopSortMode
+    @State private var defaultTimeFrame: WorkshopTimeFrame
 
     @State private var engineAssets = WPEEngineAssetsLibrary.shared
     @State private var engineInstaller = WPEEngineAssetsInstaller.shared
@@ -20,7 +22,10 @@ struct WorkshopSettingsView: View {
 
     init(pendingSearchAnchor: Binding<SettingsSearchAnchor?> = .constant(nil)) {
         _pendingSearchAnchor = pendingSearchAnchor
-        _showsPresetsInBrowse = State(initialValue: SettingsManager.shared.loadGlobalSettings().showsWorkshopPresetsInBrowse)
+        let settings = SettingsManager.shared.loadGlobalSettings()
+        _showsPresetsInBrowse = State(initialValue: settings.showsWorkshopPresetsInBrowse)
+        _defaultSort = State(initialValue: BrowseViewModel.defaultSort(from: settings.workshopDefaultSort))
+        _defaultTimeFrame = State(initialValue: BrowseViewModel.defaultTimeFrame(from: settings.workshopDefaultTimeFrame))
     }
 
     /// One page, no pushed screens and no sheets for setup. Each thing
@@ -91,6 +96,49 @@ struct WorkshopSettingsView: View {
                         }
                         .accessibilityLabel(Text("Show presets as wallpapers in Browse"))
                 }
+                SettingRow(
+                    icon: "arrow.up.arrow.down",
+                    iconColor: .blue,
+                    title: "Default sort",
+                    subtitle: "The sort order Browse opens with"
+                ) {
+                    Picker("", selection: $defaultSort) {
+                        ForEach(Self.defaultSortOptions) { sort in
+                            Text(verbatim: sort.title).tag(sort)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .fixedSize()
+                    .onChange(of: defaultSort) { _, newValue in
+                        var settings = SettingsManager.shared.loadGlobalSettings()
+                        settings.workshopDefaultSort = newValue.rawValue
+                        SettingsManager.shared.saveGlobalSettings(settings)
+                    }
+                    .accessibilityLabel(Text("Default sort"))
+                }
+                SettingRow(
+                    icon: "calendar",
+                    iconColor: .orange,
+                    title: "Default time frame",
+                    subtitle: "Applies when the default sort is Most Popular"
+                ) {
+                    Picker("", selection: $defaultTimeFrame) {
+                        ForEach(Self.defaultTimeFrameOptions) { timeFrame in
+                            Text(verbatim: timeFrame.title).tag(timeFrame)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .fixedSize()
+                    .disabled(defaultSort != .mostPopular)
+                    .onChange(of: defaultTimeFrame) { _, newValue in
+                        var settings = SettingsManager.shared.loadGlobalSettings()
+                        settings.workshopDefaultTimeFrame = newValue.rawValue
+                        SettingsManager.shared.saveGlobalSettings(settings)
+                    }
+                    .accessibilityLabel(Text("Default time frame"))
+                }
             } header: {
                 SettingsSearchSectionHeader("Content", anchor: .workshopContent)
             }
@@ -127,6 +175,11 @@ struct WorkshopSettingsView: View {
             await workshopServices.refreshAPIKeyStatus()
         }
     }
+
+    /// Relevance needs a search text; All Time is not a window (the page
+    /// switches to Top Rated for it). Both are what `BrowseViewModel` rejects.
+    private static let defaultSortOptions: [WorkshopSortMode] = WorkshopSortMode.allCases.filter { $0 != .search }
+    private static let defaultTimeFrameOptions: [WorkshopTimeFrame] = WorkshopTimeFrame.allCases.filter { $0.days != nil }
 
     // MARK: - Status bar
 

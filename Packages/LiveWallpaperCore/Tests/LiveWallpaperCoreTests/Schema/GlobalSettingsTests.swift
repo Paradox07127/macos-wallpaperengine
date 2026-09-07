@@ -218,6 +218,27 @@ struct GlobalSettingsTests {
         #expect(decoded.screenNames["1552:24067:16843009"] == "Desk left")
     }
 
+    @Test("An install predating the Workshop default sort browses Most Popular over one week")
+    func workshopDefaultSortDefaults() throws {
+        let old = Data("{\"pauseOnFullScreen\": true}".utf8)
+        let decoded = try JSONDecoder().decode(GlobalSettings.self, from: old)
+        #expect(decoded.workshopDefaultSort == "mostPopular")
+        #expect(decoded.workshopDefaultTimeFrame == "oneWeek")
+    }
+
+    @Test("A chosen Workshop default sort and window round-trip")
+    func workshopDefaultSortRoundTrips() throws {
+        var settings = GlobalSettings()
+        settings.workshopDefaultSort = "lastUpdated"
+        settings.workshopDefaultTimeFrame = "thirtyDays"
+
+        let data = try JSONEncoder().encode(settings)
+        let decoded = try JSONDecoder().decode(GlobalSettings.self, from: data)
+
+        #expect(decoded.workshopDefaultSort == "lastUpdated")
+        #expect(decoded.workshopDefaultTimeFrame == "thirtyDays")
+    }
+
     @Test("An install predating custom display names decodes to none")
     func screenNamesDefaultToEmpty() throws {
         let old = Data("{\"pauseOnFullScreen\": true}".utf8)

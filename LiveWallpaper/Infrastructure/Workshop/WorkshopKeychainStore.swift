@@ -117,6 +117,11 @@ actor WorkshopKeychainStore {
     /// Sticky record of the last read having been refused, so the settings UI
     /// can say so without performing a read of its own.
     private(set) var readWasDenied = false
+    /// Fingerprint of the key this store last wrote or read back, nil once it
+    /// is gone. Lets `WorkshopServices` tie a Valve verdict to the key that
+    /// earned it without a keychain read of its own (`read` can show the ACL
+    /// dialog; `exists` deliberately cannot).
+    private(set) var storedKeyFingerprint: String?
 
     /// The parameters are test seams; production uses the sandbox container's
     /// Application Support and the real keychain slot.
@@ -135,21 +140,27 @@ actor WorkshopKeychainStore {
         let status = slot.write(key)
         guard status == errSecSuccess else { throw Self.error(for: status) }
         readWasDenied = false
+        storedKeyFingerprint = WorkshopQueryService.keyFingerprint(key)
         // Loads consult the file first, so a leftover one would shadow this.
         try? FileManager.default.removeItem(at: fileURL)
     }
 
     func loadWebAPIKey() async throws -> String? {
-        if let migrated = try migrateContainerFileIfPresent() { return migrated }
+        if let migrated = try migrateContainerFileIfPresent() {
+            storedKeyFingerprint = WorkshopQueryService.keyFingerprint(migrated)
+            return migrated
+        }
         switch slot.read() {
         case .found(let key):
             readWasDenied = false
             guard Self.isValidAPIKeyShape(key) else {
                 throw WorkshopKeychainError.malformedData
             }
+            storedKeyFingerprint = WorkshopQueryService.keyFingerprint(key)
             return key
         case .absent:
             readWasDenied = false
+            storedKeyFingerprint = nil
             return nil
         case .denied:
             readWasDenied = true
@@ -164,6 +175,7 @@ actor WorkshopKeychainStore {
         let status = slot.delete()
         guard status == errSecSuccess else { throw Self.error(for: status) }
         readWasDenied = false
+        storedKeyFingerprint = nil
         do {
             try FileManager.default.removeItem(at: fileURL)
         } catch let error as CocoaError where error.code == .fileNoSuchFile {

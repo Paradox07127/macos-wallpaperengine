@@ -39,7 +39,9 @@ struct WorkshopMetadataBatchTests {
         #expect(first.appID == 431_960)
 
         #expect(results[222] == .failure(.itemNotFound))
-        #expect(results[333] == .failure(.itemNotFound))
+        // Only 9 (not found) and 15 (access denied) are permanent; 2 (generic
+        // failure) says nothing about the item and must stay transient.
+        #expect(results[333] == .failure(.unknown("result 2")))
         // 444 is absent from the response entirely.
         #expect(results[444] == .failure(.itemNotFound))
         #expect(results[555] == .failure(.itemPrivate))

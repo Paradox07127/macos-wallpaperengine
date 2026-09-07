@@ -71,7 +71,8 @@ Windows executable wallpapers are not supported.
 **Scene presets** store named values for a base wallpaper. Scene defaults,
 a preset and per-display edits are separate layers. The Preset row offers
 selection, save, rename and delete; Workshop detail pages list community
-presets for the base wallpaper. Those lists require a Steam Web API key.
+presets for the base wallpaper with a Steam Web API key, and link to them on
+Steam without one.
 
 Presets can also carry Wallpaper Engine color correction and volume. Color
 correction runs as a full-frame pass when enabled and non-neutral; its curves
@@ -149,12 +150,22 @@ render actors. Display configuration and sidebar ordering persist.
 
 ## Workshop — Pro
 
-- Browse with paging, cache, maturity/type/resolution/genre filters and
-  translated tags. Public browsing can work without a key; API-backed queries,
-  creator metadata and preset lists use a Steam Web API key.
+- Browse with paging, cache, maturity/type/resolution/genre/Miscellaneous
+  filters and translated tags. Maturity starts at Everyone, matching what the
+  signed-out Workshop page shows; the Questionable and Mature chips turn those
+  ratings back on. Sort names, time windows and the search-field
+  menu (Title & Description / Title Only / Description Only) use Steam's own
+  wording; the default sort is Most Popular over one week and can be changed
+  in Workshop settings.
+- Public browsing works without a key and reads the page's own result data,
+  so keyless cards carry author names and page counts. A stored key that Steam
+  rejects switches browsing to the public path with a dismissible notice.
 - Creator names load after initial results, and existing cards remain visible
-  while filters refresh. Genre choices match any selected genre; tag/creator
-  scopes retain the other filters.
+  while filters refresh. Genre choices match any selected genre; Miscellaneous
+  choices must all be present; tag/creator scopes retain the other filters.
+- Detail pages show posted/updated dates, rating and comment counts, required
+  items, grouped tags and links to the item's change notes, comments and
+  collections on Steam.
 - **Show presets as wallpapers** is off by default. Presets remain available
   through their base wallpaper's detail page.
 - Steam setup supports managed SteamCMD installation, automatic detection and

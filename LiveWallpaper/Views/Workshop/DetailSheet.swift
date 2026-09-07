@@ -10,9 +10,12 @@ struct WorkshopInspectorContent: View {
     var onBrowseCreator: ((String, String?) -> Void)?
     /// nil → tags render as plain labels.
     var onSelectTag: ((String) -> Void)?
+    /// Opens another item in this inspector (Required items rows); nil hides the section.
+    var onOpenItem: ((UInt64) -> Void)?
 
     @Environment(\.openURL) private var openURL
     @Environment(ScreenManager.self) private var screenManager
+    @Environment(WorkshopServices.self) private var services
     @State private var installedEntry: WPEHistoryEntry?
 
     /// Named constants, not literals: the grid card reads the same two keys
@@ -79,6 +82,17 @@ struct WorkshopInspectorContent: View {
         .groupBoxStyle(ContainerGroupBoxStyle())
     }
 
+    /// The page's "Required items" (what a Preset restyles).
+    @ViewBuilder
+    private var requiredItemsGroup: some View {
+        if !item.requiredItemIDs.isEmpty, let onOpenItem {
+            GroupBox {
+                DetailRequiredItemsSection(itemIDs: item.requiredItemIDs, onOpenItem: onOpenItem)
+            }
+            .groupBoxStyle(ContainerGroupBoxStyle())
+        }
+    }
+
     private var aboutGroup: some View {
         GroupBox {
             VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
@@ -86,6 +100,7 @@ struct WorkshopInspectorContent: View {
                     tagsSection
                 }
                 descriptionSection
+                communityLinksRow
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -103,6 +118,7 @@ struct WorkshopInspectorContent: View {
                 VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
                     identityBlock
                     actionsGroup
+                    requiredItemsGroup
                     presetsGroup
                     aboutGroup
                 }
@@ -178,23 +194,36 @@ struct WorkshopInspectorContent: View {
 
     // MARK: - Author
 
-    @ViewBuilder
     private var authorRatingRow: some View {
-        let hasAuthor = !(item.creatorPersonaName ?? "").isEmpty
-        let hasRating = (item.voteScore ?? 0) > 0
-        if hasAuthor || hasRating {
-            HStack(spacing: DesignTokens.Spacing.sm) {
-                ratingRow
-                Spacer(minLength: 0)
-                authorLine
-            }
+        HStack(spacing: DesignTokens.Spacing.sm) {
+            ratingRow
+            Spacer(minLength: 0)
+            authorLine
         }
     }
 
     @ViewBuilder
     private var authorLine: some View {
         if let author = item.creatorPersonaName, !author.isEmpty {
-            if let creatorID = item.creatorID, let onBrowseCreator {
+            if let creatorID = item.creatorID, services.isKeyless {
+                // The keyless creator page ignores the browse filters and
+                // states no page count, so it is Steam's to show, not ours.
+                Button {
+                    openURL(WorkshopCommunityURL.creatorWorkshop(steamID: creatorID))
+                } label: {
+                    HStack(spacing: 3) {
+                        Text("by \(author)", comment: "Workshop item author line. Placeholder is the creator's Steam persona name.")
+                            .lineLimit(1)
+                        Image(systemName: "arrow.up.right.square")
+                            .font(DesignTokens.Typography.captionEmphasized)
+                    }
+                    .font(.subheadline)
+                    .foregroundStyle(Color.accentColor)
+                }
+                .buttonStyle(.plain)
+                .help(Text("Open \(author)’s Workshop on Steam"))
+                .accessibilityLabel(Text("Open \(author)’s Workshop on Steam"))
+            } else if let creatorID = item.creatorID, let onBrowseCreator {
                 Button {
                     onBrowseCreator(creatorID, author)
                 } label: {
@@ -221,11 +250,11 @@ struct WorkshopInspectorContent: View {
 
     // MARK: - Rating
 
-    @ViewBuilder
+    /// Stars when rated, always the vote count (the page's `numRatings`), and
+    /// the up/down split where the keyed path supplies it.
     private var ratingRow: some View {
-        if let score = item.voteScore, score > 0 {
-            let stars = min(max(score * 5, 0), 5)
-            HStack(spacing: 6) {
+        HStack(spacing: 6) {
+            if let stars = item.rating?.starsOutOfFive, stars > 0 {
                 HStack(spacing: 1) {
                     ForEach(0..<5, id: \.self) { index in
                         Image(systemName: Self.starSymbol(for: index, rating: stars))
@@ -233,12 +262,48 @@ struct WorkshopInspectorContent: View {
                             .font(.system(size: 12))
                     }
                 }
+                .accessibilityLabel(Text("\(stars.formatted(.number.precision(.fractionLength(1)))) stars"))
                 Text(verbatim: stars.formatted(.number.precision(.fractionLength(1))))
                     .font(DesignTokens.Typography.body)
                     .foregroundStyle(.secondary)
             }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(Text("\(stars.formatted(.number.precision(.fractionLength(1)))) stars"))
+            Text(verbatim: ratingCountText)
+                .font(DesignTokens.Typography.caption)
+                .foregroundStyle(.secondary)
+            if case let .score(_, up, down)? = item.rating {
+                HStack(spacing: 6) {
+                    Label(up.formatted(), systemImage: "hand.thumbsup")
+                    Label(down.formatted(), systemImage: "hand.thumbsdown")
+                }
+                .font(DesignTokens.Typography.caption)
+                .foregroundStyle(.secondary)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(Text("\(up.formatted()) up, \(down.formatted()) down"))
+            }
+        }
+    }
+
+    /// What the rating line says about votes. The key-free details endpoint
+    /// carries no vote data at all; that is not an item nobody has rated.
+    enum RatingCountLabel: Equatable {
+        case unavailable
+        case none
+        case count(Int)
+    }
+
+    nonisolated static func ratingCountLabel(_ rating: WorkshopRating?) -> RatingCountLabel {
+        guard let rating else { return .unavailable }
+        return rating.totalVotes > 0 ? .count(rating.totalVotes) : .none
+    }
+
+    private var ratingCountText: String {
+        switch Self.ratingCountLabel(item.rating) {
+        case .unavailable:
+            String(localized: "Rating unavailable", bundle: .appLanguage, comment: "Workshop detail rating line when the source carries no vote data at all (key-free details endpoint).")
+        case .none:
+            String(localized: "No ratings yet", bundle: .appLanguage, comment: "Workshop detail rating line when the item has no votes.")
+        case let .count(votes):
+            String(localized: "\(votes.formatted()) ratings", bundle: .appLanguage, comment: "Workshop detail rating count. Placeholder is a formatted number such as 3,094.")
         }
     }
 
@@ -479,9 +544,12 @@ struct WorkshopInspectorContent: View {
         // sheet's width once views and favorites join the subscriber count.
         VStack(alignment: .leading, spacing: 2) {
             countsRow
+            if let posted = item.timeCreated {
+                Text("Posted \(Self.dateFormatter.string(from: posted)) (\(WorkshopRelativeDateFormatter.string(posted)))")
+            }
             HStack(spacing: 6) {
                 if let updated = item.timeUpdated {
-                    Text("Updated \(Self.dateFormatter.string(from: updated))")
+                    Text("Updated \(Self.dateFormatter.string(from: updated)) (\(WorkshopRelativeDateFormatter.string(updated)))")
                     if item.fileSizeBytes != nil {
                         Text(verbatim: "·").foregroundStyle(.tertiary)
                     }
@@ -537,14 +605,52 @@ struct WorkshopInspectorContent: View {
         }
     }
 
+    /// One row per facet group, in the page's order (Type, Age Rating, …).
     private var tagsSection: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                ForEach(item.tags, id: \.self) { tag in
-                    tagChip(tag)
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+            ForEach(WorkshopTagTaxonomy.grouped(tags: item.tags), id: \.group) { grouped in
+                HStack(spacing: DesignTokens.Spacing.xs) {
+                    Text(verbatim: grouped.group.displayName)
+                        .font(DesignTokens.Typography.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize()
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            ForEach(grouped.tags, id: \.self) { tag in
+                                tagChip(tag)
+                            }
+                        }
+                    }
                 }
             }
         }
+    }
+
+    /// What the page has and the query payload does not: change notes, the
+    /// comment thread and the collections listing stay on Steam.
+    private var communityLinksRow: some View {
+        HStack(spacing: DesignTokens.Spacing.md) {
+            communityLink(commentsTitle, systemImage: "bubble.left", url: WorkshopCommunityURL.comments(itemID: item.id))
+            communityLink(Text("Change Notes"), systemImage: "clock.arrow.circlepath", url: WorkshopCommunityURL.changeNotes(itemID: item.id))
+            communityLink(Text("Collections"), systemImage: "square.stack", url: WorkshopCommunityURL.collections(itemID: item.id))
+        }
+        .font(DesignTokens.Typography.caption)
+    }
+
+    private var commentsTitle: Text {
+        if let count = item.commentCount, count > 0 {
+            return Text("\(count.formatted()) comments", comment: "Workshop detail link to the item's comment thread. Placeholder is a formatted count.")
+        }
+        return Text("Comments")
+    }
+
+    private func communityLink(_ title: Text, systemImage: String, url: URL) -> some View {
+        Button {
+            openURL(url)
+        } label: {
+            Label { title } icon: { Image(systemName: systemImage) }
+        }
+        .buttonStyle(.link)
     }
 
     @ViewBuilder

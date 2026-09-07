@@ -125,6 +125,37 @@ struct WorkshopPublicSearchTests {
         #expect(!WorkshopPublicSearchSource.queryItem(from: entry).isMatureRated)
     }
 
+    /// `description` on GetPublishedFileDetails is raw BBCode; only
+    /// `short_description` is plain text, and its absence is an empty summary.
+    @Test("A raw BBCode description never stands in for a missing short description")
+    func bbcodeDescriptionIsNotAShortDescription() throws {
+        let payload = Data("""
+        {"response":{"result":1,"resultcount":1,"publishedfiledetails":[\
+        {"publishedfileid":"555","result":1,"consumer_app_id":431960,\
+        "title":"Marked up","description":"[h1]x[/h1]","visibility":0,"banned":0,"tags":[]}]}}
+        """.utf8)
+        let entry = try #require(SteamWorkshopMetadataService.decodeBatch(data: payload, requestedIDs: [555])[555]).get()
+        #expect(entry.shortDescription == "")
+
+        // Control: a short description is carried as is.
+        let summarised = try #require(
+            SteamWorkshopMetadataService.decodeBatch(data: Self.detailsPayload(id: "556", tags: []), requestedIDs: [556])[556]
+        ).get()
+        #expect(summarised.shortDescription == "summary")
+    }
+
+    @Test("A keyless item with no title falls back to a title carrying its id")
+    func keylessUntitledFallsBackToID() throws {
+        let payload = Data("""
+        {"response":{"result":1,"resultcount":1,"publishedfiledetails":[\
+        {"publishedfileid":"333","result":1,"consumer_app_id":431960,\
+        "visibility":0,"banned":0,"tags":[]}]}}
+        """.utf8)
+        let results = SteamWorkshopMetadataService.decodeBatch(data: payload, requestedIDs: [333])
+        let entry = try #require(results[333]).get()
+        #expect(WorkshopPublicSearchSource.queryItem(from: entry).title.contains("333"))
+    }
+
     /// Only links on Valve's own host may contribute ids: the browse page also
     /// renders author-supplied markup.
     @Test("Detail links off the community host contribute no ids")
