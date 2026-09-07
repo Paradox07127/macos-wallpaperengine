@@ -54,7 +54,9 @@ struct BrowsePaginationMetadataTests {
             queryService: WorkshopQueryService(keychain: keychain, cache: cache, countIssuedRequest: {})
         )
         try KeylessPageStub.configure(
-            html: WorkshopPublicSearchSSRTests.derived(WorkshopBrowseFixture.pages3),
+            html: WorkshopPublicSearchSSRTests.derived {
+                try WorkshopBrowseFixture.excludingMaturity(in: WorkshopBrowseFixture.pages3())
+            },
             details: .transportError
         )
         let session = KeylessPageStub.makeSession()
@@ -68,7 +70,10 @@ struct BrowsePaginationMetadataTests {
         try #require(model.usesKeylessSearch)
         // The fixture answers exactly this request; anything else would be an
         // identity mismatch and the (failing) details stub would surface it.
-        try #require(model.makeRequest(page: 1).excludedTags == ["Application", "Asset", "Preset"])
+        try #require(
+            model.makeRequest(page: 1).excludedTags
+                == ["Application", "Asset", "Mature", "Preset", "Questionable"]
+        )
 
         await model.reload()
 

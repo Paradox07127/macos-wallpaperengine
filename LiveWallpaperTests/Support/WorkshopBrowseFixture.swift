@@ -85,6 +85,17 @@ enum WorkshopBrowseFixture {
     }
 
     /// SSR `total_pages` 1000 → 3.
+    /// The captured page predates the Everyone-only maturity default, so its
+    /// query key lists three excluded tags; a browse built from today's default
+    /// excludes five. Composable, so a variant can carry both changes.
+    static func excludingMaturity(in page: String) throws -> String {
+        try replacing(
+            #"\\\"excluded_tags\\\":[\\\"Application\\\",\\\"Asset\\\",\\\"Preset\\\"]"#,
+            with: #"\\\"excluded_tags\\\":[\\\"Application\\\",\\\"Asset\\\",\\\"Mature\\\",\\\"Preset\\\",\\\"Questionable\\\"]"#,
+            in: page
+        )
+    }
+
     static func pages3() throws -> String {
         try replacing(#"\\\"total_pages\\\":1000,"#, with: #"\\\"total_pages\\\":3,"#, in: base())
     }
