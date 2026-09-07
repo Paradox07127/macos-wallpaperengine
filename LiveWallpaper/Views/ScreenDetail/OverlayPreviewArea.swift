@@ -292,9 +292,11 @@ struct OverlayPreviewArea: View {
                 Text(resolvedWeatherEffect.titleKey)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.white)
-                Text(resolvedWeatherEffect == .none ? "No particles for current weather" : "Drawn over the wallpaper")
-                    .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.75))
+                if resolvedWeatherEffect == .none {
+                    Text("No particles for current weather")
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.75))
+                }
             }
         }
         .padding(.horizontal, 10)

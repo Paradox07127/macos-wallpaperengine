@@ -1,9 +1,7 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// Which badges the Workshop grids draw on their thumbnails — Browse Online and
-/// the installed / Scene cards. Positions are fixed; this only decides what
-/// appears. Other libraries (Aerials, Bookmarks) keep their own badges.
+/// Controls Workshop thumbnail badges; other libraries retain their own badge settings.
 struct WorkshopBadgeSection: View {
     @AppStorage(CardBadgeSettings.showsRating, store: .appScoped()) private var showsRating = true
     @AppStorage(CardBadgeSettings.showsType, store: .appScoped()) private var showsType = true
@@ -18,8 +16,7 @@ struct WorkshopBadgeSection: View {
             SettingRow(
                 icon: "square.stack.3d.up",
                 iconColor: .indigo,
-                title: "Wallpaper type",
-                subtitle: "Show Scene, Video, or Web on the thumbnail"
+                title: "Wallpaper type"
             ) {
                 Toggle("", isOn: $showsType)
                     .labelsHidden()
@@ -30,8 +27,7 @@ struct WorkshopBadgeSection: View {
             SettingRow(
                 icon: "textformat",
                 iconColor: .indigo,
-                title: "Type badge style",
-                subtitle: "Whether the type badge shows its icon, its name, or both"
+                title: "Type badge style"
             ) {
                 Picker("", selection: $typeStyle) {
                     Text("Icon").tag(CardTypeBadgeStyle.icon)
@@ -48,8 +44,7 @@ struct WorkshopBadgeSection: View {
             SettingRow(
                 icon: "star",
                 iconColor: .yellow,
-                title: "Rating",
-                subtitle: "Show the Workshop star rating"
+                title: "Rating"
             ) {
                 Toggle("", isOn: $showsRating)
                     .labelsHidden()
@@ -60,8 +55,7 @@ struct WorkshopBadgeSection: View {
             SettingRow(
                 icon: "ruler",
                 iconColor: .teal,
-                title: "Resolution",
-                subtitle: "Show 4K, 1440p, and other resolution labels"
+                title: "Resolution"
             ) {
                 Toggle("", isOn: $showsResolution)
                     .labelsHidden()
@@ -72,8 +66,7 @@ struct WorkshopBadgeSection: View {
             SettingRow(
                 icon: "checkmark.circle",
                 iconColor: .green,
-                title: "Already installed",
-                subtitle: "Mark Workshop results you have downloaded"
+                title: "Already installed"
             ) {
                 Toggle("", isOn: $showsInLibrary)
                     .labelsHidden()
@@ -84,8 +77,7 @@ struct WorkshopBadgeSection: View {
             SettingRow(
                 icon: "arrow.triangle.2.circlepath",
                 iconColor: .orange,
-                title: "Update available",
-                subtitle: "Flag installed items with a newer version on Steam"
+                title: "Update available"
             ) {
                 Toggle("", isOn: $showsUpdate)
                     .labelsHidden()
@@ -96,8 +88,7 @@ struct WorkshopBadgeSection: View {
             SettingRow(
                 icon: "play.circle",
                 iconColor: .green,
-                title: "Currently in use",
-                subtitle: "Mark the wallpaper a display is showing right now"
+                title: "Currently in use"
             ) {
                 Toggle("", isOn: $showsInUse)
                     .labelsHidden()

@@ -94,17 +94,12 @@ struct PickerView: View {
 
     // MARK: - Subviews
 
-    /// Last step, so the copy says where each card lands rather than promising a
-    /// wallpaper: only Import applies one here, the other two open the library
-    /// you asked for.
+    /// Only import applies a wallpaper; library actions navigate after setup.
     private var header: some View {
         VStack(spacing: DesignTokens.Spacing.md) {
-            Text("You're All Set")
+            Text("Setup Complete")
                 .font(DesignTokens.Typography.pageTitle)
                 .accessibilityAddTraits(.isHeader)
-            Text("Pick where to start. This closes setup and takes you there.")
-                .font(DesignTokens.Typography.body)
-                .foregroundStyle(.secondary)
         }
         .multilineTextAlignment(.center)
     }
@@ -116,8 +111,8 @@ struct PickerView: View {
             ActionRowCard(
                 icon: "cube.transparent",
                 tint: DesignTokens.Colors.accent,
-                title: "Steam Workshop",
-                subtitle: "Browse Wallpaper Engine from Steam",
+                title: "Browse Steam Workshop",
+                accessibilityHint: "Browse Wallpaper Engine from Steam",
                 action: chooseSteamWorkshop
             )
         case .importFile:
@@ -125,7 +120,7 @@ struct PickerView: View {
                 icon: "square.and.arrow.down",
                 tint: .blue,
                 title: "Import a File",
-                subtitle: sceneCapable
+                accessibilityHint: sceneCapable
                     ? "Video, web page, or Wallpaper Engine scene"
                     : "Video or web page",
                 action: openImportPanel
@@ -134,16 +129,14 @@ struct PickerView: View {
             ActionRowCard(
                 icon: "sparkles.tv",
                 tint: .teal,
-                title: "Apple Aerials",
-                subtitle: "Apple TV's aerial screensavers",
+                title: "Browse Apple Aerials",
+                accessibilityHint: "Apple TV's aerial screensavers",
                 action: chooseAppleAerials
             )
         }
     }
 
-    /// Shown only with more than one display: with one there is nothing to
-    /// choose, and a picker with a single entry reads as a decision the reader
-    /// has to make.
+    /// Single-display imports use the only available display.
     @ViewBuilder
     private var displayPicker: some View {
         if screenManager.screens.count > 1 {
@@ -342,7 +335,7 @@ private struct ActionRowCard: View {
     let icon: String
     let tint: Color
     let title: LocalizedStringKey
-    let subtitle: LocalizedStringKey
+    let accessibilityHint: LocalizedStringKey
     let action: () -> Void
 
     @State private var isHovering = false
@@ -372,15 +365,9 @@ private struct ActionRowCard: View {
                 }
                 .accessibilityHidden(true)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(DesignTokens.Typography.sectionTitle)
-                    Text(subtitle)
-                        .font(DesignTokens.Typography.body)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
+                Text(title)
+                    .font(DesignTokens.Typography.sectionTitle)
+                    .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 4)
 
                 Image(systemName: "chevron.right")
@@ -401,6 +388,6 @@ private struct ActionRowCard: View {
         .focused($isFocused)
         .onHover { isHovering = $0 }
         .accessibilityLabel(Text(title))
-        .accessibilityHint(Text(subtitle))
+        .accessibilityHint(Text(accessibilityHint))
     }
 }

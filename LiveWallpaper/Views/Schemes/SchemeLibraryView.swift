@@ -2,9 +2,6 @@ import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
-/// Library of saved whole-display setups. Deliberately the same shape as the
-/// Bookmarks library — scaffold, filter bar, gallery grid — because a scheme is
-/// another archived thing you apply to a display; only the payload differs.
 struct SchemeLibraryView: View {
     @Environment(\.libraryTileSize) private var tileSize
     @Environment(ScreenManager.self) private var screenManager
@@ -21,9 +18,7 @@ struct SchemeLibraryView: View {
 
     // MARK: - Content
 
-    /// The filter bar floats over the grid rather than sitting above it, and it
-    /// stays up over the no-search-match state too — that is the one state where
-    /// the user most needs the field they typed into.
+    /// Keep search available when no schemes match so the filter can be cleared.
     @ViewBuilder
     private var content: some View {
         if store.schemes.isEmpty {
@@ -47,8 +42,7 @@ struct SchemeLibraryView: View {
         if filteredSchemes.isEmpty {
             IllustratedEmptyState(
                 symbol: "magnifyingglass",
-                title: "No schemes match your search",
-                message: "Try a different keyword, or clear the search field to see every saved scheme."
+                title: "No schemes match your search"
             )
         } else {
             ScrollView {
@@ -88,12 +82,7 @@ struct SchemeLibraryView: View {
             icon: "square.stack.3d.up",
             tint: DesignTokens.Colors.LibraryTint.schemes,
             title: "No schemes yet",
-            message: "A scheme is a whole display's setup, not just its wallpaper — saved once, put back on any display.",
-            features: [
-                LibraryGuideFeature(icon: "square.and.arrow.down", text: "Saved from a display's Save as Scheme"),
-                LibraryGuideFeature(icon: "slider.horizontal.3", text: "Carries wallpaper, playback and overlay"),
-                LibraryGuideFeature(icon: "display.2", text: "Applying one replaces that display's whole setup"),
-            ]
+            message: "Use Save as Scheme in display details to save wallpapers, overlays, and settings."
         )
     }
 

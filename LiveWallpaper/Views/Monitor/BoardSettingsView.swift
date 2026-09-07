@@ -15,6 +15,7 @@ struct BoardSettingsView: View {
 
     @State private var claudeAuthorized = false
     @State private var codexAuthorized = false
+    @State private var showsAgentActivity = false
 
     /// Display-only temperature unit for every sensor readout (app-wide, not per-board).
     @AppStorage(MonitorTemperature.fahrenheitDefaultsKey) private var temperatureFahrenheit = false
@@ -36,6 +37,7 @@ struct BoardSettingsView: View {
         .onChange(of: screen.id) { _, _ in reload() }
         // Board edits made on the preview or the live overlay bypass this panel.
         .onChange(of: persistedBoard) { _, _ in reload() }
+        .sheet(isPresented: $showsAgentActivity) { AgentActivityPanel() }
     }
 
     private var boardSection: some View {
@@ -315,6 +317,8 @@ struct BoardSettingsView: View {
 
     @ViewBuilder
     private var authorizationRows: some View {
+        Button("Open Agent Activity") { showsAgentActivity = true }
+            .buttonStyle(.bordered)
         authorizationRow(
             title: "Authorize Claude Folder",
             subtitle: "Read-only access to ~/.claude",

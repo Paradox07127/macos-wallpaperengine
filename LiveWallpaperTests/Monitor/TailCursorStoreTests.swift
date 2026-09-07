@@ -56,8 +56,8 @@ struct TailCursorStoreTests {
         #expect(reloaded.aggregate(for: transcript, provider: .claude)?.turnCount == 7)
     }
 
-    @Test("Claude reload injects candidate identity and resumes JSONL after the durable cursor")
-    func claudeReloadReconnectsIdentityAndCursor() throws {
+    @Test("Claude reload resumes current aggregates and rebuilds legacy usage", arguments: [true, false])
+    func claudeReloadReconnectsIdentityAndCursor(hasActivity: Bool) throws {
         let dir = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: dir) }
         let transcript = dir.appendingPathComponent("claude-session.jsonl", isDirectory: false)
@@ -71,6 +71,7 @@ struct TailCursorStoreTests {
         let cursor = try #require(initialReader.cursorState)
         var aggregate = makeAggregate(turnCount: 7)
         aggregate.sessionId = "must-not-reach-disk"
+        aggregate.activity = hasActivity ? AgentActivityState() : nil
 
         let store = TailCursorStore(directory: dir, debounceInterval: 60)
         store.set(cursor, aggregate: aggregate, for: transcript)
@@ -95,10 +96,10 @@ struct TailCursorStoreTests {
             storedCursor: storedCursor,
             storedAggregate: storedAggregate
         )
-        #expect(bootstrap.restoredModel?.sessionId == "candidate-session-id")
+        #expect(bootstrap.restoredModel?.sessionId == (hasActivity ? "candidate-session-id" : nil))
         let resumed = try bootstrap.reader.poll()
         #expect(!resumed.didRotate)
-        #expect(resumed.newLines == [newLine])
+        #expect(resumed.newLines == (hasActivity ? [newLine] : [oldLine, newLine]))
     }
 
     @Test("agent sources persist cursor and aggregate through the atomic store API")

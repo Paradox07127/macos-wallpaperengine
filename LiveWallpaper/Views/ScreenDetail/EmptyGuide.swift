@@ -10,13 +10,7 @@ struct EmptyStateGuideView: View {
     @Environment(\.featureCatalog) private var featureCatalog
 
     var body: some View {
-        // Centred while it fits, scrollable only when it genuinely doesn't.
-        // The previous shape — one `ScrollView` whose content carried
-        // `minHeight: viewport` — centred the cards but stayed a scroll view on
-        // every window size, so the page dragged and bounced with nothing to
-        // reveal. `ViewThatFits` takes the scroll view out of the hierarchy
-        // entirely on a normal window, and still keeps the short-window case
-        // from clipping the header.
+        // Avoid scroll bounce when the guide fits; scroll only in short windows.
         ViewThatFits(in: .vertical) {
             guideColumn
 
@@ -32,9 +26,7 @@ struct EmptyStateGuideView: View {
         VStack(spacing: 16) {
             header
 
-            // One column per card, not `.adaptive` — the types are peers and
-            // read as a single row of choices. Adaptive sizing wrapped Scene
-            // onto its own line and made the three look unrelated.
+            // Keep wallpaper types together in one row.
             LazyVGrid(
                 columns: Array(
                     repeating: GridItem(.flexible(), spacing: 14),
@@ -47,7 +39,7 @@ struct EmptyStateGuideView: View {
                         icon: card.icon,
                         iconTint: card.iconTint,
                         title: card.title,
-                        subtitle: card.subtitle,
+                        accessibilityHint: card.accessibilityHint,
                         accessibilityLabel: card.accessibilityLabel,
                         action: card.action
                     )
@@ -74,7 +66,7 @@ struct EmptyStateGuideView: View {
                 icon: "film",
                 iconTint: .blue,
                 title: "Video",
-                subtitle: videoSubtitle,
+                accessibilityHint: videoAccessibilityHint,
                 accessibilityLabel: "Video wallpaper type",
                 action: onChooseVideo
             ),
@@ -83,7 +75,7 @@ struct EmptyStateGuideView: View {
                 icon: "globe",
                 iconTint: .green,
                 title: "Web",
-                subtitle: "Web pages, local .html files, and folders.",
+                accessibilityHint: "Web pages, local .html files, and folders.",
                 accessibilityLabel: "Web wallpaper type",
                 action: onChooseHTML
             ),
@@ -95,7 +87,7 @@ struct EmptyStateGuideView: View {
                     icon: "cube.transparent",
                     iconTint: .purple,
                     title: "Scene",
-                    subtitle: "Compatible imported scenes.",
+                    accessibilityHint: "Compatible imported scenes.",
                     accessibilityLabel: "Scene wallpaper type",
                     action: onChooseScene
                 )
@@ -104,7 +96,7 @@ struct EmptyStateGuideView: View {
         return models
     }
 
-    private var videoSubtitle: LocalizedStringKey {
+    private var videoAccessibilityHint: LocalizedStringKey {
         featureCatalog.isEnabled(.playlists) || featureCatalog.isEnabled(.scheduleAutomation)
             ? "MP4 / MOV, playlists, and schedules."
             : "MP4 / MOV from your Mac."
@@ -133,7 +125,7 @@ private struct GuideCardModel: Identifiable {
     let icon: String
     let iconTint: Color
     let title: LocalizedStringKey
-    let subtitle: LocalizedStringKey
+    let accessibilityHint: LocalizedStringKey
     let accessibilityLabel: LocalizedStringKey
     let action: () -> Void
 }
@@ -142,7 +134,7 @@ private struct GuideCard: View {
     let icon: String
     let iconTint: Color
     let title: LocalizedStringKey
-    let subtitle: LocalizedStringKey
+    let accessibilityHint: LocalizedStringKey
     let accessibilityLabel: LocalizedStringKey
     let action: () -> Void
 
@@ -171,11 +163,6 @@ private struct GuideCard: View {
                         Text(title)
                             .font(DesignTokens.Typography.sectionTitle)
                     }
-                    Text(subtitle)
-                        .font(DesignTokens.Typography.body)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .padding(DesignTokens.Spacing.cardInset)
@@ -201,6 +188,6 @@ private struct GuideCard: View {
         .cardHoverEffect(isActive: isActive, reduceMotion: reduceMotion)
         .onHover { isHovering = $0 }
         .accessibilityLabel(Text(accessibilityLabel))
-        .accessibilityHint(Text(subtitle))
+        .accessibilityHint(Text(accessibilityHint))
     }
 }

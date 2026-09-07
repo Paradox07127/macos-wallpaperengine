@@ -1,17 +1,23 @@
 import AppKit
-import SwiftUI
 import LiveWallpaperCore
+import SwiftUI
 
 struct AgentSessionWidgetView: View {
     let context: MonitorWidgetContext
 
-    private var reduceMotion: Bool { context.reduceMotion }
+    private var reduceMotion: Bool {
+        context.reduceMotion
+    }
 
     /// Sessions the module has, or nil when the runtime is not sampling agents (no agent-session widget placed).
-    private var sessions: [MonitorAgentSessionState]? { context.snapshot.agents }
+    private var sessions: [MonitorAgentSessionState]? {
+        context.snapshot.agents
+    }
 
     /// Per-placement tuning bag (read-only here; the settings popover writes it).
-    private var options: [String: MonitorWidgetOptionValue] { context.placement.options }
+    private var options: [String: MonitorWidgetOptionValue] {
+        context.placement.options
+    }
 
     /// Sessions after the provider filter — the set every count / row derives from
     /// so a filtered board's aggregate matches its rows.
@@ -43,9 +49,13 @@ struct AgentSessionWidgetView: View {
         Self.sorted(visibleSessions, mode: Self.sortMode(options))
     }
 
-    private var counts: Self.Counts { Self.counts(visibleSessions) }
+    private var counts: Self.Counts {
+        Self.counts(visibleSessions)
+    }
 
-    private func totals(now: Double) -> Self.Totals { Self.totals(visibleSessions, now: now) }
+    private func totals(now: Double) -> Self.Totals {
+        Self.totals(visibleSessions, now: now)
+    }
 
     // MARK: - M (364×170) — action strip + up to 3 single-line rows
 
@@ -58,12 +68,13 @@ struct AgentSessionWidgetView: View {
         shell(scale: scale, cellHeight: cellHeight) {
             if !rows.isEmpty {
                 VStack(alignment: .leading, spacing: scale.gap) {
-                    actionStrip(scale: scale, now: now)
                     ForEach(rows) { session in
                         AgentSessionCompactRow(session: session, now: now,
                                                reduceMotion: reduceMotion, scale: scale)
                     }
-                    if hiddenCount > 0 { moreWhisper(hiddenCount, scale: scale) }
+                    if hiddenCount > 0 {
+                        moreWhisper(hiddenCount, scale: scale)
+                    }
                     Spacer(minLength: 0)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -91,7 +102,9 @@ struct AgentSessionWidgetView: View {
                         AgentSessionFullRow(session: session, now: now, isLead: index == 0,
                                             reduceMotion: reduceMotion, scale: scale)
                     }
-                    if hiddenCount > 0 { moreWhisper(hiddenCount, scale: scale) }
+                    if hiddenCount > 0 {
+                        moreWhisper(hiddenCount, scale: scale)
+                    }
                     Spacer(minLength: 0)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -103,11 +116,10 @@ struct AgentSessionWidgetView: View {
         }
     }
 
-    @ViewBuilder
-    private func shell<Body: View>(
+    private func shell(
         scale: AgentTypeScale,
         cellHeight: CGFloat,
-        @ViewBuilder body: @escaping () -> Body
+        @ViewBuilder body: @escaping () -> some View
     ) -> some View {
         WidgetContainer(
             label: AgentSessionStrings.title,
@@ -120,9 +132,13 @@ struct AgentSessionWidgetView: View {
 
     // MARK: - Header status ("N agents" + state dot)
 
-    @ViewBuilder
     private func headerStatus(scale: AgentTypeScale) -> some View {
         HStack(spacing: scale.label * 0.5) {
+            if (context.snapshot.health ?? []).contains(where: { ($0.sourceID == "claude" || $0.sourceID == "codex") && $0.state != "ok" }) {
+                Image(systemName: "exclamationmark.triangle")
+                    .foregroundStyle(Design.signalCoral)
+                    .help(Text("Session source needs attention"))
+            }
             Text(verbatim: AgentSessionStrings.agentCount(visibleSessions.count))
                 .font(Design.subFont(size: scale.label))
                 .monospacedDigit()
@@ -149,7 +165,9 @@ struct AgentSessionWidgetView: View {
                           keyword: AgentSessionStrings.needsYou, emphatic: true, scale: scale)
             }
             if c.running > 0 {
-                if c.needsInput > 0 { actionDot() }
+                if c.needsInput > 0 {
+                    actionDot()
+                }
                 actionSeg(dot: Design.signalAmber, count: c.running,
                           keyword: AgentSessionStrings.runningKeyword, emphatic: false, scale: scale)
             }
@@ -183,11 +201,11 @@ struct AgentSessionWidgetView: View {
                 .overlay(
                     RoundedRectangle(cornerRadius: AgentSessionRowStyle.radius, style: .continuous)
                         .strokeBorder(alert ? Design.signalCoral.opacity(DesignTokens.Opacity.emphasisStroke)
-                                            : Design.panelStroke,
-                                      lineWidth: 1)
+                            : Design.panelStroke,
+                            lineWidth: 1)
                 )
         )
-        .shadow(color: alert ? Design.signalCoral.opacity(0.35) : .clear, radius: alert ? 8 : 0)
+        .accessibilityElement(children: .combine)
         .opacity(alert ? 1 : 0.78)
     }
 
@@ -196,15 +214,16 @@ struct AgentSessionWidgetView: View {
             return LinearGradient(
                 colors: [Design.oklch(0.30, 0.05, 34, alpha: 0.92),
                          Design.oklch(0.235, 0.03, 34, alpha: 0.86)],
-                startPoint: .top, endPoint: .bottom)
+                startPoint: .top, endPoint: .bottom
+            )
         }
         return LinearGradient(
             colors: [Design.oklch(0.24, 0.013, 74, alpha: 0.9),
                      Design.oklch(0.20, 0.012, 74, alpha: 0.8)],
-            startPoint: .top, endPoint: .bottom)
+            startPoint: .top, endPoint: .bottom
+        )
     }
 
-    @ViewBuilder
     private func actionSeg(dot: Color, count: Int, keyword: LocalizedStringKey,
                            emphatic: Bool, scale: AgentTypeScale) -> some View {
         HStack(spacing: scale.label * 0.34) {
@@ -237,15 +256,18 @@ struct AgentSessionWidgetView: View {
         VStack(alignment: .leading, spacing: scale.gap) {
             actionStrip(scale: scale, now: now)
             HStack(spacing: scale.body * 0.5) {
-                if c.idle > 0 { countChip(Design.signalIdle, c.idle, AgentSessionStrings.idleKeyword, scale) }
-                if c.ended > 0 { countChip(Design.signalSage, c.ended, AgentSessionStrings.doneKeyword, scale) }
+                if c.idle > 0 {
+                    countChip(Design.signalIdle, c.idle, AgentSessionStrings.idleKeyword, scale)
+                }
+                if c.ended > 0 {
+                    countChip(Design.signalSage, c.ended, AgentSessionStrings.doneKeyword, scale)
+                }
             }
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    @ViewBuilder
     private func countChip(_ color: Color, _ count: Int, _ word: LocalizedStringKey,
                            _ scale: AgentTypeScale) -> some View {
         HStack(spacing: scale.label * 0.4) {
@@ -272,6 +294,7 @@ struct AgentSessionWidgetView: View {
 
     @ViewBuilder
     private func quietState(scale: AgentTypeScale) -> some View {
+        let sourceError = (context.snapshot.health ?? []).contains { ($0.sourceID == "claude" || $0.sourceID == "codex") && $0.state == "error" }
         let unauthorized = (context.snapshot.health ?? []).contains {
             ($0.sourceID == "claude" || $0.sourceID == "codex") && $0.state == "unauthorized"
         }
@@ -282,7 +305,7 @@ struct AgentSessionWidgetView: View {
                     .fill(unauthorized ? Design.signalAmber : Design.signalIdle)
                     .frame(width: scale.label * 0.5, height: scale.label * 0.5)
                     .overlay(Circle().strokeBorder(Color.black.opacity(0.4), lineWidth: 1))
-                Text(unauthorized ? AgentSessionStrings.authorizeHint : AgentSessionStrings.noActiveSessions)
+                Text(unauthorized ? AgentSessionStrings.authorizeHint : (sourceError ? "Session source needs attention" : AgentSessionStrings.noActiveSessions))
                     .font(Design.captionFont(size: scale.body))
                     .foregroundStyle(Design.inkFaint)
                     .fixedSize(horizontal: false, vertical: true)
@@ -294,7 +317,6 @@ struct AgentSessionWidgetView: View {
 
     // MARK: - "+N more" whisper
 
-    @ViewBuilder
     private func moreWhisper(_ count: Int, scale: AgentTypeScale) -> some View {
         Text(verbatim: AgentSessionStrings.moreCount(count))
             .font(Design.labelFont(size: scale.label))
@@ -335,49 +357,51 @@ private struct AgentSessionCompactRow: View {
     let reduceMotion: Bool
     let scale: AgentTypeScale
 
-    private var status: MonitorAgentStatus { session.status }
-    private var accentColor: Color { AgentSessionWidgetView.accentColor(status) }
-    private var isBlocked: Bool { status == .needsInput }
-    private var isLive: Bool { status == .running || isBlocked }
+    private var status: MonitorAgentStatus {
+        session.status
+    }
+
+    private var accentColor: Color {
+        AgentSessionWidgetView.accentColor(status)
+    }
+
+    private var isBlocked: Bool {
+        status == .needsInput
+    }
+
+    private var isLive: Bool {
+        status == .running || isBlocked
+    }
 
     var body: some View {
-        HStack(spacing: scale.label * 0.5) {
-            BreathingDot(color: accentColor, size: scale.label * 0.55,
-                         animated: !reduceMotion && isLive)
-            AgentProviderMark(provider: session.provider, size: scale.title * 0.82)
-            Text(verbatim: session.projectName)
-                .font(Design.subFont(size: scale.title))
-                .foregroundStyle(status == .ended ? Design.inkMuted
-                                 : (isBlocked ? Design.oklch(0.97, 0.02, 40) : Design.inkPrimary))
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .layoutPriority(1)
-            if let scope = AgentSessionWidgetView.scopeLabel(for: session) {
-                Text(verbatim: scope)
-                    .font(Design.captionFont(size: scale.body))
-                    .foregroundStyle(Design.inkFaint)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: DesignTokens.Spacing.xs) {
+                AgentProviderMark(provider: session.provider, size: scale.title * 0.82)
+                Text(verbatim: session.title ?? session.projectName)
+                    .font(Design.subFont(size: scale.title))
+                    .foregroundStyle(Design.inkPrimary)
                     .lineLimit(1)
-                    .truncationMode(.middle)
+                Spacer(minLength: DesignTokens.Spacing.xs)
+                AgentSessionRowTimer(session: session, now: now, scale: scale)
+                    .fixedSize()
             }
-            Spacer(minLength: scale.label * 0.3)
-            if isLive, AgentSessionWidgetView.warningLabel(for: session) != nil {
-                Circle()
-                    .fill(Design.signalCoral)
-                    .frame(width: scale.label * 0.46, height: scale.label * 0.46)
-                    .shadow(color: Design.signalCoral.opacity(0.6), radius: 3)
+            HStack(spacing: DesignTokens.Spacing.xs) {
+                Image(systemName: AgentPresentation.symbol(session.effectivePhase))
+                Text(verbatim: AgentPresentation.phase(session.effectivePhase))
+                    .lineLimit(1)
+                Spacer(minLength: 0)
             }
-            AgentSessionRowTimer(session: session, now: now, scale: scale)
+            .font(Design.captionFont(size: scale.body))
+            .foregroundStyle(accentColor)
         }
-        .padding(.horizontal, scale.label * 0.7)
-        .padding(.vertical, scale.label * 0.5)
+        .padding(.horizontal, DesignTokens.Spacing.sm)
+        .padding(.vertical, DesignTokens.Spacing.xxs)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(AgentSessionRowStyle.fill(isBlocked: isBlocked))
-        .overlay(alignment: .leading) {
-            AgentSessionRowStyle.accentBar(color: accentColor, isBlocked: isBlocked, scale: scale)
-        }
         .clipShape(RoundedRectangle(cornerRadius: AgentSessionRowStyle.radius, style: .continuous))
         .overlay(AgentSessionRowStyle.border(isBlocked: isBlocked))
         .opacity(status == .ended ? DesignTokens.Opacity.disabledContent : 1)
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -390,10 +414,21 @@ private struct AgentSessionFullRow: View {
     let reduceMotion: Bool
     let scale: AgentTypeScale
 
-    private var status: MonitorAgentStatus { session.status }
-    private var accentColor: Color { AgentSessionWidgetView.accentColor(status) }
-    private var isBlocked: Bool { status == .needsInput }
-    private var isLive: Bool { status == .running || isBlocked }
+    private var status: MonitorAgentStatus {
+        session.status
+    }
+
+    private var accentColor: Color {
+        AgentSessionWidgetView.accentColor(status)
+    }
+
+    private var isBlocked: Bool {
+        status == .needsInput
+    }
+
+    private var isLive: Bool {
+        status == .running || isBlocked
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: scale.gap * 0.5) {
@@ -414,7 +449,8 @@ private struct AgentSessionFullRow: View {
         }
         .clipShape(RoundedRectangle(cornerRadius: AgentSessionRowStyle.radius, style: .continuous))
         .overlay(AgentSessionRowStyle.border(isBlocked: isBlocked))
-        .opacity(status == .ended ? DesignTokens.Opacity.disabledContent : (status == .idle ? 0.62 : 1))
+        .opacity(status == .ended ? DesignTokens.Opacity.disabledContent : 1)
+        .accessibilityElement(children: .combine)
     }
 
     private var header: some View {
@@ -422,10 +458,10 @@ private struct AgentSessionFullRow: View {
             BreathingDot(color: accentColor, size: scale.label * 0.55,
                          animated: !reduceMotion && isLive)
             AgentProviderMark(provider: session.provider, size: scale.title * 0.9)
-            Text(verbatim: session.projectName)
+            Text(verbatim: session.title ?? session.projectName)
                 .font(Design.subFont(size: scale.title))
                 .foregroundStyle(status == .ended ? Design.inkMuted
-                                 : (isBlocked ? Design.oklch(0.97, 0.02, 40) : Design.inkPrimary))
+                    : (isBlocked ? Design.oklch(0.97, 0.02, 40) : Design.inkPrimary))
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .layoutPriority(1)
@@ -443,7 +479,7 @@ private struct AgentSessionFullRow: View {
     @ViewBuilder
     private var secondTier: some View {
         let scope = AgentSessionWidgetView.scopeLabel(for: session)
-        let detail = isBlocked || status == .running ? session.statusDetail : nil
+        let detail = (isBlocked || status == .running) && session.statusDetail != "exec" ? session.statusDetail : nil
         if scope != nil || session.model != nil || !(detail ?? "").isEmpty {
             HStack(spacing: scale.label * 0.45) {
                 if let scope {
@@ -454,7 +490,9 @@ private struct AgentSessionFullRow: View {
                         .truncationMode(.middle)
                 }
                 if let model = session.model, !model.isEmpty {
-                    if scope != nil { tierDot }
+                    if scope != nil {
+                        tierDot
+                    }
                     Text(verbatim: model)
                         .font(Design.captionFont(size: scale.body))
                         .foregroundStyle(Design.inkFaint)
@@ -474,19 +512,23 @@ private struct AgentSessionFullRow: View {
                 }
             }
         }
-        if let detail, !detail.isEmpty {
-            Text(verbatim: detail)
-                .font(.system(size: scale.body, weight: .regular, design: .monospaced))
-                .foregroundStyle(isBlocked ? Design.oklch(0.95, 0.028, 40) : Design.inkMuted)
+        HStack(spacing: DesignTokens.Spacing.xs) {
+            Image(systemName: AgentPresentation.symbol(session.effectivePhase))
+            Text(verbatim: AgentPresentation.phase(session.effectivePhase))
                 .lineLimit(1)
-                .truncationMode(.tail)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        } else if isBlocked {
-            Text(AgentSessionStrings.needsYou)
-                .font(Design.subFont(size: scale.body))
-                .foregroundStyle(Design.signalCoral)
-                .lineLimit(1)
+            if let detail, !detail.isEmpty {
+                Text(verbatim: detail)
+                    .foregroundStyle(Design.inkFaint)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+            if session.partialHistory == true {
+                Image(systemName: "clock.badge.questionmark")
+                    .help(Text("Partial history"))
+            }
         }
+        .font(Design.captionFont(size: scale.body))
+        .foregroundStyle(accentColor)
     }
 
     private var tierDot: some View {
@@ -500,25 +542,27 @@ private struct AgentSessionFullRow: View {
 // MARK: - Shared row pieces
 
 private enum AgentSessionRowStyle {
-    static var radius: CGFloat { max(6, Design.cornerRadiusMin) }
+    static var radius: CGFloat {
+        max(6, Design.cornerRadiusMin)
+    }
 
     static func fill(isBlocked: Bool) -> some View {
         RoundedRectangle(cornerRadius: radius, style: .continuous)
             .fill(isBlocked
-                  ? LinearGradient(colors: [Design.oklch(0.315, 0.055, 34, alpha: 0.94),
-                                            Design.oklch(0.235, 0.032, 34, alpha: 0.9)],
-                                   startPoint: .top, endPoint: .bottom)
-                  : LinearGradient(colors: [Design.oklch(0.255, 0.014, 74, alpha: 0.92),
-                                            Design.oklch(0.205, 0.013, 74, alpha: 0.86)],
-                                   startPoint: .top, endPoint: .bottom))
+                ? LinearGradient(colors: [Design.bg2,
+                                          Design.bg1],
+                                 startPoint: .top, endPoint: .bottom)
+                : LinearGradient(colors: [Design.oklch(0.255, 0.014, 74, alpha: 0.92),
+                                          Design.oklch(0.205, 0.013, 74, alpha: 0.86)],
+                                 startPoint: .top, endPoint: .bottom))
     }
 
-    static func accentBar(color: Color, isBlocked: Bool, scale: AgentTypeScale) -> some View {
+    static func accentBar(color: Color, isBlocked _: Bool, scale: AgentTypeScale) -> some View {
         RoundedRectangle(cornerRadius: 1.5, style: .continuous)
             .fill(color)
             .frame(width: 2.5)
             .padding(.vertical, scale.label * 0.55)
-            .shadow(color: color.opacity(isBlocked ? 0.9 : 0.6), radius: isBlocked ? 6 : 4)
+            .accessibilityHidden(true)
     }
 
     static func border(isBlocked: Bool) -> some View {
@@ -553,15 +597,15 @@ private struct AgentProviderMark: View {
 
     private var assetName: String {
         switch provider {
-        case .claude: return "provider-claude"
-        case .codex: return "provider-codex"
+        case .claude: "provider-claude"
+        case .codex: "provider-codex"
         }
     }
 
     private var fallbackSymbol: String {
         switch provider {
-        case .claude: return "sparkle"
-        case .codex: return "chevron.left.forwardslash.chevron.right"
+        case .claude: "sparkle"
+        case .codex: "chevron.left.forwardslash.chevron.right"
         }
     }
 }
@@ -590,9 +634,9 @@ private struct AgentSessionRowTimer: View {
 
     static func color(for status: MonitorAgentStatus) -> Color {
         switch status {
-        case .needsInput: return Design.oklch(0.9, 0.06, 40)
-        case .running: return Design.signalAmber
-        default: return Design.inkFaint
+        case .needsInput: Design.oklch(0.9, 0.06, 40)
+        case .running: Design.signalAmber
+        default: Design.inkFaint
         }
     }
 }
@@ -611,7 +655,7 @@ private struct AgentSessionWarningChip: View {
             Text(AgentSessionStrings.warningLabel(warn.text))
                 .font(Design.labelFont(size: scale.label))
                 .foregroundStyle(warn.isStale ? Design.oklch(0.9, 0.07, 80)
-                                              : Design.oklch(0.92, 0.06, 44))
+                    : Design.oklch(0.92, 0.06, 44))
                 .lineLimit(1)
         }
         .padding(.horizontal, scale.label * 0.42)
@@ -619,12 +663,12 @@ private struct AgentSessionWarningChip: View {
         .background(
             Capsule(style: .continuous)
                 .fill(warn.isStale ? Design.oklch(0.3, 0.05, 78, alpha: 0.35)
-                                   : Design.oklch(0.34, 0.07, 38, alpha: 0.4))
+                    : Design.oklch(0.34, 0.07, 38, alpha: 0.4))
                 .overlay(
                     Capsule(style: .continuous)
                         .strokeBorder(warn.isStale ? Design.oklch(0.5, 0.1, 78, alpha: 0.7)
-                                                   : Design.oklch(0.5, 0.13, 40, alpha: 0.7),
-                                      lineWidth: 1)
+                            : Design.oklch(0.5, 0.13, 40, alpha: 0.7),
+                            lineWidth: 1)
                 )
         )
     }
@@ -635,20 +679,39 @@ private struct AgentSessionWarningChip: View {
 private enum AgentSessionStrings {
     static let title = "Agent Session"
 
-    static var noActiveSessions: LocalizedStringKey { "No active sessions" }
+    static var noActiveSessions: LocalizedStringKey {
+        "No active sessions"
+    }
+
     /// Why-no-data: a wanted AI source has no folder grant (synthesized
     /// `unauthorized` health from the runtime).
     static var authorizeHint: LocalizedStringKey {
         "Authorize the agent folders in Widgets settings."
     }
 
-    static var runningKeyword: LocalizedStringKey { "running" }
-    static var warnKeyword: LocalizedStringKey { "warn" }
-    static var idleKeyword: LocalizedStringKey { "idle" }
-    static var doneKeyword: LocalizedStringKey { "done" }
+    static var runningKeyword: LocalizedStringKey {
+        "running"
+    }
 
-    static var needsYou: LocalizedStringKey { "needs you" }
-    static var ended: LocalizedStringKey { "ended" }
+    static var warnKeyword: LocalizedStringKey {
+        "warn"
+    }
+
+    static var idleKeyword: LocalizedStringKey {
+        "idle"
+    }
+
+    static var doneKeyword: LocalizedStringKey {
+        "done"
+    }
+
+    static var needsYou: LocalizedStringKey {
+        "needs you"
+    }
+
+    static var ended: LocalizedStringKey {
+        "ended"
+    }
 
     /// "3 agents" — count is data, so composed with a verbatim number at the call
     /// site rather than a format string. The word is the only localizable part.
@@ -675,20 +738,20 @@ extension AgentSessionWidgetView {
 
     nonisolated static func accentColor(_ status: MonitorAgentStatus) -> Color {
         switch status {
-        case .running: return Design.signalAmber
-        case .needsInput: return Design.signalCoral
-        case .ended: return Design.signalSage
-        case .idle, .unknown: return Design.signalIdle
+        case .running: Design.signalAmber
+        case .needsInput: Design.signalCoral
+        case .ended: Design.signalSage
+        case .idle, .unknown: Design.signalIdle
         }
     }
 
     nonisolated static func statusWord(_ status: MonitorAgentStatus) -> LocalizedStringKey {
         switch status {
-        case .running: return AgentSessionStrings.runningKeyword
-        case .needsInput: return AgentSessionStrings.needsYou
-        case .idle: return AgentSessionStrings.idleKeyword
-        case .ended: return AgentSessionStrings.ended
-        case .unknown: return AgentSessionStrings.idleKeyword
+        case .running: AgentSessionStrings.runningKeyword
+        case .needsInput: AgentSessionStrings.needsYou
+        case .idle: AgentSessionStrings.idleKeyword
+        case .ended: AgentSessionStrings.ended
+        case .unknown: "Status unknown"
         }
     }
 
@@ -698,15 +761,19 @@ extension AgentSessionWidgetView {
     nonisolated static func scopeLabel(for session: MonitorAgentSessionState) -> String? {
         // ⧉ (a second copy) for a worktree, ⑂ for a plain branch — ⌥ reads as the
         // Option key and told the user nothing.
-        if let worktree = session.worktreeName, !worktree.isEmpty { return "⧉ " + worktree }
-        if let branch = session.gitBranch, !branch.isEmpty { return "⑂ " + branch }
+        if let worktree = session.worktreeName, !worktree.isEmpty {
+            return "⧉ " + worktree
+        }
+        if let branch = session.gitBranch, !branch.isEmpty {
+            return "⑂ " + branch
+        }
         return nil
     }
 
     /// "128K tok" from the transcript's own usage counters, or nil before any
     /// usage-bearing event has been seen.
     nonisolated static func tokenText(for session: MonitorAgentSessionState) -> String? {
-        let total = session.tokens.total
+        let total = session.totalTokenCount
         guard total > 0 else { return nil }
         return Format.tokens(total) + " tok"
     }
@@ -720,16 +787,16 @@ extension AgentSessionWidgetView {
     }
 
     enum SortMode: String, Equatable {
-        case attention   // default: needsInput > running > idle > ended, then recency
-        case recent      // most-recent event first
+        case attention // default: needsInput > running > idle > ended, then recency
+        case recent // most-recent event first
     }
 
     /// Provider filter from the option bag; nil == show all (the default).
     nonisolated static func providerFilter(_ options: [String: MonitorWidgetOptionValue]) -> MonitorAgentProvider? {
         switch options[Option.provider]?.stringValue {
-        case MonitorAgentProvider.claude.rawValue: return .claude
-        case MonitorAgentProvider.codex.rawValue: return .codex
-        default: return nil
+        case MonitorAgentProvider.claude.rawValue: .claude
+        case MonitorAgentProvider.codex.rawValue: .codex
+        default: nil
         }
     }
 
@@ -752,8 +819,12 @@ extension AgentSessionWidgetView {
     nonisolated static func sorted(_ sessions: [MonitorAgentSessionState]) -> [MonitorAgentSessionState] {
         sessions.sorted { lhs, rhs in
             let lp = lhs.status.attentionPriority, rp = rhs.status.attentionPriority
-            if lp != rp { return lp > rp }
-            return lhs.lastEventAt > rhs.lastEventAt
+            if lp != rp {
+                return lp > rp
+            }
+            let lt = lhs.turnStartedAt ?? lhs.startedAt ?? lhs.lastEventAt
+            let rt = rhs.turnStartedAt ?? rhs.startedAt ?? rhs.lastEventAt
+            return lt == rt ? lhs.id < rhs.id : lt > rt
         }
     }
 
@@ -761,9 +832,9 @@ extension AgentSessionWidgetView {
                                    mode: SortMode) -> [MonitorAgentSessionState] {
         switch mode {
         case .attention:
-            return sorted(sessions)
+            sorted(sessions)
         case .recent:
-            return sessions.sorted { $0.lastEventAt > $1.lastEventAt }
+            sessions.sorted { $0.lastEventAt > $1.lastEventAt }
         }
     }
 
@@ -809,11 +880,15 @@ extension AgentSessionWidgetView {
     nonisolated static func totals(_ sessions: [MonitorAgentSessionState], now: Double) -> Totals {
         var t = Totals()
         for s in sessions {
-            if s.status == .running, let started = s.startedAt {
+            if s.status == .running, let started = s.turnStartedAt {
                 let run = now - started
-                if run > t.longest { t.longest = run }
+                if run > t.longest {
+                    t.longest = run
+                }
             }
-            if s.warning != nil { t.anyWarn = true }
+            if s.warning != nil {
+                t.anyWarn = true
+            }
         }
         return t
     }
@@ -829,7 +904,7 @@ extension AgentSessionWidgetView {
     nonisolated static func timerText(for session: MonitorAgentSessionState, now: Double) -> TimerText? {
         switch session.status {
         case .running:
-            guard let started = session.startedAt else { return nil }
+            guard let started = session.turnStartedAt else { return nil }
             return TimerText(source: .running, text: Format.mmss(max(0, now - started)))
         case .needsInput:
             guard let since = session.waitSince else {
@@ -837,7 +912,7 @@ extension AgentSessionWidgetView {
             }
             return TimerText(source: .waiting, text: waitingText(max(0, now - since)))
         case .ended:
-            return TimerText(source: .finished, text: finishedText(max(0, now - session.lastEventAt)))
+            return TimerText(source: .finished, text: finishedText(max(0, now - (session.completedAt ?? session.lastEventAt))))
         case .idle, .unknown:
             return nil
         }
@@ -849,7 +924,7 @@ extension AgentSessionWidgetView {
     }
 
     private nonisolated static func finishedText(_ secondsAgo: Double) -> String {
-        String(localized: "finished \(Format.ago(secondsAgo)) ago",
+        String(localized: "ended \(Format.ago(secondsAgo)) ago",
                bundle: .appLanguage, comment: "Agent Session row: how long ago an ended session finished; arg is a compact age like 2m.")
     }
 
@@ -863,8 +938,8 @@ extension AgentSessionWidgetView {
     nonisolated static func warningLabel(for session: MonitorAgentSessionState) -> WarningInfo? {
         guard let raw = session.warning, !raw.isEmpty else { return nil }
         switch raw {
-        case "toolLoop": return WarningInfo(text: "tool loop", isStale: false)
-        case "stale": return WarningInfo(text: "stale", isStale: true)
+        case "toolLoop": return WarningInfo(text: "Repeated failures", isStale: false)
+        case "stale": return WarningInfo(text: "No recent activity", isStale: true)
         default: return WarningInfo(text: raw, isStale: false)
         }
     }
@@ -877,14 +952,15 @@ private extension MonitorWidgetContext {
     static func agentSessionSample(size: MonitorWidgetSize) -> MonitorWidgetContext {
         let now = Date().timeIntervalSince1970
         func events(count: Int, step: Double, from offset: Double = 0) -> [Double] {
-            (0..<count).map { now - offset - Double($0) * step }
+            (0 ..< count).map { now - offset - Double($0) * step }
         }
 
         var sessions: [MonitorAgentSessionState] = []
 
         var blocked = MonitorAgentSessionState(
             id: "codex:1", provider: .codex, projectName: "api-server",
-            status: .needsInput, lastEventAt: now - 34, processAlive: true)
+            status: .needsInput, lastEventAt: now - 34, processAlive: true
+        )
         blocked.statusDetail = "approve DB migration 0042_add_sessions"
         blocked.model = "gpt-5"
         blocked.gitBranch = "main"
@@ -897,7 +973,8 @@ private extension MonitorWidgetContext {
 
         var looping = MonitorAgentSessionState(
             id: "claude:1", provider: .claude, projectName: "LiveWallpaper",
-            status: .running, lastEventAt: now - 2, processAlive: true)
+            status: .running, lastEventAt: now - 2, processAlive: true
+        )
         looping.statusDetail = "Bash: swift build"
         looping.model = "opus-5"
         looping.gitBranch = "main"
@@ -905,13 +982,14 @@ private extension MonitorWidgetContext {
         looping.startedAt = now - 192
         looping.turnCount = 14
         looping.warning = "toolLoop"
-        looping.tokens = MonitorTokenTotals(input: 120000, output: 8000)
+        looping.tokens = MonitorTokenTotals(input: 120_000, output: 8000)
         looping.recentEventTimes = events(count: 40, step: 2.5)
         sessions.append(looping)
 
         var docs = MonitorAgentSessionState(
             id: "claude:2", provider: .claude, projectName: "docs-site",
-            status: .running, lastEventAt: now - 5, processAlive: true)
+            status: .running, lastEventAt: now - 5, processAlive: true
+        )
         docs.statusDetail = "Edit: routing.md"
         docs.model = "haiku"
         docs.gitBranch = "fix/links"
@@ -922,14 +1000,16 @@ private extension MonitorWidgetContext {
 
         var idle = MonitorAgentSessionState(
             id: "claude:4", provider: .claude, projectName: "infra",
-            status: .idle, lastEventAt: now - 300, processAlive: true)
+            status: .idle, lastEventAt: now - 300, processAlive: true
+        )
         idle.startedAt = now - 900
         idle.turnCount = 2
         sessions.append(idle)
 
         var done = MonitorAgentSessionState(
             id: "claude:3", provider: .claude, projectName: "scratch",
-            status: .ended, lastEventAt: now - 130, processAlive: false)
+            status: .ended, lastEventAt: now - 130, processAlive: false
+        )
         done.statusDetail = "summarised logs"
         done.model = "sonnet"
         done.startedAt = now - 600
@@ -959,7 +1039,8 @@ private extension MonitorWidgetContext {
             snapshot: snapshot, history: MonitorHistorySnapshot(),
             placement: MonitorWidgetPlacement(kind: .fleet, size: size),
             isEditing: false, reduceMotion: false,
-            now: Date())
+            now: Date()
+        )
     }
 }
 

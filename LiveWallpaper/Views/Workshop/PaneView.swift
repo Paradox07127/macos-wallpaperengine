@@ -177,10 +177,7 @@ struct PaneView: View {
         Task { await viewModel.searchFromDeepLink(query) }
     }
 
-    /// A Web API key unlocks the full native search (keyless Browse falls back
-    /// to Valve's own public listing), and the key isn't discoverable on its
-    /// own — so the setup sheet greets the first visit to that tab. It used to hang off the paste button, which
-    /// a user looking for downloads never presses.
+    /// Presents browsing onboarding on the first visit; API key setup is optional.
     private func presentOnboardingIfNeeded() {
         guard selectedTab == .browseOnline, !onboardingShown else { return }
         isShowingOnboarding = true
@@ -230,7 +227,7 @@ private struct PrivateSessionNoticeBanner: View {
                 Text("Steam downloads now sign in separately")
                     .font(.subheadline.weight(.semibold))
                     .fixedSize(horizontal: false, vertical: true)
-                Text("Loomscreen keeps its own Steam download session, apart from the Steam app, so downloading no longer signs the Steam app out. Connect your account once; after that, downloads stay signed in.")
+                Text("Connect the account for Workshop downloads. Steam app sign-in is unaffected.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -276,8 +273,6 @@ enum WorkshopPaneTab: String, CaseIterable, Identifiable {
         }
     }
 
-    /// The capsule carries this page's identity now that the in-page header is
-    /// gone, so each segment says what it is with a glyph as well as a word.
     var systemImage: String {
         switch self {
         case .installed: "square.grid.2x2"
@@ -303,10 +298,7 @@ enum WorkshopDeepLink {
     }
 }
 
-/// Workshop's toolbar actions. Was an in-page header row; the title moved to the
-/// `.principal` capsule and the installed count to the floating filter bar's
-/// counter, leaving these three controls, which belong on the toolbar's trailing
-/// edge because they act on the whole page rather than on any one card.
+/// Page-level Workshop toolbar actions.
 struct WorkshopPaneActions: View {
     let onPaste: () -> Void
 

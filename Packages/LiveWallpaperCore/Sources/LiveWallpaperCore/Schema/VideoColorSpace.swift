@@ -26,15 +26,15 @@ public enum VideoColorSpace: String, Codable, CaseIterable, Identifiable, Sendab
     public var descriptionKey: String {
         switch self {
         case .auto:
-            return "Use the display's native profile."
+            "Use the display's native profile."
         case .sRGB:
-            return "Force sRGB output — most accurate for SDR content."
+            "Use sRGB output."
         case .displayP3:
-            return "Wide-gamut output for P3-capable displays."
+            "Wide-gamut output for P3-capable displays."
         case .rec2020HDR:
-            return "HDR-aware output. Requires an HDR-capable display."
+            "HDR-aware output. Requires an HDR-capable display."
         case .forceSDR:
-            return "Render HDR content as SDR via Rec.709. Disables frame-rate limit."
+            "Render HDR content as SDR via Rec.709. Disables frame-rate limit."
         }
     }
 }

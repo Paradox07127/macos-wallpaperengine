@@ -35,7 +35,7 @@ struct CodexSessionScanner: Sendable {
         self.visitObserver = visitObserver
     }
 
-    func scan(now: Date = Date()) throws -> [SessionFile] {
+    func scan(now: Date = Date(), knownURLs: [URL] = []) throws -> [SessionFile] {
         let fileManager = FileManager.default
         var isDirectory = ObjCBool(false)
         let rootPath = rootURL.path(percentEncoded: false)
@@ -60,12 +60,20 @@ struct CodexSessionScanner: Sendable {
         }
 
         let cutoff = now.addingTimeInterval(-Self.scanWindow)
-        let candidates = try candidateFiles(
+        var candidates = try candidateFiles(
             under: sessionsURL,
             cutoff: cutoff,
             now: now,
             fileManager: fileManager
         )
+        let existing = Set(candidates.map(\.url))
+        for url in knownURLs where !existing.contains(url) {
+            guard Self.isNonSymlinkDirectory(url.deletingLastPathComponent(), beneath: sessionsURL),
+                  let attrs = try? fileManager.attributesOfItem(atPath: url.path),
+                  attrs[.type] as? FileAttributeType == .typeRegular,
+                  let modified = attrs[.modificationDate] as? Date, modified >= cutoff else { continue }
+            candidates.append((url: url, modificationDate: modified))
+        }
 
         let codexRunning = processProbe()
         return candidates
@@ -272,7 +280,7 @@ struct CodexSessionScanner: Sendable {
     }
 
     private static func isCanonicalYear(_ component: String) -> Bool {
-        component.count == 4 && component.allSatisfy { $0.isNumber }
+        component.count == 4 && component.allSatisfy(\.isNumber)
     }
 }
 
@@ -292,7 +300,9 @@ enum CodexProcessProbe {
                 continue
             }
             // A process that chdir'd to "/" tells us nothing about which session it is.
-            if dir == "/" { complete = false; continue }
+            if dir == "/" {
+                complete = false; continue
+            }
             result.insert((dir as NSString).standardizingPath)
         }
         return (result, complete)

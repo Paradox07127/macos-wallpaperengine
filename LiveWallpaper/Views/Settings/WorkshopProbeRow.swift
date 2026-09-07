@@ -2,11 +2,7 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// One diagnostic probe, as a row that states its conclusion and hides its evidence until asked.
-/// The previous row laid everything out at once — name, monospaced value, description paragraph,
-/// terminal panel, button strip — so five stacked read as a log, not a checklist. Now the collapsed
-/// row is one line (status, name, result); the description, command and fix show only when expanded.
-/// Failing probes expand themselves — a checklist nobody opens is not a diagnostic.
+/// Collapses probe evidence by default and expands the first failure automatically.
 struct WorkshopProbeRow: View {
     let report: DoctorProbeReport
     let service: SteamCMDDoctorService
@@ -30,9 +26,7 @@ struct WorkshopProbeRow: View {
         .padding(.vertical, DesignTokens.Spacing.xxs)
         .animation(.easeInOut(duration: 0.18), value: isExpanded)
         .animation(.easeInOut(duration: 0.18), value: report.status)
-        // `initial: true`: probes often finish before this sheet is opened
-        // (autoConfigureIfNeeded runs on .task), so without it a row that was
-        // already failing on first render never expands itself.
+        // Include initial status because a probe can finish before the view appears.
         .onChange(of: report.status, initial: true) { _, status in
             guard !didAutoExpand, isFailure(status) else { return }
             didAutoExpand = true
@@ -76,9 +70,7 @@ struct WorkshopProbeRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        // Deliberately not `.disabled(!hasDetail)`: SwiftUI dims the whole
-        // label, so every *passing* probe would render greyed out — the one
-        // state that must look confident. The action guards instead.
+        // Guard in the action to avoid disabled styling on passing probes.
         .accessibilityHint(
             hasDetail
                 ? (isExpanded ? Text("Hide details") : Text("Show details"))
@@ -120,17 +112,13 @@ struct WorkshopProbeRow: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
-                .help(Text("Re-run this probe"))
             }
         }
     }
 
-    /// Only the probes with a real remedy get a button; the rest would be a
-    /// row of greyed verbs teaching the user nothing.
+    /// Offer a fix only when the probe has an applicable recovery action.
     @ViewBuilder private var fixButton: some View {
         if needsAccountConnection {
-            // The probe's own sentence tells the user to connect the account in
-            // Loomscreen; the primary button has to be that, not a shell command.
             Button("Connect account") { onConnectAccount?() }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)

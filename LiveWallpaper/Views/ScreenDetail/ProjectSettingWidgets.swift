@@ -41,8 +41,7 @@ struct WPEProjectTextBlock: View {
 
 struct WPEProjectNotice: View {
     let icon: String
-    /// App-supplied LocalizedStringKey — gate notices live in source
-    /// and flow through the four bundled languages.
+    /// App-supplied gate notice, localized in the five bundled languages.
     let text: LocalizedStringKey
 
     var body: some View {

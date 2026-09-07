@@ -134,10 +134,6 @@ struct HTMLSourceSection: View {
             sourceChipsRow
 
             Spacer(minLength: 0)
-
-            Text("Pick URL or Local to replace")
-                .font(DesignTokens.Typography.caption)
-                .foregroundStyle(.secondary)
         }
     }
 
@@ -384,15 +380,13 @@ struct HTMLTransformControls: View {
         .padding(DesignTokens.Spacing.md)
     }
 
-    /// Opt-in, and first in the list. The sliders are safe to leave available;
-    /// dragging is not — the preview fills most of the page, and without a switch
-    /// the first accidental drag across it throws the wallpaper off-centre.
+    /// Preview gestures are opt-in to prevent accidental transforms.
     private var dragRow: some View {
         SettingRow(
             icon: "hand.draw",
             iconColor: .teal,
             title: "Adjust on the Preview",
-            info: "Drag to move, pinch to scale, and twist to rotate directly on the preview. Off by default so a stray drag can't move the page."
+            info: "Drag to move; pinch to scale; twist to rotate."
         ) {
             Toggle("", isOn: $isDragEnabled)
                 .labelsHidden()
@@ -421,8 +415,7 @@ struct HTMLTransformControls: View {
         SettingRow(
             icon: "arrow.up.left.and.arrow.down.right",
             iconColor: .teal,
-            title: "Scale",
-            info: "Scales the rendered page around its center."
+            title: "Scale"
         ) {
             // Coalesced: `applyConfigChange` persists the config and pushes it to
             // the live `WKWebView` session on every write.
@@ -453,7 +446,7 @@ struct HTMLTransformControls: View {
             icon: "arrow.up.and.down.and.arrow.left.and.right",
             iconColor: .purple,
             title: "Translate",
-            info: "Offsets the rendered page horizontally (X) and vertically (Y) in CSS pixels."
+            info: "Offsets are measured in CSS pixels."
         ) {
             VStack(alignment: .trailing, spacing: 4) {
                 translateAxisSlider(
@@ -526,14 +519,11 @@ struct HTMLTransformControls: View {
         }
     }
 
-    /// `±180` covers everything; slider stays continuous (not stepped) so
-    /// "tilt the canvas" use cases feel responsive.
     private var rotationRow: some View {
         SettingRow(
             icon: "rotate.right",
             iconColor: .pink,
-            title: "Rotation",
-            info: "Rotates the rendered page around its center."
+            title: "Rotation"
         ) {
             CoalescedSlider(
                 value: config.transformRotationDegrees,

@@ -67,7 +67,6 @@ struct PlaylistSection: View {
         IllustratedEmptyState(
             symbol: "film.stack",
             title: "No videos yet",
-            message: "Drop a video on this screen, or use Add Videos below.",
             variant: .compact
         )
         .frame(maxWidth: .infinity)

@@ -140,7 +140,7 @@ struct DetailInspectorPanel: View {
         IllustratedEmptyState(
             symbol: "slider.horizontal.3",
             title: "No scene options",
-            message: "This scene's author published no adjustable properties. Playback, sound and interaction stay on the preview controls.",
+            message: "The author provided no adjustable properties.",
             variant: .compact
         )
     }
@@ -217,7 +217,7 @@ struct DetailInspectorPanel: View {
             SettingRow(
                 icon: "rectangle.on.rectangle",
                 title: "Span All Displays",
-                info: "Stretches one video across every display as a single picture, instead of playing a copy on each."
+                info: "Uses one continuous image instead of a copy on each display."
             ) {
                 // Disabled, never hidden: unplugging the second display must not
                 // hide a persisted `.spanAllDisplays` — it would keep spanning
