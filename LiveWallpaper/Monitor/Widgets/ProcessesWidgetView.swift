@@ -1,11 +1,16 @@
-import SwiftUI
 import LiveWallpaperCore
+import SwiftUI
 
 struct ProcessesWidgetView: View {
     let context: MonitorWidgetContext
 
-    private var snapshot: MonitorSnapshot { context.snapshot }
-    private var system: MonitorSystemSnapshot? { snapshot.system }
+    private var snapshot: MonitorSnapshot {
+        context.snapshot
+    }
+
+    private var system: MonitorSystemSnapshot? {
+        snapshot.system
+    }
 
     private static let colProgram = "Program"
     private static let colCPU = "CPU"
@@ -163,7 +168,7 @@ struct ProcessesWidgetView: View {
         memColWidth: CGFloat, colGap: CGFloat
     ) -> some View {
         HStack(spacing: colGap) {
-            nameCell(proc.name, scale: scale)
+            nameCell(proc, scale: scale)
                 .frame(maxWidth: .infinity, alignment: .leading)
             cpuCell(
                 proc.cpuPercent, maxCPU: maxCPU, scale: scale,
@@ -180,14 +185,12 @@ struct ProcessesWidgetView: View {
         .lineLimit(1)
     }
 
-    /// `.pn` — leading square glyph + truncating name (names truncate rather
+    /// `.pn` — optional application icon + truncating name (names truncate rather
     /// than shrink, so the name column stays optically even down the table).
-    private func nameCell(_ name: String, scale: Design.TypeScale) -> some View {
+    private func nameCell(_ process: MonitorProcessSample, scale: Design.TypeScale) -> some View {
         HStack(spacing: scale.caption * 0.5) {
-            RoundedRectangle(cornerRadius: 2, style: .continuous)
-                .fill(Design.inkFaint.opacity(0.7))
-                .frame(width: scale.caption * 0.5, height: scale.caption * 0.5)
-            Text(verbatim: name)
+            ProcessAppIcon(bundleID: process.bundleID, size: scale.caption * 1.1)
+            Text(verbatim: process.name)
                 .font(Design.captionFont(size: scale.caption))
                 .foregroundStyle(Design.inkPrimary)
                 .lineLimit(1)
@@ -242,14 +245,13 @@ struct ProcessesWidgetView: View {
         let capacity = max(
             Self.rowCapacity(frameHeight: frameHeight, scaleHeight: scaleHeight), 1
         )
-        let requested: Int
-        if let n = context.placement.options[MonitorWidgetDraft.countKey]?
+        let requested: Int = if let n = context.placement.options[MonitorWidgetDraft.countKey]?
             .intValue(clampedTo: MonitorWidgetDraft.processCountRange) {
-            requested = n
+            n
         } else if context.placement.size == .large {
-            requested = MonitorWidgetDraft.processCountRange.upperBound
+            MonitorWidgetDraft.processCountRange.upperBound
         } else {
-            requested = MonitorWidgetDraft.defaultProcessCount
+            MonitorWidgetDraft.defaultProcessCount
         }
         return min(requested, capacity)
     }
@@ -272,7 +274,9 @@ struct ProcessesWidgetView: View {
     nonisolated static func cpuText(_ cpuPercent: Double) -> String {
         let v = cpuPercent.isFinite ? max(cpuPercent, 0) : 0
         let tenths = (v * 10).rounded() / 10
-        if tenths < 10 { return String(format: "%.1f", tenths) }
+        if tenths < 10 {
+            return String(format: "%.1f", tenths)
+        }
         return "\(Int(v.rounded()))"
     }
 
@@ -321,11 +325,13 @@ private func processesMockContext(
             MonitorProcessSample(name: "Finder", cpuPercent: 2.3, memBytes: 310 * 1_048_576),
             MonitorProcessSample(name: "mds_stores", cpuPercent: 1.8, memBytes: 1023 * 1_048_576),
             MonitorProcessSample(name: "coreaudiod", cpuPercent: 0.9, memBytes: 96 * 1_048_576),
-            MonitorProcessSample(name: "Terminal", cpuPercent: 0.4, memBytes: 210 * 1_048_576)
+            MonitorProcessSample(name: "Terminal", cpuPercent: 0.4, memBytes: 210 * 1_048_576),
         ]
     }
     var options: [String: MonitorWidgetOptionValue] = [:]
-    if let count { options[MonitorWidgetDraft.countKey] = .number(Double(count)) }
+    if let count {
+        options[MonitorWidgetDraft.countKey] = .number(Double(count))
+    }
     return MonitorWidgetContext(
         snapshot: MonitorSnapshot(timestamp: 0, system: system),
         history: MonitorHistorySnapshot(),
