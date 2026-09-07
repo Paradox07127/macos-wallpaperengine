@@ -1,13 +1,8 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// A glyph over its own caption, for the preview bar's controls.
-///
-/// Captioned, not icon-only: the bar no longer carries the wallpaper name (it
-/// has its own capsule on the top edge), so the width is affordable — and an
-/// unlabelled `cursorarrow.click` that disables desktop clicks must not need a
-/// hover to identify. Fixed width so a Japanese caption widens the row
-/// predictably rather than letting one control grow past its neighbours.
+/// Preview control with a visible caption, including controls that affect desktop clicks.
+/// Fixed width keeps adjacent controls aligned across languages.
 struct PreviewControlLabel: View {
     let systemImage: String
     let title: LocalizedStringKey

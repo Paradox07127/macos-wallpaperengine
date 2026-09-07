@@ -39,9 +39,6 @@ struct AerialsLibraryView: View {
         }
     }
 
-    /// The scan spinner rides beside the refresh button rather than inside it:
-    /// `GlassIconButton` takes a symbol, not an arbitrary view, and a toolbar
-    /// spinner beside the control it belongs to is what Mail does while fetching.
     private var libraryActions: some View {
         HStack(spacing: DesignTokens.Spacing.sm) {
             if library.isScanning {
@@ -55,7 +52,7 @@ struct AerialsLibraryView: View {
             } label: {
                 Image(systemName: "arrow.clockwise")
             }
-            .help(Text("Refresh — rescan the Aerials library for new content"))
+            .help(Text("Refresh Aerials library"))
             .accessibilityLabel(Text("Refresh Aerials library"))
             .disabled(library.isScanning)
 
@@ -68,12 +65,6 @@ struct AerialsLibraryView: View {
             icon: "exclamationmark.triangle",
             tint: DesignTokens.Colors.LibraryTint.aerials,
             title: "Couldn't scan Aerials",
-            message: "We hit a problem while scanning the Apple Aerials library.",
-            features: [
-                LibraryGuideFeature(icon: "folder.badge.gearshape", text: "macOS may have moved the folder"),
-                LibraryGuideFeature(icon: "arrow.triangle.2.circlepath", text: "A download in progress can lock it briefly"),
-                LibraryGuideFeature(icon: "checkmark.shield", text: "Nothing on disk was modified"),
-            ],
             actionTitle: "Reconnect",
             actionSystemImage: "folder.badge.gearshape",
             secondaryTitle: "Retry",
@@ -89,8 +80,6 @@ struct AerialsLibraryView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    /// A single destructive action doesn't earn an overflow menu, and the icon
-    /// now says what it does — unlink a folder, not dismiss something.
     private var disconnectButton: some View {
         Button(role: .destructive) {
             pendingDestructive = PendingDestructive(.disconnectAerialsLibrary) {
@@ -131,12 +120,7 @@ struct AerialsLibraryView: View {
             icon: "sparkles.tv",
             tint: DesignTokens.Colors.LibraryTint.aerials,
             title: "Connect Apple Aerials",
-            message: "Connect the local Apple Aerials library that contains downloaded aerial videos.",
-            features: [
-                LibraryGuideFeature(icon: "display.2", text: "Put any downloaded aerial on any display"),
-                LibraryGuideFeature(icon: "arrow.triangle.2.circlepath", text: "New aerials show up as macOS downloads them"),
-                LibraryGuideFeature(icon: "checkmark.shield", text: "Read-only — the files stay where they are"),
-            ],
+            message: "Authorize access to downloaded aerials. Original files remain unchanged.",
             actionTitle: library.isScanning ? "Connecting…" : "Connect Library",
             actionSystemImage: "folder.badge.plus",
             isActionInProgress: library.isScanning,
@@ -153,12 +137,7 @@ struct AerialsLibraryView: View {
             icon: "sparkles.tv",
             tint: DesignTokens.Colors.LibraryTint.aerials,
             title: "No aerials downloaded yet",
-            message: "Apple downloads aerial wallpapers on demand. Pick one from System Settings → Wallpaper, then refresh.",
-            features: [
-                LibraryGuideFeature(icon: "gearshape", text: "Choosing one in System Settings downloads it"),
-                LibraryGuideFeature(icon: "arrow.triangle.2.circlepath", text: "It appears here once the download finishes"),
-                LibraryGuideFeature(icon: "checkmark.shield", text: "Only fully downloaded aerials are listed"),
-            ],
+            message: "Download an aerial in System Settings, then refresh when the download completes.",
             actionTitle: "Open System Settings",
             actionSystemImage: "gearshape",
             secondaryTitle: "Refresh",
@@ -176,8 +155,7 @@ struct AerialsLibraryView: View {
         if filteredAssets.isEmpty {
             IllustratedEmptyState(
                 symbol: "magnifyingglass",
-                title: "No aerials match your search",
-                message: "Try a different keyword, or clear the search field to see every downloaded aerial."
+                title: "No aerials match your search"
             )
         } else {
             ScrollView {

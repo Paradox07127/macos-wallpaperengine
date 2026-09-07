@@ -116,7 +116,7 @@ struct DetailPresetsSection: View {
                     .monospacedDigit()
             }
             InfoTooltipButton(
-                text: "Presets are settings other people saved for this wallpaper. Downloading one adds it to the Preset menu in this wallpaper's scene settings — it does not add another wallpaper."
+                text: "Downloaded presets appear in this wallpaper’s scene settings, without adding a wallpaper."
             )
             Spacer(minLength: 0)
         }
@@ -343,8 +343,8 @@ private struct WorkshopPresetRow: View {
             // place.
             Image(systemName: "photo.fill")
                 .foregroundStyle(.secondary)
-                .help(Text("Turned out to be a wallpaper; it's in your library"))
-                .accessibilityLabel(Text("Turned out to be a wallpaper; it's in your library"))
+                .help(Text("Wallpaper added to library"))
+                .accessibilityLabel(Text("Wallpaper added to library"))
         case .idle, .failed:
             Button {
                 downloads.download(itemID: preset.id, title: preset.title, using: doctor)

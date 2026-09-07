@@ -1,6 +1,6 @@
 import Foundation
-import Testing
 @testable import LiveWallpaper
+import Testing
 
 @Suite("CodexSessionModel")
 struct CodexSessionModelTests {
@@ -119,7 +119,7 @@ struct CodexSessionModelTests {
         #expect(model.tokens == MonitorTokenTotals(input: 20, output: 7, cacheRead: 5, cacheWrite: 0))
     }
 
-    @Test("Unknown line types update freshness without changing terminal state")
+    @Test("Unknown line types do not fabricate activity")
     func unknownTypesUpdateFreshness() {
         var model = CodexSessionModel()
         model.ingest(Self.line(
@@ -133,7 +133,7 @@ struct CodexSessionModelTests {
             payload: #"{"type": "future_unknown_payload"}"#
         ))
 
-        #expect(model.lastEventAt?.timeIntervalSince1970 == 190)
+        #expect(model.lastEventAt?.timeIntervalSince1970 == 180)
         #expect(model.status(now: Date(timeIntervalSince1970: 195), processAlive: true) == .idle)
     }
 

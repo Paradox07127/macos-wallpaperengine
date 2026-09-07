@@ -119,7 +119,12 @@ enum SettingsNavigation: String, CaseIterable, Hashable, Identifiable {
             destination: .general,
             title: "General",
             systemImage: "gearshape",
-            keywords: ["language", "login", "dock", "lock screen", "behavior"]
+            keywords: [
+                "language", "login", "dock", "lock screen", "behavior",
+                "Show wallpaper in screen captures", "screenshots", "recording", "screen sharing",
+                "在截屏与共享中显示壁纸", "在截圖與共享中顯示桌布",
+                "画面キャプチャに壁紙を表示", "Mostrar el fondo en capturas de pantalla",
+            ]
         ),
         SettingsNavigationItem(
             destination: .displayDefaults,
@@ -137,7 +142,11 @@ enum SettingsNavigation: String, CaseIterable, Hashable, Identifiable {
             destination: .performancePower,
             title: "Performance",
             systemImage: "bolt.circle",
-            keywords: ["power", "battery", "fullscreen", "game", "covered", "frame rate", "fps", "帧率", "fotogramas", "memory", "video preload"]
+            keywords: [
+                "power", "battery", "fullscreen", "game", "covered", "frame rate", "fps",
+                "帧率", "fotogramas", "memory", "video preload", "Adaptive frame rate",
+                "自适应帧率", "自適應影格率", "適応フレームレート", "Frecuencia de fotogramas adaptativa",
+            ]
         ),
         SettingsNavigationItem(
             destination: .audioResponse,

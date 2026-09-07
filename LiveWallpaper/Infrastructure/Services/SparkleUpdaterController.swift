@@ -2,6 +2,31 @@ import Foundation
 import LiveWallpaperCore
 import Sparkle
 
+@MainActor
+protocol SparkleUpdateStarting {
+    var automaticallyChecksForUpdates: Bool { get }
+    func start() throws
+    func checkForUpdatesInBackground()
+}
+
+extension SPUUpdater: SparkleUpdateStarting {}
+
+/// Keep the launch check in the same runloop turn as Sparkle startup, before
+/// its scheduler takes over. Repeated startup calls must not trigger more checks.
+@MainActor
+struct SparkleUpdateStartup {
+    private(set) var hasStarted = false
+
+    mutating func start(updater: any SparkleUpdateStarting) throws {
+        guard !hasStarted else { return }
+        try updater.start()
+        hasStarted = true
+        if updater.automaticallyChecksForUpdates {
+            updater.checkForUpdatesInBackground()
+        }
+    }
+}
+
 /// Owns the one Sparkle updater for the app. A scheduled check that finds
 /// something gets Sparkle's own alert (default behaviour, since the menu bar
 /// badge alone is easy to miss) — the badge still lights too, because
@@ -18,6 +43,7 @@ final class SparkleUpdaterController {
     @ObservationIgnored private var controller: SPUStandardUpdaterController!
     @ObservationIgnored private var driverDelegate: GentleReminderDelegate!
     @ObservationIgnored private var updaterDelegate: UpdateAvailabilityDelegate!
+    @ObservationIgnored private var startup = SparkleUpdateStartup()
 
     private init() {
         driverDelegate = GentleReminderDelegate()
@@ -65,9 +91,10 @@ final class SparkleUpdaterController {
     /// with a relaunch, so the new process starts with no pending update anyway.
     func noteUpdateSessionFinished() {}
 
-    /// Starts the scheduled-check machinery. Kept out of `init` so tests can
-    /// touch the type without it reaching the network.
+    /// Starts Sparkle and immediately checks once if the General settings toggle
+    /// is enabled. Kept out of `init` so construction never reaches the network.
     func start() {
+        guard !startup.hasStarted else { return }
         if let carried = Self.legacyOptOutToCarryOver(
             defaults: .appScoped(),
             sparkleChoiceIsStored: UserDefaults.standard.object(forKey: Self.sparkleAutomaticChecksKey) != nil
@@ -75,7 +102,7 @@ final class SparkleUpdaterController {
             controller.updater.automaticallyChecksForUpdates = carried
         }
         do {
-            try controller.updater.start()
+            try startup.start(updater: controller.updater)
         } catch {
             Logger.error("Sparkle updater failed to start: \(String(describing: error))", category: .updates)
         }

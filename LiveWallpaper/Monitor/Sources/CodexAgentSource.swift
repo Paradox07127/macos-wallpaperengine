@@ -4,8 +4,6 @@ import os
 final class CodexAgentSource: MonitorDataSource {
     let sourceID = "codex"
 
-    private static let activePollInterval: TimeInterval = 1.5
-    private static let idlePollInterval: TimeInterval = 5
     private static let rescanInterval: TimeInterval = 10
     private static let endedRetention: TimeInterval = 2 * 60 * 60
 
@@ -57,15 +55,21 @@ final class CodexAgentSource: MonitorDataSource {
         var files: [CodexSessionScanner.SessionFile] = []
         var lastScan = Date.distantPast
         var waitTracker = MonitorAgentWaitTracker()
+        var polling = AgentPollingPolicy()
+        let history = AgentHistoryDiscovery(root: rootURL.appendingPathComponent("sessions"))
+        var lastProcessProbe = Date.distantPast
+        var liveProcessDirectories = (directories: Set<String>(), complete: false)
 
         while !Task.isCancelled {
             let now = Date()
             var pollHadError = false
+            var changed = false
+            var catchingUp = false
 
             if now.timeIntervalSince(lastScan) >= Self.rescanInterval {
                 lastScan = now
                 do {
-                    files = try scanner.scan(now: now)
+                    files = try scanner.scan(now: now, knownURLs: history.scan(now: now))
                     let currentURLs = Set(files.map(\.url))
                     readers = readers.filter { currentURLs.contains($0.key) }
                     models = models.filter { currentURLs.contains($0.key) }
@@ -89,22 +93,26 @@ final class CodexAgentSource: MonitorDataSource {
                     let storedCursor = cursorStore?.state(for: file.url)
                     let storedAggregate = cursorStore?.aggregate(for: file.url, provider: .codex)
                     let restoredModel = storedCursor.flatMap { _ in
-                        storedAggregate.flatMap(CodexSessionModel.restore)
+                        storedAggregate.flatMap { $0.activity == nil ? nil : CodexSessionModel.restore(from: $0) }
                     }
                     reader = JSONLTailReader(
                         url: file.url,
                         resumeFrom: restoredModel == nil ? nil : storedCursor
                     )
                     readers[file.url] = reader
-                    if let restoredModel {
-                        models[file.url] = restoredModel
-                    } else if storedAggregate != nil {
+                    var initial = restoredModel ?? CodexSessionModel()
+                    for object in JSONLTailReader.headerObjects(at: file.url) where object["type"] as? String == "session_meta" {
+                        initial.ingest(decodedLine: object)
+                    }
+                    models[file.url] = initial
+                    if restoredModel == nil, storedAggregate != nil {
                         cursorStore?.removeAggregate(for: file.url)
                     }
                 }
 
                 do {
-                    let outcome = try reader.poll()
+                    let outcome = try reader.poll(byteBudget: 128 * 1024)
+                    catchingUp = catchingUp || reader.hasUnreadBytes
                     if outcome.fileVanished {
                         readers[file.url] = nil
                         models[file.url] = nil
@@ -115,11 +123,13 @@ final class CodexAgentSource: MonitorDataSource {
                         models[file.url] = CodexSessionModel()
                         cursorStore?.removeAggregate(for: file.url)
                     }
+                    changed = changed || !outcome.newLines.isEmpty
                     if !outcome.newLines.isEmpty {
                         var model = models[file.url] ?? CodexSessionModel()
                         for line in outcome.newLines {
                             model.ingest(line)
                         }
+                        model.activity.partialHistory = model.activity.partialHistory || reader.startedMidFile
                         models[file.url] = model
                     }
                     if let cursorState = reader.cursorState {
@@ -137,9 +147,10 @@ final class CodexAgentSource: MonitorDataSource {
             // Default arguments are re-evaluated at every call site, which is how
             // this full process-table walk ended up running on every 1.5 s tick.
             // It is only meaningful once there is a transcript to attribute.
-            let liveProcessDirectories = files.isEmpty
-                ? (directories: Set<String>(), complete: false)
-                : CodexProcessProbe.codexWorkingDirectories()
+            if now.timeIntervalSince(lastProcessProbe) >= 5 {
+                liveProcessDirectories = files.isEmpty ? (directories: [], complete: false) : CodexProcessProbe.codexWorkingDirectories()
+                lastProcessProbe = now
+            }
             let sessions = Self.sessionStates(
                 modelsByURL: models,
                 files: files,
@@ -152,8 +163,8 @@ final class CodexAgentSource: MonitorDataSource {
                 await sink.updateHealth(Self.health(state: "error", detail: "Failed to read Codex sessions", at: now))
             }
 
-            let hasLiveSession = sessions.contains { $0.status == .running || $0.status == .needsInput || $0.status == .idle }
-            let interval = hasLiveSession ? Self.activePollInterval : Self.idlePollInterval
+            let working = sessions.contains { $0.status == .running }
+            let interval = polling.interval(changed: changed, working: working, catchingUp: catchingUp)
             try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
         }
     }
@@ -168,17 +179,18 @@ final class CodexAgentSource: MonitorDataSource {
         let states = files.compactMap { file -> MonitorAgentSessionState? in
             guard let model = modelsByURL[file.url],
                   var state = model.sessionState(
-                    now: now,
-                    processAlive: Self.isAlive(
-                        model: model,
-                        scannerSaysAlive: file.processAlive,
-                        liveProcessDirectories: liveProcessDirectories
-                    ),
-                    fallbackSessionId: fallbackSessionId(for: file.url),
-                    fallbackProjectName: "Codex"
+                      now: now,
+                      processAlive: Self.isAlive(
+                          model: model,
+                          scannerSaysAlive: file.processAlive,
+                          liveProcessDirectories: liveProcessDirectories
+                      ),
+                      fallbackSessionId: fallbackSessionId(for: file.url),
+                      fallbackProjectName: "Codex"
                   ) else {
                 return nil
             }
+            state.livenessEvidence = liveProcessDirectories.complete && model.cwd != nil ? "workingDirectory" : "recentLog"
             state.waitSince = waitTracker.waitSince(
                 sessionID: state.id,
                 status: state.status,

@@ -3,10 +3,7 @@ import LiveWallpaperCore
 import SwiftUI
 
 extension GeneralSettingsView {
-    /// The About page must fit whatever height the settings window has (floor:
-    /// `SettingsWindowMetrics.minimumContentSize`) — at the floor the roomy layout overflowed
-    /// and put a scroller on a page of six static elements. `ViewThatFits` picks the largest
-    /// layout that fits instead — no height thresholds to sync with translations or Dynamic Type, since it measures the real content.
+    /// Measures real content to choose a layout that fits the minimum window size and current language.
     @ViewBuilder
     var aboutTab: some View {
         ViewThatFits(in: .vertical) {
@@ -88,9 +85,7 @@ extension GeneralSettingsView {
             .padding(.horizontal, 8)
     }
 
-    /// Two rows of two when there is height to spend, one row of four when
-    /// there isn't — the tiles are the tallest block on the page, so folding
-    /// them into a single row is what buys back the most vertical space.
+    /// Folds tiles into one row when vertical space is limited.
     private func aboutActionGrid(_ layout: AboutLayout) -> some View {
         LazyVGrid(
             columns: Array(
@@ -199,9 +194,7 @@ private struct AboutActionTile: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, layout.tilePadding)
             .padding(.horizontal, 10)
-            // Settings window cards deliberately run a lighter register —
-            // surfaceRaised at 0.72 with Corner.sm/md — distinct from the
-            // opaque Corner.panel inspector cards; user-ratified 2026-08-31.
+            // Settings cards use surfaceRaised at 0.72 with Corner.sm/md.
             .background(
                 RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
                     .fill(DesignTokens.Colors.surfaceRaised.opacity(0.72))
@@ -280,8 +273,7 @@ struct AboutLayout {
         tilePadding: 10
     )
 
-    /// Last rung: the tiles fold into a single row, which is the only move left
-    /// that buys a whole tile's height back.
+    /// Compact layout uses one tile row.
     static let minimal = AboutLayout(
         contentWidth: 560,
         verticalPadding: 12,

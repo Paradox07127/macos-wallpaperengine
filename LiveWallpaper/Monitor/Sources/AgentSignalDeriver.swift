@@ -5,11 +5,9 @@ enum AgentSignalDeriver {
     static let recentEventCap = 60
     static let recentToolCap = 8
 
-    /// A run this long is a loop; anything shorter is an agent doing its job. This was 8, which flagged 23 of the 58 most
-    /// recent local sessions — including ones whose entire "loop" was eight `Bash` calls in 61 seconds. Only the tool *name*
-    /// is compared (arguments are never stored, by the privacy invariant), so run length is the only signal, and 8 sits below
-    /// the 90th percentile of ordinary runs (same corpus: p50=1, p90=12, p99=48, max 295). 40 is just under that p99 and
-    /// takes the corpus down to 2 sessions.
+    /// Repeated names alone also describe ordinary shell-heavy work. A warning
+    /// requires forty calls in ten minutes plus at least three failed results;
+    /// successful wrappers and calls with unknown results do not prove a loop.
     static let toolLoopRun = 40
     /// Events kept per session for the detector — enough to see a whole run.
     /// Separate from `recentToolCap`, which is the display tail.
@@ -41,6 +39,7 @@ enum AgentSignalDeriver {
     /// the buffer reaches 2× the eventual display cap (`trimmedEventTimes` does
     /// the final sort+cap at snapshot time).
     static func appendRecentEventTime(_ times: inout [Double], _ time: Double) {
+        guard time.isFinite, times.last != time else { return }
         times.append(time)
         if times.count > recentEventCap * 2 {
             times = Array(times.suffix(recentEventCap))
@@ -66,7 +65,10 @@ enum AgentSignalDeriver {
         lastEventAt: Double?,
         now: Double
     ) -> String? {
-        if isToolLoop(recentTools) { return "toolLoop" }
+        if status == .running, isToolLoop(recentTools),
+           let last = recentTools.last, now - last.at <= toolLoopWindow {
+            return "toolLoop"
+        }
         if status == .running, processAlive, let last = lastEventAt, now - last > staleAfter {
             return "stale"
         }
@@ -78,7 +80,13 @@ enum AgentSignalDeriver {
         let tail = Array(tools.sorted { $0.at < $1.at }.suffix(toolLoopRun))
         guard let first = tail.first, let last = tail.last else { return false }
         guard last.at - first.at <= toolLoopWindow else { return false }
-        return tail.allSatisfy { $0.name == first.name }
+        return tail.allSatisfy { $0.name == first.name } && tail.filter { $0.ok == false }.count >= 3
+    }
+
+    static func displayMetadata(_ value: String) -> String? {
+        let clean = value.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) }
+        let text = String(String.UnicodeScalarView(clean)).trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? nil : String(text.prefix(96))
     }
 }
 
@@ -89,7 +97,7 @@ enum MonitorWorktree {
         let components = (cwd as NSString).pathComponents
         // Find the ".../.claude/worktrees/<name>/..." segment and take the segment immediately after "worktrees".
         guard let worktreesIndex = components.firstIndex(where: { $0 == "worktrees" }),
-              worktreesIndex >= 1, components[worktreesIndex - 1] == ".claude",
+              worktreesIndex >= 1, [".claude", ".codex"].contains(components[worktreesIndex - 1]),
               worktreesIndex + 1 < components.count else {
             return nil
         }
@@ -109,7 +117,9 @@ struct MonitorAgentWaitTracker {
         eventTime: Double
     ) -> Double? {
         if status == .needsInput {
-            if let existing = waitSince[sessionID] { return existing }
+            if let existing = waitSince[sessionID] {
+                return existing
+            }
             waitSince[sessionID] = eventTime
             return eventTime
         } else {

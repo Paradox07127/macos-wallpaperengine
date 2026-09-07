@@ -2,9 +2,7 @@ import SwiftUI
 import AppKit
 import LiveWallpaperCore
 
-/// Toggle-style behaviour settings that the preview cannot show the effect of;
-/// the ones it can (JavaScript, Interaction) and the geometry controls both live
-/// on the preview bar.
+/// Web compatibility and reload settings; canvas controls live on the preview bar.
 struct HTMLOptionsInspector: View {
     var screen: Screen
     @Binding var config: HTMLConfig
@@ -21,12 +19,6 @@ struct HTMLOptionsInspector: View {
                 systemImage: "globe",
                 isExpanded: $isExpanded
             ) {
-                // JavaScript and Interaction moved to the preview bar: turning
-                // scripts off visibly blanks a scripted wallpaper, and Interaction
-                // is the same control — with the same consequence for desktop
-                // clicks — that a scene already offers there. What is left here
-                // either has no visible effect (auto-refresh is a schedule) or is
-                // a one-time compatibility switch.
                 VStack(spacing: 8) {
                     physicalPixelRow
                     Divider()
@@ -46,7 +38,7 @@ struct HTMLOptionsInspector: View {
             icon: "rectangle.split.2x1",
             iconColor: .indigo,
             title: "Physical-pixel layout",
-            info: "Renders CSS-naive HTML canvas content at retina resolution. Auto-enabled only for imported project folders that do not already use devicePixelRatio."
+            info: "Uses screen pixels for pages that do not adapt to high-resolution displays."
         ) {
             Toggle("", isOn: configBinding(\.physicalPixelLayout))
                 .labelsHidden()
@@ -62,8 +54,7 @@ struct HTMLOptionsInspector: View {
         SettingRow(
             icon: "arrow.clockwise",
             iconColor: .cyan,
-            title: "Auto Refresh",
-            info: "Reloads the page at the chosen interval. Useful for dashboards or feeds; off keeps the page rendering continuously without reloads."
+            title: "Auto Refresh"
         ) {
             Picker(
                 "",

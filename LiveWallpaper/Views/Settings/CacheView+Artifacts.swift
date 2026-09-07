@@ -29,7 +29,7 @@ extension WPECacheManagementView {
                     .controlSize(.small)
                     .destructiveControlTint()
                     StorageInfoButton {
-                        infoNote("Scratch directories created by the test suites under the container's tmp folder. Debug builds only — no shipping code path writes them. Deleting them affects nothing but disk usage.")
+                        infoNote("Temporary test files in the app container. Deleting them does not affect wallpapers or settings.")
                     }
                 }
             } header: {

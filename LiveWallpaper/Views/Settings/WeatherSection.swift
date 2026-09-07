@@ -10,7 +10,7 @@ extension GeneralSettingsView {
                 icon: "cloud.sun",
                 iconColor: weatherShowsInlineStatus ? weatherPermissionColor : .cyan,
                 title: "Weather Location",
-                subtitle: "Where weather-reactive effects read conditions"
+                info: "System requires location access; Manual uses a selected city."
             ) {
                 HStack(spacing: 8) {
                     if weatherShowsInlineStatus {
@@ -56,10 +56,6 @@ extension GeneralSettingsView {
 
         } header: {
             Text("Weather")
-        } footer: {
-            Text("System uses Location Services; Manual lets you pick a city. Powers rain, snow, and fog effects.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
         }
     }
 

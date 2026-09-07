@@ -1,25 +1,19 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// Shared chrome for the Steam sheets (connection, install consent, sign-in, API key, privacy).
-/// Five had each grown their own header and their own width — two headers were the same fifteen
-/// lines with a different icon. One header and two widths makes the family read as one feature, not five adjacent screens.
+// Shared headers, sizing and status glyphs for Steam sheets.
 
 // MARK: - Header
 
-/// Icon + title + optional one-line subtitle, the shape every Steam sheet had
-/// converged on by hand. Lives outside the LITE guard because the Settings
-/// sheets (both SKUs) share it; `icon` is optional for their text-only headers.
+/// Shared by Settings in both SKUs; icon and subtitle are optional.
 struct SteamSheetHeader: View {
     var icon: String?
     let title: LocalizedStringKey
-    /// Defaults to the "this is fine" tint. Callers whose icon changes with
-    /// state must pass the matching colour — a warning glyph in green reads as
-    /// success at a glance, which is worse than no glyph at all.
+    /// Callers must match the tint to state; warning glyphs must not use the success tint.
     var iconTint: Color = DesignTokens.Colors.Status.active
+    /// Visible scope, permission, or file consequences of the current operation.
     var subtitle: LocalizedStringKey?
-    /// Rendered next to the title when the sheet needs to explain itself in
-    /// more than a subtitle's worth of words.
+    /// Optional details that are not required to make the current choice.
     var info: String.LocalizationValue?
 
     var body: some View {
@@ -57,9 +51,6 @@ struct SteamSheetHeader: View {
 
 // MARK: - Width
 
-/// Two widths, not five. Anything wider than `dense` starts stretching
-/// single-line detail text across a gulf; anything narrower than `form` wraps
-/// CJK labels that run 1.5–2× their English source.
 enum SteamSheetWidth {
     /// Forms, confirmations, short explanations.
     static let form: CGFloat = 480
@@ -69,24 +60,18 @@ enum SteamSheetWidth {
 
 // MARK: - Status
 
-/// One status vocabulary for the whole family.
-/// Setup rows used a 6pt dot plus a word; probe rows used filled SF Symbols — two languages for
-/// one concept meant a green dot and a green checkmark had to be read as unrelated. This is the
-/// symbol version, because a symbol survives being scanned at a glance and a dot doesn't.
 enum SteamStatusIcon {
     static func symbol(for state: WorkshopStepState) -> String {
         switch state {
         case .ready: return "checkmark.circle.fill"
         case .attention: return "exclamationmark.triangle.fill"
-        // Never rendered — `.working` draws a spinner instead, because a
-        // static "refresh" glyph is indistinguishable from an idle button.
+        // SteamStatusGlyph renders a spinner for this state.
         case .working: return "arrow.triangle.2.circlepath"
         case .notStarted: return "circle.dashed"
         }
     }
 }
 
-/// The status glyph, sized and coloured once.
 struct SteamStatusGlyph: View {
     let state: WorkshopStepState
     var size: CGFloat = 16

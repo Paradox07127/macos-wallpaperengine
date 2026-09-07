@@ -11,7 +11,7 @@ final class ClaudeAgentSource: MonitorDataSource {
     private let engine: Engine
 
     init(rootURL: URL, cursorStore: TailCursorStore? = nil) {
-        self.engine = Engine(rootURL: rootURL, cursorStore: cursorStore)
+        engine = Engine(rootURL: rootURL, cursorStore: cursorStore)
     }
 
     /// Reconnects the scanner-owned session identity to a privacy-minimized durable aggregate.
@@ -22,7 +22,7 @@ final class ClaudeAgentSource: MonitorDataSource {
         storedAggregate: SessionAggregateState?
     ) -> TailBootstrap {
         guard let storedCursor,
-              let storedAggregate,
+              let storedAggregate, storedAggregate.activity != nil,
               let restoredModel = ClaudeSessionModel.restore(
                   from: storedAggregate,
                   sessionId: candidateSessionID
@@ -42,7 +42,6 @@ final class ClaudeAgentSource: MonitorDataSource {
     func stop() async {
         await engine.stop()
     }
-
 }
 
 // MARK: - Engine (all mutable state, isolated)
@@ -64,10 +63,14 @@ private actor Engine {
     private var consecutiveIOFailures = 0
 
     private var waitTracker = MonitorAgentWaitTracker()
+    private var polling = AgentPollingPolicy()
+    private var changed = false
+    private var catchingUp = false
+    private var lastProcessProbe = Date.distantPast
+    private var liveness: [String: Bool] = [:]
+    private var descriptors: [ClaudePIDDescriptor] = []
 
-    // Cadence.
-    private static let activeInterval: TimeInterval = 1.5
-    private static let idleInterval: TimeInterval = 5
+    /// Cadence.
     private static let rescanInterval: TimeInterval = 10
     // Drop ended sessions from the pushed list once this stale.
     private static let endedRetention: TimeInterval = 2 * 3600
@@ -75,7 +78,7 @@ private actor Engine {
 
     init(rootURL: URL, cursorStore: TailCursorStore?) {
         self.rootURL = rootURL
-        self.scanner = ClaudeSessionScanner(rootURL: rootURL)
+        scanner = ClaudeSessionScanner(rootURL: rootURL)
         self.cursorStore = cursorStore
     }
 
@@ -92,7 +95,9 @@ private actor Engine {
         pollTask = nil
         task?.cancel()
         // No producer may mutate the cursor generation after the termination flush snapshots it.
-        if let task { await task.value }
+        if let task {
+            await task.value
+        }
         sink = nil
         readers.removeAll()
         models.removeAll()
@@ -103,13 +108,15 @@ private actor Engine {
     private func runLoop() async {
         while !Task.isCancelled {
             let liveCount = await tick()
-            let interval = liveCount > 0 ? Self.activeInterval : Self.idleInterval
+            let interval = polling.interval(changed: changed, working: liveCount > 0, catchingUp: catchingUp)
             try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
         }
     }
 
     private func tick() async -> Int {
         let now = Date()
+        changed = false
+        catchingUp = false
 
         if now.timeIntervalSince(lastScan) >= Self.rescanInterval {
             lastScan = now
@@ -123,13 +130,17 @@ private actor Engine {
             }
         }
 
-        let descriptors = scanner.loadPIDDescriptors()
-        let liveness = scanner.livenessBySession(descriptors)
+        if now.timeIntervalSince(lastProcessProbe) >= 5 {
+            descriptors = scanner.loadPIDDescriptors()
+            liveness = scanner.livenessBySession(descriptors)
+            lastProcessProbe = now
+        }
 
         var pollFailed = false
         for (sessionId, reader) in readers {
             do {
-                let outcome = try reader.poll()
+                let outcome = try reader.poll(byteBudget: 128 * 1024)
+                catchingUp = catchingUp || reader.hasUnreadBytes
                 if outcome.fileVanished {
                     readers[sessionId] = nil
                     if let url = sourceURLs[sessionId] {
@@ -143,13 +154,18 @@ private actor Engine {
                         cursorStore?.removeAggregate(for: url)
                     }
                 }
+                changed = changed || !outcome.newLines.isEmpty
                 if !outcome.newLines.isEmpty {
                     var model = models[sessionId] ?? ClaudeSessionModel(sessionId: sessionId)
                     for data in outcome.newLines {
-                        if let line = ClaudeTranscriptLine(data: data) {
+                        if var line = ClaudeTranscriptLine(data: data) {
+                            if sourceURLs[sessionId]?.deletingLastPathComponent().lastPathComponent == "subagents" {
+                                line.isSidechain = false
+                            }
                             model.ingest(line)
                         }
                     }
+                    model.activity.partialHistory = model.activity.partialHistory || reader.startedMidFile
                     models[sessionId] = model
                 }
                 if let url = sourceURLs[sessionId],
@@ -180,7 +196,7 @@ private actor Engine {
             await pushHealth(state: "ok", detail: nil, now: now)
         }
 
-        return sessions.filter { $0.processAlive }.count
+        return sessions.filter { $0.status == .running }.count
     }
 
     private func rescan(now: Date) throws {
@@ -205,6 +221,9 @@ private actor Engine {
                     cursorStore?.removeAggregate(for: candidate.url)
                 }
             }
+            for object in JSONLTailReader.headerObjects(at: candidate.url) {
+                models[candidate.sessionId]?.hydrateMetadata(object)
+            }
             sourceURLs[candidate.sessionId] = candidate.url
         }
 
@@ -221,8 +240,15 @@ private actor Engine {
     private func composeSessions(now: Date, liveness: [String: Bool]) -> [MonitorAgentSessionState] {
         var states: [MonitorAgentSessionState] = []
         for (sessionId, model) in models {
-            let alive = liveness[sessionId] ?? false
+            let parentID = sourceURLs[sessionId].flatMap { url -> String? in
+                guard url.deletingLastPathComponent().lastPathComponent == "subagents" else { return nil }
+                return url.deletingLastPathComponent().deletingLastPathComponent().lastPathComponent
+            }
+            let alive = liveness[sessionId] ?? parentID.flatMap { liveness[$0] } ?? false
             var state = model.snapshot(now: now, processAlive: alive)
+            state.parentSessionID = parentID.map { "claude:" + $0 }
+            state.livenessEvidence = liveness[sessionId] != nil ? "processDescriptor" : (parentID != nil ? "parentProcess" : "unknown")
+            state.title = state.title ?? descriptors.first(where: { $0.sessionId == sessionId })?.name.flatMap(AgentSignalDeriver.displayMetadata)
             // Overlay the cross-scan wait clock: stamp the flip into needsInput with
             // the session's last event time, carry it while blocked, clear otherwise.
             state.waitSince = waitTracker.waitSince(
@@ -256,5 +282,7 @@ private actor Engine {
         ))
     }
 
-    private var sourceID: String { "claude" }
+    private var sourceID: String {
+        "claude"
+    }
 }

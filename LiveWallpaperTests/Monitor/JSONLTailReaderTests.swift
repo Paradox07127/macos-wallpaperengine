@@ -1,10 +1,9 @@
 import Foundation
-import Testing
 @testable import LiveWallpaper
+import Testing
 
 @Suite("JSONLTailReader: incremental tailing, rotation, resync")
 struct JSONLTailReaderTests {
-
     private func makeTempFile(_ contents: String = "") throws -> URL {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("JSONLTailReaderTests-\(UUID().uuidString)", isDirectory: true)
@@ -142,7 +141,7 @@ struct JSONLTailReaderTests {
         let reader = JSONLTailReader(url: url, resumeFrom: nil)
         _ = try reader.poll()
 
-        try "{\"new\":1}\n".data(using: .utf8)!.write(to: url)
+        try Data("{\"new\":1}\n".utf8).write(to: url)
         let outcome = try reader.poll()
         #expect(outcome.didRotate == true)
         #expect(linesAsStrings(outcome) == ["{\"new\":1}"])
@@ -157,7 +156,7 @@ struct JSONLTailReaderTests {
         _ = try reader.poll()
 
         try FileManager.default.removeItem(at: url)
-        try "{\"fresh\":1}\n{\"fresh\":2}\n".data(using: .utf8)!.write(to: url)
+        try Data("{\"fresh\":1}\n{\"fresh\":2}\n".utf8).write(to: url)
         let outcome = try reader.poll()
         #expect(outcome.didRotate == true)
         #expect(linesAsStrings(outcome) == ["{\"fresh\":1}", "{\"fresh\":2}"])
@@ -187,7 +186,7 @@ struct JSONLTailReaderTests {
         let template = "{\"i\":%d,\"pad\":\"\(pad)\"}\n"
         var i = 0
         while buffer.count < 21 << 20 {
-            buffer.append(String(format: template, i).data(using: .utf8)!)
+            try buffer.append(#require(String(format: template, i).data(using: .utf8)))
             i += 1
         }
         try buffer.write(to: url)
@@ -210,5 +209,35 @@ struct JSONLTailReaderTests {
         let reader = JSONLTailReader(url: url, resumeFrom: nil)
         let outcome = try reader.poll()
         #expect(linesAsStrings(outcome) == ["{\"a\":1}", "{\"b\":2}"])
+    }
+
+    @Test("Small byte budgets drain lines exactly once and preserve the committed cursor")
+    func budgetedDrain() throws {
+        let expected = (0 ..< 4000).map { "{\"i\":\($0)}" }
+        let contents = expected.joined(separator: "\n") + "\n"
+        let url = try makeTempFile(contents)
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let reader = JSONLTailReader(url: url, resumeFrom: nil)
+        var actual: [String] = []
+        repeat {
+            try actual += linesAsStrings(reader.poll(byteBudget: 127))
+        } while reader.hasUnreadBytes
+        #expect(actual == expected)
+        #expect(reader.cursorState?.offset == UInt64(contents.utf8.count))
+        #expect(try reader.poll().newLines.isEmpty)
+    }
+
+    @Test("An oversized unfinished line resynchronizes without leaking its tail as an event")
+    func oversizedPartialLineResync() throws {
+        let url = try makeTempFile(String(repeating: "x", count: (3 << 20) + 17))
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let reader = JSONLTailReader(url: url, resumeFrom: nil)
+        repeat {
+            #expect(try reader.poll(byteBudget: 128 * 1024).newLines.isEmpty)
+        } while reader.hasUnreadBytes
+        #expect(reader.cursorState == nil)
+        try append("suffix\n{\"valid\":true}\n", to: url)
+        #expect(try linesAsStrings(reader.poll()) == ["{\"valid\":true}"])
+        #expect(reader.cursorState != nil)
     }
 }

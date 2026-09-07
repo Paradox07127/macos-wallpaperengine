@@ -3,11 +3,8 @@ import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
-/// What leaves this Mac, and the terms the Steam side is used under.
-/// Used to live in three places — a privacy sheet, the API key sheet's warning card, a tooltip
-/// on the assets row — so the reader could only assemble the picture by opening all three. Held
-/// here as data, rendered by both the settings section and onboarding sheet: one copy each.
-/// Main-actor isolated because `LocalizedStringKey` isn't `Sendable`; both renderers are views, so it costs nothing.
+/// Privacy facts shared by settings and onboarding.
+/// Main-actor isolated because `LocalizedStringKey` is not `Sendable`.
 @MainActor
 enum WorkshopLegalContent {
     struct Point: Identifiable {

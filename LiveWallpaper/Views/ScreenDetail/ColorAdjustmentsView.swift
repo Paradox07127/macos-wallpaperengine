@@ -3,8 +3,7 @@ import LiveWallpaperCore
 
 struct ColorAdjustmentsView: View {
     @Binding var effectConfig: VideoEffectConfig
-    /// Per-screen colourspace override. Lives next to the SDR effect sliders
-    /// because users mentally group "make the colours look right" together.
+    /// Per-display colourspace override.
     @Binding var videoColorSpace: VideoColorSpace
     var screen: Screen
     var screenManager: ScreenManager
@@ -24,17 +23,15 @@ struct ColorAdjustmentsView: View {
 
                 Divider()
 
-                HStack {
-                    Text("Auto warm tint")
-                        .font(DesignTokens.Typography.body)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                    Spacer()
+                SettingRow(
+                    icon: "sun.max",
+                    title: "Auto warm tint",
+                    info: "Automatically adjust color temperature by time of day"
+                ) {
                     Toggle("", isOn: effectBinding(\.autoTimeTint))
                         .labelsHidden()
                         .toggleStyle(.switch)
                         .controlSize(.small)
-                        .help(Text("Automatically adjust color temperature by time of day"))
                         .accessibilityLabel(Text("Auto warm tint"))
                         .accessibilityHint(Text("Automatically adjusts color warmth based on time of day"))
                 }
@@ -57,31 +54,26 @@ struct ColorAdjustmentsView: View {
     }
 
     private var colorSpaceRow: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text("Color Management")
-                    .font(DesignTokens.Typography.body)
-                Spacer()
-                Picker("", selection: Binding(
-                    get: { videoColorSpace },
-                    set: { newValue in
-                        guard videoColorSpace != newValue else { return }
-                        videoColorSpace = newValue
-                        screenManager.updateVideoColorSpace(newValue, for: screen)
-                    }
-                )) {
-                    ForEach(VideoColorSpace.allCases) { space in
-                        Text(LocalizedStringKey(space.titleKey)).tag(space)
-                    }
+        SettingRow(
+            icon: "paintpalette",
+            title: "Color Management",
+            info: String.LocalizationValue(stringLiteral: videoColorSpace.descriptionKey)
+        ) {
+            Picker("", selection: Binding(
+                get: { videoColorSpace },
+                set: { newValue in
+                    guard videoColorSpace != newValue else { return }
+                    videoColorSpace = newValue
+                    screenManager.updateVideoColorSpace(newValue, for: screen)
                 }
-                .labelsHidden()
-                .frame(maxWidth: 160)
-                .accessibilityLabel(Text("Color management"))
+            )) {
+                ForEach(VideoColorSpace.allCases) { space in
+                    Text(LocalizedStringKey(space.titleKey)).tag(space)
+                }
             }
-            Text(LocalizedStringKey(videoColorSpace.descriptionKey))
-                .font(DesignTokens.Typography.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            .labelsHidden()
+            .frame(maxWidth: 160)
+            .accessibilityLabel(Text("Color management"))
         }
     }
 
@@ -90,11 +82,7 @@ struct ColorAdjustmentsView: View {
         screenManager.updateEffectConfig(effectConfig, for: screen)
     }
 
-    /// Resets only the six fields the "Reset Color & Filters" button's `.help`
-    /// text promises (blur, brightness, saturation, warmth, vignette, auto-tint).
-    /// Weather/particle fields (`weatherReactive`, `weatherWind`,
-    /// `weatherIntensity`, `particleDensity`) live in the same config but belong
-    /// to the Overlays page, so they must survive this reset.
+    /// Reset colour/filter fields only; preserve weather and particle settings.
     static func resettingColorAdjustments(_ config: VideoEffectConfig) -> VideoEffectConfig {
         var result = config
         let defaults = VideoEffectConfig.default
@@ -132,8 +120,7 @@ struct ColorAdjustmentsView: View {
         HStack(spacing: DesignTokens.Inspector.sliderValueSpacing) {
             Text(title)
                 .font(DesignTokens.Typography.body)
-                .lineLimit(1)
-                .truncationMode(.tail)
+                .fixedSize(horizontal: false, vertical: true)
                 .frame(width: 90, alignment: .leading)
 
             CoalescedSlider(

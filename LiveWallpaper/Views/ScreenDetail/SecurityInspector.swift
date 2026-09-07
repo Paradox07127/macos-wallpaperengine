@@ -42,14 +42,14 @@ struct SecurityInspector: View {
         SettingRow(
             icon: "archivebox",
             iconColor: .purple,
-            title: "Clear Data on Exit",
-            info: "When on, the wallpaper's WKWebView starts fresh each session — cookies, localStorage, and cache are not persisted."
+            title: "Temporary Website Data",
+            info: "Cookies, website data and cache are not saved between sessions."
         ) {
             Toggle("", isOn: htmlConfigBinding(\.useEphemeralStorage))
                 .labelsHidden()
                 .toggleStyle(.switch)
                 .controlSize(.small)
-                .accessibilityLabel(Text("Ephemeral browsing data"))
+                .accessibilityLabel(Text("Temporary Website Data"))
         }
     }
 
@@ -71,14 +71,14 @@ struct SecurityInspector: View {
         SettingRow(
             icon: "lock.shield.fill",
             iconColor: .indigo,
-            title: "Enforce Content Security Policy",
-            info: "Injects a strict CSP meta tag before the page evaluates its own scripts. Permits HTTPS + the bundled livewallpaper:// scheme; blocks data exfiltration via FTP / arbitrary schemes. Some wallpapers may break — toggling requires a reload."
+            title: "Content Security Policy",
+            info: "Limits web content. Changes reload the page and may affect compatibility."
         ) {
             Toggle("", isOn: htmlConfigBinding(\.cspEnforcementEnabled))
                 .labelsHidden()
                 .toggleStyle(.switch)
                 .controlSize(.small)
-                .accessibilityLabel(Text("Enforce content security policy"))
+                .accessibilityLabel(Text("Content Security Policy"))
         }
     }
 
@@ -87,7 +87,7 @@ struct SecurityInspector: View {
             icon: "bolt.slash.fill",
             iconColor: .yellow,
             title: "Aggressive Suspend",
-            info: "On suspend, force-release every GPU canvas context and recreate it on resume. This can reduce GPU work while the wallpaper is occluded or thermally throttled, but some pages do not handle context restoration and may stay black afterward."
+            info: "Frees graphics resources while paused. Some pages may resume blank."
         ) {
             Toggle("", isOn: htmlConfigBinding(\.aggressiveSuspend))
                 .labelsHidden()

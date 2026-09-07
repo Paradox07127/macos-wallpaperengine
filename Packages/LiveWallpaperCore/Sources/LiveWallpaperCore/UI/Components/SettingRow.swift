@@ -12,14 +12,8 @@ public struct SettingRowTitleBadge {
     }
 }
 
-/// Inspector row pairing an icon-prefixed title with a trailing control. The title and value
-/// subtitle crawl on hover and also carry a tooltip. The crawl was once dropped for scroll cost; it
-/// costs nothing — swapping the two moves a 64-row inspector by 0.16 ms per scroll step (5.18 vs
-/// 5.02, measured 2026-08-22), and `marqueeOnHover` mounts its measuring copy only while hovered.
-/// The tooltip stays because the crawl stops at `guard !reduceMotion`, which would otherwise leave a
-/// truncated label with no way to read its tail. Use `info` for "what does this do" explanations and
-/// keep `subtitle` for live state ("Browsing data is cleared on each session") so the two roles
-/// don't bleed into each other.
+/// A titled setting with a trailing control. Inspectors reserve subtitles for current
+/// state; static explanations use optional `info`. Action flows may show necessary consequences.
 public struct SettingRow<Content: View>: View {
     let icon: String
     let iconColor: Color
@@ -141,12 +135,7 @@ public struct SettingRow<Content: View>: View {
                 HStack(spacing: 4) {
                     title
                         .font(.body.weight(.medium))
-                        .marqueeOnHover(truncationMode: .tail)
-                        // Kept alongside the crawl, the way the value subtitle
-                        // already does it: the marquee stops at
-                        // `guard !reduceMotion`, and without this the tail of a
-                        // truncated title would be unreachable there.
-                        .help(title)
+                        .fixedSize(horizontal: false, vertical: true)
                     if let titleBadge {
                         Image(systemName: titleBadge.systemImage)
                             .font(.caption)

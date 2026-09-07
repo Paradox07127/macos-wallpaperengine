@@ -2,40 +2,34 @@ import LiveWallpaperCore
 import SwiftUI
 
 extension GeneralSettingsView {
-    /// Per-screen RAM budget for the in-memory video cache.
     @ViewBuilder
     var performanceSection: some View {
         Section {
-            SettingRow(icon: "macwindow.badge.plus", iconColor: .purple, title: "Pause on full-screen apps", subtitle: "Automatically pause wallpapers when a full-screen app is active") {
+            SettingRow(icon: "macwindow.badge.plus", iconColor: .purple, title: "Pause on full-screen apps") {
                 Toggle("", isOn: $pauseOnFullScreen)
                     .labelsHidden()
                     .toggleStyle(.switch)
                     .onChange(of: pauseOnFullScreen) { _, _ in updateGlobalSettings() }
                     .accessibilityLabel(Text("Pause on full-screen apps"))
-                    .accessibilityHint(Text("Automatically pause wallpapers when a full-screen app is active"))
             }
 
             SettingRow(
                 icon: "battery.25",
                 iconColor: .green,
-                title: "Pause in Low Power Mode",
-                subtitle: "Yield the GPU while macOS is in Low Power Mode",
-                info: "While macOS Low Power Mode is on, wallpapers pause to save battery. They resume as soon as you turn it off."
+                title: "Pause in Low Power Mode"
             ) {
                 Toggle("", isOn: $pauseInLowPowerMode)
                     .labelsHidden()
                     .toggleStyle(.switch)
                     .onChange(of: pauseInLowPowerMode) { _, _ in updateGlobalSettings() }
                     .accessibilityLabel(Text("Pause in Low Power Mode"))
-                    .accessibilityHint(Text("Yield the GPU while macOS is in Low Power Mode"))
             }
 
             SettingRow(
                 icon: "rectangle.on.rectangle",
                 iconColor: .purple,
                 title: "Pause when windows cover the desktop",
-                subtitle: "Pause when app windows cover most of the screen, even without full-screen",
-                info: "When open windows cover about 85 percent or more of a display, the wallpaper pauses to free CPU and GPU. It resumes as soon as you reveal the desktop."
+                info: "Pauses when windows cover about \(0.85, format: .percent) of the display; resumes when the desktop is revealed."
             ) {
                 Toggle("", isOn: $pauseOnWindowOcclusion)
                     .labelsHidden()
@@ -49,16 +43,15 @@ extension GeneralSettingsView {
             SettingRow(
                 icon: "gauge.with.dots.needle.33percent",
                 iconColor: .teal,
-                title: "Reduce frame rate when covered",
-                subtitle: "Lower the frame rate when windows cover the desktop or on battery, to save power",
-                info: "When windows cover about half the screen, or your Mac is unplugged and wallpapers keep playing, the frame rate drops to about half to save GPU power. Full speed returns once the desktop is visible again. Affects scene (Wallpaper Engine) wallpapers."
+                title: "Adaptive frame rate",
+                info: "Uses about half the scene frame rate when windows cover half the display or the Mac is on battery."
             ) {
                 Toggle("", isOn: $adaptiveFrameRateEnabled)
                     .labelsHidden()
                     .toggleStyle(.switch)
                     .onChange(of: adaptiveFrameRateEnabled) { _, _ in updateGlobalSettings() }
-                    .accessibilityLabel(Text("Reduce frame rate when covered"))
-                    .accessibilityHint(Text("Lower the frame rate when windows cover the desktop or on battery, to save power"))
+                    .accessibilityLabel(Text("Adaptive frame rate"))
+                    .accessibilityHint(Text("Scene wallpapers only: reduces frame rate when covered or on battery."))
             }
 
             if WPEMetalFXSpatialUpscaler.deviceSupportsSpatialScaler {
@@ -66,13 +59,9 @@ extension GeneralSettingsView {
                     icon: "wand.and.stars",
                     iconColor: .cyan,
                     title: "MetalFX upscaling",
-                    subtitle: "For demanding wallpapers only — renders them smaller, then upscales with MetalFX",
-                    info: "Turn this on only for a wallpaper that makes your Mac run hot. Those render at a reduced internal resolution and Apple's MetalFX spatial scaler rebuilds the full-resolution image, which measurably lowers GPU power. On a light wallpaper the scaler costs more than it saves and can raise power instead — which is why this is off by default. Quality keeps most detail; Performance saves the most but can soften small text. Changing this reloads your wallpapers."
+                    info: "Renders scenes at a lower resolution; may blur text or increase power use. Changes reload wallpapers."
                 ) {
-                    // Read at executor init, so a change must rebuild sessions to
-                    // take effect — reloadAllScreens tears down and restores every
-                    // session, re-reading the scale (same pattern as the
-                    // multithreaded-rendering toggle above).
+                    // Render scale is read at session creation; changes require a rebuild.
                     Picker("", selection: $metalFXRenderScale) {
                         Text("Off").tag(1.0)
                         Text("Quality (0.75×)").tag(0.75)
@@ -82,7 +71,7 @@ extension GeneralSettingsView {
                     .fixedSize()
                     .onChange(of: metalFXRenderScale) { _, _ in screenManager.reloadAllScreens() }
                     .accessibilityLabel(Text("MetalFX upscaling"))
-                    .accessibilityHint(Text("For demanding wallpapers only — renders them smaller, then upscales with MetalFX"))
+                    .accessibilityHint(Text("Reduces scene resolution; may use more power on light scenes. Changes reload wallpapers."))
                 }
             }
 
@@ -90,33 +79,32 @@ extension GeneralSettingsView {
                 icon: "cpu",
                 iconColor: .indigo,
                 title: "Multithreaded rendering",
-                subtitle: "Render each display on its own thread for smoother playback",
-                info: "Each display gets its own render thread, moving frame work off the main thread for smoother playback. Turn this off to render on the main thread — only needed for troubleshooting. Changing it reloads your wallpapers. Affects scene (Wallpaper Engine) wallpapers."
+                info: "Scene wallpapers only. Disable for troubleshooting; changes reload wallpapers."
             ) {
-                // The flag is read once when each session is built, so a live toggle must rebuild sessions to take effect — reloadAllScreens tears down and restores every session, re-reading the flag.
+                // Thread mode is read at session creation; changes require a rebuild.
                 Toggle("", isOn: $offMainRenderEnabled)
                     .labelsHidden()
                     .toggleStyle(.switch)
                     .onChange(of: offMainRenderEnabled) { _, _ in screenManager.reloadAllScreens() }
                     .accessibilityLabel(Text("Multithreaded rendering"))
-                    .accessibilityHint(Text("Render each display on its own thread for smoother playback"))
+                    .accessibilityHint(Text("Scene wallpapers only. Disable for troubleshooting; changes reload wallpapers."))
             }
             #endif
 
-            SettingRow(icon: "bolt.circle.fill", iconColor: .yellow, title: "Pause on battery", subtitle: "Switch wallpapers to a static frame when your Mac is unplugged") {
+            SettingRow(icon: "bolt.circle.fill", iconColor: .yellow, title: "Pause on battery") {
                 Toggle("", isOn: $globalPauseOnBattery)
                     .labelsHidden()
                     .toggleStyle(.switch)
                     .onChange(of: globalPauseOnBattery) { _, _ in updateGlobalSettings() }
                     .accessibilityLabel(Text("Pause on battery"))
-                    .accessibilityHint(Text("Switch wallpapers to a static frame when your Mac is unplugged"))
             }
 
             SettingRow(
                 icon: "hand.raised",
                 iconColor: .blue,
-                title: "App Exceptions",
-                subtitle: appExceptionsSubtitle
+                title: "Application Pause Rules",
+                subtitle: appExceptionsSubtitle,
+                info: "Rules apply to all displays."
             ) {
                 Button("Edit") { showAppExceptions = true }
                     .fixedSize()
@@ -127,8 +115,7 @@ extension GeneralSettingsView {
                 icon: "memorychip",
                 iconColor: .pink,
                 title: "Video preload (RAM)",
-                subtitle: "Preload video loops into memory to reduce disk reads",
-                info: "Caching keeps each looping video in RAM so it doesn't re-read your disk every cycle — saving SSD wear and power. Drag to Off to stream straight from disk and use the least memory. The value below is the budget per screen (and the total across all displays)."
+                info: "Uses memory per display to reduce disk reads. When off, videos stream from disk."
             ) {
                 VStack(alignment: .trailing, spacing: 4) {
                     HStack(spacing: DesignTokens.Inspector.sliderValueSpacing) {
@@ -167,11 +154,10 @@ extension GeneralSettingsView {
         }
     }
 
-    // One key per count instead of an interpolated English "s": the shared key
-    // dropped that morpheme mid-sentence in ja/zh, gluing a Latin s onto CJK.
+    /// Keep singular and plural in separate localization keys.
     private var appExceptionsSubtitle: LocalizedStringKey {
         if applicationRules.isEmpty {
-            return "Pause wallpapers while chosen apps are in use"
+            return "No apps added"
         }
         if applicationRules.count == 1 {
             return "Active for 1 app"

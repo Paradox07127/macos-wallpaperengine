@@ -21,8 +21,7 @@ struct AppExceptionsSheet: View {
 
     private var header: some View {
         SteamSheetHeader(
-            title: "Application Exceptions",
-            subtitle: "Pause wallpapers on all displays while these apps are in use, to free up the GPU."
+            title: "Application Pause Rules"
         )
         .padding(DesignTokens.Spacing.lg)
     }
@@ -33,7 +32,6 @@ struct AppExceptionsSheet: View {
             IllustratedEmptyState(
                 symbol: "app.badge.checkmark",
                 title: "No apps added",
-                message: "Add apps like Xcode, Final Cut Pro, or a game.",
                 primary: EmptyStateButtonAction("Add Application") { addApp() }
             )
         } else {

@@ -101,7 +101,7 @@ struct MenuBarContent: View {
                 .labelsHidden()
                 .disabled(isWallpaperSwitchDisabled)
                 .accessibilityElement(children: .ignore)
-                .help(Text("LiveWallpaper system on/off — keeps the app running in the background"))
+                .help(Text("Enable wallpapers. The app keeps running when disabled."))
                 .accessibilityLabel(Text("LiveWallpaper system"))
                 .accessibilityValue(isWallpaperEnabled ? Text("On") : Text("Off"))
                 .accessibilityAddTraits(.isButton)
@@ -112,9 +112,7 @@ struct MenuBarContent: View {
         .frame(maxWidth: .infinity)
     }
 
-    /// Present only when Sparkle is holding an update it has already found and
-    /// deliberately not shown (see `SparkleUpdaterController`). Clicking hands
-    /// control to Sparkle's own install UI.
+    /// Opens Sparkle's update UI when a discovered update is pending.
     @ViewBuilder
     private var updateButton: some View {
         if updater.availableVersion != nil {
@@ -273,7 +271,6 @@ struct MenuBarContent: View {
             .adaptiveGlassButton(.prominent)
             .controlSize(.large)
             .frame(maxWidth: .infinity)
-            .help(Text("Manage — open the LiveWallpaper settings window"))
             .accessibilityLabel(Text("Manage wallpapers"))
 
             GlassIconButton("gearshape", action: invokeOpenSettings)

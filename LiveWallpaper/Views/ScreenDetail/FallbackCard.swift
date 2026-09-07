@@ -73,12 +73,6 @@ struct FallbackCard: View {
                 if case .missingDependency(let ids) = reason {
                     dependencyList(ids: ids)
                 }
-
-                if origin.originalType == .scene && reason == .unsupportedType {
-                    Text("Tip: many creators publish a video version of the same wallpaper.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
             }
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)

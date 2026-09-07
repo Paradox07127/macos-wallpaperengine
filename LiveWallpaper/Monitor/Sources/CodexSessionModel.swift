@@ -1,6 +1,9 @@
 import Foundation
 
 struct CodexSessionModel: Sendable {
+    var activity = AgentActivityState()
+    private(set) var parentSessionID: String?
+    private var lastUsageRecordAt: Date?
     private(set) var sessionId: String?
     private(set) var projectName: String?
     private(set) var gitBranch: String?
@@ -45,19 +48,51 @@ struct CodexSessionModel: Sendable {
     mutating func ingest(decodedLine line: [String: Any]) {
         let payload = line["payload"] as? [String: Any] ?? [:]
         let timestamp = Self.timestamp(from: line, payload: payload)
-        if let timestamp {
-            markFresh(at: timestamp)
-            AgentSignalDeriver.appendRecentEventTime(&recentEventTimes, timestamp.timeIntervalSince1970)
+        guard let lineType = Self.stringValue(line["type"]) else { return }
+        let payloadType = payload["type"] as? String ?? ""
+        let eventTypes: Set = ["task_started", "task_complete", "task_aborted", "turn_aborted",
+                               "agent_message", "user_message", "item_completed", "token_count", "exec_approval_request",
+                               "apply_patch_approval_request", "exec_approval_response", "apply_patch_approval_response"]
+        let responseTypes: Set = ["function_call", "custom_tool_call", "local_shell_call", "web_search_call",
+                                  "function_call_output", "custom_tool_call_output", "message"]
+        guard ["session_meta", "turn_context", "token_usage_record", "compacted"].contains(lineType)
+            || (lineType == "event_msg" && eventTypes.contains(payloadType))
+            || (lineType == "response_item" && responseTypes.contains(payloadType)) else { return }
+        if lineType == "response_item", payloadType == "message",
+           !["user", "assistant"].contains(payload["role"] as? String ?? "") {
+            return
         }
-
+        if payloadType == "item_completed" {
+            let item = payload["item"] as? [String: Any] ?? [:]
+            let type = (item["type"] as? String ?? "").lowercased()
+            // Reasoning summaries and duplicate message completions add no
+            // actionable tool activity; context compaction only resets usage.
+            if type == "contextcompaction" {
+                activity.contextTokens = nil
+                return
+            }
+            guard ["commandexecution", "filechange", "websearch", "mcptoolcall"].contains(type) else { return }
+        }
+        let bookkeeping = lineType == "token_usage_record" || lineType == "turn_context" || payloadType == "token_count"
+        if !bookkeeping, let timestamp {
+            markFresh(at: timestamp)
+            if lineType != "session_meta" {
+                AgentSignalDeriver.appendRecentEventTime(&recentEventTimes, timestamp.timeIntervalSince1970)
+            }
+        }
         if let discoveredModel = Self.discoveredModel(in: payload) {
             model = discoveredModel
         }
-
-        guard let lineType = Self.stringValue(line["type"]) else { return }
         switch lineType {
         case "session_meta":
             ingestSessionMeta(payload)
+        case "token_usage_record":
+            if let usage = payload["thread_token_usage"] as? [String: Any] {
+                tokens = Self.tokenTotals(from: usage)
+                lastUsageRecordAt = timestamp
+            }
+        case "compacted":
+            activity.contextTokens = nil
         case "turn_context":
             // Repeated every turn, unlike session_meta which appears once at line 1.
             // A >20 MiB rollout starts mid-file and never sees that first line, so
@@ -78,19 +113,21 @@ struct CodexSessionModel: Sendable {
         freshnessTimeout: TimeInterval = 180
     ) -> MonitorAgentStatus {
         guard let lastEventAt else { return .unknown }
+        guard activity.turnStartedAt != nil || !activity.tools.isEmpty
+            || lastTerminalEventIsTaskComplete || pendingApproval else { return .unknown }
         let age = max(0, now.timeIntervalSince(lastEventAt))
 
-        if pendingApproval && processAlive {
+        if pendingApproval || activity.phase == .waitingForInput, processAlive {
             return .needsInput
         }
         // A completed turn settles the session even if the file is still warm.
-        if lastTerminalEventIsTaskComplete && processAlive {
+        if lastTerminalEventIsTaskComplete, processAlive {
             return .idle
         }
         // An unfinished task while the process is alive stays running regardless
         // of how quiet the transcript has gone — a long tool writes nothing. The
         // 5-minute `stale` warning is what surfaces a suspicious one.
-        if !lastTerminalEventIsTaskComplete && processAlive {
+        if !lastTerminalEventIsTaskComplete, processAlive {
             return .running
         }
         if age < 15, !lastTerminalEventIsTaskComplete {
@@ -102,7 +139,9 @@ struct CodexSessionModel: Sendable {
         return .unknown
     }
 
-    var worktreeName: String? { MonitorWorktree.name(fromCwd: cwd) }
+    var worktreeName: String? {
+        MonitorWorktree.name(fromCwd: cwd)
+    }
 
     func sessionState(
         now: Date,
@@ -118,14 +157,14 @@ struct CodexSessionModel: Sendable {
             provider: .codex,
             projectName: projectName ?? fallbackProjectName,
             status: currentStatus,
-            statusDetail: lastToolName,
+            statusDetail: currentStatus == .running ? lastToolName : nil,
             model: model,
             gitBranch: gitBranch,
             startedAt: startedAt?.timeIntervalSince1970,
             lastEventAt: lastEventAt.timeIntervalSince1970,
             processAlive: processAlive,
             turnCount: turnCount,
-            tokens: tokens,
+            tokens: tokens
         )
         state.recentEventTimes = AgentSignalDeriver.trimmedEventTimes(recentEventTimes)
         state.recentTools = AgentSignalDeriver.trimmedTools(recentTools)
@@ -137,11 +176,13 @@ struct CodexSessionModel: Sendable {
             now: now.timeIntervalSince1970
         )
         state.worktreeName = worktreeName
+        state.parentSessionID = parentSessionID
+        activity.apply(to: &state)
         return state
     }
 
     func snapshotState() -> SessionAggregateState {
-        SessionAggregateState(
+        var state = SessionAggregateState(
             provider: .codex,
             sessionId: sessionId,
             projectName: projectName,
@@ -157,11 +198,14 @@ struct CodexSessionModel: Sendable {
             lastStatusEventAt: lastStatusEventAt?.timeIntervalSince1970,
             lastTerminalEventIsTaskComplete: lastTerminalEventIsTaskComplete
         )
+        state.activity = activity.checkpoint()
+        return state
     }
 
     static func restore(from state: SessionAggregateState) -> CodexSessionModel? {
         guard state.provider == .codex else { return nil }
         var model = CodexSessionModel()
+        model.activity = state.activity ?? AgentActivityState()
         model.sessionId = state.sessionId
         model.projectName = state.projectName
         model.gitBranch = state.gitBranch
@@ -182,7 +226,9 @@ struct CodexSessionModel: Sendable {
 
     private mutating func ingestSessionMeta(_ payload: [String: Any]) {
         sessionId = Self.stringValue(payload["id"]) ?? Self.stringValue(payload["session_id"]) ?? sessionId
+        parentSessionID = Self.stringValue(payload["parent_thread_id"]).map { "codex:" + $0 }
         ingestLocationMetadata(payload)
+        activity.contextWindow = Self.intValue(payload["context_window"])
     }
 
     /// cwd + branch, from either `session_meta` (once, at line 1) or `turn_context`
@@ -206,12 +252,25 @@ struct CodexSessionModel: Sendable {
 
         switch payloadType {
         case "task_started":
-            turnCount += 1
+            if activity.beginTurn(id: Self.stringValue(payload["turn_id"]), at: timestamp?.timeIntervalSince1970 ?? 0) {
+                turnCount += 1
+            }
+            activity.contextWindow = Self.intValue(payload["model_context_window"]) ?? activity.contextWindow
             if let timestamp {
                 clearPendingApproval(at: timestamp)
                 markTerminal(false, at: timestamp)
             }
+        case "item_completed":
+            ingestCompletedItem(payload, timestamp: timestamp)
+        case "task_aborted", "turn_aborted":
+            activity.finish(.interrupted, at: timestamp?.timeIntervalSince1970 ?? 0)
+            lastToolName = nil
+            if let timestamp {
+                markTerminal(true, at: timestamp)
+                clearPendingApproval(at: timestamp)
+            }
         case "task_complete":
+            activity.finish(.completed, at: timestamp?.timeIntervalSince1970 ?? 0)
             if let timestamp {
                 clearPendingApproval(at: timestamp)
                 markTerminal(true, at: timestamp)
@@ -222,41 +281,79 @@ struct CodexSessionModel: Sendable {
             if let timestamp {
                 clearPendingApproval(at: timestamp)
                 if payloadType == "user_message" {
+                    if lastTerminalEventIsTaskComplete {
+                        activity.beginTurn(id: nil, at: timestamp.timeIntervalSince1970)
+                    }
                     markTerminal(false, at: timestamp)
+                }
+                if activity.pendingCount == 0 {
+                    activity.transition(.responding, at: timestamp.timeIntervalSince1970)
                 }
             }
         case "token_count":
-            ingestTokenCount(payload)
+            if lastUsageRecordAt == nil || timestamp.map({ $0 > lastUsageRecordAt! }) == true {
+                ingestTokenCount(payload)
+            }
         default:
             if Self.isApprovalRequest(payloadType) {
                 if let timestamp {
                     markPendingApproval(at: timestamp)
+                    activity.transition(.waitingForApproval, at: timestamp.timeIntervalSince1970)
                     markTerminal(false, at: timestamp)
                 }
             } else if Self.isApprovalResolution(payloadType), let timestamp {
                 clearPendingApproval(at: timestamp)
+                activity.transition(.responding, at: timestamp.timeIntervalSince1970)
             }
         }
     }
 
     private mutating func ingestResponseItem(_ payload: [String: Any], timestamp: Date?) {
-        guard let toolName = Self.toolName(from: payload) else { return }
-        lastToolName = toolName
         let at = timestamp?.timeIntervalSince1970 ?? lastEventAt?.timeIntervalSince1970 ?? 0
-        recentTools.append(MonitorAgentToolEvent(name: toolName, at: at, ok: nil))
-        if recentTools.count > AgentSignalDeriver.toolLoopBuffer {
-            recentTools = Array(recentTools.suffix(AgentSignalDeriver.toolLoopBuffer))
+        let type = payload["type"] as? String ?? ""
+        let id = Self.stringValue(payload["call_id"]) ?? Self.stringValue(payload["id"]) ?? "anonymous:\(at)"
+        if type.hasSuffix("_output") {
+            // A result's text is not a success protocol; only structured results can supply ok.
+            activity.endTool(id: id, at: at, ok: nil)
+            lastToolName = activity.currentTool
+        } else if let toolName = Self.toolName(from: payload) {
+            activity.beginTool(id: id, name: toolName, at: at)
+            lastToolName = activity.currentTool
+            if let timestamp {
+                markTerminal(false, at: timestamp)
+            }
         }
-        if let timestamp {
-            markTerminal(false, at: timestamp)
+        recentTools = activity.tools
+    }
+
+    private mutating func ingestCompletedItem(_ payload: [String: Any], timestamp: Date?) {
+        guard let item = payload["item"] as? [String: Any], let id = Self.stringValue(item["id"]) else { return }
+        let type = (item["type"] as? String ?? "").lowercased()
+        let names = ["commandexecution": "shell", "filechange": "file_change", "websearch": "web_search", "mcptoolcall": "mcp"]
+        let at = ((payload["completed_at_ms"] as? NSNumber)?.doubleValue).map { $0 / 1000 } ?? timestamp?.timeIntervalSince1970 ?? 0
+        if type == "contextcompaction" {
+            activity.contextTokens = nil; return
         }
+        guard let name = names[type] else { return }
+        let start = ((payload["started_at_ms"] as? NSNumber)?.doubleValue).map { $0 / 1000 } ?? at
+        let status = (item["status"] as? String ?? "").lowercased()
+        let code = Self.intValue(item["exit_code"])
+        let ok: Bool? = code.map { $0 == 0 } ?? (["completed", "success"].contains(status) ? true : (["failed", "declined"].contains(status) ? false : nil))
+        activity.beginTool(id: id, name: name, at: start)
+        activity.endTool(id: id, at: at, ok: ok, duration: max(0, at - start))
+        recentTools = activity.tools
+        lastToolName = activity.currentTool
     }
 
     private mutating func ingestTokenCount(_ payload: [String: Any]) {
         if let info = payload["info"] as? [String: Any] {
+            activity.contextWindow = Self.intValue(info["model_context_window"]) ?? activity.contextWindow
+            if let usage = info["last_token_usage"] as? [String: Any] {
+                activity.contextTokens = Self.intValue(usage["input_tokens"])
+            }
             if let total = info["total_token_usage"] as? [String: Any] {
                 tokens = Self.tokenTotals(from: total)
-                recordLastUsage(from: total)
+                recordLastUsage(from: (info["last_token_usage"] as? [String: Any]) ?? total)
                 return
             }
             if let last = info["last_token_usage"] as? [String: Any] {
@@ -323,15 +420,8 @@ struct CodexSessionModel: Sendable {
     }
 
     private static func parseTimestamp(_ value: String) -> Date? {
-        let fractional = ISO8601DateFormatter()
-        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = fractional.date(from: value) {
-            return date
-        }
-
-        let plain = ISO8601DateFormatter()
-        plain.formatOptions = [.withInternetDateTime]
-        return plain.date(from: value)
+        (try? Date(value, strategy: Date.ISO8601FormatStyle(includingFractionalSeconds: true)))
+            ?? (try? Date(value, strategy: .iso8601))
     }
 
     private static func discoveredModel(in payload: [String: Any]) -> String? {

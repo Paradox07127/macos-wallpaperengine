@@ -11,8 +11,7 @@ extension GeneralSettingsView {
                 icon: "waveform",
                 iconColor: audioResponseEnabled ? audioStatusColor : .pink,
                 title: "Audio Response",
-                subtitle: "Let compatible scenes move with the music and sound playing on your Mac.",
-                info: "Analyzes your Mac's audio output on-device to compute a frequency spectrum for audio-reactive scenes. Nothing is recorded, saved, or sent anywhere. macOS asks for permission the first time you turn this on."
+                info: "Requires system audio access. Compatible scenes use local analysis; audio is not saved or uploaded."
             ) {
                 HStack(spacing: 8) {
                     if audioResponseEnabled {

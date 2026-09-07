@@ -3,10 +3,7 @@ import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
-/// Linking or downloading a Wallpaper Engine install for the assets some
-/// scenes reference.
-/// The download progress gets a row of its own here: a multi-GB bar squeezed into the
-/// trailing slot next to three buttons was the one place this page ran out of width.
+/// Links or downloads shared Wallpaper Engine assets.
 struct WorkshopEngineAssetsSection: View {
     @Environment(WorkshopSetupController.self) private var controller
 
@@ -22,8 +19,7 @@ struct WorkshopEngineAssetsSection: View {
                 icon: "shippingbox",
                 iconColor: .brown,
                 title: "Wallpaper Engine assets",
-                subtitle: engineAssetsSubtitle,
-                info: "Scenes reference textures, shaders and models that ship with Wallpaper Engine rather than with the scene. Loomscreen bundles clean-room equivalents of the most common ones, but the rest are skipped without an install — the scene still renders, so the loss is silent. Read-only access; no files are modified."
+                info: "Shared assets required by some scenes. Linked files are read-only."
             ) {
                 engineAssetsControl
                     .frame(maxHeight: 24)
@@ -41,8 +37,7 @@ struct WorkshopEngineAssetsSection: View {
                     icon: "arrow.triangle.2.circlepath",
                     iconColor: .brown,
                     title: "Check for asset updates at launch",
-                    subtitle: "Look for a newer Wallpaper Engine build when Loomscreen starts",
-                    info: "Runs the same version check as the button, once per launch. It only reads Steam's build number — nothing is downloaded until you choose to update."
+                    info: "Checks the version only. Downloads require choosing Update."
                 ) {
                     Toggle("", isOn: $checksAssetsUpdateAtLaunch)
                         .labelsHidden()
@@ -62,16 +57,9 @@ struct WorkshopEngineAssetsSection: View {
         }
     }
 
-    private var engineAssetsSubtitle: LocalizedStringKey {
-        engineInstaller.hasManagedInstall || engineAssets.isAuthorized
-            ? "Linked — scenes can use Wallpaper Engine's shared assets"
-            : "Required for full scene support — download or link an install"
-    }
-
     // MARK: - Download progress
 
-    /// Only the determinate download has its own row; the short indeterminate
-    /// phases stay in the trailing slot where a spinner costs nothing.
+    /// Determinate downloads use a separate row; other phases use an inline spinner.
     private var downloadFraction: Double? {
         guard engineInstaller.isBusy, case .downloading = engineInstaller.phase else { return nil }
         return engineInstaller.progress
@@ -137,8 +125,6 @@ struct WorkshopEngineAssetsSection: View {
         HStack(spacing: DesignTokens.Spacing.xs) {
             switch engineInstaller.phase {
             case .downloading:
-                // The bar and its numbers live on their own row; anything left
-                // here would only duplicate them.
                 if engineInstaller.progress == nil {
                     ProgressView().controlSize(.small)
                     Text("Starting…").font(DesignTokens.Typography.caption).foregroundStyle(.secondary)
@@ -293,8 +279,7 @@ struct WorkshopEngineAssetsSection: View {
                 tint: DesignTokens.Colors.Status.active
             )
         }
-        // Names the missing prerequisite rather than the generic sentence: this
-        // is also the only non-hover way to read why Download is greyed out.
+        // Keep the download blocker visible without requiring hover.
         if let reason = controller.engineAssetsDownloadBlockReason, !controller.hasEngineAssets {
             return EngineAssetsStatusLine(message: reason, tint: .secondary)
         }
@@ -335,8 +320,6 @@ struct WorkshopEngineAssetsSection: View {
                 tint: .secondary
             )
         case .notChecked:
-            // Silent: the row's own subtitle already says the assets are
-            // linked, and repeating it underneath said nothing new.
             return nil
         }
     }

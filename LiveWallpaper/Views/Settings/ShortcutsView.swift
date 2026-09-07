@@ -39,8 +39,6 @@ struct ShortcutsView: View {
                 }
             } header: {
                 SettingsSearchSectionHeader("Global Shortcuts", anchor: .shortcutsGlobal)
-            } footer: {
-                shortcutFooter
             }
             .disabled(!globalShortcutsEnabled)
         }
@@ -74,7 +72,7 @@ struct ShortcutsView: View {
                 icon: "command",
                 iconColor: .blue,
                 title: "Enable Global Shortcuts",
-                subtitle: "Master switch — your bindings are kept while it's off"
+                info: "Bindings are kept while off. Shortcuts require a modifier key and must not conflict with other shortcuts."
             ) {
                 Toggle("", isOn: masterEnableBinding)
                     .labelsHidden()
@@ -99,25 +97,6 @@ struct ShortcutsView: View {
                 persistSettings()
             }
         )
-    }
-
-    private var shortcutFooter: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            shortcutFooterRow(systemImage: "moon.circle", text: "Works even when LiveWallpaper is in the background.")
-            shortcutFooterRow(systemImage: "command", text: "Each combo needs a modifier (⌃ ⌥ ⇧ ⌘), must be unique, and can't clash with the system.")
-        }
-        .font(.caption)
-        .foregroundStyle(.secondary)
-    }
-
-    private func shortcutFooterRow(systemImage: String, text: LocalizedStringKey) -> some View {
-        HStack(alignment: .top, spacing: 6) {
-            Image(systemName: systemImage)
-                .frame(width: 14, alignment: .center)
-                .accessibilityHidden(true)
-            Text(text)
-                .fixedSize(horizontal: false, vertical: true)
-        }
     }
 
     private func bindingFor(_ action: GlobalShortcutAction) -> GlobalShortcutBinding? {
