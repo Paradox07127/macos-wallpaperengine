@@ -14,32 +14,51 @@ actor DataHub: MonitorSnapshotSink {
 
     private var lastPublish: Date?
     private var trailingTask: Task<Void, Never>?
+    private var isStopped = false
 
     /// Injectable throttle (tests); production default 0.5s (≤2Hz).
-    init(broker: SnapshotBroker, throttleInterval: TimeInterval = 0.5) {
+    init(
+        broker: SnapshotBroker,
+        throttleInterval: TimeInterval = 0.5,
+        initialSnapshot: MonitorSnapshot? = nil,
+        agentsEnabled: Bool = true
+    ) {
         self.broker = broker
         self.throttleInterval = throttleInterval
+        self.agentsEnabled = agentsEnabled
+        if let initialSnapshot {
+            system = initialSnapshot.system
+            nowPlaying = initialSnapshot.nowPlaying
+            if agentsEnabled, let agents = initialSnapshot.agents {
+                agentsBySource = Dictionary(grouping: agents, by: { $0.provider.rawValue })
+            }
+            // Preserve measurement times: a retained frame is not a new sample.
+            broker.publish(initialSnapshot)
+        }
     }
 
     // MARK: - MonitorSnapshotSink
 
     func updateSystem(_ snapshot: MonitorSystemSnapshot) async {
+        guard !isStopped else { return }
         system = snapshot
         schedulePublish()
     }
 
     func updateAgents(sourceID: String, sessions: [MonitorAgentSessionState]) async {
-        guard agentsEnabled else { return }
+        guard !isStopped, agentsEnabled else { return }
         agentsBySource[sourceID] = sessions
         schedulePublish()
     }
 
     func updateHealth(_ health: MonitorSourceHealth) async {
+        guard !isStopped else { return }
         healthBySource[health.sourceID] = health
         schedulePublish()
     }
 
     func updateNowPlaying(_ state: MonitorNowPlayingState?) async {
+        guard !isStopped else { return }
         nowPlaying = state
         schedulePublish()
     }
@@ -47,9 +66,20 @@ actor DataHub: MonitorSnapshotSink {
     // MARK: - Module gating
 
     func setModuleEnabled(agents: Bool) {
+        guard !isStopped else { return }
         agentsEnabled = agents
-        if !agents { agentsBySource.removeAll() }
+        if !agents {
+            agentsBySource.removeAll()
+        }
         schedulePublish()
+    }
+
+    /// Retire the writer before stopping its sources. Neither a trailing timer
+    /// nor a late source callback may overwrite the next pipeline's snapshot.
+    func stop() {
+        isStopped = true
+        trailingTask?.cancel()
+        trailingTask = nil
     }
 
     // MARK: - Throttled publish
@@ -74,6 +104,7 @@ actor DataHub: MonitorSnapshotSink {
     }
 
     private func firePendingTrailingPublish() {
+        guard !isStopped else { return }
         trailingTask = nil
         publishNow(at: Date())
     }
@@ -95,11 +126,13 @@ actor DataHub: MonitorSnapshotSink {
 
     private func composedAgents() -> [MonitorAgentSessionState]? {
         guard agentsEnabled, !agentsBySource.isEmpty else { return nil }
-        let merged = agentsBySource.values.flatMap { $0 }
+        let merged = agentsBySource.values.flatMap(\.self)
         return merged.sorted { lhs, rhs in
             let lp = lhs.status.attentionPriority
             let rp = rhs.status.attentionPriority
-            if lp != rp { return lp > rp }
+            if lp != rp {
+                return lp > rp
+            }
             return lhs.lastEventAt > rhs.lastEventAt
         }
     }

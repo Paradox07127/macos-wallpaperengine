@@ -27,6 +27,13 @@ struct AgentActivityRenderingTests {
                                                          id: "tool", completedAt: now - 16, durationSeconds: 4)]
             sessions.append(session)
         }
+        // Exercise the full row budget with additional hidden sessions, as on a
+        // busy desktop; a four-session fixture cannot reveal footer overflow.
+        for index in 4 ..< 53 {
+            var session = sessions[3]
+            session.id = "fixture-\(index)"
+            sessions.append(session)
+        }
         let snapshot = MonitorSnapshot(timestamp: now, agents: sessions)
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("AgentActivityVisualQA", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
