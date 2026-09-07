@@ -346,4 +346,16 @@ if len(distinct) != 1:
     )
 PYGATE
 
+# A locked screen makes CGWindowListCreateImage return a black image rather
+# than fail, so a screen-reading suite without the skip guard goes red for a
+# reason no product code can be wrong about. Anything that reads the screen has
+# to route through CaptureEnvironment.
+while read -r capture_suite; do
+  if ! grep -Fq 'CaptureEnvironment.requireUnlockedScreen' "$capture_suite"; then
+    echo "ERROR: $capture_suite captures the screen without CaptureEnvironment.requireUnlockedScreen(); a locked screen would fail it instead of skipping it." >&2
+    exit 1
+  fi
+done < <(grep -rl 'CGWindowListCreateImage' LiveWallpaperTests --include='*.swift' \
+           | grep -v 'Support/CaptureEnvironment.swift' | sort)
+
 echo "Release tooling contract passed for Lite and Pro."
