@@ -37,18 +37,22 @@ struct AgentActivityRenderingTests {
         let snapshot = MonitorSnapshot(timestamp: now, agents: sessions)
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("AgentActivityVisualQA", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        for (size, height) in [(MonitorWidgetSize.medium, 170.0), (.large, 376.0)] {
+        for (size, factor, suffix) in [(MonitorWidgetSize.medium, 1.0, "m"), (.large, 1.0, "l"),
+                                       (.large, 0.85, "l-small"), (.large, 1.5, "l-scaled")] {
+            let geometry = MonitorBoardGeometry(boardSize: CGSize(width: 1440, height: 900), referenceWidth: 1440 / factor)
+            let tile = geometry.renderRect(forRawRect: CGRect(origin: .zero, size: geometry.pixelSize(for: .fleet, size: size))).size
             let context = MonitorWidgetContext(snapshot: snapshot, history: MonitorHistorySnapshot(),
                                                placement: MonitorWidgetPlacement(kind: .fleet, size: size), isEditing: false,
                                                reduceMotion: true, now: Date(timeIntervalSince1970: now))
-            let content = AgentSessionWidgetView(context: context).frame(width: 364, height: height)
+            let content = AgentSessionWidgetView(context: context).frame(width: tile.width, height: tile.height)
                 .padding(16).background(Design.boardWash)
                 .environment(\.locale, Locale(identifier: "zh-Hans"))
             let renderer = ImageRenderer(content: content)
             renderer.scale = 2
             let image = try #require(renderer.cgImage)
-            #expect(image.width == 792)
-            try write(image, to: folder.appendingPathComponent("widget-\(size.rawValue).png"))
+            #expect(abs(Double(image.width) - (tile.width + 32) * 2) <= 1)
+            #expect(abs(Double(image.height) - (tile.height + 32) * 2) <= 1)
+            try write(image, to: folder.appendingPathComponent("widget-\(suffix).png"))
         }
         let host = NSHostingView(rootView: AgentActivityPanel(snapshot: snapshot, observesLiveSources: false).environment(\.locale, Locale(identifier: "zh-Hans")))
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 860, height: 620),

@@ -86,7 +86,7 @@ struct AgentSessionWidgetView: View {
         }
     }
 
-    // MARK: - L (364×376) — action strip + up to 4 two-tier rows
+    // MARK: - L — fit the board's actual tile, including its gutter (356×356 at 1×)
 
     @ViewBuilder
     private func largeBody(cellHeight: CGFloat, now: Double) -> some View {
@@ -95,15 +95,23 @@ struct AgentSessionWidgetView: View {
         let rows = Self.largeRows(ordered, cap: cap)
         shell(scale: scale, cellHeight: cellHeight) {
             if !rows.isEmpty {
-                VStack(alignment: .leading, spacing: scale.gap) {
-                    actionStrip(scale: scale, now: now)
-                    ForEach(Array(rows.enumerated()), id: \.element.id) { index, session in
-                        AgentSessionFullRow(session: session, now: now, isLead: index == 0,
-                                            reduceMotion: reduceMotion, scale: scale)
+                GeometryReader { area in
+                    // The content cannot impose its intrinsic height on the
+                    // panel chrome. Prefer four rows, then fewer at small scales.
+                    ViewThatFits(in: .vertical) {
+                        ForEach(Array((1 ... rows.count).reversed()), id: \.self) { count in
+                            VStack(alignment: .leading, spacing: scale.gap) {
+                                actionStrip(scale: scale, now: now)
+                                ForEach(Array(rows.prefix(count).enumerated()), id: \.element.id) { index, session in
+                                    AgentSessionFullRow(session: session, now: now, isLead: index == 0,
+                                                        reduceMotion: reduceMotion, scale: scale)
+                                }
+                            }
+                            .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
-                    Spacer(minLength: 0)
+                    .frame(width: area.size.width, height: area.size.height, alignment: .topLeading)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             } else if !visibleSessions.isEmpty {
                 idleSummary(scale: scale, now: now)
             } else {
@@ -427,19 +435,22 @@ private struct AgentSessionFullRow: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: scale.gap * 0.5) {
+        VStack(alignment: .leading, spacing: scale.gap * 0.4) {
             header
             secondTier
+        }
+        .padding(.horizontal, scale.label * 0.7)
+        .padding(.vertical, scale.label * 0.4)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .background(AgentSessionRowStyle.fill(isBlocked: isBlocked))
+        .overlay(alignment: .bottom) {
             if isLead, isLive {
                 TickTrack(events: session.recentEventTimes ?? [], now: now, span: 180,
                           tint: isBlocked ? Design.signalCoral : Design.signalAmber)
-                    .frame(height: scale.label)
+                    .frame(height: DesignTokens.Spacing.xxs)
+                    .padding(.horizontal, scale.label * 0.7)
             }
         }
-        .padding(.horizontal, scale.label * 0.7)
-        .padding(.vertical, scale.label * 0.55)
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-        .background(AgentSessionRowStyle.fill(isBlocked: isBlocked))
         .overlay(alignment: .leading) {
             AgentSessionRowStyle.accentBar(color: accentColor, isBlocked: isBlocked, scale: scale)
         }

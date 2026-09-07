@@ -616,7 +616,9 @@ enum SystemMetricsSamplers {
             MonitorProcessSample(
                 name: processName(pid: key),
                 cpuPercent: appCPU[key] ?? 0,
-                memBytes: appMem[key] ?? memOf[key] ?? 0
+                memBytes: appMem[key] ?? memOf[key] ?? 0,
+                pid: Int(key),
+                bundleID: ProcessAppIdentity.bundleID(forPID: key)
             )
         }
 
@@ -639,6 +641,8 @@ enum SystemMetricsSamplers {
                     name: processName(pid: entry.pid),
                     cpuPercent: appCPU[entry.pid] ?? 0,
                     memBytes: appMem[entry.pid] ?? 0,
+                    pid: Int(entry.pid),
+                    bundleID: ProcessAppIdentity.bundleID(forPID: entry.pid),
                     ioReadBytesPerSec: appRead[entry.pid] ?? 0,
                     ioWriteBytesPerSec: appWrite[entry.pid] ?? 0
                 )
