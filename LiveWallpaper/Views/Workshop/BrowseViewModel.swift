@@ -49,12 +49,20 @@ enum WorkshopAgeRatingFilter: String, CaseIterable, Identifiable {
         }
     }
 
-    static let defaultSelection: Set<WorkshopAgeRatingFilter> = Set(allCases)
+    /// Everyone only. The signed-out Workshop page hides Questionable and
+    /// Mature (about 18% of the catalog), so browsing them by default is both a
+    /// surprise and the reason a side-by-side with the website disagrees;
+    /// the two chips turn them back on.
+    static let defaultSelection: Set<WorkshopAgeRatingFilter> = [.everyone]
 }
 
 extension WorkshopQueryItem {
     /// True when the item carries Wallpaper Engine's `Mature` maturity tag.
     var isMatureRated: Bool {
+        Self.isMatureRated(tags: tags)
+    }
+
+    static func isMatureRated(tags: [String]) -> Bool {
         tags.contains { $0.caseInsensitiveCompare("Mature") == .orderedSame }
     }
 }
@@ -74,53 +82,74 @@ enum WorkshopGenre {
     ]
 }
 
+/// Steam's Miscellaneous facet, in the page's order, minus `Asset Pack` (that
+/// one is Category: Asset, always excluded). Opt-in and all-of: every selected
+/// tag is required, an empty selection filters nothing — see `makeRequest`.
+enum WorkshopMiscellaneousFilter {
+    static let allTags: [String] = [
+        "Approved", "Audio responsive", "3D", "Customizable", "Puppet Warp", "HDR",
+        "Media Integration", "User Shortcut", "Video Texture",
+    ]
+}
+
+/// Buckets over Steam's 25 Resolution tags: a chip per bucket, and a narrowed
+/// selection excludes every tag of every unselected bucket. Raw values are
+/// persisted (`FilterKey.resolutions`), so the pre-bucket names stay.
 enum WorkshopResolutionFilter: String, CaseIterable, Identifiable {
     case any
     case standardDefinition
-    case fullHD1080
+    case hd = "fullHD1080"
     case quadHD1440
     case ultraHD4K
     case ultrawide
-    case portrait
     case dual
+    case triple
+    case portrait
+    case other
 
     var id: String { rawValue }
 
-    /// Verbatim Wallpaper Engine Workshop labels — no renaming. `.any` is the only localized label.
     var displayName: String {
         switch self {
         case .any:
-            return String(localized: "All", bundle: .appLanguage, comment: "Workshop resolution filter: no restriction.")
+            String(localized: "All", bundle: .appLanguage, comment: "Workshop resolution filter: no restriction.")
         case .standardDefinition:
-            return String(localized: "Standard Definition", bundle: .appLanguage, comment: "Workshop resolution filter display label.")
-        case .fullHD1080:
-            return "1920 x 1080"
+            String(localized: "SD", bundle: .appLanguage, comment: "Workshop resolution filter: standard definition.")
+        case .hd:
+            String(localized: "HD", bundle: .appLanguage, comment: "Workshop resolution filter: 720p to 1080p.")
         case .quadHD1440:
-            return "2560 x 1440"
+            String(localized: "2K", bundle: .appLanguage, comment: "Workshop resolution filter: 2560 x 1440.")
         case .ultraHD4K:
-            return "3840 x 2160"
+            String(localized: "4K", bundle: .appLanguage, comment: "Workshop resolution filter.")
         case .ultrawide:
-            return "3440 x 1440"
-        case .portrait:
-            return "1080 x 1920"
+            String(localized: "Ultrawide", bundle: .appLanguage, comment: "Workshop resolution filter: ultrawide displays.")
         case .dual:
-            return String(localized: "Dual 3840 x 1080", bundle: .appLanguage, comment: "Workshop dual-display resolution filter label.")
+            String(localized: "Dual Monitor", bundle: .appLanguage, comment: "Workshop resolution filter: two-display layouts.")
+        case .triple:
+            String(localized: "Triple Monitor", bundle: .appLanguage, comment: "Workshop resolution filter: three-display layouts.")
+        case .portrait:
+            String(localized: "Portrait", bundle: .appLanguage, comment: "Workshop resolution filter.")
+        case .other:
+            String(localized: "Other resolutions", bundle: .appLanguage, comment: "Workshop resolution filter: other and dynamic resolutions.")
         }
     }
 
     static var selectableCases: [WorkshopResolutionFilter] { allCases.filter { $0 != .any } }
 
-    /// Exact Steam Workshop resolution tag, or `nil` for `.any`.
-    var tag: String? {
+    /// Exact Steam Workshop resolution tags in this bucket (verbatim, Steam
+    /// matches on exact case); empty for `.any`.
+    var tags: [String] {
         switch self {
-        case .any: return nil
-        case .standardDefinition: return "Standard Definition"
-        case .fullHD1080: return "1920 x 1080"
-        case .quadHD1440: return "2560 x 1440"
-        case .ultraHD4K: return "3840 x 2160"
-        case .ultrawide: return "3440 x 1440"
-        case .portrait: return "1080 x 1920"
-        case .dual: return "Dual 3840 x 1080"
+        case .any: []
+        case .standardDefinition: ["Standard Definition"]
+        case .hd: ["1280 x 720", "1366 x 768", "1920 x 1080"]
+        case .quadHD1440: ["2560 x 1440"]
+        case .ultraHD4K: ["3840 x 2160"]
+        case .ultrawide: ["Ultrawide Standard Definition", "Ultrawide 2560 x 1080", "Ultrawide 3440 x 1440"]
+        case .dual: ["Dual Standard Definition", "Dual 3840 x 1080", "Dual 5120 x 1440", "Dual 7680 x 2160"]
+        case .triple: ["Triple Standard Definition", "Triple 4096 x 768", "Triple 5760 x 1080", "Triple 7680 x 1440", "Triple 11520 x 2160"]
+        case .portrait: ["Portrait Standard Definition", "Portrait 720 x 1280", "Portrait 1080 x 1920", "Portrait 1440 x 2560", "Portrait 2160 x 3840"]
+        case .other: ["Other resolution", "Dynamic resolution"]
         }
     }
 }
@@ -139,8 +168,9 @@ final class BrowseViewModel {
     @ObservationIgnored private let services: WorkshopServices
 
     /// Excluded from EVERY query: Application wallpapers can't run in this
-    /// runtime, so never surface them (server-side exclusion, not post-filter).
-    nonisolated static let alwaysExcludedTags = ["Application"]
+    /// runtime, and Asset packs are editor material, not wallpapers — never
+    /// surface either (server-side exclusion, not post-filter).
+    nonisolated static let alwaysExcludedTags = ["Application", "Asset"]
 
     /// `Preset` items restyle another wallpaper rather than being one — excluded
     /// unless the user opted in via Settings → Workshop.
@@ -156,17 +186,35 @@ final class BrowseViewModel {
             // searching; clearing the text drops back to the browse default.
             if preferredSort == .search,
                searchInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                preferredSort = .topRated
+                preferredSort = defaultSort
             }
             scheduleAutoApply()
         }
     }
-    var preferredSort: WorkshopSortMode = .topRated
+    /// Which text fields the search matches. Persisted like the chip rows,
+    /// but not a filter: `resetFilters` and the Filters badge leave it alone.
+    var searchTextTarget: WorkshopSearchTextTarget = .all {
+        didSet {
+            guard searchTextTarget != oldValue else { return }
+            defaults.set(searchTextTarget.rawValue, forKey: FilterKey.searchTextTarget)
+            scheduleAutoApply()
+        }
+    }
+
+    var preferredSort: WorkshopSortMode
+    /// Settings → Workshop's default sort: it seeds `preferredSort` and is
+    /// where clearing a Relevance search lands. Re-read on `onAppear()`.
+    @ObservationIgnored private var defaultSort: WorkshopSortMode
+    /// The pane keeps one view model for the process; a sort or window the
+    /// user picked in this session outranks a default changed in Settings.
+    @ObservationIgnored private var userChangedSortThisSession = false
     private(set) var selectedTypes: Set<WorkshopContentTypeFilter> = Set(WorkshopContentTypeFilter.selectableCases)
     private(set) var selectedAgeRatings: Set<WorkshopAgeRatingFilter> = WorkshopAgeRatingFilter.defaultSelection
     private(set) var selectedResolutions: Set<WorkshopResolutionFilter> = Set(WorkshopResolutionFilter.selectableCases)
     private(set) var selectedGenres: Set<String> = Set(WorkshopGenre.allTags)
-    private(set) var preferredTimeFrame: WorkshopTimeFrame = .allTime
+    /// Empty means no feature is required — the opposite default from the rows above.
+    private(set) var selectedMiscellaneous: Set<String> = []
+    private(set) var preferredTimeFrame: WorkshopTimeFrame
     /// When set, the grid shows only this creator's published files (via
     /// GetUserFiles). Mutually exclusive with `pinnedTag`.
     private(set) var creatorFilter: CreatorFilter?
@@ -185,6 +233,8 @@ final class BrowseViewModel {
     /// ever loaded"; a reload over an existing grid dims it instead.
     private(set) var hasLoadedPage: Bool = false
     private(set) var totalAvailable: Int?
+    /// Steam's own page count for the current query (`WorkshopQueryPage.totalPages`).
+    private(set) var reportedTotalPages: Int?
     private(set) var isLoading: Bool = false
     /// True while paging — current results stay on screen until the new page
     /// replaces them, so memory stays bounded.
@@ -193,9 +243,26 @@ final class BrowseViewModel {
     /// Set when Steam returns HTTP 429; controls stay disabled until it lapses.
     private(set) var rateLimitUntil: Date?
 
-    /// True when no Steam Web API key is stored: browse then runs off Valve's
-    /// public Workshop page (ids only) plus the key-free metadata endpoint.
-    var usesKeylessSearch: Bool { !services.hasWebAPIKey }
+    /// True when no Steam Web API key is stored, or Valve rejected the stored
+    /// one: browse then runs off Valve's public Workshop page (ids only) plus
+    /// the key-free metadata endpoint.
+    var usesKeylessSearch: Bool {
+        services.isKeyless
+    }
+
+    /// The Browse banner for a key Valve rejected. Stays up across reloads
+    /// until dismissed; goes away by itself once the rejection is cleared (a
+    /// new key saved and validated). Keyed on the rejected key's fingerprint so
+    /// dismissing it does not also hide a later rejection of a different key.
+    var showsKeyRejectedNotice: Bool {
+        services.apiKeyRejected && services.rejectedKeyFingerprint != dismissedRejectionFingerprint
+    }
+
+    private var dismissedRejectionFingerprint: String?
+
+    func dismissKeyRejectedNotice() {
+        dismissedRejectionFingerprint = services.rejectedKeyFingerprint
+    }
 
     /// QueryFiles lets us ask for 50; the public page is fixed at 30.
     private var perPage: Int {
@@ -208,9 +275,18 @@ final class BrowseViewModel {
 
     /// 1-based. Steam's QueryFiles `page` param lets us jump to any page directly.
     private(set) var pageIndex: Int = 1
+    /// Target of the last page turn that failed, for the pager's Retry; nil
+    /// once a page loads or a reload starts.
+    private(set) var failedPageTarget: Int?
 
     var isRateLimited: Bool {
         (rateLimitUntil ?? .distantPast) > Date()
+    }
+
+    /// A page turn failed while the previous page stayed on screen — the
+    /// empty-grid error state is gated on `items.isEmpty` and cannot show it.
+    var showsPagingError: Bool {
+        lastError != nil && (!items.isEmpty || currentPageIsFilteredOut)
     }
 
     /// Grid renders these; `items` stays the raw page so pagination/counts stay intact.
@@ -228,8 +304,20 @@ final class BrowseViewModel {
     }
 
     var totalPages: Int? {
+        if let reported = reportedTotalPages, reported > 0 {
+            return min(Self.maxQueryPage, reported)
+        }
         guard let total = totalAvailable, total > 0 else { return nil }
         return Self.pageCount(totalAvailable: total, perPage: perPage)
+    }
+
+    /// Steam answered this page with items, or reports other pages, yet nothing
+    /// survived the client-side drop — the pager has to stay reachable, unlike
+    /// a query with no results at all. A later page that came back empty (no
+    /// total to say so up front) is the same case: the reader paged here and
+    /// has to be able to page back.
+    var currentPageIsFilteredOut: Bool {
+        hasLoadedPage && items.isEmpty && (lastFetchedRawItemCount > 0 || (totalPages ?? 0) > 1 || pageIndex > 1)
     }
 
     var canGoNextPage: Bool {
@@ -243,9 +331,10 @@ final class BrowseViewModel {
         return lastFetchedRawItemCount >= perPage
     }
 
-    /// Size of the last fetched page BEFORE `displayable` dropped Application /
-    /// Preset items: counting `items` instead greys out Next on a full page that
-    /// happened to contain one filtered item.
+    /// `WorkshopQueryPage.sourceItemCount` of the last fetched page — before
+    /// Steam's shells and `displayable`'s Application / Preset drop: counting
+    /// `items` instead greys out Next on a full page that happened to contain
+    /// one filtered item.
     var lastFetchedRawItemCount: Int = 0
 
     var canGoPrevPage: Bool {
@@ -256,8 +345,10 @@ final class BrowseViewModel {
     @ObservationIgnored private var currentRequestToken: UInt64 = 0
     @ObservationIgnored private var autoSearchTask: Task<Void, Never>?
     @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored private let loadGlobalSettings: @MainActor () -> GlobalSettings
+    @ObservationIgnored private let injectedPublicSource: WorkshopPublicSearchSource?
     /// Built on first keyless fetch — it owns a `URLSession`, so a keyed session never makes one.
-    @ObservationIgnored private lazy var publicSource = WorkshopPublicSearchSource()
+    @ObservationIgnored private lazy var publicSource: WorkshopPublicSearchSource = injectedPublicSource ?? WorkshopPublicSearchSource()
 
     /// Quiet window after the last keystroke before auto-search fires: long
     /// enough that mid-word states don't burn API quota, short enough to feel live.
@@ -269,18 +360,56 @@ final class BrowseViewModel {
         makeRequest(page: 1) != currentRequest
     }
 
-    init(services: WorkshopServices, defaults: UserDefaults = .appScoped()) {
+    init(
+        services: WorkshopServices,
+        defaults: UserDefaults = .appScoped(),
+        loadGlobalSettings: @escaping @MainActor () -> GlobalSettings = { SettingsManager.shared.loadGlobalSettings() },
+        publicSource: WorkshopPublicSearchSource? = nil
+    ) {
         self.services = services
         self.defaults = defaults
+        self.loadGlobalSettings = loadGlobalSettings
+        injectedPublicSource = publicSource
+        let globalSettings = loadGlobalSettings()
+        defaultSort = Self.defaultSort(from: globalSettings.workshopDefaultSort)
+        preferredSort = defaultSort
+        preferredTimeFrame = Self.defaultTimeFrame(from: globalSettings.workshopDefaultTimeFrame)
         self.currentRequest = WorkshopQueryRequest(sort: .topRated, timeFrame: .allTime)
         loadPersistedFilters()
         self.currentRequest = makeRequest(page: 1)
     }
 
+    /// `GlobalSettings` stores the raw values as strings (the enums live here,
+    /// not in Core). Relevance needs a search text, so it cannot be a default.
+    nonisolated static func defaultSort(from raw: String) -> WorkshopSortMode {
+        guard let sort = WorkshopSortMode(rawValue: raw), sort != .search else { return .mostPopular }
+        return sort
+    }
+
+    /// All Time is not a window (`days == nil`); Most Popular has no such thing.
+    nonisolated static func defaultTimeFrame(from raw: String) -> WorkshopTimeFrame {
+        guard let timeFrame = WorkshopTimeFrame(rawValue: raw), timeFrame.days != nil else { return .oneWeek }
+        return timeFrame
+    }
+
     func onAppear() {
-        if items.isEmpty, lastError == nil {
+        if applySettingsDefaults() || (items.isEmpty && lastError == nil) {
             Task { await reload() }
         }
+    }
+
+    /// Returns `true` when Settings → Workshop's defaults changed since they
+    /// were last applied and the user has not picked a sort this session.
+    private func applySettingsDefaults() -> Bool {
+        guard !userChangedSortThisSession else { return false }
+        let settings = loadGlobalSettings()
+        let sort = Self.defaultSort(from: settings.workshopDefaultSort)
+        let timeFrame = Self.defaultTimeFrame(from: settings.workshopDefaultTimeFrame)
+        guard sort != defaultSort || timeFrame != preferredTimeFrame else { return false }
+        defaultSort = sort
+        preferredSort = sort
+        preferredTimeFrame = timeFrame
+        return true
     }
 
     /// Reloads after the search debounce only when the applied request would change.
@@ -305,10 +434,12 @@ final class BrowseViewModel {
         let request = makeRequest(page: 1)
         currentRequest = request
         totalAvailable = nil
+        reportedTotalPages = nil
         hasMoreKeylessPages = false
         isLoading = true
         isPaging = false
         lastError = nil
+        failedPageTarget = nil
         _ = await runFetch(request, replacingItems: true, paging: false)
     }
 
@@ -329,6 +460,8 @@ final class BrowseViewModel {
             pageIndex = clamped
             currentRequest = request
         }
+        // Not `!ok` alone: a superseded fetch also returns false, without a failure.
+        failedPageTarget = (!ok && lastError != nil) ? clamped : nil
     }
 
     /// Immediate submit (Return / search button) — skips the typing debounce.
@@ -372,6 +505,16 @@ final class BrowseViewModel {
         await reload()
     }
 
+    /// `WorkshopServices.isKeyless` flipped either way. The keyless creator
+    /// page ignores `excludedtags` and states no total, so a creator scope is
+    /// left rather than carried over to it.
+    func browsePathChanged() async {
+        if usesKeylessSearch, creatorFilter != nil {
+            creatorFilter = nil
+        }
+        await reload()
+    }
+
     /// Scope to items carrying one Workshop tag. Leaves the normal filter selection untouched.
     func browseTag(_ tag: String) async {
         guard !isRateLimited else { return }
@@ -383,6 +526,15 @@ final class BrowseViewModel {
         creatorFilter = nil
         pinnedTag = trimmed
         await reload()
+    }
+
+    /// Test seam: the outcome of a page fetch, without a transport.
+    func applyPageForTesting(sourceItemCount: Int, totalPages: Int?, pageIndex: Int = 1) {
+        items = []
+        lastFetchedRawItemCount = sourceItemCount
+        reportedTotalPages = totalPages
+        hasLoadedPage = true
+        self.pageIndex = pageIndex
     }
 
     /// Applies the scope `browseTag`/`browseCreator` set, without the fetch they
@@ -400,12 +552,20 @@ final class BrowseViewModel {
 
 
     func updateSort(_ sort: WorkshopSortMode) {
+        userChangedSortThisSession = true
         preferredSort = sort
         scheduleAutoApply()
     }
 
+    /// Mirrors the page: its trend sort has no all-time window, so choosing
+    /// All Time there switches to Top Rated (All Time) and keeps the window.
     func updateTimeFrame(_ timeFrame: WorkshopTimeFrame) {
-        preferredTimeFrame = timeFrame
+        userChangedSortThisSession = true
+        if timeFrame == .allTime, preferredSort == .mostPopular {
+            preferredSort = .topRated
+        } else {
+            preferredTimeFrame = timeFrame
+        }
         scheduleAutoApply()
     }
 
@@ -429,6 +589,18 @@ final class BrowseViewModel {
 
     func toggleGenre(_ tag: String) {
         selectedGenres = Self.toggled(tag, in: selectedGenres, all: WorkshopGenre.allTags)
+        persistFilters()
+        scheduleAutoApply()
+    }
+
+    /// A plain add/remove: `toggled()`'s snap-back would turn "no feature
+    /// required" into "every feature required".
+    func toggleMiscellaneous(_ tag: String) {
+        if selectedMiscellaneous.contains(tag) {
+            selectedMiscellaneous.remove(tag)
+        } else {
+            selectedMiscellaneous.insert(tag)
+        }
         persistFilters()
         scheduleAutoApply()
     }
@@ -477,6 +649,7 @@ final class BrowseViewModel {
         selectedAgeRatings = WorkshopAgeRatingFilter.defaultSelection
         selectedResolutions = Set(WorkshopResolutionFilter.selectableCases)
         selectedGenres = Set(WorkshopGenre.allTags)
+        selectedMiscellaneous = []
         persistFilters()
         scheduleAutoApply()
     }
@@ -485,9 +658,17 @@ final class BrowseViewModel {
 
     private enum FilterKey {
         static let types = "loomscreen.workshop.filter.types.v1"
-        static let ages = "loomscreen.workshop.filter.ages.v1"
-        static let resolutions = "loomscreen.workshop.filter.resolutions.v1"
+        /// v1 stored the old "all three selected" default, which now reads as a
+        /// deliberate opt-in to mature content; v2 starts over at Everyone.
+        static let ages = "loomscreen.workshop.filter.ages.v2"
+        static let retiredAgesV1 = "loomscreen.workshop.filter.ages.v1"
+        /// v1 held seven buckets; read against nine, its "everything" is a
+        /// narrowing that drops Triple and Other, so v2 starts over.
+        static let resolutions = "loomscreen.workshop.filter.resolutions.v2"
+        static let retiredResolutionsV1 = "loomscreen.workshop.filter.resolutions.v1"
         static let genres = "loomscreen.workshop.filter.genres.v1"
+        static let miscellaneous = "loomscreen.workshop.filter.miscellaneous.v1"
+        static let searchTextTarget = "loomscreen.workshop.filter.searchTextTarget.v1"
     }
 
     private func persistFilters() {
@@ -495,6 +676,7 @@ final class BrowseViewModel {
         defaults.set(selectedAgeRatings.map(\.rawValue), forKey: FilterKey.ages)
         defaults.set(selectedResolutions.map(\.rawValue), forKey: FilterKey.resolutions)
         defaults.set(Array(selectedGenres), forKey: FilterKey.genres)
+        defaults.set(Array(selectedMiscellaneous), forKey: FilterKey.miscellaneous)
     }
 
     /// Restores one persisted category. An empty result — written by a build
@@ -518,6 +700,7 @@ final class BrowseViewModel {
                 decode: WorkshopContentTypeFilter.init(rawValue:)
             )
         }
+        defaults.removeObject(forKey: FilterKey.retiredAgesV1)
         if let raw = defaults.array(forKey: FilterKey.ages) as? [String] {
             selectedAgeRatings = Self.restoredSelection(
                 raw: raw,
@@ -525,6 +708,7 @@ final class BrowseViewModel {
                 decode: WorkshopAgeRatingFilter.init(rawValue:)
             )
         }
+        defaults.removeObject(forKey: FilterKey.retiredResolutionsV1)
         if let raw = defaults.array(forKey: FilterKey.resolutions) as? [String] {
             selectedResolutions = Self.restoredSelection(
                 raw: raw,
@@ -539,6 +723,13 @@ final class BrowseViewModel {
                 decode: { $0 }
             )
         }
+        // No snap-back here: an empty (or fully retired) selection is the default.
+        if let raw = defaults.array(forKey: FilterKey.miscellaneous) as? [String] {
+            selectedMiscellaneous = Set(raw).intersection(WorkshopMiscellaneousFilter.allTags)
+        }
+        if let target = WorkshopSearchTextTarget(rawValue: defaults.integer(forKey: FilterKey.searchTextTarget)) {
+            searchTextTarget = target
+        }
     }
 
     /// Returns `true` on a successful page load.
@@ -546,27 +737,47 @@ final class BrowseViewModel {
     private func runFetch(_ request: WorkshopQueryRequest, replacingItems: Bool, paging: Bool) async -> Bool {
         currentRequestToken &+= 1
         let token = currentRequestToken
+        // Read once, with the request it shaped (`makeRequest` ran in this same
+        // turn): a key rejected while the fetch is in flight must not have the
+        // keyed page's metadata interpreted as the public page's.
+        let keyless = usesKeylessSearch
+        // Safety net under `browsePathChanged`: served by the public creator
+        // page this request would be wrong (filters ignored, no total).
+        if keyless, request.creatorSteamID != nil {
+            lastError = .missingAPIKey
+            if replacingItems, !paging {
+                items = []
+                lastFetchedRawItemCount = 0
+            }
+            if paging {
+                isPaging = false
+            } else {
+                isLoading = false
+            }
+            return false
+        }
         let task = Task { [weak self] () -> Bool in
             guard let self else { return false }
             var succeeded = false
             do {
                 // With a key, QueryFiles stays the path: richer fields and a
                 // real result total. Without one, fall back to the public page.
-                let page = self.usesKeylessSearch
+                let page = keyless
                     ? try await self.publicSource.fetch(request)
                     : try await self.services.queryService.fetch(request)
                 guard token == self.currentRequestToken else { return false }
                 if replacingItems {
                     items = Self.displayable(page.items, showsPresets: showsWorkshopPresets)
-                    lastFetchedRawItemCount = page.items.count
+                    lastFetchedRawItemCount = page.sourceItemCount
                     hasLoadedPage = true
                 }
-                self.hasMoreKeylessPages = self.usesKeylessSearch && page.nextCursor != nil
+                hasMoreKeylessPages = keyless && page.nextCursor != nil
                 self.totalAvailable = page.totalAvailable
+                reportedTotalPages = page.totalPages
                 self.lastError = nil
                 self.rateLimitUntil = nil
                 succeeded = true
-                if !usesKeylessSearch {
+                if !keyless {
                     Task { [weak self] in
                         await self?.mergeCreatorNames(into: page, request: request, token: token)
                     }
@@ -638,7 +849,7 @@ final class BrowseViewModel {
     /// Read fresh on every request: Settings → Workshop writes straight to
     /// `GlobalSettings`, with no push into this view model.
     private var showsWorkshopPresets: Bool {
-        SettingsManager.shared.loadGlobalSettings().showsWorkshopPresetsInBrowse
+        loadGlobalSettings().showsWorkshopPresetsInBrowse
     }
 
     func makeRequest(page: Int) -> WorkshopQueryRequest {
@@ -650,19 +861,23 @@ final class BrowseViewModel {
                 page: page,
                 numPerPage: perPage,
                 excludedTags: excludedFilterTags(),
+                miscellaneousTags: selectedMiscellaneousTags(),
                 creatorSteamID: creatorFilter.steamID
             )
         }
 
         if let pinnedTag {
+            // No search text here, so Relevance has nothing to rank against;
+            // the request layer would fold it to Top Rated, bypassing Settings.
             return WorkshopQueryRequest(
-                sort: preferredSort,
+                sort: preferredSort == .search ? defaultSort : preferredSort,
                 searchText: "",
                 page: page,
                 numPerPage: perPage,
                 timeFrame: preferredTimeFrame,
                 requiredTags: [pinnedTag],
-                excludedTags: excludedFilterTags()
+                excludedTags: excludedFilterTags(),
+                miscellaneousTags: selectedMiscellaneousTags()
             )
         }
 
@@ -675,6 +890,7 @@ final class BrowseViewModel {
         return WorkshopQueryRequest(
             sort: preferredSort,
             searchText: trimmed,
+            searchTextTarget: searchTextTarget,
             page: page,
             numPerPage: perPage,
             timeFrame: preferredTimeFrame,
@@ -682,8 +898,13 @@ final class BrowseViewModel {
             // Genre is the only multi-valued facet — a wallpaper can be Anime
             // AND Landscape — so a genre selection matches ANY of them.
             matchAllTags: false,
-            excludedTags: excludedFilterTags() + (keyless ? deselectedGenreTags() : [])
+            excludedTags: excludedFilterTags() + (keyless ? deselectedGenreTags() : []),
+            miscellaneousTags: selectedMiscellaneousTags()
         )
+    }
+
+    private func selectedMiscellaneousTags() -> [String] {
+        WorkshopMiscellaneousFilter.allTags.filter { selectedMiscellaneous.contains($0) }
     }
 
     /// Type / maturity / resolution partition their items (each carries exactly
@@ -691,21 +912,17 @@ final class BrowseViewModel {
     /// Genre does not partition and is handled by `selectedGenreTags()`.
     private func excludedFilterTags() -> [String] {
         var excluded: [String] = []
-        excluded += deselectedTags(in: selectedTypes, all: WorkshopContentTypeFilter.selectableCases) { $0.tag }
-        excluded += deselectedTags(in: selectedAgeRatings, all: WorkshopAgeRatingFilter.allCases) { $0.tag }
-        excluded += deselectedTags(in: selectedResolutions, all: WorkshopResolutionFilter.selectableCases) { $0.tag }
+        excluded += deselected(in: selectedTypes, all: WorkshopContentTypeFilter.selectableCases).compactMap(\.tag)
+        excluded += deselected(in: selectedAgeRatings, all: WorkshopAgeRatingFilter.allCases).map(\.tag)
+        excluded += deselected(in: selectedResolutions, all: WorkshopResolutionFilter.selectableCases).flatMap(\.tags)
         excluded += Self.excludedTags(showsPresets: showsWorkshopPresets)
         return excluded
     }
 
     /// Empty when the category is fully selected or fully empty (both = "no filter").
-    private func deselectedTags<T: Hashable>(
-        in selected: Set<T>,
-        all: [T],
-        tag: (T) -> String?
-    ) -> [String] {
+    private func deselected<T: Hashable>(in selected: Set<T>, all: [T]) -> [T] {
         guard !selected.isEmpty, selected.count < all.count else { return [] }
-        return all.filter { !selected.contains($0) }.compactMap(tag)
+        return all.filter { !selected.contains($0) }
     }
 
     private func selectedGenreTags() -> [String] {
@@ -715,7 +932,7 @@ final class BrowseViewModel {
 
     /// Keyless form of the genre narrowing: the unselected genres, excluded.
     private func deselectedGenreTags() -> [String] {
-        deselectedTags(in: selectedGenres, all: WorkshopGenre.allTags) { $0 }
+        deselected(in: selectedGenres, all: WorkshopGenre.allTags)
     }
 }
 #endif

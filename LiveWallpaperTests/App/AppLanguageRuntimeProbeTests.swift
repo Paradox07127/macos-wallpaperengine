@@ -60,6 +60,17 @@ struct AppLanguageRuntimeProbeTests {
     /// is silently back on the system language.
     @Test("Bundle.appLanguage routes String(localized:) to the picked language")
     func appLanguageBundleRoutes() {
+        // Pick the language here rather than assume it: the host reads the
+        // app's real preference, which is whatever this Mac happens to be set to.
+        let previous = UserDefaults.standard.string(forKey: AppLanguagePreference.storageKey)
+        defer {
+            if let previous {
+                UserDefaults.standard.set(previous, forKey: AppLanguagePreference.storageKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: AppLanguagePreference.storageKey)
+            }
+        }
+        AppLanguagePreference.save(.simplifiedChinese)
         let value = String(localized: String.LocalizationValue(Self.key), bundle: .appLanguage)
         #expect(value == Self.zhHans, "Bundle.appLanguage returned \(value)")
     }

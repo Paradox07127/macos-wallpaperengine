@@ -66,6 +66,12 @@ public struct GlobalSettings: Codable, Sendable {
     /// real wallpapers.
     public var showsWorkshopPresetsInBrowse: Bool = false
 
+    /// Browse's starting sort and (for Most Popular) window, as the app's
+    /// `WorkshopSortMode` / `WorkshopTimeFrame` raw values. Stored as strings
+    /// because those enums live in the app; the app decodes and falls back.
+    public var workshopDefaultSort: String = "mostPopular"
+    public var workshopDefaultTimeFrame: String = "oneWeek"
+
     public static let defaultVideoCacheBytes: Int = 150 * 1024 * 1024
     /// Settings slider ceiling (RAM / auto-policy guard).
     public static let maxVideoCacheBytes: Int = 1024 * 1024 * 1024
@@ -97,7 +103,9 @@ public struct GlobalSettings: Codable, Sendable {
         audioResponseEnabled: Bool = false,
         adaptiveFrameRateEnabled: Bool = false,
         wallpaperVisibleInScreenCapture: Bool = true,
-        showsWorkshopPresetsInBrowse: Bool = false
+        showsWorkshopPresetsInBrowse: Bool = false,
+        workshopDefaultSort: String = "mostPopular",
+        workshopDefaultTimeFrame: String = "oneWeek"
     ) {
         self.globalPauseOnBattery = globalPauseOnBattery
         self.preservePlaybackOnLock = preservePlaybackOnLock
@@ -120,6 +128,8 @@ public struct GlobalSettings: Codable, Sendable {
         self.adaptiveFrameRateEnabled = adaptiveFrameRateEnabled
         self.wallpaperVisibleInScreenCapture = wallpaperVisibleInScreenCapture
         self.showsWorkshopPresetsInBrowse = showsWorkshopPresetsInBrowse
+        self.workshopDefaultSort = workshopDefaultSort
+        self.workshopDefaultTimeFrame = workshopDefaultTimeFrame
     }
 
     public init(from decoder: Decoder) throws {
@@ -166,6 +176,8 @@ public struct GlobalSettings: Codable, Sendable {
         // Lossy: one unreadable preset must not drop the rest of the library.
         scenePresets = c.decodeLossyStringDictionary(forKey: .scenePresets) ?? [:]
         showsWorkshopPresetsInBrowse = (try? c.decodeIfPresent(Bool.self, forKey: .showsWorkshopPresetsInBrowse)) ?? false
+        workshopDefaultSort = (try? c.decodeIfPresent(String.self, forKey: .workshopDefaultSort)) ?? "mostPopular"
+        workshopDefaultTimeFrame = (try? c.decodeIfPresent(String.self, forKey: .workshopDefaultTimeFrame)) ?? "oneWeek"
     }
 
     /// Skip malformed elements; absent/non-array → empty.

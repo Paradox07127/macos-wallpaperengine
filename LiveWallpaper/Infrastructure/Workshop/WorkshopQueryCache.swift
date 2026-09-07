@@ -74,26 +74,47 @@ actor WorkshopQueryCache {
 }
 
 private struct CachedPagePayload: Codable {
+    /// 2: `sourceItemCount` + `totalPages` (keyless pages moved to the SSR
+    /// payload). 3: `rating` replaces `voteScore`, plus `timeCreated`,
+    /// `commentCount`, `requiredItemIDs`. 4: `title` is the wire title (nil
+    /// when untitled), not the localized fallback. Older pages miss so a
+    /// stale page cannot outlive the upgrade for its TTL.
+    static let currentSchemaVersion = 4
+
+    let schemaVersion: Int?
     let items: [CachedItemPayload]
     let nextCursor: String?
     let totalAvailable: Int?
+    let sourceItemCount: Int
+    let totalPages: Int?
 
     init(page: WorkshopQueryPage) {
-        self.items = page.items.map(CachedItemPayload.init(item:))
-        self.nextCursor = page.nextCursor
-        self.totalAvailable = page.totalAvailable
+        schemaVersion = Self.currentSchemaVersion
+        items = page.items.map(CachedItemPayload.init(item:))
+        nextCursor = page.nextCursor
+        totalAvailable = page.totalAvailable
+        sourceItemCount = page.sourceItemCount
+        totalPages = page.totalPages
     }
 
     var page: WorkshopQueryPage? {
+        guard schemaVersion == Self.currentSchemaVersion else { return nil }
         let decoded = items.compactMap(\.item)
         guard decoded.count == items.count else { return nil }
-        return WorkshopQueryPage(items: decoded, nextCursor: nextCursor, totalAvailable: totalAvailable)
+        return WorkshopQueryPage(
+            items: decoded,
+            nextCursor: nextCursor,
+            totalAvailable: totalAvailable,
+            sourceItemCount: sourceItemCount,
+            totalPages: totalPages
+        )
     }
 }
 
 private struct CachedItemPayload: Codable {
     let id: UInt64
-    let title: String
+    /// The wire title, `nil` when untitled — never the localized fallback.
+    let title: String?
     let shortDescription: String
     let creatorID: String?
     let creatorPersonaName: String?
@@ -103,7 +124,10 @@ private struct CachedItemPayload: Codable {
     let subscriptionCount: Int?
     let viewCount: Int?
     let favoriteCount: Int?
-    let voteScore: Double?
+    let rating: WorkshopRating?
+    let timeCreated: Date?
+    let commentCount: Int?
+    let requiredItemIDs: [UInt64]
     let tags: [String]
     let visibility: String
     let isBanned: Bool
@@ -111,7 +135,7 @@ private struct CachedItemPayload: Codable {
 
     init(item: WorkshopQueryItem) {
         self.id = item.id
-        self.title = item.title
+        title = item.rawTitle
         self.shortDescription = item.shortDescription
         self.creatorID = item.creatorID
         self.creatorPersonaName = item.creatorPersonaName
@@ -121,7 +145,10 @@ private struct CachedItemPayload: Codable {
         self.subscriptionCount = item.subscriptionCount
         self.viewCount = item.viewCount
         self.favoriteCount = item.favoriteCount
-        self.voteScore = item.voteScore
+        rating = item.rating
+        timeCreated = item.timeCreated
+        commentCount = item.commentCount
+        requiredItemIDs = item.requiredItemIDs
         self.tags = item.tags
         self.visibility = item.visibility.rawValue
         self.isBanned = item.isBanned
@@ -133,7 +160,7 @@ private struct CachedItemPayload: Codable {
         let previewURL = previewImageURL.flatMap { URL(string: $0) }
         return WorkshopQueryItem(
             id: id,
-            title: title,
+            rawTitle: title,
             shortDescription: shortDescription,
             creatorID: creatorID,
             creatorPersonaName: creatorPersonaName,
@@ -143,7 +170,10 @@ private struct CachedItemPayload: Codable {
             subscriptionCount: subscriptionCount,
             viewCount: viewCount,
             favoriteCount: favoriteCount,
-            voteScore: voteScore,
+            rating: rating,
+            timeCreated: timeCreated,
+            commentCount: commentCount,
+            requiredItemIDs: requiredItemIDs,
             tags: tags,
             visibility: SteamWorkshopMetadata.Visibility(rawValue: visibility) ?? .unknown,
             isBanned: isBanned,

@@ -124,6 +124,8 @@ LiveWallpaperTests/Fixtures
 LiveWallpaperTests/Fixtures/*
 !LiveWallpaperTests/Fixtures/oracle-golden/
 !LiveWallpaperTests/Fixtures/GeneralSettingsOwnershipFixture.swift
+# Trimmed Steam Workshop browse pages (~1.5 MB of HTML, provenance in the README).
+!LiveWallpaperTests/Fixtures/workshop/
 
 # Keep portable CI/release contracts; all other maintainer-local scripts remain ignored.
 !scripts/

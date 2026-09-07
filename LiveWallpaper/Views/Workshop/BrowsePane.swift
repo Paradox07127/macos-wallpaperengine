@@ -16,7 +16,18 @@ struct BrowsePane: View {
     /// Browse sheet), which then renders no header and contributes no toolbar items.
 
     @Environment(WorkshopServices.self) private var services
-    @State private var selectedItem: WorkshopQueryItem?
+    /// An id, not a value copy: the inspector follows the grid when a page
+    /// turn or the persona pass replaces `viewModel.items`.
+    @State private var selectedID: UInt64?
+    /// An item opened from a Required items row, which need not be on the
+    /// current page; resolved once through `services.itemDetails`.
+    @State private var detachedItem: WorkshopQueryItem?
+    /// The off-page open in flight, if any; `onChange(of: items)` must not
+    /// clear its id while the fetch runs.
+    @State private var pendingOpen: BrowseSelection.PendingOpen?
+    /// Tells two opens of the same id apart, so the first fetch landing cannot
+    /// settle the second.
+    @State private var openGeneration = 0
     /// User collapsed the detail panel via the header toggle while keeping the card selected.
     @State private var inspectorHidden = false
     @State private var rateLimitRemaining: TimeInterval = 0
@@ -60,7 +71,7 @@ struct BrowsePane: View {
         )
         .background(DesignTokens.Colors.pageBackground)
         .toolbar {
-            if selectedItem != nil {
+            if selectedID != nil {
                 ToolbarItem(placement: .primaryAction) {
                     Button {
                         inspectorHidden.toggle()
@@ -84,10 +95,12 @@ struct BrowsePane: View {
         .onChange(of: hidesDownloadedPref) { _, hide in
             viewModel.hidesDownloadedInBrowse = hide
         }
-        // Either direction changes which backend serves Browse, so re-run the
-        // query rather than leaving results from the other path on screen.
-        .onChange(of: services.hasWebAPIKey) { _, _ in
-            Task { await viewModel.reload() }
+        // Either direction changes which backend serves Browse — a key added,
+        // removed, or rejected by Valve — so rebuild the query from page 1
+        // (page size and the genre form differ per path) rather than leaving
+        // results from the other path on screen.
+        .onChange(of: services.isKeyless) { _, _ in
+            Task { await viewModel.browsePathChanged() }
         }
         // Guarded: this fires every second for the whole session, and writing
         // `@State` invalidates the grid's `ForEach` — every visible card then
@@ -106,9 +119,50 @@ struct BrowsePane: View {
         .onReceive(NotificationCenter.default.publisher(for: .workshopPresetVisibilityDidChange)) { _ in
             Task { await viewModel.reload() }
         }
+        // The grid moved on (page turn, new filter) and the selected card
+        // went with it — unless it was opened detached from the grid.
+        .onChange(of: viewModel.items) { _, items in
+            guard !BrowseSelection.keepsSelection(
+                id: selectedID, in: items, detached: detachedItem, pending: pendingOpen?.id
+            ) else { return }
+            selectedID = nil
+        }
     }
 
-    private var isInspectorVisible: Bool { selectedItem != nil && !inspectorHidden }
+    private var selectedItem: WorkshopQueryItem? {
+        BrowseSelection.resolve(id: selectedID, in: viewModel.items, detached: detachedItem)
+    }
+
+    private var isInspectorVisible: Bool {
+        selectedID != nil && !inspectorHidden
+    }
+
+    /// Opens an item by id — from a Required items row, so it may not be on
+    /// this page. Off-page ids are fetched once; an id Steam will not describe
+    /// leaves the previous selection in place.
+    private func openItem(_ id: UInt64) {
+        inspectorHidden = false
+        guard !viewModel.items.contains(where: { $0.id == id }), detachedItem?.id != id else {
+            selectedID = id
+            return
+        }
+        openGeneration += 1
+        let open = BrowseSelection.PendingOpen(
+            id: id, generation: openGeneration, previousSelectedID: selectedID, previousDetached: detachedItem
+        )
+        pendingOpen = open
+        selectedID = id
+        detachedItem = nil
+        Task {
+            let outcome = await services.itemDetails.load(ids: [id])
+            guard pendingOpen?.generation == open.generation else { return }
+            pendingOpen = nil
+            guard selectedID == id else { return }
+            let settled = open.settle(with: outcome.items.first, in: viewModel.items)
+            selectedID = settled.selectedID
+            detachedItem = settled.detached
+        }
+    }
 
     private var mainColumn: some View {
         gridColumn
@@ -121,8 +175,54 @@ struct BrowsePane: View {
         VStack(spacing: 0) {
             filterBand
             Divider()
+            keyRejectedBanner
             content
                 .overlay(alignment: .top) { rateLimitBanner }
+        }
+    }
+
+    /// Valve refused the stored key, so Browse silently went keyless; say so
+    /// once, and stay until dismissed — the switch is otherwise invisible.
+    @ViewBuilder
+    private var keyRejectedBanner: some View {
+        if viewModel.showsKeyRejectedNotice {
+            HStack(spacing: DesignTokens.Spacing.sm) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(DesignTokens.Colors.Status.warning)
+                    .accessibilityHidden(true)
+                Text("Steam rejected the saved API key. Browsing without it.")
+                    .font(DesignTokens.Typography.caption)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+                Button("Open Settings") {
+                    NotificationCenter.default.post(
+                        name: .openSettingsSection,
+                        object: nil,
+                        userInfo: [
+                            "destination": SettingsNavigation.workshopSetup.rawValue,
+                            "anchor": SettingsSearchAnchor.workshopSetup.rawValue,
+                        ]
+                    )
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                Button {
+                    viewModel.dismissKeyRejectedNotice()
+                } label: {
+                    Image(systemName: "xmark")
+                }
+                .buttonStyle(.borderless)
+                .controlSize(.small)
+                .accessibilityLabel(Text("Dismiss"))
+            }
+            .padding(.horizontal, DesignTokens.Spacing.md)
+            .padding(.vertical, DesignTokens.Spacing.sm)
+            .background(
+                DesignTokens.Colors.Status.warning.opacity(DesignTokens.Opacity.activeFill),
+                in: RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
+            )
+            .padding(.horizontal, DesignTokens.LibraryFilterBar.horizontalPadding)
+            .padding(.top, DesignTokens.LibraryFilterBar.verticalPadding)
         }
     }
 
@@ -154,14 +254,21 @@ struct BrowsePane: View {
                     item: selectedItem,
                     doctor: doctor,
                     onBrowseCreator: { steamID, name in
-                        self.selectedItem = nil
+                        selectedID = nil
                         Task { await viewModel.browseCreator(steamID: steamID, name: name) }
                     },
                     onSelectTag: { tag in
-                        self.selectedItem = nil
+                        selectedID = nil
                         Task { await viewModel.browseTag(tag) }
-                    }
+                    },
+                    onOpenItem: { openItem($0) }
                 )
+            } else if selectedID != nil {
+                // Off-page id still being resolved.
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .accessibilityLabel(Text("Loading item…"))
             } else {
                 inspectorPlaceholder
             }
@@ -172,19 +279,23 @@ struct BrowsePane: View {
 
     @ViewBuilder
     private var content: some View {
-        if let error = viewModel.lastError, viewModel.items.isEmpty, !viewModel.isRateLimited {
+        // A failure with the pager live (a page turn off an all-filtered or
+        // later page) belongs to the grid branch, whose error bar keeps
+        // Previous reachable; the full-pane error state has no way back.
+        if let error = viewModel.lastError, viewModel.items.isEmpty, !viewModel.isRateLimited,
+           !viewModel.currentPageIsFilteredOut {
             // A keyless failure is the public page's, not a missing key — but
             // the key is the sturdier route, so offer it there instead.
-            if services.hasWebAPIKey {
-                errorState(error)
-            } else {
+            if viewModel.usesKeylessSearch {
                 publicSearchFailedState(error)
+            } else {
+                errorState(error)
             }
         } else if !viewModel.hasLoadedPage, viewModel.isLoading {
             // Only the very first load gets the skeleton; a reload keeps the
             // previous grid and dims it instead of blanking the pane.
             loadingSkeleton
-        } else if viewModel.items.isEmpty {
+        } else if viewModel.items.isEmpty, !viewModel.currentPageIsFilteredOut {
             emptyState
         } else {
             populatedGrid
@@ -198,7 +309,9 @@ struct BrowsePane: View {
                 VStack(spacing: 0) {
                     Color.clear.frame(height: 0).id(Self.gridTopAnchor)
 
-                    if viewModel.displayedItems.isEmpty {
+                    if viewModel.items.isEmpty {
+                        filteredPageNote
+                    } else if viewModel.displayedItems.isEmpty {
                         scopeEmptyNote
                     } else {
                         LazyVGrid(columns: gridColumns, spacing: DesignTokens.LibraryGrid.spacing) {
@@ -218,11 +331,11 @@ struct BrowsePane: View {
                 .background(
                     Color.clear
                         .contentShape(Rectangle())
-                        .onTapGesture { selectedItem = nil }
+                        .onTapGesture { selectedID = nil }
                 )
             }
             // Opening the inspector reflows rows and can push the selected tile off-screen — re-center it.
-            .onChange(of: selectedItem?.id) { _, id in
+            .onChange(of: selectedID) { _, id in
                 guard let id else { return }
                 Task { @MainActor in
                     try? await Task.sleep(nanoseconds: 60_000_000)
@@ -241,15 +354,16 @@ struct BrowsePane: View {
         BrowseCard(
             item: item,
             isInLibrary: installedWorkshopIDs.contains(String(item.id)),
-            isSelected: selectedItem?.id == item.id,
+            isSelected: selectedID == item.id,
             cardPreferences: cardPreferences,
             reduceMotion: reduceMotion,
             canDownload: doctor.isDownloadReady,
             onSelect: {
-                if selectedItem?.id == item.id {
-                    selectedItem = nil
+                if selectedID == item.id {
+                    selectedID = nil
                 } else {
-                    selectedItem = item
+                    selectedID = item.id
+                    detachedItem = nil
                     inspectorHidden = false
                 }
             },
@@ -263,62 +377,106 @@ struct BrowsePane: View {
         )
     }
 
+    /// A failed page turn keeps the previous grid, so the empty-grid error
+    /// state never shows it; this names the failure next to the pager.
+    @ViewBuilder
+    private var pagingErrorBar: some View {
+        if let error = viewModel.lastError, viewModel.showsPagingError, !viewModel.isRateLimited {
+            HStack(spacing: DesignTokens.Spacing.sm) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(DesignTokens.Colors.Status.warning)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    if let target = viewModel.failedPageTarget {
+                        Text("Couldn’t load page \(target).")
+                            .font(DesignTokens.Typography.captionEmphasized)
+                    }
+                    Text(verbatim: message(for: error))
+                        .font(DesignTokens.Typography.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if let target = viewModel.failedPageTarget {
+                    Button("Retry") { Task { await viewModel.goToPage(target) } }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(viewModel.isPaging || viewModel.isLoading)
+                }
+            }
+            .padding(.horizontal, DesignTokens.Spacing.md)
+            .padding(.vertical, DesignTokens.Spacing.sm)
+            .background(
+                DesignTokens.Colors.Status.warning.opacity(DesignTokens.Opacity.activeFill),
+                in: RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
+            )
+        }
+    }
+
     /// Cursor-based prev/next pager.
     @ViewBuilder
     private var paginationBar: some View {
         if viewModel.pageIndex > 1 || viewModel.canGoNextPage {
-            HStack(spacing: DesignTokens.Spacing.md) {
-                Button {
-                    Task { await viewModel.goToPrevPage() }
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "chevron.left")
-                        Text("Previous")
-                    }
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(!viewModel.canGoPrevPage)
-
-                HStack(spacing: 4) {
-                    if viewModel.isPaging { ProgressView().controlSize(.small) }
-                    Text("Page")
-                        .font(DesignTokens.Typography.body)
-                        .foregroundStyle(.secondary)
-                    TextField("", text: $pageJumpText)
-                        .frame(width: 46)
-                        .multilineTextAlignment(.center)
-                        .textFieldStyle(.plain)
-                        .padding(.vertical, 3)
-                        .background(Capsule().fill(Color.primary.opacity(0.04)))
-                        .overlay(Capsule().strokeBorder(Color.primary.opacity(0.10), lineWidth: 0.5))
-                        .contentShape(Capsule())
-                        .monospacedDigit()
-                        .disabled(viewModel.isPaging || viewModel.isLoading)
-                        .onSubmit { jumpToTypedPage() }
-                    if let total = viewModel.totalPages {
-                        Text("of \(total)")
-                            .font(DesignTokens.Typography.metric)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                Button {
-                    Task { await viewModel.goToNextPage() }
-                } label: {
-                    HStack(spacing: 4) {
-                        Text("Next")
-                        Image(systemName: "chevron.right")
-                    }
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(!viewModel.canGoNextPage)
+            VStack(spacing: DesignTokens.Spacing.md) {
+                pagingErrorBar
+                pagerControls
             }
             .padding(.vertical, DesignTokens.Spacing.lg)
             .frame(maxWidth: .infinity)
             .onAppear { pageJumpText = String(viewModel.pageIndex) }
             .onChange(of: viewModel.pageIndex) { _, page in pageJumpText = String(page) }
+        }
+    }
+
+    private var pagerControls: some View {
+        HStack(spacing: DesignTokens.Spacing.md) {
+            Button {
+                Task { await viewModel.goToPrevPage() }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "chevron.left")
+                    Text("Previous")
+                }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .disabled(!viewModel.canGoPrevPage)
+
+            HStack(spacing: 4) {
+                if viewModel.isPaging {
+                    ProgressView().controlSize(.small)
+                }
+                Text("Page")
+                    .font(DesignTokens.Typography.body)
+                    .foregroundStyle(.secondary)
+                TextField("", text: $pageJumpText)
+                    .frame(width: 46)
+                    .multilineTextAlignment(.center)
+                    .textFieldStyle(.plain)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(Color.primary.opacity(0.04)))
+                    .overlay(Capsule().strokeBorder(Color.primary.opacity(0.10), lineWidth: 0.5))
+                    .contentShape(Capsule())
+                    .monospacedDigit()
+                    .disabled(viewModel.isPaging || viewModel.isLoading)
+                    .onSubmit { jumpToTypedPage() }
+                if let total = viewModel.totalPages {
+                    Text("of \(total)")
+                        .font(DesignTokens.Typography.metric)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Button {
+                Task { await viewModel.goToNextPage() }
+            } label: {
+                HStack(spacing: 4) {
+                    Text("Next")
+                    Image(systemName: "chevron.right")
+                }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .disabled(!viewModel.canGoNextPage)
         }
     }
 
@@ -419,6 +577,16 @@ struct BrowsePane: View {
             primary: hasActiveFilters
                 ? EmptyStateButtonAction("Clear filters") { clearFilters() }
                 : nil
+        )
+    }
+
+    /// Shown inside the grid when Steam's page held only items the client drops
+    /// (shells, Application / Preset), so Prev / Next stay reachable.
+    private var filteredPageNote: some View {
+        IllustratedEmptyState(
+            symbol: "line.3.horizontal.decrease.circle",
+            title: "No items on this page can be shown.",
+            variant: .compact
         )
     }
 
@@ -542,6 +710,7 @@ struct BrowsePane: View {
             || WorkshopFilterMath.isNarrowing(viewModel.selectedAgeRatings, total: WorkshopAgeRatingFilter.allCases.count)
             || WorkshopFilterMath.isNarrowing(viewModel.selectedResolutions, total: WorkshopResolutionFilter.selectableCases.count)
             || WorkshopFilterMath.isNarrowing(viewModel.selectedGenres, total: WorkshopGenre.allTags.count)
+            || !viewModel.selectedMiscellaneous.isEmpty
     }
 
     private var currentRateLimitRemaining: TimeInterval {
@@ -612,6 +781,58 @@ struct BrowsePane: View {
             // Listed rather than defaulted: a new case has to be considered
             // here for a remedy, not silently inherit the bare cause.
             error.causeDescription
+        }
+    }
+}
+
+/// Which item the inspector shows for a selected id: the grid's copy when the
+/// id is on the page (it carries the persona pass), else a detached copy for
+/// that same id, else nothing.
+enum BrowseSelection {
+    static func resolve(id: UInt64?, in items: [WorkshopQueryItem], detached: WorkshopQueryItem?) -> WorkshopQueryItem? {
+        guard let id else {
+            return nil
+        }
+        if let onPage = items.first(where: { $0.id == id }) {
+            return onPage
+        }
+        return detached?.id == id ? detached : nil
+    }
+
+    /// Whether the selection survives the grid replacing its items: it is on
+    /// the new page, already detached from it, or still being fetched for an
+    /// off-page open (`openItem` clears `detached` before that fetch).
+    static func keepsSelection(
+        id: UInt64?, in items: [WorkshopQueryItem], detached: WorkshopQueryItem?, pending: UInt64?
+    ) -> Bool {
+        guard let id else {
+            return true
+        }
+        return pending == id || detached?.id == id || items.contains { $0.id == id }
+    }
+
+    /// An off-page open whose details are still being fetched.
+    struct PendingOpen: Equatable {
+        let id: UInt64
+        /// The pane's open counter at the time; two opens of the same id from
+        /// the same selection are otherwise indistinguishable.
+        let generation: Int
+        let previousSelectedID: UInt64?
+        let previousDetached: WorkshopQueryItem?
+
+        /// The inspector's selection once Steam answered: the fetched item, or
+        /// what was showing before — an id Steam will not describe must not
+        /// close the details the user was reading.
+        func settle(
+            with item: WorkshopQueryItem?, in items: [WorkshopQueryItem]
+        ) -> (selectedID: UInt64?, detached: WorkshopQueryItem?) {
+            if let item {
+                return (id, item)
+            }
+            guard BrowseSelection.resolve(id: previousSelectedID, in: items, detached: previousDetached) != nil else {
+                return (nil, nil)
+            }
+            return (previousSelectedID, previousDetached)
         }
     }
 }

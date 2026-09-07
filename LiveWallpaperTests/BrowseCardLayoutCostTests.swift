@@ -30,7 +30,7 @@ struct BrowseCardLayoutCostTests {
         (0 ..< count).map { index in
             WorkshopQueryItem(
                 id: UInt64(1_000_000 + index),
-                title: "Wallpaper \(index)",
+                rawTitle: "Wallpaper \(index)",
                 shortDescription: "A description long enough to wrap onto a second line.",
                 creatorID: "7656119800000000",
                 creatorPersonaName: "Creator \(index % 7)",
@@ -40,7 +40,7 @@ struct BrowseCardLayoutCostTests {
                 fileSizeBytes: UInt64(12_345_678 + index),
                 timeUpdated: Date(timeIntervalSince1970: 1_760_000_000),
                 subscriptionCount: 1234 + index,
-                voteScore: 0.9,
+                rating: .score(0.9, votesUp: 9, votesDown: 1),
                 tags: index.isMultiple(of: 2) ? ["Scene", "Anime"] : ["Video"],
                 visibility: .public,
                 isBanned: false,

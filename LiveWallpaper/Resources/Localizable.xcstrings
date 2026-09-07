@@ -627,6 +627,42 @@
         }
       }
     },
+    "%@ comments" : {
+      "comment" : "Workshop detail link to the item's comment thread. Placeholder is a formatted count.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ comments"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ comentarios"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 件のコメント"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 条评论"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 則留言"
+          }
+        }
+      }
+    },
     "%@ did not match the checksum in the manifest." : {
       "comment" : "Managed SteamCMD install error. Placeholder is the package name.",
       "extractionState" : "manual",
@@ -904,6 +940,42 @@
         }
       }
     },
+    "%@ ratings" : {
+      "comment" : "Workshop detail rating count. Placeholder is a formatted number such as 3,094.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ratings"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ valoraciones"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 件の評価"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 个评价"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 個評價"
+          }
+        }
+      }
+    },
     "%@ stars" : {
       "comment" : "Workshop card VoiceOver rating. Placeholder is a number 0–5.",
       "localizations" : {
@@ -987,6 +1059,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ 位訂閱者"
+          }
+        }
+      }
+    },
+    "%@ up, %@ down" : {
+      "comment" : "Accessibility label for the thumbs up / thumbs down vote split in the Workshop detail inspector.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ up, %@ down"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ positivos, %@ negativos"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "高評価 %@、低評価 %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 个好评，%@ 个差评"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 個好評，%@ 個差評"
           }
         }
       }
@@ -2989,6 +3097,42 @@
         }
       }
     },
+    "2K" : {
+      "comment" : "Workshop resolution filter: 2560 x 1440.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "2K"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "2K"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "2K"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "2K"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "2K"
+          }
+        }
+      }
+    },
     "3 lines" : {
       "comment" : "Now Playing lyric row count: the current line plus its neighbours.",
       "extractionState" : "manual",
@@ -4698,41 +4842,6 @@
         }
       }
     },
-    "Add your Steam Web API key to see presets for this wallpaper." : {
-      "comment" : "Workshop detail presets section when no Steam Web API key is configured.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Add your Steam Web API key to see presets for this wallpaper."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Añade tu clave de Steam Web API para ver los preajustes de este fondo de pantalla."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "この壁紙のプリセットを表示するには Steam Web API キーを設定してください。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "设置 Steam Web API key 后才能看到这张壁纸的预设。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "設定 Steam Web API key 後才能看到這張桌布的預設。"
-          }
-        }
-      }
-    },
     "added %lld" : {
       "comment" : "Library-sync summary fragment. Placeholder is the number of newly imported wallpapers.",
       "extractionState" : "manual",
@@ -5112,6 +5221,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "下午"
+          }
+        }
+      }
+    },
+    "Age Rating" : {
+      "comment" : "Workshop tag group: Everyone / Questionable / Mature.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Age Rating"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clasificación por edad"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "年齢制限"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "年龄分级"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "年齡分級"
           }
         }
       }
@@ -5746,7 +5891,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Siempre"
+            "value" : "Desde el principio"
           }
         },
         "ja" : {
@@ -5758,13 +5903,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "全部时间"
+            "value" : "发布至今"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "全部時間"
+            "value" : "有史以來"
           }
         }
       }
@@ -6519,6 +6664,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "作用於 app 自己的視窗。浮在桌布之上的面板（監控板的控制項、媒體預覽）無論選哪個都保持深色——跟隨淺色外觀會讓它們在桌布上變成白的。"
+          }
+        }
+      }
+    },
+    "Applies when the default sort is Most Popular" : {
+      "comment" : "Settings → Workshop: subtitle of the default time frame row.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Applies when the default sort is Most Popular"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se aplica cuando el orden predeterminado es «Más populares»"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "デフォルトの並べ替えが「人気順」のときに適用されます"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仅在默认排序为「最热门」时生效"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "僅在預設排序為「最熱門」時生效"
           }
         }
       }
@@ -10901,6 +11082,42 @@
         }
       }
     },
+    "Category" : {
+      "comment" : "Workshop tag group: Wallpaper / Preset / Asset.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Category"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Categoría"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "カテゴリ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "类别"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "類別"
+          }
+        }
+      }
+    },
     "Center" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -11032,6 +11249,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "更改"
+          }
+        }
+      }
+    },
+    "Change Notes" : {
+      "comment" : "Workshop detail link to the item's change notes on Steam.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Change Notes"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notas de cambios"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新履歴"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新说明"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更新說明"
           }
         }
       }
@@ -13784,6 +14037,42 @@
         }
       }
     },
+    "Collections" : {
+      "comment" : "Workshop detail link to the Steam collections containing the item.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Collections"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Colecciones"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コレクション"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "合集"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "合集"
+          }
+        }
+      }
+    },
     "Color" : {
       "comment" : "Now Playing DIY row holding the custom accent color well.",
       "extractionState" : "manual",
@@ -14026,6 +14315,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "顏色 = 壓力"
+          }
+        }
+      }
+    },
+    "Comments" : {
+      "comment" : "Workshop detail link to the item's comment thread when the count is unknown.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comments"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comentarios"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コメント"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "评论"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "留言"
           }
         }
       }
@@ -16460,6 +16785,42 @@
         }
       }
     },
+    "Couldn’t load page %lld." : {
+      "comment" : "Workshop browse error bar when a page turn failed and the previous page is still shown. Placeholder is the page number.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t load page %lld."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo cargar la página %lld."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld ページを読み込めませんでした。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法加载第 %lld 页。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法載入第 %lld 頁。"
+          }
+        }
+      }
+    },
     "Couldn't load presets." : {
       "comment" : "Workshop detail presets section load failure.",
       "localizations" : {
@@ -16491,6 +16852,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "無法載入預設。"
+          }
+        }
+      }
+    },
+    "Couldn’t load required items." : {
+      "comment" : "Workshop detail inspector: the Required items list could not be fetched (transient failure); a Retry button follows.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t load required items."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudieron cargar los elementos requeridos."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "必要なアイテムを読み込めませんでした。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法加载所需项目。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法載入所需項目。"
           }
         }
       }
@@ -18074,6 +18471,78 @@
         }
       }
     },
+    "Default sort" : {
+      "comment" : "Settings → Workshop: the sort Browse opens with.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Default sort"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Orden predeterminado"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "デフォルトの並べ替え"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "默认排序"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "預設排序"
+          }
+        }
+      }
+    },
+    "Default time frame" : {
+      "comment" : "Settings → Workshop: the Most Popular window Browse opens with.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Default time frame"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Período temporal predeterminado"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "デフォルトの期間"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "默认时间范围"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "預設時間範圍"
+          }
+        }
+      }
+    },
     "Default video color management" : {
       "comment" : "Default video color management.",
       "isCommentAutoGenerated" : true,
@@ -18763,6 +19232,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "描述"
+          }
+        }
+      }
+    },
+    "Description Only" : {
+      "comment" : "Workshop search target (Steam's Workshop_SearchTarget_Description).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Description Only"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solo descripción"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "説明のみ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仅限描述"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "僅限說明"
           }
         }
       }
@@ -21687,37 +22192,38 @@
         }
       }
     },
-    "Dual 3840 x 1080" : {
+    "Dual Monitor" : {
+      "comment" : "Workshop resolution filter: two-display layouts.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Dual 3840 x 1080"
+            "value" : "Dual Monitor"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Doble 3840 x 1080"
+            "value" : "Doble monitor"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "デュアル 3840 x 1080"
+            "value" : "デュアルモニター"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "双屏 3840 x 1080"
+            "value" : "双屏"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "雙螢幕 3840 x 1080"
+            "value" : "雙螢幕"
           }
         }
       }
@@ -28093,6 +28599,42 @@
         }
       }
     },
+    "HD" : {
+      "comment" : "Workshop resolution filter: 720p to 1080p.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "HD"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "HD"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "HD"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "HD"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "HD"
+          }
+        }
+      }
+    },
     "HDR-aware output. Requires an HDR-capable display." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -31339,7 +31881,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Última actualización"
+            "value" : "Actualizaciones recientes"
           }
         },
         "ja" : {
@@ -31351,13 +31893,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "最近更新"
+            "value" : "最新更新"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "最近更新"
+            "value" : "最新更新"
           }
         }
       }
@@ -32877,6 +33419,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "載入預覽"
+          }
+        }
+      }
+    },
+    "Loading item…" : {
+      "comment" : "Accessibility label while the Workshop inspector resolves an item by id.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loading item…"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cargando elemento…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アイテムを読み込み中…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在加载项目…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在載入項目…"
           }
         }
       }
@@ -36487,6 +37065,42 @@
         }
       }
     },
+    "Miscellaneous" : {
+      "comment" : "Workshop tag group: feature tags such as Approved or Audio responsive.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Miscellaneous"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Varios"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "その他"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "杂项"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "雜項"
+          }
+        }
+      }
+    },
     "Missing %lld Workshop dependencies" : {
       "comment" : "Scene error title. The placeholder is the number of missing Workshop dependencies.\nWallpaper Engine fallback warning title. The placeholder is the missing dependency count.",
       "localizations" : {
@@ -37097,13 +37711,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "最受欢迎"
+            "value" : "最热门"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "最受歡迎"
+            "value" : "最熱門"
           }
         }
       }
@@ -37131,13 +37745,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "最新"
+            "value" : "最近发行"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "最新"
+            "value" : "最近"
           }
         }
       }
@@ -39162,6 +39776,36 @@
         }
       }
     },
+    "No items on this page can be shown." : {
+      "comment" : "Workshop browse: Steam's page held only items the client drops, so the pager stays visible.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se puede mostrar ningún elemento de esta página."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このページには表示できるアイテムがありません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这一页没有可显示的项目。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "這一頁沒有可顯示的項目。"
+          }
+        }
+      }
+    },
     "No JS" : {
       "comment" : "HTML preview badge: JavaScript disabled.",
       "extractionState" : "manual",
@@ -39370,6 +40014,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "無處理程序讀數"
+          }
+        }
+      }
+    },
+    "No ratings yet" : {
+      "comment" : "Workshop detail rating line when the item has no votes.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No ratings yet"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sin valoraciones todavía"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "評価はまだありません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂无评价"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚無評價"
           }
         }
       }
@@ -41725,13 +42405,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "一周"
+            "value" : "1 周"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "一週"
+            "value" : "1 週"
           }
         }
       }
@@ -41759,13 +42439,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "一年"
+            "value" : "1 年"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "一年"
+            "value" : "1 年"
           }
         }
       }
@@ -41977,6 +42657,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "開啟"
+          }
+        }
+      }
+    },
+    "Open %@’s Workshop on Steam" : {
+      "comment" : "Tooltip on the author line without a usable Web API key. Placeholder is the creator's persona name.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open %@’s Workshop on Steam"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abrir el Workshop de %@ en Steam"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ のワークショップを Steam で開く"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 Steam 上打开 %@ 的创意工坊"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 Steam 上開啟 %@ 的工作坊"
           }
         }
       }
@@ -43187,6 +43903,42 @@
         }
       }
     },
+    "Other" : {
+      "comment" : "Workshop tag group for tags outside Steam's wallpaper facets.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Other"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otras"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未分類"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未分类"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未分類"
+          }
+        }
+      }
+    },
     "Other options" : {
       "comment" : "Accessibility label for the overflow menu holding a setup step's other routes.",
       "extractionState" : "manual",
@@ -43213,6 +43965,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "其他選項"
+          }
+        }
+      }
+    },
+    "Other resolutions" : {
+      "comment" : "Workshop resolution filter: other and dynamic resolutions.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Other resolutions"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otras resoluciones"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "その他の解像度"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "其他分辨率"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "其他解析度"
           }
         }
       }
@@ -46283,6 +47071,42 @@
         }
       }
     },
+    "Posted %@ (%@)" : {
+      "comment" : "Workshop detail: creation date. Placeholders are the absolute date and the relative time, e.g. 'Sep 4, 2026 (3 days ago)'.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Posted %@ (%@)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Publicado el %@ (%@)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "投稿日 %@（%@）"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "发表于 %@（%@）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "發表於 %@（%@）"
+          }
+        }
+      }
+    },
     "Poster" : {
       "comment" : "Now Playing widget style.",
       "extractionState" : "manual",
@@ -48145,6 +48969,42 @@
         }
       }
     },
+    "Rating unavailable" : {
+      "comment" : "Workshop detail rating line when the source carries no vote data at all (key-free details endpoint).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rating unavailable"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Valoración no disponible"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "評価は利用できません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "评价不可用"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "評價不可用"
+          }
+        }
+      }
+    },
     "Re-attempt to load this preview" : {
       "comment" : "A11y hint describing what the retry preview badge does.",
       "localizations" : {
@@ -49598,41 +50458,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "發佈於 %@"
-          }
-        }
-      }
-    },
-    "Relevance" : {
-      "comment" : "Workshop sort option available while searching: Steam's text-relevance ranking.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Relevance"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Relevancia"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "関連度"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "相关性"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "相關性"
           }
         }
       }
@@ -51398,6 +52223,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "完整場景支援所必需 —— 下載或連結一個安裝"
+          }
+        }
+      }
+    },
+    "Required items" : {
+      "comment" : "Workshop detail section header: the items this one depends on (a Preset's wallpaper).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Required items"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elementos necesarios"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "必要なアイテム"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "必需项目"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "必需項目"
           }
         }
       }
@@ -56008,6 +56869,42 @@
         }
       }
     },
+    "Search Relevance" : {
+      "comment" : "Workshop sort offered while a search text is typed (Steam's Workshop_BrowseSort_SearchRelevance).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search Relevance"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Relevancia"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "検索関連性"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "搜索相关度"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "搜尋相關程度"
+          }
+        }
+      }
+    },
     "Search Results" : {
       "localizations" : {
         "en" : {
@@ -59337,13 +60234,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "六个月"
+            "value" : "6 个月"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "六個月"
+            "value" : "6 個月"
           }
         }
       }
@@ -59804,6 +60701,42 @@
         }
       }
     },
+    "Sort Order" : {
+      "comment" : "Accessibility label of the Workshop browse sort menu (Steam's Workshop_BrowseSort_SortOrder).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sort Order"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Orden de clasificación"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "並べ替え順序"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "排序顺序"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "排序"
+          }
+        }
+      }
+    },
     "Sort the library" : {
       "comment" : "Tooltip for library sort picker.",
       "extractionState" : "manual",
@@ -60050,6 +60983,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "跨所有顯示器"
+          }
+        }
+      }
+    },
+    "Specify what text fields of the item you want to search:" : {
+      "comment" : "Workshop search-target menu header (Steam's Workshop_SearchTarget_MenuTitle).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Specify what text fields of the item you want to search:"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Especifica qué campos de texto del artículo quieres buscar:"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "検索したいアイテムのテキストフィールドを指定してください："
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "指定您希望搜索的项目文本字段："
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "指定您想搜尋的項目文字欄位："
           }
         }
       }
@@ -61856,6 +62825,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Steam 拒絕了此金鑰。"
+          }
+        }
+      }
+    },
+    "Steam rejected the saved API key. Browsing without it." : {
+      "comment" : "Workshop browse banner shown after Valve rejected the stored Steam Web API key and browsing fell back to the public page.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam rejected the saved API key. Browsing without it."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam ha rechazado la clave de API guardada. Se navega sin ella."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam が保存済みの API キーを拒否しました。キーなしで閲覧しています。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam 拒绝了已保存的 API 密钥。现在以无密钥方式浏览。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam 拒絕了已儲存的 API 金鑰。現在以無金鑰方式瀏覽。"
           }
         }
       }
@@ -66824,6 +67829,42 @@
         }
       }
     },
+    "The sort order Browse opens with" : {
+      "comment" : "Settings → Workshop: subtitle of the default sort row.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The sort order Browse opens with"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El orden de clasificación con el que se abre Explorar"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "閲覧を開いたときの並べ替え順序"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "浏览打开时使用的排序顺序"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "瀏覽開啟時使用的排序順序"
+          }
+        }
+      }
+    },
     "The Steam connector did not respond." : {
       "comment" : "Managed SteamCMD install failure: the XPC service was unreachable.",
       "localizations" : {
@@ -68744,13 +69785,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "三个月"
+            "value" : "3 个月"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "三個月"
+            "value" : "3 個月"
           }
         }
       }
@@ -68873,7 +69914,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Periodo"
+            "value" : "Período temporal"
           }
         },
         "ja" : {
@@ -68919,13 +69960,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "时间范围适用于最受欢迎"
+            "value" : "时间范围适用于最热门"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "時間範圍適用於最受歡迎"
+            "value" : "時間範圍適用於最熱門"
           }
         }
       }
@@ -69107,6 +70148,42 @@
         }
       }
     },
+    "Title & Description" : {
+      "comment" : "Workshop search target: full text (Steam's Workshop_SearchTarget_All).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Title & Description"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Título y descripción"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タイトルと説明"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "标题与描述"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "名稱與說明"
+          }
+        }
+      }
+    },
     "Title font" : {
       "comment" : "Now Playing DIY row: typeface used for the track title.",
       "extractionState" : "manual",
@@ -69139,6 +70216,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "標題字體"
+          }
+        }
+      }
+    },
+    "Title Only" : {
+      "comment" : "Workshop search target (Steam's Workshop_SearchTarget_Title).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Title Only"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solo título"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タイトルのみ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仅限标题"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "僅限標題"
           }
         }
       }
@@ -69777,25 +70890,25 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mejor valorados de todos los tiempos"
+            "value" : "Mejores valoraciones"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "全期間の高評価"
+            "value" : "これまでの高評価作品"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "全部时间最高评分"
+            "value" : "最受好评（发布至今）"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "全部時間最高評分"
+            "value" : "有史以來最高評價"
           }
         }
       }
@@ -69889,19 +71002,19 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ユニーク購読者数"
+            "value" : "ユニークサブスクライブ数"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "不重复订阅者总数"
+            "value" : "不重复订阅者总计"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "不重複訂閱者總數"
+            "value" : "不重複總訂閱人數"
           }
         }
       }
@@ -70075,6 +71188,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "播放控制"
+          }
+        }
+      }
+    },
+    "Triple Monitor" : {
+      "comment" : "Workshop resolution filter: three-display layouts.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Triple Monitor"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Triple monitor"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "トリプルモニター"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "三屏"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "三螢幕"
           }
         }
       }
@@ -70640,6 +71789,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "排版"
+          }
+        }
+      }
+    },
+    "Ultrawide" : {
+      "comment" : "Workshop resolution filter: ultrawide displays.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ultrawide"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ultrapanorámica"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ウルトラワイド"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "超宽屏"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "超寬螢幕"
           }
         }
       }
@@ -71727,32 +72912,38 @@
         }
       }
     },
-    "Updated %@" : {
-      "comment" : "A date and size of a Workshop item.",
-      "isCommentAutoGenerated" : true,
+    "Updated %@ (%@)" : {
+      "comment" : "Workshop detail: last-update date. Placeholders are the absolute date and the relative time.",
+      "extractionState" : "manual",
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Updated %@ (%@)"
+          }
+        },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Actualizado %@"
+            "value" : "Actualizado el %@ (%@)"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "更新：%@"
+            "value" : "更新日 %@（%@）"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "更新于 %@"
+            "value" : "更新于 %@（%@）"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "更新於 %@"
+            "value" : "更新於 %@（%@）"
           }
         }
       }
@@ -73077,6 +74268,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在 GitHub 上檢視"
+          }
+        }
+      }
+    },
+    "View presets on Steam" : {
+      "comment" : "Workshop detail presets section without a usable Web API key: link to the item's Steam page.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "View presets on Steam"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ver preajustes en Steam"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam でプリセットを表示"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 Steam 上查看预设"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 Steam 上檢視預設"
           }
         }
       }
@@ -76810,6 +78037,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "創意工坊 標籤頁"
+          }
+        }
+      }
+    },
+    "workshop.sort.most_popular_with_window" : {
+      "comment" : "Workshop sort button: sort name, then the Most Popular window (Steam's Workshop_BrowseSort_Combined).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ (%2$@)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ (%2$@)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@（%2$@）"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@（%2$@）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@（%2$@）"
           }
         }
       }

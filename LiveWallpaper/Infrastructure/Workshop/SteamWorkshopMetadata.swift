@@ -6,6 +6,8 @@ struct SteamWorkshopMetadata: Equatable, Sendable {
     let publishedFileID: UInt64
     let title: String
     let shortDescription: String
+    /// Creator's SteamID64 (`creator` on the payload).
+    let creatorID: String?
     /// Optional — paste flow has no API key, so the supplemental
     /// `ISteamUser/GetPlayerSummaries/v2` lookup can't run.
     let creatorPersonaName: String?
@@ -98,18 +100,8 @@ final class SteamWorkshopMetadataService {
     /// `decodeBatch`.
     func fetch(publishedFileIDs ids: [UInt64]) async -> [UInt64: Result<SteamWorkshopMetadata, SteamWorkshopMetadataError>] {
         guard !ids.isEmpty else { return [:] }
-
-        var request = URLRequest(url: Self.endpoint)
-        request.httpMethod = "POST"
-        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.timeoutInterval = 30
-        request.httpBody = Self.formBody(publishedFileIDs: ids).data(using: .utf8)
-
-        let data: Data
-        let response: URLResponse
         do {
-            (data, response) = try await BoundedNetworkFetch.fetch(request, session: session, byteCap: Self.maxResponseBytes)
+            return try await Self.results(from: post(publishedFileIDs: ids), requestedIDs: ids)
         } catch let urlError as URLError {
             switch urlError.code {
             case .timedOut:
@@ -121,28 +113,54 @@ final class SteamWorkshopMetadataService {
             default:
                 return Self.uniformFailure(.unknown(urlError.localizedDescription), ids: ids)
             }
-        } catch is BoundedNetworkFetch.ResponseTooLarge {
-            return Self.uniformFailure(.responseParseFailure, ids: ids)
+        } catch let error as SteamWorkshopMetadataError {
+            return Self.uniformFailure(error, ids: ids)
         } catch {
             return Self.uniformFailure(.unknown(error.localizedDescription), ids: ids)
         }
+    }
 
-        guard let http = response as? HTTPURLResponse else {
-            return Self.uniformFailure(.responseParseFailure, ids: ids)
+    /// The bare request: transport failures come back as the raw `URLError`
+    /// so a caller can hand them to `WorkshopRetryPolicy`. Replaying this POST
+    /// is safe — GetPublishedFileDetails is a read-only lookup that Valve
+    /// happens to expose as POST.
+    func post(publishedFileIDs ids: [UInt64]) async throws -> WorkshopRetryPolicy.Response {
+        var request = URLRequest(url: Self.endpoint)
+        request.httpMethod = "POST"
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.timeoutInterval = 30
+        request.httpBody = Self.formBody(publishedFileIDs: ids).data(using: .utf8)
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await BoundedNetworkFetch.fetch(request, session: session, byteCap: Self.maxResponseBytes)
+        } catch is BoundedNetworkFetch.ResponseTooLarge {
+            throw SteamWorkshopMetadataError.responseParseFailure
         }
+        guard let http = response as? HTTPURLResponse else {
+            throw SteamWorkshopMetadataError.responseParseFailure
+        }
+        return (data, http)
+    }
 
-        switch http.statusCode {
+    nonisolated static func results(
+        from response: WorkshopRetryPolicy.Response,
+        requestedIDs ids: [UInt64]
+    ) -> [UInt64: Result<SteamWorkshopMetadata, SteamWorkshopMetadataError>] {
+        switch response.http.statusCode {
         case 200:
-            return Self.decodeBatch(data: data, requestedIDs: ids)
+            return decodeBatch(data: response.data, requestedIDs: ids)
         case 429:
-            let retryAfter = (http.value(forHTTPHeaderField: "Retry-After")).flatMap(TimeInterval.init)
-            return Self.uniformFailure(.rateLimited(retryAfter: retryAfter), ids: ids)
+            let retryAfter = (response.http.value(forHTTPHeaderField: "Retry-After")).flatMap(TimeInterval.init)
+            return uniformFailure(.rateLimited(retryAfter: retryAfter), ids: ids)
         case 401, 403:
-            return Self.uniformFailure(.unauthorized, ids: ids)
-        case 404:
-            return Self.uniformFailure(.itemNotFound, ids: ids)
+            return uniformFailure(.unauthorized, ids: ids)
+        // A 404 from the endpoint says nothing about the items (it is the
+        // endpoint that was not found), so it is an HTTP failure like any other.
         default:
-            return Self.uniformFailure(.http(status: http.statusCode), ids: ids)
+            return uniformFailure(.http(status: response.http.statusCode), ids: ids)
         }
     }
 
@@ -204,7 +222,9 @@ final class SteamWorkshopMetadataService {
         payload: GetPublishedFileDetailsEnvelope.Payload,
         publishedFileID id: UInt64
     ) -> Result<SteamWorkshopMetadata, SteamWorkshopMetadataError> {
-        // Steam result code: 1 = OK, 9 = not found, 15 = access denied.
+        // Steam result code: 1 = OK, 9 = not found, 15 = access denied. Only
+        // those two say the item is invisible for good; any other code (2 =
+        // generic failure, …) is transient and must not drop the item.
         // Checked before the app-id guard: non-OK payloads legitimately omit
         // `consumer_app_id` and must not surface as schema mismatches.
         switch payload.result {
@@ -215,7 +235,7 @@ final class SteamWorkshopMetadataService {
         case 15:
             return .failure(.itemPrivate)
         default:
-            return .failure(.itemNotFound)
+            return .failure(.unknown("result \(payload.result)"))
         }
         // GetPublishedFileDetails is looked up by id alone — it will happily return
         // an item that belongs to a different Steam app. `UInt32(exactly:)` (not the
@@ -247,11 +267,14 @@ final class SteamWorkshopMetadataService {
         }
 
         let communityURL = URL(string: "https://steamcommunity.com/sharedfiles/filedetails/?id=\(id)")!
+        let creatorID = payload.creator?.trimmingCharacters(in: .whitespacesAndNewlines)
 
         return .success(SteamWorkshopMetadata(
             publishedFileID: id,
             title: payload.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
-            shortDescription: payload.short_description ?? payload.description?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
+            // Not `description`: that is raw BBCode.
+            shortDescription: payload.short_description ?? "",
+            creatorID: creatorID.flatMap { $0.isEmpty ? nil : $0 },
             creatorPersonaName: nil,
             previewImageURL: preview,
             fileSizeBytes: payload.file_size.flatMap(UInt64.init),
@@ -308,7 +331,6 @@ private struct GetPublishedFileDetailsEnvelope: Decodable {
         let preview_url: String?
         let url: String?
         let title: String?
-        let description: String?
         let short_description: String?
         let time_created: Int?
         let time_updated: Int?
