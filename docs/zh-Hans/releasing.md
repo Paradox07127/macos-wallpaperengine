@@ -10,7 +10,7 @@ Developer ID，也没有公证。
 
 已安装的副本去拉 `main` 上按 SKU 分开的 Sparkle appcast（`appcast-lite.xml` /
 `appcast-pro.xml`）。Sparkle 下载对应 DMG、校验 EdDSA 签名并替换应用。新下载的
-构建首次启动仍要跑清除隔离标记的命令——没有公证。
+构建没有公证；如果 macOS 拦截手动下载的副本，可能需要清除隔离标记。
 
 ## 版本号清单
 
@@ -27,7 +27,7 @@ Developer ID，也没有公证。
 
 ## 预检
 
-生成产物之前，先跑完整的串行门禁：
+日常集成先跑 `make verify`；生成发版产物之前，再跑完整串行门禁：
 
 ```sh
 scripts/release_candidate_check.sh
@@ -63,8 +63,9 @@ JavaScriptCore，或手动链接的 libc++ 动态库。Sparkle 是故意链接�
 这些 ad-hoc archive 是**验证证据，不是出货用的 entitlement 产物**。Xcode 的
 "Sign to Run Locally"路径可能注入 `get-task-allow=true`，而
 `scripts/check_entitlements.sh --app` 必须拒绝这种形态。真正出货的 Pro/Lite
-entitlement 批准、Developer ID 信任与公证，必须在签名 Mac 上针对最终的
-Developer ID archive 执行；不要豁免那里的失败，也不要拿链接矩阵的 archive 顶替。
+有效 entitlement 与嵌套签名，在签名 Mac 上针对最终 Apple Development 签名应用验证。
+Developer ID 信任与公证是未来分发步骤，当前打包脚本不会完成。不要以 ad-hoc 冒烟 archive
+代替出货产物，也不要豁免 `get-task-allow` 检查失败。
 
 ## 手动打包
 
@@ -119,8 +120,8 @@ scripts/release-app.sh --sku pro  --version X.Y.Z --plan
 环境/机器层面的输入，不存放在本仓库里。
 
 公开的 Lite 产物必须命名为 `Loomscreen-X.Y.Z.dmg`，Pro 产物必须命名为
-`Loomscreen-Pro-X.Y.Z.dmg`。asset 顺序不影响应用内的检查——它读的是 release tag，
-从不看 asset 列表——但仍把 Lite 的 DMG 放在前面，好让 release 页面以公开下载开头。
+`Loomscreen-Pro-X.Y.Z.dmg`。asset 顺序不影响应用内检查：Sparkle 读取对应版本 appcast 的 enclosure，
+并比较 `CFBundleVersion`。仍把 Lite 放在前面，保持下载顺序稳定。
 
 ## GitHub release
 
@@ -176,8 +177,8 @@ For Pro:
 xattr -dr com.apple.quarantine "/Applications/Loomscreen Pro.app"
 ```
 
-Once is enough — updates Loomscreen installs itself clear the flag, so later
-versions open straight away.
+In-app Sparkle updates normally handle the flag during installation. A fresh
+manual download may need this step again.
 
 </details>
 
@@ -206,10 +207,9 @@ Requires macOS 14.6+.
   一个包通吃，不要按架构拆成两行（2026-08-30 试过又撤回：同一个链接出现两次看着像贴错）。
   Pro 是 `arm64` 单架构，所以那行只写 Apple Silicon。架构结论以本次发布的 `lipo -archs` 为准，
   别照抄上一版。
-- **首次启动那块是兜底说明，不是必做步骤。** 2026-08-30 实测：Sparkle 2.9.6 会清掉它自己
-  安装的那份的 `com.apple.quarantine`，所以用户执行过一次之后，后续更新都不用再执行。
-  措辞要写成「如果 macOS 拒绝打开」，并说明应用内更新会自己清掉这个标记。但**不能整段删**
-  ——手动下载的 DMG 仍然会被隔离，而且 `release_contract_check.sh` 会断言 appcast 里必须有这条命令。
+- **首次启动块是兜底，不是强制步骤。** 2026-08-30 的 Sparkle 2.9.6 安装探针观察到隔离标记被清除；
+  文案写“如果 macOS 拒绝打开”，不承诺以后每次手动下载都无需处理。说明不能删，手动 DMG
+  仍可能带隔离标记，`release_contract_check.sh` 会检查 appcast 包含该命令。
 - **`</summary>` 后面要空一行**，否则 GitHub 不会渲染 `<details>` 里的 markdown。
 - **一键复制靠的就是围栏代码块** —— GitHub 会自动加复制按钮。Lite 与 Pro 分成两个块，
   各有各的按钮。

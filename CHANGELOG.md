@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to **Loomscreen** (the open-source Lite edition) are
+All notable changes to **Loomscreen**, including Lite and Pro, are
 tracked here. Format follows
 [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
@@ -10,8 +10,8 @@ unstable — any `0.y` → `0.(y+1)` bump may introduce breaking changes to
 the configuration schema, UI layout, or feature gating. A `1.0.0` tag
 will be cut once the surface has stabilized through real-world use.
 
-Pro-edition (`Loomscreen Pro.app`) release notes live separately and are
-not covered by this file.
+Entries identify Pro-only features where applicable. Versioned entries describe
+what shipped at that time; current behavior is documented in `docs/`.
 
 ## [0.6.6] — 2026-09-06
 

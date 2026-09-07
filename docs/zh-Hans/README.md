@@ -4,7 +4,8 @@
 
 Loomscreen 是一个以菜单栏为核心的 macOS 动态壁纸平台：用 Metal 原生渲染
 Wallpaper Engine 场景（Pro），另支持视频、网页与 Apple Aerials 壁纸，可按显示器
-分别配置，并带播放列表与自动化。
+分别配置，保存整屏方案，并带播放列表与自动化。天气、小组件和音乐可独立叠加；
+macOS 26+ 还提供经兼容性检查的系统视频壁纸 provider。
 
 ## 面向用户
 
@@ -15,13 +16,14 @@ Wallpaper Engine 场景（Pro），另支持视频、网页与 Apple Aerials 壁
 
 ## 面向贡献者
 
-- [features.md](features.md) —— 功能 ↔ 代码对照图。
+- [features.md](features.md) —— 当前功能与版本边界。
+- [architecture.md](architecture.md) —— 应用/会话所有权、包、渲染、XPC 与系统 provider。
 - [building.md](building.md) —— 构建要求、scheme 与测试门禁。
 - [releasing.md](releasing.md) —— 维护者发版清单。
 - [CONTRIBUTING.md](CONTRIBUTING.md) —— 如何提交改动。
 - [SECURITY.md](SECURITY.md) —— 如何报告安全问题。
-- [LiveWallpaperCore DESIGN.md](../../Packages/LiveWallpaperCore/DESIGN.md) —— 什么该放进共享包、什么不该。
-- [../../CHANGELOG.md](../../CHANGELOG.md) —— 开源 Lite 版的发版记录。
+- [LiveWallpaperCore DESIGN.md](../../Packages/LiveWallpaperCore/DESIGN.md) —— 共享 UI token、组件与无障碍契约。
+- [../../CHANGELOG.md](../../CHANGELOG.md) —— Lite 与 Pro 的版本记录。
 
 ## 翻译
 

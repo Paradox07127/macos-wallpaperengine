@@ -14,18 +14,20 @@ stripped-down interface. Video / web / Apple Aerials fidelity is identical.
 | Per-display wallpapers, copy-to-all | ✅ | ✅ |
 | Playlists, shuffle, rotation | ✅ | ✅ |
 | Time-of-day schedule automation | ✅ | ✅ |
-| Bookmarks | ✅ | ✅ |
+| Saved wallpapers, display schemes and configuration backup | ✅ | ✅ |
 | Particle & weather-reactive overlays | ✅ | ✅ |
-| System-monitor overlay board | ✅ | ✅ |
+| Monitor board (ten widget types, including Weather and Agent Session) | ✅ | ✅ |
+| Now Playing layouts, controls and optional lyrics | ✅ | ✅ |
+| System Wallpaper video provider (macOS 26+, compatibility-gated) | ✅ | ✅ |
 | Global shortcuts | ✅ | ✅ |
 | On-lock video-frame desktop-picture capture | ✅ | ✅ |
 | Full-screen / occlusion / battery / Low Power Mode auto-pause | ✅ | ✅ |
-| Update check (notification only — never auto-installs) | ✅ | ✅ |
+| Sparkle update checks, download and installation | ✅ | ✅ |
 | **Wallpaper Engine scene rendering** (Metal) | — | ✅ |
 | **Scene project import** (linked local folders, read in place) | — | ✅ |
 | **Steam Workshop browse & download** | — | ✅ |
 | **Scene presets** (Workshop presets + your own saved values) | — | ✅ |
-| **Audio-reactive scenes** (system audio capture) | — | ✅ |
+| **System audio capture** (scene and music visual effects) | — | ✅ |
 | **Adaptive frame rate under occlusion** | — | ✅ |
 | **Per-display render threads** | — | ✅ |
 | **Storage management** (projects, engine assets, caches) | — | ✅ |
@@ -43,10 +45,15 @@ part of the scene capability rather than a separate line item.
 The runtime source of truth for what an edition exposes is
 [`ProductCapabilities.swift`](../../Packages/LiveWallpaperCore/Sources/LiveWallpaperCore/Capabilities/ProductCapabilities.swift).
 
-The GitHub Releases update check runs in both editions. It compares against the
-release tag rather than an asset name, so the single release that carries both
-DMGs serves both. Neither edition installs anything — the banner only opens the
-release page.
+Both editions use Sparkle to read their own appcast, verify and install the
+matching update. Automatic checking is controlled in General settings; update
+choices are presented by Sparkle. See [Install & update](install.md).
+
+Core is shared; Pro additionally links the ProWPE parser/schema package. App
+compilation conditions do not propagate into Swift packages. See [Architecture](architecture.md).
+
+Backups preserve configuration data, but Lite cannot run scene entries from Pro.
+Export does not bundle media or make file grants portable between machines.
 
 ## Architecture
 

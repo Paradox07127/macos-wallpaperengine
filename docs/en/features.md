@@ -2,204 +2,190 @@
 
 **English** · [简体中文](../zh-Hans/features.md)
 
-The authoritative map from user-facing features to their implementation. For a
-task-oriented walkthrough, use [quick-start.md](quick-start.md) instead.
+For setup steps, see [Quick Start](quick-start.md). For module ownership and
+rendering data flow, see [Architecture](architecture.md). Edition availability
+is defined by [ProductCapabilities.swift](../../Packages/LiveWallpaperCore/Sources/LiveWallpaperCore/Capabilities/ProductCapabilities.swift)
+and the app target's build gates.
 
-Authoritative capability gate: [`ProductCapabilities.swift`](../../Packages/LiveWallpaperCore/Sources/LiveWallpaperCore/Capabilities/ProductCapabilities.swift).
+## App surfaces
 
-## 0) App surfaces
+- **Menu bar**: add a wallpaper, global on/off, per-display playback and volume,
+  playlist navigation, CPU/GPU/RAM/thermal status, updates, settings and quit.
+- **Settings window**: Displays, **Saved** (wallpapers and display schemes),
+  Apple Aerials, Steam Workshop (Pro), and System Wallpaper (macOS 26+).
+- **Display inspector**: Wallpaper and Overlays tabs. Overlays has separate
+  Weather, Widgets and Music pages, each with its own controls and preview.
+- **Languages**: English, Simplified Chinese, Traditional Chinese, Japanese and Spanish.
 
-- **Menu bar** (`LiveWallpaper/Views/MenuBarContent.swift`)
-  - Quick-add wallpaper, global on/off toggle.
-  - **Update** button, left of the toggle, only while a newer release is available.
-  - Per-display rows: status, play/pause, prev/next (playlist mode), volume.
-  - Live usage strip (CPU / GPU / RAM / thermal pressure).
-  - Manage, General Settings, reload-all, quit.
-- **Settings window** (`LiveWallpaper/Views/ContentView.swift`, `LiveWallpaper/Views/Settings/Navigation.swift`)
-  - Sidebar: per-display pages, Bookmarks, Schemes, Apple Aerials, Steam Workshop (Pro).
-  - Settings tabs — availability varies by SKU:
-
-| Tab | Edition | Contents |
+| Settings page | Edition | Contents |
 |---|---|---|
-| General | both | Language, start at login, lock-screen frame capture, Dock visibility |
-| Display Defaults | both | Default mute/volume, frame cap, fit mode, color space, web interaction |
-| Performance | both | Pause rules, app exceptions, RAM preload budget; **Pro adds** adaptive frame rate & per-display render threads |
-| Audio Response | Pro | System audio capture for audio-reactive scenes |
-| Weather | both | Off / system location / manual location for weather-reactive overlays |
-| Shortcuts | both | Master switch + eight bindable global shortcuts |
-| Storage | Pro | Downloaded projects, engine assets, caches |
-| Backup & Restore | both | `.lwconfig` export / import |
-| Workshop | Pro | API key, SteamCMD doctor, engine-asset updates, content filters |
-| Advanced | both | Diagnostics export, bug report, log folder |
-| About | both | Version, links, Welcome Tour, update banner |
+| General | both | Language, login behavior, Dock visibility, lock-screen frame capture, automatic update checks |
+| Display Defaults | both | Playback, frame rate, fit, color and interaction defaults |
+| Performance | both | Pause rules, app exceptions, video preload; Pro adds adaptive scene frame rate and render threads |
+| Audio Response | Pro | System audio capture for scene and music visual effects |
+| Weather | both | Off, system location or manual location |
+| Shortcuts | both | Master switch and eight bindable actions |
+| Storage | Pro | Downloaded projects, engine assets and caches |
+| Backup & Restore | both | Configuration export/import |
+| Workshop | Pro | Steam setup, API key, engine assets and browse preferences |
+| Advanced / About | both | Diagnostics, maintenance, version, links and updates |
 
-## 1) Wallpaper types
+## Wallpaper types
 
-`WallpaperType` (`Packages/LiveWallpaperCore/.../Schema/WallpaperType.swift`) has
-three cases — video, HTML, scene. Apple Aerials are applied as video sources.
+### Video — both editions
 
-### Video (both editions)
+- `mp4`, `m4v`, `mov` and `avi`, subject to the codecs available to AVFoundation.
+- Fill, Fit and Stretch; playback speed, mute/volume and video effects.
+- Auto, sRGB, Display P3, Rec. 2020 HDR and force-SDR color modes.
+- Independent display playback or a video spanned across displays.
+- Configurable per-display RAM preload budget.
+- Frame-rate targets of 15, 30, 60 or **match display**. Controls show the
+  effective rate available on that display; video is also bounded by its source
+  rate. Saved settings from earlier frame-rate formats migrate on load.
 
-- Formats: `mp4`, `m4v`, `mov`, `avi` (`Schema/../Persistence/ResourceUtilities.swift`).
-- Fit modes Fill / Fit / Stretch; frame-rate caps 15/24/30/60/unlimited.
-- Color spaces: auto, sRGB, Display P3, Rec. 2020 HDR, force-SDR (`Schema/VideoColorSpace.swift`).
-- Per-display playback or a single video spanned across all displays (`Schema/VideoDisplayMode.swift`).
-- RAM preload budget per screen for smooth looping.
+### Web — both editions
 
-### Web (both editions)
+URLs, HTML files, local folders and inline HTML run in WKWebView. Settings
+include JavaScript and mouse interaction, tracker blocking, custom CSS,
+mute/volume, refresh interval, scale/pan/rotation and physical-pixel layout.
+Workshop web imports use ephemeral storage and network isolation. User-created
+web sources can use the network according to their settings.
 
-`Schema/HTMLConfig.swift` — per-display: JavaScript toggle, mouse interaction,
-tracker blocking, custom CSS, mute/volume, auto-refresh interval,
-scale/pan/rotate transforms, Retina physical-pixel layout, ephemeral storage
-(forced for Workshop imports), CSP enforcement, aggressive suspend.
+### Apple Aerials — both editions
 
-### Apple Aerials (both editions)
+Browse, search and apply aerial videos macOS has already downloaded. Aerials
+use the video playback path; Loomscreen does not download the Apple catalog.
 
-`LiveWallpaper/Infrastructure/Platform/AppleAerialsLibrary.swift` scans the
-aerial videos macOS has already downloaded; browse, search, and apply from the
-sidebar library.
+### Wallpaper Engine scenes — Pro
 
-### Wallpaper Engine scenes (Pro)
+Local project folders and downloaded Workshop content are read in place.
+The native Metal renderer supports layered scenes, particles, puppet-warp
+animation, text, SceneScript, audio response and cursor effects. Scene GLSL
+is translated to Metal; it is not a separate wallpaper type.
 
-- Native Metal renderer for WPE `scene.pkg` projects: layered scenes, particle systems, puppet-warp animation, SceneScript, text layers, audio-reactive and cursor effects. GLSL effects inside a scene are transpiled to Metal at load (`LiveWallpaper/Runtime/Metal/WPEShaderTranspiler*.swift`) — shaders are part of scene rendering, not a separate wallpaper type.
-- Sources: local project folders (read in place) or Steam Workshop downloads.
-- Scene-specific controls: fit mode incl. Center, cursor parallax, click interaction.
-- Projects requiring Windows executables are skipped on import.
+Compatibility varies by project and feature. Import/preflight and runtime
+errors describe unsupported content or missing assets; this is an independent
+implementation, not a guarantee that every Windows project renders identically.
+Windows executable wallpapers are not supported.
 
-#### Scene presets (Pro)
+**Scene presets** store named values for a base wallpaper. Scene defaults,
+a preset and per-display edits are separate layers. The Preset row offers
+selection, save, rename and delete; Workshop detail pages list community
+presets for the base wallpaper. Those lists require a Steam Web API key.
 
-A preset is a named set of `project.json` property values bound to one base
-wallpaper (`Schema/ScenePreset.swift`). Downloaded Workshop preset items and
-"save my current values" are the *same* object, which is what lets a downloaded
-preset be renamed, re-saved, and exported like a local one.
+Presets can also carry Wallpaper Engine color correction and volume. Color
+correction runs as a full-frame pass when enabled and non-neutral; its curves
+follow Loomscreen's video controls rather than claiming exact WPE parity.
+Preset volume multiplies the display's volume. These engine settings are kept
+separate from identically named project properties.
 
-- **Applied as a layer, never baked in**: scene defaults → preset → your
-  per-display increment. "Reset to preset" is therefore just dropping the
-  increment.
-- Presets also carry Wallpaper Engine's own per-wallpaper application settings,
-  which are *not* `project.json` properties and so are not in the wallpaper's
-  schema:
-  - **Colour correction** (`wec_e` enable flag plus brightness / contrast /
-    saturation / hue on a 0–100 scale, 50 neutral) becomes a full-frame post
-    pass, skipped entirely when the values are neutral —
-    `Schema/WPEEngineColorCorrection.swift`,
-    `Runtime/Metal/WPEMetalRenderExecutor+Present.swift`. The neutral point and
-    enable flag were established from real published presets; the transfer
-    curves are matched to the app's own video colour controls rather than being
-    bit-exact with Wallpaper Engine.
-  - **Volume** (0–100) becomes a gain that *multiplies* your master volume
-    instead of replacing it — `Schema/WPEEngineAudioSettings.swift`.
+## Saved content and automation
 
-  Both read the preset snapshot rather than the layered map, so a wallpaper that
-  declares its own property named `volume` cannot drive the engine setting.
-- UI: the **Preset** row in the scene settings card
-  (`LiveWallpaper/Views/ScreenDetail/ScenePresetBar.swift`) — a picker split
-  into *Saved by you* and *From the Workshop*, plus save / rename / delete.
-  Workshop wallpaper pages list the presets published for that wallpaper
-  (`LiveWallpaper/Views/Workshop/DetailPresetsSection.swift`); listing
-  them needs a Steam Web API key, downloading one needs SteamCMD.
+- **Saved → Bookmarks**: bookmarks keep the wallpaper content. Applying one
+  leaves the target display's playback and overlay settings in place.
+- **Saved → Schemes**: a full display setup, including wallpaper, overlays,
+  playback, effects, playlist and schedule. Applying a scheme replaces that
+  display's setup after confirmation. Positions adapt to the target display.
+- **Playlists**: videos, drag-reordering, shuffle and 1–1440 minute rotation.
+- **Schedules**: time slots, conflict checks and fallback to the primary
+  wallpaper. Automation pauses during lock/sleep and reconciles once on wake.
+- **Shortcuts**: play/pause, next, previous, mute, mouse interaction, global
+  wallpaper visibility, reload and settings — eight configurable actions.
+- **Backup**: `.lwconfig` carries configurations, global settings, bookmarks
+  and schemes. It does not package media files, Steam credentials or API keys.
+  File grants are machine-specific; files may need to be selected again after
+  moving a backup. Lite cannot play Pro-only scene configurations in a backup.
 
-## 2) Playback & automation
+## Overlays
 
-- **Playlists** (`LiveWallpaper/Views/Playlist/PlaylistSection.swift`, `LiveWallpaper/Policies/PlaylistPolicy.swift`) — drag-reorder, shuffle, 1–1440 min rotation, apply to one or all displays.
-- **Schedule** (`LiveWallpaper/Views/ScheduleSection/`, `LiveWallpaper/Policies/SchedulePolicy.swift`) — time slots with presets, conflict detection, fallback to the primary wallpaper.
-- **Coordinator** (`LiveWallpaper/Runtime/Coordinators/WallpaperAutomationCoordinator.swift`) — one 60-second tick, running only while some display actually has automation; stops entirely during lock/sleep and reconciles once on wake.
-- **Bookmarks** (`Schema/WallpaperBookmark.swift`, `LiveWallpaper/App/ScreenManager+Bookmarks.swift`) — a favourite wallpaper and nothing else. Applying one swaps the content and leaves every setting on the target display untouched.
-- **Schemes** (`Schema/ScreenScheme.swift`, `LiveWallpaper/App/ScreenManager+Schemes.swift`) — one display's complete setup: wallpaper, overlay (Monitor board and Now Playing layer) and every playback, effect, playlist and schedule setting. Applying one replaces the whole setup on the target display, behind a confirmation. Widget and overlay positions are stored normalized, so a scheme captured on one display lands correctly on a differently-sized one. Local archive only — a scheme references media through per-machine security-scoped bookmarks, so it is not portable between machines.
-- **Import routing** (`LiveWallpaper/Infrastructure/Assets/WallpaperImportRouter.swift`) — one classifier behind the toolbar picker, drag & drop, and onboarding: video / scene project / scene library / html / unsupported.
+Overlays have per-display configuration and can accompany video, web or scenes.
+Particles and the monitor/music layers can also run over the macOS desktop
+without an active Loomscreen wallpaper session. Preview pages show one overlay
+category at a time.
 
-## 3) Overlays
+- **12 particle effects**: Snow, Rain, Bokeh, Fireflies, Dust, Stars, Leaves,
+  Sakura, Mist, Embers, Bubbles and Meteors. Includes wind-aware effects,
+  Reduce Motion handling and screen-capture visibility control.
+- **Weather response**: Open-Meteo conditions drive particle selection and
+  video adjustments, using system or manual location.
+- **Monitor board**: ten widget types — CPU, Memory, GPU, Network, Disk, Power,
+  Processes, Agent Session, ANE Memory and Weather. Widgets have supported
+  small/medium/large sizes, drag arrangement, display scaling, options and
+  layout import/export. The board can sit at the desktop or above windows.
+  Unavailable readings are distinguished from zero; histories retain sampling
+  gaps. Network/disk totals are monitoring-session estimates.
+- **Weather widget**: a sky scene with condition/place caption, day/night
+  appearance, clouds, precipitation and wind. It is separate from the
+  display-wide weather-response controls.
+- **Agent Session**: reads local Claude Code and Codex session records for
+  status. ANE Memory reports memory, not neural-engine utilization.
+- **Music / Now Playing**: independent Poster, Vinyl and Aurora layouts,
+  cover-derived accents, drag placement and optional lyrics. Pro adds system
+  audio-driven visual effects, including Wave, when Audio Response is enabled.
 
-All overlays are renderer-independent — they stack on video, web, and scene
-wallpapers alike.
+Track changes come from Spotify/Apple Music notifications, with a startup
+state read when needed. Apple Music's missing playhead is queried through
+Apple Events while the source is active, so progress and synchronized lyrics
+can follow it when Automation permission is granted. Playback buttons and
+seeking use the same permission boundary. Without a usable playhead or timed
+lyrics, the display falls back rather than inventing timing.
 
-- **Particles** (`Schema/ParticleEffect.swift`) — Snow, Rain, Bokeh, Fireflies, Dust, Stars, Leaves, Sakura.
-- **Weather-reactive** (`LiveWallpaper/Runtime/WeatherReactiveService.swift`) — hourly Open-Meteo conditions map to particle effects and video adjustments (saturation, brightness, temperature…). Location: off / system / manual.
-- **Monitor board** (`LiveWallpaper/Monitor/`) — per-display, desktop layer (click-through) or always-on-top. Widgets: CPU, Memory, GPU, Network, Disk, Power, Processes, Agent Session (tracks local Claude Code / Codex CLI sessions), ANE Memory. Suspends automatically when fully occluded or the user is away.
-- **Now Playing** (`LiveWallpaper/Monitor/NowPlaying/`, `LiveWallpaper/Monitor/Widgets/NowPlaying*`) — the current Spotify or Apple Music track, in Poster, Vinyl, or Aurora style, with cover-derived accent colors and five audio-reactive effects when Audio Response is on. It is its own overlay layer, switched on and positioned independently of the Monitor board (nine-point anchors or dragging it in the preview), and it disappears entirely while nothing is playing.
-  - **How it reads the track:** the players' own `DistributedNotificationCenter` broadcasts. No polling, no helper process, no Media Remote private API.
-  - **Transport controls** appear on hover and drive the player over Apple Events, which macOS gates behind an Automation prompt on first use; declining leaves the buttons inert and changes nothing else.
-  - **Lyrics** (optional) come from the public LRCLIB service, matched on artist/title/album. Spotify reports a playback position, so its lyrics follow the song line by line; Apple Music broadcasts no position, so its lyrics stand still at the top.
-  - **Network discipline:** cover art and lyrics are fetched from a fixed allow-list of hosts (`open.spotify.com`, `itunes.apple.com`, `lrclib.net`, and the Spotify/Apple cover CDNs) over HTTPS only, with streamed size caps, redirects off the list refused, and both a positive LRU cache and a TTL'd negative cache (`NowPlayingNetwork.swift`).
+Cover art and optional LRCLIB lyrics use HTTPS host allowlists, response-size
+limits and caches. Lyrics are off by default. Preview artwork uses cached
+content; it does not independently fetch a second copy.
 
-## 4) Performance model
+## Performance and display lifecycle
 
-`LiveWallpaper/Policies/WallpaperPolicyEngine.swift` separates **safety
-suspends** (user absent, critical memory pressure, critical thermal state —
-cannot be overridden) from **discretionary suspends** (full-screen, ≥85 % window
-occlusion, battery, Low Power Mode, per-app rules). Moderate heat (`serious`)
-**throttles** the frame rate of scene and web wallpapers instead of stopping
-them, and a memory `warning` throttles scenes — a busy scene idles near those
-levels in normal use. Video has no frame-rate knob to shed load with, so
-moderate heat still suspends it.
+The playback state machine keeps user play/pause intent separate from system
+policy. Lock/sleep, critical memory pressure and critical thermal state are
+safety suspends. Full-screen, window occlusion, battery, Low Power Mode and
+per-app rules are configurable policies; **never pause** app rules only veto
+the discretionary policies. Menu-bar and display status explain pause reasons.
 
-- **App exceptions** (`Schema/ApplicationPerformanceRule.swift`) — three triggers per app: pause when frontmost, pause while running, or **never pause** (vetoes discretionary suspends only). This is also the way to handle games: full-screen detection catches most, and an explicit rule covers the rest.
-- **No suspend ever changes your play intent** — intent lives in one per-screen
-  state machine (`LiveWallpaperCore … WallpaperPlaybackStateMachine.swift`) that
-  only the play/pause controls can write, so wallpapers always resume on their
-  own once the condition clears, and the play button can never strand one.
-- When a system rule is holding a wallpaper down, the menu bar and the screen's
-  detail header say **which** rule (battery, full-screen, heat, …).
-- A manual pause keeps the last frame on screen and releases the decoder and
-  caches after 5 minutes — the same wall clock for video, web and scene
-  wallpapers alike.
-- Pro adds adaptive frame rate under occlusion and per-display render threads.
+Moderate thermal pressure reduces scene/web frame rates and can suspend video.
+A manual pause retains a still frame and enters deeper resource hibernation
+after the dwell period. Pro adds adaptive scene frame rates and per-display
+render actors. Display configuration and sidebar ordering persist.
 
-## 5) Multi-display
+## Workshop — Pro
 
-- Independent config per display (`LiveWallpaper/App/ScreenManager+Screens.swift`).
-- Copy one display's setup to all; span one video across all displays.
-- Sidebar display order persists (`LiveWallpaper/Models/SidebarDisplayOrder.swift`).
+- Browse with paging, cache, maturity/type/resolution/genre filters and
+  translated tags. Public browsing can work without a key; API-backed queries,
+  creator metadata and preset lists use a Steam Web API key.
+- Creator names load after initial results, and existing cards remain visible
+  while filters refresh. Genre choices match any selected genre; tag/creator
+  scopes retain the other filters.
+- **Show presets as wallpapers** is off by default. Presets remain available
+  through their base wallpaper's detail page.
+- Steam setup supports managed SteamCMD installation, automatic detection and
+  manual selection. The XPC connector verifies the tool and runs SteamCMD.
+- In-app sign-in supports Steam Guard and cached accounts. Sessions are kept
+  per account; downloads go to the authorized Steam library. Subscription sync
+  makes subscribed items available in the app.
+- Downloads are revalidated inside the authorized library before import;
+  app-managed deletion and download mutations share repository coordination.
+- Shared Wallpaper Engine assets can be linked or installed, with update checks.
 
-## 6) Workshop (Pro)
+## System Wallpaper — both editions, macOS 26+
 
-- **SteamConnector** (`SteamConnector/`) — XPC helper that runs SteamCMD serially, verifies its code signature and SHA-256, discovers cached Steam logins, and downloads Workshop items with your account.
-- **Managed SteamCMD install** (`Workshop/SteamCMDManagedInstallCoordinator.swift`) — the app asks, the connector does the work: fetch Valve's package manifest, download each package, reject anything whose SHA-256 doesn't match the manifest, unpack into a staging directory, and keep the result only if the installed binary's code signature and team identifier are Valve's. A failure at any step rolls back to whatever was installed before. Additive — package-manager detection and manually chosen binaries are unchanged, and every run path applies the same trust gates.
-- **Online browse** (`LiveWallpaper/Infrastructure/Workshop/WorkshopQueryService.swift`) — Steam Web API queries with paging, caching, rate limiting, creator resolution; maturity blur and content filters in settings.
-- **Engine assets** (`LiveWallpaper/Infrastructure/Workshop/WPEEngineAssetsInstaller.swift`) — one-time SteamCMD download of shared Wallpaper Engine assets, with build-ID update checks.
-- **Doctor** (`LiveWallpaper/Infrastructure/Workshop/Doctor/`) — guided setup and diagnostics for the whole chain.
+The **System Wallpaper** library copies supported video files into the
+provider's library. Choose them through macOS Wallpaper settings; the provider
+can keep playing when Loomscreen is closed. This is a video-only system path,
+separate from Loomscreen's scenes, web pages and overlay windows. The page
+reports provider compatibility and can pause publishing on an unsupported
+macOS build. See [Architecture](architecture.md#system-wallpaper-provider).
 
-## 7) Updates (both editions)
+## Updates and privacy
 
-`LiveWallpaper/Infrastructure/Services/SparkleUpdaterController.swift` — Sparkle
-handles checking, downloading and installing. Updates are verified against an
-ed25519 public key pinned in each edition's `Info.plist`, so an update that is
-not signed by the release key is refused outright; the feed is HTTPS-only.
+Both editions use Sparkle with separate HTTPS appcasts and signed update
+payloads. Scheduled checks can show Sparkle's update dialog; the menu-bar
+Update button and About page also expose the update flow. Sparkle handles
+download and installation, including relaunch. Automatic checking is controlled
+in General settings. This is not a GitHub-API notification-only checker.
 
-Scheduled checks are deliberately quiet. Sparkle would normally raise its alert
-the moment it finds something, which over a full-screen wallpaper is an
-interruption nobody asked for; the gentle-reminder delegate suppresses that and
-lights up the menu bar **Update** button instead. Clicking it hands control to
-Sparkle's own install UI. Automatic checking can be turned off in
-**Settings → General**, and the **Settings → About** banner reports the same
-state plus a manual check.
-
-Because the app is sandboxed it cannot replace its own bundle: Sparkle brokers
-the install through an XPC service that runs outside the sandbox, which is what
-`SUEnableInstallerLauncherService` and the `-spks`/`-spki` mach-lookup
-entitlements are for. Each edition has its own appcast (`appcast-pro.xml`,
-`appcast-lite.xml`), regenerated at release time by
-`scripts/generate-appcast.sh`, because the two ship as separate DMGs and an
-enclosure can only point at one of them. Sparkle orders updates by
-`CFBundleVersion`, which both plists set to `MARKETING_VERSION`. Packaging
-re-signs Sparkle's nested installer helpers so they share the app's Team ID.
-
-## 8) Security & privacy
-
-- No telemetry, no accounts.
-- Workshop API key is stored in Loomscreen's sandboxed Application Support
-  directory with owner-only permissions. Loomscreen does not intentionally
-  sync it; normal Mac backup and migration behavior remains a system policy.
-- Web wallpapers render in sandboxed contexts; optional tracker blocking and CSP enforcement.
-- File access uses security-scoped bookmarks; permission prompts are listed in [install.md](install.md#system-permission-prompts).
-
-## 9) Code entry points
-
-- Capability gating: `Packages/LiveWallpaperCore/Sources/LiveWallpaperCore/Capabilities/ProductCapabilities.swift`
-- Screen orchestration: `LiveWallpaper/App/ScreenManager.swift` (+ extensions in `LiveWallpaper/App/`)
-- Policies (pause/playlist/schedule): `LiveWallpaper/Policies/`
-- Display detail UI: `LiveWallpaper/Views/ScreenDetail*`
-- Menu bar: `LiveWallpaper/Views/MenuBarContent.swift`
-- Settings: `LiveWallpaper/Views/Settings/`
-- WPE runtime: `LiveWallpaper/Runtime/` (Metal renderer, scene runtime)
-- Workshop stack: `LiveWallpaper/Infrastructure/Workshop/`, `SteamConnector/`
+No Loomscreen account or usage telemetry is required. Optional online features
+contact Steam, weather, artwork/lyrics or update services; remote web wallpapers
+can contact their own sites. New Steam API keys are saved in the login Keychain;
+legacy owner-only files are migrated after a verified Keychain write and can
+remain when migration is refused. See [Security](../SECURITY.md) and
+[permissions](install.md#system-permission-prompts).

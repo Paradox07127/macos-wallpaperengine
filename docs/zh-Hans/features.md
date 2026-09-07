@@ -2,170 +2,128 @@
 
 [English](../en/features.md) · **简体中文**
 
-从用户可见功能到其实现的权威对照。想要按任务走的教程，请看
-[quick-start.md](quick-start.md)。
+操作步骤见[快速上手](quick-start.md)，模块职责与渲染数据流见[架构说明](architecture.md)。
+版本能力由 [ProductCapabilities.swift](../../Packages/LiveWallpaperCore/Sources/LiveWallpaperCore/Capabilities/ProductCapabilities.swift)
+和应用 target 的编译门控共同决定。
 
-能力开关的真值源：[`ProductCapabilities.swift`](../../Packages/LiveWallpaperCore/Sources/LiveWallpaperCore/Capabilities/ProductCapabilities.swift)。
+## 应用界面
 
-## 0）应用界面
+- **菜单栏**：添加壁纸、总开关、逐屏播放和音量、播放列表切换、CPU/GPU/内存/热压力、更新、设置与退出。
+- **设置窗口**：显示器、**已保存**（壁纸与整屏方案）、Apple Aerials、Steam 创意工坊（Pro），以及系统壁纸（macOS 26+）。
+- **显示器检查器**：壁纸与叠加层两个标签；叠加层内分别提供天气、小组件、音乐页面和各自的预览。
+- **语言**：英语、简体中文、繁体中文、日语、西班牙语。
 
-- **菜单栏**（`LiveWallpaper/Views/MenuBarContent.swift`）
-  - 快速添加壁纸、总开关。
-  - 总开关左边的 **Update** 按钮，只在有新版本时出现。
-  - 每台显示器一行：状态、播放/暂停、上一张/下一张（播放列表模式）、音量。
-  - 实时占用条（CPU / GPU / 内存 / 温度压力）。
-  - 管理、通用设置、全部重新加载、退出。
-- **设置窗口**（`LiveWallpaper/Views/ContentView.swift`、`LiveWallpaper/Views/Settings/Navigation.swift`）
-  - 侧栏：每台显示器的页面、书签、方案、Apple Aerials、Steam 创意工坊（Pro）。
-  - 设置页——是否可用取决于 SKU：
-
-| 页 | 版本 | 内容 |
+| 设置页 | 版本 | 内容 |
 |---|---|---|
-| 通用 | 两者 | 语言、开机启动、锁屏帧捕获、Dock 显示 |
-| 显示器默认值 | 两者 | 默认静音/音量、帧率上限、适配模式、色彩空间、网页交互 |
-| 性能 | 两者 | 暂停规则、App 例外、内存预载预算；**Pro 另有**自适应帧率与每显示器渲染线程 |
-| 音频响应 | Pro | 为音频联动场景采集系统音频 |
-| 天气 | 两者 | 关闭 / 系统定位 / 手动位置，用于天气联动叠加层 |
-| 快捷键 | 两者 | 总开关 + 八个可绑定的全局快捷键 |
-| 存储 | Pro | 已下载工程、引擎资源、缓存 |
-| 备份与恢复 | 两者 | `.lwconfig` 导出 / 导入 |
-| 创意工坊 | Pro | API key、SteamCMD 诊断、引擎资源更新、内容过滤 |
-| 高级 | 两者 | 诊断导出、问题报告、日志文件夹 |
-| 关于 | 两者 | 版本、链接、欢迎导览、更新横幅 |
+| 通用 | 两者 | 语言、登录启动、Dock、锁屏截帧、自动检查更新 |
+| 显示器默认值 | 两者 | 播放、帧率、适配、色彩和交互默认值 |
+| 性能 | 两者 | 暂停规则、应用例外、视频预载；Pro 另有场景自适应帧率与渲染线程 |
+| 音频响应 | Pro | 为场景和音乐视觉效果捕获系统音频 |
+| 天气 | 两者 | 关闭、系统定位或手动位置 |
+| 快捷键 | 两者 | 总开关与八个可绑定动作 |
+| 存储 | Pro | 已下载项目、引擎资源、缓存 |
+| 备份与恢复 | 两者 | 导出与导入配置 |
+| 创意工坊 | Pro | Steam 配置、API key、引擎资源与浏览偏好 |
+| 高级 / 关于 | 两者 | 诊断、维护、版本、链接与更新 |
 
-## 1）壁纸类型
+## 壁纸类型
 
-`WallpaperType`（`Packages/LiveWallpaperCore/.../Schema/WallpaperType.swift`）只有
-三种：视频、HTML、场景。Apple Aerials 是以视频源的形式应用的。
+### 视频——两个版本
 
-### 视频（两个版本）
+- 支持 `mp4`、`m4v`、`mov`、`avi`，实际可播放性取决于 AVFoundation 可用的编解码器。
+- 填充、适合、拉伸；播放速度、静音/音量与视频效果。
+- 自动、sRGB、Display P3、Rec. 2020 HDR、强制 SDR 色彩模式。
+- 逐屏独立播放，或让视频跨屏铺展。
+- 每屏可配置内存预载预算。
+- 帧率目标为 15、30、60 或**跟随显示器**。控件显示该显示器可达到的实际帧率；视频还受源帧率限制。旧版帧率配置在读取时迁移。
 
-- 格式：`mp4`、`m4v`、`mov`、`avi`（`Schema/../Persistence/ResourceUtilities.swift`）。
-- 适配模式 填充 / 适应 / 拉伸；帧率上限 15/24/30/60/不限。
-- 色彩空间：自动、sRGB、Display P3、Rec. 2020 HDR、强制 SDR（`Schema/VideoColorSpace.swift`）。
-- 每台显示器独立播放，或一段视频跨所有显示器铺满（`Schema/VideoDisplayMode.swift`）。
-- 每屏的内存预载预算，用于平滑循环。
+### 网页——两个版本
 
-### 网页（两个版本）
+URL、HTML 文件、本地文件夹和内联 HTML 通过 WKWebView 运行。可设置 JavaScript、
+鼠标交互、跟踪器拦截、自定义 CSS、静音/音量、刷新间隔、缩放/平移/旋转和物理像素布局。
+创意工坊网页导入使用临时存储与网络隔离；用户自建网页来源可按配置访问网络。
 
-`Schema/HTMLConfig.swift` —— 每台显示器可配：JavaScript 开关、鼠标交互、
-跟踪器拦截、自定义 CSS、静音/音量、自动刷新间隔、缩放/平移/旋转变换、
-Retina 物理像素布局、临时存储（创意工坊导入强制开启）、CSP 强制、激进挂起。
+### Apple Aerials——两个版本
 
-### Apple Aerials（两个版本）
+浏览、搜索并应用 macOS 已下载的航拍视频。Aerials 走视频播放路径，Loomscreen 不负责下载 Apple 目录。
 
-`LiveWallpaper/Infrastructure/Platform/AppleAerialsLibrary.swift` 扫描 macOS 已经
-下载好的航拍视频；可在侧栏的库里浏览、搜索并应用。
+### Wallpaper Engine 场景——Pro
 
-### Wallpaper Engine 场景（Pro）
+本地项目文件夹与已下载的创意工坊内容就地读取。原生 Metal 渲染器支持分层场景、粒子、
+木偶变形、文字、SceneScript、音频响应和光标效果。场景 GLSL 转译为 Metal，不是另一种壁纸类型。
 
-- WPE `scene.pkg` 工程的原生 Metal 渲染器：分层场景、粒子系统、puppet-warp 动画、SceneScript、文字图层、音频联动与光标特效。场景内部的 GLSL 特效在载入时转译为 Metal（`LiveWallpaper/Runtime/Metal/WPEShaderTranspiler*.swift`）——着色器属于场景渲染的一部分，不是单独一种壁纸类型。
-- 来源：本地工程文件夹（就地读取）或 Steam 创意工坊下载。
-- 场景专有控制项：适配模式（含居中）、光标视差、点击交互。
-- 需要 Windows 可执行文件的工程在导入时会被跳过。
+兼容程度随项目和功能而异。导入预检与运行时错误会说明不支持的内容或缺失资源；
+这是独立实现，不保证每个 Windows 项目都呈现相同效果。不支持 Windows 可执行程序壁纸。
 
-#### 场景预设（Pro）
+**场景预设**为基础壁纸保存一组命名参数。场景默认值、预设、逐屏修改分层保存。
+预设行提供选择、保存、重命名和删除；创意工坊壁纸详情页列出社区预设，该列表需要 Steam Web API key。
 
-一个预设就是一组具名的 `project.json` 属性值，绑定在某一张基础壁纸上
-（`Schema/ScenePreset.swift`）。从创意工坊下载的预设条目和"保存我当前的参数"是
-*同一个*对象，正因如此，下载来的预设也能像本地预设一样被重命名、重新保存和导出。
+预设还可携带 Wallpaper Engine 的色彩校正与音量。启用且非中性时，色彩校正执行全帧处理；
+曲线沿用 Loomscreen 视频控件，不宣称与 WPE 完全一致。预设音量乘以显示器音量。
+这些引擎设置与项目中恰好同名的属性分开保存。
 
-- **以图层方式应用，从不烘进去**：场景默认值 → 预设 → 你按显示器的增量改动。所以"重置为预设"就是把增量丢掉而已。
-- 预设里还带着 Wallpaper Engine 自己的按壁纸应用级设置，这些**不是** `project.json` 属性，因此不在壁纸的 schema 里：
-  - **色彩校正**（`wec_e` 启用开关，加上亮度 / 对比度 / 饱和度 / 色相，量程 0–100，50 为中性）会变成一个全帧后处理 pass；值为中性时整个 pass 被跳过 —— `Schema/WPEEngineColorCorrection.swift`、`Runtime/Metal/WPEMetalRenderExecutor+Present.swift`。中性点和启用开关是从真实发布的预设里定出来的；传递曲线则对齐了本应用自己的视频色彩控制，而不是与 Wallpaper Engine 逐位一致。
-  - **音量**（0–100）会变成一个增益，与你的主音量**相乘**而不是替换它 —— `Schema/WPEEngineAudioSettings.swift`。
+## 已保存内容与自动化
 
-  两者读的都是预设快照而非合并后的映射表，所以一张声明了自己名为 `volume` 属性的壁纸没法驱动引擎设置。
-- 界面：场景设置卡片里的**预设**那一行（`LiveWallpaper/Views/ScreenDetail/ScenePresetBar.swift`）——选择器分为*你保存的*与*来自创意工坊*两组，另有保存 / 重命名 / 删除。创意工坊的壁纸页会列出为该壁纸发布的预设（`LiveWallpaper/Views/Workshop/DetailPresetsSection.swift`）；列出它们需要 Steam Web API key，下载则需要 SteamCMD。
+- **已保存 → 书签**：书签保存壁纸内容；应用时保留目标显示器的播放与叠加层设置。
+- **已保存 → 方案**：包含壁纸、叠加层、播放、效果、播放列表、计划的整屏配置。确认后替换目标显示器的配置，位置适配目标显示器。
+- **播放列表**：视频、拖拽排序、随机播放、1–1440 分钟轮换。
+- **计划**：时段、冲突检查、主壁纸兜底；锁屏/休眠时暂停，唤醒后对齐一次。
+- **快捷键**：播放/暂停、下一张、上一张、静音、鼠标交互、全局可见性、重载、设置，共八个动作。
+- **备份**：`.lwconfig` 保存逐屏配置、全局设置、书签与方案，不打包媒体文件、Steam 凭据或 API key。文件授权与机器相关，迁移后可能需要重新选择来源。Lite 无法播放备份里的 Pro 场景配置。
 
-## 2）播放与自动化
+## 叠加层
 
-- **播放列表**（`LiveWallpaper/Views/Playlist/PlaylistSection.swift`、`LiveWallpaper/Policies/PlaylistPolicy.swift`）—— 拖拽排序、随机、1–1440 分钟轮换、应用到一台或所有显示器。
-- **计划**（`LiveWallpaper/Views/ScheduleSection/`、`LiveWallpaper/Policies/SchedulePolicy.swift`）—— 带预设时段、冲突检测、回落到主壁纸。
-- **协调器**（`LiveWallpaper/Runtime/Coordinators/WallpaperAutomationCoordinator.swift`）—— 单个 60 秒 tick，只在确实有显示器启用了自动化时才运行；锁屏/休眠期间完全停止，唤醒后只对齐一次。
-- **书签**（`Schema/WallpaperBookmark.swift`、`LiveWallpaper/App/ScreenManager+Bookmarks.swift`）—— 只收藏一张壁纸,别的什么都不带。套用书签只替换内容,目标显示器上的所有设置原样不动。
-- **方案**（`Schema/ScreenScheme.swift`、`LiveWallpaper/App/ScreenManager+Schemes.swift`）—— 一台显示器的完整设置:壁纸、叠加层(监控面板与 Now Playing 层)、以及全部播放/滤镜/播放列表/排程参数。套用会整套替换目标显示器的设置,并有确认框。组件与叠加层位置按归一化存储,所以在一块屏上捕获的方案落到不同尺寸的屏上仍然正确。仅限本机存档 —— 方案通过每台机器独有的安全作用域书签引用媒体文件,不能跨机器搬运。
-- **导入路由**（`LiveWallpaper/Infrastructure/Assets/WallpaperImportRouter.swift`）—— 工具栏选择器、拖放和引导流程背后共用一个分类器：视频 / 场景工程 / 场景库 / html / 不支持。
+叠加层逐屏配置，可搭配视频、网页或场景。粒子、监控与音乐层也能在没有 Loomscreen
+活动壁纸会话时叠在 macOS 桌面上。预览页面一次显示一种叠加层类别。
 
-## 3）叠加层
+- **12 种粒子效果**：雪、雨、散景、萤火虫、尘埃、星星、落叶、樱花、薄雾、余烬、气泡、流星。支持适用效果的风向、“减少动态效果”与屏幕捕捉可见性设置。
+- **天气联动**：Open-Meteo 天气驱动粒子选择与视频参数，位置可用系统定位或手动指定。
+- **监控面板**：CPU、内存、GPU、网络、磁盘、电源、进程、Agent 会话、ANE 内存、天气，共十种组件。按类型提供小/中/大尺寸、拖拽排列、显示缩放、选项和布局导入/导出。可位于桌面或窗口上方。缺测与零读数有区别，曲线保留采样空隙；网络/磁盘累计为本次监控估算。
+- **天气组件**：带天气/位置说明的天空场景，随昼夜变化，显示云、降水与风；独立于整屏天气联动设置。
+- **Agent 会话**：读取本地 Claude Code 与 Codex 会话记录呈现状态；ANE 内存表示内存占用，不是神经引擎利用率。
+- **音乐 / 正在播放**：独立的 Poster、Vinyl、Aurora 布局，封面取色、拖拽定位和可选歌词。Pro 开启音频响应后可使用含 Wave 在内的系统音频视觉效果。
 
-所有叠加层都与渲染器无关——它们同样能叠在视频、网页和场景壁纸上。
+曲目信息来自 Spotify/Apple Music 通知，必要时在启动阶段读取现有状态。
+Apple Music 通知缺少播放位置，数据源活动时会通过 Apple Events 查询；授予自动化权限后，
+进度与同步歌词可以跟随它。播放控制与跳转使用同一权限边界。
+缺少可用播放位置或带时间歌词时会降级显示，不伪造同步时间。
 
-- **粒子**（`Schema/ParticleEffect.swift`）—— 雪、雨、散景、萤火虫、尘埃、星星、落叶、樱花。
-- **天气联动**（`LiveWallpaper/Runtime/WeatherReactiveService.swift`）—— 每小时的 Open-Meteo 天气状况映射到粒子特效与视频调整（饱和度、亮度、色温……）。位置来源：关闭 / 系统 / 手动。
-- **监控面板**（`LiveWallpaper/Monitor/`）—— 按显示器独立，可置于桌面层（点击穿透）或始终置顶。组件：CPU、内存、GPU、网络、磁盘、电源、进程、Agent 会话（跟踪本机的 Claude Code / Codex CLI 会话）、ANE 内存。完全被遮挡或用户离开时自动挂起。
-- **音乐播放**（`LiveWallpaper/Monitor/NowPlaying/`、`LiveWallpaper/Monitor/Widgets/NowPlaying*`）—— 显示 Spotify 或 Apple Music 正在播放的曲目，提供海报、黑胶、极光三种样式，强调色取自封面；开启音频响应后还有五种随音乐起伏的特效。它是独立的叠加层，开关与位置都与监控面板分开（九宫格锚点，或在预览里直接拖动），没有音乐播放时整层消失。
-  - **曲目信息来源：**播放器自己广播的 `DistributedNotificationCenter` 通知。不轮询、不装辅助进程、不用 Media Remote 私有 API。
-  - **播放控件**在悬停时出现，通过 Apple Events 控制播放器；macOS 会在首次使用时弹出「自动化」授权，拒绝授权只会让按钮失效，不影响其他功能。
-  - **歌词**（可选）来自公开的 LRCLIB 服务，按艺人／标题／专辑匹配。Spotify 会广播播放位置，所以歌词逐行跟随；Apple Music 不广播位置，歌词固定停在开头。
-  - **网络约束：**封面与歌词只走固定白名单主机（`open.spotify.com`、`itunes.apple.com`、`lrclib.net` 以及 Spotify／Apple 的封面 CDN）的 HTTPS，边下边计字节上限，跳转到白名单之外一律拒绝；命中与未命中分别有 LRU 缓存和带 TTL 的负缓存（`NowPlayingNetwork.swift`）。
+封面与可选 LRCLIB 歌词通过 HTTPS 域名白名单、响应大小限制和缓存获取。
+歌词默认关闭。预览使用已有封面缓存，不独立再发一次请求。
 
-## 4）性能模型
+## 性能与显示器生命周期
 
-`LiveWallpaper/Policies/WallpaperPolicyEngine.swift` 把**安全挂起**（用户不在、内存压力
-达到 critical、过热达到 critical——不可覆盖）与**可选挂起**（全屏、窗口遮挡 ≥85%、电池、
-低电量模式、按 App 规则）分开。中度发热（serious）对场景与网页壁纸只会**降低帧率**
-而不是停掉,内存 warning 则只降场景的帧率——繁忙场景在正常使用时本来就常年停在这些
-档位附近。视频没有可降的帧率旋钮,降档等于空操作,所以中度发热仍会挂起视频。
+播放状态机把用户的播放/暂停意图与系统策略分开。锁屏/休眠、严重内存压力、危急热状态
+属于安全暂停；全屏、窗口遮挡、电池、低电量模式与逐应用规则可配置。
+应用的**从不暂停**规则只覆盖可选策略。菜单栏与显示器状态说明暂停原因。
 
-- **App 例外**（`Schema/ApplicationPerformanceRule.swift`）—— 每个 App 三种触发方式：位于最前时暂停、运行期间暂停，或**从不暂停**（只否决可选挂起）。游戏也走这条路：全屏检测能抓住大多数，剩下的用一条显式规则覆盖。
-- **任何挂起都不会改写你的播放意图**——意图由每屏一台的状态机统一持有
-  （`LiveWallpaperCore … WallpaperPlaybackStateMachine.swift`），只有播放/暂停操作能写入。
-  条件解除后壁纸一定自行恢复，播放键也不可能把壁纸卡死。
-- 系统规则压住壁纸时，菜单栏和该屏详情页会写明**是哪条规则**（电池、全屏、过热……）。
-- 手动暂停会保留最后一帧画面，5 分钟后释放解码器与缓存——视频、网页、场景三类壁纸
-  的时刻一致。
-- Pro 另有遮挡时的自适应帧率与每显示器渲染线程。
+中度热压力会降低场景/网页帧率，也可能暂停视频。手动暂停保留静帧，经过驻留时间后
+进入更深的资源休眠。Pro 另有场景自适应帧率与逐屏 render actor。逐屏配置和侧栏顺序持久保存。
 
-## 5）多显示器
+## 创意工坊——Pro
 
-- 每台显示器独立配置（`LiveWallpaper/App/ScreenManager+Screens.swift`）。
-- 把一台显示器的配置复制到全部；把一段视频跨所有显示器铺满。
-- 侧栏的显示器顺序会持久化（`LiveWallpaper/Models/SidebarDisplayOrder.swift`）。
+- 分页浏览、缓存、成熟度/类型/分辨率/题材筛选和标签翻译。公共浏览可在无 key 时工作；API 查询、作者资料和预设列表使用 Steam Web API key。
+- 首批结果先于作者名称显示，切筛选时保留已有卡片。题材匹配任一所选项；标签/作者范围内仍保留其他筛选条件。
+- **把预设当作壁纸显示**默认关闭；基础壁纸的详情页仍可查看预设。
+- SteamCMD 支持托管安装、自动查找、手动选择；XPC 连接器验证并运行工具。
+- 应用内登录支持 Steam Guard 与已缓存账号，逐账号保留会话，下载进入授权的 Steam 库。订阅同步让订阅项目出现在应用中。
+- 下载导入前重新验证授权库内的目录；应用发起的删除与下载共用仓库修改协调。
+- 可链接或安装 Wallpaper Engine 共享资源，并检查更新。
 
-## 6）创意工坊（Pro）
+## 系统壁纸——两个版本，macOS 26+
 
-- **SteamConnector**（`SteamConnector/`）—— XPC 辅助进程，串行运行 SteamCMD，校验其代码签名与 SHA-256，发现已缓存的 Steam 登录，并用你的账号下载创意工坊条目。
-- **SteamCMD 托管安装**（`Workshop/SteamCMDManagedInstallCoordinator.swift`）—— 应用只负责发起，实际工作全在 connector 里：拉取 Valve 的包清单、下载每个包、SHA-256 与清单对不上就拒绝、解包到暂存目录，只有当装好的二进制的代码签名与团队标识确实是 Valve 的才保留。任何一步失败都回滚到此前已安装的状态。这是**增量能力**——包管理器探测和手动指定的二进制都不受影响，而且所有运行路径都过同一套信任门。
-- **在线浏览**（`LiveWallpaper/Infrastructure/Workshop/WorkshopQueryService.swift`）—— Steam Web API 查询，带分页、缓存、限流、作者解析；设置里有成人内容模糊与内容过滤。
-- **引擎资源**（`LiveWallpaper/Infrastructure/Workshop/WPEEngineAssetsInstaller.swift`）—— 通过 SteamCMD 一次性下载 Wallpaper Engine 的共享资源，并按 build ID 检查更新。
-- **诊断**（`LiveWallpaper/Infrastructure/Workshop/Doctor/`）—— 对整条链路的引导式配置与诊断。
+**系统壁纸**库把支持的视频文件复制到 provider 的资源库，再通过 macOS 壁纸设置选择。
+Loomscreen 关闭后，provider 仍可播放。这是独立的视频路径，不包含 Loomscreen 的场景、
+网页和叠加窗口。页面报告 provider 兼容状态，在不支持的 macOS 构建上可暂停发布。
+见[架构说明](architecture.md#系统壁纸-provider)。
 
-## 7）更新（两个版本）
+## 更新与隐私
 
-`LiveWallpaper/Infrastructure/Services/SparkleUpdaterController.swift` —— 检查、
-下载与安装都交给 Sparkle。更新包会用固定在各版本 `Info.plist` 里的 ed25519 公钥验签，
-没有用发布密钥签过的更新一律拒绝；feed 只走 HTTPS。
+两个版本都使用 Sparkle，分别读取 HTTPS appcast 并验证更新包签名。
+定时检查可弹出 Sparkle 更新窗口，菜单栏更新按钮和关于页也提供更新入口。
+Sparkle 负责下载、安装与重启；通用设置控制自动检查。这不是仅访问 GitHub API 并提示链接的更新器。
 
-后台检查刻意保持安静。Sparkle 默认一发现新版就弹对话框，而这会打断正在全屏播放的壁纸；
-gentle-reminder 委托把那个对话框压掉，改成点亮菜单栏的 **Update** 按钮。点它才把控制权
-交给 Sparkle 自己的安装界面。自动检查可以在**设置 → 通用**里关掉，**设置 → 关于**的
-横幅显示同一份状态并提供手动检查。
-
-因为应用处于沙盒中，它无法替换自己的 bundle：Sparkle 通过一个跑在沙盒外的 XPC 服务
-完成安装，这正是 `SUEnableInstallerLauncherService` 和 `-spks`/`-spki` 两条 mach-lookup
-授权的用途。两个版本各有自己的 appcast（`appcast-pro.xml`、`appcast-lite.xml`），
-发版时由 `scripts/generate-appcast.sh` 重新生成——因为它们是两个独立的 DMG，
-一条 enclosure 只能指向其中一个。Sparkle 按 `CFBundleVersion` 排序，两份
-plist 都把它设成 `MARKETING_VERSION`。打包时会重签 Sparkle 嵌套的安装
-helper，让它们和主程序共用同一个 Team ID。
-
-## 8）安全与隐私
-
-- 无遥测，无账号。
-- 创意工坊 API key 存放在 Loomscreen 沙盒的 Application Support 目录里，权限仅属主可读。
-  Loomscreen 不会主动同步它；Mac 常规的备份与迁移行为仍属系统策略范畴。
-- 网页壁纸在沙盒上下文中渲染；跟踪器拦截与 CSP 强制为可选项。
-- 文件访问使用 security-scoped bookmark；权限提示清单见
-  [install.md](install.md#系统权限提示)。
-
-## 9）代码入口
-
-- 能力开关：`Packages/LiveWallpaperCore/Sources/LiveWallpaperCore/Capabilities/ProductCapabilities.swift`
-- 屏幕编排：`LiveWallpaper/App/ScreenManager.swift`（扩展在 `LiveWallpaper/App/` 下）
-- 策略（暂停/播放列表/计划）：`LiveWallpaper/Policies/`
-- 显示器详情界面：`LiveWallpaper/Views/ScreenDetail*`
-- 菜单栏：`LiveWallpaper/Views/MenuBarContent.swift`
-- 设置：`LiveWallpaper/Views/Settings/`
-- WPE 运行时：`LiveWallpaper/Runtime/`（Metal 渲染器、场景运行时）
-- 创意工坊栈：`LiveWallpaper/Infrastructure/Workshop/`、`SteamConnector/`
+无需 Loomscreen 账号，不收集使用遥测。可选在线功能会访问 Steam、天气、封面/歌词或
+更新服务；远程网页壁纸也可访问自己的站点。新保存的 Steam API key 存入登录钥匙串；
+旧版仅属主可读的文件在钥匙串写入并确认后迁移，迁移被拒时可能保留。
+详见[安全策略](SECURITY.md)与[权限说明](install.md#系统权限提示)。
