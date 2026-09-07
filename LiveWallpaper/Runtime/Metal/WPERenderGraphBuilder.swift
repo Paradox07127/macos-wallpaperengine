@@ -846,7 +846,10 @@ struct WPERenderGraphBuilder: Sendable {
     ) -> Set<String> {
         let composeLayerIDs = Set(
             document.imageObjects
-                .filter { isComposelayerModelPath($0.imageRelativePath) }
+                .filter {
+                    isComposelayerModelPath($0.imageRelativePath)
+                        && !$0.effects.contains(where: Self.buildsIntoGraph)
+                }
                 .map(\.id)
         )
         guard !composeLayerIDs.isEmpty else { return [] }

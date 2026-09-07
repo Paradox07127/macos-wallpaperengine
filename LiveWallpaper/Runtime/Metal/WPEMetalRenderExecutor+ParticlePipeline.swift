@@ -95,7 +95,10 @@ extension WPEMetalRenderExecutor {
         case .translucent:
             attachment.sourceRGBBlendFactor = .sourceAlpha
             attachment.destinationRGBBlendFactor = .oneMinusSourceAlpha
-            attachment.sourceAlphaBlendFactor = .sourceAlpha
+            // Scene intermediates carry premultiplied RGBA, just like image passes.
+            // Squaring source alpha punches a quad-shaped hole in an opaque scene;
+            // downstream unpremultiplication then brightens even zero refraction.
+            attachment.sourceAlphaBlendFactor = .one
             attachment.destinationAlphaBlendFactor = .oneMinusSourceAlpha
         case .additive:
             attachment.sourceRGBBlendFactor = .sourceAlpha

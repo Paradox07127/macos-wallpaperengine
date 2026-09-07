@@ -657,7 +657,8 @@ extension WPEMetalSceneRenderer {
                         if let streaming = try resolveStreamingPayloadIfHeavy(candidate) {
                             let source = try textureLoader.makeLazyAnimatedTextureSource(
                                 from: streaming,
-                                label: label
+                                label: label,
+                                colorSpace: colorSpace
                             )
                             // Finished off-thread decode hops back into this actor immediately (pre-3c), not on the next frame tick.
                             source.onPrefetchComplete = { [weak actor] in
@@ -688,13 +689,15 @@ extension WPEMetalSceneRenderer {
                         if payload.animationTrack != nil {
                             let source = try await textureLoader.makeAnimatedTextureSource(
                                 from: payload,
-                                label: label
+                                label: label,
+                                colorSpace: colorSpace
                             )
                             attachAtlasProvider(
                                 to: source,
                                 eagerPayload: payload,
                                 candidate: candidate,
-                                label: label
+                                label: label,
+                                colorSpace: colorSpace
                             )
                             return .dynamicSource(source)
                         }
@@ -744,7 +747,8 @@ extension WPEMetalSceneRenderer {
         to source: WPETexAnimatedTextureSource,
         eagerPayload: WPETexTexturePayload,
         candidate: String,
-        label: String
+        label: String,
+        colorSpace: WPEMetalColorSpace
     ) {
         guard !eagerPayload.mipmaps.isEmpty,
               !WPEMetalTextureLoader.uploadsMipChain(scalingActive: false),
@@ -752,7 +756,8 @@ extension WPEMetalSceneRenderer {
               let provider = WPETexAnimatedAtlasProvider(
                   payload: streaming,
                   device: executor.textureSourceDevice,
-                  label: label
+                  label: label,
+                  colorSpace: colorSpace
               ) else { return }
         if !source.attachAtlasProvider(provider) {
             debugStage("tex.eager.provider-rejected", "candidate=\(candidate)")

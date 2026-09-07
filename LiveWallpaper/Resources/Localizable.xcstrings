@@ -1,510 +1,6 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
-    "Use sRGB output." : {
-      "comment" : "Color management info. Describes the chosen output without claiming universal color accuracy.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Use sRGB output."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "使用 sRGB 输出。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "使用 sRGB 輸出。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "sRGB で出力します。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Usa la salida sRGB."
-          }
-        }
-      }
-    },
-    "Clicks go to the scene instead of desktop icons and the desktop context menu on this display. Turn off Interaction to restore desktop clicks." : {
-      "comment" : "Scene Interaction enable confirmation. Preserve both desktop-icon and desktop-context-menu loss, per-display scope, and turning off Interaction to restore access.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Clicks go to the scene instead of desktop icons and the desktop context menu on this display. Turn off Interaction to restore desktop clicks."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "点击将由场景接收，此显示器上的桌面图标和桌面右键菜单将无法使用。关闭“交互”可恢复桌面点击。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "點按將由場景接收，此顯示器上的桌面圖示與桌面快捷選單將無法使用。關閉「互動」可恢復桌面點按。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "クリックはシーンに送られ、このディスプレイのデスクトップアイコンとコンテキストメニューを操作できなくなります。「インタラクション」をオフにすると元に戻ります。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Los clics se envían a la escena y no a los iconos ni al menú contextual del escritorio de esta pantalla. Desactiva Interacción para restaurar los clics en el escritorio."
-          }
-        }
-      }
-    },
-    "Effects follow the cursor without capturing desktop clicks." : {
-      "comment" : "Scene follow-cursor tooltip. Passive pointer motion does not capture desktop clicks.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Effects follow the cursor without capturing desktop clicks."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "特效随指针移动，不拦截桌面点击。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "特效隨游標移動，不攔截桌面點按。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "エフェクトがポインタに追従します。デスクトップへのクリックは妨げません。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Los efectos siguen el cursor sin interceptar los clics en el escritorio."
-          }
-        }
-      }
-    },
-    "Sends clicks to the scene instead of this display’s desktop." : {
-      "comment" : "Scene Interaction tooltip. The selected display loses desktop click handling while this is enabled.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sends clicks to the scene instead of this display’s desktop."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "将点击发送至场景，而非此显示器的桌面。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "將點按傳送至場景，而非此顯示器的桌面。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "クリックをこのディスプレイのデスクトップではなくシーンに送ります。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Envía los clics a la escena en lugar de al escritorio de esta pantalla."
-          }
-        }
-      }
-    },
-    "Scripted content may not display when disabled." : {
-      "comment" : "JavaScript toggle tooltip. Disabling scripts can affect scripted content; do not claim that every web wallpaper becomes blank.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Scripted content may not display when disabled."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "关闭后，脚本内容可能无法显示。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "關閉後，指令碼內容可能無法顯示。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "オフにすると、スクリプトを使うコンテンツが表示されない場合があります。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Al desactivarlo, el contenido basado en scripts puede no mostrarse."
-          }
-        }
-      }
-    },
-    "Sends clicks and scrolls to the wallpaper; desktop icons and the Dock cannot receive clicks." : {
-      "comment" : "Web Interaction tooltip. Preserve click/scroll routing and the desktop-icon/Dock click consequence.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sends clicks and scrolls to the wallpaper; desktop icons and the Dock cannot receive clicks."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "将点击和滚动发送至壁纸；桌面图标和Dock将无法接收点击。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "將點按與捲動傳送至桌布；桌面圖示與 Dock 將無法接收點按。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "クリックとスクロールを壁紙に送ります。デスクトップアイコンと Dock はクリックできなくなります。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Envía los clics y el desplazamiento al fondo; los iconos del escritorio y el Dock no pueden recibir clics."
-          }
-        }
-      }
-    },
-    "A custom shader could not be translated." : {
-      "comment" : "Scene unsupported-shader failure explanation. Do not suggest re-downloading as a fix without evidence of corrupt or missing content.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "A custom shader could not be translated."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "无法转换自定义着色器。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "無法轉換自訂著色器。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "カスタムシェーダーを変換できませんでした。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No se ha podido convertir un shader personalizado."
-          }
-        }
-      }
-    },
-    "Required Workshop projects are missing." : {
-      "comment" : "Accessibility explanation for missing dependency IDs. A missing local dependency does not establish that the user has not subscribed in Steam.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Required Workshop projects are missing."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "缺少必需的创意工坊项目。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "缺少必要的創意工坊專案。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "必要なワークショップのプロジェクトが見つかりません。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Faltan proyectos necesarios de Workshop."
-          }
-        }
-      }
-    },
-    "JavaScript is off. Project settings cannot be applied." : {
-      "comment" : "Web project inspector state while JavaScript is disabled. Settings may be stored but cannot reach the running page.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "JavaScript is off. Project settings cannot be applied."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "JavaScript 已关闭，项目设置无法应用。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "JavaScript 已關閉，無法套用專案設定。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "JavaScript がオフのため、プロジェクト設定を適用できません。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "JavaScript está desactivado. No se pueden aplicar los ajustes del proyecto."
-          }
-        }
-      }
-    },
-    "Interaction is off; mouse options may not respond." : {
-      "comment" : "Web project state while the preview toolbar Interaction control is off. Use the same localized term as Interaction.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Interaction is off; mouse options may not respond."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "交互已关闭，鼠标选项可能不生效。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "互動已關閉，滑鼠選項可能無效。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "インタラクションがオフのため、マウスの設定が反映されない場合があります。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Interacción está desactivada; las opciones del ratón pueden no responder."
-          }
-        }
-      }
-    },
-    "Audio is muted." : {
-      "comment" : "Web project current state while the Audio toolbar control is muted.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Audio is muted."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "音频已静音。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "音訊已靜音。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "オーディオは消音中です。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "El audio está silenciado."
-          }
-        }
-      }
-    },
-    "Uses about half the scene frame rate when windows cover half the display or the Mac is on battery." : {
-      "comment" : "Adaptive frame rate info; applies only to scene wallpapers.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Uses about half the scene frame rate when windows cover half the display or the Mac is on battery."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "窗口覆盖显示器一半或 Mac 使用电池时，场景帧率降至约一半。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "視窗覆蓋顯示器一半或 Mac 使用電池時，場景影格率降至約一半。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ウインドウが画面の半分を覆う場合やバッテリー使用時に、シーンのフレームレートを約半分にします。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Reduce aproximadamente a la mitad la tasa de fotogramas de las escenas cuando las ventanas cubren media pantalla o el Mac usa la batería."
-          }
-        }
-      }
-    },
-    "Requires system audio access. Compatible scenes use local analysis; audio is not saved or uploaded." : {
-      "comment" : "Audio response info: system audio permission, compatible scenes and local processing.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Requires system audio access. Compatible scenes use local analysis; audio is not saved or uploaded."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "需要系统音频访问权限。兼容场景使用本机分析结果，音频不保存或上传。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "需要系統音訊取用權限。相容場景使用本機分析結果，音訊不儲存或上傳。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "システムオーディオへのアクセスが必要です。対応するシーンがこの Mac での解析結果を使用し、音声の保存やアップロードは行いません。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Requiere acceso al audio del sistema. Las escenas compatibles usan análisis local; el audio no se guarda ni se sube."
-          }
-        }
-      }
-    },
-    "Temporary test files in the app container. Deleting them does not affect wallpapers or settings." : {
-      "comment" : "Debug test artifact storage info.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Temporary test files in the app container. Deleting them does not affect wallpapers or settings."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "应用容器中的临时测试文件。删除后不影响壁纸或设置。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "App 容器中的暫存測試檔案。刪除後不影響桌布或設定。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "アプリのコンテナ内の一時テストファイルです。削除しても壁紙や設定には影響しません。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Archivos temporales de prueba del contenedor de la app. Borrarlos no afecta a los fondos ni a los ajustes."
-          }
-        }
-      }
-    },
     "" : {
 
     },
@@ -3766,6 +3262,42 @@
         }
       }
     },
+    "A custom shader could not be translated." : {
+      "comment" : "Scene unsupported-shader failure explanation. Do not suggest re-downloading as a fix without evidence of corrupt or missing content.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A custom shader could not be translated."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se ha podido convertir un shader personalizado."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "カスタムシェーダーを変換できませんでした。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法转换自定义着色器。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法轉換自訂著色器。"
+          }
+        }
+      }
+    },
     "A newer request replaced this one." : {
       "comment" : "Scene import refused because a later import for the same display took over.",
       "extractionState" : "manual",
@@ -6260,6 +5792,7 @@
       }
     },
     "All Time" : {
+      "comment" : "Workshop time menu: switches Most Popular to Top Rated (Steam's SharedFiles_Browse_Trend_Option_AllTime).",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -6888,42 +6421,6 @@
         }
       }
     },
-    "Applies when the default sort is Most Popular" : {
-      "comment" : "Settings → Workshop: subtitle of the default time frame row.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Applies when the default sort is Most Popular"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Se aplica cuando el orden predeterminado es «Más populares»"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "デフォルトの並べ替えが「人気順」のときに適用されます"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "仅在默认排序为「最热门」时生效"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "僅在預設排序為「最熱門」時生效"
-          }
-        }
-      }
-    },
     "Application Pause Rules" : {
       "comment" : "Title of per-application wallpaper pause rules in settings and editor.",
       "extractionState" : "manual",
@@ -6932,6 +6429,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Application Pause Rules"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reglas de pausa por app"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アプリ別の一時停止ルール"
           }
         },
         "zh-Hans" : {
@@ -6944,18 +6453,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "App 暫停規則"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "アプリ別の一時停止ルール"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Reglas de pausa por app"
           }
         }
       }
@@ -7028,6 +6525,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "適用於截圖、錄製和共享，小工具也遵循此設定。關閉後顯示 macOS 桌面圖片。"
+          }
+        }
+      }
+    },
+    "Applies when the default sort is Most Popular" : {
+      "comment" : "Settings → Workshop: subtitle of the default time frame row.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Applies when the default sort is Most Popular"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se aplica cuando el orden predeterminado es «Más populares»"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "デフォルトの並べ替えが「人気順」のときに適用されます"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仅在默认排序为「最热门」时生效"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "僅在預設排序為「最熱門」時生效"
           }
         }
       }
@@ -7961,6 +7494,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "音訊"
+          }
+        }
+      }
+    },
+    "Audio is muted." : {
+      "comment" : "Web project current state while the Audio toolbar control is muted.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Audio is muted."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El audio está silenciado."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "オーディオは消音中です。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音频已静音。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音訊已靜音。"
           }
         }
       }
@@ -9247,6 +8816,18 @@
             "value" : "Bindings are kept while off. Shortcuts require a modifier key and must not conflict with other shortcuts."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las asignaciones se conservan al desactivarlos. Cada atajo requiere una tecla modificadora y no debe entrar en conflicto con otros atajos."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "オフにしても割り当ては保持されます。ショートカットには修飾キーが必要で、ほかのショートカットと重複できません。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9257,18 +8838,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "關閉後保留快速鍵綁定。組合需包含修飾鍵，且不得與其他快速鍵衝突。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "オフにしても割り当ては保持されます。ショートカットには修飾キーが必要で、ほかのショートカットと重複できません。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Las asignaciones se conservan al desactivarlos. Cada atajo requiere una tecla modificadora y no debe entrar en conflicto con otros atajos."
           }
         }
       }
@@ -9891,6 +9460,18 @@
             "value" : "Browse Apple Aerials"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Explorar Apple Aerials"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple Aerialsを見る"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -9901,18 +9482,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "瀏覽 Apple Aerials"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Apple Aerialsを見る"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Explorar Apple Aerials"
           }
         }
       }
@@ -10028,6 +9597,18 @@
             "value" : "Browse Steam Workshop"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Explorar Steam Workshop"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam ワークショップを見る"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10038,18 +9619,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "瀏覽 Steam 創意工坊"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Steam ワークショップを見る"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Explorar Steam Workshop"
           }
         }
       }
@@ -12194,6 +11763,18 @@
             "value" : "Choose a wallpaper in System Settings"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elige un fondo en Ajustes del Sistema"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "システム設定で壁紙を選択"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -12204,18 +11785,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在系統設定中選擇桌布"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "システム設定で壁紙を選択"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Elige un fondo en Ajustes del Sistema"
           }
         }
       }
@@ -13680,6 +13249,18 @@
             "value" : "Click a blurred thumbnail to reveal it."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Haz clic en una miniatura difuminada para mostrarla."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ぼかしたサムネイルをクリックすると表示できます。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -13690,18 +13271,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "點按模糊縮圖可顯示內容。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ぼかしたサムネイルをクリックすると表示できます。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Haz clic en una miniatura difuminada para mostrarla."
           }
         }
       }
@@ -13858,6 +13427,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "點擊"
+          }
+        }
+      }
+    },
+    "Clicks go to the scene instead of desktop icons and the desktop context menu on this display. Turn off Interaction to restore desktop clicks." : {
+      "comment" : "Scene Interaction enable confirmation. Preserve both desktop-icon and desktop-context-menu loss, per-display scope, and turning off Interaction to restore access.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clicks go to the scene instead of desktop icons and the desktop context menu on this display. Turn off Interaction to restore desktop clicks."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los clics se envían a la escena y no a los iconos ni al menú contextual del escritorio de esta pantalla. Desactiva Interacción para restaurar los clics en el escritorio."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "クリックはシーンに送られ、このディスプレイのデスクトップアイコンとコンテキストメニューを操作できなくなります。「インタラクション」をオフにすると元に戻ります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "点击将由场景接收，此显示器上的桌面图标和桌面右键菜单将无法使用。关闭“交互”可恢复桌面点击。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "點按將由場景接收，此顯示器上的桌面圖示與桌面快捷選單將無法使用。關閉「互動」可恢復桌面點按。"
           }
         }
       }
@@ -14838,6 +14443,18 @@
             "value" : "Connect the account for Workshop downloads. Steam app sign-in is unaffected."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conecta la cuenta para descargar de Workshop. La sesión de la aplicación Steam no cambia."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ワークショップからダウンロードするにはアカウントを接続してください。Steamアプリのログイン状態には影響しません。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14848,18 +14465,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "連結帳號以下載創意工坊內容，不影響 Steam 應用程式的登入狀態。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ワークショップからダウンロードするにはアカウントを接続してください。Steamアプリのログイン状態には影響しません。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Conecta la cuenta para descargar de Workshop. La sesión de la aplicación Steam no cambia."
           }
         }
       }
@@ -14979,6 +14584,18 @@
             "value" : "Connected"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conectado"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "接続済み"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -14989,18 +14606,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已連線"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "接続済み"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Conectado"
           }
         }
       }
@@ -15184,6 +14789,18 @@
             "value" : "Content Security Policy"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Política CSP"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コンテンツセキュリティポリシー"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -15194,18 +14811,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "內容安全原則"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "コンテンツセキュリティポリシー"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Política CSP"
           }
         }
       }
@@ -19379,6 +18984,18 @@
             "value" : "Desktop playback"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reproducción en el escritorio"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "デスクトップでの再生"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -19389,18 +19006,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "桌面播放"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "デスクトップでの再生"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Reproducción en el escritorio"
           }
         }
       }
@@ -20301,6 +19906,18 @@
             "value" : "Disk usage: %@"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Espacio en disco: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ディスク使用量：%@"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -20311,18 +19928,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "磁碟用量：%@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ディスク使用量：%@"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Espacio en disco: %@"
           }
         }
       }
@@ -21292,6 +20897,18 @@
             "value" : "Downloaded files in the Steam library. Remove wallpapers from Installed to free space."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Archivos descargados en la biblioteca de Steam. Elimina fondos de Instalado para liberar espacio."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam ライブラリ内のダウンロード済みファイルです。「インストール済み」から壁紙を削除すると容量を解放できます。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21302,18 +20919,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Steam 收藏庫中的已下載檔案。從「已安裝」中移除桌布可釋出空間。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Steam ライブラリ内のダウンロード済みファイルです。「インストール済み」から壁紙を削除すると容量を解放できます。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Archivos descargados en la biblioteca de Steam. Elimina fondos de Instalado para liberar espacio."
           }
         }
       }
@@ -21328,6 +20933,18 @@
             "value" : "Downloaded presets appear in this wallpaper’s scene settings, without adding a wallpaper."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los preajustes descargados aparecen en los ajustes de escena de este fondo, sin añadir otro fondo."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ダウンロードしたプリセットは、この壁紙のシーン設定に追加されます。壁紙は追加されません。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21338,18 +20955,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "下載的預設會顯示在此桌布的場景設定中，不會新增桌布。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ダウンロードしたプリセットは、この壁紙のシーン設定に追加されます。壁紙は追加されません。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Los preajustes descargados aparecen en los ajustes de escena de este fondo, sin añadir otro fondo."
           }
         }
       }
@@ -21623,6 +21228,18 @@
             "value" : "Downloads missing subscribed wallpapers without deleting files or changing Steam subscriptions."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Descarga los fondos suscritos que faltan sin borrar archivos ni cambiar las suscripciones de Steam."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "購読中の未ダウンロードの壁紙を取得します。ファイルの削除や Steam の購読変更は行いません。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -21633,18 +21250,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "下載本機缺少的已訂閱桌布，不刪除檔案或更改 Steam 訂閱。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "購読中の未ダウンロードの壁紙を取得します。ファイルの削除や Steam の購読変更は行いません。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Descarga los fondos suscritos que faltan sin borrar archivos ni cambiar las suscripciones de Steam."
           }
         }
       }
@@ -22339,6 +21944,42 @@
         }
       }
     },
+    "Effects follow the cursor without capturing desktop clicks." : {
+      "comment" : "Scene follow-cursor tooltip. Passive pointer motion does not capture desktop clicks.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Effects follow the cursor without capturing desktop clicks."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los efectos siguen el cursor sin interceptar los clics en el escritorio."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "エフェクトがポインタに追従します。デスクトップへのクリックは妨げません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "特效随指针移动，不拦截桌面点击。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "特效隨游標移動，不攔截桌面點按。"
+          }
+        }
+      }
+    },
     "Elapsed" : {
       "comment" : "Developer tools table column title.",
       "extractionState" : "manual",
@@ -22594,6 +22235,18 @@
             "value" : "Enable Schedule"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activar programación"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スケジュールを有効にする"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -22604,18 +22257,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "啟用排程"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "スケジュールを有効にする"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Activar programación"
           }
         }
       }
@@ -27246,6 +26887,18 @@
             "value" : "Frees graphics resources while paused. Some pages may resume blank."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Libera recursos gráficos al pausar. Algunas páginas pueden quedar en blanco al reanudar."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一時停止中に描画リソースを解放します。再開後に何も表示されないページがあります。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -27256,18 +26909,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "暫停時釋放圖形資源，部分網頁恢復後可能黑屏。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "一時停止中に描画リソースを解放します。再開後に何も表示されないページがあります。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Libera recursos gráficos al pausar. Algunas páginas pueden quedar en blanco al reanudar."
           }
         }
       }
@@ -27752,8 +27393,7 @@
       }
     },
     "Genre" : {
-      "comment" : "A label displayed in the Workshop filter ribbon.",
-      "isCommentAutoGenerated" : true,
+      "comment" : "Workshop tag group.",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -30373,6 +30013,18 @@
             "value" : "Install with Loomscreen"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Instalar con Loomscreen"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loomscreenでインストール"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -30383,18 +30035,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "透過 Loomscreen 安裝"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreenでインストール"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Instalar con Loomscreen"
           }
         }
       }
@@ -30667,6 +30307,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "預設啟用互動"
+          }
+        }
+      }
+    },
+    "Interaction is off; mouse options may not respond." : {
+      "comment" : "Web project state while the preview toolbar Interaction control is off. Use the same localized term as Interaction.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Interaction is off; mouse options may not respond."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Interacción está desactivada; las opciones del ratón pueden no responder."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "インタラクションがオフのため、マウスの設定が反映されない場合があります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "交互已关闭，鼠标选项可能不生效。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "互動已關閉，滑鼠選項可能無效。"
           }
         }
       }
@@ -30987,6 +30663,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "此來源允許 JavaScript。"
+          }
+        }
+      }
+    },
+    "JavaScript is off. Project settings cannot be applied." : {
+      "comment" : "Web project inspector state while JavaScript is disabled. Settings may be stored but cannot reach the running page.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "JavaScript is off. Project settings cannot be applied."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "JavaScript está desactivado. No se pueden aplicar los ajustes del proyecto."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "JavaScript がオフのため、プロジェクト設定を適用できません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "JavaScript 已关闭，项目设置无法应用。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "JavaScript 已關閉，無法套用專案設定。"
           }
         }
       }
@@ -31452,6 +31164,7 @@
       }
     },
     "Last Updated" : {
+      "comment" : "Workshop sort (Steam's Workshop_BrowseSort_LastUpdated).",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -31996,6 +31709,18 @@
             "value" : "Limits web content. Changes reload the page and may affect compatibility."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Limita el contenido web. Los cambios recargan la página y pueden afectar a la compatibilidad."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Web コンテンツを制限します。変更時にページを再読み込みし、互換性に影響する場合があります。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -32006,18 +31731,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "限制網頁內容；變更後會重新載入網頁，可能影響相容性。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Web コンテンツを制限します。変更時にページを再読み込みし、互換性に影響する場合があります。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Limita el contenido web. Los cambios recargan la página y pueden afectar a la compatibilidad."
           }
         }
       }
@@ -36446,6 +36159,7 @@
       }
     },
     "Most Popular" : {
+      "comment" : "Workshop sort (Steam's Workshop_BrowseSort_MostPopular).",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -36480,6 +36194,7 @@
       }
     },
     "Most Recent" : {
+      "comment" : "Workshop sort (Steam's Workshop_BrowseSort_MostRecent).",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -39083,6 +38798,18 @@
             "value" : "No saved videos"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No hay vídeos guardados"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存済みのビデオはありません"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -39093,18 +38820,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "尚無已儲存的影片"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "保存済みのビデオはありません"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No hay vídeos guardados"
           }
         }
       }
@@ -39154,6 +38869,18 @@
             "value" : "No schedule"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No hay programación"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スケジュールがありません"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -39164,18 +38891,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "尚無排程"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "スケジュールがありません"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No hay programación"
           }
         }
       }
@@ -40889,6 +40604,18 @@
             "value" : "Offsets are measured in CSS pixels."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los desplazamientos se miden en píxeles CSS."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "オフセットの単位は CSS ピクセルです。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -40899,18 +40626,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "位移量以 CSS 像素為單位。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "オフセットの単位は CSS ピクセルです。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Los desplazamientos se miden en píxeles CSS."
           }
         }
       }
@@ -41122,6 +40837,7 @@
       }
     },
     "One Week" : {
+      "comment" : "Workshop Most Popular window (Steam's SharedFiles_Browse_Trend_Option_Week).",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -41156,6 +40872,7 @@
       }
     },
     "One Year" : {
+      "comment" : "Workshop Most Popular window (Steam's SharedFiles_Browse_Trend_Option_OneYear).",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -42452,6 +42169,18 @@
             "value" : "Optional. Adds ratings, authors, and faster search."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opcional. Añade valoraciones, autores y búsquedas más rápidas."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "任意。評価や作者情報を表示し、検索を高速化します。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -42462,18 +42191,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "選用。提供評分、作者資訊並加快搜尋。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "任意。評価や作者情報を表示し、検索を高速化します。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Opcional. Añade valoraciones, autores y búsquedas más rápidas."
           }
         }
       }
@@ -42488,6 +42205,18 @@
             "value" : "Optional. Adds ratings, authors, and faster search. Stored only on this Mac; requests go directly to Steam."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opcional. Añade valoraciones, autores y búsquedas más rápidas. La clave solo se guarda en este Mac; las solicitudes van directamente a Steam."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "任意。評価や作者情報を表示し、検索を高速化します。キーはこのMacにのみ保存され、リクエストはSteamに直接送信されます。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -42498,18 +42227,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "選用。提供評分、作者資訊並加快搜尋。金鑰僅儲存於此 Mac，請求直接傳送至 Steam。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "任意。評価や作者情報を表示し、検索を高速化します。キーはこのMacにのみ保存され、リクエストはSteamに直接送信されます。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Opcional. Añade valoraciones, autores y búsquedas más rápidas. La clave solo se guarda en este Mac; las solicitudes van directamente a Steam."
           }
         }
       }
@@ -42621,42 +42338,6 @@
         }
       }
     },
-    "Other" : {
-      "comment" : "Workshop tag group for tags outside Steam's wallpaper facets.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Other"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Otras"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "未分類"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "未分类"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "未分類"
-          }
-        }
-      }
-    },
     "Original wallpaper files must be available. Selected files and folders need access granted again on this Mac." : {
       "comment" : "Settings explanation; preserve scope and consequences.",
       "extractionState" : "manual",
@@ -42689,6 +42370,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "原始桌布檔案必須可用；所選檔案和檔案夾需在這台 Mac 上重新授權。"
+          }
+        }
+      }
+    },
+    "Other" : {
+      "comment" : "Workshop tag group for tags outside Steam's wallpaper facets.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Other"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otras"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未分類"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未分类"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未分類"
           }
         }
       }
@@ -45297,6 +45014,18 @@
             "value" : "Play video"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reproducir vídeo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ビデオ再生"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -45307,18 +45036,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "播放影片"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ビデオ再生"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Reproducir vídeo"
           }
         }
       }
@@ -45402,6 +45119,18 @@
             "value" : "Playback control denied. Enable access in System Settings → Privacy & Security → Automation."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Acceso al control de reproducción denegado. Actívalo en Ajustes del Sistema → Privacidad y seguridad → Automatización."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再生操作の権限が拒否されています。「システム設定 → プライバシーとセキュリティ → オートメーション」で許可してください。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -45412,18 +45141,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "播放控制權限遭拒。可在「系統設定 → 隱私權與安全性 → 自動化」中啟用。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "再生操作の権限が拒否されています。「システム設定 → プライバシーとセキュリティ → オートメーション」で許可してください。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Acceso al control de reproducción denegado. Actívalo en Ajustes del Sistema → Privacidad y seguridad → Automatización."
           }
         }
       }
@@ -45438,6 +45155,18 @@
             "value" : "Playback control requires Automation permission on first use."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El primer uso del control de reproducción requiere permiso de automatización."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "初めて再生を操作する際に、オートメーションの許可が必要です。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -45448,18 +45177,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "首次控制播放時需授予自動化權限。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "初めて再生を操作する際に、オートメーションの許可が必要です。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "El primer uso del control de reproducción requiere permiso de automatización."
           }
         }
       }
@@ -46133,6 +45850,18 @@
             "value" : "Presets are variations of existing wallpapers."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los preajustes son variantes de fondos existentes."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "プリセットは既存の壁紙のバリエーションです。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -46143,18 +45872,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "預設是現有桌布的樣式變體。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "プリセットは既存の壁紙のバリエーションです。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Los preajustes son variantes de fondos existentes."
           }
         }
       }
@@ -50341,6 +50058,18 @@
             "value" : "Renders scenes at a lower resolution; may blur text or increase power use. Changes reload wallpapers."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Renderiza las escenas a menor resolución; puede difuminar el texto o aumentar el consumo. Los cambios recargan los fondos."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "シーンを低い解像度で描画します。文字がぼやけたり消費電力が増えたりする場合があります。変更すると壁紙を再読み込みします。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -50351,18 +50080,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "以較低解析度算繪場景，可能使文字模糊或增加耗電。更改後會重新載入桌布。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "シーンを低い解像度で描画します。文字がぼやけたり消費電力が増えたりする場合があります。変更すると壁紙を再読み込みします。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Renderiza las escenas a menor resolución; puede difuminar el texto o aumentar el consumo. Los cambios recargan los fondos."
           }
         }
       }
@@ -50748,6 +50465,78 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "下載創意工坊桌布所需的工具。可安裝 SteamCMD 或使用現有版本。"
+          }
+        }
+      }
+    },
+    "Required Workshop projects are missing." : {
+      "comment" : "Accessibility explanation for missing dependency IDs. A missing local dependency does not establish that the user has not subscribed in Steam.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Required Workshop projects are missing."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Faltan proyectos necesarios de Workshop."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "必要なワークショップのプロジェクトが見つかりません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "缺少必需的创意工坊项目。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "缺少必要的創意工坊專案。"
+          }
+        }
+      }
+    },
+    "Requires system audio access. Compatible scenes use local analysis; audio is not saved or uploaded." : {
+      "comment" : "Audio response info: system audio permission, compatible scenes and local processing.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Requires system audio access. Compatible scenes use local analysis; audio is not saved or uploaded."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Requiere acceso al audio del sistema. Las escenas compatibles usan análisis local; el audio no se guarda ni se sube."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "システムオーディオへのアクセスが必要です。対応するシーンがこの Mac での解析結果を使用し、音声の保存やアップロードは行いません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "需要系统音频访问权限。兼容场景使用本机分析结果，音频不保存或上传。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "需要系統音訊取用權限。相容場景使用本機分析結果，音訊不儲存或上傳。"
           }
         }
       }
@@ -51523,8 +51312,7 @@
       }
     },
     "Resolution" : {
-      "comment" : "A filter for the resolution of a game.",
-      "isCommentAutoGenerated" : true,
+      "comment" : "Workshop tag group.",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -52466,6 +52254,18 @@
             "value" : "Right-click a display to rename it."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Haz clic derecho en una pantalla para cambiarle el nombre."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ディスプレイを右クリックすると名前を変更できます。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -52476,18 +52276,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "以右鍵點按顯示器可重新命名。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ディスプレイを右クリックすると名前を変更できます。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Haz clic derecho en una pantalla para cambiarle el nombre."
           }
         }
       }
@@ -52784,6 +52572,18 @@
             "value" : "Rules apply to all displays."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Las reglas se aplican a todas las pantallas."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ルールはすべてのディスプレイに適用されます。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -52794,18 +52594,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "規則適用於所有顯示器。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ルールはすべてのディスプレイに適用されます。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Las reglas se aplican a todas las pantallas."
           }
         }
       }
@@ -54713,6 +54501,42 @@
         }
       }
     },
+    "Scripted content may not display when disabled." : {
+      "comment" : "JavaScript toggle tooltip. Disabling scripts can affect scripted content; do not claim that every web wallpaper becomes blank.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scripted content may not display when disabled."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Al desactivarlo, el contenido basado en scripts puede no mostrarse."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "オフにすると、スクリプトを使うコンテンツが表示されない場合があります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭后，脚本内容可能无法显示。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "關閉後，指令碼內容可能無法顯示。"
+          }
+        }
+      }
+    },
     "Scripts disabled. Manage in Content Security panel." : {
       "comment" : "Tooltip on the untrusted URL chip — directs the user to manage trust in the inspector.",
       "extractionState" : "manual",
@@ -55530,6 +55354,78 @@
         }
       }
     },
+    "Sends clicks and scrolls to the wallpaper; desktop icons and the Dock cannot receive clicks." : {
+      "comment" : "Web Interaction tooltip. Preserve click/scroll routing and the desktop-icon/Dock click consequence.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sends clicks and scrolls to the wallpaper; desktop icons and the Dock cannot receive clicks."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Envía los clics y el desplazamiento al fondo; los iconos del escritorio y el Dock no pueden recibir clics."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "クリックとスクロールを壁紙に送ります。デスクトップアイコンと Dock はクリックできなくなります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将点击和滚动发送至壁纸；桌面图标和Dock将无法接收点击。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將點按與捲動傳送至桌布；桌面圖示與 Dock 將無法接收點按。"
+          }
+        }
+      }
+    },
+    "Sends clicks to the scene instead of this display’s desktop." : {
+      "comment" : "Scene Interaction tooltip. The selected display loses desktop click handling while this is enabled.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sends clicks to the scene instead of this display’s desktop."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Envía los clics a la escena en lugar de al escritorio de esta pantalla."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "クリックをこのディスプレイのデスクトップではなくシーンに送ります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将点击发送至场景，而非此显示器的桌面。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將點按傳送至場景，而非此顯示器的桌面。"
+          }
+        }
+      }
+    },
     "Sensor" : {
       "localizations" : {
         "en" : {
@@ -56180,6 +56076,18 @@
             "value" : "Setup Complete"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Configuración completada"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "設定完了"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -56190,18 +56098,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "設定完成"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "設定完了"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Configuración completada"
           }
         }
       }
@@ -56490,6 +56386,18 @@
             "value" : "Shared scene materials, models, and shaders. Required by scenes that reference these files."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Materiales, modelos y sombreadores compartidos. Son necesarios para las escenas que los utilizan."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "シーンで共有するマテリアル、モデル、シェーダーです。これらのファイルを参照するシーンに必要です。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -56500,18 +56408,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "共用的場景材質、模型和著色器。引用這些檔案的場景需要它們。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "シーンで共有するマテリアル、モデル、シェーダーです。これらのファイルを参照するシーンに必要です。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Materiales, modelos y sombreadores compartidos. Son necesarios para las escenas que los utilizan."
           }
         }
       }
@@ -58316,6 +58212,7 @@
       }
     },
     "Six Months" : {
+      "comment" : "Workshop Most Popular window (Steam's SharedFiles_Browse_Trend_Option_SixMonths).",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -60969,42 +60866,6 @@
         }
       }
     },
-    "Steam rejected the saved API key. Browsing without it." : {
-      "comment" : "Workshop browse banner shown after Valve rejected the stored Steam Web API key and browsing fell back to the public page.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Steam rejected the saved API key. Browsing without it."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Steam ha rechazado la clave de API guardada. Se navega sin ella."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Steam が保存済みの API キーを拒否しました。キーなしで閲覧しています。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Steam 拒绝了已保存的 API 密钥。现在以无密钥方式浏览。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Steam 拒絕了已儲存的 API 金鑰。現在以無金鑰方式瀏覽。"
-          }
-        }
-      }
-    },
     "Steam rejected the key. Enter a new key." : {
       "comment" : "Settings explanation; preserve scope and consequences.",
       "extractionState" : "manual",
@@ -61037,6 +60898,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Steam 拒絕了此金鑰，請輸入新金鑰。"
+          }
+        }
+      }
+    },
+    "Steam rejected the saved API key. Browsing without it." : {
+      "comment" : "Workshop browse banner shown after Valve rejected the stored Steam Web API key and browsing fell back to the public page.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam rejected the saved API key. Browsing without it."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam ha rechazado la clave de API guardada. Se navega sin ella."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam が保存済みの API キーを拒否しました。キーなしで閲覧しています。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam 拒绝了已保存的 API 密钥。现在以无密钥方式浏览。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Steam 拒絕了已儲存的 API 金鑰。現在以無金鑰方式瀏覽。"
           }
         }
       }
@@ -61861,6 +61758,18 @@
             "value" : "SteamCMD downloads Workshop items using this account."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMD descarga elementos de Workshop con esta cuenta."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SteamCMDはこのアカウントでワークショップのアイテムをダウンロードします。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -61871,18 +61780,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "SteamCMD 將使用此帳號下載創意工坊項目。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "SteamCMDはこのアカウントでワークショップのアイテムをダウンロードします。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "SteamCMD descarga elementos de Workshop con esta cuenta."
           }
         }
       }
@@ -62558,6 +62455,18 @@
             "value" : "Still image"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imagen fija"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "静止画"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -62568,18 +62477,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "靜態影像"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "静止画"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Imagen fija"
           }
         }
       }
@@ -63418,6 +63315,18 @@
             "value" : "System requires location access; Manual uses a selected city."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sistema requiere acceso a la ubicación; Manual usa la ciudad seleccionada."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「システム」には位置情報へのアクセスが必要です。「手動」では選択した都市を使用します。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -63428,18 +63337,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "「系統」需要定位權限；「手動」使用所選城市。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "「システム」には位置情報へのアクセスが必要です。「手動」では選択した都市を使用します。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sistema requiere acceso a la ubicación; Manual usa la ciudad seleccionada."
           }
         }
       }
@@ -63947,6 +63844,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "溫度單位"
+          }
+        }
+      }
+    },
+    "Temporary test files in the app container. Deleting them does not affect wallpapers or settings." : {
+      "comment" : "Debug test artifact storage info.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Temporary test files in the app container. Deleting them does not affect wallpapers or settings."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Archivos temporales de prueba del contenedor de la app. Borrarlos no afecta a los fondos ni a los ajustes."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アプリのコンテナ内の一時テストファイルです。削除しても壁紙や設定には影響しません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "应用容器中的临时测试文件。删除后不影响壁纸或设置。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "App 容器中的暫存測試檔案。刪除後不影響桌布或設定。"
           }
         }
       }
@@ -66519,6 +66452,7 @@
       }
     },
     "Thirty Days" : {
+      "comment" : "Workshop Most Popular window (Steam's SharedFiles_Browse_Trend_Option_Month).",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -67563,6 +67497,7 @@
       }
     },
     "Three Months" : {
+      "comment" : "Workshop Most Popular window (Steam's SharedFiles_Browse_Trend_Option_ThreeMonths).",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -68095,6 +68030,7 @@
       }
     },
     "Today" : {
+      "comment" : "Workshop Most Popular window (Steam's SharedFiles_Browse_Trend_Option_Today).",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -68589,6 +68525,18 @@
             "value" : "Top processes are hidden at this size."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los procesos principales no se muestran en este tamaño."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "現在のサイズでは上位プロセスは表示されません。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -68600,22 +68548,11 @@
             "state" : "translated",
             "value" : "目前尺寸不顯示佔用最高的處理程序。"
           }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "現在のサイズでは上位プロセスは表示されません。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Los procesos principales no se muestran en este tamaño."
-          }
         }
       }
     },
     "Top Rated All Time" : {
+      "comment" : "Workshop sort (Steam's Workshop_BrowseSort_TopRated).",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -68722,6 +68659,7 @@
       }
     },
     "Total Unique Subscribers" : {
+      "comment" : "Workshop sort (Steam's Workshop_BrowseSort_TotalUniqueSubscribers).",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -69215,7 +69153,7 @@
       }
     },
     "Type" : {
-      "comment" : "Workshop library sort order.",
+      "comment" : "Workshop tag group: Scene / Video / Web.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -70581,6 +70519,42 @@
         }
       }
     },
+    "Use sRGB output." : {
+      "comment" : "Color management info. Describes the chosen output without claiming universal color accuracy.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use sRGB output."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usa la salida sRGB."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "sRGB で出力します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用 sRGB 输出。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用 sRGB 輸出。"
+          }
+        }
+      }
+    },
     "Use Steam Library" : {
       "comment" : "Open-panel confirm button when authorizing the official Steam Library.",
       "localizations" : {
@@ -70881,6 +70855,42 @@
         }
       }
     },
+    "Uses about half the scene frame rate when windows cover half the display or the Mac is on battery." : {
+      "comment" : "Adaptive frame rate info; applies only to scene wallpapers.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uses about half the scene frame rate when windows cover half the display or the Mac is on battery."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reduce aproximadamente a la mitad la tasa de fotogramas de las escenas cuando las ventanas cubren media pantalla o el Mac usa la batería."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ウインドウが画面の半分を覆う場合やバッテリー使用時に、シーンのフレームレートを約半分にします。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "窗口覆盖显示器一半或 Mac 使用电池时，场景帧率降至约一半。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "視窗覆蓋顯示器一半或 Mac 使用電池時，場景影格率降至約一半。"
+          }
+        }
+      }
+    },
     "Uses memory per display to reduce disk reads. When off, videos stream from disk." : {
       "comment" : "Video preload info; memory budget applies separately to each display.",
       "extractionState" : "manual",
@@ -70889,6 +70899,18 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Uses memory per display to reduce disk reads. When off, videos stream from disk."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Usa memoria por pantalla para reducir las lecturas del disco. Al desactivarlo, los vídeos se reproducen desde el disco."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ディスプレイごとにメモリを使用し、ディスクの読み取りを減らします。オフの場合、動画をディスクからストリーミング再生します。"
           }
         },
         "zh-Hans" : {
@@ -70901,18 +70923,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "為每台顯示器使用記憶體以減少磁碟讀取。關閉時從磁碟串流播放影片。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ディスプレイごとにメモリを使用し、ディスクの読み取りを減らします。オフの場合、動画をディスクからストリーミング再生します。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Usa memoria por pantalla para reducir las lecturas del disco. Al desactivarlo, los vídeos se reproducen desde el disco."
           }
         }
       }
@@ -70927,6 +70937,18 @@
             "value" : "Uses one continuous image instead of a copy on each display."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Extiende una sola imagen continua en lugar de repetirla en cada pantalla."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "各ディスプレイに同じ映像を複製せず、1 つの映像をつなげて表示します。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -70937,18 +70959,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "將畫面連續延展至所有顯示器，而非在各顯示器上分別複製。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "各ディスプレイに同じ映像を複製せず、1 つの映像をつなげて表示します。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Extiende una sola imagen continua en lugar de repetirla en cada pantalla."
           }
         }
       }
@@ -71388,6 +71398,18 @@
             "value" : "Video copies used by macOS. Remove videos from System Wallpaper to free space."
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copias de vídeo que usa macOS. Elimina vídeos de Fondo del sistema para liberar espacio."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS が使用する動画のコピーです。「システム壁紙」から動画を削除すると容量を解放できます。"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -71398,18 +71420,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "macOS 使用的影片副本。從「系統桌布」中移除影片可釋出空間。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "macOS が使用する動画のコピーです。「システム壁紙」から動画を削除すると容量を解放できます。"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Copias de vídeo que usa macOS. Elimina vídeos de Fondo del sistema para liberar espacio."
           }
         }
       }
@@ -72422,6 +72432,18 @@
             "value" : "Wallpaper added to library"
           }
         },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fondo añadido a la biblioteca"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "壁紙をライブラリに追加しました"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -72432,18 +72454,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "桌布已加入資料庫"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "壁紙をライブラリに追加しました"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fondo añadido a la biblioteca"
           }
         }
       }
@@ -75330,6 +75340,42 @@
         }
       }
     },
+    "Workshop URLs or item IDs" : {
+      "comment" : "Accessible name for Workshop paste input.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Workshop URLs or item IDs"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enlaces de Workshop o ID de elementos"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ワークショップのURLまたはアイテムID"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "创意工坊链接或项目 ID"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "創意工坊連結或項目 ID"
+          }
+        }
+      }
+    },
     "workshop.sort.most_popular_with_window" : {
       "comment" : "Workshop sort button: sort name, then the Most Popular window (Steam's Workshop_BrowseSort_Combined).",
       "extractionState" : "manual",
@@ -75362,42 +75408,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%1$@（%2$@）"
-          }
-        }
-      }
-    },
-    "Workshop URLs or item IDs" : {
-      "comment" : "Accessible name for Workshop paste input.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Workshop URLs or item IDs"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "创意工坊链接或项目 ID"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "創意工坊連結或項目 ID"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ワークショップのURLまたはアイテムID"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Enlaces de Workshop o ID de elementos"
           }
         }
       }

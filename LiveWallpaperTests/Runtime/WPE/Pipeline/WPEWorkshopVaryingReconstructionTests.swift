@@ -376,5 +376,32 @@ struct WPEWorkshopVaryingReconstructionTests {
         #expect(!msl.contains("WPE-DIAGNOSTIC: varying 'v_AudioPulse'"))
         try compileMSL(msl)
     }
+    @Test("Water ripple uses the mask resolution and animated vertex coordinates")
+    func reconstructsWaterRippleVertexInputs() throws {
+        let source = """
+        #define MASK 1
+        uniform float g_Time;
+        uniform vec4 g_Texture0Resolution;
+        uniform vec4 g_Texture1Resolution;
+        uniform float g_AnimationSpeed;
+        uniform float g_ScrollSpeed;
+        uniform float g_Direction;
+        uniform float g_Ratio;
+        uniform float g_Scale;
+        uniform sampler2D g_Texture0;
+        uniform sampler2D g_Texture1;
+        uniform sampler2D g_Texture2;
+        varying vec4 v_TexCoord;
+        varying vec4 v_TexCoordRipple;
+        void main() {
+            gl_FragColor = vec4(v_TexCoord.zw, v_TexCoordRipple.xy);
+        }
+        """
+        let msl = try translate(shaderName: "effects/waterripple", source: source, comboValues: ["MASK": 1])
+        #expect(msl.contains("wpe_texcoord_with_resolution(in.uv, g_Texture1Resolution)"))
+        #expect(msl.contains("v_TexCoordRipple = wpe_ripple_texcoord(in.uv, g_Time,"))
+        #expect(!msl.contains("WPE-DIAGNOSTIC: varying 'v_TexCoordRipple'"))
+        try compileMSL(msl)
+    }
 }
 #endif

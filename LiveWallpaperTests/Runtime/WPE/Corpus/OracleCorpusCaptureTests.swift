@@ -23,9 +23,10 @@ struct OracleCorpusCaptureTests {
         var memoryAuditLog: Bool = false
         var frames: Int = 1
         var frameStepSeconds: Double = 1.0 / 60.0
+        var audioProbeLayer: String?
 
         private enum CodingKeys: String, CodingKey {
-            case corpusRoot, engineAssetsRoot, label, scenes, perPass, dumpPNGs, memoryAuditLog, frames, frameStepSeconds
+            case corpusRoot, engineAssetsRoot, label, scenes, perPass, dumpPNGs, memoryAuditLog, frames, frameStepSeconds, audioProbeLayer
         }
 
         init(from decoder: Decoder) throws {
@@ -37,6 +38,7 @@ struct OracleCorpusCaptureTests {
             perPass = try container.decodeIfPresent(Bool.self, forKey: .perPass) ?? false
             dumpPNGs = try container.decodeIfPresent(Bool.self, forKey: .dumpPNGs) ?? false
             memoryAuditLog = try container.decodeIfPresent(Bool.self, forKey: .memoryAuditLog) ?? false
+            audioProbeLayer = try container.decodeIfPresent(String.self, forKey: .audioProbeLayer)
             frames = try container.decodeIfPresent(Int.self, forKey: .frames) ?? 1
             frameStepSeconds = try container.decodeIfPresent(Double.self, forKey: .frameStepSeconds) ?? (1.0 / 60.0)
         }
@@ -209,6 +211,9 @@ struct OracleCorpusCaptureTests {
                     try FileManager.default.copyItem(at: trace, to: dest)
                     captured += 1
                     print("[oracle-capture] [\(id)] ✅ trace → \(dest.lastPathComponent)")
+                    if let layerID = config.audioProbeLayer {
+                        try Self.verifyAudioLayer(renderer: renderer, layerID: layerID, outputRoot: outDir)
+                    }
                 } else {
                     print("[oracle-capture] [\(id)] loaded but no trace written")
                     failed += 1
@@ -229,6 +234,48 @@ struct OracleCorpusCaptureTests {
         #expect(malformedAuthoredLayerLinks == 0, "layer-level authored scene ancestry was lost")
         #expect(authoredJSONPasses > 0, "real-scene render graphs exposed no material/effect authored JSON")
         #expect(malformedAuthoredPassLinks == 0, "pass-level authored JSON lost its parent document")
+    }
+
+    /// Isolate a real scene layer, pin every other input, and drive its shader
+    /// uniforms with silence/full-scale spectra. A live tap is neither required
+    /// nor evidence of GPU consumption; the trace records the packed slots.
+    @MainActor
+    private static func verifyAudioLayer(
+        renderer: WPEMetalSceneRenderer, layerID: String, outputRoot: URL
+    ) throws {
+        let layer = try #require(renderer.renderPipeline?.layers.first { $0.graphLayer.objectID == layerID })
+        let pipeline = WPEPreparedRenderPipeline(layers: [layer])
+        let executor = try WPEMetalRenderExecutor(device: renderer.executor.textureSourceDevice)
+        var coverage: [Int] = []
+        for level in [0.0, 1.0] {
+            let id = "audio-\(layerID)-\(Int(level))"
+            _ = WPESceneDebugArtifacts.shared.beginSession(workshopID: id, descriptor: "audio consumption probe")
+            WPECanonicalTraceRecorder.shared.beginScene(
+                workshopID: id, projectJsonPath: "scene.json", descriptor: "audio consumption probe"
+            )
+            let uniforms = WPEMetalRuntimeUniforms(
+                time: 6, daytime: 0, brightness: 1, pointerPosition: SIMD2(0.5, 0.5),
+                audioSpectrum: Array(repeating: level, count: 64)
+            )
+            let texture = try executor.render(
+                pipeline: pipeline, size: renderer.sceneRenderSize, textures: renderer.loadedTextures,
+                textureSamplingDescriptors: renderer.loadedTextureSamplingDescriptors,
+                dynamicLayerIDs: [layerID], runtimeUniforms: uniforms,
+                cameraUniforms: renderer.cameraUniforms, sceneID: id
+            )
+            let stats = try #require(WPEMetalTextureVisualStats.analyze(texture: texture))
+            coverage.append(stats.nonBlackPixelCount)
+            WPECanonicalTraceRecorder.shared.finishFrame(
+                outputTexture: texture, runtimeUniforms: uniforms, firstFrameStats: stats,
+                resolutionDiagnostics: renderer.resolutionTracer.snapshot()
+            )
+            WPESceneDebugArtifacts.shared.endSession()
+            let trace = try #require(awaitLatestTrace(forID: id))
+            let destination = outputRoot.appendingPathComponent("\(id).json")
+            try FileManager.default.copyItem(at: trace, to: destination)
+            print("[audio-probe] layer=\(layerID) spectrum=\(level) nonBlack=\(stats.nonBlackPixelCount)")
+        }
+        #expect(coverage[1] > coverage[0], "The real layer must draw more audio bars with nonzero spectra")
     }
 
     @Test("Config decode fills in defaults for keys a config file omits")

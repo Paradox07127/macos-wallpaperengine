@@ -1460,13 +1460,12 @@ final class WPEParticleSystem {
             position = sceneTransform.applyModelMatrix(toLocalPoint: localPoint)
         }
         let velocity = sceneTransform.applyModelDirection(localVelocity)
-        let sizeScale: Float
-        if isNestedChildSystem {
-            sizeScale = childWorldSizeMultiplier
+        let sizeScale: Float = if isNestedChildSystem {
+            childWorldSizeMultiplier
         } else {
-            // Preserve the established refractive-root exception: its quad size is
-            // already resolved by the refraction path rather than object scale.
-            sizeScale = isRefract ? 1 : spawnWorldSizeMultiplier
+            // Refraction changes sampling, not geometry. The instanced shader receives
+            // world-sized quads and never applies the scene object's scale again.
+            spawnWorldSizeMultiplier
         }
         // `sizerandom`: min + (max-min)·rand^exp (exp>1 biases toward min).
         let sizeSample: Double
