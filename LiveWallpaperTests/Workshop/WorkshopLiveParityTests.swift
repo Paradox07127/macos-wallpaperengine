@@ -197,7 +197,7 @@ struct WorkshopLiveParityTests {
         let request = WorkshopQueryRequest(
             sort: .topRated,
             numPerPage: WorkshopPublicBrowseURL.itemsPerPage,
-            excludedTags: deselectedAgeTags + BrowseViewModel.excludedTags(showsPresets: false),
+            excludedTags: Self.deselectedAgeTags + BrowseViewModel.excludedTags(showsPresets: false),
             miscellaneousTags: ["Approved"]
         )
         let source = WorkshopPublicSearchSource(cache: WorkshopQueryCache(directoryURL: Self.freshCacheDirectory()))
