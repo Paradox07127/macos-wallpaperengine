@@ -51,7 +51,10 @@ extension WPEMetalSceneRenderer {
             id: signposter.makeSignpostID(),
             "scene:\(self.descriptor.workshopID, privacy: .public) renderer:\(self.rendererSignpostID, privacy: .public)"
         )
-        defer { signposter.endInterval("frame", frameState) }
+        // The defer runs on the throw paths too, so an aborted frame otherwise records a
+        // complete — and shorter — "frame" interval, which reads as a speed-up in a trace.
+        var frameRendered = false
+        defer { signposter.endInterval("frame", frameState, "rendered:\(frameRendered, privacy: .public)") }
 
         guard let pipeline = renderPipeline else {
             throw WPEMetalRenderExecutorError.noRenderablePasses
@@ -255,7 +258,7 @@ extension WPEMetalSceneRenderer {
             deferredPresent: guardedPresent
         )
         didFinishSceneScriptVideoCommands = true
-        return try finishSceneScriptFrame(
+        let rendered = try finishSceneScriptFrame(
             speculativeFrame: frame,
             failureBeforeFrame: scriptFailureBeforeFrame,
             publicationBeforeFrame: publicationBeforeFrame,
@@ -267,6 +270,8 @@ extension WPEMetalSceneRenderer {
             videoCommandsOutcome: videoCommandsOutcome,
             deferredPresent: deferredPresent
         )
+        frameRendered = true
+        return rendered
     }
 
     func encodeSceneFrame(

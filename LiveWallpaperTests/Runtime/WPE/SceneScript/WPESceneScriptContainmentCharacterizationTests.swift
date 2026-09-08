@@ -403,7 +403,7 @@ struct WPESceneScriptContainmentCharacterizationTests {
         #expect(containment.contains("guard !state.isRetired, state.failureReason == nil"))
         #expect(containment.contains("guard current === token,"))
         #expect(containment.contains("return try token.withCompletionPermission(commit)"))
-        #expect(frame.contains("return try finishSceneScriptFrame("))
+        #expect(frame.contains("try finishSceneScriptFrame("))
         #expect(failClose.contains("if videoCommandsOutcome ?? finishCurrentSceneScriptVideoCommands() {"))
         #expect(lifecycle.contains("&& finishCurrentSceneScriptVideoCommands()"))
         #expect(load.contains("try finishSceneScriptLoadVideoCommands("))
@@ -424,7 +424,7 @@ struct WPESceneScriptContainmentCharacterizationTests {
             "LiveWallpaper/Runtime/Metal/WPEMetalSceneRenderer+ScriptFailClose.swift"
         )
         let encode = try #require(frame.range(of: "let frame = try encodeSceneFrame("))
-        let finish = try #require(frame.range(of: "return try finishSceneScriptFrame("))
+        let finish = try #require(frame.range(of: "try finishSceneScriptFrame("))
         let ownerAnchor = try #require(owner.range(of: "func finishSceneScriptFrame("))
         let ownerEnd = try #require(owner.range(of: "func updateParticleHostOriginOffsets("))
         let ownerRegion = String(owner[ownerAnchor.lowerBound ..< ownerEnd.lowerBound])
