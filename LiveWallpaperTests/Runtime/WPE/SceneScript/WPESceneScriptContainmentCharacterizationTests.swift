@@ -867,6 +867,29 @@ struct WPESceneScriptContainmentCharacterizationTests {
         #endif
         #expect(!blocker.hitHardDeadline)
     }
+
+    /// The particle-alpha family reached tick, user properties and frame demand
+    /// without reaching teardown: its JSContexts and governor lanes are only
+    /// released by `destroy()`, and unload goes through
+    /// `clearSceneScriptRuntimeState()` rather than the load path's `= [:]`.
+    @Test("Particle alpha scripts are destroyed and dropped on unload")
+    func particleAlphaScriptsReachTeardown() throws {
+        let ticks = try RR10ProductionSource.read(
+            "LiveWallpaper/Runtime/Metal/WPEMetalSceneRenderer+ScriptTicks.swift"
+        )
+        let containment = try RR10ProductionSource.read(
+            "LiveWallpaper/Runtime/Metal/WPEMetalSceneRenderer+ScriptContainment.swift"
+        )
+        let destroyAnchor = try #require(ticks.range(of: "func destroySceneScriptInstances() {"))
+        let destroyEnd = try #require(ticks.range(of: "var hasTransformScriptInstances: Bool"))
+        let destroyBody = String(ticks[destroyAnchor.lowerBound ..< destroyEnd.lowerBound])
+        #expect(destroyBody.contains("particleAlphaScriptInstances"))
+
+        let clearAnchor = try #require(containment.range(of: "func clearSceneScriptRuntimeState() {"))
+        let clearBody = String(containment[clearAnchor.lowerBound...])
+        #expect(clearBody.contains("particleAlphaScriptInstances.removeAll"))
+        #expect(clearBody.contains("liveParticleInstanceAlpha.removeAll"))
+    }
 }
 
 private final class RR10PermitWorkerHarness: @unchecked Sendable {

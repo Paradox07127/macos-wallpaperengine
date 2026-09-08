@@ -61,7 +61,10 @@ public struct MonitorOverlayConfiguration: Codable, Equatable, Sendable {
         } else {
             .default
         }
-        clock = try c.decodeIfPresent(ClockOverlayConfiguration.self, forKey: .clock) ?? migrated
+        // Lenient like `music`, not strict like `board`: a clock nobody can read is
+        // one missing decoration, while throwing here would drop the display's whole
+        // entry — widgets and Now Playing with it.
+        clock = ((try? c.decodeIfPresent(ClockOverlayConfiguration.self, forKey: .clock)) ?? nil) ?? migrated
         board.widgets.removeAll { $0.kind == .nixieClock }
     }
 
