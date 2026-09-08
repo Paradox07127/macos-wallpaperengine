@@ -2183,6 +2183,29 @@ struct ScreenRuntimeOwnershipTests {
         #expect(screen.activeWallpaperWindow == nil)
     }
 
+    @Test("Failure diagnostics are captured before candidate cleanup while A stays installed")
+    func captureFailureBeforeCleanup() async throws {
+        let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
+        let active = TestWallpaperRuntimeSession(summary: .notConfigured, wallpaperType: .video)
+        let candidate = TestWallpaperRuntimeSession(summary: .notConfigured, wallpaperType: .scene, preparationResult: .failed)
+        screen.installRuntimeSession(active)
+        var captured = false
+        let result = await WallpaperSessionTransaction.prepareAndCommit(
+            candidate, to: screen, replacing: active, timeout: .seconds(1), isStillCurrent: { true },
+            beforeDiscard: { result in
+                #expect(result == .failed)
+                #expect(candidate.cleanupCallCount == 0)
+                #expect(screen.runtimeSession === active)
+                captured = true
+            }
+        )
+        #expect(captured)
+        #expect(result == .failed)
+        #expect(candidate.cleanupCallCount == 1)
+        #expect(active.cleanupCallCount == 0)
+        #expect(screen.runtimeSession === active)
+    }
+
     @Test("Prepared session transaction keeps old runtime until readiness then swaps once")
     func preparedSessionTransactionKeepsOldUntilReady() async {
         guard let nsScreen = NSScreen.screens.first else {

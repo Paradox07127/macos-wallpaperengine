@@ -156,10 +156,6 @@ struct WorkshopSettingsView: View {
                 .padding(.bottom, DesignTokens.Spacing.xl)
                 .allowsHitTesting(false)
         }
-        .overlay(alignment: .bottomTrailing) {
-            DownloadToastHost()
-                .padding(DesignTokens.Spacing.lg)
-        }
         .task {
             await workshopServices.refreshAPIKeyStatus()
         }

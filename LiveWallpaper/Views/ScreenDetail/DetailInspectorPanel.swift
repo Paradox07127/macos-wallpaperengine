@@ -19,6 +19,8 @@ struct DetailInspectorPanel: View {
     /// A nil schema means "loading" until the read finishes, and "this scene has
     /// none" after — the notice must only speak for the second.
     @State private var wpeSceneCustomSettingsResolved = false
+    @State private var wpeSceneSettingsFailure: String?
+    @State private var schemaReload = 0
     #endif
 
     var body: some View {
@@ -80,9 +82,18 @@ struct DetailInspectorPanel: View {
                             schema: schema,
                             descriptor: sceneDescriptorBinding
                         )
+                    } else if let failure = wpeSceneSettingsFailure {
+                        VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
+                            Label("Unable to Read Settings", systemImage: "exclamationmark.triangle")
+                            Text(verbatim: failure).textSelection(.enabled)
+                            Button("Reload Settings") { schemaReload += 1 }.buttonStyle(.bordered)
+                        }
+                        .font(DesignTokens.Typography.body)
                     } else if wpeSceneCustomSettingsResolved {
                         // Show the empty state only after schema loading has resolved.
                         sceneWithoutOptionsNotice
+                    } else {
+                        ProgressView().accessibilityLabel(Text("Loading settings…"))
                     }
                 }
                 #endif
@@ -129,8 +140,8 @@ struct DetailInspectorPanel: View {
               let descriptor = draft.sceneDescriptor else {
             return "hidden"
         }
-        let originFingerprint = draft.wpeOrigin?.sourceFolderBookmark.count.description ?? "-"
-        return "\(screen.id):scene:\(descriptor.workshopID):\(originFingerprint)"
+        let originFingerprint = draft.wpeOrigin?.sourceFolderBookmark.base64EncodedString() ?? "-"
+        return "\(screen.id):scene:\(descriptor.cacheRelativePath):\(descriptor.entryFile):\(originFingerprint):\(schemaReload)"
     }
 
     private var sceneWithoutOptionsNotice: some View {
@@ -150,6 +161,7 @@ struct DetailInspectorPanel: View {
             return
         }
         wpeSceneCustomSettingsSchema = nil
+        wpeSceneSettingsFailure = nil
         wpeSceneCustomSettingsResolved = false
         let outcome = await WPESceneProjectSchemaLoader.load(
             descriptor: descriptor,
@@ -165,6 +177,7 @@ struct DetailInspectorPanel: View {
         // A read that failed (unreadable project, denied bookmark) is not an
         // answer about the scene, so the notice must stay away.
         wpeSceneCustomSettingsResolved = outcome.schema != nil || outcome.isExpectedAbsence
+        wpeSceneSettingsFailure = wpeSceneCustomSettingsResolved ? nil : outcome.failure?.reason ?? LogPrivacyRedactor.scrub(outcome.log)
     }
 
     /// Drives schema reloads from the panel rather than the card: the panel is always mounted while HTML properties are visible, so the async read can't deadlock behind an initially empty card body.

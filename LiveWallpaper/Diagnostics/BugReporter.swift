@@ -63,17 +63,20 @@ enum BugReporter {
     private static let maxBodyLength = 6 * 1024
 
     @MainActor
-    static func makeReport(activeWallpapers: [String]) -> BugReport {
+    static func makeReport(activeWallpapers: [String], failureContext: WallpaperFailureSnapshot? = nil) -> BugReport {
         let snapshot = SystemSnapshot.capture(activeWallpapers: activeWallpapers)
         let recentLog = sanitizedRecentLogLines()
         let form = issueForm()
+        let failureText = failureContext.map { fencedLog([$0.diagnosticText]) + "\n\n" } ?? ""
+        let fullMarkdown = failureText + formatMarkdown(snapshot: snapshot, recentLogLines: recentLog, form: form)
         let markdown = capped(
-            formatMarkdown(snapshot: snapshot, recentLogLines: recentLog, form: form),
+            (failureContext.map { fencedLog([$0.issueDiagnosticText]) + "\n\n" } ?? "")
+                + formatMarkdown(snapshot: snapshot, recentLogLines: recentLog, form: form),
             to: maxBodyLength,
             form: form
         )
         return BugReport(
-            diagnosticMarkdown: markdown,
+            diagnosticMarkdown: fullMarkdown,
             issueURL: makeIssueURL(prefilledBody: markdown, template: form.templateName),
             logFileURL: Logger.persistentLogFileURL,
             logFileExists: logFileExists()
@@ -270,7 +273,8 @@ enum BugReporter {
     }
 
     @MainActor
-    static func openIssueInBrowser(_ url: URL) {
+    @discardableResult
+    static func openIssueInBrowser(_ url: URL) -> Bool {
         NSWorkspace.shared.open(url)
     }
 }

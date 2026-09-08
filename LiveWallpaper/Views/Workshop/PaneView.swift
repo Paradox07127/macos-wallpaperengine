@@ -38,10 +38,6 @@ struct PaneView: View {
                 WorkshopAccountAction()
             }
         }
-        .overlay(alignment: .bottomTrailing) {
-            DownloadToastHost()
-                .padding(DesignTokens.Spacing.lg)
-        }
         // Re-confirm SteamCMD readiness (so the Download button isn't greyed out just because this launch hasn't re-run the probes), then reconcile the library with what's on disk.
         .task {
             await doctor.autoConfirmDownloadReadinessIfNeeded()

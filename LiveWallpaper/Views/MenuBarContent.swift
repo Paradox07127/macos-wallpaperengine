@@ -337,6 +337,9 @@ struct MenuBarContent: View {
     }
 
     private func displaySource(for screen: Screen, summary: WallpaperSessionSummary) -> String {
+        if let failure = screenManager.wallpaperLoads.attempt(for: screen)?.failure {
+            return String(localized: "Last wallpaper application failed", bundle: .appLanguage) + " · " + failure.title
+        }
         // Show the suspension reason before wallpaper identity.
         if summary.activity == .policySuspended,
            let reason = SuspendReasonText.localized(

@@ -13,6 +13,7 @@ final class WallpaperEngineImportService {
         /// Callers register it in the preset library instead of installing it.
         case workshopPreset(ScenePreset)
         case rejected(reason: String)
+        case sceneFailure(cause: WallpaperFailureCause, origin: WPEOrigin, descriptor: SceneDescriptor)
     }
 
     private let fileManager: FileManager
@@ -273,57 +274,27 @@ final class WallpaperEngineImportService {
         }
 
         let pkgURL = folderURL.appendingPathComponent("scene.pkg")
-        if fileManager.fileExists(atPath: pkgURL.path) {
-            // Unopenable package is unsupported (same parser as the old extract path).
-            if let packageResult = await finishScenePackageBackedImport(
-                project: project,
-                pkgURL: pkgURL,
-                sourceBookmark: sourceBookmark
-            ) {
-                return packageResult
+        let packaged = fileManager.fileExists(atPath: pkgURL.path)
+        do {
+            if packaged {
+                return try await finishScenePackageBackedImport(project: project, pkgURL: pkgURL, sourceBookmark: sourceBookmark)
             }
-            return .rejected(reason: String(localized: "Packaged scene \(project.entryFile) could not be read from the package", bundle: .appLanguage, comment: "Wallpaper Engine import rejection reason; appears inside the invalid-package alert."))
+            return try await finishSceneSourceDirectoryImport(project: project, folderURL: folderURL, sourceBookmark: sourceBookmark)
+        } catch {
+            let origin = makeOrigin(project: project, sourceBookmark: sourceBookmark, cacheRelativePath: cacheRelativePath(for: project), resourceLocation: .cache)
+            let descriptor = SceneDescriptor(workshopID: project.workshopID, cacheRelativePath: cacheRelativePath(for: project), entryFile: project.entryFile, capabilityTier: .imageOnly, assetStorage: packaged ? .packageSource(fileName: "scene.pkg") : .sourceDirectory, dependencyWorkshopIDs: project.dependencyWorkshopIDs)
+            return .sceneFailure(cause: SceneFailureCause.make(error), origin: origin, descriptor: descriptor)
         }
-
-        guard let entryURL = WPEPathSafety.resourceURL(root: folderURL, relativePath: project.entryFile),
-              fileManager.fileExists(atPath: entryURL.path) else {
-            return .unsupported(origin: makeOrigin(
-                project: project,
-                sourceBookmark: sourceBookmark,
-                cacheRelativePath: nil,
-                resourceLocation: .unsupported
-            ))
-        }
-
-        // If in-place reading fails it's unsupported — a mirror copies the same
-        // files, so it couldn't have recovered either.
-        if let directoryResult = await finishSceneSourceDirectoryImport(
-            project: project,
-            folderURL: folderURL,
-            sourceBookmark: sourceBookmark
-        ) {
-            return directoryResult
-        }
-        return .rejected(reason: String(localized: "Scene \(project.entryFile) could not be read from the source folder", bundle: .appLanguage, comment: "Wallpaper Engine import rejection reason; appears inside the invalid-package alert."))
     }
 
-    /// Returns `nil` when the package can't be opened/parsed for in-place use,
-    /// in which case the caller rejects it as unsupported.
     private func finishScenePackageBackedImport(
         project: WallpaperEngineProject,
         pkgURL: URL,
         sourceBookmark: Data
-    ) async -> ImportResult? {
-        guard let provider = try? await WPEPackageSceneAssetProvider.open(packageURL: pkgURL),
-              let sceneData = try? provider.data(atRelativePath: project.entryFile) else {
-            return nil
-        }
-        let document: WPESceneDocument
-        do {
-            document = try WPESceneDocumentParser.parse(data: sceneData)
-        } catch {
-            return nil
-        }
+    ) async throws -> ImportResult {
+        let provider = try await WPEPackageSceneAssetProvider.open(packageURL: pkgURL)
+        let sceneData = try provider.data(atRelativePath: project.entryFile)
+        let document = try WPESceneDocumentParser.parse(data: sceneData)
 
         let dependencyMounts = WPEDependencyMountResolver().mounts(
             dependencyWorkshopIDs: project.dependencyWorkshopIDs,
@@ -364,24 +335,14 @@ final class WallpaperEngineImportService {
         return .ready(.scene(descriptor), origin: origin)
     }
 
-    /// Returns `nil` when the entry can't be read/parsed, in which case the
-    /// caller rejects it as unsupported.
     private func finishSceneSourceDirectoryImport(
         project: WallpaperEngineProject,
         folderURL: URL,
         sourceBookmark: Data
-    ) async -> ImportResult? {
+    ) async throws -> ImportResult {
         let provider = WPEDirectorySceneAssetProvider(rootURL: folderURL)
-        guard let sceneData = try? provider.data(atRelativePath: project.entryFile) else {
-            return nil
-        }
-        let document: WPESceneDocument
-        do {
-            document = try WPESceneDocumentParser.parse(data: sceneData)
-        } catch {
-            return nil
-        }
-
+        let sceneData = try provider.data(atRelativePath: project.entryFile)
+        let document = try WPESceneDocumentParser.parse(data: sceneData)
 
         let dependencyMounts = WPEDependencyMountResolver().mounts(
             dependencyWorkshopIDs: project.dependencyWorkshopIDs,
