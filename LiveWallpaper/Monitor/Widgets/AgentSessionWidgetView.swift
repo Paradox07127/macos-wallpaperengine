@@ -9,7 +9,7 @@ struct AgentSessionWidgetView: View {
         context.reduceMotion
     }
 
-    /// Sessions the module has, or nil when the runtime is not sampling agents (no agent-session widget placed).
+    /// Nil when the runtime is not sampling agents.
     private var sessions: [MonitorAgentSessionState]? {
         context.snapshot.agents
     }
@@ -579,8 +579,7 @@ private enum AgentSessionRowStyle {
     }
 }
 
-/// Provider mark. Ships as an SF Symbol stand-in; drop the vendors' own icons
-/// into the asset catalog under these names and they take over with no code change.
+/// Use the provider asset when available, otherwise an SF Symbol.
 private struct AgentProviderMark: View {
     let provider: MonitorAgentProvider
     let size: CGFloat
@@ -720,8 +719,7 @@ private enum AgentSessionStrings {
         "ended"
     }
 
-    /// "3 agents" — count is data, so composed with a verbatim number at the call
-    /// site rather than a format string. The word is the only localizable part.
+    /// Localize the count and noun together so each language controls their order.
     static func agentCount(_ n: Int) -> String {
         String(localized: "\(n) agents", bundle: .appLanguage, comment: "Agent Session widget header: number of tracked agent sessions.")
     }
@@ -766,8 +764,7 @@ extension AgentSessionWidgetView {
     /// otherwise the git branch. Both answer "which checkout", so showing both
     /// is redundant — the worktree is the more specific answer.
     nonisolated static func scopeLabel(for session: MonitorAgentSessionState) -> String? {
-        // ⧉ (a second copy) for a worktree, ⑂ for a plain branch — ⌥ reads as the
-        // Option key and told the user nothing.
+        // Use distinct symbols for worktrees and branches.
         if let worktree = session.worktreeName, !worktree.isEmpty {
             return "⧉ " + worktree
         }

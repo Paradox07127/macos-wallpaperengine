@@ -1,8 +1,6 @@
 import SwiftUI
 
-/// Unified error-alert presentation. Pairs with
-/// `DestructiveActionPolicy.confirmDestructive` so the codebase has exactly
-/// one error-display modifier and one destructive-confirm modifier.
+/// Error presentation paired with confirmDestructive for destructive actions.
 extension View {
     public func errorAlert(
         _ title: LocalizedStringKey,

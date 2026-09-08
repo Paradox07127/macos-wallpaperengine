@@ -9,8 +9,7 @@ struct WorkshopSettingsView: View {
 
     @AppStorage("loomscreen.workshop.blurMatureThumbnails.v1", store: .appScoped()) private var blurMatureThumbnails = true
     @AppStorage("loomscreen.workshop.hidesDownloaded.v1", store: .appScoped()) private var hidesDownloadedInBrowse = false
-    /// Backed by `GlobalSettings` (not `@AppStorage`): it needs to survive backup/restore
-    /// the same way the rest of `GlobalSettings` does.
+    /// Stored in GlobalSettings for backup and restore.
     @State private var showsPresetsInBrowse: Bool
     @State private var defaultSort: WorkshopSortMode
     @State private var defaultTimeFrame: WorkshopTimeFrame
@@ -78,9 +77,7 @@ struct WorkshopSettingsView: View {
                             var settings = SettingsManager.shared.loadGlobalSettings()
                             settings.showsWorkshopPresetsInBrowse = newValue
                             SettingsManager.shared.saveGlobalSettings(settings)
-                            // Deferred to the next MainActor turn like the other
-                            // settings posts, so it does not fire inside the
-                            // SwiftUI reconcile pass that triggered the save.
+                            // Defer notification until after SwiftUI reconciliation.
                             Task { @MainActor in
                                 NotificationCenter.default.post(
                                     name: .workshopPresetVisibilityDidChange, object: nil
@@ -92,8 +89,7 @@ struct WorkshopSettingsView: View {
                 SettingRow(
                     icon: "arrow.up.arrow.down",
                     iconColor: .blue,
-                    title: "Default sort",
-                    subtitle: "The sort order Browse opens with"
+                    title: "Default sort"
                 ) {
                     Picker("", selection: $defaultSort) {
                         ForEach(Self.defaultSortOptions) { sort in
@@ -114,7 +110,7 @@ struct WorkshopSettingsView: View {
                     icon: "calendar",
                     iconColor: .orange,
                     title: "Default time frame",
-                    subtitle: "Applies when the default sort is Most Popular"
+                    subtitle: defaultSort == .mostPopular ? nil : "Requires Most Popular sort."
                 ) {
                     Picker("", selection: $defaultTimeFrame) {
                         ForEach(Self.defaultTimeFrameOptions) { timeFrame in
@@ -169,8 +165,7 @@ struct WorkshopSettingsView: View {
         }
     }
 
-    /// Relevance needs a search text; All Time is not a window (the page
-    /// switches to Top Rated for it). Both are what `BrowseViewModel` rejects.
+    /// Exclude relevance without a query and the unbounded time range, matching BrowseViewModel.
     private static let defaultSortOptions: [WorkshopSortMode] = WorkshopSortMode.allCases.filter { $0 != .search }
     private static let defaultTimeFrameOptions: [WorkshopTimeFrame] = WorkshopTimeFrame.allCases.filter { $0.days != nil }
 
@@ -198,8 +193,7 @@ struct WorkshopSettingsView: View {
                 title: "Scene resources",
                 state: engineAssetsState
             ),
-            // Last and optional, matching the page order below it: browsing
-            // works without a key.
+            // Browsing works without an API key.
             WorkshopSetupFacet(
                 key: "apiKey",
                 anchor: .workshopSetup,

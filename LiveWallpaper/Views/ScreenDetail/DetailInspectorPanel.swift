@@ -81,10 +81,7 @@ struct DetailInspectorPanel: View {
                             descriptor: sceneDescriptorBinding
                         )
                     } else if wpeSceneCustomSettingsResolved {
-                        // Most scenes publish no properties at all, and the panel
-                        // opens anyway (a scene is configured), so without this the
-                        // column is a blank rectangle with no way to tell "nothing
-                        // to adjust" from "still loading".
+                        // Show the empty state only after schema loading has resolved.
                         sceneWithoutOptionsNotice
                     }
                 }
@@ -140,7 +137,6 @@ struct DetailInspectorPanel: View {
         IllustratedEmptyState(
             symbol: "slider.horizontal.3",
             title: "No scene options",
-            message: "The author provided no adjustable properties.",
             variant: .compact
         )
     }
@@ -272,7 +268,7 @@ struct DetailInspectorPanel: View {
             .buttonStyle(.bordered)
             .controlSize(.small)
             .tint(DesignTokens.Colors.Status.danger)
-            .help(Text("Reset all playback, color, particle, audio, and layout settings on this display — wallpaper, playlist, and bookmarks stay"))
+            .help(Text("Resets playback, effects, web options, and scheduling. Keeps the wallpaper, playlist, and bookmarks."))
             Spacer()
         }
         .padding(.top, 2)

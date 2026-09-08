@@ -1,20 +1,7 @@
 import SwiftUI
 
-/// `onHover` that only reports "in" once the pointer has settled, and reports
-/// "out" immediately.
-///
-/// Scrolling a grid drags every cell under a stationary pointer, so plain
-/// `onHover` fires a hover-in/hover-out pair per cell. On a gallery card that
-/// pair starts three pieces of work at once — the tile's scale + shadow spring,
-/// the title band growing from one line to two (a *layout* change inside a
-/// `LazyVGrid`), and a marquee — none of which the user asked for and none of
-/// which finishes before the next cell arrives. This is the only debounce in
-/// the hover path: the GIF thumbnail's own 250 ms decode delay stacked on top
-/// of it and made a sweep take 400 ms to start, so that one is now 0
-/// (`ThumbnailPlaybackGate.hoverPreviewDelayNanoseconds`).
-///
-/// Asymmetric on purpose: delaying the "out" edge would leave chrome lit on a
-/// card the pointer has already left, which reads as a stuck frame.
+/// Delay hover-in to avoid activating cards passed during scrolling; leave immediately.
+/// This owns hover debounce, so thumbnail playback must not add another delay.
 public extension View {
     func settledHover(
         delay: Duration = .milliseconds(150),

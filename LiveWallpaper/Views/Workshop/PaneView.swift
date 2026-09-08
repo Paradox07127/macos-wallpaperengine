@@ -356,7 +356,7 @@ struct WorkshopPaneActions: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Loomscreen deletes only its own download session for this account. Your Steam app sign-in is not affected. You'll connect this account again the next time you download.")
+            Text("Removes this account's Loomscreen download session. Reconnect before downloading again. Steam app sign-in is unaffected.")
         }
     }
 

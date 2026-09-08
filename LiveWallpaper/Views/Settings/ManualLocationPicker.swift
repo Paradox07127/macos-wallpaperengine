@@ -117,7 +117,7 @@ struct ManualLocationPicker: View {
     }
 }
 
-/// For weather we only care about geographic regions, not arbitrary street addresses.
+/// Resolves address and place suggestions into a weather location.
 @MainActor
 final class LocationCompleterModel: NSObject, ObservableObject, MKLocalSearchCompleterDelegate {
     @Published var results: [MKLocalSearchCompletion] = []
@@ -136,7 +136,7 @@ final class LocationCompleterModel: NSObject, ObservableObject, MKLocalSearchCom
         debounceTask?.cancel()
     }
 
-    /// Coalesces typing bursts so the city search fires at most every 300 ms.
+    /// Submit the query after typing has paused for 300 ms.
     func update(query: String) {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         debounceTask?.cancel()

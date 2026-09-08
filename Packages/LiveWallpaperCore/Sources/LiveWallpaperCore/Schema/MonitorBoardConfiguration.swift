@@ -16,6 +16,7 @@ public enum MonitorBoardMetrics {
 }
 
 public enum MonitorWidgetKind: String, Codable, Sendable, CaseIterable, Identifiable {
+    case systemOverview
     case cpu
     case memory
     case gpu
@@ -41,9 +42,9 @@ public enum MonitorWidgetKind: String, Codable, Sendable, CaseIterable, Identifi
 
     public var allowedSizes: [MonitorWidgetSize] {
         switch self {
-        case .processes, .fleet: return [.medium, .large]
-        case .power: return [.small, .medium]
-        default: return [.small, .medium, .large]
+        case .systemOverview, .processes, .fleet: [.medium, .large]
+        case .power: [.small, .medium]
+        default: [.small, .medium, .large]
         }
     }
 }

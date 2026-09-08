@@ -184,7 +184,7 @@ struct MonitorBoardConfigurationTests {
 
     @Test("allowedSizes matrix matches the design mock's per-kind META, minus xl")
     func allowedSizesMatrix() {
-        let mediumLarge: Set<MonitorWidgetKind> = [.processes, .fleet]
+        let mediumLarge: Set<MonitorWidgetKind> = [.systemOverview, .processes, .fleet]
         let smallMedium: Set<MonitorWidgetKind> = [.power]
         for kind in MonitorWidgetKind.allCases {
             if mediumLarge.contains(kind) {

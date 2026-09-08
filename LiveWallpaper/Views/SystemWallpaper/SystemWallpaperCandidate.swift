@@ -2,9 +2,7 @@ import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
-/// Something the user could hand to macOS: a bookmarked video, or a video-type
-/// Workshop import. Both sources produce the same tile, so the sheet does not
-/// have to know which list a row came from.
+/// A bookmarked or Workshop video available for export to System Wallpaper.
 @available(macOS 26.0, *)
 struct SystemWallpaperCandidate: Identifiable {
     enum Source {
@@ -50,9 +48,7 @@ struct SystemWallpaperCandidate: Identifiable {
     }
     #endif
 
-    /// Throws rather than swallowing: the sheet publishes several at once, and a
-    /// later success clears `lastError`, so a failure that is not collected here
-    /// vanishes with no message. `publish(fileURLs:)` learned this already.
+    /// Propagate each failure so later successes cannot erase batch error reporting.
     @MainActor
     func publish(using service: WallpaperExportService) async throws {
         switch source {

@@ -3,7 +3,6 @@ import LiveWallpaperCore
 import SwiftUI
 import AppKit
 
-/// Unified "Storage" tab.
 @MainActor
 struct WPECacheManagementView: View {
     @State var isLoading: Bool = true
@@ -32,8 +31,7 @@ struct WPECacheManagementView: View {
     @Environment(WorkshopServices.self) var workshopServices
     /// Steam library sizes need the Doctor security-scoped bookmark.
     @Environment(SteamCMDDoctorService.self) var doctorService
-    /// System Wallpaper keeps its own copy of every published video, which is
-    /// the largest thing the app writes outside Workshop content.
+    /// Includes the separate video copies used by macOS System Wallpaper.
     @Environment(WallpaperExportService.self) var exportService
     @State var workshopCacheBytes: Int64 = 0
 
@@ -64,8 +62,7 @@ struct WPECacheManagementView: View {
             ]
         )
         .onAppear {
-            // Sizes are read from disk on demand; without this the System
-            // Wallpaper tile would show whatever the last publish left behind.
+            // Refresh disk sizes after changes outside this page.
             exportService.refresh()
             Task { await refreshStats() }
         }

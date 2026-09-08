@@ -10,9 +10,7 @@ enum SettingsSearchAnchor: String, Hashable, Identifiable, Sendable {
     case shortcutsGlobal
     case storageDashboard
     case storageCaches
-    /// The Steam Web API key section. Keeps its original name so a search
-    /// result saved before the setup page split into three sections still
-    /// lands somewhere sensible.
+    /// Stable anchor for Steam Web API key search results.
     case workshopSetup
     case workshopConnection
     case workshopAssets
@@ -60,8 +58,7 @@ enum SettingsNavigation: String, CaseIterable, Hashable, Identifiable {
         allItems.filter { item in
             switch item.destination {
             case .audioResponse:
-                // System audio capture is compiled out of Lite (LITE_BUILD),
-                // so the page would only host a dead toggle there.
+                // Lite excludes system audio capture.
                 capabilities.sku == .pro
             case .storage:
                 capabilities.enabledFeatures.contains(.wpeImport)
@@ -207,10 +204,7 @@ struct SettingsNavigationItem: Identifiable, Equatable {
 
     var id: SettingsNavigation { destination }
 
-    /// Indexed in the rendered language as well as the English key: matching only
-    /// the key meant a zh-Hans user could not find a row by the words on screen.
-    /// `bundle` is injectable so the five-language contract is assertable without
-    /// switching the process-wide app language.
+    /// Index both the rendered label and English key; the bundle supports language-specific tests.
     func searchableText(in bundle: Bundle = .appLanguage) -> String {
         ([title, title.localized(in: bundle)] + keywords).joined(separator: " ")
     }
@@ -360,8 +354,6 @@ private struct SettingsNavigationSearchTarget: Equatable {
     let anchor: SettingsSearchAnchor
     let keywords: [String]
 
-    /// No injectable bundle here, unlike `SettingsNavigationItem`: nothing outside
-    /// this file can obtain a target, so there is nothing to assert against.
     private var searchableText: String {
         ([label, label.localized(in: .appLanguage)] + keywords).joined(separator: " ")
     }
@@ -387,8 +379,7 @@ private struct SettingsNavigationSearchTarget: Equatable {
 }
 
 extension String {
-    /// The catalog's translation of this key. Search has to match the words the
-    /// sidebar shows, and those come from the catalog, not from the key.
+    /// Resolve the label shown in the sidebar for search matching.
     func localized(in bundle: Bundle) -> String {
         String(localized: String.LocalizationValue(self), bundle: bundle)
     }

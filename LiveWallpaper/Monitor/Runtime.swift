@@ -52,6 +52,8 @@ struct MonitorSampleDemand: Sendable, Equatable {
         var demand = Self()
         for widget in widgets {
             switch widget.kind {
+            case .systemOverview:
+                demand.sensors = demand.sensors || SystemOverviewOptions.showsSensors(widget)
             case .cpu:
                 // CPU's "Top by CPU" column has no toggle — it draws whenever
                 // the sampler hands it processes, but only at `.large`.
@@ -108,7 +110,7 @@ struct MonitorRuntimeOptions: Sendable, Equatable {
             switch kind {
             case .fleet, .weather:
                 false
-            case .cpu, .memory, .gpu, .network, .disk, .power, .processes, .aiEngine:
+            case .systemOverview, .cpu, .memory, .gpu, .network, .disk, .power, .processes, .aiEngine:
                 true
             }
         }
@@ -523,18 +525,19 @@ actor Runtime {
     }
 
     static func systemOptions(for kinds: Set<MonitorWidgetKind>) -> SystemMetricsSource.Options {
-        SystemMetricsSource.Options(
-            gpu: kinds.contains(.gpu),
+        let overview = kinds.contains(.systemOverview)
+        return SystemMetricsSource.Options(
+            gpu: overview || kinds.contains(.gpu),
             topProcesses: kinds.contains(.processes) || kinds.contains(.cpu) || kinds.contains(.memory),
             ane: kinds.contains(.aiEngine),
             accessories: kinds.contains(.power),
-            sensors: kinds.contains(.cpu) || kinds.contains(.gpu) || kinds.contains(.power),
+            sensors: overview || kinds.contains(.cpu) || kinds.contains(.gpu) || kinds.contains(.power),
             processIO: kinds.contains(.disk),
-            cpu: kinds.contains(.cpu),
-            memory: kinds.contains(.memory),
-            network: kinds.contains(.network),
-            disk: kinds.contains(.disk),
-            power: kinds.contains(.power)
+            cpu: overview || kinds.contains(.cpu),
+            memory: overview || kinds.contains(.memory),
+            network: overview || kinds.contains(.network),
+            disk: overview || kinds.contains(.disk),
+            power: overview || kinds.contains(.power)
         )
     }
 

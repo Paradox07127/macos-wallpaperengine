@@ -125,8 +125,7 @@ struct CPUWidgetView: View {
                         ) {
                             heroReadout(fraction: cpuFraction, baseSize: scale.hero * 1.05)
                         }
-                        // Height cap, so the ring is the same size it has always
-                        // been; the column beside it is pinned by `gaugeSide`.
+                        // Cap ring height while `gaugeSide` reserves its column width.
                         .frame(maxHeight: Self.gaugeSideCap)
                         if showComposition {
                             compositionLegend(userPct: userPct, sysPct: sysPct, scale: scale)
@@ -375,7 +374,7 @@ struct CPUWidgetView: View {
         }
     }
 
-    /// "PEAK n%" tag pinned inside the top-right of the M load curve (was a separate row under the arc).
+    /// Peak reading inside the load curve.
     @ViewBuilder
     private func peakInlineTag(scale: Design.TypeScale) -> some View {
         let size = scale.label * 0.9
@@ -830,12 +829,8 @@ extension CPUWidgetView {
     nonisolated static let gaugeChromeIdentityRow: CGFloat = 19
     /// What the composition legend and its spacing add to `gaugeChromeBase`.
     nonisolated static let gaugeChromeCompositionLegend: CGFloat = 38.3
-    /// Legend chip width as a multiple of `scale.label`. Measured at its widest
-    /// reading ("USER 100%" / "SYS 100%", both `Text(verbatim:)`, so no locale
-    /// widens them): 80.00 pt at the 10 pt label, 81.72 at 10.625, 91.90 at 12 —
-    /// ratios 8.00 / 7.69 / 7.66, the peak being the 10 pt label where the 0.95×
-    /// legend font is still clamped up. 8.05 rather than a knife-edge 8.00 so
-    /// the chip is never a rounding error away from truncating.
+    /// Legend width in multiples of `scale.label`: 8.05 covers the measured maximum of 8.00
+    /// for USER/SYS 100% at the 10 pt label size, with rounding margin.
     nonisolated static let gaugeLegendSlots: CGFloat = 8.05
 
     /// Reserve a stable upper bound so changing gauge readings cannot move adjacent columns.
@@ -859,16 +854,8 @@ extension CPUWidgetView {
         return min(gaugeSideCap, max(0, legend, cellHeight * 2 - chrome))
     }
 
-    /// Size the hero digits shrink to once the reading needs three of them.
-    ///
-    /// "100%" is 1.382× as wide as "20%" at the same size (CTLine, semibold
-    /// monospaced-digit system font, measured across the whole 21.6…48.3 pt
-    /// hero range this widget produces). The M ring's centre box is
-    /// `side * 0.62` = 41.97 pt on a 356×170 tile, so "100%" at the unshrunk
-    /// 32.13 pt needed a 0.561 scale — under `minimumScaleFactor(0.6)`, and
-    /// SwiftUI truncates rather than overshooting the floor: the reading came
-    /// out as "1…". At 0.68 the tightest tile over board scales 0.85…2.0 needs
-    /// 0.62, and the desktop board's own M tile needs 0.82.
+    /// Scale three-digit hero values to fit the ring while staying above the 0.6 text-scale floor.
+    /// The 0.68 factor was measured across board scales 0.85…2.0.
     nonisolated static let threeDigitHeroShrink: CGFloat = 0.68
 
     /// Hero size for a `digits`-digit readout. Only full load reaches three.
@@ -932,19 +919,12 @@ extension CPUWidgetView {
     nonisolated static let compactCoreCellGap: CGFloat = 2
     nonisolated static let tallCoreCellGap: CGFloat = 3
 
-    /// Widest row the M strip allows. A 2-cluster M tile gives each cluster
-    /// ~102 pt (356 pt tile − 32 pt inset − 104 pt gauge column − 7 pt − 9 pt,
-    /// halved), so 8 cells with 2 pt gaps are 11.5 pt wide. Equal to the cap the
-    /// strip already enforced as `count > 8 ? 2 : 1` rows, so every cluster of
-    /// 16 or fewer cores lays out exactly as it did.
+    /// Cap M strips at eight cells per row: the narrowest cluster column is about 102 pt,
+    /// leaving 11.5 pt cells with 2 pt gaps.
     nonisolated static let compactCoreCellsPerRow = 8
 
-    /// Widest row the L strip allows. Its cluster column is ~157 pt (356 − 32 −
-    /// 9, halved with the process column), so 12 cells at 3 pt gaps are 10.4 pt
-    /// wide — the width the 12-core cluster on an 18-core Mac already draws at.
-    /// Before this cap the L strip put a whole cluster in one row: a 24-core
-    /// cluster came out 3.7 pt wide, and `HeatCell`'s 1 pt inset border eats
-    /// 2 pt of that.
+    /// Cap L strips at twelve cells per row: the 157 pt cluster column leaves 10.4 pt cells
+    /// with 3 pt gaps, keeping each cell wider than its inset border.
     nonisolated static let tallCoreCellsPerRow = 12
 
     /// Rows a cluster of `coreCount` cells wraps into so no row exceeds `cap`.
@@ -1131,8 +1111,7 @@ private extension MonitorWidgetContext {
     .background(Design.boardWash)
 }
 
-// A machine nobody here owns: 36 cores is where the core strip used to squeeze
-// a cluster below its own cell border.
+// Synthetic 36-core fixture exercises cluster wrapping.
 #Preview("CPU · 36 cores") {
     let topology = MonitorWidgetContext.ultraTopology
     HStack(spacing: 20) {

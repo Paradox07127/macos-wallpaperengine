@@ -1,18 +1,13 @@
 import SwiftUI
 
-/// How wide the track is. Two shapes cover every inspector row today.
+/// Track width policy for inspector controls.
 public enum CoalescedSliderSizing {
     case fixed(CGFloat)
     case flexible(minimum: CGFloat, maximum: CGFloat)
 }
 
-/// A slider whose gesture samples stay inside the row. Every inspector slider used to write straight
-/// through on each sample, and on the other side of those bindings sit things that are not free once
-/// per frame: persisting settings to disk, rebuilding a `CIFilter` chain, rebuilding an overlay, or
-/// reaching the render session. The knob now tracks the pointer from row-local state, and the value
-/// leaves the row on a quiet window and again when the gesture ends. The WPE scene custom-settings
-/// card keeps its own plain `Slider` instead of this one: it stages into an editor that merges a
-/// preset layer underneath the user's increment — a different commit protocol, not a different slider.
+/// Stage gesture samples locally; commit after a quiet interval and on release.
+/// Use the caller’s custom commit protocol when edits must merge a preset layer.
 public struct CoalescedSlider<Readout: View>: View {
     private let committedValue: Double
     private let range: ClosedRange<Double>

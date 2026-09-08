@@ -19,6 +19,11 @@ struct MonitorWidgetContext {
         // lookup below would report every one of them as unavailable.
         guard placement.kind != .fleet, placement.kind != .weather else { return nil }
         guard let system = snapshot.system else { return "Waiting for readings" }
+        // The overview keeps healthy instruments visible when another source is
+        // unavailable. Its individual readings use their own metric provenance.
+        if placement.kind == .systemOverview {
+            return nil
+        }
         if let samples = system.metricSamples {
             guard let sample = samples[placement.kind.rawValue], sample.available else { return "Readings unavailable" }
             return sample.isStale(at: now) ? "Readings are out of date" : nil
@@ -34,7 +39,7 @@ struct MonitorWidgetContext {
         case .power: system.batteryLevel != nil || system.powerSource != nil
         case .processes: system.topProcesses != nil
         case .aiEngine: system.aneFootprintPresent != nil
-        case .fleet, .weather: true
+        case .systemOverview, .fleet, .weather: true
         }
         return available ? nil : "Readings unavailable"
     }

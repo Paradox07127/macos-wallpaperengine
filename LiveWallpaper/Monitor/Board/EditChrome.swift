@@ -45,10 +45,7 @@ struct WidgetDragModifier: ViewModifier {
 /// Board-relative coordinate space for drag gestures.
 enum MonitorBoardCoordinateSpace {
     static let name = "MonitorBoard"
-    /// The edit toolbar's own space. The Add Widget frame is published in it
-    /// rather than in the board's, because the toolbar is drawn through a scale
-    /// the board is not — a frame relative to the toolbar is the same number at
-    /// every preview scale.
+    /// Publish the Add Widget frame in toolbar coordinates, independent of the board preview scale.
     static let toolbar = "MonitorBoardEditToolbar"
 }
 
@@ -99,10 +96,7 @@ struct MonitorWidgetControlBar: View {
                                         : Color.clear
                                 )
                             )
-                            // Without this the hit area follows the drawn fill,
-                            // so only the already-selected segment — the one
-                            // with an opaque capsule — could be clicked, and
-                            // every actual size change was a no-op.
+                            // Keep unselected segments clickable when their fill is transparent.
                             .contentShape(Capsule())
                     }
                     .buttonStyle(.plain)
@@ -151,9 +145,7 @@ struct MonitorWidgetControlBar: View {
 /// Top-centre Add Widget + Done pill (Done is the exit path for menu-entered edit mode).
 struct MonitorBoardEditToolbar: View {
     @ObservedObject var model: InteractionModel
-    /// The inspector preview is permanently in edit mode — arranging is the
-    /// only thing it does — so a button whose whole job is to leave edit mode
-    /// has nothing to lead to there. On the desktop it is the only way out.
+    /// Inspector previews stay in edit mode; only desktop boards need an exit button.
     var showsDone: Bool = true
 
     var body: some View {
@@ -276,8 +268,9 @@ private struct CatalogItemCard: View {
                     .fill(Color(white: 0.17))
                     .frame(height: 44)
                     .overlay(
-                        Text(WidgetFactory.displayName(kind))
-                            .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        Image(systemName: WidgetFactory.icon(kind))
+                            .font(DesignTokens.Typography.sectionTitle)
+                            .accessibilityHidden(true)
                             .foregroundStyle(Color.white.opacity(0.55))
                     )
                 HStack(spacing: 4) {

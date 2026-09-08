@@ -1,9 +1,7 @@
 import SwiftUI
 import AppKit
 
-/// Shared frame for a library page: the page background and the size floor.
-/// No header slot: a page's identity lives in the toolbar and its search in
-/// `LibraryFilterBar`, so a second way to build a page is deliberately absent.
+/// Library page background and minimum size; identity belongs in the toolbar.
 public struct DetailPageScaffold<Content: View>: View {
     private let content: Content
 

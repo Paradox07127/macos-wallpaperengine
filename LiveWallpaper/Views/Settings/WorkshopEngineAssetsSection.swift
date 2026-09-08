@@ -89,7 +89,7 @@ struct WorkshopEngineAssetsSection: View {
         .accessibilityValue(Text(verbatim: downloadProgressLabel(fraction)))
     }
 
-    /// Percent + transferred size so multi-GB downloads don't look stuck on a bare bar.
+    /// Show both progress percentage and transferred bytes.
     private func downloadProgressLabel(_ fraction: Double) -> String {
         let percent = Int((fraction * 100).rounded())
         guard let bytes = engineInstaller.progressBytes,
@@ -177,7 +177,7 @@ struct WorkshopEngineAssetsSection: View {
                     Button("Remove", role: .destructive) { engineInstaller.remove() }
                     Button("Cancel", role: .cancel) {}
                 } message: {
-                    Text("This deletes the downloaded assets from this Mac. You can download them again anytime.")
+                    Text("Deletes the downloaded assets from this Mac. They can be downloaded again.")
                 }
         }
     }
@@ -198,8 +198,7 @@ struct WorkshopEngineAssetsSection: View {
         }
     }
 
-    /// The same two routes the onboarding step offers, in the same order:
-    /// download the copy you own, or point at one you already have.
+    /// Match onboarding’s download and existing-install actions.
     private var engineAssetsUnlinkedControl: some View {
         WorkshopSetupRoutes(
             primary: WorkshopSetupRoute(
@@ -247,14 +246,12 @@ struct WorkshopEngineAssetsSection: View {
         switch engineInstaller.phase {
         case .downloading:
             return EngineAssetsStatusLine(
-                message: String(localized: "Downloading Wallpaper Engine, then Loomscreen will keep only the assets folder and link it automatically.", bundle: .appLanguage, comment: "Engine-assets settings status while downloading."),
+                message: String(localized: "Downloading Wallpaper Engine; only the assets folder will be kept and linked.", bundle: .appLanguage, comment: "Engine-assets settings status while downloading."),
                 tint: .secondary
             )
         case .pruning:
-            return EngineAssetsStatusLine(
-                message: String(localized: "Download finished. Keeping the assets folder and linking it now.", bundle: .appLanguage, comment: "Engine-assets settings status while pruning the downloaded WPE app."),
-                tint: .secondary
-            )
+            // Removal also uses this phase; the control already shows "Finishing…".
+            return nil
         case .checking:
             return EngineAssetsStatusLine(
                 message: String(localized: "Checking Steam for the latest Wallpaper Engine build.", bundle: .appLanguage, comment: "Engine-assets settings status while checking for updates."),
@@ -275,7 +272,7 @@ struct WorkshopEngineAssetsSection: View {
                 bundle: .appLanguage, comment: "Fallback display name for a manually linked engine-assets folder."
             )
             return EngineAssetsStatusLine(
-                message: String(localized: "Linked to \(name) for extra scene coverage.", bundle: .appLanguage, comment: "Engine-assets settings status for a manually linked folder."),
+                message: String(localized: "Linked to \(name).", bundle: .appLanguage, comment: "Engine-assets settings status for a manually linked folder."),
                 tint: DesignTokens.Colors.Status.active
             )
         }
@@ -284,7 +281,7 @@ struct WorkshopEngineAssetsSection: View {
             return EngineAssetsStatusLine(message: reason, tint: .secondary)
         }
         return EngineAssetsStatusLine(
-            message: String(localized: "Not linked. Most scenes still use Loomscreen's built-in equivalents.", bundle: .appLanguage, comment: "Engine-assets settings status when no engine assets are linked."),
+            message: String(localized: "Not linked.", bundle: .appLanguage, comment: "Engine-assets settings status when no engine assets are linked."),
             tint: .secondary
         )
     }
@@ -303,7 +300,7 @@ struct WorkshopEngineAssetsSection: View {
             )
         case .unableToCompare:
             return EngineAssetsStatusLine(
-                message: String(localized: "Downloaded assets linked, but their version is unknown. Click Update to download the current build and record it.", bundle: .appLanguage, comment: "Engine-assets settings status when installed build id is unknown."),
+                message: String(localized: "Assets linked; version unknown. Update to download and identify the current build.", bundle: .appLanguage, comment: "Engine-assets settings status when installed build id is unknown."),
                 tint: DesignTokens.Colors.Status.warning
             )
         case let .checkFailed(reason):

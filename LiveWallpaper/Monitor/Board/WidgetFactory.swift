@@ -7,6 +7,7 @@ enum WidgetFactory {
 
     static func displayName(_ kind: MonitorWidgetKind) -> String {
         switch kind {
+        case .systemOverview: String(localized: "System Overview", bundle: .appLanguage, comment: "Monitor widget name: combined system instruments.")
         case .cpu: String(localized: "CPU", bundle: .appLanguage, comment: "Monitor widget name: CPU instrument.")
         case .memory: String(localized: "Memory", bundle: .appLanguage, comment: "Monitor widget name: Memory instrument.")
         case .gpu: String(localized: "GPU", bundle: .appLanguage, comment: "Monitor widget name: GPU instrument.")
@@ -22,6 +23,7 @@ enum WidgetFactory {
 
     static func icon(_ kind: MonitorWidgetKind) -> String {
         switch kind {
+        case .systemOverview: "gauge.with.dots.needle.50percent"
         case .cpu: "cpu"
         case .memory: "memorychip"
         case .gpu: "cpu.fill"
@@ -57,6 +59,8 @@ enum WidgetFactory {
     @MainActor @ViewBuilder
     private static func availableTile(context: MonitorWidgetContext) -> some View {
         switch context.placement.kind {
+        case .systemOverview:
+            SystemOverviewWidgetView(context: context)
         case .cpu:
             CPUWidgetView(context: context)
         case .memory:

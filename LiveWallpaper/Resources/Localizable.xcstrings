@@ -2052,6 +2052,42 @@
         }
       }
     },
+    "%lld cores" : {
+      "comment" : "GPU core count in system overview.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld cores"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld núcleos"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld コア"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 核"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 核"
+          }
+        }
+      }
+    },
     "%lld duplicate" : {
       "comment" : "Paste queue ingestion summary fragment.",
       "localizations" : {
@@ -4315,42 +4351,6 @@
         }
       }
     },
-    "Add at least one modifier (⌃ ⌥ ⇧ ⌘) — bare keys would intercept normal typing." : {
-      "comment" : "Shortcut validation rejection message.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Add at least one modifier (⌃ ⌥ ⇧ ⌘) — bare keys would intercept normal typing."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Añade al menos un modificador (⌃ ⌥ ⇧ ⌘) — las teclas sueltas interceptarían la escritura normal."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "少なくとも 1 つの修飾キー（⌃ ⌥ ⇧ ⌘）を追加してください — 単独キーは通常の入力を妨げます。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "请添加至少一个修饰键（⌃ ⌥ ⇧ ⌘）——单独的按键会影响正常输入。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "請至少加入一個修飾鍵（⌃ ⌥ ⇧ ⌘）— 單獨按鍵會攔截一般輸入。"
-          }
-        }
-      }
-    },
     "Add Bookmark" : {
       "localizations" : {
         "en" : {
@@ -6529,38 +6529,38 @@
         }
       }
     },
-    "Applies when the default sort is Most Popular" : {
-      "comment" : "Settings → Workshop: subtitle of the default time frame row.",
+    "Applies to video and scene wallpapers." : {
+      "comment" : "Scope of the global mute shortcut; HTML wallpaper mute is not changed by this action.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Applies when the default sort is Most Popular"
+            "value" : "Applies to video and scene wallpapers."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Se aplica cuando el orden predeterminado es «Más populares»"
+            "value" : "Se aplica a fondos de vídeo y de escena."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "デフォルトの並べ替えが「人気順」のときに適用されます"
+            "value" : "動画とシーンの壁紙に適用されます。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "仅在默认排序为「最热门」时生效"
+            "value" : "适用于视频和场景壁纸。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "僅在預設排序為「最熱門」時生效"
+            "value" : "適用於影片和場景桌布。"
           }
         }
       }
@@ -6905,76 +6905,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "套用到全部"
-          }
-        }
-      }
-    },
-    "Apply to All — copy this display's overlay to every other display, leaving their wallpapers alone" : {
-      "comment" : "Tooltip for the Apply to All button while an overlay page is showing.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Apply to All — copy this display's overlay to every other display, leaving their wallpapers alone"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aplicar a todas — copia la superposición de esta pantalla a todas las demás, sin cambiar sus fondos de pantalla"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "すべてに適用 — このディスプレイのオーバーレイを他のすべてに複製します（壁紙は変更しません）"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "应用到全部 — 把这台显示器的叠加层复制到其它所有显示器，不改动它们的壁纸"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "套用到全部 — 把這台顯示器的疊加層複製到其它所有顯示器，不更動它們的桌布"
-          }
-        }
-      }
-    },
-    "Apply to All — copy this display's wallpaper and settings to every other display" : {
-      "comment" : "Tooltip for apply-to-all display settings action.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Apply to All — copy this display's wallpaper and settings to every other display"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aplicar a todas — copia el fondo de pantalla y los ajustes de esta pantalla a todas las demás"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "全てに適用 — このディスプレイの壁紙と設定を他の全ディスプレイに反映"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "应用到全部显示器 — 将该显示器的壁纸与设置复制到其余显示器"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "套用到所有顯示器 — 將本顯示器的桌布與設定複製到其他顯示器"
           }
         }
       }
@@ -7404,6 +7334,42 @@
         }
       }
     },
+    "Assets linked; version unknown. Update to download and identify the current build." : {
+      "comment" : "Managed assets remain usable but have no comparable build ID; Update downloads a known current build.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Assets linked; version unknown. Update to download and identify the current build."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recursos vinculados; versión desconocida. Actualiza para descargar e identificar la compilación actual."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "リソースはリンク済みですが、バージョンは不明です。更新すると最新ビルドをダウンロードし、バージョンを記録します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "资源已关联，版本未知。更新可下载当前版本并记录版本信息。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "資源已連結，版本未知。更新可下載目前版本並記錄版本資訊。"
+          }
+        }
+      }
+    },
     "Assets version unknown" : {
       "comment" : "Engine-assets update check version-unknown headline.",
       "localizations" : {
@@ -7429,6 +7395,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "資源版本未知"
+          }
+        }
+      }
+    },
+    "Attach the sanitized log from Finder to the GitHub issue." : {
+      "comment" : "Bug report attachment instruction; the label is not itself draggable. The Show Log in Finder action reveals the sanitized file.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attach the sanitized log from Finder to the GitHub issue."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adjunta el registro sin datos personales desde Finder a la incidencia de GitHub."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Finder から個人情報を除去したログを GitHub Issue に添付してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从“访达”将脱敏日志附加到 GitHub 议题。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "從 Finder 將去識別化日誌附加至 GitHub 議題。"
           }
         }
       }
@@ -7839,66 +7841,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "授權讀取 Steam 收藏庫中已安裝的創意工坊桌布。"
-          }
-        }
-      }
-    },
-    "Authorize Claude Folder" : {
-      "comment" : "Title of a row that opens a dialog to authorize Claude to read files in the user's home folder.",
-      "isCommentAutoGenerated" : true,
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Autorizar carpeta de Claude"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Claudeフォルダを許可"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "授权 Claude 文件夹"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "授權 Claude 資料夾"
-          }
-        }
-      }
-    },
-    "Authorize Codex Folder" : {
-      "comment" : "Button title to authorize access to the Codex folder.",
-      "isCommentAutoGenerated" : true,
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Autorizar carpeta de Codex"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Codexフォルダを許可"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "授权 Codex 文件夹"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "授權 Codex 資料夾"
           }
         }
       }
@@ -10775,41 +10717,6 @@
         }
       }
     },
-    "Cards refract the wallpaper behind them, the way Apple's own widgets do. Each card re-samples what is behind it every frame, so a busy live wallpaper under a full board costs more energy than the painted cards." : {
-      "comment" : "Monitor settings explanation for the Liquid Glass option, including its energy cost.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cards refract the wallpaper behind them, the way Apple's own widgets do. Each card re-samples what is behind it every frame, so a busy live wallpaper under a full board costs more energy than the painted cards."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Las tarjetas refractan el fondo de pantalla que hay detrás, como los widgets de Apple. Cada tarjeta vuelve a muestrear lo que tiene detrás en cada fotograma, así que un fondo animado con mucho movimiento bajo un panel completo consume más energía que las tarjetas pintadas."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Apple 純正ウィジェットと同じように、カードが背後の壁紙を屈折させます。各カードは毎フレーム背後を再サンプリングするため、動きの多い壁紙の上に多数の計器を並べると、描画カードより電力を消費します。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "卡片会像 Apple 自家小组件那样折射背后的壁纸。每张卡片每帧都会重新采样背后的内容，所以在动态壁纸上摆满仪表时，比绘制卡片更耗电。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "卡片會像 Apple 自家小工具那樣折射背後的桌布。每張卡片每一影格都會重新取樣背後的內容，所以在動態桌布上擺滿儀表時，比繪製卡片更耗電。"
-          }
-        }
-      }
-    },
     "Cartoon" : {
       "comment" : "Workshop genre tag.",
       "localizations" : {
@@ -12675,6 +12582,42 @@
         }
       }
     },
+    "Claude Folder" : {
+      "comment" : "Claude local history folder authorization row; Authorize/Revoke buttons state action.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude Folder"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Carpeta de Claude"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude フォルダ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude 文件夹"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude 檔案夾"
+          }
+        }
+      }
+    },
     "Clear" : {
       "comment" : "Weather condition.",
       "localizations" : {
@@ -13700,6 +13643,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "程式碼簽章"
+          }
+        }
+      }
+    },
+    "Codex Folder" : {
+      "comment" : "Codex local history folder authorization row; Authorize/Revoke buttons state action.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex Folder"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Carpeta de Codex"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex フォルダ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex 文件夹"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex 檔案夾"
           }
         }
       }
@@ -14880,6 +14859,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在瀏覽器中繼續"
+          }
+        }
+      }
+    },
+    "Controls cursor tracking in scenes and mouse interaction on web pages." : {
+      "comment" : "Global interaction shortcut toggles sceneMouseInteractionEnabled and HTML allowMouseInteraction; it does not change scene interactiveInputEnabled.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Controls cursor tracking in scenes and mouse interaction on web pages."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Controla el seguimiento del cursor en escenas y la interacción del ratón en páginas web."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "シーンのカーソル追従とWebページのマウス操作を切り替えます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "控制场景中的光标跟随和网页鼠标交互。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "控制場景中的游標跟隨和網頁滑鼠互動。"
           }
         }
       }
@@ -16432,13 +16447,20 @@
         }
       }
     },
-    "Couldn't export the layout" : {
-      "comment" : "Alert title when a monitor layout file fails to export.",
+    "Couldn’t export layout" : {
+      "comment" : "Monitor layout export error title; error details remain visible.",
+      "extractionState" : "manual",
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t export layout"
+          }
+        },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No se pudo exportar la disposición"
+            "value" : "No se pudo exportar la distribución"
           }
         },
         "ja" : {
@@ -16456,7 +16478,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "無法匯出版面"
+            "value" : "無法匯出佈局"
           }
         }
       }
@@ -16532,31 +16554,38 @@
         }
       }
     },
-    "Couldn't import that layout" : {
-      "comment" : "Alert title when a monitor layout file fails to import.",
+    "Couldn’t import layout" : {
+      "comment" : "Monitor layout import error title; error details remain visible.",
+      "extractionState" : "manual",
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t import layout"
+          }
+        },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No se pudo importar esa disposición"
+            "value" : "No se pudo importar la distribución"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "そのレイアウトを読み込めませんでした"
+            "value" : "レイアウトを読み込めませんでした"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "无法导入该布局"
+            "value" : "无法导入布局"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "無法匯入該版面"
+            "value" : "無法匯入佈局"
           }
         }
       }
@@ -18035,42 +18064,6 @@
         }
       }
     },
-    "Default graphite" : {
-      "comment" : "Widget tint row value when no custom colour is set.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Default graphite"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Grafito predeterminado"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "デフォルトのグラファイト"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "默认石墨色"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "預設石墨色"
-          }
-        }
-      }
-    },
     "Default scaling" : {
       "comment" : "A label displayed in the settings screen for the default scaling of a display.",
       "isCommentAutoGenerated" : true,
@@ -18773,6 +18766,42 @@
         }
       }
     },
+    "Deletes the downloaded assets from this Mac. They can be downloaded again." : {
+      "comment" : "Confirmation for removing the app-managed Wallpaper Engine assets, not a user-linked external installation.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deletes the downloaded assets from this Mac. They can be downloaded again."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elimina los recursos descargados de este Mac. Se pueden descargar de nuevo."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この Mac にダウンロードしたリソースを削除します。再ダウンロードできます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "删除此 Mac 上下载的资源，之后可重新下载。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "刪除此 Mac 上下載的資源，之後可重新下載。"
+          }
+        }
+      }
+    },
     "Denied" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -19042,41 +19071,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "桌面：位於視窗下方。置頂：位於視窗上方。"
-          }
-        }
-      }
-    },
-    "Detailed log (sanitized): drag it into the GitHub issue after it opens." : {
-      "comment" : "Caption below the diagnostic preview pointing users at the sanitized log attach step.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Detailed log (sanitized): drag it into the GitHub issue after it opens."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Registro detallado (sin datos sensibles): arrástralo al issue de GitHub cuando se abra."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "詳細ログ（サニタイズ済み）：GitHub issue を開いたらドラッグして添付してください。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "详细日志（已脱敏）：GitHub issue 打开后请把它拖进去作为附件。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "完整日誌（已去識別）：GitHub issue 開啟後請將它拖入作為附件。"
           }
         }
       }
@@ -19896,6 +19890,42 @@
         }
       }
     },
+    "Disk read" : {
+      "comment" : "Disk read throughput label.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Read"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lectura"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "読み取り"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "读取"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "讀取"
+          }
+        }
+      }
+    },
     "Disk usage: %@" : {
       "comment" : "System wallpaper library storage. %@ is an already localized, formatted byte size.",
       "extractionState" : "manual",
@@ -19928,6 +19958,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "磁碟用量：%@"
+          }
+        }
+      }
+    },
+    "Disk write" : {
+      "comment" : "Disk write throughput label.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Write"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Escritura"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "書き込み"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "写入"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "寫入"
           }
         }
       }
@@ -20463,35 +20529,6 @@
         }
       }
     },
-    "Download finished. Keeping the assets folder and linking it now." : {
-      "comment" : "Engine-assets settings status while pruning the downloaded WPE app.",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Descarga finalizada. Conservando la carpeta assets y vinculándola ahora."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ダウンロードが完了しました。アセットフォルダを残してリンクしています。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "下载完成。正在保留资源文件夹并链接它。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "下載完成。正在保留資源資料夾並連結它。"
-          }
-        }
-      }
-    },
     "Download progress" : {
       "comment" : "A label for the progress bar in the macOS detail sheet.",
       "isCommentAutoGenerated" : true,
@@ -20822,35 +20859,6 @@
         }
       }
     },
-    "Downloaded assets linked, but their version is unknown. Click Update to download the current build and record it." : {
-      "comment" : "Engine-assets settings status when installed build id is unknown.",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Recursos descargados vinculados, pero se desconoce su versión. Haz clic en Actualizar para descargar la compilación actual y registrarla."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ダウンロード済みアセットをリンクしましたが、バージョンは不明です。「更新」をクリックして現在のビルドをダウンロードし、記録してください。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已链接下载的资源，但版本未知。点击“更新”下载当前版本并记录。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已連結下載的資源，但版本未知。按一下「更新」下載目前版本並加以記錄。"
-          }
-        }
-      }
-    },
     "Downloaded assets linked. %@" : {
       "comment" : "Engine-assets settings status when the update check fails; %@ is why it failed.",
       "extractionState" : "manual",
@@ -21130,31 +21138,38 @@
         }
       }
     },
-    "Downloading Wallpaper Engine, then Loomscreen will keep only the assets folder and link it automatically." : {
-      "comment" : "Engine-assets settings status while downloading.",
+    "Downloading Wallpaper Engine; only the assets folder will be kept and linked." : {
+      "comment" : "Download status explains that only the assets folder survives the managed-install prune and is linked automatically.",
+      "extractionState" : "manual",
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Downloading Wallpaper Engine; only the assets folder will be kept and linked."
+          }
+        },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Descargando Wallpaper Engine; después Loomscreen conservará solo la carpeta assets y la vinculará automáticamente."
+            "value" : "Descargando Wallpaper Engine; solo se conservará y vinculará la carpeta assets."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Wallpaper Engine をダウンロードしています。その後、Loomscreen はアセットフォルダだけを残して自動的にリンクします。"
+            "value" : "Wallpaper Engine をダウンロード中です。assets フォルダのみを保持してリンクします。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "正在下载 Wallpaper Engine；随后 Loomscreen 会仅保留资源文件夹并自动链接。"
+            "value" : "正在下载 Wallpaper Engine；仅保留并关联 assets 文件夹。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "正在下載 Wallpaper Engine；接著 Loomscreen 只會保留資源資料夾並自動連結。"
+            "value" : "正在下載 Wallpaper Engine；僅保留並連結 assets 檔案夾。"
           }
         }
       }
@@ -22287,6 +22302,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "啟用桌布互動？"
+          }
+        }
+      }
+    },
+    "Enable wallpapers" : {
+      "comment" : "Accessible name for the menu bar master wallpaper switch.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enable wallpapers"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Activar fondos"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "壁紙を有効にする"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启用壁纸"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "啟用桌布"
           }
         }
       }
@@ -25666,6 +25717,42 @@
         }
       }
     },
+    "Fan speed" : {
+      "comment" : "System overview fan speed readout label.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fan speed"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ventilador"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ファン回転数"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "风扇转速"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "風扇轉速"
+          }
+        }
+      }
+    },
     "Fantasy" : {
       "comment" : "Workshop genre tag.",
       "localizations" : {
@@ -27727,7 +27814,7 @@
       }
     },
     "Grant Access" : {
-      "comment" : "Confirm button in the monitor wallpaper's AI-log folder access panel.",
+      "comment" : "Button to request Location Services for the first time.\nConfirm button in the monitor wallpaper's AI-log folder access panel.",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -28523,42 +28610,6 @@
         }
       }
     },
-    "How much wallpaper shows through the widget cards. Bottoms out well above zero — a fully transparent card leaves text floating unreadably over the wallpaper." : {
-      "comment" : "Widget opacity tooltip.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "How much wallpaper shows through the widget cards. Bottoms out well above zero — a fully transparent card leaves text floating unreadably over the wallpaper."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cuánto se transparenta el fondo de pantalla a través de las tarjetas widget. El mínimo queda claramente por encima de cero — una tarjeta totalmente transparente deja el texto flotando e ilegible sobre el fondo."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ウィジェットカード越しに壁紙がどれだけ透けるか。完全な透明にはできません — 文字が壁紙の上に浮いて読めなくなるためです。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "壁纸透过组件卡片的程度。下限明显高于零——完全透明会让文字浮在壁纸上无法阅读。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "桌布透過元件卡片的程度。下限明顯高於零——完全透明會讓文字浮在桌布上無法閱讀。"
-          }
-        }
-      }
-    },
     "How often the instruments sample" : {
       "comment" : "Monitor inspector: refresh-rate row subtitle.",
       "extractionState" : "manual",
@@ -28591,41 +28642,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "儀表取樣的頻率"
-          }
-        }
-      }
-    },
-    "How often the instruments sample. Longer intervals use less energy." : {
-      "comment" : "Info popover for the monitor board refresh interval setting.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "How often the instruments sample. Longer intervals use less energy."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Con qué frecuencia muestrean los instrumentos. Los intervalos más largos consumen menos energía."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "計器がサンプリングする間隔です。間隔を長くするほど消費電力が下がります。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "各仪表采样一次的间隔。间隔越长越省电。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "各儀表取樣一次的間隔。間隔越長越省電。"
           }
         }
       }
@@ -29788,6 +29804,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在 %@ 上使用"
+          }
+        }
+      }
+    },
+    "Include a modifier key (⌃ ⌥ ⇧ ⌘)." : {
+      "comment" : "Shortcut capture validation; at least one modifier is required.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Include a modifier key (⌃ ⌥ ⇧ ⌘)."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Incluye una tecla modificadora (⌃ ⌥ ⇧ ⌘)."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "修飾キー（⌃ ⌥ ⇧ ⌘）を含めてください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请包含修饰键（⌃ ⌥ ⇧ ⌘）。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "請包含修飾鍵（⌃ ⌥ ⇧ ⌘）。"
           }
         }
       }
@@ -31433,36 +31485,6 @@
         }
       }
     },
-    "Let the overlay receive clicks instead of passing them through to the desktop" : {
-      "comment" : "Description for the Monitor overlay mouse-interaction toggle.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Permite que la superposición reciba los clics en lugar de dejarlos pasar al escritorio"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "クリックをデスクトップに通さず、オーバーレイで受け取ります"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "让浮层接收点击，而不是把它们透传给桌面"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "讓浮層接收點擊，而不是把它們透傳給桌面"
-          }
-        }
-      }
-    },
     "Lets compatible scenes react to the audio playing on your Mac. Off by default; requires audio-recording permission." : {
       "comment" : "A hint for the audio-response toggle in General settings.",
       "isCommentAutoGenerated" : true,
@@ -32075,6 +32097,7 @@
     },
     "Linked to %@ for extra scene coverage." : {
       "comment" : "Engine-assets settings status for a manually linked folder.",
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -32098,6 +32121,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已連結到 %@，用於擴充場景相容性。"
+          }
+        }
+      }
+    },
+    "Linked to %@." : {
+      "comment" : "Engine asset status; placeholder is the selected folder display name.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Linked to %@."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vinculado a %@."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ にリンク済み。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已关联至 %@。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已連結至 %@。"
           }
         }
       }
@@ -32206,42 +32265,6 @@
         }
       }
     },
-    "Live session activity · metadata only" : {
-      "comment" : "Agent session activity monitor.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Live session activity · metadata only"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Actividad en vivo · solo metadatos"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "セッションの動作 · メタデータのみ"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "实时会话活动 · 仅元数据"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "即時工作階段活動 · 僅中繼資料"
-          }
-        }
-      }
-    },
     "Live view" : {
       "comment" : "Web rendering diagnostics: what was measured.",
       "localizations" : {
@@ -32273,75 +32296,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "即時視圖"
-          }
-        }
-      }
-    },
-    "Live wallpapers for macOS — video, web, and compatible scenes on every display." : {
-      "comment" : "Tagline on the About page describing what the app does.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Live wallpapers for macOS — video, web, and compatible scenes on every display."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fondos animados para macOS: vídeo, web y escenas compatibles en todas las pantallas."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "macOS 向けライブ壁紙。動画、ウェブ、対応シーンをすべてのディスプレイで再生。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "macOS 动态壁纸：视频、网页与兼容场景，覆盖每一台显示器。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "macOS 動態桌布：影片、網頁與相容場景，覆蓋每一台顯示器。"
-          }
-        }
-      }
-    },
-    "LiveWallpaper system" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen system"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sistema de Loomscreen"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen システム"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen 系统"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen 系統"
           }
         }
       }
@@ -33345,6 +33299,42 @@
         }
       }
     },
+    "Longer sampling intervals use less energy." : {
+      "comment" : "Monitor refresh interval help; longer intervals reduce energy use.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Longer sampling intervals use less energy."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los intervalos de muestreo más largos reducen el consumo de energía."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "サンプリング間隔を長くすると消費電力を抑えられます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "较长的采样间隔可降低能耗。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "較長的取樣間隔可降低耗電量。"
+          }
+        }
+      }
+    },
     "Look for more on Steam" : {
       "comment" : "Link out to the wallpaper's Steam Community page, since the preset query only finds presets Steam indexed.",
       "localizations" : {
@@ -33448,35 +33438,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Loomscreen 無法將該檔案用作 SteamCMD。"
-          }
-        }
-      }
-    },
-    "Loomscreen deletes only its own download session for this account. Your Steam app sign-in is not affected. You'll connect this account again the next time you download." : {
-      "comment" : "Confirmation message explaining that removing the saved session touches only Loomscreen's own profile.",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen solo elimina su propia sesión de descarga para esta cuenta. Tu inicio de sesión en la app de Steam no se ve afectado. Volverás a conectar esta cuenta la próxima vez que descargues."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen が削除するのは、このアカウント用に自身が保存したダウンロードセッションだけです。Steam アプリのサインインには影響しません。次回のダウンロード時にこのアカウントを再度接続してください。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen 只会删除它自己为该账户保存的下载会话，不影响你在 Steam 应用中的登录。下次下载时需要重新连接该账户。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Loomscreen 只會刪除它自己為該帳戶儲存的下載工作階段，不影響你在 Steam 應用程式中的登入。下次下載時需要重新連結該帳戶。"
           }
         }
       }
@@ -39845,41 +39806,6 @@
         }
       }
     },
-    "Not checked yet" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Not checked yet"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aún no comprobado"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "まだ確認していません"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "尚未检查"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "尚未檢查"
-          }
-        }
-      }
-    },
     "Not configured" : {
       "comment" : "Menu bar display row subtitle: no wallpaper set.",
       "localizations" : {
@@ -40021,31 +39947,38 @@
         }
       }
     },
-    "Not linked. Most scenes still use Loomscreen's built-in equivalents." : {
-      "comment" : "Engine-assets settings status when no engine assets are linked.",
+    "Not linked." : {
+      "comment" : "Engine-assets state when no assets are linked and there is no actionable download blocker.",
+      "extractionState" : "manual",
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not linked."
+          }
+        },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No vinculado. La mayoría de las escenas siguen usando los equivalentes integrados de Loomscreen."
+            "value" : "Sin vincular."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "未リンクです。ほとんどのシーンでは引き続き Loomscreen 内蔵の代替アセットを使います。"
+            "value" : "未リンク。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "未链接。大多数场景仍会使用 Loomscreen 内置的等效资源。"
+            "value" : "未关联。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "未連結。大多數場景仍會使用 Loomscreen 內建的等效資源。"
+            "value" : "未連結。"
           }
         }
       }
@@ -40937,42 +40870,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "僅從 %@ 移除目前桌布。來源檔案、書籤與媒體庫項目不會刪除。"
-          }
-        }
-      }
-    },
-    "Only the Agent Session instrument uses this. It reads session metadata — project name, status, model, branch, tool names, token counts — never the text of your prompts, your agent's replies, or tool arguments." : {
-      "comment" : "Monitor settings: what the agent folder grant is used for and what it never reads.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Only the Agent Session instrument uses this. It reads session metadata — project name, status, model, branch, tool names, token counts — never the text of your prompts, your agent's replies, or tool arguments."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Solo lo usa el instrumento Agent Session. Lee metadatos de la sesión — nombre del proyecto, estado, modelo, rama, nombres de herramientas, recuento de tokens —, nunca el texto de tus prompts, las respuestas del agente ni los argumentos de las herramientas."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "この項目を使うのは Agent Session 計器だけです。プロジェクト名、状態、モデル、ブランチ、ツール名、トークン数といったセッションのメタデータのみを読み取り、プロンプトの本文、エージェントの応答、ツールの引数は読み取りません。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "只有 Agent Session 仪表会用到它。它只读取会话元数据 —— 项目名、状态、模型、分支、工具名、token 数，不会读取你的提示词正文、agent 的回复或工具参数。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "只有 Agent Session 儀表會用到它。它只讀取工作階段中繼資料 —— 專案名稱、狀態、模型、分支、工具名稱、token 數，不會讀取你的提示詞內文、agent 的回覆或工具參數。"
           }
         }
       }
@@ -43885,38 +43782,38 @@
         }
       }
     },
-    "Paused by a per-app rule" : {
-      "comment" : "Suspension caused by a user-configured application rule; user can change it in settings",
+    "Paused by an application rule" : {
+      "comment" : "Current pause reason from Application Pause Rules.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Paused by a per-app rule"
+            "value" : "Paused by an application rule"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "En pausa por una regla por app"
+            "value" : "En pausa por una regla de aplicación"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "アプリ別ルールにより一時停止"
+            "value" : "アプリのルールにより一時停止中"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已按应用规则暂停"
+            "value" : "因应用暂停规则暂停"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已依應用程式規則暫停"
+            "value" : "因 App 暫停規則暫停"
           }
         }
       }
@@ -43953,6 +43850,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "系統已暫停"
+          }
+        }
+      }
+    },
+    "Paused for system resource limits" : {
+      "comment" : "Current pause reason for thermal or memory pressure, not a user toggle.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Paused for system resource limits"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En pausa por límites de recursos del sistema"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "システムリソースの制限により一時停止中"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "因系统资源限制暂停"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "因系統資源限制暫停"
           }
         }
       }
@@ -45318,6 +45251,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "播放清單模式"
+          }
+        }
+      }
+    },
+    "Plugged in" : {
+      "comment" : "System overview power status for external AC power.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plugged in"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conectado"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "電源接続中"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已接电源"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已接電源"
           }
         }
       }
@@ -46906,38 +46875,38 @@
         }
       }
     },
-    "Quit LiveWallpaper" : {
-      "comment" : "A button that quits LiveWallpaper.",
-      "isCommentAutoGenerated" : true,
+    "Quit %@" : {
+      "comment" : "Menu bar quit action. Placeholder is the running Pro/Lite product name.",
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Quit Loomscreen"
+            "value" : "Quit %@"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Salir de Loomscreen"
+            "value" : "Salir de %@"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loomscreen を終了"
+            "value" : "%@を終了"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "退出 Loomscreen"
+            "value" : "退出 %@"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "結束 Loomscreen"
+            "value" : "結束 %@"
           }
         }
       }
@@ -47787,6 +47756,42 @@
         }
       }
     },
+    "Receives clicks that would otherwise reach the desktop." : {
+      "comment" : "Mouse Interaction help; enabled overlay receives clicks.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Receives clicks that would otherwise reach the desktop."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recibe los clics que de otro modo llegarían al escritorio."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "デスクトップに届くクリックを受け取ります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "接收原本会传递到桌面的点击。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "接收原本會傳遞到桌面的點擊。"
+          }
+        }
+      }
+    },
     "Receives pointer movement and clicks." : {
       "comment" : "Settings explanation; preserve scope and consequences.",
       "extractionState" : "manual",
@@ -47848,78 +47853,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "最近"
-          }
-        }
-      }
-    },
-    "Recent local sessions" : {
-      "comment" : "Agent session activity monitor.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Recent local sessions"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sesiones locales recientes"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "最近のローカルセッション"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "近期本地会话"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "近期本機工作階段"
-          }
-        }
-      }
-    },
-    "Recolours every widget card. The designed top-to-bottom falloff is kept, so the panel still reads as a lit surface rather than a flat rectangle." : {
-      "comment" : "Widget tint tooltip.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Recolours every widget card. The designed top-to-bottom falloff is kept, so the panel still reads as a lit surface rather than a flat rectangle."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Recolorea todas las tarjetas de widget. Se conserva el degradado de arriba abajo previsto, de modo que el panel sigue leyéndose como una superficie iluminada y no como un rectángulo plano."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "すべてのウィジェットカードを着色します。上下のグラデーションは維持されるため、パネルは平坦な矩形ではなく光の当たった面として見えます。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "为所有组件卡片着色。保留原有的上下明暗过渡，所以面板看起来仍是有光照的表面，而不是一块纯色矩形。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "為所有元件卡片著色。保留原有的上下明暗過渡，所以面板看起來仍是有光照的表面，而不是一塊純色矩形。"
           }
         }
       }
@@ -48024,41 +47957,6 @@
         }
       }
     },
-    "Reduce Transparency is on, so the cards stay solid." : {
-      "comment" : "Monitor settings subtitle when the system accessibility setting overrides the Liquid Glass option.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Reduce Transparency is on, so the cards stay solid."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Reducir transparencia está activado, así que las tarjetas se mantienen opacas."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "「透明度を下げる」がオンのため、カードは不透明のままです。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "系统已开启「降低透明度」，卡片将保持不透明。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "系統已開啟「降低透明度」，卡片將維持不透明。"
-          }
-        }
-      }
-    },
     "Reduces scene resolution; may use more power on light scenes. Changes reload wallpapers." : {
       "comment" : "Settings explanation; preserve scope and consequences.",
       "extractionState" : "manual",
@@ -48127,6 +48025,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ 的參照層級過深"
+          }
+        }
+      }
+    },
+    "Refracts the wallpaper through widget cards. May increase energy use." : {
+      "comment" : "Liquid Glass optional help; visual effect and reversible energy tradeoff.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Refracts the wallpaper through widget cards. May increase energy use."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Refracta el fondo a través de las tarjetas. Puede aumentar el consumo de energía."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ウィジェットカード越しに壁紙が屈折します。消費電力が増える場合があります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "通过组件卡片折射壁纸，可能增加能耗。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "透過元件卡片折射桌布，可能增加耗電量。"
           }
         }
       }
@@ -49242,42 +49176,6 @@
         }
       }
     },
-    "Remove Instrument" : {
-      "comment" : "Widget settings: remove button.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Remove Instrument"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Eliminar instrumento"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "計器を削除"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "移除仪表"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "移除儀表"
-          }
-        }
-      }
-    },
     "Remove saved session" : {
       "comment" : "Steam account menu item that deletes Loomscreen's own stored SteamCMD download session.",
       "localizations" : {
@@ -49611,6 +49509,42 @@
         }
       }
     },
+    "Remove Widget" : {
+      "comment" : "Widget settings action removes this board widget, consistent with Add Widget.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove Widget"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eliminar widget"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ウィジェットを削除"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移除组件"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移除元件"
+          }
+        }
+      }
+    },
     "Removed %@ from the library, but its files couldn't be deleted." : {
       "comment" : "Workshop delete: history removed but managed files couldn't be deleted.",
       "localizations" : {
@@ -49734,6 +49668,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "從此 Mac 移除已儲存的金鑰。在你前往 steamcommunity.com/dev/apikey 撤銷之前，該金鑰仍會在你的 Steam 帳戶下保持有效。"
+          }
+        }
+      }
+    },
+    "Removes this account's Loomscreen download session. Reconnect before downloading again. Steam app sign-in is unaffected." : {
+      "comment" : "Confirmation for removing the selected Steam account download session used by Loomscreen. The Steam app session remains signed in.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Removes this account's Loomscreen download session. Reconnect before downloading again. Steam app sign-in is unaffected."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elimina la sesión de descarga de esta cuenta en Loomscreen. Vuelve a conectarla antes de descargar. La sesión de la app Steam no cambia."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このアカウントの Loomscreen ダウンロードセッションを削除します。次のダウンロード前に再接続が必要です。Steam アプリのログイン状態には影響しません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移除此账户在 Loomscreen 中的下载会话。再次下载前需重新连接；不影响 Steam 应用的登录状态。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移除此帳號在 Loomscreen 中的下載工作階段。再次下載前需重新連線；不影響 Steam 應用程式的登入狀態。"
           }
         }
       }
@@ -50505,6 +50475,42 @@
         }
       }
     },
+    "Requires Most Popular sort." : {
+      "comment" : "Disabled default time-frame reason; use the exact localized Most Popular sort label.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Requires Most Popular sort."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Requiere el orden «Más populares»."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "並べ替えを「人気順」に設定してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "需将排序设为“最热门”。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "需將排序設為「最熱門」。"
+          }
+        }
+      }
+    },
     "Requires system audio access. Compatible scenes use local analysis; audio is not saved or uploaded." : {
       "comment" : "Audio response info: system audio permission, compatible scenes and local processing.",
       "extractionState" : "manual",
@@ -50643,42 +50649,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "全部重設"
-          }
-        }
-      }
-    },
-    "Reset all playback, color, particle, audio, and layout settings on this display — wallpaper, playlist, and bookmarks stay" : {
-      "comment" : "A description of the reset display button.",
-      "isCommentAutoGenerated" : true,
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Reset all playback, color, particle, audio, and layout settings on this display — wallpaper, playlist, and bookmarks stay"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Restablece todos los ajustes de reproducción, color, partículas, audio y disposición de esta pantalla — el fondo de pantalla, la lista de reproducción y los marcadores se conservan"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "このディスプレイの再生、カラー、パーティクル、オーディオ、レイアウト設定をすべてリセット — 壁紙、プレイリスト、ブックマークは残ります"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重置此显示器的所有播放、色彩、粒子、音频和布局设置——壁纸、播放列表和书签保留"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重設此顯示器上的所有播放、色彩、粒子、音訊與佈局設定 — 桌布、播放清單和書籤會保留"
           }
         }
       }
@@ -51004,6 +50974,42 @@
         }
       }
     },
+    "Reset replaces widgets. Import replaces widgets and board settings." : {
+      "comment" : "Visible consequence beside layout reset/import actions. Reset changes widgets only; import also replaces board settings.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reset replaces widgets. Import replaces widgets and board settings."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restablecer reemplaza los widgets. Importar reemplaza los widgets y los ajustes del panel."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "リセットはウィジェットを置き換えます。読み込みはウィジェットとボード設定を置き換えます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重置将替换组件；导入将替换组件和面板设置。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重置會取代元件；匯入會取代元件與面板設定。"
+          }
+        }
+      }
+    },
     "Reset scale, translate, and rotation" : {
       "localizations" : {
         "en" : {
@@ -51069,35 +51075,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "重設設定"
-          }
-        }
-      }
-    },
-    "Reset the board to its default instruments, or move a layout between machines" : {
-      "comment" : "Monitor inspector: layout management row info tooltip.",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Restablece el tablero a sus instrumentos predeterminados, o mueve un diseño entre equipos"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ボードを既定の計器にリセット、またはレイアウトを別のマシンへ移行"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "将面板重置为默认仪表，或在设备之间迁移布局"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "將面板重設為預設儀表，或在裝置之間搬移版面"
           }
         }
       }
@@ -51273,6 +51250,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "將元件配色重設為預設"
+          }
+        }
+      }
+    },
+    "Resets playback, effects, web options, and scheduling. Keeps the wallpaper, playlist, and bookmarks." : {
+      "comment" : "Reset Current Display tooltip. Resets playback/effects/web/scheduling, preserves wallpaper content, playlist entries, and bookmarks. Does not reset overlay layout.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resets playback, effects, web options, and scheduling. Keeps the wallpaper, playlist, and bookmarks."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restablece la reproducción, los efectos, las opciones web y la programación. Conserva el fondo, la lista de reproducción y los marcadores."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再生、エフェクト、Web オプション、スケジュールをリセットします。壁紙、プレイリスト、ブックマークは保持します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重置播放、效果、网页选项和计划设置；保留壁纸、播放列表和书签。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重置播放、效果、網頁選項和排程設定；保留桌布、播放清單和書籤。"
           }
         }
       }
@@ -52135,6 +52148,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "返回桌布瀏覽側邊欄"
+          }
+        }
+      }
+    },
+    "Review the diagnostics before continuing. Published GitHub issues are public." : {
+      "comment" : "Bug report sheet notice before opening the GitHub issue draft; publication is a separate user action.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Review the diagnostics before continuing. Published GitHub issues are public."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Revisa los diagnósticos antes de continuar. Las incidencias publicadas en GitHub son públicas."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "続行前に診断情報を確認してください。投稿した GitHub Issue は公開されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "继续前请检查诊断信息。发布的 GitHub 议题对所有人公开。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "繼續前請檢查診斷資訊。發布的 GitHub 議題對所有人公開。"
           }
         }
       }
@@ -53152,41 +53201,6 @@
         }
       }
     },
-    "Save as Scheme — archive this display's wallpaper, overlay layout, and every setting" : {
-      "comment" : "Tooltip for the Save as Scheme button in the display header.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Save as Scheme — archive this display's wallpaper, overlay layout, and every setting"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Guardar como esquema — archiva el fondo de pantalla, la disposición de superposición y todos los ajustes de esta pantalla"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "構成として保存 — このディスプレイの壁紙、オーバーレイの配置、すべての設定を保存します"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "保存为方案 — 存下这块屏幕的壁纸、叠加层布局与全部设置"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "儲存為方案 — 存下這台顯示器的桌布、疊加層配置與全部設定"
-          }
-        }
-      }
-    },
     "Save Bookmark" : {
       "comment" : "A label for a button that saves a wallpaper as a bookmark.",
       "isCommentAutoGenerated" : true,
@@ -53288,6 +53302,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "把場景目前的數值另存為一個新預設"
+          }
+        }
+      }
+    },
+    "Save this display's wallpaper, overlays, and settings as a scheme." : {
+      "comment" : "Tooltip for Save as Scheme; captures the current display configuration and overlay layers.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save this display's wallpaper, overlays, and settings as a scheme."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guarda el fondo, las superposiciones y los ajustes de esta pantalla como un esquema."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このディスプレイの壁紙、オーバーレイ、設定を構成として保存します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将此显示器的壁纸、叠加层和设置保存为方案。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將此顯示器的桌布、疊加層和設定儲存為方案。"
           }
         }
       }
@@ -62481,42 +62531,6 @@
         }
       }
     },
-    "Still the animations on this board" : {
-      "comment" : "Monitor inspector: reduce-motion row subtitle.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Still the animations on this board"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Detener las animaciones de este tablero"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "このボードのアニメーションを止める"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "停止此仪表板上的动画"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "停止此儀表板上的動畫"
-          }
-        }
-      }
-    },
     "Stopped at the download limit for linked items. Still missing: %@" : {
       "comment" : "Workshop toast subtitle when the linked-item download hit its depth, count or size limit; the placeholder lists the remaining Workshop IDs.",
       "localizations" : {
@@ -63305,6 +63319,42 @@
         }
       }
     },
+    "System Overview" : {
+      "comment" : "Combined CPU, memory, GPU, network, disk and power widget.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "System Overview"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resumen del sistema"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "システム概要"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系统总览"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系統總覽"
+          }
+        }
+      }
+    },
     "System requires location access; Manual uses a selected city." : {
       "comment" : "Weather location info; System and Manual are segment titles.",
       "extractionState" : "manual",
@@ -63337,42 +63387,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "「系統」需要定位權限；「手動」使用所選城市。"
-          }
-        }
-      }
-    },
-    "System resources are tight — playback resumes automatically" : {
-      "comment" : "Explains a heat or memory suspension the user cannot turn off",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "System resources are tight — playback resumes automatically"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Los recursos del sistema están justos — la reproducción se reanuda automáticamente"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "システムリソースが逼迫しています。回復後に自動で再開します"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "系统资源紧张，恢复后将自动继续播放"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "系統資源緊張，恢復後將自動繼續播放"
           }
         }
       }
@@ -63716,6 +63730,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "tar 以結束代碼 %@ 結束：%@"
+          }
+        }
+      }
+    },
+    "Targets the playlist on the display under the pointer." : {
+      "comment" : "Info for next/previous wallpaper shortcuts: selects a playlist by the display containing the pointer.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Targets the playlist on the display under the pointer."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Afecta a la lista de reproducción de la pantalla donde está el puntero."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ポインタがあるディスプレイのプレイリストが対象です。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "作用于指针所在显示器的播放列表。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "作用於游標所在顯示器的播放清單。"
           }
         }
       }
@@ -64766,42 +64816,6 @@
         }
       }
     },
-    "The author provided no adjustable properties." : {
-      "comment" : "Scene property inspector empty state; playback remains available elsewhere.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The author provided no adjustable properties."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "El autor no ha incluido propiedades ajustables."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "作者が調整可能な項目を提供していません。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "作者未提供可调参数。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "作者未提供可調參數。"
-          }
-        }
-      }
-    },
     "The author's scene.json couldn't be parsed: %@" : {
       "comment" : "Wallpaper Engine fallback warning body. The placeholder is parser detail.",
       "localizations" : {
@@ -65687,42 +65701,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "選取的不是 Web 檔案，也不是含有 index 頁面的資料夾。"
-          }
-        }
-      }
-    },
-    "The sort order Browse opens with" : {
-      "comment" : "Settings → Workshop: subtitle of the default sort row.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The sort order Browse opens with"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "El orden de clasificación con el que se abre Explorar"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "閲覧を開いたときの並べ替え順序"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "浏览打开时使用的排序顺序"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "瀏覽開啟時使用的排序順序"
           }
         }
       }
@@ -66693,35 +66671,6 @@
         }
       }
     },
-    "This deletes the downloaded assets from this Mac. You can download them again anytime." : {
-      "comment" : "Remove-engine-assets confirmation message.",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Esto elimina los recursos descargados de este Mac. Puedes volver a descargarlos cuando quieras."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "この Mac からダウンロード済みのアセットを削除します。いつでも再ダウンロードできます。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "这会从该 Mac 删除已下载的资源。你随时可以重新下载。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "這會從此 Mac 刪除已下載的資源。你隨時可以重新下載。"
-          }
-        }
-      }
-    },
     "This file is too large to import (%lld bytes). Configuration backups are usually well under 10 MB." : {
       "comment" : "Import failure: the file exceeds the size cap and is likely not a real config bundle.",
       "extractionState" : "manual",
@@ -66754,42 +66703,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "此檔案太大，無法匯入（%lld 位元組）。設定備份通常遠小於 10 MB。"
-          }
-        }
-      }
-    },
-    "This fills a GitHub issue. Review before publishing; published issues are public." : {
-      "comment" : "Settings explanation; preserve scope and consequences.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "This fills a GitHub issue. Review before publishing; published issues are public."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Se rellenará una incidencia de GitHub. Revísela antes de publicarla; será pública."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "GitHub の Issue に入力されます。公開後は誰でも閲覧できるため、投稿前に確認してください。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "内容将填入 GitHub 问题。发布后任何人可见，请先检查。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "內容將填入 GitHub 問題。發布後任何人皆可查看，請先檢查。"
           }
         }
       }
@@ -69116,42 +69029,6 @@
         }
       }
     },
-    "Turn pointer and click input on or off for scene and web wallpapers." : {
-      "comment" : "Global shortcut action description.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Turn pointer and click input on or off for scene and web wallpapers."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Activa o desactiva la entrada de puntero y clics en fondos de pantalla de escena y web."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "シーンと Web 壁紙のポインタ入力とクリック入力のオン/オフを切り替えます。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "开关场景和网页壁纸的指针与点击输入。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "開關場景和網頁桌布的指標與點按輸入。"
-          }
-        }
-      }
-    },
     "Type" : {
       "comment" : "Workshop tag group: Scene / Video / Web.",
       "localizations" : {
@@ -69460,31 +69337,38 @@
         }
       }
     },
-    "Unit for the CPU / GPU temperature readouts" : {
-      "comment" : "Monitor inspector: temperature-unit row info tooltip.",
+    "Unavailable while Reduce Transparency is on." : {
+      "comment" : "Liquid Glass disabled reason, conditional on macOS Reduce Transparency.",
+      "extractionState" : "manual",
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unavailable while Reduce Transparency is on."
+          }
+        },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Unidad de las lecturas de temperatura de CPU / GPU"
+            "value" : "No disponible con Reducir transparencia activado."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "CPU / GPU 温度表示の単位"
+            "value" : "「透明度を下げる」がオンの間は使用できません。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "CPU / GPU 温度读数的单位"
+            "value" : "开启“降低透明度”时不可用。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "CPU / GPU 溫度讀數的單位"
+            "value" : "開啟「減少透明度」時無法使用。"
           }
         }
       }
@@ -70414,6 +70298,42 @@
         }
       }
     },
+    "Upload" : {
+      "comment" : "Network transmit rate label in the system overview.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Upload"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Subida"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アップロード"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上传"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上傳"
+          }
+        }
+      }
+    },
     "URL" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -70816,6 +70736,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已用"
+          }
+        }
+      }
+    },
+    "Used by Agent Session and Agent Activity to display session metadata. Prompt text, replies and tool arguments are excluded." : {
+      "comment" : "Folder access help; names both consumers and excludes message content from displayed metadata.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Used by Agent Session and Agent Activity to display session metadata. Prompt text, replies and tool arguments are excluded."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sesión del agente y Actividad de agentes muestran metadatos de las sesiones. Se excluyen el texto de las instrucciones, las respuestas y los argumentos de herramientas."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "エージェントセッションとエージェントのアクティビティでメタデータを表示します。プロンプト本文、返信、ツール引数は含みません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "供 Agent 会话和 Agent 活动台显示会话元数据，不包含提示词正文、回复或工具参数。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "供 Agent 工作階段與 Agent 活動台顯示工作階段中繼資料，不包含提示詞正文、回覆或工具參數。"
           }
         }
       }

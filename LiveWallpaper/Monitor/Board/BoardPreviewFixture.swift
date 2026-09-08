@@ -43,6 +43,8 @@ enum MonitorBoardPreviewFixture {
             ]
         )
         system.gpuDeviceName = "Apple M4 Pro"
+        system.gpuCoreCount = 20
+        system.loadAverage1 = 3.42
         system.gpuRendererUtil = 0.37
         system.gpuTilerUtil = 0.18
         system.gpuSampledAt = now

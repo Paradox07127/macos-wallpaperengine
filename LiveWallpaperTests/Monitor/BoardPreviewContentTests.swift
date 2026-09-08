@@ -43,7 +43,7 @@ struct BoardPreviewContentTests {
         #expect(MonitorBoardPreviewMode.allCases.count == 3)
     }
 
-    @Test("sample data fills all 27 card kind and size combinations")
+    @Test("sample data fills all 29 card kind and size combinations")
     func sampleDataCoversEveryCard() throws {
         let preview = MonitorBoardPreview.resolve(mode: .sample, latest: nil)
         let snapshot = try #require(preview.snapshot)
@@ -68,7 +68,7 @@ struct BoardPreviewContentTests {
         // combinations was counted, so it stays green through any change to the
         // size table. Adding a widget must land here and confirm the fixture
         // feeds the new card.
-        #expect(combinations == 27)
+        #expect(combinations == 29)
         #expect(MonitorWidgetKind.allCases.allSatisfy { covered.contains($0) })
     }
 
