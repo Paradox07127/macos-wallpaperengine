@@ -49,6 +49,10 @@ struct OverlayPreviewArea: View {
                 OverlayPreviewCanvas(screen: screen, backdrop: backdrop) {
                     weatherLayer
                 }
+            case .clock:
+                OverlayPreviewCanvas(screen: screen, backdrop: backdrop) {
+                    ClockOverlayPreview(screen: screen, screenManager: screenManager)
+                }
             case .music:
                 OverlayPreviewCanvas(screen: screen, backdrop: backdrop) {
                     musicLayer
@@ -333,7 +337,7 @@ private extension ParticleEffect {
 ///
 /// Same recipe as the active badges, dialled down: this is the "nothing is
 /// running" state, not a live readout.
-private struct OverlayOffNotice: View {
+struct OverlayOffNotice: View {
     let text: LocalizedStringKey
 
     var body: some View {

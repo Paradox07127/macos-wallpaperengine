@@ -88,7 +88,7 @@ struct RootView: View {
                     .allowsHitTesting(model.isEditing || model.acceptsBoardWidePointer)
 
                 if !geometry.isDegenerate {
-                    if model.placements.isEmpty {
+                    if isInspectorPreview, model.placements.isEmpty {
                         emptyBoardHint(boardSize: boardSize)
                     }
 
@@ -117,9 +117,17 @@ struct RootView: View {
 
     // MARK: Empty-board hint
 
-    /// Passive (no hit testing); only while the board is empty.
+    /// Passive (no hit testing); only while the board is empty, and only in the
+    /// inspector: an empty board leaves the desktop untouched, and the hint's
+    /// own text is about a gesture that exists only in the preview.
+    ///
+    /// Sized like edit chrome rather than board content — the inspector shrinks
+    /// the board by ~1:5, which left the hint a few points tall. `scaleEffect`
+    /// about the default centre anchor pairs with `position`, so it stays
+    /// centred without the chrome modifier's first-frame size measurement.
     private func emptyBoardHint(boardSize: CGSize) -> some View {
-        VStack(spacing: 6) {
+        let boost = MonitorChromeScale.boost(forRenderScale: renderScale)
+        return VStack(spacing: 6) {
             Image(systemName: "square.grid.2x2")
                 .font(.system(size: 22, weight: .light))
                 .foregroundStyle(.secondary.opacity(0.5))
@@ -128,7 +136,8 @@ struct RootView: View {
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary.opacity(0.6))
         }
-        .frame(width: min(boardSize.width - 24, 320))
+        .frame(width: min(boardSize.width / boost - 24, 320))
+        .scaleEffect(boost)
         .position(x: boardSize.width / 2, y: boardSize.height / 2)
         .allowsHitTesting(false)
         .zIndex(2)
@@ -201,11 +210,7 @@ struct RootView: View {
                 MonitorWidgetNameTile(kind: placement.kind, cellHeight: renderHeight, cornerRadius: cornerRadius)
             case .empty:
                 if placement.kind == .nixieClock {
-                    NixieClockWidgetView(context: MonitorWidgetContext(
-                        snapshot: MonitorSnapshot(), history: MonitorHistorySnapshot(),
-                        placement: placement, isEditing: model.isEditing,
-                        reduceMotion: reduceMotion, now: now
-                    ))
+                    NixieClockView(now: now)
                 } else {
                     MonitorPreviewEmptyTile(
                         kind: placement.kind, cellHeight: renderHeight, cornerRadius: cornerRadius

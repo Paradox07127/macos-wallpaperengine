@@ -355,7 +355,8 @@ extension WPEMetalSceneRenderer {
         layerScriptPointerFrame: WPEPointerFrame
     ) -> WPEPreparedRenderPipeline {
         guard !layerScriptInstances.isEmpty || !layerAlphaScriptInstances.isEmpty
-            || !textVisibleScriptInstances.isEmpty || !textAlphaScriptInstances.isEmpty else {
+            || !textVisibleScriptInstances.isEmpty || !textAlphaScriptInstances.isEmpty
+            || !particleAlphaScriptInstances.isEmpty else {
             return pipeline
         }
         // Sorted by objectID: these scripts cross-talk through shared state, so a
@@ -395,6 +396,16 @@ extension WPEMetalSceneRenderer {
                 pointerFrame: layerScriptPointerFrame
             ) {
                 liveTextAlpha[objectID] = output.own.alpha
+            }
+        }
+        // Read back in `tickParticleSystems`, which runs later in this same frame.
+        for (objectID, instance) in particleAlphaScriptInstances.sorted(by: { $0.key < $1.key }) {
+            if let output = tickLayerScript(
+                instance,
+                runtimeSeconds: uniforms.time,
+                pointerFrame: layerScriptPointerFrame
+            ) {
+                liveParticleInstanceAlpha[objectID] = output.own.alpha
             }
         }
         stageIntroPhaseAlign()
@@ -538,6 +549,10 @@ extension WPEMetalSceneRenderer {
         // is already this-frame-fresh when its event-follow child ticks.
         for system in particleSystems {
             system.pointerCentered = particlePointer
+            if let objectID = system.instanceAlphaScriptObjectID,
+               let alpha = liveParticleInstanceAlpha[objectID] {
+                system.instanceAlphaScale = Float(max(0, min(1, alpha)))
+            }
             if system.isAudioResponsive { system.audioSpectrum16 = audioSpectrum16 }
             Self.injectFollowControlPoint(into: system)
             system.tick(now: time, frameSlot: frameSlot)

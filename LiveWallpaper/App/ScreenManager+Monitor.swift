@@ -104,6 +104,10 @@ extension ScreenManager {
         mutateMonitorOverlays(of: [screen]) { $0.music = music }
     }
 
+    func setClockOverlay(_ clock: ClockOverlayConfiguration, for screen: Screen) {
+        mutateMonitorOverlays(of: [screen]) { $0.clock = clock.normalized }
+    }
+
     /// Whole-struct overwrite, for applying a saved scheme. Assigns the config
     /// rather than copying its four fields across so a field added to
     /// `MonitorOverlayConfiguration` later cannot be silently dropped on apply.
@@ -133,6 +137,9 @@ extension ScreenManager {
         case .music:
             let template = monitorOverlay(for: source).music
             mutateMonitorOverlays(of: targets) { $0.music = template }
+        case .clock:
+            let template = monitorOverlay(for: source).clock
+            mutateMonitorOverlays(of: targets) { $0.clock = template }
         case .weather:
             // Weather is not in `monitorOverlays` — it rides on each display's
             // own configuration, so only its three fields move.
@@ -164,6 +171,7 @@ extension ScreenManager {
             let overlay = monitorOverlay(for: $0)
             return (overlay.enabled && overlay.level == .desktop)
                 || (overlay.music.enabled && overlay.music.level == .desktop)
+                || (overlay.clock.enabled && overlay.clock.level == .desktop)
         }
     }
 

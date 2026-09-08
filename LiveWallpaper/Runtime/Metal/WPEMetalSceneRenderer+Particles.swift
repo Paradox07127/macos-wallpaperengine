@@ -158,9 +158,11 @@ extension WPEMetalSceneRenderer {
     func particleTextureResource(
         relativePath: String,
         label: String,
-        colorSpace: WPEMetalColorSpace = .sRGB,
+        colorSpace: WPEMetalColorSpace? = nil,
         on actor: isolated WPEDisplayRenderActor
     ) async throws -> WPELoadedTextureResource {
+        let colorSpace = colorSpace
+            ?? WPEMetalTextureColorSpaceClassifier.colorSpace(forReference: relativePath)
         let key = ParticleTextureLoadKey(path: relativePath, colorSpace: colorSpace)
         if let cached = particleTextureLoadCache[key] {
             return cached
@@ -565,6 +567,9 @@ extension WPEMetalSceneRenderer {
             objectBrightness: object.brightness
         )
         system.isNestedChildSystem = isNestedChild
+        if object.instanceOverride?.alphaScript != nil {
+            system.instanceAlphaScriptObjectID = object.id
+        }
         if let groupEffect {
             system.groupOpacityMask = groupEffect.mask
             system.groupTint = groupEffect.tint
