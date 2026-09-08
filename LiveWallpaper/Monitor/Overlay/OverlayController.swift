@@ -442,7 +442,9 @@ final class OverlayController: NSObject {
             context.timingFunction = DesignTokens.Motion.exitTiming
             window.animator().alphaValue = 0
         } completionHandler: {
-            window.orderOut(nil)
+            // AppKit runs this on the main thread; the closure is only nonisolated
+            // because `runAnimationGroup` predates concurrency annotations.
+            MainActor.assumeIsolated { window.orderOut(nil) }
         }
     }
 
