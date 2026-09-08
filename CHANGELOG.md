@@ -13,6 +13,55 @@ will be cut once the surface has stabilized through real-world use.
 Entries identify Pro-only features where applicable. Versioned entries describe
 what shipped at that time; current behavior is documented in `docs/`.
 
+## [0.6.7] — 2026-09-08
+
+### Added
+
+- Nixie clock overlay: a per-display tube clock that sits on the desktop or
+  above windows, moved and resized by dragging it on the preview. 24- or
+  12-hour, an optional leading zero, blinking separators, and opacity.
+- System Overview tile for the Monitor board: CPU, memory, network and disk
+  rates and the power source in one widget.
+- A wallpaper that fails to load now says so on the display's page — what
+  failed, at which stage, and why — with Retry, the failure details, Open in
+  Workshop and a prefilled problem report. The desktop keeps the wallpaper it
+  had, and the card names it.
+- Workshop detail sheet lists the items a wallpaper requires, each loaded and
+  openable on its own, with Mature covers hidden until revealed.
+- Settings → Workshop: a default sort and time frame for Browse, blurring
+  Mature covers until they are clicked, and hiding items already in the
+  library.
+
+### Changed
+
+- Browsing the Workshop without an API key reads Steam's own browse page
+  instead of paging the search API: one request per page, with creator names
+  and a real page count. Keyed queries gained tag groups and search-field
+  targeting, and fall back to the keyless path by themselves when Valve
+  rejects the key.
+- Maturity defaults to Everyone, the way the signed-out Steam page browses.
+- Workshop requests retry transport failures and 429/5xx up to three times
+  behind a per-host cooldown; a rate limit that would outlast 15 seconds is
+  reported with the remaining wait instead of being slept through, and 401/403
+  come straight back, because retrying those does not help.
+- Process and agent-session tiles show each process's app icon, and the agent
+  tile lays out its large size for the extra room.
+
+### Fixed
+
+- Board edit chrome was unreadable in the inspector preview: the board lays out
+  at the display's point size and is then drawn down, so a 36pt control bar
+  landed about 7 points tall. Chrome now undoes that shrink; widget tiles still
+  shrink with the board.
+- The log sheet kept its first colourised text when the log grew while the
+  sheet was open, and the HTML preview's expanded badge announced itself as a
+  button to VoiceOver without being activatable.
+- Pro: trail particles stretched along world velocity rather than the object's
+  own, so rotated or scaled emitters — rain among them — pointed their trails
+  the wrong way.
+- Pro: an object's `instanceoverride.alpha` script never reached its particles,
+  and animated textures were loaded in the wrong colour space.
+
 ## [0.6.6] — 2026-09-06
 
 ### Added
