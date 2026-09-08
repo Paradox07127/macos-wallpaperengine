@@ -1,9 +1,7 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// The picker is the last step on purpose: it *is* the finish line. A separate "You're All Set"
-/// page claimed a wallpaper was on screen even when the reader had chosen Workshop or Aerials,
-/// which configure nothing — the browsing they asked for happens in the app. Each card now closes onboarding straight into the place it names.
+/// Source selection finishes onboarding by opening the selected app destination.
 private enum OnboardingStep: Hashable {
     case welcome
     case workshopSetup
@@ -19,10 +17,7 @@ enum OnboardingCompletionDestination: Equatable {
 struct Flow: View {
     @AppStorage("Onboarding.Completed") private var hasCompletedOnboarding: Bool = false
     @State private var index = 0
-    /// One-shot: the first finish wins. "Skip for Now" sits on the chrome, so it
-    /// can close onboarding while a dropped folder's import is still running —
-    /// that import's `didConfigure` then re-fired `finish`, yanking the user
-    /// back to the display page of a setup they had just dismissed.
+    /// Ignore late import completion after setup has already finished or been skipped.
     @State private var didFinish = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.featureCatalog) private var featureCatalog
@@ -123,9 +118,6 @@ struct Flow: View {
         .accessibilityLabel(stepLabel)
     }
 
-    /// Back on the left, skip on the right, both pinned to the top.
-    /// Skip used to sit under the primary button on every page, where it read as a second thing
-    /// to consider before continuing. Up here it is chrome: available on every step, competing with nothing.
     private var navigationChrome: some View {
         VStack {
             HStack {

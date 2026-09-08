@@ -181,10 +181,7 @@ struct ContentView: View {
         lastAppNavigation = navigation
     }
 
-    /// `NSScreen.screens` order, so the fallback is the primary display. This
-    /// used to bail out unless exactly one display was attached, which left
-    /// multi-display Macs on the "no display selected" pane whenever the window
-    /// opened without a screen in hand — every menu-bar Settings entry does.
+    /// Use system display order so the fallback selects the primary display.
     private func selectDefaultDisplayIfNeeded() {
         guard !isSettingsMode else { return }
         guard let fallback = screenManager.screens.first else { return }
@@ -230,9 +227,7 @@ struct ContentView: View {
         }
     }
 
-    /// One picker for every wallpaper kind, routed by what the file actually is
-    /// — the same classifier the drop target and onboarding use. Replaces the
-    /// per-page import buttons that each opened their own narrower panel.
+    /// Share file classification with drop targets and onboarding.
     private func promptAnyWallpaperSource(for screen: Screen) {
         NSApp.activate(ignoringOtherApps: true)
         let panel = NSOpenPanel()

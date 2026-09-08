@@ -15,7 +15,7 @@ enum GeneralSettingsPage: Equatable {
     case about
 }
 
-/// Composition + shared state; the section rows live in the sibling `*Section.swift` / `AboutTab.swift` extension files.
+/// Shared settings state; page content is defined in sibling extensions.
 struct GeneralSettingsView: View {
     enum SystemStatusScope {
         case loginItem
@@ -27,8 +27,7 @@ struct GeneralSettingsView: View {
     @AppStorage(AppLanguagePreference.storageKey, store: .appScoped()) var appLanguageRawValue = AppLanguagePreference.system.rawValue
     @AppStorage(AppAppearance.defaultsKey, store: .appScoped()) var appearanceRawValue = AppAppearance.system.rawValue
     @AppStorage(LibraryTileSize.preferencesKey, store: .appScoped()) var libraryTileSizeRaw = LibraryTileSize.medium.rawValue
-    /// Mirrors Sparkle's own `automaticallyChecksForUpdates`; Sparkle persists
-    /// it, so there is no parallel defaults key to keep in sync.
+    /// Sparkle owns persistence for this mirrored preference.
     @State var checksUpdatesAtLaunch: Bool = SparkleUpdaterController.shared.automaticallyChecksForUpdates
     @State var globalPauseOnBattery: Bool
     @State var startOnLogin: Bool
@@ -79,7 +78,7 @@ struct GeneralSettingsView: View {
     @State var exportErrorMessage: String?
     @State private var diagnosticsExportErrorMessage: String?
 
-    /// Drives SwiftUI's native `.fileExporter` / `.fileImporter` sheets — these handle UTType filtering, sandbox extensions, and sheet modality automatically, which `NSSavePanel.runModal()` does not.
+    /// Native file sheets manage type filtering and sandbox access.
     @State var isPresentingExporter = false
     @State var isPresentingImporter = false
     @State var isPresentingDiagnosticsExporter = false
@@ -394,7 +393,7 @@ struct GeneralSettingsView: View {
 
     // MARK: - Settings Persistence
 
-    /// Persists every `@State` field this view mirrors (the full list loaded in `init`) via read-modify-write, so unrelated `GlobalSettings` fields (schedule, shortcuts, display defaults, WPE history…) survive.
+    /// Read-modify-write preserves settings owned by other pages.
     func updateGlobalSettings() {
         var settings = SettingsManager.shared.loadGlobalSettings()
         let dockChanged = settings.showInDock != showInDock

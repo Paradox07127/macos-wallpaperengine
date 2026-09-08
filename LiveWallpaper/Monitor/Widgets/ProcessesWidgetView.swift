@@ -67,7 +67,7 @@ struct ProcessesWidgetView: View {
         }
     }
 
-    /// Honest empty treatment: the top-process sampler only runs when enabled, so an absent/empty list means "not sampling", not "no processes".
+    /// An absent process list does not establish that no processes are running.
     private func quietState(scale: Design.TypeScale) -> some View {
         VStack(alignment: .leading) {
             Spacer(minLength: 0)
@@ -107,7 +107,6 @@ struct ProcessesWidgetView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    /// `.ph` — column labels, uppercase/tracked, with a hairline underline.
     private func headerRow(
         scale: Design.TypeScale,
         cpuColWidth: CGFloat, memColWidth: CGFloat, colGap: CGFloat
@@ -160,7 +159,6 @@ struct ProcessesWidgetView: View {
             .lineLimit(1)
     }
 
-    /// `.pr` — one process: name cell (1fr) · CPU cell (bar + value) · MEM cell.
     private func processRow(
         _ proc: MonitorProcessSample, maxCPU: Double,
         scale: Design.TypeScale,
@@ -185,8 +183,7 @@ struct ProcessesWidgetView: View {
         .lineLimit(1)
     }
 
-    /// `.pn` — optional application icon + truncating name (names truncate rather
-    /// than shrink, so the name column stays optically even down the table).
+    /// Keep process names at a consistent type size; truncate overflow.
     private func nameCell(_ process: MonitorProcessSample, scale: Design.TypeScale) -> some View {
         HStack(spacing: scale.caption * 0.5) {
             ProcessAppIcon(bundleID: process.bundleID, size: scale.caption * 1.1)
@@ -198,7 +195,7 @@ struct ProcessesWidgetView: View {
         }
     }
 
-    /// `.pcpu` — the inline bar (fills to its share of the busiest row; the CPU widget's procRows track-plus-overlay idiom at its 2.6em width) + the cpu% readout (amber, tabular, fixed-width slot so digits align).
+    /// Scale the bar relative to the busiest displayed process; reserve a stable value column.
     private func cpuCell(
         _ cpuPercent: Double, maxCPU: Double, scale: Design.TypeScale,
         barWidth: CGFloat, valueWidth: CGFloat

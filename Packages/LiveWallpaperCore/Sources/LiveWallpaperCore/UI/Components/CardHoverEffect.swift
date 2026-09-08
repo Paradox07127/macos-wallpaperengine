@@ -1,11 +1,7 @@
 import SwiftUI
 
-/// Hover lift for interactive cards that draw their own surface instead of going through
-/// `GalleryTileChrome`. Same physics, same source of truth: every constant here is the
-/// `DesignTokens.Card` group the chrome reads — scale 1.02, shadow opacity/y-offset
-/// interpolation, spring(0.28, 0.85). The shadow radius is deliberately a single constant,
-/// per the note in `GalleryTileChrome`: a blur radius that changes has to be re-rasterised
-/// every frame of the spring, while opacity and offset do not.
+/// Shares GalleryTileChrome hover tokens. Keep shadow radius constant to avoid
+/// rerasterizing the blur during the hover animation.
 private struct CardHoverEffect: ViewModifier {
     let isActive: Bool
     let reduceMotion: Bool

@@ -1,11 +1,6 @@
 import SwiftUI
 
-/// Shared search capsule for library filter bars (`LibraryFilterBar`, the
-/// Workshop Browse ribbon). Owns only the visual shell — magnifier, text
-/// field, clear button, capsule chrome. Submit/clear/debounce behavior stays
-/// with the caller through the closure slots: `onSubmit` (Return key, and it
-/// also turns the magnifier into a submit button) and `onClear` (replaces the
-/// default `text = ""`).
+/// Search chrome only; callers own submission, debounce, and optional clear behavior.
 public struct LibrarySearchField: View {
     @Binding private var text: String
     private let prompt: LocalizedStringKey

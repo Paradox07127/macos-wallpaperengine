@@ -82,7 +82,7 @@ struct WorkshopConnectionSetup: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Loomscreen deletes only its own download session for this account. Your Steam app sign-in is not affected. You'll connect this account again the next time you download.")
+            Text("Removes this account's Loomscreen download session. Reconnect before downloading again. Steam app sign-in is unaffected.")
         }
         .task { await controller.prepare() }
     }
@@ -269,8 +269,7 @@ struct WorkshopConnectionSetup: View {
 
 // MARK: - Shared step readiness
 
-/// One reading of each step, so the status bar, the settings rows and the
-/// onboarding tree can't disagree about what is set up.
+/// Shared readiness for settings, overview, and onboarding.
 extension SteamCMDDoctorService {
     var isLibraryReady: Bool {
         guard workdirBookmarkData != nil, !workdirResolutionFailed else { return false }
@@ -297,8 +296,7 @@ extension SteamCMDDoctorService {
         return .ready
     }
 
-    /// `.working` covers "bound, not yet checked" as well as "checking right
-    /// now": a binary we have never probed is unverified, not broken.
+    /// Bound but unprobed binaries remain pending until verification.
     var binaryStepState: WorkshopStepState {
         guard hasBoundBinary else { return .notStarted }
         switch probes[.binaryIdentity]?.status {
@@ -328,9 +326,7 @@ extension SteamCMDDoctorService {
         return .notStarted
     }
 
-    /// The probe sentence behind a step's `.attention` badge, for the rows
-    /// that otherwise show only the badge; nil while the step is anything else,
-    /// so a "choose an account" hint never shows as a warning.
+    /// Only attention states expose a probe failure beside the setup row.
     func attentionMessage(for kind: DoctorProbeKind) -> String? {
         let state: WorkshopStepState
         switch kind {

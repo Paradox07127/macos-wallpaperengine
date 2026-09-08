@@ -145,9 +145,9 @@ extension GeneralSettingsView {
     private var weatherGrantButtonTitle: String {
         switch locationAuthorizationStatus {
         case .notDetermined:
-            return String(localized: "Re-grant Access", bundle: .appLanguage, comment: "Button to request Location Services again.")
+            String(localized: "Grant Access", bundle: .appLanguage, comment: "Button to request Location Services for the first time.")
         default:
-            return String(localized: "Open", bundle: .appLanguage, comment: "Open System Settings.")
+            String(localized: "Open", bundle: .appLanguage, comment: "Open System Settings.")
         }
     }
 

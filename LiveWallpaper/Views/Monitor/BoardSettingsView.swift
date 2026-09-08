@@ -10,7 +10,6 @@ struct BoardSettingsView: View {
     @AppStorage("Monitor.SettingsExpanded") private var isExpanded = true
     @AppStorage("Monitor.AuthorizationExpanded") private var isAuthorizationExpanded = true
 
-    /// The board config being edited.
     @State private var draft: MonitorBoardConfiguration = .default
 
     @State private var claudeAuthorized = false
@@ -66,10 +65,7 @@ struct BoardSettingsView: View {
         .groupBoxStyle(ContainerGroupBoxStyle())
     }
 
-    /// Its own card: these grants exist only for the Agent Session instrument,
-    /// and they are the one setting here that touches files outside the app.
-    /// The title names what is being read, not who reads it: "Agent Access" told a collapsed
-    /// reader nothing about the transcripts on their own disk that it opens.
+    /// Read-only grants for local agent session history.
     private var authorizationSection: some View {
         GroupBox {
             CollapsibleSection(
@@ -87,25 +83,21 @@ struct BoardSettingsView: View {
 
     // MARK: - Board-level controls
 
-    /// Title + readout on one line, slider on its own full-width line below.
-    /// The 19-stop grid needs a longer track than the shared 96 pt inspector
-    /// slider geometry allows next to a title.
+    /// A full-width slider keeps the 19-step interval grid usable in a narrow inspector.
     private var refreshRateRow: some View {
         VStack(alignment: .leading, spacing: 6) {
             SettingRow(
                 icon: "arrow.triangle.2.circlepath",
                 iconColor: .blue,
                 title: "Refresh Interval (seconds)",
-                info: "How often the instruments sample. Longer intervals use less energy."
+                info: "Longer sampling intervals use less energy."
             ) {
                 Text(verbatim: Self.refreshIntervalLabel(draft.refreshIntervalSeconds))
                     .font(DesignTokens.Typography.metric)
                     .foregroundStyle(.secondary)
                     .frame(width: DesignTokens.Inspector.sliderValueWidth, alignment: .trailing)
             }
-            // Slider rides the step *index*, not the seconds value — that is what
-            // makes the scale non-uniform (0.1 s below 2 s, 1 s above) while every
-            // stop keeps the same drag distance.
+            // Bind the step index so unequal time intervals have equal drag distances.
             Slider(
                 value: Binding(
                     get: { Double(Self.refreshIntervalIndex(draft.refreshIntervalSeconds)) },
@@ -129,7 +121,7 @@ struct BoardSettingsView: View {
             icon: "cursorarrow.rays",
             iconColor: draft.mouseInteractionEnabled ? .blue : .secondary,
             title: "Mouse Interaction",
-            info: "Let the overlay receive clicks instead of passing them through to the desktop"
+            info: "Receives clicks that would otherwise reach the desktop."
         ) {
             Toggle("", isOn: Binding(
                 get: { draft.mouseInteractionEnabled },
@@ -146,8 +138,7 @@ struct BoardSettingsView: View {
         SettingRow(
             icon: "wind",
             iconColor: .teal,
-            title: "Reduce Motion",
-            info: "Still the animations on this board"
+            title: "Reduce Motion"
         ) {
             Picker("", selection: Binding(
                 get: { ReduceMotionChoice(draft.reduceMotionOverride) },
@@ -168,8 +159,7 @@ struct BoardSettingsView: View {
         SettingRow(
             icon: "thermometer.variable.and.figure",
             iconColor: .orange,
-            title: "Temperature",
-            info: "Unit for the CPU / GPU temperature readouts"
+            title: "Temperature"
         ) {
             GlassSegmentedPicker(
                 selection: Binding(
@@ -190,10 +180,7 @@ struct BoardSettingsView: View {
 
     // MARK: - Widget appearance
 
-    /// Only offered where there is real Liquid Glass to turn on. Below macOS 26
-    /// the alternative is an imitation of it, which looks worse than the
-    /// designed gradient the board already ships — so the row is absent rather
-    /// than present-and-disabled, which would read as something being broken.
+    /// Liquid Glass requires macOS 26 or later.
     @ViewBuilder
     private var widgetGlassRow: some View {
         if #available(macOS 26.0, *) {
@@ -202,9 +189,9 @@ struct BoardSettingsView: View {
                 iconColor: .teal,
                 title: "Liquid Glass",
                 subtitle: reduceTransparency
-                    ? "Reduce Transparency is on, so the cards stay solid."
+                    ? "Unavailable while Reduce Transparency is on."
                     : nil,
-                info: "Cards refract the wallpaper behind them, the way Apple's own widgets do. Each card re-samples what is behind it every frame, so a busy live wallpaper under a full board costs more energy than the painted cards."
+                info: "Refracts the wallpaper through widget cards. May increase energy use."
             ) {
                 Toggle("", isOn: $widgetLiquidGlass)
                     .labelsHidden()
@@ -216,16 +203,12 @@ struct BoardSettingsView: View {
         }
     }
 
-    /// Board-wide, not per widget: the tiles are meant to read as one surface.
     private var widgetTintRow: some View {
         SettingRow(
             icon: "paintpalette",
             iconColor: .teal,
             title: "Widget tint",
-            valueSubtitle: widgetTintHex.isEmpty
-                ? String(localized: "Default graphite", bundle: .appLanguage, comment: "Widget tint row value when no custom colour is set.")
-                : widgetTintHex,
-            info: "Recolours every widget card. The designed top-to-bottom falloff is kept, so the panel still reads as a lit surface rather than a flat rectangle."
+            valueSubtitle: widgetTintHex.isEmpty ? nil : widgetTintHex
         ) {
             HStack(spacing: DesignTokens.Spacing.sm) {
                 ColorPicker("", selection: Binding(
@@ -235,9 +218,7 @@ struct BoardSettingsView: View {
                 .labelsHidden()
                 .accessibilityLabel(Text("Widget tint"))
 
-                // `fixedSize`: the row's title column takes every point it can,
-                // which squeezed this button down to a bare capsule with its
-                // label truncated away.
+                // Preserve the reset button width beside the localized title.
                 Button("Reset") { widgetTintHex = MonitorPanelAppearance.defaultTintHex }
                     .controlSize(.small)
                     .fixedSize()
@@ -252,8 +233,7 @@ struct BoardSettingsView: View {
             icon: "circle.lefthalf.filled",
             iconColor: .teal,
             title: "Widget opacity",
-            valueSubtitle: "\(Int(MonitorPanelAppearance.resolvedOpacity(widgetOpacity) * 100))%",
-            info: "How much wallpaper shows through the widget cards. Bottoms out well above zero — a fully transparent card leaves text floating unreadably over the wallpaper."
+            valueSubtitle: "\(Int(MonitorPanelAppearance.resolvedOpacity(widgetOpacity) * 100))%"
         ) {
             Slider(
                 value: Binding(
@@ -269,16 +249,14 @@ struct BoardSettingsView: View {
 
     // MARK: - Layout management (reset / import / export)
 
-    /// Three buttons never fit beside the title — inline they clip "Export" off
-    /// the panel's trailing edge even at the default width. Same full-width
-    /// second line the authorization rows use.
+    /// Keep all three layout actions on a full-width line.
     private var layoutManagementRow: some View {
         VStack(alignment: .leading, spacing: 6) {
             SettingRow(
                 icon: "square.grid.2x2",
                 iconColor: .purple,
                 title: "Layout",
-                info: "Reset the board to its default instruments, or move a layout between machines"
+                subtitle: "Reset replaces widgets. Import replaces widgets and board settings."
             ) {
                 EmptyView()
             }
@@ -302,7 +280,7 @@ struct BoardSettingsView: View {
         }
     }
 
-    /// True when the board already matches the default preset — same instruments, sizes, AND positions — so Reset is a genuine no-op.
+    /// Reset is disabled only when widget kinds, sizes and positions match the default.
     private var isDefaultLayout: Bool {
         let defaults = MonitorBoardConfiguration.defaultSystemPlacements()
         let current = draft.widgets
@@ -320,9 +298,9 @@ struct BoardSettingsView: View {
         Button("Open Agent Activity") { showsAgentActivity = true }
             .buttonStyle(.bordered)
         authorizationRow(
-            title: "Authorize Claude Folder",
+            title: "Claude Folder",
             subtitle: "Read-only access to ~/.claude",
-            info: "Only the Agent Session instrument uses this. It reads session metadata — project name, status, model, branch, tool names, token counts — never the text of your prompts, your agent's replies, or tool arguments.",
+            info: "Used by Agent Session and Agent Activity to display session metadata. Prompt text, replies and tool arguments are excluded.",
             isAuthorized: claudeAuthorized,
             authorize: {
                 SourceAuthorization.shared.requestAccess(for: .claude, from: hostWindow()) {
@@ -336,9 +314,9 @@ struct BoardSettingsView: View {
         Divider()
 
         authorizationRow(
-            title: "Authorize Codex Folder",
+            title: "Codex Folder",
             subtitle: "Read-only access to ~/.codex",
-            info: "Only the Agent Session instrument uses this. It reads session metadata — project name, status, model, branch, tool names, token counts — never the text of your prompts, your agent's replies, or tool arguments.",
+            info: "Used by Agent Session and Agent Activity to display session metadata. Prompt text, replies and tool arguments are excluded.",
             isAuthorized: codexAuthorized,
             authorize: {
                 SourceAuthorization.shared.requestAccess(for: .codex, from: hostWindow()) {
@@ -466,8 +444,8 @@ struct BoardSettingsView: View {
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = isImport
-            ? String(localized: "Couldn't import that layout", bundle: .appLanguage, comment: "Alert title when a monitor layout file fails to import.")
-            : String(localized: "Couldn't export the layout", bundle: .appLanguage, comment: "Alert title when a monitor layout file fails to export.")
+            ? String(localized: "Couldn’t import layout", bundle: .appLanguage, comment: "Alert title when a monitor layout file fails to import.")
+            : String(localized: "Couldn’t export layout", bundle: .appLanguage, comment: "Alert title when a monitor layout file fails to export.")
         alert.informativeText = error.localizedDescription
         alert.addButton(withTitle: String(localized: "OK", bundle: .appLanguage, comment: "Dismiss button on the monitor layout error alert."))
         if let window = hostWindow() {
@@ -498,16 +476,14 @@ struct BoardSettingsView: View {
         codexAuthorized = SourceAuthorization.shared.isAuthorized(.codex)
     }
 
-    /// Sheet host for the grant panel and the layout-error alert; the same
-    /// fallback chain must hold for all three or one of them modals off-window.
+    /// Use the same host for authorization sheets and layout error alerts.
     private func hostWindow() -> NSWindow? {
         NSApp.keyWindow ?? NSApp.mainWindow ?? NSApp.windows.first
     }
 
     // MARK: - Formatting helpers
 
-    /// Whole seconds print without a decimal so the coarse half of the grid
-    /// reads "3" rather than "3.0" next to the fine half's "1.2".
+    /// Omit decimals for whole seconds; preserve tenths for the fine interval steps.
     nonisolated static func refreshIntervalLabel(_ seconds: Double) -> String {
         let snapped = MonitorBoardConfiguration.snappedRefreshInterval(seconds)
         return snapped == snapped.rounded()

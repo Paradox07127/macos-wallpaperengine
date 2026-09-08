@@ -1,13 +1,7 @@
 import SwiftUI
 
-/// The one way to make a circular icon action button (w5-p2-spec §R1a):
-/// `Button` + `adaptiveGlassButton(shape: .circle)`, so hover/press/disabled and
-/// the macOS 26 glass / 14 bordered split all stay system-driven. The glyph size
-/// follows `controlSize` — never override the icon font. `help` /
-/// `accessibilityLabel` are attached by the caller (only the call site knows the
-/// icon's meaning). `Menu` cannot wrap in a `Button`: give it
-/// `.menuStyle(.button)` + `.adaptiveGlassButton(_, shape: .circle, size:)`
-/// directly instead (see the Workshop account control in PaneView).
+/// Circular icon action using shared glass and control-size metrics.
+/// Callers supply help and an accessible name; use a button with a popover over artwork.
 public struct GlassIconButton: View {
     private let systemImage: String
     private let prominence: AdaptiveGlassProminence

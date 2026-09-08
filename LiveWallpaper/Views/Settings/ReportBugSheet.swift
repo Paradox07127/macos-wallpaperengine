@@ -1,7 +1,7 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// Modal sheet behind the "Report a Bug" row's Open button in Advanced settings.
+/// Reviews diagnostics before opening a public GitHub issue.
 struct ReportBugSheet: View {
     let report: BugReport
     var onDismiss: () -> Void
@@ -45,7 +45,7 @@ struct ReportBugSheet: View {
             icon: "ladybug.fill",
             title: "Report a Bug",
             iconTint: DesignTokens.Colors.Status.danger,
-            subtitle: "This fills a GitHub issue. Review before publishing; published issues are public."
+            subtitle: "Review the diagnostics before continuing. Published GitHub issues are public."
         )
     }
 
@@ -71,7 +71,7 @@ struct ReportBugSheet: View {
 
             if let logURL = sanitizedLogURL {
                 Label {
-                    Text("Detailed log (sanitized): drag it into the GitHub issue after it opens.")
+                    Text("Attach the sanitized log from Finder to the GitHub issue.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 } icon: {

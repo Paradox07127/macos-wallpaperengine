@@ -33,7 +33,7 @@ struct AgentActivityPanel: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            SteamSheetHeader(icon: "waveform.path", title: "Agent Activity", subtitle: "Live session activity · metadata only")
+            SteamSheetHeader(icon: "waveform.path", title: "Agent Activity")
                 .padding(DesignTokens.Spacing.lg)
             filters
             sourceHealth
@@ -46,9 +46,6 @@ struct AgentActivityPanel: View {
                 Toggle("Pause display", isOn: $paused)
                     .toggleStyle(.checkbox)
                 Spacer()
-                Text("Recent local sessions")
-                    .font(DesignTokens.Typography.caption)
-                    .foregroundStyle(DesignTokens.Colors.textSecondary)
             })
         }
         .frame(width: 860, height: 620)
@@ -119,13 +116,6 @@ struct AgentActivityPanel: View {
             }
         }
         .listStyle(.sidebar)
-        .overlay {
-            if sessions.isEmpty {
-                Text("No matching sessions")
-                    .font(DesignTokens.Typography.body)
-                    .foregroundStyle(DesignTokens.Colors.textSecondary)
-            }
-        }
     }
 
     @ViewBuilder private var detail: some View {
@@ -144,8 +134,16 @@ struct AgentActivityPanel: View {
                 .padding(DesignTokens.Spacing.lg)
             }
         } else {
-            IllustratedEmptyState(symbol: "waveform.path", title: "No active sessions",
-                                  message: "Authorize the agent folders in Widgets settings.")
+            let unauthorized = search.isEmpty && !activeOnly && (snapshot.health ?? []).contains {
+                ($0.sourceID == "claude" || $0.sourceID == "codex")
+                    && (provider == "all" || $0.sourceID == provider)
+                    && $0.state == "unauthorized"
+            }
+            IllustratedEmptyState(
+                symbol: "waveform.path",
+                title: "No matching sessions",
+                message: unauthorized ? "Authorize the agent folders in Widgets settings." : nil
+            )
         }
     }
 

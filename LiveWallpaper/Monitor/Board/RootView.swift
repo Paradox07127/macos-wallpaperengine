@@ -55,11 +55,8 @@ struct RootView: View {
         .background(Color.clear)
         .focusable(model.isEditing)
         .focused($boardFocused)
-        // Focusable for arrow-key nudge and Delete, but without the system focus
-        // ring: this is a full-bleed canvas, so the ring traces the whole board
-        // (the inspector preview's entire frame) in accent blue the moment it is
-        // clicked. Which widget is active is already shown by its own selection
-        // chrome, so the ring adds noise, not information.
+        // Keep keyboard nudge and Delete support; the selected widget provides focus feedback
+        // instead of a focus ring around the entire canvas.
         .focusEffectDisabled()
         .onMoveCommand(perform: handleMoveCommand)
         .onDeleteCommand {

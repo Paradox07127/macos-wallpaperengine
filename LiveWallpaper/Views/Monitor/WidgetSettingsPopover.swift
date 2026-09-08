@@ -2,9 +2,7 @@ import LiveWallpaperCore
 import SwiftUI
 
 struct WidgetSettingsPopover: View {
-    /// Fixed host width (segmented pickers + deterministic board-card placement).
-    /// 280 matches `TimeEditorPopover`, the other segmented-picker popover in
-    /// the app; 360 was wider than any of its content needed.
+    /// Fixed width shared with board settings-card placement.
     static let preferredWidth: CGFloat = 280
 
     let placement: MonitorWidgetPlacement
@@ -49,7 +47,7 @@ struct WidgetSettingsPopover: View {
         Button(role: .destructive) {
             onRemove()
         } label: {
-            Label("Remove Instrument", systemImage: "trash")
+            Label("Remove Widget", systemImage: "trash")
                 .frame(maxWidth: .infinity)
         }
         .controlSize(.regular)
@@ -59,7 +57,7 @@ struct WidgetSettingsPopover: View {
 
     private var hasKindOptions: Bool {
         switch placement.kind {
-        case .processes, .cpu, .gpu, .memory, .disk, .fleet, .weather: true
+        case .systemOverview, .processes, .cpu, .gpu, .memory, .disk, .fleet, .weather: true
         default: false
         }
     }
@@ -96,6 +94,8 @@ struct WidgetSettingsPopover: View {
     @ViewBuilder
     private var kindOptions: some View {
         switch placement.kind {
+        case .systemOverview:
+            overviewOptions
         case .processes:
             processesOptions
         case .cpu:
@@ -112,6 +112,19 @@ struct WidgetSettingsPopover: View {
             weatherOptions
         default:
             EmptyView()
+        }
+    }
+
+    // MARK: System Overview
+
+    private var overviewOptions: some View {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
+            gpuSamplingPicker
+            if placement.size == .large {
+                historyWindowPicker(defaultWindow: SystemOverviewOptions.defaultHistoryWindow)
+                toggleRow("Show history curve", isOn: boolBinding(key: MonitorWidgetDraft.showTrendKey, default: true))
+                toggleRow("Show sensors", isOn: boolBinding(key: MonitorWidgetDraft.showSensorsKey, default: true))
+            }
         }
     }
 
@@ -413,7 +426,7 @@ enum MonitorWidgetDraft {
 
     /// Fastest GPU sample period across placements (runtime lease).
     static func gpuSampleSeconds(in widgets: [MonitorWidgetPlacement]) -> Double? {
-        widgets.filter { $0.kind == .gpu }
+        widgets.filter { $0.kind == .gpu || $0.kind == .systemOverview }
             .map { gpuSampleSeconds($0) ?? gpuDefaultSeconds }
             .min()
     }

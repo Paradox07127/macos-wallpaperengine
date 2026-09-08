@@ -213,12 +213,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         #endif
 
-        // Sparkle checks once at launch when automatic checks are enabled, then owns the
-        // schedule. A found update uses its alert and lights up the menu bar button. Started
-        // unconditionally rather than skipped during onboarding: this is the only call site, so
-        // skipping it left a first-run session — possibly weeks long — with no checks at all and a
-        // disabled manual-check button. Sparkle's own first-launch prompt is pre-answered by
-        // SUEnableAutomaticChecks, so there is nothing to collide with.
+        // Start even during onboarding so manual updates and the automatic schedule remain available.
+        // The initial automatic check respects the saved preference.
         if !runtimeOptions.isTesting {
             SparkleUpdaterController.shared.start()
         }

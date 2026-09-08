@@ -1,14 +1,7 @@
 import SwiftUI
 
-/// Shared gallery-card chrome: an opaque raised surface, a hairline edge, and a hover lift. The
-/// surface is not decoration — without one the card's footer is transparent, so `shadow` traces the
-/// opaque thumbnail alone and draws a line across the card's waist instead of sitting behind the
-/// whole card. Opaque rather than glass: a card-sized `glassEffect` resamples whatever is scrolling
-/// behind it every frame, and the thumbnail covers most of it anyway. The same reasoning reaches the
-/// badges floating over the artwork, which is why this sets `thumbnailBadgeSurface(.opaque)` for
-/// everything it wraps — a gallery page carries roughly four badges on each of ~50 cards, all of
-/// which would sample the scrolling content otherwise. Detail and inspector surfaces do not use this
-/// chrome, so their badges keep the real material.
+/// Opaque gallery surface keeps the footer and shadow attached to the whole card.
+/// Card badges also use opaque fills to avoid sampling scrolling content for each badge.
 struct GalleryTileChrome: ViewModifier {
     let isHovering: Bool
     let isSelected: Bool

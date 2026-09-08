@@ -25,10 +25,8 @@ enum MonitorBoardPreviewMode: String, CaseIterable, Sendable {
     }
 }
 
-/// The frozen contents of an inspector board: one snapshot, the history that
-/// went with it, and the instant both were taken. Frozen because a preview the
-/// user is dragging tiles around in must not relayout under their hand, and
-/// because the preview holds no runtime lease — nothing here samples anything.
+/// Frozen snapshot, history and capture time for an inspector preview. Holding them stable
+/// prevents relayout during dragging; the preview owns no runtime lease.
 struct MonitorBoardPreview: Equatable {
     /// Which tile a preview draws. Split out of the view so the choice is
     /// assertable without a rendering host.

@@ -206,10 +206,7 @@ private struct BookmarkTile: View {
 
     // MARK: Thumbnail tile
 
-    /// Poster as an `overlay` rather than a ZStack sibling: `scaledToFill` reports
-    /// the *scaled* size, so as a sibling it grew the tile to the thumbnail's own
-    /// aspect ratio and bled into the neighbouring grid column. See the same note
-    /// in `ThumbnailCard`.
+    /// An overlay keeps scaled-to-fill artwork from changing the tile’s aspect ratio.
     private var thumbnailTile: some View {
         tileBackground
             .overlay { tileContent }
@@ -222,9 +219,7 @@ private struct BookmarkTile: View {
             .overlay(alignment: .bottom) { bottomBand }
     }
 
-    /// Renaming takes the band's place rather than sitting inside it: the field is a full-height
-    /// control and the band is one line of type. Clicking the title used to start the rename; on
-    /// the picture that affordance had no visual tell, so it now lives only in the context menu and the VoiceOver action, where it's already spelled out.
+    /// The full-height rename field replaces the single-line title band.
     @ViewBuilder
     private var bottomBand: some View {
         if isRenaming {
