@@ -10,6 +10,14 @@ enum WPESceneProjectSchemaLoader {
         let schema: WallpaperEngineProjectPropertySchema?
         let log: String
         let isExpectedAbsence: Bool
+        let failure: WallpaperFailureCause?
+
+        init(schema: WallpaperEngineProjectPropertySchema?, log: String, isExpectedAbsence: Bool, failure: WallpaperFailureCause? = nil) {
+            self.schema = schema
+            self.log = log
+            self.isExpectedAbsence = isExpectedAbsence
+            self.failure = failure
+        }
     }
 
     static func load(
@@ -21,7 +29,8 @@ enum WPESceneProjectSchemaLoader {
             return Outcome(
                 schema: nil,
                 log: "skip - unsafe cacheRelativePath (\(descriptor.cacheRelativePath))",
-                isExpectedAbsence: true
+                isExpectedAbsence: false,
+                failure: WallpaperFailureCause(code: "schema.unsafe_path", reason: String(localized: "The project settings path is not safe to open.", bundle: .appLanguage))
             )
         }
 
@@ -30,7 +39,7 @@ enum WPESceneProjectSchemaLoader {
         let workshopID = descriptor.workshopID
 
         return await Task.detached(priority: .userInitiated) {
-            if let supportRoot,
+            if descriptor.assetStorage == .cache, let supportRoot,
                let outcome = readFromCache(
                    supportRoot: supportRoot,
                    cacheRelativePath: cacheRelativePath,
@@ -43,7 +52,8 @@ enum WPESceneProjectSchemaLoader {
                 return Outcome(
                     schema: nil,
                     log: "no cached project.json and wpeOrigin missing source bookmark for workshop=\(workshopID)",
-                    isExpectedAbsence: false
+                    isExpectedAbsence: false,
+                    failure: WallpaperFailureCause(code: "schema.source_missing", reason: String(localized: "The project settings source is unavailable. Choose the project folder again.", bundle: .appLanguage))
                 )
             }
             return readFromBookmark(bookmark: bookmark, workshopID: workshopID)
@@ -73,7 +83,8 @@ enum WPESceneProjectSchemaLoader {
             return Outcome(
                 schema: nil,
                 log: "project.json read/parse failed for workshop=\(workshopID) at \(folderURL.path) (\(error.localizedDescription))",
-                isExpectedAbsence: true
+                isExpectedAbsence: false,
+                failure: SceneFailureCause.make(error)
             )
         }
     }
@@ -90,7 +101,8 @@ enum WPESceneProjectSchemaLoader {
             return Outcome(
                 schema: nil,
                 log: "bookmark resolve failed for workshop=\(workshopID) (\(failure.localizedDescription))",
-                isExpectedAbsence: false
+                isExpectedAbsence: false,
+                failure: SceneFailureCause.make(failure)
             )
         case .success(let resolved):
             do {
@@ -102,7 +114,8 @@ enum WPESceneProjectSchemaLoader {
                 return Outcome(
                     schema: nil,
                     log: "project.json read/parse failed for workshop=\(workshopID) at \(resolved.url.path) (\(error.localizedDescription))",
-                    isExpectedAbsence: true
+                    isExpectedAbsence: false,
+                    failure: SceneFailureCause.make(error)
                 )
             }
         }

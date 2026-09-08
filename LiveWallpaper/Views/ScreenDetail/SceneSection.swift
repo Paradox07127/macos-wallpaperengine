@@ -55,13 +55,6 @@ struct SceneSection: View {
             Task { @MainActor in reloadHistory() }
         }
         .confirmDestructive($pendingDestructive)
-        .errorAlert(
-            "Apply Failed",
-            error: Binding<AppError?>(
-                get: { screenManager.wpeImportTracker.error(for: screen.id) },
-                set: { if $0 == nil { screenManager.wpeImportTracker.clearError(for: screen.id) } }
-            )
-        )
     }
 
     // MARK: - States

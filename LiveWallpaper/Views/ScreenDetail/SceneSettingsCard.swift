@@ -10,6 +10,7 @@ struct WPESceneCustomSettingsCard: View {
     var screen: Screen
     var schema: WallpaperEngineProjectPropertySchema
     @Binding var descriptor: SceneDescriptor
+    var attemptID: UUID?
 
     @Environment(ScreenManager.self) private var screenManager
     @AppStorage("Inspector.WPESceneCustomSettingsExpanded") private var isExpanded = true
@@ -79,7 +80,13 @@ struct WPESceneCustomSettingsCard: View {
             // After the sync, so the badges describe the increment now shown.
             refreshPresetDerivedState()
         }
-        .onDisappear { flushPendingCommit() }
+        .onDisappear {
+            if attemptID != nil {
+                commitTask?.cancel(); commitTask = nil
+            } else {
+                flushPendingCommit()
+            }
+        }
     }
 
     /// A sunken well inside the card's raised surface. The preset block governs
@@ -163,7 +170,11 @@ struct WPESceneCustomSettingsCard: View {
         guard descriptor != next else { return }
         descriptor = next
         synchronizeEditor(force: true)
-        await screenManager.updateSceneDescriptor(next, for: screen)
+        if let attemptID {
+            screenManager.updateAttemptDescriptor(next, attemptID: attemptID, for: screen)
+        } else {
+            await screenManager.updateSceneDescriptor(next, for: screen)
+        }
     }
 
     /// Snapshots the preset layer *and* the increment, so the new preset alone
@@ -631,7 +642,11 @@ struct WPESceneCustomSettingsCard: View {
         let next = descriptor.withPropertyOverrides(editor.overrides)
         guard descriptor != next else { return }
         descriptor = next
-        await screenManager.updateSceneDescriptor(next, for: screen)
+        if let attemptID {
+            screenManager.updateAttemptDescriptor(next, attemptID: attemptID, for: screen)
+        } else {
+            await screenManager.updateSceneDescriptor(next, for: screen)
+        }
     }
 
     private func flushPendingCommit() {

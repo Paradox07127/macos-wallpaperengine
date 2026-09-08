@@ -187,6 +187,9 @@ final class WorkshopFolderImportCoordinator {
                     clearsDeleteTombstone: deliberate
                 )
                 return .imported
+            case let .sceneFailure(cause, _, _):
+                Logger.warning("Failed to read a scene during import: \(cause.reason)", category: .workshop)
+                return .unreadable
             case let .rejected(reason):
                 Logger.info("Skipped a project during import: \(reason)", category: .workshop)
                 return .rejected

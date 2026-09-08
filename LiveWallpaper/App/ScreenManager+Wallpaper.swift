@@ -34,6 +34,8 @@ extension ScreenManager {
     /// Bump latest-intent even for no-op selects (cancel older prepared candidates).
     @discardableResult
     func beginExplicitWallpaperSelection(for screen: Screen) -> Int {
+        wallpaperLoads.clear(for: screen)
+        setTransientRuntimeError(nil, for: screen.id)
         #if !LITE_BUILD
         // Retire any older WPE import so a late proposal cannot re-win latest.
         _ = wpeImportTracker.bumpGeneration(for: screen.id)
@@ -120,6 +122,10 @@ extension ScreenManager {
     }
 
     func retryRuntimeSession(for screen: Screen) {
+        if wallpaperLoads.attempt(for: screen)?.phase == .failed {
+            retryWallpaperAttempt(for: screen)
+            return
+        }
         Task { @MainActor [weak self, weak screen] in
             guard let self, let screen, !self.isTerminating else { return }
             // Transactional scene rebuild so a failed reload keeps the last frame.
@@ -153,7 +159,11 @@ extension ScreenManager {
         }
         #if !LITE_BUILD
         if let session = session as? SceneWallpaperSession {
-            session.onRuntimeErrorChange = notify
+            session.onRuntimeErrorChange = { [weak self, weak session] in
+                notify()
+                guard let self, let session else { return }
+                self.captureActiveSceneFailure(session)
+            }
             // A static scene reports idle after load: re-fold the App Nap
             // assertion on the renderer's own transitions, not only on policy events.
             session.onRuntimeActivityChange = { [weak self] in

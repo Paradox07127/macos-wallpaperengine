@@ -22,6 +22,10 @@ struct RuntimeErrorBanner: View {
                 Text(verbatim: sanitizedTitle)
                     .font(.callout.weight(.medium))
                     .lineLimit(2)
+                Text(verbatim: LogPrivacyRedactor.scrub(error.userMessage))
+                    .font(DesignTokens.Typography.body)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 if let subtitle = error.subtitlePath, !subtitle.isEmpty {
                     Text(verbatim: LogPrivacyRedactor.scrub(subtitle))
                         .font(DesignTokens.Typography.codeCaption)

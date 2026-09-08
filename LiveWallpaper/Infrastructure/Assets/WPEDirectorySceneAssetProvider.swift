@@ -19,11 +19,9 @@ struct WPEDirectorySceneAssetProvider: WPESceneAssetProvider {
         guard isRegularFile(url) else {
             throw WPESceneAssetProviderError.fileMissing(relativePath)
         }
-        do {
-            return try Data(contentsOf: url, options: [.mappedIfSafe])
-        } catch {
-            throw WPESceneAssetProviderError.unreadable(relativePath)
-        }
+        // Keep the system's domain/code and reason (e.g. access denied or I/O)
+        // instead of replacing them with only the file name.
+        return try Data(contentsOf: url, options: [.mappedIfSafe])
     }
 
     func stagedURL(atRelativePath relativePath: String) throws -> URL {

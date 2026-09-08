@@ -9,6 +9,8 @@ struct ReportBugSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var sanitizedLogURL: URL?
+    @State private var browserFailed = false
+    @State private var copied = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -45,7 +47,7 @@ struct ReportBugSheet: View {
             icon: "ladybug.fill",
             title: "Report a Bug",
             iconTint: DesignTokens.Colors.Status.danger,
-            subtitle: "Review the diagnostics before continuing. Published GitHub issues are public."
+            subtitle: "Continuing sends the prefilled diagnostics to GitHub. Review them first; published issues are public."
         )
     }
 
@@ -69,6 +71,11 @@ struct ReportBugSheet: View {
             )
             .frame(maxHeight: .infinity)
 
+            if browserFailed {
+                Label("The browser could not be opened. You can copy the diagnostics below.", systemImage: "exclamationmark.triangle")
+                    .font(DesignTokens.Typography.body)
+                    .foregroundStyle(DesignTokens.Colors.Status.warning)
+            }
             if let logURL = sanitizedLogURL {
                 Label {
                     Text("Attach the sanitized log from Finder to the GitHub issue.")
@@ -87,9 +94,12 @@ struct ReportBugSheet: View {
         SheetFooterBar(
             primaryTitle: "Continue in Browser",
             primaryAction: {
-                BugReporter.openIssueInBrowser(report.issueURL)
-                onDismiss()
-                dismiss()
+                if BugReporter.openIssueInBrowser(report.issueURL) {
+                    onDismiss()
+                    dismiss()
+                } else {
+                    browserFailed = true
+                }
             },
             cancelTitle: "Cancel",
             cancelAction: {
@@ -97,6 +107,13 @@ struct ReportBugSheet: View {
                 dismiss()
             }
         ) {
+            Button {
+                NSPasteboard.general.clearContents()
+                copied = NSPasteboard.general.setString(report.diagnosticMarkdown, forType: .string)
+            } label: {
+                Label(copied ? "Copied" : "Copy Diagnostics", systemImage: copied ? "checkmark" : "doc.on.doc")
+            }
+            .buttonStyle(.bordered)
             if let logURL = sanitizedLogURL {
                 Button {
                     BugReporter.revealLogInFinder(logURL)

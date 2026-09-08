@@ -47,6 +47,7 @@ final class ScreenManager {
     @ObservationIgnored let memoryPressureWatcher: any MemoryPressureWatching
     @ObservationIgnored let restoresSavedWallpapersOnScreenRefresh: Bool
     @ObservationIgnored var lastScreenSignatures: [CGDirectDisplayID: ScreenConfigurationSignature] = [:]
+    let wallpaperLoads = WallpaperLoadState()
     @ObservationIgnored var transientRuntimeErrors: [CGDirectDisplayID: WallpaperRuntimeError] = [:]
     /// App Nap throttles an `LSUIElement` accessory app's render loop to ~1fps the moment another app becomes active, freezing the wallpaper whenever the user focuses any other window.
     @ObservationIgnored var renderingActivityToken: (any NSObjectProtocol)?
@@ -194,6 +195,9 @@ final class ScreenManager {
                 intent: .proposal,
                 beforeCommit: beforeCommit
             )
+        },
+        reportFailure: { [weak self] screen, cause, origin, descriptor in
+            self?.recordSceneImportFailure(cause, origin: origin, descriptor: descriptor, for: screen)
         },
         persistOriginBookmarkRefresh: { [weak self] origin, refreshed in
             self?.persistRuntimeWPEBookmarkRefresh(origin: origin, with: refreshed)

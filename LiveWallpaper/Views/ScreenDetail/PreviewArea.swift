@@ -34,7 +34,9 @@ struct PreviewArea: View {
         ZStack {
             DesignTokens.Colors.pageBackground
 
-            if showsGuideEmptyState {
+            if let attempt = screenManager.inspectedWallpaperAttempt(for: screen) {
+                WallpaperAttemptPreview(screen: screen, attempt: attempt)
+            } else if showsGuideEmptyState {
                 EmptyStateGuideView(
                     onChooseVideo: onChooseVideo,
                     onChooseHTML: onChooseHTML,

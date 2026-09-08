@@ -83,7 +83,22 @@ struct DetailView: View {
 
     @ViewBuilder
     private var runtimeErrorBannerView: some View {
-        if let runtimeError {
+        if let attempt = screenManager.wallpaperLoads.attempt(for: screen), let failure = attempt.failure {
+            if selectedTab != .wallpaper || !attempt.isInspecting {
+                HStack(spacing: DesignTokens.Spacing.md) {
+                    Label("Last wallpaper application failed", systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(DesignTokens.Colors.Status.warning)
+                    Text(verbatim: failure.title).lineLimit(1)
+                    Spacer()
+                    Button("View Details") {
+                        screenManager.inspectWallpaperAttempt(true, for: screen)
+                        selectedTab = .wallpaper
+                    }.buttonStyle(.bordered)
+                }
+                .font(DesignTokens.Typography.body)
+                .padding(DesignTokens.Spacing.md)
+            }
+        } else if let runtimeError {
             let activeType = screen.runtimeSession?.wallpaperType ?? draft.selectedWallpaperType
             let canRePick = activeType == .video || activeType == .html
             RuntimeErrorBanner(
@@ -198,6 +213,9 @@ struct DetailView: View {
             )
         }
 
+        if screenManager.inspectedWallpaperAttempt(for: screen) != nil {
+            return DerivedViewState(showsGuideEmptyState: false, showsInspector: true, showsHeaderWallpaperActions: false)
+        }
         let config = screenManager.getConfiguration(for: screen)
         let hasRuntimeOrPreview = screen.runtimeSession != nil
             || draft.hasPreviewSource
@@ -372,9 +390,17 @@ struct DetailView: View {
         .confirmDestructive($pendingDestructive)
         .onAppear { scheduleConfigurationLoad() }
         .onDisappear { cleanupPreviewPlayer() }
+        .onChange(of: screenManager.inspectedWallpaperAttempt(for: screen)?.id) { loadScreenConfiguration() }
+        .onChange(of: screenManager.inspectedWallpaperAttempt(for: screen)?.configuration) { loadScreenConfiguration() }
         .onChange(of: screen.id) {
             cleanupPreviewPlayer()
             scheduleConfigurationLoad()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .selectScreenInSettings)) { notification in
+            if notification.userInfo?["screenID"] as? CGDirectDisplayID == screen.id,
+               notification.userInfo?["failureID"] != nil {
+                selectedTab = .wallpaper
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .wallpaperConfigurationDidChange)) { notification in
             guard let changedID = notification.userInfo?["screenID"] as? CGDirectDisplayID,
@@ -492,7 +518,17 @@ struct DetailView: View {
                 onWeatherIntensityChange: { screenManager.setWeatherIntensity($0, for: screen) }
             )
         } else {
+            #if !LITE_BUILD
+            if let attempt = screenManager.inspectedWallpaperAttempt(for: screen) {
+                AttemptSceneProperties(screen: screen, attempt: attempt)
+                    .id(attempt.id)
+                    .frame(width: width)
+            } else {
+                wallpaperInspectorPanel(width: width)
+            }
+            #else
             wallpaperInspectorPanel(width: width)
+            #endif
         }
     }
 
@@ -660,7 +696,7 @@ struct DetailView: View {
     }
 
     private func loadScreenConfiguration() {
-        let config = screenManager.getConfiguration(for: screen)
+        let config = screenManager.inspectedWallpaperAttempt(for: screen)?.configuration ?? screenManager.getConfiguration(for: screen)
         // Guarded: this runs on every `.wallpaperConfigurationDidChange`, which
         // every settings commit posts. Reassigning an identical draft rebuilt
         // the entire inspector — playback, security, HTML options, transform and
