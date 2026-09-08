@@ -38,12 +38,15 @@ struct NixieClockView: View {
         .accessibilityValue(Text(now, style: .time))
     }
 
-    private static let tubeWidth: CGFloat = 200
-    private static let tubeHeight: CGFloat = 420
+    // `nonisolated` throughout: `fittedSize` is a pure layout calculation its
+    // callers reach from outside the main actor, and `View` conformance would
+    // otherwise isolate these constants to it.
+    private nonisolated static let tubeWidth: CGFloat = 200
+    private nonisolated static let tubeHeight: CGFloat = 420
     // The assembly render shares the digit camera and adds 40 points below it for the plinth.
-    private static let designHeight: CGFloat = 460
-    private static let pairGap: CGFloat = 28
-    private static let designWidth = tubeWidth * 6 + pairGap * 2
+    private nonisolated static let designHeight: CGFloat = 460
+    private nonisolated static let pairGap: CGFloat = 28
+    private nonisolated static let designWidth = tubeWidth * 6 + pairGap * 2
 
     nonisolated static func fittedSize(in bounds: CGSize) -> CGSize {
         let scale = max(0, min(bounds.width / designWidth, bounds.height / designHeight))

@@ -104,6 +104,7 @@ Temporary Items
 .audit/
 
 .claude/
+.codegraph/
 
 .vm-bridge/
 cache/

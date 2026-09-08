@@ -1233,6 +1233,10 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         case .oneMinusSource1Color: "inv-src1-color"
         case .source1Alpha: "src1-alpha"
         case .oneMinusSource1Alpha: "inv-src1-alpha"
+        // Metal 4 pipeline specialization placeholder, not a real factor: no
+        // D3D11 counterpart exists, so it gets its own token rather than
+        // colliding with one the Windows side can emit.
+        case .unspecialized: "unspecialized"
         @unknown default: "mtl-\(factor.rawValue)"
         }
     }
@@ -1244,6 +1248,7 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         case .reverseSubtract: "rev-subtract"
         case .min: "min"
         case .max: "max"
+        case .unspecialized: "unspecialized"
         @unknown default: "mtl-\(operation.rawValue)"
         }
     }

@@ -31,96 +31,111 @@ struct Row: View {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     var body: some View {
+        rowContent
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .frame(height: 50)
+            .background(rowBackground)
+            .overlay(
+                RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous)
+                    .strokeBorder(strokeColor, lineWidth: strokeWidth)
+            )
+            .shadow(color: shadowColor, radius: shadowRadius, x: 0, y: shadowOffset)
+            .offset(y: hoverLiftOffset)
+            .contentShape(Rectangle())
+            .onHover { isHovering = $0 }
+            .onTapGesture(count: 2) { onPlayNow() }
+            .contextMenu { rowMenuItems }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(accessibilityLabel)
+            .accessibilityAction { onPlayNow() }
+            .accessibilityAction(named: Text("Set as Primary")) { onSetPrimary() }
+            .accessibilityAction(named: Text("Play Now")) { onPlayNow() }
+            .accessibilityAction(named: Text("Move Up")) {
+                if canMoveUp {
+                    onMoveUp()
+                }
+            }
+            .accessibilityAction(named: Text("Move Down")) {
+                if canMoveDown {
+                    onMoveDown()
+                }
+            }
+            .accessibilityAction(named: Text("Remove")) { onRemove() }
+            .task(id: entry.bookmark) {
+                let loaded = await MetadataService.shared.metadata(for: entry.bookmark)
+                guard !Task.isCancelled else { return }
+                metadata = loaded
+            }
+    }
+
+    /// Split out of `body`: as a single expression the row cost the type
+    /// checker ~1.1s, over its 300ms warning limit. Modifier order is
+    /// unchanged — only the sub-expressions are named.
+    private var rowContent: some View {
         HStack(spacing: 10) {
-            leadingHandle
-                .frame(width: 28, height: 44)
-                .contentShape(Rectangle())
-                .gesture(
-                    DragGesture(minimumDistance: 8, coordinateSpace: .named(playlistCoordSpaceName))
-                        .onChanged { value in
-                            onDragChanged(value.translation.height, value.location.y)
-                        }
-                        .onEnded { _ in
-                            onDragEnded()
-                        }
-                )
-                .onHover { hovering in
-                    guard isHandleHovering != hovering else { return }
-                    isHandleHovering = hovering
-                    if hovering {
-                        (isBeingDragged ? NSCursor.closedHand : NSCursor.openHand).push()
-                    } else {
-                        NSCursor.pop()
-                    }
-                }
-                .onChange(of: isBeingDragged) { _, dragging in
-                    guard isHandleHovering else { return }
-                    NSCursor.pop()
-                    (dragging ? NSCursor.closedHand : NSCursor.openHand).push()
-                }
-                .onDisappear {
-                    if isHandleHovering {
-                        NSCursor.pop()
-                        isHandleHovering = false
-                    }
-                }
+            dragHandleSlot
 
             AsyncRowThumbnail(bookmark: entry.bookmark)
 
-            VStack(alignment: .leading, spacing: 1) {
-                Text(verbatim: entry.name)
-                    .font(entry.isPlaying ? DesignTokens.Typography.bodyEmphasized : DesignTokens.Typography.body)
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .help(Text(verbatim: entry.name))
-
-                Text(verbatim: metadata.subtitle)
-                    .font(DesignTokens.Typography.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .layoutPriority(1)
+            titleColumn
 
             trailingControls
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .frame(height: 50)
-        .background(rowBackground)
-        .overlay(
-            RoundedRectangle(cornerRadius: DesignTokens.Corner.sm, style: .continuous)
-                .strokeBorder(strokeColor, lineWidth: strokeWidth)
-        )
-        .shadow(color: shadowColor, radius: shadowRadius, x: 0, y: shadowOffset)
-        .offset(y: hoverLiftOffset)
-        .contentShape(Rectangle())
-        .onHover { isHovering = $0 }
-        .onTapGesture(count: 2) { onPlayNow() }
-        .contextMenu { rowMenuItems }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(accessibilityLabel)
-        .accessibilityAction { onPlayNow() }
-        .accessibilityAction(named: Text("Set as Primary")) { onSetPrimary() }
-        .accessibilityAction(named: Text("Play Now")) { onPlayNow() }
-        .accessibilityAction(named: Text("Move Up")) {
-            if canMoveUp {
-                onMoveUp()
+    }
+
+    private var dragHandleSlot: some View {
+        leadingHandle
+            .frame(width: 28, height: 44)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 8, coordinateSpace: .named(playlistCoordSpaceName))
+                    .onChanged { value in
+                        onDragChanged(value.translation.height, value.location.y)
+                    }
+                    .onEnded { _ in
+                        onDragEnded()
+                    }
+            )
+            .onHover { hovering in
+                guard isHandleHovering != hovering else { return }
+                isHandleHovering = hovering
+                if hovering {
+                    (isBeingDragged ? NSCursor.closedHand : NSCursor.openHand).push()
+                } else {
+                    NSCursor.pop()
+                }
             }
-        }
-        .accessibilityAction(named: Text("Move Down")) {
-            if canMoveDown {
-                onMoveDown()
+            .onChange(of: isBeingDragged) { _, dragging in
+                guard isHandleHovering else { return }
+                NSCursor.pop()
+                (dragging ? NSCursor.closedHand : NSCursor.openHand).push()
             }
+            .onDisappear {
+                if isHandleHovering {
+                    NSCursor.pop()
+                    isHandleHovering = false
+                }
+            }
+    }
+
+    private var titleColumn: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(verbatim: entry.name)
+                .font(entry.isPlaying ? DesignTokens.Typography.bodyEmphasized : DesignTokens.Typography.body)
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .help(Text(verbatim: entry.name))
+
+            Text(verbatim: metadata.subtitle)
+                .font(DesignTokens.Typography.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
         }
-        .accessibilityAction(named: Text("Remove")) { onRemove() }
-        .task(id: entry.bookmark) {
-            let loaded = await MetadataService.shared.metadata(for: entry.bookmark)
-            guard !Task.isCancelled else { return }
-            metadata = loaded
-        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .layoutPriority(1)
     }
 
     private var hoverLiftOffset: CGFloat {

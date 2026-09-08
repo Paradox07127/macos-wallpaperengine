@@ -40,12 +40,15 @@ struct MonitorChromeScale: ViewModifier {
     /// magnifying scale — this only ever gives chrome its size back, never more.
     /// Capped because a near-zero scale would otherwise ask for a box larger
     /// than the board and every panel would clamp to the same corner.
-    static func boost(forRenderScale renderScale: CGFloat) -> CGFloat {
+    /// `nonisolated`: pure arithmetic, and `MonitorBoardChromeMetrics` — a
+    /// plain struct — is its main caller. `ViewModifier` conformance would
+    /// otherwise put both of these on the main actor.
+    nonisolated static func boost(forRenderScale renderScale: CGFloat) -> CGFloat {
         guard renderScale.isFinite, renderScale > 0, renderScale < 1 else { return 1 }
         return min(1 / renderScale, maxBoost)
     }
 
-    static let maxBoost: CGFloat = 12
+    nonisolated static let maxBoost: CGFloat = 12
 }
 
 extension View {
