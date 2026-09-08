@@ -375,6 +375,10 @@ actor Runtime {
     private var activeOptions: MonitorRuntimeOptions?
     /// The display cache survives a pause even though activeOptions becomes nil.
     private var retainedSnapshotOptions: MonitorRuntimeOptions?
+    /// Last shape reported by the pipeline log. Occlusion pauses the lease and
+    /// resumes it on every full-screen ⇄ desktop switch, and each resume rebuilds
+    /// an identical pipeline — worth one line the first time, noise thereafter.
+    private var loggedPipelineShape: String?
     private var resolvedRoots: (claude: URL?, codex: URL?)?
     private var rebuildTask: Task<Void, Never>?
     private var rebuildRevision: UInt64 = 0
@@ -685,7 +689,11 @@ actor Runtime {
             // A source start is also reentrant.
             guard lifecycle == .running else { return }
         }
-        monitorSourcesLog.info("🛰️ pipeline: agents=\(resolved.agents) claudeRoot=\(resolved.claudeRoot != nil) codexRoot=\(resolved.codexRoot != nil) sources=\(built.map(\.sourceID).joined(separator: ","), privacy: .public)")
+        let pipelineShape = "agents=\(resolved.agents) claudeRoot=\(resolved.claudeRoot != nil) codexRoot=\(resolved.codexRoot != nil) sources=\(built.map(\.sourceID).joined(separator: ","))"
+        if pipelineShape != loggedPipelineShape {
+            loggedPipelineShape = pipelineShape
+            monitorSourcesLog.info("🛰️ pipeline: \(pipelineShape, privacy: .public)")
+        }
 
     }
 
@@ -706,6 +714,7 @@ actor Runtime {
         await stopPipeline()
         activeOptions = nil
         retainedSnapshotOptions = nil
+        loggedPipelineShape = nil
         broker.clear()
         await releaseGrants()
         rebuildTask = nil

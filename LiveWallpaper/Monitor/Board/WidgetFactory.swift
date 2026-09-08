@@ -64,7 +64,7 @@ enum WidgetFactory {
         case .systemOverview:
             SystemOverviewWidgetView(context: context)
         case .nixieClock:
-            NixieClockWidgetView(context: context)
+            NixieClockView(now: context.now)
         case .cpu:
             CPUWidgetView(context: context)
         case .memory:

@@ -12,8 +12,10 @@ struct LogPrivacySourceAuditTests {
             "self.descriptor.workshopID": 1,
             "self.rendererSignpostID": 1,
         ],
+        // Module flags, grant-resolved booleans and source IDs — no paths, no
+        // user data. Built once into `pipelineShape` so the line can be deduped.
         "LiveWallpaper/Monitor/Runtime.swift": [
-            "built.map(\\.sourceID).joined(separator:\",\")": 1,
+            "pipelineShape": 1,
         ],
         "LiveWallpaper/Monitor/SourceAuthorization.swift": [
             "provider.defaultDirectoryName": 6,

@@ -299,6 +299,14 @@ final class WPEParticleSystem {
     var groupOpacityMask: MTLTexture?
     var groupTint: SIMD3<Float> = SIMD3<Float>(1, 1, 1)
     var pointerCentered: SIMD2<Float>?
+    /// Live value of the object's `instanceoverride.alpha` script, ticked by the
+    /// renderer. 1 when the object has no such script — and it deliberately KEEPS
+    /// its last ticked value if the script later fails, matching how the layer
+    /// families freeze rather than snap back.
+    var instanceAlphaScale: Float = 1
+    /// Scene object whose `instanceoverride.alpha` script drives `instanceAlphaScale`.
+    /// nil ⇒ no script; the renderer skips this system when fanning tick results out.
+    var instanceAlphaScriptObjectID: String?
     /// 16-band mono spectrum for this frame (renderer-set); nil ⇒ silence ⇒ scale 1.
     var audioSpectrum16: [Float]?
 
@@ -759,6 +767,9 @@ final class WPEParticleSystem {
         if let overrideAlpha = definition.overrideAlphaAnimation,
            let scale = overrideAlpha.scalar(at: systemElapsed) {
             alpha *= Float(max(0, scale))
+        }
+        if instanceAlphaScale != 1 {
+            alpha *= max(0, instanceAlphaScale)
         }
         if let oscillateAlpha = definition.oscillateAlpha {
             alpha *= Float(oscillateAlpha.factor(

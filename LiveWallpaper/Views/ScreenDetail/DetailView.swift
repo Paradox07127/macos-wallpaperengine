@@ -26,12 +26,14 @@ enum OverlayKind: Hashable, CaseIterable {
     case weather
     case monitor
     case music
+    case clock
 
     var title: LocalizedStringKey {
         switch self {
         case .weather: "Weather"
         case .monitor: "Widgets"
         case .music: "Music"
+        case .clock: "Clock"
         }
     }
 
@@ -43,14 +45,15 @@ enum OverlayKind: Hashable, CaseIterable {
         case .weather: String(localized: "Weather", bundle: .appLanguage, comment: "Overlay name inside the apply-to-all confirmation.")
         case .monitor: String(localized: "Widgets", bundle: .appLanguage, comment: "Overlay name inside the apply-to-all confirmation.")
         case .music: String(localized: "Music", bundle: .appLanguage, comment: "Overlay name inside the apply-to-all confirmation.")
+        case .clock: String(localized: "Clock", bundle: .appLanguage, comment: "Independent decorative clock overlay.")
         }
     }
 
     var feature: ProductFeature {
         switch self {
-        case .weather: return .videoEffects
-        // Music rides on the monitor board, so it ships wherever Monitor does.
-        case .monitor, .music: return .monitorOverlay
+        case .weather: .videoEffects
+        // Decorative overlays ship wherever the monitor overlay feature does.
+        case .monitor, .music, .clock: .monitorOverlay
         }
     }
 }

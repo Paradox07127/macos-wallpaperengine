@@ -17,6 +17,7 @@ public enum MonitorBoardMetrics {
 
 public enum MonitorWidgetKind: String, Codable, Sendable, CaseIterable, Identifiable {
     case systemOverview
+    /// Decode-only compatibility for the pre-Clock-section demo; the overlay migrates it out.
     case nixieClock
     case cpu
     case memory
@@ -31,6 +32,11 @@ public enum MonitorWidgetKind: String, Codable, Sendable, CaseIterable, Identifi
     case weather
 
     public var id: String { rawValue }
+
+    public static let allCases: [Self] = [
+        .systemOverview, .cpu, .memory, .gpu, .network, .disk,
+        .power, .processes, .fleet, .aiEngine, .weather,
+    ]
 
     /// Grid cells matching Apple widget frames (S 1×1 / M 2×1 / L 2×2).
     public func cellSize(for size: MonitorWidgetSize) -> (columns: Int, rows: Int) {

@@ -9,13 +9,9 @@ enum NixieOverlayPreview {
         guard let screen = NSScreen.main ?? NSScreen.screens.first,
               let screenID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
         else { return }
-        let placement = MonitorWidgetPlacement(
-            kind: .nixieClock, size: .medium,
-            x: max(0, 0.5 - MonitorBoardMetrics.cellPitch / screen.frame.width), y: 0.66
-        )
-        let board = MonitorBoardConfiguration(widgets: [placement], mouseInteractionEnabled: false)
+        let clock = ClockOverlayConfiguration(enabled: true)
         OverlayController.shared.apply(
-            overlay: MonitorOverlayConfiguration(enabled: true, level: .desktop, board: board),
+            overlay: MonitorOverlayConfiguration(clock: clock),
             screenID: screenID, screenFrame: screen.frame
         )
     }

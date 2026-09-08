@@ -413,6 +413,7 @@ extension WPEMetalSceneRenderer {
         streamingThreshold: Int,
         maxSourceEdge: Int? = nil
     ) async throws -> WPEParallelTextureResult {
+        let colorSpace = WPEMetalTextureColorSpaceClassifier.colorSpace(forReference: relativePath)
         try Task.checkCancellation()
         var lastError: Error?
         for candidate in candidates {
@@ -434,7 +435,8 @@ extension WPEMetalSceneRenderer {
                             return .needsOnActor
                         }
                         return .staticTexture(try await loader.makeTexture(
-                            from: payload, label: label, maxSourceEdge: maxSourceEdge
+                            from: payload, label: label, colorSpace: colorSpace,
+                            maxSourceEdge: maxSourceEdge
                         ))
                     } catch is CancellationError {
                         throw CancellationError()
@@ -450,6 +452,7 @@ extension WPEMetalSceneRenderer {
                 return .staticTexture(try await loader.makeTexture(
                     from: resolved.image,
                     label: label,
+                    colorSpace: colorSpace,
                     maxSourceEdge: maxSourceEdge,
                     sourcePixelSize: (resolved.sourcePixelWidth, resolved.sourcePixelHeight)
                 ))
@@ -640,13 +643,18 @@ extension WPEMetalSceneRenderer {
     /// texture's PHYSICAL dimensions — the particle sprite-grid divides atlas
     /// pixels by sidecar frame size, so a reduced-mip upload would halve its
     /// cols/rows. Only the plain scene-layer path passes a cap.
+    /// `colorSpace` nil ⇒ classify from the authored reference, so engine data
+    /// namespaces load linear. Callers that already know the role (the particle
+    /// refraction normal) pass it explicitly and win.
     func makeTextureResource(
         relativePath: String,
         label: String,
-        colorSpace: WPEMetalColorSpace = .sRGB,
+        colorSpace: WPEMetalColorSpace? = nil,
         maxSourceEdge: Int? = nil,
         on actor: isolated WPEDisplayRenderActor
     ) async throws -> WPELoadedTextureResource {
+        let colorSpace = colorSpace
+            ?? WPEMetalTextureColorSpaceClassifier.colorSpace(forReference: relativePath)
         try Task.checkCancellation()
         var lastError: Error?
         for candidate in textureCandidates(for: relativePath) {

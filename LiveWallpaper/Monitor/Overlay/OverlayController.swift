@@ -1,17 +1,19 @@
 import AppKit
 import LiveWallpaperCore
 
-/// The two independently switchable overlay modules. Each owns its own window
+/// Independently switchable overlay modules. Each owns its own window
 /// per display, so Music can float on top while the Monitor board stays on the
 /// desktop — or run with the Monitor board switched off entirely.
 enum MonitorOverlayModule: String, CaseIterable, Hashable, Sendable {
     case monitor
     case music
+    case clock
 
     func isEnabled(in overlay: MonitorOverlayConfiguration) -> Bool {
         switch self {
         case .monitor: overlay.enabled
         case .music: overlay.music.enabled
+        case .clock: overlay.clock.enabled
         }
     }
 
@@ -19,6 +21,7 @@ enum MonitorOverlayModule: String, CaseIterable, Hashable, Sendable {
         switch self {
         case .monitor: overlay.level
         case .music: overlay.music.level
+        case .clock: overlay.clock.level
         }
     }
 }
@@ -47,7 +50,7 @@ struct MonitorOverlayVisibilityDecision: Equatable, Sendable {
     var suspendedHostKeys: Set<MonitorOverlayHostKey>
 
     var pumpShouldRun: Bool {
-        !visibleHostKeys.isEmpty
+        visibleHostKeys.contains { $0.module != .clock }
     }
 }
 
@@ -66,9 +69,10 @@ enum MonitorOverlayVisibilityPolicy {
         }
 
         let allHostKeys = Set(hosts.map(\.key))
+        let dataHostKeys = Set(allHostKeys.filter { $0.module != .clock })
         guard !isUserAbsent else {
             return MonitorOverlayVisibilityDecision(
-                runtimeDisposition: .paused,
+                runtimeDisposition: dataHostKeys.isEmpty ? .released : .paused,
                 visibleHostKeys: [],
                 suspendedHostKeys: allHostKeys
             )
@@ -83,7 +87,8 @@ enum MonitorOverlayVisibilityPolicy {
             }
         })
         return MonitorOverlayVisibilityDecision(
-            runtimeDisposition: visibleHostKeys.isEmpty ? .paused : .active,
+            runtimeDisposition: dataHostKeys.isEmpty ? .released
+                : visibleHostKeys.isDisjoint(with: dataHostKeys) ? .paused : .active,
             visibleHostKeys: visibleHostKeys,
             suspendedHostKeys: allHostKeys.subtracting(visibleHostKeys)
         )
@@ -101,12 +106,11 @@ final class OverlayController: NSObject {
     /// Global + local mouse monitors, live only while a host is `.widgetsOnly`.
     private var pointerMonitors: [Any] = []
 
-    /// The two modules render different things from different configurations,
-    /// so a host is one or the other — never a board filtered down to half its
-    /// widgets.
+    /// Each module owns its content independently of the widget board.
     private enum HostContent {
         case monitor(HostView, MonitorBoardConfiguration)
         case music(MusicHostView, MusicOverlayConfiguration)
+        case clock(ClockHostView, ClockOverlayConfiguration)
     }
 
     @MainActor
@@ -144,6 +148,7 @@ final class OverlayController: NSObject {
             // The layer has no edit mode of its own: either its controls want
             // the pointer or the window is click-through.
             case .music(let view, _): view.wantsPointer ? .widgetsOnly : .none
+            case .clock: .none
             }
         }
 
@@ -157,6 +162,7 @@ final class OverlayController: NSObject {
             switch content {
             case .monitor(let view, _): view.push(snapshot)
             case .music(let view, _): view.push(snapshot)
+            case .clock: break
             }
         }
 
@@ -164,6 +170,7 @@ final class OverlayController: NSObject {
             switch content {
             case .monitor(let view, _): view.setSuspended(suspended)
             case .music(let view, _): view.setSuspended(suspended)
+            case let .clock(view, _): view.setSuspended(suspended)
             }
         }
 
@@ -171,6 +178,7 @@ final class OverlayController: NSObject {
             switch content {
             case .monitor(let view, _): view.acceptsPointer(atLocalPoint: point)
             case .music(let view, _): view.acceptsPointer(atLocalPoint: point)
+            case .clock: false
             }
         }
 
@@ -178,6 +186,7 @@ final class OverlayController: NSObject {
             switch content {
             case .monitor(let view, _): view
             case .music(let view, _): view
+            case let .clock(view, _): view
             }
         }
     }
@@ -302,6 +311,9 @@ final class OverlayController: NSObject {
             case .music(let view, _):
                 host.content = .music(view, overlay.music)
                 view.apply(configuration: overlay.music, safeArea: safeArea)
+            case let .clock(view, _):
+                host.content = .clock(view, overlay.clock)
+                view.apply(configuration: overlay.clock, safeArea: safeArea)
             }
             updateInteractive(host)
             reconcileVisibilityAndRuntime()
@@ -350,6 +362,12 @@ final class OverlayController: NSObject {
             music.setSuspended(true)
             window.contentView = music
             host = Host(window: window, content: .music(music, overlay.music), level: level)
+        case .clock:
+            let clock = ClockHostView(frame: frame, configuration: overlay.clock, safeArea: safeArea)
+            clock.autoresizingMask = [.width, .height]
+            clock.setSuspended(true)
+            window.contentView = clock
+            host = Host(window: window, content: .clock(clock, overlay.clock), level: level)
         }
         hosts[key] = host
 
@@ -598,7 +616,8 @@ final class OverlayController: NSObject {
     /// Monitor after Music let it steal Music's transport-control clicks with
     /// no way to recover short of disabling and re-enabling both.
     nonisolated static func stackingOrder(_ modules: [MonitorOverlayModule]) -> [MonitorOverlayModule] {
-        modules.sorted { lhs, rhs in (lhs == .music ? 1 : 0) < (rhs == .music ? 1 : 0) }
+        let order: [MonitorOverlayModule] = [.monitor, .clock, .music]
+        return order.filter { modules.contains($0) }
     }
 
     private func restackSameLevelHosts() {
@@ -653,6 +672,7 @@ final class OverlayController: NSObject {
                 // The tap and its FFT only pay for themselves while a layer
                 // actually draws the reactive effects.
                 musicWantsAudio = musicWantsAudio || NowPlayingOptions(configuration.options).audioReactive
+            case .clock: break
             }
         }
         return MonitorRuntimeOptions(
@@ -771,7 +791,7 @@ final class OverlayController: NSObject {
             }
         }
 
-        if hosts.values.contains(where: \.isDeliveringSnapshots) {
+        if visibilityDecision.pumpShouldRun {
             startPump()
         } else {
             stopPump()
