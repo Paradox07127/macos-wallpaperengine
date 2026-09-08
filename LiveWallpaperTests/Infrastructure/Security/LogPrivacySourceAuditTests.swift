@@ -8,9 +8,12 @@ struct LogPrivacySourceAuditTests {
     private typealias ReviewedPrivacyAlias = OSLogPrivacy
 
     private static let allowedPublicExpressions: [String: [String: Int]] = [
+        // `frameRendered` is the signpost's own success flag: a Bool that tells an
+        // Instruments trace an aborted frame apart from a complete one.
         "LiveWallpaper/Runtime/Metal/WPEMetalSceneRenderer+Frame.swift": [
             "self.descriptor.workshopID": 1,
             "self.rendererSignpostID": 1,
+            "frameRendered": 1,
         ],
         // Module flags, grant-resolved booleans and source IDs — no paths, no
         // user data. Built once into `pipelineShape` so the line can be deduped.
