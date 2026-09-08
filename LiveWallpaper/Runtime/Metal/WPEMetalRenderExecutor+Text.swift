@@ -47,6 +47,7 @@ extension WPEMetalRenderExecutor {
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
             throw WPEMetalRenderExecutorError.commandBufferFailed
         }
+        encoder.applyTraceLabel("textGlyphs")
         WPEFrameOccupancyMeter.count(.textEncoder)
         encoder.setRenderPipelineState(state)
         var sceneSizeValue = SIMD2<Float>(
@@ -83,6 +84,7 @@ extension WPEMetalRenderExecutor {
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
             throw WPEMetalRenderExecutorError.commandBufferFailed
         }
+        encoder.applyTraceLabel("textBackground")
         WPEFrameOccupancyMeter.count(.textEncoder)
         encoder.setRenderPipelineState(state)
         encoder.setFragmentTexture(source, index: 0)

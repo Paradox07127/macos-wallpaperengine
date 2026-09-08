@@ -280,6 +280,7 @@ final class WPEMetalFXSpatialUpscaler {
         pass.colorAttachments[0].loadAction = .load
         pass.colorAttachments[0].storeAction = .store
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: pass) else { return }
+        encoder.applyTraceLabel("metalfx-alphaFix")
         WPEFrameOccupancyMeter.count(.presentEncoder)
         encoder.setRenderPipelineState(pipeline)
         var uniforms = WPESolidUniforms(color: SIMD4<Float>(0, 0, 0, 1))

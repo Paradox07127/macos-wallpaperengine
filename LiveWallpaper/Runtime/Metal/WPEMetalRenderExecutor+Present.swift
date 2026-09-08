@@ -180,6 +180,7 @@ extension WPEMetalRenderExecutor {
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
             throw WPEMetalRenderExecutorError.commandBufferFailed
         }
+        encoder.applyTraceLabel("present")
         WPEFrameOccupancyMeter.count(.presentEncoder)
         encoder.setRenderPipelineState(copyState)
         encoder.setFragmentTexture(source, index: 0)
@@ -254,6 +255,7 @@ extension WPEMetalRenderExecutor {
             guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
                 throw WPEMetalRenderExecutorError.commandBufferFailed
             }
+            encoder.applyTraceLabel("bloom|\(fragment)")
             WPEFrameOccupancyMeter.count(.bloomEncoder)
             defer { encoder.endEncoding() }
             encoder.setRenderPipelineState(try renderPipeline(
@@ -429,6 +431,7 @@ extension WPEMetalRenderExecutor {
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
             throw WPEMetalRenderExecutorError.commandBufferFailed
         }
+        encoder.applyTraceLabel("colorCorrection")
         WPEFrameOccupancyMeter.count(.colorCorrectionEncoder)
         defer { encoder.endEncoding() }
 
