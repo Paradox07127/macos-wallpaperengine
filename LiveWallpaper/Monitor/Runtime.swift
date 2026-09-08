@@ -73,7 +73,7 @@ struct MonitorSampleDemand: Sendable, Equatable {
             case .disk:
                 demand.processIO = demand.processIO
                     || (drawsAtLargeOnly(widget) && shows(widget, "showTopProcesses"))
-            case .network, .fleet, .aiEngine, .weather:
+            case .network, .fleet, .aiEngine, .weather, .nixieClock:
                 break
             }
         }
@@ -108,7 +108,7 @@ struct MonitorRuntimeOptions: Sendable, Equatable {
     static func requiresSystemMetrics(for kinds: Set<MonitorWidgetKind>) -> Bool {
         kinds.contains { kind in
             switch kind {
-            case .fleet, .weather:
+            case .fleet, .weather, .nixieClock:
                 false
             case .systemOverview, .cpu, .memory, .gpu, .network, .disk, .power, .processes, .aiEngine:
                 true

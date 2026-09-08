@@ -8,6 +8,7 @@ enum WidgetFactory {
     static func displayName(_ kind: MonitorWidgetKind) -> String {
         switch kind {
         case .systemOverview: String(localized: "System Overview", bundle: .appLanguage, comment: "Monitor widget name: combined system instruments.")
+        case .nixieClock: String(localized: "Nixie Clock", bundle: .appLanguage, comment: "Decorative glass nixie tube clock widget.")
         case .cpu: String(localized: "CPU", bundle: .appLanguage, comment: "Monitor widget name: CPU instrument.")
         case .memory: String(localized: "Memory", bundle: .appLanguage, comment: "Monitor widget name: Memory instrument.")
         case .gpu: String(localized: "GPU", bundle: .appLanguage, comment: "Monitor widget name: GPU instrument.")
@@ -24,6 +25,7 @@ enum WidgetFactory {
     static func icon(_ kind: MonitorWidgetKind) -> String {
         switch kind {
         case .systemOverview: "gauge.with.dots.needle.50percent"
+        case .nixieClock: "clock"
         case .cpu: "cpu"
         case .memory: "memorychip"
         case .gpu: "cpu.fill"
@@ -61,6 +63,8 @@ enum WidgetFactory {
         switch context.placement.kind {
         case .systemOverview:
             SystemOverviewWidgetView(context: context)
+        case .nixieClock:
+            NixieClockWidgetView(context: context)
         case .cpu:
             CPUWidgetView(context: context)
         case .memory:
