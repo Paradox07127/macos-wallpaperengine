@@ -200,9 +200,17 @@ struct RootView: View {
             case .names:
                 MonitorWidgetNameTile(kind: placement.kind, cellHeight: renderHeight, cornerRadius: cornerRadius)
             case .empty:
-                MonitorPreviewEmptyTile(
-                    kind: placement.kind, cellHeight: renderHeight, cornerRadius: cornerRadius
-                )
+                if placement.kind == .nixieClock {
+                    NixieClockWidgetView(context: MonitorWidgetContext(
+                        snapshot: MonitorSnapshot(), history: MonitorHistorySnapshot(),
+                        placement: placement, isEditing: model.isEditing,
+                        reduceMotion: reduceMotion, now: now
+                    ))
+                } else {
+                    MonitorPreviewEmptyTile(
+                        kind: placement.kind, cellHeight: renderHeight, cornerRadius: cornerRadius
+                    )
+                }
             case .widget:
                 // Same factory the desktop uses, on frozen data and a frozen
                 // clock — the clock is what every chart's window is measured

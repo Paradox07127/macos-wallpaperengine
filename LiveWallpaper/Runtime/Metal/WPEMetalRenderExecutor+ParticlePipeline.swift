@@ -80,6 +80,18 @@ extension WPEMetalRenderExecutor {
             throw WPEMetalRenderExecutorError.pipelineUnavailable("wpe_particle_instanced_fragment")
         }
         attachment.pixelFormat = colorPixelFormat
+        Self.applyParticleBlend(blendMode, to: attachment)
+        let state = try device.makeRenderPipelineState(descriptor: descriptor)
+        particlePipelineCache[key] = state
+        return state
+    }
+
+    /// Shared with the canonical trace recorder so the recorded factors are the ones the
+    /// pipeline is built from.
+    nonisolated static func applyParticleBlend(
+        _ blendMode: WPEParticleBlendMode,
+        to attachment: MTLRenderPipelineColorAttachmentDescriptor
+    ) {
         attachment.isBlendingEnabled = true
         attachment.rgbBlendOperation = .add
         attachment.alphaBlendOperation = .add
@@ -106,9 +118,6 @@ extension WPEMetalRenderExecutor {
             attachment.sourceAlphaBlendFactor = .sourceAlpha
             attachment.destinationAlphaBlendFactor = .one
         }
-        let state = try device.makeRenderPipelineState(descriptor: descriptor)
-        particlePipelineCache[key] = state
-        return state
     }
 }
 #endif

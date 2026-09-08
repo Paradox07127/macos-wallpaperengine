@@ -765,7 +765,16 @@ struct WPEMetalShaderDispatcher {
             result: result,
             textureBindings: canonicalTextureBindings,
             packedUniformSlots: packedUniforms.slotsForTracing(),
-            usesObjectQuad: usesObjectQuad
+            usesObjectQuad: usesObjectQuad,
+            nativeState: .scenePass(
+                blendMode: pass.pass.blending,
+                alphaWritePolicy: .resolve(targetID: destination.id, blendMode: pass.pass.blending),
+                cullMode: pass.pass.cullMode,
+                depthAttached: executor.depthCache.needsAttachment(for: pass),
+                depthTest: pass.pass.depthTest,
+                depthWrite: pass.pass.depthWrite,
+                reversedZ: frameState.cameraUniforms.usesPerspectiveProjection
+            )
         )
         #endif
 

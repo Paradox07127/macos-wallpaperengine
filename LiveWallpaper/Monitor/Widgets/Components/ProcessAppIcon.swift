@@ -52,6 +52,10 @@ struct ProcessAppIcon: View {
                 .interpolation(.high)
                 .frame(width: size, height: size)
                 .accessibilityHidden(true)
+        } else {
+            Color.clear
+                .frame(width: size, height: size)
+                .accessibilityHidden(true)
         }
     }
 }

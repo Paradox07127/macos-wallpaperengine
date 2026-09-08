@@ -88,19 +88,20 @@ struct ProcessesWidgetView: View {
         let cpuValueWidth = base * 3.4
         let cpuColWidth = cpuBarWidth + base * 0.45 + cpuValueWidth
         let memColWidth = base * 4.0
+        let pidColWidth = base * 3.8
         let colGap = base * 0.7
         let rowGap = base * (compact ? 0.24 : 0.34)
 
         return VStack(alignment: .leading, spacing: rowGap) {
             headerRow(
                 scale: scale, cpuColWidth: cpuColWidth,
-                memColWidth: memColWidth, colGap: colGap
+                memColWidth: memColWidth, pidColWidth: pidColWidth, colGap: colGap
             )
             ForEach(Array(rows.enumerated()), id: \.offset) { _, proc in
                 processRow(
                     proc, maxCPU: maxCPU, scale: scale,
                     cpuBarWidth: cpuBarWidth, cpuValueWidth: cpuValueWidth,
-                    memColWidth: memColWidth, colGap: colGap
+                    memColWidth: memColWidth, pidColWidth: pidColWidth, colGap: colGap
                 )
             }
         }
@@ -109,11 +110,13 @@ struct ProcessesWidgetView: View {
 
     private func headerRow(
         scale: Design.TypeScale,
-        cpuColWidth: CGFloat, memColWidth: CGFloat, colGap: CGFloat
+        cpuColWidth: CGFloat, memColWidth: CGFloat, pidColWidth: CGFloat, colGap: CGFloat
     ) -> some View {
         HStack(spacing: colGap) {
             localizedColumnLabel(Self.colProgram, scale: scale)
                 .frame(maxWidth: .infinity, alignment: .leading)
+            columnLabel("PID", scale: scale)
+                .frame(width: pidColWidth, alignment: .trailing)
             columnHeader(Self.colCPU, systemImage: WidgetFactory.icon(.cpu), columnWidth: cpuColWidth, scale: scale)
                 .frame(width: cpuColWidth, alignment: .center)
             columnHeader(Self.colMEM, systemImage: WidgetFactory.icon(.memory), columnWidth: memColWidth, scale: scale)
@@ -163,21 +166,28 @@ struct ProcessesWidgetView: View {
         _ proc: MonitorProcessSample, maxCPU: Double,
         scale: Design.TypeScale,
         cpuBarWidth: CGFloat, cpuValueWidth: CGFloat,
-        memColWidth: CGFloat, colGap: CGFloat
+        memColWidth: CGFloat, pidColWidth: CGFloat, colGap: CGFloat
     ) -> some View {
         HStack(spacing: colGap) {
             nameCell(proc, scale: scale)
                 .frame(maxWidth: .infinity, alignment: .leading)
+            Text(verbatim: proc.pid.map(String.init) ?? "—")
+                .font(Design.captionFont(size: scale.caption * 0.94))
+                .monospacedDigit()
+                .foregroundStyle(Design.inkMuted)
+                .minimumScaleFactor(0.7)
+                .frame(width: pidColWidth, alignment: .trailing)
             cpuCell(
                 proc.cpuPercent, maxCPU: maxCPU, scale: scale,
                 barWidth: cpuBarWidth, valueWidth: cpuValueWidth
             )
-            Text(verbatim: Format.bytes(proc.memBytes))
+            Text(verbatim: Format.bytes(proc.memBytes) + (proc.memoryMetric == "resident" || proc.memoryMetric == "mixed" ? "*" : ""))
                 .font(Design.captionFont(size: scale.caption * 0.94))
                 .monospacedDigit()
                 .foregroundStyle(Design.inkMuted)
                 .minimumScaleFactor(0.7)
                 .frame(width: memColWidth, alignment: .trailing)
+                .help(Text(ProcessMemoryPresentation.metricText(proc.memoryMetric)))
         }
         .font(Design.captionFont(size: scale.caption))
         .lineLimit(1)
@@ -192,6 +202,13 @@ struct ProcessesWidgetView: View {
                 .foregroundStyle(Design.inkPrimary)
                 .lineLimit(1)
                 .truncationMode(.tail)
+            if let count = process.processCount, count > 1 {
+                Text(verbatim: "×\(count)")
+                    .font(Design.captionFont(size: scale.caption * 0.85))
+                    .foregroundStyle(Design.inkFaint)
+                    .fixedSize()
+                    .help(Text("Includes child processes"))
+            }
         }
     }
 

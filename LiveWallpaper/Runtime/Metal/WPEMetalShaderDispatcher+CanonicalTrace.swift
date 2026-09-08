@@ -130,7 +130,16 @@ extension WPEMetalShaderDispatcher {
             vertexShaderName: usesObjectQuad ? "wpe_object_quad_vertex" : "wpe_fullscreen_vertex",
             fragmentShaderName: metadata.fragmentShaderName,
             textureBindings: bindings,
-            usesObjectQuad: usesObjectQuad
+            usesObjectQuad: usesObjectQuad,
+            nativeState: .scenePass(
+                blendMode: pass.pass.blending,
+                alphaWritePolicy: .resolve(targetID: destination.id, blendMode: pass.pass.blending),
+                cullMode: pass.pass.cullMode,
+                depthAttached: executor.depthCache.needsAttachment(for: pass),
+                depthTest: pass.pass.depthTest,
+                depthWrite: pass.pass.depthWrite,
+                reversedZ: frameState.cameraUniforms.usesPerspectiveProjection
+            )
         )
     }
 

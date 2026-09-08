@@ -1,6 +1,41 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "Nixie Clock" : {
+      "comment" : "Decorative glass nixie tube clock widget.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nixie Clock"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "辉光管时钟"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "輝光管時鐘"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ニキシー管時計"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reloj Nixie"
+          }
+        }
+      }
+    },
     "" : {
 
     },
@@ -29844,6 +29879,40 @@
         }
       }
     },
+    "Includes child processes" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Includes child processes"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Incluye procesos secundarios"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "子プロセスを含む"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "包含子进程"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "包含子程序"
+          }
+        }
+      }
+    },
     "Initializing…" : {
       "localizations" : {
         "en" : {
@@ -35139,6 +35208,40 @@
         }
       }
     },
+    "Memory metric unavailable" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Memory metric unavailable"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Métrica de memoria no disponible"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "メモリ指標が不明"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "内存统计口径未知"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "記憶體統計方式未知"
+          }
+        }
+      }
+    },
     "Metal pipeline '%@' rejected (likely stage_in mismatch): %@" : {
       "comment" : "Scene failure reason. Placeholders are the pipeline name and the Metal error.",
       "extractionState" : "manual",
@@ -35774,6 +35877,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "霧"
+          }
+        }
+      }
+    },
+    "Mixed footprint and RSS (process group)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mixed footprint and RSS (process group)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Huella física y RSS mixtas (grupo de procesos)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "物理使用量と RSS の混在（プロセスグループ）"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "混合物理占用与 RSS（进程组）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "混合實體用量與 RSS（程序群組）"
           }
         }
       }
@@ -44312,6 +44449,40 @@
         }
       }
     },
+    "Physical footprint (process group)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Physical footprint (process group)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Huella física (grupo de procesos)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "物理メモリ使用量（プロセスグループ）"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "物理内存占用（进程组）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "實體記憶體用量（程序群組）"
+          }
+        }
+      }
+    },
     "Physical pixels" : {
       "comment" : "Web rendering diagnostics: canvas sizing mode.",
       "localizations" : {
@@ -51286,6 +51457,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "重置播放、效果、網頁選項和排程設定；保留桌布、播放清單和書籤。"
+          }
+        }
+      }
+    },
+    "Resident memory (RSS fallback)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resident memory (RSS fallback)"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Memoria residente (alternativa RSS)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "常駐メモリ（RSS にフォールバック）"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "常驻内存（RSS 回退）"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "常駐記憶體（RSS 備援）"
           }
         }
       }

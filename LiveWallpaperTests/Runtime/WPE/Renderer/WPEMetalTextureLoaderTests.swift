@@ -9,6 +9,79 @@ import Testing
 struct WPEMetalTextureLoaderTests {
 
     @MainActor
+    @Test("Rain quads preserve model scale and trails retain local speed and frame aspect",
+          arguments: [-1, 0, 4], [SIMD3<Float>(1, 1, 0), SIMD3<Float>(0.5, 0.5, 0),
+                                  SIMD3<Float>(0.5, 1, 0), SIMD3<Float>(0.5, 1, .pi / 2),
+                                  SIMD3<Float>(-0.5, 1, 0)])
+    func rainTrailGeometry(flags: Int, scale: SIMD3<Float>) throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        // Windows Lofi Cafe uses 32x128 drop textures and velocity-based stretch,
+        // including flags=4. Keep depth zero to isolate trail geometry from projection.
+        let definition = try #require(WPEParticleDefinitionParser.parse(dictionary: [
+            "flags": max(0, flags), "maxcount": 1,
+            "emitter": [["name": "boxrandom", "instantaneous": 1, "rate": 0]],
+            "initializer": [["name": "sizerandom", "min": 8, "max": 8],
+                            ["name": "lifetimerandom", "min": 10, "max": 10],
+                            ["name": "velocityrandom", "min": "0 -100 0", "max": "0 -100 0"]],
+            "renderer": flags < 0 ? [] : [["name": "spritetrail", "length": 0.05, "maxlength": 6]],
+        ]))
+        let system = try #require(WPEParticleSystem(
+            definition: definition, device: device,
+            sceneTransform: WPEParticleSceneTransform(
+                sceneSize: SIMD2<Float>(256, 256), objectOrigin: SIMD3<Float>(128, 128, 0),
+                objectScale: SIMD3<Float>(scale.x, scale.y, 1), objectAngleZ: scale.z
+            ), seed: 133
+        ))
+        system.tick(now: 0)
+        system.tick(now: 0.05)
+        try #require(system.liveInstanceCount == 1)
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: 256, height: 256, mipmapped: false)
+        descriptor.storageMode = .shared
+        descriptor.usage = [.shaderRead, .renderTarget]
+        let output = try #require(device.makeTexture(descriptor: descriptor))
+        let zero = [UInt8](repeating: 0, count: 256 * 256 * 4)
+        output.replace(region: MTLRegionMake2D(0, 0, 256, 256), mipmapLevel: 0, withBytes: zero, bytesPerRow: 1024)
+        let textureHeight = flags < 0 ? 32 : 128
+        let textureDescriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: 32, height: textureHeight, mipmapped: false)
+        textureDescriptor.storageMode = .shared
+        textureDescriptor.usage = .shaderRead
+        let albedo = try #require(device.makeTexture(descriptor: textureDescriptor))
+        albedo.replace(region: MTLRegionMake2D(0, 0, 32, textureHeight), mipmapLevel: 0,
+                       withBytes: [UInt8](repeating: 255, count: 32 * textureHeight * 4), bytesPerRow: 128)
+        let queue = try #require(device.makeCommandQueue())
+        let command = try #require(queue.makeCommandBuffer())
+        let size = CGSize(width: 256, height: 256)
+        var state = WPEMetalFrameState(output: output, sceneSize: size)
+        try executor.encodeParticleSystem(
+            system, into: command, output: output, sceneSize: size, cameraParallax: .neutral,
+            texturesByMaterial: [ObjectIdentifier(system): albedo], normalsByMaterial: [:],
+            frameState: &state, traceIndex: 0
+        )
+        command.commit()
+        command.waitUntilCompleted()
+        try #require(command.status == .completed)
+        var pixels = zero
+        output.getBytes(&pixels, bytesPerRow: 1024, from: MTLRegionMake2D(0, 0, 256, 256), mipmapLevel: 0)
+        var xs: [Int] = []
+        var ys: [Int] = []
+        for y in 0 ..< 256 {
+            for x in 0 ..< 256 where pixels[(y * 256 + x) * 4] > 0 {
+                xs.append(x)
+                ys.append(y)
+            }
+        }
+        let width = try #require(xs.max()) - #require(xs.min()) + 1
+        let height = try #require(ys.max()) - #require(ys.min()) + 1
+        let localWidth = Int(8 * abs(scale.x))
+        let localHeight = Int((flags < 0 ? 8 : 160) * abs(scale.y))
+        let expectedWidth = scale.z == 0 ? localWidth : localHeight
+        let expectedHeight = scale.z == 0 ? localHeight : localWidth
+        #expect(abs(width - expectedWidth) <= 1)
+        #expect(abs(height - expectedHeight) <= 2, "Expected \(expectedWidth)x\(expectedHeight), got \(width)x\(height)")
+    }
+
+    @MainActor
     @Test("Zero refraction preserves the background across the whole particle quad")
     func zeroRefractionPreservesBackground() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())

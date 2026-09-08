@@ -16,7 +16,7 @@ struct WPEParticleInstance {
     var positionAndSize: SIMD4<Float>
     var color: SIMD4<Float>
     var rotationAndLife: SIMD4<Float>
-    /// TRAILRENDERER only; WPE gates the matching `a_TexCoordVec4C1` on THICKFORMAT.
+    /// TRAILRENDERER: xy local velocity for direction, z local 3D speed for stretch.
     var velocity: SIMD4<Float> = SIMD4<Float>(0, 0, 0, 0)
 }
 
@@ -204,6 +204,20 @@ struct WPEParticleSceneTransform {
             scaled.x * cosA - scaled.y * sinA,
             scaled.x * sinA + scaled.y * cosA,
             scaled.z
+        )
+    }
+
+    /// Trail stretch uses local velocity before the model transform (WPE GS).
+    func localVelocity(ofWorldVelocity velocity: SIMD3<Float>) -> SIMD3<Float> {
+        let unrotated = SIMD3<Float>(
+            velocity.x * cosAngleZ + velocity.y * sinAngleZ,
+            -velocity.x * sinAngleZ + velocity.y * cosAngleZ,
+            velocity.z
+        )
+        return SIMD3<Float>(
+            abs(objectScale.x) > 0.000001 ? unrotated.x / objectScale.x : 0,
+            abs(objectScale.y) > 0.000001 ? unrotated.y / objectScale.y : 0,
+            abs(objectScale.z) > 0.000001 ? unrotated.z / objectScale.z : 0
         )
     }
 
@@ -863,6 +877,8 @@ final class WPEParticleSystem {
             let spriteSize = attrs.size
             let rgb = attrs.rgb
             let drawPosition = attrs.position
+            let localVelocity = definition.trailRenderer?.kind == .sprite
+                ? sceneTransform.localVelocity(ofWorldVelocity: particle.velocity) : .zero
             let frameIndex: Float
             if animatesSequence {
                 let raw = lifetimeFraction * cyclesPerLifetime * frameCount
@@ -876,7 +892,9 @@ final class WPEParticleSystem {
                 ),
                 color: SIMD4<Float>(rgb.x, rgb.y, rgb.z, alpha),
                 rotationAndLife: SIMD4<Float>(particle.rotationZ, lifetimeFraction, frameIndex, visualScaleSigns.y),
-                velocity: SIMD4<Float>(particle.velocity.x, particle.velocity.y, 0, 0)
+                velocity: SIMD4<Float>(
+                    localVelocity.x, localVelocity.y, simd_length(localVelocity), 0
+                )
             )
             written += 1
         }

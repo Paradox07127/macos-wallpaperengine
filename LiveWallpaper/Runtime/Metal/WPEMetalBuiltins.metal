@@ -1316,7 +1316,7 @@ struct WPEParticleInstance {
     float4 positionAndSize;   // x, y, signed sprite X scale, size in pixels
     float4 color;             // rgb 0..1, a = current alpha
     float4 rotationAndLife;   // x = rotationZ rad, y = lifetimeFraction, z = spriteFrameIndex, w = signed sprite Y scale
-    float4 velocity;          // xy = scene px/s (TRAILRENDERER only), zw unused
+    float4 velocity;          // xy = local velocity, z = local 3D speed for trail stretch
 };
 
 struct WPEParticleVertexOut {
@@ -1338,14 +1338,15 @@ struct WPEParticleVertexOut {
 struct WPEParticleProjection {
     float4 sceneSize;         // x = width, y = height (pixels)
     // xy = camera-parallax pixel offset for this system's depth.
-    // z, w unused (z carried `textureRatio` until it was rolled back — see
-    // wpe_particle_vertex).
+    // z = atlas height/width for sprite trails; frame UV extents resolve its aspect.
+    // w unused.
     float4 padding;
     // WPE `g_RenderVar0` for TRAILRENDERER (common_particles.h
     // ComputeParticleTrailTangents): x = length multiplier on the particle's
     // speed, y = max trail length, z = min trail length. w > 0.5 enables the
     // trail path at all.
     float4 trail;
+    float4 modelShape;        // signed XY scale / baked average, cos(model Z), sin(model Z)
 };
 
 // Sprite-sheet slice + format hint. `grid.w == 1` means the atlas is an
@@ -1397,6 +1398,15 @@ vertex WPEParticleVertexOut wpe_particle_vertex(
     float s = sin(rot);
     float2 rotatedCorner = float2(c * corner.x - s * corner.y,
                                   s * corner.x + c * corner.y);
+    // Undo the model rotation, restore independent XY scale, then rotate back.
+    // Size already contains the average scale; signs are in spriteSign above.
+    float mc = projection.modelShape.z;
+    float ms = projection.modelShape.w;
+    float2 modelCorner = float2(mc * rotatedCorner.x + ms * rotatedCorner.y,
+                              -ms * rotatedCorner.x + mc * rotatedCorner.y);
+    modelCorner *= abs(projection.modelShape.xy);
+    rotatedCorner = float2(mc * modelCorner.x - ms * modelCorner.y,
+                          ms * modelCorner.x + mc * modelCorner.y);
     float halfWidth = max(projection.sceneSize.x, 1.0) * 0.5;
     float halfHeight = max(projection.sceneSize.y, 1.0) * 0.5;
     // padding.xy = camera-parallax pixel offset for this system's depth.
@@ -1409,24 +1419,41 @@ vertex WPEParticleVertexOut wpe_particle_vertex(
         / float2(halfWidth * 2.0, halfHeight * 2.0);
 
     // `spritetrail`: orient the quad along the particle's VELOCITY rather than its
-    // rotation and stretch it by the speed — verbatim from common_particles.h's
+    // rotation and stretch it by the speed, following common_particles.h's
     // ComputeParticleTrailTangents (up = veldir * clamp(speed*length, 0, maxlength);
-    // height = size*stretch*textureRatio). The eye sits at -Z for our 2D ortho
-    // scenes, so `cross(eyeDir, v)` reduces to the in-plane perpendicular (v.y, -v.x).
-    // Only non-perspective spritetrails set `trail.w > 0.5`; ropetrail and perspective
-    // systems keep the plain sprite quad (see WPEMetalRenderExecutor+Particles).
+    // height = size*stretch*textureRatio). Our 2D eye-ray approximation along -Z
+    // gives the in-plane perpendicular (v.y, -v.x); full 3D tangents also depend
+    // on the local position and inverse-model eye position.
+    // Sprite trails retain authored stretch in both orthographic and perspective
+    // systems. Rope trails use their separate history-ribbon geometry.
     if (projection.trail.w > 0.5) {
         float2 v = instance.velocity.xy;
         float speed = length(v);
         if (speed > 1e-4) {
             float2 dir = v / speed;
             float2 right = float2(dir.y, -dir.x);
-            float stretch = max(projection.trail.z, min(speed * projection.trail.x, projection.trail.y));
+            float localSpeed = instance.velocity.z > 0.0 ? instance.velocity.z : speed;
+            float stretch = max(projection.trail.z, min(localSpeed * projection.trail.x, projection.trail.y));
+            float frameAspect = projection.padding.z;
+            if (sprite.frameRectMode.x > 0.5 && sprite.frameRectMode.y > 0.5) {
+                uint frame = uint(clamp(floor(instance.rotationAndLife.z), 0.0, sprite.frameRectMode.y - 1.0));
+                float4 rect = frameRects[frame];
+                frameAspect *= abs(rect.w - rect.y) / max(abs(rect.z - rect.x), 1e-6);
+            } else {
+                frameAspect *= max(sprite.grid.x, 1.0) / max(sprite.grid.y, 1.0);
+            }
+            corner.y *= frameAspect;
             float size = instance.positionAndSize.w;
             // WPE: `size*right*(u-.5) - size*up*(v-.5)*ratio`, where `up` already
             // carries the stretch — so `stretch` MULTIPLIES the sprite size, it is
             // not an absolute length. corner.y already carries textureRatio.
-            float2 offsetPixels = right * (corner.x * size) + dir * (corner.y * size * stretch);
+            // Expand in local space, then apply the model, as the Windows GS
+            // does. Trail tangents ignore particle spin; modelShape carries signs.
+            float2 localCorner = corner * spriteSign;
+            float2 offsetPixels = right * (localCorner.x * size) + dir * (localCorner.y * size * stretch);
+            offsetPixels *= projection.modelShape.xy;
+            offsetPixels = float2(mc * offsetPixels.x - ms * offsetPixels.y,
+                                  ms * offsetPixels.x + mc * offsetPixels.y);
             cornerNDC = offsetPixels * 2.0 / float2(halfWidth * 2.0, halfHeight * 2.0);
         }
     }

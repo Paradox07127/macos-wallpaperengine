@@ -140,6 +140,27 @@ struct WPESceneMediaEventDispatchTests {
                 "all three handlers must have run — a dropped event leaves seen < 3")
     }
 
+    @Test("A text media update survives temporary script-capacity pressure")
+    func textMediaUpdateSurvivesCapacityPressure() throws {
+        let governor = WPESceneScriptExecutionGovernor(limit: 1)
+        let instance = try LiveWallpaper.WPESceneScriptInstance(
+            script: """
+            var mediaData = "";
+            export function update(value) { return mediaData; }
+            export function mediaPropertiesChanged(event) { mediaData = event.title; }
+            """,
+            initialValue: "Song Title", setupBudget: 2, tickBudget: 0.5, governor: governor
+        )
+        let blocker = governor.makeParticipant()
+        let permit = try #require(governor.tryAcquireUnreserved(for: blocker))
+        instance.dispatchMediaEvent(.propertiesChanged(WPESceneMediaProperties(title: "Previous song")))
+        instance.dispatchMediaEvent(.propertiesChanged(WPESceneMediaProperties(title: "Current song")))
+        permit.release()
+        // No second player notification: a drained event must reach the next frame.
+        _ = instance.batchTickString(runtimeSeconds: 1)
+        #expect(instance.tickString(runtimeSeconds: 1) == "Current song")
+    }
+
     // MARK: - 2. mediaPropertiesChanged reaches a text script
 
     @Test("A text script's mediaPropertiesChanged receives title and artist")

@@ -262,7 +262,7 @@ struct MonitorSamplerOwnershipCharacterizationTests {
         #expect(options.system)
         #expect(options.agents)
 
-        let nonSystemKinds: Set<MonitorWidgetKind> = [.fleet, .weather]
+        let nonSystemKinds: Set<MonitorWidgetKind> = [.fleet, .weather, .nixieClock]
         for kind in Set(MonitorWidgetKind.allCases).subtracting(nonSystemKinds) {
             #expect(MonitorRuntimeOptions.requiresSystemMetrics(for: [kind]))
         }

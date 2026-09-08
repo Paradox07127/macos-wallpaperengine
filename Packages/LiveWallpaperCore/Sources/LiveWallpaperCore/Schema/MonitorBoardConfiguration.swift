@@ -17,6 +17,7 @@ public enum MonitorBoardMetrics {
 
 public enum MonitorWidgetKind: String, Codable, Sendable, CaseIterable, Identifiable {
     case systemOverview
+    case nixieClock
     case cpu
     case memory
     case gpu
@@ -42,7 +43,7 @@ public enum MonitorWidgetKind: String, Codable, Sendable, CaseIterable, Identifi
 
     public var allowedSizes: [MonitorWidgetSize] {
         switch self {
-        case .systemOverview, .processes, .fleet: [.medium, .large]
+        case .systemOverview, .nixieClock, .processes, .fleet: [.medium, .large]
         case .power: [.small, .medium]
         default: [.small, .medium, .large]
         }
