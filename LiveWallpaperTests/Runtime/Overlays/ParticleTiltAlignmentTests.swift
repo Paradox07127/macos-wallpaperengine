@@ -52,7 +52,10 @@ final class ParticleTiltAlignmentTests: XCTestCase {
 
         let window = NSWindow(contentRect: frame, styleMask: [.borderless],
                               backing: .buffered, defer: false)
-        window.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopIconWindow)) + 2)
+        // Above ordinary windows, not at the wallpaper's level: a window the
+        // compositor considers occluded stops updating its backing store, and the
+        // capture then comes back black.
+        window.level = .floating
         window.isOpaque = true
         window.backgroundColor = .black
         defer { window.orderOut(nil) }
@@ -76,8 +79,29 @@ final class ParticleTiltAlignmentTests: XCTestCase {
     }
 
     /// One calibrated frame of a host window built by `capture`.
+    ///
+    /// The compositor hands back an all-black backing store often enough just
+    /// after the window is ordered in that a single attempt failed about two
+    /// runs in three, first as "no marker" and then as "no streaks". A capture
+    /// that never shows the marker still fails, so the calibration keeps its
+    /// teeth.
     @MainActor
     private func snapshot(of window: NSWindow, size: CGSize) throws -> Frame {
+        for _ in 0 ..< 9 {
+            if let frame = try calibratedFrame(of: window, size: size) {
+                return frame
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+        return try XCTUnwrap(
+            calibratedFrame(of: window, size: size),
+            "calibration marker not found — the capture is not showing the host view"
+        )
+    }
+
+    /// `nil` when the calibration marker is not in the capture.
+    @MainActor
+    private func calibratedFrame(of window: NSWindow, size: CGSize) throws -> Frame? {
         // This window's own backing store, not the screen region it occupies.
         // `.optionOnScreenOnly` over a rect captures whatever is in front —
         // during a full run other suites put their own windows up and these
@@ -105,12 +129,12 @@ final class ParticleTiltAlignmentTests: XCTestCase {
                 sum + (0..<strip).reduce(0) { $0 + Int(pixels[y * width + $1]) }
             }
         }
-        let headIsMarker = brightness(rows: 0..<band) > brightness(rows: (height - band)..<height)
-        XCTAssertNotEqual(
-            brightness(rows: 0..<band), brightness(rows: (height - band)..<height),
-            "calibration marker not found — the capture is not showing the host view"
-        )
-        if !headIsMarker {
+        let head = brightness(rows: 0 ..< band)
+        let tail = brightness(rows: (height - band) ..< height)
+        guard head != tail else {
+            return nil
+        }
+        if head < tail {
             var flipped = [UInt8](repeating: 0, count: width * height)
             for y in 0..<height {
                 let src = (height - 1 - y) * width
@@ -147,7 +171,10 @@ final class ParticleTiltAlignmentTests: XCTestCase {
         )
         let window = NSWindow(contentRect: frame, styleMask: [.borderless],
                               backing: .buffered, defer: false)
-        window.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopIconWindow)) + 2)
+        // Above ordinary windows, not at the wallpaper's level: a window the
+        // compositor considers occluded stops updating its backing store, and the
+        // capture then comes back black.
+        window.level = .floating
         window.isOpaque = true
         window.backgroundColor = .black
         defer { window.orderOut(nil) }
