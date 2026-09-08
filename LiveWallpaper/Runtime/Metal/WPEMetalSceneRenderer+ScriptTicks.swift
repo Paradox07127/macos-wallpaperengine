@@ -289,6 +289,7 @@ extension WPEMetalSceneRenderer {
             layerAlphaScriptInstances,
             textVisibleScriptInstances,
             textAlphaScriptInstances,
+            particleAlphaScriptInstances,
         ] {
             for key in instances.keys.sorted() {
                 guard let instance = instances[key],
