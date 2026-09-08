@@ -38,6 +38,7 @@ extension WPEMetalRenderExecutor {
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
             throw WPEMetalRenderExecutorError.commandBufferFailed
         }
+        encoder.applyTraceLabel("particles")
         WPEFrameOccupancyMeter.count(.particleEncoder)
         return encoder
     }

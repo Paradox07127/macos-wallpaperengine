@@ -8,7 +8,29 @@ import MetalKit
 import os
 import simd
 
+extension MTLCommandEncoder {
+    /// Names the encoder so an Instruments capture reads as scene layers instead
+    /// of "Render Command 37". The autoclosure keeps the string unbuilt while the
+    /// flag is off, which is every shipping frame.
+    func applyTraceLabel(_ makeLabel: @autoclosure () -> String) {
+        if WPEMetalRenderExecutor.tracePassLabels { label = makeLabel() }
+    }
+}
+
 final class WPEMetalRenderExecutor {
+
+    /// Names each render/blit encoder so an Instruments capture reads as scene
+    /// layers instead of "Render Command 37". Off by default and read once: a
+    /// frame encodes ~82 encoders, and the label only earns its bridge while
+    /// someone is reading a trace.
+    /// `defaults write com.loomscreen.pro WPETracePassLabels -bool YES`
+    static let tracePassLabels: Bool = {
+        let key = "WPETracePassLabels"
+        for suite in [UserDefaults.appSuite, UserDefaults.standard] where suite.object(forKey: key) != nil {
+            return suite.bool(forKey: key)
+        }
+        return false
+    }()
     /// Every offscreen target and the on-screen swapchain share
     /// a single sRGB pixel format so render pipelines built for the offscreen
     /// pass can be reused by `present()` without re-creation, and so the
@@ -1752,6 +1774,7 @@ final class WPEMetalRenderExecutor {
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
             throw WPEMetalRenderExecutorError.commandBufferFailed
         }
+        encoder.applyTraceLabel("\(layer.objectName)|\(pass.pass.phase)|\(pass.pass.id)|\(pass.pass.shader)")
         WPEFrameOccupancyMeter.count(.renderPassEncoder)
         defer { encoder.endEncoding() }
 
@@ -2072,6 +2095,7 @@ final class WPEMetalRenderExecutor {
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
             throw WPEMetalRenderExecutorError.commandBufferFailed
         }
+        encoder.applyTraceLabel("clear")
         WPEFrameOccupancyMeter.count(.helperEncoder)
         encoder.endEncoding()
     }
@@ -2079,11 +2103,13 @@ final class WPEMetalRenderExecutor {
     func copyTexture(
         _ source: MTLTexture,
         to destination: MTLTexture,
-        commandBuffer: MTLCommandBuffer
+        commandBuffer: MTLCommandBuffer,
+        traceLabel: String? = nil
     ) throws {
         guard let blit = commandBuffer.makeBlitCommandEncoder() else {
             throw WPEMetalRenderExecutorError.commandBufferFailed
         }
+        if let traceLabel { blit.applyTraceLabel(traceLabel) }
         WPEFrameOccupancyMeter.count(.helperEncoder)
         blit.copy(
             from: source,
@@ -2120,11 +2146,13 @@ final class WPEMetalRenderExecutor {
             return
         }
         let capture = try reflectionCaptureTexture(matching: source)
-        try copyTexture(source, to: capture, commandBuffer: commandBuffer)
+        try copyTexture(source, to: capture, commandBuffer: commandBuffer,
+                        traceLabel: "reflection-copy|\(layer.objectName)|\(pass.pass.id)")
         if capture.mipmapLevelCount > 1 {
             guard let blit = commandBuffer.makeBlitCommandEncoder() else {
                 throw WPEMetalRenderExecutorError.commandBufferFailed
             }
+            blit.applyTraceLabel("reflection-mips|\(layer.objectName)|\(pass.pass.id)")
             WPEFrameOccupancyMeter.count(.helperEncoder)
             blit.generateMipmaps(for: capture)
             blit.endEncoding()
@@ -2266,6 +2294,7 @@ final class WPEMetalRenderExecutor {
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
             throw WPEMetalRenderExecutorError.commandBufferFailed
         }
+        encoder.applyTraceLabel("copy|\(layer.objectName)")
         WPEFrameOccupancyMeter.count(.helperEncoder)
         defer { encoder.endEncoding() }
 

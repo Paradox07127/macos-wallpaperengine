@@ -2237,6 +2237,7 @@ extension WPEMetalRenderExecutor {
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
             throw WPEMetalRenderExecutorError.commandBufferFailed
         }
+        encoder.applyTraceLabel("puppet-deferred|\(fragmentName)")
         WPEFrameOccupancyMeter.count(.renderPassEncoder)
         defer { encoder.endEncoding() }
 
@@ -2310,6 +2311,7 @@ extension WPEMetalRenderExecutor {
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
             throw WPEMetalRenderExecutorError.commandBufferFailed
         }
+        encoder.applyTraceLabel("puppet|\(fragmentName)")
         WPEFrameOccupancyMeter.count(.renderPassEncoder)
         defer { encoder.endEncoding() }
 
