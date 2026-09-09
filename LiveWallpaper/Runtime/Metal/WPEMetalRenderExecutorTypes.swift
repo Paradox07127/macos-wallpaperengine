@@ -7,6 +7,14 @@ import MetalKit
 import os
 import simd
 
+/// Frame-local evidence for the conservative initial scene clear optimization.
+struct WPEMetalInitialSceneClearStats: Equatable {
+    var passID: String?
+    var skipped = 0
+    var fallback = 0
+    var rejectReason: String?
+}
+
 /// One frame's consecutive solid scene draws. Only the owner closes borrowed encoders.
 final class WPEMetalSolidSceneRun {
     var encoder: MTLRenderCommandEncoder?
