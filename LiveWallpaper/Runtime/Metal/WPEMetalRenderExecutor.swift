@@ -349,6 +349,10 @@ final class WPEMetalRenderExecutor {
     /// back to clamp-to-edge + linear — the safe default that never wraps.
     func customShaderSamplerState(for texture: MTLTexture?) -> MTLSamplerState {
         let resolution = texture.map { WPEMetalTextureMetadataRegistry.shared.resolution(for: $0) }
+        return customShaderSamplerState(resolution: resolution)
+    }
+
+    func customShaderSamplerState(resolution: WPEMetalTextureResolution?) -> MTLSamplerState {
         let clamp = resolution?.clampUVs ?? true
         let nearest = resolution?.noInterpolation ?? false
         let key = (clamp ? 1 : 0) | (nearest ? 2 : 0)
@@ -390,6 +394,10 @@ final class WPEMetalRenderExecutor {
     /// divergence — the exact failure that froze scrolling ripple UVs.
     func customShaderSamplerDescription(for texture: MTLTexture?) -> [String: String] {
         let resolution = texture.map { WPEMetalTextureMetadataRegistry.shared.resolution(for: $0) }
+        return customShaderSamplerDescription(resolution: resolution)
+    }
+
+    func customShaderSamplerDescription(resolution: WPEMetalTextureResolution?) -> [String: String] {
         let descriptor = customShaderSamplerDescriptor(
             clamp: resolution?.clampUVs ?? true,
             nearest: resolution?.noInterpolation ?? false

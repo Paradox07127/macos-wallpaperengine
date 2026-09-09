@@ -740,11 +740,13 @@ struct WPEMetalShaderDispatcher {
             // (clamp/repeat) + filter (linear/nearest) come from the texture's TEXI
             // flags. Tiling maps sampled at time-scrolled UVs (water-normal, noise,
             // flow) now repeat instead of clamping to a frozen edge.
-            let sampler = executor.customShaderSamplerState(for: texture)
+            let resolution = texture.map { WPEMetalTextureMetadataRegistry.shared.resolution(for: $0) }
+            let sampler = executor.customShaderSamplerState(resolution: resolution)
             resolvedTexturesBySlot.set(
                 texture: texture,
                 samplingDescriptor: samplingDescriptor,
                 sampler: sampler,
+                resolution: resolution,
                 at: slot
             )
             #if !LITE_BUILD && DEBUG
@@ -754,7 +756,7 @@ struct WPEMetalShaderDispatcher {
                 reference: resolvedReference,
                 texture: texture,
                 fallbackToPrimary: fallbackToPrimary,
-                sampler: executor.customShaderSamplerDescription(for: texture)
+                sampler: executor.customShaderSamplerDescription(resolution: resolution)
             ))
             #endif
         }
