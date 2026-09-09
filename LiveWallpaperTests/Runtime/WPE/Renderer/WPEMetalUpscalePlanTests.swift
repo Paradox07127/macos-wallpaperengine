@@ -203,6 +203,86 @@ struct WPEMetalUpscalePlanTests {
         #expect(pixels8 == CGSize(width: 2880, height: 1620))
     }
 
+    // MARK: - The display clamp is independent of MetalFX
+
+    /// The bug this pins: an 8K canvas rendered 7680x4320 on a 4K display with MetalFX off
+    /// — 4x the pixels the screen can resolve, every frame, in every scene that authors a
+    /// canvas above the display. Measured on 3437487219, whose Mac viewport read
+    /// `[0,0,7680,4320]` against Windows' 3840x2160.
+    @Test("An oversized canvas is clamped to the display even with MetalFX off")
+    func oversizedCanvasClampsWithoutMetalFX() {
+        let eightK = CGSize(width: 7680, height: 4320)
+        let plan = Self.plan(canvas: eightK, drawable: Self.uhd, renderScale: 1.0)
+        #expect(plan.isActive == false, "MetalFX is off; this is not an upscale")
+        #expect(plan.displayFitScale == 0.5)
+        #expect(plan.renderPixelScale == 0.5)
+        let pixels = WPEMetalFXSpatialUpscaler.scaledCanvasSize(
+            eightK, pixelScale: plan.renderPixelScale
+        )
+        #expect(pixels == Self.uhd)
+    }
+
+    /// Every MetalFX rejection is a rejection of UPSCALING, not a licence to render above
+    /// the display. A plain present blit resolves the smaller source just as well.
+    @Test("Every MetalFX rejection still clamps an oversized canvas")
+    func rejectionsStillClamp() {
+        let eightK = CGSize(width: 7680, height: 4320)
+        let cases: [(String, WPEMetalUpscalePlan)] = [
+            ("settingOff", Self.plan(canvas: eightK, drawable: Self.uhd, renderScale: 1.0)),
+            ("deviceUnsupported", Self.plan(canvas: eightK, drawable: Self.uhd, deviceSupports: false)),
+            ("hdrScene", Self.plan(canvas: eightK, drawable: Self.uhd, isHDR: true)),
+        ]
+        for (label, plan) in cases {
+            #expect(plan.isActive == false, "\(label) must not claim an active upscale")
+            #expect(plan.renderPixelScale == 0.5, "\(label) must still clamp to the display")
+        }
+    }
+
+    /// `.center` presents source pixels 1:1, so shrinking the source shrinks the picture.
+    @Test("Center fit never clamps")
+    func centerFitNeverClamps() {
+        let plan = Self.plan(
+            canvas: CGSize(width: 7680, height: 4320), drawable: Self.uhd, fitMode: .center
+        )
+        #expect(plan.displayFitScale == 1.0)
+        #expect(plan.renderPixelScale == 1.0)
+    }
+
+    /// Cover crops, so the visible part is scaled by the LARGER axis ratio. Clamping on the
+    /// smaller one would under-sample whatever survives the crop.
+    @Test("Cover clamps on the axis that fills the drawable")
+    func coverClampsOnTheFillingAxis() {
+        // 16:9 canvas on a 16:10 drawable: height fills, width overflows and is cropped.
+        let canvas = CGSize(width: 7680, height: 4320)
+        let drawable = CGSize(width: 3840, height: 2400)
+        let cover = Self.plan(canvas: canvas, drawable: drawable, fitMode: .cover, renderScale: 1.0)
+        #expect(cover.displayFitScale == 2400.0 / 4320.0)
+        // Contain letterboxes instead, so the smaller ratio is the honest one there.
+        let contain = Self.plan(canvas: canvas, drawable: drawable, fitMode: .contain, renderScale: 1.0)
+        #expect(contain.displayFitScale == 3840.0 / 7680.0)
+    }
+
+    /// A present-time MetalFX decline gives up UPSCALING. It must not restore the
+    /// over-render: the display clamp had nothing to do with the scaler.
+    @Test("A present-time decline falls back to the display clamp, not to native")
+    func declineFallsBackToDisplayFit() {
+        let eightK = CGSize(width: 7680, height: 4320)
+        let declined = Self.plan(canvas: eightK, drawable: Self.uhd).demotedToNative()
+        #expect(declined.verdict == .declinedAtPresent)
+        #expect(declined.renderPixelScale == 0.5)
+    }
+
+    /// A canvas at or below the drawable must come out bit-identical to the pre-clamp path.
+    @Test("A canvas within the display is untouched")
+    func canvasWithinDisplayIsUntouched() {
+        for canvas in [Self.hd, Self.uhd, CGSize(width: 640, height: 360)] {
+            let plan = Self.plan(canvas: canvas, drawable: Self.uhd, renderScale: 1.0)
+            #expect(plan.displayFitScale == 1.0)
+            #expect(plan.renderPixelScale == 1.0)
+            #expect(plan.maxSourceTextureEdge == nil)
+        }
+    }
+
     @Test("A coprime drawable cannot scale under cover, but still can under stretch")
     func coprimeDrawableAspect() {
         // 1081 and 1920 are coprime, so no reduced integer size keeps the ratio

@@ -1318,6 +1318,11 @@ public struct WPESceneImageObject: Equatable, Sendable, Identifiable {
     /// authored input; the renderer does not change dispatch policy until the
     /// overlapping-layer order has an L1 oracle.
     public let solid: Bool
+    /// Authored `objects[].perspective`. In an otherwise orthographic scene this object is
+    /// projected through the scene's perspective camera instead of the ortho canvas matrix
+    /// — RenderDoc 3437487219 ordinals 5/8 (the Earth and cloud models) carry a perspective
+    /// `g_ViewProjectionMatrix` while every image layer in the same frame is orthographic.
+    public let usesPerspectiveProjection: Bool
     /// Whether utility composition layers should seed their pass chain from the current scene.
     public let copyBackground: Bool
     /// Scene object this layer attaches to (the parent puppet for body-split rigs). `nil` for roots.
@@ -1401,6 +1406,7 @@ public struct WPESceneImageObject: Equatable, Sendable, Identifiable {
         config: WPESceneImageConfig = WPESceneImageConfig(),
         disablePropagation: Bool = false,
         solid: Bool = false,
+        usesPerspectiveProjection: Bool = false,
         copyBackground: Bool = true,
         parentObjectID: String? = nil,
         attachment: String? = nil,
@@ -1442,6 +1448,7 @@ public struct WPESceneImageObject: Equatable, Sendable, Identifiable {
         self.config = config
         self.disablePropagation = disablePropagation
         self.solid = solid
+        self.usesPerspectiveProjection = usesPerspectiveProjection
         self.copyBackground = copyBackground
         self.parentObjectID = parentObjectID
         self.attachment = attachment

@@ -579,9 +579,12 @@ final class WPEMetalSceneRenderer: NSObject {
             pendingForcedRerender = true
             surfaceControl.setNeedsRedraw()
         }
-        guard updated.verdict != .settingOff else { return }
+        // `.settingOff` still gets a line once the display clamp bites — that case is now
+        // a real resolution change, not "feature disabled, nothing happened".
+        guard updated.verdict != .settingOff || updated.renderPixelScale < 1 else { return }
         Logger.notice(
             "[metalfx] plan \(updated.verdict.rawValue) scale=\(updated.renderPixelScale) "
+                + "displayFit=\(updated.displayFitScale) "
                 + "canvas=\(Int(sceneRenderSize.width))x\(Int(sceneRenderSize.height)) "
                 + "drawable=\(Int(drawableSize.width))x\(Int(drawableSize.height)) "
                 + "textureCap=\(updated.maxSourceTextureEdge.map(String.init) ?? "none") "
