@@ -493,10 +493,8 @@ extension WPEMetalRenderExecutor {
         }
     }
 
-    /// Snapshots every composite whose last producer is `passIndex` into a persistent texture,
-    /// redirects `frameState` so this frame already reads the snapshot (identical pixels), and
-    /// — once all of the plan's targets are captured — commits them to the cache as one layer
-    /// entry. If the layer's total exceeds the budget, partial snapshots are discarded and the layer keeps re-rendering (slower, never wrong).
+    /// Reserve all planned destinations before the first snapshot allocation.
+    /// Results remain pending until their command buffer completes successfully.
     func captureStaticLayerSnapshots(
         at passIndex: Int,
         plan: WPEMetalStaticLayerCachePlan,
@@ -506,49 +504,61 @@ extension WPEMetalRenderExecutor {
         snapshots: inout [String: MTLTexture],
         bytes: inout Int
     ) {
+        var keys: [String: WPEMetalRenderTargetKey] = [:]
+        var targetBytes: [String: Int] = [:]
+        for (name, target) in plan.targetTypes {
+            let key = targetPool.diagnosticKey(
+                for: target, layer: layer, sceneSize: frameState.sceneSize, declaredFBOs: [:]
+            )
+            // Match persistentTexture's descriptor, including Metal's alignment
+            // estimate rather than treating tightly packed pixels as allocation size.
+            guard key.width <= 16_384, key.height <= 16_384 else { return }
+            let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+                pixelFormat: key.pixelFormat, width: key.width, height: key.height, mipmapped: false
+            )
+            descriptor.usage = [.shaderRead]
+            descriptor.storageMode = .private
+            keys[name] = key
+            targetBytes[name] = device.heapTextureSizeAndAlign(descriptor: descriptor).size
+        }
+        guard staticLayerCompositeCache.reserve(
+            layerID: layer.objectID, targetBytes: targetBytes, commandBuffer: commandBuffer
+        ) else { return }
+
         for (targetName, producerIndex) in plan.cachedTargets where producerIndex == passIndex {
             guard snapshots[targetName] == nil,
-                  let source = frameState.latestNamedTextures[targetName] else { continue }
+                  let source = frameState.latestNamedTextures[targetName],
+                  let key = keys[targetName],
+                  source.width == key.width, source.height == key.height,
+                  source.pixelFormat == key.pixelFormat else {
+                staticLayerCompositeCache.abandon(layerID: layer.objectID, commandBuffer: commandBuffer)
+                return
+            }
             do {
                 let cached = try targetPool.persistentTexture(
                     matching: source,
                     label: "WPE static layer cache \(layer.objectID) \(targetName)"
                 )
+                guard staticLayerCompositeCache.recordSnapshot(
+                    cached, target: targetName, layerID: layer.objectID, commandBuffer: commandBuffer
+                ) else {
+                    staticLayerCompositeCache.abandon(layerID: layer.objectID, commandBuffer: commandBuffer)
+                    return
+                }
                 try copyTexture(source, to: cached, commandBuffer: commandBuffer,
                                 traceLabel: "static-cache")
                 frameState.seedPreviousTexture(cached, targetID: .named(targetName))
                 frameState.markInitialized(cached)
                 snapshots[targetName] = cached
-                bytes += WPEMetalTextureByteEstimator.estimatedBytes(of: source)
+                bytes += cached.allocatedSize
             } catch {
+                staticLayerCompositeCache.abandon(layerID: layer.objectID, commandBuffer: commandBuffer)
                 Logger.warning(
                     "[WPE.static-layer-cache] snapshot failed layer=\(layer.objectID) target=\(targetName): \(error)",
                     category: .wpeRender
                 )
+                return
             }
-        }
-
-        // Commit only once every planned target is captured this frame.
-        guard snapshots.count == plan.cachedTargets.count else { return }
-        guard staticLayerCompositeCache.canAdmit(bytes: bytes) else {
-            Logger.info(
-                "[WPE.static-layer-cache] skip cache layer=\(layer.objectID) bytes=\(bytes) over budget",
-                category: .wpeRender
-            )
-            return
-        }
-        let evicted = staticLayerCompositeCache.insert(
-            layerID: layer.objectID,
-            texturesByTarget: snapshots,
-            bytes: bytes
-        )
-        Logger.info(
-            "[WPE.static-layer-cache] cached layer=\(layer.objectID) targets=\(snapshots.count) passes=\(plan.compositePassCount) bytes=\(bytes)",
-            category: .wpeRender
-        )
-        for layerID in evicted where layerID != layer.objectID {
-            loggedStaticLayerCacheHits.remove(layerID)
-            Logger.info("[WPE.static-layer-cache] evicted layer=\(layerID)", category: .wpeRender)
         }
     }
 

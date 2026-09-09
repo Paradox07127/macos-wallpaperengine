@@ -15,15 +15,127 @@ struct WPEMetalInitialSceneClearStats: Equatable {
     var rejectReason: String?
 }
 
-/// One frame's consecutive solid scene draws. Only the owner closes borrowed encoders.
+/// Frame-local accounting for the opt-in extension to independent textured quads.
+struct WPEMetalSceneQuadBatchStats {
+    var encoders = 0
+    var draws = 0
+    var texturedDraws = 0
+    var rejectedPasses: [String: Int] = [:]
+    /// Compatibility for the oracle schema; counts are pass decisions, not unique layers.
+    var rejectedLayers: [String: Int] { rejectedPasses }
+}
+
+/// One frame's consecutive scene quads. The original solid-only policy remains
+/// the default; independent copy/image draws are a separately gated extension.
+/// Only the owner closes borrowed encoders.
 final class WPEMetalSolidSceneRun {
     var encoder: MTLRenderCommandEncoder?
+    var destinationTexture: MTLTexture?
     var encoderCount = 0
     var drawCount = 0
+    var texturedDrawCount = 0
+    private var deferredAliasPassIndices: [Int] = []
+    private let releaseAliasPass: (Int) -> Void
+
+    init(releaseAliasPass: @escaping (Int) -> Void = { _ in }) {
+        self.releaseAliasPass = releaseAliasPass
+    }
+
+    /// A sampled FBO stays leased until the entire encoder has finished encoding.
+    /// No later allocation may reuse its heap interval while this run is open.
+    func deferEndPass(_ index: Int) {
+        deferredAliasPassIndices.append(index)
+    }
 
     func end() {
         encoder?.endEncoding()
         encoder = nil
+        destinationTexture = nil
+        for index in deferredAliasPassIndices { releaseAliasPass(index) }
+        deferredAliasPassIndices.removeAll(keepingCapacity: true)
+    }
+
+    /// This is admission to a shared attachment, never an identity-copy proof.
+    /// Ordinary single-pass image layers may continue a run. A layer's final
+    /// copy may start one from a named FBO written this frame; end-pass leases
+    /// then remain deferred until the shared encoder closes.
+    static func texturedRejectionReason(
+        _ layer: WPEPreparedRenderLayer, textures: [String: MTLTexture],
+        output: MTLTexture, hasMediaSubstitution: Bool,
+        finalCopyPass: WPEPreparedRenderPass? = nil, frameState: WPEMetalFrameState? = nil
+    ) -> String? {
+        let graph = layer.graphLayer
+        guard graph.visible else { return "hidden" }
+        guard layer.puppetModel == nil, graph.puppetPath == nil, graph.attachment == nil,
+              graph.groupRenderTarget == nil, graph.groupCompositeSource == nil,
+              graph.groupLocalGeometry == nil,
+              (graph.imagePath as NSString).pathExtension.lowercased() != "mdl",
+              !WPETextLayerSynthesis.isTargetPath(graph.imagePath) else { return "special-layer" }
+        let pass: WPEPreparedRenderPass
+        if let finalCopyPass {
+            guard layer.passes.last?.id == finalCopyPass.id,
+                  WPEBuiltinShaderKind(normalizing: finalCopyPass.pass.shader) == .copy else {
+                return "not-final-copy"
+            }
+            pass = finalCopyPass
+        } else {
+            guard layer.passes.count == 1, let onlyPass = layer.passes.first else { return "multi-pass" }
+            pass = onlyPass
+        }
+        guard pass.shader?.isBuiltin == true,
+              let kind = WPEBuiltinShaderKind(normalizing: pass.pass.shader),
+              kind == .copy || kind == .genericImage2 || kind == .genericImage4 else { return "shader" }
+        switch pass.pass.phase {
+        case .material: break
+        case .command(let file) where kind == .copy && file == WPERenderPassPhase.sceneCopyCommandFile: break
+        default: return "phase"
+        }
+        guard pass.pass.target == .scene, pass.pass.visibilityGate == nil else { return "target-or-gate" }
+        guard pass.pass.depthTest.lowercased() == "disabled",
+              pass.pass.depthWrite.lowercased() == "disabled" else { return "depth" }
+        guard !hasMediaSubstitution else { return "media-substitution" }
+        guard output.sampleCount == 1 else { return "multisample" }
+        func rejection(_ reference: WPETextureReference) -> String? {
+            switch reference {
+            case .previous: return "target-dependency"
+            case .fbo(let name):
+                guard finalCopyPass != nil, !WPETextureReference.isSceneAliasName(name) else {
+                    return "target-dependency"
+                }
+                // latestNamedTextures alone may refer to a previous frame or a
+                // cache seed. Only an explicit write in this frame proves provenance.
+                guard let frameState, frameState.writtenTargets.contains(.named(name)),
+                      let texture = frameState.latestNamedTextures[name],
+                      frameState.hasInitialized(texture) else { return "fbo-not-written-this-frame" }
+                return samplesAttachment(texture, output: output) ? "attachment-alias" : nil
+            case .image(let path), .asset(let path):
+                guard let texture = textures[path] else { return "unresolved-texture" }
+                return samplesAttachment(texture, output: output) ? "attachment-alias" : nil
+            }
+        }
+        return rejection(pass.pass.source)
+            ?? pass.textureBindings.values.lazy.compactMap(rejection).first
+            ?? pass.pass.textures.values.lazy.compactMap(rejection).first
+            ?? pass.pass.binds.values.lazy.compactMap(rejection).first
+    }
+
+    /// Views share their parent's allocation. Heap/buffer identity is deliberately
+    /// conservative: distinct texture objects may still occupy overlapping bytes.
+    static func samplesAttachment(_ texture: MTLTexture, output: MTLTexture) -> Bool {
+        func root(_ texture: MTLTexture) -> MTLTexture {
+            var result = texture
+            while let parent = result.parent { result = parent }
+            return result
+        }
+        let source = root(texture), destination = root(output)
+        if source === destination { return true }
+        if let heap = source.heap, let destinationHeap = destination.heap,
+           heap === destinationHeap { return true }
+        if let buffer = source.buffer, let destinationBuffer = destination.buffer,
+           buffer === destinationBuffer { return true }
+        if let surface = source.iosurface, let destinationSurface = destination.iosurface,
+           surface === destinationSurface { return true }
+        return false
     }
 
     static func accepts(_ layer: WPEPreparedRenderLayer) -> Bool {
