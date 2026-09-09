@@ -1404,14 +1404,46 @@ struct WPEShaderTranspilerTests {
         _ = try device.makeLibrary(source: result.mslSource, options: opts)
     }
 
-    @Test("Sampler slots above the supported 0–7 range are rejected, not mis-emitted")
-    func rejectsTextureSlotsAboveSupportedRange() throws {
+    /// Slot 8 is stock WPE, not an overflow: `chroma4`, `fur4` and `genericimage4` all
+    /// declare `g_Texture8`. Rejecting it skipped those passes entirely (3437487219's cloud
+    /// layer drew nothing and reported "transpiler supports slots 0–7"). The signature is
+    /// sized to the slots the shader declares, so a sparse layout still binds the top one.
+    @Test("A stock slot-8 sampler is emitted, and the signature is sized to it")
+    func emitsStockSlotEightSampler() throws {
         let source = """
         #version 410 core
         uniform sampler2D g_Texture8;
         in vec2 v_TexCoord;
         void main() {
             gl_FragColor = texture(g_Texture8, v_TexCoord);
+        }
+        """
+        let result = try WPEShaderTranspiler.translateFragment(
+            shaderName: "slot8",
+            preprocessedSource: source
+        )
+        #expect(result.mslSource.contains("auto g_Texture8 = tex8;"))
+        #expect(result.mslSource.contains("texture2d<float> tex8"))
+        // One sampler declared, but nine bindings: the binding side must iterate the
+        // declared arity, not the sampler count.
+        #expect(result.textureSlotCount == 9)
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let opts = MTLCompileOptions()
+        opts.languageVersion = .version3_0
+        _ = try device.makeLibrary(source: result.mslSource, options: opts)
+    }
+
+    /// 16 sampler arguments is a hard Metal limit (measured on Apple M5 Pro: a 17th fails to
+    /// compile with "'sampler' attribute parameter is out of bounds"), so the transpiler
+    /// still has a ceiling — it is just no longer 8.
+    @Test("Sampler slots above the Metal limit are rejected, not mis-emitted")
+    func rejectsTextureSlotsAboveMetalLimit() throws {
+        let source = """
+        #version 410 core
+        uniform sampler2D g_Texture16;
+        in vec2 v_TexCoord;
+        void main() {
+            gl_FragColor = texture(g_Texture16, v_TexCoord);
         }
         """
         #expect(throws: WPEShaderCompilerError.self) {
