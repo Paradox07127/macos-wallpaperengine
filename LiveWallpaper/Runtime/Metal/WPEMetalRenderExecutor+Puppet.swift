@@ -758,11 +758,18 @@ extension WPEMetalRenderExecutor {
             encoder.setFragmentBytes(&uniforms, length: MemoryLayout<WPEGenericImageUniforms>.stride, index: 0)
         }
 
-        // This vertex multiplies by the selected object view-projection matrix;
-        // fullscreen/atlas and hand-built NDC geometry must retain their own winding.
-        encoder.setFrontFacing(frameState.cameraUniforms.frontFacingWinding(objectID: layer.objectID))
         let paletteState = puppetBonePalette(for: skinningState)
         var meshUniforms = sceneModelMeshUniforms(for: layer, frameState: frameState, paletteState: paletteState)
+        // Both overrides are scoped to THIS draw. The vertex above multiplies by the object's
+        // view-projection and its own model matrix, either of which can mirror; every other
+        // path through the outer encoder builds NDC directly and keeps the CCW default it was
+        // given. `normal` likewise only means back-face culling here — the capture behind it
+        // covers mesh passes and nothing else (`sceneModelCullMode`).
+        encoder.setFrontFacing(frameState.cameraUniforms.frontFacingWinding(
+            objectID: layer.objectID,
+            modelMatrix: meshUniforms.modelMatrix
+        ))
+        encoder.setCullMode(WPEMetalPipelineCache.sceneModelCullMode(for: pass.pass.cullMode))
         try bindPuppetBonePalette(paletteState.bonePalette, encoder: encoder)
         encoder.setVertexBytes(
             &meshUniforms,

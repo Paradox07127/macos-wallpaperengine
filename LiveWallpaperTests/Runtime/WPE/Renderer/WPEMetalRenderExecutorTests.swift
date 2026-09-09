@@ -1,9 +1,10 @@
 import CoreGraphics
 import Foundation
+@testable import LiveWallpaper
 import LiveWallpaperProWPE
 import Metal
+import simd
 import Testing
-@testable import LiveWallpaper
 
 @Suite("WPE Metal render executor")
 struct WPEMetalRenderExecutorTests {
@@ -6277,7 +6278,8 @@ struct WPEMetalProjectedGeometryCullingTests {
         let executor = try WPEMetalRenderExecutor(device: device)
         let source = try makeRGBAInputTexture(device: device, bytes: Data(repeating: 255, count: 16))
         let camera = camera()
-        #expect(camera.frontFacingWinding(objectID: "layer") == .clockwise)
+        // The projection WOULD flip winding; the atlas path must ignore that and stay CCW.
+        #expect(camera.projectionFlipsWinding(objectID: "layer"))
         func pipeline(cull: String) -> WPEPreparedRenderPipeline {
             let atlas = "_rt_imageLayerComposite_layer_a"
             return preparedPipeline(localFBOs: [], passes: [
@@ -6302,7 +6304,9 @@ struct WPEMetalProjectedGeometryCullingTests {
         let executor = try WPEMetalRenderExecutor(device: device)
         let source = try makeRGBAInputTexture(device: device, bytes: Data(repeating: 255, count: 16))
         let camera = camera(perspective: perspective)
-        #expect(camera.frontFacingWinding(objectID: "winding") == (perspective ? MTLWinding.counterClockwise : .clockwise))
+        // The mesh path's own accessor, with the identity model transform this fixture uses.
+        #expect(camera.frontFacingWinding(objectID: "winding", modelMatrix: matrix_identity_float4x4)
+            == (perspective ? MTLWinding.counterClockwise : .clockwise))
         let model = WPEPuppetModel(version: 23, meshes: [WPEPuppetMesh(
             materialPath: "white",
             vertices: [

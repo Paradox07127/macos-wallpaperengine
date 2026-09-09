@@ -25,6 +25,35 @@ struct WPEDisplayHDROutputTests {
         #expect(WPEDisplayHDROutput.drawablePixelFormat(hdrOutputEnabled: true) == .rgba16Float)
     }
 
+    /// The upscale plan must ask the DRAWABLE whether output is HDR, not the defaults key.
+    /// The two can disagree: the surface refuses HDR output when no attached screen can show
+    /// EDR, and a plan that still believed the key would call an HDR scene float-to-float,
+    /// render it small for MetalFX, then have the scaler refuse the 8-bit drawable at present
+    /// and demote the scene to native for the rest of its life.
+    @Test("HDR output is read back from the drawable format, not from the defaults key")
+    func hdrOutputIsReadFromTheDrawable() {
+        #expect(WPEDisplayHDROutput.isHDROutput(drawablePixelFormat: .rgba16Float))
+        #expect(WPEDisplayHDROutput.isHDROutput(drawablePixelFormat: .rgba8Unorm_srgb) == false)
+        #expect(WPEDisplayHDROutput.isHDROutput(drawablePixelFormat: .bgra8Unorm) == false)
+        // Round-trips with the formatter the surface actually builds the drawable from.
+        for enabled in [true, false] {
+            #expect(WPEDisplayHDROutput.isHDROutput(
+                drawablePixelFormat: WPEDisplayHDROutput.drawablePixelFormat(hdrOutputEnabled: enabled)
+            ) == enabled)
+        }
+    }
+
+    /// The defaults key alone is not enough to widen the drawable: an all-SDR setup pays the
+    /// wider drawable for output it cannot show. WPE gates its own "Ultra (Display HDR)"
+    /// option the same way.
+    @Test("The drawable request needs both the setting and a capable screen")
+    func requestNeedsSettingAndCapableScreen() {
+        #expect(WPEDisplayHDROutput.shouldRequestHDROutput(settingEnabled: true, hasCapableScreen: true))
+        #expect(WPEDisplayHDROutput.shouldRequestHDROutput(settingEnabled: true, hasCapableScreen: false) == false)
+        #expect(WPEDisplayHDROutput.shouldRequestHDROutput(settingEnabled: false, hasCapableScreen: true) == false)
+        #expect(WPEDisplayHDROutput.shouldRequestHDROutput(settingEnabled: false, hasCapableScreen: false) == false)
+    }
+
     @Test("off leaves the layer's colorspace and EDR request untouched")
     func offLeavesLayerAlone() {
         let layer = CAMetalLayer()

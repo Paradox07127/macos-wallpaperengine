@@ -3,6 +3,7 @@ import Foundation
 @testable import LiveWallpaper
 import LiveWallpaperProWPE
 import Metal
+import simd
 import Testing
 
 /// WPE's perspective camera inside an otherwise orthographic scene.
@@ -183,31 +184,80 @@ struct WPEObjectPerspectiveProjectionTests {
 
     // MARK: - Raster state
 
-    /// Both from RenderDoc on 3437487219: the two model passes declare `cullmode: "normal"`
-    /// and rasterize `cullMode: back`; every image layer in the same frame declares
+    /// From RenderDoc on 3437487219: the two model passes declare `cullmode: "normal"` and
+    /// rasterize `cullMode: back`; every image layer in the same frame declares
     /// `cullmode: "nocull"` and rasterizes `cullMode: none`.
-    @Test("cullmode normal is back-face culling, nocull is none")
+    ///
+    /// That evidence covers the SCENE-MODEL MESH path and nothing else, so the `normal`
+    /// mapping lives in a separate accessor used only there. Applying it library-wide put
+    /// back-face culling on paths with no capture behind them — measured on this machine's
+    /// 58-scene library, 37 material passes declare `normal` and 16 of them are 2D image
+    /// shaders (`genericimage4`/`genericimage2`) plus 2 particle shaders, all of which build
+    /// their own NDC and can carry a mirrored (`scale.x < 0`) transform that inverts winding.
+    @Test("cullmode normal culls only on the scene-model mesh path")
     func cullModeMapping() {
-        #expect(WPEMetalPipelineCache.cullMode(for: "normal") == .back)
-        #expect(WPEMetalPipelineCache.cullMode(for: "back") == .back)
-        #expect(WPEMetalPipelineCache.cullMode(for: "nocull") == MTLCullMode.none)
-        #expect(WPEMetalPipelineCache.cullMode(for: "disabled") == MTLCullMode.none)
-        #expect(WPEMetalPipelineCache.cullMode(for: "front") == .front)
+        #expect(WPEMetalPipelineCache.sceneModelCullMode(for: "normal") == .back)
+        #expect(WPEMetalPipelineCache.cullMode(for: "normal") == MTLCullMode.none)
+        // An explicitly authored side is honoured on every path either way.
+        for mapping in [WPEMetalPipelineCache.cullMode, WPEMetalPipelineCache.sceneModelCullMode] {
+            #expect(mapping("back") == .back)
+            #expect(mapping("front") == .front)
+            #expect(mapping("nocull") == MTLCullMode.none)
+            #expect(mapping("disabled") == MTLCullMode.none)
+        }
     }
 
     /// The ortho canvas matrix negates Y and the perspective camera does not, so the same
-    /// mesh presents opposite windings under the two. Culling only became observable when
-    /// `cullmode: "normal"` stopped mapping to `.none`.
+    /// mesh presents opposite windings under the two.
     @Test("Front-facing winding follows the projection's handedness")
     func windingFollowsProjection() {
-        let uniforms = WPEMetalCameraUniforms(
+        let uniforms = Self.orthoSceneWithPerspectiveObject
+        #expect(uniforms.projectionFlipsWinding(objectID: "112") == false)
+        #expect(uniforms.projectionFlipsWinding(objectID: "191"))
+    }
+
+    /// A mirrored model transform inverts winding just as a Y-negating projection does, and
+    /// the two compose. Without the model term a `scale.x = -1` object under `cullmode:
+    /// "normal"` has every front face culled and renders as nothing.
+    @Test("Front-facing winding also follows the model transform's handedness")
+    func windingFollowsModelTransform() {
+        let uniforms = Self.orthoSceneWithPerspectiveObject
+        let identity = matrix_identity_float4x4
+        var mirroredX = matrix_identity_float4x4
+        mirroredX.columns.0.x = -1
+        // Two mirrored axes are a rotation: the winding must come back.
+        var mirroredXY = mirroredX
+        mirroredXY.columns.1.y = -1
+
+        // Perspective object: projection preserves winding, so the model decides.
+        #expect(uniforms.frontFacingWinding(objectID: "112", modelMatrix: identity) == .counterClockwise)
+        #expect(uniforms.frontFacingWinding(objectID: "112", modelMatrix: mirroredX) == .clockwise)
+        #expect(uniforms.frontFacingWinding(objectID: "112", modelMatrix: mirroredXY) == .counterClockwise)
+
+        // Ortho object: projection already flips, so a mirrored model flips it back.
+        #expect(uniforms.frontFacingWinding(objectID: "191", modelMatrix: identity) == .clockwise)
+        #expect(uniforms.frontFacingWinding(objectID: "191", modelMatrix: mirroredX) == .counterClockwise)
+        #expect(uniforms.frontFacingWinding(objectID: "191", modelMatrix: mirroredXY) == .clockwise)
+    }
+
+    /// A uniform negative scale on all three axes is also an odd number of mirrors.
+    @Test("A fully inverted model transform still flips winding")
+    func fullyInvertedModelTransform() {
+        let uniforms = Self.orthoSceneWithPerspectiveObject
+        var inverted = matrix_identity_float4x4
+        inverted.columns.0.x = -1
+        inverted.columns.1.y = -1
+        inverted.columns.2.z = -1
+        #expect(uniforms.frontFacingWinding(objectID: "112", modelMatrix: inverted) == .clockwise)
+    }
+
+    private static var orthoSceneWithPerspectiveObject: WPEMetalCameraUniforms {
+        WPEMetalCameraUniforms(
             orthogonalProjection: WPESceneOrthogonalProjection(width: 7680, height: 4320, auto: false),
             sceneCamera: .defaultCamera,
             perspectiveOverrideFOVDegrees: 21,
             perspectiveObjectIDs: ["112"]
         )
-        #expect(uniforms.frontFacingWinding(objectID: "112") == .counterClockwise)
-        #expect(uniforms.frontFacingWinding(objectID: "191") == .clockwise)
     }
 
     // MARK: - Parsing

@@ -560,7 +560,14 @@ final class WPEMetalSceneRenderer: NSObject {
             drawableSize: drawableSize,
             fitMode: presentFitMode,
             isHDR: cameraUniforms.sceneHDR,
-            hdrOutputEnabled: WPEDisplayHDROutput.isEnabled,
+            // The drawable itself, not the defaults key: the surface refuses HDR output when
+            // no attached screen can show EDR, and the plan has to agree with the drawable it
+            // will present to. `pixelFormat` is written once at surface construction and never
+            // mutated afterwards, which is the same contract that lets this actor call
+            // `nextDrawable()` off the main thread.
+            hdrOutputEnabled: WPEDisplayHDROutput.isHDROutput(
+                drawablePixelFormat: metalLayer.layer.pixelFormat
+            ),
             renderScale: WPEMetalFXSpatialUpscaler.renderScale,
             deviceSupportsScaler: WPEMetalFXSpatialUpscaler.deviceSupportsSpatialScaler
         )
