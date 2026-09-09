@@ -20987,6 +20987,42 @@
         }
       }
     },
+    "Download size: %@" : {
+      "comment" : "Workshop detail size tooltip and VoiceOver label. Placeholder is a formatted file size such as 168 MB.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Download size: %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tamaño de la descarga: %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ダウンロードサイズ: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下载大小：%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下載大小：%@"
+          }
+        }
+      }
+    },
     "Download subscribed wallpapers missing from this Mac" : {
       "comment" : "Workshop toolbar button help for opening the subscription sync sheet.",
       "extractionState" : "manual",

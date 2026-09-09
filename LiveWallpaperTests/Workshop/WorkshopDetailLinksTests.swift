@@ -40,6 +40,7 @@ struct WorkshopDetailCopyTests {
         "%@ ratings",
         "No ratings yet",
         "Rating unavailable",
+        "Download size: %@",
         "%@ up, %@ down",
         "%@ comments",
         "Comments",
@@ -67,11 +68,11 @@ struct WorkshopDetailCopyTests {
     /// an item nobody has rated.
     @Test("A missing rating reads as unavailable, zero votes as none")
     func ratingCountLabel() {
-        #expect(WorkshopInspectorContent.ratingCountLabel(nil) == .unavailable)
-        #expect(WorkshopInspectorContent.ratingCountLabel(.stars(4, totalVotes: 0)) == .none)
-        #expect(WorkshopInspectorContent.ratingCountLabel(.score(0, votesUp: 0, votesDown: 0)) == .none)
-        #expect(WorkshopInspectorContent.ratingCountLabel(.stars(4, totalVotes: 7)) == .count(7))
-        #expect(WorkshopInspectorContent.ratingCountLabel(.score(0.9, votesUp: 9, votesDown: 1)) == .count(10))
+        #expect(WorkshopDetailIdentityHeader.ratingCountLabel(nil) == .unavailable)
+        #expect(WorkshopDetailIdentityHeader.ratingCountLabel(.stars(4, totalVotes: 0)) == .none)
+        #expect(WorkshopDetailIdentityHeader.ratingCountLabel(.score(0, votesUp: 0, votesDown: 0)) == .none)
+        #expect(WorkshopDetailIdentityHeader.ratingCountLabel(.stars(4, totalVotes: 7)) == .count(7))
+        #expect(WorkshopDetailIdentityHeader.ratingCountLabel(.score(0.9, votesUp: 9, votesDown: 1)) == .count(10))
     }
 }
 #endif
