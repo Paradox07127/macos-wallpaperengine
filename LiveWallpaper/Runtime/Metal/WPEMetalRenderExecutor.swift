@@ -190,6 +190,9 @@ final class WPEMetalRenderExecutor {
     /// Test seam: cache hit vs silent per-frame recompile.
     var uniformPlanCompileCount = 0
 
+    /// Internal A/B seam for byte comparisons and same-binary Release packing benchmarks.
+    var derivedUniformPackingEnabled = true
+
     func invalidateUniformPlans() {
         uniformPlansByPassID.removeAll()
         uniformPlanCompileCount = 0
@@ -714,15 +717,14 @@ final class WPEMetalRenderExecutor {
     /// head-resolution-derived globals to every pass of the chain.
     private(set) var currentScenePixelSize: CGSize = .zero
 
-    #if DEBUG
-    /// Test-only seam. `g_TexelSize` is derived from this rather than from any
+    /// Internal test seam, also available to same-binary Release microbenchmarks.
+    /// `g_TexelSize` is derived from this rather than from any
     /// dictionary, so without a way to set it a characterization test can only
     /// chain the helpers and would stay green if `resolvedUniformValue` started
     /// reading world size instead — which is exactly what two reviewers caught.
     func setCurrentScenePixelSizeForTesting(_ size: CGSize) {
         currentScenePixelSize = size
     }
-    #endif
 
     // Object IDs that parent at least one child which paints FLAT INTO THE SCENE.
     // Such a `composelayer` is a layer group (transform/opacity container), not a
@@ -3398,7 +3400,14 @@ final class WPEMetalRenderExecutor {
     ) {
         let plans = uniformPlans(for: pass, layout: layout)
         let frame = frameUniformContext
+        let useDirectPacking = derivedUniformPackingEnabled
         for (index, u) in layout.enumerated() {
+            if useDirectPacking,
+               let packing = plans[index].directPacking,
+               let vector = directUniformVector(packing, texturesBySlot: texturesBySlot) {
+                slots[u.slot] = vector
+                continue
+            }
             let value = resolvedUniformValue(
                 plan: plans[index],
                 pass: pass,

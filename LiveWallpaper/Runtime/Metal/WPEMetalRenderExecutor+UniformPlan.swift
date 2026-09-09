@@ -19,7 +19,18 @@ extension WPEMetalRenderExecutor {
         case passConstant(String)
     }
 
+    /// Canonical single-slot declarations whose derived values can bypass temporary arrays.
+    enum DirectUniformPacking: Equatable {
+        case texelSize
+        case texelSizeHalf
+        case screen
+        case textureResolution(Int)
+        case textureRotation(Int)
+        case textureTranslation(Int)
+    }
+
     struct UniformResolutionPlan {
+        let directPacking: DirectUniformPacking?
         /// `g_TexelSize` is scene-level; falls through when scene size is degenerate.
         let isTexelSize: Bool
         /// Official half-pixel reciprocal, derived from the same render-pixel
@@ -132,6 +143,7 @@ extension WPEMetalRenderExecutor {
         }
 
         return UniformResolutionPlan(
+            directPacking: Self.directUniformPacking(for: uniform),
             isTexelSize: uniform.name == Self.texelSizeUniformName,
             isTexelSizeHalf: uniform.name == Self.texelSizeHalfUniformName,
             isScreen: uniform.name == Self.screenUniformName,
@@ -141,6 +153,77 @@ extension WPEMetalRenderExecutor {
             steps: steps,
             defaultValue: uniform.defaultValue
         )
+    }
+
+    private static func directUniformPacking(for uniform: WPEUniformSlot) -> DirectUniformPacking? {
+        guard uniform.arrayLength == nil, uniform.slotCount == 1 else { return nil }
+        switch uniform.glslType {
+        case "vec2":
+            if uniform.name == texelSizeUniformName {
+                return .texelSize
+            }
+            if uniform.name == texelSizeHalfUniformName {
+                return .texelSizeHalf
+            }
+            if let slot = textureTranslationSlotIndex(for: uniform.name) {
+                return .textureTranslation(slot)
+            }
+        case "vec3":
+            if uniform.name == screenUniformName {
+                return .screen
+            }
+        case "vec4":
+            if let slot = textureResolutionSlotIndex(for: uniform.name) {
+                return .textureResolution(slot)
+            }
+            if let slot = textureRotationSlotIndex(for: uniform.name) {
+                return .textureRotation(slot)
+            }
+        default:
+            break
+        }
+        return nil
+    }
+
+    /// Preserve the legacy Double calculation/conversion and missing-source fallthrough.
+    /// Texture metadata is the same draw-local snapshot used by the ordinary resolver.
+    func directUniformVector(
+        _ packing: DirectUniformPacking,
+        texturesBySlot: WPEMetalTextureSlotTable?
+    ) -> SIMD4<Float>? {
+        switch packing {
+        case .texelSize, .texelSizeHalf, .screen:
+            let width = Double(currentScenePixelSize.width)
+            let height = Double(currentScenePixelSize.height)
+            guard width > 0, height > 0 else { return nil }
+            switch packing {
+            case .texelSize:
+                return SIMD4<Float>(Float(1 / width), Float(1 / height), 0, 0)
+            case .texelSizeHalf:
+                return SIMD4<Float>(Float(0.5 / width), Float(0.5 / height), 0, 0)
+            default:
+                return SIMD4<Float>(Float(width), Float(height), Float(width / height), 0)
+            }
+        case let .textureResolution(slot):
+            guard let texture = texturesBySlot?[slot] else { return nil }
+            let resolution = texturesBySlot?.resolution(at: slot)
+                ?? WPEMetalTextureMetadataRegistry.shared.resolution(for: texture)
+            return SIMD4<Float>(
+                Float(Double(resolution.textureWidth)), Float(Double(resolution.textureHeight)),
+                Float(Double(resolution.imageWidth)), Float(Double(resolution.imageHeight))
+            )
+        case let .textureRotation(slot):
+            guard let descriptor = texturesBySlot?.samplingDescriptor(at: slot) else { return nil }
+            return SIMD4<Float>(
+                Float(Double(descriptor.rotation.x)), Float(Double(descriptor.rotation.y)),
+                Float(Double(descriptor.rotation.z)), Float(Double(descriptor.rotation.w))
+            )
+        case let .textureTranslation(slot):
+            guard let descriptor = texturesBySlot?.samplingDescriptor(at: slot) else { return nil }
+            return SIMD4<Float>(
+                Float(Double(descriptor.translation.x)), Float(Double(descriptor.translation.y)), 0, 0
+            )
+        }
     }
 
     func resolvedUniformValue(
