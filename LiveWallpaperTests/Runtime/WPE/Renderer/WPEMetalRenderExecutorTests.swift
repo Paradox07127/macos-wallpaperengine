@@ -19,7 +19,8 @@ struct WPEMetalRenderExecutorTests {
             fragmentFunctionName: "cached_fragment",
             mslSource: "// cached",
             uniformLayout: [],
-            samplerNames: []
+            samplerNames: [],
+            textureSlotCount: 0
         )
         executor.seedTranslatedShaderCache([
             (key: cachedRequest.translationCacheKey, result: cachedResult)
@@ -53,7 +54,8 @@ struct WPEMetalRenderExecutorTests {
             fragmentFunctionName: "first_fragment",
             mslSource: "// first",
             uniformLayout: [],
-            samplerNames: []
+            samplerNames: [],
+            textureSlotCount: 0
         )
         let second = WPEShaderCompileResult(
             library: executor.defaultLibrary,
@@ -61,7 +63,8 @@ struct WPEMetalRenderExecutorTests {
             fragmentFunctionName: "second_fragment",
             mslSource: "// second",
             uniformLayout: [],
-            samplerNames: []
+            samplerNames: [],
+            textureSlotCount: 0
         )
         executor.seedCompiledShaderResultsByPassID([
             (passID: "layer0.0", result: first)

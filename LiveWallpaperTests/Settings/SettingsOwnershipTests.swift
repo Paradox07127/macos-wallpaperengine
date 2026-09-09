@@ -19,7 +19,9 @@ struct GeneralSettingsOwnershipCharacterizationTests {
         // approved 2026-09-01 when the five library grids stopped hard-coding it).
         // 44 = 43 + pendingDestructive (diagnostics domain, approved 2026-09-03 when
         // Advanced gained the Reset All Settings confirmation).
-        #expect(actual.count == 44, "Changing the root state surface requires explicitly re-approving the UI-08 lock")
+        // 45 = 44 + displayHDROutputEnabled (performance domain, approved 2026-09-09 when
+        // Performance gained the HDR output switch for scene wallpapers).
+        #expect(actual.count == 45, "Changing the root state surface requires explicitly re-approving the UI-08 lock")
     }
 
     @Test("Each page mounts only its own system-capability probe")

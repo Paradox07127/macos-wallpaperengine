@@ -21,9 +21,43 @@ struct WPESceneModelMaterialShaderTests {
         #expect(WPEMetalRenderExecutor.sceneModelMaterialShader(for: "genericimage2") == .genericImage2)
         #expect(WPEMetalRenderExecutor.sceneModelMaterialShader(for: "genericimage3") == .genericImage2)
         #expect(WPEMetalRenderExecutor.sceneModelMaterialShader(for: "genericimage4") == .genericImage4)
+        // chroma4: same failure, third occurrence. 3437487219's cloud layer
+        // (`materials/models/Cloud_Cover/DefaultMaterial.json` → "shader": "chroma4")
+        // fell through to the transpiler, whose MSL then failed to compile at all, so
+        // the pass was skipped and the target kept its cleared contents — flat green.
+        #expect(WPEMetalRenderExecutor.sceneModelMaterialShader(for: "chroma4") == .chroma4)
         // Control: a workshop shader has no mesh fragment, so it must NOT claim
         // the mesh path — it still belongs to the transpiled dispatcher.
         #expect(WPEMetalRenderExecutor.sceneModelMaterialShader(for: "workshop/2652493753/tint") == nil)
+    }
+
+    /// This failure has now happened three times (generic2, then chroma4 twice over —
+    /// once as a slot-limit rejection and once as a compile failure), always silently.
+    /// The transpiled path CANNOT render a model shader even when it compiles: its
+    /// vertex function is hard-coded to `wpe_fullscreen_vertex`, which supplies only
+    /// `v_TexCoord`, while these shaders read v_WorldPos / v_WorldNormal / v_Tangent /
+    /// v_Bitangent / v_ViewDir / v_ScreenPos. Anything WPE ships as a model material
+    /// must therefore be claimed here, not left to fall through.
+    @Test("Every model material shader WPE bundles is claimed by the mesh encoder")
+    func bundledModelShadersAreClaimed() {
+        // Model materials in WPE's own assets/shaders that a `.mdl` can reference.
+        // fur4/foliage4 are listed as KNOWN GAPS below, not asserted here.
+        for name in ["generic2", "generic4", "genericimage2", "genericimage3", "genericimage4", "chroma4"] {
+            #expect(
+                WPEMetalRenderExecutor.sceneModelMaterialShader(for: name) != nil,
+                "\(name) must reach the mesh encoder; falling through renders it wrong or not at all"
+            )
+        }
+    }
+
+    /// Known gaps, asserted so the list stays honest rather than drifting: these are
+    /// WPE model shaders we have NOT ported. They still fall through to the transpiler
+    /// and will render wrong. No local corpus scene uses them, so they are untested
+    /// rather than working — flip these to `!= nil` when a fragment is written.
+    @Test("Unported model shaders are still unclaimed")
+    func unportedModelShadersRemainGaps() {
+        #expect(WPEMetalRenderExecutor.sceneModelMaterialShader(for: "fur4") == nil)
+        #expect(WPEMetalRenderExecutor.sceneModelMaterialShader(for: "foliage4") == nil)
     }
 
     /// `generic2` is a MODEL shader (g_TintColor/g_TintAlpha/g_Brightness material

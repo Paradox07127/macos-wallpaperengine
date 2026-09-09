@@ -336,6 +336,14 @@ struct WPESceneModelGenericUniforms {
     var reflection: SIMD4<Float>
     /// xy = render size in pixels, z = width/height (WPE `g_Screen`), w unused.
     var screen: SIMD4<Float>
+    /// chroma4 only, appended so generic2/generic4 keep their layout: rgb =
+    /// `g_TintFront`, w = `g_TintPigmentation`.
+    var chromaTintFront: SIMD4<Float>
+    /// chroma4 only: rgb = `g_TintBack`, w = `g_TintExponent`.
+    var chromaTintBack: SIMD4<Float>
+    /// chroma4 only: xy = the noise texture's pixel size (`g_Texture8Resolution`),
+    /// z = 1 when a noise texture is bound, w unused.
+    var chromaNoise: SIMD4<Float>
 }
 
 /// Layout MUST match `WPEShapeQuadUniforms` in `WPEMetalBuiltins.metal`. Four

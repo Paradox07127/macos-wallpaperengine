@@ -560,6 +560,7 @@ final class WPEMetalSceneRenderer: NSObject {
             drawableSize: drawableSize,
             fitMode: presentFitMode,
             isHDR: cameraUniforms.sceneHDR,
+            hdrOutputEnabled: WPEDisplayHDROutput.isEnabled,
             renderScale: WPEMetalFXSpatialUpscaler.renderScale,
             deviceSupportsScaler: WPEMetalFXSpatialUpscaler.deviceSupportsSpatialScaler
         )

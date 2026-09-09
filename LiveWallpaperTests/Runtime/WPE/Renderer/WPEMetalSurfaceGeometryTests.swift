@@ -95,6 +95,7 @@ struct WPEMetalSurfaceGeometryTests {
             drawableSize: CGSize(width: 3840, height: 2160),
             fitMode: .cover,
             isHDR: false,
+            hdrOutputEnabled: false,
             renderScale: 0.75,
             deviceSupportsScaler: true
         )
@@ -298,6 +299,7 @@ struct WPEMetalSurfaceGeometryTests {
             drawableSize: renderer.surfaceDrawableSize,
             fitMode: renderer.presentFitMode,
             isHDR: false,
+            hdrOutputEnabled: false,
             renderScale: 0.75,
             deviceSupportsScaler: true
         )

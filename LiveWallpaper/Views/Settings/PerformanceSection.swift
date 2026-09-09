@@ -75,6 +75,23 @@ extension GeneralSettingsView {
                 }
             }
 
+            if WPEDisplayHDROutput.hasEDRCapableScreen {
+                SettingRow(
+                    icon: "sun.max",
+                    iconColor: .orange,
+                    title: "HDR output",
+                    info: "Scene wallpapers only. Lets HDR scenes glow brighter than white on HDR displays; changes reload wallpapers."
+                ) {
+                    // Drawable format is fixed when the surface is built; changes require a rebuild.
+                    Toggle("", isOn: $displayHDROutputEnabled)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                        .onChange(of: displayHDROutputEnabled) { _, _ in screenManager.reloadAllScreens() }
+                        .accessibilityLabel(Text("HDR output"))
+                        .accessibilityHint(Text("Scene wallpapers only. HDR scenes can render brighter than white on HDR displays. Changes reload wallpapers."))
+                }
+            }
+
             SettingRow(
                 icon: "cpu",
                 iconColor: .indigo,

@@ -12,7 +12,7 @@ final class WPEMetalTextureSlotTable {
     private var textures: ContiguousArray<MTLTexture?>
     private var samplingDescriptors: ContiguousArray<WPETexSpriteSamplingDescriptor?>
 
-    init(slotCount: Int = WPEShaderTranspiler.customTextureSlotCount) {
+    init(slotCount: Int = WPEShaderTranspiler.customTextureSlotLimit) {
         let count = max(0, slotCount)
         textures = ContiguousArray(repeating: nil, count: count)
         samplingDescriptors = ContiguousArray(repeating: nil, count: count)
