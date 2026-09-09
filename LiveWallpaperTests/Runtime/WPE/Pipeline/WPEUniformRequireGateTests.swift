@@ -1,4 +1,6 @@
 @testable import LiveWallpaper
+import LiveWallpaperProWPE
+import Metal
 import Testing
 
 /// `require` is parsed for DIAGNOSTICS ONLY. It must never gate uniform resolution.
@@ -49,9 +51,9 @@ struct WPEUniformRequireGateTests {
             defaultValue: point.defaultValue,
             requiredCombos: point.requiredCombos
         )
-        // The scene's actual combo: the material constant must be withheld.
+        // Editor authorability is false; runtime binding is tested separately below.
         #expect(!slot.isAuthorable(under: ["DIRECTDRAW": 1]))
-        // The combo the annotation asks for: the constant applies.
+        // Editor authorability is true for the requested combo.
         #expect(slot.isAuthorable(under: ["DIRECTDRAW": 0]))
         // A combo the pass never declares reads as 0, matching how combos default.
         #expect(slot.isAuthorable(under: [:]))
@@ -90,5 +92,78 @@ struct WPEUniformRequireGateTests {
         )
         #expect(slot.isAuthorable(under: ["DIRECTDRAW": 1]))
         #expect(slot.isAuthorable(under: [:]))
+    }
+
+    private func runtimePass(
+        _ values: [String: WPESceneShaderConstantValue]
+    ) -> WPEPreparedRenderPass {
+        let shader = "effects/lightshafts"
+        return WPEPreparedRenderPass(
+            pass: WPERenderPass(
+                id: "require-runtime", phase: .effect(file: "effects/lightshafts/effect.json"),
+                shader: shader, source: .asset("unused"), target: .scene,
+                textures: [:], binds: [:], constants: [:], combos: ["DIRECTDRAW": 1],
+                blending: "premultiplied", cullMode: "nocull",
+                depthTest: "disabled", depthWrite: "disabled"
+            ),
+            shader: WPEShaderProgram(name: shader, vertexSource: "", fragmentSource: "", isBuiltin: false),
+            textureBindings: [:], comboValues: ["DIRECTDRAW": 1], uniformValues: values
+        )
+    }
+
+    @Test("Unmet editor require keeps live authored values in runtime packing", arguments: [false, true])
+    func unmetRequireDoesNotGateRuntimeValue(directPacking: Bool) throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        executor.derivedUniformPackingEnabled = directPacking
+        let declaration = try #require(WPEUniformDecl.parse(line: Self.pointDeclaration))
+        let slot = WPEUniformSlot(
+            name: declaration.name, glslType: declaration.type, slot: 0, slotCount: 1,
+            materialName: declaration.materialName, defaultValue: declaration.defaultValue,
+            requiredCombos: declaration.requiredCombos
+        )
+        // The first value is the existing Windows evidence; the second proves live updates.
+        for point in [[6.83764, -3.17560], [0.25, 0.75]] {
+            let pass = runtimePass(["g_Point0": .vector(point)])
+            #expect(!slot.isAuthorable(under: pass.pass.combos))
+            #expect(executor.uniformPlans(for: pass, layout: [slot])[0].directPacking == nil)
+            let packed = executor.packTranslatedUniforms(for: pass, layout: [slot])
+            #expect(packed == [SIMD4<Float>(Float(point[0]), Float(point[1]), 0, 0)])
+        }
+        #expect(executor.uniformPlanCompileCount == 1)
+    }
+
+    @Test("Unmet editor require preserves live texture-derived precedence", arguments: [false, true])
+    func unmetRequireDoesNotGateDerivedValue(directPacking: Bool) throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        executor.derivedUniformPackingEnabled = directPacking
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .rgba8Unorm, width: 8, height: 4, mipmapped: false
+        )
+        descriptor.usage = [.shaderRead]
+        descriptor.storageMode = .shared
+        let texture = try #require(device.makeTexture(descriptor: descriptor))
+        let table = WPEMetalTextureSlotTable()
+        table.set(
+            texture: texture, samplingDescriptor: nil,
+            resolution: WPEMetalTextureMetadataRegistry.shared.resolution(for: texture), at: 0
+        )
+        let slot = WPEUniformSlot(
+            name: "g_Texture0Resolution", glslType: "vec4", slot: 0, slotCount: 1,
+            materialName: "textureSize", defaultValue: .vector([91, 92, 93, 94]),
+            requiredCombos: ["DIRECTDRAW": 0]
+        )
+        let sentinel: [Double] = [71, 72, 73, 74]
+        let pass = runtimePass(["g_Texture0Resolution": .vector(sentinel)])
+        #expect(!slot.isAuthorable(under: pass.pass.combos))
+        #expect(executor.uniformPlans(for: pass, layout: [slot])[0].directPacking == .textureResolution(0))
+        #expect(executor.packTranslatedUniforms(for: pass, layout: [slot], texturesBySlot: table)
+            == [SIMD4<Float>(8, 4, 8, 4)])
+        // No GPU sampling is needed: this tests the live binding's resolution metadata.
+        table.reset()
+        #expect(executor.packTranslatedUniforms(for: pass, layout: [slot], texturesBySlot: table)
+            == [SIMD4<Float>(71, 72, 73, 74)])
+        #expect(executor.uniformPlanCompileCount == 1)
     }
 }
