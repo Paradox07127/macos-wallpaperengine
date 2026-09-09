@@ -137,6 +137,7 @@ enum WPERenderDiagnosticReport {
 @MainActor
 enum WPERenderDiagnosticEnvironment {
     nonisolated static let renderFlagKeys = [
+        "WPEMetalDisplayHDROutputEnabled",
         "WPEMetalFXRenderScale",
         "WPEMetalMemorylessDepthEnabled",
         "WPEMetalMipChainEnabled",
