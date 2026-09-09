@@ -319,8 +319,11 @@ struct WPESceneDocumentParserTests {
             $0.target == .generalField(name: "perspectiveoverridefov")
         } == true)
         #expect(document.camera == WPESceneCamera.defaultCamera)
+        // No longer "awaits L1": the override FOV is what builds the perspective camera an
+        // object with `perspective: true` is projected through (WPEObjectPerspectiveProjectionTests).
         #expect(document.diagnostics.contains {
-            $0.message.contains("perspectiveoverridefov") && $0.message.contains("awaits L1")
+            $0.message.contains("perspectiveoverridefov")
+                && $0.message.contains("objects that author perspective: true")
         })
         #expect(document.diagnostics.contains {
             $0.message.contains("camerashake") && $0.message.contains("not consumed")
