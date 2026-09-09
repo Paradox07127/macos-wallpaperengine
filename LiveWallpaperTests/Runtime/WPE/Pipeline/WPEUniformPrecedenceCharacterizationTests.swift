@@ -234,12 +234,16 @@ struct WPEUniformPrecedenceCharacterizationTests {
 
         #expect(WPEMetalRenderExecutor.textureRotationSlotIndex(for: "g_Texture0Rotation") == 0)
         #expect(WPEMetalRenderExecutor.textureRotationSlotIndex(for: "g_Texture7Rotation") == 7)
-        #expect(WPEMetalRenderExecutor.textureRotationSlotIndex(for: "g_Texture8Rotation") == nil)
+        #expect(WPEMetalRenderExecutor.textureRotationSlotIndex(for: "g_Texture8Rotation") == 8)
+        #expect(WPEMetalRenderExecutor.textureRotationSlotIndex(for: "g_Texture15Rotation") == 15)
+        #expect(WPEMetalRenderExecutor.textureRotationSlotIndex(for: "g_Texture16Rotation") == nil)
         #expect(WPEMetalRenderExecutor.textureRotationSlotIndex(for: "g_texture0Rotation") == nil)
         #expect(WPEMetalRenderExecutor.textureRotationSlotIndex(for: "g_Texture0rotation") == nil)
         #expect(WPEMetalRenderExecutor.textureTranslationSlotIndex(for: "g_Texture0Translation") == 0)
         #expect(WPEMetalRenderExecutor.textureTranslationSlotIndex(for: "g_Texture7Translation") == 7)
-        #expect(WPEMetalRenderExecutor.textureTranslationSlotIndex(for: "g_Texture8Translation") == nil)
+        #expect(WPEMetalRenderExecutor.textureTranslationSlotIndex(for: "g_Texture8Translation") == 8)
+        #expect(WPEMetalRenderExecutor.textureTranslationSlotIndex(for: "g_Texture15Translation") == 15)
+        #expect(WPEMetalRenderExecutor.textureTranslationSlotIndex(for: "g_Texture16Translation") == nil)
         #expect(WPEMetalRenderExecutor.textureTranslationSlotIndex(for: "g_Texture0TranslationNext") == nil)
 
         #expect(WPEMetalRenderExecutor.texelSizeValue(named: "g_texelsize", sceneSize: CGSize(width: 4, height: 2)) == nil)
