@@ -22,6 +22,10 @@ final class WPEMetalRenderExecutor {
     var initialSceneClearElisionEnabled = true
     private(set) var lastInitialSceneClearStats = WPEMetalInitialSceneClearStats()
     var solidSceneBatchingEnabled = true
+    /// Experimental until scene-level A/B validation shows a net benefit.
+    /// Environment-only activation makes diagnostic runs reproducible and reversible.
+    var sceneQuadBatchingEnabled = ProcessInfo.processInfo.environment["WPE_SCENE_QUAD_BATCHING"] == "1"
+    private(set) var lastSceneQuadBatchStats = WPEMetalSceneQuadBatchStats()
     private(set) var lastSolidSceneBatchStats = (encoders: 0, draws: 0)
 
     /// Names each render/blit encoder so an Instruments capture reads as scene
@@ -884,8 +888,9 @@ final class WPEMetalRenderExecutor {
         currentScenePixelSize = outputPixelSize
         let output = try makeOutputTexture(size: outputPixelSize)
         let staticLayerCacheEnabled = Self.isStaticLayerCacheEnabled
-        staticLayerCompositeCache.updateBudget(Self.staticLayerCacheBudgetBytes)
         if staticLayerCacheEnabled {
+            staticLayerCompositeCache.updateBudget(Self.staticLayerCacheBudgetBytes)
+            staticLayerCompositeCache.setOutputFormat(currentOutputPixelFormat)
             if staticLayerCacheSceneSize != size {
                 invalidateStaticLayerCache()
                 staticLayerCacheSceneSize = size
@@ -896,6 +901,9 @@ final class WPEMetalRenderExecutor {
         gpuPassProfiler?.noteScene(sceneID)
         guard let commandBuffer = commandQueue.makeCommandBuffer() else {
             throw WPEMetalRenderExecutorError.commandBufferFailed
+        }
+        defer {
+            if staticLayerCacheEnabled { staticLayerCompositeCache.discardUnsubmittedWork(for: commandBuffer) }
         }
         WPEFrameOccupancyMeter.count(.sceneCommandBuffer)
         // Video conversions first: they write textures the scene passes below
@@ -995,10 +1003,15 @@ final class WPEMetalRenderExecutor {
             sceneSize: size
         )
 
-        let solidRun = WPEMetalSolidSceneRun()
+        let solidRun = WPEMetalSolidSceneRun { [targetPool] in targetPool.endPass(passIndex: $0) }
+        var quadStats = WPEMetalSceneQuadBatchStats()
         defer {
             solidRun.end()
             lastSolidSceneBatchStats = (solidRun.encoderCount, solidRun.drawCount)
+            quadStats.encoders = solidRun.encoderCount
+            quadStats.draws = solidRun.drawCount
+            quadStats.texturedDraws = solidRun.texturedDrawCount
+            lastSceneQuadBatchStats = quadStats
         }
         func finishInitialSceneClear() throws {
             guard initialClearPending else { return }
@@ -1109,6 +1122,14 @@ final class WPEMetalRenderExecutor {
         for (layerIndex, layer) in preparedPipeline.layers.enumerated() {
             if layerIndex > 0 { try finishInitialSceneClear() }
             var batchesSolid = solidSceneBatchingEnabled && WPEMetalSolidSceneRun.accepts(layer)
+            if sceneQuadBatchingEnabled && !staticLayerCacheEnabled && !batchesSolid {
+                let hasMedia = layer.passes.first.map {
+                    mediaTextureStore?.declarations(forPassID: $0.pass.id) != nil
+                } ?? false
+                batchesSolid = WPEMetalSolidSceneRun.texturedRejectionReason(
+                    layer, textures: textures, output: output, hasMediaSubstitution: hasMedia
+                ) == nil
+            }
             #if DEBUG
             batchesSolid = batchesSolid && !dumpScenePasses
                 && dumpLayerPassesID != layer.graphLayer.objectID
@@ -1129,7 +1150,8 @@ final class WPEMetalRenderExecutor {
             let cachedStaticLayer = staticCachePlan.flatMap { plan in
                 staticLayerCompositeCache.cachedLayer(
                     for: layer.graphLayer.objectID,
-                    requiredTargets: Set(plan.cachedTargets.keys)
+                    requiredTargets: Set(plan.cachedTargets.keys),
+                    commandBuffer: commandBuffer
                 )
             }
             if let cachedStaticLayer {
@@ -1183,7 +1205,14 @@ final class WPEMetalRenderExecutor {
                 // AFTER the index advances + defer is armed.
                 let passAliasIndex = aliasPassCounter
                 aliasPassCounter += 1
-                defer { targetPool.endPass(passIndex: passAliasIndex) }
+                var sharesSceneEncoder = false
+                defer {
+                    if sharesSceneEncoder, solidRun.encoder != nil {
+                        solidRun.deferEndPass(passAliasIndex)
+                    } else {
+                        targetPool.endPass(passIndex: passAliasIndex)
+                    }
+                }
                 // Hidden layer: still encode passes that write a composite/FBO (dependents
                 // may sample them), but skip the final scene draw so the layer is invisible.
                 // Toggling `visible` true re-includes it without a pipeline rebuild. A pass
@@ -1232,6 +1261,23 @@ final class WPEMetalRenderExecutor {
                         continue
                     }
                 }
+                sharesSceneEncoder = batchesSolid
+                if sceneQuadBatchingEnabled && !staticLayerCacheEnabled && !sharesSceneEncoder {
+                    let finalCopy = layerPassIndex == layer.passes.count - 1
+                        && WPEBuiltinShaderKind(normalizing: pass.pass.shader) == .copy
+                    let reason = WPEMetalSolidSceneRun.texturedRejectionReason(
+                        layer, textures: textures, output: output,
+                        hasMediaSubstitution: mediaTextureStore?.declarations(forPassID: pass.pass.id) != nil,
+                        finalCopyPass: finalCopy ? pass : nil, frameState: frameState
+                    )
+                    sharesSceneEncoder = reason == nil
+                    if let reason { quadStats.rejectedPasses[reason, default: 0] += 1 }
+                }
+                #if DEBUG
+                sharesSceneEncoder = sharesSceneEncoder && !dumpScenePasses
+                    && dumpLayerPassesID != layer.graphLayer.objectID
+                #endif
+                if !sharesSceneEncoder { solidRun.end() }
                 do {
                     try encode(
                         pass: pass,
@@ -1243,7 +1289,7 @@ final class WPEMetalRenderExecutor {
                         textPayload: textPayloads[graphLayer.objectID],
                         commandBuffer: commandBuffer,
                         frameState: &frameState,
-                        solidRun: batchesSolid ? solidRun : nil
+                        solidRun: sharesSceneEncoder ? solidRun : nil
                     )
                 } catch let error as WPEMetalRenderExecutorError where error.untranslatableShaderReason != nil {
                     // The pass opened (and therefore cleared) its render target before the shader
@@ -1803,6 +1849,12 @@ final class WPEMetalRenderExecutor {
             return
         }
 
+        // Sharing requires this exact physical attachment and preservation of its
+        // current contents. A target label alone cannot establish either fact.
+        if let solidRun, solidRun.encoder != nil,
+           solidRun.destinationTexture !== destination.texture || !shouldLoadExistingAttachment || needsDepth {
+            solidRun.end()
+        }
         let encoder: MTLRenderCommandEncoder
         if let sharedEncoder = solidRun?.encoder {
             encoder = sharedEncoder
@@ -1850,6 +1902,7 @@ final class WPEMetalRenderExecutor {
 
             if let solidRun {
                 solidRun.encoder = encoder
+                solidRun.destinationTexture = destination.texture
                 solidRun.encoderCount += 1
                 encoder.setViewport(MTLViewport(originX: 0, originY: 0,
                                                width: Double(destination.texture.width),
@@ -1947,6 +2000,9 @@ final class WPEMetalRenderExecutor {
 
             encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
             solidRun?.drawCount += 1
+            if WPEBuiltinShaderKind(normalizing: pass.pass.shader) != .solidLayer {
+                solidRun?.texturedDrawCount += 1
+            }
         }
         frameState.registerWrite(texture: destination.texture, targetID: destination.id)
     }

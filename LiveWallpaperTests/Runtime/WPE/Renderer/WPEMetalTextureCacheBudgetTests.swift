@@ -163,5 +163,248 @@ struct WPEMetalTextureCacheBudgetTests {
         #expect(lru.entries["visible"] != nil)
         #expect(lru.totalBytes == 80)
     }
+    @Test("Static snapshots reserve the whole layer before any allocation")
+    func staticSnapshotReservationIncludesPendingWork() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let queue = try #require(device.makeCommandQueue())
+        let producer = try #require(queue.makeCommandBuffer())
+        let other = try #require(queue.makeCommandBuffer())
+        let cache = WPEMetalStaticLayerCompositeCache(budgetBytes: 100)
+        #expect(cache.reserve(layerID: "a", targetBytes: ["first": 30, "second": 30], commandBuffer: producer))
+        #expect(cache.accountedBytes == 60)
+        #expect(cache.allocatedBytes == 0)
+        #expect(!cache.reserve(layerID: "b", targetBytes: ["next": 50], commandBuffer: other))
+        #expect(!cache.reserve(layerID: "oversized", targetBytes: ["first": 70, "second": 40], commandBuffer: other))
+        #expect(!cache.reserve(layerID: "overflow", targetBytes: ["first": Int.max, "second": 1], commandBuffer: other))
+        cache.discardUnsubmittedWork(for: producer)
+        #expect(cache.accountedBytes == 0)
+        #expect(cache.reserve(layerID: "b", targetBytes: ["next": 50], commandBuffer: other))
+        cache.discardUnsubmittedWork(for: other)
+    }
+
+    @Test("Static cache only publishes complete successful GPU work")
+    func staticSnapshotPublicationRequiresSuccess() {
+        let incompleteStatuses: [MTLCommandBufferStatus] = [.notEnqueued, .enqueued, .committed, .scheduled, .error]
+        for status in incompleteStatuses {
+            #expect(!WPEMetalStaticLayerCompositeCache.mayPublish(producerStatus: status, hasEveryTarget: true))
+        }
+        #expect(!WPEMetalStaticLayerCompositeCache.mayPublish(producerStatus: .completed, hasEveryTarget: false))
+        #expect(WPEMetalStaticLayerCompositeCache.mayPublish(producerStatus: .completed, hasEveryTarget: true))
+    }
+
+    @Test("Invalidation retains reader resources and budget until GPU use ends")
+    func staticSnapshotInvalidationPreservesInFlightBudget() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let queue = try #require(device.makeCommandQueue())
+        let producer = try #require(queue.makeCommandBuffer())
+        let reader = try #require(queue.makeCommandBuffer())
+        let next = try #require(queue.makeCommandBuffer())
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .rgba16Float, width: 16, height: 16, mipmapped: false
+        )
+        descriptor.storageMode = .private
+        descriptor.usage = [.shaderRead]
+        let texture = try #require(device.makeTexture(descriptor: descriptor))
+        let bytes = max(1, texture.allocatedSize)
+        let cache = WPEMetalStaticLayerCompositeCache(budgetBytes: bytes)
+        cache.setOutputFormat(.rgba16Float)
+        #expect(cache.reserve(layerID: "a", targetBytes: ["target": bytes], commandBuffer: producer))
+        #expect(cache.recordSnapshot(texture, target: "target", layerID: "a", commandBuffer: producer))
+        #expect(cache.cachedLayer(for: "a", requiredTargets: ["target"], commandBuffer: reader) == nil)
+        producer.commit()
+        producer.waitUntilCompleted()
+        #expect(producer.status == .completed)
+        #expect(cache.cachedLayer(for: "a", requiredTargets: ["target"], commandBuffer: reader) != nil)
+        cache.setOutputFormat(.bgra8Unorm)
+        #expect(cache.cachedLayer(for: "a", requiredTargets: ["target"], commandBuffer: next) == nil)
+        #expect(cache.accountedBytes == bytes)
+        #expect(cache.allocatedBytes == texture.allocatedSize)
+        #expect(!cache.reserve(layerID: "b", targetBytes: ["target": bytes], commandBuffer: next))
+        reader.commit()
+        reader.waitUntilCompleted()
+        #expect(reader.status == .completed)
+        #expect(cache.reserve(layerID: "b", targetBytes: ["target": bytes], commandBuffer: next))
+        #expect(cache.accountedBytes == bytes)
+        cache.discardUnsubmittedWork(for: next)
+        #expect(cache.accountedBytes == 0)
+    }
+
+    @Test("Abandoned and partially produced layers release reservations without publishing")
+    func staticSnapshotIncompleteAndCancelledWork() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let queue = try #require(device.makeCommandQueue())
+        let producer = try #require(queue.makeCommandBuffer())
+        let reader = try #require(queue.makeCommandBuffer())
+        let cache = WPEMetalStaticLayerCompositeCache(budgetBytes: 100)
+        #expect(cache.reserve(layerID: "partial", targetBytes: ["a": 30, "b": 30], commandBuffer: producer))
+        cache.abandon(layerID: "partial", commandBuffer: producer)
+        // No allocation was made: unused reservation is released immediately.
+        #expect(cache.accountedBytes == 0)
+        cache.updateBudget(10)
+        cache.discardUnsubmittedWork(for: producer)
+        #expect(cache.accountedBytes == 0)
+        #expect(cache.reserve(layerID: "incomplete", targetBytes: ["a": 10], commandBuffer: reader))
+        reader.commit()
+        reader.waitUntilCompleted()
+        #expect(reader.status == .completed)
+        cache.updateBudget(10)
+        #expect(cache.accountedBytes == 0)
+        let next = try #require(queue.makeCommandBuffer())
+        #expect(cache.cachedLayer(for: "incomplete", requiredTargets: ["a"], commandBuffer: next) == nil)
+    }
+
+    @Test("Unexpected allocation size never enters a cache copy or publication")
+    func staticSnapshotRejectsUnderestimatedAllocation() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let queue = try #require(device.makeCommandQueue())
+        let producer = try #require(queue.makeCommandBuffer())
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .rgba16Float, width: 64, height: 64, mipmapped: false
+        )
+        descriptor.storageMode = .private
+        descriptor.usage = [.shaderRead]
+        let texture = try #require(device.makeTexture(descriptor: descriptor))
+        #expect(texture.allocatedSize > 1)
+        let cache = WPEMetalStaticLayerCompositeCache(budgetBytes: 1)
+        #expect(cache.reserve(layerID: "a", targetBytes: ["target": 1], commandBuffer: producer))
+        #expect(!cache.recordSnapshot(texture, target: "target", layerID: "a", commandBuffer: producer))
+        #expect(cache.allocatedBytes == 0)
+        cache.abandon(layerID: "a", commandBuffer: producer)
+        #expect(cache.accountedBytes == 0)
+        cache.discardUnsubmittedWork(for: producer)
+    }
+
+    private func retirementTexture(_ device: MTLDevice) throws -> MTLTexture {
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .rgba16Float, width: 16, height: 16, mipmapped: false
+        )
+        descriptor.storageMode = .private
+        descriptor.usage = [.shaderRead]
+        return try #require(device.makeTexture(descriptor: descriptor))
+    }
+
+    /// Observe actual texture lifetime without calling any cache method that could
+    /// reap retired entries. Metal status can become completed before callbacks run.
+    private func expectTextureReleased(_ texture: () -> MTLTexture?) {
+        let deadline = Date().addingTimeInterval(2)
+        while texture() != nil, Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.001)
+        }
+        #expect(texture() == nil)
+    }
+
+    @Test("An invalidated producer releases its texture after completion without another frame")
+    func retiredProducerReleasesWithoutOwnerReaping() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let queue = try #require(device.makeCommandQueue())
+        let producer = try #require(queue.makeCommandBuffer())
+        let cache = WPEMetalStaticLayerCompositeCache(budgetBytes: 1_048_576)
+        weak var observedTexture: MTLTexture?
+        try autoreleasepool {
+            let texture = try retirementTexture(device)
+            observedTexture = texture
+            #expect(cache.reserve(layerID: "a", targetBytes: ["target": texture.allocatedSize], commandBuffer: producer))
+            #expect(cache.recordSnapshot(texture, target: "target", layerID: "a", commandBuffer: producer))
+            cache.removeAll()
+        }
+        #expect(observedTexture != nil)
+        producer.commit()
+        producer.waitUntilCompleted()
+        #expect(producer.status == .completed)
+        expectTextureReleased { observedTexture }
+        // This getter does not reap. Budget may remain conservative until the
+        // next owner operation, but the GPU allocation must already be gone.
+        #expect(cache.allocatedBytes == 0)
+    }
+
+    @Test("Retired cache textures survive the first reader and release after the last reader")
+    func retiredReadersReleaseWithoutOwnerReaping() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let queue = try #require(device.makeCommandQueue())
+        let producer = try #require(queue.makeCommandBuffer())
+        let first = try #require(queue.makeCommandBuffer())
+        let last = try #require(queue.makeCommandBuffer())
+        let cache = WPEMetalStaticLayerCompositeCache(budgetBytes: 1_048_576)
+        weak var observedTexture: MTLTexture?
+        try autoreleasepool {
+            let texture = try retirementTexture(device)
+            observedTexture = texture
+            #expect(cache.reserve(layerID: "a", targetBytes: ["target": texture.allocatedSize], commandBuffer: producer))
+            #expect(cache.recordSnapshot(texture, target: "target", layerID: "a", commandBuffer: producer))
+            producer.commit()
+            producer.waitUntilCompleted()
+            #expect(producer.status == .completed)
+            #expect(cache.cachedLayer(for: "a", requiredTargets: ["target"], commandBuffer: first) != nil)
+            #expect(cache.cachedLayer(for: "a", requiredTargets: ["target"], commandBuffer: last) != nil)
+            cache.removeAll()
+        }
+        first.commit()
+        first.waitUntilCompleted()
+        #expect(first.status == .completed)
+        #expect(observedTexture != nil)
+        last.commit()
+        last.waitUntilCompleted()
+        #expect(last.status == .completed)
+        expectTextureReleased { observedTexture }
+        #expect(cache.allocatedBytes == 0)
+    }
+
+    @Test("Cancelling an unsubmitted retired reader does not release another reader's texture")
+    func retiredReaderCancellationAndCompletionAreIndependent() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let queue = try #require(device.makeCommandQueue())
+        let producer = try #require(queue.makeCommandBuffer())
+        let submitted = try #require(queue.makeCommandBuffer())
+        let cancelled = try #require(queue.makeCommandBuffer())
+        let cache = WPEMetalStaticLayerCompositeCache(budgetBytes: 1_048_576)
+        weak var observedTexture: MTLTexture?
+        try autoreleasepool {
+            let texture = try retirementTexture(device)
+            observedTexture = texture
+            #expect(cache.reserve(layerID: "a", targetBytes: ["target": texture.allocatedSize], commandBuffer: producer))
+            #expect(cache.recordSnapshot(texture, target: "target", layerID: "a", commandBuffer: producer))
+            producer.commit()
+            producer.waitUntilCompleted()
+            #expect(producer.status == .completed)
+            #expect(cache.cachedLayer(for: "a", requiredTargets: ["target"], commandBuffer: submitted) != nil)
+            #expect(cache.cachedLayer(for: "a", requiredTargets: ["target"], commandBuffer: cancelled) != nil)
+            cache.removeAll()
+        }
+        cache.discardUnsubmittedWork(for: cancelled)
+        cache.discardUnsubmittedWork(for: cancelled)
+        #expect(observedTexture != nil)
+        submitted.commit()
+        submitted.waitUntilCompleted()
+        #expect(submitted.status == .completed)
+        expectTextureReleased { observedTexture }
+        #expect(cache.allocatedBytes == 0)
+    }
+
+    @Test("Partial allocation failure frees unused reservation but retains encoded resources")
+    func staticSnapshotPartialAllocationRetainsOnlyAllocatedTargets() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let queue = try #require(device.makeCommandQueue())
+        let producer = try #require(queue.makeCommandBuffer())
+        let next = try #require(queue.makeCommandBuffer())
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .rgba8Unorm, width: 16, height: 16, mipmapped: false
+        )
+        descriptor.storageMode = .private
+        descriptor.usage = [.shaderRead]
+        let texture = try #require(device.makeTexture(descriptor: descriptor))
+        let bytes = max(1, texture.allocatedSize)
+        let cache = WPEMetalStaticLayerCompositeCache(budgetBytes: bytes * 2)
+        #expect(cache.reserve(layerID: "partial", targetBytes: ["a": bytes, "b": bytes], commandBuffer: producer))
+        #expect(cache.recordSnapshot(texture, target: "a", layerID: "partial", commandBuffer: producer))
+        cache.abandon(layerID: "partial", commandBuffer: producer)
+        #expect(cache.accountedBytes == bytes)
+        #expect(cache.allocatedBytes == texture.allocatedSize)
+        #expect(!cache.reserve(layerID: "next", targetBytes: ["a": bytes * 2], commandBuffer: next))
+        cache.updateBudget(0)
+        #expect(cache.accountedBytes == bytes)
+        cache.discardUnsubmittedWork(for: producer)
+        #expect(cache.accountedBytes == 0)
+        #expect(cache.allocatedBytes == 0)
+    }
 }
 #endif

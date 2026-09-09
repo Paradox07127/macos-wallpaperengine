@@ -88,6 +88,7 @@ struct OracleCorpusCaptureTests {
         var arguments = previousArguments
         arguments["WPEOraclePerPassHashes"] = config.perPass
         arguments["WPEMemoryAuditLog"] = config.memoryAuditLog
+        arguments["WPETracePassLabels"] = config.captureGPU
         arguments["WPEMetalFXRenderScale"] = 1.0
         if let replay = config.replayFrame {
             for (field, key) in [("time", "WPEOracleReplayTime"), ("daytime", "WPEOracleReplayDaytime"),
@@ -242,6 +243,14 @@ struct OracleCorpusCaptureTests {
                     var capture = document["capture"] as? [String: Any] ?? [:]
                     let solidStats = renderer.executor.lastSolidSceneBatchStats
                     var renderWork = capture["renderWork"] as? [String: Any] ?? [:]
+                    let quadStats = renderer.executor.lastSceneQuadBatchStats
+                    renderWork["sceneQuads"] = [
+                        "enabled": renderer.executor.sceneQuadBatchingEnabled,
+                        "encoders": quadStats.encoders,
+                        "draws": quadStats.draws,
+                        "texturedDraws": quadStats.texturedDraws,
+                        "rejectedLayers": quadStats.rejectedLayers,
+                    ] as [String: Any]
                     renderWork["solidScene"] = ["encoders": solidStats.encoders, "draws": solidStats.draws]
                     let clearStats = renderer.executor.lastInitialSceneClearStats
                     renderWork["initialSceneClear"] = [

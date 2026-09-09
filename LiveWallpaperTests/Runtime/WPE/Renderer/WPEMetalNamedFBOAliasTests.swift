@@ -12,7 +12,7 @@ struct WPEMetalSolidSceneRunTests {
         _ index: Int, shader: String = "solidlayer", source: WPETextureReference = .image("unused"),
         target: WPERenderTarget = .scene, depthTest: String = "disabled", visible: Bool = true,
         builtin: Bool = true, bindings: [Int: WPETextureReference]? = nil,
-        color: [Double]? = nil, transformed: Bool = true
+        color: [Double]? = nil, transformed: Bool = true, blending: String? = nil, cullMode: String = "nocull"
     ) -> WPEPreparedRenderLayer {
         let colors: [[Double]] = [[0.2, 0.6, 1.5, 1], [1.2, 0.1, 0.4, 0.35],
                                   [0.3, 1.4, 0.1, 0.6], [0.8, 0.2, 0.9, 0.15]]
@@ -20,8 +20,8 @@ struct WPEMetalSolidSceneRunTests {
         let graphPass = WPERenderPass(
             id: "solid-\(index).0", phase: .material, shader: shader, source: source, target: target,
             textures: [:], binds: [:], constants: ["g_Color": .vector(color ?? colors[index % 4])],
-            combos: [:], blending: shader == "solidlayer" ? modes[index % 4] : "disabled",
-            cullMode: "nocull", depthTest: depthTest, depthWrite: "disabled"
+            combos: [:], blending: blending ?? (shader == "solidlayer" ? modes[index % 4] : "disabled"),
+            cullMode: cullMode, depthTest: depthTest, depthWrite: "disabled"
         )
         let geometry = WPERenderLayerGeometry(
             origin: SIMD3<Double>(16.5 + (transformed ? Double(index * 3 - 4) : 0), 8.5, 0),
@@ -69,13 +69,14 @@ struct WPEMetalSolidSceneRunTests {
     }
 
     private func renderBytes(
-        _ executor: WPEMetalRenderExecutor, pipeline: WPEPreparedRenderPipeline, hdr: Bool
+        _ executor: WPEMetalRenderExecutor, pipeline: WPEPreparedRenderPipeline, hdr: Bool,
+        textures: [String: MTLTexture] = [:]
     ) throws -> [UInt8] {
         let camera = WPEMetalCameraUniforms(
             orthogonalProjection: WPESceneOrthogonalProjection(width: Double(size.width), height: Double(size.height), auto: true),
             sceneCamera: .defaultCamera, sceneHDR: hdr
         )
-        let output = try executor.render(pipeline: pipeline, size: size, textures: [:], cameraUniforms: camera)
+        let output = try executor.render(pipeline: pipeline, size: size, textures: textures, cameraUniforms: camera)
         #expect(output.pixelFormat == (hdr ? MTLPixelFormat.rgba16Float : MTLPixelFormat.rgba8Unorm_srgb))
         return try bytes(output)
     }
@@ -173,6 +174,230 @@ struct WPEMetalSolidSceneRunTests {
         #expect(!WPEMetalSolidSceneRun.accepts(layer(0, builtin: false)))
         #expect(!WPEMetalSolidSceneRun.accepts(layer(0, visible: false)))
         #expect(!WPEMetalSolidSceneRun.accepts(layer(0, shader: "commands/copy")))
+    }
+
+    private func patternedTexture(_ device: MTLDevice, flipped: Bool = false) throws -> MTLTexture {
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .rgba16Float, width: 4, height: 2, mipmapped: false
+        )
+        descriptor.storageMode = .shared
+        descriptor.usage = [.shaderRead, .pixelFormatView, .renderTarget]
+        let texture = try #require(device.makeTexture(descriptor: descriptor))
+        let values = (0 ..< 8).flatMap { index -> [Float16] in
+            let alpha: Float16 = index % 2 == 0 ? 0.4 : 0.8
+            return [Float16(flipped ? 7 - index : index) / 3, 0.2, 0.7, alpha]
+        }
+        values.withUnsafeBytes {
+            texture.replace(region: MTLRegionMake2D(0, 0, 4, 2), mipmapLevel: 0,
+                            withBytes: $0.baseAddress!, bytesPerRow: 4 * 8)
+        }
+        return texture
+    }
+
+    @Test("Mixed solid copy image runs rebind textures and uniforms, preserving raw HDR and SDR bytes",
+          arguments: [false, true])
+    func mixedTexturedSceneRuns(hdr: Bool) throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let first = try patternedTexture(device)
+        let second = try patternedTexture(device, flipped: true)
+        let pipeline = WPEPreparedRenderPipeline(layers: [
+            layer(0),
+            layer(1, shader: "commands/copy", source: .asset("first"), blending: "premultiplied"),
+            layer(2, shader: "genericimage2", source: .asset("second"), blending: "additive", cullMode: "front"),
+            layer(3),
+            layer(4, shader: "commands/copy", source: .asset("second"), blending: "premultiplied", cullMode: "back"),
+            layer(5, shader: "genericimage2", source: .asset("first"), blending: "premultiplied"),
+        ])
+        for textures in [["first": first, "second": second], ["first": second, "second": first]] {
+            executor.solidSceneBatchingEnabled = false
+            executor.sceneQuadBatchingEnabled = false
+            let expected = try renderBytes(executor, pipeline: pipeline, hdr: hdr, textures: textures)
+            executor.solidSceneBatchingEnabled = true
+            executor.sceneQuadBatchingEnabled = true
+            let actual = try renderBytes(executor, pipeline: pipeline, hdr: hdr, textures: textures)
+            #expect(actual == expected)
+            #expect(actual.contains { $0 != 0 })
+            #expect(executor.lastSceneQuadBatchStats.encoders == 1)
+            #expect(executor.lastSceneQuadBatchStats.draws == 6)
+            #expect(executor.lastSceneQuadBatchStats.texturedDraws == 4)
+            let reversed = WPEPreparedRenderPipeline(layers: Array(pipeline.layers.reversed()))
+            #expect(try renderBytes(executor, pipeline: reversed, hdr: hdr, textures: textures) != expected)
+        }
+    }
+
+    @Test("Texture admission rejects scene views, unresolved inputs, media substitution and dependencies")
+    func texturedEligibilityRejectsPhysicalHazards() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let output = try patternedTexture(device)
+        let independent = try patternedTexture(device, flipped: true)
+        let view = try #require(output.makeTextureView(pixelFormat: .rgba16Float))
+        let copy = layer(0, shader: "commands/copy", source: .asset("source"))
+        func reason(_ texture: MTLTexture?, media: Bool = false) -> String? {
+            WPEMetalSolidSceneRun.texturedRejectionReason(
+                copy, textures: texture.map { ["source": $0] } ?? [:],
+                output: output, hasMediaSubstitution: media
+            )
+        }
+        #expect(reason(independent) == nil)
+        #expect(reason(output) == "attachment-alias")
+        #expect(reason(view) == "attachment-alias")
+        #expect(reason(nil) == "unresolved-texture")
+        #expect(reason(independent, media: true) == "media-substitution")
+        for dependency in [WPETextureReference.previous, .fbo("_rt_FullFrameBuffer"), .fbo("independent-fbo")] {
+            let candidate = layer(0, shader: "commands/copy", source: .asset("source"), bindings: [8: dependency])
+            #expect(WPEMetalSolidSceneRun.texturedRejectionReason(
+                candidate, textures: ["source": independent], output: output,
+                hasMediaSubstitution: false
+            ) == "target-dependency")
+        }
+    }
+
+    @Test("A scene read ends an extended quad run before the snapshot blit")
+    func snapshotSeparatesTexturedRuns() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let textures = try ["source": patternedTexture(device)]
+        let pipeline = WPEPreparedRenderPipeline(layers: [
+            layer(0), layer(1, shader: "genericimage2", source: .asset("source")),
+            layer(2, shader: "commands/copy", source: .fbo("_rt_FullFrameBuffer"), transformed: false),
+            layer(3), layer(4, shader: "commands/copy", source: .asset("source")),
+        ])
+        executor.solidSceneBatchingEnabled = false
+        let expected = try renderBytes(executor, pipeline: pipeline, hdr: true, textures: textures)
+        executor.solidSceneBatchingEnabled = true
+        executor.sceneQuadBatchingEnabled = true
+        let actual = try renderBytes(executor, pipeline: pipeline, hdr: true, textures: textures)
+        #expect(actual == expected)
+        #expect(executor.lastSceneQuadBatchStats.encoders == 2)
+        #expect(executor.lastSceneQuadBatchStats.draws == 4)
+        #expect(executor.lastSceneQuadBatchStats.rejectedPasses["target-dependency"] == 1)
+    }
+
+    private func compositedLayer(_ index: Int) throws -> WPEPreparedRenderLayer {
+        let name = "solid-\(index)-a"
+        let producer = layer(index, target: .layerComposite(name: name),
+                             color: [0.6, 0.4, 1.2, 0.35], transformed: false)
+        let copy = layer(index + 1, shader: "commands/copy", source: .fbo(name),
+                         transformed: false, blending: "premultiplied")
+        let graph = producer.graphLayer
+        let passes = producer.passes + copy.passes
+        return WPEPreparedRenderLayer(graphLayer: WPERenderLayer(
+            objectID: graph.objectID, objectName: graph.objectName, visible: true,
+            imagePath: graph.imagePath, materialPath: nil, geometry: graph.geometry,
+            compositeA: graph.compositeA, compositeB: graph.compositeB, localFBOs: [],
+            passes: passes.map(\.pass), sortIndex: index
+        ), passes: passes)
+    }
+
+    @Test("A final FBO copy shares with image4 while a later producer ends the lease",
+          arguments: [false, true])
+    func finalCopyToMaskedImagePreservesOutput(hdr: Bool) throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let textures = try ["image": patternedTexture(device), "mask": patternedTexture(device, flipped: true)]
+        let masked = layer(2, shader: "genericimage4", source: .asset("image"),
+                           bindings: [0: .asset("image"), 1: .asset("mask")], blending: "premultiplied")
+        let fallback = layer(3, shader: "genericimage4", source: .asset("mask"), blending: "additive")
+        let pipeline = try WPEPreparedRenderPipeline(layers: [
+            compositedLayer(0), masked, fallback, compositedLayer(4), layer(6),
+        ])
+        executor.solidSceneBatchingEnabled = false
+        executor.sceneQuadBatchingEnabled = false
+        let expected = try renderBytes(executor, pipeline: pipeline, hdr: hdr, textures: textures)
+        executor.solidSceneBatchingEnabled = true
+        executor.sceneQuadBatchingEnabled = true
+        for _ in 0 ..< 3 {
+            let actual = try renderBytes(executor, pipeline: pipeline, hdr: hdr, textures: textures)
+            #expect(actual == expected)
+            #expect(executor.lastSceneQuadBatchStats.encoders == 2)
+            #expect(executor.lastSceneQuadBatchStats.draws == 5)
+            #expect(executor.lastSceneQuadBatchStats.texturedDraws == 4)
+        }
+        // Changing the mask must affect output: this is not a fixture of invisible draws.
+        let primary = try #require(textures["image"])
+        let swapped = ["image": primary, "mask": primary]
+        #expect(try renderBytes(executor, pipeline: pipeline, hdr: hdr, textures: swapped) != expected)
+    }
+
+    @Test("History and cache seeds are not evidence of a named FBO write this frame")
+    func finalCopyRejectsUnwrittenNamedTexture() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let output = try patternedTexture(device)
+        let source = try patternedTexture(device, flipped: true)
+        let chain = try compositedLayer(0)
+        let copy = try #require(chain.passes.last)
+        var frame = WPEMetalFrameState(
+            output: output, sceneSize: size, previousNamedTextures: ["solid-0-a": source]
+        )
+        func reason() -> String? {
+            WPEMetalSolidSceneRun.texturedRejectionReason(
+                chain, textures: [:], output: output, hasMediaSubstitution: false,
+                finalCopyPass: copy, frameState: frame
+            )
+        }
+        #expect(reason() == "fbo-not-written-this-frame")
+        frame.markInitialized(source)
+        frame.seedPreviousTexture(source, targetID: .named("solid-0-a"))
+        #expect(reason() == "fbo-not-written-this-frame")
+        frame.registerWrite(texture: source, targetID: .named("solid-0-a"))
+        #expect(reason() == nil)
+        frame.registerWrite(texture: output, targetID: .named("solid-0-a"))
+        #expect(reason() == "attachment-alias")
+    }
+
+    @Test("Deferred alias end-pass callbacks run once and only after the encoder closes")
+    func aliasLeaseReleaseFollowsEncoderEnd() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let queue = try #require(device.makeCommandQueue())
+        let command = try #require(queue.makeCommandBuffer())
+        let descriptor = MTLRenderPassDescriptor()
+        descriptor.colorAttachments[0].texture = try patternedTexture(device)
+        descriptor.colorAttachments[0].loadAction = .load
+        descriptor.colorAttachments[0].storeAction = .store
+        var released: [Int] = []
+        var activeRun: WPEMetalSolidSceneRun?
+        let run = WPEMetalSolidSceneRun { index in
+            // Metal validation rejects a second encoder if end() releases leases
+            // before closing the old render encoder.
+            #expect(activeRun?.encoder == nil)
+            let blit = command.makeBlitCommandEncoder()
+            #expect(blit != nil)
+            blit?.endEncoding()
+            released.append(index)
+        }
+        activeRun = run
+        run.encoder = try #require(command.makeRenderCommandEncoder(descriptor: descriptor))
+        run.deferEndPass(7)
+        run.deferEndPass(8)
+        #expect(released.isEmpty)
+        run.end()
+        #expect(released == [7, 8])
+        run.end()
+        #expect(released == [7, 8])
+        command.commit()
+        command.waitUntilCompleted()
+        #expect(command.status == .completed)
+        activeRun = nil
+    }
+
+    @Test("A failed frame releases the preceding final-copy run before the next FBO allocation")
+    func failureReleasesFinalCopyLease() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        executor.sceneQuadBatchingEnabled = true
+        let broken = try WPEPreparedRenderPipeline(layers: [
+            compositedLayer(0), layer(2),
+            layer(3, shader: "commands/copy", source: .asset("absent")),
+        ])
+        #expect(throws: (any Error).self) {
+            try executor.render(pipeline: broken, size: size, textures: [:])
+        }
+        let valid = try WPEPreparedRenderPipeline(layers: [compositedLayer(0), layer(2)])
+        let actual = try renderBytes(executor, pipeline: valid, hdr: true)
+        executor.sceneQuadBatchingEnabled = false
+        executor.solidSceneBatchingEnabled = false
+        #expect(try renderBytes(executor, pipeline: valid, hdr: true) == actual)
     }
 
     @Test("Failure after a run leaves the next frame able to encode")
