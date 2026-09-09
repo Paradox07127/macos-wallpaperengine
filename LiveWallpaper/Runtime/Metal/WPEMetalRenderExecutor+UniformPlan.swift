@@ -93,18 +93,16 @@ extension WPEMetalRenderExecutor {
         pass: WPEPreparedRenderPass,
         keyIndex: UniformKeyIndex
     ) -> UniformResolutionPlan {
-        // `require` does NOT gate runtime binding. Measured on the Windows capture of
-        // 3437487219 (`.notes/oracle-runs/3437487219-…/windows.json`, ordinal 2):
-        // `effects/lightshafts` runs with DIRECTDRAW=1 while `g_Point0..3` are annotated
-        // `require {"DIRECTDRAW": 0}`, and WPE still binds them —
-        // `g_Point0 = [6.83764, -3.17560]`, `usedByShader: true`, and the same values also
-        // appear as the draw's vertex TEXCOORDs. So `require` only decides whether the
-        // EDITOR shows the field; the authored constant stays live either way.
-        //
-        // The parsed `requiredCombos` is kept for diagnostics (below) but must not filter
-        // candidates: withholding the material alias here removed values WPE was using.
+        // `require` does NOT gate runtime binding, so `uniform.requiredCombos` is
+        // deliberately not consulted here. Measured on the Windows capture of 3437487219
+        // (`.notes/oracle-runs/3437487219-97ad29d672164503b44c2c631a6001c3/windows.json`,
+        // ordinal 2): `effects/lightshafts` runs with DIRECTDRAW=1 while `g_Point0..3` are
+        // annotated `require {"DIRECTDRAW": 0}`, and WPE binds them anyway —
+        // `g_Point0 = [6.83764, -3.17560]`, `usedByShader: true`, and the same values appear
+        // again as that draw's vertex TEXCOORDs. `require` decides only whether the EDITOR
+        // exposes the field. A gate was briefly wired here on the opposite assumption and
+        // withheld values WPE was actively using.
         let candidates = memoizedUniformNameCandidates(for: uniform)
-        let authorable = uniform.isAuthorable(under: pass.pass.combos)
         var steps: [UniformResolutionStep] = []
         func append(_ step: UniformResolutionStep) {
             guard !steps.contains(step) else { return }
@@ -154,36 +152,6 @@ extension WPEMetalRenderExecutor {
             }
         }
 
-        if !uniform.requiredCombos.isEmpty {
-            // One line per (shader, uniform) so a require that silently fails to gate is
-            // diagnosable from a shipping log instead of by inference.
-            let key = "\(pass.pass.shader)\u{0}\(uniform.name)"
-            if loggedUniformRequireDecisions.insert(key).inserted {
-                let present = uniform.requiredCombos.keys
-                    .map { "\($0)=\(pass.pass.combos[$0].map(String.init) ?? "absent")" }
-                    .sorted()
-                    .joined(separator: ",")
-                // Also report where the value ACTUALLY comes from. Withholding the material
-                // alias is not enough on its own: the pipeline builder also copies authored
-                // constants onto the uniform's own name, so a stale value can still win
-                // through `g_Point0` after `point0` was withheld.
-                let sources = steps.map { step -> String in
-                    switch step {
-                    case let .frameGlobal(n): return "frame:\(n)"
-                    case let .passValue(n): return "value:\(n)"
-                    case let .passConstant(n): return "const:\(n)"
-                    }
-                }
-                Logger.notice(
-                    "[WPE.uniform] \(pass.pass.shader) \(uniform.name)"
-                        + " requires \(uniform.requiredCombos) | pass has \(present)"
-                        + " | authorable=\(authorable)"
-                        + " | resolves from [\(sources.joined(separator: ", "))]"
-                        + " | default=\(uniform.defaultValue.map(String.init(describing:)) ?? "none")",
-                    category: .wpeRender
-                )
-            }
-        }
         return UniformResolutionPlan(
             directPacking: Self.directUniformPacking(for: uniform),
             isTexelSize: uniform.name == Self.texelSizeUniformName,

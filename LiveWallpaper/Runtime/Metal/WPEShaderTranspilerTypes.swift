@@ -26,7 +26,9 @@ struct WPEUniformSlot: Equatable {
     let arrayLength: Int?   // present when the source declared an array
     let materialName: String?
     let defaultValue: WPESceneShaderConstantValue?
-    /// See `WPEUniformDecl.requiredCombos`. Empty means unconditional.
+    /// See `WPEUniformDecl.requiredCombos`. Preserved as authored metadata; empty means
+    /// unconditional. Deliberately NOT consulted when resolving a value — see the citation
+    /// in `WPEMetalRenderExecutor+UniformPlan.compileUniformPlan`.
     let requiredCombos: [String: Int]
 
     init(
@@ -47,12 +49,6 @@ struct WPEUniformSlot: Equatable {
         self.materialName = materialName
         self.defaultValue = defaultValue
         self.requiredCombos = requiredCombos
-    }
-
-    /// Whether the editor exposes this uniform under `combos`.
-    /// This metadata is diagnostic only; it must not suppress runtime authored values.
-    func isAuthorable(under combos: [String: Int]) -> Bool {
-        requiredCombos.allSatisfy { combo, expected in (combos[combo] ?? 0) == expected }
     }
 }
 
@@ -85,9 +81,10 @@ struct WPEUniformDecl: Equatable {
     /// Scene effect overrides use that material name, not the GLSL variable.
     let materialName: String?
     let defaultValue: WPESceneShaderConstantValue?
-    /// The annotation's editor visibility map, e.g. `{"DIRECTDRAW":0}`.
-    /// Retained for diagnostics and cache round trips, not runtime value filtering.
-    /// See `compileUniformPlan` for the capture-backed binding behavior.
+    /// The annotation's `"require"` map, e.g. `{"DIRECTDRAW":0}`. It controls only whether
+    /// the WPE EDITOR exposes the field: the Windows capture of 3437487219 shows
+    /// `g_Point0..3` bound with real values under DIRECTDRAW=1 despite requiring 0. Parsed
+    /// and preserved; no runtime behaviour is derived from it.
     let requiredCombos: [String: Int]
 
     static func parse(line: String) -> Self? {

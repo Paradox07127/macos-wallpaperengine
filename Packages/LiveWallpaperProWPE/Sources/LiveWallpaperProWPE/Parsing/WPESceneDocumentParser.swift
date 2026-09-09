@@ -2021,7 +2021,7 @@ public enum WPESceneDocumentParser {
         if perspectiveOverrideFOV.isAuthored {
             diagnostics.append(.init(
                 severity: .info,
-                message: "general.perspectiveoverridefov and its authored bindings are preserved; camera-domain consumption awaits L1 validation"
+                message: "general.perspectiveoverridefov drives the perspective camera used by objects that author perspective: true"
             ))
         }
         if [cameraShake.enabled.isAuthored, cameraShake.amplitude.isAuthored,
@@ -2178,6 +2178,7 @@ public enum WPESceneDocumentParser {
         let config = parseImageConfig(dict["config"])
         let disablePropagation = parseBool(dict["disablepropagation"]) ?? false
         let solid = parseBool(dict["solid"]) ?? false
+        let usesPerspectiveProjection = parseBool(dict["perspective"]) ?? false
         let copyBackground = parseBool(dict["copybackground"]) ?? true
         let dependencies = parseDependencyIDs(dict["dependencies"])
         let animationLayers = parseAnimationLayers(dict["animationlayers"], imageName: name, diagnostics: &diagnostics)
@@ -2253,6 +2254,7 @@ public enum WPESceneDocumentParser {
             config: config,
             disablePropagation: disablePropagation,
             solid: solid,
+            usesPerspectiveProjection: usesPerspectiveProjection,
             copyBackground: copyBackground,
             parentObjectID: parentObjectID,
             attachment: attachment,

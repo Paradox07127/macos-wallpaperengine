@@ -41,7 +41,7 @@ struct WPEShaderTranslationCacheSchemaTests {
     ]
 
     /// Bump together with `schemaVersion`.
-    static let expectedSchemaVersion = 9
+    static let expectedSchemaVersion = 8
     /// 2026-08-30: comment-only compression across eight of the files above moved the
     /// fingerprint without touching a line of code, so the MSL is byte-identical and
     /// `schemaVersion` deliberately stayed at 1 — bumping it would have thrown away every
@@ -66,10 +66,11 @@ struct WPEShaderTranslationCacheSchemaTests {
     /// rebuild the real response instead of a constant 0 (2370927443, issue #133); cached MSL
     /// for those shaders holds the deaf version.
     /// 2026-09-07: schema 7 rebuilds waterripple mask UVs from texture slot 1.
-    /// 2026-09-09: schema 8 carries each shader's actual texture-slot range; schema 9
-    /// preserves editor require metadata. The integration also corrects diagnostic-only
-    /// comments without changing MSL, so no additional schema bump is needed.
-    static let expectedFingerprint = "ea97eabaa97a1e929a31824d7bbf3f7bc413160287ac33b286f49c8a2292db10"
+    /// 2026-09-09: schema 8 sizes each fragment signature to the texture/sampler slots the
+    /// shader actually declares instead of a fixed 8, so a stock shader reaching
+    /// `g_Texture8` (chroma4, fur4, genericimage4) compiles at all; cached MSL for every
+    /// shader holds the fixed-8 signature and the payload gained the slot arity.
+    static let expectedFingerprint = "5480cce0e3cece29e5edd7351f23d70039141135e4cbc0970aaff2556d169c03"
 
     @Test("Hosted shader cache defaults stay in the process configuration scratch tree")
     func defaultCacheRootIsIsolated() {

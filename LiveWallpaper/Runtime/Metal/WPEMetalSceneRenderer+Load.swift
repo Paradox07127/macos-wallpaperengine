@@ -301,10 +301,17 @@ extension WPEMetalSceneRenderer {
             document.textObjects.map { ($0.id, $0.visible) },
             uniquingKeysWith: { first, _ in first }
         )
+        // A 2D scene can still carry a perspective camera for the objects that opt in
+        // (`perspective: true`); the scene itself stays orthographic.
+        let perspectiveObjectIDs = Set(
+            document.imageObjects.filter(\.usesPerspectiveProjection).map(\.id)
+        )
         cameraUniforms = WPEMetalCameraUniforms(
             orthogonalProjection: document.general.orthogonalProjection,
             sceneCamera: document.camera,
             usesPerspectiveProjection: document.general.usesPerspectiveProjection,
+            perspectiveOverrideFOVDegrees: document.general.perspectiveOverrideFOV.resolvedValue,
+            perspectiveObjectIDs: perspectiveObjectIDs,
             lightAmbientColor: document.general.lightAmbientColor,
             lightSkylightColor: document.general.lightSkylightColor,
             sceneHDR: document.general.hdr,
@@ -334,6 +341,8 @@ extension WPEMetalSceneRenderer {
                     ),
                     sceneCamera: document.camera,
                     usesPerspectiveProjection: true,
+                    perspectiveOverrideFOVDegrees: document.general.perspectiveOverrideFOV.resolvedValue,
+                    perspectiveObjectIDs: perspectiveObjectIDs,
                     lightAmbientColor: document.general.lightAmbientColor,
                     lightSkylightColor: document.general.lightSkylightColor,
                     sceneHDR: document.general.hdr,
