@@ -232,6 +232,9 @@ struct WPEUniformPrecedenceCharacterizationTests {
         #expect(WPEMetalRenderExecutor.textureResolutionSlotIndex(for: "g_TextureResolution") == nil)
         #expect(WPEMetalRenderExecutor.textureResolutionSlotIndex(for: "g_TextureXResolution") == nil)
 
+        // The out-of-range probe tracks `customTextureSlotLimit`, which is 16 (a hard Metal
+        // sampler-argument limit). Slot 8 became valid when the limit was raised from 8 —
+        // WPE's own chroma4/fur4/genericimage4 bind `g_Texture8`.
         #expect(WPEMetalRenderExecutor.textureRotationSlotIndex(for: "g_Texture0Rotation") == 0)
         #expect(WPEMetalRenderExecutor.textureRotationSlotIndex(for: "g_Texture7Rotation") == 7)
         #expect(WPEMetalRenderExecutor.textureRotationSlotIndex(for: "g_Texture8Rotation") == 8)

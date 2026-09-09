@@ -111,10 +111,11 @@ enum WPEShaderCompilerError: Error, Sendable, Equatable {
 /// Memory hits serve a second display / new executor; disk hits serve cold start.
 /// All mutable state sits behind `lock`.
 final class WPEShaderTranslationCache: @unchecked Sendable {
-    /// 8: fragment signatures now declare only the texture/sampler slots each shader
-    /// actually uses (previously a fixed 8), and the payload carries that arity — cached
-    /// v7 MSL has the old fixed shape and no slot count to bind against.
-    static let schemaVersion = 8
+    /// 8: fragment signatures declare only the texture/sampler slots each shader actually
+    /// uses (previously a fixed 8), and the payload carries that arity.
+    /// 9: slots carry their annotation `require` map, without which a stale material
+    /// constant overrides a uniform WPE would have left at its default.
+    static let schemaVersion = 9
     static let shared = WPEShaderTranslationCache()
 
     struct Payload: Codable, Equatable, Sendable {
@@ -134,6 +135,9 @@ final class WPEShaderTranslationCache: @unchecked Sendable {
             var arrayLength: Int?
             var materialName: String?
             var defaultValue: Constant?
+            /// Absent in payloads written before schema 9; decoded as empty (unconditional),
+            /// which is the pre-feature behaviour.
+            var requiredCombos: [String: Int]?
 
             enum Constant: Codable, Equatable, Sendable {
                 case bool(Bool)
@@ -152,7 +156,8 @@ final class WPEShaderTranslationCache: @unchecked Sendable {
                     slotCount: slot.slotCount,
                     arrayLength: slot.arrayLength,
                     materialName: slot.materialName,
-                    defaultValue: slot.defaultValue.map(\.domainValue)
+                    defaultValue: slot.defaultValue.map(\.domainValue),
+                    requiredCombos: slot.requiredCombos ?? [:]
                 )
             }
         }
@@ -173,7 +178,8 @@ final class WPEShaderTranslationCache: @unchecked Sendable {
                     slotCount: slot.slotCount,
                     arrayLength: slot.arrayLength,
                     materialName: slot.materialName,
-                    defaultValue: Slot.Constant(slot.defaultValue)
+                    defaultValue: Slot.Constant(slot.defaultValue),
+                    requiredCombos: slot.requiredCombos
                 ))
             }
             return Payload(

@@ -217,7 +217,8 @@ struct WPEShaderTranspiler {
                 slotCount: count,
                 arrayLength: u.arrayLength,
                 materialName: u.materialName,
-                defaultValue: u.defaultValue
+                defaultValue: u.defaultValue,
+                requiredCombos: u.requiredCombos
             ))
             nextSlot += count
         }
