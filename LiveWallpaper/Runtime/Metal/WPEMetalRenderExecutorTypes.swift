@@ -46,11 +46,13 @@ final class WPEMetalSolidSceneRun {
 final class WPEMetalTextureSlotTable {
     private var textures: ContiguousArray<MTLTexture?>
     private var samplingDescriptors: ContiguousArray<WPETexSpriteSamplingDescriptor?>
+    private var samplers: ContiguousArray<MTLSamplerState?>
 
     init(slotCount: Int = WPEShaderTranspiler.customTextureSlotLimit) {
         let count = max(0, slotCount)
         textures = ContiguousArray(repeating: nil, count: count)
         samplingDescriptors = ContiguousArray(repeating: nil, count: count)
+        samplers = ContiguousArray(repeating: nil, count: count)
     }
 
     var slotCount: Int { textures.count }
@@ -61,17 +63,20 @@ final class WPEMetalTextureSlotTable {
             guard textures.indices.contains(slot) else { return }
             textures[slot] = newValue
             samplingDescriptors[slot] = nil
+            samplers[slot] = nil
         }
     }
 
     func set(
         texture: MTLTexture?,
         samplingDescriptor: WPETexSpriteSamplingDescriptor?,
+        sampler: MTLSamplerState? = nil,
         at slot: Int
     ) {
         guard textures.indices.contains(slot) else { return }
         textures[slot] = texture
         samplingDescriptors[slot] = texture == nil ? nil : samplingDescriptor
+        samplers[slot] = sampler
     }
 
     func samplingDescriptor(at slot: Int) -> WPETexSpriteSamplingDescriptor? {
@@ -79,10 +84,25 @@ final class WPEMetalTextureSlotTable {
         return samplingDescriptors[slot]
     }
 
+    /// The same resolved slot values, submitted in two API calls without allocating
+    /// per-draw arrays. Every encoder receives its own complete declared range.
+    func bindFragmentResources(to encoder: MTLRenderCommandEncoder, count: Int) {
+        precondition(count >= 0 && count <= slotCount)
+        guard count > 0 else { return }
+        let range = NSRange(location: 0, length: count)
+        textures.withUnsafeBufferPointer {
+            encoder.__setFragmentTextures($0.baseAddress!, with: range)
+        }
+        samplers.withUnsafeBufferPointer {
+            encoder.__setFragmentSamplerStates($0.baseAddress!, with: range)
+        }
+    }
+
     func reset() {
         for index in textures.indices {
             textures[index] = nil
             samplingDescriptors[index] = nil
+            samplers[index] = nil
         }
     }
 }

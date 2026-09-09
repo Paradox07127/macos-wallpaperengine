@@ -736,18 +736,15 @@ struct WPEMetalShaderDispatcher {
                 texture: texture,
                 fallbackToPrimary: fallbackToPrimary
             )
-            encoder.setFragmentTexture(texture, index: slot)
             // Bind the matching per-slot sampler (`wpeSampler<slot>`): address mode
             // (clamp/repeat) + filter (linear/nearest) come from the texture's TEXI
             // flags. Tiling maps sampled at time-scrolled UVs (water-normal, noise,
             // flow) now repeat instead of clamping to a frozen edge.
-            encoder.setFragmentSamplerState(
-                executor.customShaderSamplerState(for: texture),
-                index: slot
-            )
+            let sampler = executor.customShaderSamplerState(for: texture)
             resolvedTexturesBySlot.set(
                 texture: texture,
                 samplingDescriptor: samplingDescriptor,
+                sampler: sampler,
                 at: slot
             )
             #if !LITE_BUILD && DEBUG
@@ -762,6 +759,7 @@ struct WPEMetalShaderDispatcher {
             #endif
         }
 
+        resolvedTexturesBySlot.bindFragmentResources(to: encoder, count: result.textureSlotCount)
         let packedUniforms = executor.packTranslatedUniformsForBinding(
             for: pass,
             layout: result.uniformLayout,

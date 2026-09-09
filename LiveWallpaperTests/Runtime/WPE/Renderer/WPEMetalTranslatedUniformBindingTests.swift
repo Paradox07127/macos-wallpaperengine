@@ -326,4 +326,174 @@ struct WPEMetalTranslatedUniformBindingTests {
         #expect(outcome == .empty)
     }
 }
+
+@Suite("WPE batched fragment bindings")
+struct WPEMetalBatchedFragmentBindingTests {
+    private struct Draw {
+        let count: Int
+        let textures: [MTLTexture]
+        let samplers: [MTLSamplerState]
+    }
+
+    private func makeDraw(device: MTLDevice, count: Int, revision: Int) throws -> Draw {
+        let textures = try (0 ..< count).map { slot -> MTLTexture in
+            let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+                pixelFormat: .rgba8Unorm, width: 2, height: 2, mipmapped: false
+            )
+            descriptor.usage = .shaderRead
+            descriptor.storageMode = device.hasUnifiedMemory ? .shared : .managed
+            let texture = try #require(device.makeTexture(descriptor: descriptor))
+            var bytes: [UInt8] = []
+            for pixel in 0 ..< 4 {
+                bytes += [
+                    UInt8((slot * 13 + revision * 41 + pixel * 37) % 251),
+                    UInt8((slot * 23 + revision * 17 + pixel * 59) % 251),
+                    UInt8((slot * 31 + revision * 53 + pixel * 19) % 251), 255,
+                ]
+            }
+            bytes.withUnsafeBytes {
+                texture.replace(region: MTLRegionMake2D(0, 0, 2, 2), mipmapLevel: 0,
+                                withBytes: $0.baseAddress!, bytesPerRow: 8)
+            }
+            return texture
+        }
+        let samplers = try (0 ..< count).map { slot -> MTLSamplerState in
+            let descriptor = MTLSamplerDescriptor()
+            let mode = (slot + revision) % 4
+            descriptor.minFilter = mode & 1 == 0 ? .nearest : .linear
+            descriptor.magFilter = descriptor.minFilter
+            descriptor.sAddressMode = mode & 2 == 0 ? .clampToEdge : .repeat
+            descriptor.tAddressMode = descriptor.sAddressMode
+            return try #require(device.makeSamplerState(descriptor: descriptor))
+        }
+        return Draw(count: count, textures: textures, samplers: samplers)
+    }
+
+    private func pipeline(device: MTLDevice, count: Int, format: MTLPixelFormat) throws -> MTLRenderPipelineState {
+        let arguments = (0 ..< count).map {
+            "texture2d<float> t\($0) [[texture(\($0))]], sampler s\($0) [[sampler(\($0))]]"
+        }.joined(separator: ", ")
+        let reads = (0 ..< count).map {
+            "if (slot == \($0)) return t\($0).sample(s\($0), uv);"
+        }.joined(separator: "\n")
+        let source = """
+        #include <metal_stdlib>
+        using namespace metal;
+        struct BindingVertexOut { float4 position [[position]]; };
+        vertex BindingVertexOut binding_vertex(uint id [[vertex_id]]) {
+            float2 p[3] = { float2(-1,-1), float2(3,-1), float2(-1,3) };
+            return { float4(p[id], 0, 1) };
+        }
+        fragment float4 binding_fragment(float4 position [[position]]\(arguments.isEmpty ? "" : ", " + arguments)) {
+            uint slot = min(uint(position.x * \(count).0 / 64.0), uint(\(max(count - 1, 0))));
+            float2 uv = position.xy / float2(3.0, 5.0) - 0.4;
+            \(reads)
+            return float4(0.25, 0.5, 0.75, 1);
+        }
+        """
+        let library = try device.makeLibrary(source: source, options: nil)
+        let descriptor = MTLRenderPipelineDescriptor()
+        descriptor.vertexFunction = try #require(library.makeFunction(name: "binding_vertex"))
+        descriptor.fragmentFunction = try #require(library.makeFunction(name: "binding_fragment"))
+        descriptor.colorAttachments[0].pixelFormat = format
+        return try device.makeRenderPipelineState(descriptor: descriptor)
+    }
+
+    private func render(
+        device: MTLDevice, draws: [Draw], pipelines: [Int: MTLRenderPipelineState],
+        format: MTLPixelFormat, batched: Bool
+    ) throws -> [UInt8] {
+        let height = draws.count * 8
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: format, width: 64, height: height, mipmapped: false
+        )
+        descriptor.usage = .renderTarget
+        descriptor.storageMode = .private
+        let target = try #require(device.makeTexture(descriptor: descriptor))
+        let queue = try #require(device.makeCommandQueue())
+        let command = try #require(queue.makeCommandBuffer())
+        let pass = MTLRenderPassDescriptor()
+        pass.colorAttachments[0].texture = target
+        pass.colorAttachments[0].loadAction = .clear
+        pass.colorAttachments[0].storeAction = .store
+        let encoder = try #require(command.makeRenderCommandEncoder(descriptor: pass))
+        let table = WPEMetalTextureSlotTable()
+        for (index, draw) in draws.enumerated() {
+            table.reset()
+            try encoder.setRenderPipelineState(#require(pipelines[draw.count]))
+            encoder.setScissorRect(MTLScissorRect(x: 0, y: index * 8, width: 64, height: 8))
+            for slot in 0 ..< draw.count {
+                table.set(texture: draw.textures[slot], samplingDescriptor: nil,
+                          sampler: draw.samplers[slot], at: slot)
+                if !batched {
+                    encoder.setFragmentTexture(draw.textures[slot], index: slot)
+                    encoder.setFragmentSamplerState(draw.samplers[slot], index: slot)
+                }
+            }
+            if batched {
+                // Reset must also support clearing a previously populated range with nil.
+                // The zero-slot shader does not sample these unbound resources.
+                if draw.count == 0 {
+                    table.bindFragmentResources(to: encoder, count: table.slotCount)
+                }
+                table.bindFragmentResources(to: encoder, count: draw.count)
+            }
+            encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+        }
+        encoder.endEncoding()
+        let bytesPerRow = 64 * (format == .rgba16Float ? 8 : 4)
+        let buffer = try #require(device.makeBuffer(length: bytesPerRow * height, options: .storageModeShared))
+        let blit = try #require(command.makeBlitCommandEncoder())
+        blit.copy(from: target, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
+                  sourceSize: MTLSize(width: 64, height: height, depth: 1), to: buffer,
+                  destinationOffset: 0, destinationBytesPerRow: bytesPerRow,
+                  destinationBytesPerImage: bytesPerRow * height)
+        blit.endEncoding()
+        command.commit()
+        command.waitUntilCompleted()
+        #expect(command.status == .completed)
+        #expect(command.error == nil)
+        return Array(UnsafeRawBufferPointer(start: buffer.contents(), count: buffer.length))
+    }
+
+    @Test("Batch bindings preserve real texture and sampler reads across changing ranges",
+          arguments: [1, 3, 9, 16], [MTLPixelFormat.rgba8Unorm, .rgba16Float])
+    func batchMatchesIndividual(count: Int, format: MTLPixelFormat) throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let draws = try [16, count, 16].enumerated().map {
+            try makeDraw(device: device, count: $0.element, revision: $0.offset)
+        }
+        var pipelines: [Int: MTLRenderPipelineState] = [:]
+        for size in Set(draws.map(\.count)) {
+            pipelines[size] = try pipeline(device: device, count: size, format: format)
+        }
+        let reference = try render(device: device, draws: draws, pipelines: pipelines, format: format, batched: false)
+        let actual = try render(device: device, draws: draws, pipelines: pipelines, format: format, batched: true)
+        #expect(actual == reference)
+        #expect(Set(actual).count > 8)
+        // Negative controls prove the fixture observes both resource and sampler identity.
+        let wrongTextures = draws.map { Draw(count: $0.count, textures: Array($0.textures.reversed()), samplers: $0.samplers) }
+        #expect(try render(device: device, draws: wrongTextures, pipelines: pipelines, format: format, batched: true) != reference)
+        let wrongSamplers = draws.map {
+            Draw(count: $0.count, textures: $0.textures,
+                 samplers: Array($0.samplers.dropFirst()) + [$0.samplers[0]])
+        }
+        #expect(try render(device: device, draws: wrongSamplers, pipelines: pipelines, format: format, batched: true) != reference)
+    }
+
+    @Test("Zero declared slots leave a texture-free fragment valid after scratch reset")
+    func zeroSlots() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let draw = Draw(count: 0, textures: [], samplers: [])
+        let format = MTLPixelFormat.rgba8Unorm
+        let pipelines = try [
+            0: pipeline(device: device, count: 0, format: format),
+            16: pipeline(device: device, count: 16, format: format),
+        ]
+        let populated = try makeDraw(device: device, count: 16, revision: 1)
+        let result = try render(device: device, draws: [populated, draw], pipelines: pipelines,
+                                format: format, batched: true)
+        #expect(Array(result[2048 ..< 2052]) == [64, 128, 191, 255])
+    }
+}
 #endif
