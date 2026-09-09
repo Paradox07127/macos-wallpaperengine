@@ -3146,7 +3146,7 @@ struct InfrastructureRuntimeBoundaryTests {
 
         let sources = try infrastructureFiles.map { file in
             (
-                path: file.path.replacingOccurrences(of: infrastructureRoot.path + "/", with: ""),
+                path: RepositoryRoot.relativePath(of: file, under: infrastructureRoot),
                 source: try String(contentsOf: file, encoding: .utf8)
             )
         }
