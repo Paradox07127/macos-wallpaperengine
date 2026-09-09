@@ -49,9 +49,8 @@ struct WPEUniformSlot: Equatable {
         self.requiredCombos = requiredCombos
     }
 
-    /// Whether this uniform is authored-bindable under `combos`. WPE hides the editor
-    /// field when a require is unmet, so a material constant left over from when the
-    /// combo had the other value must NOT be applied.
+    /// Whether the editor exposes this uniform under `combos`.
+    /// This metadata is diagnostic only; it must not suppress runtime authored values.
     func isAuthorable(under combos: [String: Int]) -> Bool {
         requiredCombos.allSatisfy { combo, expected in (combos[combo] ?? 0) == expected }
     }
@@ -86,12 +85,9 @@ struct WPEUniformDecl: Equatable {
     /// Scene effect overrides use that material name, not the GLSL variable.
     let materialName: String?
     let defaultValue: WPESceneShaderConstantValue?
-    /// The annotation's `"require"` map, e.g. `{"DIRECTDRAW":0}`. WPE only exposes (and
-    /// only binds) the uniform when every listed combo equals the given value; otherwise
-    /// the shader runs on the annotation default. Authors leave stale material constants
-    /// behind when they flip such a combo, so honouring this is what keeps those stale
-    /// values out — lightshafts' `g_Point0..3` require `DIRECTDRAW:0`, and 3437487219
-    /// ships `DIRECTDRAW:1` alongside decade-old point values 10x out of range.
+    /// The annotation's editor visibility map, e.g. `{"DIRECTDRAW":0}`.
+    /// Retained for diagnostics and cache round trips, not runtime value filtering.
+    /// See `compileUniformPlan` for the capture-backed binding behavior.
     let requiredCombos: [String: Int]
 
     static func parse(line: String) -> Self? {

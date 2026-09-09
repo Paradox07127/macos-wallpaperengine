@@ -2815,7 +2815,7 @@ struct WPEShaderTranslationCacheTests {
             processedFragmentSource: """
             #version 410 core
             uniform sampler2D g_Texture0;
-            uniform float g_Opacity;
+            uniform float g_Opacity; // {"material":"opacity","require":{"TESTMODE":1}}
             in vec2 v_TexCoord;
             void main() {
                 vec4 c = texture(g_Texture0, v_TexCoord);
@@ -2861,6 +2861,8 @@ struct WPEShaderTranslationCacheTests {
         cache.dropMemoryForTesting()
         let second = try WPESwiftShaderCompiler(device: device, translationCache: cache).compile(request)
         #expect(cache.diskHitCountForTesting == 1)
+        #expect(first.uniformLayout.first(where: { $0.name == "g_Opacity" })?.requiredCombos == ["TESTMODE": 1])
+        #expect(second.uniformLayout.first(where: { $0.name == "g_Opacity" })?.requiredCombos == ["TESTMODE": 1])
         #expect(second.mslSource == first.mslSource)
         #expect(second.uniformLayout == first.uniformLayout)
         #expect(second.fragmentFunctionName == "wpe_translated_fragment")

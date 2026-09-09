@@ -113,8 +113,8 @@ enum WPEShaderCompilerError: Error, Sendable, Equatable {
 final class WPEShaderTranslationCache: @unchecked Sendable {
     /// 8: fragment signatures declare only the texture/sampler slots each shader actually
     /// uses (previously a fixed 8), and the payload carries that arity.
-    /// 9: slots carry their annotation `require` map, without which a stale material
-    /// constant overrides a uniform WPE would have left at its default.
+    /// 9: slots preserve their annotation `require` map for editor-visibility diagnostics.
+    /// This metadata does not filter authored runtime uniform values.
     static let schemaVersion = 9
     static let shared = WPEShaderTranslationCache()
 
