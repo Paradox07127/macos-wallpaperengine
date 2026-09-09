@@ -457,17 +457,35 @@ struct WPEMetalCameraUniforms: Equatable, Sendable {
             : viewProjectionMatrix
     }
 
-    /// Which triangle winding faces the viewer once `objectID`'s projection has been
-    /// applied. The orthographic canvas matrix negates Y (row 1 is `-2/H`, top-left origin)
-    /// and a negative determinant on the projection's X/Y block reverses apparent winding;
-    /// the perspective camera does not negate Y, so the same mesh presents the opposite
-    /// face. Only matters once something is culled — WPE's `cullmode: "normal"` model
-    /// passes are, and they rasterize `frontCCW` in the capture.
-    func frontFacingWinding(objectID: String) -> MTLWinding {
+    /// Whether `objectID`'s projection reverses apparent triangle winding. The orthographic
+    /// canvas matrix negates Y (row 1 is `-2/H`, top-left origin) and a negative determinant
+    /// on the projection's X/Y block reverses winding; the perspective camera does not
+    /// negate Y, so the same mesh presents the opposite face under the two.
+    func projectionFlipsWinding(objectID: String) -> Bool {
         let matrix = objectViewProjectionMatrix(objectID: objectID)
-        guard matrix.count >= 16 else { return .counterClockwise }
-        let determinant = matrix[0] * matrix[5] - matrix[4] * matrix[1]
-        return determinant < 0 ? .clockwise : .counterClockwise
+        guard matrix.count >= 16 else { return false }
+        return matrix[0] * matrix[5] - matrix[4] * matrix[1] < 0
+    }
+
+    /// Which winding faces the viewer for a mesh drawn with `modelMatrix` under `objectID`'s
+    /// projection. Both halves of the transform can mirror, and they compose: a `scale.x` of
+    /// -1 inverts winding exactly as a Y-negating projection does, and the two together
+    /// cancel. Only matters once something is culled — WPE's `cullmode: "normal"` model
+    /// passes are, and they rasterize `frontCCW` in the capture.
+    ///
+    /// Considering only the projection left a mirrored model (3578699777's "Fireworks 1"
+    /// authors `scale = -1 1 1`) presenting every front face backwards, so back-face culling
+    /// would have erased it entirely.
+    func frontFacingWinding(objectID: String, modelMatrix: simd_float4x4) -> MTLWinding {
+        let linear = simd_float3x3(
+            SIMD3<Float>(modelMatrix.columns.0.x, modelMatrix.columns.0.y, modelMatrix.columns.0.z),
+            SIMD3<Float>(modelMatrix.columns.1.x, modelMatrix.columns.1.y, modelMatrix.columns.1.z),
+            SIMD3<Float>(modelMatrix.columns.2.x, modelMatrix.columns.2.y, modelMatrix.columns.2.z)
+        )
+        let modelFlips = simd_determinant(linear) < 0
+        return projectionFlipsWinding(objectID: objectID) != modelFlips
+            ? .clockwise
+            : .counterClockwise
     }
 
     /// The eye the perspective draws are shaded from (specular, rim, reflection view vector).

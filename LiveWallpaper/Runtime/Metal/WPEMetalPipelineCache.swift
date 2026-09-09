@@ -88,19 +88,37 @@ final class WPEMetalPipelineCache {
         return state
     }
 
-    /// WPE's authored `cullmode`. `normal` means ordinary back-face culling, not "no
-    /// override": RenderDoc on 3437487219 shows the two `cullmode: "normal"` model passes
-    /// (ordinals 5/8) rasterizing with `cullMode: back` while every `cullmode: "nocull"`
-    /// image layer in the same frame reads `cullMode: none`. Mapping `normal` to `.none`
-    /// drew a solid sphere's far hemisphere over its near one through translucent blending.
+    /// WPE's authored `cullmode` for every draw path EXCEPT the scene-model mesh.
+    /// `normal` deliberately falls through to `.none` here — see `sceneModelCullMode`.
     static func cullMode(for raw: String) -> MTLCullMode {
         switch raw.lowercased() {
-        case "back", "normal":
+        case "back":
             return .back
-        case "front", "inverted":
+        case "front":
             return .front
         default:
             return .none
+        }
+    }
+
+    /// Scene-model mesh draws only. `normal` there means ordinary back-face culling, not
+    /// "no override": RenderDoc on 3437487219 shows the two `cullmode: "normal"` model
+    /// passes (ordinals 5/8) rasterizing with `cullMode: back` while every
+    /// `cullmode: "nocull"` image layer in the same frame reads `cullMode: none`. Without
+    /// it a solid sphere drew its far hemisphere over its near one through translucent
+    /// blending.
+    ///
+    /// Kept off the shared mapping on purpose: that capture covers the mesh path and
+    /// nothing else. This machine's 58-scene library has 37 material passes declaring
+    /// `normal`, of which 16 are 2D image shaders and 2 are particle shaders — paths whose
+    /// vertex stages build NDC themselves and can carry a mirrored transform, so culling
+    /// them on inference rather than evidence risks erasing a layer outright. Widen this
+    /// only with a capture of a non-mesh `normal` pass.
+    static func sceneModelCullMode(for raw: String) -> MTLCullMode {
+        switch raw.lowercased() {
+        case "normal": .back
+        case "inverted": .front
+        default: cullMode(for: raw)
         }
     }
 

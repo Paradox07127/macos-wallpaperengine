@@ -40,7 +40,10 @@ final class WPERenderSurface: NSObject, MTKViewDelegate {
         view.wantsLayer = true
         // View config lifted verbatim from the old renderer init — the initial
         // pacing (paused, on-demand redraw, 30 FPS) the renderer expects.
-        let hdrOutput = WPEDisplayHDROutput.isEnabled
+        let hdrOutput = WPEDisplayHDROutput.shouldRequestHDROutput(
+            settingEnabled: WPEDisplayHDROutput.isEnabled,
+            hasCapableScreen: WPEDisplayHDROutput.hasEDRCapableScreen
+        )
         view.colorPixelFormat = WPEDisplayHDROutput.drawablePixelFormat(hdrOutputEnabled: hdrOutput)
         view.clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
         view.preferredFramesPerSecond = WPEMetalSceneRenderer.defaultPreferredFPS
@@ -258,6 +261,22 @@ enum WPEDisplayHDROutput {
     /// Pure so it is testable without touching `UserDefaults.standard`.
     static func drawablePixelFormat(hdrOutputEnabled: Bool) -> MTLPixelFormat {
         hdrOutputEnabled ? .rgba16Float : WPEMetalRenderExecutor.outputPixelFormat
+    }
+
+    /// The setting alone must not widen the drawable: on an all-SDR setup that pays float
+    /// bandwidth for output nothing can show. Split out from the call site so the two halves
+    /// are testable without an attached HDR display.
+    static func shouldRequestHDROutput(settingEnabled: Bool, hasCapableScreen: Bool) -> Bool {
+        settingEnabled && hasCapableScreen
+    }
+
+    /// Whether a drawable of this format actually carries HDR output. The upscale plan asks
+    /// THIS rather than the defaults key: the key can be on while the drawable stayed 8-bit
+    /// (no capable screen), and a plan that believed the key would size an HDR scene down
+    /// for a float-to-float scaler, then have the scaler refuse the 8-bit drawable at
+    /// present and demote the scene to native for the rest of its life.
+    static func isHDROutput(drawablePixelFormat: MTLPixelFormat) -> Bool {
+        drawablePixelFormat == .rgba16Float
     }
 
     /// Extended-range colorspace + the EDR request. Construction-time only: calling this
