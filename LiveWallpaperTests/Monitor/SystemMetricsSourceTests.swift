@@ -240,4 +240,35 @@ struct SystemMetricsSourceTests {
 
         #expect(countLater == countAfterStop)
     }
+
+    /// A rebuilt pipeline hands the board a brand-new source, and CPU, network
+    /// and disk each report `available: false` on a tick with no previous
+    /// counters to subtract. Every time an occluded board came back, that made
+    /// the first published tick read "readings unavailable" for a whole
+    /// interval before the real numbers arrived. `primeDeltaBaselines` is what
+    /// keeps that first tick real; drop it and this goes red.
+    @Test("The first published tick already carries a real CPU reading", .timeLimit(.minutes(1)))
+    func firstTickCarriesDeltaBaselines() async {
+        let sink = MockSink()
+        // Wide enough that only the priming gap, never a second tick, can land
+        // inside the wait below — the assertion has to judge the FIRST tick.
+        let source = SystemMetricsSource(includeTopProcesses: false, interval: 5.0)
+
+        await source.start(sink: sink)
+
+        let deadline = Date().addingTimeInterval(3.0)
+        while Date() < deadline, await sink.count() == 0 {
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+        await source.stop()
+
+        let ticks = await sink.count()
+        guard let snapshot = await sink.system() else {
+            Issue.record("no system snapshot arrived within the timeout")
+            return
+        }
+
+        #expect(ticks == 1)
+        #expect(snapshot.metricSamples?["cpu"]?.available == true)
+    }
 }

@@ -17,6 +17,7 @@ public struct MonitorOverlayConfiguration: Codable, Equatable, Sendable {
     public var level: MonitorOverlayLevel
     /// The Now Playing layer: its own switch, level, position and options.
     public var music: MusicOverlayConfiguration
+    public var clock: ClockOverlayConfiguration
     /// Monitor widgets only.
     public var board: MonitorBoardConfiguration
 
@@ -26,16 +27,21 @@ public struct MonitorOverlayConfiguration: Codable, Equatable, Sendable {
         enabled: Bool = false,
         level: MonitorOverlayLevel = .desktop,
         music: MusicOverlayConfiguration = .default,
+        clock: ClockOverlayConfiguration? = nil,
         board: MonitorBoardConfiguration = .default
     ) {
         self.enabled = enabled
         self.level = level
         self.music = music
         self.board = board
+        self.clock = clock ?? board.widgets.first(where: { $0.kind == .nixieClock }).map {
+            ClockOverlayConfiguration(enabled: enabled, level: level, x: $0.x, y: $0.y, width: 356)
+        } ?? .default
+        self.board.widgets.removeAll { $0.kind == .nixieClock }
     }
 
     private enum CodingKeys: String, CodingKey {
-        case enabled, level, music, board
+        case enabled, level, music, clock, board
     }
 
     public init(from decoder: Decoder) throws {
@@ -49,6 +55,17 @@ public struct MonitorOverlayConfiguration: Codable, Equatable, Sendable {
         // default board instead would resurrect the display wearing a layout the
         // user never chose. Absent or null stays absent → default board.
         board = try c.decodeIfPresent(MonitorBoardConfiguration.self, forKey: .board) ?? .default
+        let legacy = board.widgets.first(where: { $0.kind == .nixieClock })
+        let migrated: ClockOverlayConfiguration = if let legacy {
+            ClockOverlayConfiguration(enabled: enabled, level: level, x: legacy.x, y: legacy.y, width: 356)
+        } else {
+            .default
+        }
+        // Lenient like `music`, not strict like `board`: a clock nobody can read is
+        // one missing decoration, while throwing here would drop the display's whole
+        // entry — widgets and Now Playing with it.
+        clock = ((try? c.decodeIfPresent(ClockOverlayConfiguration.self, forKey: .clock)) ?? nil) ?? migrated
+        board.widgets.removeAll { $0.kind == .nixieClock }
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -56,6 +73,7 @@ public struct MonitorOverlayConfiguration: Codable, Equatable, Sendable {
         try c.encode(enabled, forKey: .enabled)
         try c.encode(level, forKey: .level)
         try c.encode(music, forKey: .music)
+        try c.encode(clock.normalized, forKey: .clock)
         try c.encode(board, forKey: .board)
     }
 }

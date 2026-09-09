@@ -19,7 +19,6 @@ extension GeneralSettingsView {
     private func aboutContent(_ layout: AboutLayout) -> some View {
         VStack(spacing: layout.sectionSpacing) {
             aboutHero(layout)
-            aboutTagline
             aboutActionGrid(layout)
             aboutFooter
         }
@@ -74,15 +73,6 @@ extension GeneralSettingsView {
                     .padding(.top, 2)
             }
         }
-    }
-
-    private var aboutTagline: some View {
-        Text("Live wallpapers for macOS — video, web, and compatible scenes on every display.")
-            .font(.callout)
-            .foregroundStyle(.secondary)
-            .multilineTextAlignment(.center)
-            .fixedSize(horizontal: false, vertical: true)
-            .padding(.horizontal, 8)
     }
 
     /// Folds tiles into one row when vertical space is limited.
@@ -194,7 +184,6 @@ private struct AboutActionTile: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, layout.tilePadding)
             .padding(.horizontal, 10)
-            // Settings cards use surfaceRaised at 0.72 with Corner.sm/md.
             .background(
                 RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
                     .fill(DesignTokens.Colors.surfaceRaised.opacity(0.72))
@@ -212,8 +201,7 @@ private struct AboutActionTile: View {
     }
 }
 
-/// The three rungs `aboutTab` steps down through. Only sizes and the tile
-/// column count change — every element stays on the page at every rung.
+/// Layout variants preserve the same actions at different window heights.
 struct AboutLayout {
     let contentWidth: CGFloat
     let verticalPadding: CGFloat

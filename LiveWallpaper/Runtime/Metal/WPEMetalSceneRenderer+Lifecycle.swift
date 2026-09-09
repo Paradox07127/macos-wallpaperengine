@@ -220,6 +220,7 @@ extension WPEMetalSceneRenderer {
         // Feed changed values through every script family's `applyUserProperties`.
         if !layerScriptInstances.isEmpty || !layerAlphaScriptInstances.isEmpty
             || !textVisibleScriptInstances.isEmpty || !textAlphaScriptInstances.isEmpty
+            || !particleAlphaScriptInstances.isEmpty
             || hasTransformScriptInstances {
             let changed = Self.bridgeUserProperties(
                 patch.newValues.filter { patch.changedKeys.contains($0.key) }
@@ -241,6 +242,15 @@ extension WPEMetalSceneRenderer {
                         runtimeSeconds: lastRuntimeUniforms?.time
                     ) {
                         applyLayerAlphaScriptOutput(output, ownObjectID: objectID)
+                    }
+                }
+                for (objectID, instance) in particleAlphaScriptInstances {
+                    if let output = applyScriptUserProperties(
+                        instance,
+                        changed,
+                        runtimeSeconds: lastRuntimeUniforms?.time
+                    ) {
+                        liveParticleInstanceAlpha[objectID] = output.own.alpha
                     }
                 }
                 for (objectID, instance) in textVisibleScriptInstances {
@@ -605,6 +615,7 @@ extension WPEMetalSceneRenderer {
             || !sharedColorReadFans.isEmpty
             || !layerScriptInstances.isEmpty
             || !layerAlphaScriptInstances.isEmpty
+            || !particleAlphaScriptInstances.isEmpty
             // Text scripts tick per frame too (content writes `shared` state;
             // visibility/alpha drive fades) — a scene whose only live driver is a
             // text script must keep the loop running or it freezes at frame 0.
@@ -653,6 +664,7 @@ extension WPEMetalSceneRenderer {
             || !dynamicColorScriptInstances.isEmpty
             || !layerScriptInstances.isEmpty
             || !layerAlphaScriptInstances.isEmpty
+            || !particleAlphaScriptInstances.isEmpty
             || !textScriptInstances.isEmpty
             || !textVisibleScriptInstances.isEmpty
             || !textAlphaScriptInstances.isEmpty

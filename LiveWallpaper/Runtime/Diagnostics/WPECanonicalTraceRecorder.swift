@@ -78,6 +78,59 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         return scene != nil && !frameComplete
     }
 
+    /// Pipeline/encoder state as Metal actually receives it, built from the same helpers the
+    /// executor feeds its pipelines and encoders (`WPEMetalPipelineCache.applyBlendMode` /
+    /// `applyAlphaWritePolicy` / `cullMode`, `WPEMetalDepthStateCache.compareFunction`), so the
+    /// trace carries real blend factors and depth/raster state instead of only the logical
+    /// `blending` string — which the Windows comparator cannot check against D3D state.
+    struct NativeRenderState {
+        let attachment: MTLRenderPipelineColorAttachmentDescriptor
+        let cullMode: MTLCullMode
+        let frontCCW: Bool
+        let depthAttached: Bool
+        let depthCompare: MTLCompareFunction
+        let depthWrite: Bool
+
+        static func scenePass(
+            blendMode: String,
+            alphaWritePolicy: WPEMetalAlphaWritePolicy,
+            cullMode: String,
+            depthAttached: Bool,
+            depthTest: String,
+            depthWrite: String,
+            reversedZ: Bool
+        ) -> NativeRenderState {
+            let attachment = MTLRenderPipelineColorAttachmentDescriptor()
+            WPEMetalPipelineCache.applyBlendMode(blendMode.lowercased(), to: attachment)
+            WPEMetalPipelineCache.applyAlphaWritePolicy(alphaWritePolicy, to: attachment)
+            return NativeRenderState(
+                attachment: attachment,
+                cullMode: WPEMetalPipelineCache.cullMode(for: cullMode),
+                frontCCW: true,
+                depthAttached: depthAttached,
+                depthCompare: WPEMetalDepthStateCache.compareFunction(
+                    for: depthTest.lowercased(),
+                    reversedZ: reversedZ
+                ),
+                depthWrite: WPEMetalDepthStateCache.depthWriteEnabled(depthWrite)
+            )
+        }
+
+        /// Particle encoders never set winding, cull or depth state.
+        static func particle(blendMode: WPEParticleBlendMode) -> NativeRenderState {
+            let attachment = MTLRenderPipelineColorAttachmentDescriptor()
+            WPEMetalRenderExecutor.applyParticleBlend(blendMode, to: attachment)
+            return NativeRenderState(
+                attachment: attachment,
+                cullMode: .none,
+                frontCCW: false,
+                depthAttached: false,
+                depthCompare: .always,
+                depthWrite: false
+            )
+        }
+    }
+
     func beginScene(
         workshopID: String,
         projectJsonPath: String?,
@@ -113,7 +166,8 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         result: WPEShaderCompileResult,
         textureBindings: [TextureBindingInput],
         packedUniformSlots: [SIMD4<Float>],
-        usesObjectQuad: Bool
+        usesObjectQuad: Bool,
+        nativeState: NativeRenderState
     ) {
         guard WPESceneDebugArtifacts.shared.isEnabled else { return }
         lock.lock()
@@ -211,15 +265,8 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
             if let descriptor = samplerBySlot[slot] { entry["descriptor"] = descriptor }
             return entry
         }
-        let state: [String: Any] = [
-            // Was hardcoded null, which left 40 of 49 passes with no blend at all
-            // while Windows recorded it on every one — blend divergence was
-            // structurally undetectable on the custom-shader path.
-            "blend": ["mode": "\(pass.pass.blending)"] as [String: Any],
-            "depth": NSNull(),
-            "raster": NSNull(),
-            "samplers": samplers
-        ]
+        var state = nativeStateJSON(nativeState, logicalBlend: "\(pass.pass.blending)")
+        state["samplers"] = samplers
         let output: [String: Any] = [
             "resource": targetResource,
             "png": NSNull(),
@@ -256,7 +303,8 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         vertexShaderName: String,
         fragmentShaderName: String,
         textureBindings: [TextureBindingInput],
-        usesObjectQuad: Bool
+        usesObjectQuad: Bool,
+        nativeState: NativeRenderState
     ) {
         guard WPESceneDebugArtifacts.shared.isEnabled else { return }
         lock.lock()
@@ -332,12 +380,8 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
             "store": "store",
             "target": describe(target: target)
         ]]
-        let state: [String: Any] = [
-            "blend": ["mode": "\(pass.pass.blending)"] as [String: Any],
-            "depth": NSNull(),
-            "raster": NSNull(),
-            "samplers": [Any]()
-        ]
+        var state = nativeStateJSON(nativeState, logicalBlend: "\(pass.pass.blending)")
+        state["samplers"] = [Any]()
         let output: [String: Any] = [
             "resource": targetResource,
             "png": NSNull(),
@@ -370,6 +414,7 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
     /// and are otherwise invisible to the canonical pass stream.
     func recordPuppetPass(
         pass: WPEPreparedRenderPass,
+        nativeState: NativeRenderState,
         stage: String,
         layer: WPERenderLayer,
         modelPath: String?,
@@ -504,14 +549,10 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
                 ]]
             ]
         ]
-        let state: [String: Any] = [
-            "blend": ["mode": "\(pass.pass.blending)"] as [String: Any],
-            "depth": NSNull(),
-            "raster": NSNull(),
-            "samplers": textureBindings.sorted(by: { $0.slot < $1.slot }).map {
-                ["stage": "fragment", "slot": $0.slot, "name": jsonOrNull($0.name)] as [String: Any]
-            }
-        ]
+        var state = nativeStateJSON(nativeState, logicalBlend: "\(pass.pass.blending)")
+        state["samplers"] = textureBindings.sorted(by: { $0.slot < $1.slot }).map {
+            ["stage": "fragment", "slot": $0.slot, "name": jsonOrNull($0.name)] as [String: Any]
+        }
         let output: [String: Any] = [
             "resource": targetResource,
             "png": NSNull(),
@@ -605,6 +646,7 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         particleCount: Int,
         sprite: MTLTexture?,
         blendMode: String,
+        nativeState: NativeRenderState,
         target: MTLTexture,
         spriteSheet: (cols: Int, rows: Int, frames: Int, alphaMask: Bool)?,
         overbright: Float,
@@ -692,10 +734,8 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         let constantBuffer: [String: Any] = [
             "name": "particle", "stage": "fragment", "slot": 0, "variables": variables
         ]
-        let state: [String: Any] = [
-            "blend": ["mode": blendMode] as [String: Any], "depth": NSNull(), "raster": NSNull(),
-            "samplers": [["stage": "fragment", "slot": 0, "name": "g_Texture0"]] as [[String: Any]]
-        ]
+        var state = nativeStateJSON(nativeState, logicalBlend: blendMode)
+        state["samplers"] = [["stage": "fragment", "slot": 0, "name": "g_Texture0"]] as [[String: Any]]
         let output: [String: Any] = [
             "resource": targetResource, "png": NSNull(), "sha256": NSNull(),
             "visualStats": ["note": "particle pass (instanced quads, \(particleCount) alive)"]
@@ -1143,6 +1183,104 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
     }
 
     private func pixelFormatName(_ format: MTLPixelFormat) -> String { "\(format.rawValue)" }
+
+    private func nativeStateJSON(_ native: NativeRenderState, logicalBlend: String) -> [String: Any] {
+        let a = native.attachment
+        let attachment: [String: Any] = [
+            "enabled": a.isBlendingEnabled,
+            "writeMask": Self.d3dWriteMask(a.writeMask),
+            "sourceRGB": Self.blendToken(a.sourceRGBBlendFactor),
+            "destinationRGB": Self.blendToken(a.destinationRGBBlendFactor),
+            "operationRGB": Self.operationToken(a.rgbBlendOperation),
+            "sourceAlpha": Self.blendToken(a.sourceAlphaBlendFactor),
+            "destinationAlpha": Self.blendToken(a.destinationAlphaBlendFactor),
+            "operationAlpha": Self.operationToken(a.alphaBlendOperation),
+        ]
+        return [
+            "blend": ["mode": logicalBlend, "attachments": [attachment]] as [String: Any],
+            // Metal has no depth-enable flag: the test only runs with a depth attachment.
+            "depth": [
+                "enabled": native.depthAttached,
+                "writes": native.depthAttached && native.depthWrite,
+                "function": Self.compareToken(native.depthCompare),
+            ] as [String: Any],
+            "raster": [
+                "cullMode": Self.cullToken(native.cullMode),
+                "fillMode": "solid",
+                "frontCCW": native.frontCCW,
+            ] as [String: Any],
+        ]
+    }
+
+    /// Token vocabulary shared with `oracle_state.token()` on the Windows side
+    /// (D3D11_BLEND_INV_SRC_ALPHA → inv-src-alpha) and the RenderDoc replay exporter.
+    private static func blendToken(_ factor: MTLBlendFactor) -> String {
+        switch factor {
+        case .zero: "zero"
+        case .one: "one"
+        case .sourceColor: "src-color"
+        case .oneMinusSourceColor: "inv-src-color"
+        case .sourceAlpha: "src-alpha"
+        case .oneMinusSourceAlpha: "inv-src-alpha"
+        case .destinationColor: "dest-color"
+        case .oneMinusDestinationColor: "inv-dest-color"
+        case .destinationAlpha: "dest-alpha"
+        case .oneMinusDestinationAlpha: "inv-dest-alpha"
+        case .sourceAlphaSaturated: "src-alpha-sat"
+        case .blendColor, .blendAlpha: "blend-factor"
+        case .oneMinusBlendColor, .oneMinusBlendAlpha: "inv-blend-factor"
+        case .source1Color: "src1-color"
+        case .oneMinusSource1Color: "inv-src1-color"
+        case .source1Alpha: "src1-alpha"
+        case .oneMinusSource1Alpha: "inv-src1-alpha"
+        // Metal 4 pipeline specialization placeholder, not a real factor: no
+        // D3D11 counterpart exists, so it gets its own token rather than
+        // colliding with one the Windows side can emit.
+        case .unspecialized: "unspecialized"
+        @unknown default: "mtl-\(factor.rawValue)"
+        }
+    }
+
+    private static func operationToken(_ operation: MTLBlendOperation) -> String {
+        switch operation {
+        case .add: "add"
+        case .subtract: "subtract"
+        case .reverseSubtract: "rev-subtract"
+        case .min: "min"
+        case .max: "max"
+        case .unspecialized: "unspecialized"
+        @unknown default: "mtl-\(operation.rawValue)"
+        }
+    }
+
+    private static func compareToken(_ function: MTLCompareFunction) -> String {
+        switch function {
+        case .never: "never"
+        case .less: "less"
+        case .equal: "equal"
+        case .lessEqual: "less-equal"
+        case .greater: "greater"
+        case .notEqual: "not-equal"
+        case .greaterEqual: "greater-equal"
+        case .always: "always"
+        @unknown default: "mtl-\(function.rawValue)"
+        }
+    }
+
+    private static func cullToken(_ mode: MTLCullMode) -> String {
+        switch mode {
+        case .none: "none"
+        case .front: "front"
+        case .back: "back"
+        @unknown default: "mtl-\(mode.rawValue)"
+        }
+    }
+
+    /// D3D11 write-mask bit order (R1 G2 B4 A8); Metal's option set uses the reverse order.
+    private static func d3dWriteMask(_ mask: MTLColorWriteMask) -> Int {
+        (mask.contains(.red) ? 1 : 0) | (mask.contains(.green) ? 2 : 0)
+            | (mask.contains(.blue) ? 4 : 0) | (mask.contains(.alpha) ? 8 : 0)
+    }
 
     private func layerID(forPassID passID: String) -> String? {
         guard let prefix = passID.split(separator: ".").first.map(String.init), prefix != passID else { return nil }

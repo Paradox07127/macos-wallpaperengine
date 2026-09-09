@@ -1,9 +1,6 @@
 import SwiftUI
 
-/// Which badges the library and Workshop grids draw on their thumbnails. Kept in `UserDefaults`
-/// rather than `GlobalSettings` to match the app's other card-display preference
-/// (`loomscreen.workshop.blurMatureThumbnails.v1`): these change what one Mac's grid looks like, not
-/// how a wallpaper runs.
+/// Local thumbnail appearance preferences; stored separately from wallpaper playback settings.
 public enum CardBadgeSettings {
     public static let showsRating = "loomscreen.cards.badge.rating.v1"
     public static let showsType = "loomscreen.cards.badge.type.v1"

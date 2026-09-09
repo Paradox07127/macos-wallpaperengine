@@ -893,6 +893,17 @@ extension WPEMetalRenderExecutor {
         }
         WPECanonicalTraceRecorder.shared.recordPuppetPass(
             pass: pass,
+            // Drawn inside the scene-pass encoder: its cull/depth state came from `pass`,
+            // and `renderPipeline` above used the default `.all` alpha write policy.
+            nativeState: .scenePass(
+                blendMode: pass.pass.blending,
+                alphaWritePolicy: .all,
+                cullMode: pass.pass.cullMode,
+                depthAttached: depthPixelFormat != .invalid,
+                depthTest: pass.pass.depthTest,
+                depthWrite: pass.pass.depthWrite,
+                reversedZ: frameState.cameraUniforms.usesPerspectiveProjection
+            ),
             stage: "material-mesh",
             layer: layer,
             modelPath: layer.puppetPath,
@@ -1026,6 +1037,15 @@ extension WPEMetalRenderExecutor {
         #if !LITE_BUILD && DEBUG
         WPECanonicalTraceRecorder.shared.recordPuppetPass(
             pass: pass,
+            nativeState: .scenePass(
+                blendMode: pass.pass.blending,
+                alphaWritePolicy: .all,
+                cullMode: pass.pass.cullMode,
+                depthAttached: depthPixelFormat != .invalid,
+                depthTest: pass.pass.depthTest,
+                depthWrite: pass.pass.depthWrite,
+                reversedZ: frameState.cameraUniforms.usesPerspectiveProjection
+            ),
             stage: "scene-composite-mesh",
             layer: layer,
             modelPath: layer.puppetPath,
@@ -2217,6 +2237,7 @@ extension WPEMetalRenderExecutor {
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
             throw WPEMetalRenderExecutorError.commandBufferFailed
         }
+        encoder.applyTraceLabel("puppet-deferred|\(fragmentName)")
         WPEFrameOccupancyMeter.count(.renderPassEncoder)
         defer { encoder.endEncoding() }
 
@@ -2290,6 +2311,7 @@ extension WPEMetalRenderExecutor {
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
             throw WPEMetalRenderExecutorError.commandBufferFailed
         }
+        encoder.applyTraceLabel("puppet|\(fragmentName)")
         WPEFrameOccupancyMeter.count(.renderPassEncoder)
         defer { encoder.endEncoding() }
 

@@ -385,22 +385,17 @@ struct InstalledView: View {
     private func apply(_ entry: WPEHistoryEntry, to screen: Screen) {
         model.startApply(entry: entry) {
             await screenManager.activateWPEHistoryEntry(entry, for: screen)
-            return screenManager.wpeImportTracker.error(for: screen.id)
+            // Display-scoped issues own the persistent page and toast.
+            return nil
         }
     }
 
     private func applyToAll(_ entry: WPEHistoryEntry) {
         model.startApply(entry: entry) {
-            // First failure wins: the same entry failing on several displays
-            // fails the same way on each.
-            var failure: AppError?
             for screen in screenManager.screens {
                 await screenManager.activateWPEHistoryEntry(entry, for: screen)
-                if failure == nil {
-                    failure = screenManager.wpeImportTracker.error(for: screen.id)
-                }
             }
-            return failure
+            return nil
         }
     }
 

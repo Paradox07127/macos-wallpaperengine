@@ -224,6 +224,8 @@ final class WorkshopDownloadCoordinator {
             finish(itemID: itemID, title: title, phase: .succeededAsPreset(
                 baseWorkshopID: preset.baseWorkshopID
             ))
+        case let .sceneFailure(cause, _, _):
+            finish(itemID: itemID, title: title, phase: .failed(cause.reason))
         case .rejected(let reason):
             finish(itemID: itemID, title: title, phase: .failed(reason))
         }

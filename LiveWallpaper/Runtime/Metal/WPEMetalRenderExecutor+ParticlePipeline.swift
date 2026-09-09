@@ -80,6 +80,18 @@ extension WPEMetalRenderExecutor {
             throw WPEMetalRenderExecutorError.pipelineUnavailable("wpe_particle_instanced_fragment")
         }
         attachment.pixelFormat = colorPixelFormat
+        Self.applyParticleBlend(blendMode, to: attachment)
+        let state = try device.makeRenderPipelineState(descriptor: descriptor)
+        particlePipelineCache[key] = state
+        return state
+    }
+
+    /// Shared with the canonical trace recorder so the recorded factors are the ones the
+    /// pipeline is built from.
+    nonisolated static func applyParticleBlend(
+        _ blendMode: WPEParticleBlendMode,
+        to attachment: MTLRenderPipelineColorAttachmentDescriptor
+    ) {
         attachment.isBlendingEnabled = true
         attachment.rgbBlendOperation = .add
         attachment.alphaBlendOperation = .add
@@ -95,7 +107,10 @@ extension WPEMetalRenderExecutor {
         case .translucent:
             attachment.sourceRGBBlendFactor = .sourceAlpha
             attachment.destinationRGBBlendFactor = .oneMinusSourceAlpha
-            attachment.sourceAlphaBlendFactor = .sourceAlpha
+            // Scene intermediates carry premultiplied RGBA, just like image passes.
+            // Squaring source alpha punches a quad-shaped hole in an opaque scene;
+            // downstream unpremultiplication then brightens even zero refraction.
+            attachment.sourceAlphaBlendFactor = .one
             attachment.destinationAlphaBlendFactor = .oneMinusSourceAlpha
         case .additive:
             attachment.sourceRGBBlendFactor = .sourceAlpha
@@ -103,9 +118,6 @@ extension WPEMetalRenderExecutor {
             attachment.sourceAlphaBlendFactor = .sourceAlpha
             attachment.destinationAlphaBlendFactor = .one
         }
-        let state = try device.makeRenderPipelineState(descriptor: descriptor)
-        particlePipelineCache[key] = state
-        return state
     }
 }
 #endif

@@ -221,10 +221,10 @@ extension WPEShaderTranspiler {
         case "glitter_combine", "waterflow", "tint", "shake", "iris",
              "localcontrast_combine", "cloudmotion", "chromatic_aberration", "fire",
              "caustics", "opacity", "blur_combine", "godrays_downsample2",
-             "depthparallax", "reflection", "xray", "shimmer", "shine_downsample2":
+             "depthparallax", "reflection", "xray", "shimmer", "shine_downsample2", "waterripple":
             return 1
         case "refract", "motionblur_accumulation", "vhs", "pulse", "clouds",
-             "filmgrain", "nitro", "waterripple":
+             "filmgrain", "nitro":
             return 2
         case "lightshafts":
             return 3

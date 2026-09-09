@@ -156,18 +156,19 @@ struct WallpaperEngineImportServiceTests {
         #expect(fromWallpaper.savedVideoPackageEntryName == "clip.mp4")
     }
 
-    @Test("Unsupported scene returns unsupported result")
-    func unsupportedSceneReturnsUnsupportedResult() async throws {
+    @Test("Missing scene entry keeps its identity and concrete file failure")
+    func missingSceneEntryReturnsFileFailure() async throws {
         let fixture = try makeFixture(type: .scene, entryFile: "scene.json", pkgEntries: nil)
         defer { fixture.cleanup() }
-
         let result = try await fixture.service.importProject(folder: fixture.folderURL)
-
-        guard case .unsupported(let origin) = result else {
-            Issue.record("Expected .unsupported, got \(result)")
+        guard case let .sceneFailure(cause, origin, descriptor) = result else {
+            Issue.record("Expected a scene file failure, got \(result)")
             return
         }
         #expect(origin.originalType == .scene)
+        #expect(descriptor.entryFile == "scene.json")
+        #expect(cause.code == "scene.file_missing")
+        #expect(cause.reason.contains("scene.json"))
     }
 
     @Test("Unsupported application returns unsupported result")
@@ -205,20 +206,19 @@ struct WallpaperEngineImportServiceTests {
         #expect(!FileManager.default.fileExists(atPath: extractedDir.path))
     }
 
-    @Test("Scene import sets origin without cache path")
-    func sceneImportSetsOriginButNoCachePath() async throws {
+    @Test("Failed source import keeps an in-place descriptor without extracting a cache")
+    func failedSceneRetainsSourceDescriptor() async throws {
         let fixture = try makeFixture(type: .scene, entryFile: "scene.json", pkgEntries: nil)
         defer { fixture.cleanup() }
-
         let result = try await fixture.service.importProject(folder: fixture.folderURL)
-
-        guard case .unsupported(let origin) = result else {
-            Issue.record("Expected .unsupported, got \(result)")
+        guard case let .sceneFailure(_, origin, descriptor) = result else {
+            Issue.record("Expected a scene source failure, got \(result)")
             return
         }
-        #expect(origin.cacheRelativePath == nil)
-        #expect(origin.resourceLocation == .unsupported)
+        #expect(descriptor.assetStorage == .sourceDirectory)
         #expect(origin.entryFile == "scene.json")
+        let extractedDir = fixture.cacheURL.appendingPathComponent(fixture.workshopID, isDirectory: true)
+        #expect(!FileManager.default.fileExists(atPath: extractedDir.path))
     }
 
     @Test("Scene with scene.pkg + valid scene.json + image asset returns ready scene content")

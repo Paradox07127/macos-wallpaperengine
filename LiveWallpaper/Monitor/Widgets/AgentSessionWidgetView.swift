@@ -9,7 +9,7 @@ struct AgentSessionWidgetView: View {
         context.reduceMotion
     }
 
-    /// Sessions the module has, or nil when the runtime is not sampling agents (no agent-session widget placed).
+    /// Nil when the runtime is not sampling agents.
     private var sessions: [MonitorAgentSessionState]? {
         context.snapshot.agents
     }
@@ -86,28 +86,32 @@ struct AgentSessionWidgetView: View {
         }
     }
 
-    // MARK: - L (364×376) — action strip + up to 4 two-tier rows
+    // MARK: - L — fit the board's actual tile, including its gutter (356×356 at 1×)
 
     @ViewBuilder
     private func largeBody(cellHeight: CGFloat, now: Double) -> some View {
         let scale = AgentTypeScale(cellHeight: cellHeight)
         let cap = Self.rowCap(options, fallback: Self.largeRowCap)
         let rows = Self.largeRows(ordered, cap: cap)
-        let hiddenCount = visibleSessions.count - rows.count
         shell(scale: scale, cellHeight: cellHeight) {
             if !rows.isEmpty {
-                VStack(alignment: .leading, spacing: scale.gap) {
-                    actionStrip(scale: scale, now: now)
-                    ForEach(Array(rows.enumerated()), id: \.element.id) { index, session in
-                        AgentSessionFullRow(session: session, now: now, isLead: index == 0,
-                                            reduceMotion: reduceMotion, scale: scale)
+                GeometryReader { area in
+                    // The content cannot impose its intrinsic height on the
+                    // panel chrome. Prefer four rows, then fewer at small scales.
+                    ViewThatFits(in: .vertical) {
+                        ForEach(Array((1 ... rows.count).reversed()), id: \.self) { count in
+                            VStack(alignment: .leading, spacing: scale.gap) {
+                                actionStrip(scale: scale, now: now)
+                                ForEach(Array(rows.prefix(count).enumerated()), id: \.element.id) { index, session in
+                                    AgentSessionFullRow(session: session, now: now, isLead: index == 0,
+                                                        reduceMotion: reduceMotion, scale: scale)
+                                }
+                            }
+                            .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
-                    if hiddenCount > 0 {
-                        moreWhisper(hiddenCount, scale: scale)
-                    }
-                    Spacer(minLength: 0)
+                    .frame(width: area.size.width, height: area.size.height, alignment: .topLeading)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             } else if !visibleSessions.isEmpty {
                 idleSummary(scale: scale, now: now)
             } else {
@@ -431,19 +435,22 @@ private struct AgentSessionFullRow: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: scale.gap * 0.5) {
+        VStack(alignment: .leading, spacing: scale.gap * 0.4) {
             header
             secondTier
+        }
+        .padding(.horizontal, scale.label * 0.7)
+        .padding(.vertical, scale.label * 0.4)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .background(AgentSessionRowStyle.fill(isBlocked: isBlocked))
+        .overlay(alignment: .bottom) {
             if isLead, isLive {
                 TickTrack(events: session.recentEventTimes ?? [], now: now, span: 180,
                           tint: isBlocked ? Design.signalCoral : Design.signalAmber)
-                    .frame(height: scale.label)
+                    .frame(height: DesignTokens.Spacing.xxs)
+                    .padding(.horizontal, scale.label * 0.7)
             }
         }
-        .padding(.horizontal, scale.label * 0.7)
-        .padding(.vertical, scale.label * 0.55)
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-        .background(AgentSessionRowStyle.fill(isBlocked: isBlocked))
         .overlay(alignment: .leading) {
             AgentSessionRowStyle.accentBar(color: accentColor, isBlocked: isBlocked, scale: scale)
         }
@@ -572,8 +579,7 @@ private enum AgentSessionRowStyle {
     }
 }
 
-/// Provider mark. Ships as an SF Symbol stand-in; drop the vendors' own icons
-/// into the asset catalog under these names and they take over with no code change.
+/// Use the provider asset when available, otherwise an SF Symbol.
 private struct AgentProviderMark: View {
     let provider: MonitorAgentProvider
     let size: CGFloat
@@ -713,8 +719,7 @@ private enum AgentSessionStrings {
         "ended"
     }
 
-    /// "3 agents" — count is data, so composed with a verbatim number at the call
-    /// site rather than a format string. The word is the only localizable part.
+    /// Localize the count and noun together so each language controls their order.
     static func agentCount(_ n: Int) -> String {
         String(localized: "\(n) agents", bundle: .appLanguage, comment: "Agent Session widget header: number of tracked agent sessions.")
     }
@@ -759,8 +764,7 @@ extension AgentSessionWidgetView {
     /// otherwise the git branch. Both answer "which checkout", so showing both
     /// is redundant — the worktree is the more specific answer.
     nonisolated static func scopeLabel(for session: MonitorAgentSessionState) -> String? {
-        // ⧉ (a second copy) for a worktree, ⑂ for a plain branch — ⌥ reads as the
-        // Option key and told the user nothing.
+        // Use distinct symbols for worktrees and branches.
         if let worktree = session.worktreeName, !worktree.isEmpty {
             return "⧉ " + worktree
         }

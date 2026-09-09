@@ -28,10 +28,7 @@ final class HostView: NSView {
     private(set) var pointerScope: PointerScope
     private var reduceMotion: Bool
     private(set) var isSuspended = false
-    /// Non-nil for the board inside the settings inspector rather than on the
-    /// desktop: it draws frozen data instead of the live pump, and the toolbar
-    /// drops "Done", because leaving edit mode is what the preview is for —
-    /// there is nothing else it could show.
+    /// Inspector previews use frozen data and remain in edit mode without a Done button.
     private(set) var preview: MonitorBoardPreview?
 
     var isInspectorPreview: Bool {

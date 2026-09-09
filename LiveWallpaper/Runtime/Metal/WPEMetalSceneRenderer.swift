@@ -183,6 +183,13 @@ final class WPEMetalSceneRenderer: NSObject {
     var layerAlphaScriptInstances: [String: WPELayerScriptInstance] = [:] {
         didSet { cachedInstalledScriptLayerIDs = nil }
     }
+    /// Particle objects whose `instanceoverride.alpha` is a script. Keyed by scene
+    /// object ID; the result multiplies every particle that object spawned. Kept
+    /// out of `cachedInstalledScriptLayerIDs` on purpose — particle objects are
+    /// not static-cacheable layers, so they were never in that exclusion set.
+    var particleAlphaScriptInstances: [String: WPELayerScriptInstance] = [:]
+    /// Last value each of the above returned, applied in `tickParticleSystems`.
+    var liveParticleInstanceAlpha: [String: Double] = [:]
     var dynamicOriginScriptInstances: [String: WPEDynamicTransformScriptInstance] = [:] {
         didSet { cachedInstalledScriptLayerIDs = nil }
     }

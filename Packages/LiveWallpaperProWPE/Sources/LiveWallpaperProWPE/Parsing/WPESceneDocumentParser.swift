@@ -1620,6 +1620,17 @@ public enum WPESceneDocumentParser {
             if let inner = (v as? [String: Any])?["value"] { return inner }
             return v
         }
+        // `{ "script": ..., "value": X }` is the third envelope shape — the same
+        // one image/text objects use for a scripted alpha. `unwrap` keeps
+        // returning the seed `value`, which is why a scripted override read as a
+        // plain constant until this was pulled out separately.
+        var alphaScript: String?
+        var alphaScriptProperties: [String: WPESceneScriptPropertyValue] = [:]
+        if let alphaDict = dict["alpha"] as? [String: Any],
+           let script = alphaDict["script"] as? String, !script.isEmpty {
+            alphaScript = script
+            alphaScriptProperties = scriptPropertyValues(alphaDict["scriptproperties"])
+        }
         let value = WPESceneParticleInstanceOverride(
             count: parseDouble(unwrap("count")),
             rate: parseDouble(unwrap("rate")),
@@ -1630,7 +1641,9 @@ public enum WPESceneDocumentParser {
             brightness: parseDouble(unwrap("brightness")),
             color: parseNormalizedParticleColor(unwrap("colorn")) ?? parseVector3(unwrap("color")),
             alphaAnimation: WPEValueParser.animatedValue(dict["alpha"]),
-            controlPointOffsets: parseInstanceControlPoints(dict)
+            controlPointOffsets: parseInstanceControlPoints(dict),
+            alphaScript: alphaScript,
+            alphaScriptProperties: alphaScriptProperties
         )
         return value.count == nil
             && value.rate == nil
@@ -1642,6 +1655,7 @@ public enum WPESceneDocumentParser {
             && value.color == nil
             && value.alphaAnimation == nil
             && value.controlPointOffsets.isEmpty
+            && value.alphaScript == nil
             ? nil
             : value
     }

@@ -1,11 +1,16 @@
-import SwiftUI
 import LiveWallpaperCore
+import SwiftUI
 
 struct ProcessesWidgetView: View {
     let context: MonitorWidgetContext
 
-    private var snapshot: MonitorSnapshot { context.snapshot }
-    private var system: MonitorSystemSnapshot? { snapshot.system }
+    private var snapshot: MonitorSnapshot {
+        context.snapshot
+    }
+
+    private var system: MonitorSystemSnapshot? {
+        snapshot.system
+    }
 
     private static let colProgram = "Program"
     private static let colCPU = "CPU"
@@ -62,7 +67,7 @@ struct ProcessesWidgetView: View {
         }
     }
 
-    /// Honest empty treatment: the top-process sampler only runs when enabled, so an absent/empty list means "not sampling", not "no processes".
+    /// An absent process list does not establish that no processes are running.
     private func quietState(scale: Design.TypeScale) -> some View {
         VStack(alignment: .leading) {
             Spacer(minLength: 0)
@@ -83,33 +88,35 @@ struct ProcessesWidgetView: View {
         let cpuValueWidth = base * 3.4
         let cpuColWidth = cpuBarWidth + base * 0.45 + cpuValueWidth
         let memColWidth = base * 4.0
+        let pidColWidth = base * 3.8
         let colGap = base * 0.7
         let rowGap = base * (compact ? 0.24 : 0.34)
 
         return VStack(alignment: .leading, spacing: rowGap) {
             headerRow(
                 scale: scale, cpuColWidth: cpuColWidth,
-                memColWidth: memColWidth, colGap: colGap
+                memColWidth: memColWidth, pidColWidth: pidColWidth, colGap: colGap
             )
             ForEach(Array(rows.enumerated()), id: \.offset) { _, proc in
                 processRow(
                     proc, maxCPU: maxCPU, scale: scale,
                     cpuBarWidth: cpuBarWidth, cpuValueWidth: cpuValueWidth,
-                    memColWidth: memColWidth, colGap: colGap
+                    memColWidth: memColWidth, pidColWidth: pidColWidth, colGap: colGap
                 )
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    /// `.ph` — column labels, uppercase/tracked, with a hairline underline.
     private func headerRow(
         scale: Design.TypeScale,
-        cpuColWidth: CGFloat, memColWidth: CGFloat, colGap: CGFloat
+        cpuColWidth: CGFloat, memColWidth: CGFloat, pidColWidth: CGFloat, colGap: CGFloat
     ) -> some View {
         HStack(spacing: colGap) {
             localizedColumnLabel(Self.colProgram, scale: scale)
                 .frame(maxWidth: .infinity, alignment: .leading)
+            columnLabel("PID", scale: scale)
+                .frame(width: pidColWidth, alignment: .trailing)
             columnHeader(Self.colCPU, systemImage: WidgetFactory.icon(.cpu), columnWidth: cpuColWidth, scale: scale)
                 .frame(width: cpuColWidth, alignment: .center)
             columnHeader(Self.colMEM, systemImage: WidgetFactory.icon(.memory), columnWidth: memColWidth, scale: scale)
@@ -155,47 +162,57 @@ struct ProcessesWidgetView: View {
             .lineLimit(1)
     }
 
-    /// `.pr` — one process: name cell (1fr) · CPU cell (bar + value) · MEM cell.
     private func processRow(
         _ proc: MonitorProcessSample, maxCPU: Double,
         scale: Design.TypeScale,
         cpuBarWidth: CGFloat, cpuValueWidth: CGFloat,
-        memColWidth: CGFloat, colGap: CGFloat
+        memColWidth: CGFloat, pidColWidth: CGFloat, colGap: CGFloat
     ) -> some View {
         HStack(spacing: colGap) {
-            nameCell(proc.name, scale: scale)
+            nameCell(proc, scale: scale)
                 .frame(maxWidth: .infinity, alignment: .leading)
+            Text(verbatim: proc.pid.map(String.init) ?? "—")
+                .font(Design.captionFont(size: scale.caption * 0.94))
+                .monospacedDigit()
+                .foregroundStyle(Design.inkMuted)
+                .minimumScaleFactor(0.7)
+                .frame(width: pidColWidth, alignment: .trailing)
             cpuCell(
                 proc.cpuPercent, maxCPU: maxCPU, scale: scale,
                 barWidth: cpuBarWidth, valueWidth: cpuValueWidth
             )
-            Text(verbatim: Format.bytes(proc.memBytes))
+            Text(verbatim: Format.bytes(proc.memBytes) + (proc.memoryMetric == "resident" || proc.memoryMetric == "mixed" ? "*" : ""))
                 .font(Design.captionFont(size: scale.caption * 0.94))
                 .monospacedDigit()
                 .foregroundStyle(Design.inkMuted)
                 .minimumScaleFactor(0.7)
                 .frame(width: memColWidth, alignment: .trailing)
+                .help(Text(ProcessMemoryPresentation.metricText(proc.memoryMetric)))
         }
         .font(Design.captionFont(size: scale.caption))
         .lineLimit(1)
     }
 
-    /// `.pn` — leading square glyph + truncating name (names truncate rather
-    /// than shrink, so the name column stays optically even down the table).
-    private func nameCell(_ name: String, scale: Design.TypeScale) -> some View {
+    /// Keep process names at a consistent type size; truncate overflow.
+    private func nameCell(_ process: MonitorProcessSample, scale: Design.TypeScale) -> some View {
         HStack(spacing: scale.caption * 0.5) {
-            RoundedRectangle(cornerRadius: 2, style: .continuous)
-                .fill(Design.inkFaint.opacity(0.7))
-                .frame(width: scale.caption * 0.5, height: scale.caption * 0.5)
-            Text(verbatim: name)
+            ProcessAppIcon(bundleID: process.bundleID, size: scale.caption * 1.1)
+            Text(verbatim: process.name)
                 .font(Design.captionFont(size: scale.caption))
                 .foregroundStyle(Design.inkPrimary)
                 .lineLimit(1)
                 .truncationMode(.tail)
+            if let count = process.processCount, count > 1 {
+                Text(verbatim: "×\(count)")
+                    .font(Design.captionFont(size: scale.caption * 0.85))
+                    .foregroundStyle(Design.inkFaint)
+                    .fixedSize()
+                    .help(Text("Includes child processes"))
+            }
         }
     }
 
-    /// `.pcpu` — the inline bar (fills to its share of the busiest row; the CPU widget's procRows track-plus-overlay idiom at its 2.6em width) + the cpu% readout (amber, tabular, fixed-width slot so digits align).
+    /// Scale the bar relative to the busiest displayed process; reserve a stable value column.
     private func cpuCell(
         _ cpuPercent: Double, maxCPU: Double, scale: Design.TypeScale,
         barWidth: CGFloat, valueWidth: CGFloat
@@ -242,14 +259,13 @@ struct ProcessesWidgetView: View {
         let capacity = max(
             Self.rowCapacity(frameHeight: frameHeight, scaleHeight: scaleHeight), 1
         )
-        let requested: Int
-        if let n = context.placement.options[MonitorWidgetDraft.countKey]?
+        let requested: Int = if let n = context.placement.options[MonitorWidgetDraft.countKey]?
             .intValue(clampedTo: MonitorWidgetDraft.processCountRange) {
-            requested = n
+            n
         } else if context.placement.size == .large {
-            requested = MonitorWidgetDraft.processCountRange.upperBound
+            MonitorWidgetDraft.processCountRange.upperBound
         } else {
-            requested = MonitorWidgetDraft.defaultProcessCount
+            MonitorWidgetDraft.defaultProcessCount
         }
         return min(requested, capacity)
     }
@@ -272,7 +288,9 @@ struct ProcessesWidgetView: View {
     nonisolated static func cpuText(_ cpuPercent: Double) -> String {
         let v = cpuPercent.isFinite ? max(cpuPercent, 0) : 0
         let tenths = (v * 10).rounded() / 10
-        if tenths < 10 { return String(format: "%.1f", tenths) }
+        if tenths < 10 {
+            return String(format: "%.1f", tenths)
+        }
         return "\(Int(v.rounded()))"
     }
 
@@ -321,11 +339,13 @@ private func processesMockContext(
             MonitorProcessSample(name: "Finder", cpuPercent: 2.3, memBytes: 310 * 1_048_576),
             MonitorProcessSample(name: "mds_stores", cpuPercent: 1.8, memBytes: 1023 * 1_048_576),
             MonitorProcessSample(name: "coreaudiod", cpuPercent: 0.9, memBytes: 96 * 1_048_576),
-            MonitorProcessSample(name: "Terminal", cpuPercent: 0.4, memBytes: 210 * 1_048_576)
+            MonitorProcessSample(name: "Terminal", cpuPercent: 0.4, memBytes: 210 * 1_048_576),
         ]
     }
     var options: [String: MonitorWidgetOptionValue] = [:]
-    if let count { options[MonitorWidgetDraft.countKey] = .number(Double(count)) }
+    if let count {
+        options[MonitorWidgetDraft.countKey] = .number(Double(count))
+    }
     return MonitorWidgetContext(
         snapshot: MonitorSnapshot(timestamp: 0, system: system),
         history: MonitorHistorySnapshot(),

@@ -8,7 +8,29 @@ import MetalKit
 import os
 import simd
 
+extension MTLCommandEncoder {
+    /// Names the encoder so an Instruments capture reads as scene layers instead
+    /// of "Render Command 37". The autoclosure keeps the string unbuilt while the
+    /// flag is off, which is every shipping frame.
+    func applyTraceLabel(_ makeLabel: @autoclosure () -> String) {
+        if WPEMetalRenderExecutor.tracePassLabels { label = makeLabel() }
+    }
+}
+
 final class WPEMetalRenderExecutor {
+
+    /// Names each render/blit encoder so an Instruments capture reads as scene
+    /// layers instead of "Render Command 37". Off by default and read once: a
+    /// frame encodes ~82 encoders, and the label only earns its bridge while
+    /// someone is reading a trace.
+    /// `defaults write com.loomscreen.pro WPETracePassLabels -bool YES`
+    static let tracePassLabels: Bool = {
+        let key = "WPETracePassLabels"
+        for suite in [UserDefaults.appSuite, UserDefaults.standard] where suite.object(forKey: key) != nil {
+            return suite.bool(forKey: key)
+        }
+        return false
+    }()
     /// Every offscreen target and the on-screen swapchain share
     /// a single sRGB pixel format so render pipelines built for the offscreen
     /// pass can be reused by `present()` without re-creation, and so the
@@ -215,7 +237,7 @@ final class WPEMetalRenderExecutor {
 
     /// One prepared pass can drive several pipeline states; (variant, pass id) names one.
     enum PassPSOVariant: UInt8 {
-        case solidColor, solidLayer, blendComposite, copy
+        case solidColor, solidLayer, blendComposite, blendCompositeFramebufferFetch, copy
         case localSceneCapture, composeLayer, compose
         case genericImage2, genericImage4, godraysCombine, effect
     }
@@ -1630,13 +1652,16 @@ final class WPEMetalRenderExecutor {
         }
         #endif
 
-        try snapshotFullFrameBufferIfAliasingScene(
-            pass: pass,
-            destinationTexture: destination.texture,
-            layer: layer,
-            commandBuffer: commandBuffer,
-            frameState: &frameState
+        let fetchSceneColor = puppetModel == nil && WPEMetalShaderInputs.canFetchSceneColor(
+            pass: pass, layer: drawLayer, destination: destination.texture,
+            textures: textures, frameState: frameState
         )
+        if !fetchSceneColor {
+            try snapshotFullFrameBufferIfAliasingScene(
+                pass: pass, destinationTexture: destination.texture, layer: layer,
+                commandBuffer: commandBuffer, frameState: &frameState
+            )
+        }
 
         // Blit + mipmap generation need their own encoder, so the capture has to
         // happen here, before this pass opens its render encoder.
@@ -1685,7 +1710,8 @@ final class WPEMetalRenderExecutor {
             try copyTexture(
                 previousTextureForTarget,
                 to: destination.texture,
-                commandBuffer: commandBuffer
+                commandBuffer: commandBuffer,
+                traceLabel: "feedback-init|\(pass.pass.id)"
             )
             frameState.markInitialized(destination.texture)
         }
@@ -1752,6 +1778,7 @@ final class WPEMetalRenderExecutor {
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
             throw WPEMetalRenderExecutorError.commandBufferFailed
         }
+        encoder.applyTraceLabel("pass|\(pass.pass.id)|\(pass.pass.shader)")
         WPEFrameOccupancyMeter.count(.renderPassEncoder)
         defer { encoder.endEncoding() }
 
@@ -1825,7 +1852,8 @@ final class WPEMetalRenderExecutor {
                     textures: textures,
                     frameState: frameState,
                     encoder: encoder,
-                    depthPixelFormat: needsDepth ? .depth32Float : .invalid
+                    depthPixelFormat: needsDepth ? .depth32Float : .invalid,
+                    fetchSceneColor: fetchSceneColor
                 )
             } catch let error as WPEMetalRenderExecutorError where error.untranslatableShaderReason != nil {
                 // The encoder is already open and has cleared this target, so hand the
@@ -2048,7 +2076,8 @@ final class WPEMetalRenderExecutor {
                 avoiding: destinationTexture
             )
             if let source = frameState.currentFrameSceneTexture {
-                try copyTexture(source, to: snapshot, commandBuffer: commandBuffer)
+                try copyTexture(source, to: snapshot, commandBuffer: commandBuffer,
+                                traceLabel: "scene-snapshot|\(pass.pass.id)|\(alias)")
             } else {
                 try clearTexture(snapshot, color: clearColor(for: .scene), commandBuffer: commandBuffer)
             }
@@ -2072,6 +2101,7 @@ final class WPEMetalRenderExecutor {
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
             throw WPEMetalRenderExecutorError.commandBufferFailed
         }
+        encoder.applyTraceLabel("clear")
         WPEFrameOccupancyMeter.count(.helperEncoder)
         encoder.endEncoding()
     }
@@ -2079,11 +2109,14 @@ final class WPEMetalRenderExecutor {
     func copyTexture(
         _ source: MTLTexture,
         to destination: MTLTexture,
-        commandBuffer: MTLCommandBuffer
+        commandBuffer: MTLCommandBuffer,
+        traceLabel: @autoclosure () -> String = "copy",
+        generateMipmaps: Bool = false
     ) throws {
         guard let blit = commandBuffer.makeBlitCommandEncoder() else {
             throw WPEMetalRenderExecutorError.commandBufferFailed
         }
+        blit.applyTraceLabel(traceLabel())
         WPEFrameOccupancyMeter.count(.helperEncoder)
         blit.copy(
             from: source,
@@ -2096,6 +2129,10 @@ final class WPEMetalRenderExecutor {
             destinationLevel: 0,
             destinationOrigin: MTLOrigin()
         )
+        if generateMipmaps, destination.mipmapLevelCount > 1 {
+            blit.generateMipmaps(for: destination)
+            WPEFrameOccupancyMeter.count(.reflectionMipGeneration)
+        }
         blit.endEncoding()
     }
 
@@ -2120,15 +2157,9 @@ final class WPEMetalRenderExecutor {
             return
         }
         let capture = try reflectionCaptureTexture(matching: source)
-        try copyTexture(source, to: capture, commandBuffer: commandBuffer)
-        if capture.mipmapLevelCount > 1 {
-            guard let blit = commandBuffer.makeBlitCommandEncoder() else {
-                throw WPEMetalRenderExecutorError.commandBufferFailed
-            }
-            WPEFrameOccupancyMeter.count(.helperEncoder)
-            blit.generateMipmaps(for: capture)
-            blit.endEncoding()
-        }
+        try copyTexture(source, to: capture, commandBuffer: commandBuffer,
+                        traceLabel: "reflection|\(pass.pass.id)", generateMipmaps: true)
+        WPEFrameOccupancyMeter.count(.reflectionCapture)
         reflectionSourceTexture = capture
     }
 
@@ -2191,7 +2222,8 @@ final class WPEMetalRenderExecutor {
             frameState.registerWrite(texture: destination.texture, targetID: destination.id)
             return
         }
-        try copyTexture(sourceTexture, to: destination.texture, commandBuffer: commandBuffer)
+        try copyTexture(sourceTexture, to: destination.texture, commandBuffer: commandBuffer,
+                        traceLabel: "gated-passthrough|\(pass.pass.id)")
         frameState.registerWrite(texture: destination.texture, targetID: destination.id)
     }
 
@@ -2232,7 +2264,8 @@ final class WPEMetalRenderExecutor {
             try copyTexture(
                 previousTextureForTarget,
                 to: destination.texture,
-                commandBuffer: commandBuffer
+                commandBuffer: commandBuffer,
+                traceLabel: "copy-feedback-init|\(layer.objectID)"
             )
             frameState.markInitialized(destination.texture)
         }
@@ -2266,6 +2299,7 @@ final class WPEMetalRenderExecutor {
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
             throw WPEMetalRenderExecutorError.commandBufferFailed
         }
+        encoder.applyTraceLabel("copy-draw|\(layer.objectID)")
         WPEFrameOccupancyMeter.count(.helperEncoder)
         defer { encoder.endEncoding() }
 

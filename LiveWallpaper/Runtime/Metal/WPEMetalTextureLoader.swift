@@ -116,9 +116,10 @@ struct WPEMetalTextureLoader: @unchecked Sendable {
     // Not `@MainActor`: called on the renderer's actor.
     func makeLazyAnimatedTextureSource(
         from payload: WPETexStreamingPayload,
-        label: String
+        label: String,
+        colorSpace: WPEMetalColorSpace = .sRGB
     ) throws -> WPETexLazyAnimatedTextureSource {
-        try WPETexLazyAnimatedTextureSource(payload: payload, device: device, label: label)
+        try WPETexLazyAnimatedTextureSource(payload: payload, device: device, label: label, colorSpace: colorSpace)
     }
 
     /// **Invariant**: one MTLTexture per unique `imageID` (the whole atlas), not per-frame
@@ -128,7 +129,8 @@ struct WPEMetalTextureLoader: @unchecked Sendable {
     // Not `@MainActor`: called on the renderer's actor.
     func makeAnimatedTextureSource(
         from payload: WPETexTexturePayload,
-        label: String
+        label: String,
+        colorSpace: WPEMetalColorSpace = .sRGB
     ) async throws -> WPETexAnimatedTextureSource {
         guard let animation = payload.animationTrack else {
             throw WPEMetalTextureLoaderError.malformedPayload("missing animation track")
@@ -158,7 +160,8 @@ struct WPEMetalTextureLoader: @unchecked Sendable {
                 )
                 texture = try await makeTexture(
                     from: framePayload,
-                    label: "\(label) image \(frame.imageID)"
+                    label: "\(label) image \(frame.imageID)",
+                    colorSpace: colorSpace
                 )
                 atlasTextures[frame.imageID] = texture
             }

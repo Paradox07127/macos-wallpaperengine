@@ -422,7 +422,8 @@ extension WPEMetalRenderExecutor {
                     matching: source,
                     label: "WPE static layer cache \(layer.objectID) \(targetName)"
                 )
-                try copyTexture(source, to: cached, commandBuffer: commandBuffer)
+                try copyTexture(source, to: cached, commandBuffer: commandBuffer,
+                                traceLabel: "static-cache")
                 frameState.seedPreviousTexture(cached, targetID: .named(targetName))
                 frameState.markInitialized(cached)
                 snapshots[targetName] = cached
@@ -626,7 +627,8 @@ extension WPEMetalRenderExecutor {
             sceneReadHazardSnapshotCache[key] = made
             snapshot = made
         }
-        try copyTexture(source, to: snapshot, commandBuffer: commandBuffer)
+        try copyTexture(source, to: snapshot, commandBuffer: commandBuffer,
+                        traceLabel: "scene-previous-hazard")
         return snapshot
     }
 
@@ -670,6 +672,7 @@ extension WPEMetalRenderExecutor {
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPass) else {
             throw WPEMetalRenderExecutorError.commandBufferFailed
         }
+        encoder.applyTraceLabel("bootstrapClear")
         WPEFrameOccupancyMeter.count(.helperEncoder)
         encoder.endEncoding()
         bootstrapPreviousTextureCache[key] = cleared

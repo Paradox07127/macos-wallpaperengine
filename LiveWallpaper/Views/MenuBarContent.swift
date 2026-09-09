@@ -102,7 +102,7 @@ struct MenuBarContent: View {
                 .disabled(isWallpaperSwitchDisabled)
                 .accessibilityElement(children: .ignore)
                 .help(Text("Enable wallpapers. The app keeps running when disabled."))
-                .accessibilityLabel(Text("LiveWallpaper system"))
+                .accessibilityLabel(Text("Enable wallpapers"))
                 .accessibilityValue(isWallpaperEnabled ? Text("On") : Text("Off"))
                 .accessibilityAddTraits(.isButton)
             }
@@ -284,8 +284,8 @@ struct MenuBarContent: View {
             GlassIconButton("power", tint: DesignTokens.Colors.Status.danger) {
                 NSApp.terminate(nil)
             }
-            .help(Text("Quit LiveWallpaper"))
-            .accessibilityLabel(Text("Quit LiveWallpaper"))
+            .help(Text("Quit \(BundleIdentity.productDisplayName)"))
+            .accessibilityLabel(Text("Quit \(BundleIdentity.productDisplayName)"))
         }
         .frame(maxWidth: .infinity)
     }
@@ -337,9 +337,10 @@ struct MenuBarContent: View {
     }
 
     private func displaySource(for screen: Screen, summary: WallpaperSessionSummary) -> String {
-        // A system suspension outranks the wallpaper's name here: the name is
-        // already visible elsewhere, while "why did it stop" is the question
-        // the user actually has, and the play button cannot answer it.
+        if let failure = screenManager.wallpaperLoads.attempt(for: screen)?.failure {
+            return String(localized: "Last wallpaper application failed", bundle: .appLanguage) + " · " + failure.title
+        }
+        // Show the suspension reason before wallpaper identity.
         if summary.activity == .policySuspended,
            let reason = SuspendReasonText.localized(
                for: screenManager.suspendReasonsByScreen[screen.id] ?? []
@@ -347,9 +348,7 @@ struct MenuBarContent: View {
             return reason
         }
 
-        // A failed session gets the same precedence, and for the same reason:
-        // the two name lookups below would otherwise win and show the wallpaper
-        // that is not playing, hiding the message explaining why.
+        // Failure details also take precedence over wallpaper identity.
         if summary.activity == .error, let message = summary.subtitle, !message.isEmpty {
             return message
         }

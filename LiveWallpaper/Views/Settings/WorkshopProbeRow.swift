@@ -123,8 +123,7 @@ struct WorkshopProbeRow: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
         } else if report.id == .binaryIdentity, case .red = report.status {
-            // Re-detect rather than re-select: the fix for a bad identity is a
-            // binary from a source we trust, not another path typed at us.
+            // Re-detection replaces an invalid binary with one from a trusted source.
             Button("Locate automatically") {
                 Task { await service.autoDetectBinary() }
             }
@@ -135,8 +134,7 @@ struct WorkshopProbeRow: View {
 
     // MARK: - Derived
 
-    /// A credential verdict, not a network one: only these are fixed by signing
-    /// in again.
+    /// Only credential failures offer sign-in as recovery.
     private var needsAccountConnection: Bool {
         guard report.id == .cachedLogin else { return false }
         switch service.cachedLoginVerdict {
@@ -161,8 +159,7 @@ struct WorkshopProbeRow: View {
         }
     }
 
-    /// The one-line conclusion on the collapsed row. A passing probe shows what
-    /// it found; a failing one says so in a word and keeps the sentence inside.
+    /// Collapsed rows show successful findings or pending status.
     private var resultText: String? {
         switch report.status {
         case .green(let detail):

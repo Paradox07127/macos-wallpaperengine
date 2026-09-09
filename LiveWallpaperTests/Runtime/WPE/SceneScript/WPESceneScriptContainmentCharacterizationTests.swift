@@ -403,7 +403,7 @@ struct WPESceneScriptContainmentCharacterizationTests {
         #expect(containment.contains("guard !state.isRetired, state.failureReason == nil"))
         #expect(containment.contains("guard current === token,"))
         #expect(containment.contains("return try token.withCompletionPermission(commit)"))
-        #expect(frame.contains("return try finishSceneScriptFrame("))
+        #expect(frame.contains("try finishSceneScriptFrame("))
         #expect(failClose.contains("if videoCommandsOutcome ?? finishCurrentSceneScriptVideoCommands() {"))
         #expect(lifecycle.contains("&& finishCurrentSceneScriptVideoCommands()"))
         #expect(load.contains("try finishSceneScriptLoadVideoCommands("))
@@ -424,7 +424,7 @@ struct WPESceneScriptContainmentCharacterizationTests {
             "LiveWallpaper/Runtime/Metal/WPEMetalSceneRenderer+ScriptFailClose.swift"
         )
         let encode = try #require(frame.range(of: "let frame = try encodeSceneFrame("))
-        let finish = try #require(frame.range(of: "return try finishSceneScriptFrame("))
+        let finish = try #require(frame.range(of: "try finishSceneScriptFrame("))
         let ownerAnchor = try #require(owner.range(of: "func finishSceneScriptFrame("))
         let ownerEnd = try #require(owner.range(of: "func updateParticleHostOriginOffsets("))
         let ownerRegion = String(owner[ownerAnchor.lowerBound ..< ownerEnd.lowerBound])
@@ -866,6 +866,29 @@ struct WPESceneScriptContainmentCharacterizationTests {
             #expect(governor.debugSnapshot.active == 0)
         #endif
         #expect(!blocker.hitHardDeadline)
+    }
+
+    /// The particle-alpha family reached tick, user properties and frame demand
+    /// without reaching teardown: its JSContexts and governor lanes are only
+    /// released by `destroy()`, and unload goes through
+    /// `clearSceneScriptRuntimeState()` rather than the load path's `= [:]`.
+    @Test("Particle alpha scripts are destroyed and dropped on unload")
+    func particleAlphaScriptsReachTeardown() throws {
+        let ticks = try RR10ProductionSource.read(
+            "LiveWallpaper/Runtime/Metal/WPEMetalSceneRenderer+ScriptTicks.swift"
+        )
+        let containment = try RR10ProductionSource.read(
+            "LiveWallpaper/Runtime/Metal/WPEMetalSceneRenderer+ScriptContainment.swift"
+        )
+        let destroyAnchor = try #require(ticks.range(of: "func destroySceneScriptInstances() {"))
+        let destroyEnd = try #require(ticks.range(of: "var hasTransformScriptInstances: Bool"))
+        let destroyBody = String(ticks[destroyAnchor.lowerBound ..< destroyEnd.lowerBound])
+        #expect(destroyBody.contains("particleAlphaScriptInstances"))
+
+        let clearAnchor = try #require(containment.range(of: "func clearSceneScriptRuntimeState() {"))
+        let clearBody = String(containment[clearAnchor.lowerBound...])
+        #expect(clearBody.contains("particleAlphaScriptInstances.removeAll"))
+        #expect(clearBody.contains("liveParticleInstanceAlpha.removeAll"))
     }
 }
 

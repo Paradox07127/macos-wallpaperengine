@@ -46,11 +46,15 @@ struct WPETexAnimatedAtlasProvider {
     private let mapping: WPEMetalTextureFormatMapping
     private let needsRG88Swizzle: Bool
 
-    init?(payload: WPETexStreamingPayload, device: MTLDevice, label: String) {
+    init?(
+        payload: WPETexStreamingPayload, device: MTLDevice, label: String,
+        colorSpace: WPEMetalColorSpace = .sRGB
+    ) {
         guard let format = payload.info.format,
               let mapping = try? WPEMetalTextureFormatMapper.mapping(
                   for: format,
-                  capabilities: WPEMetalTextureCapabilities(device: device)
+                  capabilities: WPEMetalTextureCapabilities(device: device),
+                  colorSpace: colorSpace
               ) else { return nil }
         self.payload = payload
         self.device = device

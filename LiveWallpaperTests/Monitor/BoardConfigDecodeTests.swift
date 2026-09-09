@@ -63,6 +63,21 @@ struct BoardConfigDecodeTests {
         #expect(settings.monitorOverlays["1552:16843:0"]?.level == .front)
     }
 
+    @Test("An unreadable clock loses the clock, not the display's whole overlay")
+    func corruptClockKeepsTheRestOfTheEntry() throws {
+        let json = """
+        {
+          "monitorOverlays": {
+            "1552:16843:0": {"enabled":true,"level":"front","clock":{"width":"large"}}
+          }
+        }
+        """
+        let settings = try JSONDecoder().decode(GlobalSettings.self, from: Data(json.utf8))
+        let entry = settings.monitorOverlays["1552:16843:0"]
+        #expect(entry?.level == .front)
+        #expect(entry?.clock.enabled == false)
+    }
+
     @Test("Unknown config keys are ignored on decode and never re-persisted")
     func unknownKeysIgnoredAndNotPersisted() throws {
         let board = try decodeBoard(#"{"systemEnabled":true,"agentsEnabled":false,"showTopProcesses":true}"#)

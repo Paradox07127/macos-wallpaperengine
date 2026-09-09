@@ -109,12 +109,19 @@ category at a time.
   Reduce Motion handling and screen-capture visibility control.
 - **Weather response**: Open-Meteo conditions drive particle selection and
   video adjustments, using system or manual location.
-- **Monitor board**: ten widget types — CPU, Memory, GPU, Network, Disk, Power,
+- **Monitor board**: eleven widget types — System Overview, CPU, Memory, GPU, Network, Disk, Power,
   Processes, Agent Session, ANE Memory and Weather. Widgets have supported
   small/medium/large sizes, drag arrangement, display scaling, options and
   layout import/export. The board can sit at the desktop or above windows.
   Unavailable readings are distinguished from zero; histories retain sampling
   gaps. Network/disk totals are monitoring-session estimates.
+- **System Overview**: one medium or large instrument panel for CPU, memory,
+  GPU, network throughput, disk I/O and power. Large adds history curves and
+  optional temperature/fan readings. Uses the existing shared sampling pipeline.
+- **Clock**: an independent, transparent Nixie clock with a metal base and glass
+  separators. Drag to place and freely resize it; choose 12/24-hour time, hour
+  leading zero, opacity and separator blinking. It has its own display switch
+  and layer, and pauses while hidden without starting metric samplers.
 - **Weather widget**: a sky scene with condition/place caption, day/night
   appearance, clouds, precipitation and wind. It is separate from the
   display-wide weather-response controls.

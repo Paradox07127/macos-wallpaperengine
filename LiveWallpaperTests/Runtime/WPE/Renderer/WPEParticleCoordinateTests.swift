@@ -7,6 +7,32 @@ import Testing
 
 struct WPEParticleCoordinateTests {
 
+    @Test("Refractive rain uses the same object size scale as ordinary particles")
+    func refractionDoesNotBypassObjectScale() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let definition = try #require(WPEParticleDefinitionParser.parse(dictionary: [
+            "maxcount": 4, "emitter": [["name": "boxrandom", "instantaneous": 1, "rate": 0]],
+            "initializer": [["name": "sizerandom", "min": 100, "max": 100],
+                            ["name": "lifetimerandom", "min": 10, "max": 10]],
+        ]))
+        let transform = WPEParticleSceneTransform(
+            sceneSize: SIMD2(3840, 2160), objectOrigin: .zero,
+            objectScale: SIMD3(0.1, 0.2, 1), objectAngleZ: 0
+        )
+        for refractive in [false, true] {
+            let system = try #require(WPEParticleSystem(
+                definition: definition, device: device, blendMode: .translucent,
+                sceneTransform: transform, seed: 133
+            ))
+            system.isRefract = refractive
+            system.tick(now: 0)
+            system.tick(now: 0.05)
+            try #require(system.liveInstanceCount == 1)
+            let instance = system.instanceBuffer.contents().bindMemory(to: WPEParticleInstance.self, capacity: 4)[0]
+            #expect(abs(instance.positionAndSize.w - 15) < 0.001)
+        }
+    }
+
     private func makeDefinition(
         originOffset: SIMD3<Double> = SIMD3(0, 0, 0),
         velocityMin: SIMD3<Double> = SIMD3(0, 0, 0),

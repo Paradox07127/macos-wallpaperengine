@@ -41,7 +41,7 @@ struct WPEShaderTranslationCacheSchemaTests {
     ]
 
     /// Bump together with `schemaVersion`.
-    static let expectedSchemaVersion = 6
+    static let expectedSchemaVersion = 7
     /// 2026-08-30: comment-only compression across eight of the files above moved the
     /// fingerprint without touching a line of code, so the MSL is byte-identical and
     /// `schemaVersion` deliberately stayed at 1 — bumping it would have thrown away every
@@ -65,7 +65,8 @@ struct WPEShaderTranslationCacheSchemaTests {
     /// declare inside `#if AUDIOPROCESSING`, so `v_AudioPulse` / `v_AudioShift` / `v_Pulse`
     /// rebuild the real response instead of a constant 0 (2370927443, issue #133); cached MSL
     /// for those shaders holds the deaf version.
-    static let expectedFingerprint = "85597e4319771c32ca92cab746bdb2636c25d2b93491d8f7c45617d3fe020f74"
+    /// 2026-09-07: schema 7 rebuilds waterripple mask UVs from texture slot 1.
+    static let expectedFingerprint = "70b664a0b7351afebfaf5597546130a685ae056d229485bf3ea615d41167479e"
 
     @Test("Hosted shader cache defaults stay in the process configuration scratch tree")
     func defaultCacheRootIsIsolated() {

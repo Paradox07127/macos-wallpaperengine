@@ -82,7 +82,7 @@ final class WPEMetalDepthStateCache {
 
         let descriptor = MTLDepthStencilDescriptor()
         descriptor.depthCompareFunction = Self.compareFunction(for: key.depthTest, reversedZ: key.reversedZ)
-        descriptor.isDepthWriteEnabled = key.depthWrite == "enabled" || key.depthWrite == "true"
+        descriptor.isDepthWriteEnabled = Self.depthWriteEnabled(key.depthWrite)
 
         let state = device.makeDepthStencilState(descriptor: descriptor)!
         depthStencilStates[key] = state
@@ -104,6 +104,11 @@ final class WPEMetalDepthStateCache {
         }
         texture.label = "WPE Metal executor depth"
         return texture
+    }
+
+    static func depthWriteEnabled(_ raw: String) -> Bool {
+        let lowered = raw.lowercased()
+        return lowered == "enabled" || lowered == "true"
     }
 
     static func compareFunction(for raw: String, reversedZ: Bool = false) -> MTLCompareFunction {

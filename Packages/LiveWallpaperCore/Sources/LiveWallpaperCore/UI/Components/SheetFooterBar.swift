@@ -1,9 +1,6 @@
 import SwiftUI
 
-/// Standard sheet/popover footer: [destructive] [leading] ··· [cancel] [primary].
-/// Primary carries `.defaultAction`, cancel carries `.cancelAction`. Titles come
-/// from the caller (resolved against the app catalog) so this component never
-/// introduces its own localization keys.
+/// Shared footer with default and cancel keyboard actions. Callers supply localized titles.
 public struct SheetFooterBar<Leading: View>: View {
     private let primaryTitle: LocalizedStringKey
     private let primaryAction: () -> Void

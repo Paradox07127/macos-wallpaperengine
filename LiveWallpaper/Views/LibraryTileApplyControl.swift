@@ -6,9 +6,7 @@ struct LibraryTileApplyControl: View {
     let screens: [Screen]
     let tint: Color
     let onApply: (Screen) -> Void
-    /// Omitted by callers whose payload is a whole-screen setup: broadcasting one
-    /// to every display would overwrite each display's entire setup at once, which
-    /// is a product decision nobody has taken. Schemes therefore apply one at a time.
+    /// Nil for whole-display schemes, which apply to one display at a time.
     var onApplyToAll: (() -> Void)?
 
     @State private var isHovering = false
@@ -20,11 +18,7 @@ struct LibraryTileApplyControl: View {
             .buttonStyle(.plain)
             .help(Text("Apply"))
         } else if screens.count > 1 {
-            // Not a Menu: `.menuStyle(.borderlessButton)` is an AppKit popup that
-            // ignores the label's `foregroundStyle` and paints the glyph in the
-            // system control colour — black, and invisible on this tinted disc
-            // over artwork. Only the multi-display branch was ever a Menu, so
-            // the single-display button silently looked right.
+            // A button/popover preserves glyph tint over artwork; AppKit Menu does not.
             Button { showingTargets = true } label: { applyIcon }
                 .buttonStyle(.plain)
                 .help(Text("Apply"))
@@ -56,9 +50,7 @@ struct LibraryTileApplyControl: View {
             .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(DesignTokens.Colors.onAccentFill)
             .frame(width: 22, height: 22)
-            // Interactive over-artwork glyph control — the hover glass API; the
-            // strong opacity keeps the tinted-identity read of the old solid
-            // fill, resting exactly where the thumbnailBadgeGlass backing sat.
+            // Match the resting thumbnail badge tint while retaining hover feedback.
             .floatingGlyphGlass(hovered: isHovering, tint: tint, opacity: 0.9)
             .onHover { isHovering = $0 }
     }

@@ -930,6 +930,32 @@ struct WPERenderGraphBuilderTests {
         #expect(graph.layers.contains { $0.objectID == "child" })
     }
 
+    @Test("Childless composition effects survive pruning (Lofi Cafe audio bars)")
+    func childlessCompositionWithEffectIsRendered() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try writeJSON(["material": "materials/compose.json"], to: root.appendingPathComponent("models/util/composelayer.json"))
+        try writeJSON(["passes": [["shader": "compose", "textures": ["_rt_FullFrameBuffer"]]]],
+                      to: root.appendingPathComponent("materials/compose.json"))
+        try writeJSON(["passes": [["material": "materials/bars.json"]]],
+                      to: root.appendingPathComponent("effects/bars/effect.json"))
+        try writeJSON(["passes": [["shader": "workshop/test/Simple_Audio_Bars"]]],
+                      to: root.appendingPathComponent("materials/bars.json"))
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 3840, "height": 2160]],
+            "objects": [[
+                "id": 5361, "name": "Visualizer", "image": "models/util/composelayer.json",
+                "size": "1075 1075", "origin": "1888 1426 0", "config": ["passthrough": true],
+                "effects": [["id": 5378, "file": "effects/bars/effect.json", "visible": true]],
+            ]],
+        ]
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: payload))
+        let graph = try WPERenderGraphBuilder(cacheRootURL: root).build(document: document)
+        let visualizer = try #require(graph.layers.first { $0.objectID == "5361" })
+        #expect(visualizer.passes.contains { $0.shader == "workshop/test/Simple_Audio_Bars" })
+    }
+
     @Test("Effect-less fullscreenlayer passthrough is dropped; one with a visible effect is kept")
     func noOpFullscreenPassthroughDroppedEffectBearingKept() throws {
         let root = FileManager.default.temporaryDirectory

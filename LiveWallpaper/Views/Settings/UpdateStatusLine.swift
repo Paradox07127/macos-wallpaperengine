@@ -2,9 +2,7 @@ import SwiftUI
 import AppKit
 import LiveWallpaperCore
 
-/// About-page readout for Sparkle, sitting inline under the version line rather than in a card
-/// of its own — the update state is a fact about the build named directly above it. Sparkle owns
-/// the actual update UI; this view only reports pending/checks, and either control hands off to Sparkle's own dialog.
+/// Shows update status beneath the app version; actions open Sparkle’s update UI.
 struct UpdateStatusLine: View {
     @State private var updater = SparkleUpdaterController.shared
 
@@ -25,10 +23,7 @@ struct UpdateStatusLine: View {
 
     // MARK: - Status rendering
 
-    /// "No pending update" and "never successfully checked" are different facts.
-    /// Reporting the second as "up to date" would tell a user whose feed is
-    /// unreachable that they are current, which is the one thing they are not
-    /// in a position to know.
+    /// Missing check history must not be presented as "Up to date".
     private var hasCheckedBefore: Bool { updater.lastUpdateCheckDate != nil }
 
     @ViewBuilder
@@ -64,13 +59,10 @@ struct UpdateStatusLine: View {
         )
     }
 
-    /// When an update is waiting, the useful second fact is what it is, not when
-    /// we last looked.
+    /// Available updates show their version instead of the previous check date.
     private var statusDetail: String? {
         guard updater.availableVersion == nil else { return nil }
-        guard let date = updater.lastUpdateCheckDate else {
-            return String(localized: "Not checked yet", bundle: .appLanguage, comment: "About panel update detail when no check has run.")
-        }
+        guard let date = updater.lastUpdateCheckDate else { return nil }
         let relative = Self.relativeFormatter.localizedString(for: date, relativeTo: Date())
         return String(
             localized: "Last checked \(relative)",

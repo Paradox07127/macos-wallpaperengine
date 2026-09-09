@@ -2,6 +2,8 @@ import LiveWallpaperCore
 import SwiftUI
 
 /// Inline banner when the active wallpaper session reports a `WallpaperRuntimeError`.
+/// Sits in the content column, so it takes the content surface rather than glass
+/// (DESIGN.md rule 11 tiers glass by position).
 struct RuntimeErrorBanner: View {
     let error: WallpaperRuntimeError
     /// Hide Re-pick when the type has no picker (e.g. scene).
@@ -10,32 +12,15 @@ struct RuntimeErrorBanner: View {
     let onRePick: () -> Void
 
     var body: some View {
-        let sanitizedTitle = LogPrivacyRedactor.scrub(error.title)
-
-        HStack(alignment: .center, spacing: 12) {
-            Image(systemName: severityIcon)
-                .foregroundStyle(severityTint)
-                .font(.title3)
-                .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(verbatim: sanitizedTitle)
-                    .font(.callout.weight(.medium))
-                    .lineLimit(2)
-                if let subtitle = error.subtitlePath, !subtitle.isEmpty {
-                    Text(verbatim: LogPrivacyRedactor.scrub(subtitle))
-                        .font(DesignTokens.Typography.codeCaption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-            }
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel(Text(verbatim: sanitizedTitle))
-            .accessibilityValue(Text(verbatim: LogPrivacyRedactor.scrub(error.accessibilityDetail)))
-
-            Spacer(minLength: 8)
-
+        InlineNoticeBanner(
+            tint: severityTint,
+            symbol: severityIcon,
+            title: Text(verbatim: LogPrivacyRedactor.scrub(error.title)),
+            message: Text(verbatim: LogPrivacyRedactor.scrub(error.userMessage)),
+            detail: error.subtitlePath.map(LogPrivacyRedactor.scrub),
+            surface: .content,
+            accessibilityDetail: LogPrivacyRedactor.scrub(error.accessibilityDetail)
+        ) {
             if error.canRetry {
                 Button("Retry", action: onRetry)
                     .buttonStyle(.borderedProminent)
@@ -49,33 +34,23 @@ struct RuntimeErrorBanner: View {
                     .accessibilityHint(Text("Pick a different wallpaper source"))
             }
         }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
-                .fill(severityTint.opacity(0.10))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: DesignTokens.Corner.md)
-                .stroke(severityTint.opacity(0.4), lineWidth: 0.5)
-        )
-        .padding(.horizontal, 12)
-        .padding(.top, 8)
-        .dynamicTypeSize(...DynamicTypeSize.accessibility3)
+        .padding(.horizontal, DesignTokens.Spacing.md)
+        .padding(.top, DesignTokens.Spacing.sm)
     }
 
     private var severityIcon: String {
         switch error.severity {
-        case .error:   return "exclamationmark.octagon.fill"
-        case .warning: return "exclamationmark.triangle.fill"
-        case .info:    return "info.circle.fill"
+        case .error: "exclamationmark.octagon.fill"
+        case .warning: "exclamationmark.triangle.fill"
+        case .info: "info.circle.fill"
         }
     }
 
     private var severityTint: Color {
         switch error.severity {
-        case .error:   return DesignTokens.Colors.Status.danger
-        case .warning: return DesignTokens.Colors.Status.warning
-        case .info:    return .blue
+        case .error: DesignTokens.Colors.Status.danger
+        case .warning: DesignTokens.Colors.Status.warning
+        case .info: DesignTokens.Colors.accent
         }
     }
 }

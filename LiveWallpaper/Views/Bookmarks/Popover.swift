@@ -1,12 +1,7 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// Inspector-header popover for quick-saving the current wallpaper.
-///
-/// The name draft lives in the presenting header, not here: dismissing the
-/// popover by clicking outside must keep an unsaved name (there is no discard
-/// path), and this view is destroyed on every dismissal. The draft only resets
-/// when the bookmark it was seeded from actually changes.
+/// The presenter owns the name draft so dismissing this popover preserves unsaved edits.
 struct Popover: View {
     let screen: Screen
     /// Inspector tab's content (not necessarily the committed active wallpaper).

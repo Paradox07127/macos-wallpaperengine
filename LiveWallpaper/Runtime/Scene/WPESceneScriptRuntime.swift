@@ -765,6 +765,10 @@ final class WPESceneScriptInstance {
     private var isDestroyed = false
     private(set) var lastValue: String
     private let asyncOutcomeSlot = WPESceneScriptOutcomeSlot<String?>()
+    /// Media notifications describe current state. Keep at most the latest
+    /// event for each handler until the shared execution governor admits it.
+    /// Otherwise a busy frame loses the title until the next track change.
+    private var pendingMediaEvents: [WPESceneMediaEvent] = []
 
     /// Budgets: setup covers the whole module body + `init()` (allow real
     /// work); per-frame `update()` is expected to be microseconds, so an
@@ -841,19 +845,31 @@ final class WPESceneScriptInstance {
     /// text engine a second async lane.
     func dispatchMediaEvent(_ event: WPESceneMediaEvent, runtimeSeconds: Double? = nil) {
         guard !isPoisoned, !isDestroyed, handles(event), engine.allows(.event) else { return }
-        switch engine.dispatchMediaEvent(
-            event,
-            runtimeSeconds: runtimeSeconds,
-            budget: tickBudget
-        ) {
-        case .timedOut:
-            isPoisoned = true
-            Logger.warning(
-                "SceneScript \(event.handlerName)() exceeded \(tickBudget)s — frozen",
-                category: .wpeRender
-            )
-        case .capacityUnavailable, .completed:
-            break
+        if let index = pendingMediaEvents.firstIndex(where: { $0.handlerName == event.handlerName }) {
+            pendingMediaEvents[index] = event
+        } else {
+            pendingMediaEvents.append(event)
+        }
+        flushPendingMediaEvents(runtimeSeconds: runtimeSeconds)
+    }
+
+    private func flushPendingMediaEvents(runtimeSeconds: Double?) {
+        guard !isPoisoned, !isDestroyed, engine.allows(.event) else { return }
+        while let event = pendingMediaEvents.first {
+            switch engine.dispatchMediaEvent(event, runtimeSeconds: runtimeSeconds, budget: tickBudget) {
+            case .timedOut:
+                isPoisoned = true
+                pendingMediaEvents.removeAll()
+                Logger.warning(
+                    "SceneScript \(event.handlerName)() exceeded \(tickBudget)s — frozen",
+                    category: .wpeRender
+                )
+                return
+            case .capacityUnavailable:
+                return
+            case .completed:
+                pendingMediaEvents.removeFirst()
+            }
         }
     }
 
@@ -1019,7 +1035,8 @@ final class WPESceneScriptInstance {
             )
             return (lastValue, nil)
         }
-        guard hasUpdateFunction else { return (lastValue, nil) }
+        flushPendingMediaEvents(runtimeSeconds: runtimeSeconds)
+        guard !isPoisoned, hasUpdateFunction else { return (lastValue, nil) }
         guard engine.allows(.tick) else { return (lastValue, nil) }
         if let fresh = asyncOutcomeSlot.takeLatest(), let newValue = fresh {
             lastValue = newValue

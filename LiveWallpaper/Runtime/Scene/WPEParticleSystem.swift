@@ -16,7 +16,7 @@ struct WPEParticleInstance {
     var positionAndSize: SIMD4<Float>
     var color: SIMD4<Float>
     var rotationAndLife: SIMD4<Float>
-    /// TRAILRENDERER only; WPE gates the matching `a_TexCoordVec4C1` on THICKFORMAT.
+    /// TRAILRENDERER: xy local velocity for direction, z local 3D speed for stretch.
     var velocity: SIMD4<Float> = SIMD4<Float>(0, 0, 0, 0)
 }
 
@@ -207,6 +207,20 @@ struct WPEParticleSceneTransform {
         )
     }
 
+    /// Trail stretch uses local velocity before the model transform (WPE GS).
+    func localVelocity(ofWorldVelocity velocity: SIMD3<Float>) -> SIMD3<Float> {
+        let unrotated = SIMD3<Float>(
+            velocity.x * cosAngleZ + velocity.y * sinAngleZ,
+            -velocity.x * sinAngleZ + velocity.y * cosAngleZ,
+            velocity.z
+        )
+        return SIMD3<Float>(
+            abs(objectScale.x) > 0.000001 ? unrotated.x / objectScale.x : 0,
+            abs(objectScale.y) > 0.000001 ? unrotated.y / objectScale.y : 0,
+            abs(objectScale.z) > 0.000001 ? unrotated.z / objectScale.z : 0
+        )
+    }
+
     func worldSizeMultiplier() -> Float {
         let s = (abs(objectScale.x) + abs(objectScale.y)) * 0.5
         return max(0, s)
@@ -285,6 +299,14 @@ final class WPEParticleSystem {
     var groupOpacityMask: MTLTexture?
     var groupTint: SIMD3<Float> = SIMD3<Float>(1, 1, 1)
     var pointerCentered: SIMD2<Float>?
+    /// Live value of the object's `instanceoverride.alpha` script, ticked by the
+    /// renderer. 1 when the object has no such script — and it deliberately KEEPS
+    /// its last ticked value if the script later fails, matching how the layer
+    /// families freeze rather than snap back.
+    var instanceAlphaScale: Float = 1
+    /// Scene object whose `instanceoverride.alpha` script drives `instanceAlphaScale`.
+    /// nil ⇒ no script; the renderer skips this system when fanning tick results out.
+    var instanceAlphaScriptObjectID: String?
     /// 16-band mono spectrum for this frame (renderer-set); nil ⇒ silence ⇒ scale 1.
     var audioSpectrum16: [Float]?
 
@@ -746,6 +768,9 @@ final class WPEParticleSystem {
            let scale = overrideAlpha.scalar(at: systemElapsed) {
             alpha *= Float(max(0, scale))
         }
+        if instanceAlphaScale != 1 {
+            alpha *= max(0, instanceAlphaScale)
+        }
         if let oscillateAlpha = definition.oscillateAlpha {
             alpha *= Float(oscillateAlpha.factor(
                 age: Double(particle.age),
@@ -863,6 +888,8 @@ final class WPEParticleSystem {
             let spriteSize = attrs.size
             let rgb = attrs.rgb
             let drawPosition = attrs.position
+            let localVelocity = definition.trailRenderer?.kind == .sprite
+                ? sceneTransform.localVelocity(ofWorldVelocity: particle.velocity) : .zero
             let frameIndex: Float
             if animatesSequence {
                 let raw = lifetimeFraction * cyclesPerLifetime * frameCount
@@ -876,7 +903,9 @@ final class WPEParticleSystem {
                 ),
                 color: SIMD4<Float>(rgb.x, rgb.y, rgb.z, alpha),
                 rotationAndLife: SIMD4<Float>(particle.rotationZ, lifetimeFraction, frameIndex, visualScaleSigns.y),
-                velocity: SIMD4<Float>(particle.velocity.x, particle.velocity.y, 0, 0)
+                velocity: SIMD4<Float>(
+                    localVelocity.x, localVelocity.y, simd_length(localVelocity), 0
+                )
             )
             written += 1
         }
@@ -1460,13 +1489,12 @@ final class WPEParticleSystem {
             position = sceneTransform.applyModelMatrix(toLocalPoint: localPoint)
         }
         let velocity = sceneTransform.applyModelDirection(localVelocity)
-        let sizeScale: Float
-        if isNestedChildSystem {
-            sizeScale = childWorldSizeMultiplier
+        let sizeScale: Float = if isNestedChildSystem {
+            childWorldSizeMultiplier
         } else {
-            // Preserve the established refractive-root exception: its quad size is
-            // already resolved by the refraction path rather than object scale.
-            sizeScale = isRefract ? 1 : spawnWorldSizeMultiplier
+            // Refraction changes sampling, not geometry. The instanced shader receives
+            // world-sized quads and never applies the scene object's scale again.
+            spawnWorldSizeMultiplier
         }
         // `sizerandom`: min + (max-min)·rand^exp (exp>1 biases toward min).
         let sizeSample: Double

@@ -112,7 +112,7 @@ extension GeneralSettingsView {
         }
     }
 
-    /// Individual `String(localized:, bundle: .appLanguage)` per section so each gets its own xcstrings pluralization rule (no manual "(s)", no concatenation).
+    /// Localize each restored section separately to preserve plural rules.
     private func importFeedbackMessage(for summary: ConfigurationPorter.ApplySummary) -> String {
         guard !summary.isEmpty else {
             return String(

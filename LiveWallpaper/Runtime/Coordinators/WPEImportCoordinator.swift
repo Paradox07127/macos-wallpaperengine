@@ -9,6 +9,7 @@ final class WPEImportCoordinator {
     typealias ImportOperation = @MainActor (URL) async throws -> WallpaperEngineImportService.ImportResult
 
     enum PreparationOutcome: Sendable, Equatable {
+        case sceneFailure(cause: WallpaperFailureCause, origin: WPEOrigin?, descriptor: SceneDescriptor?)
         case ready(content: WallpaperContent, origin: WPEOrigin)
         case unsupported(origin: WPEOrigin)
         /// A Workshop preset item: registered into the library, nothing to show
@@ -27,6 +28,7 @@ final class WPEImportCoordinator {
         case rejected(reason: String)
     }
 
+    private let reportFailure: @MainActor (Screen, WallpaperFailureCause, WPEOrigin?, SceneDescriptor?) -> Void
     private let importOperation: ImportOperation
     private let cachedContentResolver: WPECachedContentResolver
     private let tracker: WPEImportTracker
@@ -58,6 +60,7 @@ final class WPEImportCoordinator {
             @MainActor @escaping () -> Bool
         ) -> Void,
         importOperation: ImportOperation? = nil,
+        reportFailure: @MainActor @escaping (Screen, WallpaperFailureCause, WPEOrigin?, SceneDescriptor?) -> Void = { _, _, _, _ in },
         recordImport: @MainActor @escaping (WPEHistoryEntry) -> Void = {
             SettingsManager.shared.recordWPEImport($0)
         },
@@ -83,6 +86,7 @@ final class WPEImportCoordinator {
             )
         }
     ) {
+        self.reportFailure = reportFailure
         self.importOperation = importOperation ?? { [importService] folderURL in
             try await importService.importProject(folder: folderURL)
         }
@@ -104,6 +108,8 @@ final class WPEImportCoordinator {
         do {
             let result = try await importOperation(folderURL)
             switch result {
+            case let .sceneFailure(cause, origin, descriptor):
+                return .sceneFailure(cause: cause, origin: origin, descriptor: descriptor)
             case .ready(let content, let origin):
                 return .ready(content: content, origin: origin)
             case .unsupported(let origin):
@@ -118,7 +124,7 @@ final class WPEImportCoordinator {
                 return .rejected(reason: reason)
             }
         } catch {
-            return .rejected(reason: error.localizedDescription)
+            return .sceneFailure(cause: SceneFailureCause.make(error), origin: nil, descriptor: nil)
         }
     }
 
@@ -141,7 +147,8 @@ final class WPEImportCoordinator {
     private func importProject(
         at folderURL: URL,
         for screen: Screen,
-        expectedGeneration generation: Int
+        expectedGeneration generation: Int,
+        onFailure: (@MainActor (Screen, WallpaperFailureCause, WPEOrigin?, SceneDescriptor?) -> Void)? = nil
     ) async -> ApplyOutcome {
         let outcome = await prepareProject(at: folderURL)
         guard isLifecycleActive(), tracker.isCurrentGeneration(generation, for: screen.id) else {
@@ -152,6 +159,11 @@ final class WPEImportCoordinator {
         }
 
         switch outcome {
+        case let .sceneFailure(cause, origin, descriptor):
+            (onFailure ?? reportFailure)(screen, cause, origin, descriptor)
+            tracker.recordError(.wpePackageInvalid(cause.reason), for: screen.id)
+            return .rejected(reason: cause.reason)
+
         case .ready(let content, let origin):
             let now = Date()
             applyReady(
@@ -165,6 +177,12 @@ final class WPEImportCoordinator {
             return .applied(origin: origin)
 
         case .unsupported(let origin):
+            let reason = origin.requiresWindowsPlugin
+                ? String(localized: "This scene requires a Windows plugin and cannot run on macOS.", bundle: .appLanguage)
+                : !origin.missingDependencyIDs.isEmpty
+                ? String(localized: "Required Workshop dependencies are missing: \(origin.missingDependencyIDs.joined(separator: ", "))", bundle: .appLanguage)
+                : String(localized: "This project's wallpaper type or rendering features are not supported.", bundle: .appLanguage)
+            (onFailure ?? reportFailure)(screen, WallpaperFailureCause(code: origin.requiresWindowsPlugin ? "scene.windows_plugin" : "scene.unsupported", reason: reason, canRetry: !origin.missingDependencyIDs.isEmpty), origin, nil)
             recordImport(WPEHistoryEntry(origin: origin, importedAt: Date(), lastUsedAt: nil))
             postDidComplete(
                 screenID: screen.id,
@@ -223,21 +241,23 @@ final class WPEImportCoordinator {
             }
 
             tracker.clearError(for: screen.id)
+            var importFailure: (WallpaperFailureCause, WPEOrigin?, SceneDescriptor?)?
             _ = await importProject(
                 at: folderURL,
                 for: screen,
-                expectedGeneration: generation
+                expectedGeneration: generation,
+                onFailure: { _, cause, origin, descriptor in importFailure = (cause, origin, descriptor) }
             )
             guard isLifecycleActive(),
                   tracker.isCurrentGeneration(generation, for: screen.id) else {
                 return
             }
-            if tracker.error(for: screen.id) != nil {
-                _ = applyCachedHistoryEntry(
-                    effectiveEntry,
-                    expectedGeneration: generation,
-                    for: screen
-                )
+            if tracker.error(for: screen.id) != nil,
+               applyCachedHistoryEntry(effectiveEntry, expectedGeneration: generation, for: screen) {
+                return
+            }
+            if let (cause, origin, descriptor) = importFailure {
+                reportFailure(screen, cause, origin, descriptor)
             }
         } catch {
             guard isLifecycleActive(),
@@ -251,6 +271,7 @@ final class WPEImportCoordinator {
             ) {
                 return
             }
+            reportFailure(screen, SceneFailureCause.make(error), entry.origin, nil)
             tracker.recordError(.wpeImportFailed(error.localizedDescription), for: screen.id)
         }
     }

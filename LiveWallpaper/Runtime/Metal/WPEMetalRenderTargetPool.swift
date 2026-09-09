@@ -565,6 +565,14 @@ final class WPEMetalRenderTargetPool {
         diagnosticSpec(for: target, layer: layer, declaredFBOs: declaredFBOs)
     }
 
+    /// Framebuffer fetch may replace a snapshot only when no resizing or format conversion occurs.
+    func sceneSnapshotMatches(_ texture: MTLTexture, layer: WPERenderLayer, sceneSize: CGSize) -> Bool {
+        let target = WPERenderTarget.fbo(name: "_rt_FullFrameBuffer")
+        let key = diagnosticKey(for: target, spec: targetSpec(for: target, layer: layer),
+                                layer: layer, sceneSize: sceneSize)
+        return key.width == texture.width && key.height == texture.height && key.pixelFormat == texture.pixelFormat
+    }
+
     private func targetKey(
         for target: WPERenderTarget,
         spec: WPERenderFBO,

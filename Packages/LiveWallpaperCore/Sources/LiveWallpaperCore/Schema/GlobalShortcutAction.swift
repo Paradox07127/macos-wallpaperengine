@@ -77,7 +77,7 @@ public enum GlobalShortcutAction: String, CaseIterable, Codable, Identifiable, S
         case .toggleMute:
             "Mute or unmute video and scene wallpapers."
         case .toggleMouseInteraction:
-            "Turn pointer and click input on or off for scene and web wallpapers."
+            "Controls cursor tracking in scenes and mouse interaction on web pages."
         case .toggleWallpapers:
             "Hide every wallpaper to reveal the desktop, or bring them back."
         case .reloadWallpapers:

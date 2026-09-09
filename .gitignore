@@ -104,6 +104,7 @@ Temporary Items
 .audit/
 
 .claude/
+.codegraph/
 
 .vm-bridge/
 cache/
@@ -179,3 +180,7 @@ __pycache__/
 .periphery.yml
 !.swiftformat
 !.swiftlint.yml
+
+# LLVM profile artifacts from -profile-generate / coverage builds
+*.profraw
+*.profdata

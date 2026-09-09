@@ -52,7 +52,10 @@ final class ParticleTiltAlignmentTests: XCTestCase {
 
         let window = NSWindow(contentRect: frame, styleMask: [.borderless],
                               backing: .buffered, defer: false)
-        window.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopIconWindow)) + 2)
+        // Above ordinary windows, not at the wallpaper's level: a window the
+        // compositor considers occluded stops updating its backing store, and the
+        // capture then comes back black.
+        window.level = .floating
         window.isOpaque = true
         window.backgroundColor = .black
         defer { window.orderOut(nil) }
@@ -76,8 +79,29 @@ final class ParticleTiltAlignmentTests: XCTestCase {
     }
 
     /// One calibrated frame of a host window built by `capture`.
+    ///
+    /// The compositor hands back an all-black backing store often enough just
+    /// after the window is ordered in that a single attempt failed about two
+    /// runs in three, first as "no marker" and then as "no streaks". A capture
+    /// that never shows the marker still fails, so the calibration keeps its
+    /// teeth.
     @MainActor
     private func snapshot(of window: NSWindow, size: CGSize) throws -> Frame {
+        for _ in 0 ..< 9 {
+            if let frame = try calibratedFrame(of: window, size: size) {
+                return frame
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+        return try XCTUnwrap(
+            calibratedFrame(of: window, size: size),
+            "calibration marker not found — the capture is not showing the host view"
+        )
+    }
+
+    /// `nil` when the calibration marker is not in the capture.
+    @MainActor
+    private func calibratedFrame(of window: NSWindow, size: CGSize) throws -> Frame? {
         // This window's own backing store, not the screen region it occupies.
         // `.optionOnScreenOnly` over a rect captures whatever is in front —
         // during a full run other suites put their own windows up and these
@@ -105,12 +129,12 @@ final class ParticleTiltAlignmentTests: XCTestCase {
                 sum + (0..<strip).reduce(0) { $0 + Int(pixels[y * width + $1]) }
             }
         }
-        let headIsMarker = brightness(rows: 0..<band) > brightness(rows: (height - band)..<height)
-        XCTAssertNotEqual(
-            brightness(rows: 0..<band), brightness(rows: (height - band)..<height),
-            "calibration marker not found — the capture is not showing the host view"
-        )
-        if !headIsMarker {
+        let head = brightness(rows: 0 ..< band)
+        let tail = brightness(rows: (height - band) ..< height)
+        guard head != tail else {
+            return nil
+        }
+        if head < tail {
             var flipped = [UInt8](repeating: 0, count: width * height)
             for y in 0..<height {
                 let src = (height - 1 - y) * width
@@ -133,10 +157,14 @@ final class ParticleTiltAlignmentTests: XCTestCase {
         return (frames[0], frames[1])
     }
 
-    /// `count` calibrated frames `gap` seconds apart of one host window.
+    /// Up to `count` calibrated frames `gap` seconds apart of one host window,
+    /// stopping at the first frame `isEnough` accepts. Sparse effects need a
+    /// window long enough to catch one, and a fixed count either wastes seconds
+    /// on every run or reports "nothing was measured" on an unlucky one.
     @MainActor
     private func captureSeries(
-        _ build: (NSView) -> Void, size: CGSize, settle: TimeInterval, gap: TimeInterval, count: Int
+        _ build: (NSView) -> Void, size: CGSize, settle: TimeInterval, gap: TimeInterval, count: Int,
+        until isEnough: (Frame) -> Bool = { _ in false }
     ) throws -> [Frame] {
         guard let screen = NSScreen.main else { throw XCTSkip("no screen") }
         try CaptureEnvironment.requireUnlockedScreen()
@@ -147,7 +175,10 @@ final class ParticleTiltAlignmentTests: XCTestCase {
         )
         let window = NSWindow(contentRect: frame, styleMask: [.borderless],
                               backing: .buffered, defer: false)
-        window.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopIconWindow)) + 2)
+        // Above ordinary windows, not at the wallpaper's level: a window the
+        // compositor considers occluded stops updating its backing store, and the
+        // capture then comes back black.
+        window.level = .floating
         window.isOpaque = true
         window.backgroundColor = .black
         defer { window.orderOut(nil) }
@@ -166,7 +197,7 @@ final class ParticleTiltAlignmentTests: XCTestCase {
         window.orderFrontRegardless()
         RunLoop.current.run(until: Date().addingTimeInterval(settle))
         var frames = try [snapshot(of: window, size: size)]
-        for _ in 1 ..< max(count, 1) {
+        for _ in 1 ..< max(count, 1) where !isEnough(frames[frames.count - 1]) {
             RunLoop.current.run(until: Date().addingTimeInterval(gap))
             try frames.append(snapshot(of: window, size: size))
         }
@@ -219,6 +250,19 @@ final class ParticleTiltAlignmentTests: XCTestCase {
             found.append(Streak(x: mx, y: my, pixels: xs.count, axis: folded(axis)))
         }
         return found
+    }
+
+    /// Grey histogram of one frame right of the marker, the value that occupies
+    /// most of it, and how many pixels sit clearly above that value.
+    private static func histogram(of frame: Frame) -> (counts: [Int], background: Int, lit: Int) {
+        var counts = [Int](repeating: 0, count: 256)
+        for y in 0 ..< frame.height {
+            for x in frame.firstDataColumn ..< frame.width {
+                counts[Int(frame.pixels[y * frame.width + x])] += 1
+            }
+        }
+        let background = counts.indices.max { counts[$0] < counts[$1] } ?? 0
+        return (counts, background, counts[min(background + 12, 255)...].reduce(0, +))
     }
 
     /// Angle from screen-down towards the right, folded like `Streak.axis`.
@@ -522,22 +566,16 @@ final class ParticleTiltAlignmentTests: XCTestCase {
     /// only shows against a dark sky — so it is measured, on screen.
     @MainActor
     func testMeteorsDoNotFillTheirSpriteBox() throws {
+        let lit: (Frame) -> Bool = { Self.histogram(of: $0).lit > 400 }
         let frames = try captureSeries({ view in
             let overlay = ParticleOverlayView(frame: view.bounds)
             view.addSubview(overlay)
             overlay.setEffect(.meteors, density: 3, tiltRadians: 0)
-        }, size: CGSize(width: 800, height: 600), settle: 1.8, gap: 0.4, count: 6)
+        }, size: CGSize(width: 800, height: 600), settle: 1.8, gap: 0.4, count: 20, until: lit)
 
         var sawAMeteor = false
         for (index, frame) in frames.enumerated() {
-            var histogram = [Int](repeating: 0, count: 256)
-            for y in 0 ..< frame.height {
-                for x in frame.firstDataColumn ..< frame.width {
-                    histogram[Int(frame.pixels[y * frame.width + x])] += 1
-                }
-            }
-            let background = histogram.indices.max { histogram[$0] < histogram[$1] } ?? 0
-            let lit = histogram[min(background + 12, 255)...].reduce(0, +)
+            let (histogram, background, lit) = Self.histogram(of: frame)
             if lit > 400 {
                 sawAMeteor = true
             }

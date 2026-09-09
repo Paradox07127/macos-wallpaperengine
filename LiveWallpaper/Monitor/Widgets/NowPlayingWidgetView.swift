@@ -214,13 +214,8 @@ struct NowPlayingWidgetLayout: Equatable {
 
 // MARK: - Pure visibility decision (which dial reaches which part of the tile)
 
-/// The layer used to multiply three factors onto every pixel it drew: the user's
-/// opacity dial, the text-brightness dial, and the paused dim. A dialled-down
-/// layer that was also paused therefore painted title and artist at
-/// `opacity × brightness × 0.55`, which is why they stopped being readable.
-/// They are separate factors here: `layer` still covers everything (that dial is
-/// the user's "how present is this at all"), `text` reaches only type, and the
-/// paused dim reaches only cover art and the platter.
+/// Apply layer opacity to all content, text brightness only to type, and paused dimming
+/// only to artwork and the platter to preserve text contrast.
 struct NowPlayingVisibility: Equatable, Sendable {
     /// What keeps type legible over arbitrary wallpaper art.
     enum TextBacking: Equatable, Sendable {
@@ -623,13 +618,8 @@ struct NowPlayingWidgetView: View {
 
     // MARK: Transport controls
 
-    /// Hidden until the pointer arrives, so the resting layer stays type, not a player widget. An overlay, never a stack row —
-    /// two bugs taught this: in-flow it reflowed the tile on hover and slid out from under the click, and on a one-cell-tall tile
-    /// the stack overflowed the widget rect (exactly what the overlay window hit-tests), so buttons were invisible to the pointer
-    /// yet could cancel their own hover; an inset overlay stays inside that rect, so hover can't be lost walking toward it.
-    /// Top-trailing, not centred: all three styles put their progress line at the bottom, and vinyl/aurora centre that block
-    /// vertically, so a centred pill sat on the one control users might want to drag — the top edge is the only corner no style
-    /// draws a scrubbable line in.
+    /// Keep hover controls in an inset overlay so they remain inside the widget hit area
+    /// without changing layout. Top-trailing placement avoids the progress slider in all styles.
     @ViewBuilder
     private func transportOverlay(state: MonitorNowPlayingState, in size: CGSize) -> some View {
         if layout.controlsAllowed {
@@ -642,9 +632,7 @@ struct NowPlayingWidgetView: View {
             }
             .padding(.horizontal, side * 0.3)
             .padding(.vertical, side * 0.16)
-            // One scrim, not two: the buttons used to carry a filled circle each on top of this capsule, which
-            // read as a control panel dropped onto the layer rather than part of it — a single hairline glass pill
-            // matches the rest of the app's floating chrome.
+            // Use one shared scrim for the playback controls.
             .background {
                 Capsule()
                     .fill(.black.opacity(0.28))
@@ -888,9 +876,7 @@ struct NowPlayingWidgetView: View {
         return parts.joined(separator: " — ").uppercased()
     }
 
-    /// Spectrum and progress line share one column, starting and ending on the same two pixels; the elapsed/total
-    /// readout sits beside the pair rather than shortening only the line. Before this the bars ran the full width
-    /// of the type block while the line stopped short of the readout, and the two looked like unrelated parts.
+    /// Align spectrum and progress tracks; place the time readout beside their shared column.
     @ViewBuilder
     private func posterMeter(
         state: MonitorNowPlayingState, eyebrowSize: CGFloat, titleSize: CGFloat

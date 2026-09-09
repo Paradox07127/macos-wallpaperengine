@@ -124,6 +124,8 @@ struct MonitorProcessSample: Codable, Sendable, Equatable {
     var kind: String? // app | background | system
     var ioReadBytesPerSec: Double?
     var ioWriteBytesPerSec: Double?
+    var processCount: Int?
+    var memoryMetric: String? // footprint | resident | mixed
 }
 
 // MARK: System hardware identity + per-component detail (v2)

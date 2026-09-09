@@ -166,6 +166,12 @@ final class SystemMetricsSource: MonitorDataSource, Sendable {
             task?.cancel()
             task = Task { [weak self] in
                 guard let self else { return }
+                await primeDeltaBaselines(options: options)
+                do {
+                    try await Task.sleep(nanoseconds: UInt64(min(interval, Self.primeInterval) * 1_000_000_000))
+                } catch {
+                    return
+                }
                 while !Task.isCancelled {
                     await tick(
                         interval: interval,
@@ -185,6 +191,44 @@ final class SystemMetricsSource: MonitorDataSource, Sendable {
                     }
                 }
             }
+        }
+
+        /// Gap between the priming read and the first published tick. Short
+        /// enough that the board fills in about as fast as it used to, long
+        /// enough that the rate metrics divide by a span wide enough to mean
+        /// something.
+        private static let primeInterval: TimeInterval = 0.5
+
+        /// Reads the counters the rate metrics subtract from, and publishes nothing.
+        ///
+        /// CPU, network and disk each report `available: false` on a tick with
+        /// no previous counters to subtract (`sampleCPU`'s `guard let previous`,
+        /// and the two `prev*` checks in `tick`). A rebuilt pipeline gets a
+        /// fresh source with all three cleared — which is every time an occluded
+        /// board comes back — so the first published tick said "readings
+        /// unavailable" and the real numbers only arrived a full interval later.
+        /// One cheap counter read up front buys a first tick that is already
+        /// real. Absolute metrics (memory, GPU, power) need no baseline and are
+        /// deliberately left out: priming must not pay for the expensive probes.
+        private func primeDeltaBaselines(options: Options) {
+            if options.cpu {
+                prevCPU = SystemMetricsSamplers.sampleCPU(previous: nil).counters
+            }
+            if options.network {
+                let raw = SystemMetricsSamplers.sampleNetworkCounters()
+                prevNet = (raw.rx, raw.tx)
+                prevNetInterfaces = Dictionary(
+                    raw.interfaces.map { ($0.name, $0) },
+                    uniquingKeysWith: { first, _ in first }
+                )
+            }
+            if options.disk {
+                let raw = SystemMetricsSamplers.sampleDiskCounters()
+                prevDisk = raw.available ? (raw.read, raw.written) : nil
+            }
+            // So the first tick's `elapsed` is the priming gap, not the poll
+            // interval — the rate metrics would be understated otherwise.
+            lastSampleTime = Date()
         }
 
         func stopLoop() async {

@@ -2,7 +2,7 @@ import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
-/// Lists every `GlobalShortcutAction` with a capture button so the user can rebind, clear, or reset to default.
+/// Edits global shortcut bindings and their master switch.
 struct ShortcutsView: View {
     @State private var bindings: [GlobalShortcutAction.RawAction: GlobalShortcutBinding?] = [:]
     @State private var rejectionMessage: String?
@@ -51,7 +51,7 @@ struct ShortcutsView: View {
             ]
         )
         .onReceive(NotificationCenter.default.publisher(for: .globalShortcutsDidChange)) { _ in
-            // Pick up reset / import side-effects fired from elsewhere in the app so neither the toggle nor the row bindings get overwritten by a stale local @State on the next save.
+            // Refresh after external reset or import to avoid saving stale bindings.
             let latest = SettingsManager.shared.loadGlobalSettings()
             var didResync = false
             if globalShortcutsEnabled != latest.globalShortcutsEnabled {
@@ -85,8 +85,7 @@ struct ShortcutsView: View {
         }
     }
 
-    /// Identity-set guarded binding so a noisy reconcile pass cannot fire
-    /// `persistSettings` repeatedly while SwiftUI is reconciling the row.
+    /// Persist only when the master switch changes.
     private var masterEnableBinding: Binding<Bool> {
         Binding(
             get: { globalShortcutsEnabled },
@@ -114,7 +113,7 @@ struct ShortcutsView: View {
                 rejectionMessage = nil
             case .missingModifier:
                 rejectionMessage = String(
-                    localized: "Add at least one modifier (⌃ ⌥ ⇧ ⌘) — bare keys would intercept normal typing.",
+                    localized: "Include a modifier key (⌃ ⌥ ⇧ ⌘).",
                     bundle: .appLanguage
                 )
                 NSSound.beep()
@@ -140,7 +139,7 @@ struct ShortcutsView: View {
         persistSettings()
     }
 
-    /// Writes the bindings dictionary AND the master enable flag in a single save so a toggle flip can never race with a binding edit.
+    /// Save bindings and the master switch together.
     private func persistSettings() {
         var settings = SettingsManager.shared.loadGlobalSettings()
         settings.globalShortcuts = bindings
@@ -169,7 +168,6 @@ struct ShortcutsView: View {
 private struct ShortcutRow: View {
     let action: GlobalShortcutAction
     let binding: GlobalShortcutBinding?
-    /// Driven by the master enable toggle.
     let isEnabled: Bool
     let onCapture: (GlobalShortcutBinding) -> Void
     let onClear: () -> Void
@@ -180,12 +178,14 @@ private struct ShortcutRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: DesignTokens.Spacing.xs) {
                     Text(action.displayNameKey)
                         .font(DesignTokens.Typography.body)
-                    Text(action.displayDescriptionKey)
-                        .font(DesignTokens.Typography.caption)
-                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityHint(Text(action.displayDescriptionKey))
+                    if let scopeInfo {
+                        InfoTooltipButton(text: scopeInfo)
+                    }
                 }
 
                 Spacer()
@@ -217,9 +217,21 @@ private struct ShortcutRow: View {
         }
         .padding(.vertical, DesignTokens.Spacing.xs)
     }
+
+    private var scopeInfo: String.LocalizationValue? {
+        switch action {
+        case .nextWallpaper, .previousWallpaper:
+            "Targets the playlist on the display under the pointer."
+        case .toggleMute:
+            "Applies to video and scene wallpapers."
+        case .toggleMouseInteraction:
+            "Controls cursor tracking in scenes and mouse interaction on web pages."
+        default:
+            nil
+        }
+    }
 }
 
-/// A small click-to-capture field.
 private struct ShortcutCaptureField: View {
     let binding: GlobalShortcutBinding?
     @Binding var isCapturing: Bool

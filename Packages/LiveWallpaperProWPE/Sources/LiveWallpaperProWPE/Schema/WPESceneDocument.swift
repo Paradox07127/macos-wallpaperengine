@@ -880,6 +880,13 @@ public struct WPESceneParticleInstanceOverride: Equatable, Sendable {
     /// system in place — scene 3596044309's two `31.json` instances sit in a ~15px clump because of
     /// it, with attract `scale` 1000 against a ~223 gravity.
     public let controlPointOffsets: [Int: SIMD3<Double>]
+    /// Script-driven `alpha` override — the same `{script, scriptproperties, value}`
+    /// envelope image and text objects use, so `alpha` above is only the seed.
+    /// 2955378002's "Blinking Stars 23"/"00" gate their whole system on
+    /// `engine.timeOfDay` and read 0 at noon; dropping the script left them lit
+    /// at the seed's 1.0 all day (Windows capture at 0-5 h has COLOR.a = 0).
+    public let alphaScript: String?
+    public let alphaScriptProperties: [String: WPESceneScriptPropertyValue]
 
     public init(
         count: Double? = nil,
@@ -891,7 +898,9 @@ public struct WPESceneParticleInstanceOverride: Equatable, Sendable {
         brightness: Double? = nil,
         color: SIMD3<Double>? = nil,
         alphaAnimation: WPESceneAnimatedValue? = nil,
-        controlPointOffsets: [Int: SIMD3<Double>] = [:]
+        controlPointOffsets: [Int: SIMD3<Double>] = [:],
+        alphaScript: String? = nil,
+        alphaScriptProperties: [String: WPESceneScriptPropertyValue] = [:]
     ) {
         self.count = count
         self.rate = rate
@@ -903,6 +912,8 @@ public struct WPESceneParticleInstanceOverride: Equatable, Sendable {
         self.color = color
         self.alphaAnimation = alphaAnimation
         self.controlPointOffsets = controlPointOffsets
+        self.alphaScript = alphaScript
+        self.alphaScriptProperties = alphaScriptProperties
     }
 }
 

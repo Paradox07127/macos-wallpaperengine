@@ -47,8 +47,7 @@ struct WorkshopDiagnosticsSection: View {
                 Spacer(minLength: 0)
             }
             .padding(.top, DesignTokens.Spacing.xs)
-            // Hung off a row rather than the Section: a modified `Section` stops
-            // being a section to `Form`.
+            // Attach the sheet to a row so Form retains section styling.
             .sheet(isPresented: $showingSignIn) {
                 AppLanguageScope(defaults: .appScoped()) {
                     SteamSignInSheet { accountName in
