@@ -19,6 +19,15 @@ final class DataModel: ObservableObject {
         self.historyStore = historyStore ?? MonitorHistoryStore(capacity: historyCapacity)
     }
 
+    /// Music consumes no system samples/history. Unrelated pump updates must not
+    /// invalidate its animated view tree; the layer supplies its own clock.
+    func updateNowPlaying(_ state: MonitorNowPlayingState?) {
+        guard snapshot.nowPlaying != state else { return }
+        var music = MonitorSnapshot()
+        music.nowPlaying = state
+        snapshot = music
+    }
+
     func update(_ snapshot: MonitorSnapshot) {
         historyStore.ingest(snapshot)
         guard snapshot != self.snapshot else { return }

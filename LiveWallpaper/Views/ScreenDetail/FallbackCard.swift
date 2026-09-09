@@ -22,6 +22,8 @@ enum FallbackReason: Equatable, Sendable {
 struct FallbackCard: View {
     let origin: WPEOrigin
     let reason: FallbackReason
+    /// Observed for the published flag only, the same way `EngineAssetsBanner` does.
+    @State private var engineAssets = WPEEngineAssetsLibrary.shared
 
     init(origin: WPEOrigin, reason: FallbackReason = .unsupportedType) {
         self.origin = origin
@@ -37,7 +39,11 @@ struct FallbackCard: View {
     }
 
     var body: some View {
-        VStack(spacing: 24) {
+        let presentation = reason.presentation(
+            origin: origin,
+            engineAssetsAuthorized: engineAssets.isAuthorized
+        )
+        VStack(spacing: DesignTokens.Spacing.xl) {
             WPEPreviewView(
                 imageURL: origin.sourcePreviewURL,
                 securityScopedBookmarkData: origin.sourceFolderBookmark,
@@ -47,40 +53,40 @@ struct FallbackCard: View {
                 .clipShape(RoundedRectangle(cornerRadius: DesignTokens.Corner.preview, style: .continuous))
                 .shadow(color: Color.black.opacity(DesignTokens.Card.shadowOpacity), radius: 8, y: 4)
 
-            VStack(spacing: 8) {
+            VStack(spacing: DesignTokens.Spacing.sm) {
                 Text(verbatim: origin.title)
                     .font(DesignTokens.Typography.pageTitle)
                     .multilineTextAlignment(.center)
                 Text("Workshop ID \(origin.workshopID) · \(origin.localizedDisplayTypeName) type", comment: "Wallpaper Engine metadata line. Placeholders are Workshop ID and project type.")
-                    .font(.subheadline)
+                    .font(DesignTokens.Typography.body)
                     .foregroundStyle(.secondary)
             }
 
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 12) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.title2)
-                        .foregroundStyle(reason.severityTint)
-                    Text(verbatim: warningTitle)
-                        .font(.headline)
-                }
-
-                Text(verbatim: warningBody)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
+            VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
+                InlineNoticeBanner(
+                    tint: presentation.tint,
+                    symbol: presentation.symbol,
+                    title: presentation.title,
+                    message: presentation.message,
+                    code: presentation.code,
+                    surface: .content
+                )
                 if case .missingDependency(let ids) = reason {
                     dependencyList(ids: ids)
                 }
             }
-            .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(reason.severityTint.opacity(0.14), in: RoundedRectangle(cornerRadius: DesignTokens.Corner.preview))
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel(Text("\(origin.title). \(warningTitle). \(warningBody)"))
 
-            primaryAction
+            // Same list the detail view renders, minus Retry: this card has no
+            // session to reload, so `onRetry: nil` drops that one action rather
+            // than the card growing a second, divergent set of buttons.
+            HStack(spacing: DesignTokens.Spacing.sm) {
+                SceneFailureRecoveryActions(
+                    recovery: presentation.recovery,
+                    onRetry: nil,
+                    isCompact: false
+                )
+            }
         }
         .padding(32)
         .frame(maxWidth: 480)
@@ -132,111 +138,6 @@ struct FallbackCard: View {
         .frame(maxHeight: 160)
     }
 
-    @ViewBuilder
-    private var primaryAction: some View {
-        switch reason {
-        case .missingDependency(let ids):
-            HStack(spacing: 8) {
-                Button {
-                    copyToPasteboard(ids.joined(separator: "\n"))
-                } label: {
-                    Label("Copy all IDs", systemImage: "doc.on.doc")
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.regular)
-                .accessibilityHint(Text("Copies every missing workshop ID to your clipboard so you can subscribe in Steam"))
-
-                Button {
-                    openWorkshop(workshopID: origin.workshopID)
-                } label: {
-                    Label("Open this project", systemImage: "safari")
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.regular)
-            }
-
-        default:
-            Button {
-                openWorkshop(workshopID: origin.workshopID)
-            } label: {
-                Label("View in Workshop", systemImage: "safari")
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.regular)
-            .accessibilityHint(Text("Opens this wallpaper's Steam Workshop page in your browser"))
-        }
-    }
-
-    private var warningTitle: String {
-        switch reason {
-        case .unsupportedType:
-            switch origin.originalType {
-            case .scene:
-                return String(localized: "Unsupported scene format", defaultValue: "Unsupported scene format", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning title.")
-            case .application:
-                return String(localized: "Executable wallpapers can't be imported", defaultValue: "Executable wallpapers can't be imported", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning title.")
-            default:
-                return String(localized: "This wallpaper type is not supported", defaultValue: "This wallpaper type is not supported", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning title.")
-            }
-        case .sceneParseFailed:
-            return String(localized: "Couldn't read scene.json", defaultValue: "Couldn't read scene.json", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning title.")
-        case .sceneShaderUnsupported:
-            return String(localized: "Scene uses unsupported shaders", defaultValue: "Scene uses unsupported shaders", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning title.")
-        case .sceneResourceMissing:
-            return String(localized: "Some scene assets are missing", defaultValue: "Some scene assets are missing", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning title.")
-        case .missingDependency(let ids):
-            if ids.count == 1 {
-                return String(localized: "Missing 1 Workshop dependency", defaultValue: "Missing 1 Workshop dependency", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning title.")
-            }
-            return String(localized: "Missing \(ids.count) Workshop dependencies", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning title. The placeholder is the missing dependency count.")
-        case .requiresWindowsPlugin:
-            return String(localized: "Windows plugin required", defaultValue: "Windows plugin required", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning title.")
-        case .texContainerUnsupported:
-            return String(localized: "Unsupported texture container", defaultValue: "Unsupported texture container", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning title.")
-        case .texUnsupportedFormat:
-            return String(localized: "Unsupported image format", defaultValue: "Unsupported image format", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning title.")
-        case .texDecodeFailed:
-            return String(localized: "Couldn't read texture file", defaultValue: "Couldn't read texture file", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning title.")
-        }
-    }
-
-    private var warningBody: String {
-        switch reason {
-        case .unsupportedType:
-            switch origin.originalType {
-            case .scene:
-                return String(localized: "This scene requires rendering features that Loomscreen does not support. Other wallpapers continue playing.", defaultValue: "This scene requires rendering features that Loomscreen does not support. Other wallpapers continue playing.", bundle: .appLanguage, comment: "Scene fallback warning body.")
-            case .application:
-                return String(localized: "For your security, LiveWallpaper does not run executable workshop projects.", defaultValue: "For your security, LiveWallpaper does not run executable workshop projects.", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning body.")
-            default:
-                return String(localized: "We couldn't recognize this project type.", defaultValue: "We couldn't recognize this project type.", bundle: .appLanguage, comment: "Project fallback warning body.")
-            }
-        case .sceneParseFailed(let detail):
-            return String(localized: "The author's scene.json couldn't be parsed: \(detail)", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning body. The placeholder is parser detail.")
-        case .sceneShaderUnsupported:
-            return String(localized: "This scene uses a custom shader the renderer couldn't translate to Metal. Try re-downloading the project in Steam.", defaultValue: "This scene uses a custom shader the renderer couldn't translate to Metal. Try re-downloading the project in Steam.", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning body.")
-        case .sceneResourceMissing:
-            return String(localized: "Some assets the scene needs aren't where the renderer expected them. The renderer ships built-in equivalents for the most common Wallpaper Engine framework files; if this scene needs something extra, an advanced option in the Workshop Library lets you link a Wallpaper Engine install. Otherwise, re-downloading the project in Steam usually fixes it.", defaultValue: "Some assets the scene needs aren't where the renderer expected them. The renderer ships built-in equivalents for the most common Wallpaper Engine framework files; if this scene needs something extra, an advanced option in the Workshop Library lets you link a Wallpaper Engine install. Otherwise, re-downloading the project in Steam usually fixes it.", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning body.")
-        case .missingDependency:
-            return String(localized: "This wallpaper relies on other Workshop projects we don't have on disk yet. Subscribe to them in Steam, then re-import this folder.", defaultValue: "This wallpaper relies on other Workshop projects we don't have on disk yet. Subscribe to them in Steam, then re-import this folder.", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning body.")
-        case .requiresWindowsPlugin:
-            return String(localized: "This wallpaper bundles a Windows `.dll` plugin (e.g. an audio visualizer or screensaver runtime). macOS can't load Windows native code, so the project is permanently unsupported here.", defaultValue: "This wallpaper bundles a Windows `.dll` plugin (e.g. an audio visualizer or screensaver runtime). macOS can't load Windows native code, so the project is permanently unsupported here.", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning body.")
-        case .texContainerUnsupported(let magic):
-            return String(localized: "This wallpaper uses an unsupported `.tex` container (\(magic)).", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning body. The placeholder is a texture container magic value.")
-        case .texUnsupportedFormat(let code):
-            switch code {
-            case 8:
-                return String(localized: "Texture format 8 (RGBA1010102) is unsupported. The renderer skips this layer and continues rendering the rest of the scene.", defaultValue: "Texture format 8 (RGBA1010102) is unsupported. The renderer skips this layer and continues rendering the rest of the scene.", bundle: .appLanguage, comment: "Texture fallback warning body.")
-            case -1:
-                return String(localized: "This format requires Metal-backed GPU decoding that this Mac doesn't support. Try rendering on a newer GPU.", defaultValue: "This format requires Metal-backed GPU decoding that this Mac doesn't support. Try rendering on a newer GPU.", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning body.")
-            default:
-                return String(localized: "Texture format \(code) is unsupported. The renderer skips this layer and continues rendering the rest of the scene.", bundle: .appLanguage, comment: "Texture fallback warning body. The placeholder is a texture format code.")
-            }
-        case .texDecodeFailed(let detail):
-            return String(localized: "A texture failed to decode (\(detail)). Re-downloading the wallpaper in Steam usually fixes it.", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning body. The placeholder is decode detail.")
-        }
-    }
-
     private func openWorkshop(workshopID: String) {
         var components = URLComponents(string: "https://steamcommunity.com/sharedfiles/filedetails/")
         components?.queryItems = [URLQueryItem(name: "id", value: workshopID)]
@@ -251,39 +152,4 @@ struct FallbackCard: View {
     }
 }
 
-extension FallbackReason {
-    var severityTint: Color {
-        switch self {
-        case .requiresWindowsPlugin:
-            return DesignTokens.Colors.Status.warning
-        case .unsupportedType,
-             .sceneShaderUnsupported,
-             .texContainerUnsupported,
-             .texUnsupportedFormat:
-            return DesignTokens.Colors.Status.warning
-        case .missingDependency,
-             .sceneParseFailed,
-             .sceneResourceMissing,
-             .texDecodeFailed:
-            return DesignTokens.Colors.Status.caution
-        }
-    }
-
-    /// Recoverable reasons that surface Retry on the detail view.
-    var isActionable: Bool {
-        switch self {
-        case .missingDependency,
-             .sceneParseFailed,
-             .sceneResourceMissing,
-             .texDecodeFailed:
-            return true
-        case .unsupportedType,
-             .sceneShaderUnsupported,
-             .requiresWindowsPlugin,
-             .texContainerUnsupported,
-             .texUnsupportedFormat:
-            return false
-        }
-    }
-}
 #endif

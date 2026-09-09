@@ -27,6 +27,12 @@ struct WallpaperFailureView: View {
                         .font(DesignTokens.Typography.body)
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
+                    // The code is what a bug report is filed against, so it gets
+                    // a real control rather than living only inside the details sheet.
+                    ErrorCodeChip(
+                        code: failure.cause.code,
+                        tint: DesignTokens.Colors.Status.warning
+                    )
                 }
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)

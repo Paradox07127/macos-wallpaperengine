@@ -1687,6 +1687,7 @@
       }
     },
     "%@. %@. %@" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3329,42 +3330,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "安裝路徑中存在符號連結：%@"
-          }
-        }
-      }
-    },
-    "A custom shader could not be translated." : {
-      "comment" : "Scene unsupported-shader failure explanation. Do not suggest re-downloading as a fix without evidence of corrupt or missing content.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "A custom shader could not be translated."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No se ha podido convertir un shader personalizado."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "カスタムシェーダーを変換できませんでした。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "无法转换自定义着色器。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "無法轉換自訂著色器。"
           }
         }
       }
@@ -15010,41 +14975,6 @@
         }
       }
     },
-    "Container %@ is unsupported." : {
-      "comment" : "Texture error detail. The placeholder is a texture container magic value.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Container %@ is unsupported."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "El contenedor %@ no es compatible."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "コンテナ %@ はサポートされていません。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "不支持容器 %@。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "不支援容器 %@。"
-          }
-        }
-      }
-    },
     "Content" : {
       "localizations" : {
         "es" : {
@@ -15561,6 +15491,42 @@
         }
       }
     },
+    "Copies the error code to the clipboard" : {
+      "comment" : "A11y hint for the error-code chip.",
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copies the error code to the clipboard"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copia el código de error al portapapeles"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "エラーコードをクリップボードにコピーします"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将错误代码复制到剪贴板"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將錯誤代碼複製到剪貼板"
+          }
+        }
+      }
+    },
     "Copies this overlay to every other connected display; their wallpapers are not changed" : {
       "comment" : "Accessibility hint for the Apply to All button while an overlay page is showing.",
       "localizations" : {
@@ -15667,6 +15633,7 @@
       }
     },
     "Copy all IDs" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -15901,6 +15868,41 @@
         }
       }
     },
+    "Copy IDs" : {
+      "comment" : "Button that copies every missing Workshop dependency ID.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy IDs"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copiar ID"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ID をコピー"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复制 ID"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "複製 ID"
+          }
+        }
+      }
+    },
     "Copy link" : {
       "comment" : "A button that copies the link to the Steam community page of a workshop.",
       "isCommentAutoGenerated" : true,
@@ -15999,6 +16001,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "複製工作階段 ID"
+          }
+        }
+      }
+    },
+    "Copy the error code" : {
+      "comment" : "Tooltip on a copyable error-code chip.",
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy the error code"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copiar el código de error"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "エラーコードをコピー"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复制错误代码"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "複製錯誤代碼"
           }
         }
       }
@@ -23251,6 +23289,42 @@
         }
       }
     },
+    "Error code %@" : {
+      "comment" : "A11y label for the error-code chip. The placeholder is a stable error code such as WPE_SCENE_PARSE.",
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Error code %@"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Código de error %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "エラーコード %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "错误代码 %@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "錯誤代碼 %@"
+          }
+        }
+      }
+    },
     "error.app.file_access_denied" : {
       "comment" : "Error shown when the app cannot access a selected wallpaper file.",
       "extractionState" : "manual",
@@ -27382,41 +27456,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "忘記我選擇的 SteamCMD"
-          }
-        }
-      }
-    },
-    "Format %lld — not yet decoded." : {
-      "comment" : "Texture error detail. The placeholder is a texture format code.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Format %lld — not yet decoded."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Formato %lld — aún no decodificado."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "形式 %lld — まだデコードされていません。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "格式 %lld — 尚未解码。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "格式 %lld — 尚未解碼。"
           }
         }
       }
@@ -33840,6 +33879,7 @@
       }
     },
     "Log" : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -34659,40 +34699,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "歌詞由 LRCLIB 提供，需要網路連線。"
-          }
-        }
-      }
-    },
-    "macOS can't load Windows native plugins." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "macOS can't load Windows native plugins."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "macOS no puede cargar complementos nativos de Windows."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "macOS では Windows ネイティブプラグインを読み込めません。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "macOS 无法加载 Windows 原生插件。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "macOS 無法載入 Windows 原生外掛。"
           }
         }
       }
@@ -36201,7 +36207,7 @@
       }
     },
     "Missing %lld Workshop dependencies" : {
-      "comment" : "Scene error title. The placeholder is the number of missing Workshop dependencies.\nWallpaper Engine fallback warning title. The placeholder is the missing dependency count.",
+      "comment" : "Wallpaper Engine fallback warning title. The placeholder is the missing dependency count.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -42599,6 +42605,7 @@
       }
     },
     "Open this project" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -55028,40 +55035,6 @@
         }
       }
     },
-    "Scene format not supported" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Scene format not supported"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Formato de escena no compatible"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "シーン形式はサポートされていません"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "不支持该场景格式"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "不支援此場景格式"
-          }
-        }
-      }
-    },
     "Scene preview" : {
       "comment" : "Scene renderer accessibility state.",
       "localizations" : {
@@ -56829,6 +56802,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "設定金鑰"
+          }
+        }
+      }
+    },
+    "Set Up Assets" : {
+      "comment" : "Button that opens the Workshop settings page to link Wallpaper Engine's shared assets.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Set Up Assets"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Configurar recursos"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アセットを設定"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "配置资源"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "設定資源"
           }
         }
       }
@@ -59557,6 +59565,41 @@
         }
       }
     },
+    "Skipped" : {
+      "comment" : "Short caption on the scene preview bar marking that a layer was skipped. Must stay short.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Skipped"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Omitido"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スキップ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已跳过"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已略過"
+          }
+        }
+      }
+    },
     "Small" : {
       "comment" : "Widget size: small.",
       "extractionState" : "manual",
@@ -59630,6 +59673,7 @@
     },
     "Some assets the scene needs aren't where the renderer expected them. The renderer ships built-in equivalents for the most common Wallpaper Engine framework files; if this scene needs something extra, an advanced option in the Workshop Library lets you link a Wallpaper Engine install. Otherwise, re-downloading the project in Steam usually fixes it." : {
       "comment" : "Wallpaper Engine fallback warning body.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -59695,6 +59739,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "有些檔案無法刪除：%@"
+          }
+        }
+      }
+    },
+    "Some layers were skipped" : {
+      "comment" : "Title for a partial-degradation notice: one texture layer was skipped and the wallpaper is still playing.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Some layers were skipped"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se omitieron algunas capas"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一部のレイヤーをスキップしました"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已跳过部分图层"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已略過部分圖層"
           }
         }
       }
@@ -65231,40 +65310,6 @@
         }
       }
     },
-    "Texture decode failed" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Texture decode failed"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Error al decodificar la textura"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "テクスチャのデコードに失敗しました"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "纹理解码失败"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "紋理解碼失敗"
-          }
-        }
-      }
-    },
     "Texture format %lld is unsupported. The renderer skips this layer and continues rendering the rest of the scene." : {
       "comment" : "Texture fallback warning body. The placeholder is a texture format code.",
       "localizations" : {
@@ -65331,40 +65376,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "不支援紋理格式 8（RGBA1010102）。算繪器會略過此圖層，並繼續算繪場景的其餘部分。"
-          }
-        }
-      }
-    },
-    "Texture format not supported" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Texture format not supported"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Formato de textura no compatible"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "テクスチャ形式はサポートされていません"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "不支持的纹理格式"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "不支援此紋理格式"
           }
         }
       }
@@ -68817,6 +68828,7 @@
     },
     "This wallpaper relies on other Workshop projects we don't have on disk yet. Subscribe to them in Steam, then re-import this folder." : {
       "comment" : "Wallpaper Engine fallback warning body.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -71055,40 +71067,6 @@
         }
       }
     },
-    "Unknown texture container" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Unknown texture container"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Contenedor de textura desconocido"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "不明なテクスチャコンテナ"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "未知纹理容器"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "未知紋理容器"
-          }
-        }
-      }
-    },
     "Unlimited" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -71266,6 +71244,7 @@
     },
     "Unsupported image format" : {
       "comment" : "Wallpaper Engine fallback warning title.",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -73472,6 +73451,7 @@
       }
     },
     "View in Workshop" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -75025,40 +75005,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "波浪"
-          }
-        }
-      }
-    },
-    "We can't render this scene's feature set yet." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "We can't render this scene's feature set yet."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aún no podemos renderizar el conjunto de funciones de esta escena."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "このシーンの機能セットはまだレンダリングできません。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "暂时无法渲染此场景的功能集。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "我們尚無法渲染此場景的功能集。"
           }
         }
       }

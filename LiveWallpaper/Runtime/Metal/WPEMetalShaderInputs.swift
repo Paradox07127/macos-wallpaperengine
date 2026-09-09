@@ -7,6 +7,61 @@ import os
 import simd
 
 enum WPEMetalShaderInputs {
+    /// Only a single builtin quad can read the attachment instead of an immutable scene snapshot.
+    static func canFetchSceneColor(
+        pass: WPEPreparedRenderPass,
+        layer: WPERenderLayer,
+        destination: MTLTexture,
+        textures: [String: MTLTexture],
+        frameState: WPEMetalFrameState
+    ) -> Bool {
+        let alias = "_rt_FullFrameBuffer"
+        guard pass.shader?.isBuiltin == true,
+              WPEBuiltinShaderKind(normalizing: pass.pass.shader) == .blendComposite,
+              pass.pass.target == .scene, layer.puppetPath == nil,
+              destination.device.supportsFamily(.apple1),
+              destination.textureType == .type2D, destination.sampleCount == 1,
+              destination.pixelFormat == .rgba16Float,
+              frameState.currentFrameSceneTexture === destination,
+              frameState.hasInitialized(destination),
+              (pass.textureBindings[4] ?? pass.pass.textures[4]) == .fbo(alias),
+              frameState.latestNamedTextures[alias] == nil
+              || frameState.sceneAliasSnapshotGenerations[alias] != nil,
+              frameState.renderTargetPool?.sceneSnapshotMatches(
+                  destination, layer: layer, sceneSize: frameState.sceneSize
+              ) == true else { return false }
+
+        if frameState.sceneAliasSnapshotGenerations[alias] == frameState.sceneWriteGeneration,
+           let snapshot = frameState.latestNamedTextures[alias] {
+            guard snapshot.width == destination.width, snapshot.height == destination.height,
+                  snapshot.pixelFormat == destination.pixelFormat, snapshot.sampleCount == 1 else { return false }
+        }
+
+        /// A skipped capture must not change any other reader's binding or alias lifetime.
+        func independent(_ reference: WPETextureReference) -> Bool {
+            if case .previous = reference {
+                return false
+            }
+            if case let .fbo(name) = reference, WPETextureReference.isSceneAliasName(name) {
+                return false
+            }
+            return true
+        }
+        guard independent(pass.pass.source) else { return false }
+        for bindings in [pass.textureBindings, pass.pass.textures, pass.pass.binds] {
+            for (slot, reference) in bindings where slot != 4 {
+                guard independent(reference) else { return false }
+            }
+            if let reference = bindings[4], reference != .fbo(alias) {
+                return false
+            }
+        }
+        let source = pass.textureBindings[0] ?? pass.pass.textures[0] ?? pass.pass.source
+        guard let texture = try? resolve(reference: source, textures: textures,
+                                         frameState: frameState, currentTargetID: .scene) else { return false }
+        return texture !== destination && texture.parent !== destination
+    }
+
     /// Requested FBO names whose fuzzy-alias resolution has already been logged,
     /// so the once-per-name warning below doesn't repeat every frame.
     private static let loggedFuzzyFBONames = OSAllocatedUnfairLock<Set<String>>(initialState: [])

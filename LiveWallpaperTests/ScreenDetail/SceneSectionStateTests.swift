@@ -63,26 +63,41 @@ struct WPESceneSectionStateTests {
         }
     }
 
-    @Test("FallbackReason severity tint distinguishes warn vs hard block")
-    func severityTintIsHonest() {
-        let caution = DesignTokens.Colors.Status.caution
+    @Test("Failure class drives the tint, so a reason cannot carry two colours")
+    func tintFollowsFailureClass() {
+        let danger = DesignTokens.Colors.Status.danger
         let warning = DesignTokens.Colors.Status.warning
-        #expect(FallbackReason.missingDependency(workshopIDs: ["1"]).severityTint == caution)
-        #expect(FallbackReason.sceneResourceMissing.severityTint == caution)
-        #expect(FallbackReason.texDecodeFailed(detail: "x").severityTint == caution)
-        #expect(FallbackReason.requiresWindowsPlugin.severityTint == warning)
-        #expect(FallbackReason.texContainerUnsupported(magic: "X").severityTint == warning)
-        #expect(FallbackReason.texUnsupportedFormat(code: 8).severityTint == warning)
-        #expect(caution != warning)
+        let caution = DesignTokens.Colors.Status.caution
+        #expect(danger != warning)
+        #expect(warning != caution)
+
+        #expect(FallbackReason.requiresWindowsPlugin.failureClass == .fatal)
+        #expect(FallbackReason.requiresWindowsPlugin.tint == danger)
+        #expect(FallbackReason.texContainerUnsupported(magic: "X").tint == danger)
+        #expect(FallbackReason.sceneParseFailed("boom").failureClass == .blocked)
+        #expect(FallbackReason.sceneParseFailed("boom").tint == warning)
+        #expect(FallbackReason.texDecodeFailed(detail: "x").tint == warning)
+        #expect(FallbackReason.missingDependency(workshopIDs: ["1"]).failureClass == .needsParts)
+        #expect(FallbackReason.missingDependency(workshopIDs: ["1"]).tint == caution)
+        #expect(FallbackReason.sceneResourceMissing.tint == caution)
+        // Skipping a layer is not the same event as failing to load a scene.
+        #expect(FallbackReason.texUnsupportedFormat(code: 8).failureClass == .degraded)
     }
 
-    @Test("isActionable matches the Retry button visibility policy")
-    func isActionableMatchesRetry() {
-        #expect(FallbackReason.missingDependency(workshopIDs: []).isActionable)
-        #expect(FallbackReason.texDecodeFailed(detail: "x").isActionable)
-        #expect(!FallbackReason.requiresWindowsPlugin.isActionable)
-        #expect(!FallbackReason.texContainerUnsupported(magic: "X").isActionable)
-        #expect(!FallbackReason.texUnsupportedFormat(code: 8).isActionable)
+    @Test("Recovery actions match what the reason can actually recover from")
+    func recoveryMatchesFailureClass() {
+        let steamID = "1234"
+        #expect(FallbackReason.missingDependency(workshopIDs: ["7"]).recovery(workshopID: steamID)
+            .contains(.copyDependencyIDs(["7"])))
+        #expect(FallbackReason.sceneResourceMissing.recovery(workshopID: steamID)
+            .contains(.configureEngineAssets))
+        #expect(FallbackReason.sceneParseFailed("boom").recovery(workshopID: steamID).contains(.retry))
+        // Fatal reasons offer no retry on any surface.
+        #expect(!FallbackReason.requiresWindowsPlugin.recovery(workshopID: steamID).contains(.retry))
+        #expect(!FallbackReason.texContainerUnsupported(magic: "X").recovery(workshopID: steamID).contains(.retry))
+        #expect(!FallbackReason.texUnsupportedFormat(code: 8).recovery(workshopID: steamID).contains(.retry))
+        // A local project has no Workshop page to open.
+        #expect(FallbackReason.requiresWindowsPlugin.recovery(workshopID: "local-folder").isEmpty)
     }
 
     @Test("error state carries the FallbackReason")

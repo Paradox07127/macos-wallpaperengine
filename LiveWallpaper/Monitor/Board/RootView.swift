@@ -22,9 +22,8 @@ struct MonitorBoardClock: TimelineSchedule {
 
 struct RootView: View {
     @ObservedObject var model: InteractionModel
-    @ObservedObject var data: DataModel
-    /// History is @Published inside the data model — observe it so tiles re-render on sample.
-    @ObservedObject private var history: MonitorHistoryStore
+    // Samples belong to tile content, not the board geometry/editing tree.
+    let data: DataModel
     @Environment(\.monitorReduceMotion) private var reduceMotion
     @Environment(\.monitorSuspended) private var suspended
     /// How far the board is being shrunk into the inspector canvas. Only the
@@ -44,14 +43,11 @@ struct RootView: View {
     init(model: InteractionModel, data: DataModel, preview: MonitorBoardPreview? = nil) {
         self.model = model
         self.data = data
-        self.history = data.historyStore
         self.preview = preview
     }
 
     var body: some View {
-        TimelineView(MonitorBoardClock(suspended: suspended)) { timeline in
-            boardContent(now: timeline.date)
-        }
+        boardContent
         .background(Color.clear)
         .focusable(model.isEditing)
         .focused($boardFocused)
@@ -69,7 +65,7 @@ struct RootView: View {
     }
 
     @ViewBuilder
-    private func boardContent(now: Date) -> some View {
+    private var boardContent: some View {
         GeometryReader { proxy in
             let boardSize = proxy.size
             let geometry = MonitorBoardGeometry(
@@ -98,7 +94,7 @@ struct RootView: View {
                     }
 
                     ForEach(model.placements) { placement in
-                        widgetTile(placement, geometry: geometry, now: now)
+                        widgetTile(placement, geometry: geometry)
                     }
 
                     if model.isEditing {
@@ -148,8 +144,7 @@ struct RootView: View {
     @ViewBuilder
     private func widgetTile(
         _ placement: MonitorWidgetPlacement,
-        geometry: MonitorBoardGeometry,
-        now: Date
+        geometry: MonitorBoardGeometry
     ) -> some View {
         let restRawRect = rawRect(placement, geometry: geometry)
         let isDragging = model.drag?.widgetID == placement.id
@@ -157,7 +152,7 @@ struct RootView: View {
         let liveRawRect = isDragging ? draggedRawRect(placement, geometry: geometry) : restRawRect
         let liveRenderRect = geometry.renderRect(forRawRect: liveRawRect)
 
-        tileBody(placement: placement, cornerRadius: geometry.cornerRadius, renderHeight: liveRenderRect.height, now: now)
+        tileBody(placement: placement, cornerRadius: geometry.cornerRadius, renderHeight: liveRenderRect.height)
             .frame(width: liveRenderRect.width, height: liveRenderRect.height)
             .modifier(SelectionChrome(
                 isEditing: model.isEditing,
@@ -201,8 +196,7 @@ struct RootView: View {
     private func tileBody(
         placement: MonitorWidgetPlacement,
         cornerRadius: CGFloat,
-        renderHeight: CGFloat,
-        now: Date
+        renderHeight: CGFloat
     ) -> some View {
         if let preview {
             switch preview.tile {
@@ -210,7 +204,9 @@ struct RootView: View {
                 MonitorWidgetNameTile(kind: placement.kind, cellHeight: renderHeight, cornerRadius: cornerRadius)
             case .empty:
                 if placement.kind == .nixieClock {
-                    NixieClockView(now: now)
+                    TimelineView(MonitorBoardClock(suspended: suspended)) { timeline in
+                        NixieClockView(now: timeline.date)
+                    }
                 } else {
                     MonitorPreviewEmptyTile(
                         kind: placement.kind, cellHeight: renderHeight, cornerRadius: cornerRadius
@@ -228,21 +224,13 @@ struct RootView: View {
                         placement: placement,
                         isEditing: model.isEditing,
                         reduceMotion: reduceMotion,
-                        now: preview.chartReference(fallback: now)
+                        now: preview.chartReference(fallback: Date())
                     )
                 )
             }
         } else {
-            WidgetFactory.tile(
-                context: MonitorWidgetContext(
-                    snapshot: data.snapshot,
-                    history: history.current,
-                    placement: placement,
-                    isEditing: model.isEditing,
-                    reduceMotion: reduceMotion,
-                    now: now
-                )
-            )
+            MonitorLiveTile(data: data, history: data.historyStore, placement: placement,
+                            isEditing: model.isEditing, reduceMotion: reduceMotion)
         }
     }
 
@@ -518,5 +506,24 @@ private struct CatalogBelowPlacement: ViewModifier {
         return content
             .modifier(MonitorPanelSizeReader(size: $measured))
             .offset(x: left, y: top)
+    }
+}
+
+/// Keeps sample/history publications and the chart clock below board layout.
+private struct MonitorLiveTile: View {
+    @ObservedObject var data: DataModel
+    @ObservedObject var history: MonitorHistoryStore
+    let placement: MonitorWidgetPlacement
+    let isEditing: Bool
+    let reduceMotion: Bool
+    @Environment(\.monitorSuspended) private var suspended
+
+    var body: some View {
+        TimelineView(MonitorBoardClock(suspended: suspended)) { timeline in
+            WidgetFactory.tile(context: MonitorWidgetContext(
+                snapshot: data.snapshot, history: history.current, placement: placement,
+                isEditing: isEditing, reduceMotion: reduceMotion, now: timeline.date
+            ))
+        }
     }
 }

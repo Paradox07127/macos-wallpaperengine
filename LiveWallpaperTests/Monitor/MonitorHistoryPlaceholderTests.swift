@@ -311,5 +311,16 @@ struct MonitorHistorySharingTests {
         #expect(mine.historyStore.current.cpuTotal == [0.42])
         #expect(theirs.historyStore.current.cpuTotal.isEmpty)
     }
-}
 
+    @Test("music updates publish track changes without collecting system history")
+    func musicProjectionDoesNotCollectHistory() {
+        let model = DataModel()
+        let track = MonitorNowPlayingState(phase: .playing, title: "Track")
+        model.updateNowPlaying(track)
+        #expect(model.snapshot.nowPlaying == track)
+        #expect(model.snapshot.system == nil)
+        #expect(model.historyStore.current.sampleTimes.isEmpty)
+        model.updateNowPlaying(nil)
+        #expect(model.snapshot.nowPlaying == nil)
+    }
+}
