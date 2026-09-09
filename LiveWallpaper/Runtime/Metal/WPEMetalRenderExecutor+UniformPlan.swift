@@ -175,7 +175,9 @@ extension WPEMetalRenderExecutor {
         }
         if let slot = plan.textureResolutionSlot,
            let texture = texturesBySlot?[slot] {
-            return WPEMetalTextureMetadataRegistry.shared.resolution(for: texture).shaderValue
+            let resolution = texturesBySlot?.resolution(at: slot)
+                ?? WPEMetalTextureMetadataRegistry.shared.resolution(for: texture)
+            return resolution.shaderValue
         }
         if let slot = plan.textureRotationSlot,
            let descriptor = texturesBySlot?.samplingDescriptor(at: slot) {

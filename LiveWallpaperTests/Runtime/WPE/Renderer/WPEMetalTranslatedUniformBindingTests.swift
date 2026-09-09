@@ -496,4 +496,133 @@ struct WPEMetalBatchedFragmentBindingTests {
         #expect(Array(result[2048 ..< 2052]) == [64, 128, 191, 255])
     }
 }
+
+@Suite("WPE draw-local texture metadata")
+struct WPEMetalDrawTextureMetadataTests {
+    private func texture(device: MTLDevice, width: Int = 8, height: Int = 4) throws -> MTLTexture {
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .rgba8Unorm, width: width, height: height, mipmapped: false
+        )
+        descriptor.usage = .shaderRead
+        return try #require(device.makeTexture(descriptor: descriptor))
+    }
+
+    private func pass() -> WPEPreparedRenderPass {
+        WPEPreparedRenderPass(
+            pass: WPERenderPass(
+                id: "metadata", phase: .effect(file: "effects/metadata/effect.json"),
+                shader: "effects/metadata", source: .image("base"), target: .scene,
+                textures: [:], binds: [:], constants: [:], combos: [:], blending: "disabled",
+                cullMode: "nocull", depthTest: "disabled", depthWrite: "disabled"
+            ),
+            shader: nil, textureBindings: [:], comboValues: [:], uniformValues: [:]
+        )
+    }
+
+    private func packed(
+        executor: WPEMetalRenderExecutor, table: WPEMetalTextureSlotTable, slots: [Int] = [0]
+    ) -> [SIMD4<Float>] {
+        let layout = slots.enumerated().map {
+            WPEUniformSlot(name: "g_Texture\($0.element)Resolution", glslType: "vec4", slot: $0.offset, slotCount: 1)
+        }
+        return executor.packTranslatedUniforms(for: pass(), layout: layout, texturesBySlot: table)
+    }
+
+    @Test("Snapshot keeps logical dimensions and the same four sampler states",
+          arguments: [false, true], [false, true])
+    func samplingAndResolution(clamp: Bool, nearest: Bool) throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let texture = try texture(device: device)
+        let registry = WPEMetalTextureMetadataRegistry.shared
+        registry.register(texture: texture, imageWidth: 5, imageHeight: 3, clampUVs: clamp,
+                          noInterpolation: nearest, worldWidth: 17, worldHeight: 11)
+        let snapshot = registry.resolution(for: texture)
+        let sampler = executor.customShaderSamplerState(resolution: snapshot)
+        #expect(sampler === executor.customShaderSamplerState(for: texture))
+        #if DEBUG
+        #expect(executor.customShaderSamplerDescription(resolution: snapshot)
+            == executor.customShaderSamplerDescription(for: texture))
+        #endif
+        #expect(snapshot.worldWidth == 17)
+        #expect(snapshot.worldHeight == 11)
+        let table = WPEMetalTextureSlotTable()
+        table.set(texture: texture, samplingDescriptor: nil, sampler: sampler, resolution: snapshot, at: 0)
+        let reference = WPEMetalTextureSlotTable()
+        reference[0] = texture // The existing, uncached registry fallback.
+        #expect(packed(executor: executor, table: table) == packed(executor: executor, table: reference))
+        #expect(packed(executor: executor, table: table) == [SIMD4<Float>(8, 4, 5, 3)])
+        #expect(table.resolution(at: 0) == snapshot)
+        #expect(executor.customShaderSamplerState(resolution: nil) === executor.customShaderSamplerState(for: nil))
+    }
+
+    @Test("New draw registration, removal and resource replacement cannot retain old metadata")
+    func mutationsAtDrawBoundaries() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let first = try texture(device: device)
+        let second = try texture(device: device, width: 12, height: 6)
+        let registry = WPEMetalTextureMetadataRegistry.shared
+        let table = WPEMetalTextureSlotTable()
+        for logicalWidth in [5, 7] {
+            registry.register(texture: first, imageWidth: logicalWidth, imageHeight: 3,
+                              clampUVs: false, noInterpolation: true)
+            table.reset()
+            let snapshot = registry.resolution(for: first)
+            table.set(texture: first, samplingDescriptor: nil,
+                      sampler: executor.customShaderSamplerState(resolution: snapshot), resolution: snapshot, at: 0)
+            #expect(packed(executor: executor, table: table) == [SIMD4<Float>(8, 4, Float(logicalWidth), 3)])
+        }
+        registry.unregister(texture: first)
+        table.reset()
+        let unregistered = registry.resolution(for: first)
+        table.set(texture: first, samplingDescriptor: nil, resolution: unregistered, at: 0)
+        #expect(unregistered.clampUVs && !unregistered.noInterpolation)
+        #expect(packed(executor: executor, table: table) == [SIMD4<Float>(8, 4, 8, 4)])
+        table[0] = second
+        #expect(table.resolution(at: 0) == nil)
+        #expect(packed(executor: executor, table: table) == [SIMD4<Float>(12, 6, 12, 6)])
+        table.set(texture: first, samplingDescriptor: nil, resolution: unregistered, at: 0)
+        table.set(texture: second, samplingDescriptor: nil, at: 0)
+        #expect(table.resolution(at: 0) == nil)
+        #expect(packed(executor: executor, table: table) == [SIMD4<Float>(12, 6, 12, 6)])
+        table.set(texture: nil, samplingDescriptor: nil, resolution: unregistered, at: 0)
+        #expect(table.resolution(at: 0) == nil)
+        #expect(packed(executor: executor, table: table) == [SIMD4<Float>(repeating: 0)])
+        #expect(table.resolution(at: -1) == nil)
+        #expect(table.resolution(at: table.slotCount) == nil)
+    }
+
+    @Test("One atlas texture preserves independent per-slot TEXS transforms")
+    func atlasTransformsStayPerSlot() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let texture = try texture(device: device)
+        let snapshot = WPEMetalTextureMetadataRegistry.shared.resolution(for: texture)
+        let first = WPETexSpriteSamplingDescriptor(
+            rotation: SIMD4<Float>(0.5, 0.125, -0.25, 0.75), translation: SIMD2<Float>(0.375, 0.625)
+        )
+        let second = WPETexSpriteSamplingDescriptor(
+            rotation: SIMD4<Float>(0.25, -0.5, 0.125, 0.375), translation: SIMD2<Float>(0.75, 0.125)
+        )
+        let table = WPEMetalTextureSlotTable()
+        table.set(texture: texture, samplingDescriptor: first, resolution: snapshot, at: 0)
+        table.set(texture: texture, samplingDescriptor: second, resolution: snapshot, at: 1)
+        let layout = [
+            WPEUniformSlot(name: "g_Texture0Rotation", glslType: "vec4", slot: 0, slotCount: 1),
+            WPEUniformSlot(name: "g_Texture1Rotation", glslType: "vec4", slot: 1, slotCount: 1),
+            WPEUniformSlot(name: "g_Texture0Translation", glslType: "vec2", slot: 2, slotCount: 1),
+            WPEUniformSlot(name: "g_Texture1Translation", glslType: "vec2", slot: 3, slotCount: 1),
+        ]
+        let values = executor.packTranslatedUniforms(for: pass(), layout: layout, texturesBySlot: table)
+        #expect(values == [first.rotation, second.rotation,
+                           SIMD4<Float>(first.translation.x, first.translation.y, 0, 0),
+                           SIMD4<Float>(second.translation.x, second.translation.y, 0, 0)])
+        #expect(packed(executor: executor, table: table, slots: [0, 1])
+            == [SIMD4<Float>(8, 4, 8, 4), SIMD4<Float>(8, 4, 8, 4)])
+        table.reset()
+        #expect(table.resolution(at: 0) == nil && table.resolution(at: 1) == nil)
+        #expect(table.samplingDescriptor(at: 0) == nil && table.samplingDescriptor(at: 1) == nil)
+    }
+}
 #endif

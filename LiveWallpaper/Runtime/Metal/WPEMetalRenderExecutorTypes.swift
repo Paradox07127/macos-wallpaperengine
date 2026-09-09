@@ -47,12 +47,14 @@ final class WPEMetalTextureSlotTable {
     private var textures: ContiguousArray<MTLTexture?>
     private var samplingDescriptors: ContiguousArray<WPETexSpriteSamplingDescriptor?>
     private var samplers: ContiguousArray<MTLSamplerState?>
+    private var resolutions: ContiguousArray<WPEMetalTextureResolution?>
 
     init(slotCount: Int = WPEShaderTranspiler.customTextureSlotLimit) {
         let count = max(0, slotCount)
         textures = ContiguousArray(repeating: nil, count: count)
         samplingDescriptors = ContiguousArray(repeating: nil, count: count)
         samplers = ContiguousArray(repeating: nil, count: count)
+        resolutions = ContiguousArray(repeating: nil, count: count)
     }
 
     var slotCount: Int { textures.count }
@@ -64,6 +66,7 @@ final class WPEMetalTextureSlotTable {
             textures[slot] = newValue
             samplingDescriptors[slot] = nil
             samplers[slot] = nil
+            resolutions[slot] = nil
         }
     }
 
@@ -71,17 +74,27 @@ final class WPEMetalTextureSlotTable {
         texture: MTLTexture?,
         samplingDescriptor: WPETexSpriteSamplingDescriptor?,
         sampler: MTLSamplerState? = nil,
+        resolution: WPEMetalTextureResolution? = nil,
         at slot: Int
     ) {
         guard textures.indices.contains(slot) else { return }
         textures[slot] = texture
         samplingDescriptors[slot] = texture == nil ? nil : samplingDescriptor
         samplers[slot] = sampler
+        resolutions[slot] = texture == nil ? nil : resolution
     }
 
     func samplingDescriptor(at slot: Int) -> WPETexSpriteSamplingDescriptor? {
         guard textures.indices.contains(slot), textures[slot] != nil else { return nil }
         return samplingDescriptors[slot]
+    }
+
+    /// Metadata is registered before texture publication; the only explicit removal
+    /// is the owning renderer's atlas teardown. A synchronous draw cannot interleave
+    /// that lifecycle boundary. Reset/set invalidate this snapshot before the next draw.
+    func resolution(at slot: Int) -> WPEMetalTextureResolution? {
+        guard textures.indices.contains(slot), textures[slot] != nil else { return nil }
+        return resolutions[slot]
     }
 
     /// The same resolved slot values, submitted in two API calls without allocating
@@ -103,6 +116,7 @@ final class WPEMetalTextureSlotTable {
             textures[index] = nil
             samplingDescriptors[index] = nil
             samplers[index] = nil
+            resolutions[index] = nil
         }
     }
 }
