@@ -111,10 +111,9 @@ enum WPEShaderCompilerError: Error, Sendable, Equatable {
 /// Memory hits serve a second display / new executor; disk hits serve cold start.
 /// All mutable state sits behind `lock`.
 final class WPEShaderTranslationCache: @unchecked Sendable {
-    /// 8: fragment signatures declare only the texture/sampler slots each shader actually
-    /// uses (previously a fixed 8) and the payload carries that arity; slots also carry
-    /// their annotation `require` map as preserved metadata.
-    static let schemaVersion = 8
+    /// 9: inline waterflow blend reconstruction so its phase expressions can share
+    /// common subexpressions with cycles; rebuild cached MSL carrying the old hint.
+    static let schemaVersion = 9
     static let shared = WPEShaderTranslationCache()
 
     struct Payload: Codable, Equatable, Sendable {

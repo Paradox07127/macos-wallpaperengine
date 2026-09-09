@@ -540,7 +540,9 @@ extension WPEShaderTranspiler {
                 float4 cycles = float4(fract(t), fract(t + 0.5), fract(0.25 + t), fract(0.25 + t + 0.5));
                 return cycles - float4(0.5);
             }
-            inline float2 wpe_waterflow_blend(float time, float speed, float feather) {
+            // Expose the shared phase expressions to CSE with wpe_waterflow_cycles.
+            // Plain inline can leave this helper out of line in optimized AIR.
+            __attribute__((always_inline)) inline float2 wpe_waterflow_blend(float time, float speed, float feather) {
                 float t = time * speed;
                 float bx = 2.0 * abs(fract(t) - 0.5);
                 float bz = 2.0 * abs(fract(0.25 + t) - 0.5);

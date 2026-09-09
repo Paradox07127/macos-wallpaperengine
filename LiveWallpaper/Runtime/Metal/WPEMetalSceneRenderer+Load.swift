@@ -249,7 +249,7 @@ extension WPEMetalSceneRenderer {
             let builder = provider.map {
                 WPERenderPipelineBuilder(primaryProvider: $0, dependencyMounts: mounts, engineAssetsRootURL: engineRoot)
             } ?? WPERenderPipelineBuilder(cacheRootURL: cacheRoot, dependencyMounts: mounts, engineAssetsRootURL: engineRoot)
-            return try builder.build(graph: graph)
+            return try builder.build(graph: graph, sceneHDR: document.general.hdr)
         }.value
         try checkCurrentSceneScriptLoad(scriptLoadToken)
         let passCount = pipeline.layers.reduce(0) { $0 + $1.passes.count }

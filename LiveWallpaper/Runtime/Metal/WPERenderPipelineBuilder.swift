@@ -52,7 +52,9 @@ struct WPERenderPipelineBuilder: Sendable {
         )
     }
 
-    func build(graph: WPERenderGraph) throws -> WPEPreparedRenderPipeline {
+    func build(
+        graph: WPERenderGraph, canonicalCompositeRotationEnabled: Bool? = nil, sceneHDR: Bool = false
+    ) throws -> WPEPreparedRenderPipeline {
         let layers = try graph.layers.map { layer in
             // FBOs are declared per layer, and a pass only ever samples its own
             // layer's targets plus the global scene aliases (which are not in
@@ -70,7 +72,16 @@ struct WPERenderPipelineBuilder: Sendable {
                 passes: passes
             )
         }
-        return WPEPreparedRenderPipeline(layers: layers)
+        let prepared = WPEPreparedRenderPipeline(layers: layers)
+        guard canonicalCompositeRotationEnabled
+            ?? (ProcessInfo.processInfo.environment["WPE_CANONICAL_COMPOSITE_ROTATION"] == "1") else {
+            return prepared
+        }
+        let rotation = WPERenderGraphBuilder.rotatingCanonicalCompositeOutputs(in: prepared, sceneHDR: sceneHDR)
+        for (objectID, decision) in rotation.decisions.sorted(by: { $0.key < $1.key }) {
+            Logger.info("[WPE canonical rotation] object=\(objectID) decision=\(decision)", category: .wpeRender)
+        }
+        return rotation.pipeline
     }
 
     private func loadPuppetModel(for layer: WPERenderLayer) throws -> WPEPuppetModel? {
