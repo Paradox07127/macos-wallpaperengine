@@ -758,6 +758,21 @@ fragment half4 wpe_blend_composite_fragment(
     return half4(float4(blended * layer.a, layer.a));
 }
 
+// Apple GPU attachment read: the executor permits only a single non-overlapping
+// quad, with the same HDR format/size as the old immutable scene snapshot.
+fragment half4 wpe_blend_composite_fetch_fragment(
+    WPEVertexOut in [[stage_in]],
+    half4 sceneColor [[color(0)]],
+    texture2d<half, access::sample> texture0 [[texture(0)]],
+    constant WPEBlendCompositeUniforms& uniforms [[buffer(0)]]
+) {
+    constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
+    float4 layer = float4(texture0.sample(linearSampler, in.uv));
+    float3 straight = layer.a > 0.001 ? saturate(layer.rgb / layer.a) : layer.rgb;
+    float3 blended = wpe_ApplyBlending(uniforms.blendMode, float3(sceneColor.rgb), straight, layer.a);
+    return half4(float4(blended * layer.a, layer.a));
+}
+
 // WPE `composelayer.frag` parity: `passthrough:true` compose/project/fullscreen
 // utility layers transfer the captured full-frame buffer 1:1 at screen UV via a
 // plain fullscreen quad (wpe_fullscreen_vertex), IGNORING the object's authored

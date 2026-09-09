@@ -50,7 +50,7 @@ final class MusicHostView: NSView {
     // MARK: - Data pump (externally driven)
 
     func push(_ snapshot: MonitorSnapshot) {
-        dataModel.update(snapshot)
+        dataModel.updateNowPlaying(snapshot.nowPlaying)
     }
 
     func apply(configuration: MusicOverlayConfiguration, safeArea: MonitorSafeAreaInsets? = nil) {

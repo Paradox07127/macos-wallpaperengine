@@ -85,18 +85,23 @@ struct DetailView: View {
     private var runtimeErrorBannerView: some View {
         if let attempt = screenManager.wallpaperLoads.attempt(for: screen), let failure = attempt.failure {
             if selectedTab != .wallpaper || !attempt.isInspecting {
-                HStack(spacing: DesignTokens.Spacing.md) {
-                    Label("Last wallpaper application failed", systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(DesignTokens.Colors.Status.warning)
-                    Text(verbatim: failure.title).lineLimit(1)
-                    Spacer()
+                InlineNoticeBanner(
+                    tint: DesignTokens.Colors.Status.warning,
+                    symbol: "exclamationmark.triangle.fill",
+                    title: Text("Last wallpaper application failed"),
+                    message: Text(verbatim: LogPrivacyRedactor.scrub(failure.title)),
+                    code: failure.cause.code,
+                    surface: .content
+                ) {
                     Button("View Details") {
                         screenManager.inspectWallpaperAttempt(true, for: screen)
                         selectedTab = .wallpaper
-                    }.buttonStyle(.bordered)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
                 }
-                .font(DesignTokens.Typography.body)
-                .padding(DesignTokens.Spacing.md)
+                .padding(.horizontal, DesignTokens.Spacing.md)
+                .padding(.top, DesignTokens.Spacing.sm)
             }
         } else if let runtimeError {
             let activeType = screen.runtimeSession?.wallpaperType ?? draft.selectedWallpaperType

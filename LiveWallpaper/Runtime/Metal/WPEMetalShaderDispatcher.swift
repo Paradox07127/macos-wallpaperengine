@@ -36,7 +36,8 @@ struct WPEMetalShaderDispatcher {
         textures: [String: MTLTexture],
         frameState: WPEMetalFrameState,
         encoder: MTLRenderCommandEncoder,
-        depthPixelFormat: MTLPixelFormat
+        depthPixelFormat: MTLPixelFormat,
+        fetchSceneColor: Bool = false
     ) throws {
         if pass.shader?.isBuiltin == false {
             try dispatchCustomShader(
@@ -100,7 +101,8 @@ struct WPEMetalShaderDispatcher {
         case .blendComposite:
             try dispatchBlendComposite(
                 pass: pass, layer: layer, destination: destination, textures: textures,
-                frameState: frameState, encoder: encoder, depthPixelFormat: depthPixelFormat
+                frameState: frameState, encoder: encoder, depthPixelFormat: depthPixelFormat,
+                fetchSceneColor: fetchSceneColor
             )
         case .compose:
             try dispatchCompose(
@@ -125,7 +127,8 @@ struct WPEMetalShaderDispatcher {
         }
 
         #if DEBUG
-        recordBuiltinTracePass(kind: kind, pass: pass, layer: layer, destination: destination, textures: textures, frameState: frameState)
+        recordBuiltinTracePass(kind: kind, pass: pass, layer: layer, destination: destination,
+                               textures: textures, frameState: frameState, fetchSceneColor: fetchSceneColor)
         #endif
     }
 
@@ -203,15 +206,16 @@ struct WPEMetalShaderDispatcher {
         textures: [String: MTLTexture],
         frameState: WPEMetalFrameState,
         encoder: MTLRenderCommandEncoder,
-        depthPixelFormat: MTLPixelFormat
+        depthPixelFormat: MTLPixelFormat,
+        fetchSceneColor: Bool
     ) throws {
         let usesObjectQuad = executor.usesObjectQuadGeometry(for: pass, layer: layer, cameraParallax: frameState.cameraParallax)
         encoder.setRenderPipelineState(try executor.passPipelineState(
             passID: pass.pass.id,
-            variant: .blendComposite,
+            variant: fetchSceneColor ? .blendCompositeFramebufferFetch : .blendComposite,
             objectQuad: usesObjectQuad,
             vertexName: usesObjectQuad ? "wpe_object_quad_vertex" : "wpe_fullscreen_vertex",
-            fragmentName: "wpe_blend_composite_fragment",
+            fragmentName: fetchSceneColor ? "wpe_blend_composite_fetch_fragment" : "wpe_blend_composite_fragment",
             blendMode: pass.pass.blending,
             alphaWritePolicy: .resolve(targetID: destination.id, blendMode: pass.pass.blending),
             colorPixelFormat: destination.texture.pixelFormat,
@@ -227,16 +231,16 @@ struct WPEMetalShaderDispatcher {
         )
         encoder.setFragmentTexture(layerTexture, index: 0)
 
-        guard let sceneReference = pass.textureBindings[4] ?? pass.pass.textures[4] else {
-            throw WPEMetalRenderExecutorError.missingTexture(layerReference)
+        if !fetchSceneColor {
+            guard let sceneReference = pass.textureBindings[4] ?? pass.pass.textures[4] else {
+                throw WPEMetalRenderExecutorError.missingTexture(layerReference)
+            }
+            let sceneTexture = try WPEMetalShaderInputs.resolve(
+                reference: sceneReference, textures: textures,
+                frameState: frameState, currentTargetID: destination.id
+            )
+            encoder.setFragmentTexture(sceneTexture, index: 4)
         }
-        let sceneTexture = try WPEMetalShaderInputs.resolve(
-            reference: sceneReference,
-            textures: textures,
-            frameState: frameState,
-            currentTargetID: destination.id
-        )
-        encoder.setFragmentTexture(sceneTexture, index: 4)
 
         var uniforms = WPEBlendCompositeUniforms(
             blendMode: Int32(WPEMetalShaderInputs.floatScalar(
