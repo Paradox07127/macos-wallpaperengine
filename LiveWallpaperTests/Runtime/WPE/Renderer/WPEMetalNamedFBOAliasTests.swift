@@ -105,6 +105,30 @@ struct WPEMetalSolidSceneRunTests {
         #expect(reordered != ordered) // Prove this fixture observes paint order, not just empty draws.
     }
 
+    @Test("A solid run has no four-draw limit and preserves every full-target draw",
+          arguments: [1, 5, 6, 17, 64], [false, true])
+    func arbitraryRunLength(count: Int, hdr: Bool) throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let layers = (0 ..< count).map { index in
+            let mix = Double(index + 1) / Double(count + 1)
+            return layer(index, color: [1.4 * mix, 0.2, 1.3 - mix, 0.35], transformed: false)
+        }
+        let pipeline = WPEPreparedRenderPipeline(layers: layers)
+        executor.solidSceneBatchingEnabled = false
+        let expected = try renderBytes(executor, pipeline: pipeline, hdr: hdr)
+        executor.solidSceneBatchingEnabled = true
+        let actual = try renderBytes(executor, pipeline: pipeline, hdr: hdr)
+        #expect(actual == expected)
+        #expect(actual.contains { $0 != 0 })
+        #expect(executor.lastSolidSceneBatchStats.encoders == 1)
+        #expect(executor.lastSolidSceneBatchStats.draws == count)
+        if count > 1 {
+            let reversed = WPEPreparedRenderPipeline(layers: Array(layers.reversed()))
+            #expect(try renderBytes(executor, pipeline: reversed, hdr: hdr) != expected)
+        }
+    }
+
     @Test("A scene snapshot closes the run and preserves the later composition")
     func snapshotSeparatesRuns() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
