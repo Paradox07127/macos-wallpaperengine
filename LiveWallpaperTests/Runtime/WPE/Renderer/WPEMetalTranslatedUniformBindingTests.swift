@@ -625,4 +625,221 @@ struct WPEMetalDrawTextureMetadataTests {
         #expect(table.samplingDescriptor(at: 0) == nil && table.samplingDescriptor(at: 1) == nil)
     }
 }
+@Suite("WPE derived uniform direct packing")
+struct WPEMetalDerivedUniformPackingTests {
+    private let canonicalNames = [
+        "g_TexelSize", "g_TexelSizeHalf", "g_Screen", "g_Texture0Resolution",
+        "g_Texture0Rotation", "g_Texture0Translation", "g_Texture1Rotation", "g_Texture1Translation",
+    ]
+
+    private func layout() -> [WPEUniformSlot] {
+        let types = ["vec2", "vec2", "vec3", "vec4", "vec4", "vec2", "vec4", "vec2"]
+        return zip(canonicalNames, types).enumerated().map {
+            WPEUniformSlot(name: $0.element.0, glslType: $0.element.1, slot: $0.offset, slotCount: 1,
+                           defaultValue: .vector([71, 72, 73, 74]))
+        } + [WPEUniformSlot(name: "u_User", glslType: "vec4", slot: 9, slotCount: 1)]
+    }
+
+    private func pass() -> WPEPreparedRenderPass {
+        WPEPreparedRenderPass(
+            pass: WPERenderPass(
+                id: "derived", phase: .effect(file: "effects/derived/effect.json"),
+                shader: "effects/derived", source: .image("base"), target: .scene,
+                textures: [:], binds: [:], constants: ["g_Texture1Rotation": .vector([51, 52, 53, 54])],
+                combos: [:], blending: "disabled", cullMode: "nocull", depthTest: "disabled", depthWrite: "disabled"
+            ),
+            shader: nil, textureBindings: [:], comboValues: [:],
+            uniformValues: ["g_TexelSize": .vector([31, 32]), "u_User": .vector([1, 2, 3, 4])]
+        )
+    }
+
+    private func table(device: MTLDevice, snapshot: Bool) throws -> WPEMetalTextureSlotTable {
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .rgba8Unorm, width: 128, height: 64, mipmapped: false
+        )
+        let texture = try #require(device.makeTexture(descriptor: descriptor))
+        let registry = WPEMetalTextureMetadataRegistry.shared
+        registry.register(texture: texture, imageWidth: 125, imageHeight: 61, clampUVs: false,
+                          noInterpolation: false, worldWidth: 300, worldHeight: 200)
+        let table = WPEMetalTextureSlotTable()
+        for slot in 0 ... 1 {
+            let transform = WPETexSpriteSamplingDescriptor(
+                rotation: SIMD4<Float>(0.25, -0.5, Float(slot), 0.75),
+                translation: SIMD2<Float>(Float(slot) / 2, 0.375)
+            )
+            table.set(texture: texture, samplingDescriptor: transform,
+                      resolution: snapshot ? registry.resolution(for: texture) : nil, at: slot)
+        }
+        return table
+    }
+
+    private func bytes(_ values: [SIMD4<Float>]) -> [UInt8] {
+        values.withUnsafeBytes { Array($0) }
+    }
+
+    @discardableResult
+    private func compare(executor: WPEMetalRenderExecutor, layout: [WPEUniformSlot],
+                         table: WPEMetalTextureSlotTable?) -> [SIMD4<Float>] {
+        executor.derivedUniformPackingEnabled = false
+        let reference = executor.packTranslatedUniforms(for: pass(), layout: layout, texturesBySlot: table)
+        executor.derivedUniformPackingEnabled = true
+        let actual = executor.packTranslatedUniforms(for: pass(), layout: layout, texturesBySlot: table)
+        #expect(bytes(actual) == bytes(reference))
+        return actual
+    }
+
+    @Test("Six canonical sources match legacy bytes, including unclaimed slots", arguments: [false, true])
+    func canonicalSources(snapshot: Bool) throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        executor.setCurrentScenePixelSizeForTesting(CGSize(width: 3841, height: 2161))
+        let layout = layout()
+        let table = try table(device: device, snapshot: snapshot)
+        let actual = compare(executor: executor, layout: layout, table: table)
+        #expect(executor.uniformPlans(for: pass(), layout: layout).compactMap(\.directPacking).count == 8)
+        #expect(actual[0] == SIMD4<Float>(Float(1.0 / 3841), Float(1.0 / 2161), 0, 0))
+        #expect(actual[1] == SIMD4<Float>(Float(0.5 / 3841), Float(0.5 / 2161), 0, 0))
+        #expect(actual[2] == SIMD4<Float>(3841, 2161, Float(3841.0 / 2161), 0))
+        #expect(actual[3] == SIMD4<Float>(128, 64, 125, 61))
+        #expect(actual[4] != actual[6] && actual[5] != actual[7])
+        #expect(actual[8] == .zero && actual[9] == SIMD4<Float>(1, 2, 3, 4))
+        var storage = [SIMD4<Float>](repeating: SIMD4<Float>(repeating: 99), count: actual.count + 2)
+        storage.withUnsafeMutableBufferPointer {
+            let region = UnsafeMutableBufferPointer(rebasing: $0[1 ..< (actual.count + 1)])
+            region.update(repeating: .zero)
+            executor.packTranslatedUniformSlots(for: pass(), layout: layout, texturesBySlot: table, into: region)
+        }
+        #expect(bytes(Array(storage[1 ..< (actual.count + 1)])) == bytes(actual))
+        #expect(storage.first == SIMD4<Float>(repeating: 99) && storage.last == SIMD4<Float>(repeating: 99))
+    }
+
+    @Test("Degenerate scene and missing resources preserve authored, constant and default fallbacks")
+    func fallbackAndNonfiniteSources() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let table = try table(device: device, snapshot: false)
+        for size in [CGSize.zero, CGSize(width: -1, height: 2), CGSize(width: CGFloat.nan, height: 2),
+                     CGSize(width: CGFloat.infinity, height: CGFloat.infinity), CGSize(width: 3840, height: 2160)] {
+            executor.setCurrentScenePixelSizeForTesting(size)
+            compare(executor: executor, layout: layout(), table: table)
+            let missing = compare(executor: executor, layout: layout(), table: nil)
+            #expect(missing[3] == SIMD4<Float>(71, 72, 73, 74))
+            #expect(missing[6] == SIMD4<Float>(51, 52, 53, 54))
+            if !(size.width > 0 && size.height > 0) {
+                #expect(missing[0] == SIMD4<Float>(31, 32, 0, 0))
+                #expect(missing[1] == SIMD4<Float>(71, 72, 0, 0))
+            }
+        }
+        let texture = try #require(table[0])
+        table.set(texture: texture, samplingDescriptor: WPETexSpriteSamplingDescriptor(
+            rotation: SIMD4<Float>(-0.0, .infinity, -.infinity, Float(bitPattern: 0x7FC0_1234)),
+            translation: SIMD2<Float>(-0.0, Float(bitPattern: 0x7FC0_5678))
+        ), at: 1)
+        compare(executor: executor, layout: layout(), table: table)
+        table.set(texture: texture, samplingDescriptor: WPETexSpriteSamplingDescriptor(
+            rotation: SIMD4<Float>(Float(bitPattern: 0x7F80_1234), Float(bitPattern: 0xFFC0_5678),
+                                   Float.leastNonzeroMagnitude, -Float.leastNonzeroMagnitude),
+            translation: SIMD2<Float>(Float(bitPattern: 0xFF80_1234), -0.0)
+        ), at: 1)
+        compare(executor: executor, layout: layout(), table: table)
+        table[1] = texture // Same texture, but this new binding no longer has TEXS metadata.
+        let missingTEXS = compare(executor: executor, layout: layout(), table: table)
+        #expect(missingTEXS[6] == SIMD4<Float>(51, 52, 53, 54))
+        #expect(missingTEXS[7] == SIMD4<Float>(71, 72, 0, 0))
+    }
+
+    @Test("Noncanonical declarations and arrays remain on the legacy path across layout invalidation")
+    func noncanonicalDeclarations() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        executor.setCurrentScenePixelSizeForTesting(CGSize(width: 3841, height: 2161))
+        let table = try table(device: device, snapshot: true)
+        for original in layout().prefix(8) {
+            for type in ["float", "vec2", "vec3", "vec4", "ivec4", "mat2"] where type != original.glslType {
+                let declaration = WPEUniformSlot(name: original.name, glslType: type, slot: 0,
+                                                 slotCount: type == "mat2" ? 2 : 1)
+                compare(executor: executor, layout: [declaration], table: table)
+                #expect(executor.uniformPlans(for: pass(), layout: [declaration])[0].directPacking == nil)
+            }
+            for declaration in [
+                WPEUniformSlot(name: original.name, glslType: original.glslType, slot: 0, slotCount: 2, arrayLength: 2),
+                WPEUniformSlot(name: original.name, glslType: original.glslType, slot: 0, slotCount: 2),
+                WPEUniformSlot(name: original.name.lowercased(), glslType: original.glslType, slot: 0, slotCount: 1),
+            ] {
+                compare(executor: executor, layout: [declaration], table: table)
+                #expect(executor.uniformPlans(for: pass(), layout: [declaration])[0].directPacking == nil)
+            }
+        }
+        compare(executor: executor, layout: layout(), table: table)
+        #expect(executor.uniformPlans(for: pass(), layout: layout()).compactMap(\.directPacking).count == 8)
+    }
+
+    @Test("Real packing A/B microbenchmark consumes output and includes Hina-like and ordinary layouts")
+    func packingMicrobenchmark() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let table = try table(device: device, snapshot: true)
+        let pass = pass()
+        let environment = ProcessInfo.processInfo.environment
+        let iterations = min(max(Int(environment["WPE_DERIVED_UNIFORM_BENCH_ITERATIONS"] ?? "64") ?? 64, 1), 100_000)
+        let mixed = (0 ..< 293).map { index in
+            WPEUniformSlot(name: index < 55 ? "g_Texture0Resolution" : (index < 63 ? "g_TexelSize" : "u_User"),
+                           glslType: (55 ..< 63).contains(index) ? "vec2" : "vec4", slot: index, slotCount: 1)
+        }
+        let ordinary = (0 ..< 293).map { WPEUniformSlot(name: "u_User", glslType: "vec4", slot: $0, slotCount: 1) }
+        var results: [[String: Any]] = []
+        for (name, layout) in [("derived", layout()), ("hina_mix", mixed), ("ordinary", ordinary)] {
+            let count = WPEMetalRenderExecutor.translatedSlotCount(for: layout)
+            let storage = UnsafeMutableBufferPointer<SIMD4<Float>>.allocate(capacity: count)
+            storage.initialize(repeating: .zero)
+            defer { storage.deinitialize(); storage.deallocate() }
+            func run(enabled: Bool, iterations: Int) -> (UInt64, UInt64) {
+                executor.derivedUniformPackingEnabled = enabled
+                var checksum: UInt64 = 0
+                let start = DispatchTime.now().uptimeNanoseconds
+                for iteration in 0 ..< iterations {
+                    executor.setCurrentScenePixelSizeForTesting(CGSize(width: 3840 + iteration % 2, height: 2160 + iteration % 3))
+                    storage.update(repeating: .zero)
+                    executor.packTranslatedUniformSlots(for: pass, layout: layout, texturesBySlot: table, into: storage)
+                    for value in storage {
+                        checksum = checksum &+ UInt64(value.x.bitPattern) &+ UInt64(value.y.bitPattern)
+                        checksum = checksum &+ UInt64(value.z.bitPattern) &+ UInt64(value.w.bitPattern)
+                    }
+                }
+                return (DispatchTime.now().uptimeNanoseconds - start, checksum)
+            }
+            #expect(run(enabled: false, iterations: 8).1 == run(enabled: true, iterations: 8).1)
+            var expected: UInt64?
+            for block in 0 ..< 12 {
+                let enabled = block % 4 == 1 || block % 4 == 2 // ABBA, repeated three times.
+                let (elapsed, checksum) = run(enabled: enabled, iterations: iterations)
+                if let expected {
+                    #expect(checksum == expected)
+                } else {
+                    expected = checksum
+                }
+                results.append(["layout": name, "direct": enabled, "block": block,
+                                "iterations": iterations, "elapsedNs": elapsed, "checksum": String(checksum)])
+            }
+        }
+        if let output = environment["WPE_DERIVED_UNIFORM_BENCH_OUTPUT"], !output.isEmpty {
+            #if DEBUG
+            let configuration = "Debug"
+            #else
+            let configuration = "Release"
+            #endif
+            // Payload only: excludes ContiguousArray storage headers, capacity rounding and allocator overhead.
+            let scratchPayloadBytes = 16 * (MemoryLayout<MTLSamplerState?>.stride
+                + MemoryLayout<WPEMetalTextureResolution?>.stride)
+            let report: [String: Any] = [
+                "configuration": configuration, "blocks": results,
+                "priorBatchMetadataScratchPayloadBytes": scratchPayloadBytes,
+                "uniformResolutionPlanStride": MemoryLayout<WPEMetalRenderExecutor.UniformResolutionPlan>.stride,
+                "scope": "Synthetic packing only; hina_mix matches the 63/293 declaration ratio, not real frame timing",
+            ]
+            let data = try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
+            try data.write(to: URL(fileURLWithPath: output), options: .atomic)
+        }
+    }
+}
 #endif
