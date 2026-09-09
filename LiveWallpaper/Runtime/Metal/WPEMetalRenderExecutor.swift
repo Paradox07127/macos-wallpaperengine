@@ -1860,7 +1860,9 @@ final class WPEMetalRenderExecutor {
         }
         defer { if solidRun == nil { encoder.endEncoding() } }
 
-        encoder.setFrontFacing(frameState.cameraUniforms.frontFacingWinding(objectID: drawLayer.objectID))
+        // Builtin quads and puppet atlas/composite vertices construct NDC directly.
+        // Only the scene-model mesh path applies the camera matrix and overrides this.
+        encoder.setFrontFacing(.counterClockwise)
         encoder.setCullMode(WPEMetalPipelineCache.cullMode(for: pass.pass.cullMode))
         encoder.setDepthStencilState(depthCache.stencilState(
             depthTest: pass.pass.depthTest,

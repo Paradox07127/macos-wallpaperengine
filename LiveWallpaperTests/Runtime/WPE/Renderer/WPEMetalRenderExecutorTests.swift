@@ -6235,6 +6235,110 @@ struct WPEGenericImageLayerTintTests {
     }
 }
 
+@Suite("WPE Metal projected geometry culling")
+struct WPEMetalProjectedGeometryCullingTests {
+    private let size = CGSize(width: 16, height: 16)
+
+    private func material(shader: String, target: WPERenderTarget, cull: String) -> WPERenderPass {
+        WPERenderPass(
+            id: "winding.material", phase: .material, shader: shader, source: .asset("white"),
+            target: target, textures: [0: .asset("white")], binds: [:], constants: [:], combos: [:],
+            blending: "disabled", cullMode: cull, depthTest: "disabled", depthWrite: "disabled"
+        )
+    }
+
+    private func camera(perspective: Bool = false) -> WPEMetalCameraUniforms {
+        WPEMetalCameraUniforms(
+            orthogonalProjection: WPESceneOrthogonalProjection(width: 16, height: 16, auto: true),
+            sceneCamera: .defaultCamera, perspectiveOverrideFOVDegrees: perspective ? 50 : 0,
+            perspectiveObjectIDs: perspective ? ["winding"] : []
+        )
+    }
+
+    private func bytes(
+        executor: WPEMetalRenderExecutor, pipeline: WPEPreparedRenderPipeline,
+        source: MTLTexture, camera: WPEMetalCameraUniforms
+    ) throws -> [UInt8] {
+        let output = try executor.render(pipeline: pipeline, size: size, textures: ["white": source], cameraUniforms: camera)
+        #expect(output.pixelFormat == .rgba8Unorm_srgb)
+        let staging = try #require(WPEMetalTextureSnapshotter.stagedForCPURead(output))
+        var result = [UInt8](repeating: 0, count: output.width * output.height * 4)
+        result.withUnsafeMutableBytes {
+            staging.getBytes($0.baseAddress!, bytesPerRow: output.width * 4,
+                             from: MTLRegionMake2D(0, 0, output.width, output.height), mipmapLevel: 0)
+        }
+        return result
+    }
+
+    @Test("Local atlas quads keep their NDC winding under an orthographic scene camera",
+          arguments: ["genericimage2", "genericimage4"])
+    func localFullscreenUsesNDCWinding(shader: String) throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let source = try makeRGBAInputTexture(device: device, bytes: Data(repeating: 255, count: 16))
+        let camera = camera()
+        #expect(camera.frontFacingWinding(objectID: "layer") == .clockwise)
+        func pipeline(cull: String) -> WPEPreparedRenderPipeline {
+            let atlas = "_rt_imageLayerComposite_layer_a"
+            return preparedPipeline(localFBOs: [], passes: [
+                preparedBuiltinPass(material(shader: shader, target: .layerComposite(name: atlas), cull: cull)),
+                preparedBuiltinPass(copyPass(id: "winding.copy", source: .fbo(atlas), target: .scene,
+                                             blending: "disabled", cullMode: "nocull")),
+            ])
+        }
+        let expected = try bytes(executor: executor, pipeline: pipeline(cull: "nocull"), source: source, camera: camera)
+        #expect(expected.contains { $0 != 0 })
+        for cull in ["normal", "back"] {
+            let actual = try bytes(executor: executor, pipeline: pipeline(cull: cull), source: source, camera: camera)
+            #expect(actual == expected)
+        }
+        let front = try bytes(executor: executor, pipeline: pipeline(cull: "front"), source: source, camera: camera)
+        #expect(front.allSatisfy { $0 == 0 }) // Keep real culling; do not mask the bug with .none.
+    }
+
+    @Test("Scene model meshes retain camera-dependent winding for both projections", arguments: [false, true])
+    func sceneModelUsesProjectedWinding(perspective: Bool) throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let source = try makeRGBAInputTexture(device: device, bytes: Data(repeating: 255, count: 16))
+        let camera = camera(perspective: perspective)
+        #expect(camera.frontFacingWinding(objectID: "winding") == (perspective ? MTLWinding.counterClockwise : .clockwise))
+        let model = WPEPuppetModel(version: 23, meshes: [WPEPuppetMesh(
+            materialPath: "white",
+            vertices: [
+                WPEPuppetVertex(position: SIMD3<Float>(-4, -4, 0), uv: SIMD2<Float>(0, 1)),
+                WPEPuppetVertex(position: SIMD3<Float>(4, -4, 0), uv: SIMD2<Float>(1, 1)),
+                WPEPuppetVertex(position: SIMD3<Float>(-4, 4, 0), uv: SIMD2<Float>(0, 0)),
+                WPEPuppetVertex(position: SIMD3<Float>(4, 4, 0), uv: SIMD2<Float>(1, 0)),
+            ], indices: [0, 1, 2, 2, 1, 3], parts: []
+        )])
+        func pipeline(cull: String) -> WPEPreparedRenderPipeline {
+            let pass = material(shader: "genericimage2", target: .scene, cull: cull)
+            let geometry = WPERenderLayerGeometry(
+                origin: SIMD3<Double>(8, 8, -1), scale: SIMD3<Double>(1, 1, 1), angles: .zero,
+                alignment: .center, size: CGSize(width: 8, height: 8), alpha: 1,
+                color: SIMD3<Double>(1, 1, 1), brightness: 1
+            )
+            let layer = WPERenderLayer(
+                objectID: "winding", objectName: "Projected mesh", imagePath: "winding.mdl", materialPath: nil,
+                puppetPath: "winding.mdl", geometry: geometry, compositeA: "a", compositeB: "b",
+                localFBOs: [], passes: [pass]
+            )
+            return WPEPreparedRenderPipeline(layers: [
+                WPEPreparedRenderLayer(graphLayer: layer, puppetModel: model, passes: [preparedBuiltinPass(pass)]),
+            ])
+        }
+        let expected = try bytes(executor: executor, pipeline: pipeline(cull: "nocull"), source: source, camera: camera)
+        #expect(expected.contains { $0 != 0 })
+        for cull in ["normal", "back"] {
+            let actual = try bytes(executor: executor, pipeline: pipeline(cull: cull), source: source, camera: camera)
+            #expect(actual == expected)
+        }
+        let front = try bytes(executor: executor, pipeline: pipeline(cull: "front"), source: source, camera: camera)
+        #expect(front.allSatisfy { $0 == 0 })
+    }
+}
+
 @Suite("WPE Metal initial scene clear elision")
 struct WPEMetalInitialSceneClearTests {
     private let size = CGSize(width: 17, height: 13)
