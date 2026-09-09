@@ -99,7 +99,7 @@ final class WPEMetalFXSpatialUpscaler {
         case usageMismatch
     }
 
-    /// 8-bit LDR only. HDR (`rgba16Float`) is linear >1 and needs `.hdr` mode — not this experiment.
+    /// 8-bit LDR, which the scaler reads in `.perceptual` mode.
     static func isPerceptualInput(_ format: MTLPixelFormat) -> Bool {
         switch format {
         case .rgba8Unorm, .rgba8Unorm_srgb, .bgra8Unorm, .bgra8Unorm_srgb:
@@ -107,6 +107,59 @@ final class WPEMetalFXSpatialUpscaler {
         default:
             return false
         }
+    }
+
+    /// Linear float that may exceed 1, which the scaler reads in `.hdr` mode.
+    static func isHDRInput(_ format: MTLPixelFormat) -> Bool {
+        switch format {
+        case .rgba16Float, .rgba32Float:
+            true
+        default:
+            false
+        }
+    }
+
+    /// The scaler's colour-processing mode for a source format, or nil if the format is
+    /// neither of the two the present path can produce.
+    static func colorProcessingMode(
+        sourceFormat: MTLPixelFormat
+    ) -> MTLFXSpatialScalerColorProcessingMode? {
+        if isPerceptualInput(sourceFormat) {
+            return .perceptual
+        }
+        if isHDRInput(sourceFormat) {
+            return .hdr
+        }
+        return nil
+    }
+
+    /// The format half of eligibility, split out from `encodeIfEligible` so it is testable
+    /// without a GPU — that method needs real textures and the fast shard bars Metal tests.
+    ///
+    /// Both ends are checked, not just the source. The four pairings the present path can
+    /// actually produce:
+    ///
+    /// | source | drawable | verdict |
+    /// |---|---|---|
+    /// | 8-bit | 8-bit | `.perceptual` — the long-standing path |
+    /// | float | float | `.hdr` — HDR scene with display-HDR output on |
+    /// | 8-bit | float | `.perceptual` — SDR scene while display-HDR output is on |
+    /// | float | 8-bit | **rejected** |
+    ///
+    /// The last one is rejected because a float source carries values past 1 that an 8-bit
+    /// drawable cannot hold, and `MTLFXSpatialScaler` does not tone map — that pairing has
+    /// to fall back to the present pass, which clamps as it always did.
+    static func formatRejection(
+        sourceFormat: MTLPixelFormat,
+        drawableFormat: MTLPixelFormat
+    ) -> FallbackReason? {
+        guard colorProcessingMode(sourceFormat: sourceFormat) != nil,
+              isPerceptualInput(drawableFormat) || isHDRInput(drawableFormat)
+        else { return .hdrInput }
+        if isHDRInput(sourceFormat), !isHDRInput(drawableFormat) {
+            return .hdrInput
+        }
+        return nil
     }
 
     /// Rejections decidable without a scaler. Usage checks happen after creation.
@@ -184,8 +237,11 @@ final class WPEMetalFXSpatialUpscaler {
             noteFallback(rejection, source: source, drawable: drawableTexture)
             return false
         }
-        guard Self.isPerceptualInput(source.pixelFormat) else {
-            noteFallback(.hdrInput, source: source, drawable: drawableTexture)
+        if let rejection = Self.formatRejection(
+            sourceFormat: source.pixelFormat,
+            drawableFormat: drawableTexture.pixelFormat
+        ) {
+            noteFallback(rejection, source: source, drawable: drawableTexture)
             return false
         }
         let key = ScalerKey(
@@ -213,7 +269,9 @@ final class WPEMetalFXSpatialUpscaler {
             descriptor.outputHeight = drawableTexture.height
             descriptor.colorTextureFormat = source.pixelFormat
             descriptor.outputTextureFormat = drawableTexture.pixelFormat
-            descriptor.colorProcessingMode = .perceptual
+            // `formatRejection` above already refused anything without a mode.
+            descriptor.colorProcessingMode =
+                Self.colorProcessingMode(sourceFormat: source.pixelFormat) ?? .perceptual
             guard let made = descriptor.makeSpatialScaler(device: device) else {
                 failedAttempts[key, default: 0] += 1
                 noteFallback(.scalerCreationFailed, source: source, drawable: drawableTexture)

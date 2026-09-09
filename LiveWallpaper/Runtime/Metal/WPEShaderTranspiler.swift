@@ -12,7 +12,33 @@ struct WPEShaderTranspiler {
     /// Bounds literal varying initializer expansion in the Swift code generator.
     static let varyingElementMaximum = 1024
 
-    static let customTextureSlotCount = 8
+    /// Ceiling, not an allocation: each shader declares only the slots it needs
+    /// (`textureSlotCount(for:)`), the same way uniforms are sized per shader and merely
+    /// capped by `uniformSlotMaximum`.
+    ///
+    /// 16 is a hard Metal limit, measured on Apple M5 Pro 2026-09-09: a fragment signature
+    /// with 17 sampler arguments fails to compile with "'sampler' attribute parameter is
+    /// out of bounds: must be between 0 and 15". Textures are not the constraint (16 bind
+    /// fine); samplers are, and the generator emits one sampler per slot.
+    ///
+    /// Used only where the count cannot yet be known: validation, `g_TextureN` name
+    /// parsing, and the two passes computed BEFORE translation (premultiplied-input
+    /// detection and `TEX<N>FORMAT` macro emission).
+    static let customTextureSlotLimit = 16
+
+    /// Slots a shader actually occupies: highest declared `g_TextureN` index + 1, and never
+    /// fewer than the sampler count — a sampler whose name is not `g_TextureN` has no
+    /// parsed slot and falls back to its enumeration index, so it occupies one too.
+    ///
+    /// Sparse layouts make count and max-index differ: WPE's stock `chroma4` declares 8
+    /// samplers (0-4, 6, 7, 8) but needs 9 bindings.
+    static func textureSlotCount(for samplers: [WPESamplerDecl]) -> Int {
+        var needed = samplers.count
+        if let maxSlot = samplers.compactMap({ textureSlot(for: $0.name) }).max() {
+            needed = max(needed, maxSlot + 1)
+        }
+        return needed
+    }
 
     static func translateFragment(
         shaderName: String,
@@ -80,17 +106,18 @@ struct WPEShaderTranspiler {
         let sortedSamplers = samplers.sorted { lhs, rhs in
             (Self.textureSlot(for: lhs.name) ?? .max) < (Self.textureSlot(for: rhs.name) ?? .max)
         }
-        guard sortedSamplers.count <= Self.customTextureSlotCount else {
+        guard sortedSamplers.count <= Self.customTextureSlotLimit else {
             throw WPEShaderCompilerError.translationFailed(
-                "shader '\(shaderName)' uses \(sortedSamplers.count) samplers; transpiler supports up to \(Self.customTextureSlotCount)"
+                "shader '\(shaderName)' uses \(sortedSamplers.count) samplers; transpiler supports up to \(Self.customTextureSlotLimit)"
             )
         }
         if let maxSlot = sortedSamplers.compactMap({ Self.textureSlot(for: $0.name) }).max(),
-           maxSlot >= Self.customTextureSlotCount {
+           maxSlot >= Self.customTextureSlotLimit {
             throw WPEShaderCompilerError.translationFailed(
-                "shader '\(shaderName)' binds texture slot \(maxSlot); transpiler supports slots 0–\(Self.customTextureSlotCount - 1)"
+                "shader '\(shaderName)' binds texture slot \(maxSlot); transpiler supports slots 0–\(Self.customTextureSlotLimit - 1)"
             )
         }
+        let textureSlotCount = Self.textureSlotCount(for: sortedSamplers)
         // Sampler wrap (clamp vs repeat) and filter are NOT decided here anymore: every
         // `g_TextureN.sample` is rewritten to the per-slot runtime sampler `wpeSamplerN`
         // (`rewriteSamplersToPerSlot`), whose address/filter the executor binds from the
@@ -146,6 +173,7 @@ struct WPEShaderTranspiler {
             uniforms: uniforms,
             totalUniformSlots: layout.totalSlots,
             samplers: sortedSamplers,
+            textureSlotCount: textureSlotCount,
             varyings: varyings,
             helpers: helperResources.helpers,
             mainBody: helperResources.mainBody,
@@ -159,7 +187,8 @@ struct WPEShaderTranspiler {
             mslSource: msl,
             samplers: sortedSamplers.map(\.name),
             uniformLayout: layout.slots,
-            totalSlots: layout.totalSlots
+            totalSlots: layout.totalSlots,
+            textureSlotCount: textureSlotCount
         )
     }
 
@@ -188,7 +217,8 @@ struct WPEShaderTranspiler {
                 slotCount: count,
                 arrayLength: u.arrayLength,
                 materialName: u.materialName,
-                defaultValue: u.defaultValue
+                defaultValue: u.defaultValue,
+                requiredCombos: u.requiredCombos
             ))
             nextSlot += count
         }

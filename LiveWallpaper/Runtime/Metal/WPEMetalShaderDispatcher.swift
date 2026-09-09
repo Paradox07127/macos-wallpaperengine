@@ -19,7 +19,8 @@ import Metal
 ///   effects (`effect_opacity`, `effect_waterwaves`) add slot 1 = mask, falling back
 ///   to source with has-mask cleared. Per-effect names/bindings/uniforms live in the
 ///   data table (`WPEMetalEffectDispatchTable.swift`).
-/// - Custom/transpiled fallback: slots 0..<`WPEShaderTranspiler.customTextureSlotCount`,
+/// - Custom/transpiled fallback: slots 0..<`result.textureSlotCount` — sized per shader by
+///   the transpiler, not a fixed span; `customTextureSlotLimit` is only the ceiling —
 ///   each `textureBindings[slot] ?? binds[slot] ?? textures[slot]`; slot 0 falls back
 ///   to the pass source, empty higher slots rebind slot 0. `godrays_combine` is fixed:
 ///   slot 0 = rays, slot 1 = albedo, slot 2 = base (absent base rebinds albedo, clears
@@ -649,7 +650,11 @@ struct WPEMetalShaderDispatcher {
         #if !LITE_BUILD && DEBUG
         var canonicalTextureBindings: [WPECanonicalTraceRecorder.TextureBindingInput] = []
         #endif
-        for slot in 0..<WPEShaderTranspiler.customTextureSlotCount {
+        // Exactly the slots this shader's signature declares — same value the generator
+        // sized it with, carried through the translation cache. Binding fewer than the
+        // signature declares would leave the shader sampling an unbound texture; binding
+        // more would just be wasted `setFragmentTexture` calls per pass.
+        for slot in 0..<result.textureSlotCount {
             // `textureBindings` is the pipeline-builder's *normalized* binding table: it
             // already rewrites an effect-bind `previous` to the pass's source (the layer
             // composite feeding this effect). The raw `pass.pass.binds` still carries the

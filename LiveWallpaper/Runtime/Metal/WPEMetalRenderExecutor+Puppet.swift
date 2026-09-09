@@ -601,17 +601,30 @@ extension WPEMetalRenderExecutor {
         encoder: MTLRenderCommandEncoder,
         depthPixelFormat: MTLPixelFormat
     ) throws -> Bool {
-        guard case .material = pass.pass.phase,
-              case .scene = pass.pass.target,
-              Self.rendersAsSceneModel(layer),
-              let model = puppetModel else {
+        // A `.mdl` layer that silently fails any of these guards renders as a flat quad (or
+        // not at all) with no error anywhere. Report the first failing one, once per layer.
+        let isModelLayer = (layer.imagePath as NSString).pathExtension.lowercased() == "mdl"
+        func noteModelReject(_ reason: String) -> Bool {
+            if isModelLayer, loggedSceneModelRejects.insert(layer.objectID).inserted {
+                Logger.notice(
+                    "[WPE.model] layer \(layer.objectID) '\(layer.objectName)'"
+                        + " shader=\(pass.pass.shader) not drawn as scene model: \(reason)",
+                    category: .wpeRender
+                )
+            }
             return false
         }
+        guard case .material = pass.pass.phase else { return noteModelReject("phase=\(pass.pass.phase)") }
+        guard case .scene = pass.pass.target else { return noteModelReject("target=\(pass.pass.target)") }
+        guard Self.rendersAsSceneModel(layer) else {
+            return noteModelReject("rendersAsSceneModel=false puppetPath=\(layer.puppetPath ?? "nil")")
+        }
+        guard let model = puppetModel else { return noteModelReject("puppetModel=nil") }
         let meshes = model.meshes.filter { !$0.vertices.isEmpty && !$0.indices.isEmpty }
-        guard !meshes.isEmpty else { return false }
+        guard !meshes.isEmpty else { return noteModelReject("no non-empty meshes (\(model.meshes.count) parsed)") }
 
         guard let materialShader = Self.sceneModelMaterialShader(for: pass.pass.shader) else {
-            return false
+            return noteModelReject("unclaimed material shader '\(pass.pass.shader)'")
         }
 
         let primaryRef = pass.textureBindings[0] ?? pass.pass.textures[0] ?? pass.pass.source
@@ -686,6 +699,56 @@ extension WPEMetalRenderExecutor {
                 materialShader: .genericImage4,
                 hasReflectionSource: reflectionSource != nil,
                 reflectionTopMipLevel: (reflectionSource?.mipmapLevelCount ?? 1) - 1
+            )
+            encoder.setFragmentBytes(&uniforms, length: MemoryLayout<WPESceneModelGenericUniforms>.stride, index: 0)
+        } else if materialShader == .chroma4 {
+            // Same material vocabulary as generic4 (lowercase "color"/"alpha"/"brightness"),
+            // so the uniform mapping is shared. The additions are the view-dependent
+            // front/back tint and the slot-8 pigment noise.
+            encoder.setRenderPipelineState(try renderPipeline(
+                vertexName: "wpe_scene_model_mesh_vertex",
+                fragmentName: "wpe_scene_model_chroma4_fragment",
+                blendMode: pass.pass.blending,
+                colorPixelFormat: destination.texture.pixelFormat,
+                depthPixelFormat: depthPixelFormat
+            ))
+            encoder.setFragmentTexture(primary, index: 0)
+
+            var componentMap: MTLTexture?
+            if let maskRef = pass.textureBindings[2] ?? pass.pass.textures[2] {
+                componentMap = try? WPEMetalShaderInputs.resolve(
+                    reference: maskRef,
+                    textures: textures,
+                    frameState: frameState,
+                    currentTargetID: destination.id
+                )
+            }
+            encoder.setFragmentTexture(componentMap ?? primary, index: 1)
+            let reflectionSource = reflectionSourceTexture
+            encoder.setFragmentTexture(reflectionSource ?? primary, index: 3)
+
+            // `g_Texture8` = the pigment noise map. Every slot must stay bound for Metal,
+            // so an unresolved noise texture falls back to `primary` and the uniform's
+            // bound flag gates the whole pigment term off rather than grading by albedo.
+            var noise: MTLTexture?
+            if let noiseRef = pass.textureBindings[8] ?? pass.pass.textures[8] {
+                noise = try? WPEMetalShaderInputs.resolve(
+                    reference: noiseRef,
+                    textures: textures,
+                    frameState: frameState,
+                    currentTargetID: destination.id
+                )
+            }
+            encoder.setFragmentTexture(noise ?? primary, index: 8)
+
+            var uniforms = sceneModelGenericUniforms(
+                for: pass,
+                layer: layer,
+                hasComponentMap: componentMap != nil,
+                materialShader: .chroma4,
+                hasReflectionSource: reflectionSource != nil,
+                reflectionTopMipLevel: (reflectionSource?.mipmapLevelCount ?? 1) - 1,
+                noiseTexture: noise
             )
             encoder.setFragmentBytes(&uniforms, length: MemoryLayout<WPESceneModelGenericUniforms>.stride, index: 0)
         } else {
@@ -1142,6 +1205,7 @@ extension WPEMetalRenderExecutor {
         case generic2
         case genericImage2
         case genericImage4
+        case chroma4
     }
 
     /// Which material shaders this mesh encoder can draw. `generic4` reaches here
@@ -1154,7 +1218,13 @@ extension WPEMetalRenderExecutor {
     /// silently replaces the mesh with a flat billboard (3470948192: the star dome
     /// and the doppler cylinder both collapsed into a full-screen flat fill).
     static func sceneModelMaterialShader(for shader: String) -> SceneModelMaterialShader? {
-        if WPEBuiltinShaderName.normalized(shader) == "generic2" { return .generic2 }
+        // Matched by their own names, NOT by aliasing onto genericimage*: a model shader
+        // aliased to the 2D image path draws the mesh but reads the wrong material
+        // annotations (generic2's `Alpha` was ignored, turning a 0.025-alpha cylinder into
+        // an opaque wall — 2026-09-05 on 3470948192).
+        let name = WPEBuiltinShaderName.normalized(shader)
+        if name == "generic2" { return .generic2 }
+        if name == "chroma4" { return .chroma4 }
         switch WPEBuiltinShaderKind(normalizing: shader) {
         case .genericImage4: return .genericImage4
         case .genericImage2: return .genericImage2

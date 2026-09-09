@@ -466,6 +466,11 @@ final class WPEMetalRenderExecutor {
     var loggedStaticLayerCacheHits: Set<String> = []
     /// Throttles the generic4 component-map resolve-failure diagnostic to once per objectID.
     var loggedComponentMapResolveFailures: Set<String> = []
+    /// One diagnostic per (shader, uniform) whose annotation carries a `require`.
+    var loggedUniformRequireDecisions: Set<String> = []
+    /// One line per `.mdl` layer the mesh encoder declined.
+    var loggedSceneModelRejects: Set<String> = []
+    var loggedSceneModelEncodeProbe: Set<String> = []
     /// Auxiliary texture slots that failed to resolve, so the fall-back-to-primary
     /// warning is emitted once per pass+slot instead of every frame.
     var loggedUnresolvedTextureSlots: Set<String> = []
@@ -1799,6 +1804,20 @@ final class WPEMetalRenderExecutor {
             )
         }
 
+        // Unconditional for material passes: every earlier probe here was keyed off an
+        // assumption (a `.mdl` extension on some layer) and stayed silent exactly when the
+        // assumption was the thing being tested.
+        if case .material = pass.pass.phase,
+           loggedSceneModelEncodeProbe.insert(pass.pass.id).inserted {
+            Logger.notice(
+                "[WPE.model] encode reached pass=\(pass.pass.id) shader=\(pass.pass.shader)"
+                    + " target=\(pass.pass.target) layer=\(layer.objectID)"
+                    + " drawLayer=\(drawLayer.objectID)"
+                    + "/\((drawLayer.imagePath as NSString).lastPathComponent)"
+                    + " puppetModel=\(puppetModel != nil)",
+                category: .wpeRender
+            )
+        }
         let drewSceneModel = try encodeSceneModelMaterialPassIfNeeded(
             pass: pass,
             layer: drawLayer,
@@ -3014,7 +3033,8 @@ final class WPEMetalRenderExecutor {
         hasComponentMap: Bool,
         materialShader: SceneModelMaterialShader = .genericImage4,
         hasReflectionSource: Bool = false,
-        reflectionTopMipLevel: Int = 0
+        reflectionTopMipLevel: Int = 0,
+        noiseTexture: MTLTexture? = nil
     ) -> WPESceneModelGenericUniforms {
         func constantVector3(_ names: [String], default def: SIMD3<Float>) -> SIMD3<Float> {
             for name in names {
@@ -3079,6 +3099,8 @@ final class WPEMetalRenderExecutor {
         let reflectivity = constantScalar(["reflectivity", "g_Reflectivity"], default: 1)
         let roughness = constantScalar(["roughness", "g_Roughness"], default: 0.7)
         let metallic = constantScalar(["metallic", "g_Metallic"], default: 0)
+        let tintFront = constantVector3(["tintfront", "g_TintFront"], default: SIMD3<Float>(1, 1, 1))
+        let tintBack = constantVector3(["tintback", "g_TintBack"], default: SIMD3<Float>(1, 1, 1))
         let renderSize = currentScenePixelSize
         let aspect = renderSize.height > 0 ? Float(renderSize.width / renderSize.height) : 1
 
@@ -3094,7 +3116,23 @@ final class WPEMetalRenderExecutor {
             ),
             skylightColor: SIMD4<Float>(skylight.x, skylight.y, skylight.z, 0),
             reflection: SIMD4<Float>(reflectivity, roughness, metallic, Float(reflectionTopMipLevel)),
-            screen: SIMD4<Float>(Float(renderSize.width), Float(renderSize.height), aspect, 0)
+            screen: SIMD4<Float>(Float(renderSize.width), Float(renderSize.height), aspect, 0),
+            // chroma4's front/back tint defaults to white so an unauthored material is a
+            // no-op multiply rather than a black mesh.
+            chromaTintFront: SIMD4<Float>(
+                tintFront.x, tintFront.y, tintFront.z,
+                constantScalar(["tintpigmentation", "g_TintPigmentation"], default: 0)
+            ),
+            chromaTintBack: SIMD4<Float>(
+                tintBack.x, tintBack.y, tintBack.z,
+                constantScalar(["tintwexponent", "g_TintExponent"], default: 1)
+            ),
+            chromaNoise: SIMD4<Float>(
+                Float(noiseTexture?.width ?? 0),
+                Float(noiseTexture?.height ?? 0),
+                noiseTexture != nil ? 1 : 0,
+                0
+            )
         )
     }
 
@@ -3478,7 +3516,7 @@ final class WPEMetalRenderExecutor {
         let prefix = "g_Texture"
         guard name.hasPrefix(prefix), name.hasSuffix(suffix) else { return nil }
         let slotText = name.dropFirst(prefix.count).dropLast(suffix.count)
-        guard let slot = Int(slotText), (0..<WPEShaderTranspiler.customTextureSlotCount).contains(slot) else {
+        guard let slot = Int(slotText), (0..<WPEShaderTranspiler.customTextureSlotLimit).contains(slot) else {
             return nil
         }
         return slot
@@ -3553,7 +3591,7 @@ final class WPEMetalRenderExecutor {
     /// un-premultiply them before running its original math.
     private static func premultipliedInputSlots(for pass: WPEPreparedRenderPass) -> Set<Int> {
         var slots = Set<Int>()
-        for slot in 0..<WPEShaderTranspiler.customTextureSlotCount {
+        for slot in 0..<WPEShaderTranspiler.customTextureSlotLimit {
             let reference = pass.textureBindings[slot]
                 ?? pass.pass.binds[slot]
                 ?? pass.pass.textures[slot]

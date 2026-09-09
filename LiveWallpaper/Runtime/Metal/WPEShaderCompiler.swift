@@ -95,6 +95,10 @@ struct WPEShaderCompileResult: @unchecked Sendable {
     let uniformLayout: [WPEUniformSlot]
     /// Names of the texture samplers the shader expects, ordered by slot.
     let samplerNames: [String]
+    /// Fragment texture/sampler arguments the generated signature declares. The dispatcher
+    /// binds exactly this many — it is carried through the cache because a cache hit
+    /// restores the MSL without re-running the transpiler that computed it.
+    let textureSlotCount: Int
 }
 
 enum WPEShaderCompilerError: Error, Sendable, Equatable {
@@ -107,7 +111,11 @@ enum WPEShaderCompilerError: Error, Sendable, Equatable {
 /// Memory hits serve a second display / new executor; disk hits serve cold start.
 /// All mutable state sits behind `lock`.
 final class WPEShaderTranslationCache: @unchecked Sendable {
-    static let schemaVersion = 7
+    /// 8: fragment signatures declare only the texture/sampler slots each shader actually
+    /// uses (previously a fixed 8), and the payload carries that arity.
+    /// 9: slots carry their annotation `require` map, without which a stale material
+    /// constant overrides a uniform WPE would have left at its default.
+    static let schemaVersion = 9
     static let shared = WPEShaderTranslationCache()
 
     struct Payload: Codable, Equatable, Sendable {
@@ -117,6 +125,7 @@ final class WPEShaderTranslationCache: @unchecked Sendable {
         var mslSource: String
         var uniformLayout: [Slot]
         var samplerNames: [String]
+        var textureSlotCount: Int
 
         struct Slot: Codable, Equatable, Sendable {
             var name: String
@@ -126,6 +135,9 @@ final class WPEShaderTranslationCache: @unchecked Sendable {
             var arrayLength: Int?
             var materialName: String?
             var defaultValue: Constant?
+            /// Absent in payloads written before schema 9; decoded as empty (unconditional),
+            /// which is the pre-feature behaviour.
+            var requiredCombos: [String: Int]?
 
             enum Constant: Codable, Equatable, Sendable {
                 case bool(Bool)
@@ -144,7 +156,8 @@ final class WPEShaderTranslationCache: @unchecked Sendable {
                     slotCount: slot.slotCount,
                     arrayLength: slot.arrayLength,
                     materialName: slot.materialName,
-                    defaultValue: slot.defaultValue.map(\.domainValue)
+                    defaultValue: slot.defaultValue.map(\.domainValue),
+                    requiredCombos: slot.requiredCombos ?? [:]
                 )
             }
         }
@@ -165,7 +178,8 @@ final class WPEShaderTranslationCache: @unchecked Sendable {
                     slotCount: slot.slotCount,
                     arrayLength: slot.arrayLength,
                     materialName: slot.materialName,
-                    defaultValue: Slot.Constant(slot.defaultValue)
+                    defaultValue: Slot.Constant(slot.defaultValue),
+                    requiredCombos: slot.requiredCombos
                 ))
             }
             return Payload(
@@ -174,7 +188,8 @@ final class WPEShaderTranslationCache: @unchecked Sendable {
                 fragmentFunctionName: result.fragmentFunctionName,
                 mslSource: result.mslSource,
                 uniformLayout: slots,
-                samplerNames: result.samplerNames
+                samplerNames: result.samplerNames,
+                textureSlotCount: result.textureSlotCount
             )
         }
     }

@@ -1686,41 +1686,6 @@
         }
       }
     },
-    "%@. %@. %@" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@. %2$@. %3$@"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@. %2$@. %3$@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@。%2$@。%3$@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@。%2$@。%3$@"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@。%2$@。%3$@"
-          }
-        }
-      }
-    },
     "%@. Scene wallpaper. %@" : {
       "comment" : "A11y label for a Wallpaper Engine scene detail card. Placeholders are scene title and state.",
       "localizations" : {
@@ -15493,7 +15458,7 @@
     },
     "Copies the error code to the clipboard" : {
       "comment" : "A11y hint for the error-code chip.",
-      "extractionState" : "stale",
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -15504,7 +15469,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Copia el código de error al portapapeles"
+            "value" : "Copia el código de error en el portapapeles"
           }
         },
         "ja" : {
@@ -15522,7 +15487,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "將錯誤代碼複製到剪貼板"
+            "value" : "將錯誤代碼複製到剪貼簿"
           }
         }
       }
@@ -15628,41 +15593,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "複製經過去識別的系統與執行階段摘要。"
-          }
-        }
-      }
-    },
-    "Copy all IDs" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Copy all IDs"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Copiar todos los ID"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "すべての ID をコピー"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "复制所有 ID"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "複製所有 ID"
           }
         }
       }
@@ -16007,7 +15937,7 @@
     },
     "Copy the error code" : {
       "comment" : "Tooltip on a copyable error-code chip.",
-      "extractionState" : "stale",
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -23327,7 +23257,7 @@
     },
     "Error code %@" : {
       "comment" : "A11y label for the error-code chip. The placeholder is a stable error code such as WPE_SCENE_PARSE.",
-      "extractionState" : "stale",
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -28656,6 +28586,41 @@
         }
       }
     },
+    "HDR output" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "HDR output"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Salida HDR"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "HDR 出力"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "HDR 输出"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "HDR 輸出"
+          }
+        }
+      }
+    },
     "HDR-aware output. Requires an HDR-capable display." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -33910,35 +33875,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已鎖定"
-          }
-        }
-      }
-    },
-    "Log" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Registro"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ログ"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "日志"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "記錄"
           }
         }
       }
@@ -42636,41 +42572,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "開啟此項的 Steam 創意工坊頁面"
-          }
-        }
-      }
-    },
-    "Open this project" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Open this project"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Abrir este proyecto"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "このプロジェクトを開く"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "打开此项目"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "開啟此專案"
           }
         }
       }
@@ -55329,6 +55230,76 @@
         }
       }
     },
+    "Scene wallpapers only. HDR scenes can render brighter than white on HDR displays. Changes reload wallpapers." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scene wallpapers only. HDR scenes can render brighter than white on HDR displays. Changes reload wallpapers."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solo fondos de escena. Las escenas HDR pueden verse más brillantes que el blanco en pantallas HDR. Los cambios recargan los fondos."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "シーン壁紙のみ。HDR ディスプレイでは HDR シーンが白より明るく表示されます。変更すると壁紙が再読み込みされます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仅场景壁纸。在 HDR 显示器上，HDR 场景可以显示得比白色更亮。更改后会重新加载壁纸。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "僅場景桌布。在 HDR 顯示器上，HDR 場景可以顯示得比白色更亮。變更後會重新載入桌布。"
+          }
+        }
+      }
+    },
+    "Scene wallpapers only. Lets HDR scenes glow brighter than white on HDR displays; changes reload wallpapers." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scene wallpapers only. Lets HDR scenes glow brighter than white on HDR displays; changes reload wallpapers."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solo fondos de escena. Permite que las escenas HDR brillen más que el blanco en pantallas HDR; los cambios recargan los fondos."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "シーン壁紙のみ。HDR ディスプレイで HDR シーンが白より明るく輝くようになります。変更すると壁紙が再読み込みされます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仅场景壁纸。让 HDR 场景在 HDR 显示器上发出比白色更亮的光；更改后会重新加载壁纸。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "僅場景桌布。讓 HDR 場景在 HDR 顯示器上發出比白色更亮的光；變更後會重新載入桌布。"
+          }
+        }
+      }
+    },
     "Scene wallpapers only: reduces frame rate when covered or on battery." : {
       "comment" : "Settings explanation; preserve scope and consequences.",
       "extractionState" : "manual",
@@ -59703,42 +59674,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "雪"
-          }
-        }
-      }
-    },
-    "Some assets the scene needs aren't where the renderer expected them. The renderer ships built-in equivalents for the most common Wallpaper Engine framework files; if this scene needs something extra, an advanced option in the Workshop Library lets you link a Wallpaper Engine install. Otherwise, re-downloading the project in Steam usually fixes it." : {
-      "comment" : "Wallpaper Engine fallback warning body.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Some assets the scene needs aren't where the renderer expected them. The renderer ships built-in equivalents for the most common Wallpaper Engine framework files; if this scene needs something extra, an advanced option in the Workshop Library lets you link a Wallpaper Engine install. Otherwise, re-downloading the project in Steam usually fixes it."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Algunos recursos que necesita la escena no están donde el renderizador los esperaba. El renderizador incluye equivalentes integrados de los archivos de framework más habituales de Wallpaper Engine; si esta escena necesita algo más, una opción avanzada de la biblioteca del Workshop permite vincular una instalación de Wallpaper Engine. Si no, volver a descargar el proyecto en Steam suele resolverlo."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "シーンに必要な一部のアセットが、レンダラーの想定した場所にありません。レンダラーには、最も一般的な Wallpaper Engine フレームワークファイルの代替アセットが組み込まれています。このシーンに追加のファイルが必要な場合は、ワークショップライブラリの詳細オプションで Wallpaper Engine のインストール先をリンクできます。それ以外の場合は、Steam でプロジェクトを再ダウンロードすると通常は修正できます。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "场景所需的部分资源不在渲染器预期的位置。渲染器已内置最常见 Wallpaper Engine 框架文件的等效资源；如果此场景还需要其他文件，可在创意工坊库的高级选项中关联 Wallpaper Engine 安装。否则，通常在 Steam 中重新下载项目即可修复。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "場景所需的部分資源不在渲染器預期的位置。渲染器內建了最常見 Wallpaper Engine 框架檔案的等效資源；如果此場景需要其他檔案，可在創意工坊資料庫的進階選項中連結 Wallpaper Engine 安裝位置。否則，通常在 Steam 重新下載專案即可修復。"
           }
         }
       }
@@ -68862,42 +68797,6 @@
         }
       }
     },
-    "This wallpaper relies on other Workshop projects we don't have on disk yet. Subscribe to them in Steam, then re-import this folder." : {
-      "comment" : "Wallpaper Engine fallback warning body.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "This wallpaper relies on other Workshop projects we don't have on disk yet. Subscribe to them in Steam, then re-import this folder."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Este fondo de pantalla depende de otros proyectos de Workshop que aún no tenemos en el disco. Suscríbete a ellos en Steam y vuelve a importar esta carpeta."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "この壁紙は、まだディスク上にない他のワークショッププロジェクトに依存しています。Steam でそれらをサブスクライブしてから、このフォルダを再インポートしてください。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "此壁纸依赖本机尚未下载的其他创意工坊项目。请在 Steam 中订阅它们，然后重新导入此文件夹。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "此桌布依賴尚未存在於磁碟上的其他創意工坊專案。請在 Steam 中訂閱它們，然後重新匯入此資料夾。"
-          }
-        }
-      }
-    },
     "This wallpaper type is not supported" : {
       "comment" : "Wallpaper Engine fallback warning title.",
       "localizations" : {
@@ -71278,42 +71177,6 @@
         }
       }
     },
-    "Unsupported image format" : {
-      "comment" : "Wallpaper Engine fallback warning title.",
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Unsupported image format"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Formato de imagen no compatible"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "サポートされていない画像形式"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "不支持的图像格式"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "不支援的圖片格式"
-          }
-        }
-      }
-    },
     "unsupported Metal render target" : {
       "comment" : "Scene failure reason.",
       "extractionState" : "manual",
@@ -73482,41 +73345,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "查看詳細資訊"
-          }
-        }
-      }
-    },
-    "View in Workshop" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "View in Workshop"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ver en Workshop"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ワークショップで表示"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在创意工坊中查看"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在創意工坊中檢視"
           }
         }
       }

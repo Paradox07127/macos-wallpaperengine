@@ -23,8 +23,10 @@ struct WPEMetalUpscalePlan: Equatable, Sendable {
         case active
         case settingOff
         case deviceUnsupported
-        /// `rgba16Float`, which the `.perceptual` scaler refuses — measured
-        /// `created=false` on Apple M5 Pro.
+        /// An HDR scene while display-HDR output is off: the scene renders `rgba16Float`
+        /// into an 8-bit drawable, and the scaler does not tone map across that pair.
+        /// With HDR output on the pair is float→float and the scaler runs in `.hdr` mode,
+        /// so this verdict no longer applies.
         case hdrScene
         /// `.center` keeps source pixels 1:1, so a full-rect scale is never right.
         case fitModeIncompatible
@@ -109,12 +111,17 @@ struct WPEMetalUpscalePlan: Equatable, Sendable {
         drawableSize: CGSize,
         fitMode: WPEPresentFitMode,
         isHDR: Bool,
+        hdrOutputEnabled: Bool,
         renderScale: Double,
         deviceSupportsScaler: Bool
     ) -> WPEMetalUpscalePlan {
         guard renderScale < 1.0 else { return inactive(.settingOff) }
         guard deviceSupportsScaler else { return inactive(.deviceUnsupported) }
-        guard !isHDR else { return inactive(.hdrScene) }
+        // An HDR scene renders float. That only reaches the scaler when the drawable is
+        // float too — i.e. display-HDR output is on — because `MTLFXSpatialScaler` does not
+        // tone map a float source down to an 8-bit drawable. With HDR output on, the pair
+        // is float→float and the scaler runs in `.hdr` mode.
+        guard !isHDR || hdrOutputEnabled else { return inactive(.hdrScene) }
         guard fitMode != .center else { return inactive(.fitModeIncompatible) }
         guard drawableSize.width > 0, drawableSize.height > 0 else {
             return inactive(.drawableUnknown)

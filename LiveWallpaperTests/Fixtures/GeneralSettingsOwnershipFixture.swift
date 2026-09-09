@@ -48,6 +48,7 @@ enum OwnershipFixture {
             "adaptiveFrameRateEnabled",
             "offMainRenderEnabled",
             "metalFXRenderScale",
+            "displayHDROutputEnabled",
         ],
         .audio: [
             "audioResponseEnabled",

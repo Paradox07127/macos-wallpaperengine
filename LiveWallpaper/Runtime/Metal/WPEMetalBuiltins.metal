@@ -1120,6 +1120,13 @@ struct WPESceneModelGenericUniforms {
     float4 reflection;
     /// xy = render size in pixels, z = width/height (WPE `g_Screen`), w unused.
     float4 screen;
+    /// chroma4 only, appended so generic2/generic4 keep their layout:
+    /// rgb = g_TintFront, w = g_TintPigmentation.
+    float4 chromaTintFront;
+    /// chroma4 only: rgb = g_TintBack, w = g_TintExponent.
+    float4 chromaTintBack;
+    /// chroma4 only: xy = g_Texture8Resolution, z = noise texture bound (0/1).
+    float4 chromaNoise;
 };
 
 /// Port of generic4.frag's `#if REFLECTION` block. `reflectionSource` is WPE's
@@ -1210,6 +1217,93 @@ fragment half4 wpe_scene_model_generic4_fragment(
         combined += u.emissive.rgb * combined * max(0.0, maskAlpha * (u.emissive.w - 1.0));
     }
     // Premultiplied-alpha render target — see wpe_genericimage2_fragment.
+    return half4(float4(combined * alpha, alpha));
+}
+
+// Port of assets/shaders/chroma4.frag (2.8.26, pulled from the Windows install).
+// Same skeleton as generic4 above — the two shaders share albedo/emissive/ambient/
+// CombineLighting/REFLECTION/HDR verbatim — plus chroma4's two additions, kept in
+// source order because both feed the lighting that follows them:
+//
+//  1. View-dependent tint: `albedo.rgb *= mix(g_TintBack, g_TintFront, dot(V, N))`.
+//     `dot` is NOT clamped in the source, so the mix extrapolates past both ends on
+//     back-facing normals; clamping here would flatten exactly the effect the shader
+//     is named after.
+//  2. Pigment noise: screen-space noise reflected about the normal, cubed, then added
+//     to the light's luminance. This is the hand-painted grain over the cloud layer.
+//
+// Not ported (all behind combos this material does not enable, same simplifications
+// generic4 already makes): TINTMASKALPHA, NORMALMAP, PBRMASKS, toon gradient, fog.
+// `PerformLighting_V1` has no definition anywhere in the engine assets — WPE injects
+// it — but it contributes only scene-light specular, and we feed no scene lights, so
+// it evaluates to 0 here exactly as it does for generic4.
+fragment half4 wpe_scene_model_chroma4_fragment(
+    WPESceneModelVertexOut in [[stage_in]],
+    texture2d<half, access::sample> texture0 [[texture(0)]],
+    texture2d<half, access::sample> texture1 [[texture(1)]],
+    texture2d<half, access::sample> texture3 [[texture(3)]],
+    texture2d<half, access::sample> texture8 [[texture(8)]],
+    constant WPESceneModelGenericUniforms& u [[buffer(0)]],
+    constant WPESceneModelMeshUniforms& mesh [[buffer(1)]]
+) {
+    constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
+    constexpr sampler noiseSampler(address::repeat, filter::linear);
+    float4 albedo = float4(texture0.sample(linearSampler, in.uv));
+    albedo.rgb *= u.tintColorAlpha.rgb;
+    float alpha = albedo.a * u.tintColorAlpha.a;
+
+    float3 worldNormal = normalize(in.worldNormal);
+    float3 eyeToPoint = mesh.eyeAndPadding.xyz - in.worldPos;
+    float viewDist = length(eyeToPoint);
+    float3 viewVector = eyeToPoint / max(viewDist, 1e-5);
+
+    // (1) chroma tint — deliberately unclamped, see header.
+    albedo.rgb *= mix(u.chromaTintBack.rgb, u.chromaTintFront.rgb, dot(viewVector, worldNormal));
+
+    float maskAlpha = u.brightnessFlags.y > 0.5
+        ? float(texture1.sample(linearSampler, in.uv).a)
+        : 0.0;
+    float3 light = max(float3(0.0), u.emissive.rgb * albedo.rgb * (maskAlpha * u.emissive.w));
+
+    // (2) pigment noise. `screenPos` is gl_Position.xyw, the same value the reflection
+    // block divides; the source scales the UV by g_Screen/g_Texture8Resolution so the
+    // grain stays at texel density regardless of render size.
+    if (u.chromaNoise.z > 0.5) {
+        float2 screenUV = (in.screenPos.xy / max(in.screenPos.z, 1e-5)) * 0.5 + 0.5;
+        screenUV *= u.screen.xy / max(u.chromaNoise.xy, float2(1.0));
+        float3 pigmentNoise = float3(texture8.sample(noiseSampler, screenUV).rgb);
+        float pigmentFactor = abs(sin(
+            9.0 * viewDist * dot(reflect(pigmentNoise * 2.0 - 1.0, viewVector), worldNormal)
+        ));
+        pigmentFactor *= pigmentFactor * pigmentFactor;
+        light += (pigmentFactor - 0.25) * u.chromaTintFront.w
+            * dot(light, float3(0.299, 0.587, 0.114));
+    }
+
+    float3 hemisphere = mix(
+        u.skylightColor.rgb, u.ambientLighting.rgb, dot(worldNormal, float3(0.0, 1.0, 0.0)) * 0.5 + 0.5
+    );
+    float3 ambient = u.ambientLighting.w > 0.5
+        ? hemisphere * albedo.rgb
+        : albedo.rgb;
+
+    float3 combined;
+    if (u.brightnessFlags.z > 0.5) {
+        float lightLen = length(light);
+        float overbright = (saturate(lightLen - 2.0) * 0.5) / max(0.01, lightLen);
+        combined = saturate(ambient + light) + light * overbright;
+    } else {
+        combined = ambient + light;
+    }
+    if (u.brightnessFlags.w > 0.5) {
+        combined += wpe_scene_model_reflection(
+            worldNormal, viewVector, in.screenPos, mesh.viewProjectionMatrix, texture3, u
+        );
+    }
+    if (u.brightnessFlags.z > 0.5) {
+        combined *= u.brightnessFlags.x;
+        combined += u.emissive.rgb * combined * max(0.0, maskAlpha * (u.emissive.w - 1.0));
+    }
     return half4(float4(combined * alpha, alpha));
 }
 

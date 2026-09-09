@@ -629,7 +629,7 @@ extension WPEMetalSceneRenderer {
                 ?? pass.pass.source
             var refs: [(reference: WPETextureReference, isRequired: Bool)] = [(reference, true)]
             // Match the dispatcher slot span. Stopping at 4 used to miss higher authored slots until encode.
-            for slot in 1..<WPEShaderTranspiler.customTextureSlotCount {
+            for slot in 1..<WPEShaderTranspiler.customTextureSlotLimit {
                 if let extra = pass.pass.binds[slot] ?? pass.textureBindings[slot] ?? pass.pass.textures[slot] {
                     refs.append((extra, false))
                 }
