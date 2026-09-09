@@ -59,6 +59,9 @@ struct GeneralSettingsView: View {
     /// Runtime reads this at executor init (`WPEMetalFXSpatialUpscaler.renderScale`);
     /// unset and 1.0 both mean upscaling off.
     @AppStorage(WPEMetalFXSpatialUpscaler.renderScaleDefaultsKey, store: .appScoped()) var metalFXRenderScale = 1.0
+    /// Runtime reads this once per surface construction (`WPEDisplayHDROutput`), so a
+    /// change only lands on the next session rebuild — same shape as the two flags above.
+    @AppStorage(WPEDisplayHDROutput.defaultsKey) var displayHDROutputEnabled = false
     #endif
     @State var weatherLocation: WeatherLocationPreference
     @State var locationAuthorizationStatus: CLAuthorizationStatus

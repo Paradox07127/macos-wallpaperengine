@@ -30,6 +30,7 @@ struct WPESwiftShaderCompiler: Sendable {
                     fragmentFunctionName: payload.fragmentFunctionName,
                     uniformLayout: payload.uniformSlots(),
                     samplerNames: payload.samplerNames,
+                    textureSlotCount: payload.textureSlotCount,
                     shaderName: request.shaderName,
                     processedVertex: request.processedVertexSource,
                     processedFragment: request.processedFragmentSource,
@@ -89,6 +90,7 @@ struct WPESwiftShaderCompiler: Sendable {
             fragmentFunctionName: "wpe_translated_fragment",
             uniformLayout: translation.uniformLayout,
             samplerNames: translation.samplers,
+            textureSlotCount: translation.textureSlotCount,
             shaderName: request.shaderName,
             processedVertex: request.processedVertexSource,
             processedFragment: request.processedFragmentSource,
@@ -106,6 +108,7 @@ struct WPESwiftShaderCompiler: Sendable {
         fragmentFunctionName: String,
         uniformLayout: [WPEUniformSlot],
         samplerNames: [String],
+        textureSlotCount: Int,
         shaderName: String,
         processedVertex: String,
         processedFragment: String,
@@ -144,7 +147,8 @@ struct WPESwiftShaderCompiler: Sendable {
             fragmentFunctionName: fragmentFunctionName,
             mslSource: mslSource,
             uniformLayout: uniformLayout,
-            samplerNames: samplerNames
+            samplerNames: samplerNames,
+            textureSlotCount: textureSlotCount
         )
     }
 

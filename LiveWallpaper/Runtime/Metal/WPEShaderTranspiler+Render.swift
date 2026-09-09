@@ -11,6 +11,9 @@ extension WPEShaderTranspiler {
         uniforms: [WPEUniformDecl],
         totalUniformSlots: Int,
         samplers: [WPESamplerDecl],
+        /// Slots to declare. Sized per shader by `textureSlotCount(for:)`; the dispatcher
+        /// binds exactly this many, so the two must come from the same value.
+        textureSlotCount: Int,
         varyings: [WPEVaryingDecl],
         helpers: String,
         mainBody: String,
@@ -97,24 +100,29 @@ extension WPEShaderTranspiler {
             out.append("")
         }
 
-        var signature = ["fragment float4 wpe_translated_fragment("]
-        signature.append("    WPEStageIn in [[stage_in]],")
+        // Collected then joined with commas rather than appended with trailing ones: a
+        // shader that declares no samplers at all makes `textureSlotCount` zero, and the
+        // old form left a dangling comma on the last fixed parameter.
+        var parameters = ["    WPEStageIn in [[stage_in]]"]
         if !uniforms.isEmpty {
-            signature.append("    constant WPEUniforms& u [[buffer(0)]],")
+            parameters.append("    constant WPEUniforms& u [[buffer(0)]]")
         }
-        for slot in 0..<Self.customTextureSlotCount {
-            signature.append("    texture2d<float> tex\(slot) [[texture(\(slot))]],")
+        for slot in 0..<textureSlotCount {
+            parameters.append("    texture2d<float> tex\(slot) [[texture(\(slot))]]")
         }
         // Per-slot samplers. Address mode (clamp vs repeat) and filter (linear vs nearest) are
         // bound at runtime from each texture's TEXI flags in
         // WPEMetalRenderExecutor's custom-shader dispatch — replacing the old annotation
         // heuristic that clamp-sampled every content texture and froze scrolled tiling maps
         // (water-normal, noise, flow) once their sample UVs left [0,1]. Direct `g_TextureN` reads use `wpeSamplerN`; helper samples fall back to the file-scope clamp/repeat constants.
-        for slot in 0..<Self.customTextureSlotCount {
-            let comma = slot < Self.customTextureSlotCount - 1 ? "," : ""
-            signature.append("    sampler wpeSampler\(slot) [[sampler(\(slot))]]\(comma)")
+        for slot in 0..<textureSlotCount {
+            parameters.append("    sampler wpeSampler\(slot) [[sampler(\(slot))]]")
         }
-        signature.append(") {")
+        let signature = [
+            "fragment float4 wpe_translated_fragment(",
+            parameters.joined(separator: ",\n"),
+            ") {"
+        ]
         out.append(signature.joined(separator: "\n"))
 
         // Alias each sampler to its ACTUAL texture slot (`g_Texture2` → tex2), matching how the

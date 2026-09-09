@@ -40,7 +40,8 @@ final class WPERenderSurface: NSObject, MTKViewDelegate {
         view.wantsLayer = true
         // View config lifted verbatim from the old renderer init — the initial
         // pacing (paused, on-demand redraw, 30 FPS) the renderer expects.
-        view.colorPixelFormat = WPEMetalRenderExecutor.outputPixelFormat
+        let hdrOutput = WPEDisplayHDROutput.isEnabled
+        view.colorPixelFormat = WPEDisplayHDROutput.drawablePixelFormat(hdrOutputEnabled: hdrOutput)
         view.clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
         view.preferredFramesPerSecond = WPEMetalSceneRenderer.defaultPreferredFPS
         view.autoresizingMask = [.width, .height]
@@ -53,6 +54,7 @@ final class WPERenderSurface: NSObject, MTKViewDelegate {
         // is off while the experiment is on.
         metalLayer.maximumDrawableCount = 3
         metalLayer.framebufferOnly = !WPEMetalFXSpatialUpscaler.isExperimentEnabled
+        WPEDisplayHDROutput.apply(to: metalLayer, hdrOutputEnabled: hdrOutput)
         let mailbox = WPEPointerMailbox()
         self.mtkView = view
         self.mailbox = mailbox
@@ -212,6 +214,58 @@ final class WPERenderSurface: NSObject, MTKViewDelegate {
             // the mailbox so the first mailbox read after layout isn't `.none`.
             self.mailbox.publishGeometry(WPEPointerPublisher.geometry(of: self.mtkView))
         }
+    }
+}
+
+/// True display-HDR output — the counterpart of WPE's "Ultra (Display HDR)" post-processing
+/// setting (WPE 2.0.97, 2022-01-27, shipped as experimental and off by default).
+///
+/// On: the present drawable becomes `rgba16Float` + extendedLinearDisplayP3 + EDR, so an HDR
+/// scene's >1 overbright — which already survives the whole offscreen chain, since
+/// `general.hdr` renders every FBO at `rgba16Float` — stops being clamped by the 8-bit
+/// drawable at present. Values past the display's headroom are tone mapped by the system.
+/// SDR scenes are unaffected in appearance (their values are <= 1); they only pay the wider
+/// drawable. Off: byte-for-byte the previous path.
+///
+/// The wallpaper window level does get EDR — measured with a 4-row control matrix, including
+/// a negative control, in `.notes/probes/2026-09-09-edr-wallpaper-level.md`.
+///
+/// Global rather than per-scene on purpose: `WPEPresentLayer`'s contract is that the main
+/// thread must not mutate the layer while the render actor is presenting, so the format is
+/// settled once at surface construction, before any frame exists.
+enum WPEDisplayHDROutput {
+    /// `defaults write com.loomscreen.pro WPEMetalDisplayHDROutputEnabled -bool YES`
+    static let defaultsKey = "WPEMetalDisplayHDROutputEnabled"
+
+    static var isEnabled: Bool {
+        UserDefaults.standard.object(forKey: defaultsKey) as? Bool ?? false
+    }
+
+    /// Whether any attached display can actually show EDR. WPE gates its own
+    /// "Ultra (Display HDR)" option the same way — the option "will only appear when a
+    /// screen with HDR enabled is connected" (WPE 2.0.97 release notes) — and on an
+    /// all-SDR setup the switch would cost drawable bandwidth for no visible change.
+    ///
+    /// `maximumPotential…` is the display's capability and is stable; the sibling
+    /// `maximum…ExtendedDynamicRangeColorComponentValue` is NOT usable here — it tracks
+    /// current brightness rather than capability and reads 1.0 on an HDR display turned
+    /// up bright (measured 2026-09-09, `.notes/probes/2026-09-09-edr-wallpaper-level.md`).
+    @MainActor
+    static var hasEDRCapableScreen: Bool {
+        NSScreen.screens.contains { $0.maximumPotentialExtendedDynamicRangeColorComponentValue > 1 }
+    }
+
+    /// Pure so it is testable without touching `UserDefaults.standard`.
+    static func drawablePixelFormat(hdrOutputEnabled: Bool) -> MTLPixelFormat {
+        hdrOutputEnabled ? .rgba16Float : WPEMetalRenderExecutor.outputPixelFormat
+    }
+
+    /// Extended-range colorspace + the EDR request. Construction-time only: calling this
+    /// once frames are in flight is the race `WPEPresentLayer` warns about.
+    static func apply(to layer: CAMetalLayer, hdrOutputEnabled: Bool) {
+        guard hdrOutputEnabled else { return }
+        layer.colorspace = CGColorSpace(name: CGColorSpace.extendedLinearDisplayP3)
+        layer.wantsExtendedDynamicRangeContent = true
     }
 }
 
