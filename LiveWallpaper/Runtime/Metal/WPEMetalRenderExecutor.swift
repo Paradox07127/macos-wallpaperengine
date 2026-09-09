@@ -482,11 +482,6 @@ final class WPEMetalRenderExecutor {
     var loggedStaticLayerCacheHits: Set<String> = []
     /// Throttles the generic4 component-map resolve-failure diagnostic to once per objectID.
     var loggedComponentMapResolveFailures: Set<String> = []
-    /// One diagnostic per (shader, uniform) whose annotation carries a `require`.
-    var loggedUniformRequireDecisions: Set<String> = []
-    /// One line per `.mdl` layer the mesh encoder declined.
-    var loggedSceneModelRejects: Set<String> = []
-    var loggedSceneModelEncodeProbe: Set<String> = []
     /// Auxiliary texture slots that failed to resolve, so the fall-back-to-primary
     /// warning is emitted once per pass+slot instead of every frame.
     var loggedUnresolvedTextureSlots: Set<String> = []
@@ -1778,6 +1773,12 @@ final class WPEMetalRenderExecutor {
         }
 
         let needsDepth = depthCache.needsAttachment(for: pass)
+        // WPE's perspective projection is reversed-Z. An otherwise orthographic scene gets
+        // it too for the objects that author `perspective: true` — and in such a scene those
+        // models are the only depth-writing content, since 2D layers author
+        // `depthtest: disabled`.
+        let usesReversedZ = frameState.cameraUniforms.usesPerspectiveProjection
+            || frameState.cameraUniforms.usesObjectPerspective(objectID: drawLayer.objectID)
 
         let shouldLoadExistingAttachment = shouldLoadExistingAttachment(
             for: pass,
@@ -1835,7 +1836,7 @@ final class WPEMetalRenderExecutor {
                     frameState.markInitialized(depth)
                 }
                 descriptor.depthAttachment.clearDepth = WPEMetalDepthStateCache.clearDepth(
-                    reversedZ: frameState.cameraUniforms.usesPerspectiveProjection
+                    reversedZ: usesReversedZ
                 )
             }
 
@@ -1859,12 +1860,12 @@ final class WPEMetalRenderExecutor {
         }
         defer { if solidRun == nil { encoder.endEncoding() } }
 
-        encoder.setFrontFacing(.counterClockwise)
+        encoder.setFrontFacing(frameState.cameraUniforms.frontFacingWinding(objectID: drawLayer.objectID))
         encoder.setCullMode(WPEMetalPipelineCache.cullMode(for: pass.pass.cullMode))
         encoder.setDepthStencilState(depthCache.stencilState(
             depthTest: pass.pass.depthTest,
             depthWrite: pass.pass.depthWrite,
-            reversedZ: frameState.cameraUniforms.usesPerspectiveProjection
+            reversedZ: usesReversedZ
         ))
         if WPESceneDebugArtifacts.shared.isEnabled {
             WPESceneDebugArtifacts.shared.appendLog(
@@ -1876,20 +1877,6 @@ final class WPEMetalRenderExecutor {
             )
         }
 
-        // Unconditional for material passes: every earlier probe here was keyed off an
-        // assumption (a `.mdl` extension on some layer) and stayed silent exactly when the
-        // assumption was the thing being tested.
-        if case .material = pass.pass.phase,
-           loggedSceneModelEncodeProbe.insert(pass.pass.id).inserted {
-            Logger.notice(
-                "[WPE.model] encode reached pass=\(pass.pass.id) shader=\(pass.pass.shader)"
-                    + " target=\(pass.pass.target) layer=\(layer.objectID)"
-                    + " drawLayer=\(drawLayer.objectID)"
-                    + "/\((drawLayer.imagePath as NSString).lastPathComponent)"
-                    + " puppetModel=\(puppetModel != nil)",
-                category: .wpeRender
-            )
-        }
         let drewSceneModel = try encodeSceneModelMaterialPassIfNeeded(
             pass: pass,
             layer: drawLayer,

@@ -3,6 +3,7 @@ import AppKit
 import Foundation
 import LiveWallpaperCore
 import LiveWallpaperProWPE
+import Metal
 import QuartzCore
 import simd
 
@@ -359,9 +360,31 @@ struct WPEMetalCameraUniforms: Equatable, Sendable {
     static let viewRight = SIMD3<Double>(1, 0, 0)
     static let viewUp = SIMD3<Double>(0, 1, 0)
 
+    /// WPE's near/far for the perspective camera it builds inside a 2D scene. NOT the
+    /// scene's `nearz`/`farz`: the depth row of `g_ViewProjectionMatrix` is byte-identical
+    /// across four RenderDoc captures whose eye distances range from 990 to 11654, and the
+    /// authored far plane (10000 in all four) would put the canvas plane itself outside the
+    /// frustum. Reversed-Z — near maps to 1, far to 0.
+    static let objectPerspectiveNearZ = 5.0
+    static let objectPerspectiveFarZ = 15000.0
+    /// Eye WPE feeds these draws: the canvas centre, 2000 in front of it. Identical in
+    /// 3437487219 / 3448877775 / 3554161528 / 2370927443 and unrelated to the authored
+    /// `camera.eye` (3437487219 authors `-783.539 -454.321 0`).
+    static let objectPerspectiveEyeZ = 2000.0
+
     let renderSize: CGSize
     let viewProjectionMatrix: [Double]
     let usesPerspectiveProjection: Bool
+    /// `general.perspectiveoverridefov`, in degrees. 0 means the scene never built a
+    /// perspective camera, so an object flag alone cannot conjure one.
+    let perspectiveOverrideFOVDegrees: Double
+    /// Objects whose `perspective: true` selects the camera below instead of the scene
+    /// matrix. WPE keeps a perspective `g_ViewProjectionMatrix` available scene-wide
+    /// whenever the override FOV is set; only these objects are projected through it.
+    let perspectiveObjectIDs: Set<String>
+    /// Column-major, same layout as `viewProjectionMatrix`. Equals it when no perspective
+    /// camera exists.
+    let objectPerspectiveViewProjectionMatrix: [Double]
     let sceneCamera: WPESceneCamera
     /// Raw `general.ambientcolor`/`skylightcolor` (no sRGB conversion).
     let lightAmbientColor: SIMD3<Double>
@@ -385,6 +408,8 @@ struct WPEMetalCameraUniforms: Equatable, Sendable {
         orthogonalProjection: WPESceneOrthogonalProjection,
         sceneCamera: WPESceneCamera,
         usesPerspectiveProjection: Bool = false,
+        perspectiveOverrideFOVDegrees: Double = 0,
+        perspectiveObjectIDs: Set<String> = [],
         lightAmbientColor: SIMD3<Double> = SIMD3<Double>(1, 1, 1),
         lightSkylightColor: SIMD3<Double> = SIMD3<Double>(1, 1, 1),
         sceneHDR: Bool = false,
@@ -394,12 +419,14 @@ struct WPEMetalCameraUniforms: Equatable, Sendable {
         let height = max(orthogonalProjection.height, 1)
         renderSize = CGSize(width: width, height: height)
         self.usesPerspectiveProjection = usesPerspectiveProjection
+        self.perspectiveOverrideFOVDegrees = perspectiveOverrideFOVDegrees
+        self.perspectiveObjectIDs = perspectiveObjectIDs
         self.sceneCamera = sceneCamera
         self.lightAmbientColor = lightAmbientColor
         self.lightSkylightColor = lightSkylightColor
         self.sceneHDR = sceneHDR
         self.bloom = bloom
-        viewProjectionMatrix = usesPerspectiveProjection
+        let sceneMatrix = usesPerspectiveProjection
             ? Self.perspectiveViewProjectionMatrix(
                 sceneCamera: sceneCamera,
                 aspect: Double(width) / Double(height)
@@ -410,6 +437,86 @@ struct WPEMetalCameraUniforms: Equatable, Sendable {
                 nearZ: sceneCamera.nearZ,
                 farZ: sceneCamera.farZ
             )
+        viewProjectionMatrix = sceneMatrix
+        objectPerspectiveViewProjectionMatrix = perspectiveOverrideFOVDegrees > 0
+            ? Self.objectPerspectiveViewProjectionMatrix(
+                width: width, height: height, fovDegrees: perspectiveOverrideFOVDegrees
+            )
+            : sceneMatrix
+    }
+
+    /// Whether `objectID` authored `perspective: true` in a scene that actually has a
+    /// perspective camera to project it through.
+    func usesObjectPerspective(objectID: String) -> Bool {
+        perspectiveOverrideFOVDegrees > 0 && perspectiveObjectIDs.contains(objectID)
+    }
+
+    func objectViewProjectionMatrix(objectID: String) -> [Double] {
+        usesObjectPerspective(objectID: objectID)
+            ? objectPerspectiveViewProjectionMatrix
+            : viewProjectionMatrix
+    }
+
+    /// Which triangle winding faces the viewer once `objectID`'s projection has been
+    /// applied. The orthographic canvas matrix negates Y (row 1 is `-2/H`, top-left origin)
+    /// and a negative determinant on the projection's X/Y block reverses apparent winding;
+    /// the perspective camera does not negate Y, so the same mesh presents the opposite
+    /// face. Only matters once something is culled — WPE's `cullmode: "normal"` model
+    /// passes are, and they rasterize `frontCCW` in the capture.
+    func frontFacingWinding(objectID: String) -> MTLWinding {
+        let matrix = objectViewProjectionMatrix(objectID: objectID)
+        guard matrix.count >= 16 else { return .counterClockwise }
+        let determinant = matrix[0] * matrix[5] - matrix[4] * matrix[1]
+        return determinant < 0 ? .clockwise : .counterClockwise
+    }
+
+    /// The eye the perspective draws are shaded from (specular, rim, reflection view vector).
+    var objectPerspectiveEye: SIMD3<Double> {
+        SIMD3<Double>(
+            Double(renderSize.width) * 0.5,
+            Double(renderSize.height) * 0.5,
+            Self.objectPerspectiveEyeZ
+        )
+    }
+
+    /// WPE's perspective camera for a 2D scene, reproduced element for element from the
+    /// Windows capture of 3437487219 (ordinals 5/8, vertex `g_ViewProjectionMatrix`) and
+    /// cross-checked against 3448877775, 3554161528 and 2370927443 — two canvases, three
+    /// authored FOVs, one formula. Column-major, rows:
+    ///
+    ///     [ f/aspect, 0, 0,       -f·H/2   ]
+    ///     [ 0,        f, 0,       -f·H/2   ]
+    ///     [ 0,        0, n/(F-n),  n·F/(F-n) ]
+    ///     [ 0,        0, -1,       f·H/2   ]
+    ///
+    /// `f = cot(fov/2)` and the eye sits at the canvas centre pushed back to `f·H/2` — the
+    /// distance at which the z = 0 plane exactly fills the vertical field of view, which is
+    /// what keeps an ortho-authored canvas its own size under this camera. The authored
+    /// `general.fov` (50 in all four scenes) does NOT reproduce the matrix;
+    /// `perspectiveoverridefov` does.
+    static func objectPerspectiveViewProjectionMatrix(
+        width: CGFloat,
+        height: CGFloat,
+        fovDegrees: Double
+    ) -> [Double] {
+        let halfWidth = Double(max(width, 1)) * 0.5
+        let halfHeight = Double(max(height, 1)) * 0.5
+        let fov = max(min(fovDegrees, 179), 1) * .pi / 180
+        let focal = 1.0 / tan(fov * 0.5)
+        let distance = focal * halfHeight
+        let near = objectPerspectiveNearZ
+        let far = objectPerspectiveFarZ
+        let depthScale = near / (far - near)
+        return [
+            // A·halfWidth == focal·halfHeight == distance, so both translations are -distance.
+            distance / halfWidth, 0, 0, 0,
+            0, focal, 0, 0,
+            0, 0, depthScale, -1,
+            // The depth translation is the projection's own bias MINUS `depthScale`
+            // times the eye distance: this is P·V, and the view moves the eye to the
+            // origin in z as well as x/y.
+            -distance, -distance, near * far / (far - near) - depthScale * distance, distance,
+        ]
     }
 
     private init(
@@ -425,6 +532,9 @@ struct WPEMetalCameraUniforms: Equatable, Sendable {
         self.renderSize = renderSize
         self.viewProjectionMatrix = viewProjectionMatrix
         self.usesPerspectiveProjection = usesPerspectiveProjection
+        perspectiveOverrideFOVDegrees = 0
+        perspectiveObjectIDs = []
+        objectPerspectiveViewProjectionMatrix = viewProjectionMatrix
         self.sceneCamera = sceneCamera
         self.lightAmbientColor = lightAmbientColor
         self.lightSkylightColor = lightSkylightColor

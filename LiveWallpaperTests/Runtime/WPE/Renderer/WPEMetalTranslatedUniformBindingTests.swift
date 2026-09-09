@@ -743,6 +743,14 @@ struct WPEMetalDerivedUniformPackingTests {
             translation: SIMD2<Float>(Float(bitPattern: 0xFF80_1234), -0.0)
         ), at: 1)
         compare(executor: executor, layout: layout(), table: table)
+        table.set(texture: texture, samplingDescriptor: WPETexSpriteSamplingDescriptor(
+            rotation: SIMD4<Float>(Float(bitPattern: 0xFFC0_5678), Float.leastNonzeroMagnitude,
+                                   -Float.leastNonzeroMagnitude, -0.0),
+            translation: SIMD2<Float>(Float.leastNonzeroMagnitude, Float(bitPattern: 0xFFC0_1234))
+        ), at: 1)
+        #expect(executor.directUniformVector(.textureRotation(1), texturesBySlot: table) != nil)
+        #expect(executor.directUniformVector(.textureTranslation(1), texturesBySlot: table) != nil)
+        compare(executor: executor, layout: layout(), table: table)
         for bits: UInt32 in [0x7F80_1234, 0xFF80_1234] {
             for lane in 0 ..< 4 {
                 var rotation = SIMD4<Float>(1, 2, 3, 4)

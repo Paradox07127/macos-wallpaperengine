@@ -88,11 +88,16 @@ final class WPEMetalPipelineCache {
         return state
     }
 
+    /// WPE's authored `cullmode`. `normal` means ordinary back-face culling, not "no
+    /// override": RenderDoc on 3437487219 shows the two `cullmode: "normal"` model passes
+    /// (ordinals 5/8) rasterizing with `cullMode: back` while every `cullmode: "nocull"`
+    /// image layer in the same frame reads `cullMode: none`. Mapping `normal` to `.none`
+    /// drew a solid sphere's far hemisphere over its near one through translucent blending.
     static func cullMode(for raw: String) -> MTLCullMode {
         switch raw.lowercased() {
-        case "back":
+        case "back", "normal":
             return .back
-        case "front":
+        case "front", "inverted":
             return .front
         default:
             return .none
