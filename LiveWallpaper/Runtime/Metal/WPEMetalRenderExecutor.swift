@@ -482,6 +482,11 @@ final class WPEMetalRenderExecutor {
     var loggedStaticLayerCacheHits: Set<String> = []
     /// Throttles the generic4 component-map resolve-failure diagnostic to once per objectID.
     var loggedComponentMapResolveFailures: Set<String> = []
+    /// One diagnostic per (shader, uniform) whose annotation carries a `require`.
+    var loggedUniformRequireDecisions: Set<String> = []
+    /// One line per `.mdl` layer the mesh encoder declined.
+    var loggedSceneModelRejects: Set<String> = []
+    var loggedSceneModelEncodeProbe: Set<String> = []
     /// Auxiliary texture slots that failed to resolve, so the fall-back-to-primary
     /// warning is emitted once per pass+slot instead of every frame.
     var loggedUnresolvedTextureSlots: Set<String> = []
@@ -1871,6 +1876,20 @@ final class WPEMetalRenderExecutor {
             )
         }
 
+        // Unconditional for material passes: every earlier probe here was keyed off an
+        // assumption (a `.mdl` extension on some layer) and stayed silent exactly when the
+        // assumption was the thing being tested.
+        if case .material = pass.pass.phase,
+           loggedSceneModelEncodeProbe.insert(pass.pass.id).inserted {
+            Logger.notice(
+                "[WPE.model] encode reached pass=\(pass.pass.id) shader=\(pass.pass.shader)"
+                    + " target=\(pass.pass.target) layer=\(layer.objectID)"
+                    + " drawLayer=\(drawLayer.objectID)"
+                    + "/\((drawLayer.imagePath as NSString).lastPathComponent)"
+                    + " puppetModel=\(puppetModel != nil)",
+                category: .wpeRender
+            )
+        }
         let drewSceneModel = try encodeSceneModelMaterialPassIfNeeded(
             pass: pass,
             layer: drawLayer,

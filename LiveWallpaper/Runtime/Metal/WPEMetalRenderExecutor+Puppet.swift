@@ -601,17 +601,30 @@ extension WPEMetalRenderExecutor {
         encoder: MTLRenderCommandEncoder,
         depthPixelFormat: MTLPixelFormat
     ) throws -> Bool {
-        guard case .material = pass.pass.phase,
-              case .scene = pass.pass.target,
-              Self.rendersAsSceneModel(layer),
-              let model = puppetModel else {
+        // A `.mdl` layer that silently fails any of these guards renders as a flat quad (or
+        // not at all) with no error anywhere. Report the first failing one, once per layer.
+        let isModelLayer = (layer.imagePath as NSString).pathExtension.lowercased() == "mdl"
+        func noteModelReject(_ reason: String) -> Bool {
+            if isModelLayer, loggedSceneModelRejects.insert(layer.objectID).inserted {
+                Logger.notice(
+                    "[WPE.model] layer \(layer.objectID) '\(layer.objectName)'"
+                        + " shader=\(pass.pass.shader) not drawn as scene model: \(reason)",
+                    category: .wpeRender
+                )
+            }
             return false
         }
+        guard case .material = pass.pass.phase else { return noteModelReject("phase=\(pass.pass.phase)") }
+        guard case .scene = pass.pass.target else { return noteModelReject("target=\(pass.pass.target)") }
+        guard Self.rendersAsSceneModel(layer) else {
+            return noteModelReject("rendersAsSceneModel=false puppetPath=\(layer.puppetPath ?? "nil")")
+        }
+        guard let model = puppetModel else { return noteModelReject("puppetModel=nil") }
         let meshes = model.meshes.filter { !$0.vertices.isEmpty && !$0.indices.isEmpty }
-        guard !meshes.isEmpty else { return false }
+        guard !meshes.isEmpty else { return noteModelReject("no non-empty meshes (\(model.meshes.count) parsed)") }
 
         guard let materialShader = Self.sceneModelMaterialShader(for: pass.pass.shader) else {
-            return false
+            return noteModelReject("unclaimed material shader '\(pass.pass.shader)'")
         }
 
         let primaryRef = pass.textureBindings[0] ?? pass.pass.textures[0] ?? pass.pass.source

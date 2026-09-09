@@ -79,6 +79,51 @@ struct WPERenderGraphBuilder: Sendable {
                     || Self.hasLiveToggleableHiddenAncestor($0, objectByID: objectByID, liveVisibilityIDs: liveVisibilityIDs)
             }
             .map(\.id))
+        // What the parser actually produced, before any filter. Keyed off nothing but the
+        // object list itself: an earlier version of this probe keyed off a `.mdl` extension
+        // and stayed silent precisely in the case worth reporting (object absent, or its
+        // path not what we assumed).
+        Logger.notice(
+            "[WPE.model] imageObjects=\(document.imageObjects.count) → "
+                + document.imageObjects
+                .map { "\($0.id):\(($0.imageRelativePath as NSString).lastPathComponent)" }
+                .joined(separator: " "),
+            category: .wpeRender
+        )
+        Logger.notice(
+            "[WPE.model] visibleLayerIDs=\(visibleLayerIDs.sorted().joined(separator: ","))",
+            category: .wpeRender
+        )
+        var builtModelLayerProbe: [(id: String, passCount: Int, detail: String)] = []
+        defer {
+            // A model object authors no passes of its own — they come from the material the
+            // MDL names. A layer that survives every filter but ends up with zero passes
+            // renders nothing, and no downstream stage can tell you why.
+            for layer in builtModelLayerProbe {
+                Logger.notice(
+                    "[WPE.model] layer \(layer.id) passes=\(layer.passCount) → \(layer.detail)",
+                    category: .wpeRender
+                )
+            }
+        }
+        for object in document.imageObjects
+            where (object.imageRelativePath as NSString).pathExtension.lowercased() == "mdl"
+            && !visibleLayerIDs.contains(object.id) {
+            let reasons = [
+                composeWrappersToDrop.contains(object.id) ? "composeWrapperDrop" : nil,
+                Self.hasHiddenAncestor(object, objectByID: objectByID, liveVisibilityIDs: liveVisibilityIDs)
+                    ? "hiddenAncestor" : nil,
+                Self.compositesToScene(object, liveVisibilityIDs: liveVisibilityIDs)
+                    ? nil
+                    : "compositesToScene=false(alpha=\(object.alpha)"
+                        + " visible=\(object.visible) effects=\(object.effects.count))"
+            ].compactMap { $0 }
+            Logger.notice(
+                "[WPE.model] layer \(object.id) '\(object.name)' dropped from render graph:"
+                    + " \(reasons.isEmpty ? "unknown" : reasons.joined(separator: ", "))",
+                category: .wpeRender
+            )
+        }
         var layerIDsToBuild = visibleLayerIDs.union(dynamicCreatedLayerTemplateIDs)
         var pendingIDs = Array(layerIDsToBuild)
         var layerIDsRequiredAsComposite = Set<String>()
@@ -112,6 +157,17 @@ struct WPERenderGraphBuilder: Sendable {
                         objectByID: authoredSceneObjectByID,
                         parentByID: document.objectParentByID
                     )
+                )
+            }
+        builtModelLayerProbe = rawLayers
+            .filter { ($0.imagePath as NSString).pathExtension.lowercased() == "mdl" }
+            .map { layer in
+                (
+                    id: layer.objectID,
+                    passCount: layer.passes.count,
+                    detail: layer.passes
+                        .map { "\($0.shader)/\($0.phase)/\($0.target)" }
+                        .joined(separator: " ")
                 )
             }
         let parallaxAligned = Self.propagatingParallaxDepthThroughParents(
