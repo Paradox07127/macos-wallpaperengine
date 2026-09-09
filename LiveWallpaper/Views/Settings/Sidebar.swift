@@ -92,10 +92,7 @@ struct SettingsSidebar: View {
     }
 }
 
-/// Deliberately NOT `LibrarySearchField`: sidebar chrome (rounded-rect +
-/// surfaceRaised + full-width) differs from the library capsule spec, so
-/// sharing would mean parameterizing the entire shell. Only the clear-button
-/// size is unified (captionEmphasized, same as LibrarySearchField).
+/// Uses the settings sidebar’s full-width search styling.
 private struct SettingsSidebarSearchField: View {
     @Binding var text: String
 

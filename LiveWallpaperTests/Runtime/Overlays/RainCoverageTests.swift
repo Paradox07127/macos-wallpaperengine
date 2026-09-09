@@ -29,7 +29,10 @@ final class RainCoverageTests: XCTestCase {
         // store, so the black has to be inside it.
         let window = NSWindow(contentRect: frame, styleMask: [.borderless],
                               backing: .buffered, defer: false)
-        window.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopIconWindow)) + 2)
+        // Above ordinary windows, not at the wallpaper's level: a window the
+        // compositor considers occluded stops updating its backing store, and the
+        // capture then comes back black.
+        window.level = .floating
         window.isOpaque = true
         window.backgroundColor = .black
         let host = NSView(frame: NSRect(origin: .zero, size: size))

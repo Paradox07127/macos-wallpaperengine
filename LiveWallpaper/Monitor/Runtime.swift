@@ -52,6 +52,8 @@ struct MonitorSampleDemand: Sendable, Equatable {
         var demand = Self()
         for widget in widgets {
             switch widget.kind {
+            case .systemOverview:
+                demand.sensors = demand.sensors || SystemOverviewOptions.showsSensors(widget)
             case .cpu:
                 // CPU's "Top by CPU" column has no toggle — it draws whenever
                 // the sampler hands it processes, but only at `.large`.
@@ -71,7 +73,7 @@ struct MonitorSampleDemand: Sendable, Equatable {
             case .disk:
                 demand.processIO = demand.processIO
                     || (drawsAtLargeOnly(widget) && shows(widget, "showTopProcesses"))
-            case .network, .fleet, .aiEngine, .weather:
+            case .network, .fleet, .aiEngine, .weather, .nixieClock:
                 break
             }
         }
@@ -106,9 +108,9 @@ struct MonitorRuntimeOptions: Sendable, Equatable {
     static func requiresSystemMetrics(for kinds: Set<MonitorWidgetKind>) -> Bool {
         kinds.contains { kind in
             switch kind {
-            case .fleet, .weather:
+            case .fleet, .weather, .nixieClock:
                 false
-            case .cpu, .memory, .gpu, .network, .disk, .power, .processes, .aiEngine:
+            case .systemOverview, .cpu, .memory, .gpu, .network, .disk, .power, .processes, .aiEngine:
                 true
             }
         }
@@ -371,6 +373,12 @@ actor Runtime {
     private var leases: [UUID: Lease] = [:]
     /// Union options requested for the live pipeline (pre-resolution).
     private var activeOptions: MonitorRuntimeOptions?
+    /// The display cache survives a pause even though activeOptions becomes nil.
+    private var retainedSnapshotOptions: MonitorRuntimeOptions?
+    /// Last shape reported by the pipeline log. Occlusion pauses the lease and
+    /// resumes it on every full-screen ⇄ desktop switch, and each resume rebuilds
+    /// an identical pipeline — worth one line the first time, noise thereafter.
+    private var loggedPipelineShape: String?
     private var resolvedRoots: (claude: URL?, codex: URL?)?
     private var rebuildTask: Task<Void, Never>?
     private var rebuildRevision: UInt64 = 0
@@ -521,18 +529,19 @@ actor Runtime {
     }
 
     static func systemOptions(for kinds: Set<MonitorWidgetKind>) -> SystemMetricsSource.Options {
-        SystemMetricsSource.Options(
-            gpu: kinds.contains(.gpu),
+        let overview = kinds.contains(.systemOverview)
+        return SystemMetricsSource.Options(
+            gpu: overview || kinds.contains(.gpu),
             topProcesses: kinds.contains(.processes) || kinds.contains(.cpu) || kinds.contains(.memory),
             ane: kinds.contains(.aiEngine),
             accessories: kinds.contains(.power),
-            sensors: kinds.contains(.cpu) || kinds.contains(.gpu) || kinds.contains(.power),
+            sensors: overview || kinds.contains(.cpu) || kinds.contains(.gpu) || kinds.contains(.power),
             processIO: kinds.contains(.disk),
-            cpu: kinds.contains(.cpu),
-            memory: kinds.contains(.memory),
-            network: kinds.contains(.network),
-            disk: kinds.contains(.disk),
-            power: kinds.contains(.power)
+            cpu: overview || kinds.contains(.cpu),
+            memory: overview || kinds.contains(.memory),
+            network: overview || kinds.contains(.network),
+            disk: overview || kinds.contains(.disk),
+            power: overview || kinds.contains(.power)
         )
     }
 
@@ -587,13 +596,24 @@ actor Runtime {
             await releaseGrants()
             guard lifecycle == .running else { return }
         }
+        if force || leases.isEmpty {
+            broker.clear()
+            retainedSnapshotOptions = nil
+        }
         guard rebuilding else { return }
-        broker.clear()
         activeOptions = target
         guard let target else { return }
 
-        let hub = DataHub(broker: broker)
-        await hub.setModuleEnabled(agents: target.agents)
+        let retained = Self.retainedSnapshot(
+            broker.latest(after: 0)?.snapshot,
+            previous: retainedSnapshotOptions,
+            next: target
+        )
+        retainedSnapshotOptions = target
+        let hub = DataHub(broker: broker, initialSnapshot: retained, agentsEnabled: target.agents)
+        if retained == nil {
+            await hub.setModuleEnabled(agents: target.agents)
+        }
         guard lifecycle == .running else { return }
         self.hub = hub
 
@@ -669,7 +689,11 @@ actor Runtime {
             // A source start is also reentrant.
             guard lifecycle == .running else { return }
         }
-        monitorSourcesLog.info("🛰️ pipeline: agents=\(resolved.agents) claudeRoot=\(resolved.claudeRoot != nil) codexRoot=\(resolved.codexRoot != nil) sources=\(built.map(\.sourceID).joined(separator: ","), privacy: .public)")
+        let pipelineShape = "agents=\(resolved.agents) claudeRoot=\(resolved.claudeRoot != nil) codexRoot=\(resolved.codexRoot != nil) sources=\(built.map(\.sourceID).joined(separator: ","))"
+        if pipelineShape != loggedPipelineShape {
+            loggedPipelineShape = pipelineShape
+            monitorSourcesLog.info("🛰️ pipeline: \(pipelineShape, privacy: .public)")
+        }
 
     }
 
@@ -677,6 +701,7 @@ actor Runtime {
         // Detach ownership before awaiting so a re-entrant lifecycle call sees the truthful target state.
         let stoppingSources = sources
         sources.removeAll()
+        await hub?.stop()
         await withTaskGroup(of: Void.self) { group in
             for source in stoppingSources {
                 group.addTask { await source.stop() }
@@ -688,6 +713,8 @@ actor Runtime {
     private func finishShutdown() async {
         await stopPipeline()
         activeOptions = nil
+        retainedSnapshotOptions = nil
+        loggedPipelineShape = nil
         broker.clear()
         await releaseGrants()
         rebuildTask = nil

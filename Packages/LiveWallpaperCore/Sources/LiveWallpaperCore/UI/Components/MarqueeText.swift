@@ -1,12 +1,7 @@
 import SwiftUI
 
-/// A fixed two-line title window. The text wraps normally; only when it still doesn't fit does
-/// hovering scroll it vertically to reveal the rest. The sizing base is a plain `Text` with
-/// `reservesSpace` — the visible copy rides in an `overlay`, which never resizes its base. That is
-/// the whole point: a title must never widen or heighten its card, or a grid row's cards start
-/// overlapping each other and the sidebar. Scrolling is hover-gated because a grid of titles all
-/// crawling at once is distracting and needless animation work; Reduce Motion turns it off and the
-/// text simply truncates.
+/// Fixed-height title window; hover scrolls overflow without resizing the card.
+/// An invisible text base owns layout. Reduce Motion disables scrolling.
 public struct MarqueeText: View {
     private let text: String
     private let lineLimit: Int

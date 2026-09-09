@@ -2,28 +2,20 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// One of the things Workshop needs before it is fully set up.
+/// A required or optional Workshop setup step.
 struct WorkshopSetupFacet: Identifiable {
-    /// Stable ForEach identity. Distinct from `anchor`: two facets may share a
-    /// scroll target (SteamCMD and Steam sign-in both live in the connection
-    /// section), and duplicate ids in a ForEach are undefined behavior.
+    /// Unique ForEach identity; multiple facets can share a scroll anchor.
     let key: String
     let anchor: SettingsSearchAnchor
-    /// Short enough to sit in a four-column legend at settings width.
     let title: LocalizedStringKey
     let state: WorkshopStepState
-    /// Kept out of the "N ready" tally. Counting an optional step as missing
-    /// made a fully working setup read as incomplete forever.
+    /// Optional steps are excluded from the readiness total.
     var isOptional = false
 
     var id: String { key }
 }
 
-/// The page-top status bar: one segmented track plus a legend naming each
-/// segment.
-/// Replaces the green seals that used to hang off each row's title — three checkmarks
-/// scattered down a scrolling page made the reader assemble the summary themselves, and a
-/// page that's entirely green seals reads as decoration, not status. Clicking a legend entry scrolls to the section it stands for.
+/// Summarizes setup readiness; each legend entry scrolls to its section.
 struct WorkshopSetupOverview: View {
     let facets: [WorkshopSetupFacet]
     let onSelect: (SettingsSearchAnchor) -> Void
@@ -92,8 +84,7 @@ struct WorkshopSetupOverview: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                // The segments differ by colour alone; the state has to be
-                // readable without seeing the colour, hover included.
+                // Expose readiness without relying on color.
                 .help(Text(facet.state.statusText))
                 .accessibilityLabel(Text(facet.title))
                 .accessibilityValue(Text(facet.state.statusText))
@@ -102,8 +93,7 @@ struct WorkshopSetupOverview: View {
         }
     }
 
-    /// `.notStarted` gets a filled-but-quiet segment rather than `WorkshopStepState`'s
-    /// text tint: an empty-looking track segment reads as a rendering glitch.
+    /// Unstarted steps remain visible in the track.
     private func segmentTint(_ facet: WorkshopSetupFacet) -> Color {
         facet.state == .notStarted ? Color.secondary.opacity(0.22) : facet.state.tint
     }
@@ -123,8 +113,7 @@ struct WorkshopSetupOverview: View {
                 bundle: .appLanguage, comment: "Workshop setup status bar summary; first number is how many steps are done, second is the total."
             )
         }
-        // Named rather than counted: the reader's question about an optional
-        // step is "do I need this", which a fraction cannot answer.
+        // Identify the missing optional step without changing the readiness total.
         guard facets.contains(where: { $0.isOptional && $0.state != .ready }) else { return base }
         return String(
             localized: "\(base) · API key optional",

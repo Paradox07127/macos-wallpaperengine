@@ -970,7 +970,12 @@ public struct WPEParticleDefinition: Equatable, Sendable {
         // seed. Leave the spawn alpha untouched and let the system apply the track
         // per frame (3448877775's star field ramps 0.01 → 1.0 across a 90s loop;
         // baking the seed pinned it at full brightness).
-        let alphaScale = instanceOverride.alphaAnimation != nil
+        // A SCRIPTED override alpha follows the same rule as a keyframed one:
+        // `update(value)` returns the property's new value, so the authored
+        // `value` is only the seed the renderer hands the script — baking it too
+        // would square it (2955378002's star systems seed 1.0, so the visible
+        // defect was the missing per-frame multiplier, not the seed).
+        let alphaScale = instanceOverride.alphaAnimation != nil || instanceOverride.alphaScript != nil
             ? 1
             : max(0, instanceOverride.alpha ?? 1)
         let scaledMaxCount: Int

@@ -22,9 +22,8 @@ struct MonitorBoardClock: TimelineSchedule {
 
 struct RootView: View {
     @ObservedObject var model: InteractionModel
-    @ObservedObject var data: DataModel
-    /// History is @Published inside the data model — observe it so tiles re-render on sample.
-    @ObservedObject private var history: MonitorHistoryStore
+    // Samples belong to tile content, not the board geometry/editing tree.
+    let data: DataModel
     @Environment(\.monitorReduceMotion) private var reduceMotion
     @Environment(\.monitorSuspended) private var suspended
     /// How far the board is being shrunk into the inspector canvas. Only the
@@ -44,22 +43,16 @@ struct RootView: View {
     init(model: InteractionModel, data: DataModel, preview: MonitorBoardPreview? = nil) {
         self.model = model
         self.data = data
-        self.history = data.historyStore
         self.preview = preview
     }
 
     var body: some View {
-        TimelineView(MonitorBoardClock(suspended: suspended)) { timeline in
-            boardContent(now: timeline.date)
-        }
+        boardContent
         .background(Color.clear)
         .focusable(model.isEditing)
         .focused($boardFocused)
-        // Focusable for arrow-key nudge and Delete, but without the system focus
-        // ring: this is a full-bleed canvas, so the ring traces the whole board
-        // (the inspector preview's entire frame) in accent blue the moment it is
-        // clicked. Which widget is active is already shown by its own selection
-        // chrome, so the ring adds noise, not information.
+        // Keep keyboard nudge and Delete support; the selected widget provides focus feedback
+        // instead of a focus ring around the entire canvas.
         .focusEffectDisabled()
         .onMoveCommand(perform: handleMoveCommand)
         .onDeleteCommand {
@@ -72,7 +65,7 @@ struct RootView: View {
     }
 
     @ViewBuilder
-    private func boardContent(now: Date) -> some View {
+    private var boardContent: some View {
         GeometryReader { proxy in
             let boardSize = proxy.size
             let geometry = MonitorBoardGeometry(
@@ -91,7 +84,7 @@ struct RootView: View {
                     .allowsHitTesting(model.isEditing || model.acceptsBoardWidePointer)
 
                 if !geometry.isDegenerate {
-                    if model.placements.isEmpty {
+                    if isInspectorPreview, model.placements.isEmpty {
                         emptyBoardHint(boardSize: boardSize)
                     }
 
@@ -101,7 +94,7 @@ struct RootView: View {
                     }
 
                     ForEach(model.placements) { placement in
-                        widgetTile(placement, geometry: geometry, now: now)
+                        widgetTile(placement, geometry: geometry)
                     }
 
                     if model.isEditing {
@@ -120,9 +113,17 @@ struct RootView: View {
 
     // MARK: Empty-board hint
 
-    /// Passive (no hit testing); only while the board is empty.
+    /// Passive (no hit testing); only while the board is empty, and only in the
+    /// inspector: an empty board leaves the desktop untouched, and the hint's
+    /// own text is about a gesture that exists only in the preview.
+    ///
+    /// Sized like edit chrome rather than board content — the inspector shrinks
+    /// the board by ~1:5, which left the hint a few points tall. `scaleEffect`
+    /// about the default centre anchor pairs with `position`, so it stays
+    /// centred without the chrome modifier's first-frame size measurement.
     private func emptyBoardHint(boardSize: CGSize) -> some View {
-        VStack(spacing: 6) {
+        let boost = MonitorChromeScale.boost(forRenderScale: renderScale)
+        return VStack(spacing: 6) {
             Image(systemName: "square.grid.2x2")
                 .font(.system(size: 22, weight: .light))
                 .foregroundStyle(.secondary.opacity(0.5))
@@ -131,7 +132,8 @@ struct RootView: View {
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary.opacity(0.6))
         }
-        .frame(width: min(boardSize.width - 24, 320))
+        .frame(width: min(boardSize.width / boost - 24, 320))
+        .scaleEffect(boost)
         .position(x: boardSize.width / 2, y: boardSize.height / 2)
         .allowsHitTesting(false)
         .zIndex(2)
@@ -142,8 +144,7 @@ struct RootView: View {
     @ViewBuilder
     private func widgetTile(
         _ placement: MonitorWidgetPlacement,
-        geometry: MonitorBoardGeometry,
-        now: Date
+        geometry: MonitorBoardGeometry
     ) -> some View {
         let restRawRect = rawRect(placement, geometry: geometry)
         let isDragging = model.drag?.widgetID == placement.id
@@ -151,7 +152,7 @@ struct RootView: View {
         let liveRawRect = isDragging ? draggedRawRect(placement, geometry: geometry) : restRawRect
         let liveRenderRect = geometry.renderRect(forRawRect: liveRawRect)
 
-        tileBody(placement: placement, cornerRadius: geometry.cornerRadius, renderHeight: liveRenderRect.height, now: now)
+        tileBody(placement: placement, cornerRadius: geometry.cornerRadius, renderHeight: liveRenderRect.height)
             .frame(width: liveRenderRect.width, height: liveRenderRect.height)
             .modifier(SelectionChrome(
                 isEditing: model.isEditing,
@@ -195,17 +196,22 @@ struct RootView: View {
     private func tileBody(
         placement: MonitorWidgetPlacement,
         cornerRadius: CGFloat,
-        renderHeight: CGFloat,
-        now: Date
+        renderHeight: CGFloat
     ) -> some View {
         if let preview {
             switch preview.tile {
             case .names:
                 MonitorWidgetNameTile(kind: placement.kind, cellHeight: renderHeight, cornerRadius: cornerRadius)
             case .empty:
-                MonitorPreviewEmptyTile(
-                    kind: placement.kind, cellHeight: renderHeight, cornerRadius: cornerRadius
-                )
+                if placement.kind == .nixieClock {
+                    TimelineView(MonitorBoardClock(suspended: suspended)) { timeline in
+                        NixieClockView(now: timeline.date)
+                    }
+                } else {
+                    MonitorPreviewEmptyTile(
+                        kind: placement.kind, cellHeight: renderHeight, cornerRadius: cornerRadius
+                    )
+                }
             case .widget:
                 // Same factory the desktop uses, on frozen data and a frozen
                 // clock — the clock is what every chart's window is measured
@@ -218,21 +224,13 @@ struct RootView: View {
                         placement: placement,
                         isEditing: model.isEditing,
                         reduceMotion: reduceMotion,
-                        now: preview.chartReference(fallback: now)
+                        now: preview.chartReference(fallback: Date())
                     )
                 )
             }
         } else {
-            WidgetFactory.tile(
-                context: MonitorWidgetContext(
-                    snapshot: data.snapshot,
-                    history: history.current,
-                    placement: placement,
-                    isEditing: model.isEditing,
-                    reduceMotion: reduceMotion,
-                    now: now
-                )
-            )
+            MonitorLiveTile(data: data, history: data.historyStore, placement: placement,
+                            isEditing: model.isEditing, reduceMotion: reduceMotion)
         }
     }
 
@@ -508,5 +506,24 @@ private struct CatalogBelowPlacement: ViewModifier {
         return content
             .modifier(MonitorPanelSizeReader(size: $measured))
             .offset(x: left, y: top)
+    }
+}
+
+/// Keeps sample/history publications and the chart clock below board layout.
+private struct MonitorLiveTile: View {
+    @ObservedObject var data: DataModel
+    @ObservedObject var history: MonitorHistoryStore
+    let placement: MonitorWidgetPlacement
+    let isEditing: Bool
+    let reduceMotion: Bool
+    @Environment(\.monitorSuspended) private var suspended
+
+    var body: some View {
+        TimelineView(MonitorBoardClock(suspended: suspended)) { timeline in
+            WidgetFactory.tile(context: MonitorWidgetContext(
+                snapshot: data.snapshot, history: history.current, placement: placement,
+                isEditing: isEditing, reduceMotion: reduceMotion, now: timeline.date
+            ))
+        }
     }
 }

@@ -159,9 +159,7 @@ private struct SchemeTile: View {
 
     // MARK: Thumbnail tile
 
-    /// Poster as an `overlay` rather than a ZStack sibling, for the reason
-    /// spelled out on `BookmarkTile`: `scaledToFill` reports the *scaled* size,
-    /// which grows the tile into the thumbnail's own aspect ratio.
+    /// An overlay keeps scaled-to-fill artwork from changing the tile’s aspect ratio.
     private var thumbnailTile: some View {
         tileBackground
             .overlay { tileContent }
@@ -211,9 +209,7 @@ private struct SchemeTile: View {
         )
     }
 
-    /// Renaming takes the band's place rather than sitting inside it — same
-    /// trade as `BookmarkTile`: the field is a full-height control, the band is
-    /// one line of type.
+    /// The full-height rename field replaces the single-line title band.
     @ViewBuilder
     private var bottomBand: some View {
         if isRenaming {
@@ -348,10 +344,6 @@ private struct SchemeTile: View {
 
 // MARK: - Tile controls
 
-/// Apply glyph for a scheme tile: straight apply on a single display, a target
-/// picker on more. Deliberately without `LibraryTileApplyControl`'s "Apply to
-/// All Displays" entry — a scheme overwrites a display's whole setup, and
-/// broadcasting that is a separate product decision nobody has made yet.
 private struct SchemeOverflowButton: View {
     let onStartRename: () -> Void
     let onDelete: () -> Void

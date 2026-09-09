@@ -29,6 +29,8 @@ struct OverlaysInspectorPanel: View {
                         screenManager: screenManager,
                         backdropAvailable: backdropAvailable
                     )
+                case .clock:
+                    ClockOverlaySection(screen: screen, screenManager: screenManager, backdropAvailable: backdropAvailable)
                 case .music:
                     MusicOverlaySection(
                         screen: screen,

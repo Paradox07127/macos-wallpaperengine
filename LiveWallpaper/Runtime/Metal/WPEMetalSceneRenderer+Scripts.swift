@@ -62,6 +62,8 @@ extension WPEMetalSceneRenderer {
         layerTransformMutationJournal.removeAll()
         layerScriptInstances = [:]
         layerAlphaScriptInstances = [:]
+        particleAlphaScriptInstances = [:]
+        liveParticleInstanceAlpha = [:]
         textVisibleScriptInstances = [:]
         textAlphaScriptInstances = [:]
         liveTextAlpha = [:]
@@ -78,15 +80,19 @@ extension WPEMetalSceneRenderer {
         let alphaScripted = document.imageObjects.filter { $0.alphaScript != nil }
         let textVisibleScripted = document.textObjects.filter { $0.visibleScript != nil }
         let textAlphaScripted = document.textObjects.filter { $0.alphaScript != nil }
+        let particleAlphaScripted = document.particleObjects
+            .filter { $0.instanceOverride?.alphaScript != nil }
         let scriptHosts = document.scriptHostObjects
         debugStage(
             "layerScripts.load",
             "hosts=\(scriptHosts.count) visible=\(visibleScripted.count) alpha=\(alphaScripted.count) "
                 + "textVisible=\(textVisibleScripted.count) textAlpha=\(textAlphaScripted.count) "
+                + "particleAlpha=\(particleAlphaScripted.count) "
                 + "hostNames=\(scriptHosts.prefix(8).map(\.name).joined(separator: ","))"
         )
         guard (!visibleScripted.isEmpty || !alphaScripted.isEmpty || !scriptHosts.isEmpty
-                || !textVisibleScripted.isEmpty || !textAlphaScripted.isEmpty),
+                || !textVisibleScripted.isEmpty || !textAlphaScripted.isEmpty
+                || !particleAlphaScripted.isEmpty),
               let pipeline = renderPipeline else { return }
 
         // Index every layer because scripts can control a different layer's video by name.
@@ -234,6 +240,33 @@ extension WPEMetalSceneRenderer {
             } catch {
                 _ = latchSceneScriptFailure(error, operation: .setup, token: scriptLoadToken)
                 Logger.warning("Scene \(descriptor.workshopID) [TextAlphaScript] init failed for \(object.name): \(error)", category: .wpeRender)
+            }
+        }
+        for object in particleAlphaScripted {
+            guard let override = object.instanceOverride,
+                  let script = override.alphaScript else { continue }
+            do {
+                guard let instance = try constructSceneScript(for: scriptLoadToken, {
+                    try WPELayerScriptInstance(
+                    script: script,
+                    scriptProperties: override.alphaScriptProperties,
+                    shared: sharedState,
+                    canvasSize: scriptCanvasSize,
+                    screenSize: scriptScreenSize,
+                    // WPE hands `update(value)` the property's live value; the
+                    // authored `value` inside the envelope is its seed.
+                    outputMode: .returnedAlpha(initialValue: override.alpha ?? 1),
+                    ownLayerName: object.name,
+                    batchDispatcher: self.sceneScriptBatchDispatcher)
+                }) else { return }
+                particleAlphaScriptInstances[object.id] = instance
+                liveParticleInstanceAlpha[object.id] = instance.initialOutput.own.alpha
+                if let output = applyScriptUserProperties(instance, userProperties) {
+                    liveParticleInstanceAlpha[object.id] = output.own.alpha
+                }
+            } catch {
+                _ = latchSceneScriptFailure(error, operation: .setup, token: scriptLoadToken)
+                Logger.warning("Scene \(descriptor.workshopID) [ParticleAlphaScript] init failed for \(object.name): \(error)", category: .wpeRender)
             }
         }
         setUpIntroPhaseAlign(
@@ -825,6 +858,7 @@ extension WPEMetalSceneRenderer {
         for instances in [
             layerScriptInstances,
             layerAlphaScriptInstances,
+            particleAlphaScriptInstances,
             textVisibleScriptInstances,
             textAlphaScriptInstances,
         ] {

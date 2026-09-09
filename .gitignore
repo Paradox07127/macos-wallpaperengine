@@ -167,3 +167,7 @@ __pycache__/
 # Local-only baseline; AF-10 lint/format contracts are tracked below.
 !.swiftformat
 !.swiftlint.yml
+
+# LLVM profile artifacts from -profile-generate / coverage builds
+*.profraw
+*.profdata

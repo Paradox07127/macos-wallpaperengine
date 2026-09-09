@@ -38,6 +38,7 @@ extension WPEMetalRenderExecutor {
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
             throw WPEMetalRenderExecutorError.commandBufferFailed
         }
+        encoder.applyTraceLabel("particles")
         WPEFrameOccupancyMeter.count(.particleEncoder)
         return encoder
     }
@@ -95,6 +96,14 @@ extension WPEMetalRenderExecutor {
                 0, 0
             )
         )
+        let transform = system.sceneTransform
+        let averageScale = transform.worldSizeMultiplier()
+        if averageScale > 0 {
+            projection.modelShape = SIMD4<Float>(
+                transform.objectScale.x / averageScale, transform.objectScale.y / averageScale,
+                cos(transform.objectAngleZ), sin(transform.objectAngleZ)
+            )
+        }
         // Translate the whole system by its camera-parallax depth (pixels),
         // carried in `padding.xy` and added to each particle's screen position.
         let parallax = cameraParallax.pixelOffset(
@@ -110,35 +119,16 @@ extension WPEMetalRenderExecutor {
             parallax.y + system.hostOriginOffset.y,
             0, 0
         )
-        // `spritetrail` orient+stretch mirrors WPE's `genericparticle` TRAILRENDERER path
-        // (`common_particles.h` `ComputeParticleTrailTangents`): orient height axis ALONG
-        // velocity (`up = normalize(velocity)`), stretch by `clamp(speed*length, minlen,
-        // maxlength)`. `g_RenderVar0 = (length, maxlength, minlen, …)` is authored JSON
-        // verbatim (not unit-converted); `trail.w > 0.5` enables the path.
-        //
-        // Orientation matters even at 1×: `ComputeParticlePosition`'s `-up*(uv.y-0.5)`
-        // puts texture-top at screen-BOTTOM when velocity points down — rain's
-        // `particle/drop` (32×128, bulb-at-top/tail-at-bottom) needs this flip to land
-        // bulb-leading; drop it and the drop renders head-up (WRONG).
-        //   - `ropetrail` (`.rope`): different shader (`genericropeparticle`), ribbons via
-        //     position history / `usesRibbonGeometry`, never stretched.
-        //   - perspective (flags&4): keep orientation, PIN stretch to 1× (length→0,
-        //     minlen→1) — `perspectiveDepthScale` only grows near particles, so the ~15×
-        //     `speed*length` stretch turned every drop into a full-screen line; 1× keeps
-        //     the validated 4:1 drop, correctly oriented.
+        // Windows Lofi Cafe GS g_RenderVar0 is (0.005, 100, 0, 8) for
+        // perspective rain and (0.05, 6, 0, 8) for glass trails. Perspective
+        // changes projection, not the authored velocity-to-length multiplier.
         if let trail = system.definition.trailRenderer, trail.kind == .sprite {
-            let existingProjection: SIMD4<Float>
-            if system.definition.isPerspective {
-                existingProjection = SIMD4<Float>(0, Float(trail.maxLength), 1, 1)
-            } else {
-                existingProjection = SIMD4<Float>(
-                    Float(trail.length), Float(trail.maxLength), 0, 1
-                )
-            }
             projection.trail = wpeApplyingAuthoredSpriteTrailMinimum(
                 from: trail,
-                to: existingProjection
+                to: SIMD4<Float>(Float(trail.length), Float(trail.maxLength), 0, 1)
             )
+            // Atlas aspect; the vertex stage applies the selected frame's UV extent.
+            projection.padding.z = Float(texture.height) / Float(max(texture.width, 1))
         }
 
         let useFrameRects = system.frameRectsBuffer != nil
@@ -226,6 +216,7 @@ extension WPEMetalRenderExecutor {
             particleCount: system.liveInstanceCount,
             sprite: texture,
             blendMode: system.blendMode.rawValue,
+            nativeState: .particle(blendMode: system.blendMode),
             target: output,
             spriteSheet: system.spriteSheet.map {
                 (cols: $0.cols, rows: $0.rows, frames: $0.frameCount, alphaMask: $0.isAlphaMask)

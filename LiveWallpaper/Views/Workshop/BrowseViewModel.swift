@@ -576,7 +576,12 @@ final class BrowseViewModel {
     }
 
     func toggleAgeRating(_ rating: WorkshopAgeRatingFilter) {
-        selectedAgeRatings = Self.toggled(rating, in: selectedAgeRatings, all: WorkshopAgeRatingFilter.allCases)
+        // Not `Set(all)`: maturity's snap-back is the Everyone default, so striking
+        // out the last chip cannot be the gesture that switches Mature on.
+        selectedAgeRatings = Self.toggled(
+            rating, in: selectedAgeRatings, all: WorkshopAgeRatingFilter.allCases,
+            fallback: WorkshopAgeRatingFilter.defaultSelection
+        )
         persistFilters()
         scheduleAutoApply()
     }
@@ -612,7 +617,10 @@ final class BrowseViewModel {
     }
 
     func isolateAgeRating(_ rating: WorkshopAgeRatingFilter) {
-        selectedAgeRatings = isolated(rating, in: selectedAgeRatings, all: WorkshopAgeRatingFilter.allCases)
+        selectedAgeRatings = isolated(
+            rating, in: selectedAgeRatings, all: WorkshopAgeRatingFilter.allCases,
+            fallback: WorkshopAgeRatingFilter.defaultSelection
+        )
         persistFilters()
         scheduleAutoApply()
     }
@@ -629,18 +637,28 @@ final class BrowseViewModel {
         scheduleAutoApply()
     }
 
-    private func isolated<T: Hashable>(_ option: T, in current: Set<T>, all: [T]) -> Set<T> {
-        if current.count == 1, current.contains(option) { return Set(all) }
+    private func isolated<T: Hashable>(
+        _ option: T, in current: Set<T>, all: [T], fallback: Set<T>? = nil
+    ) -> Set<T> {
+        if current.count == 1, current.contains(option) {
+            return fallback ?? Set(all)
+        }
         return [option]
     }
 
     /// Deselecting the last chip snaps back to all-selected: an empty set means
     /// "no filter" at the request layer, but every chip struck through reads as
     /// "exclude everything" in the UI — same snap-back idiom as `isolated()`.
-    nonisolated static func toggled<T: Hashable>(_ option: T, in current: Set<T>, all: [T]) -> Set<T> {
+    nonisolated static func toggled<T: Hashable>(
+        _ option: T, in current: Set<T>, all: [T], fallback: Set<T>? = nil
+    ) -> Set<T> {
         var next = current
-        if next.contains(option) { next.remove(option) } else { next.insert(option) }
-        return next.isEmpty ? Set(all) : next
+        if next.contains(option) {
+            next.remove(option)
+        } else {
+            next.insert(option)
+        }
+        return next.isEmpty ? (fallback ?? Set(all)) : next
     }
 
     /// Reset every filter (not search/sort) to all-selected (= no filter).
@@ -686,10 +704,11 @@ final class BrowseViewModel {
     nonisolated static func restoredSelection<T: Hashable>(
         raw: [String],
         all: [T],
+        fallback: Set<T>? = nil,
         decode: (String) -> T?
     ) -> Set<T> {
         let decoded = Set(raw.compactMap(decode)).intersection(Set(all))
-        return decoded.isEmpty ? Set(all) : decoded
+        return decoded.isEmpty ? (fallback ?? Set(all)) : decoded
     }
 
     private func loadPersistedFilters() {
@@ -705,6 +724,7 @@ final class BrowseViewModel {
             selectedAgeRatings = Self.restoredSelection(
                 raw: raw,
                 all: WorkshopAgeRatingFilter.allCases,
+                fallback: WorkshopAgeRatingFilter.defaultSelection,
                 decode: WorkshopAgeRatingFilter.init(rawValue:)
             )
         }

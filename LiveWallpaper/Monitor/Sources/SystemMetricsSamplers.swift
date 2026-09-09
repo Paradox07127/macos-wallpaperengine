@@ -551,6 +551,7 @@ enum SystemMetricsSamplers {
         var ppidOf: [Int32: Int32] = [:]
         var cpuOf: [Int32: Double] = [:]
         var memOf: [Int32: UInt64] = [:]
+        var residentFallbacks = Set<Int32>()
         var ioReadOf: [Int32: Double] = [:]
         var ioWriteOf: [Int32: Double] = [:]
 
@@ -571,29 +572,26 @@ enum SystemMetricsSamplers {
                 ppidOf[pid] = Int32(bitPattern: bsd.pbsi_ppid)
             }
 
-            memOf[pid] = info.pti_resident_size
+            let usage = ProcessResourceUsage.read(pid: pid)
+            let memory = ProcessResourceUsage.memory(resident: info.pti_resident_size, footprint: usage?.ri_phys_footprint)
+            memOf[pid] = memory.bytes
+            if memory.metric == "resident" {
+                residentFallbacks.insert(pid)
+            }
             // A counter decrease indicates PID reuse; re-baseline instead of underflowing.
             if let prev = previous[pid], totalTime >= prev.totalTimeNanos {
                 let delta = totalTime - prev.totalTimeNanos
                 cpuOf[pid] = processCPUPercent(cpuNanoseconds: delta, elapsedSeconds: seconds)
             }
 
-            if includeIO {
-                var usage = rusage_info_v4()
-                let ok = withUnsafeMutablePointer(to: &usage) { ptr -> Int32 in
-                    ptr.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) {
-                        proc_pid_rusage(pid, RUSAGE_INFO_V4, $0)
-                    }
-                }
-                if ok == 0 {
-                    counter.diskReadBytes = usage.ri_diskio_bytesread
-                    counter.diskWrittenBytes = usage.ri_diskio_byteswritten
-                    if let prev = previous[pid],
-                       usage.ri_diskio_bytesread >= prev.diskReadBytes,
-                       usage.ri_diskio_byteswritten >= prev.diskWrittenBytes {
-                        ioReadOf[pid] = Double(usage.ri_diskio_bytesread - prev.diskReadBytes) / seconds
-                        ioWriteOf[pid] = Double(usage.ri_diskio_byteswritten - prev.diskWrittenBytes) / seconds
-                    }
+            if includeIO, let usage {
+                counter.diskReadBytes = usage.ri_diskio_bytesread
+                counter.diskWrittenBytes = usage.ri_diskio_byteswritten
+                if let prev = previous[pid],
+                   usage.ri_diskio_bytesread >= prev.diskReadBytes,
+                   usage.ri_diskio_byteswritten >= prev.diskWrittenBytes {
+                    ioReadOf[pid] = Double(usage.ri_diskio_bytesread - prev.diskReadBytes) / seconds
+                    ioWriteOf[pid] = Double(usage.ri_diskio_byteswritten - prev.diskWrittenBytes) / seconds
                 }
             }
             counters[pid] = counter
@@ -601,22 +599,39 @@ enum SystemMetricsSamplers {
 
         var appCPU: [Int32: Double] = [:]
         var appMem: [Int32: UInt64] = [:]
+        var appMembers: [Int32: Int] = [:]
+        var appFallbacks: [Int32: Int] = [:]
         for pid in memOf.keys {
             let root = Self.topLevelPID(pid, parents: ppidOf)
             appCPU[root, default: 0] += cpuOf[pid] ?? 0
             appMem[root, default: 0] += memOf[pid] ?? 0
+            appMembers[root, default: 0] += 1
+            if residentFallbacks.contains(pid) {
+                appFallbacks[root, default: 0] += 1
+            }
+        }
+
+        func memoryMetric(_ root: Int32) -> String {
+            let fallbacks = appFallbacks[root] ?? 0
+            return fallbacks == 0 ? "footprint" : (fallbacks == appMembers[root] ? "resident" : "mixed")
         }
 
         let topCPUKeys = appCPU.filter { $0.value > 0 }
             .sorted { $0.value > $1.value }.prefix(limit).map(\.key)
         let topMemKeys = appMem.sorted { $0.value > $1.value }.prefix(limit).map(\.key)
         var orderedKeys = Array(topCPUKeys)
-        for key in topMemKeys where !orderedKeys.contains(key) { orderedKeys.append(key) }
+        for key in topMemKeys where !orderedKeys.contains(key) {
+            orderedKeys.append(key)
+        }
         let samples = orderedKeys.map { key in
             MonitorProcessSample(
                 name: processName(pid: key),
                 cpuPercent: appCPU[key] ?? 0,
-                memBytes: appMem[key] ?? memOf[key] ?? 0
+                memBytes: appMem[key] ?? memOf[key] ?? 0,
+                pid: Int(key),
+                bundleID: ProcessAppIdentity.bundleID(forPID: key),
+                processCount: appMembers[key],
+                memoryMetric: memoryMetric(key)
             )
         }
 
@@ -639,8 +654,12 @@ enum SystemMetricsSamplers {
                     name: processName(pid: entry.pid),
                     cpuPercent: appCPU[entry.pid] ?? 0,
                     memBytes: appMem[entry.pid] ?? 0,
+                    pid: Int(entry.pid),
+                    bundleID: ProcessAppIdentity.bundleID(forPID: entry.pid),
                     ioReadBytesPerSec: appRead[entry.pid] ?? 0,
-                    ioWriteBytesPerSec: appWrite[entry.pid] ?? 0
+                    ioWriteBytesPerSec: appWrite[entry.pid] ?? 0,
+                    processCount: appMembers[entry.pid],
+                    memoryMetric: memoryMetric(entry.pid)
                 )
             }
         }

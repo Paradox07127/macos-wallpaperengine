@@ -462,6 +462,34 @@ struct BrowseRequestShapeTests {
         #expect(suite.defaults.array(forKey: v1Key) == nil)
     }
 
+    @Test("Striking out the last maturity chip returns to Everyone, not to every rating")
+    func maturitySnapsBackToTheDefaultNotToEverything() throws {
+        let (model, suite) = try Self.makeModel("maturitySnapBack")
+        defer { suite.discard() }
+        #expect(model.selectedAgeRatings == [.everyone])
+
+        model.toggleAgeRating(.everyone)
+        #expect(model.selectedAgeRatings == [.everyone])
+        #expect(model.makeRequest(page: 1).excludedTags.contains("Mature"))
+
+        model.isolateAgeRating(.everyone)
+        #expect(model.selectedAgeRatings == [.everyone])
+
+        suite.defaults.set([String](), forKey: "loomscreen.workshop.filter.ages.v2")
+        let restored = BrowseViewModel(services: WorkshopServices(), defaults: suite.defaults)
+        #expect(restored.selectedAgeRatings == [.everyone])
+    }
+
+    @Test("Control: the other facets still snap back to all-selected")
+    func otherFacetsStillSnapBackToEverything() throws {
+        let (model, suite) = try Self.makeModel("typeSnapBack")
+        defer { suite.discard() }
+        for type in WorkshopContentTypeFilter.selectableCases where model.selectedTypes.contains(type) {
+            model.toggleType(type)
+        }
+        #expect(model.selectedTypes == Set(WorkshopContentTypeFilter.selectableCases))
+    }
+
     @Test("Control: a v2 maturity store keeps the ratings the user opted into")
     func storedAgeSelectionSurvives() throws {
         let suite = try TestScratch.defaultsSuite("workshop.browse.filter.ages.v2")

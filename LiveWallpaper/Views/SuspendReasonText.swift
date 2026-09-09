@@ -1,15 +1,9 @@
 import Foundation
 import LiveWallpaperCore
 
-/// User-facing wording for why a wallpaper stopped.
-/// Grouped by what the user can do about it, not which subsystem raised it: safety reasons
-/// have no setting to turn off, so they get a "this lifts on its own" note instead of a cause
-/// the user would go hunting for in preferences.
+/// User-visible suspension reasons; system limits take precedence over configurable policies.
 enum SuspendReasonText {
-    /// The single reason worth showing when several apply at once.
-    /// Safety wins — it is the one the user cannot do anything about, and
-    /// telling them to change a setting that would not help is worse than
-    /// saying nothing.
+    /// A configurable reason must not hide a higher-priority system limit.
     static func primary(from reasons: Set<WallpaperSuspendReason>) -> WallpaperSuspendReason? {
         let order: [WallpaperSuspendReason] = [
             .thermal, .memoryPressure, .userAbsent,
@@ -23,18 +17,16 @@ enum SuspendReasonText {
         return copy(for: reason)
     }
 
-    // Each case resolves its own literal rather than returning a key for one
-    // shared lookup: a key that only exists as a runtime value is invisible to
-    // both the string extractor and `LocalizationCoverageTests`.
+    /// Keeps literal keys visible to extraction and localization coverage checks.
     private static func copy(for reason: WallpaperSuspendReason) -> String {
         switch reason {
         case .thermal, .memoryPressure:
             String(
-                localized: "System resources are tight — playback resumes automatically",
+                localized: "Paused for system resource limits",
                 bundle: .appLanguage
             )
         case .applicationRule:
-            String(localized: "Paused by a per-app rule", bundle: .appLanguage)
+            String(localized: "Paused by an application rule", bundle: .appLanguage)
         case .battery:
             String(localized: "Paused on battery", bundle: .appLanguage)
         case .lowPowerMode:
@@ -42,7 +34,7 @@ enum SuspendReasonText {
         case .fullScreen, .windowOcclusion:
             String(localized: "Paused while covered", bundle: .appLanguage)
         case .userAbsent:
-            // Filtered out above: nobody is looking at the screen to read it.
+            // Excluded from user-visible reasons by localized(for:).
             String(localized: "Paused by system", bundle: .appLanguage)
         }
     }

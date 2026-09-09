@@ -10,9 +10,7 @@ enum WeatherWidgetOptions {
     }
 }
 
-/// The local sky as a picture, not a readout: a gradient for the weather and
-/// the hour, clouds, rain or snow leaning with the real wind, fog, stars, the
-/// odd lightning strike. One small caption names the condition and the place.
+/// Weather scene with an optional condition and location caption.
 struct WeatherWidgetView: View {
     let context: MonitorWidgetContext
 
@@ -55,11 +53,7 @@ struct WeatherWidgetView: View {
         }
     }
 
-    /// Names the whole tile for VoiceOver — the header and the sky Canvas are both
-    /// `accessibilityHidden`, so with the caption's own label removed (kept purely
-    /// visual below) the tile would otherwise have no name at all when
-    /// `showCaption` is off. Reuses the caption's own strings rather than adding
-    /// a new localized template.
+    /// Name the tile even when its visual caption is hidden. The header and Canvas are accessibility-hidden.
     private var tileAccessibilityLabel: Text {
         guard let weather, let condition = weather.currentCondition else {
             return Text(verbatim: weather?.locationStatus.localizedTitle ?? WidgetFactory.displayName(.weather))

@@ -170,154 +170,82 @@ struct SceneDetailView: View {
             fallbackBackground
         case .error(let fallbackReason):
             fallbackBackground
-                .overlay(alignment: .bottom) { previewErrorStrip(reason: fallbackReason) }
                 .overlay {
                     RoundedRectangle(cornerRadius: DesignTokens.Corner.preview, style: .continuous)
-                        .strokeBorder(severityColor(for: fallbackReason).opacity(0.45), lineWidth: 1.5)
+                        .strokeBorder(fallbackReason.tint.opacity(0.45), lineWidth: 1.5)
                 }
-        }
-    }
-
-    /// Glanceable error code over artwork; summary in `errorBanner`, full log in sheet.
-    private func previewErrorStrip(reason: FallbackReason) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: severityIcon(for: reason))
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(severityColor(for: reason))
-            Text(verbatim: errorCode(for: reason))
-                .font(.system(.caption2, design: .monospaced).weight(.bold))
-                .foregroundStyle(DesignTokens.Colors.overlayForeground)
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, DesignTokens.Spacing.cardInset)
-        .padding(.top, 24)
-        .padding(.bottom, 10)
-        .frame(maxWidth: .infinity)
-        .background(
-            LinearGradient(
-                colors: [.black.opacity(0), .black.opacity(0.78)],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-        )
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
-    }
-
-    private func errorTitle(for reason: FallbackReason) -> Text {
-        switch reason {
-        case .unsupportedType:        return Text("Scene format not supported")
-        case .sceneParseFailed:       return Text("Couldn't read scene.json")
-        case .sceneShaderUnsupported: return Text("Scene uses unsupported shaders")
-        case .sceneResourceMissing:   return Text("Some scene assets are missing")
-        case .missingDependency(let ids):
-            if ids.count == 1 {
-                return Text("Missing 1 Workshop dependency")
-            }
-            return Text("Missing \(ids.count) Workshop dependencies", comment: "Scene error title. The placeholder is the number of missing Workshop dependencies.")
-        case .requiresWindowsPlugin:  return Text("Windows plugin required")
-        case .texContainerUnsupported: return Text("Unknown texture container")
-        case .texUnsupportedFormat:    return Text("Texture format not supported")
-        case .texDecodeFailed:         return Text("Texture decode failed")
-        }
-    }
-
-    private func errorBody(for reason: FallbackReason) -> Text {
-        switch reason {
-        case .unsupportedType:
-            return Text("We can't render this scene's feature set yet.")
-        case .sceneParseFailed(let detail):
-            return Text(verbatim: LogPrivacyRedactor.scrub(detail))
-        case .sceneShaderUnsupported:
-            return Text("A custom shader could not be translated.")
-        case .sceneResourceMissing:
-            // Names where the files were looked for, not what to do about it —
-            // `EngineAssetsBanner` at the top of the Scene page owns the recovery.
-            if engineAssets.isAuthorized {
-                return Text("Image layers couldn't be found in this project or in your Wallpaper Engine assets.")
-            }
-            return Text("Image layers couldn't be found in this project. Wallpaper Engine's shared assets normally supply them.")
-        case .missingDependency(let ids):
-            if ids.count <= 2 {
-                return Text("Subscribe to \(ids.joined(separator: ", ")) in Steam, then re-import.", comment: "Scene dependency recovery hint. The placeholder is one or two Workshop IDs.")
-            }
-            let head = ids.prefix(2).joined(separator: ", ")
-            return Text("Subscribe to \(head) and \(ids.count - 2) more in Steam, then re-import.", comment: "Scene dependency recovery hint. Placeholders are Workshop IDs and the remaining count.")
-        case .requiresWindowsPlugin:
-            return Text("macOS can't load Windows native plugins.")
-        case .texContainerUnsupported(let magic):
-            return Text("Container \(magic) is unsupported.", comment: "Texture error detail. The placeholder is a texture container magic value.")
-        case .texUnsupportedFormat(let code):
-            return Text("Format \(code) — not yet decoded.", comment: "Texture error detail. The placeholder is a texture format code.")
-        case .texDecodeFailed(let detail):
-            return Text(verbatim: LogPrivacyRedactor.scrub(detail))
         }
     }
 
     // MARK: - Error banner
 
+    /// A `.degraded` reason means one layer was skipped and the wallpaper is
+    /// still playing, so it gets the HUD chip rather than a banner across the
+    /// bottom of the preview.
     @ViewBuilder
     private var errorBanner: some View {
-        if case .error(let reason) = state {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: severityIcon(for: reason))
-                    .font(.title3)
-                    .foregroundStyle(severityColor(for: reason))
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 2) {
-                    errorTitle(for: reason)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.primary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    errorBody(for: reason)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .accessibilityElement(children: .combine)
-                Spacer(minLength: 8)
-                if reason.isActionable {
-                    Button {
-                        Task { @MainActor in
-                            withAnimation(DesignTokens.motion(reduceMotion, .spring(response: 0.35, dampingFraction: 0.85))) {
-                                state = .loading
-                            }
-                            livePoster = nil
-                            let targetSession = session
-                            let generation = previewLifecycle.generation
-                            await targetSession?.reload()
-                            await pollPreviewUntilSettled(
-                                session: targetSession,
-                                generation: generation
-                            )
-                        }
-                    } label: {
-                        Label("Retry", systemImage: "arrow.clockwise")
-                            .font(.caption.weight(.semibold))
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                    .accessibilityHint(Text("Reloads the current scene."))
-                }
-                Button {
-                    showLogSheet = true
-                } label: {
-                    Label("Log", systemImage: "terminal")
-                        .font(.caption.weight(.semibold))
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .help(Text("Open the full diagnostic log"))
-                .accessibilityLabel(Text("Open the full diagnostic log"))
-            }
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .adaptiveGlassSurface(.roundedRectangle(DesignTokens.Corner.md), tint: severityColor(for: reason))
-            .overlay {
-                RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
-                    .strokeBorder(severityColor(for: reason).opacity(0.30), lineWidth: 1)
+        if case let .error(reason) = state, reason.failureClass != .degraded {
+            let presentation = reason.presentation(
+                origin: origin,
+                engineAssetsAuthorized: engineAssets.isAuthorized
+            )
+            InlineNoticeBanner(
+                tint: presentation.tint,
+                symbol: presentation.symbol,
+                title: presentation.title,
+                message: presentation.message,
+                code: presentation.code,
+                surface: .chrome
+            ) {
+                // No Log button here: `hasDiagnosticFindings` is true for every
+                // error state, so the HUD row right below already shows
+                // Diagnostics into the same sheet. A second entry point 20pt
+                // away only crowded the recovery actions off the edge.
+                SceneFailureRecoveryActions(
+                    recovery: presentation.recovery,
+                    onRetry: { reloadScene() }
+                )
             }
             .transition(.opacity)
+        }
+    }
+
+    /// Non-blocking notice for `.degraded`: it sits in the HUD action row beside
+    /// Diagnostics instead of taking a banner's worth of vertical space.
+    @ViewBuilder
+    private var degradedChip: some View {
+        if case let .error(reason) = state, reason.failureClass == .degraded {
+            let detail = reason.localizedMessage(
+                originalType: origin.originalType,
+                engineAssetsAuthorized: engineAssets.isAuthorized
+            )
+            Button {
+                showLogSheet = true
+            } label: {
+                PreviewControlLabel(
+                    systemImage: reason.symbol,
+                    title: "Skipped",
+                    tint: reason.tint
+                )
+            }
+            .buttonStyle(.borderless)
+            .help(Text(verbatim: detail))
+            .accessibilityLabel(Text(verbatim: reason.localizedTitle(originalType: origin.originalType)))
+            .accessibilityValue(Text(verbatim: detail))
+            .accessibilityHint(Text("Open renderer diagnostics"))
+        }
+    }
+
+    private func reloadScene() {
+        Task { @MainActor in
+            withAnimation(DesignTokens.motion(reduceMotion, .spring(response: 0.35, dampingFraction: 0.85))) {
+                state = .loading
+            }
+            livePoster = nil
+            let targetSession = session
+            let generation = previewLifecycle.generation
+            await targetSession?.reload()
+            await pollPreviewUntilSettled(session: targetSession, generation: generation)
         }
     }
 
@@ -335,11 +263,10 @@ struct SceneDetailView: View {
     }
 
     private var fullDiagnosticText: String {
-        let currentErrorCode: String?
-        if case .error(let reason) = state {
-            currentErrorCode = errorCode(for: reason)
+        let currentErrorCode: String? = if case let .error(reason) = state {
+            reason.code
         } else {
-            currentErrorCode = nil
+            nil
         }
         return WPERenderDiagnosticReport.make(
             descriptor: descriptor,
@@ -348,40 +275,9 @@ struct SceneDetailView: View {
         )
     }
 
-    // MARK: - Severity derivation
-
-    private func severityColor(for reason: FallbackReason) -> Color {
-        switch reason {
-        case .missingDependency, .requiresWindowsPlugin: return DesignTokens.Colors.Status.warning
-        default:                                         return DesignTokens.Colors.Status.danger
-        }
-    }
-
-    private func severityIcon(for reason: FallbackReason) -> String {
-        switch reason {
-        case .missingDependency:     return "exclamationmark.triangle.fill"
-        case .requiresWindowsPlugin: return "puzzlepiece.extension.fill"
-        default:                     return "exclamationmark.octagon.fill"
-        }
-    }
-
-    private func errorCode(for reason: FallbackReason) -> String {
-        switch reason {
-        case .unsupportedType:         return "WPE_UNSUPPORTED_TYPE"
-        case .sceneParseFailed:        return "WPE_SCENE_PARSE"
-        case .sceneShaderUnsupported:  return "WPE_SHADER_UNSUPPORTED"
-        case .sceneResourceMissing:    return "WPE_RESOURCE_MISS"
-        case .missingDependency:       return "WPE_MISSING_DEPENDENCY"
-        case .requiresWindowsPlugin:   return "WPE_WINDOWS_PLUGIN"
-        case .texContainerUnsupported: return "WPE_TEX_CONTAINER"
-        case .texUnsupportedFormat:    return "WPE_TEX_FORMAT"
-        case .texDecodeFailed:         return "WPE_TEX_DECODE"
-        }
-    }
-
     private var currentSeverityTint: Color {
         if case .error(let reason) = state {
-            return severityColor(for: reason)
+            return reason.tint
         }
         return .accentColor
     }
@@ -437,6 +333,7 @@ struct SceneDetailView: View {
             playbackControls
         } actions: {
             HStack(spacing: DesignTokens.Spacing.xs) {
+                degradedChip
                 workshopLinkButton
                 // Only when the log has something in it. A scene that loaded
                 // cleanly has nothing to show here, and the context menu keeps

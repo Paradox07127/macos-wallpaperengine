@@ -1,10 +1,7 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// Owns the eight card-chrome defaults for the whole window and publishes them as one environment value.
-/// The defaults suite lives in the app target (`UserDefaults.appScoped()`), so the reader
-/// can't sit next to `GalleryCardPreferences` in the package. Applied once at the root: a badge
-/// toggle is a Settings-panel action, and the grids it affects all hang off `ContentView`.
+/// Observe card preferences once at the window root, using the app-scoped defaults suite.
 private struct GalleryCardPreferencesReader: ViewModifier {
     @AppStorage(CardBadgeSettings.showsRating, store: .appScoped()) private var showsRating = true
     @AppStorage(CardBadgeSettings.showsType, store: .appScoped()) private var showsType = true
@@ -44,9 +41,7 @@ enum MatureContentSettings {
     static let blursThumbnails = "loomscreen.workshop.blurMatureThumbnails.v1"
     static let confirmed = "loomscreen.workshop.matureContentConfirmed.v1"
 
-    /// Read at the moment of a tap rather than observed: a card only consults
-    /// this when the reader activates a blurred thumbnail, so an `@AppStorage`
-    /// per tile bought nothing but a KVO registration.
+    /// Read on activation; this preference needs no per-tile observation.
     @MainActor
     static var isConfirmed: Bool {
         UserDefaults.appScoped().bool(forKey: confirmed)

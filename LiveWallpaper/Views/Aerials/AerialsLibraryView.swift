@@ -26,9 +26,20 @@ struct AerialsLibraryView: View {
         .toolbar {
             LibraryIdentityToolbarItem(systemImage: "sparkles.tv", title: Text("Apple Aerials"))
             // Nothing to refresh or disconnect until a folder is linked.
+            // Separate items let macOS own toolbar grouping and spacing.
             if library.isAuthorized {
+                if library.isScanning {
+                    ToolbarItem(placement: .primaryAction) {
+                        ProgressView()
+                            .controlSize(.small)
+                            .accessibilityLabel(Text("Scanning the Aerials library", comment: "A11y label for the toolbar spinner shown while the Apple Aerials library is being rescanned."))
+                    }
+                }
                 ToolbarItem(placement: .primaryAction) {
-                    libraryActions
+                    refreshButton
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    disconnectButton
                 }
             }
         }
@@ -39,25 +50,15 @@ struct AerialsLibraryView: View {
         }
     }
 
-    private var libraryActions: some View {
-        HStack(spacing: DesignTokens.Spacing.sm) {
-            if library.isScanning {
-                ProgressView()
-                    .controlSize(.small)
-                    .accessibilityLabel(Text("Scanning the Aerials library", comment: "A11y label for the toolbar spinner shown while the Apple Aerials library is being rescanned."))
-            }
-
-            Button {
-                Task { await library.refresh() }
-            } label: {
-                Image(systemName: "arrow.clockwise")
-            }
-            .help(Text("Refresh Aerials library"))
-            .accessibilityLabel(Text("Refresh Aerials library"))
-            .disabled(library.isScanning)
-
-            disconnectButton
+    private var refreshButton: some View {
+        Button {
+            Task { await library.refresh() }
+        } label: {
+            Image(systemName: "arrow.clockwise")
         }
+        .help(Text("Refresh Aerials library"))
+        .accessibilityLabel(Text("Refresh Aerials library"))
+        .disabled(library.isScanning)
     }
 
     private func scanErrorView(message: String) -> some View {

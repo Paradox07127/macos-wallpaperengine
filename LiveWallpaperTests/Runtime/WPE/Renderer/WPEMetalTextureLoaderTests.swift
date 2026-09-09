@@ -8,6 +8,211 @@ import Testing
 @Suite("WPE Metal texture loader")
 struct WPEMetalTextureLoaderTests {
 
+    @MainActor
+    @Test("Rain quads preserve model scale and trails retain local speed and frame aspect",
+          arguments: [-1, 0, 4], [SIMD3<Float>(1, 1, 0), SIMD3<Float>(0.5, 0.5, 0),
+                                  SIMD3<Float>(0.5, 1, 0), SIMD3<Float>(0.5, 1, .pi / 2),
+                                  SIMD3<Float>(-0.5, 1, 0)])
+    func rainTrailGeometry(flags: Int, scale: SIMD3<Float>) throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        // Windows Lofi Cafe uses 32x128 drop textures and velocity-based stretch,
+        // including flags=4. Keep depth zero to isolate trail geometry from projection.
+        let definition = try #require(WPEParticleDefinitionParser.parse(dictionary: [
+            "flags": max(0, flags), "maxcount": 1,
+            "emitter": [["name": "boxrandom", "instantaneous": 1, "rate": 0]],
+            "initializer": [["name": "sizerandom", "min": 8, "max": 8],
+                            ["name": "lifetimerandom", "min": 10, "max": 10],
+                            ["name": "velocityrandom", "min": "0 -100 0", "max": "0 -100 0"]],
+            "renderer": flags < 0 ? [] : [["name": "spritetrail", "length": 0.05, "maxlength": 6]],
+        ]))
+        let system = try #require(WPEParticleSystem(
+            definition: definition, device: device,
+            sceneTransform: WPEParticleSceneTransform(
+                sceneSize: SIMD2<Float>(256, 256), objectOrigin: SIMD3<Float>(128, 128, 0),
+                objectScale: SIMD3<Float>(scale.x, scale.y, 1), objectAngleZ: scale.z
+            ), seed: 133
+        ))
+        system.tick(now: 0)
+        system.tick(now: 0.05)
+        try #require(system.liveInstanceCount == 1)
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: 256, height: 256, mipmapped: false)
+        descriptor.storageMode = .shared
+        descriptor.usage = [.shaderRead, .renderTarget]
+        let output = try #require(device.makeTexture(descriptor: descriptor))
+        let zero = [UInt8](repeating: 0, count: 256 * 256 * 4)
+        output.replace(region: MTLRegionMake2D(0, 0, 256, 256), mipmapLevel: 0, withBytes: zero, bytesPerRow: 1024)
+        let textureHeight = flags < 0 ? 32 : 128
+        let textureDescriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: 32, height: textureHeight, mipmapped: false)
+        textureDescriptor.storageMode = .shared
+        textureDescriptor.usage = .shaderRead
+        let albedo = try #require(device.makeTexture(descriptor: textureDescriptor))
+        albedo.replace(region: MTLRegionMake2D(0, 0, 32, textureHeight), mipmapLevel: 0,
+                       withBytes: [UInt8](repeating: 255, count: 32 * textureHeight * 4), bytesPerRow: 128)
+        let queue = try #require(device.makeCommandQueue())
+        let command = try #require(queue.makeCommandBuffer())
+        let size = CGSize(width: 256, height: 256)
+        var state = WPEMetalFrameState(output: output, sceneSize: size)
+        try executor.encodeParticleSystem(
+            system, into: command, output: output, sceneSize: size, cameraParallax: .neutral,
+            texturesByMaterial: [ObjectIdentifier(system): albedo], normalsByMaterial: [:],
+            frameState: &state, traceIndex: 0
+        )
+        command.commit()
+        command.waitUntilCompleted()
+        try #require(command.status == .completed)
+        var pixels = zero
+        output.getBytes(&pixels, bytesPerRow: 1024, from: MTLRegionMake2D(0, 0, 256, 256), mipmapLevel: 0)
+        var xs: [Int] = []
+        var ys: [Int] = []
+        for y in 0 ..< 256 {
+            for x in 0 ..< 256 where pixels[(y * 256 + x) * 4] > 0 {
+                xs.append(x)
+                ys.append(y)
+            }
+        }
+        let width = try #require(xs.max()) - #require(xs.min()) + 1
+        let height = try #require(ys.max()) - #require(ys.min()) + 1
+        let localWidth = Int(8 * abs(scale.x))
+        let localHeight = Int((flags < 0 ? 8 : 160) * abs(scale.y))
+        let expectedWidth = scale.z == 0 ? localWidth : localHeight
+        let expectedHeight = scale.z == 0 ? localHeight : localWidth
+        #expect(abs(width - expectedWidth) <= 1)
+        #expect(abs(height - expectedHeight) <= 2, "Expected \(expectedWidth)x\(expectedHeight), got \(width)x\(height)")
+    }
+
+    @MainActor
+    @Test("Zero refraction preserves the background across the whole particle quad")
+    func zeroRefractionPreservesBackground() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let definition = try #require(WPEParticleDefinitionParser.parse(dictionary: [
+            "maxcount": 1, "emitter": [["name": "boxrandom", "instantaneous": 1, "rate": 0]],
+            "initializer": [["name": "sizerandom", "min": 80, "max": 80],
+                            ["name": "lifetimerandom", "min": 10, "max": 10]],
+        ]))
+        let system = try #require(WPEParticleSystem(definition: definition, device: device, blendMode: .translucent, seed: 133))
+        system.isRefract = true
+        system.refractAmount = 0
+        system.tick(now: 0)
+        system.tick(now: 0.05)
+        try #require(system.liveInstanceCount == 1)
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm_srgb, width: 128, height: 128, mipmapped: false)
+        descriptor.storageMode = .shared
+        descriptor.usage = [.shaderRead, .renderTarget]
+        let output = try #require(device.makeTexture(descriptor: descriptor))
+        var pixels: [UInt8] = []
+        for y in 0 ..< 128 {
+            for x in 0 ..< 128 {
+                pixels.append(contentsOf: [UInt8(x * 2), UInt8(y * 2), 80, 255])
+            }
+        }
+        output.replace(region: MTLRegionMake2D(0, 0, 128, 128), mipmapLevel: 0, withBytes: pixels, bytesPerRow: 512)
+        let small = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: 1, height: 1, mipmapped: false)
+        small.storageMode = .shared
+        small.usage = .shaderRead
+        let albedo = try #require(device.makeTexture(descriptor: small))
+        let normal = try #require(device.makeTexture(descriptor: small))
+        albedo.replace(region: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 0, withBytes: [UInt8](repeating: 255, count: 4), bytesPerRow: 4)
+        normal.replace(region: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 0, withBytes: [UInt8](arrayLiteral: 255, 129, 0, 128), bytesPerRow: 4)
+        let queue = try #require(device.makeCommandQueue())
+        let command = try #require(queue.makeCommandBuffer())
+        let size = CGSize(width: 128, height: 128)
+        var state = WPEMetalFrameState(output: output, sceneSize: size)
+        try executor.encodeParticleSystem(
+            system, into: command, output: output, sceneSize: size, cameraParallax: .neutral,
+            texturesByMaterial: [ObjectIdentifier(system): albedo], normalsByMaterial: [ObjectIdentifier(system): normal],
+            frameState: &state, traceIndex: 0
+        )
+        command.commit()
+        command.waitUntilCompleted()
+        try #require(command.status == .completed)
+        var rendered = [UInt8](repeating: 0, count: pixels.count)
+        output.getBytes(&rendered, bytesPerRow: 512, from: MTLRegionMake2D(0, 0, 128, 128), mipmapLevel: 0)
+        #expect(stride(from: 3, to: rendered.count, by: 4).allSatisfy { rendered[$0] == 255 },
+                "Translucent droplets must preserve an already opaque scene's alpha")
+        #expect(zip(pixels, rendered).allSatisfy { abs(Int($0) - Int($1)) <= 1 })
+    }
+
+    @MainActor
+    @Test("Animated normal maps preserve linear sampling through upload and restore")
+    func animatedNormalMapsPreserveLinearSampling() async throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        // Lofi Cafe's flat atlas border: red=mask, green=normal Y, alpha=normal X.
+        let bytes = Data([255, 129, 0, 128])
+        let info = WPETexInfo(
+            containerVersion: 5, infoVersion: 1, width: 1, height: 1,
+            textureFormatCode: WPETexFormat.rgba8888.rawValue,
+            format: .rgba8888, mipmapCount: 1, flags: 0
+        )
+        let mip = WPETexTextureMipmap(index: 0, width: 1, height: 1, bytes: bytes)
+        let rect = CGRect(x: 0, y: 0, width: 1, height: 1)
+        let payload = WPETexTexturePayload(
+            info: info, mipmaps: [], hasAnimationFrames: true,
+            animationTrack: WPETexAnimationTrack(
+                frames: [WPETexAnimationFrame(imageID: 0, duration: 0.1, mipmaps: [mip], subRect: rect)],
+                frameRate: 10, loop: true
+            )
+        )
+        let streaming = WPETexStreamingPayload(
+            info: info,
+            compressedImages: [WPETexCompressedImage(width: 1, height: 1, payloads: [
+                WPETexCompressedMipmap(
+                    index: 0, width: 1, height: 1, isCompressed: false,
+                    compressedBytes: bytes, decompressedByteCount: bytes.count
+                ),
+            ])],
+            frames: [WPETexStreamingFrame(imageID: 0, subRect: rect, duration: 0.1)],
+            frameRate: 10, loop: true
+        )
+        let loader = WPEMetalTextureLoader(device: device)
+        let eager = try await loader.makeAnimatedTextureSource(from: payload, label: "normal", colorSpace: .linear)
+        let provider = try #require(WPETexAnimatedAtlasProvider(
+            payload: streaming, device: device, label: "normal", colorSpace: .linear
+        ))
+        #expect(eager.attachAtlasProvider(provider))
+        let initial = try #require(eager.texture(at: 0))
+        eager.applyPerformanceProfile(.suspended)
+        let restored = try #require(eager.texture(at: 0))
+        let lazy = try loader.makeLazyAnimatedTextureSource(from: streaming, label: "normal", colorSpace: .linear)
+        let streamed = try #require(lazy.texture(at: 0))
+        for texture in [initial, restored, streamed] {
+            #expect(texture.pixelFormat == .rgba8Unorm)
+            let normal = try sampleNormal(texture, device: device)
+            #expect(abs(normal.x) < 0.02 && abs(normal.y) < 0.02,
+                    "A flat normal border must not displace the whole particle quad")
+        }
+        let color = try await loader.makeAnimatedTextureSource(from: payload, label: "color")
+        #expect(color.texture(at: 0)?.pixelFormat == .rgba8Unorm_srgb)
+    }
+
+    private func sampleNormal(_ texture: MTLTexture, device: MTLDevice) throws -> SIMD2<Float> {
+        let library = try device.makeLibrary(source: """
+        #include <metal_stdlib>
+        using namespace metal;
+        kernel void sample_normal(texture2d<float> t [[texture(0)]], device float2 *out [[buffer(0)]]) {
+            constexpr sampler s(filter::linear, address::clamp_to_edge);
+            float4 value = t.sample(s, float2(0.5));
+            out[0] = value.ag * 2.0 - 1.0;
+        }
+        """, options: nil)
+        let function = try #require(library.makeFunction(name: "sample_normal"))
+        let pipeline = try device.makeComputePipelineState(function: function)
+        let buffer = try #require(device.makeBuffer(length: MemoryLayout<SIMD2<Float>>.stride, options: .storageModeShared))
+        let queue = try #require(device.makeCommandQueue())
+        let command = try #require(queue.makeCommandBuffer())
+        let encoder = try #require(command.makeComputeCommandEncoder())
+        encoder.setComputePipelineState(pipeline)
+        encoder.setTexture(texture, index: 0)
+        encoder.setBuffer(buffer, offset: 0, index: 0)
+        encoder.dispatchThreads(MTLSize(width: 1, height: 1, depth: 1), threadsPerThreadgroup: MTLSize(width: 1, height: 1, depth: 1))
+        encoder.endEncoding()
+        command.commit()
+        command.waitUntilCompleted()
+        try #require(command.status == .completed)
+        return buffer.contents().load(as: SIMD2<Float>.self)
+    }
+
     @Test("Uploads RGBA texture payload into an MTLTexture")
     func uploadsRGBA8888Payload() async throws {
         let device = try #require(MTLCreateSystemDefaultDevice())

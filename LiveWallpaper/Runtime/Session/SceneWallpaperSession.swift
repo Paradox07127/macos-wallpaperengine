@@ -135,6 +135,7 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
     /// `loadTask` when done" writes so a finished older task can't drop the
     /// handle of a newer one that replaced it while the older was draining.
     private var loadGeneration = 0
+    private(set) var loadFailureCause: WallpaperFailureCause?
     private(set) var loadError: SceneRenderingError? {
         didSet {
             runtimeError = loadError.map {
@@ -228,6 +229,10 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
             rendererDiagnostics = nil
             return
         }
+        cacheRendererState(snapshot)
+    }
+
+    private func cacheRendererState(_ snapshot: WPERendererStateSnapshot) {
         hasPresentedFrame = snapshot.hasPresentedFrame
         rendererDiagnostics = SceneRendererDiagnostics(
             loadDiagnostics: snapshot.loadDiagnostics,
@@ -621,6 +626,7 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
             guard let snapshot = await self.renderActor.rendererStateSnapshot() else {
                 return nil
             }
+            cacheRendererState(snapshot)
             guard snapshot.isLoaded else { return nil }
             if targetGeneration == nil {
                 targetGeneration = snapshot.currentLoadGeneration
@@ -665,12 +671,14 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
                 try await self.renderActor.reload()
                 guard self.loadGeneration == generation else { return }
                 await self.refreshSystemAudioCaptureRequirement()
+                loadFailureCause = nil
                 self.loadError = nil
                 self.loadProgress = nil
             } catch is CancellationError {
                 return
             } catch let error as SceneRenderingError {
                 guard self.loadGeneration == generation else { return }
+                self.loadFailureCause = SceneFailureCause.make(error)
                 self.loadError = error
             } catch {
                 guard self.loadGeneration == generation else { return }
@@ -696,6 +704,7 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
             try await renderActor.load()
             guard !Task.isCancelled else { return }
             await refreshSystemAudioCaptureRequirement()
+            loadFailureCause = nil
             loadError = nil
             loadProgress = nil
         } catch is CancellationError {
@@ -708,6 +717,7 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
                 "Scene wallpaper load failed: \(error.errorDescription ?? "(no description)")",
                 category: .screenManager
             )
+            loadFailureCause = SceneFailureCause.make(error)
             loadError = error
         } catch {
             guard !Task.isCancelled else { return }
@@ -775,10 +785,16 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
     /// Folds a non-typed load error into a `SceneRenderingError`, pulling the
     /// renderer's `loadDiagnostics` (via the actor) when available.
     private func mapLoadFailure(_ error: Error) async -> SceneRenderingError {
+        let cause = SceneFailureCause.make(error)
+        loadFailureCause = cause
         if let diagnostic = await renderActor.loadDiagnostics() {
+            loadFailureCause = SceneFailureCause.make(diagnostic)
             return .resourceFailed(diagnostic)
         }
-        return .parseFailed(error.localizedDescription)
+        if error is WPESceneDocumentError {
+            return .parseFailed(error.localizedDescription)
+        }
+        return .resourceFailed(.other(layer: "scene", message: cause.reason))
     }
 }
 

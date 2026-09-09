@@ -41,6 +41,8 @@ enum WPEFrameOccupancyMeter {
         case jscSetObject
         case jscRead
         case audioBandWrite
+        case reflectionCapture
+        case reflectionMipGeneration
 
         var label: String {
             switch self {
@@ -61,6 +63,8 @@ enum WPEFrameOccupancyMeter {
             case .jscSetObject: "jscSet"
             case .jscRead: "jscRead"
             case .audioBandWrite: "audioBand"
+            case .reflectionCapture: "reflectionCopy"
+            case .reflectionMipGeneration: "reflectionMip"
             }
         }
     }

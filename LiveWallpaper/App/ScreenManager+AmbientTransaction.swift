@@ -34,6 +34,7 @@ extension ScreenManager {
         for screen: Screen,
         replacing expected: (any WallpaperRuntimeSession)?,
         generation: Int,
+        attemptID: UUID? = nil,
         expectedConfigurationRevision: UInt64,
         timeout: Duration,
         beforeCommit: @MainActor @escaping () -> Bool,
@@ -104,6 +105,9 @@ extension ScreenManager {
                 beforeCommit: beforeCommit,
                 afterCommit: { [weak self, weak screen] in
                     guard let self, let screen else { return }
+                    if let attemptID {
+                        wallpaperLoads.clear(for: screen, matching: attemptID)
+                    }
                     afterCommit()
                     self.observeRuntimeErrors(for: candidate)
                     self.setTransientRuntimeError(nil, for: screenID)
@@ -114,15 +118,42 @@ extension ScreenManager {
                     self.playbackCoordinator.refreshVideoAudioLeadership()
                     self.htmlCoordinator.refreshAudioLeadership()
                     self.notifyWallpaperSessionChanged()
+                },
+                beforeDiscard: { [weak self, weak screen] result in
+                    guard let self, let screen, let attemptID,
+                          WallpaperCandidateErrorPolicy.shouldPublish(result, isStillCurrent: isCandidateStillCurrent()) else { return }
+                    let error = candidate.runtimeError ?? .wallpaperPreparationFailed(type: candidate.wallpaperType, timedOut: result == .timedOut)
+                    var cause = WallpaperFailureCause.runtime(error)
+                    var diagnostics = ""
+                    #if !LITE_BUILD
+                    if let scene = candidate as? SceneWallpaperSession {
+                        cause = scene.loadFailureCause ?? scene.loadError.map(SceneFailureCause.make) ?? cause
+                        if scene.loadError == nil, let gpuError = scene.rendererDiagnostics?.gpuErrors.last {
+                            cause = WallpaperFailureCause(code: "scene.gpu_present", reason: gpuError)
+                        }
+                        if let config = wallpaperLoads.attempt(for: screen)?.configuration,
+                           case let .scene(descriptor) = config.activeWallpaper {
+                            diagnostics = WPERenderDiagnosticReport.make(descriptor: descriptor, diagnostics: scene.rendererDiagnostics, errorCode: cause.code)
+                        }
+                    }
+                    #endif
+                    guard isCandidateStillCurrent() else { return }
+                    failWallpaperAttempt(attemptID, for: screen, cause: cause, stage: result == .timedOut ? "first-frame" : "loading", diagnostics: diagnostics)
                 }
             )
 
+            if result == .cancelled, let attemptID {
+                wallpaperLoads.clear(for: screen, matching: attemptID)
+            }
             if let error = WallpaperCandidateErrorPolicy.errorToPublish(
                 result,
                 isStillCurrent: isCandidateStillCurrent(),
                 candidateError: candidate.runtimeError,
                 fallbackWallpaperType: candidate.wallpaperType
             ) {
+                if let attemptID, wallpaperLoads.attempt(for: screen)?.failure == nil {
+                    failWallpaperAttempt(attemptID, for: screen, cause: .runtime(error), stage: "commit")
+                }
                 self.setTransientRuntimeError(error, for: screenID)
             }
             if let work {

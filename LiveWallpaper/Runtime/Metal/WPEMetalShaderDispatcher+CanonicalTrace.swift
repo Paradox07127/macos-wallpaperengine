@@ -57,12 +57,16 @@ extension WPEMetalShaderDispatcher {
         layer: WPERenderLayer,
         destination: (id: WPEMetalTargetID, texture: MTLTexture),
         textures: [String: MTLTexture],
-        frameState: WPEMetalFrameState
+        frameState: WPEMetalFrameState,
+        fetchSceneColor: Bool = false
     ) {
         let recorder = WPECanonicalTraceRecorder.shared
         guard recorder.isAccumulating else { return }
 
         var metadata = Self.builtinTraceMetadata(for: kind, passShader: pass.pass.shader)
+        if kind == .blendComposite && fetchSceneColor {
+            metadata = BuiltinTraceMetadata(fragmentShaderName: "wpe_blend_composite_fetch_fragment", textureSlots: [0])
+        }
         let firstReference = pass.textureBindings[0] ?? pass.pass.textures[0] ?? pass.pass.source
         let singleTextureCompose = kind == .compose
             && layer.isUtilityModelLayer
@@ -130,7 +134,16 @@ extension WPEMetalShaderDispatcher {
             vertexShaderName: usesObjectQuad ? "wpe_object_quad_vertex" : "wpe_fullscreen_vertex",
             fragmentShaderName: metadata.fragmentShaderName,
             textureBindings: bindings,
-            usesObjectQuad: usesObjectQuad
+            usesObjectQuad: usesObjectQuad,
+            nativeState: .scenePass(
+                blendMode: pass.pass.blending,
+                alphaWritePolicy: .resolve(targetID: destination.id, blendMode: pass.pass.blending),
+                cullMode: pass.pass.cullMode,
+                depthAttached: executor.depthCache.needsAttachment(for: pass),
+                depthTest: pass.pass.depthTest,
+                depthWrite: pass.pass.depthWrite,
+                reversedZ: frameState.cameraUniforms.usesPerspectiveProjection
+            )
         )
     }
 

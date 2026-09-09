@@ -152,7 +152,7 @@ struct Header: View {
             GlassIconButton("square.stack.3d.up") {
                 showSchemeCapture = true
             }
-            .help(Text("Save as Scheme — archive this display's wallpaper, overlay layout, and every setting"))
+            .help(Text("Save this display's wallpaper, overlays, and settings as a scheme."))
             .accessibilityLabel(Text("Save as Scheme"))
             .popover(isPresented: $showSchemeCapture, arrowEdge: .bottom) {
                 AppLanguageScope(defaults: .appScoped()) {
@@ -168,17 +168,14 @@ struct Header: View {
         if screenManager.screens.count > 1,
            appliesOverlayOnly || screenManager.getConfiguration(for: screen) != nil {
             GlassIconButton("square.on.square", action: onApplyToAll)
-            // The button copies whatever tab you are on. On the overlay tab
-            // that is the layer in front of you and nothing else — taking the
-            // wallpaper along with it would replace content the user never
-            // asked about from a page that does not even show it.
-            .help(appliesOverlayOnly
-                ? Text("Apply to All — copy this display's overlay to every other display, leaving their wallpapers alone")
-                : Text("Apply to All — copy this display's wallpaper and settings to every other display"))
-            .accessibilityLabel(Text("Apply to all displays"))
-            .accessibilityHint(appliesOverlayOnly
-                ? Text("Copies this overlay to every other connected display; their wallpapers are not changed")
-                : Text("Copies the current wallpaper and settings to every other connected display"))
+                // Applying from the overlay tab preserves the destination wallpapers.
+                .help(appliesOverlayOnly
+                    ? Text("Copies this overlay to every other connected display; their wallpapers are not changed")
+                    : Text("Copies the current wallpaper and settings to every other connected display"))
+                .accessibilityLabel(Text("Apply to all displays"))
+                .accessibilityHint(appliesOverlayOnly
+                    ? Text("Copies this overlay to every other connected display; their wallpapers are not changed")
+                    : Text("Copies the current wallpaper and settings to every other connected display"))
         }
     }
 

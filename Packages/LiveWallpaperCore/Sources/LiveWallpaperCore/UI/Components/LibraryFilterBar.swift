@@ -1,8 +1,6 @@
 import SwiftUI
 
-/// Secondary control row beneath `DetailHeaderBar` on library pages. The only
-/// per-page divergence is the `filters` view-builder slot (Bookmarks: type
-/// chips when the library is large; Workshop: Type + Sort pickers; Aerials: none).
+/// Library search and result counts with caller-supplied filter controls.
 public struct LibraryFilterBar<Filters: View>: View {
     @Binding private var searchText: String
     private let searchPrompt: LocalizedStringKey

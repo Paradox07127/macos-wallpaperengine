@@ -7,6 +7,11 @@ import SwiftUI
 struct DownloadToastHost: View {
     private let center = WorkshopToastCenter.shared
     @State private var shown: WorkshopToastEvent?
+    @State private var hovering = false
+    private enum Control: Hashable { case details, dismiss }
+    @FocusState private var focused: Control?
+    var visibleDisplayID: CGDirectDisplayID?
+    var onOpenFailure: (WallpaperFailureSnapshot, CGDirectDisplayID) -> Void = { _, _ in }
 
     var body: some View {
         VStack {
@@ -17,11 +22,20 @@ struct DownloadToastHost: View {
         }
         .animation(.easeOut(duration: 0.2), value: shown?.token)
         .onChange(of: center.lastEvent?.token) { _, _ in
-            if let event = center.lastEvent { shown = event }
+            if let event = center.lastEvent {
+                shown = event.failure != nil && event.screenID == visibleDisplayID ? nil : event
+            }
         }
-        .task(id: shown?.token) {
-            guard let event = shown else { return }
-            try? await Task.sleep(for: .seconds(event.isSuccess ? 4 : 7))
+        .onChange(of: visibleDisplayID) {
+            if shown?.failure != nil, shown?.screenID == visibleDisplayID {
+                shown = nil
+            }
+        }
+        .onHover { hovering = $0 }
+        .task(id: "\(shown?.token ?? 0):\(hovering):\(focused != nil)") {
+            guard let event = shown, !hovering, focused == nil else { return }
+            do { try await Task.sleep(for: .seconds(event.isSuccess ? 4 : 8)) } catch { return }
+            guard !Task.isCancelled, shown?.token == event.token else { return }
             withAnimation(.easeOut(duration: 0.2)) { shown = nil }
         }
     }
@@ -51,6 +65,11 @@ struct DownloadToastHost: View {
             }
             .frame(maxWidth: 240, alignment: .leading)
 
+            if let failure = event.failure, let screenID = event.screenID {
+                Button("View Details") { onOpenFailure(failure, screenID); shown = nil }
+                    .buttonStyle(.bordered)
+                    .focused($focused, equals: .details)
+            }
             Button {
                 withAnimation(.easeOut(duration: 0.2)) { shown = nil }
             } label: {
@@ -59,13 +78,14 @@ struct DownloadToastHost: View {
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.borderless)
+            .focused($focused, equals: .dismiss)
             .accessibilityLabel(Text("Dismiss"))
         }
         .padding(.horizontal, DesignTokens.Spacing.cardInset)
         .padding(.vertical, 10)
         .adaptiveGlassSurface(.roundedRectangle(DesignTokens.Corner.xl))
         .shadow(color: .black.opacity(DesignTokens.Card.shadowOpacity), radius: 14, x: 0, y: 6)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
         .accessibilityLabel(Text(verbatim: "\(event.headline): \(event.title). \(event.message)"))
     }
 }

@@ -179,7 +179,8 @@ enum WallpaperSessionTransaction {
             Duration
         ) async -> WallpaperPreparationResult)? = nil,
         beforeCommit: @MainActor () -> Bool = { true },
-        afterCommit: @MainActor () -> Void = {}
+        afterCommit: @MainActor () -> Void = {},
+        beforeDiscard: @MainActor (WallpaperPreparationResult) async -> Void = { _ in }
     ) async -> WallpaperPreparationResult {
         // Candidate windows render behind the live session for first-frame readiness.
         if candidate.wallpaperType != .video {
@@ -197,6 +198,7 @@ enum WallpaperSessionTransaction {
                 "Wallpaper candidate for screen \(screen.id) discarded: \(candidate.wallpaperType) prepare returned \(result)",
                 category: .screenManager
             )
+            await beforeDiscard(result)
             candidate.cleanup()
             return result
         }

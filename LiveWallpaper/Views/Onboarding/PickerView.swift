@@ -198,7 +198,7 @@ struct PickerView: View {
         _ = handleImportedURL(url)
     }
 
-    /// Apply a dropped/picked URL to all displays; returns whether accepted.
+    /// Imports a dropped or selected URL onto the selected display; returns whether accepted.
     @discardableResult
     private func handleImportedURL(_ url: URL) -> Bool {
         clearError()
@@ -218,8 +218,6 @@ struct PickerView: View {
             case let .success(data):
                 bookmark = data
             case .failure(.couldNotCopy):
-                // "Couldn't read that file" covered both, and was wrong for the
-                // one where the file read fine and the disk refused the copy.
                 return fail("Couldn't copy that video into Loomscreen's storage. Check that the file is readable and that there is free space.")
             case .failure(.couldNotBookmarkCopy):
                 return fail("Copied that video, but macOS wouldn't grant lasting access to it.")
@@ -260,10 +258,7 @@ struct PickerView: View {
     }
 
     #if !LITE_BUILD
-    /// Finishing onboarding is a claim that a wallpaper is now on screen, so it
-    /// waits for an outcome that put one there. A Workshop *preset* folder is
-    /// the case that used to slip through: it joins the preset menu of a
-    /// wallpaper the user may not even own yet, and nothing gets displayed.
+    /// Preset-only imports do not finish setup; a wallpaper must also be configured.
     private func applyScene(_ folderURL: URL, to targets: [Screen]) {
         let didStartScope = folderURL.startAccessingSecurityScopedResource()
         isImportingScene = true
@@ -271,10 +266,7 @@ struct PickerView: View {
             defer { if didStartScope { folderURL.stopAccessingSecurityScopedResource() } }
             var didConfigureAny = false
             var presetName: String?
-            // The import service states why it refused, in a sentence it has
-            // already localized. Dropping it left every refusal — a missing
-            // entry file, an unreadable package, a bookmark macOS would not
-            // grant — reading as "try another folder".
+            // Preserve the service’s localized failure reason.
             var rejection: String?
             for screen in targets {
                 switch await screenManager.importWallpaperEngineProject(at: folderURL, for: screen) {
@@ -318,9 +310,7 @@ struct PickerView: View {
         if inlineError != nil { inlineError = nil }
     }
 
-    /// The display the picker names, or the primary one when there is only a
-    /// single display and no picker is shown. Importing writes a wallpaper to a
-    /// specific screen, so the reader has to be able to say which.
+    /// Uses the selected display, falling back to the first available display.
     private var targetScreens: [Screen] {
         if let selectedScreenID,
            let chosen = screenManager.screens.first(where: { $0.id == selectedScreenID }) {

@@ -13,13 +13,26 @@ extension ScreenManager {
             return .rejected(reason: "Application terminating")
         }
         beginExplicitWallpaperSelection(for: screen)
-        return await wpeImportCoordinator.importProject(at: folderURL, for: screen)
+        let id = wallpaperLoads.begin(for: screen, title: folderURL.lastPathComponent, sourceURL: folderURL)
+        let outcome = await wpeImportCoordinator.importProject(at: folderURL, for: screen)
+        if wallpaperLoads.attempt(for: screen)?.id == id, wallpaperLoads.attempt(for: screen)?.phase == .importing {
+            if case .rejected(let reason) = outcome {
+                failWallpaperAttempt(id, for: screen, cause: WallpaperFailureCause(code: "import.rejected", reason: reason), stage: "import")
+            } else { wallpaperLoads.clear(for: screen, matching: id) }
+        }
+        return outcome
     }
 
     func activateWPEHistoryEntry(_ entry: WPEHistoryEntry, for screen: Screen) async {
         guard !isTerminating else { return }
         beginExplicitWallpaperSelection(for: screen)
+        let id = wallpaperLoads.begin(for: screen, title: entry.origin.title, origin: entry.origin)
         await wpeImportCoordinator.activateHistoryEntry(entry, for: screen)
+        if wallpaperLoads.attempt(for: screen)?.id == id, wallpaperLoads.attempt(for: screen)?.phase == .importing {
+            if let error = wpeImportTracker.error(for: screen.id) {
+                failWallpaperAttempt(id, for: screen, cause: WallpaperFailureCause(code: "import.source", reason: error.localizedDescription), stage: "import")
+            } else { wallpaperLoads.clear(for: screen, matching: id) }
+        }
     }
 
     func removeWPEImport(workshopID: String) {
@@ -44,6 +57,9 @@ extension ScreenManager {
         // If a screen is currently rendering the scene being deleted, switch it away FIRST — otherwise its live renderer keeps reading the cache files that the delete is about to move to the Trash.
         let cacheRelativePath = "wpe-cache/\(workshopID)"
         for screen in screens {
+            if wallpaperLoads.attempt(for: screen)?.origin?.workshopID == workshopID {
+                beginExplicitWallpaperSelection(for: screen)
+            }
             guard let config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint) else { continue }
             let matchesScene: Bool
             if case .scene(let descriptor) = config.activeWallpaper {

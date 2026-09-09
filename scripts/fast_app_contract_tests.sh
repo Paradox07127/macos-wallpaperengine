@@ -36,6 +36,7 @@ SUITES=(
   # Failure surfaces that have a classified cause must render it rather
   # than collapsing every cause into one sentence.
   ErrorReasonSurfaceTests
+  SceneFailureFlowTests
   HTMLTrustVerdictTests
   LogPrivacySourceAuditTests
   LocalizationCoverageTests

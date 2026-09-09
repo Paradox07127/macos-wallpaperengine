@@ -23,9 +23,15 @@ struct OracleCorpusCaptureTests {
         var memoryAuditLog: Bool = false
         var frames: Int = 1
         var frameStepSeconds: Double = 1.0 / 60.0
+        var audioProbeLayer: String?
+        var jobId: String?
+        var replayFrame: [String: Double]?
+        var resolution: [Int]?
+        var captureGPU: Bool = false
 
         private enum CodingKeys: String, CodingKey {
-            case corpusRoot, engineAssetsRoot, label, scenes, perPass, dumpPNGs, memoryAuditLog, frames, frameStepSeconds
+            case corpusRoot, engineAssetsRoot, label, scenes, perPass, dumpPNGs, memoryAuditLog, frames, frameStepSeconds, audioProbeLayer
+            case jobId, replayFrame, resolution, captureGPU
         }
 
         init(from decoder: Decoder) throws {
@@ -37,6 +43,11 @@ struct OracleCorpusCaptureTests {
             perPass = try container.decodeIfPresent(Bool.self, forKey: .perPass) ?? false
             dumpPNGs = try container.decodeIfPresent(Bool.self, forKey: .dumpPNGs) ?? false
             memoryAuditLog = try container.decodeIfPresent(Bool.self, forKey: .memoryAuditLog) ?? false
+            audioProbeLayer = try container.decodeIfPresent(String.self, forKey: .audioProbeLayer)
+            jobId = try container.decodeIfPresent(String.self, forKey: .jobId)
+            replayFrame = try container.decodeIfPresent([String: Double].self, forKey: .replayFrame)
+            resolution = try container.decodeIfPresent([Int].self, forKey: .resolution)
+            captureGPU = try container.decodeIfPresent(Bool.self, forKey: .captureGPU) ?? false
             frames = try container.decodeIfPresent(Int.self, forKey: .frames) ?? 1
             frameStepSeconds = try container.decodeIfPresent(Double.self, forKey: .frameStepSeconds) ?? (1.0 / 60.0)
         }
@@ -71,6 +82,26 @@ struct OracleCorpusCaptureTests {
         let configURL = try #require(Self.captureConfigURL)
         let data = try Data(contentsOf: configURL)
         let config = try JSONDecoder().decode(Config.self, from: data)
+        let captureStarted = Date()
+        let defaults = UserDefaults.standard
+        let previousArguments = defaults.volatileDomain(forName: UserDefaults.argumentDomain)
+        var arguments = previousArguments
+        arguments["WPEOraclePerPassHashes"] = config.perPass
+        arguments["WPEMemoryAuditLog"] = config.memoryAuditLog
+        arguments["WPEMetalFXRenderScale"] = 1.0
+        if let replay = config.replayFrame {
+            for (field, key) in [("time", "WPEOracleReplayTime"), ("daytime", "WPEOracleReplayDaytime"),
+                                 ("pointerX", "WPEOracleReplayPointerX"), ("pointerY", "WPEOracleReplayPointerY")] {
+                let value = try #require(replay[field], "Missing replay field: \(field)")
+                try #require(value.isFinite && value >= 0, "Invalid replay field: \(field)")
+                arguments[key] = value
+            }
+        }
+        let size = config.resolution ?? [1920, 1080]
+        try #require(size.count == 2 && size.allSatisfy { $0 > 0 && $0 <= 16384 })
+        try #require(config.frames > 0 && config.frameStepSeconds.isFinite && config.frameStepSeconds >= 0)
+        defaults.setVolatileDomain(arguments, forName: UserDefaults.argumentDomain)
+        defer { defaults.setVolatileDomain(previousArguments, forName: UserDefaults.argumentDomain) }
         try #require(!config.corpusRoot.isEmpty, "oracle-capture.json corpusRoot must not be empty")
         let root = URL(fileURLWithPath: config.corpusRoot)
         let outDir = try #require(Self.captureOutputRoot)
@@ -81,25 +112,10 @@ struct OracleCorpusCaptureTests {
 
         WPEOracleMode.testingOverride = true
         WPESceneDebugArtifacts.shared.setEnabledForTesting(true)
-        if config.perPass {
-            UserDefaults.standard.set(true, forKey: "WPEOraclePerPassHashes")
-        }
-        if config.memoryAuditLog {
-            UserDefaults.standard.set(true, forKey: "WPEMemoryAuditLog")
-        }
         defer {
             WPEOracleMode.testingOverride = nil
             WPEOracleMode.frameAdvanceSeconds = 0
             WPESceneDebugArtifacts.shared.setEnabledForTesting(nil)
-            if config.perPass {
-                UserDefaults.standard.removeObject(forKey: "WPEOraclePerPassHashes")
-            }
-            if config.dumpPNGs {
-                UserDefaults.standard.removeObject(forKey: "WPEDumpScenePasses")
-            }
-            if config.memoryAuditLog {
-                UserDefaults.standard.removeObject(forKey: "WPEMemoryAuditLog")
-            }
         }
 
         let device = try #require(MTLCreateSystemDefaultDevice())
@@ -157,9 +173,8 @@ struct OracleCorpusCaptureTests {
                 continue
             }
 
-            if config.dumpPNGs {
-                UserDefaults.standard.set(id, forKey: "WPEDumpScenePasses")
-            }
+            arguments["WPEDumpScenePasses"] = config.dumpPNGs ? id : ""
+            defaults.setVolatileDomain(arguments, forName: UserDefaults.argumentDomain)
             WPEOracleMode.frameAdvanceSeconds = 0
             let descriptor = SceneDescriptor(
                 workshopID: id,
@@ -173,7 +188,7 @@ struct OracleCorpusCaptureTests {
                     cacheRootURL: stage,
                     dependencyMounts: [],
                     engineAssetsRootURL: engineAssetsRoot,
-                    frame: CGRect(x: 0, y: 0, width: 1920, height: 1080),
+                    frame: CGRect(x: 0, y: 0, width: size[0], height: size[1]),
                     device: device,
                     // WPE's captured frame carries its own pointer; centring ours
                     // shifts every mouse-driven parallax/effect uniform.
@@ -181,6 +196,20 @@ struct OracleCorpusCaptureTests {
                 )
                 let renderActor = WPEDisplayRenderActor(backing: .main)
                 await renderActor.adopt(WPERendererHandoff(renderer: renderer).renderer)
+                let captureManager = MTLCaptureManager.shared()
+                if config.captureGPU {
+                    try #require(captureManager.supportsDestination(.gpuTraceDocument))
+                    let capture = MTLCaptureDescriptor()
+                    capture.captureObject = device
+                    capture.destination = .gpuTraceDocument
+                    capture.outputURL = outDir.appendingPathComponent("\(id).gputrace")
+                    try captureManager.startCapture(with: capture)
+                }
+                defer {
+                    if config.captureGPU, captureManager.isCapturing {
+                        captureManager.stopCapture()
+                    }
+                }
                 try await renderActor.load()
                 let authoredSummary = Self.authoredJSONSummary(renderer.renderGraph)
                 graphLayers += authoredSummary.layers
@@ -201,14 +230,26 @@ struct OracleCorpusCaptureTests {
                     stepSeconds: config.frameStepSeconds,
                     perPass: config.perPass || config.dumpPNGs
                 )
-                if let trace = Self.awaitLatestTrace(forID: id) {
+                if config.captureGPU {
+                    captureManager.stopCapture()
+                }
+                if let trace = Self.awaitLatestTrace(forID: id, after: captureStarted) {
                     let builtinSummary = try Self.validateBuiltinPasses(in: trace, sceneID: id)
                     builtinPassesCaptured += builtinSummary.count
                     let dest = outDir.appendingPathComponent("\(id).json")
-                    try? FileManager.default.removeItem(at: dest)
-                    try FileManager.default.copyItem(at: trace, to: dest)
+                    try #require(!FileManager.default.fileExists(atPath: dest.path), "Refusing to overwrite an oracle trace")
+                    var document = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: trace)) as? [String: Any])
+                    var capture = document["capture"] as? [String: Any] ?? [:]
+                    if let jobId = config.jobId {
+                        capture["jobId"] = jobId
+                    }
+                    document["capture"] = capture
+                    try JSONSerialization.data(withJSONObject: document, options: [.prettyPrinted, .sortedKeys]).write(to: dest, options: .atomic)
                     captured += 1
                     print("[oracle-capture] [\(id)] ✅ trace → \(dest.lastPathComponent)")
+                    if let layerID = config.audioProbeLayer {
+                        try Self.verifyAudioLayer(renderer: renderer, layerID: layerID, outputRoot: outDir)
+                    }
                 } else {
                     print("[oracle-capture] [\(id)] loaded but no trace written")
                     failed += 1
@@ -224,11 +265,57 @@ struct OracleCorpusCaptureTests {
               + "malformedLayerLinks=\(malformedAuthoredLayerLinks) graphPasses=\(graphPasses) "
               + "authoredPasses=\(authoredJSONPasses) malformedPassLinks=\(malformedAuthoredPassLinks) ===")
         #expect(captured > 0, "no scene produced a trace — check corpus root / engine assets")
+        #expect(failed == 0, "one or more requested scenes failed")
+        if let filter {
+            #expect(captured == filter.count && skipped == 0, "requested scene coverage is incomplete")
+        }
         #expect(builtinPassesCaptured > 0, "captured traces contained no hand-authored Metal builtin pass")
         #expect(authoredJSONLayers > 0, "real-scene render graphs exposed no authored scene/model layer JSON")
         #expect(malformedAuthoredLayerLinks == 0, "layer-level authored scene ancestry was lost")
         #expect(authoredJSONPasses > 0, "real-scene render graphs exposed no material/effect authored JSON")
         #expect(malformedAuthoredPassLinks == 0, "pass-level authored JSON lost its parent document")
+    }
+
+    /// Isolate a real scene layer, pin every other input, and drive its shader
+    /// uniforms with silence/full-scale spectra. A live tap is neither required
+    /// nor evidence of GPU consumption; the trace records the packed slots.
+    @MainActor
+    private static func verifyAudioLayer(
+        renderer: WPEMetalSceneRenderer, layerID: String, outputRoot: URL
+    ) throws {
+        let layer = try #require(renderer.renderPipeline?.layers.first { $0.graphLayer.objectID == layerID })
+        let pipeline = WPEPreparedRenderPipeline(layers: [layer])
+        let executor = try WPEMetalRenderExecutor(device: renderer.executor.textureSourceDevice)
+        var coverage: [Int] = []
+        for level in [0.0, 1.0] {
+            let id = "audio-\(layerID)-\(Int(level))"
+            _ = WPESceneDebugArtifacts.shared.beginSession(workshopID: id, descriptor: "audio consumption probe")
+            WPECanonicalTraceRecorder.shared.beginScene(
+                workshopID: id, projectJsonPath: "scene.json", descriptor: "audio consumption probe"
+            )
+            let uniforms = WPEMetalRuntimeUniforms(
+                time: 6, daytime: 0, brightness: 1, pointerPosition: SIMD2(0.5, 0.5),
+                audioSpectrum: Array(repeating: level, count: 64)
+            )
+            let texture = try executor.render(
+                pipeline: pipeline, size: renderer.sceneRenderSize, textures: renderer.loadedTextures,
+                textureSamplingDescriptors: renderer.loadedTextureSamplingDescriptors,
+                dynamicLayerIDs: [layerID], runtimeUniforms: uniforms,
+                cameraUniforms: renderer.cameraUniforms, sceneID: id
+            )
+            let stats = try #require(WPEMetalTextureVisualStats.analyze(texture: texture))
+            coverage.append(stats.nonBlackPixelCount)
+            WPECanonicalTraceRecorder.shared.finishFrame(
+                outputTexture: texture, runtimeUniforms: uniforms, firstFrameStats: stats,
+                resolutionDiagnostics: renderer.resolutionTracer.snapshot()
+            )
+            WPESceneDebugArtifacts.shared.endSession()
+            let trace = try #require(awaitLatestTrace(forID: id))
+            let destination = outputRoot.appendingPathComponent("\(id).json")
+            try FileManager.default.copyItem(at: trace, to: destination)
+            print("[audio-probe] layer=\(layerID) spectrum=\(level) nonBlack=\(stats.nonBlackPixelCount)")
+        }
+        #expect(coverage[1] > coverage[0], "The real layer must draw more audio bars with nonzero spectra")
     }
 
     @Test("Config decode fills in defaults for keys a config file omits")
@@ -347,13 +434,17 @@ struct OracleCorpusCaptureTests {
     /// `recordNote` intentionally writes on the artifacts utility queue. Wait for
     /// that bounded handoff instead of racing `fileExists` immediately after
     /// `finishFrame`; the renderer itself remains fully asynchronous.
-    private static func awaitLatestTrace(forID id: String) -> URL? {
+    private static func awaitLatestTrace(forID id: String, after: Date = .distantPast) -> URL? {
         let deadline = Date().addingTimeInterval(2)
         repeat {
-            if let trace = latestTrace(forID: id) { return trace }
+            if let trace = latestTrace(forID: id),
+               let modified = try? trace.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate,
+               modified >= after {
+                return trace
+            }
             usleep(20_000)
         } while Date() < deadline
-        return latestTrace(forID: id)
+        return nil
     }
 
     private static func validateBuiltinPasses(

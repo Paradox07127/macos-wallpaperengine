@@ -15,12 +15,8 @@ struct Sparkline: View {
     var guides: [Double] = []
     var lineWidth: CGFloat = 1.6
 
-    /// Paths in one immediate-mode pass instead of a `ZStack` of `Path`s, a guide `ForEach`, and a gradient — every monitor
-    /// widget rebuilt that tree on its sample tick (`CPUStackChart` here already draws this way). The endpoint dot stays a
-    /// real view at the newest sample's X, its glow deliberately spilling past the sparkline's bounds — `Canvas` clips to its
-    /// frame, so drawing the dot there would shave off half of it and its shadow. Reads size from a `GeometryReader`, not
-    /// `onGeometryChange` into `@State`: the state round-trip costs a pass, so the dot was missing from the sparkline's first
-    /// frame.
+    /// Draw paths in one Canvas pass. Keep the endpoint dot outside Canvas so its glow is not clipped.
+    /// Read GeometryReader size directly so the dot is present on the first frame.
     var body: some View {
         Canvas(opaque: false, rendersAsynchronously: false) { context, size in
             let (lo, hi) = resolvedDomain()

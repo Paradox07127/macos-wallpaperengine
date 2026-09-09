@@ -496,6 +496,8 @@ struct WPEParticleProjection {
     /// WPE `g_RenderVar0` for TRAILRENDERER: x = speed→length multiplier,
     /// y = max length, z = min length, w > 0.5 = trail enabled.
     var trail: SIMD4<Float> = SIMD4<Float>(0, 0, 0, 0)
+    /// Signed model XY scale divided by the size's baked average; cos/sin of model Z rotation.
+    var modelShape = SIMD4<Float>(1, 1, 1, 0)
 }
 
 /// Layout MUST match `WPESkewParams` in WPEMetalBuiltins.metal. Normalized

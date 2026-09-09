@@ -27,13 +27,16 @@ struct PaneView: View {
             ToolbarItem(placement: .principal) {
                 tabSwitcher
             }
+            // Separate items let macOS own toolbar grouping and spacing.
             ToolbarItem(placement: .primaryAction) {
-                WorkshopPaneActions(onPaste: { presentPasteFlow() })
+                WorkshopPasteAction(onPaste: { presentPasteFlow() })
             }
-        }
-        .overlay(alignment: .bottomTrailing) {
-            DownloadToastHost()
-                .padding(DesignTokens.Spacing.lg)
+            ToolbarItem(placement: .primaryAction) {
+                WorkshopSubscriptionSyncAction()
+            }
+            ToolbarItem(placement: .primaryAction) {
+                WorkshopAccountAction()
+            }
         }
         // Re-confirm SteamCMD readiness (so the Download button isn't greyed out just because this launch hasn't re-run the probes), then reconcile the library with what's on disk.
         .task {
@@ -298,10 +301,43 @@ enum WorkshopDeepLink {
     }
 }
 
-/// Page-level Workshop toolbar actions.
-struct WorkshopPaneActions: View {
+/// Page-level Workshop toolbar action: add an item by URL or ID.
+struct WorkshopPasteAction: View {
     let onPaste: () -> Void
 
+    var body: some View {
+        Button {
+            onPaste()
+        } label: {
+            Image(systemName: "link.badge.plus")
+        }
+        .help(Text("Add a Steam Workshop item by URL or ID"))
+        .accessibilityLabel(Text("Add from Workshop URL or ID"))
+    }
+}
+
+/// Page-level Workshop toolbar action: fetch subscribed items missing locally.
+struct WorkshopSubscriptionSyncAction: View {
+    @State private var showingSubscriptionSync = false
+
+    var body: some View {
+        Button {
+            showingSubscriptionSync = true
+        } label: {
+            Image(systemName: "arrow.down.circle")
+        }
+        .help(Text("Download subscribed wallpapers missing from this Mac"))
+        .accessibilityLabel(Text("Sync subscribed wallpapers"))
+        .sheet(isPresented: $showingSubscriptionSync) {
+            AppLanguageScope(defaults: .appScoped()) {
+                SubscriptionSyncSheet()
+            }
+        }
+    }
+}
+
+/// Page-level Workshop toolbar action: the Steam account control.
+struct WorkshopAccountAction: View {
     @Environment(WorkshopServices.self) private var services
     @Environment(SteamCMDDoctorService.self) private var doctor
     @Environment(WorkshopSetupController.self) private var setupController
@@ -309,55 +345,31 @@ struct WorkshopPaneActions: View {
     @State private var showingSignIn = false
     @State private var showingAccountMenu = false
     @State private var showingRemoveSessionConfirm = false
-    @State private var showingSubscriptionSync = false
 
     var body: some View {
-        HStack(spacing: DesignTokens.Spacing.sm) {
-            Button {
-                onPaste()
-            } label: {
-                Image(systemName: "link.badge.plus")
-            }
-            .help(Text("Add a Steam Workshop item by URL or ID"))
-            .accessibilityLabel(Text("Add from Workshop URL or ID"))
-
-            Button {
-                showingSubscriptionSync = true
-            } label: {
-                Image(systemName: "arrow.down.circle")
-            }
-            .help(Text("Download subscribed wallpapers missing from this Mac"))
-            .accessibilityLabel(Text("Sync subscribed wallpapers"))
-
-            accountControl
-        }
-        .task { await setupController.loadAccounts() }
-        .sheet(isPresented: $showingSignIn) {
-            AppLanguageScope(defaults: .appScoped()) {
-                SteamSignInSheet { accountName in
-                    setupController.adoptSignedInAccount(accountName)
+        accountControl
+            .task { await setupController.loadAccounts() }
+            .sheet(isPresented: $showingSignIn) {
+                AppLanguageScope(defaults: .appScoped()) {
+                    SteamSignInSheet { accountName in
+                        setupController.adoptSignedInAccount(accountName)
+                    }
                 }
             }
-        }
-        .sheet(isPresented: $showingSubscriptionSync) {
-            AppLanguageScope(defaults: .appScoped()) {
-                SubscriptionSyncSheet()
+            .confirmationDialog(
+                Text("Remove the saved Steam session?"),
+                isPresented: $showingRemoveSessionConfirm,
+                titleVisibility: .visible
+            ) {
+                // No destructive role on the confirm button: the user already
+                // pressed a control labelled Remove (rules/ui-design.md).
+                Button("Remove") {
+                    Task { await doctor.removeSignedInSession() }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Removes this account's Loomscreen download session. Reconnect before downloading again. Steam app sign-in is unaffected.")
             }
-        }
-        .confirmationDialog(
-            Text("Remove the saved Steam session?"),
-            isPresented: $showingRemoveSessionConfirm,
-            titleVisibility: .visible
-        ) {
-            // No destructive role on the confirm button: the user already
-            // pressed a control labelled Remove (rules/ui-design.md).
-            Button("Remove") {
-                Task { await doctor.removeSignedInSession() }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Loomscreen deletes only its own download session for this account. Your Steam app sign-in is not affected. You'll connect this account again the next time you download.")
-        }
     }
 
     /// An icon, not the Steam avatar: the app never learns the signed-in user's

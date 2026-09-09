@@ -7,41 +7,38 @@
     <description>Updates for Loomscreen Pro</description>
     <language>en</language>
     <item>
-      <title>Version 0.6.6</title>
-      <pubDate>Sun, 06 Sep 2026 18:20:53 +0000</pubDate>
-      <sparkle:version>0.6.6</sparkle:version>
-      <sparkle:shortVersionString>0.6.6</sparkle:shortVersionString>
+      <title>Version 0.6.7</title>
+      <pubDate>Tue, 08 Sep 2026 08:54:56 +0000</pubDate>
+      <sparkle:version>0.6.7</sparkle:version>
+      <sparkle:shortVersionString>0.6.7</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.6</sparkle:minimumSystemVersion>
       <description sparkle:descriptionFormat="html"><![CDATA[
 <p><strong>What's New</strong></p>
 <ul>
-<li>Weather tile for the Monitor board: the local sky as a picture — condition, hour, clouds, rain or snow leaning with the real wind, fog, stars, lightning</li>
-<li>Steam Workshop subscriptions sync after sign-in, so subscribed items can be downloaded without opening Steam</li>
-<li>Settings → Workshop → "Show presets as wallpapers", off by default: presets restyle another wallpaper, and Browse now leaves them out unless you ask</li>
-<li>Wave audio effect for the Now Playing layer, which is placed by dragging on the preview canvas</li>
+<li>A Nixie clock overlay: one tube clock per display, on the desktop or above your windows. Drag it to move it, drag its corner to resize</li>
+<li>System Overview tile for the Monitor board — CPU, memory, network, disk and power in a single widget</li>
+<li>A wallpaper that fails to load now says so on the display's page: what failed and why, with Retry, the full details, and a prefilled problem report. Your desktop keeps the wallpaper it had, and the card names it</li>
+<li>The Workshop detail sheet lists the items a wallpaper requires, each openable on its own</li>
+<li>Settings ▸ Workshop: a default sort and time frame for Browse, blurred Mature covers, and hiding items already in your library</li>
 </ul>
 <p><strong>Improvements</strong></p>
 <ul>
-<li>Particles no longer need a wallpaper session — rain or snow draws over the macOS wallpaper too — and both particles and the Monitor board honour Reduce Motion live</li>
-<li>The frame-rate cap is a target rate, not a divisor of the refresh rate: 30 FPS is reachable on a 240 Hz panel, saved settings migrate, and a 60 Hz panel no longer rewrites "match display" into a fixed 60</li>
-<li>Workshop filters: picking a genre means "any of these", and tag- or creator-scoped browsing keeps your maturity, type and resolution filters. The first page arrives before creator names are looked up, the grid stays up while filters change, and browsing without an API key is cached</li>
-<li>SteamCMD uses a private Steam session per account and downloads straight into the library; deletes take the same lock a download holds, and a download is imported only after its folder is re-checked to lie inside the authorised library</li>
-<li>Unavailable Monitor readings show "—" instead of a zero, in peaks and current rates alike</li>
+<li>Browsing the Workshop without a Steam API key now reads Steam's own browse page: one request per page, with creator names and a real page count</li>
+<li>Keyed search gained tag groups and search-field targeting, and falls back to the keyless path by itself when Valve rejects the key</li>
+<li>Maturity starts at Everyone, the way the signed-out Steam page browses</li>
+<li>Workshop requests retry a dropped connection or a busy server; a rate limit reports how long it lasts instead of hanging on it</li>
+<li>The Processes and agent tiles show each process's own app icon</li>
 </ul>
 <p><strong>Bug Fixes</strong></p>
 <ul>
-<li>The particle layer ignored "Show wallpaper in screen capture", and stayed behind after its display was unplugged</li>
-<li>Meteors suspended mid-flight were never removed once the flight ended</li>
-<li>A Weather tile placed after startup drew no sky</li>
-<li>The web wallpaper's address bar accepted any text — "foo" and Return set the desktop to a page reading "foo"</li>
-<li>Audio-reactive Workshop effects whose audio uniforms live only in the vertex shader (effects/shake, scene 2370927443) did nothing (#133)</li>
-<li>An .mdl index past its vertex table read beyond the GPU buffer; zero or NaN normals produced NaN lighting; an audio RESOLUTION outside 16/32/64 read past the spectrum array</li>
-<li>Workshop connector cleanups re-resolved a path they had just checked for symlinks; a sign-in whose +quit took more than three seconds was reported as failed</li>
-<li>Monitor board and Now Playing titles followed the system language while the labels beside them followed the app language</li>
+<li>Board edit controls were about seven points tall in the inspector preview</li>
+<li>The log sheet kept its first page of text when the log grew while it was open</li>
+<li>Pro: trail particles — rain among them — pointed the wrong way on rotated or scaled emitters</li>
+<li>Pro: an object's alpha script never reached its particles, and animated textures were loaded in the wrong colour space</li>
 </ul>
-<p><small>Not notarized — if macOS refuses to open the app, run <code>xattr -dr com.apple.quarantine "/Applications/Loomscreen Pro.app"</code> once; updates Loomscreen Pro installs itself clear the flag. <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.6.6">Full release notes</a> · <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.6.6">完整发布说明</a></small></p>
+<p><small>Not notarized — if macOS refuses to open the app, run <code>xattr -dr com.apple.quarantine "/Applications/Loomscreen Pro.app"</code> once; updates Loomscreen Pro installs itself clear the flag. <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.6.7">Full release notes</a> · <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.6.7">完整发布说明</a></small></p>
       ]]></description>
-      <enclosure url="https://github.com/Paradox07127/macos-wallpaperengine/releases/download/loomscreen-v0.6.6/Loomscreen-Pro-0.6.6.dmg" type="application/octet-stream" sparkle:edSignature="K+jKWpPvvcBQFpn50BhCwOSRJbvStNqjGfgHrnKd9SYWvUlR2hvWbpxNKq33wCk9iNofaHvjhvfFC/++Fu5VCQ==" length="10063240" />
+      <enclosure url="https://github.com/Paradox07127/macos-wallpaperengine/releases/download/loomscreen-v0.6.7/Loomscreen-Pro-0.6.7.dmg" type="application/octet-stream" sparkle:edSignature="SssCfniDSCU44b5LJ5H5ZA/B8zB5CYwDBlZkBkkxxUaMB4kb65oR2O6R1BZJxlH3D5cgvxaRo6uK+pRUR5xNAw==" length="14811690" />
     </item>
   </channel>
 </rss>

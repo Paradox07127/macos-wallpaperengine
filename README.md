@@ -45,7 +45,7 @@
 - **Per-display control** — every monitor runs its own wallpaper; copy one setup to all screens, or span a single video across them.
 - **Playlists & scheduling** — shuffle, rotation intervals, time-of-day slots, and a bookmark library for one-click swaps.
 - **Menu bar first** — global on/off, per-display play/pause and prev/next, plus a live CPU / GPU / RAM / thermal strip.
-- **Desktop overlays** — 12 particle effects, live weather response, and a configurable board with ten widget types, including Weather and local AI-agent sessions. Arrange and resize widgets per display.
+- **Desktop overlays** — 12 particle effects, live weather response, and a configurable board with eleven widget types, including System Overview, Weather and local AI-agent sessions. An independent Clock section offers a freely resizable transparent Nixie clock. Arrange overlays per display.
 - **Music layer** — Spotify and Apple Music, Poster/Vinyl/Aurora layouts, cover art, playback controls and optional synchronized lyrics. Pro adds system audio-driven visual effects.
 - **System Wallpaper (macOS 26+)** — publish videos to the macOS wallpaper provider so they can play with Loomscreen closed, subject to provider compatibility.
 - **Power-aware playback** — configurable full-screen, occlusion, battery and Low Power Mode rules; lock/sleep and resource-pressure handling preserve your play/pause intent.

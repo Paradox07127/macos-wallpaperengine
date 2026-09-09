@@ -19,6 +19,8 @@ struct DetailInspectorPanel: View {
     /// A nil schema means "loading" until the read finishes, and "this scene has
     /// none" after — the notice must only speak for the second.
     @State private var wpeSceneCustomSettingsResolved = false
+    @State private var wpeSceneSettingsFailure: String?
+    @State private var schemaReload = 0
     #endif
 
     var body: some View {
@@ -80,12 +82,18 @@ struct DetailInspectorPanel: View {
                             schema: schema,
                             descriptor: sceneDescriptorBinding
                         )
+                    } else if let failure = wpeSceneSettingsFailure {
+                        VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
+                            Label("Unable to Read Settings", systemImage: "exclamationmark.triangle")
+                            Text(verbatim: failure).textSelection(.enabled)
+                            Button("Reload Settings") { schemaReload += 1 }.buttonStyle(.bordered)
+                        }
+                        .font(DesignTokens.Typography.body)
                     } else if wpeSceneCustomSettingsResolved {
-                        // Most scenes publish no properties at all, and the panel
-                        // opens anyway (a scene is configured), so without this the
-                        // column is a blank rectangle with no way to tell "nothing
-                        // to adjust" from "still loading".
+                        // Show the empty state only after schema loading has resolved.
                         sceneWithoutOptionsNotice
+                    } else {
+                        ProgressView().accessibilityLabel(Text("Loading settings…"))
                     }
                 }
                 #endif
@@ -132,15 +140,14 @@ struct DetailInspectorPanel: View {
               let descriptor = draft.sceneDescriptor else {
             return "hidden"
         }
-        let originFingerprint = draft.wpeOrigin?.sourceFolderBookmark.count.description ?? "-"
-        return "\(screen.id):scene:\(descriptor.workshopID):\(originFingerprint)"
+        let originFingerprint = draft.wpeOrigin?.sourceFolderBookmark.base64EncodedString() ?? "-"
+        return "\(screen.id):scene:\(descriptor.cacheRelativePath):\(descriptor.entryFile):\(originFingerprint):\(schemaReload)"
     }
 
     private var sceneWithoutOptionsNotice: some View {
         IllustratedEmptyState(
             symbol: "slider.horizontal.3",
             title: "No scene options",
-            message: "The author provided no adjustable properties.",
             variant: .compact
         )
     }
@@ -154,6 +161,7 @@ struct DetailInspectorPanel: View {
             return
         }
         wpeSceneCustomSettingsSchema = nil
+        wpeSceneSettingsFailure = nil
         wpeSceneCustomSettingsResolved = false
         let outcome = await WPESceneProjectSchemaLoader.load(
             descriptor: descriptor,
@@ -169,6 +177,7 @@ struct DetailInspectorPanel: View {
         // A read that failed (unreadable project, denied bookmark) is not an
         // answer about the scene, so the notice must stay away.
         wpeSceneCustomSettingsResolved = outcome.schema != nil || outcome.isExpectedAbsence
+        wpeSceneSettingsFailure = wpeSceneCustomSettingsResolved ? nil : outcome.failure?.reason ?? LogPrivacyRedactor.scrub(outcome.log)
     }
 
     /// Drives schema reloads from the panel rather than the card: the panel is always mounted while HTML properties are visible, so the async read can't deadlock behind an initially empty card body.
@@ -272,7 +281,7 @@ struct DetailInspectorPanel: View {
             .buttonStyle(.bordered)
             .controlSize(.small)
             .tint(DesignTokens.Colors.Status.danger)
-            .help(Text("Reset all playback, color, particle, audio, and layout settings on this display — wallpaper, playlist, and bookmarks stay"))
+            .help(Text("Resets playback, effects, web options, and scheduling. Keeps the wallpaper, playlist, and bookmarks."))
             Spacer()
         }
         .padding(.top, 2)

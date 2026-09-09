@@ -104,6 +104,10 @@ extension ScreenManager {
         mutateMonitorOverlays(of: [screen]) { $0.music = music }
     }
 
+    func setClockOverlay(_ clock: ClockOverlayConfiguration, for screen: Screen) {
+        mutateMonitorOverlays(of: [screen]) { $0.clock = clock.normalized }
+    }
+
     /// Whole-struct overwrite, for applying a saved scheme. Assigns the config
     /// rather than copying its four fields across so a field added to
     /// `MonitorOverlayConfiguration` later cannot be silently dropped on apply.
@@ -133,6 +137,9 @@ extension ScreenManager {
         case .music:
             let template = monitorOverlay(for: source).music
             mutateMonitorOverlays(of: targets) { $0.music = template }
+        case .clock:
+            let template = monitorOverlay(for: source).clock
+            mutateMonitorOverlays(of: targets) { $0.clock = template }
         case .weather:
             // Weather is not in `monitorOverlays` — it rides on each display's
             // own configuration, so only its three fields move.
@@ -164,6 +171,7 @@ extension ScreenManager {
             let overlay = monitorOverlay(for: $0)
             return (overlay.enabled && overlay.level == .desktop)
                 || (overlay.music.enabled && overlay.music.level == .desktop)
+                || (overlay.clock.enabled && overlay.clock.level == .desktop)
         }
     }
 
@@ -228,6 +236,20 @@ extension ScreenManager {
         guard !isTerminating else { return }
         let generation = bumpTransition(for: screen.id)
         let expected = screen.runtimeSession
+        let attemptID: UUID?
+        if case .scene = definition {
+            let current = wallpaperLoads.attempt(for: screen)
+            let id = current?.phase == .importing ? current!.id : wallpaperLoads.begin(for: screen, title: configuration.wpeOrigin?.title ?? definition.displayName(using: { bookmarkDisplayName(for: $0) }) ?? String(localized: "Scene wallpaper", bundle: .appLanguage), origin: configuration.wpeOrigin)
+            wallpaperLoads.update(id, for: screen) {
+                $0.configuration = configuration
+                $0.origin = configuration.wpeOrigin
+                $0.title = configuration.wpeOrigin?.title ?? $0.title
+                $0.phase = .preparing
+            }
+            attemptID = id
+        } else {
+            attemptID = nil
+        }
         let candidate: any WallpaperRuntimeSession
         let timeout: Duration
         var afterCommit: @MainActor () -> Void = {}
@@ -349,6 +371,9 @@ extension ScreenManager {
                     )
                 }
             ) else {
+                if let attemptID {
+                    failWallpaperAttempt(attemptID, for: screen, cause: WallpaperFailureCause(code: "scene.source_unavailable", reason: String(localized: "The scene source could not be opened. Check its location and access permission.", bundle: .appLanguage)), stage: "source")
+                }
                 Logger.warning("Scene wallpaper for screen \(screen.id) (workshop \(descriptor.workshopID)) could not be built — cache missing or descriptor invalid", category: .screenManager)
                 return
             }
@@ -423,6 +448,7 @@ extension ScreenManager {
             for: screen,
             replacing: expected,
             generation: generation,
+            attemptID: attemptID,
             expectedConfigurationRevision: expectedConfigurationRevision,
             timeout: timeout,
             beforeCommit: transactionalBeforeCommit,

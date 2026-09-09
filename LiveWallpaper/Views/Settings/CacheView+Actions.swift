@@ -16,9 +16,7 @@ extension WPECacheManagementView {
         await refreshVideoStats()
     }
 
-    /// `wpeHistoryDidChange` fires on every apply/bookmark edit, so passes stack up
-    /// mid-walk. Newest generation wins; older ones are cancelled and their results
-    /// dropped.
+    /// Cancel superseded scans and discard stale results after history changes.
     private func refreshInventory() async {
         inventoryScan?.cancel()
         inventoryGeneration &+= 1

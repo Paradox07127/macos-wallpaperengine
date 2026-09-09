@@ -104,6 +104,7 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
         payload: WPETexStreamingPayload,
         device: MTLDevice,
         label: String,
+        colorSpace: WPEMetalColorSpace = .sRGB,
         capabilities: WPEMetalTextureCapabilities? = nil,
         maximumTextureDimension2D: Int? = nil,
         frameByteCache: WPEAnimatedFrameByteCache = .shared
@@ -114,7 +115,7 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
         }
         let caps = capabilities ?? WPEMetalTextureCapabilities(device: device)
         do {
-            self.mapping = try WPEMetalTextureFormatMapper.mapping(for: format, capabilities: caps)
+            mapping = try WPEMetalTextureFormatMapper.mapping(for: format, capabilities: caps, colorSpace: colorSpace)
         } catch {
             throw Failure.unsupportedFormat(payload.info.textureFormatCode)
         }

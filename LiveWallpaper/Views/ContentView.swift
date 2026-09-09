@@ -16,6 +16,7 @@ struct ContentView: View {
     @State private var didConsumeInitialAddWallpaperPrompt = false
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var isReloading = false
+    @State private var historicalFailure: WallpaperFailureSnapshot?
     /// Published into the environment here rather than read by each grid, so the
     /// five library pages cannot disagree about tile size.
     @AppStorage(LibraryTileSize.preferencesKey, store: .appScoped())
@@ -45,6 +46,16 @@ struct ContentView: View {
             }
         }
         .navigationSplitViewStyle(.balanced)
+        #if !LITE_BUILD
+        .overlay(alignment: .bottomTrailing) {
+            DownloadToastHost(visibleDisplayID: visibleDisplayID, onOpenFailure: openFailure)
+                .padding(DesignTokens.Spacing.lg)
+        }
+        .sheet(item: $historicalFailure) { failure in
+            WallpaperFailureView(failure: failure, isCurrentAttempt: false)
+                .frame(width: 600, height: 480)
+        }
+        #endif
         .environment(\.libraryTileSize, LibraryTileSize(rawValue: libraryTileSizeRaw) ?? .medium)
         .providesGalleryCardPreferences()
         .toolbar { toolbarContent }
@@ -78,6 +89,22 @@ struct ContentView: View {
             scheduleDefaultDisplaySelection()
             consumeInitialAddWallpaperPromptIfNeeded()
         }
+    }
+
+    private var visibleDisplayID: CGDirectDisplayID? {
+        guard !isSettingsMode, case let .screen(id) = selectedNavigation else { return nil }
+        return id
+    }
+
+    private func openFailure(_ failure: WallpaperFailureSnapshot, screenID: CGDirectDisplayID) {
+        guard let screen = screenManager.screens.first(where: { $0.id == screenID }),
+              screenManager.wallpaperLoads.attempt(for: screen)?.id == failure.id else {
+            historicalFailure = failure
+            return
+        }
+        screenManager.inspectWallpaperAttempt(true, for: screen)
+        selectAppNavigation(.screen(screenID))
+        NotificationCenter.default.post(name: .selectScreenInSettings, object: nil, userInfo: ["screenID": screenID, "failureID": failure.id])
     }
 
     @ViewBuilder
@@ -181,10 +208,7 @@ struct ContentView: View {
         lastAppNavigation = navigation
     }
 
-    /// `NSScreen.screens` order, so the fallback is the primary display. This
-    /// used to bail out unless exactly one display was attached, which left
-    /// multi-display Macs on the "no display selected" pane whenever the window
-    /// opened without a screen in hand — every menu-bar Settings entry does.
+    /// Use system display order so the fallback selects the primary display.
     private func selectDefaultDisplayIfNeeded() {
         guard !isSettingsMode else { return }
         guard let fallback = screenManager.screens.first else { return }
@@ -230,9 +254,7 @@ struct ContentView: View {
         }
     }
 
-    /// One picker for every wallpaper kind, routed by what the file actually is
-    /// — the same classifier the drop target and onboarding use. Replaces the
-    /// per-page import buttons that each opened their own narrower panel.
+    /// Share file classification with drop targets and onboarding.
     private func promptAnyWallpaperSource(for screen: Screen) {
         NSApp.activate(ignoringOtherApps: true)
         let panel = NSOpenPanel()
@@ -582,6 +604,12 @@ struct ScreenRow: View {
                     }
                 }
 
+            if screenManager.wallpaperLoads.attempt(for: screen)?.failure != nil {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(DesignTokens.Colors.Status.warning)
+                    .help(Text("Last wallpaper application failed"))
+                    .accessibilityLabel(Text("Last wallpaper application failed"))
+            }
             Text(verbatim: screen.name)
                 .fontWeight(.medium)
                 .lineLimit(1)

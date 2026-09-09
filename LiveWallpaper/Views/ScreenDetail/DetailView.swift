@@ -26,12 +26,14 @@ enum OverlayKind: Hashable, CaseIterable {
     case weather
     case monitor
     case music
+    case clock
 
     var title: LocalizedStringKey {
         switch self {
         case .weather: "Weather"
         case .monitor: "Widgets"
         case .music: "Music"
+        case .clock: "Clock"
         }
     }
 
@@ -43,14 +45,15 @@ enum OverlayKind: Hashable, CaseIterable {
         case .weather: String(localized: "Weather", bundle: .appLanguage, comment: "Overlay name inside the apply-to-all confirmation.")
         case .monitor: String(localized: "Widgets", bundle: .appLanguage, comment: "Overlay name inside the apply-to-all confirmation.")
         case .music: String(localized: "Music", bundle: .appLanguage, comment: "Overlay name inside the apply-to-all confirmation.")
+        case .clock: String(localized: "Clock", bundle: .appLanguage, comment: "Independent decorative clock overlay.")
         }
     }
 
     var feature: ProductFeature {
         switch self {
-        case .weather: return .videoEffects
-        // Music rides on the monitor board, so it ships wherever Monitor does.
-        case .monitor, .music: return .monitorOverlay
+        case .weather: .videoEffects
+        // Decorative overlays ship wherever the monitor overlay feature does.
+        case .monitor, .music, .clock: .monitorOverlay
         }
     }
 }
@@ -80,7 +83,27 @@ struct DetailView: View {
 
     @ViewBuilder
     private var runtimeErrorBannerView: some View {
-        if let runtimeError {
+        if let attempt = screenManager.wallpaperLoads.attempt(for: screen), let failure = attempt.failure {
+            if selectedTab != .wallpaper || !attempt.isInspecting {
+                InlineNoticeBanner(
+                    tint: DesignTokens.Colors.Status.warning,
+                    symbol: "exclamationmark.triangle.fill",
+                    title: Text("Last wallpaper application failed"),
+                    message: Text(verbatim: LogPrivacyRedactor.scrub(failure.title)),
+                    code: failure.cause.code,
+                    surface: .content
+                ) {
+                    Button("View Details") {
+                        screenManager.inspectWallpaperAttempt(true, for: screen)
+                        selectedTab = .wallpaper
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+                .padding(.horizontal, DesignTokens.Spacing.md)
+                .padding(.top, DesignTokens.Spacing.sm)
+            }
+        } else if let runtimeError {
             let activeType = screen.runtimeSession?.wallpaperType ?? draft.selectedWallpaperType
             let canRePick = activeType == .video || activeType == .html
             RuntimeErrorBanner(
@@ -195,6 +218,9 @@ struct DetailView: View {
             )
         }
 
+        if screenManager.inspectedWallpaperAttempt(for: screen) != nil {
+            return DerivedViewState(showsGuideEmptyState: false, showsInspector: true, showsHeaderWallpaperActions: false)
+        }
         let config = screenManager.getConfiguration(for: screen)
         let hasRuntimeOrPreview = screen.runtimeSession != nil
             || draft.hasPreviewSource
@@ -369,9 +395,17 @@ struct DetailView: View {
         .confirmDestructive($pendingDestructive)
         .onAppear { scheduleConfigurationLoad() }
         .onDisappear { cleanupPreviewPlayer() }
+        .onChange(of: screenManager.inspectedWallpaperAttempt(for: screen)?.id) { loadScreenConfiguration() }
+        .onChange(of: screenManager.inspectedWallpaperAttempt(for: screen)?.configuration) { loadScreenConfiguration() }
         .onChange(of: screen.id) {
             cleanupPreviewPlayer()
             scheduleConfigurationLoad()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .selectScreenInSettings)) { notification in
+            if notification.userInfo?["screenID"] as? CGDirectDisplayID == screen.id,
+               notification.userInfo?["failureID"] != nil {
+                selectedTab = .wallpaper
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .wallpaperConfigurationDidChange)) { notification in
             guard let changedID = notification.userInfo?["screenID"] as? CGDirectDisplayID,
@@ -489,7 +523,17 @@ struct DetailView: View {
                 onWeatherIntensityChange: { screenManager.setWeatherIntensity($0, for: screen) }
             )
         } else {
+            #if !LITE_BUILD
+            if let attempt = screenManager.inspectedWallpaperAttempt(for: screen) {
+                AttemptSceneProperties(screen: screen, attempt: attempt)
+                    .id(attempt.id)
+                    .frame(width: width)
+            } else {
+                wallpaperInspectorPanel(width: width)
+            }
+            #else
             wallpaperInspectorPanel(width: width)
+            #endif
         }
     }
 
@@ -657,7 +701,7 @@ struct DetailView: View {
     }
 
     private func loadScreenConfiguration() {
-        let config = screenManager.getConfiguration(for: screen)
+        let config = screenManager.inspectedWallpaperAttempt(for: screen)?.configuration ?? screenManager.getConfiguration(for: screen)
         // Guarded: this runs on every `.wallpaperConfigurationDidChange`, which
         // every settings commit posts. Reassigning an identical draft rebuilt
         // the entire inspector — playback, security, HTML options, transform and
