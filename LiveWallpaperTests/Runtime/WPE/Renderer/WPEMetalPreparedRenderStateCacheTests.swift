@@ -182,7 +182,7 @@ struct WPEMetalPreparedRenderStateCacheTests {
         for slot in -2..<32 {
             #expect(table[slot] === reference[slot])
         }
-        #expect(table.slotCount == WPEShaderTranspiler.customTextureSlotCount)
+        #expect(table.slotCount == WPEShaderTranspiler.customTextureSlotLimit)
         #expect(table.samplingDescriptor(at: 3) == samplingDescriptor)
         #expect(table.samplingDescriptor(at: 0) == nil)
 

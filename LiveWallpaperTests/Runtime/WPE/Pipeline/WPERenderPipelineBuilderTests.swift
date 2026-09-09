@@ -380,7 +380,7 @@ struct WPERenderPipelineBuilderTests {
         // Regression guard: the target format may influence ONLY the `.previous`
         // slot — every .tex/FBO/sparse slot must resolve identically across
         // target formats, or target plumbing leaked into unrelated compile keys.
-        for slot in 0 ..< WPEShaderTranspiler.customTextureSlotCount where slot != 1 {
+        for slot in 0 ..< WPEShaderTranspiler.customTextureSlotLimit where slot != 1 {
             let macro = "TEX\(slot)FORMAT"
             #expect(rg1616fPass.comboValues[macro] == rgbaPass.comboValues[macro])
         }

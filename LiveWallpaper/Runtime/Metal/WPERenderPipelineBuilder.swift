@@ -396,7 +396,7 @@ private struct WPEShaderSourceLoader: Sendable {
         source: String
     ) -> [String: Int] {
         var values: [String: Int] = [:]
-        for slot in 0..<WPEShaderTranspiler.customTextureSlotCount {
+        for slot in 0 ..< WPEShaderTranspiler.customTextureSlotLimit {
             let macro = "TEX\(slot)FORMAT"
             let resolution = textureFormatResolution(for: bindings[slot], fboFormats: fboFormats, passTarget: passTarget)
             values[macro] = resolution.value

@@ -95,6 +95,10 @@ struct WPEShaderCompileResult: @unchecked Sendable {
     let uniformLayout: [WPEUniformSlot]
     /// Names of the texture samplers the shader expects, ordered by slot.
     let samplerNames: [String]
+    /// Fragment texture/sampler arguments the generated signature declares. The dispatcher
+    /// binds exactly this many — it is carried through the cache because a cache hit
+    /// restores the MSL without re-running the transpiler that computed it.
+    let textureSlotCount: Int
 }
 
 enum WPEShaderCompilerError: Error, Sendable, Equatable {
@@ -107,7 +111,10 @@ enum WPEShaderCompilerError: Error, Sendable, Equatable {
 /// Memory hits serve a second display / new executor; disk hits serve cold start.
 /// All mutable state sits behind `lock`.
 final class WPEShaderTranslationCache: @unchecked Sendable {
-    static let schemaVersion = 7
+    /// 8: fragment signatures now declare only the texture/sampler slots each shader
+    /// actually uses (previously a fixed 8), and the payload carries that arity — cached
+    /// v7 MSL has the old fixed shape and no slot count to bind against.
+    static let schemaVersion = 8
     static let shared = WPEShaderTranslationCache()
 
     struct Payload: Codable, Equatable, Sendable {
@@ -117,6 +124,7 @@ final class WPEShaderTranslationCache: @unchecked Sendable {
         var mslSource: String
         var uniformLayout: [Slot]
         var samplerNames: [String]
+        var textureSlotCount: Int
 
         struct Slot: Codable, Equatable, Sendable {
             var name: String
@@ -174,7 +182,8 @@ final class WPEShaderTranslationCache: @unchecked Sendable {
                 fragmentFunctionName: result.fragmentFunctionName,
                 mslSource: result.mslSource,
                 uniformLayout: slots,
-                samplerNames: result.samplerNames
+                samplerNames: result.samplerNames,
+                textureSlotCount: result.textureSlotCount
             )
         }
     }

@@ -11,6 +11,11 @@ struct WPEShaderTranslationResult {
     /// Total float4 slots needed for this shader's uniforms — capped by
     /// `WPEShaderTranspiler.uniformSlotMaximum`.
     let totalSlots: Int
+    /// Fragment texture/sampler arguments THIS shader's signature declares — capped by
+    /// `WPEShaderTranspiler.customTextureSlotLimit`. The binding side must iterate exactly
+    /// this many slots: binding fewer than the signature declares leaves the shader
+    /// sampling an unbound texture.
+    let textureSlotCount: Int
 }
 
 struct WPEUniformSlot: Equatable {

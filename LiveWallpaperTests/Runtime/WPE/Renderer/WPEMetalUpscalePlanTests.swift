@@ -16,6 +16,7 @@ struct WPEMetalUpscalePlanTests {
         drawable: CGSize = uhd,
         fitMode: WPEPresentFitMode = .cover,
         isHDR: Bool = false,
+        hdrOutputEnabled: Bool = false,
         renderScale: Double = 0.75,
         deviceSupports: Bool = true
     ) -> WPEMetalUpscalePlan {
@@ -24,6 +25,7 @@ struct WPEMetalUpscalePlanTests {
             drawableSize: drawable,
             fitMode: fitMode,
             isHDR: isHDR,
+            hdrOutputEnabled: hdrOutputEnabled,
             renderScale: renderScale,
             deviceSupportsScaler: deviceSupports
         )
@@ -53,6 +55,8 @@ struct WPEMetalUpscalePlanTests {
     func verdictsAreDistinguishable() {
         #expect(Self.plan(renderScale: 1.0).verdict == .settingOff)
         #expect(Self.plan(deviceSupports: false).verdict == .deviceUnsupported)
+        // Rejected because the helper leaves `hdrOutputEnabled` false — an HDR scene IS
+        // upscalable once display-HDR output is on (`WPEDisplayHDROutputTests`).
         #expect(Self.plan(isHDR: true).verdict == .hdrScene)
         #expect(Self.plan(fitMode: .center).verdict == .fitModeIncompatible)
         #expect(Self.plan(drawable: CGSize(width: 1728, height: 1117)).verdict == .aspectMismatch)
