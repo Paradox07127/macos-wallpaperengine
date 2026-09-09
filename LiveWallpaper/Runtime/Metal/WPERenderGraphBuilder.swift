@@ -1674,6 +1674,211 @@ struct WPERenderGraphBuilder: Sendable {
     }
 }
 
+/// Runs after shader default textures are resolved, before lifetime/heap analysis.
+/// Public A stays A: only the closed producer's private A/B roles are permuted.
+extension WPERenderGraphBuilder {
+    struct CanonicalCompositeRotationResult {
+        let pipeline: WPEPreparedRenderPipeline
+        /// Candidate object ID -> "rotated" or a conservative rejection reason.
+        let decisions: [String: String]
+    }
+
+    static func rotatingCanonicalCompositeOutputs(
+        in pipeline: WPEPreparedRenderPipeline, sceneHDR: Bool = false
+    ) -> CanonicalCompositeRotationResult {
+        var decisions: [String: String] = [:]
+        let layers = pipeline.layers.map { layer -> WPEPreparedRenderLayer in
+            guard let index = canonicalCopyIndex(in: layer) else { return layer }
+            // The removed render copy samples through half precision. SDR sRGB
+            // decode/filter/encode is not a proven identity (observed corpus
+            // difference); only the runtime's explicit RGBA16Float promotion is
+            // currently verified. Unknown callers retain their copy.
+            guard sceneHDR else {
+                decisions[layer.id] = "unsupported-composite-format"
+                return layer
+            }
+            if let reason = canonicalRotationRejection(layer: layer, copyIndex: index, pipeline: pipeline) {
+                decisions[layer.id] = reason
+                return layer
+            }
+            let graph = layer.graphLayer
+            func swap(_ reference: WPETextureReference) -> WPETextureReference {
+                if reference == .fbo(graph.compositeA) {
+                    return .fbo(graph.compositeB)
+                }
+                if reference == .fbo(graph.compositeB) {
+                    return .fbo(graph.compositeA)
+                }
+                return reference
+            }
+            let passes = layer.passes.enumerated().compactMap { offset, prepared -> WPEPreparedRenderPass? in
+                if offset == index {
+                    return nil
+                }
+                // Scene and external consumers keep the canonical A reference.
+                guard offset < index else { return prepared }
+                let pass = prepared.pass
+                let target = pass.target == .layerComposite(name: graph.compositeA)
+                    ? graph.compositeB : graph.compositeA
+                let renamed = WPERenderPass(
+                    id: pass.id, phase: pass.phase, shader: pass.shader,
+                    source: swap(pass.source), target: .layerComposite(name: target),
+                    textures: pass.textures.mapValues(swap), binds: pass.binds.mapValues(swap),
+                    constants: pass.constants, combos: pass.combos,
+                    userTextureBindings: pass.userTextureBindings, authoredJSON: pass.authoredJSON,
+                    blending: pass.blending, cullMode: pass.cullMode,
+                    depthTest: pass.depthTest, depthWrite: pass.depthWrite,
+                    constantScripts: pass.constantScripts, visibilityGate: pass.visibilityGate
+                )
+                return WPEPreparedRenderPass(
+                    pass: renamed, shader: prepared.shader,
+                    textureBindings: prepared.textureBindings.mapValues(swap),
+                    comboValues: prepared.comboValues, uniformValues: prepared.uniformValues,
+                    materialUniformNames: prepared.materialUniformNames,
+                    layerTintOverride: prepared.layerTintOverride
+                )
+            }
+            decisions[layer.id] = "rotated"
+            return WPEPreparedRenderLayer(
+                graphLayer: graph.replacingPasses(passes.map(\.pass)),
+                puppetModel: layer.puppetModel, passes: passes
+            )
+        }
+        return CanonicalCompositeRotationResult(
+            pipeline: WPEPreparedRenderPipeline(layers: layers), decisions: decisions
+        )
+    }
+
+    private static func canonicalCopyIndex(in layer: WPEPreparedRenderLayer) -> Int? {
+        let graph = layer.graphLayer
+        // Only the exact synthetic copy emitted by finalizedPasses qualifies.
+        // Authored copies carry authoredJSON, even when their shader name matches.
+        return layer.passes.indices.last { index in
+            let pass = layer.passes[index].pass
+            return index > 0 && pass.id == "\(graph.objectID).\(index)"
+                && pass.phase == .command(file: WPERenderPassPhase.sceneCopyCommandFile)
+                && pass.shader == WPERenderPassPhase.sceneCopyCommandFile
+                && pass.authoredJSON == .empty
+                && pass.source == .fbo(graph.compositeB)
+                && pass.target == .layerComposite(name: graph.compositeA)
+                && pass.textures == [0: .fbo(graph.compositeB)]
+                && pass.binds.isEmpty && pass.constants.isEmpty && pass.combos.isEmpty
+        }
+    }
+
+    private static func canonicalRotationRejection(
+        layer: WPEPreparedRenderLayer, copyIndex: Int, pipeline: WPEPreparedRenderPipeline
+    ) -> String? {
+        let graph = layer.graphLayer
+        let copy = layer.passes[copyIndex]
+        guard copy.pass.blending.lowercased() == "premultiplieddisabled",
+              copy.pass.depthTest == "disabled", copy.pass.depthWrite == "disabled",
+              copy.pass.cullMode == "nocull", copy.pass.visibilityGate == nil,
+              copy.pass.constantScripts.isEmpty, copy.pass.userTextureBindings.isEmpty,
+              copy.textureBindings == [0: .fbo(graph.compositeB)], copy.shader?.isBuiltin == true else {
+            return "copy-has-render-semantics"
+        }
+        guard graph.localFBOs.isEmpty, graph.puppetPath == nil, layer.puppetModel == nil,
+              graph.attachment == nil, graph.groupRenderTarget == nil,
+              graph.groupCompositeSource == nil, graph.groupLocalGeometry == nil,
+              graph.geometry.shapePoints == nil,
+              (graph.imagePath as NSString).pathExtension.lowercased() != "mdl",
+              !WPETextLayerSynthesis.isTargetPath(graph.imagePath) else { return "special-layer" }
+        // Scripted producer/ancestor resources have not been proven closed. This
+        // does not reject unrelated scripted layers elsewhere in the scene.
+        if graph.authoredJSON.sceneObjects.contains(where: containsScript)
+            || graph.authoredJSON.imageDescriptor.map(containsScript) == true {
+            return "scripted-producer"
+        }
+        for other in pipeline.layers where other.id != layer.id {
+            if other.passes.contains(where: { prepared in
+                prepared.textureReferences.contains { canonicalAlias($0, matches: graph.compositeB) }
+                    || canonicalAlias(prepared.pass.target.textureReference, matches: graph.compositeB)
+                    || canonicalAlias(prepared.pass.target.textureReference, matches: graph.compositeA)
+            }) {
+                return "external-private-composite-access"
+            }
+        }
+        // The only suffix allowed is the ordinary, unchanged scene publication.
+        let suffix = layer.passes.dropFirst(copyIndex + 1)
+        guard suffix.count <= 1, suffix.allSatisfy({
+            $0.pass.target == .scene && $0.pass.source == .fbo(graph.compositeA)
+                && !$0.textureReferences.contains { canonicalAlias($0, matches: graph.compositeB) }
+        }) else { return "noncanonical-suffix" }
+        var written: Set<String> = []
+        for prepared in layer.passes.prefix(copyIndex) {
+            let pass = prepared.pass
+            guard case let .layerComposite(target) = pass.target,
+                  target == graph.compositeA || target == graph.compositeB else { return "explicit-or-foreign-target" }
+            guard pass.visibilityGate == nil, pass.constantScripts.isEmpty,
+                  pass.userTextureBindings.isEmpty, prepared.shader != nil,
+                  pass.depthTest == "disabled", pass.depthWrite == "disabled",
+                  !containsScript(pass.authoredJSON.materialPass ?? .null),
+                  !containsScript(pass.authoredJSON.effectPass ?? .null) else { return "dynamic-or-special-pass" }
+            // Match executor hazard analysis, which also scans raw slots/binds.
+            // Even an overridden raw previous/self reference requests attachment
+            // history/load, so resolved shader bindings alone are insufficient.
+            for reference in prepared.textureReferences {
+                switch reference {
+                case .previous:
+                    return "previous-frame-read"
+                case let .fbo(name):
+                    if canonicalAlias(reference, matches: graph.compositeA)
+                        || canonicalAlias(reference, matches: graph.compositeB) {
+                        guard name == graph.compositeA || name == graph.compositeB else { return "private-composite-alias" }
+                        guard name != target, written.contains(name) else { return "self-or-read-before-write" }
+                    } else if !WPETextureReference.isSceneAliasName(name) {
+                        return "foreign-fbo-read"
+                    }
+                case let .asset(name), let .image(name):
+                    let ext = (name as NSString).pathExtension.lowercased()
+                    if ["mp4", "webm", "mov", "gif", "avi"].contains(ext) {
+                        return "media-input"
+                    }
+                }
+            }
+            written.insert(target)
+        }
+        guard layer.passes[copyIndex - 1].pass.target == .layerComposite(name: graph.compositeB) else {
+            return "nonterminal-producer"
+        }
+        return nil
+    }
+
+    /// Over-approximate the executor's case/prefix fallback; ambiguous spellings
+    /// reject optimization rather than changing which live texture they resolve.
+    private static func canonicalAlias(_ reference: WPETextureReference?, matches expected: String) -> Bool {
+        guard let reference, case let .fbo(name) = reference else { return false }
+        func key(_ value: String) -> String {
+            var result = value.lowercased()
+            while true {
+                if result.hasPrefix("_rt_") {
+                    result = String(result.dropFirst(4)); continue
+                }
+                if result.hasPrefix("rt_") {
+                    result = String(result.dropFirst(3)); continue
+                }
+                if result.hasPrefix("_") {
+                    result = String(result.dropFirst()); continue
+                }
+                return result
+            }
+        }
+        return key(name) == key(expected)
+    }
+
+    private static func containsScript(_ value: WPESceneJSONValue) -> Bool {
+        switch value {
+        case let .object(fields):
+            fields.contains { $0.key.lowercased() == "script" || containsScript($0.value) }
+        case let .array(values):
+            values.contains(where: containsScript)
+        default:
+            false
+        }
+    }
+}
+
 private struct LayerBuildContext {
     let object: WPESceneImageObject
     let model: WPEModelDescriptor

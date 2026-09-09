@@ -81,6 +81,73 @@ struct WPEMetalSolidSceneRunTests {
         return try bytes(output)
     }
 
+    @Test("Canonical rotation preserves raw HDR output and external A consumers", arguments: [2, 4])
+    func canonicalRotationHDR(count: Int) throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        func write(_ payload: [String: Any], _ path: String) throws {
+            let url = root.appendingPathComponent(path)
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try JSONSerialization.data(withJSONObject: payload).write(to: url)
+        }
+        try write(["material": "materials/base.json"], "models/image.json")
+        try write(["passes": [["shader": "copy", "textures": ["source"], "blending": "disabled"]]], "materials/base.json")
+        try write(["passes": Array(repeating: ["material": "materials/effect.json"], count: count - 1)], "effects/chain.json")
+        try write(["passes": [["shader": "copy", "blending": "disabled"]]], "materials/effect.json")
+        let names = WPERenderTargetNames.ImageLayerComposite.make(objectID: "701")
+        try write(["material": "materials/consumer.json"], "models/consumer.json")
+        try write(["passes": [["shader": "copy", "textures": [names.a], "blending": "disabled"]]], "materials/consumer.json")
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: [
+            "camera": ["center": "0 0 0", "eye": "0 0 1", "up": "0 1 0"],
+            "general": ["orthogonalprojection": ["width": size.width, "height": size.height]],
+            "objects": [
+                ["id": 701, "name": "Producer", "image": "models/image.json", "size": "33 17", "origin": "16.5 8.5 0",
+                 "effects": [["id": 702, "file": "effects/chain.json"]]],
+                ["id": 703, "name": "Consumer", "image": "models/consumer.json", "size": "33 17", "origin": "16.5 8.5 0",
+                 "dependencies": [701]],
+            ],
+        ]))
+        let graph = try WPERenderGraphBuilder(cacheRootURL: root).build(document: document)
+        let builder = WPERenderPipelineBuilder(cacheRootURL: root)
+        let baseline = try builder.build(graph: graph, canonicalCompositeRotationEnabled: false, sceneHDR: true)
+        let optimized = try builder.build(graph: graph, canonicalCompositeRotationEnabled: true, sceneHDR: true)
+        #expect(optimized.layers[0].passes.count == baseline.layers[0].passes.count - 1)
+        #expect(optimized.layers[1] == baseline.layers[1])
+        #expect(optimized.layers[1].passes[0].textureBindings[0] == .fbo(names.a))
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .rgba16Float, width: Int(size.width), height: Int(size.height), mipmapped: false
+        )
+        descriptor.storageMode = .shared
+        descriptor.usage = .shaderRead
+        let input = try #require(device.makeTexture(descriptor: descriptor))
+        let referenceExecutor = try WPEMetalRenderExecutor(device: device)
+        let optimizedExecutor = try WPEMetalRenderExecutor(device: device)
+        var previous: [UInt8]?
+        for frame in 0 ..< 2 {
+            let pixels = (0 ..< (input.width * input.height)).flatMap { index -> [UInt16] in
+                [Float16(1.5 + Double((index + frame) % 7) * 0.125).bitPattern,
+                 Float16(0.25 + Double(frame) * 0.125).bitPattern, Float16(0.75).bitPattern, Float16(0.5).bitPattern]
+            }
+            pixels.withUnsafeBytes {
+                input.replace(region: MTLRegionMake2D(0, 0, input.width, input.height), mipmapLevel: 0,
+                              withBytes: $0.baseAddress!, bytesPerRow: input.width * 8)
+            }
+            let reference = try renderBytes(referenceExecutor, pipeline: baseline, hdr: true, textures: ["source": input])
+            let actual = try renderBytes(optimizedExecutor, pipeline: optimized, hdr: true, textures: ["source": input])
+            #expect(actual == reference)
+            // Raw half floats prove the fixture exercises HDR and alpha, not a clamped hash.
+            let red = Float16(bitPattern: UInt16(actual[0]) | UInt16(actual[1]) << 8)
+            let alpha = Float16(bitPattern: UInt16(actual[6]) | UInt16(actual[7]) << 8)
+            #expect(red > 1)
+            #expect(alpha == 0.5)
+            if let previous {
+                #expect(actual != previous)
+            }
+            previous = actual
+        }
+    }
+
     @Test("Actual merged render preserves ordered colors, transforms and all target bytes",
           arguments: [false, true])
     func mergedPixelsMatch(hdr: Bool) throws {

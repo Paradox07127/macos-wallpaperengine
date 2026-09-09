@@ -87,6 +87,126 @@ struct WPE28ShaderCompatibilityTests {
         #expect(WPESwiftShaderCompiler.fixedVertexFunctionName == "wpe_fullscreen_vertex")
     }
 
+    private static let waterflowProbeSource = """
+    uniform float g_Time;
+    uniform float g_FlowSpeed;
+    uniform float g_PhaseFeather;
+    in vec4 v_Cycles;
+    in vec2 v_Blend;
+    void main() { gl_FragColor = vec4(v_Cycles.xz, v_Blend); }
+    """
+
+    @Test("Waterflow inlining preserves existing varying eligibility across shader names and combos")
+    func waterflowInliningKeepsVaryingEligibility() throws {
+        for shaderName in ["effects/waterflow", "workshop/custom/effects/waterflow", "other_shader"] {
+            for position in 0 ... 2 {
+                let translated = try WPEShaderTranspiler.translateFragment(
+                    shaderName: shaderName,
+                    preprocessedSource: Self.waterflowProbeSource,
+                    comboValues: ["POSITION": position]
+                )
+                #expect(translated.totalSlots == 3)
+                #expect(translated.textureSlotCount == 0)
+                let body = try #require(translated.mslSource.components(separatedBy: "fragment float4").last)
+                #expect(body.contains("wpe_waterflow_cycles(g_Time, g_FlowSpeed)"))
+                #expect(body.contains("wpe_waterflow_blend(g_Time, g_FlowSpeed, g_PhaseFeather)"))
+            }
+        }
+        let missingUniform = Self.waterflowProbeSource.replacingOccurrences(of: "g_FlowSpeed", with: "g_FlowSpeedOther")
+        let translated = try WPEShaderTranspiler.translateFragment(
+            shaderName: "effects/waterflow",
+            preprocessedSource: missingUniform
+        )
+        let body = try #require(translated.mslSource.components(separatedBy: "fragment float4").last)
+        #expect(!body.contains("wpe_waterflow_cycles("))
+        #expect(!body.contains("wpe_waterflow_blend("))
+    }
+
+    @Test("Waterflow inline hint preserves raw GPU Float phases and feather boundaries", arguments: [false, true])
+    func waterflowInliningPreservesGPUValues(fastMath: Bool) throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let translated = try WPEShaderTranspiler.translateFragment(
+            shaderName: "effects/waterflow",
+            preprocessedSource: Self.waterflowProbeSource
+        )
+        let marker = "__attribute__((always_inline)) inline float2 wpe_waterflow_blend"
+        #expect(translated.mslSource.components(separatedBy: marker).count == 2)
+        let kernel = """
+        kernel void phase_probe(constant float4* inputs [[buffer(0)]],
+                                device float4* outputs [[buffer(1)]],
+                                uint tid [[thread_position_in_grid]]) {
+            float4 values = inputs[tid];
+            outputs[tid * 2] = wpe_waterflow_cycles(values.x, values.y);
+            outputs[tid * 2 + 1] = float4(wpe_waterflow_blend(values.x, values.y, values.z), 0.0, 1.0);
+        }
+        """
+        let candidate = translated.mslSource + "\n" + kernel
+        // Change only the new hint: the reference keeps the production helper
+        // formula and compiler options, without a CPU approximation of Metal math.
+        let reference = candidate.replacingOccurrences(
+            of: marker,
+            with: "inline float2 wpe_waterflow_blend"
+        )
+        let boundaries: [Float] = [-1, -0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75, 1, 16, 1_048_576]
+        let speeds: [Float] = [0, 0.01, 0.5, 1, 2, -1]
+        let featherThreshold: Float = 0.00000005
+        let feathers: [Float] = [0, featherThreshold.nextDown, featherThreshold, featherThreshold.nextUp, 0.1, 0.4, 0.5, -0.1]
+        var inputs: [SIMD4<Float>] = []
+        for boundary in boundaries {
+            for time in [boundary.nextDown, boundary, boundary.nextUp] {
+                for speed in speeds {
+                    for feather in feathers {
+                        inputs.append(SIMD4(time, speed, feather, 0))
+                    }
+                }
+            }
+        }
+        let expected = try waterflowProbeBits(reference, device: device, inputs: inputs, fastMath: fastMath)
+        let actual = try waterflowProbeBits(candidate, device: device, inputs: inputs, fastMath: fastMath)
+        #expect(Set(expected).count > 4)
+        let differences = zip(expected, actual).enumerated().compactMap { index, values in
+            values.0 == values.1 ? nil : index
+        }
+        #expect(differences.isEmpty, Comment(rawValue: "GPU Float mismatch indices: \(differences.prefix(8))"))
+    }
+
+    private func waterflowProbeBits(
+        _ source: String,
+        device: MTLDevice,
+        inputs: [SIMD4<Float>],
+        fastMath: Bool
+    ) throws -> [UInt32] {
+        let options = MTLCompileOptions()
+        options.languageVersion = .version3_0
+        options.fastMathEnabled = fastMath
+        let library = try device.makeLibrary(source: source, options: options)
+        let function = try #require(library.makeFunction(name: "phase_probe"))
+        let pipeline = try device.makeComputePipelineState(function: function)
+        let inputBuffer = try #require(device.makeBuffer(
+            bytes: inputs,
+            length: inputs.count * MemoryLayout<SIMD4<Float>>.stride,
+            options: .storageModeShared
+        ))
+        let wordCount = inputs.count * 8
+        let outputBuffer = try #require(device.makeBuffer(length: wordCount * MemoryLayout<UInt32>.stride, options: .storageModeShared))
+        let queue = try #require(device.makeCommandQueue())
+        let commandBuffer = try #require(queue.makeCommandBuffer())
+        let encoder = try #require(commandBuffer.makeComputeCommandEncoder())
+        encoder.setComputePipelineState(pipeline)
+        encoder.setBuffer(inputBuffer, offset: 0, index: 0)
+        encoder.setBuffer(outputBuffer, offset: 0, index: 1)
+        encoder.dispatchThreads(
+            MTLSize(width: inputs.count, height: 1, depth: 1),
+            threadsPerThreadgroup: MTLSize(width: pipeline.threadExecutionWidth, height: 1, depth: 1)
+        )
+        encoder.endEncoding()
+        commandBuffer.commit()
+        commandBuffer.waitUntilCompleted()
+        try #require(commandBuffer.status == .completed)
+        let words = outputBuffer.contents().bindMemory(to: UInt32.self, capacity: wordCount)
+        return Array(UnsafeBufferPointer(start: words, count: wordCount))
+    }
+
     @Test("font.frag R8 coverage branch (ConvertSampleR8) translates and compiles")
     func fontRasterBranchCompiles() throws {
         let source = """

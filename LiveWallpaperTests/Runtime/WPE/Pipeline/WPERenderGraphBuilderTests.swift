@@ -3130,3 +3130,208 @@ private extension Data {
         return data
     }
 }
+
+@Suite("Canonical composite output rotation")
+struct WPECanonicalCompositeRotationTests {
+    private func pass(
+        id: String, source: WPETextureReference, target: WPERenderTarget,
+        shader: String = "genericimage2", blending: String = "premultipliedDisabled",
+        bindings: [Int: WPETextureReference]? = nil,
+        rawTextures: [Int: WPETextureReference]? = nil, rawBinds: [Int: WPETextureReference] = [:],
+        authoredJSON: WPERenderPassAuthoredJSON = .empty,
+        visibilityGate: WPEPassVisibilityGate? = nil, userTextures: WPERenderUserTextureBindings = .empty
+    ) -> WPEPreparedRenderPass {
+        let graph = WPERenderPass(
+            id: id, phase: .command(file: WPERenderPassPhase.sceneCopyCommandFile),
+            shader: shader, source: source, target: target, textures: rawTextures ?? [0: source], binds: rawBinds,
+            constants: [:], combos: [:], userTextureBindings: userTextures, authoredJSON: authoredJSON,
+            blending: blending, cullMode: "nocull", depthTest: "disabled", depthWrite: "disabled",
+            visibilityGate: visibilityGate
+        )
+        return WPEPreparedRenderPass(
+            pass: graph,
+            shader: WPEShaderProgram(name: shader, vertexSource: "", fragmentSource: "", isBuiltin: true),
+            textureBindings: bindings ?? [0: source], comboValues: ["TEST_COMBO": 1],
+            uniformValues: ["test": .number(0.25)], materialUniformNames: ["amount": "test"]
+        )
+    }
+
+    private func layer(id: String = "producer", passes: [WPEPreparedRenderPass]) -> WPEPreparedRenderLayer {
+        let names = WPERenderTargetNames.ImageLayerComposite.make(objectID: id)
+        return WPEPreparedRenderLayer(
+            graphLayer: WPERenderLayer(
+                objectID: id, objectName: id, imagePath: "models/image.json", materialPath: nil,
+                geometry: .identity, compositeA: names.a, compositeB: names.b, localFBOs: [],
+                passes: passes.map(\.pass)
+            ), passes: passes
+        )
+    }
+
+    private func chain(id: String = "producer", count: Int = 2) -> [WPEPreparedRenderPass] {
+        let names = WPERenderTargetNames.ImageLayerComposite.make(objectID: id)
+        var passes = (0 ..< count).map { index in
+            pass(id: "\(id).\(index)",
+                 source: index == 0 ? .asset("albedo") : .fbo(index.isMultiple(of: 2) ? names.b : names.a),
+                 target: .layerComposite(name: index.isMultiple(of: 2) ? names.a : names.b))
+        }
+        passes.append(pass(id: "\(id).\(count)", source: .fbo(names.b), target: .layerComposite(name: names.a),
+                           shader: WPERenderPassPhase.sceneCopyCommandFile))
+        passes.append(pass(id: "\(id).\(count + 1)", source: .fbo(names.a), target: .scene))
+        return passes
+    }
+
+    @Test("Real graph and shader preparation opt in without rewriting public consumers")
+    func preparedBuilderIntegration() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        func write(_ payload: [String: Any], _ path: String) throws {
+            let url = root.appendingPathComponent(path)
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try JSONSerialization.data(withJSONObject: payload).write(to: url)
+        }
+        try write(["material": "materials/base.json"], "models/image.json")
+        try write(["passes": [["shader": "genericimage2", "textures": ["albedo"]]]], "materials/base.json")
+        try write(["passes": [["material": "materials/opacity.json"]]], "effects/opacity.json")
+        try write(["passes": [["shader": "effects/opacity"]]], "materials/opacity.json")
+        let names = WPERenderTargetNames.ImageLayerComposite.make(objectID: "41")
+        try write(["material": "materials/consumer.json"], "models/consumer.json")
+        try write(["passes": [["shader": "genericimage2", "textures": [names.a]]]], "materials/consumer.json")
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: [
+            "camera": ["center": "0 0 0", "eye": "0 0 1", "up": "0 1 0"],
+            "general": ["orthogonalprojection": ["width": 1920, "height": 1080]],
+            "objects": [
+                ["id": 41, "name": "Producer", "image": "models/image.json",
+                 "effects": [["id": 42, "file": "effects/opacity.json"]]],
+                ["id": 43, "name": "Consumer", "image": "models/consumer.json", "dependencies": [41]],
+            ],
+        ]))
+        let graph = try WPERenderGraphBuilder(cacheRootURL: root).build(document: document)
+        let builder = WPERenderPipelineBuilder(cacheRootURL: root)
+        let baseline = try builder.build(graph: graph, canonicalCompositeRotationEnabled: false, sceneHDR: true)
+        let optimized = try builder.build(graph: graph, canonicalCompositeRotationEnabled: true, sceneHDR: true)
+        #expect(baseline.layers[0].passes.count == 4)
+        #expect(optimized.layers[0].passes.count == 3)
+        #expect(optimized.layers[0].passes.map(\.id) == ["41.0", "41.1", "41.3"])
+        #expect(optimized.layers[0].passes[1].pass.target == .layerComposite(name: names.a))
+        #expect(optimized.layers[1] == baseline.layers[1])
+        #expect(optimized.layers[1].passes[0].textureBindings[0] == .fbo(names.a))
+        let sdr = try builder.build(graph: graph, canonicalCompositeRotationEnabled: true, sceneHDR: false)
+        let unknown = try builder.build(graph: graph, canonicalCompositeRotationEnabled: true)
+        #expect(sdr == baseline)
+        #expect(unknown == baseline)
+        let rejected = WPERenderGraphBuilder.rotatingCanonicalCompositeOutputs(in: baseline)
+        #expect(rejected.pipeline == baseline)
+        #expect(rejected.decisions["41"] == "unsupported-composite-format")
+    }
+
+    @Test("Any even closed chain keeps public A, IDs and prepared values", arguments: [2, 4, 8])
+    func rotatesClosedChain(count: Int) throws {
+        let id = "independent-object-\(count)"
+        let names = WPERenderTargetNames.ImageLayerComposite.make(objectID: id)
+        let original = layer(id: id, passes: chain(id: id, count: count))
+        let consumer = layer(id: "consumer", passes: [
+            pass(id: "consumer.0", source: .fbo(names.a), target: .scene),
+        ])
+        let result = WPERenderGraphBuilder.rotatingCanonicalCompositeOutputs(
+            in: WPEPreparedRenderPipeline(layers: [original, consumer]), sceneHDR: true
+        )
+        #expect(result.decisions == [id: "rotated"])
+        let optimized = try #require(result.pipeline.layers.first)
+        #expect(optimized.graphLayer.compositeA == names.a)
+        #expect(optimized.graphLayer.compositeB == names.b)
+        #expect(optimized.passes.count == count + 1)
+        #expect(optimized.passes.map(\.id) == (0 ..< count).map { "\(id).\($0)" } + ["\(id).\(count + 1)"])
+        #expect(optimized.passes[0].pass.target == .layerComposite(name: names.b))
+        #expect(optimized.passes[count - 1].pass.target == .layerComposite(name: names.a))
+        #expect(optimized.passes[1].textureBindings[0] == .fbo(names.b))
+        #expect(optimized.passes[1].shader == original.passes[1].shader)
+        #expect(optimized.passes[1].comboValues == original.passes[1].comboValues)
+        #expect(optimized.passes[1].uniformValues == original.passes[1].uniformValues)
+        #expect(optimized.passes[1].materialUniformNames == original.passes[1].materialUniformNames)
+        #expect(optimized.graphLayer.passes == optimized.passes.map(\.pass))
+        #expect(result.pipeline.layers[1] == consumer)
+        // A second pass over the transformed graph must not infer another copy.
+        #expect(WPERenderGraphBuilder.rotatingCanonicalCompositeOutputs(in: result.pipeline, sceneHDR: true).decisions.isEmpty)
+    }
+
+    @Test("Unsafe dependencies and meaningful copies retain the entire original pipeline", arguments: [
+        "external-b", "implicit-external-b", "external-write-a", "history", "read-before-write",
+        "self-read", "foreign-fbo", "explicit-target", "blended-copy", "authored-copy", "media",
+        "gated-pass", "scripted-pass", "user-textures",
+        "overridden-raw-previous", "overridden-bind-previous", "overridden-raw-self", "overridden-raw-unwritten",
+        "lowercase-external-b", "prefix-external-b", "alias-external-write-a", "alias-internal-self", "alias-suffix-b",
+    ])
+    func rejectsUnsafeChain(reason: String) {
+        let names = WPERenderTargetNames.ImageLayerComposite.make(objectID: "producer")
+        var passes = chain()
+        var others: [WPEPreparedRenderLayer] = []
+        switch reason {
+        case "external-b", "implicit-external-b", "external-write-a":
+            others = [layer(id: "consumer", passes: [pass(
+                id: "consumer.0", source: reason == "external-b" ? .fbo(names.b) : .asset("other"),
+                target: reason == "external-write-a" ? .fbo(name: names.a) : .scene,
+                bindings: reason == "implicit-external-b" ? [0: .asset("other"), 7: .fbo(names.b)] : nil
+            )])]
+        case "history", "read-before-write", "self-read", "foreign-fbo", "media":
+            let reference: WPETextureReference = switch reason {
+            case "history": .previous
+            case "read-before-write": .fbo(names.b)
+            case "self-read": .fbo(names.a)
+            case "foreign-fbo": .fbo("_rt_other")
+            default: .asset("movie.mp4")
+            }
+            passes[0] = pass(id: "producer.0", source: .asset("albedo"), target: .layerComposite(name: names.a),
+                             bindings: [0: .asset("albedo"), 7: reference])
+        case "lowercase-external-b", "prefix-external-b", "alias-external-write-a":
+            let alias = reason == "prefix-external-b" ? String(names.b.dropFirst(4)) : names.b.lowercased()
+            others = [layer(id: "consumer", passes: [pass(
+                id: "consumer.0", source: .asset("albedo"),
+                target: reason == "alias-external-write-a" ? .fbo(name: names.a.lowercased()) : .scene,
+                bindings: reason == "alias-external-write-a" ? [0: .asset("albedo")] : [0: .asset("albedo"), 7: .fbo(alias)]
+            )])]
+        case "alias-internal-self":
+            passes[0] = pass(id: "producer.0", source: .asset("albedo"), target: .layerComposite(name: names.a),
+                             bindings: [0: .asset("albedo"), 7: .fbo(names.a.lowercased())])
+        case "alias-suffix-b":
+            passes[3] = pass(id: "producer.3", source: .fbo(names.a), target: .scene,
+                             bindings: [0: .fbo(names.a), 7: .fbo(names.b.lowercased())])
+        case "overridden-raw-previous", "overridden-bind-previous", "overridden-raw-self", "overridden-raw-unwritten":
+            let raw: WPETextureReference = switch reason {
+            case "overridden-raw-self": .fbo(names.a)
+            case "overridden-raw-unwritten": .fbo(names.b)
+            default: .previous
+            }
+            passes[0] = pass(
+                id: "producer.0", source: .asset("albedo"), target: .layerComposite(name: names.a),
+                bindings: [0: .asset("albedo"), 7: .asset("mask")],
+                rawTextures: reason == "overridden-bind-previous" ? nil : [0: raw],
+                rawBinds: reason == "overridden-bind-previous" ? [0: raw] : [:]
+            )
+        case "gated-pass", "scripted-pass", "user-textures":
+            passes[0] = pass(
+                id: "producer.0", source: .asset("albedo"), target: .layerComposite(name: names.a),
+                authoredJSON: reason == "scripted-pass"
+                    ? WPERenderPassAuthoredJSON(materialPass: .object(["script": .string("return true;")])) : .empty,
+                visibilityGate: reason == "gated-pass"
+                    ? WPEPassVisibilityGate(script: WPESceneTransformScript(script: "return true;", seed: .zero), initialVisible: true) : nil,
+                userTextures: reason == "user-textures"
+                    ? WPERenderUserTextureBindings(material: [WPESceneUserTextureBinding(name: "$dynamic", type: "system")]) : .empty
+            )
+        case "explicit-target":
+            passes[0] = pass(id: "producer.0", source: .asset("albedo"), target: .fbo(name: names.a))
+        case "blended-copy", "authored-copy":
+            passes[2] = pass(
+                id: "producer.2", source: .fbo(names.b), target: .layerComposite(name: names.a),
+                shader: WPERenderPassPhase.sceneCopyCommandFile,
+                blending: reason == "blended-copy" ? "premultiplied" : "premultipliedDisabled",
+                authoredJSON: reason == "authored-copy" ? WPERenderPassAuthoredJSON(materialPass: .object([:])) : .empty
+            )
+        default:
+            break
+        }
+        let original = WPEPreparedRenderPipeline(layers: [layer(passes: passes)] + others)
+        let result = WPERenderGraphBuilder.rotatingCanonicalCompositeOutputs(in: original, sceneHDR: true)
+        #expect(result.pipeline == original)
+        #expect(!result.decisions.values.contains("rotated"))
+    }
+}
