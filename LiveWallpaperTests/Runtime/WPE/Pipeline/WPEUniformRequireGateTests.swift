@@ -98,6 +98,7 @@ struct WPEUniformRequireGateTests {
         // The first value is the existing Windows evidence; the second proves live updates.
         for point in [[6.83764, -3.17560], [0.25, 0.75]] {
             let pass = runtimePass(["g_Point0": .vector(point)])
+            #expect(slot.requiredCombos["DIRECTDRAW"] == 0 && pass.pass.combos["DIRECTDRAW"] == 1)
             #expect(executor.uniformPlans(for: pass, layout: [slot])[0].directPacking == nil)
             let packed = executor.packTranslatedUniforms(for: pass, layout: [slot])
             #expect(packed == [SIMD4<Float>(Float(point[0]), Float(point[1]), 0, 0)])
@@ -128,6 +129,7 @@ struct WPEUniformRequireGateTests {
         )
         let sentinel: [Double] = [71, 72, 73, 74]
         let pass = runtimePass(["g_Texture0Resolution": .vector(sentinel)])
+        #expect(slot.requiredCombos["DIRECTDRAW"] == 0 && pass.pass.combos["DIRECTDRAW"] == 1)
         #expect(executor.uniformPlans(for: pass, layout: [slot])[0].directPacking == .textureResolution(0))
         #expect(executor.packTranslatedUniforms(for: pass, layout: [slot], texturesBySlot: table)
             == [SIMD4<Float>(8, 4, 8, 4)])
