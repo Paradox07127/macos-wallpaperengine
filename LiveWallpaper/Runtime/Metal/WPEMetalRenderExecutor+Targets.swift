@@ -8,6 +8,98 @@ import MetalKit
 import os
 import simd
 extension WPEMetalRenderExecutor {
+    /// Only a first-layer prefix proven independent of the scene may defer its clear
+    /// to a normal copy pass's existing loadAction.clear. Unknown paths keep the old clear.
+    func initialSceneClearPlan(
+        pipeline: WPEPreparedRenderPipeline,
+        textures: [String: MTLTexture],
+        output: MTLTexture,
+        liveParticleSortIndices: some Sequence<Int>,
+        hasFirstLayerTextPayload: Bool,
+        staticCacheEnabled: Bool
+    ) -> WPEMetalInitialSceneClearStats {
+        func reject(_ reason: String) -> WPEMetalInitialSceneClearStats {
+            WPEMetalInitialSceneClearStats(rejectReason: reason)
+        }
+        guard initialSceneClearElisionEnabled else { return reject("disabled") }
+        guard !staticCacheEnabled else { return reject("static-cache") }
+        guard let layer = pipeline.layers.first else { return reject("empty-pipeline") }
+        let graph = layer.graphLayer
+        guard graph.visible else { return reject("hidden-first-layer") }
+        guard !layer.passes.isEmpty else { return reject("empty-first-layer") }
+        // Ordinary parents affect prepared geometry/parallax only; attachment and
+        // group fields below identify the paths that can change resource reads.
+        guard layer.puppetModel == nil, graph.puppetPath == nil,
+              graph.attachment == nil,
+              graph.groupRenderTarget == nil, graph.groupCompositeSource == nil,
+              graph.groupLocalGeometry == nil,
+              (graph.imagePath as NSString).pathExtension.lowercased() != "mdl" else {
+            return reject("special-layer")
+        }
+        guard !hasFirstLayerTextPayload,
+              !WPETextLayerSynthesis.isTargetPath(graph.imagePath) else { return reject("text-layer") }
+        guard !liveParticleSortIndices.contains(where: { $0 < graph.sortIndex }) else {
+            return reject("particle-before-scene")
+        }
+        func rootTexture(_ texture: MTLTexture) -> MTLTexture {
+            var root = texture
+            while let parent = root.parent { root = parent }
+            return root
+        }
+        let outputRoot = ObjectIdentifier(rootTexture(output))
+        var produced: Set<String> = []
+        for pass in layer.passes {
+            guard pass.pass.visibilityGate == nil else { return reject("visibility-gate") }
+            guard pass.pass.depthTest.lowercased() == "disabled",
+                  pass.pass.depthWrite.lowercased() == "disabled",
+                  (pass.pass.combos["REFLECTION"] ?? 0) == 0,
+                  !Self.requiresDiscreteDestinationForSourceAliasing(pass),
+                  !WPETextLayerSynthesis.isGlyphPassShader(pass.pass.shader) else { return reject("special-pass") }
+            let isScene = pass.pass.target == .scene
+            let kind = WPEBuiltinShaderKind(normalizing: pass.pass.shader)
+            if isScene {
+                guard pass.shader?.isBuiltin == true, kind == .copy else {
+                    return reject("first-scene-not-copy")
+                }
+            } else if pass.shader?.isBuiltin == true {
+                guard kind == .copy || kind == .genericImage2 || kind == .genericImage4
+                    || kind == .solidColor || kind == .solidLayer else { return reject("prefix-shader") }
+            } else {
+                guard pass.shader != nil, case .effect = pass.pass.phase else { return reject("prefix-shader") }
+            }
+            func referenceRejection(_ reference: WPETextureReference) -> String? {
+                switch reference {
+                case .previous:
+                    return "previous-reference"
+                case .fbo(let name):
+                    return !WPETextureReference.isSceneAliasName(name) && produced.contains(name)
+                        ? nil : "unproven-fbo-read"
+                case .asset(let name), .image(let name):
+                    guard let texture = textures[name] else { return "unresolved-asset" }
+                    return ObjectIdentifier(rootTexture(texture)) == outputRoot ? "scene-texture-alias" : nil
+                }
+            }
+            // Inspect all raw and normalized slots without materializing textureReferences.
+            if let reason = referenceRejection(pass.pass.source)
+                ?? pass.pass.textures.values.lazy.compactMap(referenceRejection).first
+                ?? pass.pass.binds.values.lazy.compactMap(referenceRejection).first
+                ?? pass.textureBindings.values.lazy.compactMap(referenceRejection).first {
+                return reject(reason)
+            }
+            if isScene { return WPEMetalInitialSceneClearStats(passID: pass.pass.id) }
+            switch pass.pass.target {
+            case .layerComposite(let name), .fbo(let name):
+                guard name == graph.compositeA || name == graph.compositeB,
+                      !WPETextureReference.isSceneAliasName(name),
+                      !WPERenderTargetNames.LayerGroup.matches(name) else { return reject("prefix-target") }
+                produced.insert(name)
+            case .scene:
+                break
+            }
+        }
+        return reject("no-scene-copy")
+    }
+
     /// Everything whose identity includes a PIXEL dimension. Split out because a
     /// mid-scene render-scale change invalidates exactly this set and nothing else: the
     /// pool, bootstrap and hazard caches are keyed by width/height, so new keys would

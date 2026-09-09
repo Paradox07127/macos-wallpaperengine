@@ -243,6 +243,22 @@ struct OracleCorpusCaptureTests {
                     let solidStats = renderer.executor.lastSolidSceneBatchStats
                     var renderWork = capture["renderWork"] as? [String: Any] ?? [:]
                     renderWork["solidScene"] = ["encoders": solidStats.encoders, "draws": solidStats.draws]
+                    let clearStats = renderer.executor.lastInitialSceneClearStats
+                    renderWork["initialSceneClear"] = [
+                        "passID": clearStats.passID ?? "", "skipped": clearStats.skipped,
+                        "fallback": clearStats.fallback, "rejectReason": clearStats.rejectReason ?? "",
+                    ]
+                    print("[oracle-capture] [\(id)] final-frame initialSceneClear pass=\(clearStats.passID ?? "") skipped=\(clearStats.skipped) fallback=\(clearStats.fallback) reject=\(clearStats.rejectReason ?? "")")
+                    if let first = (renderer.lastFramePipeline ?? renderer.renderPipeline)?.layers.first {
+                        let graph = first.graphLayer
+                        renderWork["initialLayer"] = [
+                            "objectID": graph.objectID, "parentObjectID": graph.parentObjectID ?? "",
+                            "hasAttachment": graph.attachment != nil, "hasPuppetPath": graph.puppetPath != nil,
+                            "hasPuppetModel": first.puppetModel != nil, "hasGroupTarget": graph.groupRenderTarget != nil,
+                            "hasGroupCompositeSource": graph.groupCompositeSource != nil,
+                            "hasGroupLocalGeometry": graph.groupLocalGeometry != nil,
+                        ]
+                    }
                     capture["renderWork"] = renderWork
                     print("[oracle-capture] [\(id)] final-frame solidScene encoders=\(solidStats.encoders) draws=\(solidStats.draws)")
                     if let jobId = config.jobId {

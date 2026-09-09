@@ -19,6 +19,8 @@ extension MTLCommandEncoder {
 
 final class WPEMetalRenderExecutor {
     /// Instance-only A/B seam; there is no persisted user setting.
+    var initialSceneClearElisionEnabled = true
+    private(set) var lastInitialSceneClearStats = WPEMetalInitialSceneClearStats()
     var solidSceneBatchingEnabled = true
     private(set) var lastSolidSceneBatchStats = (encoders: 0, draws: 0)
 
@@ -944,7 +946,17 @@ final class WPEMetalRenderExecutor {
         // a layer composite) would sample this garbage and, via shine's
         // `albedo.a = saturate(albedo.a + rays.a)` accumulation, ramp the whole layer white
         // within seconds. Clear to the scene clear color so any pre-write alias read sees black.
-        try clearTexture(output, color: clearColor(for: .scene), commandBuffer: commandBuffer)
+        var initialClearStats = initialSceneClearPlan(
+            pipeline: preparedPipeline, textures: textures, output: output,
+            liveParticleSortIndices: particleSystems.lazy.filter { $0.liveInstanceCount > 0 }.map(\.sortIndex),
+            hasFirstLayerTextPayload: preparedPipeline.layers.first.map { textPayloads[$0.graphLayer.objectID] != nil } ?? false,
+            staticCacheEnabled: staticLayerCacheEnabled
+        )
+        var initialClearPending = initialClearStats.passID != nil
+        defer { lastInitialSceneClearStats = initialClearStats }
+        if !initialClearPending {
+            try clearTexture(output, color: clearColor(for: .scene), commandBuffer: commandBuffer)
+        }
         var frameState = WPEMetalFrameState(
             output: output,
             sceneSize: size,
@@ -985,6 +997,17 @@ final class WPEMetalRenderExecutor {
         defer {
             solidRun.end()
             lastSolidSceneBatchStats = (solidRun.encoderCount, solidRun.drawCount)
+        }
+        func finishInitialSceneClear() throws {
+            guard initialClearPending else { return }
+            if frameState.hasInitialized(output) {
+                initialClearStats.skipped = 1
+            } else {
+                solidRun.end()
+                try clearTexture(output, color: clearColor(for: .scene), commandBuffer: commandBuffer)
+                initialClearStats.fallback = 1
+            }
+            initialClearPending = false
         }
         // Particles composite at their scene paint index, interleaved between
         // layers: a particle with sortIndex P draws after every layer with a
@@ -1081,7 +1104,8 @@ final class WPEMetalRenderExecutor {
         // the same `for layer { for pass in layer.passes }` order the alias plan
         // used, across every branch below, or makeAliasable could fire early.
         var aliasPassCounter = 0
-        for layer in preparedPipeline.layers {
+        for (layerIndex, layer) in preparedPipeline.layers.enumerated() {
+            if layerIndex > 0 { try finishInitialSceneClear() }
             var batchesSolid = solidSceneBatchingEnabled && WPEMetalSolidSceneRun.accepts(layer)
             #if DEBUG
             batchesSolid = batchesSolid && !dumpScenePasses
@@ -1226,6 +1250,7 @@ final class WPEMetalRenderExecutor {
                     // Logged once per pass: an unlogged skip is how a routing bug that sent a
                     // BUILTIN pass down the custom-shader path surfaced as a downstream "named FBO
                     // miss" instead of naming the pass that actually failed (3660962877).
+                    try finishInitialSceneClear()
                     let reason = error.untranslatableShaderReason ?? ""
                     if untranslatableShaderReasonByPassID.updateValue(reason, forKey: pass.id) == nil {
                         Logger.warning(
@@ -1275,6 +1300,7 @@ final class WPEMetalRenderExecutor {
         }
 
         solidRun.end()
+        try finishInitialSceneClear()
         try flushParticles(before: Int.max)
 
         guard didEncode else {

@@ -6234,3 +6234,200 @@ struct WPEGenericImageLayerTintTests {
         #expect(uniforms.color.w == 1)
     }
 }
+
+@Suite("WPE Metal initial scene clear elision")
+struct WPEMetalInitialSceneClearTests {
+    private let size = CGSize(width: 17, height: 13)
+    private let a = "_rt_imageLayerComposite_clear_a"
+    private let b = "_rt_imageLayerComposite_clear_b"
+
+    private func pass(
+        _ id: String, source: WPETextureReference, target: WPERenderTarget,
+        shader: String = "materials/util/copy.json", builtin: Bool = true,
+        binds: [Int: WPETextureReference] = [:], gate: WPEPassVisibilityGate? = nil
+    ) -> WPEPreparedRenderPass {
+        let raw = WPERenderPass(
+            id: id, phase: builtin ? .material : .effect(file: "effects/test/effect.json"),
+            shader: shader, source: source, target: target, textures: [:], binds: binds,
+            constants: [:], combos: [:], blending: "premultiplied", cullMode: "nocull",
+            depthTest: "disabled", depthWrite: "disabled", visibilityGate: gate
+        )
+        return WPEPreparedRenderPass(
+            pass: raw, shader: WPEShaderProgram(name: shader, vertexSource: "", fragmentSource: "", isBuiltin: builtin),
+            textureBindings: [0: source], comboValues: [:], uniformValues: [:]
+        )
+    }
+
+    private func pipeline(
+        _ passes: [WPEPreparedRenderPass], visible: Bool = true,
+        imagePath: String = "input", puppetPath: String? = nil,
+        parentObjectID: String? = nil, attachment: String? = nil,
+        groupRenderTarget: String? = nil, groupCompositeSource: String? = nil, groupedGeometry: Bool = false
+    ) -> WPEPreparedRenderPipeline {
+        let geometry = WPERenderLayerGeometry(
+            origin: SIMD3<Double>(8.5, 6.5, 0), scale: SIMD3<Double>(-1, 1, 1),
+            angles: SIMD3<Double>(0, 0, 0.17), alignment: .center,
+            size: CGSize(width: 11, height: 7), alpha: 1,
+            color: SIMD3<Double>(repeating: 1), brightness: 1
+        )
+        let graph = WPERenderLayer(
+            objectID: "clear", objectName: "Clear fixture", visible: visible,
+            imagePath: imagePath, materialPath: nil, puppetPath: puppetPath,
+            parentObjectID: parentObjectID, attachment: attachment, geometry: geometry,
+            compositeA: a, compositeB: b, localFBOs: [], passes: passes.map(\.pass),
+            groupRenderTarget: groupRenderTarget, groupLocalGeometry: groupedGeometry ? geometry : nil,
+            groupCompositeSource: groupCompositeSource, sortIndex: 2
+        )
+        return WPEPreparedRenderPipeline(layers: [WPEPreparedRenderLayer(graphLayer: graph, passes: passes)])
+    }
+
+    private func copyChain() -> [WPEPreparedRenderPass] {
+        [pass("clear.0", source: .asset("input"), target: .layerComposite(name: a)),
+         pass("clear.1", source: .fbo(a), target: .layerComposite(name: b)),
+         pass("clear.2", source: .fbo(b), target: .layerComposite(name: a)),
+         pass("clear.3", source: .fbo(a), target: .scene)]
+    }
+
+    private func input(_ device: MTLDevice, alpha: Float = 1) throws -> MTLTexture {
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba16Float, width: 2, height: 2, mipmapped: false)
+        descriptor.usage = [.shaderRead, .pixelFormatView]
+        descriptor.storageMode = .shared
+        let texture = try #require(device.makeTexture(descriptor: descriptor))
+        let pixel: [Float16] = [Float16(2 * alpha), Float16(-0.25 * alpha), Float16(0.6 * alpha), Float16(alpha)]
+        let values = Array(repeating: pixel, count: 4).flatMap(\.self)
+        values.withUnsafeBytes {
+            texture.replace(region: MTLRegionMake2D(0, 0, 2, 2), mipmapLevel: 0,
+                            withBytes: $0.baseAddress!, bytesPerRow: 16)
+        }
+        return texture
+    }
+
+    private func renderBytes(
+        _ executor: WPEMetalRenderExecutor, pipeline: WPEPreparedRenderPipeline,
+        input: MTLTexture, hdr: Bool
+    ) throws -> [UInt8] {
+        let camera = WPEMetalCameraUniforms(
+            orthogonalProjection: WPESceneOrthogonalProjection(width: Double(size.width), height: Double(size.height), auto: true),
+            sceneCamera: .defaultCamera, sceneHDR: hdr
+        )
+        let output = try executor.render(pipeline: pipeline, size: size, textures: ["input": input], cameraUniforms: camera)
+        #expect(output.pixelFormat == (hdr ? MTLPixelFormat.rgba16Float : MTLPixelFormat.rgba8Unorm_srgb))
+        let staging = try #require(WPEMetalTextureSnapshotter.stagedForCPURead(output))
+        let stride = output.width * (hdr ? 8 : 4)
+        var bytes = [UInt8](repeating: 0, count: stride * output.height)
+        bytes.withUnsafeMutableBytes {
+            staging.getBytes($0.baseAddress!, bytesPerRow: stride,
+                             from: MTLRegionMake2D(0, 0, output.width, output.height), mipmapLevel: 0)
+        }
+        return bytes
+    }
+
+    @Test("First-copy clear preserves every HDR/LDR byte across reused frames", arguments: [false, true], [false, true])
+    func preservesCopyChain(hdr: Bool, parented: Bool) throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let graph = pipeline(copyChain(), parentObjectID: parented ? "transform-parent" : nil)
+        for alpha in [Float(0), 0.35, 1] {
+            let texture = try input(device, alpha: alpha)
+            executor.initialSceneClearElisionEnabled = false
+            let expected = try renderBytes(executor, pipeline: graph, input: texture, hdr: hdr)
+            #expect(executor.lastInitialSceneClearStats.rejectReason == "disabled")
+            for _ in 0 ..< 2 {
+                executor.initialSceneClearElisionEnabled = true
+                let actual = try renderBytes(executor, pipeline: graph, input: texture, hdr: hdr)
+                #expect(actual == expected)
+                #expect(executor.lastInitialSceneClearStats.passID == "clear.3")
+                #expect(executor.lastInitialSceneClearStats.skipped == 1)
+                #expect(executor.lastInitialSceneClearStats.fallback == 0)
+                if hdr, alpha == 1 {
+                    let values = stride(from: 0, to: actual.count, by: 2).map {
+                        Float16(bitPattern: UInt16(actual[$0]) | UInt16(actual[$0 + 1]) << 8)
+                    }
+                    #expect(values.contains { $0 > 1 })
+                }
+            }
+        }
+    }
+
+    @Test("First-reader hazards and changing frame eligibility retain the original clear")
+    func rejectsUnprovenPrefixes() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let texture = try input(device)
+        let output = try input(device)
+        func reason(_ graph: WPEPreparedRenderPipeline, particles: [Int] = [], text: Set<String> = [], cache: Bool = false) -> String? {
+            executor.initialSceneClearPlan(
+                pipeline: graph, textures: ["input": texture], output: output,
+                liveParticleSortIndices: particles, hasFirstLayerTextPayload: text.contains("clear"),
+                staticCacheEnabled: cache
+            ).rejectReason
+        }
+        let copy = pass("copy", source: .asset("input"), target: .scene)
+        #expect(reason(pipeline([copy])) == nil)
+        #expect(reason(pipeline([copy], parentObjectID: "transform-parent")) == nil)
+        #expect(reason(pipeline([copy], parentObjectID: "rig", attachment: "face")) == "special-layer")
+        #expect(reason(pipeline([copy], groupRenderTarget: "_rt_layerGroup_test")) == "special-layer")
+        #expect(reason(pipeline([copy], groupCompositeSource: a)) == "special-layer")
+        #expect(reason(pipeline([copy], groupedGeometry: true)) == "special-layer")
+        #expect(reason(pipeline([copy]), particles: [1]) == "particle-before-scene")
+        #expect(reason(pipeline([copy]), particles: [2, 3]) == nil)
+        #expect(reason(pipeline([copy]), text: ["clear"]) == "text-layer")
+        #expect(reason(pipeline([copy]), cache: true) == "static-cache")
+        #expect(reason(pipeline([copy], visible: false)) == "hidden-first-layer")
+        #expect(reason(pipeline([copy], puppetPath: "puppet.mdl")) == "special-layer")
+        #expect(reason(pipeline([copy], imagePath: "__wpetext__/direct/clear.layer")) == "text-layer")
+        #expect(reason(pipeline([pass("solid", source: .asset("input"), target: .scene, shader: "solidlayer")])) == "first-scene-not-copy")
+        #expect(reason(pipeline([pass("local", source: .asset("input"), target: .fbo(name: "unknown")), copy])) == "prefix-target")
+        #expect(reason(pipeline([pass("local", source: .asset("input"), target: .layerComposite(name: a))])) == "no-scene-copy")
+        #expect(reason(pipeline([])) == "empty-first-layer")
+        #expect(reason(WPEPreparedRenderPipeline(layers: [])) == "empty-pipeline")
+        for ref in [WPETextureReference.previous, .fbo("_rt_FullFrameBuffer"), .fbo(a), .asset("missing")] {
+            #expect(reason(pipeline([pass("copy", source: ref, target: .scene)])) != nil)
+        }
+        // The normalized source is safe; the raw bind still drives executor feedback logic.
+        #expect(reason(pipeline([pass("copy", source: .asset("input"), target: .scene, binds: [0: .previous])])) == "previous-reference")
+        let gate = WPEPassVisibilityGate(script: WPESceneTransformScript(script: "return true;", seed: .zero), initialVisible: true)
+        #expect(reason(pipeline([pass("copy", source: .asset("input"), target: .scene, gate: gate)])) == "visibility-gate")
+        let view = try #require(texture.makeTextureView(pixelFormat: texture.pixelFormat))
+        let aliasPlan = executor.initialSceneClearPlan(pipeline: pipeline([copy]), textures: ["input": view], output: texture,
+                                                       liveParticleSortIndices: [], hasFirstLayerTextPayload: false, staticCacheEnabled: false)
+        #expect(aliasPlan.rejectReason == "scene-texture-alias")
+    }
+
+    @Test("Recoverable prefix failure restores the initial clear before continuing")
+    func recoverableFailureRestoresClear() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let texture = try input(device)
+        let broken = pass("broken", source: .asset("input"), target: .layerComposite(name: a), shader: "effects/broken", builtin: false)
+        let graph = pipeline([broken, pass("copy", source: .fbo(a), target: .scene)])
+        executor.untranslatableShaderReasonByPassID["broken"] = "test recoverable translation failure"
+        executor.initialSceneClearElisionEnabled = false
+        let expected = try renderBytes(executor, pipeline: graph, input: texture, hdr: true)
+        executor.initialSceneClearElisionEnabled = true
+        let actual = try renderBytes(executor, pipeline: graph, input: texture, hdr: true)
+        #expect(actual == expected)
+        #expect(executor.lastInitialSceneClearStats.skipped == 0)
+        #expect(executor.lastInitialSceneClearStats.fallback == 1)
+    }
+
+    @Test("All-hidden and missing-source frames cannot publish uninitialized scene pixels")
+    func hiddenAndFailureFrames() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let texture = try input(device)
+        let hidden = pipeline(copyChain(), visible: false)
+        executor.initialSceneClearElisionEnabled = false
+        let expected = try renderBytes(executor, pipeline: hidden, input: texture, hdr: true)
+        executor.initialSceneClearElisionEnabled = true
+        #expect(try renderBytes(executor, pipeline: hidden, input: texture, hdr: true) == expected)
+        #expect(executor.lastInitialSceneClearStats.rejectReason == "hidden-first-layer")
+        let missing = pipeline([pass("missing", source: .asset("missing"), target: .scene)])
+        #expect(throws: (any Error).self) {
+            try renderBytes(executor, pipeline: missing, input: texture, hdr: true)
+        }
+        let healthy = try renderBytes(executor, pipeline: pipeline(copyChain()), input: texture, hdr: true)
+        #expect(healthy.contains { $0 != 0 })
+        #expect(executor.lastInitialSceneClearStats.skipped == 1)
+    }
+}
