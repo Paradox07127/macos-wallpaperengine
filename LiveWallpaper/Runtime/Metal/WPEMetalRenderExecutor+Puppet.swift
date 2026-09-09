@@ -758,6 +758,9 @@ extension WPEMetalRenderExecutor {
             encoder.setFragmentBytes(&uniforms, length: MemoryLayout<WPEGenericImageUniforms>.stride, index: 0)
         }
 
+        // This vertex multiplies by the selected object view-projection matrix;
+        // fullscreen/atlas and hand-built NDC geometry must retain their own winding.
+        encoder.setFrontFacing(frameState.cameraUniforms.frontFacingWinding(objectID: layer.objectID))
         let paletteState = puppetBonePalette(for: skinningState)
         var meshUniforms = sceneModelMeshUniforms(for: layer, frameState: frameState, paletteState: paletteState)
         try bindPuppetBonePalette(paletteState.bonePalette, encoder: encoder)
