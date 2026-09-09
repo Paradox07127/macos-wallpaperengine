@@ -40,10 +40,17 @@ struct WPEMetalUpscalePlan: Equatable, Sendable {
     }
 
     let verdict: Verdict
-    /// Multiplies the WORLD canvas to get render-target pixels. Exactly 1.0
-    /// whenever `verdict != .active`, which keeps every downstream size
-    /// derivation bit-identical to the pre-feature path.
+    /// Multiplies the WORLD canvas to get render-target pixels. Equals
+    /// `displayFitScale` whenever `verdict != .active`, so an inactive MetalFX
+    /// verdict is bit-identical to the pre-feature path for every canvas the
+    /// display can actually resolve, and clamps the ones it cannot.
     let renderPixelScale: Double
+    /// Largest scale (<= 1) at which no pixel the viewer sees is under-sampled.
+    /// Below 1 only when the authored canvas exceeds the drawable — rendering
+    /// above it is pixels the display cannot resolve. Independent of MetalFX:
+    /// shrinking the source is right whether the scaler runs or the plain present
+    /// blit does, which is why a scaler rejection falls back to THIS, not to 1.0.
+    let displayFitScale: Double
     /// Longest source-texture edge worth uploading, or nil when inactive.
     let maxSourceTextureEdge: Int?
     /// The drawable this verdict was decided against. A present-time decline is
@@ -56,7 +63,7 @@ struct WPEMetalUpscalePlan: Equatable, Sendable {
     var isActive: Bool { verdict == .active }
 
     static let inactive = WPEMetalUpscalePlan(
-        verdict: .settingOff, renderPixelScale: 1.0,
+        verdict: .settingOff, renderPixelScale: 1.0, displayFitScale: 1.0,
         maxSourceTextureEdge: nil, plannedDrawableSize: .zero
     )
 
@@ -68,7 +75,12 @@ struct WPEMetalUpscalePlan: Equatable, Sendable {
     func demotedToNative() -> WPEMetalUpscalePlan {
         WPEMetalUpscalePlan(
             verdict: .declinedAtPresent,
-            renderPixelScale: 1.0,
+            // NOT 1.0: the scaler refusing to upscale says nothing about a canvas
+            // larger than the display, which the plain present blit resolves just
+            // as well. Going back to the authored canvas here would restore the
+            // over-render this plan exists to prevent.
+            renderPixelScale: displayFitScale,
+            displayFitScale: displayFitScale,
             maxSourceTextureEdge: maxSourceTextureEdge,
             plannedDrawableSize: plannedDrawableSize
         )
@@ -88,22 +100,60 @@ struct WPEMetalUpscalePlan: Equatable, Sendable {
     /// no longer held. A present-time decline is sticky: re-activating after the scaler
     /// already refused would just oscillate.
     func adopting(_ fresh: WPEMetalUpscalePlan) -> WPEMetalUpscalePlan {
-        guard verdict != .declinedAtPresent else { return self }
+        guard verdict != .declinedAtPresent else {
+            // The refusal sticks, but a new drawable still gets its own display clamp —
+            // keeping the old one would over-render (or under-render) the new display.
+            return WPEMetalUpscalePlan(
+                verdict: .declinedAtPresent,
+                renderPixelScale: fresh.displayFitScale,
+                displayFitScale: fresh.displayFitScale,
+                maxSourceTextureEdge: maxSourceTextureEdge,
+                plannedDrawableSize: fresh.plannedDrawableSize
+            )
+        }
         return WPEMetalUpscalePlan(
             verdict: fresh.verdict,
             renderPixelScale: fresh.renderPixelScale,
+            displayFitScale: fresh.displayFitScale,
             maxSourceTextureEdge: fresh.maxSourceTextureEdge,
             plannedDrawableSize: fresh.plannedDrawableSize
         )
     }
 
+    /// No MetalFX upscale, but still never above what the display resolves.
+    /// `verdict` keeps naming the MetalFX rejection so a shipping log can still
+    /// answer "why did this machine not upscale"; `maxSourceTextureEdge` stays nil
+    /// because the source-texture cap is latched irreversibly at upload and a
+    /// display clamp can change when the wallpaper moves screens.
     private static func inactive(
-        _ verdict: Verdict, drawableSize: CGSize = .zero
+        _ verdict: Verdict, drawableSize: CGSize = .zero, displayFitScale: Double = 1.0
     ) -> WPEMetalUpscalePlan {
         WPEMetalUpscalePlan(
-            verdict: verdict, renderPixelScale: 1.0,
+            verdict: verdict, renderPixelScale: displayFitScale, displayFitScale: displayFitScale,
             maxSourceTextureEdge: nil, plannedDrawableSize: drawableSize
         )
+    }
+
+    /// The per-axis drawable/canvas ratios the present transform actually applies, reduced
+    /// to one uniform scale that under-samples nothing. `contain` letterboxes, so the
+    /// smaller ratio is the whole picture; `cover` crops and `stretch` fills, so the larger
+    /// ratio is what the visible pixels are scaled by. `center` presents 1:1 — shrinking the
+    /// source there shrinks the picture, so it never clamps.
+    static func displayFitScale(
+        worldCanvas: CGSize, drawableSize: CGSize, fitMode: WPEPresentFitMode
+    ) -> Double {
+        guard worldCanvas.width > 0, worldCanvas.height > 0,
+              drawableSize.width > 0, drawableSize.height > 0 else { return 1.0 }
+        let axisX = Double(drawableSize.width / worldCanvas.width)
+        let axisY = Double(drawableSize.height / worldCanvas.height)
+        let fit: Double = switch fitMode {
+        case .center: 1.0
+        case .contain: min(axisX, axisY)
+        case .cover, .stretch: max(axisX, axisY)
+        }
+        // Never above 1: rendering past the authored canvas is supersampling, a
+        // different feature.
+        return min(1.0, fit)
     }
 
     static func make(
@@ -115,30 +165,44 @@ struct WPEMetalUpscalePlan: Equatable, Sendable {
         renderScale: Double,
         deviceSupportsScaler: Bool
     ) -> WPEMetalUpscalePlan {
-        guard renderScale < 1.0 else { return inactive(.settingOff) }
-        guard deviceSupportsScaler else { return inactive(.deviceUnsupported) }
-        // An HDR scene renders float. That only reaches the scaler when the drawable is
-        // float too — i.e. display-HDR output is on — because `MTLFXSpatialScaler` does not
-        // tone map a float source down to an 8-bit drawable. With HDR output on, the pair
-        // is float→float and the scaler runs in `.hdr` mode.
-        guard !isHDR || hdrOutputEnabled else { return inactive(.hdrScene) }
-        guard fitMode != .center else { return inactive(.fitModeIncompatible) }
+        // Sizes first: the display clamp is not a MetalFX feature and survives every
+        // rejection below, so nothing may return before it is known.
         guard drawableSize.width > 0, drawableSize.height > 0 else {
             return inactive(.drawableUnknown)
         }
         guard worldCanvas.width > 0, worldCanvas.height > 0 else {
             return inactive(.noHeadroom)
         }
-
-        // Clamp the canvas to what the display can actually resolve BEFORE applying the
-        // user's scale. Without this, an authored canvas larger than the screen (a 4K scene
-        // on a 1080p display) keeps rendering above the drawable even at 0.75 — the scaler
-        // then refuses it as a downscale, and the saving stops at the authored canvas instead of following the screen. Capped at 1.0 because rendering ABOVE the authored canvas is supersampling, a different feature.
-        let drawableFit = min(
-            drawableSize.width / worldCanvas.width,
-            drawableSize.height / worldCanvas.height
+        let displayFit = displayFitScale(
+            worldCanvas: worldCanvas, drawableSize: drawableSize, fitMode: fitMode
         )
-        let effectiveScale = min(1.0, Double(drawableFit)) * renderScale
+        func withoutUpscale(_ verdict: Verdict) -> WPEMetalUpscalePlan {
+            inactive(verdict, drawableSize: drawableSize, displayFitScale: displayFit)
+        }
+
+        guard renderScale < 1.0 else { return withoutUpscale(.settingOff) }
+        guard deviceSupportsScaler else { return withoutUpscale(.deviceUnsupported) }
+        // An HDR scene renders float. That only reaches the scaler when the drawable is
+        // float too — i.e. display-HDR output is on — because `MTLFXSpatialScaler` does not
+        // tone map a float source down to an 8-bit drawable. With HDR output on, the pair
+        // is float→float and the scaler runs in `.hdr` mode.
+        guard !isHDR || hdrOutputEnabled else { return withoutUpscale(.hdrScene) }
+        guard fitMode != .center else { return withoutUpscale(.fitModeIncompatible) }
+
+        // The scaler's source must fit inside the drawable on BOTH axes
+        // (`preScalerRejection`), so its clamp is the smaller ratio even where the present
+        // transform scales by the larger one. Applied BEFORE the user's scale: without it an
+        // authored canvas larger than the screen keeps rendering above the drawable even at
+        // 0.75, the scaler refuses it as a downscale, and the saving stops at the authored
+        // canvas instead of following the screen.
+        let scalerFit = min(
+            1.0,
+            Double(min(
+                drawableSize.width / worldCanvas.width,
+                drawableSize.height / worldCanvas.height
+            ))
+        )
+        let effectiveScale = scalerFit * renderScale
 
         let pixelSize = WPEMetalFXSpatialUpscaler.scaledCanvasSize(
             worldCanvas, pixelScale: effectiveScale
@@ -158,15 +222,16 @@ struct WPEMetalUpscalePlan: Equatable, Sendable {
             drawableHeight: Int(drawableSize.height)
         ) {
             switch rejection {
-            case .aspectMismatch: return inactive(.aspectMismatch)
-            case .fitMode: return inactive(.fitModeIncompatible)
-            default: return inactive(.noHeadroom)
+            case .aspectMismatch: return withoutUpscale(.aspectMismatch)
+            case .fitMode: return withoutUpscale(.fitModeIncompatible)
+            default: return withoutUpscale(.noHeadroom)
             }
         }
 
         return WPEMetalUpscalePlan(
             verdict: .active,
             renderPixelScale: effectiveScale,
+            displayFitScale: displayFit,
             maxSourceTextureEdge: Int(max(pixelSize.width, pixelSize.height)),
             plannedDrawableSize: drawableSize
         )

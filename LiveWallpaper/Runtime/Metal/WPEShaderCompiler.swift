@@ -112,10 +112,9 @@ enum WPEShaderCompilerError: Error, Sendable, Equatable {
 /// All mutable state sits behind `lock`.
 final class WPEShaderTranslationCache: @unchecked Sendable {
     /// 8: fragment signatures declare only the texture/sampler slots each shader actually
-    /// uses (previously a fixed 8), and the payload carries that arity.
-    /// 9: slots carry their annotation `require` map, without which a stale material
-    /// constant overrides a uniform WPE would have left at its default.
-    static let schemaVersion = 9
+    /// uses (previously a fixed 8) and the payload carries that arity; slots also carry
+    /// their annotation `require` map as preserved metadata.
+    static let schemaVersion = 8
     static let shared = WPEShaderTranslationCache()
 
     struct Payload: Codable, Equatable, Sendable {
@@ -135,8 +134,7 @@ final class WPEShaderTranslationCache: @unchecked Sendable {
             var arrayLength: Int?
             var materialName: String?
             var defaultValue: Constant?
-            /// Absent in payloads written before schema 9; decoded as empty (unconditional),
-            /// which is the pre-feature behaviour.
+            /// Optional so a payload without it decodes as empty (unconditional).
             var requiredCombos: [String: Int]?
 
             enum Constant: Codable, Equatable, Sendable {
