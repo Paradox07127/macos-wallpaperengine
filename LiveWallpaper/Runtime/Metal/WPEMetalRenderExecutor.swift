@@ -18,6 +18,9 @@ extension MTLCommandEncoder {
 }
 
 final class WPEMetalRenderExecutor {
+    /// Instance-only A/B seam; there is no persisted user setting.
+    var solidSceneBatchingEnabled = true
+    private(set) var lastSolidSceneBatchStats = (encoders: 0, draws: 0)
 
     /// Names each render/blit encoder so an Instruments capture reads as scene
     /// layers instead of "Render Command 37". Off by default and read once: a
@@ -970,6 +973,11 @@ final class WPEMetalRenderExecutor {
             sceneSize: size
         )
 
+        let solidRun = WPEMetalSolidSceneRun()
+        defer {
+            solidRun.end()
+            lastSolidSceneBatchStats = (solidRun.encoderCount, solidRun.drawCount)
+        }
         // Particles composite at their scene paint index, interleaved between
         // layers: a particle with sortIndex P draws after every layer with a
         // lower sortIndex and before any higher one (background → rain → character).
@@ -989,6 +997,9 @@ final class WPEMetalRenderExecutor {
         // render standalone; a run never spans `flushParticles` calls (a layer pass renders
         // between them), so it's closed before returning.
         func flushParticles(before threshold: Int) throws {
+            if particleCursor < sortedParticles.count, sortedParticles[particleCursor].sortIndex < threshold {
+                solidRun.end()
+            }
             var particleRunEncoder: MTLRenderCommandEncoder?
             func endParticleRun() {
                 guard let encoder = particleRunEncoder else { return }
@@ -1063,6 +1074,12 @@ final class WPEMetalRenderExecutor {
         // used, across every branch below, or makeAliasable could fire early.
         var aliasPassCounter = 0
         for layer in preparedPipeline.layers {
+            var batchesSolid = solidSceneBatchingEnabled && WPEMetalSolidSceneRun.accepts(layer)
+            #if DEBUG
+            batchesSolid = batchesSolid && !dumpScenePasses
+                && dumpLayerPassesID != layer.graphLayer.objectID
+            #endif
+            if !batchesSolid { solidRun.end() }
             try flushParticles(before: layer.graphLayer.sortIndex)
             // Static-layer cache: a provably-static layer's composites are
             // rendered once and reused. On a hit we seed frameState with every
@@ -1191,7 +1208,8 @@ final class WPEMetalRenderExecutor {
                         textures: textures,
                         textPayload: textPayloads[graphLayer.objectID],
                         commandBuffer: commandBuffer,
-                        frameState: &frameState
+                        frameState: &frameState,
+                        solidRun: batchesSolid ? solidRun : nil
                     )
                 } catch let error as WPEMetalRenderExecutorError where error.untranslatableShaderReason != nil {
                     // The pass opened (and therefore cleared) its render target before the shader
@@ -1248,6 +1266,7 @@ final class WPEMetalRenderExecutor {
             }
         }
 
+        solidRun.end()
         try flushParticles(before: Int.max)
 
         guard didEncode else {
@@ -1553,7 +1572,8 @@ final class WPEMetalRenderExecutor {
         textures: [String: MTLTexture],
         textPayload: WPETextRenderPayload?,
         commandBuffer: MTLCommandBuffer,
-        frameState: inout WPEMetalFrameState
+        frameState: inout WPEMetalFrameState,
+        solidRun: WPEMetalSolidSceneRun? = nil
     ) throws {
         let targetID = WPEMetalTargetID(target: pass.pass.target)
         let initialPreviousTextureForTarget = frameState.latestTexture(for: targetID)
@@ -1741,46 +1761,62 @@ final class WPEMetalRenderExecutor {
             return
         }
 
-        let descriptor = MTLRenderPassDescriptor()
-        descriptor.colorAttachments[0].texture = destination.texture
-        descriptor.colorAttachments[0].loadAction = shouldLoadExistingAttachment ? .load : .clear
-        descriptor.colorAttachments[0].storeAction = .store
-        descriptor.colorAttachments[0].clearColor = clearColor(for: targetID)
+        let encoder: MTLRenderCommandEncoder
+        if let sharedEncoder = solidRun?.encoder {
+            encoder = sharedEncoder
+        } else {
+            let descriptor = MTLRenderPassDescriptor()
+            descriptor.colorAttachments[0].texture = destination.texture
+            descriptor.colorAttachments[0].loadAction = shouldLoadExistingAttachment ? .load : .clear
+            descriptor.colorAttachments[0].storeAction = .store
+            descriptor.colorAttachments[0].clearColor = clearColor(for: targetID)
 
-        if needsDepth {
-            let depth = try depthCache.attachmentTexture(
-                for: destination,
-                frameState: &frameState,
-                allowTransient: !persistentDepthTargetIDs.contains(targetID)
-            )
-            descriptor.depthAttachment.texture = depth
-            if depthCache.isTransientDepthAttachment(depth) {
-                // Memoryless depth cannot load/store; it's per-pass transient regardless.
-                descriptor.depthAttachment.loadAction = .clear
-                descriptor.depthAttachment.storeAction = .dontCare
-            } else {
-                // Depth is keyed independently of the color target (`WPEMetalDepthTextureKey`)
-                // and allocated fresh on first use per frame, so the color's
-                // `shouldLoadExistingAttachment` must NOT decide it: a bootstrapped color
-                // paired with a virgin depth texture would otherwise `.load` undefined GPU
-                // memory. `.load` only once this exact depth texture was written this frame.
-                let depthInitialized = frameState.hasInitialized(depth)
-                descriptor.depthAttachment.loadAction = depthInitialized ? .load : .clear
-                descriptor.depthAttachment.storeAction = .store
-                frameState.markInitialized(depth)
+            if needsDepth {
+                let depth = try depthCache.attachmentTexture(
+                    for: destination,
+                    frameState: &frameState,
+                    allowTransient: !persistentDepthTargetIDs.contains(targetID)
+                )
+                descriptor.depthAttachment.texture = depth
+                if depthCache.isTransientDepthAttachment(depth) {
+                    // Memoryless depth cannot load/store; it's per-pass transient regardless.
+                    descriptor.depthAttachment.loadAction = .clear
+                    descriptor.depthAttachment.storeAction = .dontCare
+                } else {
+                    // Depth is keyed independently of the color target (`WPEMetalDepthTextureKey`)
+                    // and allocated fresh on first use per frame, so the color's
+                    // `shouldLoadExistingAttachment` must NOT decide it: a bootstrapped color
+                    // paired with a virgin depth texture would otherwise `.load` undefined GPU
+                    // memory. `.load` only once this exact depth texture was written this frame.
+                    let depthInitialized = frameState.hasInitialized(depth)
+                    descriptor.depthAttachment.loadAction = depthInitialized ? .load : .clear
+                    descriptor.depthAttachment.storeAction = .store
+                    frameState.markInitialized(depth)
+                }
+                descriptor.depthAttachment.clearDepth = WPEMetalDepthStateCache.clearDepth(
+                    reversedZ: frameState.cameraUniforms.usesPerspectiveProjection
+                )
             }
-            descriptor.depthAttachment.clearDepth = WPEMetalDepthStateCache.clearDepth(
-                reversedZ: frameState.cameraUniforms.usesPerspectiveProjection
-            )
-        }
 
-        gpuPassProfiler?.attach(descriptor, to: commandBuffer, label: "\(pass.pass.id)|\(pass.pass.shader)")
-        guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
-            throw WPEMetalRenderExecutorError.commandBufferFailed
+            gpuPassProfiler?.attach(descriptor, to: commandBuffer, label: "\(pass.pass.id)|\(pass.pass.shader)")
+            guard let createdEncoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
+                throw WPEMetalRenderExecutorError.commandBufferFailed
+            }
+            encoder = createdEncoder
+            encoder.applyTraceLabel("pass|\(pass.pass.id)|\(pass.pass.shader)")
+            WPEFrameOccupancyMeter.count(.renderPassEncoder)
+
+            if let solidRun {
+                solidRun.encoder = encoder
+                solidRun.encoderCount += 1
+                encoder.setViewport(MTLViewport(originX: 0, originY: 0,
+                                               width: Double(destination.texture.width),
+                                               height: Double(destination.texture.height), znear: 0, zfar: 1))
+                encoder.setScissorRect(MTLScissorRect(x: 0, y: 0, width: destination.texture.width,
+                                                    height: destination.texture.height))
+            }
         }
-        encoder.applyTraceLabel("pass|\(pass.pass.id)|\(pass.pass.shader)")
-        WPEFrameOccupancyMeter.count(.renderPassEncoder)
-        defer { encoder.endEncoding() }
+        defer { if solidRun == nil { encoder.endEncoding() } }
 
         encoder.setFrontFacing(.counterClockwise)
         encoder.setCullMode(WPEMetalPipelineCache.cullMode(for: pass.pass.cullMode))
@@ -1866,6 +1902,7 @@ final class WPEMetalRenderExecutor {
             }
 
             encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+            solidRun?.drawCount += 1
         }
         frameState.registerWrite(texture: destination.texture, targetID: destination.id)
     }

@@ -4,6 +4,172 @@ import Metal
 import Testing
 @testable import LiveWallpaper
 
+@Suite("WPE Metal solid scene encoder runs")
+struct WPEMetalSolidSceneRunTests {
+    private let size = CGSize(width: 33, height: 17)
+
+    private func layer(
+        _ index: Int, shader: String = "solidlayer", source: WPETextureReference = .image("unused"),
+        target: WPERenderTarget = .scene, depthTest: String = "disabled", visible: Bool = true,
+        builtin: Bool = true, bindings: [Int: WPETextureReference]? = nil,
+        color: [Double]? = nil, transformed: Bool = true
+    ) -> WPEPreparedRenderLayer {
+        let colors: [[Double]] = [[0.2, 0.6, 1.5, 1], [1.2, 0.1, 0.4, 0.35],
+                                  [0.3, 1.4, 0.1, 0.6], [0.8, 0.2, 0.9, 0.15]]
+        let modes = ["premultiplied", "additive", "premultiplied", "premultiplied"]
+        let graphPass = WPERenderPass(
+            id: "solid-\(index).0", phase: .material, shader: shader, source: source, target: target,
+            textures: [:], binds: [:], constants: ["g_Color": .vector(color ?? colors[index % 4])],
+            combos: [:], blending: shader == "solidlayer" ? modes[index % 4] : "disabled",
+            cullMode: "nocull", depthTest: depthTest, depthWrite: "disabled"
+        )
+        let geometry = WPERenderLayerGeometry(
+            origin: SIMD3<Double>(16.5 + (transformed ? Double(index * 3 - 4) : 0), 8.5, 0),
+            scale: SIMD3<Double>(transformed && index == 2 ? -1 : 1, 1, 1),
+            angles: SIMD3<Double>(0, 0, transformed ? Double(index) * 0.15 : 0),
+            alignment: .center, size: size, alpha: 1, color: SIMD3<Double>(repeating: 1), brightness: 1
+        )
+        let graphLayer = WPERenderLayer(
+            objectID: "solid-\(index)", objectName: "Solid \(index)", visible: visible,
+            imagePath: "unused", materialPath: nil, geometry: geometry,
+            compositeA: "solid-\(index)-a", compositeB: "solid-\(index)-b", localFBOs: [],
+            passes: [graphPass], sortIndex: index
+        )
+        let pass = WPEPreparedRenderPass(
+            pass: graphPass,
+            shader: WPEShaderProgram(name: shader, vertexSource: "", fragmentSource: "", isBuiltin: builtin),
+            textureBindings: bindings ?? [0: source], comboValues: [:], uniformValues: [:]
+        )
+        return WPEPreparedRenderLayer(graphLayer: graphLayer, passes: [pass])
+    }
+
+    private func bytes(_ texture: MTLTexture) throws -> [UInt8] {
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: texture.pixelFormat, width: texture.width, height: texture.height, mipmapped: false
+        )
+        descriptor.storageMode = .shared
+        let staging = try #require(texture.device.makeTexture(descriptor: descriptor))
+        let queue = try #require(texture.device.makeCommandQueue())
+        let command = try #require(queue.makeCommandBuffer())
+        let blit = try #require(command.makeBlitCommandEncoder())
+        blit.copy(from: texture, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(),
+                  sourceSize: MTLSize(width: texture.width, height: texture.height, depth: 1),
+                  to: staging, destinationSlice: 0, destinationLevel: 0, destinationOrigin: MTLOrigin())
+        blit.endEncoding()
+        command.commit()
+        command.waitUntilCompleted()
+        #expect(command.status == .completed)
+        let bytesPerRow = texture.width * (texture.pixelFormat == .rgba16Float ? 8 : 4)
+        var result = [UInt8](repeating: 0, count: bytesPerRow * texture.height)
+        result.withUnsafeMutableBytes {
+            staging.getBytes($0.baseAddress!, bytesPerRow: bytesPerRow,
+                             from: MTLRegionMake2D(0, 0, texture.width, texture.height), mipmapLevel: 0)
+        }
+        return result
+    }
+
+    private func renderBytes(
+        _ executor: WPEMetalRenderExecutor, pipeline: WPEPreparedRenderPipeline, hdr: Bool
+    ) throws -> [UInt8] {
+        let camera = WPEMetalCameraUniforms(
+            orthogonalProjection: WPESceneOrthogonalProjection(width: Double(size.width), height: Double(size.height), auto: true),
+            sceneCamera: .defaultCamera, sceneHDR: hdr
+        )
+        let output = try executor.render(pipeline: pipeline, size: size, textures: [:], cameraUniforms: camera)
+        #expect(output.pixelFormat == (hdr ? MTLPixelFormat.rgba16Float : MTLPixelFormat.rgba8Unorm_srgb))
+        return try bytes(output)
+    }
+
+    @Test("Actual merged render preserves ordered colors, transforms and all target bytes",
+          arguments: [false, true])
+    func mergedPixelsMatch(hdr: Bool) throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let pipeline = WPEPreparedRenderPipeline(layers: (0 ..< 4).map { layer($0) })
+        var reference: [UInt8]?
+        for enabled in [false, true, false, true] {
+            executor.solidSceneBatchingEnabled = enabled
+            let actual = try renderBytes(executor, pipeline: pipeline, hdr: hdr)
+            #expect(actual.contains { $0 != 0 })
+            #expect(executor.lastSolidSceneBatchStats.encoders == (enabled ? 1 : 0))
+            #expect(executor.lastSolidSceneBatchStats.draws == (enabled ? 4 : 0))
+            if let reference {
+                #expect(actual == reference)
+            } else {
+                reference = actual
+            }
+        }
+        let reversed = WPEPreparedRenderPipeline(layers: Array(pipeline.layers.reversed()))
+        let reordered = try renderBytes(executor, pipeline: reversed, hdr: hdr)
+        let ordered = try #require(reference)
+        #expect(reordered != ordered) // Prove this fixture observes paint order, not just empty draws.
+    }
+
+    @Test("A scene snapshot closes the run and preserves the later composition")
+    func snapshotSeparatesRuns() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let capture = layer(2, shader: "commands/copy", source: .fbo("_rt_FullFrameBuffer"), transformed: false)
+        let pipeline = WPEPreparedRenderPipeline(layers: [layer(0), layer(1), capture, layer(3), layer(4)])
+        executor.solidSceneBatchingEnabled = false
+        let expected = try renderBytes(executor, pipeline: pipeline, hdr: true)
+        executor.solidSceneBatchingEnabled = true
+        let actual = try renderBytes(executor, pipeline: pipeline, hdr: true)
+        #expect(actual == expected)
+        #expect(executor.lastSolidSceneBatchStats.encoders == 2)
+        #expect(executor.lastSolidSceneBatchStats.draws == 4)
+    }
+
+    @Test("Hidden layer boundaries and same-key color updates do not retain stale state")
+    func visibilityAndLiveUniforms() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        for alpha in [0.0, 0.35, 1.0] {
+            let pipeline = WPEPreparedRenderPipeline(layers: [
+                layer(0), layer(1, visible: false), layer(2, color: [0.1, 1.8, 0.2, alpha]), layer(3),
+            ])
+            executor.solidSceneBatchingEnabled = false
+            let expected = try renderBytes(executor, pipeline: pipeline, hdr: true)
+            executor.solidSceneBatchingEnabled = true
+            let actual = try renderBytes(executor, pipeline: pipeline, hdr: true)
+            #expect(actual == expected)
+            #expect(executor.lastSolidSceneBatchStats.encoders == 2)
+            #expect(executor.lastSolidSceneBatchStats.draws == 3)
+        }
+    }
+
+    @Test("Unsupported input and depth paths cannot borrow a solid encoder")
+    func conservativeEligibility() {
+        #expect(WPEMetalSolidSceneRun.accepts(layer(0)))
+        #expect(!WPEMetalSolidSceneRun.accepts(layer(0, source: .previous)))
+        #expect(!WPEMetalSolidSceneRun.accepts(layer(0, source: .fbo("scene"))))
+        #expect(!WPEMetalSolidSceneRun.accepts(layer(0, bindings: [8: .fbo("_rt_FullFrameBuffer")])))
+        #expect(!WPEMetalSolidSceneRun.accepts(layer(0, target: .fbo(name: "other"))))
+        #expect(!WPEMetalSolidSceneRun.accepts(layer(0, depthTest: "enabled")))
+        #expect(!WPEMetalSolidSceneRun.accepts(layer(0, builtin: false)))
+        #expect(!WPEMetalSolidSceneRun.accepts(layer(0, visible: false)))
+        #expect(!WPEMetalSolidSceneRun.accepts(layer(0, shader: "commands/copy")))
+    }
+
+    @Test("Failure after a run leaves the next frame able to encode")
+    func failureClosesRun() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let broken = WPEPreparedRenderPipeline(layers: [
+            layer(0), layer(1), layer(2, shader: "commands/copy", source: .asset("absent")),
+        ])
+        #expect(throws: (any Error).self) {
+            try executor.render(pipeline: broken, size: size, textures: [:])
+        }
+        let output = try executor.render(
+            pipeline: WPEPreparedRenderPipeline(layers: [layer(0), layer(1)]), size: size, textures: [:]
+        )
+        #expect(try bytes(output).contains { $0 != 0 })
+        #expect(executor.lastSolidSceneBatchStats.encoders == 1)
+        #expect(executor.lastSolidSceneBatchStats.draws == 2)
+    }
+}
+
 @Suite("WPEMetalShaderInputs — named FBO alias lookup")
 struct WPEMetalNamedFBOAliasTests {
 

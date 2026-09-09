@@ -240,6 +240,11 @@ struct OracleCorpusCaptureTests {
                     try #require(!FileManager.default.fileExists(atPath: dest.path), "Refusing to overwrite an oracle trace")
                     var document = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: trace)) as? [String: Any])
                     var capture = document["capture"] as? [String: Any] ?? [:]
+                    let solidStats = renderer.executor.lastSolidSceneBatchStats
+                    var renderWork = capture["renderWork"] as? [String: Any] ?? [:]
+                    renderWork["solidScene"] = ["encoders": solidStats.encoders, "draws": solidStats.draws]
+                    capture["renderWork"] = renderWork
+                    print("[oracle-capture] [\(id)] final-frame solidScene encoders=\(solidStats.encoders) draws=\(solidStats.draws)")
                     if let jobId = config.jobId {
                         capture["jobId"] = jobId
                     }

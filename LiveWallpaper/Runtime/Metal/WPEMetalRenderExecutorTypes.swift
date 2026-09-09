@@ -7,6 +7,41 @@ import MetalKit
 import os
 import simd
 
+/// One frame's consecutive solid scene draws. Only the owner closes borrowed encoders.
+final class WPEMetalSolidSceneRun {
+    var encoder: MTLRenderCommandEncoder?
+    var encoderCount = 0
+    var drawCount = 0
+
+    func end() {
+        encoder?.endEncoding()
+        encoder = nil
+    }
+
+    static func accepts(_ layer: WPEPreparedRenderLayer) -> Bool {
+        guard layer.graphLayer.visible, layer.puppetModel == nil, layer.graphLayer.puppetPath == nil,
+              layer.passes.count == 1, let pass = layer.passes.first,
+              pass.shader?.isBuiltin == true,
+              WPEBuiltinShaderKind(normalizing: pass.pass.shader) == .solidLayer,
+              pass.pass.target == .scene, pass.pass.visibilityGate == nil,
+              pass.pass.depthTest.lowercased() == "disabled",
+              pass.pass.depthWrite.lowercased() == "disabled",
+              case .material = pass.pass.phase else { return false }
+        // The builder inserts source at slot 0 even though solid shaders do not sample.
+        // Reject dependencies that could request a snapshot before dispatch.
+        func independent(_ reference: WPETextureReference) -> Bool {
+            switch reference {
+            case .image, .asset: return true
+            case .previous, .fbo: return false
+            }
+        }
+        return independent(pass.pass.source)
+            && pass.textureBindings.values.allSatisfy(independent)
+            && pass.pass.textures.values.allSatisfy(independent)
+            && pass.pass.binds.values.allSatisfy(independent)
+    }
+}
+
 /// Indexed fragment-texture slots for one transpiled-shader dispatch.
 final class WPEMetalTextureSlotTable {
     private var textures: ContiguousArray<MTLTexture?>
