@@ -256,12 +256,17 @@ extension WPEMetalRenderExecutor {
             )
         case let .textureRotation(slot):
             guard let descriptor = texturesBySlot?.samplingDescriptor(at: slot) else { return nil }
+            // Release may fold Float(Double(x)); preserve the legacy resolver's NaN quieting.
+            guard !descriptor.rotation.x.isSignalingNaN, !descriptor.rotation.y.isSignalingNaN,
+                  !descriptor.rotation.z.isSignalingNaN, !descriptor.rotation.w.isSignalingNaN else { return nil }
             return SIMD4<Float>(
                 Float(Double(descriptor.rotation.x)), Float(Double(descriptor.rotation.y)),
                 Float(Double(descriptor.rotation.z)), Float(Double(descriptor.rotation.w))
             )
         case let .textureTranslation(slot):
             guard let descriptor = texturesBySlot?.samplingDescriptor(at: slot) else { return nil }
+            guard !descriptor.translation.x.isSignalingNaN,
+                  !descriptor.translation.y.isSignalingNaN else { return nil }
             return SIMD4<Float>(
                 Float(Double(descriptor.translation.x)), Float(Double(descriptor.translation.y)), 0, 0
             )

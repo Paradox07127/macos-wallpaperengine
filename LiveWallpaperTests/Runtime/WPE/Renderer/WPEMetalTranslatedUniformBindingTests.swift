@@ -625,6 +625,7 @@ struct WPEMetalDrawTextureMetadataTests {
         #expect(table.samplingDescriptor(at: 0) == nil && table.samplingDescriptor(at: 1) == nil)
     }
 }
+
 @Suite("WPE derived uniform direct packing")
 struct WPEMetalDerivedUniformPackingTests {
     private let canonicalNames = [
@@ -742,6 +743,26 @@ struct WPEMetalDerivedUniformPackingTests {
             translation: SIMD2<Float>(Float(bitPattern: 0xFF80_1234), -0.0)
         ), at: 1)
         compare(executor: executor, layout: layout(), table: table)
+        for bits: UInt32 in [0x7F80_1234, 0xFF80_1234] {
+            for lane in 0 ..< 4 {
+                var rotation = SIMD4<Float>(1, 2, 3, 4)
+                rotation[lane] = Float(bitPattern: bits)
+                table.set(texture: texture, samplingDescriptor: WPETexSpriteSamplingDescriptor(
+                    rotation: rotation, translation: SIMD2<Float>(5, 6)
+                ), at: 1)
+                #expect(executor.directUniformVector(.textureRotation(1), texturesBySlot: table) == nil)
+                compare(executor: executor, layout: layout(), table: table)
+            }
+            for lane in 0 ..< 2 {
+                var translation = SIMD2<Float>(5, 6)
+                translation[lane] = Float(bitPattern: bits)
+                table.set(texture: texture, samplingDescriptor: WPETexSpriteSamplingDescriptor(
+                    rotation: SIMD4<Float>(1, 2, 3, 4), translation: translation
+                ), at: 1)
+                #expect(executor.directUniformVector(.textureTranslation(1), texturesBySlot: table) == nil)
+                compare(executor: executor, layout: layout(), table: table)
+            }
+        }
         table[1] = texture // Same texture, but this new binding no longer has TEXS metadata.
         let missingTEXS = compare(executor: executor, layout: layout(), table: table)
         #expect(missingTEXS[6] == SIMD4<Float>(51, 52, 53, 54))
