@@ -245,6 +245,7 @@ struct OracleCorpusCaptureTests {
                     var renderWork = capture["renderWork"] as? [String: Any] ?? [:]
                     let diagnostics = renderer.executor.lastDiagnosticFrameStats
                     renderWork["diagnosticControls"] = [
+                        "waterShaderOptimizationsEnabled": WPEShaderTranspiler.waterOptimizationsEnabled,
                         "disableParticleBatching": diagnostics.controls.disableParticleBatching,
                         "disableSolidBatching": diagnostics.controls.disableSolidBatching,
                         "disableFBOAliasing": diagnostics.controls.disableFBOAliasing,

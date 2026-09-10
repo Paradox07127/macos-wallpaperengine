@@ -1300,8 +1300,8 @@ struct WPEMetalRenderExecutorTests {
         #expect(pixel.a >= 250)
     }
 
-    @Test("Custom-shader sampler honors the TEXI ClampUVs flag (repeat vs clamp)")
-    func customShaderSamplerHonorsClampUVsFlag() throws {
+    @Test("Scrolling shader textures keep TEXI repeat semantics far beyond the first UV cycle", arguments: [4.0, 600.0, 3600.0, 86400.0])
+    func customShaderSamplerHonorsClampUVsFlag(scroll: Double) throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let executor = try WPEMetalRenderExecutor(device: device)
 
@@ -1317,7 +1317,7 @@ struct WPEMetalRenderExecutorTests {
             shader: "effects/wrap",
             source: .image("materials/base.png"),
             target: .scene,
-            textures: [0: .image("materials/base.png")],
+            textures: [2: .image("materials/base.png")],
             binds: [:],
             constants: [:],
             combos: [:],
@@ -1336,14 +1336,16 @@ struct WPEMetalRenderExecutorTests {
                             name: "effects/wrap",
                             vertexSource: "// fullscreen vertex from executor",
                             fragmentSource: """
-                            uniform sampler2D g_Texture0;
+                            uniform sampler2D g_Texture2; // {"label":"water_normal"}
+                            uniform float g_Time;
+                            vec4 readNormal(vec2 uv) { return texture(g_Texture2, uv); }
                             void main() {
-                                gl_FragColor = texture(g_Texture0, vec2(1.25, 0.5));
+                                gl_FragColor = readNormal(vec2(g_Time * 0.25 + 0.25, 0.5));
                             }
                             """,
                             isBuiltin: false
                         ),
-                        textureBindings: [0: .image("materials/base.png")],
+                        textureBindings: [2: .image("materials/base.png")],
                         comboValues: [:],
                         uniformValues: [:]
                     )]
@@ -1357,11 +1359,20 @@ struct WPEMetalRenderExecutorTests {
         )
         let repeatOut = try executor.render(
             pipeline: pipeline(), size: CGSize(width: 1, height: 1),
-            textures: ["materials/base.png": repeatTex]
+            textures: ["materials/base.png": repeatTex],
+            runtimeUniforms: .init(time: scroll, daytime: 0.5, brightness: 1, pointerPosition: SIMD2(0.5, 0.5))
         )
         let repeatPixel = try readPixel(repeatOut, x: 0, y: 0)
         #expect(repeatPixel.r >= 200)
         #expect(repeatPixel.g <= 60)
+
+        let nextRepeatOut = try executor.render(
+            pipeline: pipeline(), size: CGSize(width: 1, height: 1),
+            textures: ["materials/base.png": repeatTex],
+            runtimeUniforms: .init(time: scroll + 2, daytime: 0.5, brightness: 1, pointerPosition: SIMD2(0.5, 0.5))
+        )
+        let nextRepeatPixel = try readPixel(nextRepeatOut, x: 0, y: 0)
+        #expect(nextRepeatPixel.g >= 200 && nextRepeatPixel.r <= 60)
 
         let clampTex = try makeSplitTexture()
         WPEMetalTextureMetadataRegistry.shared.register(
@@ -1369,7 +1380,8 @@ struct WPEMetalRenderExecutorTests {
         )
         let clampOut = try executor.render(
             pipeline: pipeline(), size: CGSize(width: 1, height: 1),
-            textures: ["materials/base.png": clampTex]
+            textures: ["materials/base.png": clampTex],
+            runtimeUniforms: .init(time: scroll, daytime: 0.5, brightness: 1, pointerPosition: SIMD2(0.5, 0.5))
         )
         let clampPixel = try readPixel(clampOut, x: 0, y: 0)
         #expect(clampPixel.g >= 200)

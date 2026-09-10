@@ -57,6 +57,9 @@ struct WPEShaderCompileRequest: Sendable, Hashable {
     /// an otherwise identical shader source (same `sourceHash`).
     var translationCacheKey: String {
         var key = sourceHash
+        if !WPEShaderTranspiler.waterOptimizationsEnabled {
+            key += "|water-reference"
+        }
         if premultipliedOutput {
             key += "|pma-output"
         }
@@ -111,9 +114,8 @@ enum WPEShaderCompilerError: Error, Sendable, Equatable {
 /// Memory hits serve a second display / new executor; disk hits serve cold start.
 /// All mutable state sits behind `lock`.
 final class WPEShaderTranslationCache: @unchecked Sendable {
-    /// 9: inline waterflow blend reconstruction so its phase expressions can share
-    /// common subexpressions with cycles; rebuild cached MSL carrying the old hint.
-    static let schemaVersion = 9
+    /// 10: rebuild generated water shaders with guarded arithmetic/texture fast paths.
+    static let schemaVersion = 10
     static let shared = WPEShaderTranslationCache()
 
     struct Payload: Codable, Equatable, Sendable {

@@ -11,6 +11,10 @@ struct WPEShaderTranspiler {
     static let uniformSlotMaximum = 1024
     /// Bounds literal varying initializer expansion in the Swift code generator.
     static let varyingElementMaximum = 1024
+    /// Candidate fast paths did not improve the six-run device comparison.
+    /// Keep production on the original math; explicit 0 opts into the experiment.
+    /// Cache identity includes this immutable process setting (1 selects reference).
+    static let waterOptimizationsEnabled = ProcessInfo.processInfo.environment["WPE_DIAGNOSTIC_DISABLE_WATER_OPTIMIZATIONS"] == "0"
 
     /// Ceiling, not an allocation: each shader declares only the slots it needs
     /// (`textureSlotCount(for:)`), the same way uniforms are sized per shader and merely
@@ -45,7 +49,8 @@ struct WPEShaderTranspiler {
         preprocessedSource: String,
         comboValues: [String: Int] = [:],
         premultipliedInputSlots: Set<Int> = [],
-        premultipliedOutput: Bool = false
+        premultipliedOutput: Bool = false,
+        waterOptimizationsEnabled: Bool = Self.waterOptimizationsEnabled
     ) throws -> WPEShaderTranslationResult {
         // fluidsimulation fragments read v_TexCoordLeftTop/RightBottom (one-texel
         // neighbour offsets their .vert derives from g_Texture0Resolution) without
@@ -180,7 +185,8 @@ struct WPEShaderTranspiler {
             mutableGlobals: helperMutableGlobals.declarations,
             comboValues: comboValues,
             premultipliedInputSlots: premultipliedInputSlots,
-            premultipliedOutput: premultipliedOutput
+            premultipliedOutput: premultipliedOutput,
+            waterOptimizationsEnabled: waterOptimizationsEnabled
         )
 
         return WPEShaderTranslationResult(

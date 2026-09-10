@@ -20,10 +20,16 @@ extension WPEShaderTranspiler {
         mutableGlobals: [ProgramScopeMutableDecl] = [],
         comboValues: [String: Int] = [:],
         premultipliedInputSlots: Set<Int> = [],
-        premultipliedOutput: Bool = false
+        premultipliedOutput: Bool = false,
+        waterOptimizationsEnabled: Bool = Self.waterOptimizationsEnabled
     ) -> String {
         let warningCleanHelpers = neutralizeMetalStdlibMacroRedefinitions(helpers)
-        let warningCleanMainBody = neutralizeMetalStdlibMacroRedefinitions(mainBody)
+        let waterMain = waterOptimizationsEnabled
+            ? specializingWaterWavePower(mainBody, uniforms: uniforms, helpers: helpers) : mainBody
+        let flow = waterOptimizationsEnabled
+            ? waterflowEndpointRewrite(waterMain, helpers: helpers, premultiplied: premultipliedInputSlots.contains(0))
+            : (main: waterMain, helper: "")
+        let warningCleanMainBody = neutralizeMetalStdlibMacroRedefinitions(flow.main)
         var out: [String] = [
             "#include <metal_stdlib>",
             "using namespace metal;",
@@ -32,6 +38,14 @@ extension WPEShaderTranspiler {
             ""
         ]
 
+        if waterMain != mainBody {
+            // The exponent is a live uniform, not a baked material value. Preserve
+            // the authored sign multiply and time calculation, including zeroes.
+            out.append("inline float wpe_unit_exponent_power(float magnitude, float exponent) {")
+            out.append("    if (exponent == 1.0) { return magnitude; }")
+            out.append("    return pow(magnitude, exponent);")
+            out.append("}")
+        }
         out.append("struct WPEStageIn {")
         out.append("    float4 position [[position]];")
         out.append("    float2 uv;")
@@ -93,6 +107,7 @@ extension WPEShaderTranspiler {
             helpers: warningCleanHelpers,
             comboValues: comboValues
         )
+        if !flow.helper.isEmpty { out.append(flow.helper) }
         out.append("")
 
         if !warningCleanHelpers.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -276,6 +291,103 @@ extension WPEShaderTranspiler {
         out.append("    }")
         out.append("}")
         return out.joined(separator: "\n")
+    }
+
+    /// Match preprocessing tokens after comment and line-continuation handling.
+    /// Self-referential mix is emitted by WPE and retains the Metal intrinsic.
+    private static func overridesWaterIntrinsics(_ source: String, names: Set<String>) -> Bool {
+        let joined = source.replacingOccurrences(of: "\\\r\n", with: "")
+            .replacingOccurrences(of: "\\\n", with: "")
+        return maskComments(joined).components(separatedBy: "\n").contains { line in
+            guard let name = defineMacroName(in: line), names.contains(name) else { return false }
+            let identity = line.range(of: #"^\s*#\s*define\s+mix\s+mix\s*$"#, options: .regularExpression) != nil
+            return !(name == "mix" && identity)
+        }
+    }
+
+    /// Narrow scalar expression rewrite; custom pow implementations keep their
+    /// semantics. No shader-name routing or time/phase specialization is involved.
+    private static func specializingWaterWavePower(
+        _ body: String, uniforms: [WPEUniformDecl], helpers: String
+    ) -> String {
+        let code = maskComments(body)
+        // The authored wave main has no nested scopes. Unknown control flow and
+        // local exponent declarations retain the original expression unchanged.
+        guard !code.contains("{"), !code.contains("}"),
+              code.range(of: #"\b(?:float[234]?|half[234]?|int[234]?|uint[234]?|auto)\s+[^;]*\bg_Exponent2?\b"#, options: .regularExpression) == nil,
+              !overridesWaterIntrinsics(helpers + "\n" + body, names: ["pow"]),
+              !parseHelperFunctions(in: helpers).contains(where: { $0.name == "pow" }),
+              !helpers.contains("wpe_unit_exponent_power"), !body.contains("wpe_unit_exponent_power") else { return body }
+        var result = body
+        for (value, exponent) in [("val1", "g_Exponent"), ("val2", "g_Exponent2")] {
+            guard uniforms.contains(where: { $0.name == exponent && $0.type == "float" && $0.arrayLength == nil }),
+                  maskComments(body).range(of: #"\bfloat\s+"# + value + #"\s*=\s*sin\s*\("#, options: .regularExpression) != nil else { continue }
+            let pattern = #"(?<![\w:])pow\s*\(\s*abs\s*\(\s*"# + value + #"\s*\)\s*,\s*"# + exponent + #"\s*\)"#
+            guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
+            let masked = maskComments(result)
+            let declarationPattern = #"\b(?:float[234]?|half[234]?|int[234]?|auto)\s+"# + value + #"\b"#
+            guard let declarations = try? NSRegularExpression(pattern: declarationPattern),
+                  declarations.numberOfMatches(in: masked, range: NSRange(masked.startIndex..., in: masked)) == 1 else { continue }
+            for match in regex.matches(in: masked, range: NSRange(masked.startIndex..., in: masked)).reversed() {
+                guard let matchRange = Range(match.range, in: masked) else { continue }
+                // maskComments preserves Character count, including Unicode comments.
+                let lower = result.index(result.startIndex, offsetBy: masked.distance(from: masked.startIndex, to: matchRange.lowerBound))
+                let upper = result.index(lower, offsetBy: masked.distance(from: matchRange.lowerBound, to: matchRange.upperBound))
+                result.replaceSubrange(lower ..< upper, with: "wpe_unit_exponent_power(abs(\(value)), \(exponent))")
+            }
+        }
+        return result
+    }
+
+    /// Recognize the complete authored four-sample blend, not an effect name.
+    /// Single-mip FBOs admit explicit level zero in divergent endpoint branches;
+    /// mipmapped sources retain the original implicit-gradient path in uniform flow.
+    private static func waterflowEndpointRewrite(
+        _ body: String, helpers: String, premultiplied: Bool
+    ) -> (main: String, helper: String) {
+        let marker = "wpe_flow_endpoint_color"
+        guard !helpers.contains(marker), !body.contains(marker),
+              !overridesWaterIntrinsics(helpers + "\n" + body, names: ["mix", "wpe_smoothstep", "wpe_unpremultiply_sample"]),
+              !parseHelperFunctions(in: helpers).contains(where: { ["mix", "wpe_smoothstep", "wpe_unpremultiply_sample"].contains($0.name) }),
+              let start = body.range(of: "[[maybe_unused]] float4 flowAlbedo ="),
+              let end = body.range(of: "flowAlbedo = mix(flowAlbedo, flowAlbedo2, wpe_smoothstep(0.2, 0.8, flowPhase));"),
+              start.lowerBound < end.upperBound else { return (body, "") }
+        func sample(_ uv: String, explicit: Bool = false, arguments: String = "g_Texture0.sample(wpeSampler0, ") -> String {
+            let read = arguments + uv + (explicit ? ", level(0.0))" : ")")
+            return premultiplied ? "wpe_unpremultiply_sample(\(read))" : read
+        }
+        let expected = """
+        [[maybe_unused]] float4 flowAlbedo = mix(\(sample("v_TexCoord.xy + flowUVOffset.xy")),
+            \(sample("v_TexCoord.xy + flowUVOffset.zw")), v_Blend.x);
+        [[maybe_unused]] float4 flowAlbedo2 = mix(\(sample("v_TexCoord.xy + flowUVOffset2.xy")),
+            \(sample("v_TexCoord.xy + flowUVOffset2.zw")), v_Blend.y);
+        flowAlbedo = mix(flowAlbedo, flowAlbedo2, wpe_smoothstep(0.2, 0.8, flowPhase));
+        """
+        let range = start.lowerBound ..< end.upperBound
+        guard body[range].filter({ !$0.isWhitespace }) == expected.filter({ !$0.isWhitespace }),
+              body.components(separatedBy: "flowAlbedo2").count == 3 else { return (body, "") }
+        let uv = ["uv + offsets.xy", "uv + offsets.zw", "uv + offsets2.xy", "uv + offsets2.zw"]
+        let implicit = uv.map { sample($0, arguments: "image.sample(state, ") }
+        let explicit = uv.map { sample($0, explicit: true, arguments: "image.sample(state, ") }
+        let code = """
+        inline float4 \(marker)(texture2d<float> image, sampler state, float2 uv,
+                                       float4 offsets, float4 offsets2, float2 blend, float phase) {
+            float weight = wpe_smoothstep(0.2, 0.8, phase);
+            if (image.get_num_mip_levels() > 1) {
+                float4 first = mix(\(implicit[0]), \(implicit[1]), blend.x);
+                float4 second = mix(\(implicit[2]), \(implicit[3]), blend.y);
+                return mix(first, second, weight);
+            } else {
+                if (weight == 0.0) { return mix(\(explicit[0]), \(explicit[1]), blend.x); }
+                if (weight == 1.0) { return mix(\(explicit[2]), \(explicit[3]), blend.y); }
+                float4 first = mix(\(explicit[0]), \(explicit[1]), blend.x);
+                float4 second = mix(\(explicit[2]), \(explicit[3]), blend.y);
+                return mix(first, second, weight);
+            }
+        }
+        """
+        let replacement = "[[maybe_unused]] float4 flowAlbedo = \(marker)(g_Texture0, wpeSampler0, v_TexCoord.xy, flowUVOffset, flowUVOffset2, v_Blend, flowPhase);"
+        return (body.replacingCharacters(in: range, with: replacement), code)
     }
 
     private static let metalStdlibMacroDefinitions: Set<String> = [
