@@ -243,6 +243,22 @@ struct OracleCorpusCaptureTests {
                     var capture = document["capture"] as? [String: Any] ?? [:]
                     let solidStats = renderer.executor.lastSolidSceneBatchStats
                     var renderWork = capture["renderWork"] as? [String: Any] ?? [:]
+                    let diagnostics = renderer.executor.lastDiagnosticFrameStats
+                    renderWork["diagnosticControls"] = [
+                        "disableParticleBatching": diagnostics.controls.disableParticleBatching,
+                        "disableSolidBatching": diagnostics.controls.disableSolidBatching,
+                        "disableFBOAliasing": diagnostics.controls.disableFBOAliasing,
+                        "particleBatchingEnabled": diagnostics.particleBatchingEnabled,
+                        "solidBatchingEnabled": diagnostics.solidBatchingEnabled,
+                        "sceneQuadBatchingEnabled": diagnostics.sceneQuadBatchingEnabled,
+                        "fboAliasingEnabled": diagnostics.fboAliasingEnabled,
+                        "perPassReadbackActive": diagnostics.perPassReadbackActive,
+                        "particleEncoderCount": diagnostics.particleEncoderCount,
+                        "particleSystemsEncoded": diagnostics.particleSystemsEncoded,
+                        "plannedAliasIntervalCount": diagnostics.plannedAliasIntervalCount,
+                        "submittedAliasIntervalCount": diagnostics.aliasIntervalCount,
+                    ] as [String: Any]
+                    print("[oracle-capture] [\(id)] diagnostics particles=\(diagnostics.particleEncoderCount)/\(diagnostics.particleSystemsEncoded) aliasIntervals=\(diagnostics.aliasIntervalCount)/\(diagnostics.plannedAliasIntervalCount) readback=\(diagnostics.perPassReadbackActive)")
                     let quadStats = renderer.executor.lastSceneQuadBatchStats
                     renderWork["sceneQuads"] = [
                         "enabled": renderer.executor.sceneQuadBatchingEnabled,

@@ -81,6 +81,100 @@ struct WPEMetalSolidSceneRunTests {
         return try bytes(output)
     }
 
+    @Test("Diagnostic controls are independent, strict and disabled by default")
+    func diagnosticEnvironmentControls() {
+        let defaults = WPEMetalRenderExecutor.DiagnosticControls()
+        #expect(!defaults.disableParticleBatching && !defaults.disableSolidBatching && !defaults.disableFBOAliasing)
+        for key in ["PARTICLE_BATCHING", "SOLID_BATCHING", "FBO_ALIASING"] {
+            let controls = WPEMetalRenderExecutor.DiagnosticControls(environment: ["WPE_DIAGNOSTIC_DISABLE_" + key: "1"])
+            #expect(controls.disableParticleBatching == (key == "PARTICLE_BATCHING"))
+            #expect(controls.disableSolidBatching == (key == "SOLID_BATCHING"))
+            #expect(controls.disableFBOAliasing == (key == "FBO_ALIASING"))
+            #expect(WPEMetalRenderExecutor.DiagnosticControls(environment: ["WPE_DIAGNOSTIC_DISABLE_" + key: "true"]) == defaults)
+        }
+    }
+
+    @Test("Solid diagnostic bypass does not get re-enabled through experimental quad sharing")
+    func diagnosticSolidBypass() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let baseline = try WPEMetalRenderExecutor(device: device, diagnosticControls: .init())
+        let disabled = try WPEMetalRenderExecutor(device: device, diagnosticControls: .init(environment: [
+            "WPE_DIAGNOSTIC_DISABLE_SOLID_BATCHING": "1",
+        ]))
+        baseline.sceneQuadBatchingEnabled = true
+        disabled.sceneQuadBatchingEnabled = true
+        let pipeline = WPEPreparedRenderPipeline(layers: (0 ..< 4).map { layer($0) })
+        let expected = try renderBytes(baseline, pipeline: pipeline, hdr: true)
+        let actual = try renderBytes(disabled, pipeline: pipeline, hdr: true)
+        #expect(actual == expected)
+        #expect(baseline.lastSolidSceneBatchStats.draws == 4)
+        #expect(disabled.lastSolidSceneBatchStats.draws == 0)
+        #expect(!disabled.lastDiagnosticFrameStats.solidBatchingEnabled)
+        #expect(disabled.lastDiagnosticFrameStats.sceneQuadBatchingEnabled)
+        #expect(!disabled.lastDiagnosticFrameStats.perPassReadbackActive)
+        #expect(disabled.lastDiagnosticFrameStats.fboAliasingEnabled)
+    }
+
+    @MainActor
+    @Test("Particle diagnostic bypass uses independent encoders without readbacks")
+    func diagnosticParticleBypass() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let definition = try #require(WPEParticleDefinitionParser.parse(dictionary: [
+            "maxcount": 1, "emitter": [["name": "boxrandom", "instantaneous": 1, "rate": 0]],
+            "initializer": [["name": "sizerandom", "min": 8, "max": 8],
+                            ["name": "lifetimerandom", "min": 10, "max": 10]],
+        ]))
+        var systems: [WPEParticleSystem] = []
+        var textures: [ObjectIdentifier: MTLTexture] = [:]
+        for index in 0 ..< 3 {
+            let system = try #require(WPEParticleSystem(
+                definition: definition, device: device,
+                sceneTransform: WPEParticleSceneTransform(
+                    sceneSize: SIMD2<Float>(33, 17), objectOrigin: SIMD3<Float>(16.5, 8.5, 0),
+                    objectScale: SIMD3<Float>(repeating: 1), objectAngleZ: 0
+                ), seed: UInt64(index + 1)
+            ))
+            system.tick(now: 0)
+            system.tick(now: 0.05)
+            try #require(system.liveInstanceCount == 1)
+            systems.append(system)
+            let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba16Float, width: 1, height: 1, mipmapped: false)
+            descriptor.storageMode = .shared
+            descriptor.usage = .shaderRead
+            let texture = try #require(device.makeTexture(descriptor: descriptor))
+            let color = [Float16(index == 0 ? 1.5 : 0.125), Float16(index == 1 ? 1.5 : 0.125),
+                         Float16(index == 2 ? 1.5 : 0.125), Float16(0.5)].map(\.bitPattern)
+            color.withUnsafeBytes {
+                texture.replace(region: MTLRegionMake2D(0, 0, 1, 1), mipmapLevel: 0, withBytes: $0.baseAddress!, bytesPerRow: 8)
+            }
+            textures[ObjectIdentifier(system)] = texture
+        }
+        let camera = WPEMetalCameraUniforms(
+            orthogonalProjection: WPESceneOrthogonalProjection(width: 33, height: 17, auto: true),
+            sceneCamera: .defaultCamera, sceneHDR: true
+        )
+        var expected: [UInt8]?
+        for disable in [false, true] {
+            let executor = try WPEMetalRenderExecutor(device: device, diagnosticControls: .init(environment:
+                disable ? ["WPE_DIAGNOSTIC_DISABLE_PARTICLE_BATCHING": "1"] : [:]))
+            let output = try executor.render(pipeline: .init(layers: []), size: size, textures: [:], cameraUniforms: camera,
+                                             particleSystems: systems, particleTextures: textures)
+            let actual = try bytes(output)
+            #expect(actual.contains { $0 != 0 })
+            if let expected {
+                #expect(actual == expected)
+            } else {
+                expected = actual
+            }
+            let stats = executor.lastDiagnosticFrameStats
+            #expect(stats.particleSystemsEncoded == 3)
+            #expect(stats.particleEncoderCount == (disable ? 3 : 1))
+            #expect(stats.particleBatchingEnabled == !disable)
+            #expect(!stats.perPassReadbackActive)
+            #expect(stats.solidBatchingEnabled && stats.fboAliasingEnabled)
+        }
+    }
+
     @Test("Canonical rotation preserves raw HDR output and external A consumers", arguments: [2, 4])
     func canonicalRotationHDR(count: Int) throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
@@ -123,6 +217,9 @@ struct WPEMetalSolidSceneRunTests {
         let input = try #require(device.makeTexture(descriptor: descriptor))
         let referenceExecutor = try WPEMetalRenderExecutor(device: device)
         let optimizedExecutor = try WPEMetalRenderExecutor(device: device)
+        let noAliasExecutor = try WPEMetalRenderExecutor(device: device, diagnosticControls: .init(environment: [
+            "WPE_DIAGNOSTIC_DISABLE_FBO_ALIASING": "1",
+        ]))
         var previous: [UInt8]?
         for frame in 0 ..< 2 {
             let pixels = (0 ..< (input.width * input.height)).flatMap { index -> [UInt16] in
@@ -136,6 +233,12 @@ struct WPEMetalSolidSceneRunTests {
             let reference = try renderBytes(referenceExecutor, pipeline: baseline, hdr: true, textures: ["source": input])
             let actual = try renderBytes(optimizedExecutor, pipeline: optimized, hdr: true, textures: ["source": input])
             #expect(actual == reference)
+            let unaliased = try renderBytes(noAliasExecutor, pipeline: baseline, hdr: true, textures: ["source": input])
+            #expect(unaliased == reference)
+            #expect(noAliasExecutor.lastDiagnosticFrameStats.plannedAliasIntervalCount > 0)
+            #expect(noAliasExecutor.lastDiagnosticFrameStats.aliasIntervalCount == 0)
+            #expect(!noAliasExecutor.lastDiagnosticFrameStats.fboAliasingEnabled)
+            #expect(referenceExecutor.lastDiagnosticFrameStats.aliasIntervalCount > 0)
             // Raw half floats prove the fixture exercises HDR and alpha, not a clamped hash.
             let red = Float16(bitPattern: UInt16(actual[0]) | UInt16(actual[1]) << 8)
             let alpha = Float16(bitPattern: UInt16(actual[6]) | UInt16(actual[7]) << 8)
