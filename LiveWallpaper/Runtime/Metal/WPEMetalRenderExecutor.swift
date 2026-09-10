@@ -18,6 +18,38 @@ extension MTLCommandEncoder {
 }
 
 final class WPEMetalRenderExecutor {
+    /// Process-only experiment controls. Tests inject a value without changing
+    /// the process environment or persistent application preferences.
+    struct DiagnosticControls: Equatable, Sendable {
+        static let process = DiagnosticControls(environment: ProcessInfo.processInfo.environment)
+        let disableParticleBatching: Bool
+        let disableSolidBatching: Bool
+        let disableFBOAliasing: Bool
+
+        init(environment: [String: String] = [:]) {
+            disableParticleBatching = environment["WPE_DIAGNOSTIC_DISABLE_PARTICLE_BATCHING"] == "1"
+            disableSolidBatching = environment["WPE_DIAGNOSTIC_DISABLE_SOLID_BATCHING"] == "1"
+            disableFBOAliasing = environment["WPE_DIAGNOSTIC_DISABLE_FBO_ALIASING"] == "1"
+        }
+    }
+
+    struct DiagnosticFrameStats {
+        let controls: DiagnosticControls
+        var particleBatchingEnabled = false
+        var solidBatchingEnabled = false
+        var sceneQuadBatchingEnabled = false
+        var fboAliasingEnabled = false
+        var perPassReadbackActive = false
+        var particleEncoderCount = 0
+        var particleSystemsEncoded = 0
+        var plannedAliasIntervalCount = 0
+        /// Intervals actually submitted to the pool, not a GPU allocation count.
+        var aliasIntervalCount = 0
+    }
+
+    let diagnosticControls: DiagnosticControls
+    private(set) var lastDiagnosticFrameStats = DiagnosticFrameStats(controls: DiagnosticControls())
+
     /// Instance-only A/B seam; there is no persisted user setting.
     var initialSceneClearElisionEnabled = true
     private(set) var lastInitialSceneClearStats = WPEMetalInitialSceneClearStats()
@@ -638,7 +670,7 @@ final class WPEMetalRenderExecutor {
         let depthPixelFormat: UInt
     }
 
-    init(device: MTLDevice) throws {
+    init(device: MTLDevice, diagnosticControls: DiagnosticControls = .process) throws {
         guard let queue = device.makeCommandQueue() else {
             throw WPEMetalRenderExecutorError.commandQueueUnavailable
         }
@@ -646,6 +678,7 @@ final class WPEMetalRenderExecutor {
             throw WPEMetalRenderExecutorError.libraryUnavailable
         }
         self.device = device
+        self.diagnosticControls = diagnosticControls
         device.shouldMaximizeConcurrentCompilation = true
         commandQueue = queue
         defaultLibrary = library
@@ -811,6 +844,12 @@ final class WPEMetalRenderExecutor {
         /// Encode present into this scene command buffer. Nil on sync/readback.
         deferredPresent: DeferredPresentEncoder? = nil
     ) throws -> MTLTexture {
+        var diagnostics = DiagnosticFrameStats(controls: diagnosticControls)
+        diagnostics.particleBatchingEnabled = !diagnosticControls.disableParticleBatching
+        diagnostics.solidBatchingEnabled = solidSceneBatchingEnabled && !diagnosticControls.disableSolidBatching
+        diagnostics.sceneQuadBatchingEnabled = sceneQuadBatchingEnabled
+        diagnostics.fboAliasingEnabled = !diagnosticControls.disableFBOAliasing
+        defer { lastDiagnosticFrameStats = diagnostics }
         currentTextureSamplingDescriptors = textureSamplingDescriptors
         defer { currentTextureSamplingDescriptors.removeAll(keepingCapacity: true) }
         // Async submission: take a permit up front so the CPU blocks here (rather
@@ -861,6 +900,10 @@ final class WPEMetalRenderExecutor {
         let dumpScenePasses = (sceneID.map { !$0.isEmpty && dumpScenePassesDefaultID == $0 } ?? false)
             || WPEOracleMode.perPassHashesEnabled
         dumpLayerPassesID = dumpLayerPassesDefaultID
+        diagnostics.perPassReadbackActive = dumpScenePasses
+        diagnostics.particleBatchingEnabled = diagnostics.particleBatchingEnabled && !dumpScenePasses
+        diagnostics.solidBatchingEnabled = diagnostics.solidBatchingEnabled && !dumpScenePasses
+        diagnostics.sceneQuadBatchingEnabled = diagnostics.sceneQuadBatchingEnabled && !dumpScenePasses
         #endif
         var shaderRuntimeUniforms = runtimeUniforms
         shaderRuntimeUniforms.frameTime = advanceShaderFrameTime(runtimeTime: runtimeUniforms.time)
@@ -940,7 +983,10 @@ final class WPEMetalRenderExecutor {
         // Aliasing is disabled while the debug bypass path is active — bypass
         // skips a layer's passes, which would break the lockstep pass index the
         // alias plan relies on.
-        let aliasIntervals = fboAliasIntervals(pipeline: preparedPipeline, sceneSize: size)
+        let plannedAliasIntervals = fboAliasIntervals(pipeline: preparedPipeline, sceneSize: size)
+        let aliasIntervals = diagnosticControls.disableFBOAliasing ? [] : plannedAliasIntervals
+        diagnostics.plannedAliasIntervalCount = plannedAliasIntervals.count
+        diagnostics.aliasIntervalCount = aliasIntervals.count
         // `fboAliasIntervals` above has already revalidated the pipeline's
         // structure this frame, so its rebuild counter is the pipeline identity
         // the pool needs to skip a whole stable-frame prepare.
@@ -1065,9 +1111,9 @@ final class WPEMetalRenderExecutor {
                 let isRefractSystem = !system.usesRibbonGeometry
                     && particleNormalTextures[ObjectIdentifier(system)] != nil
                 #if DEBUG
-                let standalone = isRefractSystem || dumpScenePasses
+                let standalone = isRefractSystem || dumpScenePasses || diagnosticControls.disableParticleBatching
                 #else
-                let standalone = isRefractSystem
+                let standalone = isRefractSystem || diagnosticControls.disableParticleBatching
                 #endif
 
                 if standalone {
@@ -1084,6 +1130,8 @@ final class WPEMetalRenderExecutor {
                         traceIndex: traceIndex
                     ) {
                         didEncode = true
+                        diagnostics.particleSystemsEncoded += 1
+                        diagnostics.particleEncoderCount += 1
                         #if DEBUG
                         // Label MUST equal the trace passId `recordParticlePass`
                         // emits (`particle.<traceIndex>`) so `recordPassOutputs`
@@ -1097,6 +1145,7 @@ final class WPEMetalRenderExecutor {
 
                 let encoder = try particleRunEncoder
                     ?? makeParticleOutputEncoder(output: output, commandBuffer: commandBuffer)
+                if particleRunEncoder == nil { diagnostics.particleEncoderCount += 1 }
                 particleRunEncoder = encoder
                 if try encodeParticleSystem(
                     system,
@@ -1111,6 +1160,7 @@ final class WPEMetalRenderExecutor {
                     sharedEncoder: encoder
                 ) {
                     didEncode = true
+                    diagnostics.particleSystemsEncoded += 1
                 }
             }
         }
@@ -1121,8 +1171,10 @@ final class WPEMetalRenderExecutor {
         var aliasPassCounter = 0
         for (layerIndex, layer) in preparedPipeline.layers.enumerated() {
             if layerIndex > 0 { try finishInitialSceneClear() }
-            var batchesSolid = solidSceneBatchingEnabled && WPEMetalSolidSceneRun.accepts(layer)
-            if sceneQuadBatchingEnabled && !staticLayerCacheEnabled && !batchesSolid {
+            let solidEligible = WPEMetalSolidSceneRun.accepts(layer)
+            let allowsSceneSharing = !(solidEligible && diagnosticControls.disableSolidBatching)
+            var batchesSolid = diagnostics.solidBatchingEnabled && solidEligible
+            if sceneQuadBatchingEnabled && allowsSceneSharing && !staticLayerCacheEnabled && !batchesSolid {
                 let hasMedia = layer.passes.first.map {
                     mediaTextureStore?.declarations(forPassID: $0.pass.id) != nil
                 } ?? false
@@ -1262,7 +1314,7 @@ final class WPEMetalRenderExecutor {
                     }
                 }
                 sharesSceneEncoder = batchesSolid
-                if sceneQuadBatchingEnabled && !staticLayerCacheEnabled && !sharesSceneEncoder {
+                if sceneQuadBatchingEnabled && allowsSceneSharing && !staticLayerCacheEnabled && !sharesSceneEncoder {
                     let finalCopy = layerPassIndex == layer.passes.count - 1
                         && WPEBuiltinShaderKind(normalizing: pass.pass.shader) == .copy
                     let reason = WPEMetalSolidSceneRun.texturedRejectionReason(
