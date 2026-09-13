@@ -8,6 +8,20 @@ private func isImplicitFBOTextureName(_ name: String) -> Bool {
     name.hasPrefix("_") && !name.hasPrefix("__")
 }
 
+/// Whether canonical composite rotation ran for a build, and each candidate
+/// layer's verdict ("rotated" or the rejection reason).
+struct WPECanonicalCompositeRotationReport: Sendable, Equatable {
+    let enabled: Bool
+    let decisions: [String: String]
+}
+
+/// Whether full-frame passthrough elision ran for a build, and each
+/// fullscreen/project utility layer's verdict ("elided" or the rejection reason).
+struct WPEFullFramePassthroughElisionReport: Sendable, Equatable {
+    let enabled: Bool
+    let decisions: [String: String]
+}
+
 struct WPERenderPipelineBuilder: Sendable {
     private let resolver: WPEMultiRootResourceResolver
     private let shaderLoader: WPEShaderSourceLoader
@@ -53,8 +67,25 @@ struct WPERenderPipelineBuilder: Sendable {
     }
 
     func build(
-        graph: WPERenderGraph, canonicalCompositeRotationEnabled: Bool? = nil, sceneHDR: Bool = false
+        graph: WPERenderGraph, canonicalCompositeRotationEnabled: Bool? = nil, sceneHDR: Bool = false,
+        fullFramePassthroughElisionEnabled: Bool? = nil
     ) throws -> WPEPreparedRenderPipeline {
+        try buildReportingCanonicalRotation(
+            graph: graph, canonicalCompositeRotationEnabled: canonicalCompositeRotationEnabled, sceneHDR: sceneHDR,
+            fullFramePassthroughElisionEnabled: fullFramePassthroughElisionEnabled
+        ).pipeline
+    }
+
+    /// Same as `build`, plus the canonical composite rotation and passthrough
+    /// elision verdicts so the renderer can surface them to captures and diagnostics.
+    func buildReportingCanonicalRotation(
+        graph: WPERenderGraph, canonicalCompositeRotationEnabled: Bool? = nil, sceneHDR: Bool = false,
+        fullFramePassthroughElisionEnabled: Bool? = nil
+    ) throws -> (
+        pipeline: WPEPreparedRenderPipeline,
+        canonicalRotation: WPECanonicalCompositeRotationReport,
+        fullFramePassthroughElision: WPEFullFramePassthroughElisionReport
+    ) {
         let layers = try graph.layers.map { layer in
             // FBOs are declared per layer, and a pass only ever samples its own
             // layer's targets plus the global scene aliases (which are not in
@@ -72,16 +103,30 @@ struct WPERenderPipelineBuilder: Sendable {
                 passes: passes
             )
         }
-        let prepared = WPEPreparedRenderPipeline(layers: layers)
-        guard canonicalCompositeRotationEnabled
-            ?? (ProcessInfo.processInfo.environment["WPE_CANONICAL_COMPOSITE_ROTATION"] == "1") else {
-            return prepared
+        var pipeline = WPEPreparedRenderPipeline(layers: layers)
+        let environment = ProcessInfo.processInfo.environment
+        // Both on by default; `WPE_CANONICAL_COMPOSITE_ROTATION=0` /
+        // `WPE_FULLFRAME_PASSTHROUGH_ELISION=0` are the kill switches.
+        var rotationReport = WPECanonicalCompositeRotationReport(enabled: false, decisions: [:])
+        if canonicalCompositeRotationEnabled ?? (environment["WPE_CANONICAL_COMPOSITE_ROTATION"] != "0") {
+            let rotation = WPERenderGraphBuilder.rotatingCanonicalCompositeOutputs(in: pipeline, sceneHDR: sceneHDR)
+            for (objectID, decision) in rotation.decisions.sorted(by: { $0.key < $1.key }) {
+                Logger.info("[WPE canonical rotation] object=\(objectID) decision=\(decision)", category: .wpeRender)
+            }
+            pipeline = rotation.pipeline
+            rotationReport = WPECanonicalCompositeRotationReport(enabled: true, decisions: rotation.decisions)
         }
-        let rotation = WPERenderGraphBuilder.rotatingCanonicalCompositeOutputs(in: prepared, sceneHDR: sceneHDR)
-        for (objectID, decision) in rotation.decisions.sorted(by: { $0.key < $1.key }) {
-            Logger.info("[WPE canonical rotation] object=\(objectID) decision=\(decision)", category: .wpeRender)
+        // After rotation: the passthrough composite may be the rotated `_b`.
+        var elisionReport = WPEFullFramePassthroughElisionReport(enabled: false, decisions: [:])
+        if fullFramePassthroughElisionEnabled ?? (environment["WPE_FULLFRAME_PASSTHROUGH_ELISION"] != "0") {
+            let elision = WPERenderGraphBuilder.elidingFullFramePassthroughs(in: pipeline, sceneHDR: sceneHDR)
+            for (objectID, decision) in elision.decisions.sorted(by: { $0.key < $1.key }) {
+                Logger.info("[WPE passthrough elision] object=\(objectID) decision=\(decision)", category: .wpeRender)
+            }
+            pipeline = elision.pipeline
+            elisionReport = WPEFullFramePassthroughElisionReport(enabled: true, decisions: elision.decisions)
         }
-        return rotation.pipeline
+        return (pipeline, rotationReport, elisionReport)
     }
 
     private func loadPuppetModel(for layer: WPERenderLayer) throws -> WPEPuppetModel? {

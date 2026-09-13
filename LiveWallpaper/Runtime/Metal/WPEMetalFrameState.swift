@@ -69,6 +69,11 @@ struct WPEMetalFrameState {
     /// same name (a chain rendering into `_rt_HalfFrameBuffer` as an actual
     /// target) removes it so the snapshot logic never clobbers real content.
     var sceneAliasSnapshotGenerations: [String: Int] = [:]
+    /// `sceneWriteGeneration` when the current layer's pass loop began. A scene-alias
+    /// read may bind the live scene only while no pass of its own layer has written it.
+    var layerEntrySceneWriteGeneration: Int = 0
+    var sceneAliasSnapshotBlits = 0
+    var sceneAliasDirectBinds = 0
     /// Per-physical-texture initialization tracking: ping-pong's secondary texture is
     /// allocated lazily and may contain garbage on first use. Tracking by texture identity
     /// (not target) lets us decide whether `.load` is safe or whether we need `.clear` (or a blit-copy from the previous primary) before a same-target pass that blends, culls, or rejects fragments via depth.

@@ -249,6 +249,9 @@ struct OracleCorpusCaptureTests {
                         "disableParticleBatching": diagnostics.controls.disableParticleBatching,
                         "disableSolidBatching": diagnostics.controls.disableSolidBatching,
                         "disableFBOAliasing": diagnostics.controls.disableFBOAliasing,
+                        "disableSceneAliasDirectBind": diagnostics.controls.disableSceneAliasDirectBind,
+                        "canonicalCompositeRotationEnabled": renderer.lastCanonicalRotation.enabled,
+                        "fullFramePassthroughElisionEnabled": renderer.lastFullFramePassthroughElision.enabled,
                         "particleBatchingEnabled": diagnostics.particleBatchingEnabled,
                         "solidBatchingEnabled": diagnostics.solidBatchingEnabled,
                         "sceneQuadBatchingEnabled": diagnostics.sceneQuadBatchingEnabled,
@@ -258,6 +261,8 @@ struct OracleCorpusCaptureTests {
                         "particleSystemsEncoded": diagnostics.particleSystemsEncoded,
                         "plannedAliasIntervalCount": diagnostics.plannedAliasIntervalCount,
                         "submittedAliasIntervalCount": diagnostics.aliasIntervalCount,
+                        "sceneAliasSnapshotBlits": diagnostics.sceneAliasSnapshotBlits,
+                        "sceneAliasDirectBinds": diagnostics.sceneAliasDirectBinds,
                     ] as [String: Any]
                     print("[oracle-capture] [\(id)] diagnostics particles=\(diagnostics.particleEncoderCount)/\(diagnostics.particleSystemsEncoded) aliasIntervals=\(diagnostics.aliasIntervalCount)/\(diagnostics.plannedAliasIntervalCount) readback=\(diagnostics.perPassReadbackActive)")
                     let quadStats = renderer.executor.lastSceneQuadBatchStats
@@ -269,6 +274,14 @@ struct OracleCorpusCaptureTests {
                         "rejectedLayers": quadStats.rejectedLayers,
                     ] as [String: Any]
                     renderWork["solidScene"] = ["encoders": solidStats.encoders, "draws": solidStats.draws]
+                    renderWork["canonicalRotation"] = [
+                        "enabled": renderer.lastCanonicalRotation.enabled,
+                        "decisions": renderer.lastCanonicalRotation.decisions,
+                    ] as [String: Any]
+                    renderWork["fullFramePassthroughElision"] = [
+                        "enabled": renderer.lastFullFramePassthroughElision.enabled,
+                        "decisions": renderer.lastFullFramePassthroughElision.decisions,
+                    ] as [String: Any]
                     let clearStats = renderer.executor.lastInitialSceneClearStats
                     renderWork["initialSceneClear"] = [
                         "passID": clearStats.passID ?? "", "skipped": clearStats.skipped,

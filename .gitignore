@@ -56,8 +56,6 @@ playground.xcworkspace
 
 .build/
 
-
-
 Carthage/Build/
 
 # fastlane
@@ -103,6 +101,7 @@ Temporary Items
 *.trace/
 .audit/
 
+buildServer.json
 .claude/
 .codegraph/
 
@@ -111,16 +110,11 @@ cache/
 tools/
 trace/
 .playwright-cli/
-scripts/
 skills/
-# Every local-only write-up lives here: review reports, plans, and the WPE
-# parity/leak ledgers. docs/ is public documentation only.
 .notes/
 archived/
 CLAUDE.md
-LiveWallpaperTests/Fixtures
-# Except the machine-independent oracle structural-fingerprint golden net (a few
-# KB of JSON, no pixels) — see .claude/skills/wpe-oracle/references/self-oracle-runbook.md.
+
 !LiveWallpaperTests/Fixtures/
 LiveWallpaperTests/Fixtures/*
 !LiveWallpaperTests/Fixtures/oracle-golden/
@@ -129,7 +123,6 @@ LiveWallpaperTests/Fixtures/*
 !LiveWallpaperTests/Fixtures/workshop/
 
 # Keep portable CI/release contracts; all other maintainer-local scripts remain ignored.
-!scripts/
 scripts/*
 !scripts/release_candidate_check.sh
 !scripts/fast_app_contract_tests.sh

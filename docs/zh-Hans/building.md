@@ -50,7 +50,7 @@ Pro/Lite Debug/Release 链接矩阵、archive 冒烟和发布/签名检查。
 共用构建存储时串行执行 scheme；独立任务必须使用不同 DerivedData。
 
 支持的出货与 CI 工具链为 Xcode 27.0。`make` 默认使用
-`/Applications/Xcode-beta.app/Contents/Developer`，安装位置不同时设置 `DEVELOPER_DIR`。
+`/Applications/Xcode.app/Contents/Developer`，安装位置不同时设置 `DEVELOPER_DIR`。
 当前 target 与包见[架构说明](architecture.md)；Video/Web 测试位于应用 target。
 
 ## 测试工作流

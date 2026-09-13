@@ -18,7 +18,7 @@ SHELL := /usr/bin/env bash
 .SHELLFLAGS := -eu -o pipefail -c
 
 # Shipping toolchain is Xcode 27.0. CI overrides this with its own image path.
-DEVELOPER_DIR ?= /Applications/Xcode-beta.app/Contents/Developer
+DEVELOPER_DIR ?= /Applications/Xcode.app/Contents/Developer
 export DEVELOPER_DIR
 
 # Revision the changed-lines ratchets diff against. CI passes the PR/push base.

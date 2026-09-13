@@ -3335,3 +3335,316 @@ struct WPECanonicalCompositeRotationTests {
         #expect(!result.decisions.values.contains("rotated"))
     }
 }
+
+@Suite("Full-frame passthrough elision")
+struct WPEFullFramePassthroughElisionTests {
+    private let fullFrame = WPETextureReference.fbo(WPESceneAliasName.fullFrameBuffer)
+
+    private func pass(
+        id: String, shader: String = "effects/opacity", source: WPETextureReference, target: WPERenderTarget,
+        phase: WPERenderPassPhase = .effect(file: "effects/opacity/effect.json"), blending: String = "premultiplied",
+        depthTest: String = "disabled", bindings: [Int: WPETextureReference]? = nil,
+        rawTextures: [Int: WPETextureReference]? = nil, rawBinds: [Int: WPETextureReference] = [:],
+        combos: [String: Int] = [:], comboValues: [String: Int] = ["TEST_COMBO": 1],
+        constantScripts: [String: WPESceneTransformScript] = [:], visibilityGate: WPEPassVisibilityGate? = nil,
+        userTextures: WPERenderUserTextureBindings = .empty
+    ) -> WPEPreparedRenderPass {
+        let graph = WPERenderPass(
+            id: id, phase: phase, shader: shader, source: source, target: target,
+            textures: rawTextures ?? [0: source], binds: rawBinds, constants: [:], combos: combos,
+            userTextureBindings: userTextures, blending: blending, cullMode: "nocull",
+            depthTest: depthTest, depthWrite: "disabled", constantScripts: constantScripts, visibilityGate: visibilityGate
+        )
+        return WPEPreparedRenderPass(
+            pass: graph,
+            shader: WPEShaderProgram(name: shader, vertexSource: "", fragmentSource: "", isBuiltin: false),
+            textureBindings: bindings ?? [0: source], comboValues: comboValues,
+            uniformValues: ["test": .number(0.25)], materialUniformNames: ["amount": "test"]
+        )
+    }
+
+    private func passthrough(id: String, target: String, shader: String = "passthrough", blending: String = "premultiplied",
+                             depthTest: String = "disabled", rawTextures: [Int: WPETextureReference]? = nil,
+                             rawBinds: [Int: WPETextureReference] = [:], combos: [String: Int] = [:],
+                             comboValues: [String: Int] = [:], constantScripts: [String: WPESceneTransformScript] = [:],
+                             visibilityGate: WPEPassVisibilityGate? = nil,
+                             userTextures: WPERenderUserTextureBindings = .empty) -> WPEPreparedRenderPass {
+        pass(id: id, shader: shader, source: fullFrame, target: .layerComposite(name: target), phase: .material,
+             blending: blending, depthTest: depthTest, rawTextures: rawTextures, rawBinds: rawBinds, combos: combos,
+             comboValues: comboValues, constantScripts: constantScripts, visibilityGate: visibilityGate,
+             userTextures: userTextures)
+    }
+
+    private func layer(
+        id: String = "post", imagePath: String = "models/util/fullscreenlayer.json",
+        geometry: WPERenderLayerGeometry = .identity, groupRenderTarget: String? = nil,
+        passes: [WPEPreparedRenderPass]
+    ) -> WPEPreparedRenderLayer {
+        let names = WPERenderTargetNames.ImageLayerComposite.make(objectID: id)
+        return WPEPreparedRenderLayer(
+            graphLayer: WPERenderLayer(
+                objectID: id, objectName: id, imagePath: imagePath, materialPath: nil,
+                geometry: geometry, compositeA: names.a, compositeB: names.b, localFBOs: [],
+                passes: passes.map(\.pass), groupRenderTarget: groupRenderTarget
+            ), passes: passes
+        )
+    }
+
+    /// passthrough → A; effect A → B (raw `bind: previous`); effect B → A (first rewrite of A);
+    /// effect A → B (must keep reading the rewritten A); copy B → scene.
+    private func chain(id: String = "post", passthroughTarget: String? = nil) -> [WPEPreparedRenderPass] {
+        let names = WPERenderTargetNames.ImageLayerComposite.make(objectID: id)
+        let first = passthroughTarget ?? names.a
+        let second = first == names.a ? names.b : names.a
+        return [
+            passthrough(id: "\(id).0", target: first),
+            pass(id: "\(id).1", source: .fbo(first), target: .layerComposite(name: second),
+                 bindings: [0: .fbo(first), 2: .asset("util/white")], rawBinds: [0: .previous]),
+            pass(id: "\(id).2", source: .fbo(second), target: .layerComposite(name: first)),
+            pass(id: "\(id).3", source: .fbo(first), target: .layerComposite(name: second)),
+            pass(id: "\(id).4", shader: "commands/copy", source: .fbo(second), target: .scene,
+                 phase: .command(file: WPERenderPassPhase.sceneCopyCommandFile)),
+        ]
+    }
+
+    @Test("The passthrough is dropped and its readers sample the scene alias up to the composite's next write",
+          arguments: [nil, WPERenderTargetNames.ImageLayerComposite.make(objectID: "post").b])
+    func elidesPassthrough(passthroughTarget: String?) throws {
+        let names = WPERenderTargetNames.ImageLayerComposite.make(objectID: "post")
+        let first = passthroughTarget ?? names.a
+        let original = layer(passes: chain(passthroughTarget: passthroughTarget))
+        let consumer = layer(id: "consumer", imagePath: "models/image.json", passes: [
+            pass(id: "consumer.0", shader: "genericimage2", source: .asset("albedo"), target: .scene, phase: .material),
+        ])
+        let result = WPERenderGraphBuilder.elidingFullFramePassthroughs(
+            in: WPEPreparedRenderPipeline(layers: [original, consumer]), sceneHDR: true
+        )
+        #expect(result.decisions == ["post": "elided"])
+        let optimized = try #require(result.pipeline.layers.first)
+        #expect(optimized.passes.map(\.id) == ["post.1", "post.2", "post.3", "post.4"])
+        #expect(optimized.graphLayer.passes == optimized.passes.map(\.pass))
+        #expect(optimized.graphLayer.compositeA == names.a && optimized.graphLayer.compositeB == names.b)
+        let rewritten = optimized.passes[0]
+        #expect(rewritten.pass.source == fullFrame)
+        #expect(rewritten.pass.textures == [0: fullFrame])
+        #expect(rewritten.pass.binds == [0: .previous])
+        #expect(rewritten.textureBindings == [0: fullFrame, 2: .asset("util/white")])
+        #expect(rewritten.pass.target == original.passes[1].pass.target)
+        #expect(rewritten.shader == original.passes[1].shader)
+        #expect(rewritten.comboValues == original.passes[1].comboValues)
+        #expect(rewritten.uniformValues == original.passes[1].uniformValues)
+        #expect(rewritten.materialUniformNames == original.passes[1].materialUniformNames)
+        // The first rewrite of the passthrough composite and everything after it are untouched.
+        #expect(Array(optimized.passes.dropFirst()) == Array(original.passes.dropFirst(2)))
+        #expect(optimized.passes[2].pass.source == .fbo(first))
+        #expect(result.pipeline.layers[1] == consumer)
+        // Idempotent: the rewritten layer no longer opens with a passthrough.
+        let again = WPERenderGraphBuilder.elidingFullFramePassthroughs(in: result.pipeline, sceneHDR: true)
+        #expect(again.pipeline == result.pipeline)
+        #expect(again.decisions == ["post": "passthrough-shader"])
+    }
+
+    @Test("A layer that never rewrites its passthrough composite has every reader rewritten")
+    func rewritesWholeLayerWithoutSecondWrite() throws {
+        let names = WPERenderTargetNames.ImageLayerComposite.make(objectID: "post")
+        let original = layer(passes: [
+            passthrough(id: "post.0", target: names.a),
+            pass(id: "post.1", source: .fbo(names.a), target: .fbo(name: "blur"), rawBinds: [0: .previous]),
+            pass(id: "post.2", source: .fbo("blur"), target: .layerComposite(name: names.b),
+                 bindings: [0: .fbo("blur"), 2: .fbo(names.a)], rawBinds: [2: .previous]),
+            pass(id: "post.3", shader: "commands/copy", source: .fbo(names.b), target: .scene,
+                 phase: .command(file: WPERenderPassPhase.sceneCopyCommandFile)),
+        ])
+        let result = WPERenderGraphBuilder.elidingFullFramePassthroughs(
+            in: WPEPreparedRenderPipeline(layers: [original]), sceneHDR: true
+        )
+        #expect(result.decisions == ["post": "elided"])
+        let optimized = try #require(result.pipeline.layers.first)
+        #expect(optimized.passes.map(\.id) == ["post.1", "post.2", "post.3"])
+        #expect(optimized.passes[0].pass.source == fullFrame)
+        #expect(optimized.passes[0].pass.binds == [0: .previous])
+        #expect(optimized.passes[1].textureBindings == [0: .fbo("blur"), 2: fullFrame])
+        #expect(optimized.passes[1].pass.binds == [2: .previous])
+        #expect(optimized.passes[2] == original.passes[3])
+        #expect(!optimized.passes.flatMap(\.textureReferences).contains(.fbo(names.a)))
+    }
+
+    @Test("Disabled elision and SDR scenes keep the pipeline", arguments: ["disabled", "sdr"])
+    func keepsPipeline(mode: String) throws {
+        let original = WPEPreparedRenderPipeline(layers: [layer(passes: chain())])
+        if mode == "sdr" {
+            let result = WPERenderGraphBuilder.elidingFullFramePassthroughs(in: original, sceneHDR: false)
+            #expect(result.pipeline == original)
+            #expect(result.decisions == ["post": "unsupported-composite-format"])
+        } else {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: root) }
+            func write(_ payload: [String: Any], _ path: String) throws {
+                let url = root.appendingPathComponent(path)
+                try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try JSONSerialization.data(withJSONObject: payload).write(to: url)
+            }
+            try write(["material": "materials/util/fullscreenlayer.json", "fullscreen": true, "passthrough": true],
+                      "models/util/fullscreenlayer.json")
+            try write(
+                ["passes": [["shader": "composelayer", "textures": ["_rt_FullFrameBuffer"], "blending": "translucent",
+                             "depthtest": "disabled", "depthwrite": "disabled", "cullmode": "nocull"]]],
+                "materials/util/fullscreenlayer.json"
+            )
+            try write(["passes": [["material": "materials/opacity.json"]]], "effects/opacity.json")
+            try write(["passes": [["shader": "effects/opacity"]]], "materials/opacity.json")
+            // A dependent consumer keeps the canonical A copy (the rotation candidate).
+            let names = WPERenderTargetNames.ImageLayerComposite.make(objectID: "41")
+            try write(["material": "materials/consumer.json"], "models/consumer.json")
+            try write(["passes": [["shader": "genericimage2", "textures": [names.a]]]], "materials/consumer.json")
+            let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: [
+                "camera": ["center": "0 0 0", "eye": "0 0 1", "up": "0 1 0"],
+                "general": ["orthogonalprojection": ["width": 1920, "height": 1080]],
+                "objects": [
+                    ["id": 41, "name": "Post", "image": "models/util/fullscreenlayer.json",
+                     "effects": [["id": 42, "file": "effects/opacity.json"]]],
+                    ["id": 43, "name": "Consumer", "image": "models/consumer.json", "dependencies": [41]],
+                ],
+            ]))
+            let graph = try WPERenderGraphBuilder(cacheRootURL: root).build(document: document)
+            let builder = WPERenderPipelineBuilder(cacheRootURL: root)
+            let baseline = try builder.build(graph: graph, canonicalCompositeRotationEnabled: false, sceneHDR: true,
+                                             fullFramePassthroughElisionEnabled: false)
+            #expect(baseline.layers[0].passes.count == 4)
+            #expect(baseline.layers[0].passes[0].pass.target == .layerComposite(name: names.a))
+            let off = try builder.buildReportingCanonicalRotation(
+                graph: graph, canonicalCompositeRotationEnabled: false, sceneHDR: true, fullFramePassthroughElisionEnabled: false
+            )
+            #expect(off.pipeline == baseline)
+            #expect(off.fullFramePassthroughElision == WPEFullFramePassthroughElisionReport(enabled: false, decisions: [:]))
+            // Without rotation the passthrough composite is the public A the consumer samples.
+            let unrotated = try builder.buildReportingCanonicalRotation(
+                graph: graph, canonicalCompositeRotationEnabled: false, sceneHDR: true, fullFramePassthroughElisionEnabled: true
+            )
+            #expect(unrotated.pipeline == baseline)
+            #expect(unrotated.fullFramePassthroughElision.decisions == ["41": "external-private-composite-access"])
+            // After rotation the passthrough composite is the private `_b`; its single reader is rewritten.
+            let rotated = try builder.buildReportingCanonicalRotation(
+                graph: graph, canonicalCompositeRotationEnabled: true, sceneHDR: true, fullFramePassthroughElisionEnabled: true
+            )
+            #expect(rotated.canonicalRotation.decisions == ["41": "rotated"])
+            #expect(rotated.fullFramePassthroughElision.decisions == ["41": "elided"])
+            #expect(rotated.pipeline.layers[0].passes.map(\.id) == ["41.1", "41.3"])
+            #expect(rotated.pipeline.layers[0].passes[0].textureBindings[0] == fullFrame)
+            #expect(rotated.pipeline.layers[0].passes[0].pass.target == .layerComposite(name: names.a))
+            #expect(rotated.pipeline.layers[0].passes[1].pass.source == .fbo(names.a))
+            #expect(rotated.pipeline.layers[1] == baseline.layers[1])
+        }
+    }
+
+    @Test("Every admission condition rejects with its own reason and keeps the pipeline", arguments: [
+        "composelayer", "non-identity-geometry", "special-layer", "single-pass", "passthrough-inputs-previous",
+        "passthrough-inputs-extra", "passthrough-target", "passthrough-shader", "passthrough-clearalpha",
+        "passthrough-blending", "passthrough-depth", "passthrough-script", "passthrough-user-textures",
+        "passthrough-gate", "scene-write-before-rewrite", "first-rewriter-reads-passthrough",
+        "first-rewriter-binds-previous", "private-composite-alias", "external-private-composite-access",
+    ])
+    func rejects(reason: String) {
+        let names = WPERenderTargetNames.ImageLayerComposite.make(objectID: "post")
+        var passes = chain()
+        var imagePath = "models/util/fullscreenlayer.json"
+        var geometry = WPERenderLayerGeometry.identity
+        var groupRenderTarget: String?
+        var others: [WPEPreparedRenderLayer] = []
+        var expected = reason
+        let gate = WPEPassVisibilityGate(
+            script: WPESceneTransformScript(script: "return true;", seed: .zero), initialVisible: true
+        )
+        switch reason {
+        case "composelayer":
+            imagePath = "models/util/composelayer.json"
+        case "non-identity-geometry":
+            geometry = WPERenderLayerGeometry(
+                origin: SIMD3<Double>(1, 0, 0), scale: SIMD3<Double>(1, 1, 1), angles: SIMD3<Double>(0, 0, 0),
+                alignment: .center, size: nil, alpha: 1, color: SIMD3<Double>(1, 1, 1), brightness: 1
+            )
+        case "special-layer":
+            groupRenderTarget = "group"
+        case "single-pass":
+            passes = [passes[0]]
+        case "passthrough-inputs-previous":
+            passes[0] = passthrough(id: "post.0", target: names.a, rawBinds: [1: .previous])
+            expected = "passthrough-inputs"
+        case "passthrough-inputs-extra":
+            passes[0] = passthrough(id: "post.0", target: names.a, rawTextures: [0: fullFrame, 1: .asset("mask")])
+            expected = "passthrough-inputs"
+        case "passthrough-target":
+            passes[0] = pass(id: "post.0", shader: "passthrough", source: fullFrame, target: .fbo(name: names.a), phase: .material)
+        case "passthrough-shader":
+            passes[0] = passthrough(id: "post.0", target: names.a, shader: "passthroughsrgb")
+        case "passthrough-clearalpha":
+            passes[0] = passthrough(id: "post.0", target: names.a, comboValues: ["CLEARALPHA": 1])
+        case "passthrough-blending":
+            passes[0] = passthrough(id: "post.0", target: names.a, blending: "premultipliedDisabled")
+            expected = "passthrough-render-semantics"
+        case "passthrough-depth":
+            passes[0] = passthrough(id: "post.0", target: names.a, depthTest: "enabled")
+            expected = "passthrough-render-semantics"
+        case "passthrough-script":
+            passes[0] = passthrough(id: "post.0", target: names.a,
+                                    constantScripts: ["g_Alpha": WPESceneTransformScript(script: "return 1;", seed: .zero)])
+            expected = "passthrough-dynamic"
+        case "passthrough-user-textures":
+            passes[0] = passthrough(id: "post.0", target: names.a, userTextures: WPERenderUserTextureBindings(
+                material: [WPESceneUserTextureBinding(name: "$dynamic", type: "system")]
+            ))
+            expected = "passthrough-dynamic"
+        case "passthrough-gate":
+            passes[0] = passthrough(id: "post.0", target: names.a, visibilityGate: gate)
+        case "scene-write-before-rewrite":
+            passes.insert(pass(id: "post.1a", shader: "commands/copy", source: .fbo(names.a), target: .scene,
+                               phase: .command(file: WPERenderPassPhase.sceneCopyCommandFile)), at: 1)
+        case "first-rewriter-reads-passthrough":
+            passes[2] = pass(id: "post.2", source: .fbo(names.b), target: .layerComposite(name: names.a),
+                             bindings: [0: .fbo(names.b), 1: .fbo(names.a)])
+        case "first-rewriter-binds-previous":
+            passes[2] = pass(id: "post.2", source: .fbo(names.b), target: .layerComposite(name: names.a),
+                             rawBinds: [1: .previous])
+            expected = "first-rewriter-reads-passthrough"
+        case "private-composite-alias":
+            passes[1] = pass(id: "post.1", source: .fbo(names.a.lowercased()), target: .layerComposite(name: names.b))
+        case "external-private-composite-access":
+            others = [layer(id: "consumer", imagePath: "models/image.json", passes: [
+                pass(id: "consumer.0", shader: "genericimage2", source: .fbo(names.a), target: .scene, phase: .material),
+            ])]
+        default:
+            break
+        }
+        let original = WPEPreparedRenderPipeline(layers: [
+            layer(imagePath: imagePath, geometry: geometry, groupRenderTarget: groupRenderTarget, passes: passes),
+        ] + others)
+        let result = WPERenderGraphBuilder.elidingFullFramePassthroughs(in: original, sceneHDR: true)
+        #expect(result.pipeline == original)
+        if reason == "composelayer" {
+            #expect(result.decisions.isEmpty)
+        } else {
+            #expect(result.decisions == ["post": expected])
+        }
+    }
+
+    @Test("A gate shared by the whole layer and a scene write after the last reader are admitted")
+    func admitsSharedGateAndTrailingSceneWrite() {
+        let names = WPERenderTargetNames.ImageLayerComposite.make(objectID: "post")
+        let gate = WPEPassVisibilityGate(
+            script: WPESceneTransformScript(script: "return true;", seed: .zero), initialVisible: true
+        )
+        let gated = layer(passes: [
+            passthrough(id: "post.0", target: names.a, visibilityGate: gate),
+            pass(id: "post.1", source: .fbo(names.a), target: .layerComposite(name: names.b), visibilityGate: gate),
+            pass(id: "post.2", shader: "commands/copy", source: .fbo(names.b), target: .scene,
+                 phase: .command(file: WPERenderPassPhase.sceneCopyCommandFile), visibilityGate: gate),
+        ])
+        let result = WPERenderGraphBuilder.elidingFullFramePassthroughs(
+            in: WPEPreparedRenderPipeline(layers: [gated]), sceneHDR: true
+        )
+        #expect(result.decisions == ["post": "elided"])
+        #expect(result.pipeline.layers[0].passes.map(\.id) == ["post.1", "post.2"])
+        #expect(result.pipeline.layers[0].passes[0].pass.source == fullFrame)
+        #expect(result.pipeline.layers[0].passes[0].pass.visibilityGate == gate)
+    }
+}

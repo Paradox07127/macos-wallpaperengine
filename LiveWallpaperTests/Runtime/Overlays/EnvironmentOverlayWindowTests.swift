@@ -60,6 +60,24 @@ final class EnvironmentOverlayWindowTests: XCTestCase {
         XCTAssertEqual(updatedFrame, newFrame, "particle overlay frame did not follow the resolution/arrangement change")
     }
 
+    /// `NSWindow.canHide` defaults to YES, so cmd+H took the particle overlay
+    /// down with the app's UI even though it is desktop decoration.
+    @MainActor
+    func testParticleOverlaySurvivesApplicationHide() {
+        let controller = EnvironmentOverlayController()
+        let screenID = CGDirectDisplayID(1)
+        defer { controller.teardownAll() }
+
+        controller.apply(
+            effect: .rain, density: 1, screenID: screenID,
+            screenFrame: NSRect(x: 0, y: 0, width: 200, height: 200)
+        )
+        XCTAssertEqual(
+            controller.debugWindowCanHide(screenID: screenID), false,
+            "cmd+H took the particle overlay down with the app's UI"
+        )
+    }
+
     /// "Show wallpaper in screen capture" reached the wallpaper windows and the
     /// Monitor board but not this panel: `makeHost` never set `sharingType`, so
     /// with the setting off the rain still went into a screen share.

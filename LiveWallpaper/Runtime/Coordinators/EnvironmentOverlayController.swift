@@ -133,6 +133,10 @@ final class EnvironmentOverlayController {
     func debugWindowSharingType(screenID: CGDirectDisplayID) -> NSWindow.SharingType? {
         hosts[screenID]?.window.sharingType
     }
+
+    func debugWindowCanHide(screenID: CGDirectDisplayID) -> Bool? {
+        hosts[screenID]?.window.canHide
+    }
     #endif
 
     func retainOnly(_ liveScreenIDs: Set<CGDirectDisplayID>) {
@@ -161,6 +165,7 @@ final class EnvironmentOverlayController {
         window.isFloatingPanel = true
         window.level = Self.overlayLevel
         window.hidesOnDeactivate = false
+        window.canHide = false
         window.isOpaque = false
         window.backgroundColor = .clear
         window.hasShadow = false

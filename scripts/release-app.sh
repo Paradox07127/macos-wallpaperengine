@@ -88,7 +88,7 @@ case "$SKU" in
 esac
 
 DERIVED_DATA="${DERIVED_DATA:-/tmp/${ARTIFACT}Release}"
-DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode-beta.app/Contents/Developer}"
+DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
 export DEVELOPER_DIR
 
 codesign_team_id() {

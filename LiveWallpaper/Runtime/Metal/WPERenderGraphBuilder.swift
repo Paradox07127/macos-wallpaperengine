@@ -1879,6 +1879,157 @@ extension WPERenderGraphBuilder {
     }
 }
 
+/// Runs after canonical rotation. A fullscreen/project utility layer opens with a
+/// passthrough that copies `_rt_FullFrameBuffer` 1:1 into its composite (cleared
+/// destination, premultiplied over, same size and format ⇒ texel-identical), so its
+/// readers up to the composite's next write can sample the scene alias directly.
+extension WPERenderGraphBuilder {
+    struct FullFramePassthroughElisionResult {
+        let pipeline: WPEPreparedRenderPipeline
+        /// Candidate object ID -> "elided" or a conservative rejection reason.
+        let decisions: [String: String]
+    }
+
+    private enum FullFramePassthroughVerdict {
+        /// `rewriteEnd` is the index of the composite's next write (exclusive bound of the rewrite).
+        case elide(composite: String, rewriteEnd: Int)
+        case reject(String)
+    }
+
+    static func elidingFullFramePassthroughs(
+        in pipeline: WPEPreparedRenderPipeline, sceneHDR: Bool = false
+    ) -> FullFramePassthroughElisionResult {
+        var decisions: [String: String] = [:]
+        let layers = pipeline.layers.map { layer -> WPEPreparedRenderLayer in
+            let graph = layer.graphLayer
+            guard isFullFramePassthroughUtilityPath(graph.imagePath) else { return layer }
+            // Same identity bar as canonical rotation: only the RGBA16Float promotion is proven.
+            guard sceneHDR else {
+                decisions[layer.id] = "unsupported-composite-format"
+                return layer
+            }
+            let composite: String
+            let rewriteEnd: Int
+            switch fullFramePassthroughVerdict(layer: layer, pipeline: pipeline) {
+            case let .reject(reason):
+                decisions[layer.id] = reason
+                return layer
+            case let .elide(name, end):
+                composite = name
+                rewriteEnd = end
+            }
+            func swap(_ reference: WPETextureReference) -> WPETextureReference {
+                reference == .fbo(composite) ? .fbo(WPESceneAliasName.fullFrameBuffer) : reference
+            }
+            // Pass IDs are kept verbatim: captures, profiler labels and script keys address them.
+            let passes = layer.passes.indices.dropFirst().map { index -> WPEPreparedRenderPass in
+                let prepared = layer.passes[index]
+                guard index < rewriteEnd else { return prepared }
+                let pass = prepared.pass
+                let rewritten = WPERenderPass(
+                    id: pass.id, phase: pass.phase, shader: pass.shader,
+                    source: swap(pass.source), target: pass.target,
+                    textures: pass.textures.mapValues(swap), binds: pass.binds.mapValues(swap),
+                    constants: pass.constants, combos: pass.combos,
+                    userTextureBindings: pass.userTextureBindings, authoredJSON: pass.authoredJSON,
+                    blending: pass.blending, cullMode: pass.cullMode,
+                    depthTest: pass.depthTest, depthWrite: pass.depthWrite,
+                    constantScripts: pass.constantScripts, visibilityGate: pass.visibilityGate
+                )
+                return WPEPreparedRenderPass(
+                    pass: rewritten, shader: prepared.shader,
+                    textureBindings: prepared.textureBindings.mapValues(swap),
+                    comboValues: prepared.comboValues, uniformValues: prepared.uniformValues,
+                    materialUniformNames: prepared.materialUniformNames,
+                    layerTintOverride: prepared.layerTintOverride
+                )
+            }
+            decisions[layer.id] = "elided"
+            return WPEPreparedRenderLayer(
+                graphLayer: graph.replacingPasses(passes.map(\.pass)),
+                puppetModel: layer.puppetModel, passes: passes
+            )
+        }
+        return FullFramePassthroughElisionResult(
+            pipeline: WPEPreparedRenderPipeline(layers: layers), decisions: decisions
+        )
+    }
+
+    private static func fullFramePassthroughVerdict(
+        layer: WPEPreparedRenderLayer, pipeline: WPEPreparedRenderPipeline
+    ) -> FullFramePassthroughVerdict {
+        let graph = layer.graphLayer
+        guard graph.geometry == .identity else { return .reject("non-identity-geometry") }
+        guard graph.puppetPath == nil, layer.puppetModel == nil, graph.attachment == nil,
+              graph.groupRenderTarget == nil, graph.groupCompositeSource == nil,
+              graph.groupLocalGeometry == nil else { return .reject("special-layer") }
+        guard layer.passes.count >= 2 else { return .reject("single-pass") }
+        let first = layer.passes[0]
+        let pass = first.pass
+        let fullFrame = WPETextureReference.fbo(WPESceneAliasName.fullFrameBuffer)
+        guard case let .layerComposite(composite) = pass.target else { return .reject("passthrough-target") }
+        // `passthrough.frag` (fullscreenlayer) or the builtin composelayer draw (projectlayer);
+        // anything else with the same inputs (passthroughsrgb, an authored material) is not 1:1.
+        guard WPEBuiltinShaderName.normalized(pass.shader) == "passthrough"
+            || WPEBuiltinShaderKind(normalizing: pass.shader) == .compose else { return .reject("passthrough-shader") }
+        // The exact full-frame alias in every slot, raw and resolved: no `.previous`, no mask.
+        guard pass.textures == [0: fullFrame],
+              first.textureReferences.allSatisfy({ $0 == fullFrame }) else { return .reject("passthrough-inputs") }
+        guard (first.comboValues["CLEARALPHA"] ?? pass.combos["CLEARALPHA"] ?? 0) == 0 else {
+            return .reject("passthrough-clearalpha")
+        }
+        guard pass.blending.lowercased() == "premultiplied",
+              pass.depthTest == "disabled", pass.depthWrite == "disabled" else { return .reject("passthrough-render-semantics") }
+        guard pass.constantScripts.isEmpty, pass.userTextureBindings.isEmpty else { return .reject("passthrough-dynamic") }
+        // A gated passthrough that is skipped leaves stale composite content behind; readers
+        // rewritten to the scene alias would then diverge unless they are gated identically.
+        guard pass.visibilityGate == nil
+            || layer.passes.dropFirst().allSatisfy({ $0.pass.visibilityGate == pass.visibilityGate }) else {
+            return .reject("passthrough-gate")
+        }
+        for other in pipeline.layers where other.id != layer.id {
+            if other.passes.contains(where: { prepared in
+                prepared.textureReferences.contains { canonicalAlias($0, matches: composite) }
+                    || canonicalAlias(prepared.pass.target.textureReference, matches: composite)
+            }) {
+                return .reject("external-private-composite-access")
+            }
+        }
+        let rewriteEnd = layer.passes.indices.dropFirst().first {
+            layer.passes[$0].pass.target.textureReference == .fbo(composite)
+        } ?? layer.passes.count
+        var sceneWritten = false
+        for index in 1 ..< rewriteEnd {
+            let prepared = layer.passes[index]
+            // Fuzzy spellings would still resolve to the composite's stale entry at run time.
+            guard !canonicalAlias(prepared.pass.target.textureReference, matches: composite) else {
+                return .reject("private-composite-alias")
+            }
+            var readsPassthrough = false
+            for reference in prepared.textureReferences where canonicalAlias(reference, matches: composite) {
+                guard reference == .fbo(composite) else { return .reject("private-composite-alias") }
+                readsPassthrough = true
+            }
+            // The passthrough froze the scene as it stood at pass 0; a reader after an own
+            // scene write would otherwise sample the updated scene.
+            if readsPassthrough, sceneWritten {
+                return .reject("scene-write-before-rewrite")
+            }
+            if prepared.pass.target == .scene {
+                sceneWritten = true
+            }
+        }
+        if rewriteEnd < layer.passes.count {
+            // The rewriter's own history/self read would see the passthrough's output.
+            let rewriter = layer.passes[rewriteEnd]
+            guard !rewriter.textureReferences.contains(where: {
+                $0 == .previous || canonicalAlias($0, matches: composite)
+            }) else { return .reject("first-rewriter-reads-passthrough") }
+        }
+        return .elide(composite: composite, rewriteEnd: rewriteEnd)
+    }
+}
+
 private struct LayerBuildContext {
     let object: WPESceneImageObject
     let model: WPEModelDescriptor
