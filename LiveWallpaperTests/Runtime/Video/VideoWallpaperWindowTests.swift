@@ -54,6 +54,14 @@ struct VideoWallpaperWindowTests {
             #expect(makeOverlay().sharingType == makeWindow().sharingType)
         }
     }
+    /// `NSWindow.canHide` defaults to YES (AppKit `NSWindow.h`), so cmd+H took
+    /// the wallpaper and the desktop decorations down with the app's UI.
+    @Test("Desktop-level windows survive NSApplication.hide")
+    func desktopWindowsSurviveApplicationHide() {
+        #expect(makeWindow().canHide == false)
+        #expect(makeOverlay().canHide == false)
+    }
+
     @Test("Capture updates reach active and still-retiring video windows",
           .enabled(if: !CaptureSharingTestHost.isAdHocSigned, "Window sharing updates require the project signing environment; ad-hoc hosted execution is not a capture-policy verdict"))
     func policyReachesActiveAndRetiringVideoWindows() throws {

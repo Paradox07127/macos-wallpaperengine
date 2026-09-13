@@ -368,6 +368,8 @@ final class WPEMetalSceneRenderer: NSObject {
     var loadDiagnostics: SceneLoadDiagnostic?
     var renderGraph: WPERenderGraph?
     var renderPipeline: WPEPreparedRenderPipeline?
+    var lastCanonicalRotation = WPECanonicalCompositeRotationReport(enabled: false, decisions: [:])
+    var lastFullFramePassthroughElision = WPEFullFramePassthroughElisionReport(enabled: false, decisions: [:])
     #if DEBUG
     /// Authored shader/effect contract items with no runtime consumer, retained
     /// across trace restarts used by multi-frame oracle capture.

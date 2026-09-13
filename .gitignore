@@ -56,8 +56,6 @@ playground.xcworkspace
 
 .build/
 
-
-
 Carthage/Build/
 
 # fastlane
@@ -103,12 +101,7 @@ Temporary Items
 *.trace/
 
 
-scripts/
-# Every local-only write-up lives here: review reports, plans, and the WPE
-# parity/leak ledgers. docs/ is public documentation only.
-LiveWallpaperTests/Fixtures
-# Except the machine-independent oracle structural-fingerprint golden net (a few
-# KB of JSON, no pixels) — see <private-notes>
+
 !LiveWallpaperTests/Fixtures/
 LiveWallpaperTests/Fixtures/*
 !LiveWallpaperTests/Fixtures/oracle-golden/
@@ -117,7 +110,6 @@ LiveWallpaperTests/Fixtures/*
 !LiveWallpaperTests/Fixtures/workshop/
 
 # Keep portable CI/release contracts; all other maintainer-local scripts remain ignored.
-!scripts/
 scripts/*
 !scripts/release_candidate_check.sh
 !scripts/fast_app_contract_tests.sh

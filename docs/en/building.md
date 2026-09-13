@@ -56,7 +56,7 @@ release/signing checks. Run the schemes sequentially when using shared build
 storage; independent jobs require independent DerivedData directories.
 
 The supported shipping and CI toolchain is Xcode 27.0. `make` defaults to
-`/Applications/Xcode-beta.app/Contents/Developer`; set `DEVELOPER_DIR` when your
+`/Applications/Xcode.app/Contents/Developer`; set `DEVELOPER_DIR` when your
 installation is elsewhere. See [Architecture](architecture.md) for the current
 targets and packages; Video/Web tests live in the app target.
 

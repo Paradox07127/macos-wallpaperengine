@@ -11,7 +11,7 @@ struct WPEMetalSolidSceneRunTests {
     private func layer(
         _ index: Int, shader: String = "solidlayer", source: WPETextureReference = .image("unused"),
         target: WPERenderTarget = .scene, depthTest: String = "disabled", visible: Bool = true,
-        builtin: Bool = true, bindings: [Int: WPETextureReference]? = nil,
+        builtin: Bool = true, bindings: [Int: WPETextureReference]? = nil, binds: [Int: WPETextureReference] = [:],
         color: [Double]? = nil, transformed: Bool = true, blending: String? = nil, cullMode: String = "nocull"
     ) -> WPEPreparedRenderLayer {
         let colors: [[Double]] = [[0.2, 0.6, 1.5, 1], [1.2, 0.1, 0.4, 0.35],
@@ -19,7 +19,7 @@ struct WPEMetalSolidSceneRunTests {
         let modes = ["premultiplied", "additive", "premultiplied", "premultiplied"]
         let graphPass = WPERenderPass(
             id: "solid-\(index).0", phase: .material, shader: shader, source: source, target: target,
-            textures: [:], binds: [:], constants: ["g_Color": .vector(color ?? colors[index % 4])],
+            textures: [:], binds: binds, constants: ["g_Color": .vector(color ?? colors[index % 4])],
             combos: [:], blending: blending ?? (shader == "solidlayer" ? modes[index % 4] : "disabled"),
             cullMode: cullMode, depthTest: depthTest, depthWrite: "disabled"
         )
@@ -85,11 +85,13 @@ struct WPEMetalSolidSceneRunTests {
     func diagnosticEnvironmentControls() {
         let defaults = WPEMetalRenderExecutor.DiagnosticControls()
         #expect(!defaults.disableParticleBatching && !defaults.disableSolidBatching && !defaults.disableFBOAliasing)
-        for key in ["PARTICLE_BATCHING", "SOLID_BATCHING", "FBO_ALIASING"] {
+        #expect(!defaults.disableSceneAliasDirectBind)
+        for key in ["PARTICLE_BATCHING", "SOLID_BATCHING", "FBO_ALIASING", "SCENE_ALIAS_DIRECT_BIND"] {
             let controls = WPEMetalRenderExecutor.DiagnosticControls(environment: ["WPE_DIAGNOSTIC_DISABLE_" + key: "1"])
             #expect(controls.disableParticleBatching == (key == "PARTICLE_BATCHING"))
             #expect(controls.disableSolidBatching == (key == "SOLID_BATCHING"))
             #expect(controls.disableFBOAliasing == (key == "FBO_ALIASING"))
+            #expect(controls.disableSceneAliasDirectBind == (key == "SCENE_ALIAS_DIRECT_BIND"))
             #expect(WPEMetalRenderExecutor.DiagnosticControls(environment: ["WPE_DIAGNOSTIC_DISABLE_" + key: "true"]) == defaults)
         }
     }
@@ -313,6 +315,253 @@ struct WPEMetalSolidSceneRunTests {
         #expect(actual == expected)
         #expect(executor.lastSolidSceneBatchStats.encoders == 2)
         #expect(executor.lastSolidSceneBatchStats.draws == 4)
+    }
+
+    /// A full-frame effect layer's shape: capture the scene into the layer's own
+    /// composite, then copy that composite back to the scene. `leadingScenePass`
+    /// prepends a solid scene write so the capture follows an own-layer scene write.
+    private func sceneAliasReaderLayer(
+        _ index: Int, leadingScenePass: Bool = false, previousBind: Bool = false, readerTarget: String? = nil
+    ) -> WPEPreparedRenderLayer {
+        let name = readerTarget ?? "solid-\(index)-a"
+        var parts: [WPEPreparedRenderLayer] = []
+        if leadingScenePass {
+            parts.append(layer(index, transformed: false))
+        }
+        parts.append(layer(index + 1, shader: "commands/copy", source: .fbo("_rt_FullFrameBuffer"),
+                           target: readerTarget.map { .fbo(name: $0) } ?? .layerComposite(name: name),
+                           binds: previousBind ? [1: .previous] : [:], transformed: false))
+        parts.append(layer(index + 2, shader: "commands/copy", source: .fbo(name), transformed: false))
+        let graph = layer(index, transformed: false).graphLayer
+        let passes = parts.flatMap(\.passes)
+        return WPEPreparedRenderLayer(graphLayer: WPERenderLayer(
+            objectID: graph.objectID, objectName: graph.objectName, visible: true,
+            imagePath: graph.imagePath, materialPath: nil, geometry: graph.geometry,
+            compositeA: name, compositeB: graph.compositeB, localFBOs: [],
+            passes: passes.map(\.pass), sortIndex: index
+        ), passes: passes)
+    }
+
+    private func sceneAliasExecutor(_ device: MTLDevice, forceSnapshot: Bool) throws -> WPEMetalRenderExecutor {
+        try WPEMetalRenderExecutor(device: device, diagnosticControls: .init(environment:
+            forceSnapshot ? ["WPE_DIAGNOSTIC_DISABLE_SCENE_ALIAS_DIRECT_BIND": "1"] : [:]))
+    }
+
+    @Test("A layer's first scene-alias read into its own composite binds the live scene, byte-identical to a snapshot")
+    func sceneAliasDirectBindMatchesSnapshot() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let pipeline = WPEPreparedRenderPipeline(layers: [layer(0), sceneAliasReaderLayer(1), layer(4)])
+        let forced = try sceneAliasExecutor(device, forceSnapshot: true)
+        let expected = try renderBytes(forced, pipeline: pipeline, hdr: true)
+        #expect(expected.contains { $0 != 0 })
+        #expect(forced.lastDiagnosticFrameStats.sceneAliasSnapshotBlits == 1)
+        #expect(forced.lastDiagnosticFrameStats.sceneAliasDirectBinds == 0)
+        let direct = try sceneAliasExecutor(device, forceSnapshot: false)
+        let actual = try renderBytes(direct, pipeline: pipeline, hdr: true)
+        #expect(actual == expected)
+        #expect(direct.lastDiagnosticFrameStats.sceneAliasSnapshotBlits == 0)
+        #expect(direct.lastDiagnosticFrameStats.sceneAliasDirectBinds == 1)
+    }
+
+    @Test("A scene-targeted alias read keeps the snapshot")
+    func sceneAliasReadIntoSceneStillSnapshots() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let capture = layer(2, shader: "commands/copy", source: .fbo("_rt_FullFrameBuffer"), transformed: false)
+        let pipeline = WPEPreparedRenderPipeline(layers: [layer(0), layer(1), capture, layer(3)])
+        let direct = try sceneAliasExecutor(device, forceSnapshot: false)
+        _ = try renderBytes(direct, pipeline: pipeline, hdr: true)
+        #expect(direct.lastDiagnosticFrameStats.sceneAliasSnapshotBlits == 1)
+        #expect(direct.lastDiagnosticFrameStats.sceneAliasDirectBinds == 0)
+    }
+
+    @Test("An alias read after an own-layer scene write keeps the snapshot and sees that write")
+    func sceneAliasReadAfterOwnSceneWriteStillSnapshots() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let pipeline = WPEPreparedRenderPipeline(layers: [layer(0), sceneAliasReaderLayer(1, leadingScenePass: true)])
+        let forced = try sceneAliasExecutor(device, forceSnapshot: true)
+        let expected = try renderBytes(forced, pipeline: pipeline, hdr: true)
+        #expect(forced.lastDiagnosticFrameStats.sceneAliasSnapshotBlits == 1)
+        let direct = try sceneAliasExecutor(device, forceSnapshot: false)
+        let actual = try renderBytes(direct, pipeline: pipeline, hdr: true)
+        #expect(actual == expected)
+        #expect(direct.lastDiagnosticFrameStats.sceneAliasSnapshotBlits == 1)
+        #expect(direct.lastDiagnosticFrameStats.sceneAliasDirectBinds == 0)
+        // The capture is taken at the read, after this layer's own solid pass, so the
+        // full-frame round trip is an identity over [layer 0, solid 1]. Had it seen the
+        // pre-write scene, the copy-back would have erased the solid.
+        let afterOwnWrite = try renderBytes(direct, pipeline: .init(layers: [layer(0), layer(1, transformed: false)]), hdr: true)
+        let beforeOwnWrite = try renderBytes(direct, pipeline: .init(layers: [layer(0)]), hdr: true)
+        #expect(actual == afterOwnWrite)
+        #expect(actual != beforeOwnWrite)
+    }
+
+    @Test("A second reader layer after an intervening scene write sees the new content on both paths")
+    func sceneAliasReadAcrossLayersIsFresh() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let pipeline = WPEPreparedRenderPipeline(layers: [
+            layer(0), sceneAliasReaderLayer(1), layer(4), sceneAliasReaderLayer(5),
+        ])
+        // Each full-frame reader is an identity round trip, so a fresh second read leaves
+        // the frame equal to [layer 0, layer 4]; a stale read of layer 1's capture would
+        // copy back the scene as it stood before layer 4 (layer 0 alone).
+        let forced = try sceneAliasExecutor(device, forceSnapshot: true)
+        let fresh = try renderBytes(forced, pipeline: .init(layers: [layer(0), layer(4)]), hdr: true)
+        let stale = try renderBytes(forced, pipeline: .init(layers: [layer(0)]), hdr: true)
+        #expect(fresh != stale)
+        let expected = try renderBytes(forced, pipeline: pipeline, hdr: true)
+        #expect(expected == fresh)
+        #expect(forced.lastDiagnosticFrameStats.sceneAliasSnapshotBlits == 2)
+        #expect(forced.lastDiagnosticFrameStats.sceneAliasDirectBinds == 0)
+        let direct = try sceneAliasExecutor(device, forceSnapshot: false)
+        let actual = try renderBytes(direct, pipeline: pipeline, hdr: true)
+        #expect(actual == fresh)
+        #expect(direct.lastDiagnosticFrameStats.sceneAliasSnapshotBlits == 0)
+        #expect(direct.lastDiagnosticFrameStats.sceneAliasDirectBinds == 2)
+    }
+
+    @Test("A pre-write alias read on a later frame keeps the capture path instead of binding the stale output")
+    func sceneAliasReadBeforeAnySceneWriteStillCaptures() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        // The reader is the first layer, so on frame 2 `output` still holds frame 1 when
+        // the alias is read; the capture path clears the snapshot instead of copying.
+        let pipeline = WPEPreparedRenderPipeline(layers: [sceneAliasReaderLayer(1), layer(4)])
+        let forced = try sceneAliasExecutor(device, forceSnapshot: true)
+        _ = try renderBytes(forced, pipeline: pipeline, hdr: true)
+        let expected = try renderBytes(forced, pipeline: pipeline, hdr: true)
+        #expect(expected.contains { $0 != 0 })
+        #expect(forced.lastDiagnosticFrameStats.sceneAliasSnapshotBlits == 0)
+        #expect(forced.lastDiagnosticFrameStats.sceneAliasDirectBinds == 0)
+        let direct = try sceneAliasExecutor(device, forceSnapshot: false)
+        _ = try renderBytes(direct, pipeline: pipeline, hdr: true)
+        let actual = try renderBytes(direct, pipeline: pipeline, hdr: true)
+        #expect(actual == expected)
+        #expect(direct.lastDiagnosticFrameStats.sceneAliasSnapshotBlits == 0)
+        #expect(direct.lastDiagnosticFrameStats.sceneAliasDirectBinds == 0)
+        // Documents why the byte comparison alone cannot catch a stale bind here: the
+        // initial-clear elision rejects a scene-alias read in the first layer's prefix,
+        // so `output` is cleared up front. The counter is the load-bearing assertion.
+        #expect(direct.lastInitialSceneClearStats.rejectReason == "unproven-fbo-read")
+    }
+
+    @Test("A raw `.previous` bind on a non-scene target still binds the live scene, byte-identical to a snapshot")
+    func sceneAliasDirectBindSurvivesPreviousBindOnOwnTarget() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        // The reader targets its own composite and carries a raw `bind: previous` (bloom's
+        // light_map/apply shape): `.previous` resolves to that composite's history, which
+        // is independent of which texture the scene-alias slot binds.
+        let pipeline = WPEPreparedRenderPipeline(layers: [
+            layer(0), sceneAliasReaderLayer(1, previousBind: true), layer(4),
+        ])
+        let forced = try sceneAliasExecutor(device, forceSnapshot: true)
+        let expected = try renderBytes(forced, pipeline: pipeline, hdr: true)
+        #expect(expected.contains { $0 != 0 })
+        #expect(forced.lastDiagnosticFrameStats.sceneAliasSnapshotBlits == 1)
+        #expect(forced.lastDiagnosticFrameStats.sceneAliasDirectBinds == 0)
+        let direct = try sceneAliasExecutor(device, forceSnapshot: false)
+        let actual = try renderBytes(direct, pipeline: pipeline, hdr: true)
+        #expect(actual == expected)
+        #expect(direct.lastDiagnosticFrameStats.sceneAliasSnapshotBlits == 0)
+        #expect(direct.lastDiagnosticFrameStats.sceneAliasDirectBinds == 1)
+    }
+
+    @Test("A `.previous` reader whose target IS the alias name keeps the snapshot")
+    func sceneAliasPreviousReadIntoAliasNamedTargetStillSnapshots() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        // Here `.previous` resolves to `latestNamedTextures["_rt_FullFrameBuffer"]`, the
+        // very entry a direct bind would drop, so the capture must stay.
+        let pipeline = WPEPreparedRenderPipeline(layers: [
+            layer(0), sceneAliasReaderLayer(1, previousBind: true, readerTarget: "_rt_FullFrameBuffer"), layer(4),
+        ])
+        let forced = try sceneAliasExecutor(device, forceSnapshot: true)
+        let expected = try renderBytes(forced, pipeline: pipeline, hdr: true)
+        #expect(expected.contains { $0 != 0 })
+        #expect(forced.lastDiagnosticFrameStats.sceneAliasSnapshotBlits == 1)
+        let direct = try sceneAliasExecutor(device, forceSnapshot: false)
+        let actual = try renderBytes(direct, pipeline: pipeline, hdr: true)
+        #expect(actual == expected)
+        #expect(direct.lastDiagnosticFrameStats.sceneAliasSnapshotBlits == 1)
+        #expect(direct.lastDiagnosticFrameStats.sceneAliasDirectBinds == 0)
+    }
+
+    @Test("Full-frame passthrough elision renders byte-identical to the kept passthrough")
+    func fullFramePassthroughElisionHDR() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        func write(_ payload: [String: Any], _ path: String) throws {
+            let url = root.appendingPathComponent(path)
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try JSONSerialization.data(withJSONObject: payload).write(to: url)
+        }
+        try write(["material": "materials/base.json"], "models/image.json")
+        try write(["passes": [["shader": "copy", "textures": ["source"], "blending": "disabled"]]], "materials/base.json")
+        try write(["material": "materials/util/fullscreenlayer.json", "fullscreen": true, "passthrough": true],
+                  "models/util/fullscreenlayer.json")
+        try write(
+            ["passes": [["shader": "composelayer", "textures": ["_rt_FullFrameBuffer"], "blending": "translucent",
+                         "depthtest": "disabled", "depthwrite": "disabled", "cullmode": "nocull"]]],
+            "materials/util/fullscreenlayer.json"
+        )
+        try write(["passes": [["material": "materials/effect.json"]]], "effects/chain.json")
+        try write(["passes": [["shader": "copy", "blending": "disabled"]]], "materials/effect.json")
+        // A dependent consumer keeps the canonical A copy, so the passthrough lands in the rotated `_b`.
+        let names = WPERenderTargetNames.ImageLayerComposite.make(objectID: "702")
+        try write(["material": "materials/consumer.json"], "models/consumer.json")
+        try write(["passes": [["shader": "copy", "textures": [names.a], "blending": "disabled"]]], "materials/consumer.json")
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: [
+            "camera": ["center": "0 0 0", "eye": "0 0 1", "up": "0 1 0"],
+            "general": ["orthogonalprojection": ["width": size.width, "height": size.height]],
+            "objects": [
+                ["id": 701, "name": "Producer", "image": "models/image.json", "size": "33 17", "origin": "16.5 8.5 0"],
+                ["id": 702, "name": "Post", "image": "models/util/fullscreenlayer.json",
+                 "effects": [["id": 703, "file": "effects/chain.json"]]],
+                ["id": 704, "name": "Consumer", "image": "models/consumer.json", "size": "33 17", "origin": "16.5 8.5 0",
+                 "dependencies": [702]],
+            ],
+        ]))
+        let graph = try WPERenderGraphBuilder(cacheRootURL: root).build(document: document)
+        let builder = WPERenderPipelineBuilder(cacheRootURL: root)
+        let kept = try builder.build(graph: graph, canonicalCompositeRotationEnabled: true, sceneHDR: true,
+                                     fullFramePassthroughElisionEnabled: false)
+        let built = try builder.buildReportingCanonicalRotation(
+            graph: graph, canonicalCompositeRotationEnabled: true, sceneHDR: true, fullFramePassthroughElisionEnabled: true
+        )
+        #expect(built.canonicalRotation.decisions["702"] == "rotated")
+        #expect(built.fullFramePassthroughElision == WPEFullFramePassthroughElisionReport(
+            enabled: true, decisions: ["702": "elided"]
+        ))
+        #expect(kept.layers[1].passes[0].pass.target == .layerComposite(name: names.b))
+        #expect(built.pipeline.layers[1].passes.count == kept.layers[1].passes.count - 1)
+        #expect(built.pipeline.layers[1].passes.map(\.id) == Array(kept.layers[1].passes.map(\.id).dropFirst()))
+        #expect(built.pipeline.layers[1].passes[0].textureBindings[0] == .fbo("_rt_FullFrameBuffer"))
+        #expect(built.pipeline.layers[1].passes[0].pass.target == .layerComposite(name: names.a))
+        #expect(built.pipeline.layers[0] == kept.layers[0])
+        #expect(built.pipeline.layers[2] == kept.layers[2])
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .rgba16Float, width: Int(size.width), height: Int(size.height), mipmapped: false
+        )
+        descriptor.storageMode = .shared
+        descriptor.usage = .shaderRead
+        let input = try #require(device.makeTexture(descriptor: descriptor))
+        let keptExecutor = try WPEMetalRenderExecutor(device: device)
+        let elidedExecutor = try WPEMetalRenderExecutor(device: device)
+        for frame in 0 ..< 2 {
+            let pixels = (0 ..< (input.width * input.height)).flatMap { index -> [UInt16] in
+                [Float16(1.5 + Double((index + frame) % 7) * 0.125).bitPattern,
+                 Float16(0.25 + Double(frame) * 0.125).bitPattern, Float16(0.75).bitPattern, Float16(0.5).bitPattern]
+            }
+            pixels.withUnsafeBytes {
+                input.replace(region: MTLRegionMake2D(0, 0, input.width, input.height), mipmapLevel: 0,
+                              withBytes: $0.baseAddress!, bytesPerRow: input.width * 8)
+            }
+            let reference = try renderBytes(keptExecutor, pipeline: kept, hdr: true, textures: ["source": input])
+            let actual = try renderBytes(elidedExecutor, pipeline: built.pipeline, hdr: true, textures: ["source": input])
+            #expect(reference.contains { $0 != 0 })
+            #expect(actual == reference)
+            #expect(keptExecutor.lastDiagnosticFrameStats.sceneAliasSnapshotBlits == 0)
+            #expect(elidedExecutor.lastDiagnosticFrameStats.sceneAliasSnapshotBlits == 0)
+            #expect(elidedExecutor.lastDiagnosticFrameStats.sceneAliasDirectBinds == 1)
+        }
     }
 
     @Test("Hidden layer boundaries and same-key color updates do not retain stale state")

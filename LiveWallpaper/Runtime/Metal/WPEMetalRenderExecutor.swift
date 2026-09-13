@@ -25,11 +25,13 @@ final class WPEMetalRenderExecutor {
         let disableParticleBatching: Bool
         let disableSolidBatching: Bool
         let disableFBOAliasing: Bool
+        let disableSceneAliasDirectBind: Bool
 
         init(environment: [String: String] = [:]) {
             disableParticleBatching = environment["WPE_DIAGNOSTIC_DISABLE_PARTICLE_BATCHING"] == "1"
             disableSolidBatching = environment["WPE_DIAGNOSTIC_DISABLE_SOLID_BATCHING"] == "1"
             disableFBOAliasing = environment["WPE_DIAGNOSTIC_DISABLE_FBO_ALIASING"] == "1"
+            disableSceneAliasDirectBind = environment["WPE_DIAGNOSTIC_DISABLE_SCENE_ALIAS_DIRECT_BIND"] == "1"
         }
     }
 
@@ -45,6 +47,8 @@ final class WPEMetalRenderExecutor {
         var plannedAliasIntervalCount = 0
         /// Intervals actually submitted to the pool, not a GPU allocation count.
         var aliasIntervalCount = 0
+        var sceneAliasSnapshotBlits = 0
+        var sceneAliasDirectBinds = 0
     }
 
     let diagnosticControls: DiagnosticControls
@@ -1024,6 +1028,10 @@ final class WPEMetalRenderExecutor {
             renderTargetPool: targetPool
         )
         frameState.cameraParallax = runtimeUniforms.cameraParallax
+        defer {
+            diagnostics.sceneAliasSnapshotBlits = frameState.sceneAliasSnapshotBlits
+            diagnostics.sceneAliasDirectBinds = frameState.sceneAliasDirectBinds
+        }
         currentSceneSize = size
         groupingContainerObjectIDs = Set(
             preparedPipeline.layers.compactMap { layer -> String? in
@@ -1222,6 +1230,7 @@ final class WPEMetalRenderExecutor {
             // plan's targets are captured, then inserts them as one layer entry.
             var pendingStaticSnapshots: [String: MTLTexture] = [:]
             var pendingStaticBytes = 0
+            frameState.layerEntrySceneWriteGeneration = frameState.sceneWriteGeneration
             // Attached children (face/hair on a body-split rig) follow the parent puppet's animated
             // anchor bone; `graphLayer` carries the followed transform, falling back to the static
             // layer when there is no resolved attachment. Skinning is validated/cached once per frame.
@@ -2250,12 +2259,41 @@ final class WPEMetalRenderExecutor {
             return frameState.sceneAliasSnapshotGenerations[name] != frameState.sceneWriteGeneration
         }
 
+        // A layer's first alias read before any own-layer scene write, drawn into a target
+        // that shares no storage with the scene, sees exactly what a capture would copy —
+        // so `resolve(.fbo)` binds the live scene (its no-entry fallback) and the blit is
+        // skipped. Layers that already wrote the scene and scene-targeted draws keep the
+        // capture (the read-write hazard paths). A raw `.previous` bind resolves to the
+        // pass's OWN target history (`latestTexture(for: targetID)`), never the scene once
+        // scene targets are excluded, so it only collides with this bind when the target
+        // is the alias name itself. Before the frame's first scene write `output` may
+        // still hold the previous frame (the initial clear can be deferred to the first
+        // scene pass), so only a written scene is bindable; the capture path clears the
+        // snapshot in that case.
+        let liveScene = frameState.currentFrameSceneTexture ?? frameState.output
+        let bindsLiveScene = !diagnosticControls.disableSceneAliasDirectBind
+            && frameState.currentFrameSceneTexture != nil
+            && pass.pass.target != .scene
+            && frameState.sceneWriteGeneration == frameState.layerEntrySceneWriteGeneration
+            && layer.puppetPath == nil
+            && destinationTexture.sampleCount == 1 && liveScene.sampleCount == 1
+            && !WPEMetalSolidSceneRun.samplesAttachment(destinationTexture, output: liveScene)
+        let previousReadsTarget = pass.textureReferences.contains(.previous)
+            ? WPEMetalTargetID(target: pass.pass.target) : nil
+
         var seen = Set<String>()
         for reference in pass.textureReferences {
             guard case .fbo(let alias) = reference,
                   WPETextureReference.isSceneAliasName(alias),
                   seen.insert(alias).inserted,
                   needsSnapshot(alias) else {
+                continue
+            }
+            if bindsLiveScene, previousReadsTarget != .named(alias),
+               targetPool.sceneSnapshotMatches(liveScene, alias: alias, layer: layer, sceneSize: frameState.sceneSize) {
+                frameState.latestNamedTextures.removeValue(forKey: alias)
+                frameState.sceneAliasSnapshotGenerations.removeValue(forKey: alias)
+                frameState.sceneAliasDirectBinds += 1
                 continue
             }
             let snapshot = try targetPool.texture(
@@ -2267,6 +2305,7 @@ final class WPEMetalRenderExecutor {
             if let source = frameState.currentFrameSceneTexture {
                 try copyTexture(source, to: snapshot, commandBuffer: commandBuffer,
                                 traceLabel: "scene-snapshot|\(pass.pass.id)|\(alias)")
+                frameState.sceneAliasSnapshotBlits += 1
             } else {
                 try clearTexture(snapshot, color: clearColor(for: .scene), commandBuffer: commandBuffer)
             }

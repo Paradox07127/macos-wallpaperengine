@@ -245,13 +245,15 @@ extension WPEMetalSceneRenderer {
 
         debugStage("pipeline.build", "begin")
         onProgress?(String(localized: "Preparing render pipeline", bundle: .appLanguage, comment: "Scene load progress: compiling Metal pipeline state."))
-        let pipeline = try await Task.detached(priority: .userInitiated) {
+        let (pipeline, canonicalRotation, passthroughElision) = try await Task.detached(priority: .userInitiated) {
             let builder = provider.map {
                 WPERenderPipelineBuilder(primaryProvider: $0, dependencyMounts: mounts, engineAssetsRootURL: engineRoot)
             } ?? WPERenderPipelineBuilder(cacheRootURL: cacheRoot, dependencyMounts: mounts, engineAssetsRootURL: engineRoot)
-            return try builder.build(graph: graph, sceneHDR: document.general.hdr)
+            return try builder.buildReportingCanonicalRotation(graph: graph, sceneHDR: document.general.hdr)
         }.value
         try checkCurrentSceneScriptLoad(scriptLoadToken)
+        lastCanonicalRotation = canonicalRotation
+        lastFullFramePassthroughElision = passthroughElision
         let passCount = pipeline.layers.reduce(0) { $0 + $1.passes.count }
         debugStage("pipeline.build.done", "passes=\(passCount)")
         for layer in pipeline.layers {

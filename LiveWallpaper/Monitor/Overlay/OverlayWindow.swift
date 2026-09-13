@@ -19,6 +19,7 @@ final class OverlayWindow: NSPanel {
 
         isFloatingPanel = true
         hidesOnDeactivate = false
+        canHide = false
         isOpaque = false
         backgroundColor = .clear
         hasShadow = false
