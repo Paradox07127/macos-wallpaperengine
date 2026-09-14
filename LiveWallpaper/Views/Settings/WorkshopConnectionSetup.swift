@@ -3,7 +3,6 @@ import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
-/// Steam setup uses the same actions and readiness model as onboarding.
 struct WorkshopConnectionSetup: View {
     @Environment(SteamCMDDoctorService.self) private var service
     @Environment(WorkshopSetupController.self) private var controller
@@ -133,7 +132,6 @@ struct WorkshopConnectionSetup: View {
         }
     }
 
-    /// Offer setup when unbound, or replacement when an installation is already bound.
     private var binaryPrimaryRoute: WorkshopSetupRoute {
         if service.isBinaryPresumedReady {
             return WorkshopSetupRoute(id: "steamcmd.change", title: "Change") {
@@ -245,7 +243,6 @@ struct WorkshopConnectionSetup: View {
 
     // MARK: - Derived row state
 
-    /// Show each failing probe’s reason next to the affected setup step.
     @ViewBuilder
     private func attentionNote(_ message: String?) -> some View {
         if let message {
@@ -256,7 +253,6 @@ struct WorkshopConnectionSetup: View {
         }
     }
 
-    /// Only failures get an inline badge; overall readiness appears in the overview.
     private func attentionBadge(for state: WorkshopStepState) -> SettingRowTitleBadge? {
         guard state == .attention else { return nil }
         return SettingRowTitleBadge(
@@ -269,7 +265,6 @@ struct WorkshopConnectionSetup: View {
 
 // MARK: - Shared step readiness
 
-/// Shared readiness for settings, overview, and onboarding.
 extension SteamCMDDoctorService {
     var isLibraryReady: Bool {
         guard workdirBookmarkData != nil, !workdirResolutionFailed else { return false }
@@ -290,13 +285,11 @@ extension SteamCMDDoctorService {
 
     var libraryStepState: WorkshopStepState {
         guard workdirBookmarkData != nil else { return .notStarted }
-        // A stored bookmark is ready only if it currently resolves.
         if workdirResolutionFailed || workdirDisplayPath == nil { return .attention }
         if case .red? = probes[.workingDirectory]?.status { return .attention }
         return .ready
     }
 
-    /// Bound but unprobed binaries remain pending until verification.
     var binaryStepState: WorkshopStepState {
         guard hasBoundBinary else { return .notStarted }
         switch probes[.binaryIdentity]?.status {
@@ -306,7 +299,6 @@ extension SteamCMDDoctorService {
         }
     }
 
-    /// Driven by the cached-login probe only (single source of truth).
     var accountStepState: WorkshopStepState {
         guard username != nil else { return .notStarted }
         switch probes[.cachedLogin]?.status {
@@ -317,7 +309,6 @@ extension SteamCMDDoctorService {
         }
     }
 
-    /// Groups library authorization and account readiness; SteamCMD is reported separately.
     var steamLibraryAndAccountState: WorkshopStepState {
         let steps = [libraryStepState, accountStepState]
         if steps.contains(.attention) { return .attention }
@@ -326,7 +317,6 @@ extension SteamCMDDoctorService {
         return .notStarted
     }
 
-    /// Only attention states expose a probe failure beside the setup row.
     func attentionMessage(for kind: DoctorProbeKind) -> String? {
         let state: WorkshopStepState
         switch kind {
@@ -342,7 +332,6 @@ extension SteamCMDDoctorService {
         }
     }
 
-    /// Unchecked steps stay pending; configuration and probe failures retain attention status.
     var connectionStepState: WorkshopStepState {
         let steps = [libraryStepState, binaryStepState, accountStepState]
         if steps.contains(.attention) { return .attention }

@@ -8,15 +8,6 @@ import LiveWallpaperProWPE
 import Metal
 import Testing
 
-/// Opt-in byte-level gate over the GLSL preprocess chain (stage 3
-/// `WPERenderPipelineBuilder.preprocess` + stage 4 `WPEShaderPreprocessor`):
-/// every non-builtin pass of every local workshop scene is run through
-/// `WPEMetalRenderExecutor.makeCompileRequest` and its processed sources are
-/// hashed. `capture` writes the baseline; `compare` fails on the first byte
-/// that moved. Never added to the fast-app-contract shard.
-///
-/// Env: `WPE_PREPROCESS_GOLDEN=capture|compare`, `WPE_PREPROCESS_GOLDEN_PATH=<json>`.
-/// Corpus/engine-assets discovery mirrors `WPETranspileCoverageCorpusReportTests`.
 @Suite("WPE preprocess golden baseline", .serialized)
 struct WPEPreprocessGoldenBaselineTests {
     private enum Mode: String {

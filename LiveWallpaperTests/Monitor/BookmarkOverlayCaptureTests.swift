@@ -4,16 +4,8 @@ import LiveWallpaperCore
 import Testing
 @testable import LiveWallpaper
 
-/// A bookmark is a favourite wallpaper, nothing more: applying one swaps the
-/// content and leaves every setting on the target display alone. The
-/// whole-screen counterpart is `ScreenScheme`.
-///
-/// This suite used to assert the opposite — that a bookmark captured playback
-/// settings plus the overlay's enabled/level state. That contract was reversed
-/// on 2026-08-31 (`.notes/plan/screen-schemes.md`), so the old assertions were
-/// replaced rather than left passing against behaviour the app no longer has.
-/// `playbackSettings` itself stays on `WallpaperBookmark`, written by nothing
-/// and read by nothing, so existing archives are not rewritten (plan D1 = A).
+/// A bookmark carries content only: applying one swaps the wallpaper and leaves every
+/// setting on the target display alone. The whole-screen counterpart is `ScreenScheme`.
 @Suite("Bookmarks carry content only")
 @MainActor
 struct BookmarkContentOnlyTests {
@@ -27,8 +19,8 @@ struct BookmarkContentOnlyTests {
         #expect(bookmark.playbackSettings == nil)
     }
 
-    /// D1 = A: the field is kept so older archives are not rewritten. If it is
-    /// ever dropped from the schema, this stops compiling — which is the point.
+    /// The field is kept so older archives are not rewritten; dropping it from the schema
+    /// would stop this compiling, which is the point.
     @Test("A legacy bookmark's settings survive a decode untouched")
     func legacySettingsStillRoundTrip() throws {
         let legacy = WallpaperBookmark(
@@ -65,9 +57,8 @@ struct BookmarkContentOnlyTests {
         #expect(bookmark.wpeOrigin?.workshopID == "12345")
     }
 
-    /// The one that actually exercises the split. The store-level tests above
-    /// would still pass with the old `applyPlaybackSettings` call restored —
-    /// this drives the real apply path and watches the target's settings.
+    /// The store-level tests above would still pass with the old `applyPlaybackSettings`
+    /// call restored; only this one drives the real apply path.
     @Test("Applying a bookmark leaves the target display's settings alone")
     func applyingABookmarkDoesNotTouchSettings() throws {
         guard let nsScreen = NSScreen.screens.first else {
@@ -96,9 +87,8 @@ struct BookmarkContentOnlyTests {
         configuration.playbackSpeed = 1.75
         manager.saveConfiguration(configuration)
 
-        // Unresolvable content on purpose: the apply bails before swapping the
-        // wallpaper, so anything this test then sees changed came from the
-        // settings path — the one that is supposed to be gone.
+        // Unresolvable content on purpose: the apply bails before the swap, so anything this
+        // test sees changed came from the settings path.
         let bookmark = WallpaperBookmark(
             label: "Other",
             content: .video(bookmarkData: Data([0x02]), packageEntryName: nil),

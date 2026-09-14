@@ -2,8 +2,8 @@ import Foundation
 import Testing
 @testable import LiveWallpaperProWPE
 
-/// Contract tests for the official timeline Mirror mode: forward for the
-/// configured duration, reverse for the same duration, then repeat.
+/// Mirror mode: forward for the configured duration, reverse for the same
+/// duration, then repeat.
 @Suite("WPE scene numeric animation Mirror mode")
 struct WPESceneNumericAnimationMirrorTests {
     private func linearMirror(
@@ -79,10 +79,8 @@ struct WPESceneNumericAnimationMirrorTests {
     }
 }
 
-/// Tracks are positional — c0 is x, c1 is y. A c0 that fails to parse (null,
-/// not an array, no valid keyframes) used to be compactMapped away, promoting
-/// c1 into slot 0: the y animation drove x. A broken track must instead hold
-/// its position and sample its fallback.
+/// Tracks are positional — c0 is x, c1 is y. A broken track holds its position and
+/// samples its fallback rather than collapsing the slots.
 @Suite("Track positional alignment")
 struct WPESceneAnimationTrackAlignmentTests {
     @Test("Track bounds preserve c63 and ignore invalid siblings")

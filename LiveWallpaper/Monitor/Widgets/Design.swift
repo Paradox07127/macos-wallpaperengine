@@ -54,8 +54,7 @@ enum Design {
 
     static let loadSteel = oklch(0.62, 0.045, 250)
 
-    /// Peak marker — the swatch and tick that mark a window's high-water mark,
-    /// board-wide. `oklch(0.72 0.09 60)`.
+    /// Peak marker — the swatch and tick that mark a window's high-water mark, board-wide.
     static let peakMarker = oklch(0.72, 0.09, 60)
 
     // MARK: - Panel material
@@ -68,13 +67,8 @@ enum Design {
 
     // MARK: - Load band mapping
 
-    /// The board's one load standard. Every instrument that draws a 0…1
-    /// utilisation — arc wedges, header state dots, bar tints — bands it here,
-    /// so a reading cannot be "hot" in one element and "fine" in another.
-    ///
-    /// Three bands, not more: colour answers only "fine / climbing / hot" while
-    /// the lit-wedge count and the digits carry the magnitude, and extra steps
-    /// would claim a precision the colour cannot deliver.
+    /// The board's one 0…1 utilisation standard so a reading cannot be hot in one element and fine in another.
+    /// Three bands only: colour answers fine/climbing/hot; magnitude is in the wedges and digits.
     enum Load {
         /// Climbing — worth a glance, not worth acting on.
         static let elevated: Double = 0.60
@@ -161,7 +155,7 @@ enum Design {
 
     // MARK: - Metrics
 
-    static let contentInsetH: CGFloat = 16  // HIG 16-pt content inset
+    static let contentInsetH: CGFloat = 16
     static let contentInsetV: CGFloat = 11
 
     static let hairlineWidth: CGFloat = 1
@@ -180,11 +174,9 @@ enum Design {
     /// the digits' size, everywhere on the board.
     static let heroUnitRatio: CGFloat = 0.4
 
-    /// Three-digit hero readings shrink by this much to clear the arc-gauge
-    /// centre box; measured across board scales 0.85…2.0.
+    /// Three-digit hero readings shrink by this much to clear the arc-gauge centre box.
     static let threeDigitHeroShrink: CGFloat = 0.68
 
-    /// Hero size for a `digits`-digit readout. Only a full 100% reaches three.
     static func heroSize(base: CGFloat, digits: Int) -> CGFloat {
         digits >= 3 ? base * threeDigitHeroShrink : base
     }

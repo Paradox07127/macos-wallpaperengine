@@ -21,7 +21,6 @@ public struct TrustedHTMLOrigin: Hashable, Codable, Sendable, Comparable, Custom
         port = effectivePort
     }
 
-    /// Accepts new persisted origin strings (`https://host:443`) plus legacy host-only values, which migrate to HTTPS on the default port.
     public init?(persistedValue: String) {
         let value = persistedValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty else { return nil }
@@ -68,10 +67,8 @@ public struct TrustedHTMLOrigin: Hashable, Codable, Sendable, Comparable, Custom
     /// the UI shows its HTTP warning from this.
     public var isSecure: Bool { scheme == "https" }
 
-    /// W3C Secure Contexts treats loopback as a potentially trustworthy origin even over http, which
-    /// is why browsers give `http://localhost` the same powers as https. Traffic never leaves the
-    /// machine, so there is no network position from which to tamper with it.
-    /// <https://w3c.github.io/webappsec-secure-contexts/>
+    /// W3C Secure Contexts treats loopback as potentially trustworthy even over http — traffic
+    /// never leaves the machine. <https://w3c.github.io/webappsec-secure-contexts/>
     public var isLoopback: Bool { Self.isLoopbackHost(host) }
 
     /// Expects an already-lowercased host, as stored.
@@ -84,10 +81,8 @@ public struct TrustedHTMLOrigin: Hashable, Codable, Sendable, Comparable, Custom
         return isIPv4Loopback(host)
     }
 
-    /// Private-network literals (RFC 1918 + link-local, and the IPv6
-    /// equivalents). Cleartext here is still tamperable by anyone already on
-    /// the same LAN, so unlike loopback these are *eligible* for trust rather
-    /// than trusted outright — the user has to grant it per origin.
+    /// RFC 1918 + link-local literals (and IPv6 equivalents). Cleartext here is tamperable
+    /// from the same LAN, so these are only *eligible* for trust, never trusted outright.
     public var isPrivateNetwork: Bool { Self.isPrivateNetworkHost(host) }
 
     /// Eligible to be granted JavaScript at all. Loopback is excluded because
@@ -112,9 +107,8 @@ public struct TrustedHTMLOrigin: Hashable, Codable, Sendable, Comparable, Custom
         }
     }
 
-    /// Parsed by the resolver the connection will use, not by our own spelling
-    /// rules: `inet_aton` reads a leading zero as octal, so `010.0.0.1` dials
-    /// the public 8.0.0.1 and must not be judged as if it were decimal.
+    /// Parsed by the resolver the connection will use: `inet_aton` reads a leading zero as
+    /// octal, so `010.0.0.1` dials the public 8.0.0.1.
     private static func ipv4Address(_ host: String) -> UInt32? {
         var address = in_addr()
         guard host.withCString({ inet_aton($0, &address) }) != 0 else { return nil }
@@ -191,7 +185,6 @@ public enum HTMLTrust: Equatable, Sendable {
         }
     }
 
-    /// Untrusted remote always forces JS off.
     public func effectiveAllowJavaScript(requested: Bool) -> Bool {
         switch self {
         case .untrustedRemote: return false

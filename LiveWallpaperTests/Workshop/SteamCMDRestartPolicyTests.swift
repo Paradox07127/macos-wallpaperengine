@@ -7,8 +7,6 @@ private struct FakeRun {
     var timedOut = false
 }
 
-/// Drives the restart engine with a scripted exit-code sequence, recording the
-/// interleaving of executions and trust-gate revalidations.
 private final class ScriptedSteamCMD {
     private(set) var events: [String] = []
     private var script: [FakeRun]
@@ -40,8 +38,6 @@ private final class ScriptedSteamCMD {
 struct SteamCMDSelfUpdateRestartTests {
     @Test("A fresh install's two exit-42 restart requests are absorbed")
     func freshInstallNeedsTwoRestarts() {
-        // Measured 2026-08-28 on a fresh managed install: +quit exits 42, again
-        // 42, and only the third execution reaches 0. One retry is not enough.
         let steamCMD = ScriptedSteamCMD(exitCodes: [42, 42, 0])
         guard case .completed(let final) = steamCMD.run() else {
             Issue.record("two restart requests must not be reported as failure")
@@ -57,12 +53,8 @@ struct SteamCMDSelfUpdateRestartTests {
 
     @Test("One restart request beyond the measured case still completes")
     func headroomAboveTheMeasuredCase() {
-        // The measured fresh install needs exactly two restarts, which a budget
-        // of three executions satisfies with nothing to spare. Valve controls
-        // how many times its bootstrap asks, so the budget carries one spare
-        // execution — otherwise a change on their side surfaces as
-        // "First SteamCMD run exited 42", which reads as a broken install
-        // rather than as "it wanted one more restart".
+        // The measured fresh install needs two restarts; the budget carries one
+        // spare execution beyond that.
         let steamCMD = ScriptedSteamCMD(exitCodes: [42, 42, 42, 0])
         guard case .completed(let final) = steamCMD.run() else {
             Issue.record("three restart requests must not be reported as failure")
@@ -132,8 +124,6 @@ struct SteamCMDSelfUpdateRestartTests {
 
     @Test("A fresh install's diagnosis probe is usable, not exitedNonZero")
     func freshInstallDiagnosesAsUsable() {
-        // The bug this whole policy fixes: the diagnosis probe used to see the
-        // first 42 and report an installed-but-broken SteamCMD.
         let steamCMD = ScriptedSteamCMD(exitCodes: [42, 42, 0])
         guard case .completed(let final) = steamCMD.run() else {
             Issue.record("fresh install must complete")
@@ -165,10 +155,6 @@ struct SteamCMDSelfUpdateRestartTests {
         #expect(diagnosis.isUsable)
     }
 
-    /// Source-level, the connector target is not linked here: every SteamCMD
-    /// execution funnels through `runSteamCMD`, so the restart engine and its
-    /// trust gates must be wired exactly there — and nowhere else, or two retry
-    /// mechanisms would compound each other's execution budgets.
     @Test("The connector's funnel is the one place restarts happen")
     func funnelRoutesThroughRestartEngine() throws {
         let source = try RepositoryRoot.source("SteamConnector/SteamConnector.swift")
@@ -180,7 +166,6 @@ struct SteamCMDSelfUpdateRestartTests {
         #expect(body.contains("SteamCMDSelfUpdateRestartPolicy.run"))
         #expect(body.contains("verifySignature"))
         #expect(body.contains("rejectIfQuarantined"))
-        // The old output-marker retry must not survive alongside the engine.
         #expect(!source.contains("SteamCMDSelfUpdateRetryPolicy"))
     }
 }

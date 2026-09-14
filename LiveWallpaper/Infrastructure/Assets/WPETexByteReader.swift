@@ -2,8 +2,7 @@
 import Foundation
 import LiveWallpaperProWPE
 
-/// Lightweight cursor over an immutable `Data` slice. Used by the `.tex` decoder to read little-endian integers and 8-byte ASCII block magics without allocating intermediate `String` / `NSData` wrappers.
-/// Block magics in WPE `.tex` files always come as a NUL-terminated 8-byte ASCII run (`TEXV0005\0`, `TEXI0001\0`, …); the reader strips the NUL terminator and returns the canonical 8-character form so the decoder can prefix-match (`hasPrefix("TEXV")`).
+/// Block magics are a NUL-terminated 8-byte ASCII run; the reader strips the NUL and returns the 8-character form for `hasPrefix("TEXV")`.
 struct WPETexByteReader {
     let data: Data
     private(set) var cursor: Int
@@ -68,9 +67,7 @@ struct WPETexByteReader {
         return span
     }
 
-    /// Reads a NUL-terminated ASCII run, advancing past the terminator.
-    /// Used by `TEXB` v4 to surface the `v4Condition` string into the IR
-    /// for dump fidelity (older code path discarded it via skip-only).
+    /// NUL-terminated ASCII; advances past the terminator.
     mutating func readNullTerminatedString(blockName: String) throws -> String {
         let absoluteCursor = data.startIndex + cursor
         let absoluteEnd = data.startIndex + endBound

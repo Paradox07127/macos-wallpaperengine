@@ -92,11 +92,8 @@ public final class PowerMonitor {
         applyPowerSourceChange(oldSource: oldSource, newSource: newSource)
     }
 
-    /// Shared tail of both transition paths: publish + notify, then start/stop
-    /// the battery-level poll timer to match the new source. `refreshPowerStatus`
-    /// needs this too — it is the only path that can observe a battery
-    /// transition IOPS never delivered a notification for (e.g. AC unplugged
-    /// while asleep), and without it the level timer never starts.
+    /// `refreshPowerStatus` must route through here: it is the only path that can see a
+    /// battery transition IOPS never notified, and the level timer would never start.
     private func applyPowerSourceChange(oldSource: PowerSource, newSource: PowerSource) {
         powerSourceSubject.send(newSource)
         postPowerChangeNotification(oldSource: oldSource, newSource: newSource)

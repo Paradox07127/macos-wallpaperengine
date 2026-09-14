@@ -5,8 +5,7 @@ import Foundation
 import ImageIO
 import LiveWallpaperProWPE
 
-/// Which decoded mip levels the caller is actually going to upload. The container ships a full chain but a Metal upload usually reads one level out of it (level 0 at renderScale 1.0), so the rest used to be LZ4-inflated and dropped.
-/// Skipped levels keep their index/width/height — that metadata is all `WPEMetalTextureLoader.uploadMipStartIndex` needs to pick a level — and carry an empty `bytes`.
+/// Skipped levels keep index/width/height (for `uploadMipStartIndex`) and carry empty `bytes`.
 struct WPETexMipInflateScope: Sendable, Equatable {
     /// Longest-edge cap the consumer renders at; nil = no render-scale cap.
     let maxSourceEdge: Int?
@@ -17,10 +16,7 @@ struct WPETexMipInflateScope: Sendable, Equatable {
     /// physical mip dimensions (particles, animation atlases) needs this.
     static let fullChain = WPETexMipInflateScope(maxSourceEdge: nil, uploadsChain: true)
 
-    /// Positions (largest-first) whose bytes the upload will actually read.
-    /// MUST mirror `WPEMetalTextureLoader.makeTextureSynchronously`; that
-    /// function degrades to a single level rather than throwing if the two ever
-    /// disagree (the mip-chain default can be flipped mid-load).
+    /// MUST mirror `WPEMetalTextureLoader.makeTextureSynchronously`; that function degrades to a single level rather than throwing if the two disagree.
     func selectedLevels(levelSizes: [(width: Int, height: Int)], noInterpolation: Bool) -> Range<Int> {
         guard let level0 = levelSizes.first else { return 0..<0 }
         // Data textures index by texel (nearest sampling, or a 4096×1 LUT
@@ -48,10 +44,8 @@ struct WPETexMipInflateScope: Sendable, Equatable {
 }
 
 #if DEBUG
-/// Test-only meter for the mip-inflate scope: total bytes `normalizedBytes`
-/// materialized (LZ4 inflate output, or the raw-copy equivalent). Bound as a
-/// task-local so a parallel suite's decodes cannot leak into the count.
-/// `@unchecked Sendable` because `total` is only ever touched under `lock`.
+/// Test-only meter for the mip-inflate scope; task-local so a parallel suite's decodes
+/// cannot leak into the count. `@unchecked Sendable` because `total` is only ever touched under `lock`.
 final class WPETexInflateMeter: @unchecked Sendable {
     private let lock = NSLock()
     private var total = 0
@@ -68,7 +62,6 @@ final class WPETexInflateMeter: @unchecked Sendable {
 }
 #endif
 
-/// Stateless TEXVxxxx `.tex` decoder with precise format/truncation errors.
 struct WPETexDecoder: Sendable {
 
     #if DEBUG
@@ -86,7 +79,6 @@ struct WPETexDecoder: Sendable {
     }
 
     #if DEBUG
-    /// Test-only `Data` entry point; production decodes through `decode(span:)`.
     func decode(data: Data) -> Result<CGImage, WPETexDecodeError> {
         decode(span: WPEMappedByteSpan(data: data))
     }
@@ -104,7 +96,6 @@ struct WPETexDecoder: Sendable {
     }
 
     #if DEBUG
-    /// Test-only `Data` entry point; production goes through the span overload.
     func extractStreamingPayload(data: Data) -> Result<WPETexStreamingPayload, WPETexDecodeError> {
         extractStreamingPayload(span: WPEMappedByteSpan(data: data))
     }
@@ -121,7 +112,6 @@ struct WPETexDecoder: Sendable {
         }
     }
 
-    /// Header-only TEXI/TEXB probe for scene-debug dumps (no GPU/decompress).
     func extractRawMetadata(data: Data) -> Result<WPETexRawMetadata, WPETexDecodeError> {
         extractRawMetadata(span: WPEMappedByteSpan(data: data))
     }
@@ -137,8 +127,7 @@ struct WPETexDecoder: Sendable {
         }
     }
 
-    /// Metal path. `scope` narrows which mip levels get LZ4-inflated to the
-    /// ones the caller's upload will actually read; defaults to the whole chain.
+    /// `scope` narrows which mip levels get LZ4-inflated to the ones the upload will read; default is the whole chain.
     func extractTexturePayload(
         data: Data,
         scope: WPETexMipInflateScope = .fullChain
@@ -273,7 +262,6 @@ struct WPETexDecoder: Sendable {
         )
     }
 
-    /// Average positive frame duration → frame rate, falling back to the track default.
     private func computeFrameRate(fromDurations durations: [TimeInterval], defaultDuration: TimeInterval) -> Double {
         let validDurations = durations.filter { $0 > 0 }
         let averageDuration = validDurations.isEmpty
@@ -287,8 +275,6 @@ struct WPETexDecoder: Sendable {
         guard parsed.bitmap.isVideoPayload || looksLikeMP4Payload(mip.payload) else {
             return nil
         }
-        // Video bytes head straight to the disk cache; a one-shot copy here
-        // matches the pre-span behavior (readBytes subdata).
         return WPETexVideoPayload(bytes: mip.payload.materializedData())
     }
 
@@ -386,7 +372,6 @@ struct WPETexDecoder: Sendable {
         let hasAnimationFrames: Bool
     }
 
-    /// Parsed `TEXS` animation metadata, including frame timing and atlas transforms.
     private struct WPETexFrameInfoBlock {
         let version: Int
         let gifWidth: Int?
@@ -417,10 +402,7 @@ struct WPETexDecoder: Sendable {
             return CGRect(x: originX, y: originY, width: clampedW, height: clampedH)
         }
 
-        /// catsout 476347b2 `WPTexImageParser.cpp`: translation is normalized
-        /// by source width/height; both x-axis lanes divide by width and both
-        /// y-axis lanes divide by height. `WPShaderValueUpdater.cpp` publishes
-        /// the lanes in xAxis.xy, yAxis.xy order.
+        /// Translation is normalized by source width/height; both x-axis lanes divide by width and both y-axis lanes divide by height (`WPTexImageParser.cpp`).
         func samplingDescriptor(
             textureWidth: Int,
             textureHeight: Int
@@ -824,7 +806,6 @@ struct WPETexDecoder: Sendable {
         return image
     }
 
-    /// Converts encoded TEXB atlases to RGBA payloads while sharing each decoded source image across frames.
     private func bridgeEncodedImagePayload(_ parsed: ParsedTex) throws -> WPETexTexturePayload {
         if parsed.hasAnimationFrames {
             return try bridgeEncodedAnimatedImagePayload(parsed)
@@ -832,8 +813,6 @@ struct WPETexDecoder: Sendable {
         return try bridgeSingleEncodedImagePayload(parsed)
     }
 
-    /// Bridged-payload `WPETexInfo`: same source metadata, overridden to the
-    /// rasterized RGBA8888 dimensions and format.
     private func rgba8888Info(from source: WPETexInfo, width: Int, height: Int) -> WPETexInfo {
         WPETexInfo(
             containerVersion: source.containerVersion,
@@ -871,7 +850,6 @@ struct WPETexDecoder: Sendable {
         let texsFrames = parsed.frameInfo?.frames ?? []
         let defaultDuration = 1.0 / WPETexAnimationTrack.defaultFrameRate
 
-        // Dedup TEXB rasters by imageID across TEXS frames.
         var rasterizedByImageID: [Int: WPETexTextureMipmap] = [:]
         func atlas(for imageID: Int) throws -> WPETexTextureMipmap {
             let sourceIndex = parsed.bitmap.frames.indices.contains(imageID)

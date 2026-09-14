@@ -5,12 +5,6 @@
     import Testing
     @testable import LiveWallpaper
 
-    /// WPE authors panels as an alpha-0 "container" image object that draws nothing and
-    /// exists only to position and scale its children. `compositesToScene` correctly keeps
-    /// that container out of the render graph, which used to leave the per-frame parent
-    /// walk in `applyingLayerTransforms` with no transform for it — and that walk fell
-    /// back to the child's LOCAL transform, silently dropping the whole ancestor chain.
-    /// Scene 3326873240's media panel landed at the scene origin at 2.5x its authored size.
     @Suite("WPE container ancestor transforms")
     struct WPEContainerAncestorTransformTests {
 
@@ -98,7 +92,6 @@
                 "an image object is never parsed as a transform host, so nothing else covers it"
             )
 
-            // Exactly what the renderer feeds the per-frame walk.
             let hostTransforms = WPEMetalSceneRenderer.ancestorLocalTransforms(in: document)
             let moved = Self.mediaPanelPipeline().applyingLayerTransforms(
                 // The container's origin SceneScript republishes its authored origin.
@@ -133,7 +126,6 @@
             let document = try WPESceneDocumentParser.parse(data: Self.mediaPanelSceneJSON)
             let hostTransforms = WPEMetalSceneRenderer.ancestorLocalTransforms(in: document)
 
-            // Parentless layer: the live origin is its world origin verbatim.
             let solo = WPEPreparedRenderPipeline(layers: [
                 Self.layer(
                     id: "118",
@@ -152,7 +144,6 @@
             #expect(movedSolo.geometry.origin == SIMD3<Double>(500, 600, 0))
             #expect(movedSolo.geometry.scale == SIMD3<Double>(1, 1, 1))
 
-            // Parent present in the pipeline: composition already worked and must not shift.
             let parentWorld = Self.geometry(origin: SIMD3<Double>(1000, 500, 0), scale: SIMD3<Double>(0.5, 0.5, 1))
             let nested = WPEPreparedRenderPipeline(layers: [
                 Self.layer(id: "a", parent: nil, world: parentWorld, local: parentWorld),
@@ -210,7 +201,6 @@
                 WPERenderGraphBuilder.compositesToScene(holder, liveVisibilityIDs: []),
                 "132 IS drawn, so it is the layer that inherits the broken chain"
             )
-            // The authored world placement the runtime walk has to reproduce.
             #expect(abs(holder.origin.x - 183.649_90) < 0.001)
             #expect(abs(holder.origin.y - 768.382_08) < 0.001)
             #expect(abs(holder.scale.x - 0.4) < 0.001)
@@ -252,7 +242,6 @@
         }
         """.utf8)
 
-    /// Explicit folder for the authored container regression scene.
     private static var installedSceneURL: URL? {
         TestScratch.externalFixtureURL(pathKey: "WPE_CONTAINER_ANCESTOR_SCENE_ROOT")
     }

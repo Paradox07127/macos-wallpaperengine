@@ -5,10 +5,8 @@ import LiveWallpaperProWPE
 import Testing
 @testable import LiveWallpaper
 
-/// Test-only evidence manifest for selecting a Windows oracle scene before any
-/// per-object camera routing is implemented. It reads the authored JSON rather
-/// than the app's parsed schema so an unsupported `perspective` field cannot
-/// disappear before the capture gate observes it.
+/// Reads the authored JSON, not the app's parsed schema: an unsupported `perspective` field would
+/// disappear before the capture gate could observe it.
 struct WPECameraEvidenceManifest: Codable, Equatable {
     struct Projection: Codable, Equatable {
         let isOrthographic: Bool

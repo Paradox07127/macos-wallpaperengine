@@ -5,7 +5,6 @@ import SwiftUI
 import Testing
 @testable import LiveWallpaper
 
-/// Verifies that suspension stops producers and board animation loops, not only snapshot delivery.
 @Suite("Monitor suspend — energy regression")
 struct SuspendEnergyTests {
 

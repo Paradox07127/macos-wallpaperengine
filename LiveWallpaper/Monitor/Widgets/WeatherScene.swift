@@ -1,8 +1,5 @@
 import Foundation
 
-/// Everything the Weather tile draws, decided once from the weather service's
-/// state so the drawing code carries no weather logic of its own. Pure, so the
-/// mapping from sky to picture is testable without rendering a pixel.
 struct WeatherScene: Equatable {
     enum Precipitation: Equatable {
         case none
@@ -43,9 +40,8 @@ struct WeatherScene: Equatable {
     var sun: Bool
     var moon: Bool
     var lightning: Bool
-    /// Radians from vertical, positive to the right of the screen. The same
-    /// wind policy the full-screen particles use, so the tile and the desktop
-    /// behind it never disagree about which way it is blowing.
+    /// Radians from vertical, positive to the right of the screen; the same
+    /// `WeatherWindPolicy` the full-screen particles use.
     var lean: Double
     /// 0…1 wind strength, for cloud drift speed.
     var wind: Double
@@ -145,9 +141,8 @@ struct WeatherScene: Equatable {
         return scene
     }
 
-    /// Sky gradient per condition, day and night. Night is the same hue family
-    /// pulled down in lightness, so the tile reads as one place at two hours
-    /// rather than as two palettes.
+    /// Sky gradient per condition. Night is the same hue family pulled down in
+    /// lightness, not a second palette.
     private static func palette(
         for condition: WeatherReactiveService.WeatherDescription, day: Bool
     ) -> (top: SkyStop, bottom: SkyStop) {

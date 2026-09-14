@@ -4,10 +4,6 @@ import os
 import Testing
 @testable import LiveWallpaper
 
-/// B4: the spectrum ring used to be shared storage — the producer wrote Float slots that
-/// the consumer copied while holding nothing, and a post-copy lap check only *detected*
-/// the mixed windows that produced. These tests pin the replacement: ownership transfer,
-/// where a stalled consumer can only miss whole generations, never blend two.
 @Suite("Audio spectrum window hand-off")
 struct AudioSpectrumProcessorHandoffTests {
     private static let windowSize = 64
@@ -64,7 +60,6 @@ struct AudioSpectrumProcessorHandoffTests {
         var observedTotals: [Int] = []
 
         for _ in 0..<6 {
-            // A slow consumer: let the producer get a whole history ahead between pulls.
             Self.waitForSeal(exchange, reaching: (observedTotals.last ?? 0) + historyCapacity)
             let cursor = exchange.copySealedWindow(into: &left, and: &right)
             observedTotals.append(cursor.totalSamples)
@@ -99,8 +94,7 @@ struct AudioSpectrumProcessorHandoffTests {
     func unsynchronizedRingTearsWhereTheExchangeDoesNot() {
         let size = Self.windowSize
 
-        // Same schedule, old shape: the consumer copies out of the shared ring element by
-        // element while the producer laps it four times halfway through.
+        // Same schedule, old shape.
         let ring = SharedRingUnderTest(capacity: size * 4)
         ring.append(count: size)
         let torn = ring.copyWindow(size: size) { shared in
@@ -197,7 +191,6 @@ struct AudioSpectrumProcessorHandoffTests {
         let publishBody = try #require(Self.body(of: "func publish(", in: exchangeSource))
         let appendBody = try #require(Self.body(of: "func appendToRing(", in: exchangeSource))
         let stageBody = try #require(Self.body(of: "func stageNewestWindow(", in: exchangeSource))
-        // publish() is the whole audio-thread call tree, so the probes cover its callees.
         let audioThreadBody = [publishBody, appendBody, stageBody].joined(separator: "\n")
 
         // Control: the slices are the real bodies. An empty string would satisfy every
@@ -275,9 +268,8 @@ struct AudioSpectrumProcessorHandoffTests {
 
     // MARK: - Helpers
 
-    /// The producers below code every sample with its absolute stream index, so a window
-    /// is verifiable from its cursor alone: coherent exactly when it is the unbroken run
-    /// ending at `total`. A window mixing laps fails on its first out-of-run sample.
+    /// Every sample is coded with its absolute stream index, so a window is coherent
+    /// exactly when it is the unbroken run ending at `total`.
     private static func isOneGeneration(_ samples: [Float], endingAt total: Int, sign: Float) -> Bool {
         let start = total - samples.count
         for index in samples.indices where start + index >= 0 {
@@ -293,8 +285,6 @@ struct AudioSpectrumProcessorHandoffTests {
         }
     }
 
-    /// Body of the first declaration whose signature starts with `marker`, brace-matched
-    /// from its opening `{`.
     private static func body(of marker: String, in source: String) -> String? {
         guard let signature = source.range(of: marker),
               let open = source[signature.upperBound...].firstIndex(of: "{") else { return nil }
@@ -331,9 +321,8 @@ struct AudioSpectrumProcessorHandoffTests {
         }
     }
 
-    /// The pre-B4 shape, kept here as the control: one shared ring, the consumer copying
-    /// out of it element by element while the producer keeps writing into it. Driven on a
-    /// single thread, so the control can demonstrate tearing without itself racing.
+    /// The shape this replaced, kept as the control: one shared ring copied element by
+    /// element. Driven on a single thread, so it tears without itself racing.
     private final class SharedRingUnderTest {
         let capacity: Int
         private let mask: Int

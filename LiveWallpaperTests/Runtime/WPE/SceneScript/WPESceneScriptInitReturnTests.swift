@@ -3,14 +3,6 @@ import LiveWallpaperProWPE
 @testable import LiveWallpaper
 import Testing
 
-/// `lib.sceneScript.d.ts` declares both hooks with the same contract:
-///
-///     init?(value: Number|Boolean|String|Vec2|Vec3|Vec4|Mat4|Mat3): Number|…|Vec4;
-///
-/// documented as "The modified value to be applied to the property", with
-/// `update()` marked "entirely optional". We called `init` and threw its return
-/// away at all three runtimes, so a module exporting only `init` was a no-op.
-/// 13 of the 54 installed scenes carry at least one such script.
 @Suite(.serialized)
 @MainActor
 struct WPESceneScriptInitReturnTests {
@@ -65,11 +57,8 @@ struct WPESceneScriptInitReturnTests {
         static let authoredOrigin = SIMD3<Double>(183.649_90, 768.382_08, 0)
         static let canvas = SIMD2<Double>(3840, 2160)
         static let scriptProperties: [String: WPESceneScriptPropertyValue] = ["isMovable": .bool(true)]
-        /// Copied verbatim out of the installed package's `scene.json`
-        /// (`objects[id=131].origin.script`), so the body under test is the
-        /// author's rather than a paraphrase. Kept inline because
-        /// `LiveWallpaperTests/Fixtures/*` is gitignored (.gitignore:124) and a
-        /// file there would not survive a clean checkout.
+        /// Kept inline: `LiveWallpaperTests/Fixtures/*` is gitignored, so a fixture file
+        /// would not survive a clean checkout.
         static let script = #"""
         'use strict';
         // Please note: Do not remove this line or asset references may break.
@@ -114,13 +103,6 @@ struct WPESceneScriptInitReturnTests {
         """#
     }
 
-    /// Scene 3326873240's `Media Info (ROUND)` (id 131) binds an origin script
-    /// exporting `cursorDown`/`cursorUp`/`cursorMove`/`init` and NO `update`.
-    /// Its `init` ends `return localStorage.get(storageName) || thisLayer.origin`,
-    /// so with empty storage it returns the authored origin. Dropping that return
-    /// left the panel at the baked fallback — on screen the whole media panel
-    /// collapsed to roughly (0,0), dragging Song Title, Artist Name and its
-    /// Background off the canvas with it.
     @Test("The real init-only origin script yields the authored origin, not nil")
     func realSceneOriginScriptYieldsAuthoredOrigin() throws {
         let authored = OriginScriptFixture.authoredOrigin
@@ -175,8 +157,6 @@ struct WPESceneScriptInitReturnTests {
         #expect(instance.batchTickString(runtimeSeconds: 0).value == "from-init")
     }
 
-    /// `init` receives the authored value as its argument — the audio-response
-    /// templates stash it as `initialValue` and multiply by it every frame.
     @Test("init still receives the authored value as its argument")
     func initReceivesAuthoredValue() throws {
         let instance = try text(
@@ -192,7 +172,6 @@ struct WPESceneScriptInitReturnTests {
         #expect(vector.tick(pointerPosition: SIMD2(0.5, 0.5), runtimeSeconds: 0) == SIMD3(3, 5, 3.5))
     }
 
-    /// The common case: nearly every authored `init` only primes module state.
     @Test("An init returning nothing leaves the authored value untouched")
     func initReturningUndefinedLeavesAuthoredValueIntact() throws {
         let instance = try text(
@@ -211,8 +190,6 @@ struct WPESceneScriptInitReturnTests {
         )
     }
 
-    /// Guard on the common case: `init` for setup + `update` per frame must be
-    /// exactly what it was — update's argument and return both unchanged.
     @Test("An init plus update script behaves exactly as before")
     func initPlusUpdateUnchanged() throws {
         let instance = try text(
@@ -237,7 +214,6 @@ struct WPESceneScriptInitReturnTests {
         #expect(vector.tick(pointerPosition: SIMD2(0.5, 0.5), runtimeSeconds: 1) == SIMD3(3, 2, 3))
     }
 
-    /// An `init` return seeds the property, and `update` then ticks from it.
     @Test("update receives the value init returned")
     func updateTicksFromInitResult() throws {
         let instance = try transform(
@@ -250,9 +226,8 @@ struct WPESceneScriptInitReturnTests {
         #expect(instance.tick(pointerPosition: SIMD2(0.5, 0.5), runtimeSeconds: 0) == SIMD3(11, 10, 10))
     }
 
-    /// An init-only module has nothing to run per frame. It must hold its value
-    /// without ever scheduling a batch job — and holding matters for correctness,
-    /// not just cost: a scheduled tick would publish nil and snap the layer back.
+    /// Holding matters for correctness, not just cost: a scheduled tick would
+    /// publish nil and snap the layer back.
     @Test("An init-only script is not forced onto a per-frame tick")
     func initOnlyScriptSchedulesNoPerFrameWork() throws {
         let instance = try transform(
@@ -281,10 +256,6 @@ struct WPESceneScriptInitReturnTests {
 
     // MARK: - Layer runtime
 
-    /// Text and transform already pass the authored value into `init(value)`
-    /// (pinned above); the layer runtime called `init()` with no arguments, so
-    /// `export function init(value) { return !value; }` saw `undefined` and
-    /// kept an authored-visible layer visible instead of hiding it.
     @Test("A layer init receives the authored visibility as its argument")
     func layerInitReceivesAuthoredVisibleSeed() throws {
         let instance = try WPELayerScriptInstance(
@@ -342,11 +313,8 @@ struct WPESceneScriptInitReturnTests {
 
     // MARK: - Part 2 pin: name collisions
 
-    /// `WPESharedScriptState.layerTransform(named:)` resolves with
-    /// `layers.first(where: { $0.name == name })`. Scene 3326873240 has `Clock`
-    /// six times and `Date` four times, so this is not hypothetical: the second
-    /// and later rows are unreachable and silently answer with the first row's
-    /// transform. Pinned as current behaviour, not endorsed.
+    /// Duplicate layer names resolve to the first row, shadowing the rest.
+    /// Pinned as current behaviour, not endorsed.
     @Test("A duplicate layer name resolves to the first row, shadowing the rest")
     func duplicateLayerNameResolvesToFirstRow() throws {
         let shared = WPESharedScriptState(layers: [
@@ -361,7 +329,6 @@ struct WPESceneScriptInitReturnTests {
         ])
         #expect(shared.layerTransform(named: "Clock")?.info.id == "first")
 
-        // And a script naming it gets the first row's origin, whichever it meant.
         let instance = try transform(
             script: "export function init(value) { return thisScene.getLayer('Clock').origin; }",
             seed: .zero,
@@ -371,9 +338,6 @@ struct WPESceneScriptInitReturnTests {
         #expect(instance.tick(pointerPosition: SIMD2(0.5, 0.5), runtimeSeconds: 0) == SIMD3(100, 200, 0))
     }
 
-    /// `layerHandle(named:)` answers an unknown name with the neutral stub, so a
-    /// script naming a particle/sound layer (absent from `scriptLayerTable`) or
-    /// simply misspelling one reads origin (0,0,0) rather than failing.
     @Test("An unknown layer name yields the neutral zero-origin handle")
     func unknownLayerNameYieldsNeutralHandle() throws {
         let shared = WPESharedScriptState(layers: [
@@ -395,12 +359,6 @@ struct WPESceneScriptInitReturnTests {
 
     // MARK: - Part 3: unnamed own layer resolves by object ID
 
-    /// Scene 3554161528's clock (object 398, `name: ""`) is the movable-widget
-    /// template: init-only, ending `return thisLayer.origin`. The name-keyed
-    /// bridge cannot see an unnamed layer, so `thisLayer` fell back to the
-    /// sandbox stub whose `x`/`y`/`z` read 0 — and once init returns are applied,
-    /// that (0,0,0) was published every frame, pinning the clock to the scene
-    /// corner. Own identity must resolve by OBJECT ID, which every object has.
     @Test("An unnamed own layer resolves thisLayer by object ID")
     func unnamedOwnLayerResolvesByObjectID() throws {
         let authored = SIMD3<Double>(1195.38159, 1337.07593, 0)
@@ -424,8 +382,8 @@ struct WPESceneScriptInitReturnTests {
             "thisLayer.origin must be the layer-table origin, not the sandbox stub's zeros"
         )
 
-        // Control: without an object ID the old name-only identity still reads
-        // the stub's zeros — proving the expectation above has teeth.
+        // Control: without an object ID, name-only identity reads the stub's zeros —
+        // the expectation above has teeth.
         let control = try transform(
             script: script,
             seed: authored,

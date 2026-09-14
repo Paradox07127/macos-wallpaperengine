@@ -2,7 +2,6 @@ import AppKit
 import Foundation
 import LiveWallpaperCore
 
-/// Optional read-only security-scoped grants for AI log roots (`~/.claude`, `~/.codex`).
 @MainActor
 final class SourceAuthorization {
     static let shared = SourceAuthorization()
@@ -107,7 +106,6 @@ final class SourceAuthorization {
         }
     }
 
-    /// Resolves the stored grant, starts its security scope, and tracks it so `release()` can balance the access.
     func resolveRoot(_ provider: Provider) -> URL? {
         let target = SecurityScopedBookmarkResolver.Target(label: "monitor.\(provider.defaultDirectoryName)") { [weak self] original, refreshed in
             guard let self else { return }
@@ -148,8 +146,6 @@ final class SourceAuthorization {
         }
     }
 
-    /// Balances every started scope. Called when the wallpaper session tears
-    /// down so the sandbox extensions don't leak past the wallpaper's life.
     func release() {
         for (_, url) in activeScopes {
             url.stopAccessingSecurityScopedResource()

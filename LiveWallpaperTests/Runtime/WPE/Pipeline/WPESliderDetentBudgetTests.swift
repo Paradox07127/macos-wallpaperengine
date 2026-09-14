@@ -4,11 +4,7 @@ import LiveWallpaperCore
 import Testing
 @testable import LiveWallpaper
 
-/// The step handed to the inspector's `Slider` view is capped at
-/// `maximumSliderDetents` detents because SwiftUI's slider gets roughly four
-/// times more expensive per layout pass beyond ~1000 of them (measured
-/// 2026-08-22: 4.1ms → 16.8ms per scroll step on a 64-row inspector), and WPE
-/// scenes routinely author `step: 0.001` across a `0...300` range.
+/// The slider step is capped at `maximumSliderDetents` because SwiftUI's slider costs ~4x more per layout pass beyond ~1000 detents.
 /// Ledger: `.notes/review/2026-08-22-scene-settings-scroll-jank.md`.
 struct WPESliderDetentBudgetTests {
     private typealias ValueLogic = PropertyValueLogic
@@ -59,9 +55,6 @@ struct WPESliderDetentBudgetTests {
         #expect(detents(probe) <= ValueLogic.maximumSliderDetents)
     }
 
-    /// Nesting the two grids is what makes the cap safe: the thumb can only
-    /// land on values `normalizedSliderValue` would have produced anyway, so
-    /// widening the display step never moves a value off the authored grid.
     @Test("Every display detent is also an authored-step detent")
     func displayGridNestsInsideAuthoredGrid() throws {
         for (min, max, step) in [
@@ -87,9 +80,6 @@ struct WPESliderDetentBudgetTests {
         #expect(ValueLogic.displaySliderStep(for: fractional) == 0.1)
     }
 
-    /// Guards the two call sites the measurement was taken against. Both cards
-    /// must feed the view the capped step while their bindings keep snapping
-    /// to the authored one.
     @Test("Both settings cards hand the capped step to the Slider view")
     func settingsCardsUseTheCappedStep() throws {
         for name in ["SceneSettingsCard", "ProjectSettingsCard"] {

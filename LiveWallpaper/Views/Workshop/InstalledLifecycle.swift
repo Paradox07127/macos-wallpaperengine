@@ -34,8 +34,6 @@
         }
     }
 
-    /// Owns Installed-page work whose lifetime must not be left to transient
-    /// SwiftUI view values: AppKit event monitors and the replaceable update check.
     @MainActor
     final class InstalledPageLifecycleOwner {
         struct UpdateTicket: Equatable, Sendable {

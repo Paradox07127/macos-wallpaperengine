@@ -28,11 +28,8 @@ struct SettingsWindowLayoutTests {
         let stage = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/WallpaperPreviewStage.swift")
         let source = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/PreviewArea.swift")
 
-        // Aspect-fit inside the pane is what stops a preview overflowing a short
-        // window. PreviewArea used to compute that by hand, once per wallpaper type.
         #expect(stage.contains(".aspectRatio(WallpaperPreviewMetrics.aspectRatio, contentMode: .fit)"))
         #expect(stage.contains(".frame(maxWidth: .infinity, maxHeight: .infinity)"))
-        // Controls float inside the card, so nothing is reserved below it.
         #expect(!source.contains("ReservedHeight"))
     }
 
@@ -43,21 +40,16 @@ struct SettingsWindowLayoutTests {
         let scene = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/SceneDetailView.swift")
         let htmlPreview = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/HTMLPreviewSection.swift")
 
-        // The expanding frame is the whole pane; the aspect-fit box is the picture.
-        // Controls overlaid *after* the frame drift past the picture's edges, so the
-        // stage fixes the order once instead of trusting three call sites with it.
+        // Controls overlaid after the expanding frame would drift past the picture's edges.
         let overlay = try #require(stage.range(of: ".overlay(alignment: .bottom)"))
         let frame = try #require(stage.range(of: ".frame(maxWidth: .infinity, maxHeight: .infinity)"))
         #expect(overlay.lowerBound < frame.lowerBound, "controls must be overlaid before the expanding frame")
 
-        // Video and web from one file, scene from the other — three call sites, and
-        // no hand-rolled fit left over. Scene used to pin its card to the top.
         #expect(previewArea.components(separatedBy: "WallpaperPreviewStage {").count - 1 == 2)
         #expect(scene.contains("WallpaperPreviewStage {"))
         #expect(!previewArea.contains("cappedPreviewHeight"))
         #expect(!scene.contains("screenPreviewSize"))
 
-        // Same reason on the other side: this view must report the drawn box.
         #expect(!htmlPreview.contains(".frame(maxWidth: .infinity)\n        .onChange"))
     }
 
@@ -72,14 +64,9 @@ struct SettingsWindowLayoutTests {
 
         #expect(!htmlContent.contains("ScrollView"))
         #expect(htmlContent.contains("HTMLPreviewSection("))
-        // Empty: the same IllustratedEmptyState skeleton video uses, so switching
-        // wallpaper type does not switch layout language — NOT the source bar
-        // stretched across an otherwise blank page (the old lone grey strip).
-        // The picked branch's floating bar is pinned by
-        // `htmlSourceControlsFloatInsidePreview`, which reads the whole file:
-        // it is declared in `webTitleRow`, past the end of this slice.
+        // The picked branch's floating bar is declared in `webTitleRow`, past the end of this
+        // slice; `htmlSourceControlsFloatInsidePreview` pins it instead.
         #expect(htmlContent.contains("HTMLEmptyState("))
-        // The empty branch must not stretch a bar across a blank page again.
         #expect(!htmlContent.contains("maxHeight: .infinity"))
     }
 
@@ -91,17 +78,12 @@ struct SettingsWindowLayoutTests {
 
         #expect(!inspectorPanel.contains("HTMLRenderingDiagnosticsInspector("))
 
-        // The source picker, the badges, the diagnostics and the refresh control
-        // all belong to one row above the picture. They used to be drawn on two
-        // layers hugging the same top edge, which overlapped and printed the
-        // page's name twice.
         #expect(previewArea.contains("private var webTitleRow"))
         #expect(previewArea.contains("HTMLSourceSection("))
         #expect(previewArea.contains("HTMLInformationOverlay("))
         #expect(previewArea.contains("HTMLRenderingDiagnosticsOverlay("))
         #expect(previewArea.contains("PreviewCornerGlyph(\"arrow.clockwise\")"))
 
-        // …and none of them are drawn a second time inside the picture.
         #expect(!previewSection.contains("HTMLInformationOverlay("))
         #expect(!previewSection.contains("HTMLRenderingDiagnosticsOverlay("))
         #expect(!previewSection.contains("PreviewCornerGlyph(\"arrow.clockwise\")"))
@@ -110,7 +92,6 @@ struct SettingsWindowLayoutTests {
         // Names the diagnostics panel's own call, not the bare one that
         // HTMLInformationOverlay happens to share the file with.
         #expect(previewSection.contains(".thumbnailBadgeGlass(opacity: 0.7, in: .roundedRectangle("))
-        // Collapsed until asked: expanded, the grid covers the frame it measures.
         #expect(previewSection.contains("@State private var isExpanded = false"))
         #expect(previewSection.contains("PreviewCornerGlyph(\"info.circle\")"))
         #expect(previewSection.contains("diagnosticCell(\"Measurement\""))
@@ -129,9 +110,6 @@ struct SettingsWindowLayoutTests {
 
         #expect(sourceSection.contains("HStack(alignment: .center, spacing: 10)"))
         #expect(sourceSection.contains(".frame(width: 108)"))
-        // The bar now renders ONLY over the live preview (the empty page went to
-        // `HTMLEmptyState`), which is what earns it glass unconditionally — the
-        // old flat in-flow chrome had nothing behind it to refract.
         #expect(sourceSection.contains(".adaptiveGlassSurface(.capsule)"))
         #expect(!sourceSection.contains("struct HTMLSourceChrome"))
         #expect(!previewArea.contains("floating:"))
@@ -142,14 +120,10 @@ struct SettingsWindowLayoutTests {
         let stage = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/WallpaperPreviewStage.swift")
         let previewArea = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/PreviewArea.swift")
 
-        // The three panes used to disagree — 24/18, 24, and none at all. The empty
-        // state keeps its own full-pane inset; this is about the preview stage.
         #expect(stage.contains(".padding(DesignTokens.Spacing.lg)"))
         #expect(!previewArea.contains(".padding(.vertical, 18)"))
         #expect(!previewArea.contains(".padding(.horizontal, 24)"))
 
-        // The call site counts too: scene kept a 24pt inset of its own on top of
-        // the stage's, so it sat 40pt in while video and web sat 16pt in.
         let sceneSection = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/SceneSection.swift")
         let hero = try #require(Self.slice(sceneSection, from: "SceneDetailView(", to: "} else {"))
         #expect(!hero.contains(".padding(24)"))
@@ -201,15 +175,10 @@ struct SettingsWindowLayoutTests {
         let previewArea = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/PreviewArea.swift")
         let sceneDetail = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/SceneDetailView.swift")
 
-        // The fit-mode picker is a GlassSegmentedPicker fed `values:`; the probe
-        // pins WHICH mode list each surface offers, not the control used. Both
-        // now live on their type's preview overlay.
         #expect(previewArea.contains("values: VideoFitMode.videoModes"))
         #expect(!previewArea.contains("VideoFitMode.sceneModes"))
         #expect(sceneDetail.contains("values: VideoFitMode.sceneModes"))
 
-        // Scale must reach a running scene, not just the video player: the two
-        // ScreenManager entry points are different code paths.
         #expect(previewArea.contains("updateSceneFitMode"))
     }
 
@@ -388,18 +357,14 @@ struct ResourceUtilitiesTests {
             localBookmarkCreator: { Data($0.path(percentEncoded: false).utf8) }
         )
 
-        // A changed size + mtime must land in a different import directory. If
-        // the fingerprint's resourceValues read failed, both calls would
-        // collapse into the same -1/-1 identity and reuse one directory.
         try Data([0x00, 0x01, 0x02, 0x03]).write(to: sourceURL)
         try fileManager.setAttributes(
             [.modificationDate: Date(timeIntervalSinceNow: -3600)],
             ofItemAtPath: sourceURL.path(percentEncoded: false)
         )
 
-        // Fresh URL instance: NSURL caches resourceValues per instance, so
-        // reusing `sourceURL` would hand the fingerprint the pre-rewrite
-        // size/mtime and mask the very regression this test guards.
+        // Fresh URL instance: NSURL caches resourceValues per instance, so reusing `sourceURL`
+        // would hand the fingerprint the pre-rewrite size/mtime and mask the regression.
         let rewrittenSourceURL = URL(fileURLWithPath: sourceURL.path(percentEncoded: false))
 
         _ = ResourceUtilities.createVideoBookmark(
@@ -459,11 +424,6 @@ struct SettingsManagerTests {
 
     @Test("The shared manager never writes to the real defaults domain under tests")
     func sharedManagerIsIsolatedFromStandardDefaults() {
-        // `cleanAllSettings` deletes keys owned by other components (engine-assets
-        // and library-root bookmarks, sidebar order, monitor grants). Six suites
-        // call it on `SettingsManager.shared`, so before this guard a full run
-        // deleted them out of the user's real domain — bookmarks can only be
-        // recovered by re-authorizing through the panel.
         let standard = UserDefaults.standard
         let key = "WPELibrary.RootBookmark.v1"
         let previous = standard.object(forKey: key)
@@ -479,9 +439,8 @@ struct SettingsManagerTests {
 
     @Test("Clean all settings clears trusted hosts and saved bookmarks")
     func cleanAllSettingsClearsTrustAndBookmarks() async throws {
-        // Fully isolated manager: this test used to run the wipe against
-        // SettingsManager.shared, which deleted the user's real defaults keys
-        // (engine-assets bookmark, aerials bookmark) on every suite run.
+        // Must be a fully isolated manager: running this wipe against `SettingsManager.shared`
+        // would delete the user's real defaults keys (engine-assets and aerials bookmarks).
         let scratch = try TestScratch.defaultsSuite("LiveWallpaperTests.cleanAllSettings")
         let defaults = scratch.defaults
         defer { scratch.discard() }
@@ -617,9 +576,6 @@ struct FrameRateLimitTests {
         #expect(result == 48)
     }
 
-    /// A target is a ceiling, not a divisor: a panel slower than the target is
-    /// already below it, so the panel's own rate is the answer. The divisor form
-    /// halved the panel here and produced 12.
     @Test("A 30 target on a 24 Hz panel yields 24, not half of it")
     func targetAboveASlowPanel() {
         let result = FrameRateLimit.fps30.getEffectiveLimit(videoFrameRate: 60, screenRefreshRate: 24)
@@ -640,8 +596,6 @@ struct FrameRateLimitTests {
 
 @Suite("PlainVideoFrameRateCompositionPolicy")
 struct PlainVideoFrameRateCompositionPolicyTests {
-    /// 60 is a real cap now, not the old no-op `full`: a 120 fps source has to be
-    /// re-timed to honour it, which is the whole point of picking it.
     @Test("The 60 step composites a 120fps source down to 60")
     func fps60CompositesAFasterSource() {
         let limit = PlainVideoFrameRateCompositionPolicy.compositionLimit(
@@ -675,10 +629,6 @@ struct PlainVideoFrameRateCompositionPolicyTests {
         #expect(limit == 30)
     }
 
-    /// A target above the source is not a cap. The divisor form divided the source
-    /// instead, so asking for "half" of a 24 fps file re-timed it to 12 — a slower
-    /// wallpaper than the one the file describes, for a setting the user reached
-    /// for to mean 30.
     @Test("A 30 target leaves a 24fps source alone")
     func targetAboveTheSourceSkipsComposition() {
         let limit = PlainVideoFrameRateCompositionPolicy.compositionLimit(
@@ -712,8 +662,6 @@ struct PlainVideoFrameRateCompositionPolicyTests {
         #expect(limit == 30)
     }
 
-    /// Match-display is the one case that never composites: there is no target to
-    /// enforce, so a slow source stays on the native path.
     @Test("Match display skips composition whatever the source runs at")
     func fullRateSkipsCompositionForAnySource() {
         #expect(
@@ -883,9 +831,8 @@ struct VideoEffectConfigTests {
         #expect(decoded == config)
     }
 
-    /// Pins the stored-property default, which is a separate literal from the
-    /// decoder's `?? 1.0` fallback that `legacyJsonDefaultsParticleDensityToOne`
-    /// covers — changing one does not make the other's test fail.
+    /// The stored-property default is a separate literal from the decoder's `?? 1.0`
+    /// fallback that `legacyJsonDefaultsParticleDensityToOne` covers; neither fails for the other.
     @Test("Default particleDensity is 1.0")
     func defaultParticleDensity() {
         let config = VideoEffectConfig.default
@@ -1251,9 +1198,8 @@ struct ResolveCompositionFPSTests {
         #expect(fps == 30)
     }
 
-    /// Video re-times through `AVVideoComposition`, so unlike scene and web it can
-    /// hold an exact 60 on a 144 Hz panel instead of falling to the 48 that panel's
-    /// divisors allow.
+    /// Video re-times through `AVVideoComposition`, so it can hold an exact 60 on a 144 Hz
+    /// panel instead of falling to the 48 that panel's divisors allow.
     @Test("The 60 step on a 120fps source at 144Hz → 60")
     func halfAppliedToHighEverything() {
         let fps = FrameRateLimit.resolveCompositionFPS(

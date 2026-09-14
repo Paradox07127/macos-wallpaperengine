@@ -1,9 +1,7 @@
 import Foundation
 
-/// Playback/effect snapshot older bookmarks carried. Retained for archives written before the bookmark/scheme split
-/// (2026-08-31): nothing writes it and nothing reads it, but dropping the field
-/// would rewrite every existing user's bookmarks. Whole-screen state now lives
-/// in `ScreenScheme`. See `.notes/plan/screen-schemes.md` D1.
+/// Dead by design: nothing writes or reads it, but dropping the field would rewrite
+/// every existing user's bookmarks. Whole-screen state now lives in `ScreenScheme`.
 public struct BookmarkPlaybackSettings: Codable, Equatable, Sendable {
     public var playbackSpeed: Double?
     public var fitMode: VideoFitMode?
@@ -13,10 +11,8 @@ public struct BookmarkPlaybackSettings: Codable, Equatable, Sendable {
     public var muted: Bool?
     public var videoVolume: Double?
     public var setAsLockScreen: Bool?
-    /// Whether the Monitor overlay was showing, and on which layer. The board's own layout is
-    /// deliberately NOT captured: it is arranged against one display's geometry and shared by every
-    /// wallpaper on it, so restoring a bookmark's copy would silently overwrite arrangement work the
-    /// user did later. Bookmarks restore whether the overlay shows, not how it is built.
+    /// Whether the Monitor overlay was showing, and on which layer. The board's layout is
+    /// deliberately NOT captured — restoring it would overwrite arrangement work done later.
     public var monitorOverlayEnabled: Bool?
     public var monitorOverlayLevel: MonitorOverlayLevel?
 

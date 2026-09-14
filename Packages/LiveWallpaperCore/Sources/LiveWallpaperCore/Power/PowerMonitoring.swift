@@ -2,7 +2,6 @@ import Combine
 import CoreGraphics
 import Foundation
 
-/// Reports the system's power source state so policy can throttle wallpapers on battery.
 @MainActor
 public protocol PowerMonitoring: AnyObject {
     var powerSourcePublisher: AnyPublisher<PowerMonitor.PowerSource, Never> { get }
@@ -12,28 +11,22 @@ public protocol PowerMonitoring: AnyObject {
 
 extension PowerMonitor: PowerMonitoring {}
 
-/// Reports per-display occlusion by full-screen apps so wallpapers can suspend.
 @MainActor
 public protocol FullScreenDetecting: AnyObject {
     var hiddenScreens: [CGDirectDisplayID: Bool] { get }
     var occludedScreens: [CGDirectDisplayID: Bool] { get }
-    /// Per-display union-coverage fraction (0…1), quantized so observers only
-    /// wake on meaningful change. The continuous source behind the binary
-    /// `occludedScreens` (≥0.85), used by adaptive frame-rate throttling.
+    /// Union-coverage fraction (0...1), quantized; the continuous source behind the
+    /// binary `occludedScreens` (>= 0.85).
     var occlusionFractions: [CGDirectDisplayID: CGFloat] { get }
     func isDesktopHidden(for screenID: CGDirectDisplayID) -> Bool
     func isDesktopOccluded(for screenID: CGDirectDisplayID) -> Bool
     func occlusionFraction(for screenID: CGDirectDisplayID) -> Double
     func checkNow()
-    /// Whether coverage state is being kept current. Space-change and
-    /// app-activation rescans share the fallback timer's demand gate, so with
-    /// this off `hiddenScreens`/`occludedScreens` stay frozen at the last scan —
+    /// With this off, `hiddenScreens`/`occludedScreens` stay frozen at the last scan -
     /// a consumer that needs fresh coverage must not read them.
     var isFallbackPollingEnabled: Bool { get }
     func setFallbackPollingEnabled(_ enabled: Bool)
-    /// Permanently releases notification subscriptions and polling owned by
-    /// this detector instance. Used by application teardown, not by the
-    /// adaptive polling toggle.
+    /// Permanent teardown, not the adaptive polling toggle.
     func stop()
 }
 

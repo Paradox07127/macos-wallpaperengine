@@ -4,7 +4,7 @@ import CoreGraphics
 
 // MARK: - Accent extraction (pure)
 
-/// Dominant-color result in display sRGB; components stay inspectable for tests.
+/// Dominant-color result in display sRGB.
 struct NowPlayingAccentColor: Equatable, Sendable {
     var red: Double
     var green: Double

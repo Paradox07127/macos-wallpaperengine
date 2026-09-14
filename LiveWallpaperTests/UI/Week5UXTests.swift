@@ -153,18 +153,9 @@ struct GlobalShortcutCarbonWiringTests {
         #expect(GlobalShortcutAction.action(forSignatureID: GlobalShortcutAction.allCases.count + 1) == nil)
     }
 
-    /// Source fence, not a delivery test: nothing in-process can press a global
-    /// key, so this only pins the shape that was arrived at the hard way — the
-    /// dispatcher target plus a file-level C trampoline. The failure it guards
-    /// is silent, which is why the shape is worth pinning: an inline `@MainActor`
-    /// closure on `GetApplicationEventTarget()` still returns `noErr` from
-    /// `RegisterEventHotKey`, so registration "succeeds" and the key never fires.
-    ///
-    /// Delivery itself was verified by hand on 2026-09-04 against a HEAD build,
-    /// with Finder frontmost so the press could not be a menu shortcut: ⌃⇧, and
-    /// ⌃⇧M each produced a `dispatchHotKey(signatureID:)` line under subsystem
-    /// `com.livewallpaper`, and the first opened the settings window. Redo that
-    /// by hand if this file's assertions ever need to change.
+    /// Source fence, not a delivery test: an inline `@MainActor` closure on
+    /// `GetApplicationEventTarget()` still returns `noErr` from `RegisterEventHotKey`, so
+    /// registration "succeeds" and the key never fires.
     @Test("Registration keeps the dispatcher target and the C trampoline")
     func registrationKeepsDispatcherTargetAndCTrampoline() throws {
         let source = try RepositoryRoot.source(
@@ -251,10 +242,9 @@ struct WeatherLocationProviderFallbackTests {
         #expect(firstStarted)
 
         async let second = provider.resolveCoordinate()
-        // Both resolves must be parked on the in-flight request before it is
-        // completed. Yielding once does not guarantee the second one has
-        // registered, and a late waiter would start a second request that this
-        // fake never answers.
+        // Both resolves must be parked on the in-flight request before it is completed:
+        // yielding once does not guarantee the second has registered, and a late waiter would
+        // start a second request this fake never answers.
         let bothParked = await eventually {
             provider.pendingCoreLocationWaiterCountForTesting == 2
         }

@@ -1,18 +1,13 @@
 import Foundation
 
-/// Opens and parses untrusted PKGV indexes on a dedicated utility queue. File
-/// reads are intentionally not performed in a detached Swift task: FileHandle
-/// is blocking I/O and must not occupy the cooperative executor indefinitely.
+/// FileHandle is blocking I/O and must not occupy the cooperative executor; parse on this utility queue, not a detached Swift task.
 enum WPEPackageIndexLoader {
     struct PreparedPackage: @unchecked Sendable {
         let package: WallpaperEnginePackage
         let handle: FileHandle
     }
 
-    /// Bound aggregate parser pressure while still allowing two displays/imports
-    /// to make progress independently. Each parse may retain a sizeable bounded
-    /// index, so an unrestricted concurrent DispatchQueue would multiply that
-    /// budget under hostile simultaneous inputs.
+    /// Caps concurrent parses at 2 so two displays/imports progress without multiplying the bounded-index budget under hostile simultaneous inputs.
     private static let queue: OperationQueue = {
         let queue = OperationQueue()
         queue.name = "com.livewallpaper.wpe-package-index"

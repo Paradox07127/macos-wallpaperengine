@@ -41,8 +41,7 @@ struct WPETranspileCoverageAggregatorTests {
         #expect(summary.totalUnits == 7)
     }
 
-    /// Mutation-sensitive: the share denominator is ALL counting units including
-    /// unclassified passes (7 here). Dropping unclassified from the denominator
+    /// Denominator is ALL counting units including unclassified passes (7 here); dropping unclassified
     /// (6) would yield 0.5 and fail both assertions.
     @Test("Share uses all counting units as the denominator")
     func shareDenominatorIncludesUnclassified() {
@@ -103,9 +102,6 @@ struct WPETranspileCoverageAggregatorTests {
     }
 }
 
-/// Opt-in Metal-bound corpus runner: renders every local workshop scene once and
-/// prints the first transpile-coverage report (per-scene pass classifications +
-/// custom shader compile outcomes). Never added to the fast-app-contract shard.
 @Suite("WPE transpile coverage corpus report", .serialized)
 struct WPETranspileCoverageCorpusReportTests {
     private static var reportRequested: Bool {
@@ -207,8 +203,7 @@ struct WPETranspileCoverageCorpusReportTests {
                 )
                 defer { renderer.releaseDebugActorIfNeeded() }
                 try await renderer.load()
-                // One rendered frame drives the executor's per-pass compile
-                // attempts; drain autoreleased Metal objects per frame.
+                // One rendered frame is what drives the executor's per-pass compile attempts.
                 _ = try autoreleasepool {
                     try renderer.renderCurrentFrame(inputs: renderer.makeFrameInputs())
                 }
@@ -229,13 +224,8 @@ struct WPETranspileCoverageCorpusReportTests {
         #expect(summary.totalUnits > 0, "rendered scenes exposed no classified pass")
     }
 
-    /// Classification comes from each prepared pass's shader program; a pass with
-    /// no program is intentionally unclassified (text and other separately
-    /// dispatched paths). `unsupported-metadata-only` never becomes a prepared
-    /// pass, so it is counted from the renderer's implementation inventory.
-    /// Compile outcomes are read per pass from the executor's own maps — NOT
-    /// `WPEShaderErrorSink`, which dedupes by shader name and so cannot count
-    /// passes even though it is scoped to one executor's current scene.
+    /// `unsupported-metadata-only` never becomes a prepared pass, so it is counted from the implementation inventory.
+    /// Compile outcomes must come from the executor's per-pass maps, never `WPEShaderErrorSink` — it dedupes by shader name.
     @MainActor
     private static func collectRecord(
         sceneID: String,

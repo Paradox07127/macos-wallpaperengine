@@ -1,7 +1,5 @@
 import os
 
-/// Cross-actor latest-intent generation for incremental scene proposals.
-/// Lock only covers generation R/W — never renderer work while held.
 struct ScenePropertyMutationToken: Equatable, Sendable {
     fileprivate let generation: UInt64
 }

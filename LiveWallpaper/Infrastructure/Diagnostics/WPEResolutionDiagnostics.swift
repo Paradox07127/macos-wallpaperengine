@@ -65,18 +65,14 @@ struct WPEResolutionDiagnosticsSnapshot: Equatable, Sendable {
         return counts
     }
 
-    /// References that never resolved through *any* attempt. A ref can produce more than one event per scene load: the renderer speculatively probes the lazy-streaming path (`resolveStreamingPayloadIfHeavy`) before the eager static path, and single-frame static `.tex` decline the streaming probe with `unsupportedAnimation` *by design* (lazy = animation-only), then resolve eagerly.
-    /// Counting the decline as a miss reported those textures as both resolved *and* missing — the spurious "missing=9" on saber 3526278753. De-dupe by ref so a texture that resolved anywhere is never also missing.
+    /// A ref can produce more than one event per load: single-frame static `.tex` decline the streaming probe with `unsupportedAnimation` by design, then resolve eagerly. De-dupe by ref so a texture that resolved anywhere is never also missing.
     var missedRefs: [WPEResolutionEvent] {
         let resolvedRefs = Set(events.lazy.filter { $0.finalOutcome == .resolved }.map(\.ref))
         return events.filter { $0.finalOutcome != .resolved && !resolvedRefs.contains($0.ref) }
     }
 }
 
-/// Mutable accumulator shared across one scene-load lifetime. Uses NSLock
-/// rather than an actor because the resolver chain is sync — moving to an
-/// actor would force every `resolveImage(...)` call to become async, which
-/// ripples through the entire runtime.
+/// Uses NSLock rather than an actor because the resolver chain is sync — an actor would force every `resolveImage(...)` to become async.
 final class WPEResolutionTracer: @unchecked Sendable {
     private let lock = NSLock()
     private var events: [WPEResolutionEvent] = []

@@ -5,14 +5,6 @@ import Testing
 
 @testable import LiveWallpaper
 
-/// P0 wiring tests: the full {user intent × system gate} grid on a real
-/// session, entered in both orders, with every cell asserting the same four
-/// outputs — intent, effective profile, summary activity, and the direction
-/// the play button would take (`ScreenManager.shouldPauseOnToggle`).
-///
-/// Driven on `AmbientWallpaperSession`: it is a real production session whose
-/// summary carries the three-way mapping (playing / policySuspended / paused)
-/// without needing a loaded AVFoundation player underneath.
 @MainActor
 @Suite("Manual and system pause combinations")
 struct ManualSystemPauseCombinationTests {
@@ -31,7 +23,6 @@ struct ManualSystemPauseCombinationTests {
         return Rig(session: session, target: target)
     }
 
-    /// One grid cell: every observable the UI or the toggle reads.
     private func assertCell(
         _ rig: Rig,
         intent: Bool,

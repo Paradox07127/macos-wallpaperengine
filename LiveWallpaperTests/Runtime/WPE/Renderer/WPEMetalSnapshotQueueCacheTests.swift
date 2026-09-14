@@ -4,10 +4,8 @@ import Testing
 import os
 @testable import LiveWallpaper
 
-// B6 guard: the poster downsample path caches one MTLCommandQueue per device
-// (process lifetime) instead of creating a queue per capture. Needs a real
-// MTLDevice, so this suite stays out of the headless fast-app-contract shard
-// (that shard is an explicit allowlist in scripts/fast_app_contract_tests.sh).
+// Needs a real MTLDevice, so this suite must stay out of the headless
+// fast-app-contract shard (allowlist in scripts/fast_app_contract_tests.sh).
 
 @Suite("WPEMetalTextureSnapshotter downsample queue cache")
 struct WPEMetalSnapshotQueueCacheTests {
@@ -58,12 +56,6 @@ struct WPEMetalSnapshotQueueCacheTests {
         #expect(cachedAfter === primed)
     }
 
-    /// The review flagged that the sRGB branch takes a differing-format texture
-    /// view, which Apple documents as needing `.pixelFormatView` — a usage the
-    /// renderer's output textures do not carry. This pins what the shipping
-    /// descriptor actually does: same format/usage as `makeOutputTexture`, and
-    /// the poster must come back downsampled rather than through the
-    /// full-resolution fallback.
     @Test("an sRGB poster built with the renderer's own descriptor still downsamples on GPU")
     func srgbPosterWithRendererDescriptorDownsamples() async throws {
         let device = try #require(MTLCreateSystemDefaultDevice())

@@ -3,11 +3,8 @@ import Foundation
 @testable import LiveWallpaper
 import Testing
 
-/// The keyless path against real browse-page markup: the page's own SSR
-/// payload is the result set, and the id-harvest + `GetPublishedFileDetails`
-/// round trip is only the fallback. Fixtures and their provenance are in
-/// `LiveWallpaperTests/Fixtures/workshop/README.md`; every expected value
-/// below was computed from the trimmed fixture, not typed in.
+/// Fixtures and their provenance are in `LiveWallpaperTests/Fixtures/workshop/README.md`;
+/// every expected value below was computed from the trimmed fixture, not typed in.
 @Suite("Workshop keyless search over the SSR payload", .serialized)
 @MainActor
 struct WorkshopPublicSearchSSRTests {
@@ -38,8 +35,6 @@ struct WorkshopPublicSearchSSRTests {
         try RepositoryRoot.data("LiveWallpaperTests/Fixtures/workshop/\(name)")
     }
 
-    /// Run-time variants of the captured page (`WorkshopBrowseFixture`), as the
-    /// stub wants them.
     nonisolated static func derived(_ page: () throws -> String) throws -> Data {
         try Data(page().utf8)
     }
@@ -167,9 +162,6 @@ struct WorkshopPublicSearchSSRTests {
         #expect(KeylessPageStub.detailRequests == 0)
     }
 
-    /// The anchors on a page that answers another request are that other
-    /// page's items; harvesting them would show and cache them under this
-    /// page's number.
     @Test("An SSR payload for a different page is an error, not a fallback")
     func mismatchedIdentityIsAnErrorNotAFallback() async throws {
         try KeylessPageStub.configure(html: Self.derived(WorkshopBrowseFixture.keyPage2), details: .resolveAll(notFound: []))
@@ -187,9 +179,8 @@ struct WorkshopPublicSearchSSRTests {
         #expect(KeylessPageStub.detailRequests == 0, "queryKey says page 2, request says page 1: no harvest either")
     }
 
-    /// The page has no Miscellaneous facet of its own: those tags go out as
-    /// `requiredtags[]` and come back in the key's `required_tags`, so the
-    /// identity check has to expect them there.
+    /// The page has no Miscellaneous facet: those tags go out as `requiredtags[]`
+    /// and come back in the key's `required_tags`.
     @Test("A Miscellaneous tag the key echoes is this request's own page")
     func miscellaneousTagIsPartOfTheIdentity() async throws {
         try KeylessPageStub.configure(html: Self.derived(WorkshopBrowseFixture.keyRequiresApproved), details: .resolveAll(notFound: []))
@@ -215,9 +206,8 @@ struct WorkshopPublicSearchSSRTests {
         #expect(KeylessPageStub.detailRequests == 0)
     }
 
-    /// The creator page never carries the SSR payload, so past its last page
-    /// (or for a creator with nothing public) the harvest sees no anchors.
-    /// Steam's own empty-state container tells that apart from a challenge page.
+    /// The creator page never carries the SSR payload, so past its last page the harvest sees no anchors;
+    /// Steam's empty-state container tells that apart from a challenge page.
     @Test("An empty creator page is an empty page with no next cursor")
     func emptyCreatorPageIsAnEmptyPage() async throws {
         let request = WorkshopQueryRequest(sort: .lastUpdated, page: 999, creatorSteamID: "76561199471797274")
@@ -233,7 +223,6 @@ struct WorkshopPublicSearchSSRTests {
         #expect(page.totalAvailable == nil)
         #expect(KeylessPageStub.detailRequests == 0)
 
-        // Control: the same creator request answered by a challenge page is still a failure.
         try KeylessPageStub.configure(html: Self.fixture("challenge_page.html"), details: .resolveAll(notFound: []))
         let (challenged, challengedDirectory) = Self.makeSource()
         defer { try? FileManager.default.removeItem(at: challengedDirectory) }
@@ -255,8 +244,6 @@ struct WorkshopPublicSearchSSRTests {
         #expect(KeylessPageStub.detailRequests == 6)
     }
 
-    /// A page that answers a title-only search under the same text is another
-    /// request's page; its anchors are not this page's items either.
     @Test("An SSR payload for another search target is an error, not a fallback")
     func mismatchedSearchTargetIsAnErrorNotAFallback() async throws {
         try KeylessPageStub.configure(html: Self.derived(WorkshopBrowseFixture.keySearchTargetTitleOnly), details: .resolveAll(notFound: []))
@@ -284,8 +271,6 @@ struct WorkshopPublicSearchSSRTests {
         #expect(KeylessPageStub.browsePageRequests == 2)
     }
 
-    /// Thirty anchors whose details all say "not found" are a complete answer
-    /// with nothing to show — not a failed lookup.
     @Test("A page whose ids are all permanently invisible is an empty page with its source count")
     func allInvisibleIDsMakeAnEmptyPage() async throws {
         let codes = Dictionary(uniqueKeysWithValues: Self.expectedIDs.map { ($0, 9) })
@@ -318,8 +303,6 @@ struct WorkshopPublicSearchSSRTests {
     }
 }
 
-/// The parser on its own: literal extraction, the double-encoded `queryData`,
-/// and the identity check against the request.
 @Suite("Workshop browse-page SSR payload parsing")
 struct WorkshopPublicBrowsePayloadTests {
     private static func html(_ name: String) throws -> String {
@@ -367,7 +350,6 @@ struct WorkshopPublicBrowsePayloadTests {
         #expect(throws: WorkshopPublicBrowsePayload.ParseFailure.identityMismatch) {
             try WorkshopPublicBrowsePayload.page(fromHTML: pageTwo, matching: Self.request, appID: Self.appID)
         }
-        // Control: asked for page 2, the same payload is adopted.
         let asPageTwo = WorkshopQueryRequest(
             sort: .mostPopular, page: 2, numPerPage: 30, timeFrame: .oneWeek,
             excludedTags: ["Application", "Asset", "Preset"]
@@ -396,8 +378,6 @@ struct WorkshopPublicBrowsePayloadTests {
         }
     }
 
-    /// The key also states the search target, the child id and the section,
-    /// and the data states which page it is; each is part of the identity.
     @Test("Identity: search target, section and the data's current page each veto adoption")
     func searchTargetSectionAndCurrentPageVeto() throws {
         let variants: [(String, () throws -> String)] = [
@@ -411,7 +391,6 @@ struct WorkshopPublicBrowsePayloadTests {
                 try WorkshopPublicBrowsePayload.page(fromHTML: html, matching: Self.request, appID: Self.appID)
             }
         }
-        // Control: the untouched page is adopted.
         let page = try WorkshopPublicBrowsePayload.page(fromHTML: WorkshopBrowseFixture.base(), matching: Self.request, appID: Self.appID)
         #expect(page.items.count == 30)
     }
@@ -429,13 +408,10 @@ struct WorkshopPublicBrowsePayloadTests {
         #expect(throws: WorkshopPublicBrowsePayload.ParseFailure.identityMismatch) {
             try WorkshopPublicBrowsePayload.page(fromHTML: childPage, matching: Self.request, appID: Self.appID)
         }
-        // Control: the page that states the child answers the request that asked for it.
         let page = try WorkshopPublicBrowsePayload.page(fromHTML: childPage, matching: withChild, appID: Self.appID)
         #expect(page.items.count == 30)
     }
 
-    /// A failed query is a failure whatever else the data omits; and a missing
-    /// `results` is only an empty page when the totals say the page is empty.
     @Test("eresult is checked before the totals; a missing results list needs the totals' evidence")
     func failureAndMissingResults() throws {
         let key = #"{"appid":431960,"browse_sort":"textsearch","page":1,"search_text":"zzzz"}"#
@@ -451,7 +427,6 @@ struct WorkshopPublicBrowsePayloadTests {
             try WorkshopPublicBrowsePayload.page(fromHTML: listless, matching: request, appID: 431_960)
         }
 
-        // Controls: nothing at all, and a page past the last one, are empty pages.
         let nothing = try Self.ssrHTML(queryData: #"{"queries":[{"queryKey":["workshop_browse",\#(key),1],"state":{"data":{"eresult":1,"total_count":0,"total_pages":0}}}]}"#)
         let empty = try WorkshopPublicBrowsePayload.page(fromHTML: nothing, matching: request, appID: 431_960)
         #expect(empty.items.isEmpty)
@@ -504,8 +479,6 @@ struct WorkshopPublicBrowsePayloadTests {
     }
 }
 
-/// Serves one configured browse page and answers `GetPublishedFileDetails`
-/// for every id in `WorkshopPublicSearchSSRTests.expectedIDs`.
 final class KeylessPageStub: URLProtocol, @unchecked Sendable {
     enum DetailsMode {
         case resolveAll(notFound: Set<UInt64>)

@@ -29,9 +29,6 @@ enum DoctorProbeKind: String, Sendable, CaseIterable, Identifiable {
         }
     }
 
-    /// Advisory failures remain visible without blocking Workshop operations.
-    /// The three Workshop-wide checks are all advisory by construction:
-    /// `downloadBlocker` never reads them, so a red row here reports a problem without taking any command away from the user.
     var isAdvisory: Bool {
         switch self {
         case .codeSignature, .workshopContent, .sceneResources, .connector: return true
@@ -54,8 +51,6 @@ struct DoctorProbeReport: Identifiable, Sendable {
     let lastRun: Date
 }
 
-/// The SteamCMD that last passed all three binary probes, kept across launches.
-/// Only facts, never rendered probe text: the details are rebuilt at restore time so a language change between launches cannot resurrect the old locale's strings.
 struct DoctorGreenFingerprint: Codable, Equatable, Sendable {
     let binaryPath: String
     let sha256: String
@@ -109,7 +104,6 @@ enum SteamCMDDoctorError: Error, Equatable, Sendable, LocalizedError {
     }
 }
 
-/// Download result independent of the concrete imported-item model.
 enum WorkshopItemDownloadResult<Imported: Sendable>: Sendable {
     case imported(Imported)
     case notConfigured(reason: String)
@@ -126,9 +120,7 @@ enum WorkshopItemDownloadResult<Imported: Sendable>: Sendable {
 final class SteamCMDDoctorService {
 
     private enum Keys {
-        /// `.v2` because the `.v1` value could be any path the user picked in an
-        /// open panel, and those are exactly the paths we no longer execute.
-        /// Re-keying retires them without a rule for telling one apart — auto-detect re-binds silently on the next use, for anyone whose SteamCMD is a managed or package-manager install.
+        /// `.v2` because `.v1` could be any path the user picked, and those are no longer executed.
         static let binaryPath = "loomscreen.workshop.doctor.binaryPath.v2"
         static let legacyPickedBinaryPath = "loomscreen.workshop.doctor.binaryPath"
         static let workdirBookmark = "loomscreen.workshop.doctor.workdirBookmark"
@@ -137,7 +129,6 @@ final class SteamCMDDoctorService {
         static let greenFingerprint = "loomscreen.workshop.doctor.greenFingerprint.v1"
     }
 
-    /// Re-bookmark a workshop item under the authorized Steam library (layout moves).
     @MainActor
     static func relocatedWorkshopSourceBookmark(
         workshopID: String,
@@ -178,7 +169,6 @@ final class SteamCMDDoctorService {
         text.range(of: pattern, options: .regularExpression) != nil
     }
 
-    /// Probes that can diagnose identity failure without executing authenticated operations.
     private static let identityFailureExplainers: [DoctorProbeKind] =
         [.codeSignature, .gatekeeperQuarantine]
     nonisolated static let wallpaperEngineAppID: UInt32 = 431960
@@ -191,32 +181,22 @@ final class SteamCMDDoctorService {
     var state: DoctorState = .idle
     var binaryDisplayPath: String?
     var workdirDisplayPath: String?
-    /// True while the stored Steam-library bookmark exists but its most recent
-    /// resolution failed (folder moved/deleted, grant revoked). A stored fact,
-    /// not a live check: `downloadBlocker` must stay IO-free (rule R2).
+    /// Stored fact that the bookmark exists but last resolution failed. `downloadBlocker` must stay IO-free.
     var workdirResolutionFailed = false
     private(set) var cachedLoginDiagnosticTail = ""
     private(set) var cachedLoginExitCode: Int32?
-    /// Bumped whenever `username` changes. Steam operations finish over XPC long
-    /// after they started; a result carries the generation it started under so a
-    /// download begun as account A cannot colour account B's probe.
+    /// Bumped whenever `username` changes so a download begun as account A cannot colour account B's probe.
     private(set) var accountGeneration = 0
     /// What Steam last said about the selected account's session. Only the
     /// credential verdicts gate downloads; network trouble does not.
     private(set) var cachedLoginVerdict: SteamCachedLoginOutcome?
 
-    /// The binary the connector most recently reported actually executing — its
-    /// execution receipt, not the app-side binding. The connector re-resolves its
-    /// candidate list on every operation, so this can differ from `binaryPath`; the app consumes the receipt but never vetoes it. nil until an operation that ran SteamCMD reports back.
+    /// Execution receipt from the connector, not the app-side binding. nil until an operation that ran SteamCMD reports back.
     private(set) var lastExecutedBinaryPath: String?
 
-    /// Bumped by every defaults-backed setter below, and read by their getters.
-    /// `@Observable` only tracks stored properties, and these three live in
-    /// `UserDefaults` — without this, a view that reads only `binaryPath` or
-    /// `workdirBookmarkData` (including step-state properties that guard on them and return before touching `probes`) registers no dependency and keeps showing "not set up" after the user sets it up; refreshing the display paths alone doesn't notify those views.
+    /// `@Observable` only tracks stored properties; these three live in `UserDefaults`, so this bump is what makes views that read only `binaryPath`/`workdirBookmarkData` update.
     private var defaultsRevision: UInt64 = 0
 
-    /// Bound SteamCMD path (not a capability; connector enforces Valve signature).
     var binaryPath: String? {
         get {
             _ = defaultsRevision
@@ -229,7 +209,6 @@ final class SteamCMDDoctorService {
         }
     }
 
-    /// True once a binary path is bound.
     var hasBoundBinary: Bool { binaryPath != nil }
 
     var workdirBookmarkData: Data? {
@@ -260,7 +239,6 @@ final class SteamCMDDoctorService {
         }
     }
 
-    /// SteamCMD read/spawn lives in the connector; doctor only stores the path.
     init(
         defaults: UserDefaults = .appScoped(),
         fileManager: FileManager = .default,
@@ -279,8 +257,6 @@ final class SteamCMDDoctorService {
         refreshDisplayPaths()
     }
 
-    /// Drops a binding made when the user could still point us at any file. The
-    /// stored digest goes with it — it describes a binary we will not run.
     private func retireLegacyPickedBinaryBinding() {
         guard defaults.object(forKey: Keys.legacyPickedBinaryPath) != nil else { return }
         defaults.removeObject(forKey: Keys.legacyPickedBinaryPath)
@@ -295,9 +271,6 @@ final class SteamCMDDoctorService {
 
     // MARK: - Binding
 
-    /// Records the binary the connector resolved from its own candidate list.
-    /// There is no "bind what the user picked" any more: an app-named path is
-    /// one the app can rewrite between our checks and the connector's spawn, and nothing on macOS binds a signature verdict to the inode that ends up executed. Every path stored here came back from the connector.
     func bindResolvedBinary(_ path: String) async throws {
         beginProbeRun()
         let inspection = await inspect(path: path)
@@ -316,14 +289,11 @@ final class SteamCMDDoctorService {
         lastBinarySHA256 = sha256
         verifiedBinarySHA256 = nil
         greenFingerprint = nil
-        // Invalidate every probe whose green-ness depends on which binary
-        // we run — re-binding to a different SteamCMD must force a re-run.
         for kind in DoctorProbeKind.allCases where kind != .workingDirectory {
             setProbe(kind, status: .notRun)
         }
         Logger.info("Bound SteamCMD binary", category: .workshop)
         await runProbe(.binaryIdentity)
-        // Identity failed: still run probes that explain why; skip ones needing a binary.
         if !isGreen(.binaryIdentity) {
             for kind in Self.identityFailureExplainers {
                 await runProbe(kind)
@@ -331,9 +301,6 @@ final class SteamCMDDoctorService {
         }
     }
 
-    /// Drops the current binding. Only for when the binary it names is known to
-    /// be gone — removing a managed install leaves the stored path pointing at
-    /// nothing, and the Doctor would keep displaying it as the chosen SteamCMD.
     func unbindBinary() {
         binaryPath = nil
         lastExecutedBinaryPath = nil
@@ -345,34 +312,17 @@ final class SteamCMDDoctorService {
         }
     }
 
-    /// Auto-bind, managed install first and then the three package-manager
-    /// locations. This is now the only way a binary ever gets bound.
-    /// Why the last auto-detect ended where it did — nil before the first run, and after one that bound a binary there is nothing left to explain.
     private(set) var lastAutoDetectDiagnosis: SteamCMDDiagnosis?
 
-    /// The managed install wins over a package-manager one because we installed
-    /// it: its provenance was digest-checked and its signature verified against
-    /// Valve's team id, which is more than we know about an arbitrary
-    /// `/usr/local/bin/steamcmd`.
     @discardableResult
     func autoDetectBinary() async -> Bool {
         lastAutoDetectDiagnosis = nil
-        // Ask the connector for the whole verdict rather than assembling one here: it's the only process that can actually launch the binary, and this app's previous path-existence inference reported green while SteamCMD could not start at all.
-        // No managed path is sent: the connector derives its own install root, so auto-detect also finds a managed copy whose app-side record was lost — exactly the state a failed removal leaves behind.
         if let diagnosis = await SteamConnectorClient.diagnoseSteamCMD() {
-            // Kept, not discarded: a failed auto-detect used to collapse into a
-            // bare `false`, so "found it, but its first run timed out — run
-            // `steamcmd +quit` once in Terminal" reached the user as "no SteamCMD
-            // found in the usual places" — the reason is the whole difference between a dead end and a next step.
             lastAutoDetectDiagnosis = diagnosis
-            // The diagnosis needs no extra receipt field: `canonicalPath` with a
-            // non-nil `launch` already names the binary the connector ran.
             if diagnosis.launch != nil, let executed = diagnosis.canonicalPath {
                 noteExecutionReceipt(executed)
             }
-            // A reached verdict is the answer, either way. Falling through to
-            // the old locate/bind on a negative one would bind a path we just
-            // proved cannot launch and report success for having stored it.
+            // A reached verdict is the answer. Falling through to locate/bind on a negative one would bind a path just proved unable to launch.
             guard diagnosis.isUsable, let resolved = diagnosis.canonicalPath else { return false }
             return (try? await bindResolvedBinary(resolved)) != nil
         }
@@ -387,27 +337,20 @@ final class SteamCMDDoctorService {
         }
     }
 
-    /// Auto-detects the binary and validates any previously authorized official
-    /// Steam profile. A fresh sandbox install requires an explicit folder pick.
     func autoConfigureIfNeeded() async {
         if !hasBoundBinary {
             await autoDetectBinary()
         } else if case .notRun? = probes[.binaryIdentity]?.status {
-            // The binding survives relaunch; the probe result does not. Without
-            // this, an already-configured SteamCMD spends the whole session
-            // "unverified" and never earns its green.
+            // The binding survives relaunch; the probe result does not. Without this, an already-configured SteamCMD stays "unverified" for the whole session.
             await runProbe(.binaryIdentity)
         }
         await autoConfigureWorkdirIfNeeded()
     }
 
-    /// Opening Workshop checks local setup only. Login is a real Steam session,
-    /// so it belongs to explicit diagnostics or a requested download.
     func autoConfirmDownloadReadinessIfNeeded() async {
         await autoConfigureIfNeeded()
     }
 
-    /// Drop retired container/custom-workdir Steam library grants (files untouched).
     private func autoConfigureWorkdirIfNeeded() async {
         guard let data = workdirBookmarkData else { return }
         guard case .success(let resolved) = SecurityScopedBookmarkResolver.shared.resolve(
@@ -420,7 +363,6 @@ final class SteamCMDDoctorService {
         workdirResolutionFailed = false
         let didStart = resolved.url.startAccessingSecurityScopedResource()
         defer { if didStart { resolved.url.stopAccessingSecurityScopedResource() } }
-        // Forget container-local Steam binds that look valid via their own config.vdf.
         guard !WPEEngineAssetsLibrary.isContainerInternal(resolved.url) else {
             forgetWorkdirBinding(reason: "binding pointed inside the app container, not the shared Steam profile")
             return
@@ -431,7 +373,6 @@ final class SteamCMDDoctorService {
         }
     }
 
-    /// Drop Steam-library grant only (never deletes library files).
     private func forgetWorkdirBinding(reason: String) {
         workdirBookmarkData = nil
         workdirDisplayPath = nil
@@ -455,7 +396,6 @@ final class SteamCMDDoctorService {
         else {
             throw SteamCMDDoctorError.steamLibraryMissingConfig(configURL)
         }
-        // Reject container Steam/config.vdf as if it were the shared profile.
         guard !WPEEngineAssetsLibrary.isContainerInternal(canonicalURL) else {
             throw SteamCMDDoctorError.steamLibraryInsideContainer(canonicalURL)
         }
@@ -464,7 +404,6 @@ final class SteamCMDDoctorService {
         workdirBookmarkData = bookmark
         workdirDisplayPath = canonicalURL.path(percentEncoded: false)
         workdirResolutionFailed = false
-        // The library stores content; account sessions have an independent home.
         Logger.info("Bound official Steam library", category: .workshop)
         await runProbe(.workingDirectory)
     }
@@ -486,8 +425,6 @@ final class SteamCMDDoctorService {
         }
     }
 
-    /// Revokes this account's stored SteamCMD session. The account stays bound —
-    /// it simply has no session until the next sign-in.
     @discardableResult
     func removeSignedInSession() async -> Bool {
         guard let username else { return false }
@@ -510,11 +447,8 @@ final class SteamCMDDoctorService {
         }
     }
 
-    /// Internal, not private, so tests can drive the reset without XPC.
     func forgetSignedInSession() {
-        // Bumping the generation is the point: an operation still in flight
-        // must not be able to colour the probe green against a session that no
-        // longer exists.
+        // Bumping the generation is the point: an in-flight operation must not colour the probe green against a session that no longer exists.
         accountGeneration += 1
         cachedLoginVerdict = nil
         cachedLoginDiagnosticTail = ""
@@ -541,9 +475,7 @@ final class SteamCMDDoctorService {
         String(localized: "SteamCMD launches without Gatekeeper interference.", bundle: .appLanguage, comment: "SteamCMD diagnostic (Doctor) probe label or result message.")
     }
 
-    /// Whether a launch may restore the stored green instead of re-running the
-    /// three binary probes. Deliberately not time-based: all three are a
-    /// function of the bytes on disk and their signature, so an unchanged fingerprint is an unchanged verdict, and a TTL would only burn a SteamCMD launch on a schedule.
+    /// Not time-based: an unchanged fingerprint is an unchanged verdict, and a TTL would only burn a SteamCMD launch on a schedule.
     nonisolated static func canRestoreGreen(
         fingerprint: DoctorGreenFingerprint?,
         boundBinaryPath: String?,
@@ -564,8 +496,6 @@ final class SteamCMDDoctorService {
         return true
     }
 
-    /// A relaunch on the same SteamCMD costs one inspection here, against the four inspections (eight `codesign` spawns) and two SteamCMD launches that `autoConfigureIfNeeded()` + `runAll()` cost between them: the three binary probes are restored from the fingerprint the last passing run recorded, and re-run only when the bytes, signature or quarantine state no longer match it.
-    /// Login is deliberately absent: a download validates its cache when requested.
     func prepareAtLaunch() async {
         beginProbeRun()
         state = .probing
@@ -613,8 +543,6 @@ final class SteamCMDDoctorService {
             status: .green(detail: Self.gatekeeperClearDetail()),
             lastRun: fingerprint.recordedAt
         )
-        // The digest, signature and team id were just confirmed against the
-        // fingerprint, so an in-session probe need not re-spawn codesign.
         verifiedBinarySHA256 = fingerprint.sha256
         // Nothing was probed, so nothing may re-date the record.
         lastInspection = nil
@@ -719,7 +647,6 @@ final class SteamCMDDoctorService {
             defer { if didStart { binary.stopAccessingSecurityScopedResource() } }
             let path = binary.standardizedFileURL.resolvingSymlinksInPath().path(percentEncoded: false)
             let result = await inspect(path: path)
-            // Distinguish unreachable/busy connector from a missing SteamCMD file.
             guard let result, result.unavailableReason == nil else {
                 setProbe(.codeSignature, status: .yellow(
                     message: result?.unavailableReason == nil
@@ -780,7 +707,6 @@ final class SteamCMDDoctorService {
                 return
             }
 
-            // Identity already launched SteamCMD → skip heavier anonymous login probe.
             if isGreen(.binaryIdentity) {
                 setProbe(.gatekeeperQuarantine, status: .green(detail: Self.gatekeeperClearDetail()))
                 return
@@ -827,7 +753,7 @@ final class SteamCMDDoctorService {
                 ))
                 return
             }
-            // Read-only library probe (old write probe left litter on green).
+            // Read-only library probe; a write probe would leave litter on green.
             guard Self.isLibraryRoot(workdir), fileManager.isReadableFile(atPath: workdir.path(percentEncoded: false)) else {
                 setProbe(.workingDirectory, status: .red(
                     message: redacted(String(localized: "Steam Library is not readable.", bundle: .appLanguage, comment: "SteamCMD diagnostic (Doctor) probe label or result message.")),
@@ -841,7 +767,6 @@ final class SteamCMDDoctorService {
         }
     }
 
-    /// Cached-login check via connector (app STEAMROOT ≠ shared Terminal profile).
     private func runCachedLoginProbe() async {
         guard let username, SteamCMDScriptWriter.validateUsername(username) else {
             setProbe(.cachedLogin, status: .yellow(
@@ -893,14 +818,6 @@ final class SteamCMDDoctorService {
         applyCachedLoginOutcome(result, username: username, binary: binary, generation: generation)
     }
 
-    /// One sentence for both the Doctor probe and the in-app sign-in sheet.
-    ///
-    /// Reports what Steam said, then offers the proxy note conditionally. The
-    /// note itself is established — SteamCMD's connection log shows it taking
-    /// UDP CM connections, which a system HTTP proxy does not carry — but that
-    /// this reader's failure is a proxy problem is not: Valve reuses
-    /// "No Connection" for other conditions, including, on the download path,
-    /// an account that does not own the app.
     static var steamUnreachableMessage: String {
         String(
             localized: "Steam reported that it couldn't connect. If you use a VPN or proxy: SteamCMD reaches Steam directly rather than through the system proxy, so try TUN (enhanced) mode or a direct connection.",
@@ -908,7 +825,6 @@ final class SteamCMDDoctorService {
         )
     }
 
-    /// Internal, not private, so tests can drive the receipt path without XPC.
     func applyCachedLoginOutcome(
         _ result: SteamCachedLoginResult,
         username: String,
@@ -1024,9 +940,7 @@ final class SteamCMDDoctorService {
               !workdirResolutionFailed,
               username.map(SteamCMDScriptWriter.validateUsername) ?? false
         else { return .setupIncomplete }
-        // Unknown after launch is not logged out, and a network failure is not
-        // a missing account: the download validates the session itself. Only a
-        // verdict about the credentials blocks.
+        // Unknown after launch is not logged out, and a network failure is not a missing account. Only a credential verdict blocks.
         switch cachedLoginVerdict {
         case .noCachedSession?, .sessionExpired?, .loginFailed?:
             return .setupIncomplete
@@ -1071,8 +985,6 @@ final class SteamCMDDoctorService {
         }
     }
 
-    /// Authenticate in the private profile; SteamCMD writes the item straight
-    /// into the authorized library.
     private func performDownloadWorkshopItem<Imported: Sendable>(
         _ itemID: UInt64,
         onProgress: SteamCMDProgressHandler?,
@@ -1087,9 +999,7 @@ final class SteamCMDDoctorService {
         guard let steamRoot = try? resolveWorkdirURL() else {
             return .notConfigured(reason: SteamCMDDoctorError.missingWorkdirBinding.errorDescription ?? "No Steam Library is authorized.")
         }
-        // No digest on file means the binding never completed its identity
-        // probe. The connector picks the binary now, so this is a readiness
-        // check, not an authorization one.
+        // No digest means the binding never completed its identity probe. This is a readiness check, not an authorization one.
         guard lastBinarySHA256 != nil else { return .untrustedBinary }
 
         let generation = accountGeneration
@@ -1150,9 +1060,7 @@ final class SteamCMDDoctorService {
         }
     }
 
-    /// `result.itemPath` is decoded from the connector's JSON reply, so it is a
-    /// claim, not an authorization: find the id we asked for among the library's
-    /// own validated items and revalidate it before the importer sees a URL.
+    /// `result.itemPath` is a claim from the connector's JSON, not an authorization; revalidate among the library's own items before the importer sees a URL.
     func authorizedDownloadedItemDirectory(workshopID: String, steamRoot: URL) -> URL? {
         guard let candidate = workshopFileInventory.projectFolders(
             under: steamRoot,
@@ -1163,15 +1071,10 @@ final class SteamCMDDoctorService {
         return workshopFileInventory.revalidatedURL(for: candidate, requiringProjectJSON: true)
     }
 
-    /// Enumerate workshop content folders while workdir scope is held. Lets the library ingest
-    /// items SteamCMD wrote outside the in-app download button (a manual `steamcmd`
-    /// run, a prior launch, a download whose import didn't record).
     func enumerateDownloadedItemFolders(_ body: @MainActor (URL) async -> Void) async {
         var seen = Set<String>()
         let inventory = workshopFileInventory
 
-        // The bound official Steam profile is the only content tree. Hold its
-        // security scope across import and per-project bookmark creation.
         if let workdir = try? resolveWorkdirURL() {
             let scope = workdir.startAccessingSecurityScopedResource()
             defer { if scope { workdir.stopAccessingSecurityScopedResource() } }
@@ -1202,8 +1105,6 @@ final class SteamCMDDoctorService {
     // MARK: - Helpers
 
     /// A result with no receipt ran nothing; it must not erase the last one.
-    /// Internal, not private: the assets installer receives receipts on its own
-    /// payload and has no other way to hand them to the Doctor.
     func noteExecutionReceipt(_ path: String?) {
         guard let path else { return }
         lastExecutedBinaryPath = path
@@ -1213,25 +1114,16 @@ final class SteamCMDDoctorService {
     /// each launch and whenever the SHA changes.
     @ObservationIgnored private var verifiedBinarySHA256: String?
 
-    /// The most recent inspection that actually reached a verdict, so the
-    /// fingerprint is recorded from the same facts the probes just judged.
-    /// Cleared by a restore, which judged nothing.
+    /// The most recent inspection that reached a verdict. Cleared by a restore, which judged nothing.
     @ObservationIgnored private var lastInspection: SteamCMDBinaryInspection?
 
-    /// Inspections already paid for during the current probe run, by canonical
-    /// path. One inspection costs a full-file SHA-256 plus two `codesign`
-    /// children in the connector, serialized behind every other SteamCMD
-    /// operation, and identity, signature and Gatekeeper all ask it about the same bytes. Valid only from a run's start until the next SteamCMD launch: SteamCMD rewrites its own executable, so `launchSteamCMD(_:args:)` drops it.
+    /// Valid only from a run's start until the next SteamCMD launch: SteamCMD rewrites its own executable, so `launchSteamCMD` drops it.
     @ObservationIgnored var runScopedInspections: [String: SteamCMDBinaryInspection] = [:]
 
-    /// Opens a probe run: whatever the last one learned about the binary is no
-    /// longer this run's evidence.
     func beginProbeRun() {
         runScopedInspections.removeAll()
     }
 
-    /// The only place a Doctor probe launches SteamCMD, so the only place the
-    /// run cache has to be dropped.
     func launchSteamCMD(
         _ authorization: SteamCMDBinaryExecutionAuthorization,
         args: [String]
@@ -1252,8 +1144,6 @@ final class SteamCMDDoctorService {
         }
     }
 
-    /// Every inspection this service asks for goes through here, so no probe
-    /// can record a verdict the fingerprint did not see.
     func inspect(path: String) async -> SteamCMDBinaryInspection? {
         if let reused = runScopedInspections[path] { return reused }
         let inspection = await SteamConnectorClient.inspectSteamCMDBinary(path: path)
@@ -1264,37 +1154,26 @@ final class SteamCMDDoctorService {
         return inspection
     }
 
-    /// Download progress, as the Workshop UI consumes it.
     typealias SteamCMDProgressHandler = @Sendable (
         _ percent: Double, _ downloadedBytes: UInt64?, _ totalBytes: UInt64?
     ) -> Void
 
-    /// What a Doctor probe came back with.
-    ///
-    /// `killed` now means "the connector never produced a verdict", not "we
-    /// signalled a child".
+    /// `killed` means the connector never produced a verdict, not that a child was signalled.
     struct SteamCMDRunResult: Sendable {
         let exitCode: Int32?
         let stdout: String
         let stderr: String
         let timedOut: Bool
         let killed: Bool
-        /// Execution receipt forwarded from the connector's probe run.
         var executedBinaryPath: String? = nil
     }
 
-    /// Proof that the Doctor evaluated the binary and found it trustworthy. A
-    /// token, not an instruction: it no longer travels to the connector, which
-    /// picks and runs its own binary. Holding one is what makes a probe body allowed to probe, and the fields are what the report renders.
     struct SteamCMDBinaryExecutionAuthorization: Equatable, Sendable {
         let canonicalPath: String
         let sha256: String
     }
 
-    /// Runs a Doctor probe through the connector and reshapes the reply into the result type the probe bodies already read.
-    /// The connector merges the child's stdout and stderr into one stream (they share a pipe there so interleaving stays faithful), so `stderr` is empty and callers that concatenate the two are unaffected.
-    /// An unreachable connector, or a refusal because no binary resolved, both surface as `killed`: neither is a verdict about SteamCMD itself. The authorization is required but not forwarded — see its own doc.
-    /// 120, not 30: a fresh SteamCMD bootstrap self-updates with up to two exit-42 restarts inside one probe (~9s measured on a fast network), and slow networks need the headroom before the probe is a verdict.
+    /// 120, not 30: a fresh SteamCMD bootstrap self-updates with up to two exit-42 restarts inside one probe, and slow networks need the headroom.
     static let probeLaunchTimeout: TimeInterval = 120
 
     private static func probe(
@@ -1329,10 +1208,6 @@ final class SteamCMDDoctorService {
         )
     }
 
-    /// Whether the Doctor considers the bound binary usable. Every read of the
-    /// file happens in the connector, so the sandboxed bundle never needs access
-    /// to `/opt/homebrew` and friends. This is a readiness verdict for the UI,
-    /// not an execution authorization: what the connector runs is what the connector resolves — an app-side check could never have authorized a spawn anyway, since the file can change between the check and the exec and nothing on macOS binds the two.
     private func trustedExecutionAuthorization(
         for binary: URL
     ) async -> SteamCMDBinaryExecutionAuthorization? {
@@ -1351,8 +1226,7 @@ final class SteamCMDDoctorService {
         return SteamCMDBinaryExecutionAuthorization(canonicalPath: path, sha256: currentSHA)
     }
 
-    /// The trust rule, as a pure function of one inspection plus what we last verified. Pulled out of the flow above so both properties stay testable now that the inspection itself happens over XPC and can no longer be faked by injecting a checker.
-    /// An unchanged SHA must skip re-verification (one "Run all" would otherwise re-spawn codesign per executing probe), and a changed SHA must be re-verified against Valve's team identifier before it's trusted again — a self-updating binary is normal, an attacker-signed replacement is not.
+    /// An unchanged SHA must skip re-verification; a changed SHA must be re-verified against Valve's team identifier before it is trusted again.
     struct TrustDecision: Equatable {
         let isTrusted: Bool
         let verifiedSHA256: String?
@@ -1364,9 +1238,7 @@ final class SteamCMDDoctorService {
         inspection: SteamCMDBinaryInspection,
         cachedSHA256: String?
     ) -> TrustDecision {
-        // No verdict is not a negative verdict. Dropping the cached digest here
-        // would make the next run re-spawn codesign for a binary nothing has
-        // said anything bad about.
+        // No verdict is not a negative verdict. Dropping the cached digest here would make the next run re-spawn codesign for a binary nothing has said is bad.
         guard inspection.unavailableReason == nil else {
             return TrustDecision(isTrusted: false, verifiedSHA256: cachedSHA256, didReverify: false)
         }
@@ -1395,9 +1267,7 @@ final class SteamCMDDoctorService {
         case .success(let resolved):
             let url = resolved.url.resolvingSymlinksInPath().standardizedFileURL
             if resolved.didRefresh {
-                // The shared resolver refreshes with read-only scope, but
-                // workdir needs write access for SteamCMD scripts + downloads
-                // — recreate the bookmark with write scope and persist.
+                // The shared resolver refreshes with read-only scope, but workdir needs write access — recreate the bookmark with write scope and persist.
                 if let refreshed = try? Self.makeBookmark(for: url, readOnly: false) {
                     workdirBookmarkData = refreshed
                 }
@@ -1466,9 +1336,6 @@ final class SteamCMDDoctorService {
         updateGreenFingerprint()
     }
 
-    /// Keeps the launch fast path's ledger honest, in three rules: a binary
-    /// probe that comes back yellow or red retires the fingerprint; three greens
-    /// plus a fresh inspection record a new one; a restored green carries no fresh inspection, so it leaves the existing record — and the date it was actually earned — alone.
     func updateGreenFingerprint() {
         let contradicted = Self.binaryProbeKinds.contains { kind in
             switch probes[kind]?.status {
@@ -1493,10 +1360,7 @@ final class SteamCMDDoctorService {
         )
     }
 
-    /// A live operation (download / assets) got "login required" from Steam even
-    /// though the cached-login probe was green: the session died after the probe
-    /// ran. Demote the probe now so `isDownloadReady` stops saying yes and the
-    /// user is not invited to retry a download that must fail.
+    /// Demote the probe when a live operation reports login required so `isDownloadReady` stops saying yes.
     func noteOperationReportedLoginRequired(generation: Int) {
         guard generation == accountGeneration else { return }
         cachedLoginVerdict = .sessionExpired

@@ -294,12 +294,6 @@ private enum SyntheticVideoFixture {
     }
 }
 
-/// A dropped source must stop its AVQueuePlayer even when nobody called
-/// `invalidate()`. A playing AVPlayer is retained by AVFoundation's own
-/// CoreMedia threads, so releasing the Swift reference does NOT tear it down:
-/// the MP4 and its decode buffers (~300 MB per 4K source) stay resident and the
-/// decoder keeps running. Sampled in Release at 10.8 GB / 42 threads with four
-/// live `coremedia.audioqueue.source` sets.
 @MainActor
 @Suite("WPEVideoTextureSource teardown", .serialized)
 struct WPEVideoTextureSourceTeardownTests {
@@ -529,9 +523,8 @@ struct WPEVideoOutputCapTests {
         )
         #expect(none == nil, "64² source on a 4K display must not upscale")
 
-        // The helper only returns a size when the file itself exceeds the cap.
-        // Probe the clamp math with a synthetic 8K source size — the file
-        // probe is covered above; this pins the renderer wiring.
+        // helper 只在文件本身超过 cap 时才返回尺寸,所以这里用合成的 8K
+        // 源尺寸单独探 clamp 数学。
         #expect(
             WPEVideoOutputCap.clampedPixelSize(
                 source: CGSize(width: 7680, height: 4320),

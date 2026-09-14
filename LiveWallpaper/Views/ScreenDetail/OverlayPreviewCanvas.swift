@@ -2,20 +2,14 @@ import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
-/// The display-shaped stage both overlay pages arrange against: a still of what
-/// the display is playing, fitted to its aspect ratio, with the page's own layer
-/// on top. Otherwise the two pages would each draw their own slightly different
-/// rectangle.
 struct OverlayPreviewCanvas<Content: View>: View {
     let screen: Screen
     var backdrop: MonitorPreviewBackdrop = .none
     @ViewBuilder var content: () -> Content
 
     @AppStorage(MonitorPreviewBackdrop.showsWallpaperDefaultsKey) private var showsWallpaper = true
-    /// A frame grabbed off the running scene renderer, so the overlay is arranged
-    /// over what the display is showing now rather than the project's shipped
-    /// preview art. One shot per session — `captureLivePosterFromNextFrame`
-    /// waits for a presented frame and reads it back, so it is not free.
+    /// One shot per session: `captureLivePosterFromNextFrame` waits for a presented
+    /// frame and reads it back, so it is not free.
     @State private var liveFrame: NSImage?
 
     var body: some View {
@@ -37,15 +31,12 @@ struct OverlayPreviewCanvas<Content: View>: View {
         .task(id: liveFrameIdentity) { await captureLiveFrame() }
     }
 
-    /// The display's aspect ratio.
     private var screenAspect: CGFloat {
         let f = screen.frame
         guard f.width > 0, f.height > 0 else { return 16.0 / 9.0 }
         return f.width / f.height
     }
 
-    /// Empty canvas whenever the wallpaper backdrop is off or unavailable, so
-    /// the overlay stays legible while the user is arranging it.
     @ViewBuilder
     private var backdropLayer: some View {
         if showsWallpaper, let liveFrame {

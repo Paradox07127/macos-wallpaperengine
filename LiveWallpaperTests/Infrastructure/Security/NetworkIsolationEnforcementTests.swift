@@ -3,19 +3,11 @@ import Foundation
 import Testing
 import WebKit
 
-/// The other isolation tests assert that the CSP *header is emitted*. That is a
-/// different claim from "WebKit enforces it", and on a custom URL scheme the
-/// second does not follow from the first — if it did not hold, every Workshop
-/// page would still be free to phone home while the whole suite stayed green.
-/// So this loads a real page in a real `WKWebView` through the real handler and
-/// watches for the `securitypolicyviolation` the browser itself raises.
 @MainActor
 @Suite("Workshop network isolation actually blocks egress")
 struct NetworkIsolationEnforcementTests {
-    /// Reports that it ran (via the collector's `localStorage` hook) and then
-    /// attempts one remote fetch. `.invalid` is reserved by RFC 2606 and never
-    /// resolves, so an unblocked attempt fails at DNS — which is not a CSP
-    /// violation and keeps the control group unambiguous.
+    /// `.invalid` is reserved by RFC 2606 and never resolves, so an unblocked fetch fails
+    /// at DNS — not a CSP violation, which keeps the control group unambiguous.
     private static let probePage = """
     <!doctype html><meta charset="utf-8"><body><script>
     try { localStorage.getItem('lw-probe-ran'); } catch (e) {}
@@ -63,8 +55,6 @@ struct NetworkIsolationEnforcementTests {
         )
         webView.load(URLRequest(url: entry))
 
-        // Poll rather than dwell: the blocked case reports within a frame or two,
-        // and the control still has to prove its script ran before we call it quiet.
         let deadline = Date().addingTimeInterval(15)
         while Date() < deadline {
             try await Task.sleep(nanoseconds: 100_000_000)
@@ -96,10 +86,8 @@ struct NetworkIsolationEnforcementTests {
         )
     }
 
-    /// Control group. Without isolation and without the opt-in toggle no policy
-    /// is served at all, so the identical page must produce no violation — that
-    /// is what makes the assertion above a measurement of the policy rather than
-    /// of `example.invalid` being unreachable.
+    /// Control group: with no policy served the identical page must produce no violation —
+    /// that is what makes the test above measure the policy, not an unreachable host.
     @Test("The same page with no policy raises no violation")
     func unpolicedRemoteFetchRaisesNoViolation() async throws {
         let seen = try await observations(networkIsolated: false, cspEnforced: false)
@@ -116,10 +104,8 @@ struct NetworkIsolationEnforcementTests {
 
     // MARK: - WebRTC
 
-    /// Loads a page that reports whether `RTCPeerConnection` exists, optionally
-    /// with the production blocker injected exactly as `makeBaselineScript` does.
-    /// Reported through a rejected promise because that is the one channel the
-    /// collector passes through verbatim.
+    /// Reported through a rejected promise because that is the one channel the collector
+    /// passes through verbatim.
     private func peerConnectionAvailability(withBlocker: Bool) async throws -> [String] {
         let folder = FileManager.default.temporaryDirectory
             .appendingPathComponent("lw-rtc-\(UUID().uuidString)", isDirectory: true)
@@ -174,28 +160,18 @@ struct NetworkIsolationEnforcementTests {
         return collector.observations.map(\.message)
     }
 
-    /// Measured 2026-08-31: under the isolation CSP alone a page still constructed
-    /// an `RTCPeerConnection`, offered, and gathered an `srflx` candidate from
-    /// `stun.l.google.com` — real UDP egress plus the user's public IP. CSP has no
-    /// say over ICE, so the constructor has to go.
     @Test("An isolated page has no peer-connection constructor")
     func isolationRemovesPeerConnection() async throws {
         let seen = try await peerConnectionAvailability(withBlocker: true)
         #expect(seen.contains("RTC type=undefined"), "\(seen)")
     }
 
-    /// Control, and the reason the blocker exists: the CSP by itself leaves the
-    /// constructor in place. If WebKit ever gains `webrtc`-directive support this
-    /// goes red, which is the right moment to revisit.
     @Test("The CSP alone leaves the constructor in place")
     func cspAloneDoesNotRemovePeerConnection() async throws {
         let seen = try await peerConnectionAvailability(withBlocker: false)
         #expect(seen.contains("RTC type=function"), "\(seen)")
     }
 
-    /// The two tests above prove the blocker works when it is injected. This pins
-    /// that the shipping path injects it, and gates it on provenance — a unit test
-    /// on the script itself cannot see `makeBaselineScript` dropping the call.
     @Test("The baseline script injects the blocker, gated on isolation")
     func baselineScriptWiresTheBlockerToIsolation() throws {
         let source = try RepositoryRoot.source("LiveWallpaper/Playback/Web/HTMLWallpaperView.swift")

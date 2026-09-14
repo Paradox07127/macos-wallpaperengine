@@ -1,13 +1,7 @@
 import Foundation
 
-/// Best-effort privacy scrubber shared by the logging boundary, persistent
-/// diagnostics, and user-facing error surfaces. Replaces home-directory
-/// prefixes, absolute user paths, URL userinfo, URL query/fragment strings
-/// for every scheme, raw geographic coordinates, bearer/basic/token/api-key
-/// fragments, IP addresses, `.local` machine hostnames, Steam IDs/account
-/// names, and `ssfn*` sentry tokens with `<redacted>` placeholders — while
-/// preserving enough structure (extensions, DNS hosts, error codes) to keep
-/// the message actionable for triage.
+/// Best-effort privacy scrubber for logs, persistent diagnostics and user-facing errors.
+/// Preserves extensions, DNS hosts and error codes so the message stays actionable.
 public enum LogPrivacyRedactor {
     public static func scrub(_ raw: String) -> String {
         var result = raw
@@ -32,11 +26,8 @@ public enum LogPrivacyRedactor {
         return result
     }
 
-    /// Flattens an untrusted display string (a Workshop title) for logging.
-    /// Titles are author-supplied: a CR/LF inside one would forge extra log
-    /// entries, and an overlong one would crowd out the five-line excerpt
-    /// lifted into a bug report. Control/format scalars become spaces, runs
-    /// collapse, and the result is capped.
+    /// Flattens an untrusted author-supplied title: a CR/LF inside one would forge extra
+    /// log entries, and an overlong one would crowd out the bug-report excerpt.
     public static func sanitizedTitle(_ raw: String, maxLength: Int = 80) -> String {
         let cap = max(1, maxLength)
         let flattened = String(String.UnicodeScalarView(raw.unicodeScalars.map { scalar in
@@ -52,7 +43,6 @@ public enum LogPrivacyRedactor {
     }
 
     /// `" — <title>"` for a log line, or `""` when there is no usable title.
-    /// Keeps the branching out of the call site's string interpolation.
     public static func titleFragment(_ raw: String?, maxLength: Int = 80) -> String {
         guard let raw else { return "" }
         let title = sanitizedTitle(raw, maxLength: maxLength)
@@ -75,9 +65,8 @@ public enum LogPrivacyRedactor {
 
     private static let homePathRegex: NSRegularExpression? = {
         guard let home = ProcessInfo.processInfo.environment["HOME"], !home.isEmpty else { return nil }
-        // `(?=/|$)` keeps the match to a whole path component so a home that is
-        // a strict prefix of another user's path (`/Users/al` vs `/Users/alice`)
-        // is left for the `/Users/<name>` rule instead of being corrupted here.
+        // `(?=/|$)` keeps the match to a whole path component, so a home that prefixes
+        // another user's path is left to the `/Users/<name>` rule.
         return try? NSRegularExpression(pattern: NSRegularExpression.escapedPattern(for: home) + #"(?=/|$)"#)
     }()
 
@@ -86,16 +75,13 @@ public enum LogPrivacyRedactor {
         Rule(pattern: #"/Users/[^/\s'"]+"#, template: "/Users/<redacted>"),
         // URL userinfo for any hierarchical scheme.
         Rule(pattern: #"([A-Za-z][A-Za-z0-9+.-]*://)[^/\s'"@]+@([^/\s'"]+)"#, template: "$1<redacted>@$2"),
-        // Query and fragment data can carry signed CDN credentials, session
-        // nonces, coordinates, and OAuth tokens. Cover custom schemes such as
-        // livewallpaper:// as well as http(s).
+        // Query/fragment can carry signed CDN credentials, session nonces, coordinates and
+        // OAuth tokens; covers custom schemes as well as http(s).
         Rule(pattern: ##"([A-Za-z][A-Za-z0-9+.-]*://[^\s'"?#]+)\?[^\s'"#]*(?:#[^\s'"]*)?"##, template: "$1?<query-redacted>"),
         Rule(pattern: ##"([A-Za-z][A-Za-z0-9+.-]*://[^\s'"#]+)#[^\s'"]*"##, template: "$1#<fragment-redacted>"),
-        // file:// URLs in full.
         Rule(pattern: #"file://[^\s'"]+"#, template: "file://<redacted>"),
-        // Common macOS/POSIX absolute roots. Preserve only the final component
-        // for extension/type triage; directory names may identify a person,
-        // mounted volume, project, or organization.
+        // Common absolute roots: keep only the final component for extension/type triage —
+        // directory names can identify a person or organization.
         Rule(
             pattern: #"/(?:Users|Volumes|private|tmp|var|home|opt|mnt|Applications)(?:/[^/\s'"]*)*/([^/\s'"]+)"#,
             template: "<path>/$1"
@@ -103,51 +89,35 @@ public enum LogPrivacyRedactor {
         // Standalone lat/lon assignments — re-thrown error strings sometimes
         // surface coordinates without a host (`URL Error -1009: lat=37.7…`).
         Rule(pattern: #"(?i)\b(lat(?:itude)?|lon(?:gitude)?)\s*[=:]\s*-?\d{1,3}(?:\.\d+)?"#, template: "$1=<redacted>"),
-        // token / api-key / password assignments.
         Rule(pattern: #"(?i)\b(token|api[_-]?key|access[_-]?token|refresh[_-]?token|secret|password)\s*[=:]\s*([^&\s'"]+)"#, template: "$1=<redacted>"),
-        // Bearer / Token authorization headers.
         Rule(pattern: #"(?i)\b(Bearer|Token)\s+[A-Za-z0-9._~+/=-]+"#, template: "$1 <redacted>"),
         // Basic authorization headers — base64 of `user:pw` is just as sensitive.
         Rule(pattern: #"(?i)\bBasic\s+[A-Za-z0-9+/=]+"#, template: "Basic <redacted>"),
 
-        // Classes below are ported from `WorkshopDiagnosticRedactor` (Pro-only,
-        // so its rules can't be referenced from here) — general surfaces like
-        // the bug-report log excerpt must meet the same redaction bar.
+        // Rules below are duplicated from `WorkshopDiagnosticRedactor`: it is Pro-only, so
+        // it cannot be referenced from here.
 
         // 17-digit SteamID64 (`7656119` prefix + 10 digits).
         Rule(pattern: #"\b7656119\d{10}\b"#, template: "<steamid-redacted>"),
         // SteamID3 form `[U:1:<accountid>]` as emitted by SteamCMD `+info`.
         Rule(pattern: #"\[U:\d+:\d+\]"#, template: "<steamid-redacted>"),
-        // IPv4 dotted quad. Mirrors the Workshop redactor's permissive stance:
-        // it does not disambiguate version strings, so a 4-part `1.2.3.4` is
-        // deliberately eaten (over-redaction is the safe direction for a
-        // publicly-posted report) while the app's real version shapes
-        // (`0.2.0`, `15.5.0`) survive because exactly four groups are required.
+        // IPv4 dotted quad. A four-part version string is deliberately eaten — over-redaction
+        // is the safe direction; three-group versions survive.
         Rule(pattern: #"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b"#, template: "<ip-redacted>"),
-        // Compressed IPv6 (`fe80::1`, `2001:db8::8a2e:370:7334`). Must run
-        // before the expanded rule below: that one only matches single-colon
-        // chains, so on `::` forms it used to eat just the tail and leak the
-        // routing prefix (the household-identifying half). The alternation
-        // requires ≥1 hex group so a bare `::` survives, and the flanking
-        // guards abort on any leftover alnum/colon, so partially-hex tokens
-        // (`Foo::bar`, `std::vector`, `fe::bezel`) pass through — only fully
-        // hex-shaped tokens (`fe::be`) are eaten, the accepted trade-off.
+        // Compressed IPv6. Must run before the expanded rule below: that one matches only
+        // single-colon chains, so on `::` forms it would eat just the tail and leak the routing
+        // prefix. The flanking guards let `std::vector` through; fully hex-shaped tokens are eaten.
         Rule(pattern: #"(?<![A-Za-z0-9:])(?:[A-Fa-f0-9]{1,4}(?::[A-Fa-f0-9]{1,4})*::(?:[A-Fa-f0-9]{1,4}(?::[A-Fa-f0-9]{1,4})*)?|::[A-Fa-f0-9]{1,4}(?::[A-Fa-f0-9]{1,4})*)(?![A-Za-z0-9:])"#, template: "<ip-redacted>"),
-        // IPv6 expanded form — deliberately permissive (2+ colon-separated hex
-        // groups), same accepted false-positive trade-off as the Workshop
-        // redactor (e.g. a `00:01:23` duration). ISO-8601 log timestamps are
-        // immune: the `T` glues the date to the time, so no word boundary
-        // precedes `12:34:56`.
+        // Expanded IPv6, deliberately permissive (2+ hex groups); ISO-8601 timestamps are
+        // immune because the `T` leaves no word boundary before `12:34:56`.
         Rule(pattern: #"\b(?:[A-Fa-f0-9]{1,4}:){2,7}[A-Fa-f0-9]{1,4}\b"#, template: "<ip-redacted>"),
-        // Bonjour machine hostnames (`Johns-MacBook-Pro.local`) derive from the
-        // user's device name. Scoped to `.local` so ordinary DNS hosts stay
-        // readable per the contract above.
+        // `.local` Bonjour hostnames derive from the user's device name; scoped to `.local`
+        // so ordinary DNS hosts stay readable.
         Rule(pattern: #"(?i)\b[A-Za-z0-9][A-Za-z0-9-]*(?:\.[A-Za-z0-9-]+)*\.local\b"#, template: "<host-redacted>"),
         // `ssfn*` Steam sentry file names (serial-like session tokens).
         Rule(pattern: #"ssfn[A-Za-z0-9]+"#, template: "ssfn<redacted>"),
-        // Steam persona / account names. Unlike the Workshop redactor's
-        // `^`-anchored line rules, these match mid-line: log lines reach us
-        // prefixed with a timestamp, so an anchor would never fire.
+        // Steam persona / account names, matched mid-line: log lines arrive timestamp-prefixed,
+        // so a `^` anchor would never fire.
         Rule(pattern: #"personaname=[^&\s]+"#, template: "personaname=<redacted>"),
         // Persona is free-form (spaces, kanji, emoji) → eat to end of line.
         Rule(pattern: #"(?i)\b(Persona Name):[ \t]*\S[^\n]*"#, template: "$1: <redacted>"),

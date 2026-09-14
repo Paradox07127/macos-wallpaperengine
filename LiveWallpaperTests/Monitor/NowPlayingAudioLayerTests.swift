@@ -6,23 +6,17 @@ final class NowPlayingAudioLayerTests: XCTestCase {
 
     // MARK: Wave
 
-    /// The wave reads its shape off the spectrum, so a band has to be sampleable at
-    /// any point across the tile, not just at the band centres.
     func testBandSamplingSpansTheSpectrumAndSurvivesAnEmptyOne() {
         let bands: [Float] = [0, 0.5, 1]
         XCTAssertEqual(Layer.Effects.sampledBand(bands, at: 0), 0, accuracy: 1e-6)
         XCTAssertEqual(Layer.Effects.sampledBand(bands, at: 1), 1, accuracy: 1e-6)
         XCTAssertEqual(Layer.Effects.sampledBand(bands, at: 0.5), 0.5, accuracy: 1e-6)
-        // Between two bands it interpolates rather than stepping.
         XCTAssertEqual(Layer.Effects.sampledBand(bands, at: 0.25), 0.25, accuracy: 1e-6)
-        // Out of range and empty are both answerable: the tile is drawn either way.
         XCTAssertEqual(Layer.Effects.sampledBand(bands, at: -1), 0, accuracy: 1e-6)
         XCTAssertEqual(Layer.Effects.sampledBand(bands, at: 2), 1, accuracy: 1e-6)
         XCTAssertEqual(Layer.Effects.sampledBand([], at: 0.5), 0, accuracy: 1e-6)
     }
 
-    /// Silence has to be still. The halo this replaced kept breathing on a residual
-    /// bass reading, which is what made it read as restless rather than musical.
     func testWaveIsFlatInSilenceAndGrowsWithTheBand() {
         XCTAssertEqual(Layer.Effects.waveAmplitude(band: 0, fade: 1, intensity: 1), 0, accuracy: 1e-6)
         XCTAssertEqual(Layer.Effects.waveAmplitude(band: 0.8, fade: 0, intensity: 1), 0, accuracy: 1e-6)
@@ -37,28 +31,18 @@ final class NowPlayingAudioLayerTests: XCTestCase {
 
     // MARK: Peak caps and mote fading
 
-    /// A peak cap is a spectrum analyser's memory: it jumps to whatever the bar just
-    /// reached and then sinks slowly, so the eye can read a transient that the bar
-    /// itself has already dropped.
     func testPeakCapRisesInstantlyAndFallsSlowly() {
-        // Up is instant: a cap that lagged behind its own bar would sit inside it.
         XCTAssertEqual(Layer.Effects.peak(previous: 0.2, band: 0.9, dt: 1 / 30), 0.9, accuracy: 1e-6)
         XCTAssertEqual(Layer.Effects.peak(previous: 0.9, band: 0.95, dt: 1 / 30), 0.95, accuracy: 1e-6)
 
-        // Down is slow, and slower than the bar it sits on — the whole point.
         let afterOneFrame = Layer.Effects.peak(previous: 0.9, band: 0, dt: 1 / 30)
         XCTAssertLessThan(afterOneFrame, 0.9)
         XCTAssertGreaterThan(afterOneFrame, 0.8, "the cap drops with the bar instead of trailing it")
 
-        // It reaches the floor rather than hovering, and never goes below it.
         XCTAssertEqual(Layer.Effects.peak(previous: 0.05, band: 0, dt: 10), 0, accuracy: 1e-6)
         XCTAssertGreaterThanOrEqual(Layer.Effects.peak(previous: 0, band: 0, dt: 1), 0)
     }
 
-    /// Motes used to be drawn by `for index in 0 ..< liveCount`, so a dip in the bass
-    /// deleted the last few mid-flight: they blinked out at whatever position and
-    /// brightness they had. Visibility now falls off smoothly at the edge of the
-    /// budget, so the same dip dims them instead.
     func testMoteVisibilityIsContinuousInTheBass() {
         let count = 32
         for index in [0, 5, 15, 24, 31] {
@@ -83,7 +67,6 @@ final class NowPlayingAudioLayerTests: XCTestCase {
         }
     }
 
-    /// The budget still means something: quiet music lights fewer motes than loud.
     func testMoteVisibilityGrowsWithTheBass() {
         let count = 32
         func lit(_ bass: Float) -> Double {
@@ -130,7 +113,6 @@ final class NowPlayingAudioLayerTests: XCTestCase {
         }
     }
 
-    /// The user switch is a gate of its own: everything else can say yes.
     func testAudioReactiveSwitchOffStopsTheLayer() {
         XCTAssertFalse(
             Layer.shouldRun(
@@ -152,7 +134,6 @@ final class NowPlayingAudioLayerTests: XCTestCase {
         let bandMean = bands.reduce(0, +) / 16
         XCTAssertEqual(bandMean, binMean, accuracy: 1e-5)
 
-        // Each band is the energy mean of its own 4-bin slice.
         for band in 0..<16 {
             let slice = bins[(band * 4)..<(band * 4 + 4)]
             XCTAssertEqual(bands[band], slice.reduce(0, +) / 4, accuracy: 1e-5, "band \(band)")
@@ -228,20 +209,15 @@ final class NowPlayingAudioLayerTests: XCTestCase {
     func testSilenceGateHoldSemantics() {
         var gate = Layer.SilenceGate()
 
-        // Never audible: inactive from the start.
         XCTAssertFalse(gate.update(audible: false, now: 10))
 
-        // Audible now: active.
         XCTAssertTrue(gate.update(audible: true, now: 11))
 
-        // Silent but within the hold window: still active (no flicker between songs).
         XCTAssertTrue(gate.update(audible: false, now: 11 + Layer.audibleHold - 0.05))
         XCTAssertTrue(gate.update(audible: false, now: 11 + Layer.audibleHold))
 
-        // Past the hold window: inactive.
         XCTAssertFalse(gate.update(audible: false, now: 11 + Layer.audibleHold + 0.05))
 
-        // Audio returning re-arms the hold.
         XCTAssertTrue(gate.update(audible: true, now: 20))
         XCTAssertTrue(gate.update(audible: false, now: 20.5))
     }
@@ -269,7 +245,6 @@ final class NowPlayingAudioLayerTests: XCTestCase {
     }
 
     func testSmoothingReleaseStopsAtHigherTarget() {
-        // A target above the decayed value wins immediately (attack over release).
         XCTAssertEqual(Layer.smoothed(previous: 0.5, target: 0.45, dt: tick), 0.45, accuracy: 1e-6)
         XCTAssertEqual(Layer.smoothed(previous: 0.5, target: 0.41, dt: tick), 0.41, accuracy: 1e-6)
         XCTAssertEqual(
@@ -288,8 +263,6 @@ final class NowPlayingAudioLayerTests: XCTestCase {
         XCTAssertEqual(Layer.smoothed(previous: 0.2, target: 0.9, dt: dt), 0.9, "attack stays instant")
     }
 
-    /// Same wall-clock second, three different frame rates: the envelope must
-    /// land in the same place, or a dropped frame slows the visuals down.
     func testReleaseIsFrameRateIndependent() {
         func decayed(steps: Int, dt: TimeInterval) -> Float {
             var value: Float = 1
@@ -307,8 +280,6 @@ final class NowPlayingAudioLayerTests: XCTestCase {
     }
 
     func testReleaseWithVaryingFrameTimesTracksElapsedTime() {
-        // A stuttering second (alternating 30fps / 60fps frames) still lands on
-        // one second's worth of decay.
         var value: Float = 1
         var elapsed: TimeInterval = 0
         var short = true
@@ -349,8 +320,7 @@ final class NowPlayingAudioLayerTests: XCTestCase {
         XCTAssertEqual(instant.treb, 0)
     }
 
-    /// Energy in one band must not leak into the other two — at 64 bins the
-    /// split is 0–7 bass, 8–31 mid, 32–63 treble.
+    /// At 64 bins the split is 0–7 bass, 8–31 mid, 32–63 treble.
     func testEachBandLiftsOnlyItsOwnDrive() {
         func frame(_ range: Range<Int>) -> [Float] {
             var bins = [Float](repeating: 0, count: 64)
@@ -393,7 +363,6 @@ final class NowPlayingAudioLayerTests: XCTestCase {
         XCTAssertEqual(drives.bass, 0.8, accuracy: 1e-6)
         XCTAssertEqual(drives.bassAtt, 0.8, accuracy: 1e-6, "attack is instant")
 
-        // The instant drives drop on the first silent frame; the envelopes decay.
         var previous = drives
         for tick in 0..<20 {
             drives.advance(left: quiet, right: quiet, dt: dt)
@@ -457,7 +426,6 @@ final class NowPlayingAudioLayerTests: XCTestCase {
         for index in 1..<beats.count {
             XCTAssertEqual(beats[index] - beats[index - 1], 0.5, accuracy: 0.02, "gap \(index)")
         }
-        // The pulse rides the last beat and is gone half a second later.
         let last = try? XCTUnwrap(beats.last)
         XCTAssertEqual(detector.pulse(now: last ?? 0), 1, accuracy: 1e-5)
         XCTAssertLessThan(detector.pulse(now: (last ?? 0) + 0.5), 0.1)
@@ -577,7 +545,6 @@ final class NowPlayingAudioLayerTests: XCTestCase {
             )
         }
 
-        // Silence parks every effect at rest.
         XCTAssertEqual(Effects.shakeOffset(bass: 0, intensity: intensity), 0)
         XCTAssertEqual(Effects.chromaticOffset(treb: 0, intensity: intensity), 0)
         XCTAssertEqual(Effects.pulseGain(bassAtt: 0, beat: 0, intensity: intensity), 1)

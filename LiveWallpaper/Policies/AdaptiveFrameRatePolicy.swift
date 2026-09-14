@@ -1,4 +1,3 @@
-/// Decides when a scene should use its lower-power frame-rate profile.
 enum AdaptiveFrameRatePolicy {
     /// Occlusion enter threshold for adaptive FPS (below 0.85 pause cutoff).
     static let occlusionEnterThreshold = 0.5
@@ -14,7 +13,6 @@ enum AdaptiveFrameRatePolicy {
         return occlusionFraction >= threshold
     }
 
-    /// Combines the latched occlusion decision with the battery policy.
     static func shouldThrottle(
         enabled: Bool,
         occlusionThrottled: Bool,

@@ -41,7 +41,6 @@ struct ScenePreviewLifecycleState: Equatable {
     }
 }
 
-/// Scene detail card for Wallpaper Engine projects.
 @MainActor
 struct SceneDetailView: View {
     private let stackSpacing: CGFloat = 16
@@ -49,19 +48,14 @@ struct SceneDetailView: View {
     let origin: WPEOrigin
     let descriptor: SceneDescriptor
     let session: SceneWallpaperSession?
-    /// Scale: a preview-view control, the same role video's overlay has always had.
     @Binding var fitMode: VideoFitMode
     let playbackControls: AnyView
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// Observed for `isAuthorized` only — the cheap published flag, not a
-    /// bookmark resolve on every layout pass.
     @State private var engineAssets = WPEEngineAssetsLibrary.shared
     @State private var state: SceneRenderState = .idle
-    /// Live renderer frame reused as hero poster once presenting.
     @State private var livePoster: NSImage?
     @State private var livePosterTask: Task<Void, Never>?
-    /// Full renderer log opens in a sheet (keeps layout stable on error).
     @State private var showLogSheet = false
     /// Generation-scoped preview lifecycle; invalidate on disappear so late polls can't re-suspend.
     @State private var previewLifecycle = ScenePreviewLifecycleState()
@@ -69,9 +63,8 @@ struct SceneDetailView: View {
     @State private var previewSession: SceneWallpaperSession?
 
     private var previewTaskIdentity: ScenePreviewTaskIdentity {
-        // Must be the same layering `stageScenePropertyPosterCommit` stages with
-        // (`ScreenManager+SceneMutation`): keyed on the increment alone, a
-        // preset-carrying descriptor never matches its own staged commit.
+        // Must be the same layering `stageScenePropertyPosterCommit` stages with:
+        // keyed on the increment alone, a preset-carrying descriptor never matches.
         let overridesRevision = ScenePropertyOverridesRevision(
             descriptor.layeredPropertyValues()
         )
@@ -179,9 +172,8 @@ struct SceneDetailView: View {
 
     // MARK: - Error banner
 
-    /// A `.degraded` reason means one layer was skipped and the wallpaper is
-    /// still playing, so it gets the HUD chip rather than a banner across the
-    /// bottom of the preview.
+    /// `.degraded` means one layer was skipped and the wallpaper is still playing,
+    /// so it gets the HUD chip instead of a banner.
     @ViewBuilder
     private var errorBanner: some View {
         if case let .error(reason) = state, reason.failureClass != .degraded {
@@ -197,10 +189,6 @@ struct SceneDetailView: View {
                 code: presentation.code,
                 surface: .chrome
             ) {
-                // No Log button here: `hasDiagnosticFindings` is true for every
-                // error state, so the HUD row right below already shows
-                // Diagnostics into the same sheet. A second entry point 20pt
-                // away only crowded the recovery actions off the edge.
                 WallpaperFailureRecoveryActions(
                     recovery: presentation.recovery,
                     onRetry: { reloadScene() }
@@ -210,8 +198,6 @@ struct SceneDetailView: View {
         }
     }
 
-    /// Non-blocking notice for `.degraded`: it sits in the HUD action row beside
-    /// Diagnostics instead of taking a banner's worth of vertical space.
     @ViewBuilder
     private var degradedChip: some View {
         if case let .error(reason) = state, reason.failureClass == .degraded {
@@ -249,9 +235,7 @@ struct SceneDetailView: View {
         }
     }
 
-    /// Whether the log would say anything. Everything below is collected in
-    /// Release too — only `WPESceneDebugArtifacts` (the on-disk dump) is
-    /// Debug-only — so a shader compile failure or a post-return GPU error has
+    /// Everything below is collected in Release too, so a shader or GPU error has
     /// no other surface in a shipped build.
     private var hasDiagnosticFindings: Bool {
         if case .error = state { return true }
@@ -282,7 +266,6 @@ struct SceneDetailView: View {
         return .accentColor
     }
 
-    /// Live renderer frame as hero (no extra render).
     @ViewBuilder
     private var fallbackBackground: some View {
         Group {
@@ -307,9 +290,6 @@ struct SceneDetailView: View {
         .overlay(Color.black.opacity(state.isLoading ? 0.35 : 0.0))
     }
 
-    /// Floating glass info bar under the preview — the scene-type analog of the video command bar.
-    /// Same control as the video overlay's, so "how does this fill the screen"
-    /// is answered in the same place whatever the wallpaper is.
     private var fitModeGroup: some View {
         GlassSegmentedPicker(
             selection: $fitMode,
@@ -335,9 +315,6 @@ struct SceneDetailView: View {
             HStack(spacing: DesignTokens.Spacing.xs) {
                 degradedChip
                 workshopLinkButton
-                // Only when the log has something in it. A scene that loaded
-                // cleanly has nothing to show here, and the context menu keeps
-                // the report reachable for a bug report either way.
                 if hasDiagnosticFindings {
                     Button {
                         showLogSheet = true
@@ -359,10 +336,6 @@ struct SceneDetailView: View {
         }
     }
 
-    /// Jumps to the Workshop tab. One action, so a button rather than a menu with
-    /// a single item in it. No capability-disabled fallback: this file compiles
-    /// only into the Pro binary, whose sole capability set (`ProductCapabilities.pro`)
-    /// carries `.scene` and `.wpeImport` together, so such a branch could not run.
     @ViewBuilder
     private var workshopLinkButton: some View {
         if isSteamWorkshopID {
@@ -424,7 +397,7 @@ struct SceneDetailView: View {
         posterCommit: ScenePropertyPosterCommit? = nil
     ) async -> SceneRenderState? {
         // Refresh the session's present/diagnostics caches from the render actor
-        // (M2c1b-3c) before deriving state, so the sync reads below see fresh data.
+        // before deriving state, so the sync reads below see fresh data.
         await targetSession?.pollRendererState()
         guard previewLifecycle.accepts(
             generation,
@@ -453,7 +426,6 @@ struct SceneDetailView: View {
         return next
     }
 
-    /// Next presented frame as poster (no forced sync render).
     private func captureLivePosterIfNeeded(
         for next: SceneRenderState,
         session targetSession: SceneWallpaperSession?,
@@ -585,7 +557,6 @@ private struct DiagnosticLogSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var didCopy = false
-    /// Cached colourised log; rebuild only when content changes (long logs).
     @State private var rendered: AttributedString?
 
     var body: some View {
@@ -595,10 +566,8 @@ private struct DiagnosticLogSheet: View {
             terminal
         }
         .frame(minWidth: 540, idealWidth: 680, minHeight: 380, idealHeight: 540)
-        // Registered exception (w1-contracts §4, W2-B7): content-layer wash on a
-        // system-presented sheet — the HIG "standard material on the content
-        // layer" case, which AdaptiveGlass has no API for. The system material
-        // already goes opaque under Reduce Transparency.
+        // Registered exception: content-layer wash on a system-presented sheet,
+        // which AdaptiveGlass has no API for.
         .background(.ultraThinMaterial)
         // Keyed on the log: without the id the sheet keeps the first colourised
         // text forever, so a log that grows while the sheet is open stops updating.
@@ -718,25 +687,12 @@ enum SceneRenderState: Equatable {
 
 // MARK: - Information overlay
 
-/// Scene-type analog of `VideoInformationOverlay` / `HTMLInformationOverlay`.
 struct SceneInformationOverlay: View {
     let origin: WPEOrigin
     let descriptor: SceneDescriptor
 
     /// Only what differs between scenes AND changes what the user should expect.
-    ///
-    /// Not the `preflightFeatureFlags` set (Shader, Particle, Text, Audio, Anim,
-    /// FX): those are genuinely computed per scene, but almost every non-trivial
-    /// Wallpaper Engine scene uses all of them, so spelling them out reads the
-    /// same on every wallpaper. The consequence of the flags is already
-    /// summarized by `capabilityTier`, and the flags themselves are listed in the
-    /// diagnostics report (`WPERenderDiagnosticReport`), which is where someone
-    /// debugging goes.
-    ///
-    /// What is left says "something here is limited or unusual", so an empty row
-    /// means "nothing to look at" and renders nothing. Without this guard the
-    /// padding and the glass backing still drew, leaving a capsule with nothing
-    /// in it on every scene that is simply fine.
+    /// Without this guard the padding and glass backing still draw an empty capsule.
     private var hasContent: Bool {
         requiresWindowsPlugin
             || descriptor.capabilityTier == .unsupported
@@ -755,7 +711,6 @@ struct SceneInformationOverlay: View {
             if requiresWindowsPlugin {
                 Text("Win plugin").informationOverlayTag(background: DesignTokens.Colors.Status.danger.opacity(0.55))
             }
-            // Only the "nothing renders" verdict earns a badge.
             if descriptor.capabilityTier == .unsupported {
                 Text(verbatim: descriptor.capabilityTier.localizedLabel)
                     .informationOverlayTag(background: DesignTokens.Colors.Status.danger.opacity(0.55))
@@ -774,15 +729,10 @@ struct SceneInformationOverlay: View {
         .foregroundStyle(DesignTokens.Colors.overlayForeground)
         .padding(.horizontal, DesignTokens.Spacing.cardInset)
         .padding(.vertical, 8)
-        // Same treatment as the title capsule beside it: white badges over a
-        // wallpaper need a scrim under the material, not a tint on it.
         .adaptiveGlassOverMedia(.capsule)
         .accessibilityElement(children: .combine)
     }
 
-    /// "Packaged" is what a Workshop item always is, so it said nothing. A linked
-    /// source folder is the unusual case, and it is the one that means edits on
-    /// disk reach the wallpaper.
     private var requiresWindowsPlugin: Bool {
         origin.requiresWindowsPlugin || descriptor.preflightFeatureFlags.contains(.windowsPlugin)
     }

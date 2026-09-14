@@ -1,11 +1,6 @@
 #if !LITE_BUILD
 import Foundation
 
-/// WPE shader-dialect builtin macros for `WPERenderPipelineBuilder.shaderPrelude`.
-///
-/// Stage-agnostic: no `#version`, no `out`-declaration, no combo `#define`s — the caller
-/// adds those. Without these macros any workshop shader using WPE intrinsics
-/// (`CAST2(...)`, `ddx`/`ddy`, ...) fails MSL compilation.
 enum WPEShaderBuiltinMacros {
     static let glslPreludeLines: [String] = [
         "#define GLSL 1",
@@ -29,9 +24,7 @@ enum WPEShaderBuiltinMacros {
         "#ifndef M_PI",
         "#define M_PI 3.14159265358979323846",
         "#endif",
-        // WPE shader sources use `M_PI_2` as a full turn (2π), not the
-        // mathematical π/2 constant. `shake.frag` and several workshop
-        // audio/shape shaders divide by it to normalize a complete cycle.
+        // WPE `M_PI_2` is a full turn (2π), not the mathematical π/2 constant.
         "#ifndef M_PI_2",
         "#define M_PI_2 6.28318530717958647692",
         "#endif",

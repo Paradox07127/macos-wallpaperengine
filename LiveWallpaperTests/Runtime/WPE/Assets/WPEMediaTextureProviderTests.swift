@@ -7,20 +7,8 @@ import Metal
 import Testing
 import UniformTypeIdentifiers
 
-/// `$mediaThumbnail` / `$mediaPreviousThumbnail`: the album-art bitmap that
-/// reaches a Scene wallpaper as a system texture bound into a shader slot, never
-/// through JavaScript. Twelve of the 54 installed scenes declare one.
-///
-/// Structure asserted here comes from the installed corpus, not from our own
-/// code: `usertextures` is positional against the sibling `textures` array with
-/// `null` in every slot the author did not override (2955378002
-/// `objects[201]/effects[0]/passes[0]` is `[null, {$mediaPreviousThumbnail},
-/// {$mediaThumbnail}]` against three `textures` entries).
-///
-/// Nothing in this file may reach `NowPlayingMonitor.shared` — it observes the
-/// user's real Spotify/Music. The injected `WPENowPlayingEventSource` seam
-/// (`FakeNowPlayingSource`, declared in WPESceneMediaEventDispatchTests) is the
-/// only source used.
+/// 本文件不许触到 `NowPlayingMonitor.shared`(用户真实播放器):
+/// 只走注入的 `FakeNowPlayingSource`(在 WPESceneMediaEventDispatchTests)。
 @Suite("WPE $mediaThumbnail system texture", .serialized)
 @MainActor
 struct WPEMediaTextureProviderTests {
@@ -53,10 +41,6 @@ struct WPEMediaTextureProviderTests {
         #expect(WPEMediaTextureDemand.byPassID(in: pipeline).isEmpty)
     }
 
-    /// Mirrors the load path in WPEMetalSceneRenderer+Load.swift: it scans the
-    /// pipeline, and only builds a store and subscribes when the scan is
-    /// non-empty. Asserted through the injected source so nothing here reaches
-    /// `NowPlayingMonitor.shared`.
     @Test("No $media binding creates neither a subscription nor a texture store")
     func demandGateCreatesNoSubscriptionWithoutBindings() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
@@ -89,8 +73,6 @@ struct WPEMediaTextureProviderTests {
         let subscription = WPEMediaTextureSubscription(store: store, source: source)
         subscription.start()
         #expect(source.subscriberCount == 1)
-        // A leaked subscription would outlive the wallpaper: the monitor holds
-        // the handler, which holds this scene's store.
         subscription.stop()
         #expect(source.subscriberCount == 0)
     }
@@ -137,16 +119,11 @@ struct WPEMediaTextureProviderTests {
 
         store.ingest(artwork: nil)
 
-        // Asserting identity, not just non-nil: binding a blank or black texture
-        // here is exactly the bug this guards — "no music playing" must render
-        // the author's cover art, not a hole.
+        // 断言 identity 而非仅 non-nil:这里换成空白/黑纹理会渲成一个洞,
+        // 而不是作者的封面图。
         #expect(store.substituting(placeholder, slot: 2, declarations: declarations) === placeholder)
     }
 
-    /// A → player stops (nil) → B: the previous slot must still serve A at B.
-    /// Clearing previous together with current on a nil push wiped that memory,
-    /// so `$mediaPreviousThumbnail` fell back to the placeholder instead of the
-    /// cover the scene was crossfading from.
     @Test("A no-artwork gap does not erase the previous cover")
     func nilArtworkKeepsPreviousCoverAcrossTheGap() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
@@ -168,9 +145,6 @@ struct WPEMediaTextureProviderTests {
                 "at B the previous slot still serves A, not the placeholder")
     }
 
-    /// The renderer's frame loop can be parked (static scene, nothing else
-    /// animating); an ingest that changed a texture reports it so the caller
-    /// can wake one frame — otherwise the desktop keeps the old song's cover.
     @Test("Ingest reports whether it changed anything")
     func ingestReportsChanges() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
@@ -204,8 +178,6 @@ struct WPEMediaTextureProviderTests {
         let first = try Self.artwork(red: 0.9)
         store.ingest(artwork: first)
 
-        // First artwork ever: there is no previous, so that slot must still be
-        // the author's placeholder rather than a copy of the current cover.
         #expect(store.substituting(placeholder, slot: 1, declarations: declarations) === placeholder)
         let current = try #require(store.substituting(placeholder, slot: 2, declarations: declarations))
 
@@ -301,9 +273,6 @@ struct WPEMediaTextureProviderTests {
         )
         let pixel = try Self.readPixel(output, x: 2, y: 2)
 
-        // The whole scene died here before: a builtin pass was routed to the custom-shader
-        // dispatch, which has no program for it, so `cover.0` threw `unsupportedShader`,
-        // never wrote `_a`, and `cover.1`'s read of `_a` failed the render (3660962877).
         #expect(pixel.r > 150, "the cover slot must carry the artwork, not the blue placeholder")
         #expect(pixel.b < 100)
     }
@@ -368,9 +337,7 @@ struct WPEMediaTextureProviderTests {
         ])
     }
 
-    /// Two passes on one layer: the `$mediaThumbnail` material pass writing the layer
-    /// composite, then a pass that READS that composite. The second pass is the point —
-    /// it is what turned a mis-dispatched cover pass into a dead scene.
+    /// 第二个 pass 读第一个写的 composite —— 这个读才是夹具的要害。
     private static func coverPipeline() -> WPEPreparedRenderPipeline {
         func prepared(_ pass: WPERenderPass) -> WPEPreparedRenderPass {
             WPEPreparedRenderPass(pass: pass, shader: nil, textureBindings: [:], comboValues: [:], uniformValues: [:])
@@ -424,7 +391,6 @@ struct WPEMediaTextureProviderTests {
         ])
     }
 
-    /// Same shape, but the composite producer is a custom shader that cannot be translated.
     private static func untranslatablePipeline() -> WPEPreparedRenderPipeline {
         let broken = WPERenderPass(
             id: "broken.0",
@@ -531,7 +497,7 @@ struct WPEMediaTextureProviderTests {
         return try #require(device.makeTexture(descriptor: descriptor))
     }
 
-    /// A solid PNG, distinct per `red` so two covers differ byte-for-byte.
+    /// 按 `red` 取值不同,使两张封面字节级不相同。
     private static func artwork(red: Double, size: Int = 64) throws -> Data {
         var bytes = [UInt8](repeating: 255, count: size * size * 4)
         for index in stride(from: 0, to: bytes.count, by: 4) {
@@ -565,10 +531,8 @@ struct WPEMediaTextureProviderTests {
     }
 }
 
-/// The `usertextures` array position IS the overridden texture slot. Both
-/// parsers used to `compactMap` the `null` holes away, which silently shifted
-/// every declaration down — `[null, {$mediaPreviousThumbnail}, {$mediaThumbnail}]`
-/// bound slots 0 and 1 instead of 1 and 2.
+/// `usertextures` 的数组下标就是被覆盖的纹理槽位:把 `null` 空洞
+/// compactMap 掉会让每条声明整体下移。
 @Suite("WPE usertextures slot alignment")
 struct WPEUserTextureSlotAlignmentTests {
     @Test("Document parser keeps instance usertextures aligned across null holes")

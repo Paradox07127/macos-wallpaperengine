@@ -2,12 +2,10 @@ import SwiftUI
 
 public enum EmptyStateVariant {
     case standard
-    /// Renders a solid accent-tinted drop-target frame so the affordance is discoverable without
-    /// dragging anything onto the area first. Pairs with the active `dragHintOverlay` in
-    /// `PreviewArea` — the empty state is the ambient/idle state, the overlay is the stronger
-    /// activated state, sharing the same shape and accent.
+    /// Accent-tinted drop-target frame; the idle counterpart to the active
+    /// `dragHintOverlay` in `PreviewArea`.
     case dropTarget
-    /// Compact (denser padding, smaller icon) for use inside inspector rows.
+    /// For use inside inspector rows.
     case compact
 }
 
@@ -23,9 +21,6 @@ public struct EmptyStateButtonAction {
     }
 }
 
-/// Standard illustrated empty state: icon + title + optional message + up to
-/// two actions, plus an optional `extra` slot for state-specific fine print
-/// (links, verbatim strings) so complex states don't fork the whole layout.
 public struct IllustratedEmptyState<Extra: View>: View {
     let symbol: String
     let title: Text
@@ -56,9 +51,8 @@ public struct IllustratedEmptyState<Extra: View>: View {
         self.extra = extra()
     }
 
-    /// Verbatim variant for already-resolved runtime strings (e.g. an
-    /// interpolated "No results for …" message) that must not be re-looked-up
-    /// in the localization catalog.
+    /// For already-resolved runtime strings that must not be re-looked-up in the
+    /// localization catalog.
     public init(
         symbol: String,
         verbatimTitle: String,

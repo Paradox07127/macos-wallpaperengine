@@ -1,8 +1,6 @@
 #if !LITE_BUILD
 import Foundation
 
-/// Shared deterministic LRU byte accounting for Metal texture and static-layer caches.
-/// Callers retain their own admission and eviction-trigger policies.
 struct WPEMetalLRUByteBudget<Key: Hashable & Comparable & Sendable>: Equatable, Sendable {
     struct Entry: Equatable, Sendable {
         let bytes: Int
@@ -59,9 +57,7 @@ struct WPEMetalLRUByteBudget<Key: Hashable & Comparable & Sendable>: Equatable, 
             })?.key
     }
 
-    /// Evict least-recently-used entries until within budget, never touching a
-    /// `protected` key — so an over-budget sweep keeps every protected entry
-    /// resident rather than evicting one still in use.
+    /// Evict least-recently-used entries until within budget, never touching a `protected` key — an over-budget sweep keeps every protected entry resident rather than evicting one still in use.
     @discardableResult
     mutating func evictOverBudget(protecting protected: Set<Key>) -> [Key] {
         var evicted: [Key] = []

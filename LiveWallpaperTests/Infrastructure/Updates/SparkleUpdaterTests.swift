@@ -2,9 +2,6 @@ import Foundation
 import Testing
 @testable import LiveWallpaper
 
-/// Replaces the retired `UpdateSurfaceOwnershipTests`. Every update surface has
-/// to read the one shared updater, or two of them could disagree about whether
-/// an update is pending.
 @Suite("Sparkle update surfaces share one updater")
 struct SparkleUpdaterOwnershipTests {
     @MainActor
@@ -38,7 +35,6 @@ struct SparkleUpdaterOwnershipTests {
         try startup.start(updater: updater)
 
         #expect(startup.hasStarted)
-        // Startup still makes manual checks available when automatic checks are off.
         #expect(updater.events == (enabled ? ["start", "check"] : ["start"]))
         try startup.start(updater: updater)
         #expect(updater.events == (enabled ? ["start", "check"] : ["start"]))
@@ -90,8 +86,6 @@ struct SparkleUpdaterOwnershipTests {
         }
     }
 
-    /// The button is the only thing that tells the user an update exists, so it
-    /// has to be gated on one actually being available.
     @Test("The menu bar Update button only exists when an update is pending")
     func menuBarButtonIsGatedOnAvailability() throws {
         let source = try RepositoryRoot.source("LiveWallpaper/Views/MenuBarContent.swift")
@@ -99,10 +93,6 @@ struct SparkleUpdaterOwnershipTests {
         #expect(source.contains("updater.checkForUpdates()"))
     }
 
-    /// A found update has to reach the user twice over: Sparkle's own alert, and
-    /// the menu bar badge on top of it. 0.6.0 suppressed the alert and shipped
-    /// the badge alone, which users missed — if the `true` below regresses to
-    /// `false`, that is what comes back.
     @Test("A scheduled check shows Sparkle's alert and lights the menu bar")
     func scheduledChecksShowSparkleAlert() throws {
         let source = try RepositoryRoot.source("LiveWallpaper/Infrastructure/Services/SparkleUpdaterController.swift")
@@ -110,12 +100,9 @@ struct SparkleUpdaterOwnershipTests {
         #expect(source.contains("standardUserDriverShouldHandleShowingScheduledUpdate"))
         // The delegate method's body is a bare `true`.
         #expect(source.contains("    ) -> Bool {\n        true\n    }"))
-        // The badge still tracks what Sparkle found.
         #expect(source.contains("onUpdateFound?(version)"))
     }
 
-    /// Sparkle refuses an update whose signature does not verify against this
-    /// key, so a missing or drifted key silently disables update delivery.
     @Test("Both SKUs ship the same EdDSA public key and their own feed", arguments: [
         ("LiveWallpaperInfo.plist", "appcast-pro.xml"),
         ("LoomscreenInfo.plist", "appcast-lite.xml"),
@@ -142,8 +129,6 @@ struct SparkleUpdaterOwnershipTests {
         #expect(plist["CFBundleShortVersionString"] as? String == "$(MARKETING_VERSION)")
     }
 
-    /// Someone who turned launch checks off in 0.5.7 must not have them turned
-    /// back on by the move to Sparkle — the Info.plist default is on.
     @Test("A 0.5.7 opt-out carries over, once, and never beats a Sparkle-side choice", arguments: [
         // legacy value, Sparkle already stores a choice, what should be applied
         (false, false, false as Bool?),
@@ -166,7 +151,6 @@ struct SparkleUpdaterOwnershipTests {
         )
 
         #expect(carried == expected)
-        // Consumed either way, so a later change in Sparkle's own settings sticks.
         #expect(defaults.object(forKey: SparkleUpdaterController.legacyCheckAtLaunchKey) == nil)
     }
 
@@ -189,11 +173,8 @@ struct SparkleUpdaterOwnershipTests {
         var fired = false
     }
 
-    /// A failed check (no network, 404, bad signature) ends the session, so this
-    /// callback is on the failure path. Sparkle 2.9.6 delivers it on the main
-    /// thread, but its own `assert` for that is compiled out of release and the
-    /// protocol header does not promise it — assuming isolation would turn a
-    /// future version bump into a crash on every failed update check.
+    /// Sparkle's own `assert` that this lands on the main thread is compiled out of
+    /// release and the protocol does not promise it — assuming isolation would crash.
     @Test("The session-finished callback survives arriving off the main thread")
     func sessionFinishedFromBackgroundThreadDoesNotTrap() async throws {
         let delegate = await GentleReminderDelegate()
@@ -225,12 +206,8 @@ struct SparkleUpdaterOwnershipTests {
         #expect(source.contains("appcast-lite.xml"))
         #expect(source.contains("ACTUAL_BUNDLE_VERSION"))
     }
-    /// "Remind Me Later" ends Sparkle's update SESSION; it does not withdraw the
-    /// update. The two arrive through different delegates — availability from
-    /// `SPUUpdaterDelegate`, session lifetime from `SPUStandardUserDriverDelegate`
-    /// — and wiring the session's end to "no update" made dismissing the alert
-    /// report the old version as current: the About line flipped to a checkmark
-    /// and the menu bar Update button disappeared until the next scheduled check.
+    /// Availability and session lifetime arrive through different delegates:
+    /// "Remind Me Later" ends the session without withdrawing the update.
     @MainActor
     @Test("Dismissing the update alert leaves the found version standing")
     func remindMeLaterKeepsTheFoundVersion() {
@@ -240,7 +217,6 @@ struct SparkleUpdaterOwnershipTests {
         updater.noteUpdateFound(version: "0.6.2")
         #expect(updater.availableVersion == "0.6.2")
 
-        // What Sparkle calls when the user picks "Remind Me Later".
         updater.noteUpdateSessionFinished()
 
         #expect(
@@ -249,7 +225,6 @@ struct SparkleUpdaterOwnershipTests {
         )
     }
 
-    /// The one thing that *does* withdraw it: a later check that finds nothing.
     @MainActor
     @Test("A check that finds nothing clears the pending update")
     func aCheckWithNoUpdateClearsIt() {

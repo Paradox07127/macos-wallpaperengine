@@ -1,11 +1,6 @@
 import AppKit
 import Combine
 
-/// Per-screen Combine subscription + fallback Task pair that the wallpaper pipeline uses to wait for
-/// `AVPlayer` to report a real frame rate before applying frame-rate-sensitive effects. Owned
-/// exclusively by `PlaybackTransitionRegistry`. Intentionally not actor-isolated because the
-/// registry's MainActor isolation already serialises access, and the nonisolated cancellation lets
-/// `deinit` clean up safely.
 public final class AssetReadinessWork {
     public var frameRateSubscription: AnyCancellable?
     public var fallbackTask: Task<Void, Never>?
@@ -24,9 +19,6 @@ public final class AssetReadinessWork {
     }
 }
 
-/// Owns one candidate-session preparation task. Kept separate from asset
-/// readiness because the latter continues after a committed video session is
-/// installed, while this task governs whether installation may happen at all.
 public final class RuntimePreparationWork {
     public var task: Task<Void, Never>?
 
@@ -42,19 +34,13 @@ public final class RuntimePreparationWork {
     }
 }
 
-/// Tracks per-screen async video transitions so stale completions get
-/// dropped, and owns the per-screen asset-readiness work used by
-/// `applyConfigurationWhenAssetReady`. Extracted from `ScreenManager`.
 @MainActor
 public final class PlaybackTransitionRegistry {
     private var generationByScreen: [CGDirectDisplayID: Int] = [:]
     private var assetReadinessByScreen: [CGDirectDisplayID: AssetReadinessWork] = [:]
     private var runtimePreparationByScreen: [CGDirectDisplayID: RuntimePreparationWork] = [:]
-    /// Per-screen "validate this URL is playable" Task started in `PlaybackCoordinator.setVideo`.
-    /// Stored here so that `bumpTransition` (called when the user picks a different video) can
-    /// cancel the previous validation before it finishes — otherwise the stale Task keeps the
-    /// security scope open and the `AVAsset` alive for several seconds past the point where the user
-    /// has already moved on.
+    /// Per-screen "is this URL playable" validation Task. Stored so `bumpTransition` can
+    /// cancel it — a stale one holds the security scope and the `AVAsset` open.
     private var validationTaskByScreen: [CGDirectDisplayID: Task<Void, Never>] = [:]
 
     public init() {}
@@ -112,9 +98,7 @@ public final class PlaybackTransitionRegistry {
         }
     }
 
-    /// Installs the validation Task for a screen, cancelling any previously
-    /// in-flight validation for the same screen first. Call this immediately
-    /// after creating the Task so a rapid bump doesn't slip past it.
+    /// Call this immediately after creating the Task so a rapid bump doesn't slip past it.
     public func setValidationTask(_ task: Task<Void, Never>, for screenID: CGDirectDisplayID) {
         validationTaskByScreen[screenID]?.cancel()
         validationTaskByScreen[screenID] = task

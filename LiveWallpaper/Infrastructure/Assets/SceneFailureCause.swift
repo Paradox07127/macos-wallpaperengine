@@ -3,8 +3,6 @@ import Foundation
 import LiveWallpaperCore
 import LiveWallpaperProWPE
 
-/// Exhaustive adapters retain the original payload for diagnostics. Presentation
-/// never infers a decoder or parser failure from a generic NSError string.
 enum SceneFailureCause {
     static func make(_ error: Error) -> WallpaperFailureCause {
         switch error {

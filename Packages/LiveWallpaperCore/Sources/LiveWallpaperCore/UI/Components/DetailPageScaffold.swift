@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-/// Library page background and minimum size; identity belongs in the toolbar.
+/// Page identity belongs in the toolbar, not here.
 public struct DetailPageScaffold<Content: View>: View {
     private let content: Content
 

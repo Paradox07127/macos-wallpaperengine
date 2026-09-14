@@ -2,9 +2,6 @@ import SwiftUI
 
 // MARK: - Pure decision + reduction (unit-tested, no capture dependencies)
 
-/// Field-driven audio-layer math for the Now Playing widget: the reactive
-/// visuals exist only while every gate below says yes, so paused tracks,
-/// reduce-motion, suspension, and silence never draw an empty spectrum.
 enum NowPlayingAudioLayer {
     /// Below this every bin counts as noise floor — the whole layer hides.
     static let silenceThreshold: Float = 0.02
@@ -30,8 +27,7 @@ enum NowPlayingAudioLayer {
     }
 
     /// 64 bins → `bands.count` bands: channels averaged, bins merged by energy
-    /// mean. Callers keep `bands` allocated across ticks (fixed capacity).
-    /// More bands than bins duplicates bins instead of leaving holes.
+    /// mean. More bands than bins duplicates bins instead of leaving holes.
     nonisolated static func mergedBands(left: [Float], right: [Float], into bands: inout [Float]) {
         let bandCount = bands.count
         guard bandCount > 0 else { return }
@@ -68,9 +64,8 @@ enum NowPlayingAudioLayer {
         meanEnergy(left: left, right: right, in: 0..<lowBandCount)
     }
 
-    /// The three instantaneous drives. Split by bin fraction, so at the shipped
-    /// 64-bin frame these are bins 0–7 (bass, the `lowBandCount` band), 8–31
-    /// (mid) and 32–63 (treble).
+    /// Split by bin fraction: at the shipped 64-bin frame these are bins 0–7
+    /// (bass, the `lowBandCount` band), 8–31 (mid) and 32–63 (treble).
     nonisolated static func instantDrives(
         left: [Float], right: [Float]
     ) -> (bass: Float, mid: Float, treb: Float) {
@@ -85,20 +80,17 @@ enum NowPlayingAudioLayer {
         )
     }
 
-    /// Any bin at or above the noise floor counts as signal.
     nonisolated static func isAudible(left: [Float], right: [Float]) -> Bool {
         left.contains { $0 >= silenceThreshold } || right.contains { $0 >= silenceThreshold }
     }
 
-    /// Attack-fast / release-slow envelope, normalized to the elapsed frame: `releaseFactor` is per 1/30 s, so a
-    /// dropped frame must decay by that many ticks' worth or the visuals slow down exactly when the machine is
-    /// busiest. A long stall is capped at 0.25 s so a resumed layer doesn't snap to zero.
+    /// Attack-fast / release-slow envelope: `releaseFactor` is per 1/30 s, so `dt`
+    /// converts to ticks; a stall is capped at 0.25 s so a resume doesn't snap to zero.
     nonisolated static func smoothed(previous: Float, target: Float, dt: TimeInterval) -> Float {
         let ticks = Float(min(max(dt, 0), 0.25) * referenceTickRate)
         return max(target, previous * pow(releaseFactor, ticks))
     }
 
-    /// Faded out and silent long enough that ticking at 30fps buys nothing.
     nonisolated static func shouldIdle(fade: Double, silentFor: TimeInterval) -> Bool {
         fade <= 0.001 && silentFor >= idleSilence
     }
@@ -140,8 +132,7 @@ enum NowPlayingAudioLayer {
     }
 
     /// Spectral-flux onset detector: a frame whose rising energy stands out
-    /// from the last ~1.5 s of flux is a beat. Buffers are sized once, so a
-    /// step costs arithmetic only.
+    /// from the last ~1.5 s of flux is a beat.
     struct BeatDetector {
         /// ~1.5 s of history at the reference tick.
         static let historyCapacity = 45
@@ -228,9 +219,7 @@ enum NowPlayingAudioLayer {
         }
     }
 
-    /// Effect amplitudes. Every one is clamped to a ceiling the user's intensity
-    /// dial cannot push past, so a 2× intensity still cannot shove the layer
-    /// visibly out of place or blow an alpha past opaque.
+    /// Effect amplitudes, each clamped to a ceiling the intensity dial cannot push past.
     enum Effects {
         static let maxShakeOffset: CGFloat = 4
         static let maxShakeRotationDegrees: Double = 0.6
@@ -260,19 +249,15 @@ enum NowPlayingAudioLayer {
         }
 
         /// How far a peak cap sinks per second once the bar has dropped away from it.
-        /// Slow enough to read as a held reading, fast enough not to litter the tile
-        /// with stale caps.
         nonisolated static let peakFallPerSecond: Float = 0.9
 
-        /// A peak cap follows its bar instantly upwards and sinks at a fixed rate
-        /// afterwards, which is what makes a transient legible after the bar has gone.
+        /// A peak cap follows its bar instantly upwards and sinks at a fixed rate after.
         nonisolated static func peak(previous: Float, band: Float, dt: Double) -> Float {
             max(band, max(0, previous - peakFallPerSecond * Float(dt)))
         }
 
-        /// The spectrum read at any point across the tile, not just at a band centre:
-        /// the wave needs a value per pixel column, and stepping between bands would
-        /// give it a staircase.
+        /// The spectrum read at any 0…1 position, not just at a band centre: stepping
+        /// between bands would give the wave a staircase instead of a per-column value.
         nonisolated static func sampledBand(_ bands: [Float], at t: Double) -> Float {
             guard !bands.isEmpty else { return 0 }
             guard bands.count > 1 else { return bands[0] }
@@ -283,9 +268,7 @@ enum NowPlayingAudioLayer {
             return bands[low] * (1 - blend) + bands[high] * blend
         }
 
-        /// Wave height at a band, as a fraction of half the tile. Zero in silence: the
-        /// halo this replaced went on breathing on a residual reading, which is what
-        /// made it restless rather than musical.
+        /// Wave height at a band, as a fraction of half the tile; zero in silence.
         nonisolated static func waveAmplitude(band: Float, fade: Double, intensity: Double) -> Double {
             limited(Double(max(band, 0)) * limited(intensity, to: 1) * limited(fade, to: 1), to: 1)
         }
@@ -294,24 +277,17 @@ enum NowPlayingAudioLayer {
         nonisolated static let moteFadeWidth: Double = 3
 
         /// How brightly mote `index` burns at this bass level, 0…1.
-        ///
-        /// A budget with a hard edge (`for index in 0 ..< liveCount`) deleted the last
-        /// motes the instant the bass dipped, mid-flight and at full brightness — the
-        /// field looked like it was glitching rather than breathing. The edge is a ramp
-        /// now, so the same dip dims those motes to nothing over a moment instead.
         nonisolated static func moteVisibility(
             index: Int, count: Int, bass: Float, intensity: Double
         ) -> Double {
             guard count > 0, index >= 0, index < count else { return 0 }
             let share = limited(0.25 + Double(bass) * 1.5 * intensity, to: 1) * limited(intensity, to: 1)
             let budget = Double(count) * share
-            // Three motes wide, not one: the budget moves about 48 motes per unit of
-            // bass, so a one-mote ramp still took a mote from full to dark inside a
-            // fiftieth of the bass range — visibly a blink. Three spreads that out.
+            // Three motes wide, not one: the budget moves ~48 motes per unit of bass, so
+            // a one-mote ramp would take a mote from full to dark visibly as a blink.
             return limited(max(0, budget - Double(index)) / moteFadeWidth, to: 1)
         }
 
-        /// Ring alpha at `progress` through a ripple's life.
         nonisolated static func rippleAlpha(progress: Double, fade: Double, intensity: Double) -> Double {
             limited((1 - progress) * 0.45 * fade * intensity, to: 1)
         }
@@ -325,9 +301,8 @@ enum NowPlayingAudioLayer {
         }
     }
 
-    /// Deterministic wobble in −1…1. Time-seeded rather than random so every
-    /// display shakes identically at the same instant instead of each drawing
-    /// its own walk.
+    /// Deterministic wobble in −1…1. Time-seeded, not random, so every display
+    /// shakes identically at the same instant.
     nonisolated static func noise(_ time: TimeInterval, phase: Double) -> Double {
         let value = time + phase
         return sin(value * 12.9898) * 0.6 + sin(value * 5.233 + 1.7) * 0.4
@@ -359,7 +334,6 @@ final class NowPlayingAudioEngine {
     private var lastTick: TimeInterval?
     private var silentSince: TimeInterval?
 
-    /// One broker pull + envelope advance per Canvas redraw.
     func step(now: TimeInterval, bandCount: Int, sensitivity: Float, tracksBeat: Bool) {
         if bands.count != bandCount {
             bands = [Float](repeating: 0, count: bandCount)
@@ -410,7 +384,6 @@ final class NowPlayingAudioEngine {
         )
     }
 
-    /// Cheap poll used while the timeline is parked: audio back means wake up.
     func probeAudible() -> Bool {
         let frame = SystemAudioCaptureManager.broker.snapshot()
         let audible = NowPlayingAudioLayer.isAudible(left: frame.left, right: frame.right)
@@ -426,9 +399,6 @@ final class NowPlayingAudioEngine {
 
 // MARK: - Reactive layer view (the ONLY 30fps surface in the widget)
 
-/// Audio-reactive sublayer for the three Now Playing styles. The TimelineView
-/// wraps just this view, so its 30fps ticks invalidate only the Canvas here;
-/// the surrounding widget stays on the 1Hz board clock.
 struct NowPlayingAudioReactiveView: View {
     enum Mode: Equatable {
         /// Poster: bottom-aligned thin spectrum bars above the progress line.
@@ -445,8 +415,6 @@ struct NowPlayingAudioReactiveView: View {
     let active: Bool
     let options: NowPlayingOptions
 
-    /// Built once per parent update rather than per tick: `Gradient(colors:)`
-    /// would otherwise allocate an array 30 times a second.
 
     @State private var engine = NowPlayingAudioEngine()
     @State private var idle = false
@@ -458,9 +426,6 @@ struct NowPlayingAudioReactiveView: View {
         self.options = options
     }
 
-    /// Bars were 2pt wide on a 2pt gap, which on a wallpaper viewed from a
-    /// normal desk distance read as noise rather than as a meter. Wide enough
-    /// to have a shape, with a gap that still separates them.
     private static let barWidth: CGFloat = 5
     private static let barSpacing: CGFloat = 4
     /// Floor so a quiet passage leaves a readable baseline instead of nothing.
@@ -468,7 +433,6 @@ struct NowPlayingAudioReactiveView: View {
     private static let capHeight: CGFloat = 2
     /// A cap closer than this to its bar is not drawn at all.
     private static let capGap: CGFloat = 3
-    /// Fewer, thicker spokes for the same reason the bars got wider.
     private static let spokeCount = 32
     private static let spokeWidth: CGFloat = 3.5
     /// Per-channel offset direction for the chromatic split.
@@ -497,8 +461,6 @@ struct NowPlayingAudioReactiveView: View {
         .accessibilityHidden(true)
     }
 
-    /// While the timeline is parked the engine stops pulling, so something has
-    /// to notice audio coming back; 2Hz costs less than one 30fps frame.
     private func pollWhileIdle() async {
         guard idle else { return }
         while !Task.isCancelled {
@@ -648,15 +610,11 @@ struct NowPlayingAudioReactiveView: View {
         )
     }
 
-    /// Flowing ribbons on top of aurora's static 0.3 glow
-    /// envelope. The amplitude used to cap at 0.15 — under the glow it sits on,
-    /// so the breathing was there in the numbers and invisible on screen.
+    /// Flowing ribbons on top of aurora's static 0.3 glow envelope.
     private func drawWave(
         in context: inout GraphicsContext, size: CGSize, now: TimeInterval, gain: Double
     ) {
         guard size.width > 1, size.height > 1 else { return }
-        // Three ribbons at different speeds and heights: one alone reads as a line
-        // being wiggled, several as a moving body of light.
         let ribbons: [(speed: Double, scale: Double, alpha: Double)] = [
             (0.9, 1.0, 0.34), (-0.55, 0.72, 0.24), (0.32, 0.46, 0.16),
         ]
@@ -672,8 +630,6 @@ struct NowPlayingAudioReactiveView: View {
                 let amplitude = NowPlayingAudioLayer.Effects.waveAmplitude(
                     band: band, fade: engine.fade, intensity: gain
                 )
-                // The travelling term is what makes it flow; the band term is what
-                // makes it the music's shape rather than a screensaver.
                 let travel = sin(t * .pi * 2.4 + now * ribbon.speed * 1.6)
                 let offset = reach * ribbon.scale * (amplitude * 0.75 + 0.12) * travel
                 let point = CGPoint(x: t * size.width, y: midline + offset)

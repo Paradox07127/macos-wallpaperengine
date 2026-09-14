@@ -15,7 +15,6 @@ struct WPEEngineAudioSettingsTests {
 
     @Test("The observed presets' levels map onto a 0...1 scale")
     func observedLevelsMap() throws {
-        // Preset 3471679253 published 50, preset 3544156790 published 80.
         #expect(try #require(WPEEngineAudioSettings.parse(["volume": .number(50)])).volumeScale == 0.5)
         #expect(try #require(WPEEngineAudioSettings.parse(["volume": .number(80)])).volumeScale == 0.8)
     }
@@ -31,9 +30,8 @@ struct WPEEngineAudioSettingsTests {
 
     @Test("A string NaN yields no setting rather than a NaN gain")
     func stringNaNIsRefused() {
-        // A NaN gain would also slip the sound runtime's `abs(delta) > 0.001`
-        // guard — the comparison is false for NaN — so the old level would be
-        // kept silently instead of failing where anyone could see it.
+        // A NaN gain slips the sound runtime's `abs(delta) > 0.001` guard - the
+        // comparison is false for NaN - so the old level would be kept silently.
         #expect(WPEEngineAudioSettings.parse(["volume": .string("NaN")]) == nil)
         #expect(WPEEngineAudioSettings.parse(["volume": .number(.nan)]) == nil)
     }
@@ -53,8 +51,7 @@ struct WPEEngineAudioCompositionTests {
 
     @Test("The preset scales the user's level rather than replacing it")
     func presetScalesMaster() {
-        // 3544156790 published 80. At half master the wallpaper must land at
-        // 0.4, not at 0.8 — a preset states a relative level.
+        // A preset states a relative level: at half master, 80 must land at 0.4, not 0.8.
         let preset = WPEEngineAudioSettings(volumeScale: 0.8)
         #expect(WPEEngineAudioSettings.effectiveVolume(master: 0.5, preset: preset) == 0.4)
         #expect(WPEEngineAudioSettings.effectiveVolume(master: 1.0, preset: preset) == 0.8)
@@ -76,11 +73,9 @@ struct WPEEngineAudioCompositionTests {
     }
 }
 
-/// Engine keys are bare names — `volume`, `rate`, `alignment` — and a wallpaper
-/// is free to declare a property of the same name. The repo's own schema fixture
-/// declares `volume` as a slider. So the source these are read from matters:
-/// `presetSnapshot` is what a preset published, while the layered map also
-/// carries whatever the user moved in the settings card.
+/// Engine keys are bare names a wallpaper may also declare as its own property, so
+/// the source matters: `presetSnapshot` is what the preset published, while the
+/// layered map also carries the user's edits.
 @Suite("Engine keys are read from the preset, not the user's edits")
 struct WPEEngineKeySourceTests {
 
@@ -117,9 +112,6 @@ struct WPEEngineKeySourceTests {
 
     @Test("Saving a preset does not promote an author's slider into the engine's volume")
     func saveAsPresetDropsAuthorVolumeFromTheSnapshot() {
-        // The path "Save current as preset" takes: the new snapshot is built
-        // from what is on screen. An author `volume` slider left in it becomes
-        // a master-gain scale the next time the preset is applied.
         let d = descriptor(presetValues: [:], overrides: ["volume": .number(20)])
         #expect(WPEEngineAudioSettings.parse(d.presetSnapshotForCurrentState()) == nil)
     }
@@ -149,8 +141,6 @@ struct WPEEngineKeySourceTests {
 
     @Test("Editing an author property does not shadow the preset's engine value")
     func userEditDoesNotOverrideEngineValue() throws {
-        // Both present: the preset says 80, the user moved a same-named author
-        // slider to 20. The engine setting is the preset's.
         let d = descriptor(
             presetValues: ["volume": .number(80)], overrides: ["volume": .number(20)]
         )

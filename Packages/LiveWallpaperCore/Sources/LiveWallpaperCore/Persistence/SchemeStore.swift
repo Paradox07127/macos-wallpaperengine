@@ -1,14 +1,12 @@
 import Foundation
 import Observation
 
-/// Persistence seam (SettingsManager in app; in-memory in tests).
 @MainActor
 public protocol SchemePersisting {
     func load() -> [ScreenScheme]
     func save(_ schemes: [ScreenScheme])
 }
 
-/// Saved per-display setups. App-wired `.shared` lives in SettingsManagerStoreBindings.swift.
 @MainActor
 @Observable
 public final class SchemeStore {
@@ -41,9 +39,6 @@ public final class SchemeStore {
         return scheme
     }
 
-    /// Overwrites an existing slot in place, keeping its id, name and creation
-    /// date. One display can hold several schemes, so re-capturing is "replace
-    /// the one you picked", never "update the display's scheme".
     @discardableResult
     public func replace(
         _ id: UUID,
@@ -53,9 +48,8 @@ public final class SchemeStore {
     ) -> ScreenScheme? {
         guard let index = schemes.firstIndex(where: { $0.id == id }) else { return nil }
         let existing = schemes[index]
-        // Rebuilt through the memberwise init so the identity strip in
-        // `ScreenScheme.init` runs on the incoming configuration too; assigning
-        // the fields one by one would archive the live display's screenID.
+        // Rebuild through the memberwise init so `ScreenScheme.init`'s identity strip runs;
+        // assigning fields one by one would archive the live display's screenID.
         let replacement = ScreenScheme(
             name: existing.name,
             configuration: configuration,
@@ -72,9 +66,6 @@ public final class SchemeStore {
         return replacement
     }
 
-    /// Records the cover captured for a scheme. Separate from `add`/`replace`
-    /// because the capture is asynchronous — the scheme has to exist before the
-    /// composed frame comes back.
     public func setCover(_ fileName: String?, for id: UUID) {
         guard let index = schemes.firstIndex(where: { $0.id == id }),
               schemes[index].coverFileName != fileName else { return }
@@ -109,9 +100,7 @@ public final class SchemeStore {
         schemes.removeAll()
     }
 
-    /// A scheme is a third copy of a security-scoped grant, next to the live
-    /// screen configuration and the bookmark library. When the system hands the
-    /// app a refreshed grant those two get rewritten; without this the archived
+    /// A scheme is a third copy of a security-scoped grant: without this the archived
     /// copy keeps the dead one and the scheme silently stops resolving.
     @discardableResult
     public func replaceHTMLBookmark(matching original: Data, with refreshed: Data) -> Int {

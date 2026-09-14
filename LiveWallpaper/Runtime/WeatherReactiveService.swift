@@ -51,9 +51,7 @@ final class WeatherReactiveService {
         case unknown = "Unknown"
     }
 
-    /// Wind as the API reports it: speed in km/h at 10 m, direction in degrees
-    /// *from* which it blows (meteorological convention — 270° is a westerly,
-    /// i.e. blowing towards the east).
+    /// Wind as the API reports it: speed in km/h at 10 m, direction in degrees from which it blows (meteorological convention — 270° is a westerly).
     struct WeatherWind: Equatable, Sendable {
         var speedKPH: Double
         var gustKPH: Double?
@@ -85,20 +83,15 @@ final class WeatherReactiveService {
     /// `shutdown()` is the process-lifetime barrier used during AppKit quit.
     @ObservationIgnored private(set) var isShutdown = false
 
-    /// Internal lifecycle seam used by termination tests. MainActor isolation
-    /// keeps the two task references coherent without exposing them publicly.
     var hasActiveWork: Bool { updateTask != nil || fetchTask != nil }
     #if DEBUG
-    // Test-only introspection; no production reader.
     var hasPreferenceObserver: Bool { preferenceObserver != nil }
     #endif
 
     // MARK: - Open-Meteo Response Model
 
     private struct OpenMeteoResponse: Decodable {
-        /// Everything past `weather_code` is optional on purpose: the extra
-        /// fields are a bonus, and a response that drops one of them must
-        /// still yield a usable condition rather than failing the decode.
+        /// Everything past weather_code is optional on purpose: a response that drops one of them must still yield a usable condition rather than failing the decode.
         struct Current: Decodable {
             let weather_code: Int
             let is_day: Int?
@@ -155,9 +148,6 @@ final class WeatherReactiveService {
         fetchTask = nil
     }
 
-    /// One-way termination barrier: cancel both producers, unregister the
-    /// preference callback that could otherwise call `refresh()` again, and
-    /// reject every later public entry point.
     func shutdown() {
         guard !isShutdown else { return }
         isShutdown = true
@@ -178,7 +168,6 @@ final class WeatherReactiveService {
         locationProvider.requestCoreLocationAuthorizationIfNeeded()
     }
 
-    /// Single-flight fetch — supersedes any in-flight fetch so refresh taps don't pile up overlapping requests.
     private func startFetch(force: Bool) {
         guard !isShutdown else { return }
         fetchTask?.cancel()
@@ -213,10 +202,7 @@ final class WeatherReactiveService {
             currentEffectAdjustments = .neutral
             currentWind = nil
         }
-        // Off means the entire weather-reactive pipeline is dormant: no
-        // location query, no Open-Meteo request, no observable updates.
-        // We still clear the cached state so a previously-rendered
-        // particle effect stops driving the wallpaper.
+        // Off means the entire weather-reactive pipeline is dormant. We still clear the cached state so a previously-rendered particle effect stops driving the wallpaper.
         let preference = SettingsManager.shared.loadGlobalSettings().weatherLocation
         if preference.source == .off {
             lastSuccessfulUpdate = nil
@@ -258,8 +244,6 @@ final class WeatherReactiveService {
         // Round coordinates to 2 decimal places (~1.1km precision) to preserve user location privacy.
         let lat = Double(round(coordinate.latitude * 100) / 100)
         let lon = Double(round(coordinate.longitude * 100) / 100)
-        // One request, same endpoint, no key: `weather_code` alone was leaving
-        // wind, daylight and precipitation on the table at zero extra cost.
         let current = [
             "weather_code", "is_day",
             "wind_speed_10m", "wind_gusts_10m", "wind_direction_10m",
@@ -346,13 +330,7 @@ final class WeatherReactiveService {
 
     // MARK: - Weather → Particle Mapping
 
-    /// Maps a weather description to a particle effect for auto-reactive mode. Seasonal
-    /// effects (sakura, falling leaves) stay out: the API says nothing about what's in bloom.
-    /// `lightning` likewise stays out — a surprise full-screen flash without consent is jarring.
-    /// Time of day is no longer excluded: the same free request returns `is_day`, so a clear
-    /// night can have the stars the effect set always had and never used — the old comment's
-    /// "the API exposes neither timestamp nor season" was only half true, and the wrong half
-    /// cost the two nicest effects on the list.
+    /// Seasonal effects (sakura, falling leaves) stay out: the API says nothing about what's in bloom. lightning stays out — a surprise full-screen flash without consent is jarring.
     private func mapDescriptionToParticle(
         _ desc: WeatherDescription, isDaylight: Bool? = nil
     ) -> ParticleEffect {

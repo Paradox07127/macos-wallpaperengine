@@ -5,7 +5,6 @@ import Security
 import Testing
 @testable import LiveWallpaper
 
-/// Movable clock for the disk cache's `now` closure.
 private final class TestClock: @unchecked Sendable { // single `Date`, guarded by `lock`
     private let lock = NSLock()
     private var current: Date
@@ -101,9 +100,6 @@ struct WorkshopQueryCacheTests {
         #expect(await cache.sizeBytes() == 0)
     }
 
-    /// Pages written before the payload carried `sourceItemCount`/`totalPages`
-    /// must miss: served, a keyless page would stay on the harvest shape for
-    /// its TTL and the pager would keep guessing.
     @Test("A page cached under the previous payload schema is not served")
     func previousSchemaPayloadMisses() async throws {
         let fileManager = FileManager.default
@@ -128,8 +124,6 @@ struct WorkshopQueryCacheTests {
             #expect(await cache.read(forKey: key) == nil, "schema \(version) must miss")
         }
 
-        // Control: a page written by this build round-trips under the same key,
-        // page metadata included.
         await cache.write(Self.samplePage(), forKey: key)
         let restored = await cache.read(forKey: key)
         #expect(restored == Self.samplePage())
@@ -137,8 +131,6 @@ struct WorkshopQueryCacheTests {
         #expect(restored?.totalPages == 7)
     }
 
-    /// Both rating units survive the disk round trip, with the fields the
-    /// detail sheet reads next to them.
     @Test("Item ratings, creation time, comment count and children round-trip")
     func itemFieldsRoundTrip() async throws {
         let fileManager = FileManager.default
@@ -181,9 +173,8 @@ struct WorkshopQueryCacheTests {
         #expect(restored.items[1].requiredItemIDs == [])
     }
 
-    /// The cache stores the wire title, not the localized fallback: a page
-    /// cached under one app language must not show the other language's
-    /// "Workshop item N" after a switch.
+    /// The cache stores the wire title, not the localized fallback, or a page cached under one app
+    /// language would show that language's "Workshop item N" after a switch.
     @Test("An untitled item stays untitled through the cache and still falls back to its id")
     func untitledItemRoundTripsAsUntitled() async throws {
         let fileManager = FileManager.default
@@ -221,8 +212,7 @@ struct WorkshopQueryCacheTests {
     }
 }
 
-/// In-memory stand-in for the login-keychain slot. Shared with the Workshop
-/// service tests so no test ever writes the developer's real keychain.
+/// Shared with the Workshop service tests so no test ever writes the developer's real keychain.
 final class WorkshopKeychainSlotSpy: @unchecked Sendable { // state guarded by `lock`
     private let lock = NSLock()
     private var stored: String?
@@ -279,9 +269,8 @@ struct WorkshopKeychainStoreTests {
         try Data(key.utf8).write(to: url)
     }
 
-    /// The keychain outranks the file: a save writes the keychain first and only
-    /// then drops the file, so whenever both exist the file is the stale side (a
-    /// failed removal, a backup restore, a half-written legacy copy).
+    /// The keychain outranks the file: a save writes the keychain first and only then drops the file,
+    /// so whenever both exist the file is the stale side.
     @Test("A corrupt leftover file does not shadow a valid keychain key")
     func corruptFileDoesNotShadowKeychain() async throws {
         let spy = WorkshopKeychainSlotSpy(stored: Self.sampleKey)

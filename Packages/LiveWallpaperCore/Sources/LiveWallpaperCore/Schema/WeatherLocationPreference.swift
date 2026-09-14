@@ -1,8 +1,8 @@
 import Foundation
 import CoreLocation
 
-/// Coordinate source for weather-reactive effects. No IP-geolocation path —
-/// third-party silent lookup was removed as a privacy compromise; use `.off`.
+/// Coordinate source for weather-reactive effects. There is no IP-geolocation path;
+/// use `.off`.
 public struct WeatherLocationPreference: Codable, Equatable, Sendable {
     public var source: Source
     /// Kept across source switches so the user can return to manual without re-entry.

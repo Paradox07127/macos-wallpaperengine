@@ -3,16 +3,6 @@ import Foundation
 import LiveWallpaperCore
 import Testing
 
-/// `HTMLConfig.originKind` decides whether a page renders with the network cut
-/// off, and until now it was copied straight out of stored state. A
-/// `.lwconfig` is a file the user can be handed, so that made an isolation
-/// decision something an imported file gets to make: mark Workshop HTML
-/// `.userLocal` and it loads with every remote origin allowed again.
-///
-/// The rule is one-way. Provenance derived from where the content actually sits
-/// can raise isolation, never lower it, so an origin that legitimately records
-/// `.workshopImport` for content served out of the app's own cache — a path that
-/// looks nothing like `steamapps/` — keeps it.
 @MainActor
 @Suite("Stored provenance can be raised by the real path, never lowered")
 struct OriginProvenanceTests {
@@ -56,7 +46,6 @@ struct OriginProvenanceTests {
         )
     }
 
-    /// A unit test on the helper cannot see a call site that stopped using it.
     @Test("Both resolver paths route provenance through the helper")
     func resolverPathsUseTheHelper() throws {
         let source = try RepositoryRoot.source(

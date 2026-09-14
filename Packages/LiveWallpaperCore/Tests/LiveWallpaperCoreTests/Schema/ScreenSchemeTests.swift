@@ -4,9 +4,8 @@ import Testing
 
 // MARK: - Fixtures
 
-/// A configuration whose every capturable field is off its default, so a
-/// round-trip that silently drops one shows up as an inequality rather than
-/// passing on coincidental defaults.
+/// Every capturable field is off its default, so a round-trip that silently drops
+/// one shows up as an inequality instead of matching by coincidence.
 private func richConfiguration(
     screenID: UInt32 = 777,
     fingerprint: String? = "source-panel-fingerprint"
@@ -96,11 +95,6 @@ struct ScreenSchemeTests {
 
     @Test("An archived scheme carries no live display identity")
     func archiveHoldsNoDisplayIdentity() throws {
-        // MUTATION CHECK: delete the `Self.stripped(configuration)` line in
-        // ScreenScheme.init (assign `configuration` directly) and this test must
-        // go red — screenID comes back as 777 and displayFingerprint reappears.
-        // Verified 2026-08-31; if it ever passes under that mutation the guard
-        // has lost its teeth.
         let scheme = ScreenScheme(
             name: "Desk setup",
             configuration: richConfiguration(screenID: 777, fingerprint: "source-panel-fingerprint"),
@@ -292,10 +286,6 @@ struct SchemeStoreTests {
 
 @Suite("ScreenScheme decode resilience")
 struct ScreenSchemeDecodeResilienceTests {
-    /// Schemes are persisted as one array, so a scheme whose overlay cannot be
-    /// read must not take the archive with it: `AtomicFileStore.read()` would
-    /// return nil, `loadScreenSchemes()` would hand back `[]`, and the next
-    /// capture would rewrite the file with only the new entry.
     @Test("A corrupt overlay costs that scheme its overlay, not the whole archive")
     func corruptOverlayKeepsTheArchive() throws {
         let good = ScreenScheme(

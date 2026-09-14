@@ -82,9 +82,6 @@ struct WallpaperCoverStoreTests {
 
     @Test("The orphan sweep keeps named covers and deletes the rest")
     func orphanSweep() throws {
-        // MUTATION CHECK: invert the `where !liveFileNames.contains(name)` filter
-        // in `removeOrphans` and this goes red both ways — the kept cover
-        // disappears and the orphan survives.
         let (store, root) = try Self.makeStore()
         defer { try? FileManager.default.removeItem(at: root) }
 
@@ -170,7 +167,6 @@ struct SavedLibrarySortOrderTests {
         let result = sorted(.type)
         let videoNames = result.filter { $0 == "Alpha" || $0 == "gamma" }
         #expect(videoNames == ["Alpha", "gamma"])
-        // The two videos must be adjacent, whichever group comes first.
         let indices = result.enumerated().filter { videoNames.contains($0.element) }.map(\.offset)
         #expect(indices[1] - indices[0] == 1)
     }
@@ -179,8 +175,6 @@ struct SavedLibrarySortOrderTests {
 @MainActor
 @Suite("Wallpaper cover framing")
 struct WallpaperCoverFramingTests {
-    /// A 16:9 cover canvas with a 4:3 source — the case where fill and fit
-    /// disagree, and the one a cover captured with the wrong mode gets wrong.
     private static let canvas = NSRect(x: 0, y: 0, width: 1600, height: 900)
     private static let source = NSSize(width: 1200, height: 900)
 
@@ -195,8 +189,6 @@ struct WallpaperCoverFramingTests {
 
     @Test("Fill covers the canvas and overflows on the long axis")
     func fillCoversAndOverflows() {
-        // MUTATION CHECK: make `.aspectFit` fall through to the `.aspectFill`
-        // branch and the fit test below goes red — the source stops being inset.
         let r = rect(.aspectFill)
         #expect(r.width >= Self.canvas.width)
         #expect(r.height >= Self.canvas.height)
@@ -211,8 +203,6 @@ struct WallpaperCoverFramingTests {
         #expect(r.height == Self.canvas.height)
         #expect(r.width < Self.canvas.width)
         #expect(r.minX > Self.canvas.minX)
-        // The aspect ratio must survive — a fit that stretched would be a fill
-        // by another name.
         #expect(abs(r.width / r.height - Self.source.width / Self.source.height) < 0.001)
     }
 
@@ -223,9 +213,8 @@ struct WallpaperCoverFramingTests {
 
     @Test("Center scales by the canvas-to-display ratio, not by source pixels")
     func centerScalesToCanvas() {
-        // The cover is half the display's width, so a centred source draws at
-        // half size. Pinning to source pixels would overflow a cover the desktop
-        // shows inset.
+        // The cover is half the display's width, so a centred source draws at half size;
+        // pinning to source pixels would overflow.
         let r = rect(.center, displayWidth: 3200)
         #expect(r.width == Self.source.width / 2)
         #expect(r.height == Self.source.height / 2)

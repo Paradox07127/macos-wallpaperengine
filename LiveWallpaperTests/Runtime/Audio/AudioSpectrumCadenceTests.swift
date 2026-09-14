@@ -27,8 +27,7 @@ struct AudioSpectrumCadenceTests {
         }
         let wrapped = processor.analyzeIfDue(nowNanos: Self.interval * 3)
 
-        // Oracle: fresh processor fed the same window contiguously (no wrap),
-        // with the same hop (2048) and the same all-zero smoothing history.
+        // Oracle: the same hop (2048) and the same all-zero smoothing history.
         let oracle = AudioSpectrumProcessor()
         let expected = oracle.process(left: window, right: window, timestampNanos: 2)
 
@@ -45,11 +44,9 @@ struct AudioSpectrumCadenceTests {
 
         #expect(processor.analyzeIfDue(nowNanos: 1_000_000_000) != nil)
 
-        // New samples arrived, but the second pull lands inside the cap.
         processor.ingest(left: tone, right: tone, timestampNanos: 2)
         #expect(processor.analyzeIfDue(nowNanos: 1_000_000_000 + Self.interval - 1) == nil)
 
-        // Once the interval elapses, the pending samples are analyzed.
         #expect(processor.analyzeIfDue(nowNanos: 1_000_000_000 + Self.interval) != nil)
     }
 
@@ -76,10 +73,8 @@ struct AudioSpectrumCadenceTests {
         let first = broker.snapshot()
         #expect(first.timestampNanos == 7)
         #expect(first.left.contains { $0 > 0 })
-        // No new samples: repeated snapshots return the cached frame unchanged.
         #expect(broker.snapshot() == first)
 
-        // Detached: new samples no longer reach the cache.
         broker.attachAnalyzer(nil)
         processor.ingest(left: tone, right: tone, timestampNanos: 9)
         #expect(broker.snapshot().timestampNanos == 7)
@@ -88,7 +83,6 @@ struct AudioSpectrumCadenceTests {
     @Test("Oversized ingest keeps only the freshest samples")
     func oversizedIngestKeepsTail() {
         let processor = AudioSpectrumProcessor()
-        // 20k samples: loud noise everywhere except a silent 2048-sample tail.
         var oversized = Self.orderSensitiveSignal(count: 20_000)
         for index in (20_000 - 2048)..<20_000 {
             oversized[index] = 0
@@ -121,7 +115,6 @@ struct AudioSpectrumCadenceTests {
         #expect(processor.analyzeIfDue(nowNanos: Self.interval) == nil)
         processor.afterWindowCopyForTesting = nil
 
-        // The next pull analyzes the fresh (post-flood) data instead.
         #expect(processor.analyzeIfDue(nowNanos: Self.interval * 2) != nil)
     }
 

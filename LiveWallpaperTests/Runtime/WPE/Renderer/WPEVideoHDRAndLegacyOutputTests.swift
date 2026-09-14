@@ -7,9 +7,6 @@ import Testing
 import VideoToolbox
 @testable import LiveWallpaper
 
-/// End-to-end coverage for two branches the hermetic NV12 tests cannot reach:
-/// the HDR (PQ) fallback driven by a real 10-bit HEVC clip, and the
-/// pre-macOS-15 item-level (`AVPlayerItemVideoOutput`) frame path.
 @MainActor
 @Suite("WPEVideoTextureSource HDR and legacy output", .serialized)
 struct WPEVideoHDRAndLegacyOutputTests {
@@ -48,16 +45,13 @@ struct WPEVideoHDRAndLegacyOutputTests {
             try await Task.sleep(for: .milliseconds(30))
         }
 
-        // (a) HDR detection fired and the outputs rebuilt to BGRA exactly once.
         #expect(source.didForceBGRAOutputForTesting, "PQ clip must trigger the HDR fallback")
         #expect(source.bgraFallbackRebuildCountForTesting == 1,
                 "outputs must rebuild exactly once, got \(source.bgraFallbackRebuildCountForTesting)")
-        // (b) Frames still publish after the rebuild.
         let frame = try #require(texture, "HDR clip must still publish frames after the BGRA rebuild")
         #expect(frame.width == 64)
         #expect(frame.height == 64)
         #expect(frame.pixelFormat == .bgra8Unorm_srgb || frame.pixelFormat == .bgra8Unorm)
-        // (c) No NV12 conversion was ever attempted on the HDR clip.
         #expect(!sawBiPlanarPublish, "PQ frames must never take the NV12 matrix path")
         #expect(source.lastPublishPathForTesting == .bgra)
     }
@@ -102,9 +96,6 @@ private enum SyntheticHDRVideoFixture {
         case hlg
     }
 
-    /// 64x64, 10 frames, HEVC Main10 from P010-style
-    /// (`kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange`) source buffers with
-    /// BT.2020 primaries/matrix and the requested transfer function.
     static func writeHEVCMain10(transfer: Transfer) async throws -> URL {
         let transferFunction: (video: String, cv: CFString)
         switch transfer {
@@ -173,7 +164,6 @@ private enum SyntheticHDRVideoFixture {
         }
     }
 
-    /// Plain 64x64 SDR H.264 clip (BGRA source frames) for the legacy path.
     static func writeSDRH264() async throws -> URL {
         let videoSettings: [String: Any] = [
             AVVideoCodecKey: AVVideoCodecType.h264,

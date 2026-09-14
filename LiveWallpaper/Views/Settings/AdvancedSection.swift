@@ -69,7 +69,6 @@ extension GeneralSettingsView {
         pendingDestructive = PendingDestructive(.resetAllSettings) { performResetAllSettings() }
     }
 
-    /// Clear ScreenManager caches and live sessions after resetting storage to prevent stale values being written back.
     private func performResetAllSettings() {
         SettingsManager.shared.cleanAllSettings()
 
@@ -121,7 +120,6 @@ extension GeneralSettingsView {
         BugReporter.makeReport(activeWallpapers: activeWallpapers)
     }
 
-    /// Include per-display wallpaper identity so reports can be matched to runtime logs.
     private var activeWallpapers: [String] {
         screenManager.screens.compactMap { screen in
             guard let kind = screenManager.wallpaperSummary(for: screen).wallpaperType?.rawValue else { return nil }

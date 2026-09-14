@@ -1,7 +1,6 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// The presenter owns the name draft so dismissing this popover preserves unsaved edits.
 struct Popover: View {
     let screen: Screen
     /// Inspector tab's content (not necessarily the committed active wallpaper).
@@ -134,9 +133,8 @@ struct Popover: View {
                 label: trimmed,
                 content: content,
                 sourceDisplayName: sourceDisplayName(for: content),
-                // Scene content lives in the Steam library, not the container: without the
-                // origin the saved bookmark cannot be resolved back to its files and
-                // applying it fails. The Workshop-side add has always passed this.
+                // Scene content lives in the Steam library, not the container: without the origin the
+                // saved bookmark cannot be resolved back to its files.
                 wpeOrigin: screenManager.getConfiguration(for: screen)?.wpeOrigin
             )
             // Only when the bookmark is the wallpaper this display is actually

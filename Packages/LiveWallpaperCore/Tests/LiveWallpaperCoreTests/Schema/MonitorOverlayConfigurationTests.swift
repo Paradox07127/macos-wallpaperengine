@@ -50,10 +50,6 @@ struct MonitorOverlayConfigurationTests {
         #expect(decoded.music.size == .medium)
     }
 
-    /// The display's record is what carries the board, so an unreadable board is
-    /// an unreadable record: the overlay decode fails and the caller's lossy
-    /// dictionary drops that display instead of keeping it with a board the user
-    /// never configured.
     @Test("A malformed board field makes the whole display entry undecodable")
     func malformedBoardFailsTheEntry() throws {
         let json = #"{ "enabled": true, "level": "front", "board": {"refreshHz": "bad"} }"#
@@ -71,8 +67,6 @@ struct MonitorOverlayConfigurationTests {
         #expect(decoded.board == MonitorBoardConfiguration.default)
     }
 
-    /// The layer's position is its own now; a board that still carries the old
-    /// widget must not put it back on the grid.
     @Test("A board written while the layer was a widget drops it at decode")
     func legacyMusicWidgetIsNotABoardWidget() throws {
         let json = """
@@ -155,10 +149,6 @@ struct MonitorOverlayConfigurationTests {
 
     @Test("A corrupt overlay slot decodes to nil, never a half-value")
     func corruptSlotIsNil() throws {
-        // A malformed `board` now fails the whole slot too (see
-        // `malformedBoardFailsTheEntry`), so `enabled` is no longer the only field
-        // that gets here — it stays as the case that never had a tolerant path at
-        // all, demonstrating a corrupt slot decoding to nil rather than a half value.
         let decoded = try decodeOverlay(#"{ "enabled": "not-a-bool" }"#)
         #expect(decoded == nil)
     }

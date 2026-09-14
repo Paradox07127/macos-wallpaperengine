@@ -1,11 +1,6 @@
 import CoreFoundation
 import Foundation
 
-/// Sendable, equatable representation of every authored JSON value in a WPE scene.
-///
-/// Typed scene fields remain the runtime's fast path. This tree is the lossless
-/// compatibility substrate for fields that have not acquired a typed consumer yet,
-/// so adding support later never requires changing the package decoder first.
 public indirect enum WPESceneJSONValue: Equatable, Sendable {
     case object([String: WPESceneJSONValue])
     case array([WPESceneJSONValue])
@@ -14,7 +9,6 @@ public indirect enum WPESceneJSONValue: Equatable, Sendable {
     case bool(Bool)
     case null
 
-    /// Converts a value produced by `JSONSerialization` without dropping keys.
     public init?(jsonValue value: Any) {
         if let dictionary = value as? [String: Any] {
             var converted: [String: WPESceneJSONValue] = [:]

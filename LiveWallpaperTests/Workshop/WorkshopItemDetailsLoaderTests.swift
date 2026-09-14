@@ -3,8 +3,6 @@ import Foundation
 @testable import LiveWallpaper
 import Testing
 
-/// Required items and detached inspector targets are resolved by id through
-/// the key-free `GetPublishedFileDetails` batch, so both browse paths can use it.
 @Suite("Workshop item details loader", .serialized)
 struct WorkshopItemDetailsLoaderTests {
     @Test("Two OK payloads become items in request order; a result 9 id is reported as failed")
@@ -21,8 +19,6 @@ struct WorkshopItemDetailsLoaderTests {
         #expect(outcome.items.map(\.id) == [111, 222])
         #expect(outcome.items.map(\.title) == ["First", "Second"])
         #expect(outcome.items.first?.tags == ["Video"])
-        // The detail inspector's "Posted" line and creator link read these;
-        // the metadata → browse-item mapping used to drop both.
         #expect(outcome.items.first?.creatorID == "76561198000000001")
         #expect(outcome.items.first?.timeCreated == Date(timeIntervalSince1970: 1_710_000_000))
         #expect(outcome.failedIDs == [333])
@@ -131,26 +127,20 @@ struct WorkshopItemDetailsLoaderTests {
     }
 }
 
-/// `GetPublishedFileDetails` describes a public Asset or Application like any
-/// item; the inspector would then offer to download it as a wallpaper.
 @Suite("Workshop required items rows")
 struct DetailRequiredItemsTests {
     @Test("An Asset or Application dependency gets a Steam link, not an inspector page")
     func assetsOpenOnSteamOnly() {
         #expect(!DetailRequiredItemsSection.opensInApp(Self.item(tags: ["Asset"])))
         #expect(!DetailRequiredItemsSection.opensInApp(Self.item(tags: ["Scene", "Application"])))
-        // Controls: wallpapers, tagged or not, open in the inspector.
         #expect(DetailRequiredItemsSection.opensInApp(Self.item(tags: ["Scene"])))
         #expect(DetailRequiredItemsSection.opensInApp(Self.item(tags: [])))
     }
 
-    /// The rows show the same thumbnails the grid blurs; the section used to
-    /// hand the row a bare URL, which cannot know the item is tagged Mature.
     @Test("A Mature dependency's thumbnail is blurred under the grid's setting")
     func matureRowsBlurUnderTheSetting() {
         #expect(DetailRequiredItemsSection.blursThumbnail(tags: ["Scene", "Mature"], blursMature: true))
         #expect(DetailRequiredItemsSection.blursThumbnail(tags: ["mature"], blursMature: true))
-        // Controls: the setting is off, or the item is not Mature.
         #expect(!DetailRequiredItemsSection.blursThumbnail(tags: ["Mature"], blursMature: false))
         #expect(!DetailRequiredItemsSection.blursThumbnail(tags: ["Scene", "Everyone"], blursMature: true))
     }

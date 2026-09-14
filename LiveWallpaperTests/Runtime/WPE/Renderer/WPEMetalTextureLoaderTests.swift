@@ -16,8 +16,8 @@ struct WPEMetalTextureLoaderTests {
     func rainTrailGeometry(flags: Int, scale: SIMD3<Float>) throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let executor = try WPEMetalRenderExecutor(device: device)
-        // Windows Lofi Cafe uses 32x128 drop textures and velocity-based stretch,
-        // flags=4 sits one eye-distance behind the canvas: its footprint is halved.
+        // 32x128 drop textures with velocity-based stretch; flags=4 sits one
+        // eye-distance behind the canvas, so its footprint is halved.
         let definition = try #require(WPEParticleDefinitionParser.parse(dictionary: [
             "flags": max(0, flags), "maxcount": 1,
             "emitter": [["name": "boxrandom", "instantaneous": 1, "rate": 0]],
@@ -142,7 +142,7 @@ struct WPEMetalTextureLoaderTests {
     @Test("Animated normal maps preserve linear sampling through upload and restore")
     func animatedNormalMapsPreserveLinearSampling() async throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
-        // Lofi Cafe's flat atlas border: red=mask, green=normal Y, alpha=normal X.
+        // Flat atlas border: red=mask, green=normal Y, alpha=normal X.
         let bytes = Data([255, 129, 0, 128, 255, 129, 0, 128, 255, 129, 0, 128, 255, 129, 0, 128])
         let info = WPETexInfo(
             containerVersion: 5, infoVersion: 1, width: 2, height: 2,

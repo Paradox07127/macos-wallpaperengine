@@ -2,18 +2,12 @@
 import CryptoKit
 import Foundation
 
-/// Disk layer for Workshop preview images: the encoded image bytes, and nothing else.
-/// All three Workshop sessions are deliberately `.ephemeral` with `httpCookieAcceptPolicy = .never`, `urlCache = nil` and `reloadIgnoringLocalAndRemoteCacheData` — here, in `WorkshopQueryService` and in `SteamWorkshopMetadata` — and `docs/SECURITY.md` advertises that posture to users.
-/// Getting a disk layer by hanging a `URLCache` on that session would persist response headers (and anything cookie-shaped in them), which is the one thing the configuration exists to prevent — so this cache is filled by the loader rather than by the URL loading system, and an entry is byte-for-byte the image that was decoded: no headers, no status line, no URL, no wrapper.
-/// The file *name* is a SHA-256 of the key, so a directory listing does not disclose which previews were browsed either. The file work itself is `WorkshopDiskCacheStore`.
+/// Encoded image bytes only — a URLCache on the ephemeral session would persist response headers. File name is SHA-256 of the key so a directory listing does not disclose which previews were browsed.
 final class WorkshopPreviewDiskCache: Sendable {
 
     static let shared = WorkshopPreviewDiskCache()
 
-    /// LRU hard cap. A Workshop page is 50 items and a Steam preview is
-    /// ~100–400 KB, so this holds on the order of a thousand previews. `Caches`
-    /// is additionally reclaimed by the system under disk pressure, so the cap
-    /// only has to stop unbounded growth between reclaims.
+    /// LRU hard cap. A Workshop page is 50 items and a Steam preview is ~100–400 KB, so this holds on the order of a thousand previews.
     static let defaultCapBytes: Int64 = 256 * 1024 * 1024
 
     /// Steam serves a replaced preview under the same `preview_url`, so an
@@ -35,9 +29,7 @@ final class WorkshopPreviewDiskCache: Sendable {
             fileExtension: Self.fileExtension,
             capBytes: capBytes,
             timeToLive: timeToLive,
-            // Expiry runs against the creation date, not the modification date:
-            // `modificationDate` is the LRU stamp and is bumped on every read, so a
-            // frequently viewed preview would never expire if the two shared a clock.
+            // Expiry runs against creationDate, not modificationDate: modificationDate is the LRU stamp and is bumped on every read, so a frequently viewed preview would never expire.
             expiryClock: .creationDate,
             maxEntryBytes: Int64(WorkshopAnimatedGIF.maxBytes),
             queueLabel: "com.loomscreen.workshop-preview-disk-cache",
@@ -61,9 +53,7 @@ final class WorkshopPreviewDiskCache: Sendable {
         await disk.sizeBytes()
     }
 
-    /// Size is part of the key, not just of the decode: Steam serves one
-    /// `preview_url` for the grid tile and the detail hero, and the two are
-    /// decoded to different pixel caps.
+    /// Size is part of the key, not just of the decode: Steam serves one preview_url for tile and hero, decoded to different pixel caps.
     static func fileName(for url: URL, size: WorkshopPreviewSize) -> String {
         let key = "v1|\(size.rawValue)|\(url.absoluteString)"
         let digest = SHA256.hash(data: Data(key.utf8))
@@ -72,10 +62,7 @@ final class WorkshopPreviewDiskCache: Sendable {
         return "\(digest).\(fileExtension)"
     }
 
-    /// `.cachesDirectory` rather than Application Support: previews are
-    /// re-downloadable, and the system reclaims `Caches` on its own under disk
-    /// pressure. Inside the sandbox `FileManager` resolves this to the app
-    /// container, so no path is hard-coded.
+    /// .cachesDirectory rather than Application Support: previews are re-downloadable, and the system reclaims Caches under disk pressure.
     private static func defaultDirectoryURL() -> URL {
         let fileManager = FileManager.default
         let caches = (try? fileManager.url(

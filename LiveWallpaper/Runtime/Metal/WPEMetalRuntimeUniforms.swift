@@ -27,10 +27,7 @@ struct WPECameraParallaxFrame: Equatable, Sendable {
 
     static let neutral = WPECameraParallaxFrame(smoothed: SIMD2<Float>(0, 0), amount: 0, influence: 0)
 
-    /// Cursor y flipped 2026-08-08: unflipped y chased the cursor vertically while
-    /// opposing it horizontally. `objectCenter` is `nodePos−camPos` — 2780710296
-    /// parks its clock at x=2732 so the character hides it; without this term the
-    /// clock sat on top of her.
+    /// Cursor y is flipped; `objectCenter` is `nodePos−camPos`.
     func pixelOffset(
         objectCenter: SIMD2<Double>,
         depth: SIMD2<Double>,
@@ -55,10 +52,7 @@ struct WPECameraParallaxFrame: Equatable, Sendable {
     }
 }
 
-/// Cursor smoother. Tracks even when parallax is disabled: only the per-layer translation
-/// is gated (`amount`); `g_ParallaxPosition` still feeds `depthparallax`. `cameraparallaxdelay`
-/// is a RAMP (`t = idle / delay`), not `1 - exp(-dt/delay)`: a moving cursor holds `t` near
-/// zero, a settled one lands exactly on target. The exp form was still ~37% short after one `delay` and never arrived, so on a 2s scene every parallaxed layer visibly trailed.
+/// Tracks even when parallax is disabled: only per-layer translation is gated (`amount`). `cameraparallaxdelay` is a RAMP (`t = idle / delay`), not `1 - exp(-dt/delay)`.
 struct WPECameraParallaxSmoother: Equatable, Sendable {
     private(set) var smoothed = SIMD2<Float>(0, 0)
     private var lastTime: Double?
@@ -116,10 +110,7 @@ struct WPECameraParallaxSmoother: Equatable, Sendable {
 struct WPEMetalRuntimeUniforms: Equatable, Sendable {
     let time: Double
     let daytime: Double
-    /// Official shader global `g_Frametime`: duration of the current logical
-    /// frame in seconds. The executor derives it from consecutive `g_Time`
-    /// samples so a fail-close re-encode of the same logical frame reuses the
-    /// same delta instead of observing zero.
+    /// Official shader global `g_Frametime`: duration of the current logical frame in seconds.
     var frameTime: Double
     let brightness: Double
     let pointerPosition: SIMD2<Double>
@@ -182,8 +173,7 @@ struct WPEMetalRuntimeUniforms: Equatable, Sendable {
         return bins + [Double](repeating: 0, count: 64 - bins.count)
     }
 
-    /// Raw pointer warped 3.2× on 3462279189 (unscaled, y inverted). Must use
-    /// the SMOOTHED cursor so `depthparallax` does not snap while neighbours trail.
+    /// Must use the SMOOTHED cursor so `depthparallax` does not snap while neighbours trail.
     var parallaxPosition: SIMD2<Double> {
         let influence = cameraParallax.influence
         return SIMD2<Double>(
@@ -235,8 +225,7 @@ struct WPEMetalRuntimeUniforms: Equatable, Sendable {
         return Self.halve(Self.halve(mono)).map { Float($0) }
     }
 
-    /// Max-pool adjacent bins (64→32→16). Mean-pool misses WPE: oracle error
-    /// 0.0 vs 0.10–0.43 on same-frame 32/16-band uniforms (3448877775).
+    /// Max-pool adjacent bins (64→32→16). Mean-pool misses WPE.
     private static func halve(_ bins: [Double]) -> [Double] {
         var result: [Double] = []
         result.reserveCapacity(bins.count / 2)
@@ -304,7 +293,6 @@ struct WPEMetalPointerSample: Equatable, Sendable {
     }
 }
 
-// Not `@MainActor`: sampled on the renderer's actor from a non-blocking mailbox.
 struct WPEMetalPointerSampler {
     let sample: @Sendable () -> WPEMetalPointerSample
 
@@ -320,7 +308,6 @@ struct WPEMetalPointerSampler {
         WPEMetalPointerSampler { .inactive }
     }
 
-    // @MainActor on the method only: remaining callers are tests already on the main actor.
     @MainActor
     static func normalizedSceneUV(mouseLocation: CGPoint, in view: NSView) -> SIMD2<Double> {
         sampleSceneUV(mouseLocation: mouseLocation, in: view).position
@@ -351,25 +338,15 @@ struct WPEMetalPointerSampler {
 }
 
 struct WPEMetalCameraUniforms: Equatable, Sendable {
-    /// The current renderer uses an identity camera orientation in both
-    /// projection paths: perspective applies only `-eye` translation and the
-    /// orthographic path has no view rotation. These are therefore the exact
-    /// normalized world-space basis vectors of the view matrix, not an inferred
-    /// axis convention from authored metadata that the renderer does not apply.
+    /// Identity camera orientation: these are the exact normalized world-space basis vectors of the view matrix, not an inferred axis convention.
     static let viewForward = SIMD3<Double>(0, 0, -1)
     static let viewRight = SIMD3<Double>(1, 0, 0)
     static let viewUp = SIMD3<Double>(0, 1, 0)
 
-    /// WPE's near/far for the perspective camera it builds inside a 2D scene. NOT the
-    /// scene's `nearz`/`farz`: the depth row of `g_ViewProjectionMatrix` is byte-identical
-    /// across four RenderDoc captures whose eye distances range from 990 to 11654, and the
-    /// authored far plane (10000 in all four) would put the canvas plane itself outside the
-    /// frustum. Reversed-Z — near maps to 1, far to 0.
+    /// WPE near/far for the 2D-scene perspective camera, NOT scene `nearz`/`farz`. Reversed-Z — near maps to 1, far to 0.
     static let objectPerspectiveNearZ = 5.0
     static let objectPerspectiveFarZ = 15000.0
-    /// Eye WPE feeds these draws: the canvas centre, 2000 in front of it. Identical in
-    /// 3437487219 / 3448877775 / 3554161528 / 2370927443 and unrelated to the authored
-    /// `camera.eye` (3437487219 authors `-783.539 -454.321 0`).
+    /// Eye WPE feeds these draws: the canvas centre, 2000 in front of it, unrelated to the authored `camera.eye`.
     static let objectPerspectiveEyeZ = 2000.0
 
     let renderSize: CGSize
@@ -445,8 +422,6 @@ struct WPEMetalCameraUniforms: Equatable, Sendable {
             : sceneMatrix
     }
 
-    /// Whether `objectID` authored `perspective: true` in a scene that actually has a
-    /// perspective camera to project it through.
     func usesObjectPerspective(objectID: String) -> Bool {
         perspectiveOverrideFOVDegrees > 0 && perspectiveObjectIDs.contains(objectID)
     }
@@ -457,25 +432,14 @@ struct WPEMetalCameraUniforms: Equatable, Sendable {
             : viewProjectionMatrix
     }
 
-    /// Whether `objectID`'s projection reverses apparent triangle winding. The orthographic
-    /// canvas matrix negates Y (row 1 is `-2/H`, top-left origin) and a negative determinant
-    /// on the projection's X/Y block reverses winding; the perspective camera does not
-    /// negate Y, so the same mesh presents the opposite face under the two.
+    /// Orthographic canvas negates Y (row 1 is `-2/H`); a negative determinant on the projection's X/Y block reverses winding. Perspective does not negate Y.
     func projectionFlipsWinding(objectID: String) -> Bool {
         let matrix = objectViewProjectionMatrix(objectID: objectID)
         guard matrix.count >= 16 else { return false }
         return matrix[0] * matrix[5] - matrix[4] * matrix[1] < 0
     }
 
-    /// Which winding faces the viewer for a mesh drawn with `modelMatrix` under `objectID`'s
-    /// projection. Both halves of the transform can mirror, and they compose: a `scale.x` of
-    /// -1 inverts winding exactly as a Y-negating projection does, and the two together
-    /// cancel. Only matters once something is culled — WPE's `cullmode: "normal"` model
-    /// passes are, and they rasterize `frontCCW` in the capture.
-    ///
-    /// Considering only the projection left a mirrored model (3578699777's "Fireworks 1"
-    /// authors `scale = -1 1 1`) presenting every front face backwards, so back-face culling
-    /// would have erased it entirely.
+    /// Both halves of the transform can mirror and they compose: `scale.x` of -1 inverts winding exactly as a Y-negating projection does, and the two together cancel.
     func frontFacingWinding(objectID: String, modelMatrix: simd_float4x4) -> MTLWinding {
         let linear = simd_float3x3(
             SIMD3<Float>(modelMatrix.columns.0.x, modelMatrix.columns.0.y, modelMatrix.columns.0.z),
@@ -488,7 +452,6 @@ struct WPEMetalCameraUniforms: Equatable, Sendable {
             : .counterClockwise
     }
 
-    /// The eye the perspective draws are shaded from (specular, rim, reflection view vector).
     var objectPerspectiveEye: SIMD3<Double> {
         SIMD3<Double>(
             Double(renderSize.width) * 0.5,
@@ -497,21 +460,7 @@ struct WPEMetalCameraUniforms: Equatable, Sendable {
         )
     }
 
-    /// WPE's perspective camera for a 2D scene, reproduced element for element from the
-    /// Windows capture of 3437487219 (ordinals 5/8, vertex `g_ViewProjectionMatrix`) and
-    /// cross-checked against 3448877775, 3554161528 and 2370927443 — two canvases, three
-    /// authored FOVs, one formula. Column-major, rows:
-    ///
-    ///     [ f/aspect, 0, 0,       -f·H/2   ]
-    ///     [ 0,        f, 0,       -f·H/2   ]
-    ///     [ 0,        0, n/(F-n),  n·F/(F-n) ]
-    ///     [ 0,        0, -1,       f·H/2   ]
-    ///
-    /// `f = cot(fov/2)` and the eye sits at the canvas centre pushed back to `f·H/2` — the
-    /// distance at which the z = 0 plane exactly fills the vertical field of view, which is
-    /// what keeps an ortho-authored canvas its own size under this camera. The authored
-    /// `general.fov` (50 in all four scenes) does NOT reproduce the matrix;
-    /// `perspectiveoverridefov` does.
+    /// Column-major; `f = cot(fov/2)`; eye at canvas centre pushed back to `f·H/2` so z=0 fills the vertical FOV. Use `perspectiveoverridefov`, not `general.fov`.
     static func objectPerspectiveViewProjectionMatrix(
         width: CGFloat,
         height: CGFloat,
@@ -574,7 +523,6 @@ struct WPEMetalCameraUniforms: Equatable, Sendable {
         ]
     }
 
-    /// Shared by image-quad and text-mesh so both land at the same scene-centered (+Y up) origin.
     func projectedCenterInScenePixels(
         worldPoint: SIMD3<Double>,
         sceneSize: CGSize

@@ -3,15 +3,7 @@ import Foundation
 import LiveWallpaperCore
 
 enum WeatherReactivePolicy {
-    /// Whether any live display needs the hourly forecast fetched at all.
-    ///
-    /// Both switches, not just "match local weather": the display's own
-    /// particle switch is the master (see `resolvedParticleEffect`), so with it
-    /// off the display draws nothing regardless of the sky, and the fetch was a
-    /// network round trip an hour for a screen with no weather on it.
-    ///
-    /// A Weather tile on a live Monitor board is the other consumer: it draws the
-    /// sky itself, so it earns the fetch on its own.
+    /// Fetch when a live display has particles and weatherReactive, or a Weather tile is placed. Particle switch is master.
     static func shouldMonitor(
         configurations: [ScreenConfiguration],
         activeScreenIDs: Set<CGDirectDisplayID>,
@@ -24,21 +16,12 @@ enum WeatherReactivePolicy {
         }
     }
 
-    /// Whether this display should have a particle overlay at all.
-    ///
-    /// Deliberately independent of the wallpaper. The overlay is its own click-through
-    /// panel above the desktop, so it decorates whatever is behind it — including
-    /// macOS's own wallpaper, with no LiveWallpaper session running. Requiring a session
-    /// ruled out the one case where the overlay is the only thing the app draws. The
-    /// master render gate still applies: turning every wallpaper off turns this off too.
+    /// Independent of the wallpaper session; requiring one would hide the overlay when it is the only thing the app draws. Master render gate still applies.
     static func shouldDrawParticles(effect: ParticleEffect, wallpapersEnabled: Bool) -> Bool {
         effect != .none && wallpapersEnabled
     }
 
-    /// Which particles a display should actually draw. `.none` is the display's master off switch and
-    /// always wins: weather chooses *which* particles fall, never *whether* they do. Resolving the other
-    /// way round left "Show on This Display" inert for as long as "Match local weather" was on — the effect
-    /// picker hid itself and the snow kept falling until the user found the weather switch.
+    /// .none is the master off switch and always wins: weather chooses which particles fall, never whether they do.
     static func resolvedParticleEffect(
         chosen: ParticleEffect, weatherReactive: Bool, weatherEffect: ParticleEffect
     ) -> ParticleEffect {
@@ -46,10 +29,7 @@ enum WeatherReactivePolicy {
         return weatherReactive ? weatherEffect : chosen
     }
 
-    /// The density the emitter actually runs at. The user's slider is what they want in general; the
-    /// intensity is what the sky is doing right now. Multiplying keeps both meaningful — turning the slider
-    /// down still calms a downpour — where replacing either one would throw away the other. Clamped to the
-    /// slider's own range so weather can never push the emitter somewhere the user could not have.
+    /// Multiply slider by intensity; replacing either would throw the other away. Clamp to the slider range so weather cannot exceed what the user could set.
     static func resolvedParticleDensity(
         userDensity: Double,
         weatherReactive: Bool,

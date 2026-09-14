@@ -1,13 +1,7 @@
 import Foundation
 
-/// Which artwork lookup a player's states go through — a data row keyed by
-/// bundle ID, mirroring `NowPlayingPlayerMapping`: a new player is a new row,
-/// not a new branch in the fetch path.
 struct NowPlayingArtworkRoute: Sendable {
     enum Strategy: Sendable {
-        /// Ask Spotify for the cover URL, falling back to oEmbed via track ID — a round trip re-deriving
-        /// what the player's own dictionary already has, because that only exists once Automation consent
-        /// is granted, and a wallpaper layer can't demand consent, so oEmbed stays the path until it is.
         case spotifyOEmbed
         /// iTunes Search scored against artist/title/album (no track ID exists).
         case itunesSearch
@@ -22,14 +16,9 @@ struct NowPlayingArtworkRoute: Sendable {
     ]
 }
 
-/// Resolves cover art for a now-playing state over the network, under the
-/// plan's network discipline (invariant 7): positive LRU cache, in-flight
-/// merging per track key, one retry, and a TTL'd negative cache so an offline
-/// failure is not permanent for the process lifetime.
 actor NowPlayingArtworkFetcher {
     typealias Transport = @Sendable (URLRequest) async throws -> (Data, URLResponse)
 
-    /// One process-wide instance so the caches survive pipeline rebuilds.
     static let shared = NowPlayingArtworkFetcher()
 
     static let maxImageBytes = 2 * 1024 * 1024
@@ -151,9 +140,6 @@ actor NowPlayingArtworkFetcher {
         memo.cached(key)
     }
 
-    /// Resolves artwork for the state, merging concurrent calls per track key.
-    /// Returns nil when the state has no route or the lookup failed (in which
-    /// case the key sits in the negative cache until its TTL expires).
     func artwork(for state: MonitorNowPlayingState) async -> Data? {
         guard let key = Self.trackKey(for: state),
               let route = NowPlayingArtworkRoute.all.first(where: { $0.bundleID == state.playerBundleID })

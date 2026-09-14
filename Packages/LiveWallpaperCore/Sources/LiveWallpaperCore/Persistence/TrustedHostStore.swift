@@ -7,8 +7,7 @@ public protocol TrustedHostPersisting {
     func save(_ origins: [String])
 }
 
-/// Allowlist of remote HTML origins that may run JavaScript. Persistence is injected;
-/// the app wires `SettingsManager` in `SettingsManagerStoreBindings.swift`.
+/// Allowlist of remote HTML origins that may run JavaScript.
 @MainActor
 @Observable
 public final class TrustedHostStore {
@@ -26,7 +25,6 @@ public final class TrustedHostStore {
         }
     }
 
-    /// Raw origin strings for persistence / settings cleanup (legacy name).
     private var hosts: [String] { origins.map(\.rawValue) }
 
     /// Immutable embed-only platform origins (YouTube nocookie, Vimeo player).
@@ -44,7 +42,6 @@ public final class TrustedHostStore {
         Set(origins).union(Self.builtInTrustedOrigins)
     }
 
-    /// Built-in allowlist membership (UI hides Revoke for these).
     public func isBuiltInTrusted(_ origin: TrustedHTMLOrigin) -> Bool {
         Self.builtInTrustedOrigins.contains(origin)
     }

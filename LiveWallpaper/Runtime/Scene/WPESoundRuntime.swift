@@ -5,9 +5,7 @@ import LiveWallpaperCore
 import LiveWallpaperProWPE
 import os
 
-/// Normalized runtime spelling of WPE's authored playback modes. The public
-/// scene schema intentionally retains the original string; unknown values use
-/// WPE's observed fallback (`loop`) only at the consumption boundary.
+/// Unknown authored values fall back to `loop` at the consumption boundary.
 enum WPESoundPlaybackMode: String, Equatable, Sendable {
     case loop
     case random
@@ -18,9 +16,6 @@ enum WPESoundPlaybackMode: String, Equatable, Sendable {
     }
 }
 
-/// Small deterministic generator used only for sound-path selection. Keeping
-/// the seed injectable makes random/single scheduling reproducible in tests and
-/// diagnostics instead of depending on process-global randomness.
 struct WPESoundSeededRandomNumberGenerator: RandomNumberGenerator, Equatable, Sendable {
     private(set) var state: UInt64
 
@@ -43,9 +38,6 @@ struct WPESoundSeededRandomNumberGenerator: RandomNumberGenerator, Equatable, Se
     }
 }
 
-/// Pure path-selection state machine. `candidates` exposes the ordered fallback
-/// list and `didSchedule` commits only after the injected file scheduler accepts
-/// a candidate, so one unreadable path cannot strand the whole sound object.
 struct WPESoundPathScheduler: Equatable, Sendable {
     let mode: WPESoundPlaybackMode
     private let initialSeed: UInt64
@@ -68,8 +60,7 @@ struct WPESoundPathScheduler: Equatable, Sendable {
         case .loop:
             startIndex = loopCursor % pathCount
         case .random, .single:
-            // L4 selects a random starting file for both modes. A fixed seed
-            // keeps that choice deterministic until Windows L1 can arbitrate.
+            // random and single both pick a random start; a fixed seed keeps that choice deterministic.
             startIndex = random.index(upperBound: pathCount)
         }
         return (0..<pathCount).map { (startIndex + $0) % pathCount }
@@ -99,9 +90,7 @@ struct WPESoundRuntimeDebugTrackSnapshot: Equatable, Sendable {
     let availablePathCount: Int
     let lastScheduledPathIndex: Int?
     let hasOpenFile: Bool
-    /// How many segments are queued on the player node. A looping sound needs
-    /// more than one: the node only plays back-to-back without a gap when the
-    /// next segment is already scheduled before the current one ends.
+    /// Queued segments on the player node; a loop needs more than one for gapless playback.
     let scheduledSegmentCount: Int
     let isEnabled: Bool
     let isVisible: Bool
@@ -110,10 +99,6 @@ struct WPESoundRuntimeDebugTrackSnapshot: Equatable, Sendable {
     let playerVolume: Float
 }
 
-/// Per-scene AVAudioEngine player for declared sound objects (spectrum comes
-/// from system capture). Mutable AVFoundation objects live entirely behind the
-/// lock, so detached preparation can hand this runtime back without unchecked
-/// Sendable conformance.
 final class WPESoundRuntime: Sendable {
     typealias SchedulerFactory = @Sendable (_ playbackMode: String, _ seed: UInt64) -> WPESoundPathScheduler
 
@@ -124,9 +109,7 @@ final class WPESoundRuntime: Sendable {
         let relativePaths: [String]
         let urls: [URL]
         var scheduler: WPESoundPathScheduler
-        /// Segments handed to the player node and not yet finished, in play
-        /// order. Held so the files outlive the node's read of them, and so the
-        /// look-ahead depth is observable.
+        /// In-flight segments: files must outlive the node's read; look-ahead depth is observable.
         var scheduledFiles: [AVAudioFile]
         var lastScheduledPathIndex: Int?
         var sceneVolume: Float
@@ -134,16 +117,11 @@ final class WPESoundRuntime: Sendable {
         var visible: Bool
         var enabled: Bool
         var needsReschedule: Bool
-        /// Bumped only when the track is torn down, so completions from a
-        /// previous life are rejected. It must NOT be per-segment: with a
-        /// look-ahead queue several segments are in flight at once and each
-        /// one's completion has to be accepted.
+        /// Bumped only on teardown, not per-segment: look-ahead has several in-flight completions.
         var epoch: UInt64
     }
 
-    /// Two segments queued is the minimum that keeps a loop seamless: the node
-    /// starts the next one the instant the current ends, with no round trip
-    /// through a completion handler, a queue hop and a lock.
+    /// Two queued segments is the minimum for a seamless loop (no completion/queue/lock round trip).
     private static let scheduleDepth = 2
 
     /// Unchecked because AVAudioEngine/AVAudioPlayerNode/AVAudioFile carry no Sendable
@@ -189,9 +167,7 @@ final class WPESoundRuntime: Sendable {
         }
     }
 
-    /// Resolve and schedule files without starting playback. `scheduleFile`
-    /// streams long assets through AVFoundation instead of allocating a PCM
-    /// buffer proportional to the complete file length.
+    /// `scheduleFile` streams long assets; it does not allocate a PCM buffer of the whole file.
     @discardableResult
     func prepare(sounds: [WPESceneSoundObject]) -> Int {
         let resolvedSounds = sounds.compactMap { sound -> ResolvedSound? in
@@ -266,7 +242,6 @@ final class WPESoundRuntime: Sendable {
         }
     }
 
-    /// Start playback after scene currency is confirmed.
     @discardableResult
     func play() -> Bool {
         state.withLock { state in
@@ -281,8 +256,6 @@ final class WPESoundRuntime: Sendable {
         }
     }
 
-    /// Apply one `ISoundLayer` call from a SceneScript. Distinct from scene
-    /// lifecycle methods because it addresses one authored layer by name.
     func applyScriptCommand(_ command: WPELayerSoundCommand, layer: String) {
         state.withLock { state in
             guard let index = state.tracks.firstIndex(where: { $0.name == layer }) else { return }
@@ -305,9 +278,7 @@ final class WPESoundRuntime: Sendable {
         }
     }
 
-    /// Applies WPE's live node-visibility contract to one authored sound id.
-    /// Visibility changes call Play/Stop on the sound control; `startSilent`
-    /// affects only the initial state and does not veto a later user toggle.
+    /// Visibility Play/Stops the sound; `startSilent` is initial state only and does not veto a later toggle.
     func setVisible(_ visible: Bool, forSoundID id: String) {
         state.withLock { state in
             guard let index = state.tracks.firstIndex(where: { $0.id == id }),
@@ -405,10 +376,7 @@ final class WPESoundRuntime: Sendable {
             if state.engine.isRunning { state.engine.pause() }
             return
         }
-        // Deliberate divergence from WPE, which keeps the timeline advancing under a
-        // gain-only mute: muting here stops decode and render callbacks outright so a
-        // muted wallpaper costs no audio power. Cost is resume position — unmuting
-        // continues where it stopped rather than where an unmuted run would be.
+        // Mute stops decode/render (unlike WPE's gain-only mute); unmute resumes where it stopped.
         guard !state.isMuted, !state.isSuspended else {
             if state.engine.isRunning { state.engine.pause() }
             return
@@ -426,9 +394,7 @@ final class WPESoundRuntime: Sendable {
         }
     }
 
-    /// Top the player's queue back up to `scheduleDepth`. Returns whether the
-    /// track still has anything queued: `single` legitimately stops at one, so
-    /// "could not schedule another" is only a failure when the queue is empty.
+    /// Returns whether anything is queued: `single` stopping at one is success; empty queue is failure.
     @discardableResult
     private func fillSchedule(in state: inout State, trackIndex: Int) -> Bool {
         guard state.tracks.indices.contains(trackIndex) else { return false }
@@ -444,10 +410,7 @@ final class WPESoundRuntime: Sendable {
         guard state.tracks.indices.contains(trackIndex) else { return false }
         let pathCount = state.tracks[trackIndex].urls.count
         let candidates = state.tracks[trackIndex].scheduler.candidates(pathCount: pathCount)
-        // `.dataConsumed` can fire while a start-silent engine is only prepared,
-        // which advances loop/random before any authored audio is heard (and can
-        // recursively fill the queue for tiny files). Rendering completion is
-        // the first safe common boundary for single and multi-file modes.
+        // `.dataConsumed` can fire while start-silent is only prepared, so use `.dataRendered`.
         let callbackType: AVAudioPlayerNodeCompletionCallbackType = .dataRendered
 
         for pathIndex in candidates {
@@ -478,9 +441,7 @@ final class WPESoundRuntime: Sendable {
 
     private func handleScheduledFileCompletion(token: UInt64, epoch: UInt64) {
         state.withLock { state in
-            // Counted before the token/epoch guards: tests use raw delivery to
-            // tell a deaf host audio stack (zero deliveries) from a runtime
-            // regression that ignores deliveries it did receive.
+            // Counted before token/epoch guards so tests can tell a deaf host stack from ignored deliveries.
             state.renderedCompletionCount += 1
             guard let index = state.tracks.firstIndex(where: { $0.token == token }),
                   state.tracks[index].epoch == epoch else { return }

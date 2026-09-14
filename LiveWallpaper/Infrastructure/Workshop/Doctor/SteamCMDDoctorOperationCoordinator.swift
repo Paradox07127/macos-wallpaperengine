@@ -26,10 +26,6 @@
         }
     }
 
-    /// Owns filesystem-sensitive Doctor work that extends beyond one subprocess.
-    /// The process runner's gate prevents simultaneous children, while this owner
-    /// keeps preflight cleanup and post-process asset publication in the same FIFO
-    /// transaction as the command that produced them.
     actor SteamCMDDoctorOperationCoordinator {
         static let shared = SteamCMDDoctorOperationCoordinator()
 

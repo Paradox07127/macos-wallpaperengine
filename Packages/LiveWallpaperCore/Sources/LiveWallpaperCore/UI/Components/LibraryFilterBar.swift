@@ -1,6 +1,5 @@
 import SwiftUI
 
-/// Library search and result counts with caller-supplied filter controls.
 public struct LibraryFilterBar<Filters: View>: View {
     @Binding private var searchText: String
     private let searchPrompt: LocalizedStringKey
@@ -33,10 +32,8 @@ public struct LibraryFilterBar<Filters: View>: View {
 
             Spacer(minLength: DesignTokens.LibraryFilterBar.contentSpacing)
 
-            // Always on: this is the only place the library's size is stated.
-            // `resultCount: nil` means the page states its own composition
-            // elsewhere (Workshop puts per-type counts on the filter chips), so
-            // only the library size belongs here.
+            // `resultCount: nil` = the page states its own composition elsewhere, so only
+            // the library size shows here.
             if let totalCount {
                 resultCounter(resultCount, totalCount)
             }

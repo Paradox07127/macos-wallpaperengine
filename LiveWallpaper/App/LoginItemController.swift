@@ -2,15 +2,9 @@ import Foundation
 import LiveWallpaperCore
 import ServiceManagement
 
-/// Owns "start at login" registration and the delayed re-check that catches `SMAppService`
-/// reporting success while the item never activates — app not in `/Applications`, or signing
-/// rejected. Touches no settings persistence; the generation counter that cancels a superseded
-/// validation is state only this controller needs.
 @MainActor
 final class LoginItemController {
-    /// Identifies the apply currently allowed to report. Bumped on every apply
-    /// and every scheduled validation, so a check that was mid-sleep when the
-    /// user toggled again declines to report a stale verdict.
+    /// Identifies the apply currently allowed to report. A check that was mid-sleep when the user toggled again declines to report a stale verdict.
     private var validationGeneration: UInt64 = 0
 
     func apply(startOnLogin: Bool) {

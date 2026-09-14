@@ -23,10 +23,8 @@ protocol WallpaperRuntimeSession: AnyObject {
     func updateFrame(to frame: CGRect)
     func cleanup()
 
-    /// User-triggered retry from the error banner.
     func retry() async
 
-    /// Wait for first frame so transitions do not flash empty.
     func prepareForDisplay(timeout: Duration) async -> WallpaperPreparationResult
 }
 

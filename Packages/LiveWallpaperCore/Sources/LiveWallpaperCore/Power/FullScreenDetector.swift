@@ -8,23 +8,18 @@ public final class FullScreenDetector {
 
     public private(set) var hiddenScreens: [CGDirectDisplayID: Bool] = [:]
 
-    /// Per-display: do other apps' windows blanket ≥ 85% of the display by
-    /// *union* area (overlaps counted once)? Distinct from `hiddenScreens`,
-    /// which needs a single ≥95% window. Drives `pauseOnWindowOcclusion`.
+    /// Per display: >= 85% covered by other apps' windows, union area (overlaps counted
+    /// once). Distinct from `hiddenScreens`, which needs a single >= 95% window.
     public private(set) var occludedScreens: [CGDirectDisplayID: Bool] = [:]
 
-    /// Continuous union-coverage fraction (0…1) behind `occludedScreens`,
-    /// quantized to `occlusionFractionStep` so adaptive-frame-rate observers
-    /// only wake on meaningful change (this updates far more often than the
-    /// ≥0.85 boolean as windows move).
+    /// Union-coverage fraction (0...1) behind `occludedScreens`, quantized to
+    /// `occlusionFractionStep` so observers only wake on meaningful change.
     public private(set) var occlusionFractions: [CGDirectDisplayID: CGFloat] = [:]
 
     @ObservationIgnored private static let occlusionFractionStep: CGFloat = 0.05
 
-    /// Cap on how many windows feed the union-area calculation per display.
-    /// The union sweep is ~O(n² log n) over the x-strips; keeping only the
-    /// largest few dozen windows bounds the cost while losing negligible
-    /// coverage (tiny windows barely move 85%).
+    /// Bounds the ~O(n^2 log n) union sweep; tiny windows barely move an 85% threshold,
+    /// so only the largest few dozen matter.
     @ObservationIgnored private nonisolated static let occlusionWindowCap = 80
 
     // MARK: - Private Properties
@@ -41,10 +36,8 @@ public final class FullScreenDetector {
         checkFullScreenState()
     }
 
-    /// Platform-owned surfaces do not represent user-visible window occlusion.
-    /// Finder is intentionally included: `.excludeDesktopElements` removes its
-    /// desktop surface, while ordinary Finder windows must participate in the
-    /// same 85-percent union-area policy as every other application window.
+    /// Finder is deliberately absent: `.excludeDesktopElements` already drops its desktop
+    /// surface, and its ordinary windows must count like any other app's.
     public nonisolated static func shouldExcludeWindowOwner(_ ownerName: String) -> Bool {
         ownerName == "Dock" || ownerName == "Window Server" || ownerName == "SystemUIServer"
     }
@@ -65,10 +58,8 @@ public final class FullScreenDetector {
             .store(in: &cancellables)
     }
 
-    /// Workspace/space churn only matters while something consumes the result
-    /// — the same demand gate as the fallback timer. Explicit `checkNow()`
-    /// bypasses this, and `setFallbackPollingEnabled(true)` rescans, so state
-    /// catches up as soon as a consumer appears.
+    /// Gated on the same demand as the fallback timer; `checkNow()` bypasses it and
+    /// enabling polling rescans, so state catches up when a consumer appears.
     private func scanIfDemanded() {
         guard isFallbackPollingEnabled else { return }
         checkFullScreenState()
@@ -193,9 +184,7 @@ public final class FullScreenDetector {
             }
         }
 
-        // Always synchronous: callers (reconcileMonitorOverlays,
-        // setupFullScreenDetection) read the published state in the same turn,
-        // and the sweep-line union is cheap even at the 80-window cap.
+        // Must stay synchronous: callers read the published state in the same turn.
         applyOcclusionScan(
             fullScreen: result,
             seedOcclusion: occlusion,
@@ -219,7 +208,6 @@ public final class FullScreenDetector {
         return coverage
     }
 
-    /// Quantization + threshold decision for one scan.
     private func applyOcclusionScan(
         fullScreen: [CGDirectDisplayID: Bool],
         seedOcclusion: [CGDirectDisplayID: Bool],
@@ -229,9 +217,8 @@ public final class FullScreenDetector {
         var occlusion = seedOcclusion
         var fractions = seedFractions
         for (screenID, fraction) in coverage {
-            // Floor (not round) to the step so a quantized value never exceeds
-            // the true coverage — keeps the policy's 0.5/0.4 thresholds honest
-            // instead of effectively shifting them to ~0.475/0.375.
+            // Floor, not round, so a quantized value never exceeds true coverage - rounding
+            // would shift the policy's 0.5/0.4 thresholds to ~0.475/0.375.
             let quantized = (fraction / Self.occlusionFractionStep).rounded(.down) * Self.occlusionFractionStep
             fractions[screenID] = min(1, max(0, quantized))
             occlusion[screenID] = fraction >= 0.85
@@ -239,10 +226,8 @@ public final class FullScreenDetector {
         updateIfChanged(fullScreen, occlusion, fractions)
     }
 
-    /// Area of the union of `rects` (overlaps counted once): sweep the
-    /// compressed x-edges left→right and, per strip, merge the active
-    /// y-intervals into covered length. Only the largest `occlusionWindowCap`
-    /// rectangles are considered to bound the cost.
+    /// Union area, overlaps counted once: sweep the compressed x-edges and merge the
+    /// active y-intervals per strip. Only the largest `occlusionWindowCap` rects.
     nonisolated static func unionArea(of rects: [CGRect]) -> CGFloat {
         let rects = rects
             .filter { $0.width > 0 && $0.height > 0 }

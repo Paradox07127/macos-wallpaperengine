@@ -1,6 +1,5 @@
 import SwiftUI
 
-/// Shared footer with default and cancel keyboard actions. Callers supply localized titles.
 public struct SheetFooterBar<Leading: View>: View {
     private let primaryTitle: LocalizedStringKey
     private let primaryAction: () -> Void

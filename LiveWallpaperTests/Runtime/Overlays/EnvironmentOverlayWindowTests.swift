@@ -4,11 +4,8 @@ import XCTest
 @testable import LiveWallpaper
 
 /// The particle layer belongs between the wallpaper and the desktop icons.
-///
 /// `NSPanel.isFloatingPanel` rewrites `level` to `.floating` (3), so setting it
-/// after the level silently promoted the particles above every application
-/// window and it rained over whatever the user was working in. Nothing about
-/// that ordering is visible at the call site, hence the test.
+/// after the level would promote the particles above every application window.
 final class EnvironmentOverlayWindowTests: XCTestCase {
 
     @MainActor
@@ -27,19 +24,14 @@ final class EnvironmentOverlayWindowTests: XCTestCase {
             level, NSWindow.Level.normal.rawValue,
             "particles are at or above application windows (level \(level))"
         )
-        // An HTML wallpaper with mouse interaction on sits at
-        // `desktopIconWindow + 1`; below that and the particles are invisible
-        // rather than merely well-behaved.
+        // An HTML wallpaper with mouse interaction on sits at `desktopIconWindow + 1`;
+        // below that the particles are invisible.
         XCTAssertGreaterThan(
             level, Int(CGWindowLevelForKey(.desktopIconWindow)) + 1,
             "particles would be drawn under an interactive wallpaper"
         )
     }
 
-    /// A resolution change or arrangement drag moves the wallpaper window via
-    /// `updateAllWindowFrames()`, but the particle overlay's frame was only ever
-    /// written from `apply()` — so it stayed at the old size/position until the
-    /// next unrelated config change rebuilt the emitter.
     @MainActor
     func testParticleOverlayFrameFollowsResolutionChange() throws {
         let controller = EnvironmentOverlayController()
@@ -60,7 +52,7 @@ final class EnvironmentOverlayWindowTests: XCTestCase {
         XCTAssertEqual(updatedFrame, newFrame, "particle overlay frame did not follow the resolution/arrangement change")
     }
 
-    /// `NSWindow.canHide` defaults to YES, so cmd+H took the particle overlay
+    /// `NSWindow.canHide` defaults to YES, so cmd+H would take the particle overlay
     /// down with the app's UI even though it is desktop decoration.
     @MainActor
     func testParticleOverlaySurvivesApplicationHide() {
@@ -78,9 +70,6 @@ final class EnvironmentOverlayWindowTests: XCTestCase {
         )
     }
 
-    /// "Show wallpaper in screen capture" reached the wallpaper windows and the
-    /// Monitor board but not this panel: `makeHost` never set `sharingType`, so
-    /// with the setting off the rain still went into a screen share.
     @MainActor
     func testParticleOverlayHonoursTheCapturePolicy() {
         let restore = WallpaperCapturePolicy.allowsScreenCapture
@@ -107,11 +96,6 @@ final class EnvironmentOverlayWindowTests: XCTestCase {
         )
     }
 
-    /// Unplugging a display releases its wallpaper session before `screens` is
-    /// updated, so the reconcile inside that release still sees the display and
-    /// keeps its particle panel; nothing swept it afterwards. AppKit moves a
-    /// window whose display is gone onto one that remains, so the unplugged
-    /// display's rain landed on top of the survivor's.
     @MainActor
     func testParticleOverlayLeavesWithItsDisplay() throws {
         let screen = try Screen(nsScreen: XCTUnwrap(NSScreen.main))

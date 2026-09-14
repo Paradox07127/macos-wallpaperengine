@@ -8,15 +8,13 @@ private func isImplicitFBOTextureName(_ name: String) -> Bool {
     name.hasPrefix("_") && !name.hasPrefix("__")
 }
 
-/// Whether canonical composite rotation ran for a build, and each candidate
-/// layer's verdict ("rotated" or the rejection reason).
+/// `decisions`: "rotated" or the rejection reason.
 struct WPECanonicalCompositeRotationReport: Sendable, Equatable {
     let enabled: Bool
     let decisions: [String: String]
 }
 
-/// Whether full-frame passthrough elision ran for a build, and each
-/// fullscreen/project utility layer's verdict ("elided" or the rejection reason).
+/// `decisions`: "elided" or the rejection reason.
 struct WPEFullFramePassthroughElisionReport: Sendable, Equatable {
     let enabled: Bool
     let decisions: [String: String]
@@ -76,8 +74,6 @@ struct WPERenderPipelineBuilder: Sendable {
         ).pipeline
     }
 
-    /// Same as `build`, plus the canonical composite rotation and passthrough
-    /// elision verdicts so the renderer can surface them to captures and diagnostics.
     func buildReportingCanonicalRotation(
         graph: WPERenderGraph, canonicalCompositeRotationEnabled: Bool? = nil, sceneHDR: Bool = false,
         fullFramePassthroughElisionEnabled: Bool? = nil
@@ -87,9 +83,7 @@ struct WPERenderPipelineBuilder: Sendable {
         fullFramePassthroughElision: WPEFullFramePassthroughElisionReport
     ) {
         let layers = try graph.layers.map { layer in
-            // FBOs are declared per layer, and a pass only ever samples its own
-            // layer's targets plus the global scene aliases (which are not in
-            // this table and correctly fall back to RGBA).
+            // A pass samples only this layer's FBOs; global scene aliases are absent here and correctly fall back to RGBA.
             let fboFormats = Dictionary(
                 layer.localFBOs.map { ($0.name, $0.format) },
                 uniquingKeysWith: { _, latest in latest }
@@ -142,10 +136,7 @@ struct WPERenderPipelineBuilder: Sendable {
         if (layer.imagePath as NSString).pathExtension.lowercased() == "mdl" {
             return model
         }
-        // MDLV0021/0023 ship vertices pre-assembled in object space. MDLV0019/0020 store the
-        // flat character-sheet (bind pose = exploded pieces); the assembled pose is recovered by
-        // linear-blend skinning through the MDLA animation pose (see the executor's skinning gate).
-        // Generations below 19 are unverified, so still refused.
+        // MDLV0021/0023 are pre-assembled; MDLV0019/0020 need MDLA skinning; generations below 19 are refused.
         guard model.version >= 19 else {
             let generation = String(format: "MDLV%04d", model.version)
             Logger.warning(
@@ -185,11 +176,6 @@ struct WPERenderPipelineBuilder: Sendable {
         )
     }
 
-    /// Test seam for the stage-3 preprocess memo. `WPEShaderSourceLoader` is
-    /// fileprivate, and the memo's key completeness is only observable by calling
-    /// the memoized function twice on ONE builder — `build(graph:)` cannot vary a
-    /// single key dimension in isolation (stage and logical path move together
-    /// with the shader name). Not a production entry point.
     func preprocessShaderStageForTesting(
         source: String,
         logicalPath: String,
@@ -205,7 +191,6 @@ struct WPERenderPipelineBuilder: Sendable {
         )
     }
 
-    /// Test seam for the builtin-program memo, same reasoning as above.
     func builtinProgramForTesting(shaderName: String, combos: [String: Int]) -> WPEShaderProgram? {
         shaderLoader.builtinProgram(shaderName: shaderName, combos: combos)
     }
@@ -224,18 +209,12 @@ enum WPEShaderStage: Hashable, Sendable {
     case fragment
 }
 
-/// Key for `WPEShaderSourceLoader.builtinProgram`. The builtin bodies are static
-/// strings; the only per-pass inputs are the name (selects the body and is
-/// stored on the program) and the combos (baked into `shaderPrelude`).
 struct WPEBuiltinProgramMemoKey: Hashable, Sendable {
     let shaderName: String
     let combos: [String: Int]
 }
 
-/// Wallpaper Engine's shader-visible texture format ABI. These values are copied
-/// from the official `assets/shaders/common_fragment.h`; they are intentionally
-/// independent of `WPETexFormat.rawValue`, which is a container-decoder detail and
-/// also contains formats (for example RGBA1010102) that the shader ABI does not.
+/// Shader-visible format ABI from official `common_fragment.h`; independent of `WPETexFormat.rawValue`.
 enum WPEOfficialTextureFormatABI {
     static let rgba8888 = 0
     static let rgb888 = 1
@@ -251,9 +230,7 @@ enum WPEOfficialTextureFormatABI {
     static let r16F = 11
     static let bc7 = 12
 
-    /// Maps the TEXI integer through the official header's declared set. This
-    /// also preserves formats our current CPU decoder cannot upload yet (ETC,
-    /// RGB565, half-float) without conflating arbitrary unknown codes with ABI.
+    /// Identity-map the official set so unknown codes stay distinct from formats we cannot upload yet.
     static func shaderValue(forTextureFormatCode code: Int) -> Int? {
         switch code {
         case Self.rgba8888: return Self.rgba8888
@@ -277,10 +254,7 @@ enum WPEOfficialTextureFormatABI {
         (value >= etc1RGB8 && value <= dxt1) || value == bc7
     }
 
-    /// Authored FBO format strings, spelled the way `WPEMetalRenderTargetPool`
-    /// accepts them. This reports the AUTHORED format: under `general.hdr` the
-    /// pool promotes LDR targets to `rgba16Float`, but the shader ABI has no
-    /// RGBA16F code, so promotion must not leak into `TEXnFORMAT`.
+    /// Reports the authored FBO format: HDR promotion to `rgba16Float` must not leak into `TEXnFORMAT`.
     static func shaderValue(forFBOFormatString format: String) -> Int? {
         switch format.lowercased() {
         case "rgba8888", "": return rgba8888
@@ -309,21 +283,12 @@ private struct WPEShaderUniformAnnotation {
 private struct WPEShaderSourceLoader: Sendable {
     private let resolver: WPEMultiRootResourceResolver
     private let textureFormatProbeCache = TextureFormatProbeCache()
-    /// Include expansion + prelude for one stage, memoized per loader = per
-    /// builder = per scene build. That scope is what makes it sound to leave the
-    /// included headers' CONTENTS out of the key (see
-    /// `WPEShaderPreprocessSourceKey`): this loader's `resolver` never changes.
-    /// Bounded because the values are fully expanded GLSL; the loader itself is
-    /// discarded when `build(graph:)` returns, so the bound only guards a single
-    /// pathological scene.
+    /// Header contents are omitted from the key because this loader's `resolver` never changes for its lifetime.
     private let preprocessCache = WPEBoundedMemo<WPEShaderPreprocessSourceKey, String>(
         maxEntries: 256,
         maxCost: 8 * 1024 * 1024,
         cost: { $0.utf8.count }
     )
-    /// Builtin programs are constructed per PASS, so a heavy native-approximation
-    /// scene re-runs the prelude concatenation + `gl_FragColor` rewrite thousands
-    /// of times for the same (name, combos). Same lifetime as `preprocessCache`.
     private let builtinProgramCache = WPEBoundedMemo<WPEBuiltinProgramMemoKey, WPEShaderProgram?>(
         maxEntries: 256,
         maxCost: 4 * 1024 * 1024,
@@ -369,9 +334,7 @@ private struct WPEShaderSourceLoader: Sendable {
             do {
                 return try sourceProgram(shaderName: shaderName, pass: pass, fboFormats: fboFormats)
             } catch WPERenderPipelineError.shaderMissing {
-                // Some corpus effects are satisfied only by Metal-side built-ins.
-                // Fall back to the copy program when the workshop ships no source,
-                // but only on shaderMissing so invalid source/include errors surface.
+                // Fall back to the copy program only on `shaderMissing` so invalid source/include errors still surface.
             }
         }
 
@@ -400,10 +363,7 @@ private struct WPEShaderSourceLoader: Sendable {
         let metadata = shaderMetadata(from: [vertexSource, fragmentSource], pass: pass)
         let textureBindings = textureBindings(for: pass, defaults: metadata.defaultTextures)
         var comboValues = metadata.comboValues
-        // TEXnFORMAT is authored by WPE's runtime from the texture actually bound
-        // to slot n. It is not a material combo and must override a stale/manual
-        // value in JSON. Baking all supported slots also puts the format tuple in
-        // both source hashes and translation cache identities.
+        // TEXnFORMAT comes from the bound texture, not the material combo, and must override a stale JSON value.
         comboValues.merge(
             textureFormatComboValues(
                 for: textureBindings,
@@ -441,9 +401,7 @@ private struct WPEShaderSourceLoader: Sendable {
         )
     }
 
-    /// Resolves the official shader ABI value for every custom-texture slot.
-    /// Missing/sparse bindings, render targets and native raster fallbacks all
-    /// sample as ordinary four-channel RGBA on Metal, so zero is conservative.
+    /// Missing/sparse/RT/native-raster slots sample as RGBA on Metal, so zero is conservative.
     private func textureFormatComboValues(
         for bindings: [Int: WPETextureReference],
         fboFormats: [String: String],
@@ -457,9 +415,6 @@ private struct WPEShaderSourceLoader: Sendable {
             let resolution = textureFormatResolution(for: bindings[slot], fboFormats: fboFormats, passTarget: passTarget)
             values[macro] = resolution.value
 
-            // Only emit fallback diagnostics when this shader actually branches
-            // on the slot format. Expected RGBA/FBO/sparse cases stay debug-level;
-            // a malformed/unsupported TEX header is actionable and is a warning.
             guard source.contains(macro), let diagnostic = resolution.diagnostic else {
                 continue
             }
@@ -487,11 +442,6 @@ private struct WPEShaderSourceLoader: Sendable {
         }
     }
 
-    /// Probing a slot's format re-reads the whole `.tex` through the provider
-    /// (`resolver.data` has no cache and returns full file contents) to look at
-    /// 32 header bytes. One texture is bound by many passes, and every pass asks
-    /// for all 8 slots, so an uncached probe is hundreds of full-file reads on
-    /// the first-frame path. Memoized per loader = per scene load.
     private final class TextureFormatProbeCache: Sendable {
         private let entries = OSAllocatedUnfairLock<[String: TextureFormatResolution]>(initialState: [:])
 
@@ -567,7 +517,6 @@ private struct WPEShaderSourceLoader: Sendable {
                     optional: true
                 )
                 guard let payload = probe.texPayload else {
-                    // ImageIO uploads PNG/JPEG/etc. as an ordinary four-channel texture.
                     return .rgbaFallback(
                         "native raster '\(probe.relativePath)' uses four-channel sampling"
                     )
@@ -601,8 +550,6 @@ private struct WPEShaderSourceLoader: Sendable {
         return .rgbaFallback("texture '\(path)' has no resolvable format metadata")
     }
 
-    /// Candidate order mirrors the runtime texture loader closely enough that
-    /// the probed TEX is the one Metal will bind, while avoiding image decode.
     private func textureFormatProbeCandidates(for path: String) -> [String] {
         let ext = (path as NSString).pathExtension.lowercased()
         let rawImageExtensions: Set<String> = ["png", "jpg", "jpeg", "tga", "dds", "bmp", "gif", "webp"]
@@ -690,11 +637,7 @@ private struct WPEShaderSourceLoader: Sendable {
              .effectColorGrading?, .effectShimmer?, .effectShake?:
             return copyProgram(shaderName: shaderName, combos: combos)
         case .genericParticle?, nil:
-            // Open set: workshop customs (genericparticle is never emitted as a
-            // pass — particles draw via the executor's dedicated path). Keep the
-            // historical fallbacks verbatim: an effect_-prefixed custom loads as
-            // copy; the isGenericImageShader OR-branch stays for strict
-            // equivalence even though normalized() already folds those.
+            // Keep the `isGenericImageShader` OR-branch for strict equivalence even though `normalized()` already folds those.
             if normalized.hasPrefix("effect_") {
                 return copyProgram(
                     shaderName: shaderName,
@@ -709,8 +652,6 @@ private struct WPEShaderSourceLoader: Sendable {
         }
     }
 
-    /// Prelude + the `gl_FragColor` → `out_FragColor` rewrite, shared by every
-    /// hand-authored builtin program below.
     private func makeBuiltinProgram(
         shaderName: String,
         combos: [String: Int],
@@ -749,11 +690,7 @@ private struct WPEShaderSourceLoader: Sendable {
     }
     """
 
-    /// WPE's `genericimage*` family with the SPRITESHEET combo on: the vertex shader
-    /// derives UVs from `g_Texture0Translation` (current frame) plus
-    /// `g_Texture0TranslationNext` (next frame), sharing the `g_Texture0Rotation` UV
-    /// transform; the fragment mixes both by `g_SpriteFrameBlend` (0..1) so a 3-frame strip
-    /// crossfades instead of strobing at 25Hz (matches `common_particles.h` `ComputeSpriteFrame`). Without the combo, falls back to the trivial copy program.
+    /// SPRITESHEET: mix current/next frame by `g_SpriteFrameBlend` (0..1) so a strip crossfades instead of strobing.
     private func genericImageProgram(shaderName: String, combos: [String: Int]) -> WPEShaderProgram {
         let usesSpriteSheet = combos.contains { key, value in
             key.uppercased() == "SPRITESHEET" && value != 0
@@ -851,10 +788,7 @@ private struct WPEShaderSourceLoader: Sendable {
         )
     }
 
-    /// Interface declaration for the `wpe_blend_composite_fragment` builtin: the
-    /// real blend math is hand-written MSL, this only pins the binding set
-    /// (`g_Texture0` = layer composite, `g_Texture4` = scene snapshot — the same
-    /// slot WPE's `genericimage4.frag` uses under `#if BLENDMODE`).
+    /// Pins the binding set only (`g_Texture0` = layer composite, `g_Texture4` = scene snapshot); blend math is hand-written MSL.
     private func blendCompositeProgram(shaderName: String, combos: [String: Int]) -> WPEShaderProgram {
         makeBuiltinProgram(
             shaderName: shaderName,
@@ -908,11 +842,7 @@ private struct WPEShaderSourceLoader: Sendable {
         comboValues: [String: Int],
         includeStack: [String]
     ) throws -> String {
-        // Recursion lives in `expandIncludes`, so every call that reaches here is
-        // a top-level stage expansion with an empty stack. Memoizing only that
-        // case keeps `includeStack` out of the key by construction: a future
-        // recursive caller falls through to the uncached path instead of
-        // colliding with a top-level entry.
+        // Memoize only the empty-stack case so `includeStack` stays out of the key; a recursive caller must not hit a top-level entry.
         guard includeStack.isEmpty else {
             return try expandAndCanonicalize(
                 source: source,
@@ -967,10 +897,7 @@ private struct WPEShaderSourceLoader: Sendable {
             + stageSource
     }
 
-    // WPE's runtime treats an undefined combo as `0` inside `#if/#elif` expressions;
-    // strict shader preprocessors raise "unexpected token after conditional expression" for
-    // an unknown identifier. Scan the expanded source for uppercase identifiers referenced in
-    // preprocessor conditionals and emit `#define X 0` for any not already defined by the prelude/combo values/shader body.
+    /// WPE treats an undefined combo as `0` in `#if`/`#elif`; emit `#define X 0` for referenced identifiers not already defined.
     private func implicitConditionalDefines(
         in source: String,
         knownCombos: [String: Int]
@@ -1021,11 +948,7 @@ private struct WPEShaderSourceLoader: Sendable {
             guard trimmed.hasPrefix("#") else { continue }
             let directive = trimmed.dropFirst().drop(while: { $0 == " " || $0 == "\t" })
             let head = directive.prefix(while: { $0.isLetter })
-            // Only `#if` and `#elif` evaluate the operand as an integer
-            // expression, so they're the only ones that need missing
-            // identifiers to be `#define`d to 0. `#ifdef` / `#ifndef`
-            // only check whether the name is defined — auto-defining
-            // would flip those branches.
+            // Only `#if`/`#elif` need missing identifiers defined to 0; auto-defining would flip `#ifdef`/`#ifndef`.
             guard head == "if" || head == "elif" else { continue }
             let expression = Self.stripDefinedOperator(in: String(directive))
             refs.formUnion(Self.uppercaseIdentifiers(in: expression))
@@ -1086,11 +1009,7 @@ private struct WPEShaderSourceLoader: Sendable {
         "defined", "GLSL", "GL_ES", "VERSION", "__VERSION__", "GL_FRAGMENT_PRECISION_HIGH"
     ]
 
-    // GLSL ES 3.00 treats `#define X A` after `#define X B` as a hard error when the token
-    // sequences differ. Our prelude already defines these compat symbols (HLSL aliases +
-    // math constants); workshop shaders frequently restate them with different precision
-    // (e.g. `M_PI` to 32 digits vs our 20), which the compiler rejects even though both
-    // collapse to the same single-precision float. Strip the user-side redefines and let the prelude win.
+    /// GLSL ES 3.00 errors on a `#define` whose token sequence differs; strip user redefines of prelude macros and let the prelude win.
     private func stripPreludeMacroRedefines(in source: String) -> String {
         let neutralized = source.components(separatedBy: .newlines).map { line -> String in
             let trimmed = line.trimmingCharacters(in: .whitespaces)
@@ -1170,10 +1089,6 @@ private struct WPEShaderSourceLoader: Sendable {
             guard includedPaths.insert(identity).inserted else {
                 return "// include-once: \(identity)"
             }
-            // Builtin fallbacks may themselves depend on a canonical header
-            // (common_composite.h → common_blending.h). Re-enter the same
-            // resolver so an installed/project header wins there too, and so
-            // resolved-path include-once prevents two ABI copies in one stage.
             return try expandIncludes(
                 in: builtin,
                 logicalPath: "shaders/\((includePath as NSString).lastPathComponent)",
@@ -1202,17 +1117,13 @@ private struct WPEShaderSourceLoader: Sendable {
         )
     }
 
-    /// Staged T-12 migration: these official/project headers are now authoritative
-    /// when present; the hand-authored builtin remains an asset-missing fallback.
-    /// Headers with unresolved ABI differences stay builtin-first until their stage.
+    /// Official/project headers are authoritative when present; the builtin is an asset-missing fallback.
+    /// Headers with unresolved ABI differences stay builtin-first.
     private static let resolverPreferredBuiltinHeaders: Set<String> = [
         "common_perspective.h",
         "common_vertex.h",
         "common_blur.h",
-        // These two define the public fragment ABI. In particular,
-        // common_blending.h uses compile-time BLENDMODE plus function-like
-        // macros; replacing it with the old integer/runtime-switch shim changes
-        // valid author code such as BlendOpacity(..., BlendLinearDodge, ...).
+        // These two are the public fragment ABI; replacing `common_blending.h` with the old runtime-switch shim would break `BlendOpacity(..., BlendLinearDodge, ...)`.
         "common_fragment.h",
         "common_blending.h"
     ]
@@ -1360,11 +1271,7 @@ private struct WPEShaderSourceLoader: Sendable {
         }
     }
 
-    /// `generic2.frag` predates the shader metadata `require` field. Its hidden
-    /// `_rt_Reflection` default is declared unconditionally, but the only sample
-    /// is compiled under `#if REFLECTION`. Treating that declaration as an
-    /// unconditional binding makes ordinary REFLECTION=0 materials try to read a
-    /// render target that WPE never asks them to use (3470948192).
+    /// `_rt_Reflection` is declared unconditionally but sampled only under `#if REFLECTION`; do not bind it when REFLECTION=0.
     private func samplerDefaultIsActive(
         _ defaultTexture: String,
         comboValues: [String: Int]
@@ -1473,13 +1380,8 @@ private struct WPEShaderSourceLoader: Sendable {
         for (index, bind) in pass.binds {
             result[index] = bind == .previous ? pass.source : bind
         }
-        // shake/pulse slot 2 is the per-instance OPACITY mask (multiplies effect strength);
-        // undeclared it must default to WHITE (full effect) — black/unbound silently
-        // disables the effect (oracle: 3554161528 cloud bands froze). Not subsumable by
-        // the sampler `"default"` annotation above: pulse.frag's mask declares no default
-        // (only `mode:"opacitymask"` + paintdefaultcolor), and shake.frag's slot 2 is the
-        // TIMEOFFSET map (default util/black, dormant while TIMEOFFSET stays 0) — the
-        // white-mask rule comes from WPE's opacitymask runtime, not a shader-comment default.
+        // shake/pulse slot 2 is the opacity mask; undeclared it must default to white — unbound/black would disable the effect.
+        // Not subsumable by the sampler "default" annotation: the white-mask rule comes from WPE's opacitymask runtime.
         if usesWhiteOpacityMaskDefault(for: pass),
            !pass.textures.keys.contains(2), !pass.binds.keys.contains(2) {
             result[2] = .asset("util/white")
@@ -1523,7 +1425,6 @@ private struct WPEShaderSourceLoader: Sendable {
     }
 
     private func shaderPrelude(comboValues: [String: Int], stage: WPEShaderStage) -> String {
-        // Builtin WPE macros (CAST2/ddx/ddy/saturate/…) live in `WPEShaderBuiltinMacros`
 
         var lines = ["// LiveWallpaper WPE shader prelude"]
         lines.append(contentsOf: WPEShaderBuiltinMacros.glslPreludeLines)
@@ -1694,8 +1595,6 @@ private struct WPEShaderSourceLoader: Sendable {
             #endif
             """
         case "common_vertex.h":
-            // Workshop authors `#include` this but rarely depend on its content,
-            // so a guarded empty stub satisfies resolution without polluting the prelude.
             return """
             #ifndef LIVEWALLPAPER_WPE_COMMON_VERTEX_H
             #define LIVEWALLPAPER_WPE_COMMON_VERTEX_H
@@ -1703,18 +1602,7 @@ private struct WPEShaderSourceLoader: Sendable {
             #endif
             """
         case "common_fragment.h":
-            // WPE 2.8 `font.frag` (+ workshop text shaders) call `ConvertSampleR8` for
-            // R8/alpha glyph coverage; an empty stub broke their translate. Mirrors
-            // WPE's GLSL path (`HLSL_SM30` never set here → `.r`).
-            //
-            // FORMAT_* mirror WPE's texture-format enum ABI values (`common_fragment.h`);
-            // `formatcombo` shaders branch on them (`#if TEX2FORMAT == FORMAT_R8 || … ==
-            // FORMAT_RG88` → replicate `.rrr`). Without this table, `implicitConditionalDefines`
-            // auto-zeroed FORMAT_R8/FORMAT_RG88 *and* the missing TEXnFORMAT, so `0 == 0`
-            // forced every such shader down the single-channel branch — lightshafts sampled
-            // its RGBA gradient map as `.rrr` and the beams saturated white instead of the
-            // gradient. The loader now injects TEXnFORMAT from each bound TEXI header;
-            // native raster/FBO/sparse slots default to FORMAT_RGBA8888.
+            // FORMAT_* must match WPE's texture-format ABI; without them `implicitConditionalDefines` would zero FORMAT_R8/FORMAT_RG88 and force the single-channel branch.
             return """
             #ifndef LIVEWALLPAPER_WPE_COMMON_FRAGMENT_H
             #define LIVEWALLPAPER_WPE_COMMON_FRAGMENT_H
@@ -1926,13 +1814,7 @@ private struct WPEShaderSourceLoader: Sendable {
             #endif
             """
         case "common_composite.h":
-            // WPE's common_composite.h `#include "common_blending.h"` so
-            // ApplyComposite(COMPOSITE==1) can overlay via ApplyBlending(BLENDMODE, …). Keep
-            // that dependency explicit: the builtin include path recurses through the normal
-            // resolver, choosing the official compile-time header when installed and the
-            // runtime shim only as the asset-missing fallback. g_CompositeColor/
-            // g_CompositeAlpha/g_CompositeOffset/COMPOSITEMONO are identity for default values
-            // and aren't yet collected as uniforms from headers — omitted until that wiring lands.
+            // `#include "common_blending.h"` so ApplyComposite can call ApplyBlending; omitted composite uniforms are identity at defaults.
             return """
             #include "common_blending.h"
             #ifndef LIVEWALLPAPER_WPE_COMMON_COMPOSITE_H
@@ -1966,13 +1848,6 @@ private struct WPEShaderSourceLoader: Sendable {
             #endif
             """
         case "common_perspective.h":
-            // WPE workshop perspective effects (waterripple, waterwaves,
-            // lightshafts, auto_sway, refract) build a 3×3 homography
-            // by inverting the matrix that maps the unit square corners
-            // to four screen-space points. Both `squareToQuad` and the
-            // mat3 form of `inverse` ship in WPE's stock header; ours
-            // were empty before, so every call surfaced as "no matching
-            // overloaded function found".
             return """
             #ifndef LIVEWALLPAPER_WPE_COMMON_PERSPECTIVE_H
             #define LIVEWALLPAPER_WPE_COMMON_PERSPECTIVE_H

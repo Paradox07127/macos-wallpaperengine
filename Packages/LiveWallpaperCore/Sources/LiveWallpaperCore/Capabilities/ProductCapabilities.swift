@@ -9,22 +9,19 @@ public enum ProductSKU: String, Sendable, Codable {
     case pro
 }
 
-/// Discrete user-facing capabilities controlled by the SKU. A `WallpaperType`
-/// represents *what* an active wallpaper is; `ProductFeature` represents
-/// *which* product surfaces or ambient subsystems are wired up to support it.
+/// `WallpaperType` is *what* a wallpaper is; `ProductFeature` is *which* surfaces
+/// are wired up to support it.
 public enum ProductFeature: String, Sendable, Hashable, Codable, CaseIterable {
     case video
     case html
     case scene
 
-    /// Monitor widget overlay, AI-agent modules included; both SKUs.
     case monitorOverlay
 
     case wpeImport
     case videoEffects
     case weatherReactive
 
-    /// Pro-only Steam Workshop metadata and SteamCMD download surfaces.
     case workshopOnline
 
     case scheduleAutomation
@@ -35,10 +32,8 @@ public enum ProductFeature: String, Sendable, Hashable, Codable, CaseIterable {
 
     case lockScreenSnapshots
 
-    /// Apple Aerials surface, with its disk scan loaded lazily in both SKUs.
     case appleAerials
 
-    /// Inline inspector preview surface available in both SKUs.
     case inspectorPreview
 }
 
@@ -53,14 +48,12 @@ public struct ProductCapabilities: Sendable, Equatable {
         self.enabledFeatures = sku == .unconfigured ? [] : enabledFeatures
     }
 
-    /// Fail-closed catalog used until an app/test/preview explicitly chooses
-    /// a shipping SKU. It deliberately enables no wallpaper or app feature.
+    /// Fail-closed catalog used until an app/test/preview explicitly chooses a shipping SKU.
     public static let unconfigured = ProductCapabilities(
         sku: .unconfigured,
         enabledFeatures: []
     )
 
-    /// Lite capability baseline excluding Pro rendering, AI-agent, Workshop, and diagnostic surfaces.
     public static let lite = ProductCapabilities(
         sku: .lite,
         enabledFeatures: [
@@ -73,7 +66,6 @@ public struct ProductCapabilities: Sendable, Equatable {
         ]
     )
 
-    /// Shipping Pro capability baseline.
     public static let pro = ProductCapabilities(
         sku: .pro,
         enabledFeatures: [
@@ -105,7 +97,6 @@ public struct ProductCapabilities: Sendable, Equatable {
         WallpaperType.allCases.filter { canRender($0) }
     }
 
-    /// Automation modes enabled by the current catalog; schedule additionally requires `.scheduleAutomation`.
     public var selectableWallpaperModes: [WallpaperMode] {
         guard enabledFeatures.contains(.playlists) else { return [] }
         return WallpaperMode.allCases.filter { mode in
@@ -117,7 +108,6 @@ public struct ProductCapabilities: Sendable, Equatable {
     }
 }
 
-/// Value-semantic capability catalog distributed through the SwiftUI environment.
 public struct FeatureCatalog: Sendable, Equatable {
     public let capabilities: ProductCapabilities
 

@@ -2,14 +2,8 @@
 import Foundation
 import os
 
-/// Process-wide byte-budget LRU for decoded animation frame bytes, shared by every
-/// `WPETexLazyAnimatedTextureSource`; replaces the former per-source "4 decoded frames" cap,
-/// which scaled with concurrent animation count instead of a budget. Eviction order (WebKit
-/// MemoryCache-style): speculative (never-consumed) entries LRU, then consumed entries LRU;
-/// per-source pinned (on-screen) IDs are skipped; prunes to ~80% of budget to avoid edge
-/// thrashing; frames over the admission cap are never stored (upload-only, held transiently).
-/// Thread-safe via one unfair lock; workers store during prefetch, render actors read; entries
-/// are `Data`.
+/// Evict speculative LRU, then consumed LRU; skip pinned; prune to 80% of budget; oversize frames are never stored.
+/// Thread-safe via one unfair lock: workers store during prefetch, render actors read.
 final class WPEAnimatedFrameByteCache: @unchecked Sendable {
     struct SourceToken: Hashable, Sendable {
         fileprivate let id: UInt64
@@ -85,7 +79,6 @@ final class WPEAnimatedFrameByteCache: @unchecked Sendable {
         }
     }
 
-    /// Returns the source's lease: drops its entries and its pin.
     func unregisterSource(_ token: SourceToken) {
         removeAll(for: token)
     }
@@ -99,9 +92,7 @@ final class WPEAnimatedFrameByteCache: @unchecked Sendable {
 
     // MARK: - Store / lookup
 
-    /// Admits the frame unless it exceeds the admission cap. `speculative`
-    /// marks prefetched entries that have not yet been consumed on screen.
-    /// Returns whether the entry was admitted.
+    /// `speculative`: prefetched but not yet consumed on screen. Not stored if over the admission cap.
     @discardableResult
     func store(_ bytes: Data, source: SourceToken, imageID: Int, speculative: Bool) -> Bool {
         guard bytes.count <= admissionByteCap else { return false }
@@ -118,8 +109,6 @@ final class WPEAnimatedFrameByteCache: @unchecked Sendable {
         }
     }
 
-    /// Touches the entry, clears its speculative flag, and pins it as the
-    /// source's current on-screen image.
     func lookup(source: SourceToken, imageID: Int) -> Data? {
         state.withLock { state in
             let key = Key(source: token(source), imageID: imageID)

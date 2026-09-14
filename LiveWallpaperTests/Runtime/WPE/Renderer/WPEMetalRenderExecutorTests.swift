@@ -93,7 +93,6 @@ struct WPEMetalRenderExecutorTests {
     func reloadClearsUntranslatableShaderVerdict() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let executor = try WPEMetalRenderExecutor(device: device)
-        // Both halves are keyed by pass id, which a different scene can reuse.
         executor.untranslatableShaderReasonByPassID["layer0.0"] = "no translator"
         executor.releaseTransientResources()
         #expect(executor.untranslatableShaderReasonByPassID.isEmpty)
@@ -400,12 +399,6 @@ struct WPEMetalRenderExecutorTests {
         #expect(pixel.a >= 250)
     }
 
-    // 3448877775's moon: the authored godrays chain binds slot 2
-    // (_rt_FullFrameBuffer) and raythreshold:1 zeroes the rays. The official
-    // godrays_combine.frag ALWAYS outputs `albedo` (slot 1) + blended rays —
-    // slot 2 is only the COPYBG background mixed under the albedo's alpha. The
-    // old builtin returned rays-only whenever slot 2 was bound, erasing the
-    // whole layer (moon invisible).
     @Test("Godrays combine with an explicit base bound still outputs the albedo layer")
     func godraysCombineWithBaseBoundKeepsAlbedo() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
@@ -488,9 +481,8 @@ struct WPEMetalRenderExecutorTests {
         )
         let pixel = try readPixel(output, x: 1, y: 1)
 
-        // Opaque albedo (a=255) means COPYBG's mix contributes nothing: the
-        // layer must come through unchanged (bytes ≈ sRGB-encode of 40/90/140
-        // = ~108/160/195), not zero rays (black) and not the red base (r→255).
+        // Opaque albedo means COPYBG contributes nothing: the bounds are the
+        // sRGB encode of 40/90/140 (≈108/160/195), not black and not the red base.
         #expect(pixel.r >= 90 && pixel.r <= 140)
         #expect(pixel.g >= 140 && pixel.g <= 180)
         #expect(pixel.b >= 175 && pixel.b <= 215)
@@ -663,9 +655,6 @@ struct WPEMetalRenderExecutorTests {
         #expect(pixel.a > 0)
     }
 
-    // Rewritten to the official godrays_combine.frag semantics: slot 2 is only
-    // the COPYBG background under the albedo — binding it must NOT switch the
-    // output to rays-only. White albedo + additive rays saturates to white.
     @Test("Godrays combine explicit base slot still outputs the albedo layer over rays")
     func godraysCombineExplicitBaseSlotKeepsRaysAsVisibleOutput() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
@@ -743,7 +732,7 @@ struct WPEMetalRenderExecutorTests {
         )
         let pixel = try readPixel(output, x: 1, y: 1)
 
-        // White albedo + rays (Add) saturates to white; the layer survives.
+        // White albedo + additive rays saturates to white.
         #expect(pixel.r >= 250)
         #expect(pixel.g >= 250)
         #expect(pixel.b >= 250)
@@ -1084,9 +1073,6 @@ struct WPEMetalRenderExecutorTests {
         }
     }
 
-    /// Scene 3776778760 lost every layer to one decorative audio-ring effect whose shader only
-    /// compiles under HLSL/fxc. Wallpaper Engine keeps drawing the rest, so a pass that cannot
-    /// translate skips its own draw instead of taking the wallpaper down with it.
     @Test("One untranslatable pass skips its own draw and the rest of the scene still renders")
     func skipsUntranslatablePassAndRendersRemainingLayers() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
@@ -1872,9 +1858,6 @@ struct WPEMetalRenderExecutorTests {
             geometry: geo(size: nil), sceneSize: scene) == .fullscreen)
     }
 
-    /// 3554161528's media cover: child 411's composite is consumed BY NAME by parent
-    /// 1111's blend, so the child never paints into the scene and the parent is a real
-    /// sub-rect box. Blanket parent-set membership stretched the 220×220 cover fullscreen.
     @Test("Compose parent of a composite-only compose child keeps its subregion box")
     func composeParentOfCompositeOnlyChildKeepsSubregionBox() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
@@ -1893,7 +1876,6 @@ struct WPEMetalRenderExecutorTests {
             255, 0, 0, 255, 255, 0, 0, 255,
             255, 0, 0, 255, 255, 0, 0, 255,
         ]))
-        // The child paints ONLY into its own composite — never into the scene.
         let feedPass = copyPass(
             id: "feed.0",
             source: .image("materials/red.png"),
@@ -1940,9 +1922,8 @@ struct WPEMetalRenderExecutorTests {
         #expect(executor.sceneCaptureUtilityOutputGeometry(for: cover) == .subregion)
     }
 
-    /// Control (3632513108's bottom-right panel shape): a child that paints into the
-    /// scene flat makes the parent a layer-group host, whose own sub-rect passthrough
-    /// must stay suppressed or it draws a picture-in-picture scene copy.
+    /// Control for the subregion test above: a child painting flat into the scene
+    /// keeps the parent fullscreen.
     @Test("Compose parent of a flat scene-painting child keeps fullscreen suppression")
     func composeParentOfFlatChildStaysFullscreen() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
@@ -1961,7 +1942,6 @@ struct WPEMetalRenderExecutorTests {
             255, 0, 0, 255, 255, 0, 0, 255,
             255, 0, 0, 255, 255, 0, 0, 255,
         ]))
-        // The child paints FLAT into the scene — this is what makes the parent a host.
         let buttonPass = copyPass(
             id: "button.0",
             source: .image("materials/red.png"),
@@ -2830,8 +2810,7 @@ struct WPEMetalRenderExecutorTests {
         }
         let vertices = quad(minX: -3, maxX: 3, minY: -3, maxY: 3)
             + quad(minX: -4, maxX: 4, minY: -4, maxY: 4)
-            // This plain coat part crosses the local card's left edge (-4). The old material-time
-            // warp clipped x=-6...-4 in compositeA, producing a hard vertical cut at scene x=4.
+            // This plain coat part crosses the local card's left edge (-4).
             + quad(minX: -6, maxX: -2, minY: -3, maxY: 3)
         let indices: [UInt32] = [
             0, 1, 2, 2, 1, 3,
@@ -6193,10 +6172,6 @@ private func staticCachePreparedLayer(
 
 @Suite("WPE generic image layer tint")
 struct WPEGenericImageLayerTintTests {
-    // WPE bakes the object's `color` into g_Color4 for every image material
-    // (RenderDoc: g_Color4 read 1122 times across 28 captures, 90 of 116
-    // distinct values non-white). Our generic image path previously only ever
-    // tinted solid layers, so authored image tints were dropped entirely.
     @Test("Layer color reaches the generic image uniforms in linear space")
     func layerColorReachesGenericImageUniforms() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
@@ -6307,7 +6282,7 @@ struct WPEMetalProjectedGeometryCullingTests {
             #expect(actual == expected)
         }
         let front = try bytes(executor: executor, pipeline: pipeline(cull: "front"), source: source, camera: camera)
-        #expect(front.allSatisfy { $0 == 0 }) // Keep real culling; do not mask the bug with .none.
+        #expect(front.allSatisfy { $0 == 0 })
     }
 
     @Test("Scene model meshes retain camera-dependent winding for both projections", arguments: [false, true])
@@ -6316,7 +6291,6 @@ struct WPEMetalProjectedGeometryCullingTests {
         let executor = try WPEMetalRenderExecutor(device: device)
         let source = try makeRGBAInputTexture(device: device, bytes: Data(repeating: 255, count: 16))
         let camera = camera(perspective: perspective)
-        // The mesh path's own accessor, with the identity model transform this fixture uses.
         #expect(camera.frontFacingWinding(objectID: "winding", modelMatrix: matrix_identity_float4x4)
             == (perspective ? MTLWinding.counterClockwise : .clockwise))
         let model = WPEPuppetModel(version: 23, meshes: [WPEPuppetMesh(

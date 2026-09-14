@@ -1,9 +1,6 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// Inline banner when the active wallpaper session reports a `WallpaperRuntimeError`.
-/// Sits in the content column, so it takes the content surface rather than glass
-/// (DESIGN.md rule 11 tiers glass by position).
 struct RuntimeErrorBanner: View {
     let error: WallpaperRuntimeError
     /// Hide Re-pick when the type has no picker (e.g. scene).

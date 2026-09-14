@@ -2,13 +2,6 @@
 import CryptoKit
 import Foundation
 
-/// Pure-Swift frontend for the WPE shader dialect. Runs before the Swift
-/// transpiler: parses `// [COMBO]` / `// [BIND]` annotations, applies
-/// WPE→canonical-GLSL macro fixups, and bakes combo `#define`s into the
-/// preamble so translation only has to deal with vanilla GLSL. `#include`
-/// expansion and the `gl_FragColor` rewrite already happened at graph-build
-/// time (`WPERenderPipelineBuilder.preprocess`), which is the only producer of
-/// the sources this sees.
 struct WPEShaderPreprocessor {
 
     func process(
@@ -73,10 +66,7 @@ struct WPEShaderPreprocessor {
     ) throws -> StageResult {
         var combos: [String: WPEComboDeclaration] = [:]
         var bindings: [Int: String] = [:]
-        // Normalize CRLF/CR → LF first. Swift treats "\r\n" as one grapheme, so the
-        // line-based passes below (`split(separator: "\n")`) would see a CRLF file as a
-        // SINGLE line, collapsing the whole shader onto its first line. WPE shaders (and
-        // most Windows-authored workshop shaders) ship CRLF.
+        // Normalize CRLF/CR → LF first: Swift treats `\r\n` as one grapheme, so `\n` splits would collapse a CRLF shader to one line.
         let scanned = scanAnnotations(
             source: Self.normalizeNewlines(source),
             combos: &combos,
@@ -96,8 +86,6 @@ struct WPEShaderPreprocessor {
         )
     }
 
-    /// Collapse CRLF and lone-CR to LF so the line-based passes split
-    /// consistently regardless of the shader's authoring platform.
     static func normalizeNewlines(_ source: String) -> String {
         source
             .replacingOccurrences(of: "\r\n", with: "\n")

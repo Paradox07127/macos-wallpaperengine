@@ -2,7 +2,6 @@ import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
-/// Generation + cacheKey gate for async HTML preview completions.
 struct HTMLPreviewLoadState: Equatable {
     struct Token: Equatable {
         fileprivate let generation: UInt64
@@ -39,16 +38,14 @@ struct HTMLPreviewLoadState: Equatable {
     }
 }
 
-/// Inspector HTML wallpaper preview.
 struct HTMLPreviewSection: View {
     let screen: Screen
     let source: HTMLSource?
     let config: HTMLConfig
     /// Bumped by the refresh control in the row above; each change forces a recapture.
     var refreshToken: Int = 0
-    /// True while the displayed image came from the running wallpaper, whose
-    /// WebView already has the CSS transform applied. Anything drawing the
-    /// transform on top of this view has to know, or it doubles it.
+    /// True while the image came from the running wallpaper, which already has the
+    /// CSS transform applied — drawing it again on top doubles it.
     var isShowingLiveCapture: Binding<Bool>?
     /// WPE web project shipped preview; always nil in Lite.
     let wpePreviewURL: URL?
@@ -80,8 +77,6 @@ struct HTMLPreviewSection: View {
     var body: some View {
         snapshotCard
             .screenPreviewChrome()
-            // Reports the drawn 16:9 box, not the column width — an overlay hung
-            // on this view has to be clipped to the picture, not to the page.
             .aspectRatio(16 / 9, contentMode: .fit)
             .onChange(of: refreshToken) { _, _ in
                 if let key = cacheKey {
@@ -210,7 +205,6 @@ struct HTMLPreviewSection: View {
     }
 }
 
-/// Resolves an `HTMLSource` into a `(URL, cacheKey)` pair that `WallpaperThumbnailService` can snapshot.
 enum HTMLPreviewKey {
     static func key(for source: HTMLSource, config: HTMLConfig) -> String {
         let sourceKey: String
@@ -313,14 +307,12 @@ enum HTMLPreviewKey {
         guard let data = try? JSONEncoder().encode(config) else {
             return String(describing: config)
         }
-        // The thumbnail cache is process-local, so Swift's randomized hash is
-        // sufficient and avoids retaining potentially large WPE properties in
-        // every cache key.
+        // Process-local cache, so Swift's per-process randomized hash is fine and
+        // avoids retaining large WPE properties in every key.
         return String(data.hashValue)
     }
 }
 
-/// Web preview source + runtime-mode badges (HTTP / JS / PHYS PX / CLICKS).
 struct HTMLInformationOverlay: View {
     let source: HTMLSource?
     let config: HTMLConfig
@@ -364,9 +356,6 @@ struct HTMLInformationOverlay: View {
     }
 }
 
-/// Secondary pill inside the glass info panel; padding matches the shared
-/// flat-pill standard (`TypeBadge`), and the default background is the
-/// over-media foreground token at panel-tag strength.
 extension Text {
     func informationOverlayTag(
         background: Color = DesignTokens.Colors.overlayForeground.opacity(0.18)
@@ -379,11 +368,6 @@ extension Text {
     }
 }
 
-/// Render-geometry badges on the web preview (not the inspector list).
-/// The preview's two corner controls sit side by side, so their glyph frame and
-/// backing live in one place — spelled twice, they drift the first time one moves.
-/// A view rather than a function so each control carries its own hover state
-/// for the interactive-corner-glyph glass API. Shared with the web title row.
 struct PreviewCornerGlyph: View {
     private let systemImage: String
 
@@ -408,8 +392,6 @@ struct HTMLRenderingDiagnosticsOverlay: View {
     let source: HTMLSource?
     let config: HTMLConfig
 
-    /// Collapsed by default. Expanded, this is seven rows of numbers sitting on
-    /// top of the frame those numbers describe — useful on demand, noise otherwise.
     @State private var isExpanded = false
 
     @ViewBuilder
@@ -421,15 +403,12 @@ struct HTMLRenderingDiagnosticsOverlay: View {
                     .foregroundStyle(DesignTokens.Colors.overlayForeground)
                     .padding(.horizontal, DesignTokens.Spacing.md)
                     .padding(.vertical, DesignTokens.Spacing.sm)
-                    // A panel of label/value rows, not a badge: the capsule's end caps
-                    // wasted its corners and read as one oversized pill.
                     .thumbnailBadgeGlass(opacity: 0.7, in: .roundedRectangle(DesignTokens.Corner.md))
                     .accessibilityElement(children: .combine)
                     .accessibilityAddTraits(.isButton)
                     .accessibilityHint(Text("Hide details"))
-                    // The trait says "button" but a tap gesture is invisible to
-                    // VoiceOver, so without this the element announces itself as
-                    // activatable and then does nothing when activated.
+                    // A tap gesture is invisible to VoiceOver: without this the element
+                    // announces itself as activatable and then does nothing.
                     .accessibilityAction { toggle() }
                     .contentShape(RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous))
                     .onTapGesture { toggle() }
@@ -448,8 +427,6 @@ struct HTMLRenderingDiagnosticsOverlay: View {
         withAnimation(.snappy(duration: 0.18)) { isExpanded.toggle() }
     }
 
-    /// Two columns rather than one: seven stacked rows in the corner covered a
-    /// third of the frame being measured, which is what collapsing it fixed.
     private let columns = [
         GridItem(.adaptive(minimum: 172), spacing: DesignTokens.Spacing.md, alignment: .leading)
     ]
@@ -478,8 +455,6 @@ struct HTMLRenderingDiagnosticsOverlay: View {
         .frame(maxWidth: 360, alignment: .leading)
     }
 
-    /// `value` is verbatim on purpose: it is either a measurement with units or
-    /// a string the diagnostics already localized at the point it was computed.
     private func diagnosticCell(_ label: LocalizedStringKey, _ value: String) -> some View {
         cell(label: Text(label), value: value)
     }

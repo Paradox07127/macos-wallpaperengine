@@ -27,7 +27,6 @@ enum WorkshopContentTypeFilter: String, CaseIterable, Identifiable {
     var tag: String? { requiredTags.first }
 }
 
-/// WPE's three maturity ratings, independent multi-select toggles.
 enum WorkshopAgeRatingFilter: String, CaseIterable, Identifiable {
     case everyone
     case questionable
@@ -49,15 +48,12 @@ enum WorkshopAgeRatingFilter: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Everyone only. The signed-out Workshop page hides Questionable and
-    /// Mature (about 18% of the catalog), so browsing them by default is both a
-    /// surprise and the reason a side-by-side with the website disagrees;
-    /// the two chips turn them back on.
+    /// Everyone only, matching the signed-out Workshop page (it hides Questionable
+    /// and Mature); the two chips turn them back on.
     static let defaultSelection: Set<WorkshopAgeRatingFilter> = [.everyone]
 }
 
 extension WorkshopQueryItem {
-    /// True when the item carries Wallpaper Engine's `Mature` maturity tag.
     var isMatureRated: Bool {
         Self.isMatureRated(tags: tags)
     }
@@ -67,12 +63,9 @@ extension WorkshopQueryItem {
     }
 }
 
-/// Official WPE Workshop genre tags — exact display strings, since Steam matches
-/// tags by exact case. On the keyed path a narrowed selection becomes
-/// `requiredtags` with `match_all_tags=false`: an item can carry several genres,
-/// so excluding the unselected ones would drop every multi-genre wallpaper. The
-/// keyless page has no `match_all_tags`, so it keeps the exclusion form —
-/// see `makeRequest`.
+/// Exact display strings — Steam matches tags by exact case. A narrowed selection
+/// becomes `requiredtags` with `match_all_tags=false`: an item can carry several
+/// genres, so excluding the unselected ones would drop every multi-genre wallpaper.
 enum WorkshopGenre {
     static let allTags: [String] = [
         "Abstract", "Animal", "Anime", "Cartoon", "CGI", "Cyberpunk", "Fantasy",
@@ -82,9 +75,8 @@ enum WorkshopGenre {
     ]
 }
 
-/// Steam's Miscellaneous facet, in the page's order, minus `Asset Pack` (that
-/// one is Category: Asset, always excluded). Opt-in and all-of: every selected
-/// tag is required, an empty selection filters nothing — see `makeRequest`.
+/// Steam's Miscellaneous facet, minus `Asset Pack` (Category: Asset, always
+/// excluded). Opt-in and all-of: every selected tag is required — see `makeRequest`.
 enum WorkshopMiscellaneousFilter {
     static let allTags: [String] = [
         "Approved", "Audio responsive", "3D", "Customizable", "Puppet Warp", "HDR",
@@ -92,9 +84,8 @@ enum WorkshopMiscellaneousFilter {
     ]
 }
 
-/// Buckets over Steam's 25 Resolution tags: a chip per bucket, and a narrowed
-/// selection excludes every tag of every unselected bucket. Raw values are
-/// persisted (`FilterKey.resolutions`), so the pre-bucket names stay.
+/// Buckets over Steam's Resolution tags; a narrowed selection excludes every tag
+/// of every unselected bucket. Raw values are persisted, so the old names stay.
 enum WorkshopResolutionFilter: String, CaseIterable, Identifiable {
     case any
     case standardDefinition
@@ -154,8 +145,6 @@ enum WorkshopResolutionFilter: String, CaseIterable, Identifiable {
     }
 }
 
-/// Drives `BrowsePane`: request shape, paginated browse, debounced
-/// search, inline error surfacing. Read-only — owns no download workflow.
 @MainActor
 @Observable
 final class BrowseViewModel {
@@ -167,9 +156,8 @@ final class BrowseViewModel {
 
     @ObservationIgnored private let services: WorkshopServices
 
-    /// Excluded from EVERY query: Application wallpapers can't run in this
-    /// runtime, and Asset packs are editor material, not wallpapers — never
-    /// surface either (server-side exclusion, not post-filter).
+    /// Excluded from EVERY query, server-side (not a post-filter): Application
+    /// wallpapers can't run in this runtime and Asset packs are editor material.
     nonisolated static let alwaysExcludedTags = ["Application", "Asset"]
 
     /// `Preset` items restyle another wallpaper rather than being one — excluded
@@ -178,7 +166,6 @@ final class BrowseViewModel {
         showsPresets ? alwaysExcludedTags : alwaysExcludedTags + ["Preset"]
     }
 
-    /// Typing schedules a debounced auto-search (fires after `searchDebounce` of quiet); Return / Search submit immediately.
     var searchInput: String = "" {
         didSet {
             guard searchInput != oldValue else { return }
@@ -221,11 +208,8 @@ final class BrowseViewModel {
     /// When set, the grid is scoped to items carrying this exact Workshop tag
     /// (detail-inspector tag-click path). Mutually exclusive with `creatorFilter`.
     private(set) var pinnedTag: String?
-    /// Pushed in by the pane; observed so the grid re-derives `displayedItems`
-    /// when the library changes underneath it.
+    /// Observed on purpose: `displayedItems` must re-derive when the library changes.
     var installedWorkshopIDs: Set<String> = []
-    /// The preference lives in Settings → Steam Workshop (`@AppStorage`); the
-    /// pane pushes the current value in here.
     var hidesDownloadedInBrowse: Bool = false
     private(set) var currentRequest: WorkshopQueryRequest
     private(set) var items: [WorkshopQueryItem] = []
@@ -233,27 +217,23 @@ final class BrowseViewModel {
     /// ever loaded"; a reload over an existing grid dims it instead.
     private(set) var hasLoadedPage: Bool = false
     private(set) var totalAvailable: Int?
-    /// Steam's own page count for the current query (`WorkshopQueryPage.totalPages`).
     private(set) var reportedTotalPages: Int?
     private(set) var isLoading: Bool = false
-    /// True while paging — current results stay on screen until the new page
-    /// replaces them, so memory stays bounded.
+    /// True while paging — current results stay on screen until the new page replaces them.
     private(set) var isPaging: Bool = false
     private(set) var lastError: WorkshopQueryError?
     /// Set when Steam returns HTTP 429; controls stay disabled until it lapses.
     private(set) var rateLimitUntil: Date?
 
-    /// True when no Steam Web API key is stored, or Valve rejected the stored
-    /// one: browse then runs off Valve's public Workshop page (ids only) plus
-    /// the key-free metadata endpoint.
+    /// True when no Steam Web API key is stored, or Valve rejected the stored one:
+    /// browse then runs off Valve's public Workshop page plus the key-free endpoint.
     var usesKeylessSearch: Bool {
         services.isKeyless
     }
 
-    /// The Browse banner for a key Valve rejected. Stays up across reloads
-    /// until dismissed; goes away by itself once the rejection is cleared (a
-    /// new key saved and validated). Keyed on the rejected key's fingerprint so
-    /// dismissing it does not also hide a later rejection of a different key.
+    /// The banner for a key Valve rejected. Stays up across reloads until dismissed;
+    /// keyed on the rejected key's fingerprint, so dismissing it does not also hide a
+    /// later rejection of a different key.
     var showsKeyRejectedNotice: Bool {
         services.apiKeyRejected && services.rejectedKeyFingerprint != dismissedRejectionFingerprint
     }
@@ -273,7 +253,7 @@ final class BrowseViewModel {
     /// only come from the page having yielded ids at all.
     private(set) var hasMoreKeylessPages: Bool = false
 
-    /// 1-based. Steam's QueryFiles `page` param lets us jump to any page directly.
+    /// 1-based.
     private(set) var pageIndex: Int = 1
     /// Target of the last page turn that failed, for the pager's Retry; nil
     /// once a page loads or a reload starts.
@@ -311,11 +291,9 @@ final class BrowseViewModel {
         return Self.pageCount(totalAvailable: total, perPage: perPage)
     }
 
-    /// Steam answered this page with items, or reports other pages, yet nothing
-    /// survived the client-side drop — the pager has to stay reachable, unlike
-    /// a query with no results at all. A later page that came back empty (no
-    /// total to say so up front) is the same case: the reader paged here and
-    /// has to be able to page back.
+    /// Steam answered with items (or reports other pages) yet nothing survived the
+    /// client-side drop — the pager must stay reachable, unlike a query with no
+    /// results at all. A later page that came back empty is the same case.
     var currentPageIsFilteredOut: Bool {
         hasLoadedPage && items.isEmpty && (lastFetchedRawItemCount > 0 || (totalPages ?? 0) > 1 || pageIndex > 1)
     }
@@ -331,10 +309,9 @@ final class BrowseViewModel {
         return lastFetchedRawItemCount >= perPage
     }
 
-    /// `WorkshopQueryPage.sourceItemCount` of the last fetched page — before
-    /// Steam's shells and `displayable`'s Application / Preset drop: counting
-    /// `items` instead greys out Next on a full page that happened to contain
-    /// one filtered item.
+    /// `WorkshopQueryPage.sourceItemCount` of the last fetched page — before Steam's
+    /// shells and `displayable`'s Application / Preset drop. Counting `items` would
+    /// grey out Next on a full page that happened to contain one filtered item.
     var lastFetchedRawItemCount: Int = 0
 
     var canGoPrevPage: Bool {
@@ -354,8 +331,6 @@ final class BrowseViewModel {
     /// enough that mid-word states don't burn API quota, short enough to feel live.
     private static let searchDebounce: Duration = .milliseconds(500)
 
-    /// True when pending filter/search state differs from what's displayed —
-    /// gates the debounced auto-search.
     var hasPendingChanges: Bool {
         makeRequest(page: 1) != currentRequest
     }
@@ -398,8 +373,6 @@ final class BrowseViewModel {
         }
     }
 
-    /// Returns `true` when Settings → Workshop's defaults changed since they
-    /// were last applied and the user has not picked a sort this session.
     private func applySettingsDefaults() -> Bool {
         guard !userChangedSortThisSession else { return false }
         let settings = loadGlobalSettings()
@@ -412,7 +385,6 @@ final class BrowseViewModel {
         return true
     }
 
-    /// Reloads after the search debounce only when the applied request would change.
     private func scheduleAutoApply() {
         autoSearchTask?.cancel()
         autoSearchTask = Task { [weak self] in
@@ -423,9 +395,8 @@ final class BrowseViewModel {
         }
     }
 
-    /// The previous page stays on screen until the new one replaces it (the way
-    /// `goToPage` already works) — clearing here flashed the skeleton on every
-    /// filter change. `isLoading` is what the grid dims itself with.
+    /// The previous page stays on screen until the new one replaces it; `isLoading`
+    /// is what the grid dims itself with. Clearing here would flash the skeleton.
     func reload() async {
         guard !isRateLimited else { return }
         autoSearchTask?.cancel()
@@ -464,16 +435,15 @@ final class BrowseViewModel {
         failedPageTarget = (!ok && lastError != nil) ? clamped : nil
     }
 
-    /// Immediate submit (Return / search button) — skips the typing debounce.
+    /// Skips the typing debounce.
     func submitSearch() async {
         guard !isRateLimited else { return }
         await reload()
     }
 
-    /// Deep-link search: clears any creator/tag scope inline (no per-clear reload) so
-    /// `makeRequest` doesn't drop the query, then applies it in one reload; `searchInput`'s
-    /// debounced auto-apply is cancelled by `reload()` on the same actor turn, so no double fetch.
-    /// Rate-limit check comes first, like every entry point: `reload()` alone would leave the scope cleared and the search box rewritten over a grid still showing old results.
+    /// Clears any creator/tag scope inline (no per-clear reload) so `makeRequest`
+    /// doesn't drop the query. The rate-limit check comes first: `reload()` alone
+    /// would leave the scope cleared and the search box rewritten over stale results.
     func searchFromDeepLink(_ query: String) async {
         guard !isRateLimited else { return }
         pinnedTag = nil
@@ -488,8 +458,7 @@ final class BrowseViewModel {
         await reload()
     }
 
-    /// Scope to one creator's published files. Leaves the normal filter
-    /// selection untouched so exiting restores it.
+    /// Leaves the normal filter selection untouched, so exiting restores it.
     func browseCreator(steamID: String, name: String?) async {
         guard !isRateLimited else { return }
         let trimmed = steamID.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -505,9 +474,8 @@ final class BrowseViewModel {
         await reload()
     }
 
-    /// `WorkshopServices.isKeyless` flipped either way. The keyless creator
-    /// page ignores `excludedtags` and states no total, so a creator scope is
-    /// left rather than carried over to it.
+    /// `WorkshopServices.isKeyless` flipped either way. The keyless creator page
+    /// ignores `excludedtags` and states no total, so a creator scope is dropped.
     func browsePathChanged() async {
         if usesKeylessSearch, creatorFilter != nil {
             creatorFilter = nil
@@ -515,7 +483,7 @@ final class BrowseViewModel {
         await reload()
     }
 
-    /// Scope to items carrying one Workshop tag. Leaves the normal filter selection untouched.
+    /// Leaves the normal filter selection untouched.
     func browseTag(_ tag: String) async {
         guard !isRateLimited else { return }
         let trimmed = tag.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -528,7 +496,6 @@ final class BrowseViewModel {
         await reload()
     }
 
-    /// Test seam: the outcome of a page fetch, without a transport.
     func applyPageForTesting(sourceItemCount: Int, totalPages: Int?, pageIndex: Int = 1) {
         items = []
         lastFetchedRawItemCount = sourceItemCount
@@ -537,8 +504,7 @@ final class BrowseViewModel {
         self.pageIndex = pageIndex
     }
 
-    /// Applies the scope `browseTag`/`browseCreator` set, without the fetch they
-    /// follow it with — the request shape is otherwise only reachable through the network.
+    /// The request shape is otherwise only reachable through the network.
     func applyScopeForTesting(pinnedTag: String? = nil, creator: CreatorFilter? = nil) {
         self.pinnedTag = pinnedTag
         creatorFilter = creator
@@ -646,9 +612,8 @@ final class BrowseViewModel {
         return [option]
     }
 
-    /// Deselecting the last chip snaps back to all-selected: an empty set means
-    /// "no filter" at the request layer, but every chip struck through reads as
-    /// "exclude everything" in the UI — same snap-back idiom as `isolated()`.
+    /// Deselecting the last chip snaps back to all-selected: an empty set means "no
+    /// filter" at the request layer but reads as "exclude everything" in the UI.
     nonisolated static func toggled<T: Hashable>(
         _ option: T, in current: Set<T>, all: [T], fallback: Set<T>? = nil
     ) -> Set<T> {
@@ -661,7 +626,6 @@ final class BrowseViewModel {
         return next.isEmpty ? (fallback ?? Set(all)) : next
     }
 
-    /// Reset every filter (not search/sort) to all-selected (= no filter).
     func resetFilters() {
         selectedTypes = Set(WorkshopContentTypeFilter.selectableCases)
         selectedAgeRatings = WorkshopAgeRatingFilter.defaultSelection
@@ -697,10 +661,9 @@ final class BrowseViewModel {
         defaults.set(Array(selectedMiscellaneous), forKey: FilterKey.miscellaneous)
     }
 
-    /// Restores one persisted category. An empty result — written by a build
-    /// before `toggled()` snapped back, or raw values that no longer decode —
-    /// would render every chip struck through while the request filters
-    /// nothing, so it snaps back to all-selected the same way `toggled()` does.
+    /// Restores one persisted category. An empty result — an old build's write, or
+    /// raw values that no longer decode — would strike through every chip while the
+    /// request filters nothing, so it snaps back the way `toggled()` does.
     nonisolated static func restoredSelection<T: Hashable>(
         raw: [String],
         all: [T],
@@ -752,14 +715,12 @@ final class BrowseViewModel {
         }
     }
 
-    /// Returns `true` on a successful page load.
     @discardableResult
     private func runFetch(_ request: WorkshopQueryRequest, replacingItems: Bool, paging: Bool) async -> Bool {
         currentRequestToken &+= 1
         let token = currentRequestToken
-        // Read once, with the request it shaped (`makeRequest` ran in this same
-        // turn): a key rejected while the fetch is in flight must not have the
-        // keyed page's metadata interpreted as the public page's.
+        // Read once, with the request it shaped: a key rejected while the fetch is in
+        // flight must not have the keyed page's metadata read as the public page's.
         let keyless = usesKeylessSearch
         // Safety net under `browsePathChanged`: served by the public creator
         // page this request would be wrong (filters ignored, no total).
@@ -780,8 +741,6 @@ final class BrowseViewModel {
             guard let self else { return false }
             var succeeded = false
             do {
-                // With a key, QueryFiles stays the path: richer fields and a
-                // real result total. Without one, fall back to the public page.
                 let page = keyless
                     ? try await self.publicSource.fetch(request)
                     : try await self.services.queryService.fetch(request)
@@ -808,10 +767,9 @@ final class BrowseViewModel {
                 if case .rateLimited(let retryAfter) = error {
                     self.rateLimitUntil = Date().addingTimeInterval(retryAfter ?? 60)
                 }
-                // `reload` no longer blanks the grid up front, so a failed one
-                // has to drop the page it was replacing — otherwise the error
-                // state (gated on an empty grid) never shows and the old
-                // filter's results stay on screen. Paging keeps its results.
+                // `reload` no longer blanks the grid up front, so a failed one has to drop the
+                // page it was replacing — otherwise the error state (gated on an empty grid)
+                // never shows and the old filter's results stay on screen. Paging keeps its results.
                 if replacingItems, !paging {
                     items = []
                     lastFetchedRawItemCount = 0
@@ -837,9 +795,8 @@ final class BrowseViewModel {
         return await task.value
     }
 
-    /// Second phase of a keyed fetch: personas arrive after the grid has already
-    /// painted. Gated on the same token as the page, so names from a superseded
-    /// request can never be painted onto the page that replaced it.
+    /// Personas arrive after the grid has painted. Gated on the page's token, so
+    /// names from a superseded request cannot be painted onto the page that replaced it.
     private func mergeCreatorNames(
         into page: WorkshopQueryPage,
         request: WorkshopQueryRequest,
@@ -903,9 +860,8 @@ final class BrowseViewModel {
 
         let trimmed = searchInput.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        // The public browse page has no `match_all_tags`, so several
-        // `requiredtags[]` there cannot be stated as "any of"; the keyless path
-        // keeps the exclusion form it had before the keyed path switched.
+        // The public browse page has no `match_all_tags`, so several `requiredtags[]`
+        // there cannot be stated as "any of"; the keyless path keeps the exclusion form.
         let keyless = usesKeylessSearch
         return WorkshopQueryRequest(
             sort: preferredSort,
@@ -927,9 +883,8 @@ final class BrowseViewModel {
         WorkshopMiscellaneousFilter.allTags.filter { selectedMiscellaneous.contains($0) }
     }
 
-    /// Type / maturity / resolution partition their items (each carries exactly
-    /// one), so a narrowed selection is exactly the deselected tags excluded.
-    /// Genre does not partition and is handled by `selectedGenreTags()`.
+    /// Type / maturity / resolution partition their items (each carries exactly one),
+    /// so a narrowed selection is exactly the deselected tags excluded; genre is not.
     private func excludedFilterTags() -> [String] {
         var excluded: [String] = []
         excluded += deselected(in: selectedTypes, all: WorkshopContentTypeFilter.selectableCases).compactMap(\.tag)
@@ -939,7 +894,6 @@ final class BrowseViewModel {
         return excluded
     }
 
-    /// Empty when the category is fully selected or fully empty (both = "no filter").
     private func deselected<T: Hashable>(in selected: Set<T>, all: [T]) -> [T] {
         guard !selected.isEmpty, selected.count < all.count else { return [] }
         return all.filter { !selected.contains($0) }
@@ -950,7 +904,6 @@ final class BrowseViewModel {
         return WorkshopGenre.allTags.filter { selectedGenres.contains($0) }
     }
 
-    /// Keyless form of the genre narrowing: the unselected genres, excluded.
     private func deselectedGenreTags() -> [String] {
         deselected(in: selectedGenres, all: WorkshopGenre.allTags)
     }

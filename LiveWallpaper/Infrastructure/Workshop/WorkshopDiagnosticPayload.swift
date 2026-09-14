@@ -2,7 +2,6 @@
 import AppKit
 import Foundation
 
-/// Redacted Workshop diagnostic payload suitable for copying into an issue.
 struct WorkshopDiagnosticPayload: Codable, Equatable, Sendable {
     let phase: Phase
     let ts: String
@@ -50,7 +49,6 @@ struct WorkshopDiagnosticPayload: Codable, Equatable, Sendable {
         case arch
     }
 
-    /// Encodes readable, stable JSON for user-submitted diagnostics.
     func encodedJSON() -> String {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
@@ -84,18 +82,15 @@ struct WorkshopDiagnosticPayload: Codable, Equatable, Sendable {
     }()
 
     static let runningArchitecture: String = {
-        // App ships arm64-only (ARCHS = arm64).
         return "arm64"
     }()
 }
 
-/// Scrub secrets/PII before user-visible diagnostic text hits pasteboard/disk.
 enum WorkshopDiagnosticRedactor {
 
     static func redact(_ raw: String) -> String {
         var output = raw
 
-        // Steam Web API key (32-hex, case-insensitive, word-bounded).
         output = output.replacingOccurrences(
             of: #"(?i)\bkey=[a-f0-9]{32}\b"#,
             with: "key=<redacted>",
@@ -112,7 +107,6 @@ enum WorkshopDiagnosticRedactor {
             options: .regularExpression
         )
 
-        // IPv4 dotted quad.
         output = output.replacingOccurrences(of: #"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b"#, with: "<ipv4>", options: .regularExpression)
 
         // Compressed IPv6 before expanded rule (else `::` leaks the prefix).
@@ -122,7 +116,6 @@ enum WorkshopDiagnosticRedactor {
             options: .regularExpression
         )
 
-        // Expanded IPv6 (permissive; false positives OK in diagnostics).
         output = output.replacingOccurrences(
             of: #"\b(?:[A-Fa-f0-9]{1,4}:){2,7}[A-Fa-f0-9]{1,4}\b"#,
             with: "<ipv6>",
@@ -136,13 +129,11 @@ enum WorkshopDiagnosticRedactor {
             options: .regularExpression
         )
 
-        // Email.
         output = output.replacingOccurrences(of: #"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"#, with: "<email>", options: .regularExpression)
 
         // ssfn* (SteamCMD session token file names).
         output = output.replacingOccurrences(of: #"ssfn[A-Za-z0-9]+"#, with: "<ssfn>", options: .regularExpression)
 
-        // Home directory.
         let home = NSHomeDirectory()
         if !home.isEmpty {
             output = output.replacingOccurrences(of: home, with: "<home>")
@@ -159,7 +150,6 @@ enum WorkshopDiagnosticRedactor {
             )
         }
 
-        // personaname= query strings.
         output = output.replacingOccurrences(of: #"personaname=[^&\s]+"#, with: "personaname=<redacted>", options: .regularExpression)
 
         // Persona Name line (SteamCMD may emit trailing spaces).

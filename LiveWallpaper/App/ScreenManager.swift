@@ -14,15 +14,12 @@ final class ScreenManager {
         UserDefaults.appScoped().object(forKey: globallyEnabledDefaultsKey) as? Bool ?? true
     }
 
-    /// Single observable snapshot of derived wallpaper-session state.
     var wallpaperSessionState = WallpaperSessionState()
     var wallpaperSessionStateVersion: UInt64 { wallpaperSessionState.version }
     var wallpaperSessionSummaryCache: WallpaperSessionSummaryCache { wallpaperSessionState.summaryCache }
     #if !LITE_BUILD
-    /// Per-screen WPE import bookkeeping (last error + generation counter).
     let wpeImportTracker = WPEImportTracker()
     #endif
-    /// Display-name cache for security-scoped bookmarks.
     let bookmarkDisplayNameCache = BookmarkDisplayNameCache()
     /// Monitor overlay per display, keyed by `displayFingerprint`; write-through
     /// to global settings. Observed so the sidebar page and menu bar track edits.
@@ -49,7 +46,6 @@ final class ScreenManager {
     @ObservationIgnored var lastScreenSignatures: [CGDirectDisplayID: ScreenConfigurationSignature] = [:]
     let wallpaperLoads = WallpaperLoadState()
     @ObservationIgnored var transientRuntimeErrors: [CGDirectDisplayID: WallpaperRuntimeError] = [:]
-    /// App Nap throttles an `LSUIElement` accessory app's render loop to ~1fps the moment another app becomes active, freezing the wallpaper whenever the user focuses any other window.
     @ObservationIgnored var renderingActivityToken: (any NSObjectProtocol)?
     enum UserAbsenceReason: Hashable {
         case screenLocked
@@ -63,18 +59,12 @@ final class ScreenManager {
     @ObservationIgnored let absenceRevalidationPollInterval: Duration
     /// When each reason was recorded, for the revalidation grace period.
     @ObservationIgnored var absenceMarkedAt: [UserAbsenceReason: ContinuousClock.Instant] = [:]
-    /// Slow poll that re-runs revalidation while absent — the safety net for a
-    /// lost wake/unlock notification with no later policy events.
     @ObservationIgnored var absenceRevalidationTimer: Task<Void, Never>?
     var isUserAbsent: Bool { !userAbsenceReasons.isEmpty }
     /// Feeds memory pressure into the performance policy without changing user playback intent.
     @ObservationIgnored var memoryPressureLevel = SystemMemoryPressureLevel.normal
     /// Why each screen is suspended, for the UI to explain itself.
     var suspendReasonsByScreen: [CGDirectDisplayID: Set<WallpaperSuspendReason>] = [:]
-    /// One machine per screen — the single source of truth for user play
-    /// intent. Installed sessions adopt it via `WallpaperIntentMachineAdopting`
-    /// and write intent through their own `play()/pause()`; policy refreshes
-    /// feed it the decision and take `suspendReasonsByScreen` from its outputs.
     @ObservationIgnored private var playbackStateMachines: [CGDirectDisplayID: WallpaperPlaybackStateMachine] = [:]
 
     func playbackStateMachine(for screenID: CGDirectDisplayID) -> WallpaperPlaybackStateMachine {
@@ -84,9 +74,7 @@ final class ScreenManager {
         return machine
     }
 
-    /// Session install/replace/release must not leak the previous session's intent into the
-    /// machine: drop the entry (lazy rebuild intends to play, matching every fresh session), hand
-    /// the fresh machine to a session that adopts it as its intent source.
+    /// Session install/replace/release must not leak the previous session's intent into the machine: drop the entry (lazy rebuild intends to play, matching every fresh session).
     func resetPlaybackStateMachine(for screen: Screen) {
         playbackStateMachines.removeValue(forKey: screen.id)
         guard let playback = screen.playbackController else { return }
@@ -95,9 +83,7 @@ final class ScreenManager {
             adopting.adoptPlaybackStateMachine(machine)
         }
     }
-    /// Coarse "not normal" memory-pressure flag for tests.
     var isUnderMemoryPressure: Bool { memoryPressureLevel != .normal }
-    /// Coordinates per-screen playback configuration mutations + transition tokens.
     @ObservationIgnored lazy var playbackCoordinator = PlaybackCoordinator(
         configurationStore: configurationStore,
         playableVideoLoader: playableVideoLoader,
@@ -176,11 +162,7 @@ final class ScreenManager {
             self?.advanceScenePropertyMutationIntent(for: screenID)
         }
     )
-    /// Lazy because the `saveConfiguration` / `restoreWallpaperSession`
-    /// callbacks capture `self` (matches `playbackCoordinator`'s pattern).
     #if !LITE_BUILD
-    /// Shares the `wpeImportTracker` reference so both this coordinator and
-    /// the views reading `wpeImportTracker.error(for:)` observe the same state.
     @ObservationIgnored lazy var wpeImportCoordinator = WPEImportCoordinator(
         tracker: wpeImportTracker,
         configurationStore: configurationStore,
@@ -208,7 +190,6 @@ final class ScreenManager {
         }
     )
     #endif
-    /// Centralises the write side of ScreenConfiguration persistence (save / remove / prune / validate / display-name priming).
     @ObservationIgnored lazy var persistence = WallpaperPersistenceCoordinator(
         store: configurationStore,
         bookmarkDisplayNameCache: bookmarkDisplayNameCache,
@@ -225,7 +206,6 @@ final class ScreenManager {
     @ObservationIgnored var transitionRegistry: PlaybackTransitionRegistry {
         playbackCoordinator.transition
     }
-    /// Owns playlist + schedule automation, including the `WallpaperAutomationCoordinator.start(...)` wiring.
     @ObservationIgnored lazy var automationOrchestrator = WallpaperAutomationOrchestrator(
         configurationStore: configurationStore,
         automationCoordinator: automationCoordinator,
@@ -261,7 +241,6 @@ final class ScreenManager {
             self?.isCurrentTransition(generation, for: screenID) ?? false
         }
     )
-    /// Owns HTML wallpaper management (setters + multi-instance audio-leader + trust evaluation).
     @ObservationIgnored lazy var htmlCoordinator = HTMLWallpaperCoordinator(
         configurationStore: configurationStore,
         screensProvider: { [weak self] in
@@ -298,7 +277,6 @@ final class ScreenManager {
             )
         }
     )
-    /// Owns video CIFilters plus the renderer-independent weather/particle overlay.
     @ObservationIgnored var effectsCoordinatorWasInitialized = false
     @ObservationIgnored lazy var effectsCoordinator: WallpaperEffectsCoordinator = {
         self.effectsCoordinatorWasInitialized = true
@@ -328,7 +306,6 @@ final class ScreenManager {
             }
         )
     }()
-    /// Exposed for the WeatherLocation settings view, which reads `currentParticleEffect` / `currentEffectAdjustments` directly and triggers `refresh()` on user gestures.
     var weatherService: WeatherReactiveService {
         let coordinator = effectsCoordinator
         // Ignore mutations while AppKit is terminating (SwiftUI may still reevaluate).
@@ -423,11 +400,7 @@ final class ScreenManager {
 
     @ObservationIgnored var refreshRateCache: [CGDirectDisplayID: Int] = [:]
 
-    /// Falls back to `NSScreen.maximumFramesPerSecond` rather than a flat 60:
-    /// `CGDisplayMode.refreshRate` reports 0 on some panels, and frame-rate caps
-    /// are divisors of this number, so a 120 Hz display read as 60 would halve
-    /// every ceiling — and disagree with the settings labels, which read the
-    /// `NSScreen` value.
+    /// Falls back to NSScreen.maximumFramesPerSecond rather than a flat 60: CGDisplayMode.refreshRate reports 0 on some panels, and frame-rate caps are divisors of this number, so a 120 Hz display read as 60 would halve every ceiling.
     func getScreenRefreshRate(for screenID: CGDirectDisplayID) -> Int {
         if let cached = refreshRateCache[screenID] { return cached }
 

@@ -4,11 +4,6 @@ import Metal
 import Testing
 @testable import LiveWallpaper
 
-/// Pixel-level verification of the engine colour-correction pass.
-///
-/// A rendering change cannot be signed off by reading the shader — this pushes
-/// known colours through the real pipeline and asserts on the bytes that come
-/// back, which is the only claim about a GPU pass worth making.
 @Suite("Engine colour correction pass", .serialized)
 struct WPEColorCorrectionPassTests {
 
@@ -21,9 +16,8 @@ struct WPEColorCorrectionPassTests {
     private func harness() throws -> Harness {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let queue = try #require(device.makeCommandQueue())
-        // `makeDefaultLibrary()` with no bundle, exactly as the executor does:
-        // tests run inside the app host, so the app's own .metallib is the
-        // default one. Passing the test bundle instead finds no library at all.
+        // No bundle: tests run in the app host, so the app's own .metallib is the
+        // default one; the test bundle has no library at all.
         let library = try #require(device.makeDefaultLibrary())
         let descriptor = MTLRenderPipelineDescriptor()
         descriptor.vertexFunction = library.makeFunction(name: "wpe_fullscreen_vertex")
@@ -35,7 +29,6 @@ struct WPEColorCorrectionPassTests {
         )
     }
 
-    /// Runs one opaque RGB triple through the pass and returns what came out.
     private func grade(
         _ rgb: (UInt8, UInt8, UInt8),
         _ correction: WPEEngineColorCorrection
@@ -92,8 +85,6 @@ struct WPEColorCorrectionPassTests {
 
     @Test("Neutral settings leave every channel where it was")
     func neutralIsIdentity() throws {
-        // The control the rest of the suite rests on: if this drifts, every
-        // other expectation below is measuring the wrong baseline.
         let out = try grade((37, 211, 102), .neutral)
         #expect(abs(Int(out.r) - 37) <= 1)
         #expect(abs(Int(out.g) - 211) <= 1)
@@ -108,9 +99,8 @@ struct WPEColorCorrectionPassTests {
         ))
         #expect(out.r == out.g)
         #expect(out.g == out.b)
-        // Rec. 709 on that colour: dominated by the green channel, so the result
-        // must land well above mid grey. Collapsing to 128 would mean the shader
-        // is averaging rather than weighting.
+        // Rec. 709 on this colour is green-dominated, so it must land well above mid
+        // grey; 128 would mean the shader averages rather than weights.
         #expect(out.r > 140)
     }
 
@@ -146,15 +136,8 @@ struct WPEColorCorrectionPassTests {
         ))
         #expect(Int(out.r) != 200, "a 120° rotation must actually move the colour")
 
-        // What an axis rotation actually conserves is the projection onto the
-        // grey axis — r+g+b — not Rec. 709 luma. Asserting luma here failed, and
-        // it was the assertion that was wrong: rotating a saturated red toward
-        // green necessarily raises perceived brightness (0.2126 → 0.7152).
-        //
-        // This is a known, deliberate divergence from `CIHueAdjust`, which the
-        // video path uses and which rotates in a luma-preserving space. The two
-        // agree on direction and on neutral; they differ in how much a strongly
-        // saturated colour brightens. Revisit if a preset ever makes that visible.
+        // An axis rotation conserves the grey-axis projection (r+g+b), not Rec. 709
+        // luma - a deliberate divergence from `CIHueAdjust`, which the video path uses.
         let before = 200 + 60 + 60
         let after = Int(out.r) + Int(out.g) + Int(out.b)
         #expect(abs(after - before) <= 6)
@@ -162,8 +145,6 @@ struct WPEColorCorrectionPassTests {
 
     @Test("The real preset's grade is visibly different from no grade at all")
     func observedPresetGradeChangesPixels() throws {
-        // Preset 3544156790's published values, through the parser rather than
-        // hand-computed, so this covers the mapping and the shader together.
         let correction = try #require(WPEEngineColorCorrection.parse([
             "wec_e": .bool(true), "wec_brs": .number(50), "wec_con": .number(80),
             "wec_hue": .number(46), "wec_sa": .number(80)

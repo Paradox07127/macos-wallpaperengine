@@ -74,7 +74,6 @@ private struct GPUWidgetBody: View {
     }
 
     // MARK: - Header accessory
-    // S shows only a load state dot (warm >60 / crit >85).
 
     @ViewBuilder
     private var statusAccessory: some View {
@@ -383,8 +382,6 @@ private struct GPUWidgetBody: View {
         }
     }
 
-    /// L's stacked sub-metric row beside the ring — swatch + whisper name, value
-    /// right-aligned against the content edge. Always single-line.
     private func subMetricRow(
         name: LocalizedStringKey, value: Double?, color: Color, dashed: Bool
     ) -> some View {
@@ -422,10 +419,7 @@ private struct GPUWidgetBody: View {
         guard t != nil else { return Optional<AnyView>.none }
         return AnyView(
             HStack(spacing: 10) {
-                // `inkMuted`, not `inkFaint`: this row sits on the darkest end
-                // of the panel's top-to-bottom falloff, and at L=0.505 it read
-                // as clipped-off rather than quiet. Measured 14pt of clearance
-                // below it, so the problem was only ever contrast.
+                // `inkMuted`, not `inkFaint`: this row sits on the darkest end of the panel falloff, where `inkFaint` would read as clipped-off rather than quiet.
                 Text(verbatim: "GPU")
                     .font(Design.labelFont(size: scale.label))
                     .tracking(Design.labelTracking(size: scale.label))
@@ -436,8 +430,6 @@ private struct GPUWidgetBody: View {
                                   value: MonitorTemperature.valueText(t), unit: MonitorTemperature.symbol)
                 }
                 Spacer(minLength: 0)
-                // Provenance tag: still the quietest thing in the row, but
-                // no longer faint-on-faint.
                 Text(verbatim: "SMC")
                     .font(Design.labelFont(size: scale.label))
                     .tracking(scale.label * 0.1)
@@ -705,13 +697,10 @@ private struct SwatchLine: View {
 // MARK: - GPU-specific palette
 private extension Design {
     static let naval = oklch(0.5, 0.012, 76)
-    /// Tiler line / breakdown violet — `oklch(0.66 0.09 300)`.
     static let tilerViolet = oklch(0.66, 0.09, 300)
-    /// Compute-gap fill/text violet — `oklch(0.66 0.09 300)` band, `0.82 0.07 300` text.
     static let computeViolet = oklch(0.82, 0.07, 300)
     static let computeChipStroke = oklch(0.5, 0.06, 300, alpha: 0.6)
     static let computeChipFill = oklch(0.24, 0.02, 300, alpha: 0.28)
-    /// Freshness "stale" warm — `oklch(0.6 0.05 60)`.
     static let staleWarm = oklch(0.6, 0.05, 60)
 }
 

@@ -17,24 +17,20 @@ public enum ParticleEffect: String, Codable, CaseIterable, Identifiable, Sendabl
 
     public var id: String { rawValue }
 
-    /// Whether wind should lean this effect. Only the ones that fall. Bokeh, fireflies and stars
-    /// have no "down" to tilt away from — leaning them just rotates the whole field, which reads as
-    /// the screen being crooked rather than as weather.
+    /// Whether wind should lean this effect — only the ones that fall; the rest have no "down"
+    /// to tilt away from.
     public var leansIntoWind: Bool {
         switch self {
         case .rain, .snow, .fallingLeaves, .sakura, .dust: return true
-        // Mist does not fall, so there is no fall direction to lean; it drifts
-        // sideways on its own instead. Embers and bubbles rise, and meteors
-        // come in on their own fixed slant — none of them has a fall to tilt,
-        // and none is driven by the weather in the first place.
+        // Mist drifts, embers and bubbles rise, meteors come in on a fixed slant — none has a
+        // fall to tilt.
         case .none, .bokeh, .fireflies, .stars, .mist,
              .embers, .bubbles, .meteors:                  return false
         }
     }
 
-    /// Tolerant decoder: a configuration persisted with a particle effect
-    /// that no longer exists (e.g. the rolled-back `Lightning`) decodes to
-    /// `.none` instead of failing the whole `ScreenConfiguration` parse.
+    /// Tolerant: a persisted effect that no longer exists decodes to `.none` instead of
+    /// failing the whole `ScreenConfiguration` parse.
     public init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         let rawValue = try container.decode(String.self)

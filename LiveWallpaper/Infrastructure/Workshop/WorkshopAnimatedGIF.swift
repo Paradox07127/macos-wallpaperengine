@@ -3,8 +3,6 @@ import CoreGraphics
 import Foundation
 import ImageIO
 
-/// How large a preview has to be decoded. Steam serves one `preview_url` for
-/// every surface, so the size is the caller's, not the asset's.
 enum WorkshopPreviewSize: String, Sendable {
     /// Library grid tile (184–220 pt) and the paste-flow rows.
     case tile
@@ -56,14 +54,12 @@ struct WorkshopAnimatedGIF: @unchecked Sendable {
     private let decodeOptions: CFDictionary
     private let encodedByteCount: Int
 
-    /// Byte cap (sync with WorkshopPreviewImageLoader; 32 MiB blanked real previews).
+    /// Byte cap (sync with WorkshopPreviewImageLoader).
     static let maxBytes = 32 * 1024 * 1024
     /// Animate at most this many frames; longer animations degrade to a static
     /// poster (we never drop the preview entirely just because it's long).
     static let maxFrameCount = 120
-    /// Total decoded-pixel budget (RGBA bytes) across all frames before an
-    /// animation degrades to its static poster. Measured on the *source*
-    /// dimensions, which is what a decompression bomb inflates.
+    /// Total decoded-pixel budget (RGBA bytes) across all frames, measured on source dimensions (what a decompression bomb inflates).
     static let maxDecodedPixelBytes = 96 * 1024 * 1024
     /// 30 FPS playback cap to bound CPU on long-running grids.
     static let minFrameDelay: TimeInterval = 0.033
@@ -82,13 +78,9 @@ struct WorkshopAnimatedGIF: @unchecked Sendable {
 }
 
 extension WorkshopAnimatedGIF {
-    /// `kCGImageSourceShouldCache: false` is load-bearing, not hygiene: with the
-    /// default (true on 64-bit) ImageIO holds every frame it has decoded inside
-    /// the source, so one hovered 120-frame GIF parks its whole decoded self in
-    /// a cache entry priced at poster + encoded bytes.
+    /// kCGImageSourceShouldCache: false is load-bearing: the 64-bit default (true) would keep every decoded frame inside the source.
     nonisolated(unsafe) private static let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
 
-    /// Returns `nil` on decode failure or any budget violation.
     static func make(
         from data: Data,
         size: WorkshopPreviewSize = .tile
@@ -98,8 +90,7 @@ extension WorkshopAnimatedGIF {
             return nil
         }
 
-        // Thumbnail rather than full decode: the grid draws these at ~220 pt, and a 1920×1080 poster costs ~8 MB of RGBA plus a per-frame GPU resample.
-        // `CreateThumbnailAtIndex` composes partial GIF frames before scaling (verified against a hand-built partial-frame fixture), so animation frames can take the same path as the poster.
+        // Thumbnail rather than full decode: CreateThumbnailAtIndex composes partial GIF frames before scaling, so animation frames can take the same path as the poster.
         let decodeOptions = WPEPreviewImageDecodeBudget.thumbnailOptions(maxPixelSize: size.maxPixelSize)
         let count = CGImageSourceGetCount(source)
         // Reject decompression bombs via metadata dims before poster decode.
@@ -110,7 +101,7 @@ extension WorkshopAnimatedGIF {
             return nil
         }
 
-        // Over budget → static poster (nil used to blank the card).
+        // Over budget → static poster (nil would blank the card).
         guard count > 1,
               count <= maxFrameCount,
               isWithinPixelBudget(width: dimensions.width, height: dimensions.height, frameCount: count) else {

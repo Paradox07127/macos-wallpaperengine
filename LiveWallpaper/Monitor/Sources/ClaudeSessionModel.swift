@@ -127,7 +127,6 @@ struct ClaudeTranscriptLine {
     }
 }
 
-/// Pure, I/O-free accumulator + classifier for one Claude Code session.
 struct ClaudeSessionModel {
     private(set) var sessionId: String
     private(set) var projectName: String?
@@ -150,9 +149,6 @@ struct ClaudeSessionModel {
     /// Subset of the above whose tool is `AskUserQuestion` — the session is
     /// blocked on a human, not on a tool.
     private(set) var outstandingAskIDs: Set<String> = []
-    /// Parallel to `recentTools`, trimmed in lockstep, so a result can be matched
-    /// back to the exact call. Kept out of `MonitorAgentToolEvent` because that
-    /// type is the wire contract pushed to the renderer.
     private var recentToolIDs: [String] = []
     private var anonymousToolCounter: UInt64 = 0
     private(set) var lastAssistantStopReason: String?
@@ -168,9 +164,7 @@ struct ClaudeSessionModel {
         "anon:\(n)"
     }
 
-    /// A call whose result never arrives (killed CLI, crashed subprocess) would
-    /// otherwise sit in `outstandingToolIDs` forever — and it is persisted.
-    /// Far above any real parallel fan-out.
+    /// Cap outstanding calls; a result that never arrives would sit in `outstandingToolIDs` forever (and is persisted).
     static let outstandingToolCap = 64
 
     private(set) var lastUsageInput: Int?
@@ -248,7 +242,6 @@ struct ClaudeSessionModel {
             if let tool = line.toolNames.last {
                 lastToolName = AgentSignalDeriver.sanitizedToolName(tool)
             }
-            // The assistant just spoke, so nothing is awaiting the model.
             lastInboundAwaitsModel = false
 
         case .user:
@@ -259,7 +252,6 @@ struct ClaudeSessionModel {
                 turnCount += 1
                 activity.beginTurn(id: nil, at: time)
                 lastAssistantStopReason = nil
-                // A fresh human turn supersedes anything still outstanding.
                 outstandingToolIDs.removeAll()
                 outstandingAskIDs.removeAll()
                 lastInboundAwaitsModel = true
@@ -275,8 +267,6 @@ struct ClaudeSessionModel {
 
     private mutating func accumulateTokens(from line: ClaudeTranscriptLine) {
         guard let usage = line.usage else { return }
-        // Routed through MonitorTokenTotals.+ so this shares its saturating-add guard
-        // against untrusted transcript usage fields (Monitor/Types.swift).
         activity.account(MonitorTokenTotals(
             input: max(0, usage.input),
             output: max(0, usage.output),
@@ -324,10 +314,7 @@ struct ClaudeSessionModel {
         }
     }
 
-    /// Results arrive out of order when the assistant issues parallel calls, so
-    /// match on `tool_use_id`. Only a result that carries no id falls back to
-    /// "oldest unresolved", and that fallback must not retire a different call's
-    /// outstanding state.
+    /// Match results on `tool_use_id`. An id-less result falls back to oldest unresolved and must not retire a different call.
     private mutating func applyToolResults(from line: ClaudeTranscriptLine) {
         for result in line.toolResults {
             if let id = result.toolUseID ?? outstandingToolIDs.first {
@@ -340,10 +327,7 @@ struct ClaudeSessionModel {
                 outstandingToolIDs.removeAll { $0 == id }
                 outstandingAskIDs.remove(id)
             } else {
-                // No id to match on: retire the oldest outstanding call — that's the authoritative list, and it
-                // survives a cursor restore where the rendered-event arrays start empty. Marking the oldest
-                // unresolved rendered event is best-effort and independent: a call whose name failed sanitization
-                // has no rendered event at all.
+                // No id: retire the oldest outstanding call (authoritative, survives cursor restore). Marking the oldest unresolved rendered event is best-effort.
                 if let index = recentTools.firstIndex(where: { $0.ok == nil }) {
                     recentTools[index].ok = !result.isError
                 }
@@ -362,16 +346,11 @@ struct ClaudeSessionModel {
         let isFresh = age < 15
         let isVeryStale = age >= freshnessTimeout
 
-        // Blocked on a human: an AskUserQuestion call the user has not answered.
-        //    This is the transcript's own signal; the old probe searched system
-        //    lines for "permission"/"approval" and matched nothing in practice.
+        // Blocked on a human: an unanswered AskUserQuestion call while the process is alive.
         if !outstandingAskIDs.isEmpty && processAlive {
             return .needsInput
         }
-        // Actively working. An outstanding tool call outranks freshness while
-        //    the process is alive: a build or a test run can go minutes without
-        //    writing a transcript event, and calling that "idle" was wrong. The
-        //    `stale` warning (5 min silent) is what flags a suspicious one.
+        // An outstanding tool call outranks freshness while the process is alive; a long tool writes nothing.
         if pendingToolUse && processAlive {
             return .running
         }
@@ -384,14 +363,12 @@ struct ClaudeSessionModel {
         if lastAssistantStopReason == "end_turn" && processAlive {
             return .idle
         }
-        // No activity for a long while: idle if alive, otherwise ended.
         if isVeryStale {
             return processAlive ? .idle : .ended
         }
         if !processAlive {
             return .ended
         }
-        // Fresh but ambiguous ⇒ running; otherwise unknown.
         return isFresh ? .running : .unknown
     }
 
@@ -477,7 +454,7 @@ struct ClaudeSessionModel {
         if let ids = state.outstandingToolIDs {
             model.outstandingToolIDs = ids
         } else if state.pendingToolUse == true {
-            // Pre-2026-08-09 aggregate: it only knew "something was outstanding".
+            // Older aggregate: it only knew "something was outstanding".
             model.outstandingToolIDs = [Self.synthesizedToolID(0)]
         }
         model.outstandingAskIDs = Set(state.outstandingAskIDs ?? [])

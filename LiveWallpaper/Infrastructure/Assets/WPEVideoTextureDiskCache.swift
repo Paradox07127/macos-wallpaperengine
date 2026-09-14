@@ -5,12 +5,9 @@ import CryptoKit
 import LiveWallpaperCore
 import LiveWallpaperProWPE
 
-/// Content-addressed disk cache for `.tex` video MP4s (`wpe-tex-video/<id>/<sha256>.mp4`).
-/// Leased while live; orphans/LRU/`purgeAll` reclaim only non-leased files.
 actor WPEVideoTextureDiskCache {
     static let shared = WPEVideoTextureDiskCache()
 
-    /// LRU disk ceiling (source of truth remains the scene `.tex`).
     static let defaultMaxBytes: UInt64 = 2 * 1024 * 1024 * 1024  // 2 GiB
 
     /// Local-import bucket; always reclaimed by launch GC.
@@ -46,10 +43,7 @@ actor WPEVideoTextureDiskCache {
 
     // MARK: - Store / lease
 
-    /// Store/reuse by SHA-256 of the ORIGINAL bytes; returns a leased URL and
-    /// refreshes LRU mtime. The stored file may be smaller than `data`: the
-    /// audio track is stripped at write time (see `stripAudioTrackIfNeeded`),
-    /// which is also why the hit check cannot compare sizes.
+    /// Store/reuse by SHA-256 of the original bytes; the stored file may be smaller because audio is stripped at write, so the hit check cannot compare sizes.
     func store(_ data: Data, workshopID: String) async throws -> URL {
         let bucketURL = rootURL.appendingPathComponent(bucketName(for: workshopID), isDirectory: true)
         try fileManager.createDirectory(at: bucketURL, withIntermediateDirectories: true)
@@ -62,18 +56,14 @@ actor WPEVideoTextureDiskCache {
         } else {
             try data.write(to: target, options: [.atomic])
         }
-        // Lease BEFORE the strip: the export suspends this actor, and a
-        // concurrently running orphan GC or LRU pass would otherwise see an
-        // unleased file and delete it mid-export (guaranteed for the
-        // `_unattributed` bucket, which GC never keeps by reference).
+        // Lease before the strip: the export suspends this actor, and orphan GC/LRU would otherwise delete an unleased file mid-export.
         leaseCounts[target.path, default: 0] += 1
         await stripAudioTrackIfNeeded(at: target, cacheKey: hex)
         enforceSizeLimit()
         return target
     }
 
-    /// Scene playback is permanently muted, but a muted-but-PRESENT audio track still makes AVPlayerLooper's item rotation non-gapless: audio priming of the next item held frame publication ~100 ms at every 20 s wrap of scene 3660962877's clip vs 14-21 ms with the track removed (loop-seam probe A/B, 2026-08-20).
-    /// Stripping once at write time keeps playback (lwmem mapping included) completely unchanged. Idempotent: an audio-free file — including every previously stripped one — returns after one track load. Any failure keeps the original file: worse seams, never broken playback.
+    /// A muted-but-present audio track still makes AVPlayerLooper rotation non-gapless; strip at write. Failure keeps the original file.
     private func stripAudioTrackIfNeeded(at target: URL, cacheKey: String) async {
         guard !audioStripFailedKeys.contains(cacheKey) else { return }
         do {
@@ -94,7 +84,7 @@ actor WPEVideoTextureDiskCache {
             let (range, transform) = try await videoTrack.load(.timeRange, .preferredTransform)
             try compositionTrack.insertTimeRange(range, of: videoTrack, at: .zero)
             compositionTrack.preferredTransform = transform
-            // Dot-prefixed sibling: same volume as `target`, since `replaceItemAt` is only atomic within a volume. Hidden keeps it out of the LRU (evicting a half-written export would break it), so `stats()` counts it and `collectOrphans` sweeps stale ones — a force-quit mid-export used to strand it forever.
+            // Dot-prefixed sibling on the same volume: `replaceItemAt` is only atomic within a volume. Hidden keeps it out of the LRU.
             let tempURL = target.deletingLastPathComponent()
                 .appendingPathComponent("\(Self.stripPrefix)\(UUID().uuidString).mp4")
             defer { try? fileManager.removeItem(at: tempURL) }
@@ -106,9 +96,7 @@ actor WPEVideoTextureDiskCache {
                 category: .wpeRender
             )
         } catch {
-            // A cancelled scene load (wallpaper switched away) can surface as
-            // CancellationError or an AVFoundation cancel code. The file is
-            // fine — leave the key unlatched so the next load strips it.
+            // CancellationError / AVFoundation cancel: leave the key unlatched so the next load strips it.
             if error is CancellationError || Task.isCancelled { return }
             audioStripFailedKeys.insert(cacheKey)
             Logger.warning(
@@ -118,7 +106,6 @@ actor WPEVideoTextureDiskCache {
         }
     }
 
-    /// Drop one lease; file stays for reuse until no holders remain.
     func release(_ url: URL) {
         let path = url.standardizedFileURL.path
         guard let count = leaseCounts[path] else { return }
@@ -131,7 +118,6 @@ actor WPEVideoTextureDiskCache {
 
     // MARK: - Garbage collection
 
-    /// Delete unreferenced buckets (spare leases), then enforce LRU size limit.
     @discardableResult
     func collectOrphans(referencedWorkshopIDs: Set<String>) -> UInt64 {
         guard let children = try? fileManager.contentsOfDirectory(
@@ -197,7 +183,6 @@ actor WPEVideoTextureDiskCache {
 
     // MARK: - Accounting
 
-    /// On-disk allocated size + file count (Settings `du`-equivalent).
     func stats() -> WPEVideoCacheStats {
         let files = allFiles() + stripTemporaries()
         return WPEVideoCacheStats(
@@ -206,7 +191,6 @@ actor WPEVideoTextureDiskCache {
         )
     }
 
-    /// Hidden scratch files, which `allFiles()` deliberately skips.
     private func stripTemporaries() -> [FileRecord] {
         guard let enumerator = fileManager.enumerator(
             at: rootURL,
@@ -287,9 +271,7 @@ actor WPEVideoTextureDiskCache {
         WPEPathSafety.isSafeProjectID(workshopID) ? workshopID : Self.unattributedBucket
     }
 
-    /// No size comparison: stored files are audio-stripped, so their size
-    /// legitimately differs from the original payload's. `.atomic` writes mean
-    /// a present file is never partial.
+    /// No size comparison: stored files are audio-stripped. `.atomic` writes mean a present file is never partial.
     private func fileExists(_ url: URL) -> Bool {
         guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey]),
               values.isRegularFile == true,
@@ -364,7 +346,6 @@ actor WPEVideoTextureDiskCache {
         (leaseCounts[path] ?? 0) > 0
     }
 
-    /// True if `url` is a leased file or a directory containing one.
     private func containsLeasedFile(_ url: URL) -> Bool {
         guard !leaseCounts.isEmpty else { return false }
         let path = url.standardizedFileURL.path
@@ -374,7 +355,6 @@ actor WPEVideoTextureDiskCache {
     }
 }
 
-/// Disk-usage snapshot of the WPE video-texture cache, surfaced in Settings.
 struct WPEVideoCacheStats: Sendable, Equatable {
     let totalBytes: UInt64
     let fileCount: Int

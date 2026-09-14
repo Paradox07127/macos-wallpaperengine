@@ -2,10 +2,6 @@ import CoreGraphics
 import Foundation
 import LiveWallpaperCore
 
-/// Wallpaper Engine `.tex` container format codes. Source: publicly
-/// documented community reverse-engineering of the format, cross-
-/// referenced against the user's Steam Workshop samples (`TEXV0005` /
-/// `TEXI0001` / `TEXB0003` is the modal layout).
 public enum WPETexFormat: Int, Sendable, Equatable {
     case rgba8888 = 0
     case dxt5 = 4   // BC3
@@ -26,7 +22,6 @@ public enum WPETexFormat: Int, Sendable, Equatable {
         }
     }
 
-    /// 16 for BC1; 32 for BC2/3/7. nil for uncompressed.
     public var bytesPerBlock: Int? {
         switch self {
         case .dxt1: return 8
@@ -35,7 +30,6 @@ public enum WPETexFormat: Int, Sendable, Equatable {
         }
     }
 
-    /// Expected raw byte count for a given mip dimension (no compression padding).
     public func expectedByteCount(width: Int, height: Int) -> Int {
         if let bpp = bytesPerPixel {
             return max(width, 1) * max(height, 1) * bpp
@@ -71,8 +65,6 @@ public enum WPETexFormat: Int, Sendable, Equatable {
     }
 }
 
-/// Each case maps to a precise UI `FallbackReason` so the user sees
-/// "Format 13 (BC7) Metal-only" instead of "scene unsupported".
 public enum WPETexDecodeError: Error, Equatable, Sendable, LocalizedError {
     case unsupportedContainer(magic: String)
     case unsupportedBlock(magic: String)
@@ -119,10 +111,7 @@ public enum WPETexDecodeError: Error, Equatable, Sendable, LocalizedError {
 
 // MARK: - Value types parsed out of the container
 
-/// Raw four-byte TEXI extension guarded by flag `0x40`. The official LUT corpus stores an
-/// asset-specific value here. The value is intentionally left uninterpreted: it is not a texture
-/// dimension and does not imply a 3D texture. `sourceRange` is retained so dumps and future oracle
-/// comparisons can identify the exact bytes without reconstructing the header layout.
+/// Uninterpreted Int32 after flag `0x40`. It is not a texture dimension and does not imply a 3D texture.
 public struct WPETexFlag0x40Extension: Sendable, Equatable {
     public let rawValue: Int32
     public let sourceRange: Range<Int>
@@ -133,10 +122,7 @@ public struct WPETexFlag0x40Extension: Sendable, Equatable {
     }
 }
 
-/// `imageWidth/imageHeight/unknownInt0` are TEXI fields the decoder reads but doesn't act on; they
-/// are surfaced here for dump fidelity so future runtime/transpiler work can cross-reference padded
-/// atlas dimensions against the texture-coordinate space (the modal `.tex` records the padded atlas
-/// size, not the logical image size, in `width/height`).
+/// `imageWidth`/`imageHeight`/`unknownInt0` are TEXI fields the decoder reads but does not act on. Modal `.tex` records padded atlas size, not logical image size, in `width`/`height`.
 public struct WPETexInfo: Sendable, Equatable {
     public let containerVersion: Int
     public let infoVersion: Int
@@ -188,11 +174,7 @@ public struct WPETexInfo: Sendable, Equatable {
     /// instead of linear — pixel-art / palette maps (e.g. `camera.tex`).
     public static let noInterpolationFlag: UInt32 = 0x0000_0001
 
-    /// TEXI flag bit 0x2 = ClampUVs: the texture must NOT tile — sample with clamp-to-edge. When
-    /// UNSET (the default) WPE tiles it with `repeat`, which is required for scrolled maps
-    /// (water-normal, noise, flow) whose sample UVs leave [0,1] over time; gradients / flashlights /
-    /// beams set the bit. Empirically confirmed: every `gradient_*` / `flashlight*` / `beam_*` sets
-    /// 0x2, while `waterripplenormal` (flags 0x0) does not.
+    /// TEXI bit 0x2 = ClampUVs (must not tile). Unset (the default) tiles with `repeat`, required for scrolled maps whose UVs leave [0,1].
     public static let clampUVsFlag: UInt32 = 0x0000_0002
 
     /// TEXI flag bit `0x40` appends one uninterpreted `Int32` after
@@ -205,20 +187,13 @@ public struct WPETexInfo: Sendable, Equatable {
     /// Sample with nearest (`true`) vs linear (`false`) filtering. See `noInterpolationFlag`.
     public var noInterpolation: Bool { flags & Self.noInterpolationFlag != 0 }
 
-    /// Whether this texture must be sampled as LUMINANCE_ALPHA → (R, R, R, G): R is luminance
-    /// broadcast to RGB, G is the alpha falloff. In the WPE corpus `RG88` is ONLY ever a particle
-    /// glow/sprite — normal and data maps use `rgba8888n`, never RG88 (verified: 0 of 50 RG88 assets
-    /// are normal maps). So every RG88 is luminance+alpha; uploading it raw as `.rg8Unorm` samples
-    /// (R, G, 0, 1) and renders opaque (the "red square light" / red-line fog artifacts).
+    /// Sample as LUMINANCE_ALPHA → (R, R, R, G): R luminance to RGB, G alpha. Uploading RG88 as `.rg8Unorm` samples (R, G, 0, 1) and renders opaque.
     public var isRG88LuminanceAlpha: Bool {
         format == .rg88
     }
 }
 
-/// TEXB v4 carries four extra fields per mipmap that the runtime doesn't consume (yet) but should
-/// still surface in raw-tex dumps so corpus regressions don't silently lose ground. `condition` is
-/// the only non-trivial one — it's a NUL-terminated ASCII run used as a conditional-mip predicate in
-/// the official engine.
+/// `condition` is a NUL-terminated ASCII run used as a conditional-mip predicate in the official engine.
 public struct WPETexMipmapV4Fields: Sendable, Equatable {
     public let param1: Int32
     public let param2: Int32
@@ -233,9 +208,7 @@ public struct WPETexMipmapV4Fields: Sendable, Equatable {
     }
 }
 
-/// One mipmap entry pulled out of `TEXB`. `v4Fields` is populated only
-/// when the parent `WPETexBitmapBlock.version == 4`; older containers
-/// leave it nil.
+/// `v4Fields` is populated only when parent `WPETexBitmapBlock.version == 4`; older containers leave it nil.
 public struct WPETexMipmap: Sendable, Equatable {
     public let index: Int
     public let width: Int
@@ -269,9 +242,6 @@ public struct WPETexMipmap: Sendable, Equatable {
     }
 }
 
-/// Raw parser output used by the P3 metadata dump path. Carries the
-/// parsed TEXI + TEXB blocks so debug consumers can render the imageW/H
-/// + TEXB v4 fields that the runtime mipmap normalization discards.
 public struct WPETexRawMetadata: Sendable, Equatable {
     public let info: WPETexInfo
     public let bitmap: WPETexBitmapBlock
@@ -323,11 +293,7 @@ public struct WPETexAnimationTrack: Sendable, Equatable {
     }
 }
 
-/// Sampling transform for one authored TEXS sprite frame.
-///
-/// Wallpaper Engine applies `translation + uv.x * rotation.xy
-/// + uv.y * rotation.zw` when sampling the source atlas. Values are normalized
-/// against that frame's source-image dimensions by the TEXS decoder.
+/// Wallpaper Engine samples as `translation + uv.x * rotation.xy + uv.y * rotation.zw`. Values are normalized against that frame's source-image dimensions.
 public struct WPETexSpriteSamplingDescriptor: Sendable, Equatable {
     public let rotation: SIMD4<Float>
     public let translation: SIMD2<Float>
@@ -337,8 +303,6 @@ public struct WPETexSpriteSamplingDescriptor: Sendable, Equatable {
         self.translation = translation
     }
 
-    /// Equivalent transform when the bound texture already contains only the
-    /// selected frame (the lazy source's cropped working-texture representation).
     public static let identity = WPETexSpriteSamplingDescriptor(
         rotation: SIMD4<Float>(1, 0, 0, 1),
         translation: SIMD2<Float>(0, 0)
@@ -349,9 +313,7 @@ public struct WPETexAnimationFrame: Sendable, Equatable {
     public let imageID: Int
     public let duration: TimeInterval
     public let mipmaps: [WPETexTextureMipmap]
-    /// Source-image sub-rect this animation frame maps to. `nil` means
-    /// "use the whole image" (legacy/back-compat for `.tex` files that
-    /// omit a TEXS block).
+    /// `nil` means use the whole image (legacy `.tex` files that omit TEXS).
     public let subRect: CGRect?
     /// Full affine sampling transform retained from TEXS. `nil` means this
     /// frame was synthesized without TEXS metadata, not an identity fallback.
@@ -372,9 +334,6 @@ public struct WPETexAnimationFrame: Sendable, Equatable {
     }
 }
 
-/// Single mipmap level held in its on-disk compressed form. The lazy
-/// streaming source decompresses these on demand so the runtime never
-/// materializes every animation frame upfront.
 public struct WPETexCompressedMipmap: Sendable, Equatable {
     public let index: Int
     public let width: Int
@@ -451,11 +410,7 @@ public struct WPETexStreamingFrame: Sendable, Equatable {
     }
 }
 
-/// Lazy-decode counterpart to `WPETexTexturePayload`. Holds compressed per-image byte spans plus
-/// the TEXS sub-rect schedule; consumers stream frames out one at a time, keeping recently
-/// decompressed images in a process-wide byte-budget LRU (see `WPEAnimatedFrameByteCache`). Peak CPU
-/// footprint is therefore the mapped `.tex` bytes plus the shared decoded-frame budget, not the full
-/// eager-decode total.
+/// Lazy-decode counterpart to `WPETexTexturePayload`. Peak CPU footprint is mapped `.tex` bytes plus the shared decoded-frame budget, not the full eager-decode total. See `WPEAnimatedFrameByteCache`.
 public struct WPETexStreamingPayload: Sendable, Equatable {
     public let info: WPETexInfo
     public let compressedImages: [WPETexCompressedImage]
@@ -477,8 +432,6 @@ public struct WPETexStreamingPayload: Sendable, Equatable {
         self.loop = loop
     }
 
-    /// Decision input for `WPEMetalSceneRenderer`: route to the lazy
-    /// source when the eager raw-bytes footprint would exceed budget.
     public var totalUncompressedImageBytes: Int {
         compressedImages.reduce(0) { total, image in
             total + (image.payloads.first?.decompressedByteCount
@@ -542,7 +495,6 @@ public struct WPETexTextureMipmap: Sendable, Equatable {
     }
 }
 
-/// CPU-side RGBA8 image emitted by every decode path (CPU or Metal).
 public struct DecodedRGBAImage: Sendable, Equatable {
     public let width: Int
     public let height: Int
@@ -556,7 +508,6 @@ public struct DecodedRGBAImage: Sendable, Equatable {
 }
 
 extension DecodedRGBAImage {
-    /// Builds a non-premultiplied RGBA8 `CGImage`.
     public func makeCGImage() throws -> CGImage {
         let bitsPerComponent = 8
         let bitsPerPixel = 32

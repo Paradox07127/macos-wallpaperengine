@@ -4,10 +4,6 @@ import Foundation
 import LiveWallpaperCore
 import Testing
 
-/// The settings inspector's copy of the board. It used to draw nothing but
-/// widget names, so a layout could not be judged before it went on the desktop;
-/// it now draws the real cards from frozen data, and must still not start a
-/// single sampler to do it.
 @Suite("Monitor inspector board preview")
 @MainActor
 struct BoardPreviewContentTests {
@@ -64,16 +60,12 @@ struct BoardPreviewContentTests {
                 covered.insert(kind)
             }
         }
-        // A literal on purpose: deriving it from allowedSizes only restates how
-        // combinations was counted, so it stays green through any change to the
-        // size table. Adding a widget must land here and confirm the fixture
-        // feeds the new card.
+        // A literal on purpose: deriving it from `allowedSizes` would make this assertion
+        // vacuous.
         #expect(combinations == 29)
         #expect(MonitorWidgetKind.allCases.allSatisfy { covered.contains($0) })
     }
 
-    /// The chart window's reference is the frozen instant, so a preview left
-    /// open does not slide its own data off the left edge of the axis.
     @Test("charts read the frozen instant, not the drawing clock")
     func chartsUseTheFrozenReference() {
         let reference = Date(timeIntervalSince1970: 1_700_000_000)
@@ -100,8 +92,6 @@ struct BoardPreviewContentTests {
         #expect(captured != later)
     }
 
-    /// The whole point of reading frozen data: turning the preview on must not
-    /// be a way to start a source the user never authorized.
     @Test("reading the preview's data leases no runtime and starts no source")
     func previewReadStartsNothing() async {
         let runtime = Runtime()
@@ -140,8 +130,6 @@ struct BoardPreviewContentTests {
         #expect(host.previewTile == .empty)
     }
 
-    /// The mode's own data, not the desktop's: a fixture read must not depend on
-    /// whether the machine happens to have delivered anything.
     @Test("sample mode is available with no desktop reading at all")
     func sampleModeIndependentOfDesktop() {
         let preview = MonitorBoardPreview.resolve(mode: .sample, latest: nil)

@@ -56,7 +56,6 @@ struct CPUWidgetView: View {
     private var showTrend: Bool { MonitorCPUDraft.showTrend(placement) }
     private var historyWindow: Int { MonitorCPUDraft.historyWindow(placement) }
 
-    /// Sensor UI is only ever drawn when the reading exists AND the option is on.
     private var sensorsVisible: Bool { showSensors && (cpuTempC != nil || fanRPM != nil) }
     private var tempCapsuleTemp: Double? { showSensors ? cpuTempC : nil }
 
@@ -125,7 +124,6 @@ struct CPUWidgetView: View {
                         ) {
                             heroReadout(fraction: cpuFraction, baseSize: scale.hero * 1.05)
                         }
-                        // Cap ring height while `gaugeSide` reserves its column width.
                         .frame(maxHeight: Self.gaugeSideCap)
                         if showComposition {
                             compositionLegend(userPct: userPct, sysPct: sysPct, scale: scale)
@@ -175,7 +173,6 @@ struct CPUWidgetView: View {
                     identityRow(identity, scale: scale)
                 }
 
-                // Keep the header aligned to the standard content inset.
                 HStack(alignment: .center, spacing: scale.label * 0.7) {
                     ArcGauge(value: cpuFraction, peak: peakFraction) {
                         heroReadout(fraction: cpuFraction, baseSize: scale.hero * 0.92)
@@ -251,7 +248,6 @@ struct CPUWidgetView: View {
             .accessibilityValue(Text(verbatim: Format.percent(fraction)))
     }
 
-    /// Whisper section header (L's "Cores · N" / "Top by CPU" column titles).
     @ViewBuilder
     private func sectionLabel(_ text: String, scale: Design.TypeScale) -> some View {
         Text(verbatim: text)
@@ -310,7 +306,6 @@ struct CPUWidgetView: View {
         }
     }
 
-    /// Compact user/sys legend under the M arc (the arc's own two-tone wedges are the primary encoding; this just labels the split with percentages).
     @ViewBuilder
     private func compositionLegend(userPct: Int, sysPct: Int, scale: Design.TypeScale) -> some View {
         VStack(alignment: .leading, spacing: scale.label * 0.3) {
@@ -334,14 +329,12 @@ struct CPUWidgetView: View {
         }
     }
 
-    /// Peak reading inside the load curve.
     @ViewBuilder
     private func peakInlineTag(scale: Design.TypeScale) -> some View {
         PeakTag(value: Format.percent(peakFraction), scale: scale, size: scale.label * 0.9)
             .padding(scale.label * 0.27)
     }
 
-    /// Per-core heat strip (M, compact): clusters side by side.
     @ViewBuilder
     private func coreHeatStrip(scale: Design.TypeScale) -> some View {
         if let groups = Self.coreGroupLoads(perCore: system?.perCore, cpuInfo: system?.cpuInfo), !groups.isEmpty {
@@ -393,8 +386,6 @@ struct CPUWidgetView: View {
         }
     }
 
-    /// Per-core heat strip (L, tall): clusters stacked, each wrapping into as
-    /// many full-width rows as its core count needs.
     @ViewBuilder
     private func coreHeatStripTall(groups: [CoreGroupLoads], scale: Design.TypeScale) -> some View {
         VStack(alignment: .leading, spacing: scale.label * 0.5) {
@@ -442,9 +433,7 @@ struct CPUWidgetView: View {
     @ViewBuilder
     private func sensorStrip(scale: Design.TypeScale) -> some View {
         HStack(spacing: scale.label * 0.9) {
-            // `inkMuted` for the same reason as the GPU card's sensor row:
-            // the strip sits on the darkest end of the panel falloff, where
-            // `inkFaint` (L=0.505) reads as cut off rather than as quiet.
+            // `inkMuted`: the strip sits on the darkest end of the panel falloff, where `inkFaint` reads as cut off rather than as quiet.
             Text(verbatim: "SMC")
                 .font(Design.labelFont(size: scale.label))
                 .tracking(Design.labelTracking(size: scale.label))
@@ -562,7 +551,6 @@ struct CPUWidgetView: View {
         }
     }
 
-    /// Identity row — device name (emphasised) + whispered core-group summary.
     @ViewBuilder
     private func identityRow(_ identity: CPUIdentity, scale: Design.TypeScale) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: scale.label * 0.5) {
@@ -746,21 +734,17 @@ extension CPUWidgetView {
     /// Tallest ring the M and L tiles draw, at every board scale.
     nonisolated static let gaugeSideCap: CGFloat = 96
 
-    /// Chrome stacked above the M ring at the smallest type size the scale
-    /// produces: 22 pt of `WidgetContainer` vertical inset, its header, and the
-    /// row spacing under it. Measured headless, board scales 0.7…2.0.
+    /// Chrome stacked above the M ring at the smallest type size: WidgetContainer vertical inset, its header, and the row spacing under it.
     nonisolated static let gaugeChromeBase: CGFloat = 41
     /// What the identity row and its spacing add to `gaugeChromeBase`.
     nonisolated static let gaugeChromeIdentityRow: CGFloat = 19
     /// What the composition legend and its spacing add to `gaugeChromeBase`.
     nonisolated static let gaugeChromeCompositionLegend: CGFloat = 38.3
-    /// Legend width in multiples of `scale.label`: 8.05 covers the measured maximum of 8.00
-    /// for USER/SYS 100% at the 10 pt label size, with rounding margin.
+    /// Legend width in multiples of `scale.label`: 8.05 covers USER/SYS 100% at the 10 pt label size, with rounding margin.
     nonisolated static let gaugeLegendSlots: CGFloat = 8.05
 
     /// Reserve a stable upper bound so changing gauge readings cannot move adjacent columns.
-    /// M uses minimum chrome height plus a legend-width floor; this may over-reserve but
-    /// cannot clip the ring. L keeps the full cap because optional detail rows change its height.
+    /// M may over-reserve but cannot clip the ring; L keeps the full cap because optional detail rows change its height.
     nonisolated static func gaugeSide(
         cellHeight: CGFloat, rows: Int,
         hasIdentityRow: Bool, hasCompositionLegend: Bool
@@ -829,9 +813,6 @@ extension CPUWidgetView {
 
     // MARK: Core heat strip geometry
 
-    /// Cell spacing in the M strip and in the L strip. Both feed
-    /// `coreStripBandHeight` and the width each cell ends up with, so the two
-    /// numbers live next to the caps they were chosen against.
     nonisolated static let compactCoreCellGap: CGFloat = 2
     nonisolated static let tallCoreCellGap: CGFloat = 3
 
@@ -843,7 +824,6 @@ extension CPUWidgetView {
     /// with 3 pt gaps, keeping each cell wider than its inset border.
     nonisolated static let tallCoreCellsPerRow = 12
 
-    /// Rows a cluster of `coreCount` cells wraps into so no row exceeds `cap`.
     nonisolated static func coreStripRows(coreCount: Int, cap: Int) -> Int {
         guard coreCount > 0, cap > 0 else { return 1 }
         return (coreCount + cap - 1) / cap
@@ -856,9 +836,7 @@ extension CPUWidgetView {
         return max(1, (max(coreCount, 0) + rowCount - 1) / rowCount)
     }
 
-    /// Height the M strip's shared band needs for `rows`. One and two rows keep
-    /// the band the tile was drawn for; past that each extra row adds its own
-    /// height instead of subdividing the band into slivers.
+    /// One and two rows keep the band the tile was drawn for; past that each extra row adds its own height instead of subdividing the band into slivers.
     nonisolated static func coreStripBandHeight(base: CGFloat, rows: Int, gap: CGFloat) -> CGFloat {
         let rowCount = CGFloat(max(rows, 1))
         let rowHeight = (base - gap) / 2
@@ -928,8 +906,6 @@ private extension MonitorWidgetContext {
         topology: (device: String, groups: [(name: String, count: Int)]) =
             ("Apple M5 Pro", [("Super", 6), ("Performance", 12)])
     ) -> MonitorWidgetContext {
-        // Deterministic per-core loads so a synthetic 36-core machine reads the
-        // same way on every run; the 18-core case keeps its hand-picked curve.
         let ramp: [Double] = [0.71, 0.58, 0.66, 0.34, 0.52, 0.19,
                               0.44, 0.29, 0.51, 0.12, 0.38, 0.22,
                               0.47, 0.09, 0.33, 0.18, 0.41, 0.15]
@@ -1027,7 +1003,6 @@ private extension MonitorWidgetContext {
     .background(Design.boardWash)
 }
 
-// Synthetic 36-core fixture exercises cluster wrapping.
 #Preview("CPU · 36 cores") {
     let topology = MonitorWidgetContext.ultraTopology
     HStack(spacing: 20) {

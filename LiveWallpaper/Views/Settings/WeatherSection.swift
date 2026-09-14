@@ -76,8 +76,6 @@ extension GeneralSettingsView {
         )
     }
 
-    /// `updateGlobalSettings()` persists `weatherLocation` and posts
-    /// `.weatherLocationPreferenceDidChange` when it actually changed.
     private func persistWeatherLocation() {
         updateGlobalSettings()
         refreshLocationAuthorizationStatus()

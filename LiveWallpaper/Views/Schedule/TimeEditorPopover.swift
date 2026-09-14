@@ -1,11 +1,8 @@
 import SwiftUI
 import LiveWallpaperCore
 
-/// Popover anchored to a slot row's time-range label.
-///
-/// The draft lives in the presenting row, not here: dismissing the popover by
-/// clicking outside must keep unapplied edits (only an explicit Cancel may
-/// discard them), and this view is destroyed on every dismissal.
+/// The draft lives in the presenting row, not here: this view is destroyed on every
+/// dismissal and unapplied edits must survive that.
 struct TimeEditorPopover: View {
     let slotID: UUID
     let initialStart: Int

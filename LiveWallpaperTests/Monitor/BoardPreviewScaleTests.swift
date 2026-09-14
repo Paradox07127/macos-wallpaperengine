@@ -4,16 +4,9 @@ import CoreGraphics
 import LiveWallpaperCore
 import Testing
 
-/// The inspector draws a whole desktop into a few hundred points. Whichever way
-/// that shrinking is expressed *outside* the preview's `NSHostingView` — a
-/// SwiftUI `scaleEffect` wrapped around the representable, or an AppKit
-/// `bounds`/`frame` mismatch on the host — the nested SwiftUI tree never learns
-/// about it: it keeps deriving pointer locations from the outer, unscaled tree,
-/// so every widget's hit region collapses into the board's top-left corner and
-/// a drag grabs nothing. Probed 2026-09-06 with synthetic events through a real
-/// window: aiming at board (500,400) at 1:4 arrived as (125,100) with either
-/// outside-scale, and as (500,400) with the scale inside the host's own SwiftUI
-/// tree. So the host must carry no transform of its own.
+/// The host must carry no transform of its own: a scale expressed outside its
+/// `NSHostingView` never reaches the nested SwiftUI tree, which keeps deriving pointer
+/// locations from the outer, unscaled tree.
 @Suite("Monitor inspector board preview scale")
 @MainActor
 struct BoardPreviewScaleTests {
@@ -64,9 +57,8 @@ struct BoardPreviewScaleTests {
         NSPoint(x: point.x * scale, y: displayed.height - point.y * scale)
     }
 
-    /// The board point the host's SwiftUI tree computes for a point in the
-    /// host's own coordinates. The scale lives inside that tree, so the only
-    /// steps here are the flip and one division — no AppKit transform.
+    /// The board point for a point in the host's own coordinates: the scale lives inside the
+    /// host's SwiftUI tree, so only the flip and one division are needed — no AppKit transform.
     private func boardPoint(fromLocal local: NSPoint) -> CGPoint {
         CGPoint(x: local.x / scale, y: (displayed.height - local.y) / scale)
     }
@@ -79,8 +71,6 @@ struct BoardPreviewScaleTests {
             host.bounds.size == displayed,
             "a bounds/frame mismatch is invisible to the nested NSHostingView"
         )
-        // Consequence, and the thing that actually matters: a point reaches the
-        // host unchanged, so AppKit's conversion and SwiftUI's own agree.
         let probe = NSPoint(x: 137, y: 88)
         #expect(host.convert(probe, from: container) == probe)
     }
@@ -90,7 +80,6 @@ struct BoardPreviewScaleTests {
         #expect(MonitorBoardRootContainer.previewScale(available: displayed, logical: logical) == 0.25)
         // A desktop board has no logical size and must not acquire a scale.
         #expect(MonitorBoardRootContainer.previewScale(available: displayed, logical: nil) == 1)
-        // Degenerate inputs fall back to 1 rather than to zero or a NaN.
         #expect(MonitorBoardRootContainer.previewScale(available: .zero, logical: logical) == 1)
         #expect(MonitorBoardRootContainer.previewScale(available: displayed, logical: .zero) == 1)
         #expect(MonitorBoardRootContainer.previewScale(available: logical, logical: logical) == 1)
@@ -122,9 +111,8 @@ struct BoardPreviewScaleTests {
         host.setPointerScope(.wholeBoard)
 
         let model = host.interactionModel
-        // The board's SwiftUI subtree lays out at the logical size and is scaled
-        // down afterwards, which is what the gesture measures in; nothing lays
-        // out in a headless test, so stand in for that size here.
+        // Nothing lays out in a headless test, so stand in for the logical size the gesture
+        // measures in.
         model.reflow(boardSize: logical)
 
         var edited: MonitorBoardConfiguration?
@@ -155,8 +143,6 @@ struct BoardPreviewScaleTests {
         #expect(abs(origin.y - raw.minY) < 1)
     }
 
-    /// A desktop board has no logical size of its own, and must not acquire a
-    /// scale from this.
     @Test("a board without a logical size is drawn 1:1")
     func desktopBoardIsUnscaled() {
         let host = HostView(

@@ -42,7 +42,6 @@ struct NetworkWidgetView: View {
 
     // MARK: - Header
 
-    /// Active-interface type drives the glyph; falls back to a generic network dot.
     private var headerSymbol: String {
         switch activeInterfaceType {
         case "wifi": return "wifi"
@@ -65,7 +64,6 @@ struct NetworkWidgetView: View {
         }
     }
 
-    /// S shows the short interface label ("Wi-Fi"); M shows "en0 · Wi-Fi".
     private var headerInterfaceLabel: String? {
         context.placement.size == .small
             ? String(localized: "All", bundle: .appLanguage)
@@ -104,7 +102,6 @@ struct NetworkWidgetView: View {
         scopeBody(cellHeight: cellHeight, isLarge: true)
     }
 
-    /// Preserves a 30-point chart floor while allowing it to absorb font-metric changes.
     @ViewBuilder
     private func scopeBody(cellHeight: CGFloat, isLarge: Bool) -> some View {
         let scale = Design.TypeScale(cellHeight: cellHeight)
@@ -176,7 +173,6 @@ struct NetworkWidgetView: View {
         .padding(scale.label * 0.3)
     }
 
-    /// Session-total Σ, chip-wrapped like every other small board annotation.
     private func sessionTotalTag(scale: Design.TypeScale) -> some View {
         (Text("Estimated total") + Text(verbatim: " \(Format.bytes(sessionTotalBytes))"))
             .font(Design.captionFont(size: scale.label))
@@ -231,7 +227,7 @@ struct NetworkWidgetView: View {
     }
 
     /// Semantic (warn-coral) chip — keeps its own color, but the capsule shape
-    /// and padding now match the board-wide `monitorChip` proportions.
+    /// and padding match the board-wide `monitorChip` proportions.
     private func warnChip(_ text: String, scale: Design.TypeScale) -> some View {
         Text(verbatim: text.uppercased())
             .font(Design.labelFont(size: scale.label * 0.92))
@@ -338,7 +334,6 @@ struct NetworkWidgetView: View {
         history.netRxSessionBytes + history.netTxSessionBytes
     }
 
-    /// Active interface: first `isActive`, else highest rx+tx traffic.
     private var activeInterface: MonitorNetworkInterface? {
         Self.pickActiveInterface(system?.netInterfaces)
     }
@@ -367,7 +362,6 @@ struct NetworkWidgetView: View {
         }
     }
 
-    /// Path condition chips — localized words (constrained / expensive).
     private var pathChips: [String] {
         guard let path = system?.netPath else { return [] }
         var chips: [String] = []

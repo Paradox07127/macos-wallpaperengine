@@ -142,8 +142,6 @@ struct NavigationTests {
             capabilities: .pro,
             includeWorkshopOnline: false
         )
-        // The Workshop setup page is three sections now, so each of its three
-        // concerns has to land on its own anchor rather than one shared "Setup".
         let connectionResults = SettingsNavigation.filteredResults(
             matching: "steamcmd",
             capabilities: .pro,

@@ -1,9 +1,6 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// The list of displays offered when one library tile can land on more than one
-/// screen. Shared by every library page's tap-the-card popover, so the four
-/// grids cannot drift into four different target lists.
 struct LibraryApplyTargetList: View {
     let screens: [Screen]
     let onApply: (Screen) -> Void
@@ -33,11 +30,7 @@ struct LibraryApplyTargetList: View {
     }
 }
 
-/// The single control a library tile carries over its artwork: an ellipsis that
-/// opens the tile's actions.
-///
-/// A real `Button` + popover, never a `Menu`: an AppKit popup paints its label in
-/// the system control colour, which is invisible over artwork.
+/// A real `Button` + popover, never a `Menu`: an AppKit popup paints its label in the system control colour, which is invisible over artwork.
 struct LibraryTileOverflowButton<Content: View>: View {
     var width: CGFloat = 200
     @ViewBuilder var content: (_ dismiss: @escaping () -> Void) -> Content
@@ -68,10 +61,6 @@ struct LibraryTileOverflowButton<Content: View>: View {
     }
 }
 
-/// Drawn over a tile whose content can no longer be applied — the media file is
-/// gone, its security-scoped grant expired, or the scene is unreachable. The
-/// tile stays visible (it is the only way to find and delete the dead entry)
-/// but says so rather than failing on click.
 struct LibraryTileUnavailableVeil: View {
     var body: some View {
         Rectangle()
@@ -86,14 +75,10 @@ struct LibraryTileUnavailableVeil: View {
     }
 }
 
-/// What a library tile's artwork load is keyed on. The entry id alone is not
-/// enough: a cover is written after the entry is saved, and the tile has to
-/// reload when that name appears.
+/// The entry id alone is not enough: a cover is written after the entry is saved, and the tile has to reload when that name appears.
 struct TileContentKey: Hashable {
     let id: UUID
     let coverFileName: String?
-    /// For entries that can be rewritten in place under the same id — a scheme
-    /// replaced from a display — so the tile reloads even when the cover name
-    /// is unchanged (both nil, say). Nil for entries whose content is immutable.
+    /// For entries rewritten in place under the same id, so the tile reloads even when the cover name is unchanged. Nil for immutable content.
     var version: Date?
 }

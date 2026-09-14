@@ -4,10 +4,6 @@ import Testing
 
 @Suite("Sidebar display order")
 struct SidebarDisplayOrderTests {
-    /// A serial-0 panel moving from its EDID key to a UUID key must keep its
-    /// place: the stored entry matches neither by (ID, fingerprint) nor by
-    /// fingerprint once the key changes, so without a re-key the display falls
-    /// to the end of the sidebar.
     @Test("Re-keyed entry keeps its place after the display's fingerprint changes")
     func rekeyedEntryKeepsSidebarPosition() {
         let stored = [display(9, "13929:15830:0"), display(4, "2513:32829:21573")]

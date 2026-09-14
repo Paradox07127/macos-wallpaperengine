@@ -100,22 +100,14 @@ extension WPEMetalRenderExecutor {
         return reject("no-scene-copy")
     }
 
-    /// Everything whose identity includes a PIXEL dimension. Split out because a
-    /// mid-scene render-scale change invalidates exactly this set and nothing else: the
-    /// pool, bootstrap and hazard caches are keyed by width/height, so new keys would
-    /// strand the old allocations for the scene's life. Worse, `previousFrameHistory` is
-    /// validated against the WORLD size — unchanged by a scale change — so its
-    /// old-resolution textures would keep being served to `.previous` reads.
-    /// Shader/pipeline caches are deliberately NOT dropped here: re-transpiling every
-    /// pass is by far the biggest load cost, and a scale change does not invalidate any
-    /// of it.
+    /// Drops every PIXEL-keyed allocation: a scale change would strand old pool/bootstrap/hazard keys, and `previousFrameHistory` is validated against WORLD size so old-resolution textures would keep serving `.previous`.
+    /// Shader/pipeline caches are not dropped — a scale change does not invalidate them.
     func releaseRenderScaleDependentResources() {
         targetPool.releaseAll()
         releaseBloomLevels()
         previousFrameHistory = nil
         invalidateStaticLayerCache()
-        // NOT `refractionBackground`: it re-allocates itself whenever the output
-        // size changes, and it is on the reload-persistent list (AF-06).
+        // NOT `refractionBackground`: it re-allocates itself whenever the output size changes, and it is on the reload-persistent list.
         outputTexturePool.removeAll()
         recentOutputTextureIDs.removeAll()
         bootstrapPreviousTextureCache.removeAll()
@@ -152,8 +144,6 @@ extension WPEMetalRenderExecutor {
         loggedUnresolvedTextureSlots.removeAll()
     }
 
-    /// Drops every cached static-layer composite. Called on scene reload /
-    /// pipeline rebuild / sceneSize change so a new scene never reads stale pixels.
     func invalidateStaticLayerCache() {
         staticLayerCompositeCache.removeAll()
         staticLayerCacheSceneSize = nil
@@ -162,9 +152,7 @@ extension WPEMetalRenderExecutor {
 
     // MARK: - FBO memory diagnostic (read-only)
 
-    /// Conservative `[firstPass, lastPass]` per pool-FBO key. Structure is
-    /// cached in `FBOAliasTopology`; sizes re-derived every frame. Validated
-    /// against the pipeline itself — a missed invalidation corrupts frames.
+    /// Conservative `[firstPass, lastPass]` per pool-FBO key. A missed invalidation corrupts frames.
     func fboAliasIntervals(
         pipeline: WPEPreparedRenderPipeline,
         sceneSize: CGSize
@@ -186,24 +174,16 @@ extension WPEMetalRenderExecutor {
         return intervals
     }
 
-    /// The cached topology for `pipeline`, rebuilt (and `fboAliasTopologyRebuildCount`
-    /// bumped) only when the graph itself changed. The counter IS the structural
-    /// generation the pool's stable-frame early-out consumes as `pipelineIdentity`,
-    /// so it must move on every real graph change and stand still on every
-    /// animation / script / uniform frame.
+    /// Rebuilt only when the graph changes. `fboAliasTopologyRebuildCount` is the pool's `pipelineIdentity` — it must move on every real graph change and stand still on animation/script/uniform frames.
     func validatedFBOAliasTopology(
         for pipeline: WPEPreparedRenderPipeline
     ) -> FBOAliasTopology {
         if var cached = cachedFBOAliasTopology {
-            // Same array storage ⇒ same graph, no walk at all.
             if cached.holdsSameLayerStorage(as: pipeline) { return cached }
             cached.metrics.structuralScans += 1
             let survived = cached.matches(pipeline)
             if survived {
-                // Structure survived, but this is a freshly built array (an
-                // animation/script frame). Adopt it so the NEXT frame that
-                // re-presents the same value takes the O(1) path, and re-derive
-                // the sizing snapshot the interval memo keys on.
+                // Structure survived on a freshly built array: adopt it so the next frame takes the O(1) path, and re-derive the sizing snapshot the interval memo keys on.
                 cached.adopt(layers: pipeline.layers)
             }
             cachedFBOAliasTopology = cached
@@ -218,7 +198,6 @@ extension WPEMetalRenderExecutor {
         return topology
     }
 
-    /// Name/index-level half of the alias-interval scan. Reloads drop it.
     struct FBOAliasTopology {
         struct Item {
             let layerIndex: Int
@@ -242,9 +221,7 @@ extension WPEMetalRenderExecutor {
             let passes: [PassSignature]
         }
 
-        /// Everything `WPEMetalRenderTargetPool.keyDimensions` reads off a live
-        /// layer. Alpha/color/origin never reach a pool key, so an animated tint
-        /// or a moved (but unscaled) layer must not invalidate the interval memo.
+        /// Fields `keyDimensions` reads. Alpha/color/origin never reach a pool key, so an animated tint or a moved (but unscaled) layer must not invalidate the interval memo.
         struct SizingGeometry: Equatable {
             let size: CGSize?
             let scale: SIMD3<Double>
@@ -257,9 +234,7 @@ extension WPEMetalRenderExecutor {
             }
         }
 
-        /// Everything outside the topology that can move a pool key. `pixelScale`
-        /// and the HDR promotion are pool state the executor sets per frame;
-        /// `sizingGeneration` stands in for the per-layer geometry snapshot.
+        /// Scene size, pixelScale, HDR promotion, and sizingGeneration — everything outside the topology that can move a pool key. `sizingGeneration` stands in for the per-layer geometry snapshot.
         struct IntervalInputs: Equatable {
             let sceneSize: CGSize
             let pixelScale: Double
@@ -283,16 +258,10 @@ extension WPEMetalRenderExecutor {
         let items: [Item]
         let itemIndicesByKeyName: [String: [Int]]
         let signature: [SignatureEntry]
-        /// Layers that own at least one pooled target, so their geometry can move
-        /// a key. Deliberately not narrowed further (e.g. by `spec.pixelSize`):
-        /// under-listing a layer here silently serves stale intervals, which is
-        /// the one failure mode that aliases two live FBOs together.
+        /// Layers that own at least one pooled target. Do not narrow further (e.g. by `spec.pixelSize`): under-listing would serve stale intervals and alias two live FBOs.
         let sizingLayerIndices: [Int]
 
-        /// The exact array this topology was built or validated against, RETAINED.
-        /// Retention is what makes `holdsSameLayerStorage` sound: while we hold
-        /// the buffer, no later array can be allocated at the same address, so
-        /// equal base addresses mean the same buffer rather than a recycled one.
+        /// RETAINED so `holdsSameLayerStorage` is sound: while we hold the buffer, equal base addresses cannot be a recycled allocation.
         private(set) var validatedLayers: [WPEPreparedRenderLayer]
         private(set) var sizingGeometry: [SizingGeometry]
         /// Bumped whenever `sizingGeometry` actually changes value, so the
@@ -332,7 +301,6 @@ extension WPEMetalRenderExecutor {
             }
         }
 
-        /// Take over a structurally identical but freshly built layer array.
         mutating func adopt(layers: [WPEPreparedRenderLayer]) {
             validatedLayers = layers
             let geometry = sizingLayerIndices.map {
@@ -442,7 +410,7 @@ extension WPEMetalRenderExecutor {
         )
     }
 
-    /// Per-frame size mapping onto a cached topology. `topology` must match `pipeline`.
+    /// `topology` must match `pipeline`.
     func fboAliasIntervals(
         topology: FBOAliasTopology,
         pipeline: WPEPreparedRenderPipeline,
@@ -562,10 +530,7 @@ extension WPEMetalRenderExecutor {
         }
     }
 
-    /// Targets used by more than one depth pass (depth-write OR depth-test) — a later pass can
-    /// `.load` an earlier pass's depth (e.g. `depthTest:less` across encoders), so their depth
-    /// must stay persistent rather than transient/memoryless. Derived from the authored
-    /// `depthWrite`/`depthTest` and the pass target only — no per-frame input — so it's memoized on the structural topology and recomputed exactly when the graph is rebuilt.
+    /// Targets used by more than one depth pass must stay persistent: a later pass can `.load` an earlier pass's depth. Memoized on the structural topology (no per-frame input).
     func computePersistentDepthTargetIDs(
         for pipeline: WPEPreparedRenderPipeline
     ) -> Set<WPEMetalTargetID> {
@@ -608,20 +573,14 @@ extension WPEMetalRenderExecutor {
             mipmapped: false
         )
         descriptor.usage = [.renderTarget, .shaderRead]
-        // `.private`: GPU-exclusive storage keeps lossless framebuffer
-        // compression on Apple Silicon; `.shared` forced CPU-coherent,
-        // uncompressed stores on the hot path. Every CPU read-back consumer
-        // (snapshotter, visual stats, trace hashes, PNG dumps) blits into its
-        // own CPU-visible staging instead of reading this texture directly.
+        // `.private` keeps lossless framebuffer compression on Apple Silicon; `.shared` would force CPU-coherent uncompressed stores. CPU read-back consumers blit into their own staging.
         descriptor.storageMode = .private
         guard let texture = device.makeTexture(descriptor: descriptor) else {
             throw WPEMetalTextureLoaderError.textureAllocationFailed
         }
         texture.label = "WPE Metal executor output"
         outputTexturePool.append(texture)
-        // Steady state needs 3 (in-render + re-presented latest + history);
-        // anything beyond that came from transient stalls — let ARC reap
-        // the dropped one once its holders release it.
+        // Steady state needs 3 (in-render + re-presented latest + history); the cap is 4 so a transient stall can exist until ARC reaps it.
         if outputTexturePool.count > 4 {
             outputTexturePool.removeFirst()
         }
@@ -644,11 +603,7 @@ extension WPEMetalRenderExecutor {
         let id = ObjectIdentifier(texture)
         recentOutputTextureIDs.removeAll { $0 == id }
         recentOutputTextureIDs.append(id)
-        // Keep the last `maxFramesInFlight` vended targets out of the reuse set:
-        // under async submission their render may still be running, and the
-        // in-flight semaphore guarantees it has finished by the time the target
-        // ages out of this window. Keep at least 2 for the static-scene re-present
-        // + `previousFrameHistory` reads even when only 1 frame is in flight.
+        // Keep the last `maxFramesInFlight` vended targets out of reuse (async render may still be running). Keep at least 2 for static-scene re-present + `previousFrameHistory` even when only 1 frame is in flight.
         let retain = max(2, Self.maxFramesInFlight)
         if recentOutputTextureIDs.count > retain {
             recentOutputTextureIDs.removeFirst(recentOutputTextureIDs.count - retain)
@@ -695,11 +650,7 @@ extension WPEMetalRenderExecutor {
         return texture
     }
 
-    /// A stable snapshot of the live scene `output` for a pass that reads
-    /// `.previous` while also writing the scene (see the read-write hazard note at
-    /// the call site). Copies the scene-so-far into a cached scratch (one per
-    /// size/format, reused every frame since it's re-copied before each read) so
-    /// `.previous` binds to a frozen image instead of the texture being drawn.
+    /// Snapshot of live scene `output` for a pass that reads `.previous` while writing the scene (see the read-write hazard note at the call site), so `.previous` binds a frozen image instead of the texture being drawn.
     func sceneReadHazardSnapshot(
         matching source: MTLTexture,
         commandBuffer: MTLCommandBuffer
@@ -739,10 +690,7 @@ extension WPEMetalRenderExecutor {
         targetID: WPEMetalTargetID,
         commandBuffer: MTLCommandBuffer
     ) throws -> MTLTexture {
-        // Bootstrap textures are read-only for their whole life (writes go to
-        // the pool/output, never to the seeded `.previous` source), so one
-        // cleared allocation per (target, size, format) serves every frame —
-        // previously this allocated + cleared a scene-sized texture per frame.
+        // Bootstrap textures are read-only for their whole life, so one cleared allocation per (target, size, format) serves every frame.
         let key = BootstrapPreviousKey(
             targetID: targetID,
             width: texture.width,

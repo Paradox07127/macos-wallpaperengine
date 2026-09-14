@@ -64,7 +64,6 @@ public final class Logger {
     // MARK: - Core Logging
 
     /// `@autoclosure` defers string interpolation; the message is only evaluated when this level is actually being logged.
-    /// `notice` and above always evaluate (file sink records them); `info`/`debug` ask `OSLog`.
 
     public static func log(
         _ message: @autoclosure () -> String,
@@ -141,8 +140,6 @@ public final class Logger {
         )
     }
 
-    /// File-backed levels always evaluate. `info`/`debug` skip interpolation
-    /// when os_log would drop the line.
     static func shouldEvaluate(_ level: Level, category: Category) -> Bool {
         switch level {
         case .notice, .warning, .error, .fault:
@@ -172,9 +169,7 @@ public final class Logger {
     /// same displays does not repeat the line into the user's runtime log.
     private static let lastReportedScreenCount = OSAllocatedUnfairLock<Int?>(initialState: nil)
 
-    /// `true` only when `count` differs from the previous call, which also
-    /// records it. Split out from `screensDetected` so the gate is testable
-    /// without a log sink.
+    /// `true` only when `count` differs from the previous call, which also records it.
     static func shouldReportScreenCount(_ count: Int) -> Bool {
         lastReportedScreenCount.withLock { last in
             guard last != count else { return false }

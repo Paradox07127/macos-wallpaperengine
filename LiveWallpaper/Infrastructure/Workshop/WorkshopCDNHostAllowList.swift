@@ -1,7 +1,6 @@
 #if !LITE_BUILD
 import Foundation
 
-/// Validates and canonicalizes Steam-hosted Workshop content URLs.
 enum WorkshopCDNHostAllowList {
 
     /// Result of a check. `.allowed` carries the canonical URL the caller

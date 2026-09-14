@@ -3,10 +3,6 @@ import LiveWallpaperCore
 import LiveWallpaperProWPE
 import Testing
 
-/// `WPEParticleDefinition.parse(dictionary:)` logs every collected diagnostic,
-/// but all of its own construction sites carry `severity: .info`. Hard-coding
-/// `Logger.warning` there published each of them into the user's runtime log —
-/// one operator note accounted for ~10% of a real 893-line report.
 @Suite("Particle diagnostic log level")
 struct ParticleDiagnosticLogLevelTests {
     @Test("An info-severity diagnostic never reaches the runtime log file")

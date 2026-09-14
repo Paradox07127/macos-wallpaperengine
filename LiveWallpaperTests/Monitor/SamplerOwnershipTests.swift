@@ -169,9 +169,6 @@ struct MonitorSamplerOwnershipCharacterizationTests {
         #expect(menu.contains(".onDisappear(perform: releaseSystemMonitorLeaseIfNeeded)"))
 
         let app = try productionSource("LiveWallpaper/App/LiveWallpaperApp.swift")
-        // B4 removed the settings-window prewarm entirely (the window is
-        // destroyed on close and cold-built on demand), so no hidden-window
-        // code path exists that could acquire a monitor lease pre-visibility.
         #expect(!app.contains("prewarmSettingsWindow"))
         let present = try slice(
             app,
@@ -182,8 +179,6 @@ struct MonitorSamplerOwnershipCharacterizationTests {
         #expect(present.contains("acquireSettingsSystemMonitorLeaseIfNeeded()"))
         #expect(present.contains("featureCatalog.isEnabled(.systemMonitor) == true"))
         #expect(present.contains("SystemMonitor.shared.startMonitoring()"))
-        // B4: close destroys the settings window, so the lease release and
-        // the controller drop both live in `windowWillClose`.
         let close = try slice(
             app,
             from: "func windowWillClose(",
@@ -191,8 +186,6 @@ struct MonitorSamplerOwnershipCharacterizationTests {
         )
         #expect(close.contains("releaseSettingsSystemMonitorLeaseIfNeeded()"))
         #expect(close.contains("settingsWindowController = nil"))
-        // Destroy-on-close means `windowShouldClose` must not re-grow a
-        // keep-alive branch for the settings window.
         let shouldClose = try slice(
             app,
             from: "func windowShouldClose(",
@@ -278,8 +271,6 @@ struct MonitorSamplerOwnershipCharacterizationTests {
             from: "private func makeOptions(visibleHostKeys:",
             until: "private func scheduleRuntimeReconciliation()"
         )
-        // Hosts are keyed per (display, module) since Music got its own
-        // window; demand still comes from the visible hosts' own widgets.
         #expect(overlayOptions.contains("where visibleHostKeys.contains(key)"))
         #expect(overlayOptions.contains("kinds.formUnion"))
         #expect(
@@ -389,10 +380,8 @@ struct MonitorSamplerOwnershipCharacterizationTests {
         }
     }
 
-    /// `RepositoryRoot` ascends to the directory holding the Xcode project, so
-    /// this survives the test file moving between directories. Counting
-    /// `deletingLastPathComponent()` calls does not — it broke silently when
-    /// this file moved into `Monitor/`.
+    /// `RepositoryRoot` ascends to the project directory, so this survives the
+    /// file moving; counting `deletingLastPathComponent()` calls would not.
     private func productionSource(_ relativePath: String) throws -> String {
         try RepositoryRoot.source(relativePath)
     }

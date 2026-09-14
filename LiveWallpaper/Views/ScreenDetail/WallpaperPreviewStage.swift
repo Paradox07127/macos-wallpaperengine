@@ -2,18 +2,11 @@ import LiveWallpaperCore
 import SwiftUI
 
 enum WallpaperPreviewMetrics {
-    /// Display aspect: a wallpaper preview is a screen, whatever it renders.
     static let aspectRatio: CGFloat = 16 / 9
 }
 
-/// The one preview stage for video, web and scene: an aspect-fitted card centred
-/// in the pane, with controls floating along its bottom edge (the three used to
-/// be hand-rolled and drifted in padding, sizing and alignment).
-/// `controls` is overlaid *before* the expanding frame on purpose: the frame is
-/// the pane, the aspect-fit box is the picture, and controls applied after the
-/// frame drift past the picture's edges. `title` floats on the picture's top
-/// edge rather than inside the bar, where as the only flexible item it always
-/// gave way.
+/// `controls` is overlaid *before* the expanding frame on purpose: applied after it,
+/// they drift past the picture's edges rather than sitting on the aspect-fit box.
 struct WallpaperPreviewStage<Title: View, Content: View, Controls: View>: View {
     @ViewBuilder let title: () -> Title
     @ViewBuilder let content: () -> Content
@@ -36,8 +29,6 @@ struct WallpaperPreviewStage<Title: View, Content: View, Controls: View>: View {
     }
 }
 
-/// The name, as a capsule floating on the preview's top edge — the same chrome
-/// the control bar uses on the bottom edge, so the two read as one pair.
 struct WallpaperPreviewTitle: View {
     let text: String
 

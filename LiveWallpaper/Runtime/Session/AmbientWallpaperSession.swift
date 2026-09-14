@@ -6,10 +6,6 @@ final class AmbientWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackC
     private var window: NSWindow?
     private weak var performanceTarget: (any WallpaperPerformanceConfigurable)?
     private var currentProfile: WallpaperPerformanceProfile = .quality
-    /// Single source of truth for durable user play intent; effective =
-    /// `userIntendsToPlay && profile == .quality`. Self-built so an
-    /// independently constructed session stands alone; `ScreenManager` swaps in
-    /// the screen's shared machine via `adoptPlaybackStateMachine` on install.
     var playbackMachine = WallpaperPlaybackStateMachine()
     var userIntendsToPlay: Bool { playbackMachine.userIntendsToPlay }
     let wallpaperType: WallpaperType
@@ -24,14 +20,11 @@ final class AmbientWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackC
     /// gets its own much longer dwell instead of reusing the view's absence
     /// constant. Matches `SceneWallpaperSession.userPauseHibernationDelay`.
     private let userPauseHibernationDelay: Duration
-    /// Own slot: the view has a single dwell slot fed by absence pushes, so the
-    /// manual-pause countdown has to live where `userIntendsToPlay` is known.
     private let pauseDwell = AbsenceDwell()
     /// The two eligibility inputs are folded before reaching the view, so an
     /// absence `false` push cannot cancel a manual-pause hibernation.
     private var absenceHibernationEligible = false
     private var manualPauseHibernationRequested = false
-    /// Third trigger folded into the same single eligibility slot.
     private var criticalMemoryPressureActive = false
 
     init(
@@ -102,15 +95,12 @@ final class AmbientWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackC
 
     func applyPerformanceProfile(_ profile: WallpaperPerformanceProfile) {
         currentProfile = profile
-        // Run only when policy and user intent both allow.
         let effective: WallpaperPerformanceProfile =
             (userIntendsToPlay && profile == .quality) ? .quality : .suspended
         performanceTarget?.applyPerformanceProfile(effective)
         reconcileManualPauseHibernation()
     }
 
-    /// Absence-dwell teardown for HTML wallpapers; the view owns the countdown,
-    /// the snapshot cover, and the `about:blank` swap.
     func setHibernationEligible(_ eligible: Bool) {
         absenceHibernationEligible = eligible
         pushHibernationEligibility()
@@ -126,10 +116,7 @@ final class AmbientWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackC
             )
     }
 
-    /// Hands the already-suspended HTML view into the deep-hibernation path it owns (snapshot
-    /// cover → `about:blank`) without waiting out its absence dwell. A session still at
-    /// `.quality` is one the profile hasn't reached yet: tearing it down would override the
-    /// profile rather than layer on it.
+    /// Immediate deep-hibernate only if already `.suspended`; tearing down `.quality` would override the profile rather than layer on it.
     func setCriticalMemoryPressureActive(_ active: Bool) {
         criticalMemoryPressureActive = active
         guard active else {
@@ -150,9 +137,6 @@ final class AmbientWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackC
             .setTargetFrameRate(framesPerSecond)
     }
 
-    /// Second hibernatable class: the view only ever sees the folded
-    /// `.suspended` profile and cannot tell a manual pause from a policy
-    /// suspend, so the countdown belongs here, next to `userIntendsToPlay`.
     private func reconcileManualPauseHibernation() {
         guard !userIntendsToPlay else {
             pauseDwell.cancel()
@@ -202,7 +186,6 @@ final class AmbientWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackC
     }
 
     func prepareForDisplay(timeout: Duration) async -> WallpaperPreparationResult {
-        // Type-specific readiness (native chrome is sync; HTML waits below).
         switch performanceTarget {
         case let html as HTMLWallpaperView:
             return await html.prepareForDisplay(timeout: timeout)
@@ -211,7 +194,6 @@ final class AmbientWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackC
         }
     }
 
-    /// Bridged from `HTMLWallpaperView.onError` so the session keeps the user-visible error.
     func recordRuntimeError(_ error: WallpaperRuntimeError) {
         runtimeError = error
     }

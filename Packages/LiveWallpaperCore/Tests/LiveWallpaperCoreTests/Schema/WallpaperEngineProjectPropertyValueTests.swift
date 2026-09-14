@@ -2,10 +2,6 @@ import Foundation
 import Testing
 @testable import LiveWallpaperCore
 
-/// `project.json` arrives with imported wallpapers and is untrusted. The
-/// integral fast path in `stringValue` used to call `Int(_:)`, which traps past
-/// `Int`'s range — crashing while building the custom-settings UI for an
-/// imported wallpaper rather than rendering the value as-is.
 @Suite("WallpaperEngineProjectPropertyValue numeric formatting")
 struct WallpaperEngineProjectPropertyValueTests {
 
@@ -30,10 +26,6 @@ struct WallpaperEngineProjectPropertyValueTests {
     }
 }
 
-/// `HTMLConfig` and `SceneDescriptor` used to decode their property-override
-/// maps with a whole-dictionary `try?`/`do-catch`, so one malformed value
-/// (an unrepresentable JSON `null`, object, or array) dropped every override
-/// in the map, not just the bad key.
 @Suite("HTMLConfig / SceneDescriptor lossy override-map decode")
 struct LossyOverrideMapDecodeTests {
     @Test("A malformed HTMLConfig override drops only that key, not the whole map")

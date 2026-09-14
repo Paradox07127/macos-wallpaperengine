@@ -140,8 +140,6 @@ struct PasteRowCard: View {
         }
     }
 
-    /// Downloading a pasted id is the one install path that needs no Steam Web
-    /// API key — only a signed-in SteamCMD. The search tab needs the key.
     @ViewBuilder
     private var downloadAction: some View {
         if let onDownload {
@@ -158,8 +156,6 @@ struct PasteRowCard: View {
                     .font(DesignTokens.Typography.body)
                     .foregroundStyle(DesignTokens.Colors.Status.active)
             case .succeededAsPreset:
-                // A preset is not a wallpaper, and saying "Installed" here sends
-                // the user looking for it in the library.
                 Label("Preset added", systemImage: "checkmark.circle.fill")
                     .font(DesignTokens.Typography.body)
                     .foregroundStyle(DesignTokens.Colors.Status.active)
@@ -407,10 +403,6 @@ private struct WorkshopRowErrorStrip: View {
 
 // MARK: - Formatters
 
-/// Shows a fallback icon when `WorkshopPreviewImageLoader` rejects the URL
-/// (allow-list miss, wrong content-type, oversize, etc.).
-/// Shared with the detail sheet's preset list; both show a small allow-listed
-/// Workshop preview and must fail the same quiet way.
 struct WorkshopPreviewImage: View {
     let url: URL
     @State private var image: NSImage?
@@ -447,8 +439,6 @@ enum WorkshopRelativeDateFormatter {
     }
 }
 
-/// Views and favorites put the magnitude suffix inside the number, so one
-/// catalog key covers all three magnitudes.
 enum WorkshopCountFormatter {
     static func compact(_ count: Int) -> String {
         if count >= 1_000_000 {

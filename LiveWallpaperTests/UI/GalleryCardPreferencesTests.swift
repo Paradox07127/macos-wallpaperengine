@@ -2,19 +2,12 @@ import LiveWallpaperCore
 import Testing
 @testable import LiveWallpaper
 
-/// The gallery cards used to carry their display defaults as `@AppStorage`, one
-/// property wrapper per setting per tile. A 50-tile Workshop page therefore
-/// installed ~300 KVO observations on the defaults suite, and re-installed them
-/// as tiles recycled under the scroller. They now read one environment value
-/// published once per window.
 @Suite("Gallery card preferences")
 struct GalleryCardPreferencesTests {
 
     @Test("Falling back to the environment default matches the shipped defaults")
     func defaultsMatchShippedValues() {
-        // A card rendered outside the provider gets `defaultValue`. If these
-        // drifted from the `@AppStorage` defaults in the reader, badges would
-        // silently disappear in whatever surface forgot the modifier.
+        // A card rendered outside the provider gets `defaultValue`.
         let defaults = GalleryCardPreferences()
         #expect(defaults.showsRating)
         #expect(defaults.showsType)
@@ -45,12 +38,8 @@ struct GalleryCardPreferencesTests {
 
     @Test("Grid cards hold no defaults observers of their own")
     func gridCardsHoldNoDefaultsObservers() throws {
-        // `BrowseCard` takes the preferences as an input rather than reading the
-        // environment, because it is an `EquatableView` and an environment read
-        // inside a short-circuited `body` goes stale. `HistoryRow` is not, so it
-        // reads the environment directly. Either is fine; what must never come
-        // back is a per-tile `@AppStorage`, which registers a KVO observation on
-        // the defaults suite for every card on screen.
+        // Either an input or an environment read is fine; what must never come back is a
+        // per-tile `@AppStorage`, which registers a KVO observation for every card on screen.
         let cards = [
             "LiveWallpaper/Views/Workshop/BrowseCard.swift",
             "LiveWallpaper/Views/ScreenDetail/HistoryRow.swift"
@@ -80,12 +69,6 @@ struct GalleryCardPreferencesTests {
         }
     }
 
-    /// Apple's guidance is to limit how many glass effects are on screen at once
-    /// and to reserve the material for the most important controls rather than
-    /// ordinary content metadata. A gallery page carries roughly four badges on
-    /// each of ~50 cards, every one of them sampling the content scrolling behind
-    /// it, so the shared card chrome switches them to a plain tinted fill.
-    /// Detail and inspector surfaces do not use this chrome and keep the glass.
     @Test("Badges that scroll in a gallery do not use real glass")
     func galleryBadgesAreOpaque() throws {
         let chrome = try RepositoryRoot.source(
@@ -96,7 +79,6 @@ struct GalleryCardPreferencesTests {
         let glass = try RepositoryRoot.source(
             "Packages/LiveWallpaperCore/Sources/LiveWallpaperCore/UI/Components/AdaptiveGlass.swift"
         )
-        // The real material is reachable only when the surface asks for it.
         #expect(glass.contains("#available(macOS 26.0, *), surface == .glass"))
     }
 

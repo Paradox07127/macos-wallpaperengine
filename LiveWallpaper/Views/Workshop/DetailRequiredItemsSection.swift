@@ -2,18 +2,15 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// The detail page's "Required items": the items this one references
-/// (`children` on the query payload — for a Preset, the wallpaper it restyles).
-/// Titles are resolved by id; an id Steam will not describe still gets a row
-/// that links to its Steam page.
+/// The items this one references (`children` — for a Preset, the wallpaper it
+/// restyles). An id Steam will not describe still gets a row linking to Steam.
 struct DetailRequiredItemsSection: View {
     let itemIDs: [UInt64]
-    /// Opens the item in the inspector; the target may not be on the current page.
+    /// The target may not be on the current page.
     let onOpenItem: (UInt64) -> Void
 
     @Environment(WorkshopServices.self) private var services
     @Environment(\.openURL) private var openURL
-    /// The grid card's spoiler setting, by its named key (`MatureContentSettings`).
     @AppStorage(MatureContentSettings.blursThumbnails, store: .appScoped()) private var blurMatureThumbnails = true
     @State private var outcome: WorkshopItemDetailsLoader.Outcome?
     /// Which ids `outcome` answers: `.task(id:)` re-runs on a new list but
@@ -83,16 +80,14 @@ struct DetailRequiredItemsSection: View {
         }
     }
 
-    /// Whether the inspector can show the item as a wallpaper. Steam describes
-    /// a public Asset or Application like any item, but the inspector would
-    /// offer to download it as one.
+    /// Whether the inspector can show the item as a wallpaper. Steam describes a
+    /// public Asset or Application like any item, but we would offer to download it.
     nonisolated static func opensInApp(_ item: WorkshopQueryItem) -> Bool {
         !item.tags.contains { tag in
             BrowseViewModel.alwaysExcludedTags.contains { tag.caseInsensitiveCompare($0) == .orderedSame }
         }
     }
 
-    /// The grid card's spoiler rule, for a row that has the item's tags.
     nonisolated static func blursThumbnail(tags: [String], blursMature: Bool) -> Bool {
         blursMature && WorkshopQueryItem.isMatureRated(tags: tags)
     }
@@ -101,7 +96,6 @@ struct DetailRequiredItemsSection: View {
         Self.blursThumbnail(tags: item.tags, blursMature: blurMatureThumbnails) && !revealedIDs.contains(item.id)
     }
 
-    /// Gated by the same one-time 18+ confirmation as the grid card.
     private func requestReveal(_ id: UInt64) {
         if MatureContentSettings.isConfirmed {
             revealedIDs.insert(id)
@@ -138,7 +132,6 @@ struct DetailRequiredItemsSection: View {
         }
     }
 
-    /// An item the inspector cannot show: unresolved (`item` nil), or not a wallpaper.
     private func steamOnlyRow(id: UInt64, title: String, item: WorkshopQueryItem?) -> some View {
         let blurred = item.map(isBlurred) ?? false
         return HStack(spacing: DesignTokens.Spacing.sm) {
@@ -171,8 +164,6 @@ struct DetailRequiredItemsSection: View {
     }
 }
 
-/// A resolved required item: a row-sized button that opens it in the inspector
-/// — or, while its thumbnail is blurred, asks to reveal it.
 private struct RequiredItemRow: View {
     let item: WorkshopQueryItem
     let isBlurred: Bool

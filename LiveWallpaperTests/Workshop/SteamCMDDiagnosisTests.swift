@@ -47,8 +47,6 @@ private func diagnosis(
 struct SteamCMDDiagnosisVerdictTests {
     @Test("Control: a binary that resolved, verified, and ran is usable")
     func healthyDiagnosisIsUsable() {
-        // The control group for this whole suite: without it every assertion
-        // below would still pass on an `isUsable` that returns false always.
         let healthy = diagnosis()
         #expect(healthy.isUsable)
         #expect(healthy.remedy == nil)
@@ -56,9 +54,6 @@ struct SteamCMDDiagnosisVerdictTests {
 
     @Test("Nothing weaker than a completed run counts as usable")
     func noLaunchIsNeverUsable() {
-        // Every field except the run says "fine" — path resolved, signature
-        // valid, no quarantine. This is exactly the shape the app's old
-        // existence-check produced when steamcmd could not spawn at all.
         #expect(!diagnosis(launch: nil).isUsable)
     }
 
@@ -71,8 +66,6 @@ struct SteamCMDDiagnosisVerdictTests {
 
     @Test("A run of some other command cannot stand in for the launch probe")
     func foreignArgumentsAreNotTheLaunchProbe() {
-        // Guards against the verdict being satisfied by whatever spawn happens
-        // to be nearby — the codesign runs both exit 0 too.
         let borrowed = diagnosis(launch: launch(.succeeded, arguments: ["-dv", "--verbose=4"]))
         #expect(!borrowed.isUsable)
         // Control: same record, the real argv.
@@ -89,15 +82,13 @@ struct SteamCMDDiagnosisVerdictTests {
     func classifyPrefersTimeout() {
         // A process killed by the connector's own SIGTERM can still report 0.
         #expect(SteamCMDLaunchProbe.classify(exitCode: 0, timedOut: true) == .timedOut)
-        // Control: the same exit code without a timeout is the healthy answer.
         #expect(SteamCMDLaunchProbe.classify(exitCode: 0, timedOut: false) == .succeeded)
     }
 
     @Test("A failed spawn is distinguished from a non-zero exit")
     func classifySeparatesSpawnFailure() {
-        // `spawn` reports a `Process.run()` throw as -1; a quarantined Mach-O is
-        // the case that produces it, and it needs different advice than a
-        // SteamCMD that ran and complained.
+        // `spawn` reports a `Process.run()` throw as -1 (a quarantined Mach-O is
+        // the case that produces it).
         #expect(SteamCMDLaunchProbe.classify(exitCode: -1, timedOut: false) == .couldNotSpawn)
         #expect(SteamCMDLaunchProbe.classify(exitCode: 1, timedOut: false) == .exitedNonZero)
     }
@@ -109,14 +100,12 @@ struct SteamCMDDiagnosisVerdictTests {
         #expect(SteamCMDDiagnosisProbe.clampedLaunchTimeout(.nan)
             == SteamCMDDiagnosisProbe.defaultLaunchTimeout)
         #expect(SteamCMDDiagnosisProbe.clampedLaunchTimeout(100_000) <= 900)
-        // Control: a sane budget passes through untouched.
         #expect(SteamCMDDiagnosisProbe.clampedLaunchTimeout(120) == 120)
     }
 
     @Test("The diagnosis argv is inside the connector's own read-only probe set")
     func launchArgumentsAreAnAllowedProbe() {
         #expect(SteamCMDProbeArgumentPolicy.isAllowed(SteamCMDDiagnosisProbe.arguments))
-        // Control: the policy does discriminate.
         #expect(!SteamCMDProbeArgumentPolicy.isAllowed(["+force_install_dir", "/tmp"]))
     }
 
@@ -144,9 +133,8 @@ struct SteamCMDDiagnosisRemedyTests {
         #expect(SteamCMDDiagnosisRemedy.advice(for: diagnosis()) == nil)
     }
 
-    /// `unusableExisting` is passed explicitly: its default reads the real
-    /// filesystem, so leaving it out makes the expected branch depend on whether
-    /// the machine running the tests happens to have SteamCMD installed.
+    /// Passed explicitly: the default reads the real filesystem, so the branch
+    /// would otherwise depend on the test machine's SteamCMD.
     @Test("Not found, with nothing on disk, tells the user how to get one")
     func notFoundAdvisesInstalling() {
         let advice = SteamCMDDiagnosis.notFound(
@@ -209,8 +197,6 @@ struct SteamCMDDiagnosisRemedyTests {
             )
         ).remedy
         #expect(advice?.contains("ABCDE12345") == true)
-        // It still ran, so the verdict itself stays usable — the advice is a
-        // warning, not a failure.
         #expect(diagnosis(
             signature: SteamCMDSignatureVerdict(
                 isValid: true, teamIdentifier: "ABCDE12345", isHardenedRuntime: false
@@ -255,9 +241,6 @@ struct SteamCMDDiagnosisPlanTests {
         ])
     }
 
-    /// Both a picked path and the managed path used to ride in on the request,
-    /// which meant a compromised app chose what this unsandboxed process spawns.
-    /// The wire format is the guarantee: there is no field left to swap through.
     @Test("The request carries no path of any kind")
     func requestCannotNameAnExecutable() throws {
         let wire = try JSONEncoder().encode(SteamCMDDiagnosisRequest())
@@ -266,13 +249,9 @@ struct SteamCMDDiagnosisPlanTests {
         )
         #expect(fields["pickedPath"] == nil)
         #expect(fields["managedInstallPath"] == nil)
-        // Control: the one thing the app may still say is how long to wait.
         #expect(fields.keys.sorted() == ["launchTimeout"])
     }
 
-    /// Pinned at the protocol rather than at today's call sites: a path-shaped
-    /// argument re-appearing here is what would re-open the hole.
-    ///
     @Test("Resolution and diagnosis take no path from the app")
     func resolutionSurfaceTakesNoPath() throws {
         let body = try Self.connectorProtocolSource()
@@ -282,16 +261,8 @@ struct SteamCMDDiagnosisPlanTests {
         #expect(body.contains("func locateSteamCMDBinary(with reply:"))
     }
 
-    /// Exactly two methods may take a path, and this is the list.
-    ///
-    /// It was zero from 2026-08-13 until 2026-08-14, when manual binding was
-    /// reinstated by explicit decision — auto-detection cannot reach an install
-    /// in a location nobody told us about, and the closed version left the user
-    /// no recourse at all. What keeps that bounded is `SteamCMDManualBinding`
-    /// re-gating the path on every run, not this list. What this list is for is
-    /// the *third* path parameter: one appearing here is how the surface goes
-    /// back to letting the app name what gets spawned, and it must be a
-    /// deliberate edit to this test rather than a quiet addition.
+    /// Exactly two methods may take a path; a third appearing here must be a
+    /// deliberate edit to this test.
     @Test("Only inspection and manual binding take a path")
     func pathTakingMethodsAreTheKnownTwo() throws {
         let body = try Self.connectorProtocolSource()
@@ -302,8 +273,6 @@ struct SteamCMDDiagnosisPlanTests {
             .map { String($0.prefix(while: { $0 != "(" })) }
         #expect(pathTakers.sorted() == ["bindManualSteamCMDBinary", "inspectSteamCMDBinary"])
 
-        // The operational methods still take none: these were how a compromised
-        // app used to choose what this unsandboxed process spawns.
         #expect(!body.contains("steamCMDPath"))
         #expect(!body.contains("tarballPath"))
         #expect(!body.contains("pickedPath"))
@@ -327,8 +296,7 @@ struct SteamCMDDiagnosisPlanTests {
     }
 
     /// The Caskroom and command-wrapper candidates carry a version directory,
-    /// so a switch over whole paths labels every one of them `.notFound` — which
-    /// is what the report shows the user as the origin of their binary.
+    /// so a switch over whole paths would label them `.notFound`.
     @Test("Caskroom and command-wrapper candidates are still labelled Homebrew")
     func homebrewLabelSurvivesTheVersionDirectory() {
         #expect(SteamCMDDiagnosisPlan.packageManagerSource(
@@ -337,14 +305,12 @@ struct SteamCMDDiagnosisPlanTests {
         #expect(SteamCMDDiagnosisPlan.packageManagerSource(
             forCandidatePath: "/opt/homebrew/.homebrew-command-wrappers/steamcmd"
         ) == .homebrew)
-        // Control: `/usr/local` alone is still MacPorts-adjacent, not Homebrew.
+        // Control: `/usr/local` alone is not Homebrew.
         #expect(SteamCMDDiagnosisPlan.packageManagerSource(
             forCandidatePath: "/usr/local/bin/steamcmd") == .usrLocal)
     }
 }
 
-/// A manual pick is a candidate, not an override. These pin the part that
-/// bounds the hole it reopens: it goes first, and it clears the same gates.
 @Suite("SteamCMD manual binding")
 struct SteamCMDManualBindingTests {
     private static let manual = URL(fileURLWithPath: "/Volumes/Tools/steamcmd/steamcmd")
@@ -368,9 +334,6 @@ struct SteamCMDManualBindingTests {
         #expect(plan.map(\.source) == [.managedInstall, .homebrew])
     }
 
-    /// The whole point of it being a candidate: if the picked file stops passing
-    /// the trust gates, downloads must keep working off the managed install
-    /// rather than failing on a path the user chose months ago.
     @Test("A manual pick that fails its gates falls through to the next candidate")
     func untrustedManualPickFallsThrough() {
         let plan = SteamCMDDiagnosisPlan.candidates(
@@ -392,7 +355,6 @@ struct SteamCMDManualBindingTests {
 
         try SteamCMDManualBinding.store("../../etc/steamcmd", home: home)
         #expect(SteamCMDManualBinding.load(home: home) == nil)
-        // Control: an absolute path through the same store does come back.
         try SteamCMDManualBinding.store("/opt/tools/steamcmd", home: home)
         #expect(SteamCMDManualBinding.load(home: home)?.path == "/opt/tools/steamcmd")
     }
@@ -407,8 +369,6 @@ struct SteamCMDManualBindingTests {
         #expect(SteamCMDManualBinding.load(home: home) == nil)
     }
 
-    /// The record must live where a sandboxed app cannot write it — the app may
-    /// only ask for a binding over XPC, never plant one.
     @Test("The record lives under the connector's own root in the real home")
     func recordLivesOutsideTheContainer() {
         let path = SteamCMDManualBinding.recordURL(
@@ -427,12 +387,6 @@ struct SteamCMDManualBindingTests {
     }
 }
 
-/// Homebrew has had three answers to "where does a cask's CLI live", and until
-/// 2026-08-14 only the oldest was searched.
-///
-/// Measured that day on a Mac with `brew install --cask steamcmd` present: all
-/// three fixed paths were missing (`/opt/homebrew/bin/steamcmd` had been renamed
-/// `steamcmd.off`) and the only reachable binary was under the Caskroom.
 @Suite("SteamCMD Homebrew discovery")
 struct SteamCMDHomebrewDiscoveryTests {
 
@@ -450,7 +404,6 @@ struct SteamCMDHomebrewDiscoveryTests {
         ))
     }
 
-    /// `.metadata` sits beside the version directories and is not one.
     @Test("The Caskroom's .metadata sibling is not offered as a binary")
     func metadataIsSkipped() throws {
         let prefix = try Fixture.homebrewPrefix(versions: ["1779919584"], withMetadata: true)
@@ -485,7 +438,6 @@ struct SteamCMDHomebrewDiscoveryTests {
         #expect(caskroom.last?.contains("/1000000000/") == true)
     }
 
-    /// The regression behind "brew says it is installed, the app says it is not".
     @Test("A cask version offers its wrapper as well as the Mach-O paths")
     func caskVersionOffersEveryKnownEntryPoint() throws {
         let prefix = try Fixture.homebrewPrefix(versions: ["1779919584"])
@@ -496,17 +448,12 @@ struct SteamCMDHomebrewDiscoveryTests {
         ).map(\.path)
 
         let version = prefix.appendingPathComponent("Caskroom/steamcmd/1779919584")
-        // The wrapper is what survives a payload layout this list has not seen:
-        // `resolveWrapper` follows it down to whatever the Mach-O actually is.
         #expect(paths.contains(version.appendingPathComponent("steamcmd.wrapper.sh").path))
         #expect(paths.contains(version.appendingPathComponent("MacOS/steamcmd").path))
         #expect(paths.contains(version.appendingPathComponent("steamcmd").path))
         #expect(paths.contains(version.appendingPathComponent("osx32/steamcmd").path))
     }
 
-    /// The fact rides on the diagnosis rather than being re-derived by the
-    /// reader: `remedy` is computed in the sandboxed app, which cannot stat
-    /// `/opt/homebrew` and would always conclude "nothing installed".
     @Test("Not-found advice names the install it could not use instead of saying to install it")
     func notFoundAdviceDoesNotLoopBackToBrew() {
         let nothingOnDisk = SteamCMDDiagnosis.notFound(
@@ -514,8 +461,6 @@ struct SteamCMDHomebrewDiscoveryTests {
         )
         #expect(nothingOnDisk.remedy?.contains("brew install --cask steamcmd") == true)
 
-        // With a copy on disk, telling the reader to install it is the dead end
-        // they already hit: brew answers "already installed".
         let onDisk = SteamCMDDiagnosis.notFound(
             resolutionFailure: "not a Mach-O",
             rejectedExisting: ["/opt/homebrew/Caskroom/steamcmd/1779919584/MacOS/steamcmd"]
@@ -525,7 +470,6 @@ struct SteamCMDHomebrewDiscoveryTests {
         #expect(onDisk.remedy?.contains("brew install --cask steamcmd") == false)
     }
 
-    /// The connector may be older than the app after an update.
     @Test("A diagnosis without the new field still decodes, with no rejected paths")
     func legacyDiagnosisDecodes() throws {
         let legacy = """
@@ -558,8 +502,6 @@ struct SteamCMDHomebrewDiscoveryTests {
         #expect(paths.contains("/opt/homebrew/.homebrew-command-wrappers/steamcmd"))
     }
 
-    /// Control: no Homebrew at all must not throw, and must still offer the
-    /// fixed paths.
     @Test("A prefix with nothing installed yields the fixed paths and no more")
     func absentHomebrewIsNotAnError() {
         let paths = SteamCMDBinaryResolver.autoDetectCandidates(
@@ -687,10 +629,6 @@ struct SteamCMDExecutionFenceTests {
         ))
     }
 
-    /// The verdict is about the file that would actually be executed, so it has
-    /// to be taken after symlink resolution. This test process runs inside the
-    /// app's own container, which makes it the right place to build both halves:
-    /// a real file there, and a link there aiming somewhere else.
     @Test("A symlink is judged by its target, not by where the link sits")
     func followsSymlinksBeforeDeciding() throws {
         let root = URL(fileURLWithPath: NSTemporaryDirectory())
@@ -705,9 +643,8 @@ struct SteamCMDExecutionFenceTests {
         try Data().write(to: planted)
         #expect(SteamCMDExecutionFence.refusesExecution(of: planted.path(percentEncoded: false)))
 
-        // A link the caller can write, aiming at bytes it cannot: the target is
-        // what gets executed, so this one is allowed. Judging the link's own
-        // path would refuse it.
+        // A link the caller can write, aiming at bytes it cannot: judging the
+        // link's own path would refuse it.
         let link = root.appendingPathComponent("steamcmd-link")
         try FileManager.default.createSymbolicLink(
             at: link, withDestinationURL: URL(fileURLWithPath: "/usr/bin/true")
@@ -715,17 +652,13 @@ struct SteamCMDExecutionFenceTests {
         #expect(!SteamCMDExecutionFence.refusesExecution(of: link.path(percentEncoded: false)))
     }
 
-    /// Source-level, like the other connector-target assertions here: the fence
-    /// is only a fence if the one function that spawns SteamCMD consults it
-    /// before spawning.
     @Test("The connector routes every SteamCMD spawn through the fence")
     func runSteamCMDIsFenced() throws {
         let source = try RepositoryRoot.source("SteamConnector/SteamConnector.swift")
         let start = try #require(source.range(of: "static func runSteamCMD("))
         let body = String(source[start.upperBound...].prefix(3500))
         let gate = try #require(body.range(of: "SteamCMDExecutionFence.refusesExecution"))
-        // Formatting-insensitive: the cancel-registry argument made the call
-        // multi-line, and this scan cares about order, not line breaks.
+        // Formatting-insensitive: this scan cares about order, not line breaks.
         let spawn = try #require(body.range(of: "executable: steamCMDPath"))
         #expect(gate.lowerBound < spawn.lowerBound)
     }
@@ -743,9 +676,6 @@ private enum ConnectorSource: Error, CustomStringConvertible {
         }
     }
 
-    /// The body of one connector method, read from source. The connector target
-    /// is not linked into the test bundle, so this is the only way to assert
-    /// what its implementation actually does.
     static func methodBody(_ name: String) throws -> String {
         let source = try RepositoryRoot.source("SteamConnector/SteamConnector.swift")
         guard let start = source.range(of: "    func \(name)(") else {
@@ -762,21 +692,15 @@ struct SteamCMDDiagnosisExecutionTests {
     @Test("The diagnosis spawns SteamCMD with the probe argv")
     func diagnosisSpawnsSteamCMD() throws {
         let body = try ConnectorSource.methodBody("diagnoseSteamCMD")
-        // The point of the whole API: a verdict from the process that can run
-        // the binary. Replacing this with a stat is the regression this pins.
         #expect(body.contains("Self.runSteamCMD("))
         #expect(body.contains("arguments: SteamCMDDiagnosisProbe.arguments"))
         #expect(body.contains("SteamCMDDiagnosisProbe.clampedLaunchTimeout("))
-        // Queued like every other spawn, and it gives up rather than running for
-        // a caller that has gone.
         #expect(body.contains("Self.steamCMDQueue.async"))
         #expect(body.contains("Self.callerAbandoned(enqueuedAt: enqueuedAt)"))
     }
 
     @Test("Control: the scan reads one method, and a method that spawns nothing shows it")
     func scanDiscriminates() throws {
-        // Without this pair, the assertions above would pass just as well on a
-        // scan that returned the whole file.
         let spawner = try ConnectorSource.methodBody("runSteamCMDProbe")
         let nonSpawner = try ConnectorSource.methodBody("deleteWorkshopItem")
         #expect(spawner.contains("Self.runSteamCMD("))
@@ -791,10 +715,6 @@ struct SteamCMDDiagnosisExecutionTests {
     }
 }
 
-// The "archive staging refuses what it cannot read" suite retired with
-// `stageAndVerifyTarball`: the managed install no longer accepts any file from
-// the app, so there is no app-supplied FIFO/directory/oversize input left to
-// refuse. Downloads land in the connector's own tmp, written by the connector.
 
 @Suite("Diagnosis refuses to launch untrusted binaries")
 struct SteamCMDDiagnosisTrustGateTests {
@@ -837,8 +757,7 @@ struct SteamCMDDiagnosisTrustGateTests {
     @Test("A refused launch is never usable, however healthy the rest looks")
     func refusedLaunchIsNotUsable() {
         // The connector must not spawn a binary that failed the trust gates, so
-        // these all arrive with `launch == nil`. Diagnosing is not a channel for
-        // asking an unsandboxed service to execute something.
+        // these all arrive with `launch == nil`.
         for probe in [
             diagnosis(signatureValid: false, team: SteamCMDBootstrapPackage.expectedTeamIdentifier,
                       quarantined: false, launched: false),
@@ -853,8 +772,6 @@ struct SteamCMDDiagnosisTrustGateTests {
 
     @Test("The connector gates the spawn on signature and quarantine")
     func spawnIsGatedInSource() throws {
-        // Source-level guard: the connector target is not linked into this test
-        // bundle, so this is the only way to hold that ordering.
         let source = try RepositoryRoot.source("SteamConnector/SteamConnector.swift")
         let body = try #require(source.range(of: "func diagnoseSteamCMD"))
         let tail = String(source[body.lowerBound...].prefix(6000))
@@ -868,10 +785,6 @@ struct SteamCMDDiagnosisTrustGateTests {
     }
 }
 
-/// The rule that keeps execution and diagnosis agreeing on which binary is
-/// trustworthy. Before this, execution took the first Mach-O outside a
-/// container while diagnosis applied the signature and quarantine gates — so a
-/// copy the diagnosis had refused could still be the one that ran.
 @Suite("Trusted candidate walk")
 struct SteamCMDTrustedCandidateWalkTests {
 
@@ -889,8 +802,6 @@ struct SteamCMDTrustedCandidateWalkTests {
 
     @Test("A rejected first candidate does not end the search")
     func rejectedCandidateFallsThrough() {
-        // The case that motivated this: a stale managed install that no longer
-        // passes the signature gate, with a working Homebrew copy behind it.
         let picked = walk(
             ["/managed/steamcmd", "/opt/homebrew/bin/steamcmd"],
             trusted: ["/opt/homebrew/bin/steamcmd"]
@@ -900,8 +811,6 @@ struct SteamCMDTrustedCandidateWalkTests {
 
     @Test("Control: the first candidate wins when it is trustworthy")
     func trustedFirstCandidateWins() {
-        // Without this the walk could be "always take the last one" and the
-        // test above would still pass.
         let picked = walk(
             ["/managed/steamcmd", "/opt/homebrew/bin/steamcmd"],
             trusted: ["/managed/steamcmd", "/opt/homebrew/bin/steamcmd"]
@@ -911,8 +820,6 @@ struct SteamCMDTrustedCandidateWalkTests {
 
     @Test("Nothing trustworthy means nothing runs")
     func noTrustedCandidateYieldsNil() {
-        // Fail closed: returning an untrusted path here would hand it straight
-        // to a spawn in an unsandboxed process.
         #expect(walk(["/a/steamcmd", "/b/steamcmd"], trusted: []) == nil)
     }
 
@@ -928,8 +835,6 @@ struct SteamCMDTrustedCandidateWalkTests {
 
     @Test("A candidate resolving into an app container is refused even if trusted")
     func containerCandidateRefused() {
-        // The fence exists because the sandboxed caller can write there; a
-        // "trusted" verdict must not be able to override it.
         let picked = walk(
             ["/Users/p/Library/Containers/com.loomscreen.pro/Data/steamcmd", "/opt/homebrew/bin/steamcmd"],
             trusted: [

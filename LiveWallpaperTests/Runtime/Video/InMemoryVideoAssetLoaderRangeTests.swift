@@ -7,9 +7,8 @@ struct InMemoryVideoAssetLoaderRangeTests {
 
     private static let windowLength = 60 * 1024 * 1024
 
-    /// AVAssetResourceLoader.h requires requestedLength to be disregarded when
-    /// `requestsAllDataToEndOfResource` is set. Serving only the finite hint and
-    /// then finishing tells AVFoundation the resource ends there (issue #131).
+    /// AVAssetResourceLoader.h 要求:`requestsAllDataToEndOfResource` 置位时
+    /// 必须无视 `requestedLength`。
     @Test("A to-EOF request with a finite hint still runs to the end of the window")
     func toEndOfResourceIgnoresFiniteHint() {
         let range = InMemoryVideoAssetLoader.logicalRange(
@@ -135,8 +134,6 @@ struct InMemoryVideoAssetLoaderRangeTests {
         #expect(range.isEmpty)
     }
 
-    /// An inverted predicate here would silently push every ordinary local video
-    /// onto the streaming path, which nothing else would catch.
     @Test("An ordinary local file counts as mappable")
     func localFileIsMappable() throws {
         let url = URL(fileURLWithPath: NSTemporaryDirectory())
@@ -146,8 +143,8 @@ struct InMemoryVideoAssetLoaderRangeTests {
         #expect(InMemoryVideoAssetLoader.isVolumeMappable(url))
     }
 
-    /// `offset &+ requestedLength` used to wrap negative here, which made the
-    /// chunk loop serve zero bytes and then finish — the same truncation.
+    /// `offset &+ requestedLength` 在这里会回绕成负数,使 chunk 循环服务
+    /// 零字节后直接 finish。
     @Test("A length that overflows the offset falls back to the end of the window")
     func overflowingLengthDoesNotServeNothing() {
         let range = InMemoryVideoAssetLoader.logicalRange(

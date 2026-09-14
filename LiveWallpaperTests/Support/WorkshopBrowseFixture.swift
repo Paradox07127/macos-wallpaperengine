@@ -1,13 +1,8 @@
 import Foundation
 import Testing
 
-/// Variants of the captured browse page, derived at run time from
-/// `browse_trend7_p1.html` (provenance in `Fixtures/workshop/README.md`)
-/// instead of shipping four more 180–320 KB copies of it.
-///
-/// The SSR payload sits three escape layers deep — JSON inside a JS string
-/// inside the render-context JSON — so a JSON quote appears in the file as
-/// `\\\"`. Every target below is written at that depth.
+/// Derived from `browse_trend7_p1.html` (provenance in `Fixtures/workshop/README.md`).
+/// Its SSR payload is three escape layers deep, so a JSON quote appears as `\\\"`.
 enum WorkshopBrowseFixture {
     struct ReplacementMiss: Error, CustomStringConvertible {
         let target: String
@@ -22,8 +17,6 @@ enum WorkshopBrowseFixture {
         try RepositoryRoot.source("LiveWallpaperTests/Fixtures/workshop/browse_trend7_p1.html")
     }
 
-    /// SSR `queryKey[1].page` and `state.data.current_page` 1 → 2: the payload
-    /// answers page 2 of the same query.
     static func keyPage2() throws -> String {
         try replacing(
             #"\\\"eresult\\\":1,\\\"current_page\\\":1,"#,
@@ -36,8 +29,6 @@ enum WorkshopBrowseFixture {
         )
     }
 
-    /// SSR `queryKey[1]` gains `required_tags: ["Approved"]`: the page answers
-    /// a request that required that tag.
     static func keyRequiresApproved() throws -> String {
         try replacing(
             #"\\\"num_per_page\\\":30,\\\"page\\\":1,"#,
@@ -46,8 +37,6 @@ enum WorkshopBrowseFixture {
         )
     }
 
-    /// SSR `queryKey[1].search_text_target` 0 → 1: the payload answers a
-    /// title-only search.
     static func keySearchTargetTitleOnly() throws -> String {
         try replacing(
             #"\\\"search_text_target\\\":0,\\\"section\\\":\\\"readytouseitems\\\""#,
@@ -56,7 +45,6 @@ enum WorkshopBrowseFixture {
         )
     }
 
-    /// SSR `queryKey[1].section` readytouseitems → collections.
     static func keySectionCollections() throws -> String {
         try replacing(
             #"\\\"section\\\":\\\"readytouseitems\\\",\\\"trend_days\\\":7}"#,
@@ -65,8 +53,6 @@ enum WorkshopBrowseFixture {
         )
     }
 
-    /// SSR `queryKey[1].childpublishedfileid` "" → "42": the payload lists the
-    /// items that reference item 42.
     static func keyChild42() throws -> String {
         try replacing(
             #"\\\"childpublishedfileid\\\":\\\"\\\",\\\"excluded_tags\\\""#,
@@ -84,10 +70,8 @@ enum WorkshopBrowseFixture {
         )
     }
 
-    /// SSR `total_pages` 1000 → 3.
-    /// The captured page predates the Everyone-only maturity default, so its
-    /// query key lists three excluded tags; a browse built from today's default
-    /// excludes five. Composable, so a variant can carry both changes.
+    /// The captured page's query key excludes three tags; a browse built from today's
+    /// Everyone-only default excludes five. Composable, so a variant can carry both changes.
     static func excludingMaturity(in page: String) throws -> String {
         try replacing(
             #"\\\"excluded_tags\\\":[\\\"Application\\\",\\\"Asset\\\",\\\"Preset\\\"]"#,
@@ -100,9 +84,8 @@ enum WorkshopBrowseFixture {
         try replacing(#"\\\"total_pages\\\":1000,"#, with: #"\\\"total_pages\\\":3,"#, in: base())
     }
 
-    /// Result 1's preview moved off the CDN allow-list, result 2 banned,
-    /// result 3 non-public. The live payload carries neither `banned` nor
-    /// `visibility`; they are added here to pin the drop rules.
+    /// Result 1's preview is off the CDN allow-list, result 2 banned, result 3 non-public.
+    /// The live payload carries neither `banned` nor `visibility`; both are synthetic here.
     static func tainted() throws -> String {
         var page = try replacing(
             #"\\\"preview_url\\\":\\\"https://images.steamusercontent.com/ugc/12506494599842728983/02B16F0FC38B65438430F8CEAE44F9B38479522A/\\\""#,
@@ -121,7 +104,6 @@ enum WorkshopBrowseFixture {
         )
     }
 
-    /// Same grid, no `window.SSR` script at all.
     static func withoutSSRScript() throws -> String {
         let page = try base()
         guard let start = page.range(of: "<script"), let end = page.range(of: "</script>") else {

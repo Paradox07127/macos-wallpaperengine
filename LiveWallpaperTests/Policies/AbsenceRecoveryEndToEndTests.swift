@@ -6,9 +6,6 @@ import Testing
 
 @testable import LiveWallpaper
 
-/// W4.2 / W4.3: the absence→resume round trip and `.neverPause` reaching a real
-/// session. Both were pure coverage holes — absence had only source-string
-/// characterization behind it, and `.neverPause` stopped at the pure function.
 @MainActor
 @Suite("Absence recovery and rule vetoes on a live session")
 struct AbsenceRecoveryEndToEndTests {
@@ -40,7 +37,6 @@ struct AbsenceRecoveryEndToEndTests {
         }
         manager.screens = [screen]
 
-        // Display slept: absence suspends without touching intent.
         manager.userAbsenceReasons.insert(.displaySleep)
         probe.allDisplaysAsleep = true
         manager.refreshPerformancePolicyForAllScreens()
@@ -87,7 +83,6 @@ struct AbsenceRecoveryEndToEndTests {
         #expect(vetoed.profile == WallpaperPerformanceProfile.quality, "neverPause must veto every discretionary reason at once")
         #expect(vetoed.suspendReasons.isEmpty)
 
-        // Safety still wins over the same veto.
         let safety = WallpaperPolicyEngine.decision(
             inputs: WallpaperPolicyInputs(
                 powerSource: .external,

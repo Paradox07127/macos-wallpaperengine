@@ -59,8 +59,6 @@ struct ScreenSchemePersistenceTests {
 
     @Test("Resetting settings clears saved schemes and the shared store")
     func resetClearsSchemes() {
-        // Reset already wipes bookmarks; a scheme archive left behind would be
-        // orphaned state the user has no way to reach.
         let store = SchemeStore.shared
         store.add(
             name: "Desk setup",

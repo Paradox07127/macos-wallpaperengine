@@ -213,11 +213,7 @@ final class CodexAgentSource: MonitorDataSource {
         return states
     }
 
-    /// Scanner only gives an mtime window, wrong both ways: marks any recently-touched transcript alive when an unrelated
-    /// codex is up, and marks a busy session dead once a long tool stops writing. A cwd match to this checkout is direct
-    /// evidence, overriding the window both ways — but only when the probe is `complete`: a refused lookup is "unknown",
-    /// falling back to the scanner rather than "not running". Known limit: same-checkout sessions are indistinguishable, and
-    /// a cursor-restored model has no cwd until its next `turn_context`, so it falls back until then.
+    /// Scanner mtime is wrong both ways; a cwd match overrides it only when the probe is `complete`. A refused lookup falls back to the scanner, not "not running".
     static func isAlive(
         model: CodexSessionModel,
         scannerSaysAlive: Bool,

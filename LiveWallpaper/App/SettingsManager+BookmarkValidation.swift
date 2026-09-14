@@ -2,8 +2,6 @@ import Foundation
 import CoreGraphics
 import LiveWallpaperCore
 
-// Kept as an extension rather than its own type because it calls back into
-// loadConfigurations()/saveConfiguration() — injecting those as closures would be decoupling in name only.
 
 extension SettingsManager {
     func validateConfiguration(for screenID: CGDirectDisplayID) -> Bool {
@@ -146,7 +144,6 @@ extension SettingsManager {
         }
     }
 
-    /// Actor-safe persistent owner used by validation.
     @discardableResult
     func persistRefreshedHTMLBookmark(
         matching original: Data,

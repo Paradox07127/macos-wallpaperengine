@@ -7,15 +7,9 @@ enum BoundedNetworkFetch {
         let byteCap: Int
     }
 
-    /// Bytes staged in a plain array before each `Data.append`. `AsyncBytes`
-    /// only vends one byte at a time, and appending each of a 2 MB preview's
-    /// bytes straight onto `Data` was the single hottest thing on the cooperative
-    /// pool while a Workshop page scrolled.
+    /// Bytes staged in a plain array before each `Data.append`: `AsyncBytes` vends one byte at a time.
     private static let chunkSize = 64 * 1024
 
-    /// Rejects by declared `Content-Length` before reading any body, then aborts
-    /// mid-stream the moment accumulated bytes exceed `byteCap` — never buffers
-    /// more than `byteCap` bytes regardless of what the server claims or sends.
     static func fetch(
         _ request: URLRequest,
         session: URLSession,
@@ -34,7 +28,6 @@ enum BoundedNetworkFetch {
         return (data, response)
     }
 
-    /// Drains an already-validated body, enforcing `byteCap` as it goes.
     static func collect(
         _ bytes: URLSession.AsyncBytes,
         expectedContentLength: Int64,

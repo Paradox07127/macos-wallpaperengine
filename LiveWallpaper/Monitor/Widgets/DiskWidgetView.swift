@@ -120,7 +120,6 @@ struct DiskWidgetView: View {
         }
     }
 
-    /// "R read  W write"  ↔  "readRate · writeRate".
     private func currentPairRow(scale: Design.TypeScale) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             HStack(spacing: scale.label * 0.35) {
@@ -150,8 +149,6 @@ struct DiskWidgetView: View {
         .minimumScaleFactor(0.7)
     }
 
-    /// "Σ <total> · <age> ago" — the R peak now lives in the chart's own corner
-    /// (see `medium`'s overlay), so this row is just the session micro-tag.
     private func footerRow(scale: Design.TypeScale) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Spacer(minLength: 0)
@@ -206,7 +203,6 @@ struct DiskWidgetView: View {
         Self.showsTopProcesses(context.placement.options["showTopProcesses"]?.boolValue)
     }
 
-    /// L's "Top by I/O" feed: the sampler's per-app, read+write-ranked list, kept only when the option allows it.
     private var topIOProcesses: [MonitorProcessSample] {
         guard showsTopProcesses, let procs = sys.topIOProcesses else { return [] }
         return Array(procs.prefix(Self.topIORowCap))
@@ -266,7 +262,6 @@ struct DiskWidgetView: View {
         }
     }
 
-    /// "Top by I/O" — the sampler's per-app disk ranking in Memory's L-list idiom (bullet + truncating name + right-aligned numeric columns).
     private func topIOBlock(
         _ procs: [MonitorProcessSample], scale: Design.TypeScale
     ) -> some View {
@@ -305,7 +300,6 @@ struct DiskWidgetView: View {
         }
     }
 
-    /// One hue-lettered rate column (the widget's R/W letter idiom, matching the mirrored scope's up/down assignment).
     private func ioRateColumn(
         letter: String, color: Color, rate: Double?, scale: Design.TypeScale,
         accessibilityName: LocalizedStringKey
@@ -326,8 +320,6 @@ struct DiskWidgetView: View {
         .accessibilityValue(Text(verbatim: rate.map { Format.rate($0) } ?? Design.noData))
     }
 
-    /// L's "now" read: both current rates at hero weight on one baseline, letters
-    /// hue-coded — the same atom S stacks vertically, laid flat where L has width.
     private func heroPairRow(scale: Design.TypeScale) -> some View {
         let size = scale.hero * 0.58
         return HStack(alignment: .firstTextBaseline, spacing: size) {
@@ -357,7 +349,6 @@ struct DiskWidgetView: View {
             .foregroundStyle(Design.inkFaint)
     }
 
-    /// Split-bar byte legend + sample freshness merged onto one line, so L's fixed 331-pt content budget goes to the scope instead of stacked micro-rows.
     private func sessionFooterRow(scale: Design.TypeScale) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             if !splitLegendCompact {
@@ -433,7 +424,6 @@ struct DiskWidgetView: View {
         available ? Format.rate(bytesPerSec) : Design.noData
     }
 
-    /// Last `count` samples of a series (never fewer than the series has) — the
     nonisolated static func breakdownIsCompact(_ raw: String?) -> Bool { raw == "compact" }
 
     nonisolated static func showsTopProcesses(_ raw: Bool?) -> Bool { raw ?? true }
@@ -453,7 +443,6 @@ struct DiskWidgetView: View {
 
 // MARK: - Session split bar
 
-/// Two-segment proportion bar (R left, W right) of the session Σ — the same track/segment idiom as Memory's Activity-Monitor breakdown bar, sized down to two series.
 private struct DiskSplitBar: View {
     var readFraction: Double
     var writeFraction: Double

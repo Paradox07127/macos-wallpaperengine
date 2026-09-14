@@ -385,10 +385,8 @@ struct WPE28ShaderCompatibilityTests {
         let marker = "__attribute__((always_inline)) inline float2 wpe_waterflow_blend"
         #expect(translated.mslSource.components(separatedBy: marker).count == 2)
         let candidate = translated.mslSource + "\n" + Self.waterflowProbeKernel
-        // Change only the new hint: the reference keeps the production helper
-        // formula and compiler options, without a CPU approximation of Metal math.
-        // Both sides therefore move together when the formula changes — the formula
-        // itself is pinned by `waterflowHelperMathMatchesModel`.
+        // Only the inline hint differs, so both sides move together when the formula changes —
+        // the formula itself is pinned by `waterflowHelperMathMatchesModel`.
         let reference = candidate.replacingOccurrences(
             of: marker,
             with: "inline float2 wpe_waterflow_blend"
@@ -411,33 +409,21 @@ struct WPE28ShaderCompatibilityTests {
         let actual = try waterflowProbeBits(candidate, device: device, inputs: inputs, fastMath: fastMath)
         #expect(Set(expected).count > 4)
         guard fastMath else {
-            // Default math: the hint has to be bit-neutral, and is.
             let differences = zip(expected, actual).enumerated().compactMap { index, values in
                 values.0 == values.1 ? nil : index
             }
             #expect(differences.isEmpty, Comment(rawValue: "GPU Float mismatch indices: \(differences.prefix(8))"))
             return
         }
-        // Production compiles with fast math (`WPESwiftShaderCompiler.assemble`), which
-        // lets the optimizer reassociate the `t` / `fract` expressions the two helpers
-        // share — the CSE this hint exists to enable. 606 of 12672 words move, all of
-        // them in `cycles.x` / `cycles.z` and the blends built from them; `cycles.y` /
-        // `cycles.w`, which the blend does not recompute, never move.
+        // Production compiles with fast math (`WPESwiftShaderCompiler.assemble`), which lets the
+        // optimizer reassociate the `t` / `fract` expressions the two helpers share.
         let violations = waterflowFastMathViolations(expected: expected, actual: actual, inputs: inputs)
         #expect(violations.isEmpty, Comment(rawValue: violations.prefix(8).joined(separator: "\n")))
     }
 
-    /// What fast math is allowed to cost here, stated as a property rather than a
-    /// tolerance. Each build may land up to one float ULP of `t` from the exact phase;
-    /// `b = 2 * |fract(phase) - 0.5|` doubles that, so `b` is admitted over
-    /// `+/- 2 * 2 * ulp(t)` and a blend output is admissible exactly when it falls in
-    /// `wpe_smoothstep`'s image of that interval. An output tolerance cannot express
-    /// this: at `feather` near zero the helper degenerates to a hard step and one ULP
-    /// legitimately becomes a 0->1 flip, while at `feather = 0.1` it is worth 3e-5.
-    ///
-    /// Two phase ULPs is the knee — the production pair first passes there — and seeded
-    /// changes to the phase offset, the amplitude, the band centre and the feather width
-    /// all still fail at twice that slack, so the slack is not what makes this pass.
+    /// Each build may land up to one float ULP of `t` from the exact phase, and
+    /// `b = 2 * |fract(phase) - 0.5|` doubles that, so `b` is admitted over `+/- 2 * 2 * ulp(t)`
+    /// and a blend output is admissible exactly when it lands in `wpe_smoothstep`'s image of it.
     private func waterflowFastMathViolations(
         expected: [UInt32], actual: [UInt32], inputs: [SIMD4<Float>]
     ) -> [String] {
@@ -484,20 +470,9 @@ struct WPE28ShaderCompatibilityTests {
         return violations
     }
 
-    /// Pins the helper arithmetic itself. `waterflowInliningPreservesGPUValues` compares two
-    /// builds of the same translated source, so an edit to `wpe_waterflow_cycles` /
-    /// `wpe_waterflow_blend` lands on both sides and cancels; this compares the GPU against an
-    /// independent Double model of the phases the helpers stand for — `fract(time * speed +
-    /// {0, 0.5, 0.25, 0.75}) - 0.5` and the smoothstep cross-fade over `2 * |fract(phase) - 0.5|`
-    /// banded by `0.5 +/- g_PhaseFeather`. It is a restatement of that formula in Double, so it
-    /// pins the numbers against drift; waterflow.vert remains the oracle for the semantics.
-    ///
-    /// The model admits an interval rather than a value, because a Float build may land off the
-    /// exact phase (one ULP per Float add in that component's expression, which fast math may
-    /// also reassociate) and `fract` turns that into a wrapped interval. `waterflowMeasure`
-    /// caps how wide the admitted set may get, so widening the slack fails the test instead of
-    /// silently disarming it: phases are pinned to 1e-3 and blend weights to 1e-2, both far
-    /// below the quantities at stake (a 0.01 phase offset, a 5% amplitude or band shift).
+    /// `waterflowInliningPreservesGPUValues` compares two builds of the same translated
+    /// source, so a helper edit lands on both sides and cancels; this pins the arithmetic
+    /// against an independent Double model. waterflow.vert stays the oracle for semantics.
     @Test("Waterflow helper phases and blend weights match an independent CPU model", arguments: [false, true])
     func waterflowHelperMathMatchesModel(fastMath: Bool) throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
@@ -578,9 +553,8 @@ struct WPE28ShaderCompatibilityTests {
         #expect(interiorBlends > 100)
     }
 
-    /// Phases on the exact 1/32 grid (so most rows pin bit-exactly), each repeated at integer
-    /// offsets to cover `fract` wrapping, plus values that are not representable in Float so
-    /// the rounding path is exercised too.
+    /// The 1/32 grid pins most rows bit-exactly and the integer offsets cover `fract`
+    /// wrapping; the trailing values are not representable in Float, exercising rounding.
     private static let waterflowModelTimes: [Float] = {
         var times: [Float] = []
         for step in 0 ..< 32 {
@@ -591,9 +565,8 @@ struct WPE28ShaderCompatibilityTests {
         return times + [0.1, 0.3, 0.7, 1.2345, 7.77, -0.123]
     }()
 
-    /// The four `wpe_waterflow_cycles` phases as `(exact value, how far a Float build may land
-    /// from it)`. `t = time * speed` is a single correctly-rounded multiply, so it carries no
-    /// slack; each Float add after it may round, and `fract(0.25 + t + 0.5)` has two.
+    /// (exact phase, how far a Float build may land from it): `t = time * speed` is one
+    /// correctly-rounded multiply and carries no slack; each Float add after it may round.
     private static func waterflowPhases(time: Float, speed: Float) -> [(phase: Double, slack: Double)] {
         let t = Double(time * speed)
         return zip([0.0, 0.5, 0.25, 0.75], [0.0, 1, 1, 2]).map { offset, adds in

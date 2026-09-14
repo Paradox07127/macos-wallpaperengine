@@ -4,7 +4,6 @@ import Testing
 @testable import LiveWallpaper
 import LiveWallpaperCore
 
-/// Prevents the global render gate from collapsing configured screens to `notConfigured`, which would disable re-enabling.
 @Suite("Master render gate")
 @MainActor
 struct MasterRenderGateTests {
@@ -154,7 +153,6 @@ struct MasterRenderGateTests {
             let session = GateTestRuntimeSession()
             liveScreen.installRuntimeSession(session)
 
-            // Show-only branch: an already-live session must be reused, not rebuilt.
             manager.applyGlobalRenderGate()
             #expect(liveScreen.runtimeSession === session)
             #expect(session.cleanupCallCount == 0)
@@ -169,13 +167,6 @@ struct MasterRenderGateTests {
     }
 
 
-    /// The master switch is "stop every wallpaper", and the overlays are drawn
-    /// over the wallpaper — so they have to stop with it.
-    ///
-    /// Particles already did, because `releaseRuntimeSession` tears their layer
-    /// down on the way past. The Monitor and Now Playing panels are owned by
-    /// `OverlayController`, which the gate never touched, so they kept
-    /// rendering over a desktop with no wallpaper left under them.
     @Test("The master switch stops the Monitor and Now Playing overlays too")
     func gateOffStopsMonitorOverlays() throws {
         guard let screen = NSScreen.screens.first.map(Screen.init(nsScreen:)) else {
@@ -217,7 +208,6 @@ struct MasterRenderGateTests {
                 "overlays are still rendering with every wallpaper stopped"
             )
 
-            // And back: the switch is not a one-way door.
             manager.setWallpapersEnabled(true)
             #expect(
                 OverlayController.shared.hasActiveOverlay,
@@ -228,8 +218,7 @@ struct MasterRenderGateTests {
 
 }
 
-/// Minimal live-session stand-in: the gate's show/release branches are the
-/// subject here, and no shipping wallpaper type builds headlessly.
+/// No shipping wallpaper type builds headlessly, so this stands in.
 @MainActor
 private final class GateTestRuntimeSession: WallpaperRuntimeSession {
     let wallpaperType: WallpaperType = .html

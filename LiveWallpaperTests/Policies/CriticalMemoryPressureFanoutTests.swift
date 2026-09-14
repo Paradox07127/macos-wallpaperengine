@@ -6,12 +6,6 @@ import os
 import Testing
 @testable import LiveWallpaper
 
-/// W2: critical system memory pressure is a resource-depth signal every session
-/// kind has to receive, not a scene-only one. Before this it was dispatched by
-/// casting to `SceneWallpaperSession` at both dispatch points, so on a Lite
-/// install — where that type is not even compiled — the deepest signal the
-/// system emits reached nobody, and AVFoundation's player/looper/item/decode
-/// pool stayed resident through the exact moment the machine had no memory.
 @MainActor
 @Suite("Critical memory pressure fan-out", .serialized)
 struct CriticalMemoryPressureFanoutTests {
@@ -38,15 +32,12 @@ struct CriticalMemoryPressureFanoutTests {
         #expect(harness.player.player == nil)
         #expect(!harness.player.hasInMemoryAssetLoaderForTesting)
         #expect(harness.player.boundVideoOutputCountForTesting == 0)
-        // Released behind the path's own width-capped still, not to a black desktop.
         #expect(harness.player.isShowingHibernationStillFrameForTesting)
-        // Resource depth only: the emergency must not rewrite user play intent.
         #expect(harness.session.userIntendsToPlay)
     }
 
-    /// Control group for the test above: without the pressure signal the same
-    /// suspended player stays warm, so the assertions there are pinned to the
-    /// new signal rather than to the suspend that precedes it.
+    /// Control for the test above: without the pressure signal the same suspended
+    /// player stays warm, so its assertions are pinned to the signal, not the suspend.
     @Test("A suspended video with no pressure signal stays warm")
     func suspendedVideoWithoutPressureStaysWarm() async throws {
         let harness = try await Harness.make(
@@ -62,11 +53,8 @@ struct CriticalMemoryPressureFanoutTests {
         #expect(harness.player.player != nil)
     }
 
-    /// The signal only deepens an already-suspended session. `critical` is
-    /// graded as a hard safety suspend by `WallpaperPolicyEngine`, so the
-    /// profile always lands first; a session still at `.quality` when this
-    /// arrives is one the profile has not reached yet, and tearing it down here
-    /// would be this signal overriding the profile instead of layering on it.
+    /// The signal only deepens an already-suspended session: tearing down a `.quality`
+    /// session would override the profile instead of layering on it.
     @Test("Critical pressure does not deepen a session the profile still has at quality")
     func criticalPressureDoesNotDeepenAQualityProfile() async throws {
         let harness = try await Harness.make(
@@ -113,11 +101,8 @@ struct CriticalMemoryPressureFanoutTests {
         }
     }
 
-    /// Fall-back race, dispatch-order half: the dwell is armed with a zero
-    /// initial delay but still runs as a task, so a clear landing in the same
-    /// MainActor turn must revoke it. Without the fold in
-    /// `setCriticalMemoryPressureActive(false)` the armed attempt survives the
-    /// clear and tears the player down for an emergency that is already over.
+    /// The dwell is armed with a zero initial delay but still runs as a task, so a
+    /// clear landing in the same MainActor turn must revoke it.
     @Test("A clear that lands before the teardown starts revokes it")
     func clearBeforeTeardownStartsRevokesIt() async throws {
         let harness = try await Harness.make(
@@ -137,9 +122,7 @@ struct CriticalMemoryPressureFanoutTests {
     }
 
     /// The player owns one eligibility flag shared by absence, manual pause and
-    /// pressure. `ScreenManager` pushes absence ineligibility on every policy
-    /// refresh, so a pressure teardown only survives if every push site OR-folds
-    /// all three triggers. This is the fold's regression test.
+    /// pressure, so every push site has to OR-fold all three triggers.
     @Test("Routine absence and profile pushes never cancel a pressure teardown")
     func pressureTeardownSurvivesRoutinePushes() async throws {
         let harness = try await Harness.make(
@@ -162,12 +145,6 @@ struct CriticalMemoryPressureFanoutTests {
         #expect(!harness.player.hasInMemoryAssetLoaderForTesting)
     }
 
-    /// `retry()` swaps in a fresh player while the emergency is still on — the
-    /// scenario the doc comment on `setCriticalMemoryPressureActive` calls out
-    /// by name. Before the fix, `retry()` only pushed the routine dwelled
-    /// eligibility, so the replacement rode out a full `hibernationDelay` in
-    /// the middle of a critical-pressure emergency instead of going down
-    /// immediately like the player it replaced.
     @Test("A player installed by retry() while critical pressure is active deep-hibernates immediately")
     func retryPlayerUnderCriticalPressureHibernatesImmediately() async throws {
         let harness = try await Harness.make(
@@ -202,9 +179,8 @@ struct CriticalMemoryPressureFanoutTests {
         #expect(installed.player == nil)
     }
 
-    /// Control group for the test above: with no pressure signal active,
-    /// `retry()`'s player swap must keep behaving exactly as before this fix —
-    /// the routine dwelled push, not an immediate teardown.
+    /// Control for the test above: with no pressure signal, `retry()`'s player swap
+    /// keeps the routine dwelled push, not an immediate teardown.
     @Test("A player installed by retry() with no pressure signal keeps the normal dwell")
     func retryPlayerWithoutPressureKeepsNormalDwell() async throws {
         let harness = try await Harness.make(
@@ -230,8 +206,6 @@ struct CriticalMemoryPressureFanoutTests {
 
     // MARK: - ScreenManager fan-out (both dispatch points)
 
-    /// Dispatch point 1, `ScreenManager+MemoryPressure.applyMemoryPressureLevel`,
-    /// driven end to end from a fake watcher through the real policy engine.
     @Test("The watcher's critical level reaches an installed video session")
     func watcherCriticalReachesInstalledVideoSession() async throws {
         let nsScreen = try #require(NSScreen.screens.first)
@@ -268,11 +242,8 @@ struct CriticalMemoryPressureFanoutTests {
         #expect(!harness.player.hasInMemoryAssetLoaderForTesting)
     }
 
-    /// Dispatch point 2, the reconcile inside
-    /// `ScreenManager+Observers.resolveAndApplyPerformanceState`. The level
-    /// change is fully applied before the session exists, so only the
-    /// per-refresh reconcile can reach it — the restore-at-launch and swap-in
-    /// case. Point 1 cannot pass this test.
+    /// The level change is fully applied before the session exists, so only the
+    /// per-refresh reconcile can reach it — dispatch point 1 cannot pass this test.
     @Test("A video installed while pressure is already critical still hibernates")
     func videoInstalledUnderCriticalPressureHibernates() async throws {
         let nsScreen = try #require(NSScreen.screens.first)
@@ -298,8 +269,7 @@ struct CriticalMemoryPressureFanoutTests {
         }
 
         watcher.emit(.critical)
-        // The watcher hop is a MainActor Task — drain it so the level change is
-        // fully applied BEFORE the session exists, or this degenerates into the
+        // The watcher hop is a MainActor Task — drain it, or this degenerates into the
         // ordering the test above already covers.
         try await Harness.poll("pressure applied before install") {
             manager.isUnderMemoryPressure
@@ -316,10 +286,8 @@ struct CriticalMemoryPressureFanoutTests {
 
     // MARK: - Source contracts
 
-    /// Both dispatch points must select sessions by capability, not by concrete
-    /// type, and must agree on who receives the signal. A cast narrowed back to
-    /// one session kind at either point compiles clean and silently drops the
-    /// feature for the others.
+    /// A cast narrowed back to one session kind at either dispatch point compiles
+    /// clean and silently drops the feature for the others.
     @Test("Both dispatch points fan out over the capability protocol")
     func bothDispatchPointsUseTheCapabilityFanOut() throws {
         let pressure = try RepositoryRoot.source(
@@ -335,9 +303,8 @@ struct CriticalMemoryPressureFanoutTests {
         #expect(!observers.contains("scene.setCriticalMemoryPressureActive"))
     }
 
-    /// Video and HTML ship in both SKUs. A `#if !LITE_BUILD` around the pressure
-    /// fan-out compiles clean and drops it from Loomscreen entirely, which is
-    /// exactly the bug this window closed.
+    /// Video and HTML ship in both SKUs: a `#if !LITE_BUILD` around the pressure
+    /// fan-out compiles clean and drops it from Loomscreen entirely.
     @Test("The pressure fan-out sits outside the Pro-only block")
     func fanOutIsNotGatedOnProOnlyBuilds() throws {
         let body = try Self.resolveAndApplyPerformanceStateBody()
@@ -354,12 +321,8 @@ struct CriticalMemoryPressureFanoutTests {
         #expect(insideGate.contains("as? SceneWallpaperSession"))
     }
 
-    /// The video implementation deliberately owns no teardown of its own: it
-    /// hands the player into the path the manual-pause dwell already uses, whose
-    /// post-await revalidation (`lifecycleGeneration` plus a re-read of
-    /// eligibility and suspension) is what makes a clear landing mid-teardown
-    /// win. Pin those guards — the fall-back correctness of this window depends
-    /// on them, and they live in a file this window does not own.
+    /// The video path reuses the manual-pause dwell's post-await revalidation; those
+    /// guards live in another file, so they are pinned here.
     @Test("The reused teardown keeps its post-await generation and eligibility guards")
     func reusedTeardownKeepsItsGenerationGuard() throws {
         let source = try RepositoryRoot.source(
@@ -378,9 +341,6 @@ struct CriticalMemoryPressureFanoutTests {
     }
 
     #if !LITE_BUILD
-    /// Scene behaviour is unchanged by construction — `SceneWallpaperSession.swift`
-    /// is untouched and only gained a conformance declared elsewhere. This pins
-    /// that it is still reached by the widened fan-out.
     @Test("The scene session still satisfies the capability the fan-out selects on")
     func sceneSessionStillReceivesTheSignal() {
         #expect(

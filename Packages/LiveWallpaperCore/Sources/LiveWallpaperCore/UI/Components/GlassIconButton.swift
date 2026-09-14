@@ -1,7 +1,5 @@
 import SwiftUI
 
-/// Circular icon action using shared glass and control-size metrics.
-/// Callers supply help and an accessible name; use a button with a popover over artwork.
 public struct GlassIconButton: View {
     private let systemImage: String
     private let prominence: AdaptiveGlassProminence

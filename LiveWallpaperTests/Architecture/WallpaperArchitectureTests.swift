@@ -99,9 +99,6 @@ struct WallpaperStatusAggregatorTests {
         #expect(overview == .paused)
     }
 
-    /// A wallpaper rebuilding after a deep hibernate is coming back, not being
-    /// held down; falling through to `.paused` drew the pause glyph and made
-    /// VoiceOver announce a paused wallpaper mid-restore.
     @Test("A restoring session reports active, not paused")
     func restoringSessionReportsActive() {
         let summaries = [
@@ -359,11 +356,6 @@ struct MenuBarPlaybackControlTests {
         #expect(playback.pauseCount == 0)
     }
 
-    /// Regression: the menu bar draws the button from `summary.activity`
-    /// (actual playback) while the toggle decided direction from
-    /// `userIntendsToPlay`. During a safety suspend the button says Play, the
-    /// tap ran `pause()`, and the wallpaper then stayed dead after the
-    /// suspend lifted because intent had been flipped to false.
     @Test("Tapping play during a policy suspend keeps intent, and playback resumes when it lifts")
     func playTapDuringPolicySuspendSurvivesAndResumes() {
         let playback = FakePlaybackController(isPlaying: true)
@@ -376,7 +368,6 @@ struct MenuBarPlaybackControlTests {
         #expect(!playback.isPlaying, "Policy suspend should stop visible playback")
         #expect(playback.userIntendsToPlay, "Policy suspend must not touch user intent")
 
-        // The button reads Play here, so the tap must mean play.
         makeManager().togglePlayback(for: screen)
         #expect(playback.userIntendsToPlay, "A tap on a Play-labelled button must not clear intent")
         #expect(playback.pauseCount == 0)
@@ -385,14 +376,8 @@ struct MenuBarPlaybackControlTests {
         #expect(playback.isPlaying, "Playback must resume once the policy suspend lifts")
     }
 
-    /// Regression: `togglePlayback()` picked its direction globally and then
-    /// applied it to every screen, so one playing wallpaper made the tap pause
-    /// a policy-suspended sibling — clearing its intent and stranding it after
-    /// the suspend lifted. Same failure the per-screen toggle was fixed for.
-    ///
-    /// Driven through the decision helpers rather than two `Screen`s: `Screen.id`
-    /// comes from the panel, so two of them on one `NSScreen` collide, and
-    /// requiring a second physical display would make this vacuous on CI.
+    /// Not two `Screen`s: `Screen.id` comes from the panel, so two on one `NSScreen`
+    /// collide and a second physical display would make this vacuous on CI.
     @Test("Global toggle pauses only what is actually running")
     func globalTogglePreservesIntentOnSuspendedScreens() {
         let playing = FakePlaybackController(isPlaying: true)
@@ -408,9 +393,6 @@ struct MenuBarPlaybackControlTests {
             "A screen policy already holds down must keep its intent"
         )
 
-        // And the direction flips once nothing is really running, so the same
-        // tap on an all-suspended set means play — not another intent-clearing
-        // pause.
         #expect(!ScreenManager.globalToggleWantsPause([suspended]))
     }
 
@@ -464,12 +446,6 @@ struct WeatherReactivePolicyTests {
         #expect(WeatherReactiveService.refreshInterval == .seconds(3600))
     }
 
-    /// Particles decorate whatever is behind them, wallpaper or not.
-    ///
-    /// The overlay is its own click-through panel above the desktop; it never needed a
-    /// LiveWallpaper session to draw. Requiring one meant a display showing macOS's own
-    /// wallpaper could not have rain on it, which is the one case where an overlay is
-    /// the *only* thing the app is drawing.
     @Test("Particles draw without a wallpaper session, but obey the master gate")
     func particlesDoNotRequireAWallpaper() {
         #expect(WeatherReactivePolicy.shouldDrawParticles(effect: .rain, wallpapersEnabled: true))
@@ -478,8 +454,6 @@ struct WeatherReactivePolicyTests {
         #expect(!WeatherReactivePolicy.shouldDrawParticles(effect: .rain, wallpapersEnabled: false))
     }
 
-    /// The guard this replaced is easy to reinstate by reflex, and nothing else would
-    /// notice: the overlay would simply stop appearing on displays without a wallpaper.
     @Test("The particle overlay path does not consult the wallpaper session")
     func particleOverlayPathIgnoresTheRuntimeSession() throws {
         let source = try RepositoryRoot.source(
@@ -495,9 +469,6 @@ struct WeatherReactivePolicyTests {
         let activeID: CGDirectDisplayID = 10
         let inactiveID: CGDirectDisplayID = 20
 
-        // Each fixture draws particles, so this test keeps measuring the one
-        // thing it is about — whether the display is live — now that the
-        // overlay's own switch is also weighed (see `monitorNeedsBothSwitches`).
         var activeConfig = ScreenConfiguration(screenID: activeID, videoBookmarkData: Data([0x01]))
         activeConfig.particleEffect = .rain
         activeConfig.effectConfig.weatherReactive = true
@@ -515,13 +486,6 @@ struct WeatherReactivePolicyTests {
         #expect(!WeatherReactivePolicy.shouldMonitor(configurations: [disabledConfig], activeScreenIDs: [activeID]))
     }
 
-    /// Polling costs a network round trip an hour, forever, so it has to be
-    /// earned by a display that is actually drawing weather.
-    ///
-    /// "Match local weather" alone is not enough: the display's own particle
-    /// switch is the master, and with it off `resolvedParticleEffect` returns
-    /// `.none` whatever the sky is doing. Fetching for a display that draws
-    /// nothing is pure waste.
     @Test("weather is fetched only for a display that both draws particles and follows the sky")
     func monitorNeedsBothSwitches() {
         let id: CGDirectDisplayID = 10
@@ -546,7 +510,6 @@ struct WeatherReactivePolicyTests {
             configurations: [config(effect: .none, reactive: false)], activeScreenIDs: [id]
         ))
 
-        // One qualifying display anywhere is enough.
         var other = ScreenConfiguration(screenID: 20, videoBookmarkData: Data([0x02]))
         other.particleEffect = .snow
         other.effectConfig.weatherReactive = true
@@ -556,14 +519,10 @@ struct WeatherReactivePolicyTests {
         ))
     }
 
-    /// Wind direction is reported as the direction it blows *from*, which is
-    /// the easiest thing in this file to get backwards: a westerly (270°) is
-    /// wind coming from the west, so it pushes particles to the right.
     @Test("wind direction resolves to the side it actually blows towards")
     func windDirectionSign() {
         #expect(WeatherWindPolicy.horizontalBias(fromDegrees: 270) > 0.99)   // westerly → right
         #expect(WeatherWindPolicy.horizontalBias(fromDegrees: 90) < -0.99)   // easterly → left
-        // Northerly and southerly blow along the screen's other axis.
         #expect(abs(WeatherWindPolicy.horizontalBias(fromDegrees: 0)) < 0.001)
         #expect(abs(WeatherWindPolicy.horizontalBias(fromDegrees: 180)) < 0.001)
         #expect(WeatherWindPolicy.horizontalBias(fromDegrees: .nan) == 0)
@@ -582,27 +541,18 @@ struct WeatherReactivePolicyTests {
         )
         #expect(rain > 0)
         #expect(snow > rain)
-        // Still air is still vertical.
         #expect(WeatherWindPolicy.tiltRadians(windSpeedKPH: 0, fallSpeedMPS: 8) == 0)
-        // A storm leans hard but never sideways.
         let gale = WeatherWindPolicy.tiltRadians(windSpeedKPH: 200, fallSpeedMPS: 1)
         #expect(gale < .pi / 6)
-        // The reading has to keep mattering all the way up: a hard clamp made
-        // every wind past a breeze produce the identical lean, so "follow the
-        // wind" silently became "lean by a constant".
         let breeze = WeatherWindPolicy.tiltRadians(windSpeedKPH: 15, fallSpeedMPS: 8)
         let strong = WeatherWindPolicy.tiltRadians(windSpeedKPH: 45, fallSpeedMPS: 8)
         let storm = WeatherWindPolicy.tiltRadians(windSpeedKPH: 90, fallSpeedMPS: 8)
         #expect(breeze < strong)
         #expect(strong < storm)
-        // Nonsense in, vertical out.
         #expect(WeatherWindPolicy.tiltRadians(windSpeedKPH: .nan, fallSpeedMPS: 8) == 0)
         #expect(WeatherWindPolicy.tiltRadians(windSpeedKPH: 20, fallSpeedMPS: 0) == 0)
     }
 
-    /// With "Match local weather" off, nothing about the sky may reach the
-    /// emitter: not the wind, not the intensity. The user picked a preset and
-    /// that is what they get.
     @Test("weather off means the preset alone")
     func weatherOffIgnoresWindAndIntensity() {
         for intensity in [WeatherIntensity.light, .moderate, .heavy] {
@@ -615,9 +565,6 @@ struct WeatherReactivePolicyTests {
         }
     }
 
-    /// Both halves of "match local weather" are separately switchable: a user
-    /// who wants a downpour to actually look heavier but does not want the
-    /// rain slanting has to be able to say so.
     @Test("intensity scaling can be switched off on its own")
     func intensityScalingIsOptional() {
         let heavy = WeatherReactivePolicy.resolvedParticleDensity(
@@ -630,7 +577,6 @@ struct WeatherReactivePolicyTests {
         #expect(flat == 1.0, "intensity still applied with the switch off")
     }
 
-    /// Defaults, stated once: wind is opt-in, intensity is on.
     @Test("weather sub-options carry their intended defaults")
     func weatherSubOptionDefaults() {
         let config = VideoEffectConfig()
@@ -645,9 +591,6 @@ struct WeatherReactivePolicyTests {
         #expect(decoded.weatherIntensity == true)
     }
 
-    /// WMO already grades every precipitation family slight / moderate / heavy.
-    /// The old mapping collapsed each triple onto one description, so a drizzle
-    /// and a downpour drew the same rain at the same density.
     @Test("WMO intensity survives the mapping")
     func wmoIntensityIsPreserved() {
         // Drizzle 51/53/55, rain 61/63/65, snow 71/73/75, showers 80/81/82.
@@ -658,8 +601,7 @@ struct WeatherReactivePolicyTests {
         }
     }
 
-    /// 77 is snow grains — the lightest snow there is — and it used to be
-    /// mapped to *heavy* snow.
+    /// 77 is snow grains — the lightest snow there is.
     @Test("snow grains are the lightest snow, not the heaviest")
     func snowGrainsAreLight() {
         #expect(WeatherCodePolicy.intensity(forWMOCode: 77) == .light)
@@ -675,7 +617,6 @@ struct WeatherReactivePolicyTests {
         }
     }
 
-    /// A code with no intensity axis has one look, not a missing one.
     @Test("codes without an intensity axis answer moderate")
     func nonGradedCodesAreModerate() {
         for code in [0, 1, 2, 3, 45, 48] {
@@ -683,8 +624,6 @@ struct WeatherReactivePolicyTests {
         }
     }
 
-    /// The slider says how much of this the user wants at all; the intensity
-    /// says what the sky is doing. Multiplying keeps both meaningful.
     @Test("intensity scales the user's density without taking it over")
     func intensityScalesUserDensity() {
         func density(_ user: Double, _ intensity: WeatherIntensity, reactive: Bool = true) -> Double {
@@ -694,33 +633,25 @@ struct WeatherReactivePolicyTests {
         }
         #expect(density(1.0, .light) < density(1.0, .moderate))
         #expect(density(1.0, .moderate) < density(1.0, .heavy))
-        // Turning the slider down still calms a downpour.
         #expect(density(0.4, .heavy) < density(1.0, .heavy))
-        // Weather off: the slider is the whole answer.
         #expect(density(1.0, .heavy, reactive: false) == 1.0)
         #expect(density(1.0, .light, reactive: false) == 1.0)
-        // Never outside the range the slider itself can reach.
         #expect(density(3.0, .heavy) <= 3.0)
         #expect(density(0.2, .light) >= 0.2)
-        // Non-finite stored value must not propagate into the emitter.
         #expect(density(.nan, .moderate).isFinite)
     }
 
     @Test("Turning the display's particles off beats Match local weather")
     func masterSwitchOffWinsOverWeather() {
-        // The bug: with weatherReactive on, the chosen effect was discarded
-        // outright, so `.none` — which is exactly what "Show on This Display"
-        // writes when switched off — never reached the renderer.
+        // `.none` is exactly what "Show on This Display" writes when it is switched off.
         #expect(WeatherReactivePolicy.resolvedParticleEffect(
             chosen: .none, weatherReactive: true, weatherEffect: .snow
         ) == .none)
 
-        // Weather still picks the effect while the display is switched on.
         #expect(WeatherReactivePolicy.resolvedParticleEffect(
             chosen: .rain, weatherReactive: true, weatherEffect: .snow
         ) == .snow)
 
-        // And it stays out of the way when the user drives the choice.
         #expect(WeatherReactivePolicy.resolvedParticleEffect(
             chosen: .rain, weatherReactive: false, weatherEffect: .snow
         ) == .rain)
@@ -1317,11 +1248,8 @@ struct WallpaperVideoPlayerStartupPolicyTests {
         let detail = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/SceneDetailView.swift")
         let stage = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/WallpaperPreviewStage.swift")
 
-        // The screen-shaped frame is the stage's, shared with video and web; scene
-        // used to compute the same 16:9 fit by hand in a GeometryReader.
         #expect(detail.contains("WallpaperPreviewStage {"))
         #expect(stage.contains(".aspectRatio(WallpaperPreviewMetrics.aspectRatio, contentMode: .fit)"))
-        // The poster still fits inside that frame rather than filling past it.
         #expect(detail.contains(".aspectRatio(contentMode: .fit)"))
         #expect(!detail.contains(".aspectRatio(contentMode: .fill)"))
     }
@@ -1436,18 +1364,13 @@ private final class FakePlaybackController: WallpaperPlaybackControllable {
     var playCount = 0
     var pauseCount = 0
 
-    /// Mirrors the real three-layer fold: visible playback is
-    /// `userIntendsToPlay && policy == .quality`. Without it a fake `play()`
-    /// reports success while policy still has the session pinned down, and no
-    /// test can express "tapped play while suspended".
     private var policyAllowsPlayback: Bool
 
     init(isPlaying: Bool, userIntendsToPlay: Bool? = nil, policyAllowsPlayback: Bool? = nil) {
         self.isPlaying = isPlaying
         self.userIntendsToPlay = userIntendsToPlay ?? isPlaying
-        // Default: policy is not suppressing. `isPlaying: false` alone means the
-        // USER paused; only an explicit intends-to-play-but-not-playing pair
-        // describes a policy suspend.
+        // Default: policy is not suppressing — `isPlaying: false` alone means the user
+        // paused; only intends-to-play-but-not-playing is a policy suspend.
         self.policyAllowsPlayback = policyAllowsPlayback ?? (isPlaying || !(userIntendsToPlay ?? isPlaying))
     }
 
@@ -1608,7 +1531,6 @@ struct WallpaperPolicyEngineTests {
         #expect(profile(hidden: true) == .suspended)
         #expect(profile(occluding: true) == .suspended)
         #expect(profile(appRule: true) == .suspended)
-        // `.serious` sheds load instead of stopping; only `.critical` suspends.
         #expect(profile(thermal: .serious) == .quality)
         #expect(profile(thermal: .critical) == .suspended)
         #expect(profile(powerSource: .battery(level: 50)) == .suspended)
@@ -2374,8 +2296,6 @@ struct ScreenRuntimeOwnershipTests {
             await Task.yield()
         }
 
-        // This is intentionally fail-closed: an in-place settings write is
-        // newer intent than the captured candidate configuration.
         configuration.playbackSpeed = 1.5
         store.save(configuration)
         candidate.completePreparation(with: .ready)
@@ -2577,8 +2497,6 @@ struct ScreenRuntimeOwnershipTests {
             )
         )
 
-        // Candidate construction has already persisted the refreshed grant, but
-        // the proposal owner's closure still captures the old value.
         manager.configurationStore.save(effective)
         let committed = manager.commitPreparedAmbientConfiguration(
             proposed: proposed,
@@ -2648,9 +2566,8 @@ struct ScreenRuntimeOwnershipTests {
         #expect((screen.runtimeSession as AnyObject?) === old)
         #expect(old.cleanupCallCount == 0)
 
-        // The fake deliberately ignores cancellation. Resume it after checking
-        // cleanup so the orphaned operation drains without extending resource
-        // lifetime or leaking a continuation into the rest of the test run.
+        // The fake ignores cancellation: resume it after the assertions, or its
+        // continuation leaks into the rest of the run.
         candidate.completePreparation(with: .ready)
         await Task.yield()
         #expect((screen.runtimeSession as AnyObject?) === old)
@@ -2923,9 +2840,8 @@ struct ScreenRuntimeOwnershipTests {
         #expect(renderActorSource.contains(
             "func commitScenePropertyPatch("
         ))
-        // Commit both applies the patch and refreshes the reload source of
-        // truth, so an in-place reload (hibernate wake / retry) can't revert
-        // the committed edits.
+        // The `descriptor` write is not redundant with the patch: without it an
+        // in-place reload reverts the committed edits.
         #expect(renderActorSource.contains(
             "renderer.applyScenePropertyPatch(prepared.patch)"
         ))

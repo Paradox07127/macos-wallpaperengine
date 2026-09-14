@@ -3,11 +3,8 @@ import Foundation
 import Metal
 import Testing
 
-/// The transpiler's texture-slot ceiling. WPE's own bundled shaders reach `g_Texture8`
-/// (`chroma4`, `fur4`, `genericimage4` — surveyed against the installed
-/// `wallpaper_engine/assets/shaders` on 2026-09-09), so a ceiling that stops at slot 7
-/// makes stock effects fail translation and their pass is skipped entirely, leaving the
-/// target with its cleared contents.
+/// The transpiler's texture-slot ceiling. A ceiling that stops at slot 7 makes stock
+/// shaders (chroma4, fur4, genericimage4) fail translation, leaving the target cleared.
 @MainActor
 @Suite("WPE shader texture slots")
 struct WPEShaderTextureSlotTests {
@@ -53,18 +50,14 @@ struct WPEShaderTextureSlotTests {
         try makeLibrary(result.mslSource)
     }
 
-    /// The ceiling has to cover slot 8, i.e. at least 9 slots. 16 is a hard Metal limit
-    /// (measured: a 17th sampler argument fails to compile), and the generator emits one
-    /// sampler per slot — so this is a floor and a wall, not a free dial.
+    /// The ceiling must cover slot 8 (≥9 slots); 16 is a hard Metal limit, and the
+    /// generator emits one sampler per slot — a floor and a wall, not a free dial.
     @Test("The slot ceiling covers every slot WPE's bundled shaders use")
     func ceilingCoversBundledShaders() {
         #expect(WPEShaderTranspiler.customTextureSlotLimit >= 9)
         #expect(WPEShaderTranspiler.customTextureSlotLimit <= 16)
     }
 
-    /// Slots are allocated per shader, not fixed: a shader sampling one texture must not
-    /// pay for the ceiling. This is what makes the common case cheaper than before —
-    /// most shaders in a local 58-scene corpus top out at slot 2.
     @Test("A shader declares only the slots it uses")
     func slotsAreAllocatedPerShader() throws {
         let single = """
@@ -88,12 +81,8 @@ struct WPEShaderTextureSlotTests {
         #expect(wide.textureSlotCount == 9)
     }
 
-    /// The generator and the binding loop must be sized by the SAME value. Binding fewer
-    /// slots than the signature declares is undefined behaviour; binding more is merely
-    /// wasteful — so a regression to a fixed span stays green on every behavioural test
-    /// (verified: reverting the loop to `customTextureSlotLimit` failed nothing). A source
-    /// assertion is the only thing that catches it, the same approach `SettingsOwnershipTests`
-    /// uses to pin a structural decision.
+    /// The generator and the binding loop must be sized by the SAME value: a regression
+    /// to a fixed span stays green on every behavioural test, so only a source assertion catches it.
     @Test("The dispatcher binds per-shader slots, not a fixed span")
     func dispatcherBindsPerShaderSlotCount() throws {
         let source = try RepositoryRoot.source("LiveWallpaper/Runtime/Metal/WPEMetalShaderDispatcher.swift")
@@ -101,9 +90,8 @@ struct WPEShaderTextureSlotTests {
         #expect(!source.contains("for slot in 0..<WPEShaderTranspiler.customTextureSlotLimit"))
     }
 
-    /// A shader with no samplers at all must still emit a well-formed signature — the
-    /// per-slot loops produce nothing, so a trailing comma on the previous parameter
-    /// would be a compile error.
+    /// With no samplers the per-slot loops produce nothing, so a trailing comma on the
+    /// previous parameter would be a compile error.
     @Test("A shader with no samplers still generates valid MSL")
     func zeroSamplersStillCompiles() throws {
         let source = """
@@ -119,9 +107,8 @@ struct WPEShaderTextureSlotTests {
         try makeLibrary(result.mslSource)
     }
 
-    /// Sparse slots must alias to their real index, not to enumeration order: the
-    /// dispatcher binds by slot number, so `g_Texture8` reading `tex7` would sample a
-    /// different texture entirely.
+    /// The dispatcher binds by slot number, so `g_Texture8` reading `tex7` would sample
+    /// a different texture entirely.
     @Test("Sparse high slots alias to their real texture index")
     func sparseSlotsKeepTheirIndex() throws {
         let result = try WPEShaderTranspiler.translateFragment(

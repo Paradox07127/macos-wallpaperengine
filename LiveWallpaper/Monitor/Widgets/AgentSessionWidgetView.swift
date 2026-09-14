@@ -14,7 +14,6 @@ struct AgentSessionWidgetView: View {
         context.snapshot.agents
     }
 
-    /// Per-placement tuning bag (read-only here; the settings popover writes it).
     private var options: [String: MonitorWidgetOptionValue] {
         context.placement.options
     }
@@ -332,17 +331,11 @@ struct AgentSessionWidgetView: View {
 
 // MARK: - Type scale
 
-/// Deliberately not `Design.TypeScale`: that one caps at 12/13 pt, which
-/// on a 4K wallpaper renders the session rows unreadable. Floors are what stays
-/// legible at arm's length; ceilings stop the L tile from looking like a poster.
+/// Not `Design.TypeScale`: that caps at 12/13 pt, unreadable on a 4K wallpaper. Floors stay legible at arm's length; ceilings stop the L tile looking like a poster.
 struct AgentTypeScale {
-    /// Project name — the one thing that must read at a glance.
     let title: CGFloat
-    /// Branch / worktree / model / status detail.
     let body: CGFloat
-    /// Caps keywords and counts.
     let label: CGFloat
-    /// Vertical rhythm between rows and between a row's two tiers.
     let gap: CGFloat
 
     init(cellHeight: CGFloat) {
@@ -481,8 +474,6 @@ private struct AgentSessionFullRow: View {
         }
     }
 
-    /// One line of "where and what": the checkout it runs in, the model, and the
-    /// live activity (or the ask, when it is blocked on the user).
     @ViewBuilder
     private var secondTier: some View {
         let scope = AgentSessionWidgetView.scopeLabel(for: session)
@@ -507,8 +498,6 @@ private struct AgentSessionFullRow: View {
                         .truncationMode(.tail)
                 }
                 Spacer(minLength: scale.label * 0.3)
-                // Tokens, unlike the cost we removed, are read straight out of the
-                // transcript's usage block — no price table, nothing inferred.
                 if let tokens = AgentSessionWidgetView.tokenText(for: session) {
                     Text(verbatim: tokens)
                         .font(Design.subFont(size: scale.body))
@@ -579,7 +568,6 @@ private enum AgentSessionRowStyle {
     }
 }
 
-/// Use the provider asset when available, otherwise an SF Symbol.
 private struct AgentProviderMark: View {
     let provider: MonitorAgentProvider
     let size: CGFloat
@@ -689,8 +677,6 @@ private enum AgentSessionStrings {
         "No active sessions"
     }
 
-    /// Why-no-data: a wanted AI source has no folder grant (synthesized
-    /// `unauthorized` health from the runtime).
     static var authorizeHint: LocalizedStringKey {
         "Authorize the agent folders in Widgets settings."
     }
@@ -736,8 +722,7 @@ private enum AgentSessionStrings {
 // MARK: - Pure agent-session logic (tested)
 
 extension AgentSessionWidgetView {
-    /// Row caps the layout was measured against — three single-line rows on M,
-    /// four two-tier rows on L. Raising these re-introduces clipping.
+    /// Raising these row caps re-introduces clipping.
     static let mediumRowCap = 3
     static let largeRowCap = 4
 
@@ -760,11 +745,8 @@ extension AgentSessionWidgetView {
         }
     }
 
-    /// Where the session is working: the worktree name when it runs in one,
-    /// otherwise the git branch. Both answer "which checkout", so showing both
-    /// is redundant — the worktree is the more specific answer.
+    /// Worktree name when present, otherwise git branch — both answer which checkout, so showing both is redundant.
     nonisolated static func scopeLabel(for session: MonitorAgentSessionState) -> String? {
-        // Use distinct symbols for worktrees and branches.
         if let worktree = session.worktreeName, !worktree.isEmpty {
             return "⧉ " + worktree
         }
@@ -791,8 +773,8 @@ extension AgentSessionWidgetView {
     }
 
     enum SortMode: String, Equatable {
-        case attention // default: needsInput > running > idle > ended, then recency
-        case recent // most-recent event first
+        case attention
+        case recent
     }
 
     /// Provider filter from the option bag; nil == show all (the default).

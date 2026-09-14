@@ -1,7 +1,5 @@
 import SwiftUI
 
-/// Opaque gallery surface keeps the footer and shadow attached to the whole card.
-/// Card badges also use opaque fills to avoid sampling scrolling content for each badge.
 struct GalleryTileChrome: ViewModifier {
     let isHovering: Bool
     let isSelected: Bool
@@ -42,12 +40,8 @@ struct GalleryTileChrome: ViewModifier {
                         lineWidth: isSelected ? 2.5 : DesignTokens.Card.strokeWidth
                     )
             }
-            // The radius is deliberately constant across rest/hover/selected. It used to interpolate
-            // 3→12, and a shadow whose blur radius changes has to be re-rasterised every frame of the
-            // spring; opacity and offset do not. The lift now comes from opacity, `y`, and the scale
-            // below — the hovered/selected appearance is unchanged, only the resting shadow went from
-            // tight to diffuse at the same 5% black, keeping hover a smooth interpolation rather than
-            // a pop from flat.
+            // Radius stays constant across rest/hover/selected: a changing blur radius would be
+            // re-rasterised every frame of the spring, where opacity and offset are not.
             .shadow(
                 color: isSelected
                     ? Color.accentColor.opacity(DesignTokens.Card.selectedShadowOpacity)
@@ -61,9 +55,8 @@ struct GalleryTileChrome: ViewModifier {
                     : DesignTokens.Card.restShadowYOffset
             )
             .scaleEffect(isHovering ? 1.02 : 1.0)
-            // Same 150ms as the title band and the hover-in delay: the lift and
-            // the band grow together, so two curves of different lengths read as
-            // the card settling twice.
+            // 150ms must match the title band and the hover-in delay, or the card
+            // reads as settling twice.
             .animation(DesignTokens.motion(reduceMotion, .easeOut(duration: 0.15)), value: isHovering)
             .animation(DesignTokens.motion(reduceMotion, .easeOut(duration: 0.15)), value: isSelected)
     }

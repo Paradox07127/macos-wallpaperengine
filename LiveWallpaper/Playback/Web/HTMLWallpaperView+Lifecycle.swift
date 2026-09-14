@@ -2,7 +2,6 @@ import AppKit
 import LiveWallpaperCore
 import WebKit
 
-/// Two-stage native/JS lifecycle: one in-flight transition; rapid requests coalesce.
 struct HTMLMediaLifecycleState {
     struct Transition: Equatable {
         let generation: UInt64
@@ -45,19 +44,12 @@ struct HTMLMediaLifecycleState {
     }
 }
 
-/// HTML runtimes whose frame pacing is a JS rAF gate rather than a display link.
-/// Separate from `WallpaperFrameRateConfigurable`: that protocol also carries the
-/// adaptive background throttle, which only the scene renderer is dispatched.
 @MainActor
 protocol HTMLWallpaperFrameRateTargeting: AnyObject {
     func setTargetFrameRate(_ framesPerSecond: Int)
 }
 
-/// The user frame-rate ceiling translated for the web runtime. WebKit exposes no
-/// frame-rate knob at all (no `WKWebpagePreferences` property, and the
-/// media-suspension API only reaches `<video>`/`<audio>`), so the ceiling lands on
-/// our own rAF gate — an interval in milliseconds, which unlike the scene renderer's
-/// display link can hold any rate the caller resolved.
+/// WebKit has no frame-rate knob; the ceiling is an rAF interval in milliseconds, which can hold any rate a display link cannot.
 enum HTMLFramePacingPolicy {
     /// Milliseconds between allowed rAF callbacks; 0 = run at the display rate.
     /// `nil` and a ceiling at or above the panel's own rate both mean "no gate".
@@ -70,9 +62,7 @@ enum HTMLFramePacingPolicy {
         return 1000.0 / Double(framesPerSecond)
     }
 
-    /// `wallpaperPropertyListener.applyGeneralProperties({fps})`. A WPE web
-    /// wallpaper reads this as its animation tempo, so an absent ceiling reports 60
-    /// rather than the panel rate — the value has no "as fast as the display" form.
+    /// Absent ceiling reports 60, not the panel rate — the value has no "as fast as the display" form.
     static func wallpaperEngineFPS(forCeiling framesPerSecond: Int?) -> Int {
         guard let framesPerSecond, framesPerSecond > 0 else { return 60 }
         return framesPerSecond
@@ -87,7 +77,6 @@ struct HTMLPreparationProbeState {
     let isCleaningUp: Bool
 }
 
-/// Binds main-frame navigation callbacks to the load generation that started them.
 struct HTMLNavigationGenerationState {
     private var activeNavigationID: ObjectIdentifier?
     private var activeGeneration: UInt64?
@@ -265,10 +254,7 @@ extension HTMLWallpaperView {
         setMediaPlaybackSuspended(profile == .suspended)
     }
 
-    /// User frame-rate ceiling. Deliberately not folded into the performance
-    /// profile: `.suspended` stops the page, this only slows it down, and a
-    /// suspended view must keep the target so the resume publishes it rather
-    /// than snapping back to 60.
+    /// Not folded into the performance profile: .suspended stops the page, this only slows it. Keep the target while suspended so resume does not snap back to 60.
     func setTargetFrameRate(_ framesPerSecond: Int) {
         guard !isCleaningUp, targetFrameRateLimit != framesPerSecond else { return }
         targetFrameRateLimit = framesPerSecond
@@ -296,8 +282,6 @@ extension HTMLWallpaperView {
         )
     }
 
-    /// Native+JS suspend/resume; generation-ordered. The JS half reaches
-    /// subframes through the main frame's relay (`broadcastToChildFrames`).
     private func setMediaPlaybackSuspended(_ suspended: Bool) {
         guard !isCleaningUp else { return }
         let request = mediaLifecycleState.request(suspended)
@@ -306,9 +290,7 @@ extension HTMLWallpaperView {
 
         if suspended {
             cancelPackageBackingForSuspend()
-            // Mid-restore the cover is already up and the reload is still in
-            // flight; snapshotting now would capture a blank document, and the
-            // phase has to stay hibernatable so the dwell can arm again.
+            // Mid-restore, snapshotting now would capture a blank document; the phase must stay hibernatable so the dwell can arm again.
             hibernationState.noteSuspendedDuringRestore()
             restoreCoverDeadlineTask?.cancel()
             restoreCoverDeadlineTask = nil
@@ -319,10 +301,7 @@ extension HTMLWallpaperView {
             switch hibernationState.requestRestore() {
             case .rebuild:
                 restartPackageBackingAfterResume = false
-                // The overlay is stacked above the web view, so un-hiding it now
-                // lets the rebuilt document paint under cover; `didFinish` drops
-                // the cover. Calling `hideSnapshotOverlay()` here would expose
-                // the `about:blank` we hibernated onto.
+                // Un-hide the web view under the overlay; hideSnapshotOverlay() here would expose the about:blank we hibernated onto.
                 webView.isHidden = false
                 reloadCurrentSource()
                 armRestoreCoverDeadline()
@@ -340,10 +319,7 @@ extension HTMLWallpaperView {
         }
     }
 
-    /// Only `didFinish` drops the cover; several `loadSource` exits report an error without navigating
-    /// (e.g. stale folder bookmark, volume unmounted during the absence) — so without a bound, the
-    /// desktop freezes on the pre-absence snapshot and, since `setHibernationEligible` needs `.live`,
-    /// never hibernates again. Mirrors the video player's still-frame deadline.
+    /// Bound the cover: loadSource can error without navigating, so without a deadline the desktop freezes on the snapshot and never hibernates again.
     private func armRestoreCoverDeadline() {
         restoreCoverDeadlineTask?.cancel()
         let generation = hibernationState.generation
@@ -352,9 +328,7 @@ extension HTMLWallpaperView {
             guard !Task.isCancelled,
                   let self,
                   !isCleaningUp,
-                  // A suspend that landed during the restore put its own cover up
-                  // and warm suspend depends on it staying: dropping it here would
-                  // un-freeze a wallpaper the user cannot see.
+                  // A suspend during restore put its own cover up; dropping it here would un-freeze a wallpaper the user cannot see.
                   !mediaPlaybackSuspended,
                   hibernationState.generation == generation,
                   hibernationState.phase == .restoring else { return }
@@ -362,7 +336,6 @@ extension HTMLWallpaperView {
                 "HTML wallpaper restore never painted; dropping the hibernation cover",
                 category: .screenManager
             )
-            // Back to `.live` so a later absence can hibernate this screen again.
             hibernationState.invalidate()
             hideSnapshotOverlay()
         }
@@ -370,11 +343,7 @@ extension HTMLWallpaperView {
 
     // MARK: - Absence-dwell hibernation
 
-    /// `ScreenManager` marks the view eligible while suspended for an absence-like reason (lock,
-    /// display sleep, full-screen cover/occlusion) — the signal
-    /// `SceneWallpaperSession.setHibernationEligible` takes; an app-rule/battery pause stays a warm
-    /// suspend. `immediately` is the manual-pause handover: that countdown already ran its full term,
-    /// and re-running it made a paused HTML wallpaper outlive a paused scene's resources.
+    /// immediately is the manual-pause handover: that countdown already ran, and re-running it would make paused HTML outlive a paused scene.
     func setHibernationEligible(_ eligible: Bool, immediately: Bool = false) {
         hibernationEligible = eligible
         guard eligible,
@@ -394,18 +363,12 @@ extension HTMLWallpaperView {
         }
     }
 
-    /// Re-read when the cover reply lands, not captured when requested: the snapshot is asynchronous,
-    /// and a pressure clear arriving inside that window used to release a manually paused wallpaper
-    /// that still had most of its 300s warm dwell left. `generation` already rejects a reply that
-    /// crossed a wake; eligibility is the dimension it does not cover.
+    /// Re-read eligibility when the cover reply lands: the snapshot is async, and generation does not cover this dimension.
     var stillWantsHibernation: Bool {
         !isCleaningUp && mediaPlaybackSuspended && hibernationEligible
     }
 
-    /// Re-checks across the dwell — cancellation races the sleep waking up.
-    /// Returns false only for a transient blocker so the dwell re-arms: a restore
-    /// in flight will finish, and dropping the countdown there would skip the rest
-    /// of the absence (eligibility is pushed on policy changes, never polled).
+    /// Return false only for a transient blocker so the dwell re-arms; dropping the countdown on an in-flight restore would skip the rest of the absence.
     @discardableResult
     private func beginHibernationIfEligible() -> Bool {
         guard !isCleaningUp, mediaPlaybackSuspended, lastSource != nil else { return true }
@@ -540,7 +503,6 @@ extension HTMLWallpaperView {
         )
     }
 
-    /// `.fair` RAF throttle — global quality policy does not cover this tier.
     func startObservingThermalState() {
         let token = NotificationCenter.default.addObserver(
             forName: ProcessInfo.thermalStateDidChangeNotification,
@@ -561,9 +523,7 @@ extension HTMLWallpaperView {
         switch thermalState {
         case .nominal: 1
         case .fair: 2
-        // Was 1 (full speed) back when `.serious` suspended the wallpaper
-        // outright, so the ratio never applied. Now that serious only throttles,
-        // running faster than `.fair` while hotter would invert the whole point.
+        // serious must be slower than fair; running faster while hotter would invert the throttle.
         case .serious: 4
         case .critical: 4
         @unknown default: 4

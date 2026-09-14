@@ -3,36 +3,10 @@ import Foundation
 import Metal
 import simd
 
-/// Resident per-frame-slot storage for the transpiler's `WPEUniforms.vals[]` packing.
-/// Before this, every pass built a fresh `[SIMD4<Float>]` (~53 allocations/frame at
-/// steady state, one per `passEnc` in `WPEFrameOccupancyMeter`), and layouts over 4 KB
-/// also built a fresh `MTLBuffer` every frame; both become one bump allocation inside
-/// a shared-storage buffer per in-flight frame slot.
-///
-/// A region from `reserve` stays GPU-readable until its command buffer completes, so a
-/// slot's cursor rewinds ONLY while `InFlightCounters` (raised before `commit()`,
-/// dropped in the completion handler) is zero for that slot — not the frame-slot index
-/// alone: on the SceneScript fail-close path a second `render()` reuses one
-/// `WPEMetalFrameSubmissionLease`/slot while the speculative command buffer is already
-/// committed and unfinished (`WPEMetalSceneRenderer+ScriptFailClose.swift`, "Speculative
-/// buffer committed without present"). Keying on completion bumps forward instead of
-/// overwriting live memory, independent of `maxFramesInFlight`.
+/// A `reserve` region stays GPU-readable until the command buffer completes. Rewind the slot cursor only while `InFlightCounters` is zero for that slot — not the frame-slot index alone (a second `render()` can reuse a slot while a speculative buffer is still in flight).
 final class WPEMetalUniformArena {
 
-    /// Byte alignment for every sub-allocation, so a region's `offset` stays legal for
-    /// `MTLRenderCommandEncoder.setFragmentBuffer(_:offset:index:)`. Metal has no runtime
-    /// query for it — `MTLDevice`'s `minimum*AlignmentForPixelFormat:` pair governs
-    /// `makeTexture`, not buffer binding — and Apple's docs only point to the Metal
-    /// Feature Set Tables' "Minimum constant buffer offset alignment" row, which reads
-    /// 4 B for the Apple families; reviewers disagreed whether a Mac2 row of 32 B still
-    /// exists there.
-    ///
-    /// 256 is deliberately over-aligned rather than either documented minimum: Apple
-    /// silicon reports both Apple7+ and Mac2 with no stated tie-break, so a multiple of
-    /// every candidate value needs no adjudication. It's also a multiple of
-    /// `MemoryLayout<SIMD4<Float>>.alignment` (16), costs under 256 B/pass, and matches
-    /// older macOS sources that put the figure at 256 (reviewers disagreed which row that
-    /// came from — this only claims 256 satisfies every reading).
+    /// 256 B: over-aligned so `setFragmentBuffer` offset is legal on every Apple/Mac2 reading (documented minima 4 B / maybe 32 B; also a multiple of `SIMD4<Float>` alignment).
     static let offsetAlignment = 256
 
     /// Enough for ~128 typical passes without a grow cycle; a scene that needs more
@@ -92,12 +66,9 @@ final class WPEMetalUniformArena {
     private var cursors: [Int]
     private var capacityTarget: Int
 
-    /// Every `MTLBuffer` this arena has ever created. The steady-state assertion is
-    /// that it stops moving; `WPEFrameOccupancyMeter` cannot stand in for it because
-    /// it is process-global across displays and hard-disabled under XCTest.
+    /// Lifetime allocation count; the steady-state assertion is that it stops moving. `WPEFrameOccupancyMeter` cannot stand in (process-global, disabled under XCTest).
     private(set) var bufferAllocationCount = 0
 
-    /// Reservations that did not fit and fell back to a per-pass allocation.
     private(set) var overflowCount = 0
 
     init(device: MTLDevice, slotCount: Int, initialCapacity: Int = defaultSlotCapacity) {
@@ -117,10 +88,7 @@ final class WPEMetalUniformArena {
 
     func inFlightCount(ofSlot slot: Int) -> Int { counters.count(slot: slot) }
 
-    /// Opens `slot` for a frame's reservations, rewinding it only when the GPU can no
-    /// longer be reading anything previously handed out from it. Growing the slot's
-    /// buffer happens here for the same reason — it is the one moment the old
-    /// contents are provably dead.
+    /// Rewind only when the GPU can no longer be reading this slot. Grow the buffer here — the one moment the old contents are provably dead.
     func beginFrame(slot: Int) {
         guard buffers.indices.contains(slot), counters.count(slot: slot) == 0 else { return }
         cursors[slot] = 0
@@ -150,9 +118,7 @@ final class WPEMetalUniformArena {
         }
         cursors[frameSlot] = Self.align(end)
         let base = buffer.contents().advanced(by: start)
-        // Byte-for-byte parity with `[SIMD4<Float>](repeating: .zero, count:)`: the
-        // packer writes only the lanes a uniform's glslType covers and relies on the
-        // rest — vec3's `.w`, unreferenced slots — already being zero.
+        // Byte-for-byte parity with `[SIMD4<Float>](repeating: .zero, count:)`: the packer writes only the glslType lanes and relies on the rest (vec3 `.w`, unreferenced slots) already being zero.
         memset(base, 0, byteCount)
         return Region(
             buffer: buffer,
@@ -171,15 +137,14 @@ final class WPEMetalUniformArena {
         commandBuffer.addCompletedHandler { _ in token.complete() }
     }
 
-    /// `trackSubmission` without a command buffer, so the rewind rule is testable.
     func beginSubmission(frameSlot: Int) -> Submission {
         counters.retain(slot: frameSlot)
         return Submission(counters: counters, slot: frameSlot)
     }
 
-    /// Exactly-once release token. `deinit` is the fail-safe for a command buffer dropped
-    /// without commit — the GPU never read the region, so freeing it is right. `@unchecked
-    /// Sendable`: `counters` is the only mutable state and `lock` guards both the read and the nil-out, so the completion handler and a concurrent `deinit` cannot both release the slot. `slot` is let.
+    /// Exactly-once release. `deinit` is the fail-safe for a command buffer dropped without commit (GPU never read the region).
+    /// `@unchecked Sendable`: `counters` is the only mutable state and `lock` guards both the read
+    /// and the nil-out, so the completion handler and a concurrent `deinit` cannot both release the slot.
     final class Submission: @unchecked Sendable {
         private let lock = NSLock()
         private var counters: InFlightCounters?

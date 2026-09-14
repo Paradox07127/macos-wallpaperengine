@@ -2,15 +2,14 @@
 import Foundation
 import LiveWallpaperCore
 
-/// URL builder for Valve's public Workshop browse page — the zero-key search path. Parameters verified live against `steamcommunity.com` on 2026-08-29: `browsesort`, `days`, `searchtext`, `requiredtags[]` and `excludedtags[]` all filter server-side, `p` pages (disjoint result sets), and `numperpage` is ignored — the page returns up to 30 items.
+/// `numperpage` is ignored on the browse page; the page returns up to 30 items.
 enum WorkshopPublicBrowseURL {
     static let itemsPerPage = 30
 
     private static let base = "https://steamcommunity.com/workshop/browse/"
 
     static func url(for request: WorkshopQueryRequest, appID: Int) -> URL {
-        // The browse page has no creator parameter (`created_by` is silently
-        // ignored, verified 2026-08-29) — a creator scope has its own page.
+        // The browse page has no creator parameter (`created_by` is silently ignored) — a creator scope has its own page.
         if let creator = request.creatorSteamID {
             var components = URLComponents()
             components.scheme = "https"
@@ -23,8 +22,7 @@ enum WorkshopPublicBrowseURL {
                 URLQueryItem(name: "numperpage", value: String(itemsPerPage)),
                 URLQueryItem(name: "p", value: String(request.page))
             ]
-            // Honoured here too, and several AND (verified live 2026-09-07:
-            // `Video` kept 4/4, `Scene` 0/4, `Video`+`Abstract` 3/4).
+            // Several `requiredtags[]` AND together.
             items += request.requiredTagsIncludingMiscellaneous.map { URLQueryItem(name: "requiredtags[]", value: $0) }
             components.percentEncodedQueryItems = WorkshopQueryService.percentEncodedQueryItems(items)
             return components.url!
@@ -54,8 +52,6 @@ enum WorkshopPublicBrowseURL {
         return components.url!
     }
 
-    /// Public-page sort keys. Every `WorkshopSortMode` has one, so the keyless
-    /// path exposes the same sort menu as the keyed one.
     static func browseSort(for sort: WorkshopSortMode) -> String {
         switch sort {
         case .mostPopular: return "trend"
@@ -68,17 +64,13 @@ enum WorkshopPublicBrowseURL {
     }
 }
 
-/// Fallback id source when the SSR payload is unusable. Titles, previews and
-/// counts then come from `GetPublishedFileDetails`, so this path's whole
-/// dependency on Valve's markup is the details-page URL shape.
 enum WorkshopPublicIDExtractor {
 
     static func publishedFileIDs(fromHTML html: String) -> [UInt64] {
         publishedFileIDs(fromHrefs: hrefs(inHTML: html))
     }
 
-    /// The result anchors are in the served markup — the browse page is server-rendered, so nothing has to run scripts to see them (verified 2026-08-29: a plain GET returns all 30 ids).
-    /// Values stay HTML-escaped (`?id=123&amp;searchtext=…`); harmless because `id` is Valve's first query parameter, so an escaped separator only mangles the parameter names after it.
+    /// Values stay HTML-escaped; `id` is Valve's first query parameter, so an escaped separator only mangles names after it.
     static func hrefs(inHTML html: String) -> [String] {
         html.matches(of: /href="(https:\/\/[^"\s]*filedetails\/\?id=[^"]*)"/)
             .map { String($0.1) }
@@ -91,9 +83,7 @@ enum WorkshopPublicIDExtractor {
         return hrefs.compactMap(publishedFileID(fromHref:)).filter { seen.insert($0).inserted }
     }
 
-    /// The href must live on Valve's community host: the page also carries links
-    /// authored by third parties, and an off-host `filedetails/?id=` would
-    /// otherwise inject an arbitrary id into the result list.
+    /// Off-host `filedetails/?id=` would inject an arbitrary id into the result list.
     static func publishedFileID(fromHref href: String) -> UInt64? {
         guard let components = URLComponents(string: href),
               WorkshopPublicNavigationPolicy.allows(components.url),
@@ -105,8 +95,6 @@ enum WorkshopPublicIDExtractor {
     }
 }
 
-/// Host allow-list for the keyless path: the page we fetch, and the detail
-/// links we accept ids from.
 enum WorkshopPublicNavigationPolicy {
     private static let host = "steamcommunity.com"
 
@@ -116,25 +104,18 @@ enum WorkshopPublicNavigationPolicy {
     }
 }
 
-/// Zero-key Workshop search: one cookie-free GET of Valve's public browse page,
-/// read through its SSR payload (`WorkshopPublicBrowsePayload`). When that
-/// payload is missing, unreadable or answers another request, the page falls
-/// back to harvesting published-file ids from the result anchors and resolving
-/// them through the key-free `GetPublishedFileDetails` batch endpoint.
 @MainActor
 final class WorkshopPublicSearchSource {
 
     private let metadata: SteamWorkshopMetadataService
     private let session: URLSession
     private let appID: Int
-    /// Same disk cache the keyed path uses: one keyless page costs ~0.7 MB of
-    /// HTML plus a details POST, so paging back to page 1 must not pay it again.
+    /// Same disk cache as the keyed path: paging back to page 1 must not pay the fetch again.
     private let cache: WorkshopQueryCache
     private let retryPolicy: WorkshopRetryPolicy
     private var inflight: [String: Task<WorkshopQueryPage, Error>] = [:]
 
-    /// The browse page is ~0.7 MB of HTML; this only has to bound a hostile
-    /// response, not a legitimate one.
+    /// Bounds a hostile response, not a legitimate browse page.
     static let maxResponseBytes = 8 * 1024 * 1024
 
     init(
@@ -158,9 +139,7 @@ final class WorkshopPublicSearchSource {
         if let task = inflight[cacheKey] {
             return try await task.value
         }
-        // The cache read happens inside the task, not before it: awaiting first
-        // would let a second caller past the `inflight` check and issue its own
-        // page fetch.
+        // Cache read is inside the task: awaiting first would let a second caller past `inflight` and fetch again.
         let task = Task { [weak self] () -> WorkshopQueryPage in
             guard let self else { throw CancellationError() }
             if let cached = await cache.read(forKey: cacheKey) {
@@ -192,9 +171,7 @@ final class WorkshopPublicSearchSource {
                 )
             } catch let failure as WorkshopPublicBrowsePayload.ParseFailure {
                 switch failure {
-                // The page answered another request: its anchors are that
-                // other page's items, so harvesting them would show and cache
-                // them under this page's number.
+                // Harvesting anchors after identityMismatch/resultNotOK would cache another page's items under this page number.
                 case .identityMismatch, .resultNotOK:
                     Logger.notice(
                         "Workshop browse page SSR payload not usable (\(failure)); not adopting this page",
@@ -212,8 +189,6 @@ final class WorkshopPublicSearchSource {
         return try await harvestedPage(fromHTML: html, request: request)
     }
 
-    /// The pre-SSR path: ids from the result anchors, everything else from
-    /// `GetPublishedFileDetails`.
     private func harvestedPage(fromHTML html: String, request: WorkshopQueryRequest) async throws -> WorkshopQueryPage {
         let ids = WorkshopPublicIDExtractor.publishedFileIDs(fromHTML: html)
         // A same-host 200 with no result anchors is a challenge or login page,
@@ -278,17 +253,10 @@ final class WorkshopPublicSearchSource {
         }
     }
 
-    /// The creator page (`myworkshopfiles`, legacy markup, never carries the
-    /// SSR payload) renders past its last page — or a creator with nothing
-    /// public — as this empty-state container (verified live 2026-09-07 at
-    /// `p=999`). The browse page needs no marker: its SSR payload says "no
-    /// matches" itself.
+    /// Creator page empty-state container (`myworkshopfiles`); the browse page needs no marker.
     nonisolated static let emptyCreatorPageMarker = "id=\"no_items\""
 
-    /// The page publishes no machine-readable total, so only an empty page ends
-    /// the result set. Comparing the id count against 30 instead cut browsing
-    /// short: a full page legitimately returns 29 (verified 2026-08-29, p=2).
-    /// The 1000-page ceiling is Steam's and is enforced by `BrowseViewModel`.
+    /// Only an empty page ends the set; a full page can return 29, so do not compare the id count against 30.
     nonisolated static func nextCursor(after page: Int, idCount: Int) -> String? {
         idCount > 0 ? String(page + 1) : nil
     }
@@ -347,11 +315,7 @@ final class WorkshopPublicSearchSource {
             throw WorkshopQueryError.cancelled
         }
 
-        // A challenge response still renders as HTML with no result links,
-        // which would read as "no matches"; the status separates them (a 429
-        // never gets here: the policy throws it as `.rateLimited`). Likewise a
-        // redirect off the allow-list (login/interstitial) is a retriable
-        // failure, not an empty result set.
+        // A challenge still renders as HTML with no result links; status (and the allow-list) separate it from "no matches".
         guard (200..<300).contains(http.statusCode) else {
             throw WorkshopQueryError.http(status: http.statusCode)
         }

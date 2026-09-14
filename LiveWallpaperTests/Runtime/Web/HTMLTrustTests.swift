@@ -153,8 +153,7 @@ struct HTMLTrustVerdictTests {
 
     @Test("Private-network eligibility matches what the resolver actually dials")
     func privateNetworkMatchesResolver() {
-        // inet_aton reads a leading zero as octal: 010.0.0.1 dials 8.0.0.1,
-        // which is public. Parsing the octets as decimal called it 10.0.0.0/8.
+        // inet_aton reads a leading zero as octal: 010.0.0.1 dials 8.0.0.1, which is public.
         #expect(!TrustedHTMLOrigin.isPrivateNetworkHost("010.0.0.1"))
         #expect(!TrustedHTMLOrigin.isPrivateNetworkHost("0177.16.0.1"))
         #expect(TrustedHTMLOrigin.isPrivateNetworkHost("10.0.0.1"))
@@ -185,7 +184,7 @@ struct HTMLTrustVerdictTests {
         #expect(TrustedHTMLOrigin.isLoopbackHost("::1"))
         #expect(TrustedHTMLOrigin.isLoopbackHost("[::1]"))
         #expect(TrustedHTMLOrigin.isLoopbackHost("localhost"))
-        // 0177.0.0.1 is 127.0.0.1 to the resolver, but decimal parsing rejected it.
+        // 0177.0.0.1 is 127.0.0.1 to the resolver.
         #expect(TrustedHTMLOrigin.isLoopbackHost("0177.0.0.1"))
         #expect(!TrustedHTMLOrigin.isLoopbackHost("128.0.0.1"))
     }
@@ -476,15 +475,10 @@ struct TrustedHostStoreTests {
 
 }
 
-/// Loopback origins are trusted without an allowlist entry, matching how
-/// browsers treat `http://localhost` (W3C Secure Contexts "potentially
-/// trustworthy"). The negative cases are the point of this suite: a hostname
-/// that merely *contains* a loopback literal must not inherit that trust.
 @Suite("Loopback origins are potentially trustworthy")
 struct LoopbackTrustTests {
     private func trust(_ urlString: String) throws -> HTMLTrust {
         let url = try #require(URL(string: urlString))
-        // Empty allowlist: anything trusted here is trusted structurally.
         return HTMLTrust.evaluate(source: .url(url), trustedOrigins: [])
     }
 
@@ -530,9 +524,8 @@ struct LoopbackTrustTests {
         #expect(!verdict.effectiveAllowJavaScript(requested: true))
     }
 
-    /// Loopback trust is structural, so it must never be written to the
-    /// persisted allowlist — otherwise "revoke" would appear to work and then
-    /// silently have no effect.
+    /// Loopback trust is structural: persisting it would make "revoke" appear to
+    /// work and then silently have no effect.
     @Test("Loopback is never persisted into the allowlist")
     @MainActor
     func loopbackIsNotPersisted() throws {
@@ -558,8 +551,6 @@ struct LoopbackTrustTests {
     }
 }
 
-/// LAN literals are *eligible* for trust, not trusted outright: cleartext on a
-/// shared network is tamperable, so the grant is per-origin and explicit.
 @Suite("Private-network origins are trust-eligible")
 @MainActor
 struct PrivateNetworkTrustTests {
@@ -610,8 +601,7 @@ struct PrivateNetworkTrustTests {
         #expect(after.effectiveAllowJavaScript(requested: true))
     }
 
-    /// The grant has to survive a relaunch; `normalizeOrigins` used to drop
-    /// every non-HTTPS origin, which would have made "Trust" look like a no-op
+    /// Dropping non-HTTPS origins in `normalizeOrigins` would make "Trust" a no-op
     /// after the next launch.
     @Test("A trusted LAN origin survives normalization on reload")
     func lanGrantSurvivesReload() {

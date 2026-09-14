@@ -2,7 +2,6 @@ import CoreGraphics
 import Foundation
 
 public struct ScreenConfiguration: Codable, Equatable, Sendable {
-    /// `var` so apply-to-all can clone a template without recomposing fields.
     public var screenID: UInt32
     public var activeWallpaper: WallpaperContent
     public var savedVideoBookmarkData: Data?
@@ -29,14 +28,12 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
     public var setAsLockScreen: Bool
     public var wallpaperMode: WallpaperMode = .playlist
     public var muted: Bool = true
-    /// Volume separate from `muted` so unmute restores the prior level.
     public var videoVolume: Double = 1.0
     public var videoColorSpace: VideoColorSpace = .auto
-    /// Scene cursor-follow (parallax / pointer shaders). Default on (historical always-on).
+    /// Scene cursor-follow (parallax / pointer shaders). Default on.
     public var sceneMouseInteractionEnabled: Bool = true
-    /// Scene click capture (steals desktop clicks); orthogonal to cursor-follow. Default off.
+    /// Scene click capture (steals desktop clicks).
     public var sceneClickCaptureEnabled: Bool = false
-    /// Workshop provenance; cleared when pickers replace with non-WPE content.
     public var wpeOrigin: WPEOrigin?
 
     /// EDID fingerprint fallback when `screenID` churns.
@@ -79,7 +76,7 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
         playbackSpeed: Double = 1.0,
         fitMode: VideoFitMode = .aspectFill,
         videoDisplayMode: VideoDisplayMode = .perDisplay,
-        // nil → `FrameRateLimit.naturalDefault(for:)` (scene 30 / video 60).
+        // nil → `FrameRateLimit.naturalDefault(for:)`.
         frameRateLimit: FrameRateLimit? = nil,
         particleEffect: ParticleEffect = .none,
         effectConfig: VideoEffectConfig = .default,
@@ -120,8 +117,6 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
         videoBookmarkData: Data,
         playbackSpeed: Double = 1.0,
         fitMode: VideoFitMode = .aspectFill,
-        // Explicit `.matchDisplay` default keeps native pass-through even when
-        // callers pass nothing (matches `FrameRateLimit.naturalDefault(for: .video)`).
         frameRateLimit: FrameRateLimit = .matchDisplay,
         particleEffect: ParticleEffect = .none,
         effectConfig: VideoEffectConfig = .default,
@@ -290,10 +285,8 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
         activeWallpaper = .html(source: source, config: config)
     }
 
-    /// Re-syncs any carried preset values against the library, and drops the layer when the preset
-    /// is gone. `presetSnapshot` is a cache that rides along with the descriptor because the
-    /// renderer never sees `GlobalSettings`. Without a call to this on the load path, editing or
-    /// deleting a preset would leave every screen still rendering the values it captured.
+    /// Must run on the load path: without it, editing or deleting a preset would leave
+    /// every screen still rendering the values it captured.
     public func refreshingScenePresets(in library: [String: ScenePreset]) -> ScreenConfiguration {
         var refreshed = self
         if case .scene(let descriptor) = activeWallpaper {
@@ -308,9 +301,8 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
     public mutating func setSceneWallpaper(_ descriptor: SceneDescriptor, origin: WPEOrigin?) {
         preserveCurrentVideoBookmarkIfNeeded()
         preserveCurrentHTMLIfNeeded()
-        // Same-scene re-pick after type switch restores the last look. Both
-        // layers travel together — restoring the increment without the preset
-        // it was authored against would apply the edits to bare scene defaults.
+        // Both layers travel together: restoring the increment without the preset it was
+        // authored against would apply the edits to bare scene defaults.
         var resolved = descriptor
         if descriptor.propertyOverrides.isEmpty,
            descriptor.presetID == nil,
@@ -328,7 +320,6 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
 
     @discardableResult
     public mutating func activateSavedVideoWallpaper() -> Bool {
-        // Keep package entry with bookmark so restore stays windowed, not raw pkg.
         let bookmarkData: Data
         let packageEntryName: String?
         if let saved = savedVideoBookmarkData {
@@ -367,7 +358,6 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
         playlistPrimaryIndex = nil
     }
 
-    /// Apply a schedule slot without replacing the saved primary.
     /// Slots are bare bookmarks (loose video only; packaged cannot round-trip).
     public mutating func applyScheduledBookmark(_ bookmarkData: Data) {
         activeWallpaper = .video(bookmarkData: bookmarkData)
@@ -450,7 +440,6 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
         return didReplace ? copy : nil
     }
 
-    /// CAS WPE source-folder grant; advances matching HTML copies in the same mutation.
     public func replacingWPEOriginBookmark(
         workshopID: String,
         matching original: Data,
@@ -476,9 +465,7 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
 }
 
 public extension ScreenConfiguration {
-    /// The Weather "Apply to All Displays" copy: exactly the fields the weather
-    /// overlay rides on, nothing else about the target display. Pure so the
-    /// field list is testable without a two-display ScreenManager.
+    /// Exactly the fields the weather overlay rides on, nothing else about the target display.
     mutating func adoptWeatherOverlay(from template: ScreenConfiguration) {
         particleEffect = template.particleEffect
         effectConfig.weatherReactive = template.effectConfig.weatherReactive

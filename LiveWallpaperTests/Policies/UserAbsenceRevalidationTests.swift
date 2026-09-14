@@ -35,8 +35,6 @@ struct UserAbsenceRevalidationTests {
         let probe = FakeUserPresenceProbe()
         let manager = makeManager(probe: probe)
 
-        // The wake notification never arrived, so the reason is still set while
-        // the display is in fact awake.
         manager.userAbsenceReasons.insert(.displaySleep)
         probe.allDisplaysAsleep = false
 
@@ -104,8 +102,6 @@ struct UserAbsenceRevalidationTests {
             featureCatalog: FeatureCatalog(capabilities: .pro)
         ))
 
-        // Exactly what handleDisplaySleep does: record, then refresh policy —
-        // which revalidates in the same call stack.
         manager.userAbsenceReasons.insert(.displaySleep)
         manager.absenceMarkedAt[.displaySleep] = ContinuousClock.now
         probe.allDisplaysAsleep = false  // CoreGraphics has not caught up yet
@@ -147,9 +143,8 @@ struct UserAbsenceRevalidationTests {
         // The display never actually slept — or its wake notification was lost.
         probe.allDisplaysAsleep = false
 
-        // The production entry point, and the only event in this test: it runs
-        // exactly one policy refresh, which lands inside the grace window and
-        // therefore skips revalidation. Nothing else ever pokes the manager.
+        // The only event in this test: one policy refresh, which lands inside the grace
+        // window and skips revalidation. Nothing else ever pokes the manager.
         manager.setUserAbsence(.displaySleep, present: true)
         #expect(manager.isUserAbsent, "the grace window has to protect a just-recorded absence")
 
@@ -163,11 +158,8 @@ struct UserAbsenceRevalidationTests {
         )
     }
 
-    /// Source-pinned rather than behavioural: a partially-asleep multi-display
-    /// rig is the only state that separates the two APIs, and it cannot be
-    /// constructed in-process. `CGGetActiveDisplayList` excludes asleep
-    /// displays by definition, so searching it for one never matches — probed
-    /// live on a sleeping Mac: active 0, online 2, main isAsleep 1.
+    /// Source-pinned: the partially-asleep multi-display state that separates the two
+    /// APIs cannot be constructed in-process.
     @Test("The sleep probe enumerates online displays, never the active list")
     func sleepProbeUsesOnlineDisplayList() throws {
         let source = try RepositoryRoot.source(
@@ -180,10 +172,8 @@ struct UserAbsenceRevalidationTests {
         )
     }
 
-    /// Also source-pinned, and for the same reason: absence means "the user is
-    /// not watching", so one awake display is enough to end it. Folding with
-    /// `contains` instead made a permanently dark second display — an unplugged
-    /// TV, a closed-lid external — hold the safety net off forever.
+    /// Folding with `contains` instead would let a permanently dark second display —
+    /// an unplugged TV, a closed-lid external — hold the safety net off forever.
     @Test("The sleep probe demands that every online display be asleep")
     func sleepProbeRequiresEveryDisplayAsleep() throws {
         let source = try RepositoryRoot.source(

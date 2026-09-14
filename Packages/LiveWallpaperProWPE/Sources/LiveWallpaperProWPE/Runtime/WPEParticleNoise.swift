@@ -1,6 +1,6 @@
 import simd
 
-/// Deterministic curl noise for WPE turbulence (oracle-reproducible; classic Perlin permutation).
+/// Deterministic and oracle-reproducible; classic Perlin permutation.
 public enum WPEParticleCurlNoise {
     // Perlin's reference permutation, doubled so index math never wraps.
     private static let perm: [Int] = {

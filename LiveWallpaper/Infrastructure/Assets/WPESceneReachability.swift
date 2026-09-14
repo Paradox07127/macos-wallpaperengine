@@ -2,11 +2,8 @@
 import Foundation
 import LiveWallpaperCore
 
-/// Workshop IDs still reachable (applied, bookmarked, or recent) — GC/reclaim keep-set.
 @MainActor
 enum WPESceneReachability {
-    /// Workshop ids referenced by any applied screen config, saved bookmark, or
-    /// recent import — plus all of their declared dependencies.
     static func referencedWorkshopIDs() -> Set<String> {
         var ids: Set<String> = []
 

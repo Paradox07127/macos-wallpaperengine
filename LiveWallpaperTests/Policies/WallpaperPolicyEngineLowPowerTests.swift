@@ -3,11 +3,6 @@ import LiveWallpaperCore
 import Testing
 @testable import LiveWallpaper
 
-/// macOS Low Power Mode used to suspend wallpapers through
-/// `GameModeDetector.evaluate(lowPowerMode:classification:)`, which returned
-/// `lowPowerMode || classification == .game`. Deleting game detection took the
-/// Low Power Mode term with it. These pin the restored behaviour so it cannot
-/// be dropped as collateral again.
 @Suite("WallpaperPolicyEngine low power mode")
 struct WallpaperPolicyEngineLowPowerTests {
 
@@ -41,8 +36,6 @@ struct WallpaperPolicyEngineLowPowerTests {
         #expect(profile == .quality)
     }
 
-    /// Low Power Mode is discretionary, exactly as the game/LPM term was: a
-    /// `.neverPause` app keeps playing, but a safety suspend still wins.
     @Test("A neverPause app vetoes the Low Power Mode suspend")
     func neverPauseVetoesLowPower() {
         let settings = GlobalSettings(pauseInLowPowerMode: true)

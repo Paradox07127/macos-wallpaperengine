@@ -14,10 +14,8 @@ import simd
 private let presentDrawableMissCount = OSAllocatedUnfairLock(initialState: 0)
 
 extension WPEMetalRenderExecutor {
-    /// Encode present into the continuous path's scene command buffer.
     typealias DeferredPresentEncoder = (MTLTexture, MTLCommandBuffer) throws -> Bool
 
-    // Not `@MainActor`: present runs on `WPEDisplayRenderActor`.
     /// Own command buffer: static re-present and sync/readback.
     func present(
         texture source: MTLTexture,
@@ -45,10 +43,7 @@ extension WPEMetalRenderExecutor {
         return true
     }
 
-    /// `worldSourceSize`: the WORLD canvas the source represents when render scaling
-    /// shrank it. Only `.center` consumes it — centering the reduced texture would
-    /// otherwise shrink the picture on screen by the pixel scale; the world size restores
-    /// the authored footprint (the quad upscales bilinearly). Aspect-driven modes are resolution-independent and ignore it.
+    /// `worldSourceSize`: the WORLD canvas the source represents when render scaling shrank it. Only `.center` consumes it — centering the reduced texture would otherwise shrink the picture on screen by the pixel scale.
     func encodePresent(
         texture source: MTLTexture,
         layer: CAMetalLayer,
@@ -57,9 +52,7 @@ extension WPEMetalRenderExecutor {
         presentCompletion: (@Sendable (MTLTexture, MTLCommandBuffer, @escaping @Sendable () -> Void) -> Void)?,
         into commandBuffer: MTLCommandBuffer
     ) throws -> Bool {
-        // Pull the drawable straight from the layer. The MTKView host is paused
-        // (a CADisplayLink on the render thread paces frames), so nothing else
-        // acquires `currentDrawable` — no double-acquire.
+        // Pull the drawable straight from the layer. The MTKView host is paused (a CADisplayLink on the render thread paces frames), so nothing else acquires `currentDrawable` — no double-acquire.
         #if DEBUG
         let forceDrawableMiss = remainingForcedDrawableMissesForTesting > 0
         if forceDrawableMiss {
@@ -69,9 +62,7 @@ extension WPEMetalRenderExecutor {
         let forceDrawableMiss = false
         #endif
         guard !forceDrawableMiss, let drawable = layer.nextDrawable() else {
-            // A dropped frame, not an error — but a sustained run means drawable
-            // starvation, so keep it visible in Release: first 5 misses, then
-            // every 300th (~one line per 10 s at 30 fps).
+            // A dropped frame, not an error — but a sustained run means drawable starvation, so keep it visible in Release: first 5 misses, then every 300th.
             let missCount = presentDrawableMissCount.withLock { count -> Int in
                 count += 1
                 return count
@@ -98,18 +89,11 @@ extension WPEMetalRenderExecutor {
             )
         }
         if !encodedByUpscaler {
-            // The plan sized this frame down expecting the scaler to restore it. It declined
-            // anyway (a fit-mode change after load, a drawable usage shortfall, or a scaler
-            // the device claimed to support and then refused), so the resolution was spent
-            // for nothing. Give up scaling for the rest of the scene rather than shipping a permanently bilinear-stretched low-resolution frame.
+            // The plan sized this frame down expecting the scaler to restore it. It declined, so give up scaling for the rest of the scene rather than shipping a permanently bilinear-stretched low-resolution frame.
             if upscalePlan.isActive,
                upscalePlan.declineIsConclusive(forDrawableSize: lastPresentedDrawableSize) {
                 upscalePlan = upscalePlan.demotedToNative()
-                // Every pixel-keyed resource is stale now, exactly as on a render-scale
-                // change. `previousFrameHistory` is the dangerous one: it's validated against
-                // the WORLD size, unchanged here, so its old smaller textures would keep being
-                // served to `.previous` — and `copyTexture` sizes the blit from the
-                // DESTINATION, a validation error once the destination grows. The renderer drains this after the frame commits.
+                // `previousFrameHistory` is validated against the WORLD size, unchanged here, so its old smaller textures would keep being served to `.previous` — and `copyTexture` sizes the blit from the DESTINATION, a validation error once the destination grows.
                 notePresentSideDemotion()
                 Logger.notice(
                     "[metalfx] scaler declined a planned frame — rendering native for this scene "
@@ -128,9 +112,7 @@ extension WPEMetalRenderExecutor {
         }
 
         commandBuffer.present(drawable)
-        // The present buffer reads `source` asynchronously; refcount it so the
-        // output ring doesn't hand the texture to the next frame's render
-        // while this GPU read is still in flight.
+        // The present buffer reads `source` asynchronously; refcount it so the output ring doesn't hand the texture to the next frame's render while this GPU read is still in flight.
         let sourceID = ObjectIdentifier(source)
         let completionSource = PresentCompletionTexture(texture: source)
         let tracker = presentTracker
@@ -152,7 +134,6 @@ extension WPEMetalRenderExecutor {
         return true
     }
 
-    /// Fullscreen present blit; also the MetalFX fallback.
     private func encodePresentPass(
         source: MTLTexture,
         drawable: CAMetalDrawable,
@@ -170,9 +151,7 @@ extension WPEMetalRenderExecutor {
             vertexName: "wpe_present_vertex",
             fragmentName: "wpe_present_fragment",
             blendMode: "disabled",
-            // The wallpaper window is transparent, but its wallpaper content is
-            // terminal and opaque. The fragment writes alpha=1 explicitly; do
-            // not encode that contract indirectly through a color write mask.
+            // The wallpaper window is transparent, but its wallpaper content is terminal and opaque. The fragment writes alpha=1 explicitly; do not encode that contract indirectly through a color write mask.
             alphaWritePolicy: .all,
             colorPixelFormat: drawable.texture.pixelFormat
         )
@@ -184,9 +163,6 @@ extension WPEMetalRenderExecutor {
         WPEFrameOccupancyMeter.count(.presentEncoder)
         encoder.setRenderPipelineState(copyState)
         encoder.setFragmentTexture(source, index: 0)
-        // Fit the scene texture's aspect to the drawable. Stretch reproduces the
-        // legacy full-bleed; Fit/Fill preserve aspect (letterbox / crop) so
-        // non-16:9 displays don't distort the scene.
         var presentUniforms = WPEPresentUniforms.make(
             fitMode: fitMode,
             sourceWidth: worldSourceSize.map { Int($0.width) } ?? source.width,
@@ -208,11 +184,7 @@ extension WPEMetalRenderExecutor {
         }
     }
 
-    /// WPE HDR bloom pyramid (RenderDoc-verified on 3509243656): prefilter (soft-knee
-    /// threshold + strength/17 + tint) into a half-res chain, 4-tap box downsamples,
-    /// scatter-weighted SRC_ALPHA/ONE upsamples, additive composite onto the scene. HDR
-    /// scenes (`general.hdr`) render to rgba16Float (`currentOutputPixelFormat` + FBO
-    /// promotion) so the prefilter sees real >1 overbright (every RT in the 3509243656 trace is format 115); `hdr:false` scenes clamp at their 8-bit write, matching WPE's LDR chain.
+    /// WPE HDR bloom pyramid: prefilter (soft-knee threshold + strength/17 + tint) into a half-res chain, 4-tap box downsamples, scatter-weighted SRC_ALPHA/ONE upsamples, additive composite. HDR scenes render to rgba16Float so the prefilter sees real >1 overbright; `hdr:false` scenes clamp at 8-bit.
     func encodeSceneBloomIfNeeded(
         cameraUniforms: WPEMetalCameraUniforms,
         output: MTLTexture,
@@ -244,11 +216,7 @@ extension WPEMetalRenderExecutor {
         ) throws {
             let descriptor = MTLRenderPassDescriptor()
             descriptor.colorAttachments[0].texture = destination
-            // "disabled" = the prefilter/downsample passes fully overwrite the target
-            // (blending off, see applyBlendMode), so their prior content can be discarded.
-            // Was "normal", which fell through applyBlendMode to straight-alpha blend and
-            // read this .dontCare (undefined) destination whenever a source pixel had
-            // alpha < 1 — inert only because the bloom shaders hardcode alpha = 1.
+            // "disabled" = the prefilter/downsample passes fully overwrite the target (blending off), so prior content can be discarded. "normal" would fall through to straight-alpha blend and read this `.dontCare` destination whenever a source pixel had alpha < 1.
             descriptor.colorAttachments[0].loadAction = blendMode == "disabled" ? .dontCare : .load
             descriptor.colorAttachments[0].storeAction = .store
             gpuPassProfiler?.attach(descriptor, to: commandBuffer, label: "bloom|\(fragment)")
@@ -402,10 +370,7 @@ extension WPEMetalRenderExecutor {
 
 extension WPEMetalRenderExecutor {
 
-    /// Applies Wallpaper Engine's per-wallpaper colour correction to a finished frame,
-    /// returning the texture to present. Returns `output` untouched when the correction is
-    /// an identity — the common case, since only a preset that adjusted the sliders carries
-    /// a non-neutral one, and a full-frame 4K pass that provably changes nothing isn't worth its bandwidth.
+    /// Returns `output` untouched when the correction is an identity — a full-frame 4K pass that provably changes nothing isn't worth its bandwidth.
     func encodeColorCorrectionIfNeeded(
         _ correction: WPEEngineColorCorrection,
         output: MTLTexture,
@@ -413,10 +378,7 @@ extension WPEMetalRenderExecutor {
     ) throws -> MTLTexture {
         guard !correction.isIdentity else { return output }
 
-        // From the output pool, not a texture of its own: this one *is* the frame once it's
-        // returned, so it obeys the same reuse rules — `makeOutputTexture` refuses to recycle
-        // anything still in flight or held as history. A private, permanently-reused scratch
-        // texture once let a later frame overwrite one a detached poster readback was still reading, and never came back on reload.
+        // From the output pool, not a texture of its own: this one *is* the frame once returned, so it obeys the same reuse rules. A private permanently-reused scratch once let a later frame overwrite one a detached poster readback was still reading.
         let destination = try makeOutputTexture(
             size: CGSize(width: output.width, height: output.height)
         )

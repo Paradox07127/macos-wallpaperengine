@@ -35,8 +35,7 @@ final class NowPlayingWidgetLayoutTests: XCTestCase {
         MonitorNowPlayingState(phase: .playing, title: "Untitled Stream")
     }
 
-    /// Options default to "user wants everything", so every expectation below
-    /// still reads as a statement about the fields the player sent.
+    /// Options default to "user wants everything".
     private func resolve(
         _ state: MonitorNowPlayingState?,
         _ size: MusicOverlaySize,
@@ -59,8 +58,6 @@ final class NowPlayingWidgetLayoutTests: XCTestCase {
 
     // MARK: Lyrics
 
-    /// Same AND rule as every other component, plus a size floor: the small
-    /// tile has no room for a line of text under the title.
     func testLyricsNeedBothTheDataAndTheSwitch() {
         var wanted = NowPlayingOptions()
         wanted.showLyrics = true
@@ -91,7 +88,6 @@ final class NowPlayingWidgetLayoutTests: XCTestCase {
             }
         }
 
-        // A paused track still shows its words; only the tile dims.
         var paused = fullState()
         paused.phase = .paused
         XCTAssertTrue(
@@ -106,7 +102,6 @@ final class NowPlayingWidgetLayoutTests: XCTestCase {
         XCTAssertEqual(Layout.lyricsLineCount(for: .medium, options: options), 1)
         XCTAssertEqual(Layout.lyricsLineCount(for: .small, options: options), 0)
 
-        // The row-count option only reaches the large tile.
         options.lyricsLines = 1
         XCTAssertEqual(Layout.lyricsLineCount(for: .large, options: options), 1)
         XCTAssertEqual(Layout.lyricsLineCount(for: .medium, options: options), 1)
@@ -144,7 +139,6 @@ final class NowPlayingWidgetLayoutTests: XCTestCase {
         }
     }
 
-    /// No position → no progress anywhere; total length only where the style keeps it.
     func testDurationWithoutPositionMatrix() {
         let state = durationOnlyState()
         let expected: [Style: [MusicOverlaySize: Set<Component>]] = [
@@ -173,7 +167,6 @@ final class NowPlayingWidgetLayoutTests: XCTestCase {
         }
     }
 
-    /// Title-only extreme: nothing optional leaks into any style at any size.
     func testTitleOnlyMatrix() {
         let state = titleOnlyState()
         let expected: [Style: Set<Component>] = [
@@ -268,8 +261,6 @@ final class NowPlayingWidgetLayoutTests: XCTestCase {
 
     // MARK: Visibility is data AND user intent
 
-    /// All four quadrants of the AND rule, for every optional component that
-    /// has a switch. Neither half alone puts anything on screen.
     func testVisibilityIsDataAndUserIntent() {
         let cases: [(Component, Style, WritableKeyPath<NowPlayingOptions, Bool>)] = [
             (.artworkThumb, .poster, \.showArtwork),
@@ -286,17 +277,14 @@ final class NowPlayingWidgetLayoutTests: XCTestCase {
             var off = NowPlayingOptions()
             off[keyPath: switchPath] = false
 
-            // data ✓ switch ✓
             XCTAssertTrue(
                 resolve(fullState(), .large, style, options: on).visible.contains(component),
                 "\(component) in \(style) with the field present and the switch on"
             )
-            // data ✓ switch ✗
             XCTAssertFalse(
                 resolve(fullState(), .large, style, options: off).visible.contains(component),
                 "\(component) in \(style) survived its switch being off"
             )
-            // data ✗ switch ✓ — and ✗/✗
             let bare = titleOnlyState()
             XCTAssertFalse(
                 resolve(bare, .large, style, options: on).visible.contains(component),
@@ -309,8 +297,6 @@ final class NowPlayingWidgetLayoutTests: XCTestCase {
         }
     }
 
-    /// Poster's readout is elapsed/total, so it goes with the progress switch;
-    /// vinyl's is the total length alone and stays.
     func testProgressSwitchTakesPosterTimeTextButNotVinylDuration() {
         var off = NowPlayingOptions()
         off.showProgress = false
@@ -324,8 +310,6 @@ final class NowPlayingWidgetLayoutTests: XCTestCase {
         XCTAssertFalse(vinyl.visible.contains(.progress))
     }
 
-    /// The platter is the vinyl style itself, not the cover: hiding artwork
-    /// leaves the record spinning with a plain label.
     func testHidingArtworkKeepsTheVinylPlatter() {
         var off = NowPlayingOptions()
         off.showArtwork = false
@@ -358,7 +342,6 @@ final class NowPlayingWidgetLayoutTests: XCTestCase {
 
     // MARK: Transport controls — data AND user intent AND the pointer
 
-    /// Three terms, and every one of them can veto on its own.
     func testControlsNeedTheTableTheSwitchAndThePointer() {
         var off = NowPlayingOptions()
         off.showControls = false
@@ -387,11 +370,6 @@ final class NowPlayingWidgetLayoutTests: XCTestCase {
         }
     }
 
-    /// Paused is exactly when the play button matters most.
-    /// The transport row must occupy the same space whether or not the pointer
-    /// is over the tile. Gating its *layout* on hover made arriving with the
-    /// pointer reflow the stack, which slid the button out from under the
-    /// click that was aiming at it.
     func testControlsReserveTheirSpaceRegardlessOfHover() {
         for style in Style.allCases {
             let hovered = resolve(fullState(), .large, style, canControl: true, hovering: true)
@@ -406,8 +384,6 @@ final class NowPlayingWidgetLayoutTests: XCTestCase {
         }
     }
 
-    /// The three cases that genuinely have no row: no permission, switch off,
-    /// edit mode. Those may collapse it — nothing can be clicked there anyway.
     func testControlsClaimNoSpaceWhenTheyCanNeverAppear() {
         var off = NowPlayingOptions()
         off.showControls = false
@@ -440,9 +416,6 @@ final class NowPlayingWidgetLayoutTests: XCTestCase {
         }
     }
 
-    /// While arranging the board a click means "grab this layer"; the board's
-    /// drag gesture runs alongside subview gestures, so a live button under the
-    /// pointer would fire mid-drag.
     func testEditModeHasNoControlsAndNoScrub() {
         let layout = resolve(
             fullState(), .large, .poster, isEditing: true, canControl: true, hovering: true
@@ -459,7 +432,6 @@ final class NowPlayingWidgetLayoutTests: XCTestCase {
 
     // MARK: Scrub
 
-    /// Every term of the seek rule, one veto at a time.
     func testSeekableNeedsProgressIntentControlAndDuration() {
         XCTAssertTrue(resolve(fullState(), .large, .poster, canControl: true).seekable)
 
@@ -478,8 +450,6 @@ final class NowPlayingWidgetLayoutTests: XCTestCase {
             "a player we cannot drive offered a scrub"
         )
 
-        // Apple Music's shape: a duration but no position, so no progress line
-        // and nothing to scrub — and the player-agnostic reason is the field.
         XCTAssertFalse(resolve(durationOnlyState(), .large, .poster, canControl: true).seekable)
 
         var noDuration = fullState()
@@ -490,8 +460,6 @@ final class NowPlayingWidgetLayoutTests: XCTestCase {
         )
     }
 
-    /// Vinyl draws progress as a ring around a spinning platter, which is a
-    /// readout rather than a scrub target.
     func testOnlyTheLinearStylesAreSeekable() {
         XCTAssertTrue(resolve(fullState(), .large, .poster, canControl: true).seekable)
         XCTAssertTrue(resolve(fullState(), .large, .aurora, canControl: true).seekable)
@@ -629,9 +597,6 @@ final class NowPlayingWidgetLayoutTests: XCTestCase {
         )
     }
 
-    /// Throttled means the identical seek is already on its way, so the position
-    /// the user asked for is the truth — clearing the draft snapped the playhead
-    /// back to where it was before the drag.
     func testThrottledSeekKeepsTheDraft() {
         XCTAssertEqual(
             outcome(.throttled),
@@ -646,8 +611,6 @@ final class NowPlayingWidgetLayoutTests: XCTestCase {
         XCTAssertEqual(outcome(.unsupportedPlayer), .discard)
     }
 
-    /// A seek that lands after the track changed must never write track A's
-    /// optimistic position onto track B — in either direction.
     func testSeekLandingOnAnotherTrackIsIgnored() {
         XCTAssertEqual(outcome(nil, current: "track-b"), .ignore)
         XCTAssertEqual(outcome(.throttled, current: "track-b"), .ignore)

@@ -47,7 +47,7 @@ private enum Fixture {
         "Total Time": 182000,
     ] }
 
-    /// Observed single-key frames: bare `Player State`, no metadata.
+    /// Single-key frames: bare `Player State`, no metadata.
     static var musicPausedSingleKey: [AnyHashable: Any] { ["Player State": "Paused"] }
     static var musicStoppedSingleKey: [AnyHashable: Any] { ["Player State": "Stopped"] }
 }
@@ -91,8 +91,6 @@ private actor Gate {
     }
 }
 
-/// Records like the plain sink, but parks one named frame inside the sink call
-/// so a later frame can overtake it — the interleaving `push` has to survive.
 private actor GatedNowPlayingSink: MonitorSnapshotSink {
     let box = NowPlayingStateBox()
     private let gate: Gate
@@ -135,8 +133,8 @@ private func offlineFetcher() -> NowPlayingArtworkFetcher {
     NowPlayingArtworkFetcher(transport: { _ in throw URLError(.notConnectedToInternet) })
 }
 
-/// Polls until the condition holds. Suspending the main actor lets the host
-/// app's main run loop spin, which is what delivers DNC notifications.
+/// Suspending the main actor lets the host app's main run loop spin, which is
+/// what delivers DNC notifications.
 @MainActor
 private func waitUntil(
     timeout: TimeInterval = 5,
@@ -250,7 +248,6 @@ struct NowPlayingMappingTests {
         )
         #expect(monitor.currentState.phase == .noPlayer)
 
-        // String duration/position fail the number cast; the rest maps.
         monitor.ingest(
             name: Fixture.spotifyName,
             userInfo: [
@@ -287,8 +284,8 @@ struct NowPlayingMappingTests {
         #expect(box.count == 1)
     }
 
-    // Invariant 10: the registration list is derived from the mapping table, so
-    // asserting the table pins what gets subscribed.
+    /// The registration list is derived from the mapping table, so asserting the
+    /// table pins what gets subscribed.
     @Test("Subscribed notification names exclude the duplicate iTunes alias")
     func subscribedNamesExcludeITunesAlias() {
         let names = NowPlayingMonitor.mappings.map(\.notificationName)
@@ -378,7 +375,6 @@ struct NowPlayingArbitrationTests {
         monitor.playerDidTerminate(bundleID: "com.apple.Music")
         #expect(monitor.currentState.phase == .noPlayer)
 
-        // Unknown bundle IDs are ignored without touching state.
         monitor.playerDidTerminate(bundleID: "com.example.other")
         #expect(monitor.currentState.phase == .noPlayer)
     }
@@ -405,10 +401,6 @@ struct NowPlayingArbitrationTests {
 @Suite("Now Playing source")
 struct NowPlayingSourceTests {
 
-    /// Music's notification has never carried a playhead, so the layer drew no
-    /// progress for it at all — while `sdef /System/Applications/Music.app`
-    /// has always listed `player position`. The source polls for exactly the
-    /// players whose mapping lacks a position key.
     @MainActor
     @Test("a player whose notification omits the position gets it polled in")
     func polledPositionReachesTheSink() async {
@@ -429,8 +421,6 @@ struct NowPlayingSourceTests {
         await source.stop()
     }
 
-    /// Spotify already puts the playhead in every frame; asking again would
-    /// spend an Apple Event to be told what we were just told.
     @MainActor
     @Test("a player that already reports its position is never polled")
     func selfReportingPlayerIsNotPolled() async {
@@ -457,8 +447,6 @@ struct NowPlayingSourceTests {
         await source.stop()
     }
 
-    /// Music re-sends full metadata on a bare pause, which rebuilt the state
-    /// from the notification and blanked the polled playhead every time.
     @MainActor
     @Test("a polled playhead survives the next notification for the same track")
     func polledPositionSurvivesRepublish() async {
@@ -481,9 +469,6 @@ struct NowPlayingSourceTests {
         await source.stop()
     }
 
-    /// Skipping to the next song inside one player keeps the same bundle ID, so
-    /// a loop keyed on the player alone never restarted: no leading tick, and a
-    /// reply already in flight for the previous song landed on the new one.
     @MainActor
     @Test("changing track restarts the poll and re-anchors immediately")
     func trackChangeRestartsPolling() async {
@@ -514,8 +499,6 @@ struct NowPlayingSourceTests {
         await source.stop()
     }
 
-    /// The carried playhead is keyed on the track, not the title: two songs can
-    /// share a name, and inheriting the old offset is worse than none.
     @MainActor
     @Test("a new track does not inherit the previous track's playhead")
     func newTrackDoesNotInheritPosition() async {
@@ -602,8 +585,6 @@ struct NowPlayingSourceTests {
         #expect(sink.box.count == countAtStop)
     }
 
-    /// Invariant 1, behavioral half: the monitor keeps accruing state with zero
-    /// live sources, and the next source's start replays it with no resume gap.
     @MainActor
     @Test("state accrued while no source exists replays into the next source")
     func stateAccruesAcrossSourceLifetimes() async {
@@ -620,7 +601,6 @@ struct NowPlayingSourceTests {
 
         await source1.stop()
 
-        // Track change with zero live sources — the pause/occlusion window.
         monitor.ingest(
             name: Fixture.spotifyName,
             userInfo: ["Name": "Residency Song B", "Player State": "Playing"]
@@ -634,12 +614,8 @@ struct NowPlayingSourceTests {
         await source2.stop()
     }
 
-    /// Invariant 1, registration half. An in-process DNC post does not deliver
-    /// under the sandboxed test host (probed 2026-08-20: delivered=0 even with
-    /// `deliverImmediately`), so the wiring is pinned as a source contract:
-    /// the observer is registered once in the monitor's init with
-    /// `.deliverImmediately`, and nothing on the source's lifecycle path can
-    /// unregister it.
+    /// An in-process DNC post does not deliver under the sandboxed test host, so
+    /// the observer wiring is pinned by reading the source instead.
     @Test("the DNC observer lives in monitor init and the source cannot remove it")
     func observerRegistrationSourceContract() throws {
         let monitor = try RepositoryRoot.source(
@@ -648,9 +624,6 @@ struct NowPlayingSourceTests {
         let initSlice = try slice(monitor, from: "init(", until: "deinit")
         #expect(initSlice.contains("addObserver("))
         #expect(initSlice.contains("suspensionBehavior: .deliverImmediately"))
-        // The only unregistration is deinit hygiene for test instances; the
-        // shared instance never deallocates. Every removeObserver in the file
-        // must live inside the deinit slice — none on any runtime path.
         let deinitSlice = try slice(monitor, from: "deinit", until: "@objc private func handleNotification")
         let total = monitor.components(separatedBy: "removeObserver").count - 1
         let inDeinit = deinitSlice.components(separatedBy: "removeObserver").count - 1
@@ -664,9 +637,6 @@ struct NowPlayingSourceTests {
         #expect(!source.contains("removeObserver"))
     }
 
-    /// A failed artwork fetch used to leave its per-track token set forever, so
-    /// the source never asked again for that track — not even long after the
-    /// fetcher's own negative cache had expired and a retry would have worked.
     @MainActor
     @Test("a failed artwork fetch is retried once the fetcher's negative cache expires")
     func failedArtworkIsRetriedAfterTTL() async {
@@ -690,8 +660,6 @@ struct NowPlayingSourceTests {
         _ = await waitUntil(timeout: 0.4) { false }
         let firstRound = requests.count
 
-        // Same track, fresh frame, still inside the fetcher's negative TTL: the
-        // fetcher answers from its own cache without a request.
         clock.advance(NowPlayingArtworkFetcher.negativeTTL - 1)
         monitor.ingest(name: Fixture.spotifyName, userInfo: Fixture.spotifyPaused)
         #expect(await waitUntil { sink.box.count >= 3 })
@@ -707,9 +675,6 @@ struct NowPlayingSourceTests {
         await source.stop()
     }
 
-    /// The push path suspends on the artwork cache and on the sink. A frame that
-    /// resumes after a newer one has already published must not write anything —
-    /// re-driving audio demand from its stale phase was the observable damage.
     @MainActor
     @Test("a frame that resumes after a newer one published writes nothing")
     func staleFrameDoesNotOverwriteNewerState() async {
@@ -724,14 +689,12 @@ struct NowPlayingSourceTests {
         )
         await source.start(sink: sink)
 
-        // A is paused and gets stuck inside the sink.
         monitor.ingest(
             name: Fixture.spotifyName,
             userInfo: ["Name": "Stale A", "Player State": "Paused"]
         )
         #expect(await waitUntil { sink.box.titles.contains("Stale A") })
 
-        // B is playing and publishes while A is still suspended.
         monitor.ingest(
             name: Fixture.spotifyName,
             userInfo: ["Name": "Fresh B", "Player State": "Playing"]
@@ -766,7 +729,6 @@ struct NowPlayingDemandGraphTests {
         let runtime = makeRuntime()
         let controller = OverlayController(runtime: runtime)
         controller.apply(
-            // The source follows the Music switch; the board is off entirely.
             overlay: MonitorOverlayConfiguration(
                 enabled: false, level: .front,
                 music: MusicOverlayConfiguration(enabled: true, level: .front)
@@ -776,8 +738,6 @@ struct NowPlayingDemandGraphTests {
         )
         await controller.waitUntilRuntimeSettled()
 
-        // agents stays false here, so this also proves the factory lives
-        // outside the agents guard.
         #expect(await runtime.debugActiveSourceIDs == ["nowPlaying"])
         #expect(await runtime.debugActiveOptions?.system == false)
         #expect(await runtime.debugActiveOptions?.agents == false)
@@ -853,8 +813,8 @@ struct NowPlayingAudioDemandTests {
         monitor.ingest(name: Fixture.spotifyName, userInfo: Fixture.spotifyPlaying)
         #expect(await waitUntil { counter.held == 1 })
 
-        // Repeated playing frames must not stack extra retains: wait for the
-        // frame to land at the sink, then check no second transition happened.
+        // Wait for the frame to land at the sink before checking that no second
+        // transition happened.
         let published = sink.box.count
         monitor.ingest(name: Fixture.spotifyName, userInfo: Fixture.spotifyPlaying)
         #expect(await waitUntil { sink.box.count > published })
@@ -867,13 +827,10 @@ struct NowPlayingAudioDemandTests {
         monitor.ingest(name: Fixture.spotifyName, userInfo: Fixture.spotifyPlaying)
         #expect(await waitUntil { counter.held == 1 })
 
-        // stop() must balance the outstanding retain even mid-playback.
         await source.stop()
         #expect(await waitUntil { counter.held == 0 })
     }
 
-    /// The layer can show the track without reacting to the audio, and in that
-    /// mode the tap and its FFT are pure battery cost with no reader.
     @MainActor
     @Test("a layer with the reactive effects off never retains the capture tap")
     func noDemandWhenEffectsAreOff() async {
@@ -899,11 +856,6 @@ struct NowPlayingAudioDemandTests {
 
 // MARK: - Cold-launch AppleScript seed
 
-/// DNC only pushes on change, so a launch while a song is already playing left
-/// the monitor blind until the next track — on a media wallpaper that read as
-/// "the song only renders after the scene reloads". The seed is one
-/// AppleScript read per running player, applied only where a notification has
-/// not already answered.
 @Suite("Now Playing launch seed")
 struct NowPlayingLaunchSeedTests {
     @MainActor

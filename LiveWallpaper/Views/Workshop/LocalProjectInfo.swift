@@ -2,8 +2,7 @@
 import Foundation
 import LiveWallpaperCore
 
-/// WPE fields surfaced in the Installed inspector, read from the item's bundled
-/// `project.json`. Purely local — never spends a Steam Web API request.
+/// Read from the item's bundled `project.json` — never spends a Steam Web API request.
 struct LocalProjectInfo: Sendable, Equatable {
     var cleanedDescription: String?
     var tags: [String]
@@ -23,7 +22,6 @@ private struct WPEProjectDisplayManifest: Decodable {
     let contentrating: String?
 }
 
-/// Resolve the item's security-scoped folder and decode its `project.json` off the main actor.
 func loadWPELocalProjectInfo(for entry: WPEHistoryEntry) async -> LocalProjectInfo? {
     let bookmark = entry.origin.sourceFolderBookmark
     let knownSize = entry.sizeBytes
@@ -65,8 +63,7 @@ func loadWPELocalProjectInfo(for entry: WPEHistoryEntry) async -> LocalProjectIn
     return outcome.info
 }
 
-/// Recursively sum every regular file under `folder`. Reads only file metadata
-/// (no content), so it's cheap even for large scenes.
+/// Reads only file metadata (no content), so it's cheap even for large scenes.
 func directorySize(of folder: URL) -> Int64 {
     let keys: Set<URLResourceKey> = [.isRegularFileKey, .totalFileAllocatedSizeKey, .fileSizeKey]
     // `enumerator(at:)` yields nothing when the root itself is a symlink.

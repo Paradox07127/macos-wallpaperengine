@@ -4,9 +4,8 @@ import Testing
 @Suite("Card badge settings")
 struct CardBadgeSettingsTests {
 
-    /// These strings are persisted in UserDefaults. Editing one silently resets
-    /// every user's choice for that badge back to the default, with no migration
-    /// and no error — so they are pinned here rather than left to a rename.
+    /// These strings are persisted in UserDefaults: renaming one silently resets
+    /// every user's choice for that badge, with no migration and no error.
     @Test("Defaults keys are stable and distinct")
     func defaultsKeysAreStableAndDistinct() {
         let keys = [

@@ -4,42 +4,27 @@ import MetalKit
 import os
 import QuartzCore
 
-/// Owns the AppKit-bound Metal surface and pointer publishing on the main actor.
-/// The renderer controls it through a narrow surface protocol and is held weakly to avoid a cycle.
 @MainActor
 final class WPERenderSurface: NSObject, MTKViewDelegate {
     let mtkView: WPEInteractiveMTKView
     let mailbox: WPEPointerMailbox
-    /// The view's backing `CAMetalLayer`, extracted once. Handed to the renderer
-    /// as its present/drawable source so the renderer never reads the view.
     let metalLayer: CAMetalLayer
 
     private let publisher: WPEPointerPublisher
-    /// Written synchronously (caller order) by the nonisolated pacing seam;
-    /// main-thread deliveries apply this latest value, not their captured one.
+    /// Written synchronously (caller order); main-thread deliveries apply this latest value, not their captured one.
     private let desiredPointerEventsEnabled = OSAllocatedUnfairLock<Bool?>(initialState: nil)
-    /// Strongly held delivery shim; the session owns the surface and the shim targets the render actor.
     private var client: WPERenderSurfaceClient?
 
     // MARK: - Display-link Frame Driver
-    //
-    // In `.renderThread` mode the surface stops being the pacing source (MTKView stays
-    // paused) and instead owns the per-display `CADisplayLink`'s main-thread lifecycle
-    // (create for the current screen, rebuild on reconfiguration, invalidate at teardown).
-    // The link lives on the render thread (`WPEDisplayRenderActor`); the surface only orchestrates create/replace/stop from main. All three fields stay nil in `.main` mode.
     private weak var displayLinkActor: WPEDisplayRenderActor?
     private var displayLinkTarget: WPEDisplayLinkTarget?
     private var screenParamsObserver: NSObjectProtocol?
-    /// Serializes create/replace/terminal-stop handoffs and keeps the current
-    /// operation alive until the session drains it during cleanup.
     private var displayLinkLifecycleTask: Task<Void, Never>?
     private var displayLinkGeneration: UInt64 = 0
 
     init(frame: CGRect, device: MTLDevice) {
         let view = WPEInteractiveMTKView(frame: frame, device: device)
         view.wantsLayer = true
-        // View config lifted verbatim from the old renderer init — the initial
-        // pacing (paused, on-demand redraw, 30 FPS) the renderer expects.
         let hdrOutput = WPEDisplayHDROutput.shouldRequestHDROutput(
             settingEnabled: WPEDisplayHDROutput.isEnabled,
             hasCapableScreen: WPEDisplayHDROutput.hasEDRCapableScreen
@@ -53,8 +38,7 @@ final class WPERenderSurface: NSObject, MTKViewDelegate {
         guard let metalLayer = view.layer as? CAMetalLayer else {
             preconditionFailure("MTKView must be backed by a CAMetalLayer")
         }
-        // macOS defaults, pinned. MetalFX writes the drawable, so framebufferOnly
-        // is off while the experiment is on.
+        // MetalFX writes the drawable, so framebufferOnly is off while the experiment is on.
         metalLayer.maximumDrawableCount = 3
         metalLayer.framebufferOnly = !WPEMetalFXSpatialUpscaler.isExperimentEnabled
         WPEDisplayHDROutput.apply(to: metalLayer, hdrOutputEnabled: hdrOutput)
@@ -68,29 +52,20 @@ final class WPERenderSurface: NSObject, MTKViewDelegate {
         publisher.onPointerEnteredView = { [weak self] in
             self?.client?.renderAndPresentFrame()
         }
-        // The view latches click/pointer state on the main thread; forward each
-        // latch to the mailbox so the render path reads it without the view.
         view.onPointerFrameChange = { [mailbox] frame in
             mailbox.publishPointerFrame(frame)
         }
     }
 
-    /// The surface's backing-pixel size. NOT `metalLayer.drawableSize`: a
-    /// CAMetalLayer reports 0x0 until something calls `nextDrawable()` — entering
-    /// a window, layout and display all leave it at zero (verified in
-    /// `WPEMetalSurfaceGeometryTests`). An MTKView, by contrast, sizes itself
-    /// from its frame at construction.
+    /// NOT `metalLayer.drawableSize`: a CAMetalLayer reports 0x0 until `nextDrawable()` (see `WPEMetalSurfaceGeometryTests`).
     var backingDrawableSize: CGSize {
         let viewSize = mtkView.drawableSize
         if viewSize.width > 0, viewSize.height > 0 { return viewSize }
         return mtkView.convertToBacking(mtkView.bounds).size
     }
 
-    /// Wire the renderer and start feeding the mailbox. Idempotent publisher.
     func attach(client: WPERenderSurfaceClient) {
         let size = backingDrawableSize
-        // Fill in the layer so anything that reads it later — including our own
-        // present path before its first drawable — sees the real size.
         if size.width > 0, size.height > 0, metalLayer.drawableSize != size {
             metalLayer.drawableSize = size
         }
@@ -101,9 +76,6 @@ final class WPERenderSurface: NSObject, MTKViewDelegate {
 
     // MARK: - Display-link Driver Lifecycle
 
-    /// Stand up the CADisplayLink frame driver once the view is in a window (so it
-    /// has a screen). Called by the builder after `orderBack`. Also starts watching
-    /// for display reconfiguration so the link is rebuilt onto the current screen.
     func startDisplayLinkDriver(renderActor: WPEDisplayRenderActor) {
         displayLinkActor = renderActor
         displayLinkTarget = WPEDisplayLinkTarget(renderActor: renderActor)
@@ -117,9 +89,6 @@ final class WPERenderSurface: NSObject, MTKViewDelegate {
         }
     }
 
-    /// Create a link for the view's current screen and hand it to the render thread,
-    /// which replaces (and invalidates) any prior one. Called for the initial attach
-    /// and on every reconfiguration.
     private func buildDisplayLink() {
         guard let renderActor = displayLinkActor,
               let target = displayLinkTarget,
@@ -135,8 +104,6 @@ final class WPERenderSurface: NSObject, MTKViewDelegate {
         }
     }
 
-    /// Remove the reconfiguration observer and enqueue a terminal actor-owned
-    /// stop after every prior build. The returned task is the teardown barrier.
     @discardableResult
     func stopDisplayLinkDriver() -> Task<Void, Never>? {
         if let screenParamsObserver {
@@ -161,9 +128,6 @@ final class WPERenderSurface: NSObject, MTKViewDelegate {
     }
 
     // MARK: - Pacing (driven by the renderer, via `WPESurfaceControl`)
-    //
-    // Main-thread bodies. The renderer reaches them only through the nonisolated
-    // `WPESurfaceControl` seam below, which delivers each call to the main thread; kept private so every renderer call site goes through the seam, keeping access thread-safe.
 
     private func applyPacingOnMain(_ update: WPERenderPacingUpdate) {
         if let paused = update.isPaused { mtkView.isPaused = paused }
@@ -171,10 +135,7 @@ final class WPERenderSurface: NSObject, MTKViewDelegate {
         if let fps = update.preferredFramesPerSecond { mtkView.preferredFramesPerSecond = fps }
         if update.pointerEventsEnabled != nil,
            let latest = desiredPointerEventsEnabled.withLock({ $0 }) {
-            // Latest-wins: `deliver`'s unstructured Tasks are not FIFO, so a
-            // rapid suspend→resume pair could apply gates inverted. The seam
-            // writes the lock in caller order; every delivery applies the
-            // newest value, so out-of-order Tasks converge instead of sticking.
+            // Latest-wins: `deliver`'s unstructured Tasks are not FIFO, so a rapid suspend→resume pair could apply gates inverted.
             publisher.setMouseMonitoringEnabled(latest)
         }
     }
@@ -192,8 +153,6 @@ final class WPERenderSurface: NSObject, MTKViewDelegate {
         mailbox.setClickCaptureEnabled(enabled)
     }
 
-    /// Terminal teardown body — stop the event/geometry feed and break the
-    /// delegate link so no further `draw(in:)` reaches a torn-down renderer.
     private func detachOnMain() {
         stopDisplayLinkDriver()
         publisher.stop()
@@ -213,29 +172,13 @@ final class WPERenderSurface: NSObject, MTKViewDelegate {
         MainActor.assumeIsolated { [weak self] in
             guard let self else { return }
             self.client?.updateSurfaceGeometry(drawableSize: size)
-            // The view just gained/changed its window-relative geometry; refresh
-            // the mailbox so the first mailbox read after layout isn't `.none`.
+            // Refresh the mailbox so the first read after layout isn't `.none`.
             self.mailbox.publishGeometry(WPEPointerPublisher.geometry(of: self.mtkView))
         }
     }
 }
 
-/// True display-HDR output — the counterpart of WPE's "Ultra (Display HDR)" post-processing
-/// setting (WPE 2.0.97, 2022-01-27, shipped as experimental and off by default).
-///
-/// On: the present drawable becomes `rgba16Float` + extendedLinearDisplayP3 + EDR, so an HDR
-/// scene's >1 overbright — which already survives the whole offscreen chain, since
-/// `general.hdr` renders every FBO at `rgba16Float` — stops being clamped by the 8-bit
-/// drawable at present. Values past the display's headroom are tone mapped by the system.
-/// SDR scenes are unaffected in appearance (their values are <= 1); they only pay the wider
-/// drawable. Off: byte-for-byte the previous path.
-///
-/// The wallpaper window level does get EDR — measured with a 4-row control matrix, including
-/// a negative control, in `.notes/probes/2026-09-09-edr-wallpaper-level.md`.
-///
-/// Global rather than per-scene on purpose: `WPEPresentLayer`'s contract is that the main
-/// thread must not mutate the layer while the render actor is presenting, so the format is
-/// settled once at surface construction, before any frame exists.
+/// Format is settled once at surface construction: the main thread must not mutate the layer while the render actor is presenting.
 enum WPEDisplayHDROutput {
     /// `defaults write com.loomscreen.pro WPEMetalDisplayHDROutputEnabled -bool YES`
     static let defaultsKey = "WPEMetalDisplayHDROutputEnabled"
@@ -244,37 +187,22 @@ enum WPEDisplayHDROutput {
         UserDefaults.standard.object(forKey: defaultsKey) as? Bool ?? false
     }
 
-    /// Whether any attached display can actually show EDR. WPE gates its own
-    /// "Ultra (Display HDR)" option the same way — the option "will only appear when a
-    /// screen with HDR enabled is connected" (WPE 2.0.97 release notes) — and on an
-    /// all-SDR setup the switch would cost drawable bandwidth for no visible change.
-    ///
-    /// `maximumPotential…` is the display's capability and is stable; the sibling
-    /// `maximum…ExtendedDynamicRangeColorComponentValue` is NOT usable here — it tracks
-    /// current brightness rather than capability and reads 1.0 on an HDR display turned
-    /// up bright (measured 2026-09-09, `.notes/probes/2026-09-09-edr-wallpaper-level.md`).
+    /// `maximumPotential…` is capability and is stable; `maximum…ExtendedDynamicRangeColorComponentValue` tracks current brightness and is NOT usable here.
     @MainActor
     static var hasEDRCapableScreen: Bool {
         NSScreen.screens.contains { $0.maximumPotentialExtendedDynamicRangeColorComponentValue > 1 }
     }
 
-    /// Pure so it is testable without touching `UserDefaults.standard`.
     static func drawablePixelFormat(hdrOutputEnabled: Bool) -> MTLPixelFormat {
         hdrOutputEnabled ? .rgba16Float : WPEMetalRenderExecutor.outputPixelFormat
     }
 
-    /// The setting alone must not widen the drawable: on an all-SDR setup that pays float
-    /// bandwidth for output nothing can show. Split out from the call site so the two halves
-    /// are testable without an attached HDR display.
+    /// The setting alone must not widen the drawable: on an all-SDR setup that pays float bandwidth for output nothing can show.
     static func shouldRequestHDROutput(settingEnabled: Bool, hasCapableScreen: Bool) -> Bool {
         settingEnabled && hasCapableScreen
     }
 
-    /// Whether a drawable of this format actually carries HDR output. The upscale plan asks
-    /// THIS rather than the defaults key: the key can be on while the drawable stayed 8-bit
-    /// (no capable screen), and a plan that believed the key would size an HDR scene down
-    /// for a float-to-float scaler, then have the scaler refuse the 8-bit drawable at
-    /// present and demote the scene to native for the rest of its life.
+    /// Ask the drawable format, not the defaults key: the key can be on while the drawable stayed 8-bit, and a plan that believed the key would demote the scene to native for life.
     static func isHDROutput(drawablePixelFormat: MTLPixelFormat) -> Bool {
         drawablePixelFormat == .rgba16Float
     }
@@ -288,11 +216,9 @@ enum WPEDisplayHDROutput {
     }
 }
 
-/// Sendable handle to the wallpaper's present layer. `@unchecked Sendable` because
-/// `CAMetalLayer` isn't `Sendable`, yet `nextDrawable()`/present are documented safe off
-/// the main thread and the render actor is the layer's only present-time caller. Wrapping
-/// it lets the renderer hold the layer WITHOUT reaching the main-thread `WPERenderSurface`
-/// — the isolation pre-req for `sending` it into `WPEDisplayRenderActor`. Falsifiable: unsound if present ever races the surface's own main-thread layer mutations.
+/// `@unchecked Sendable` because `CAMetalLayer` isn't `Sendable`, yet `nextDrawable()`/present
+/// are documented safe off the main thread and the render actor is the layer's only present-time
+/// caller. Unsound if present ever races the surface's own main-thread layer mutations.
 struct WPEPresentLayer: @unchecked Sendable {
     let layer: CAMetalLayer
 }
@@ -303,24 +229,15 @@ struct WPERenderPacingUpdate: Sendable {
     var isPaused: Bool?
     var enableSetNeedsDisplay: Bool?
     var preferredFramesPerSecond: Int?
-    /// Gates the pointer publisher's NSEvent monitors (suspend + demand). Rides
-    /// the pacing update so it stays ordered with the pause state it mirrors.
     var pointerEventsEnabled: Bool?
 }
 
-/// What the surface calls back into (the renderer). Kept a protocol so the
-/// surface has no compile dependency on the concrete renderer type.
 @MainActor
 protocol WPERenderSurfaceClient: AnyObject {
     func renderAndPresentFrame()
     func updateSurfaceGeometry(drawableSize: CGSize)
 }
 
-/// The renderer-to-surface control seam. One method per main-thread entry
-/// the renderer drove synchronously before; every method is **non-blocking
-/// delivery** — callable from any thread, guaranteed to land on the main thread.
-/// `Sendable` because the renderer is no longer `@MainActor` — it lives in
-/// `WPEDisplayRenderActor` and holds `any WPESurfaceControl` across that boundary.
 protocol WPESurfaceControl: Sendable {
     func applyPacing(_ update: WPERenderPacingUpdate)
     func setNeedsRedraw()
@@ -358,9 +275,6 @@ extension WPERenderSurface: WPESurfaceControl {
         deliver { $0.setClickCaptureEnabledOnMain(enabled) }
     }
 
-    /// Non-blocking delivery to main: synchronous when the caller is already on
-    /// the main thread, otherwise a `@MainActor` `Task` — the render-actor path.
-    /// Never blocks the caller.
     private nonisolated func deliver(_ body: @escaping @MainActor (WPERenderSurface) -> Void) {
         if Thread.isMainThread {
             MainActor.assumeIsolated { body(self) }

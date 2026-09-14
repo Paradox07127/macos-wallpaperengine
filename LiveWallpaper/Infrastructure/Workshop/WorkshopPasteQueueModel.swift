@@ -4,7 +4,6 @@ import Combine
 import Foundation
 import Observation
 
-/// Owns Workshop paste parsing, metadata fetches, and row state.
 @MainActor
 @Observable
 final class WorkshopPasteQueueModel {
@@ -45,9 +44,6 @@ final class WorkshopPasteQueueModel {
     }
 
     private let metadataService: SteamWorkshopMetadataService
-    /// Single-row tasks (retry path), keyed by row id so `remove(rowID:)` can
-    /// cancel exactly one. Ingestion batches live in `batchFetchTasks` because
-    /// one task serves many rows.
     private var inflightFetches: [UUID: Task<Void, Never>] = [:]
     private var batchFetchTasks: [UUID: Task<Void, Never>] = [:]
 
@@ -59,10 +55,7 @@ final class WorkshopPasteQueueModel {
         self.metadataService = metadataService
     }
 
-    // No `deinit` cancellation: fetch tasks capture `[weak self]` and no-op
-    // once released, and a nonisolated `deinit` can't touch main-actor state
-    // under strict concurrency. `removeAll()` is the caller-driven escape
-    // hatch to shed in-flight work before a sheet disappears.
+    // No deinit cancellation: fetch tasks capture [weak self] and no-op once released; a nonisolated deinit cannot touch main-actor state.
 
     // MARK: - Public API
 
@@ -118,7 +111,6 @@ final class WorkshopPasteQueueModel {
         }
     }
 
-    /// Idempotent: cancels any existing in-flight task for the same row first.
     func retry(rowID: UUID) {
         guard let index = rows.firstIndex(where: { $0.id == rowID }),
               let id = rows[index].publishedFileID else { return }
@@ -140,7 +132,6 @@ final class WorkshopPasteQueueModel {
         rows.removeAll()
     }
 
-    /// Opens every valid row in the Steam client.
     func openAllInSteam() {
         for row in rows {
             guard let url = row.steamURL else { continue }
@@ -198,10 +189,7 @@ final class WorkshopPasteQueueModel {
 
     // MARK: - Private
 
-    /// One task per ingestion: chunks of ≤`metadataFetchBatchSize` ids run
-    /// sequentially, so a 200-link paste costs 4 POSTs instead of 200
-    /// concurrent ones. Row removal is tolerated mid-flight: `applyFetchResult`
-    /// drops results whose row is gone.
+    /// One task per ingestion: chunks of metadataFetchBatchSize ids run sequentially (200-link paste → 4 POSTs, not 200).
     private func scheduleBatchMetadataFetch(_ entries: [(rowID: UUID, publishedFileID: UInt64)]) {
         let batchTaskID = UUID()
         let task = Task { @MainActor [weak self] in

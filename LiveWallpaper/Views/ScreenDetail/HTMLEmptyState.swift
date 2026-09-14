@@ -2,18 +2,9 @@ import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
-/// The web wallpaper's "nothing picked yet" page.
-///
-/// Shares the `IllustratedEmptyState(.dropTarget)` skeleton with the video empty
-/// state next door, so switching wallpaper type does not switch layout language.
-/// URL is the dominant path and gets an address-bar-shaped field; local files are
-/// a secondary link plus the page-wide drop target `DetailView` already routes
-/// (`WallpaperImportRouter` → `.html`).
-///
-/// Both button slots are deliberately empty. The skeleton renders
-/// `icon → text → buttons → extra`, so putting "Choose Local File" in `secondary`
-/// would place the secondary path ABOVE the address bar, and a composite field
-/// cannot live inside the slot's `.borderedProminent` Button anyway.
+/// Both button slots are deliberately empty: the skeleton renders
+/// `icon → text → buttons → extra`, so "Choose Local File" in `secondary` would
+/// sit ABOVE the address bar, and a composite field cannot live in that Button.
 struct HTMLEmptyState: View {
     var screen: Screen
     var config: HTMLConfig
@@ -23,11 +14,9 @@ struct HTMLEmptyState: View {
     @State private var urlInput: String = ""
     @FocusState private var addressFieldFocused: Bool
 
-    /// Wide enough for a real URL without becoming a full-width form field —
-    /// the skeleton's own text column is 360, so the bar reads as the anchored
-    /// base of the composition rather than another paragraph.
+    /// 420 against the skeleton's own 360pt text column, so the bar reads as the
+    /// anchored base rather than another paragraph.
     private let addressBarWidth: CGFloat = 420
-    /// Narrower than the bar so the separator reads as a step down in weight.
     private let dividerWidth: CGFloat = 280
 
     var body: some View {
@@ -46,10 +35,8 @@ struct HTMLEmptyState: View {
             .padding(.top, DesignTokens.Spacing.lg)
         }
         .onAppear {
-            // One hop: at first `onAppear` the window's responder chain and the
-            // backing NSTextField are not necessarily mounted yet, and the
-            // assignment is silently dropped. Same reason `HTMLSourceSection`
-            // defers its binding sync.
+            // One hop: at first `onAppear` the backing NSTextField may not be mounted
+            // yet and the assignment is silently dropped.
             DispatchQueue.main.async { addressFieldFocused = true }
         }
     }
@@ -62,8 +49,6 @@ struct HTMLEmptyState: View {
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
 
-            // `.plain` strips AppKit's own bezel so the surrounding capsule is the
-            // only frame — a bordered field inside a drawn one reads as two boxes.
             TextField("example.com", text: $urlInput)
                 .textFieldStyle(.plain)
                 .font(DesignTokens.Typography.body)
@@ -95,8 +80,6 @@ struct HTMLEmptyState: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
-                // Not `Card.strokeWidth` (0.5): that token is the hairline for card
-                // chrome, and a field border needs to read at a glance.
                 .strokeBorder(
                     addressFieldFocused ? Color.accentColor : DesignTokens.Colors.separator,
                     lineWidth: addressFieldFocused ? 1.5 : 1
@@ -106,9 +89,7 @@ struct HTMLEmptyState: View {
     }
 
     /// Only a URL: `HTMLSource(userInput:)` turns any other non-empty text into
-    /// `.inline`, which the source section treats as legacy-only, so "foo" +
-    /// Return would have set the desktop to a page reading "foo". The arrow
-    /// lighting up is the feedback that the address is usable.
+    /// `.inline`, so "foo" + Return would set the desktop to a page reading "foo".
     private var canCommit: Bool {
         parsedURL != nil
     }
@@ -121,8 +102,6 @@ struct HTMLEmptyState: View {
 
     // MARK: - Secondary path
 
-    /// Spells out that the two paths are alternatives. Without it, a field stacked
-    /// over a button reads as "step 1, then step 2".
     private var orDivider: some View {
         HStack(spacing: DesignTokens.Spacing.sm) {
             dividerRule

@@ -2,48 +2,33 @@
 import AppKit
 import Foundation
 
-/// Fetches one preview's encoded bytes. A seam, so a test can count fetches and
-/// prove that a disk hit does not make one.
 typealias WorkshopPreviewByteFetch = @Sendable (URL) async -> Data?
 
-/// Workshop preview fetch: allow-list redirects, image/* only, capped, cookieless session.
 @MainActor
 final class WorkshopPreviewImageLoader {
 
     static let shared = WorkshopPreviewImageLoader()
 
-    // Sync with WorkshopAnimatedGIF.maxBytes (32 MiB blanked real GIF previews).
+    /// Sync with WorkshopAnimatedGIF.maxBytes.
     nonisolated static let maxBytes = 32 * 1024 * 1024
-    /// Sized for a screenful plus scroll headroom, not the browsing history: a tile poster caps at 800px on its long edge, so a 16:9 preview decodes to 800×450×4 ≈ 1.44 MB (the meter's 84 live entries averaged 1.52 MiB); the default window shows ~12 tiles (4 columns × ~3 rows), a maximised 1440p window ~50 (one whole query page).
-    /// 48 MB ≈ 33 posters, so the cost limit is what binds for tiles and the count limit only catches unusually small entries.
-    /// Undersizing is cheap now that `WorkshopPreviewDiskCache` backs this (a miss costs a disk read and decode, not a download), and a mounted tile holds its own asset via `GIFAnimationController`, so eviction never blanks a visible card.
-    /// Was 128 MB / 128 entries, which metered at 127.65 MiB live with 177 evictions against 261 inserts — full to the brim and thrashing.
+    /// Tile poster long-edge 800px: 16:9 -> 800x450x4 approx 1.44 MB; 48 MB approx 33 posters so the cost limit binds for tiles.
     nonisolated static let cacheCountLimit = 40
     nonisolated static let cacheCostLimit = 48 * 1024 * 1024
 
-    /// Keyed by URL *and* decode size: Steam serves one `preview_url` for both
-    /// the grid tile and the detail hero, and a tile-sized poster must not be
-    /// handed to the hero (or the hero's cost charged to a grid page). Not
-    /// `private`: `LocalImageCacheReclaimerTests` observes that the last window closing empties this too, the same way it observes the three local-source caches.
+    /// Keyed by URL and decode size: one preview_url serves tile and hero. Not private (see LocalImageCacheReclaimerTests).
     let assetCache = NSCache<NSString, CachedWorkshopPreviewAsset>()
     private var assetInflight: [String: InflightLoad] = [:]
     private let diskCache: WorkshopPreviewDiskCache
     private let fetch: WorkshopPreviewByteFetch
 
-    /// One shared load, plus how many tiles are still waiting on it. Sweeping
-    /// through pages used to leave every started download running to completion:
-    /// the loader's task is deliberately detached from the view's `.task` so
-    /// several tiles can share one fetch, and nothing counted when the last of them went away.
+    /// One shared load plus waiter count. The loader task is detached from the view's .task so several tiles can share one fetch; without waiters a sweep would leave every started download running to completion.
     @MainActor
     private final class InflightLoad {
         var task: Task<CachedWorkshopPreviewAsset?, Never>!
         var waiters = 0
     }
 
-    /// Both the normal and the cancelled path release the same waiter, and on
-    /// cancellation both can run. `@unchecked Sendable` so the cancellation
-    /// handler — which runs on the cancelling task's executor — can carry it
-    /// back to the main actor, where every read and write of `released` happens.
+    /// Both the normal and cancelled path release the same waiter and on cancellation both can run. @unchecked Sendable so the cancellation handler can hop back to the main actor.
     @MainActor
     private final class WaiterRelease: @unchecked Sendable {
         private var released = false
@@ -61,10 +46,7 @@ final class WorkshopPreviewImageLoader {
         assetCache.countLimit = Self.cacheCountLimit
         assetCache.totalCostLimit = Self.cacheCostLimit
         WPEImageCacheMeter.attach(assetCache, as: .workshopPreview)
-        // Reclaimed with the local caches once the last window closes — safe
-        // only because these bytes now survive on disk: a rebuild is a 0.05 ms
-        // read plus a decode (measured p50 1.5 ms, p95 8.2 ms), never a
-        // re-download. The budget itself stays, since that decode tail is why the tier must keep its size while a window is open.
+        // Reclaimed with the local caches once the last window closes — safe only because these bytes now survive on disk. The budget stays: the decode tail is why the tier must keep its size while a window is open.
         LocalImageCacheRegistry.shared.register(assetCache)
         self.diskCache = diskCache
 
@@ -78,10 +60,7 @@ final class WorkshopPreviewImageLoader {
         self.fetch = fetch ?? { url in await Self.fetchData(url, session: session) }
     }
 
-    /// Cookieless and cache-less on purpose: nothing about a browsing session is
-    /// offered to Steam's CDN or written to disk by the URL loading system.
-    /// `WorkshopPreviewDiskCache` is the disk layer instead and holds image bytes
-    /// only — switching `urlCache` on here would put response headers, and anything cookie-shaped in them, back on disk.
+    /// Cookieless and cache-less on purpose. Switching urlCache on here would put response headers, and anything cookie-shaped in them, back on disk.
     nonisolated static func makeSessionConfiguration() -> URLSessionConfiguration {
         let config = URLSessionConfiguration.ephemeral
         config.httpCookieAcceptPolicy = .never
@@ -96,12 +75,9 @@ final class WorkshopPreviewImageLoader {
     /// Returns `nil` if any allow-list / content-type / size check fails —
     /// callers fall back to a placeholder.
     func load(_ url: URL, size: WorkshopPreviewSize = .tile) async -> NSImage? {
-        // Route through `loadAsset` so the poster goes through the same byte /
-        // frame-count / decoded-pixel caps (paste-flow thumbnails included).
         await loadCachedAsset(url, size: size)?.posterImage
     }
 
-    /// Load as still vs bounded animation for hover-to-play.
     func loadAsset(_ url: URL, size: WorkshopPreviewSize = .tile) async -> WorkshopPreviewAsset? {
         await loadCachedAsset(url, size: size)?.asset
     }
@@ -153,9 +129,7 @@ final class WorkshopPreviewImageLoader {
         return load
     }
 
-    /// Cancels the shared load once nothing is waiting on it any more. Takes the
-    /// `InflightLoad` the caller actually joined rather than looking the key up
-    /// again: by the time the last waiter of an old load lets go, a new tile may already have registered a different load under the same key.
+    /// Cancels the shared load once nothing is waiting. Takes the InflightLoad the caller joined rather than looking the key up: a new tile may already have registered a different load under the same key.
     private func dropWaiter(_ load: InflightLoad, forKey cacheKey: String) {
         load.waiters -= 1
         guard load.waiters <= 0 else { return }
@@ -163,10 +137,7 @@ final class WorkshopPreviewImageLoader {
         retire(load, forKey: cacheKey)
     }
 
-    /// Unregisters `load` only if it is still the load registered for that key.
-    /// A cancelled load finishes *after* its replacement has been registered,
-    /// and removing by key alone would unregister the live one — leaving it
-    /// impossible to cancel and making the next tile re-download the same bytes.
+    /// Unregister load only if it is still the load for that key. Removing by key alone would unregister a live replacement.
     private func retire(_ load: InflightLoad, forKey cacheKey: String) {
         guard assetInflight[cacheKey] === load else { return }
         assetInflight.removeValue(forKey: cacheKey)
@@ -180,10 +151,7 @@ final class WorkshopPreviewImageLoader {
         _ url: URL,
         size: WorkshopPreviewSize
     ) async -> WorkshopPreviewAsset? {
-        // Allow-list before anything else, and key the disk entry on the
-        // canonical URL: a disk hit never reaches `fetchData`, so this is the
-        // only remaining gate that can stop a host dropped from the allow-list
-        // in a later version from still being served out of an old entry.
+        // Allow-list before anything else, and key the disk entry on the canonical URL: a disk hit never reaches fetchData, so this is the only remaining gate for a host later dropped from the allow-list.
         guard case .allowed(let canonicalURL) =
                 WorkshopCDNHostAllowList.evaluate(url.absoluteString) else { return nil }
         let diskCache = diskCache
@@ -201,15 +169,10 @@ final class WorkshopPreviewImageLoader {
                 data = await fetch(canonicalURL)
                 PreviewSignpost.end("workshop.fetch", fetching)
             }
-            // No cancellation check here on purpose: the store below now happens
-            // after the decode, and bailing out at this point would drop bytes
-            // that were already paid for. A cancelled tile reaches the decode
-            // and comes back `.abandoned`, which still stores.
+            // No cancellation check here: bailing would drop bytes already paid for. A cancelled tile reaches decode and comes back .abandoned, which still stores.
             guard let data else { return nil }
-            // Decode off the main actor — the CGImageSource work is CPU-bound.
             let decoding = PreviewSignpost.begin("workshop.decode")
-            // `Task.detached` does not inherit cancellation, so an abandoned tile
-            // used to hold its gate slot until the decode finished anyway.
+            // Task.detached does not inherit cancellation, so an abandoned tile would hold its gate slot until the decode finished anyway.
             let decode = Task.detached(priority: .userInitiated) { () -> PreviewDecodeOutcome in
                 guard !Task.isCancelled else { return .abandoned }
                 guard let asset = WorkshopAnimatedGIF.make(from: data, size: size) else {
@@ -223,10 +186,7 @@ final class WorkshopPreviewImageLoader {
                 decode.cancel()
             }
             PreviewSignpost.end("workshop.decode", decoding)
-            // The disk entry is written here, after the verdict, not before the
-            // decode: a body that passed every network check (200, `image/*`,
-            // under the byte cap) but still wasn't an image used to be persisted
-            // anyway, so every later visit hit that dead entry and the card stayed blank until the TTL or cap caught it. `.abandoned` still stores — those bytes are already paid for and nothing ever judged them.
+            // Write the disk entry after the verdict, not before decode. A non-image body that passed network checks would persist and blank the card until TTL/cap. .abandoned still stores — those bytes are already paid for.
             if !servedFromDisk, outcome.keepsBytes {
                 await diskCache.store(data, for: canonicalURL, size: size)
             }
@@ -235,9 +195,7 @@ final class WorkshopPreviewImageLoader {
         }
     }
 
-    /// How one decode attempt ended. "These bytes are not an image" and "nobody
-    /// was left waiting to find out" have to be told apart, because only the
-    /// first of them must keep the bytes off disk.
+    /// undecodable vs abandoned must be told apart: only the former keeps the bytes off disk.
     private enum PreviewDecodeOutcome: Sendable {
         case decoded(WorkshopPreviewAsset)
         case undecodable
@@ -251,7 +209,6 @@ final class WorkshopPreviewImageLoader {
         }
     }
 
-    /// Stream body with size cap; re-check allow-list; require 200 + image/*.
     private nonisolated static func fetchData(_ url: URL, session: URLSession) async -> Data? {
         guard case .allowed(let canonicalURL) = WorkshopCDNHostAllowList.evaluate(url.absoluteString) else {
             return nil
@@ -286,11 +243,7 @@ final class WorkshopPreviewImageLoader {
     }
 }
 
-/// One cache entry owns both the decoded asset and its AppKit poster wrapper.
-/// Keeping these together removes the prior duplicate URL→poster dictionary.
 @MainActor
-/// Not `private`: `LocalImageCacheReclaimerTests` builds one to prove the last
-/// window closing empties this cache too.
 final class CachedWorkshopPreviewAsset {
     let asset: WorkshopPreviewAsset
     let posterImage: NSImage
@@ -303,7 +256,6 @@ final class CachedWorkshopPreviewAsset {
     }
 }
 
-/// Cancel redirects that fail WorkshopCDNHostAllowList.
 private final class RedirectGuardDelegate: NSObject, URLSessionTaskDelegate {
     func urlSession(
         _ session: URLSession,

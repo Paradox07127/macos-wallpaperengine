@@ -44,9 +44,6 @@ struct InspectorResizeStepTests {
         )
     }
 
-    /// A drag arms the close and shows it before release; a keypress commits at
-    /// once. Narrowing by keyboard must therefore stop at `minWidth` rather than
-    /// fall through a close threshold the user never saw arming.
     @Test("Narrowing by keyboard never crosses below the minimum into a close")
     func keyboardNarrowingNeverReachesCloseThreshold() {
         var width = maxWidth

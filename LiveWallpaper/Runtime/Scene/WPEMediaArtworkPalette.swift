@@ -4,11 +4,6 @@ import CryptoKit
 import Foundation
 import ImageIO
 
-// Colour extraction for `mediaThumbnailChanged`. WPE never published its algorithm, and the
-// reference implementation (waywallen/open-wallpaper-engine, `src/Scene/Script/Script.cpp`)
-// hardcodes white/black stubs — no ground truth to copy, so this is our own deterministic
-// extractor. Contract is the documented one: five normalized-RGB Vec3s, `textColor` legible
-// against `primaryColor`, `highContrastColor` black or white by contrast ratio.
 
 /// `mediaThumbnailChanged`'s event payload. Colours are sRGB, 0...1 — the same
 /// space the pixels were sampled in, and the space scene colours are authored in.
@@ -22,10 +17,7 @@ struct WPESceneMediaThumbnail: Sendable, Equatable {
     var textColor: SIMD3<Double>
     var highContrastColor: SIMD3<Double>
 
-    /// No artwork. Black accents with white text: black/white is the pairing our
-    /// own contrast rule produces for a black primary, so a scene that tints with
-    /// `primaryColor` and labels with `textColor` stays legible, and "no art"
-    /// reads as absence rather than as an invented accent colour.
+    /// No artwork. Black accents with white text: the contrast pairing for a black primary.
     static let absent = WPESceneMediaThumbnail(
         hasThumbnail: false,
         primaryColor: SIMD3(0, 0, 0),
@@ -37,15 +29,10 @@ struct WPESceneMediaThumbnail: Sendable, Equatable {
 }
 
 enum WPEMediaArtworkPalette {
-    /// Analysis resolution. Now-playing art is ~300px; 1024 samples settle the
-    /// dominant hues and keep one extraction well under a millisecond. This runs
-    /// off a now-playing notification, never per frame.
+    /// Analysis resolution: 32² = 1024 samples to settle dominant hues.
     static let analysisSize = 32
 
-    /// Below this saturation a pixel is "near-neutral" — greys, near-whites and
-    /// near-blacks. Photographic covers are mostly these, and a plain
-    /// most-frequent-bucket vote returns muddy grey from them every time, so they
-    /// are excluded from the dominant vote unless the image has nothing else.
+    /// Below this saturation a pixel is near-neutral and excluded from the dominant vote unless the image has nothing else.
     private static let neutralSaturation = 0.18
     private static let neutralValueFloor = 0.10
     /// Minimum RGB distance between the three reported dominants, so we never
@@ -65,8 +52,7 @@ enum WPEMediaArtworkPalette {
             primaryColor: primary,
             secondaryColor: secondary,
             tertiaryColor: tertiary,
-            // The docs only require "sufficient contrast with primary color".
-            // Black or white maximizes it; anything cleverer would be invented.
+            // Black or white maximizes contrast with primary; anything cleverer would be invented.
             textColor: contrast,
             highContrastColor: contrast
         )
@@ -88,8 +74,6 @@ enum WPEMediaArtworkPalette {
         return (max(a, b) + 0.05) / (min(a, b) + 0.05)
     }
 
-    /// "Black or white, depending on what has higher contrast with the primary
-    /// color" — verbatim from `lib.sceneScript.d.ts`.
     static func highContrastColor(against primary: SIMD3<Double>) -> SIMD3<Double> {
         let white = SIMD3<Double>(1, 1, 1)
         let black = SIMD3<Double>(0, 0, 0)
@@ -98,7 +82,6 @@ enum WPEMediaArtworkPalette {
 
     // MARK: - Dominant colours
 
-    /// Ranked distinct dominants, at most three.
     private static func dominantColors(_ pixels: [SIMD4<Double>]) -> [SIMD3<Double>] {
         struct Bucket {
             var weight = 0.0
@@ -116,9 +99,7 @@ enum WPEMediaArtworkPalette {
             // votes as one colour and fine enough to keep hues apart.
             let key = (Int(rgb.x * 15 + 0.5) << 8) | (Int(rgb.y * 15 + 0.5) << 4) | Int(rgb.z * 15 + 0.5)
             let isNeutral = saturation < neutralSaturation || high < neutralValueFloor
-            // Squared saturation: a small vivid accent outvotes a large washed-out
-            // field roughly 20:1 at sat 0.9 vs 0.2, which is what stops album art
-            // that is mostly pale background from reporting that background.
+            // Squared saturation: a small vivid accent outvotes a large washed-out field.
             let weight = isNeutral ? 1.0 : saturation * saturation
             var bucket = (isNeutral ? neutral[key] : chromatic[key]) ?? Bucket()
             bucket.weight += weight
@@ -152,9 +133,7 @@ enum WPEMediaArtworkPalette {
         return (d.x * d.x + d.y * d.y + d.z * d.z).squareRoot()
     }
 
-    /// Synthesized stand-in when the artwork simply has no second or third
-    /// distinct colour: move `primary` away from its own luminance pole, so the
-    /// result is always separated from it and never collapses to black-on-black.
+    /// Stand-in when there is no 2nd/3rd colour: move primary away from its luminance pole so it never collapses to black-on-black.
     private static func shifted(_ primary: SIMD3<Double>, by amount: Double) -> SIMD3<Double> {
         let target: SIMD3<Double> = relativeLuminance(primary) > 0.5
             ? SIMD3(0, 0, 0)
@@ -213,10 +192,7 @@ enum WPEMediaArtworkPalette {
     }
 }
 
-/// One-entry memo so re-delivering an unchanged now-playing snapshot never
-/// re-decodes the image. Keyed on a digest of the bytes: `trackID` alone is not
-/// enough (a player can replace the art for the same track) and `Data`'s own
-/// hash is not stable across launches.
+/// Keyed on a digest of the bytes: trackID alone is not enough and Data's hash is not stable across launches.
 struct WPEMediaArtworkPaletteCache {
     private var key: String?
     private var cached = WPESceneMediaThumbnail.absent

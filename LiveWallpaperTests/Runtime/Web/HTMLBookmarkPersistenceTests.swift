@@ -176,8 +176,6 @@ struct HTMLBookmarkPersistenceTests {
         let relocated = Data("relocated-bookmark".utf8)
         let origin = Self.makeWPEOrigin(bookmark: original)
 
-        // Resolver rejects the stored bookmark (the library moved) but accepts
-        // the one the relocator produced.
         let resolver = SecurityScopedBookmarkResolver(
             resolveData: { data in
                 guard data == relocated else { throw CocoaError(.fileNoSuchFile) }
@@ -202,10 +200,8 @@ struct HTMLBookmarkPersistenceTests {
         #expect(relocatorCalls == [origin.workshopID])
         #expect(effective.origin.sourceFolderBookmark == relocated)
         #expect(effective.url == root)
-        // Session-only. A dead resolve does not distinguish "the file is gone"
-        // from "its volume is not mounted", so persisting here would overwrite
-        // a still-good bookmark with the Steam library's copy the first time an
-        // external drive was unplugged. Relocation is cheap and re-runs.
+        // Session-only on purpose: a dead resolve cannot tell "file gone" from "volume
+        // not mounted", so persisting would overwrite a still-good bookmark.
         #expect(persisted == nil)
     }
 
@@ -316,8 +312,8 @@ struct HTMLBookmarkPersistenceTests {
 
     @Test("Settings persistence exposes no executor-unsafe HTML Target")
     func actorSafetySourceContract() throws {
-        // Two files since bookmark validation was split out; the actor-safety
-        // contract is on the settings-persistence surface, not on one file.
+        // The actor-safety contract is on the settings-persistence surface, so both
+        // files are checked rather than one.
         let source = try RepositoryRoot.source("LiveWallpaper/App/SettingsManager.swift")
             + "\n"
             + RepositoryRoot.source("LiveWallpaper/App/SettingsManager+BookmarkValidation.swift")

@@ -66,9 +66,8 @@ struct WPECameraParallaxTests {
 
     @Test("Negative mouseinfluence inverts parallax instead of disabling it")
     func negativeMouseInfluenceInvertsParallax() {
-        // Asserted on the resolved SHIFT: `mouseinfluence` weights the mouse
-        // term inside `pixelOffset`, so `smoothed` (the raw cursor offset) is
-        // identical for both signs by design.
+        /// Assert on the resolved shift, not `smoothed`: the raw cursor offset
+        /// is identical for both signs.
         func shift(influence: Double) -> SIMD2<Float> {
             var smoother = WPECameraParallaxSmoother()
             let settings = WPESceneCameraParallaxSettings(
@@ -107,10 +106,6 @@ struct WPECameraParallaxTests {
         #expect(abs(off.y - (-200)) < 1e-3)
     }
 
-    /// The reference clamps nothing (`WPShaderValueUpdater.cpp`): a deep layer
-    /// is MEANT to travel far. 2780710296 parks its clock behind the character
-    /// and needs 831 scene px of travel to clear it; the old ±0.2-of-scene
-    /// ceiling stopped it at 512 and saturated after 10% of cursor travel.
     @Test("pixelOffset does not clamp: deep layers travel as far as WPE moves them")
     func pixelOffsetIsUnclamped() {
         let frame = WPECameraParallaxFrame(smoothed: SIMD2<Float>(0.5, -0.5), amount: 1, influence: 1)
@@ -119,11 +114,6 @@ struct WPECameraParallaxTests {
         #expect(abs(off.y - 5000) < 1e-3)
     }
 
-    /// End-to-end against the two RenderDoc captures of 2780710296 (ortho
-    /// 2560×1440, `cameraparallaxamount` 0.5, `mouseinfluence` 0.5, the clock's
-    /// `parallaxDepth` "4 0"): sliding the cursor right must carry the text
-    /// left by `Δpointer × 2560` scene px. The captures differ by 831 px, which
-    /// the old formula could not reach at ANY cursor position.
     @Test("2780710296: reference travel per cursor unit is ortho × influence × amount × depth")
     func referenceTravelMatchesCapture() {
         var smoother = WPECameraParallaxSmoother()
@@ -138,15 +128,12 @@ struct WPECameraParallaxTests {
                 .frame(settings: settings, pointerPosition: SIMD2<Double>(pointerX, 0.5), time: 0, gain: 1)
                 .pixelOffset(objectCenter: .zero, depth: depth, sceneSize: scene).x
         }
-        // Cursor dead centre parks the layer at its authored origin.
         #expect(abs(offset(at: 0.5)) < 1e-3)
         // Full-width sweep = half the scene each way (WPE: (0.5-p) × ortho).
         #expect(abs(offset(at: 1.0) - (-1280)) < 0.5)
         #expect(abs(offset(at: 0.0) - 1280) < 0.5)
-        // The measured 831 px separation is reachable, and needs ~32% of travel.
         #expect(abs((offset(at: 0.287) - offset(at: 0.612)) - 831) < 5)
-        // The static `nodePos - camPos` term parks the clock off-scene at rest:
-        // origin x 1763.9 in a 2560-wide scene → +967.8 px, i.e. x=2731.7.
+        // origin x 1763.9 in a 2560-wide scene -> +967.8 px static (nodePos - camPos).
         smoother.reset()
         let atRest = smoother
             .frame(settings: settings, pointerPosition: SIMD2<Double>(0.5, 0.5), time: 0, gain: 1)
@@ -155,9 +142,6 @@ struct WPECameraParallaxTests {
                 depth: depth, sceneSize: scene
             )
         #expect(abs(atRest.x - 967.8) < 0.5, "the character must hide the clock at rest")
-        // Cursor at the right edge (the capture solves to 0.999) brings it back
-        // to the left of the authored origin — beside the character, not across
-        // the whole screen.
         smoother.reset()
         let revealed = smoother
             .frame(settings: settings, pointerPosition: SIMD2<Double>(1.0, 0.5), time: 0, gain: 1)
@@ -168,7 +152,6 @@ struct WPECameraParallaxTests {
         #expect(abs(revealed.x - (967.8 - 1280)) < 0.5)
         #expect(1763.895 + Double(revealed.x) > 1400, "revealed clock stays on the right half")
 
-        // Depth "4 0" stays horizontal.
         smoother.reset()
         let vertical = smoother
             .frame(settings: settings, pointerPosition: SIMD2<Double>(0.5, 1.0), time: 0, gain: 1)
@@ -212,9 +195,8 @@ struct WPECameraParallaxTests {
 
     // MARK: - Smoother
 
-    /// Asserted on the resolved SHIFT rather than on `== .neutral`: the frame
-    /// keeps tracking the cursor and carries the authored `mouseinfluence` even
-    /// when parallax is off, so `g_ParallaxPosition` still drives `depthparallax`.
+    /// Assert on the resolved shift, not `== .neutral`: the frame still carries
+    /// the authored `mouseinfluence` while parallax is off.
     @Test("Disabled / amount 0 produce no layer shift at all")
     func smootherNoOp() {
         var s = WPECameraParallaxSmoother()
@@ -231,8 +213,7 @@ struct WPECameraParallaxTests {
         #expect(shift(s.frame(settings: .init(enabled: true, amount: 0, delay: 0.1, mouseInfluence: 0.5),
                               pointerPosition: cursor, time: 0)) == SIMD2<Float>(0, 0))
         // `mouseinfluence == 0` is NOT a no-op: it silences the cursor term and
-        // leaves the static `(nodePos − camPos)` half, so the layer sits at its
-        // parallaxed rest position.
+        // leaves the static `(nodePos - camPos)` half.
         s.reset()
         #expect(shift(s.frame(settings: .init(enabled: true, amount: 0.5, delay: 0.1, mouseInfluence: 0),
                               pointerPosition: cursor, time: 0)) == SIMD2<Float>(400, 300))
@@ -380,8 +361,7 @@ struct WPECameraParallaxTests {
 
     // MARK: - Static-term anchor (one offset per parallax root)
 
-    /// 3719111841's ortho, `cameraparallaxamount` and rig, with the cursor dead
-    /// centre so only the static `(nodePos - camPos)` term is live.
+    /// Cursor dead centre, so only the static `(nodePos - camPos)` term is live.
     private static let rigScene = CGSize(width: 3840, height: 2160)
     private static let rigDepth = SIMD2<Double>(0.41, -0.36)
 
@@ -397,8 +377,7 @@ struct WPECameraParallaxTests {
         )
     }
 
-    /// Exactly what `objectQuadUniforms` does: the parallax-root centre when the
-    /// layer has one, its own anchor otherwise.
+    /// Mirrors `objectQuadUniforms`.
     private func resolvedShift(
         _ layer: WPERenderLayer,
         centers: [String: SIMD2<Float>]
@@ -413,19 +392,10 @@ struct WPECameraParallaxTests {
         )
     }
 
-    /// WPE shifts a parented subtree by ONE vector — its root's. Ground truth:
-    /// both 3719111841 RenderDoc captures put the `g_ModelViewProjectionMatrix`
-    /// translation of the root (475 长发3) and of its child (91 主体) the same
-    /// distance from their authored origins, agreeing to 3.5e-5 scene px.
-    ///
-    /// Evaluating the static term per child instead scales the whole subtree
-    /// about the scene centre by `(1 + depth·amount)` = (1.1435, 0.8740) here —
-    /// a 12.6% vertical squash of the character, measured on the live capture as
-    /// a (+109.87, -145.13) px tear between the ear and the hair root.
     @Test("3719111841: every layer of a parented rig gets the ROOT's parallax shift")
     func parentedRigSharesTheRootsShift() {
-        // Origins as the executor sees them at t=49.93: the root's authored
-        // origin, and the ear's attachment-driven live anchor from the capture.
+        // Origins as the executor sees them: the root's authored origin, and the
+        // ear's attachment-driven live anchor.
         let layers = WPERenderGraphBuilder.propagatingParallaxDepthThroughParents([
             layer("475", depth: Self.rigDepth, origin: SIMD2<Double>(1238.14209, 704.67969)),
             layer("91", depth: .zero, parent: "475", origin: SIMD2<Double>(1967.3861, 919.1593)),
@@ -439,13 +409,10 @@ struct WPECameraParallaxTests {
         let byID = Dictionary(uniqueKeysWithValues: layers.map { ($0.objectID, $0) })
         let rootShift = resolvedShift(byID["475"]!, centers: centers)
 
-        // The root's own shift is the reference value, unchanged by this rule.
         #expect(abs(rootShift.x - (-97.8466)) < 0.01)
         #expect(abs(rootShift.y - 47.2904) < 0.01)
-        // Both descendants ride it exactly — no tear, at any depth of nesting.
         #expect(resolvedShift(byID["91"]!, centers: centers) == rootShift)
         #expect(resolvedShift(byID["303"]!, centers: centers) == rootShift)
-        // An unparented depth-0 object stays put.
         #expect(resolvedShift(byID["209"]!, centers: centers) == SIMD2<Float>(0, 0))
     }
 
@@ -464,20 +431,13 @@ struct WPECameraParallaxTests {
         // A root is absent from the map and falls back to its own anchor.
         #expect(centers["root"] == nil)
         #expect(centers["child"] == SIMD2<Float>(1000 - 1920, 800 - 1080))
-        // A parent outside the graph leaves the layer as its own root.
         #expect(centers["orphan"] == nil)
-        // A cycle walks back to where it started, so each node stays its own
-        // root — no entry, and no hang.
         #expect(centers["loopA"] == nil)
         #expect(centers["loopB"] == nil)
     }
 
     // MARK: - Rigid subtree across group hosts (3448877775)
 
-    /// Windows ground truth (fidelity-3448877775_1/_2): every text in the clock
-    /// assembly shifts by the same (5.31, 7.97) px — the GROUP's depth -0.408 —
-    /// while the leaves author -0.7 / 0 / 1.0. The chain to that group runs
-    /// through non-drawn hosts, so the walk must cross them.
     @Test("Depth propagation crosses non-drawn group hosts, and the root wins")
     func depthPropagationCrossesGroupHosts() {
         let out = WPERenderGraphBuilder.propagatingParallaxDepthThroughParents(
@@ -497,7 +457,6 @@ struct WPECameraParallaxTests {
             ]
         )
         let byID = Dictionary(uniqueKeysWithValues: out.map { ($0.objectID, $0.parallaxDepth) })
-        // The authored leaf depths are provably ignored on Windows — even 0.
         #expect(byID["clockText"] == SIMD2<Double>(-0.408, -0.408))
         #expect(byID["dayText"] == SIMD2<Double>(-0.408, -0.408))
         #expect(byID["bg"] == SIMD2<Double>(-0.92, -0.92))
@@ -528,17 +487,10 @@ struct WPECameraParallaxTests {
                 "assembly": SIMD2<Double>(1920, 1080)
             ]
         )
-        // BOTH leaves anchor at the assembly root, so their static terms agree
-        // and the assembly stays rigid at rest.
         #expect(centers["clockText"] == SIMD2<Float>(0, 0))
         #expect(centers["dayText"] == SIMD2<Float>(0, 0))
     }
 
-    /// The captures only prove that an authored ancestor value wins. A topmost
-    /// group that authored NO depth parses to zero — zeroing its children on
-    /// that basis would kill 93 corpus objects (3151551777 birds, 3351072238's
-    /// FPS triangles) with no evidence, so the anchor is the root-most
-    /// NON-ZERO node on the path, the leaf itself when the path is flat.
     @Test("A key-less group root does not zero its children's authored depth")
     func keylessGroupRootKeepsChildDepth() {
         let out = WPERenderGraphBuilder.propagatingParallaxDepthThroughParents(
@@ -580,11 +532,8 @@ struct WPECameraParallaxTests {
 
     @Test("The cursor term opposes the cursor on BOTH axes, not just x")
     func mouseTermOpposesCursorOnBothAxes() {
-        // `WPShaderValueUpdater.cpp` builds the cursor term in the scene's +y-up
-        // world (`Scaling(1,-1) * (0.5 - mouse)`, mouse y-down); the object quad
-        // lives in top-left y-down scene pixels, so the world y has to be negated
-        // on the way in. Keeping it made every parallaxed layer chase the cursor
-        // vertically while opposing it horizontally.
+        // The reference builds the cursor term y-up (`Scaling(1,-1) * (0.5 - mouse)`);
+        // the object quad is y-down, so the world y is negated on the way in.
         let frame = WPECameraParallaxFrame(
             smoothed: SIMD2<Float>(0.25, 0.25), amount: 1, influence: 1
         )
@@ -599,9 +548,8 @@ struct WPECameraParallaxTests {
 
     @Test("A disabled camera parallax still reports mouseinfluence")
     func disabledParallaxStillReportsInfluence() {
-        // The reference computes `g_ParallaxPosition` from `mouseinfluence`
-        // unconditionally — only the per-layer translation is gated on `enable`.
-        // Zeroing influence here silently pinned every `depthparallax` effect.
+        // Only the per-layer translation is gated on `enable`; `g_ParallaxPosition`
+        // keeps `mouseinfluence` unconditionally.
         var smoother = WPECameraParallaxSmoother()
         let frame = smoother.frame(
             settings: WPESceneCameraParallaxSettings(
@@ -616,11 +564,7 @@ struct WPECameraParallaxTests {
 
     @Test("g_ParallaxPosition is the influence-scaled, y-flipped offset about 0.5")
     func parallaxPositionUniformFollowsReference() {
-        // Built from the SMOOTHED cursor, like every other parallax consumer:
-        // the reference feeds `m_mousePos` to both the per-layer translation and
-        // this uniform. Reading the raw pointer here let the `depthparallax`
-        // layer snap instantly to full deflection while its neighbours crawled
-        // behind a 2 s `cameraparallaxdelay` — the layer that "came unstuck".
+        /// Built from the SMOOTHED cursor: the raw pointer must not reach this uniform.
         func value(smoothed: SIMD2<Float>, influence: Double) -> [Double] {
             var uniforms = WPEMetalRuntimeUniforms(
                 time: 0, daytime: 0, brightness: 1,
@@ -638,8 +582,7 @@ struct WPECameraParallaxTests {
         // `depthparallax.vert` reads `g_ParallaxPosition * 2 - 1`, so 0.5 is the
         // neutral centre — and it stays neutral at any influence.
         #expect(value(smoothed: SIMD2<Float>(0, 0), influence: 0.31) == [0.5, 0.5])
-        // Amplitude is `mouseinfluence`. Feeding the raw pointer (we did until
-        // now) drove the effect 1/influence too hard — 3.2x on 3462279189.
+        // Amplitude is `mouseinfluence`.
         let right = value(smoothed: SIMD2<Float>(0.5, 0), influence: 0.31)
         #expect(abs(right[0] - (0.5 + 0.5 * 0.31)) < 1e-9)
         // Our pointer is y-down; the shader's parallax axis is y-up.
@@ -649,13 +592,9 @@ struct WPECameraParallaxTests {
 
     // MARK: - Delay model
 
-    /// `cameraparallaxdelay` is a ramp on the lerp factor, not an exponential
-    /// time constant (`WPShaderValueUpdater.cpp` FrameBegin/MouseInput): idle
-    /// time accumulates to `delay`, `t = idle / delay`, and each cursor event
-    /// knocks the accumulator back by the gap since the previous one. So a
-    /// settled cursor lands EXACTLY on target within `delay`, where our
-    /// exponential was still ~37% short of it and kept undershooting — the
-    /// "other layers barely move" half of the disconnect.
+    /// `cameraparallaxdelay` ramps the lerp factor, it is not an exponential time
+    /// constant: idle accumulates to `delay`, `t = idle / delay`, and each cursor
+    /// event rolls the accumulator back by the gap since the previous one.
     @Test("A settled cursor reaches the full offset within cameraparallaxdelay")
     func settledCursorConvergesExactly() {
         var smoother = WPECameraParallaxSmoother()
@@ -664,7 +603,6 @@ struct WPECameraParallaxTests {
         )
         let step = 1.0 / 60.0
         var time = 0.0
-        // Frame 0 seeds at centre, then the cursor jumps to the corner and stays.
         _ = smoother.frame(settings: settings, pointerPosition: SIMD2<Double>(0.5, 0.5), time: time)
         for _ in 0..<Int(2.0 / step) + 2 {
             time += step
@@ -675,8 +613,8 @@ struct WPECameraParallaxTests {
 
     @Test("mouseInfluence 0 silences the cursor term but keeps the static one")
     func zeroInfluenceKeepsAmount() {
-        // The reference gates the whole translation on `enable` alone; zeroing
-        // `amount` here also deleted the `(nodePos - camPos)` term.
+        // The whole translation is gated on `enable` alone; zeroing `amount` would
+        // also delete the `(nodePos - camPos)` term.
         var smoother = WPECameraParallaxSmoother()
         let frame = smoother.frame(
             settings: WPESceneCameraParallaxSettings(

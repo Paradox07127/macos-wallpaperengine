@@ -6,8 +6,6 @@ struct DirectoryBookmarkResolution {
     let isStale: Bool
 }
 
-/// Read-only security-scoped directory grants, shared by the Aerials and
-/// Wallpaper Engine asset libraries.
 enum DirectoryBookmarks {
     static func resolveDirectoryBookmark(_ bookmarkData: Data) throws -> DirectoryBookmarkResolution {
         let (url, isStale) = try SecurityScopedBookmarkResolver.shared.resolveData(bookmarkData)

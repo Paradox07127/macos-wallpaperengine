@@ -3,8 +3,6 @@ import Foundation
 @testable import LiveWallpaper
 import Testing
 
-/// The pager is driven by what Steam reported for the page — its raw item
-/// count and page count — not by what survived the client-side filters.
 @Suite("Workshop browse pagination metadata", .serialized)
 @MainActor
 struct BrowsePaginationMetadataTests {
@@ -85,8 +83,6 @@ struct BrowsePaginationMetadataTests {
         #expect(!model.currentPageIsFilteredOut)
     }
 
-    /// Synchronous state check (like `nextPageUsesRawPageCount`): a page whose
-    /// 30 source items were all dropped, versus a query with nothing at all.
     @Test("An empty grid keeps the pager when Steam's page was not empty")
     func filteredOutPageKeepsPager() throws {
         let suite = try TestScratch.defaultsSuite("workshop.browse.pagination.filteredOut")

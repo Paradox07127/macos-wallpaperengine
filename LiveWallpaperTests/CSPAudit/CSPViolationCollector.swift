@@ -1,7 +1,6 @@
 import Foundation
 import WebKit
 
-/// Collects CSP and JavaScript audit events without adding a script-message handler to production wallpaper views.
 @MainActor
 final class CSPViolationCollector: NSObject, WKScriptMessageHandler {
 
@@ -42,7 +41,6 @@ final class CSPViolationCollector: NSObject, WKScriptMessageHandler {
         observations.append(observation)
     }
 
-    /// Instruments CSP, JavaScript, and storage activity before page scripts execute.
     static let instrumentationSource: String = """
     (function() {
       const send = (payload) => {

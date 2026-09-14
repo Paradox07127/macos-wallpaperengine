@@ -1,9 +1,7 @@
 #if !LITE_BUILD
 import Foundation
 
-/// Outcome of `WPEScriptFaultPolicy.recordFailure`.
 enum WPEScriptFaultVerdict: Equatable {
-    /// Skip the entry point for the given number of attempts.
     case backoff(skippedFrames: Int)
     /// Backoff exhausted; retry at most once per `probeInterval`.
     case probing
@@ -12,20 +10,13 @@ enum WPEScriptFaultVerdict: Equatable {
     case quarantined
 }
 
-/// Per-entry-point exponential backoff for script entry points that raise uncaught JS
-/// exceptions. A throwing tick costs ~100x a clean one (measured in
-/// `WPELayerScriptRuntime.logFirstThrow`), so re-running it every frame is the expensive part
-/// of a broken script. Keyed by entry point ("update", a cursor handler name) only —
-/// deliberately NOT the exception message, since a script throwing `Error("t=" + Date.now())`
-/// would restart the escalation every tick and never reach quarantine. Pure value type,
-/// mutated only on the owning engine's serial queue; `now` is caller-supplied for testability.
+/// Keyed by entry point only, not the exception message: a timestamped Error would never reach quarantine.
 struct WPEScriptFaultPolicy {
     /// Attempts skipped after the 1st, 2nd and 3rd consecutive failure.
     static let backoffFrames: [Int] = [1, 8, 64]
     /// Minimum spacing of retries once backoff is exhausted.
     static let probeInterval: TimeInterval = 1.0
-    /// Failed probes before hard quarantine (only for entry points that never
-    /// succeeded; 12 chosen from the reviewed 8-16 range).
+    /// Failed probes before hard quarantine; only for entry points that never succeeded.
     static let quarantineProbeLimit = 12
 
     private struct FaultState {

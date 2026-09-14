@@ -2,9 +2,8 @@ import Foundation
 import AppKit
 import SwiftUI
 
-/// Identifies a global shortcut command. Adding a case requires:
-/// 1) extending `default(for:)` with a sensible default binding (or `nil`),
-/// 2) handling it in `GlobalShortcutManager.dispatchHotKey(signatureID:)`.
+/// Adding a case requires a default in `defaultBinding(for:)` and a branch in
+/// `GlobalShortcutManager.dispatchHotKey(signatureID:)`.
 public enum GlobalShortcutAction: String, CaseIterable, Codable, Identifiable, Sendable {
     case togglePlayback
     case nextWallpaper
@@ -17,9 +16,8 @@ public enum GlobalShortcutAction: String, CaseIterable, Codable, Identifiable, S
 
     public var id: String { rawValue }
 
-    /// `String` alias used as the `GlobalSettings.globalShortcuts` dictionary
-    /// key. Decoupled from `RawValue` so a future case rename can keep the
-    /// wire format stable through a `CodingKey`-style override.
+    /// Dictionary key for `GlobalSettings.globalShortcuts`. Decoupled from `RawValue` so a
+    /// case rename can keep the wire format stable.
     public typealias RawAction = String
 
     public var rawAction: RawAction { rawValue }
@@ -87,7 +85,6 @@ public enum GlobalShortcutAction: String, CaseIterable, Codable, Identifiable, S
         }
     }
 
-    /// Default binding shipped on first launch.
     public static func defaultBinding(for action: GlobalShortcutAction) -> GlobalShortcutBinding? {
         switch action {
         case .togglePlayback:
@@ -133,8 +130,7 @@ public struct GlobalShortcutBinding: Codable, Equatable, Hashable, Sendable {
         public static let shift    = ModifierSet(rawValue: 1 << 3)
     }
 
-    /// Human-readable form, e.g. `⌃⇧Space`. Used by both the settings
-    /// capture view and accessibility descriptions.
+    /// Human-readable form, e.g. `⌃⇧Space`.
     public var displayString: String {
         var symbols = ""
         if modifiers.contains(.control) { symbols += "⌃" }

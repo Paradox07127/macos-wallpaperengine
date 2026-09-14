@@ -17,7 +17,6 @@
                 var maxSeconds = 0.0
             }
 
-            /// Samples attached to one command buffer; resolved in its completion handler.
             private final class Session {
                 var buffers: [MTLCounterSampleBuffer] = []
                 var entries: [(label: String, buffer: Int, index: Int)] = []
@@ -92,7 +91,6 @@
                 }
             }
 
-            /// Flush + reset when the scene changes so one CSV never mixes two scenes.
             func noteScene(_ sceneID: String?) {
                 lock.lock()
                 defer { lock.unlock() }
@@ -107,10 +105,6 @@
                 currentSceneID = sceneID
             }
 
-            /// Attach timestamp sampling to a render pass. Safe to call for every pass;
-            /// silently skips the pass when a sample buffer can't be allocated. The
-            /// first attach on a command buffer registers the resolve handler, so no
-            /// explicit begin/commit calls are needed at the call sites.
             func attach(_ descriptor: MTLRenderPassDescriptor, to commandBuffer: MTLCommandBuffer, label: String) {
                 lock.lock()
                 defer { lock.unlock() }
@@ -261,8 +255,6 @@
             }
         }
     #else
-        /// Release stub so call sites stay unconditional one-liners; `makeIfEnabled`
-        /// always vends nil, so every optional-chained call is a no-op.
         final class WPEMetalPassGPUProfiler: @unchecked Sendable {
             static func makeIfEnabled(device _: MTLDevice) -> WPEMetalPassGPUProfiler? {
                 nil

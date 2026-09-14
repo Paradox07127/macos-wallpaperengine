@@ -1,10 +1,8 @@
 import Foundation
 
-/// Runtime-ready wallpaper definition derived from persisted configuration.
 public enum WallpaperSessionDefinition: Equatable, Sendable {
-    /// `packageEntryName` is non-nil for an in-place packaged video, where
-    /// `bookmarkData` resolves to a `scene.pkg` and the player serves the
-    /// entry windowed from the package (mirrors `WallpaperContent.video`).
+    /// `packageEntryName` non-nil ⇒ an in-place packaged video: `bookmarkData` resolves
+    /// to a `scene.pkg` and the entry is served windowed from it.
     case video(bookmarkData: Data, packageEntryName: String?)
     case html(HTMLSource, HTMLConfig)
     case scene(SceneDescriptor)

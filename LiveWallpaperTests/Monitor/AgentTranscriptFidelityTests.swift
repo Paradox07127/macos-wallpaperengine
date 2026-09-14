@@ -2,9 +2,6 @@ import Foundation
 @testable import LiveWallpaper
 import Testing
 
-/// Regressions for the transcript-parsing defects found by the 2026-08-09 review:
-/// results matched positionally instead of by id, `needsInput` keyed off a probe
-/// that never fired, and outstanding work being forgotten after 15 seconds.
 @Suite("Monitor agent transcript fidelity")
 struct AgentTranscriptFidelityTests {
     // MARK: - Helpers
@@ -47,7 +44,6 @@ struct AgentTranscriptFidelityTests {
     func resultsMatchByID() {
         var model = ClaudeSessionModel(sessionId: "s")
         model.ingest(assistantToolUse([(name: "Read", id: "tu_read"), (name: "Bash", id: "tu_bash")], at: stamp(0)))
-        // Bash answers first — the real out-of-order shape from parallel calls.
         model.ingest(toolResult(id: "tu_bash", isError: true, at: stamp(1)))
 
         let tools = model.recentTools
@@ -154,9 +150,8 @@ struct AgentTranscriptFidelityTests {
         #expect(model.tokens.output == 20)
     }
 
-    /// Guards the arithmetic that made us *not* add reasoning tokens: Codex's
-    /// `output_tokens` already contains `reasoning_output_tokens`, so summing
-    /// them would double-count.
+    /// Codex's `output_tokens` already contains `reasoning_output_tokens`, so summing them
+    /// would double-count.
     @Test("Reasoning tokens are not added on top of output tokens")
     func reasoningTokensAreNotDoubleCounted() {
         var model = CodexSessionModel(sessionId: "s")
@@ -199,15 +194,13 @@ struct AgentTranscriptFidelityTests {
         var model = CodexSessionModel(sessionId: "s")
         model.ingest(decodedLine: ["type": "turn_context", "timestamp": stamp(0),
                                    "payload": ["cwd": "/Users/me/Code/api-server"]])
-        // Nothing refused the query and no codex process exists, so a warm file
-        // mtime is not evidence of life.
         #expect(!CodexAgentSource.isAlive(model: model, scannerSaysAlive: true,
                                           liveProcessDirectories: ([], true)))
     }
 
     @Test("A session with no known cwd falls back to the scanner")
     func unknownCwdFallsBack() {
-        let model = CodexSessionModel(sessionId: "s") // never saw cwd
+        let model = CodexSessionModel(sessionId: "s")
         #expect(CodexAgentSource.isAlive(model: model, scannerSaysAlive: true,
                                          liveProcessDirectories: (["/somewhere/else"], true)))
         #expect(!CodexAgentSource.isAlive(model: model, scannerSaysAlive: false,
@@ -279,8 +272,6 @@ struct AgentTranscriptFidelityTests {
         var model = CodexSessionModel(sessionId: "s")
         model.ingest(decodedLine: ["type": "turn_context", "timestamp": stamp(0),
                                    "payload": ["cwd": "/Users/me/Code/api-server"]])
-        // A tool that has written nothing for 11 minutes: the scanner gives up,
-        // but the process is demonstrably still in that checkout.
         #expect(CodexAgentSource.isAlive(model: model, scannerSaysAlive: false,
                                          liveProcessDirectories: (["/Users/me/Code/api-server"], true)))
     }
@@ -290,7 +281,6 @@ struct AgentTranscriptFidelityTests {
         var model = CodexSessionModel(sessionId: "s")
         model.ingest(decodedLine: ["type": "turn_context", "timestamp": stamp(0),
                                    "payload": ["cwd": "/Users/me/Code/api-server"]])
-        // Another codex answered, ours did not: absent must not mean dead.
         #expect(CodexAgentSource.isAlive(model: model, scannerSaysAlive: true,
                                          liveProcessDirectories: (["/Users/me/Code/other"], false)))
     }

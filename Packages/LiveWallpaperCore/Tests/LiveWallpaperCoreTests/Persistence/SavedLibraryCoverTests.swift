@@ -50,9 +50,6 @@ private func configuration(screenID: UInt32 = 777) -> ScreenConfiguration {
 struct SavedLibraryCoverTests {
     @Test("A scheme's cover file name survives the archive round trip")
     func schemeCoverRoundTrips() throws {
-        // MUTATION CHECK: drop `coverFileName` from ScreenScheme.CodingKeys and
-        // this goes red — the encoder stops writing the key, so the decode
-        // returns nil.
         let scheme = ScreenScheme(
             name: "Desk",
             configuration: configuration(),
@@ -142,9 +139,6 @@ struct SavedLibraryCoverTests {
     @MainActor
     @Test("Replacing a scheme keeps its identity, re-strips the display, and drops the stale cover")
     func replaceKeepsIdentityAndClearsCover() throws {
-        // MUTATION CHECK: build the replacement by mutating the existing scheme's
-        // `configuration` directly instead of going through `ScreenScheme.init`
-        // and the screenID assertion goes red — the live 999 is archived.
         let persistence = MemorySchemePersistence()
         let store = SchemeStore(persistence: persistence)
         let original = store.add(
@@ -169,13 +163,9 @@ struct SavedLibraryCoverTests {
         #expect(replaced.createdAt == original.createdAt)
         #expect(replaced.updatedAt >= original.updatedAt)
         #expect(replaced.sourceDisplayName == "Desk Panel")
-        // The archive must never hold a live display's identity, whichever way
-        // the scheme was written.
         #expect(replaced.configuration.screenID == ScreenScheme.unboundScreenID)
         #expect(replaced.configuration.displayFingerprint == nil)
         #expect(replaced.configuration.playbackSpeed == 1.5)
-        // A cover is a still of the *old* contents; keeping it would caption the
-        // new capture with the setup it just overwrote.
         #expect(replaced.coverFileName == nil)
         #expect(store.schemes.count == 1)
     }

@@ -2,7 +2,6 @@ import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
-/// A separate consumer: the activity panel works even without a desktop widget.
 struct AgentActivityPanel: View {
     private let observesLiveSources: Bool
     @Environment(\.dismiss) private var dismiss

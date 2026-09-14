@@ -3,8 +3,6 @@ import Foundation
 import LiveWallpaperCore
 import os
 
-/// App-wide owner of the single capture pipeline (one tap + one broker for all surfaces).
-/// Driven by settings enable + consumer ref-count.
 @MainActor
 final class SystemAudioCaptureManager {
     static let shared = SystemAudioCaptureManager()
@@ -17,10 +15,8 @@ final class SystemAudioCaptureManager {
 
     private(set) var state: State = .idle
 
-    /// App-lifetime Sendable spectrum sink; silence on stop.
     nonisolated static let broker = AudioSpectrumBroker()
 
-    /// Nonisolated capture-on hint for render hot path (main writes, render reads via lock).
     nonisolated private static let captureActive = OSAllocatedUnfairLock(initialState: false)
     nonisolated static var isCapturing: Bool { captureActive.withLock { $0 } }
 
@@ -30,7 +26,6 @@ final class SystemAudioCaptureManager {
     private(set) var isTerminated = false
     private var serviceBox: SystemAudioCaptureService?
 
-    /// Internal ctor for isolated lifecycle tests (avoids poisoning the singleton).
     init() {}
 
     func setEnabled(_ enabled: Bool) {
@@ -50,7 +45,6 @@ final class SystemAudioCaptureManager {
         reconcile()
     }
 
-    /// Consumer retain/release so enabled-but-unused costs no tap/FFT.
     func retain() {
         guard !isTerminated else { return }
         consumerCount += 1
@@ -63,7 +57,6 @@ final class SystemAudioCaptureManager {
         reconcile()
     }
 
-    /// Termination: stop tap immediately and reject re-enable for this process.
     func shutdown() {
         guard !isTerminated else { return }
         isTerminated = true
@@ -85,7 +78,6 @@ final class SystemAudioCaptureManager {
     #if DEBUG
     var consumerCountForTesting: Int { consumerCount }
 
-    /// Test-only: flip isCapturing without a real Core Audio tap.
     nonisolated static func setCapturingForTesting(_ active: Bool) {
         captureActive.withLock { $0 = active }
     }

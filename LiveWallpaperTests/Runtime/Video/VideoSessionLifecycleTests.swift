@@ -372,8 +372,6 @@ struct VideoSessionLifecycleTests {
         }
         #expect(await Self.waitUntil { preparation.isWaiting })
 
-        // These all change after retry preparation starts. The candidate must
-        // receive this state, never the values captured at task creation.
         session.pause()
         session.applyPerformanceProfile(.suspended)
         old.setMuted(true)
@@ -545,9 +543,6 @@ struct VideoSessionLifecycleTests {
         #expect(player.contains("startsHidden: Bool = false"))
         #expect(player.contains("func prepareFrameRateLimit("))
         #expect(coordinator.contains("WallpaperSessionTransaction.prepareAndCommit("))
-        // The replacement player is built through the injectable factory now, so
-        // the hidden-start guarantee lives on the factory's default rather than
-        // at the call site.
         #expect(coordinator.contains("makeVideoPlayer("))
         let owner = try RepositoryRoot.source(
             "LiveWallpaper/Runtime/Coordinators/PlaybackCoordinator.swift"
@@ -634,8 +629,6 @@ struct VideoSessionLifecycleTests {
             currentItemID: ObjectIdentifier(first)
         ) == .poll(itemGeneration: 1))
 
-        // AVPlayerLooper replacing currentItem is a new binding generation,
-        // not cancellation of a still-current candidate.
         #expect(coordinator.nextAction(
             lifecycleGeneration: 7,
             compositionGeneration: 11,
@@ -913,9 +906,8 @@ struct VideoSessionLifecycleTests {
 
         player.setFrameRateLimit(30)
 
-        // With no test AVPlayerItem the replacement build remains deferred, but
-        // the old effect is removed immediately and the positive FPS request is
-        // retained for the real current-item observer to build as `.frameRate`.
+        // No AVPlayerItem here, so the replacement build stays deferred; the old
+        // effect is still removed at once.
         #expect(player.requestedFrameRateLimit == 30)
         #expect(player.videoCompositionOwner == .none)
         #expect(player.currentVideoComposition == nil)
@@ -1122,8 +1114,6 @@ struct VideoSessionLifecycleTests {
         #expect(!service.hasTrackedWorkKey(for: screenID, player: player))
         #expect(service.workRevision(for: screenID, player: player) == 0)
 
-        // Reusing the same key immediately recreates the same numeric generation
-        // sequence. WorkIdentity must still reject the retired completion.
         service.applyEffects(
             to: player,
             screenID: screenID,
@@ -1192,13 +1182,11 @@ struct VideoSessionLifecycleTests {
         let hdr = VideoFormatInfo(isHDR: true)
         let sdr = VideoFormatInfo(isHDR: false)
 
-        // Models the late detector callback arriving after Force SDR.
         #expect(!VideoDynamicRangePolicy.usesExtendedDynamicRange(
             formatInfo: hdr,
             preference: .forceSDR
         ))
 
-        // Leaving Force SDR restores the state derived from the detected format.
         #expect(VideoDynamicRangePolicy.usesExtendedDynamicRange(
             formatInfo: hdr,
             preference: .auto
@@ -1489,7 +1477,6 @@ struct VideoSessionLifecycleTests {
         #expect(player.hasInMemoryAssetLoaderForTesting)
 
         session.pause()
-        // The dwell has not run yet: a pause the user may undo immediately stays warm.
         #expect(!player.isSuspended)
         #expect(!player.isHibernated)
 
@@ -1499,7 +1486,6 @@ struct VideoSessionLifecycleTests {
         #expect(player.player == nil)
         #expect(!player.hasInMemoryAssetLoaderForTesting)
         #expect(player.boundVideoOutputCountForTesting == 0)
-        // Released behind a still frame, not to a black desktop.
         #expect(player.isShowingHibernationStillFrameForTesting)
         #expect(player.hasInstalledPlaybackWindow)
 
@@ -1515,12 +1501,6 @@ struct VideoSessionLifecycleTests {
         }
     }
 
-    /// The absence signal and the manual pause share the player's single dwell
-    /// slot, so the session has to hold eligibility and suspend depth true across
-    /// both an absence-false push and a `.quality` policy refresh — every policy
-    /// refresh pushes absence ineligibility for a pause that is not an absence.
-    /// The pushes land during the manual-pause countdown: since the handover to
-    /// the player became immediate (D3), that is the only window left.
     @Test("Neither an absence-false push nor a quality refresh cancels a manual-pause hibernation")
     func manualPauseHibernationSurvivesAbsenceAndPolicyPushes() async throws {
         let url = try await ManualPauseVideoFixture.writeMP4()
@@ -1544,9 +1524,8 @@ struct VideoSessionLifecycleTests {
         session.pause()
         #expect(!player.isHibernated, "the manual-pause dwell has not elapsed yet")
 
-        // `ScreenManager.resolveAndApplyPerformanceState` order: the profile
-        // first, the absence push last — so the eligibility fold is the one that
-        // has to survive, not just the profile fold.
+        // Order mirrors `ScreenManager.resolveAndApplyPerformanceState`: profile
+        // first, absence push last.
         session.applyPerformanceProfile(.quality)
         session.setHibernationEligible(false)
 
@@ -1558,12 +1537,8 @@ struct VideoSessionLifecycleTests {
         #expect(!session.userIntendsToPlay)
     }
 
-    /// D3: the wall clock from a manual pause to the resources actually going
-    /// away must be the same for all three wallpaper kinds. The scene session
-    /// releases the moment its own 300s dwell elapses; video used to hand the
-    /// player over and then wait out the player's *absence* dwell on top of it,
-    /// so the real figure was 320s. The player's dwell is left at a value this
-    /// test could never wait for, so only the handover being immediate can pass.
+    /// The player's dwell is left at a value this test could never wait for, so
+    /// only an immediate handover can pass.
     @Test("A manual pause releases the video without also waiting the absence dwell")
     func manualPauseReleaseDoesNotStackTheAbsenceDwell() async throws {
         let url = try await ManualPauseVideoFixture.writeMP4()
@@ -1876,9 +1851,6 @@ struct InspectorPosterLoadStateTests {
     }
 }
 
-/// The provider closure captures this and the test mutates it afterwards, which
-/// Swift 6.4 diagnoses on a plain captured `var`.
-///
 /// `@unchecked Sendable`: every access to `asset` goes through `lock`, and the
 /// box holds nothing else.
 private final class AssetSlot: @unchecked Sendable {

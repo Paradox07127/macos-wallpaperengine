@@ -2,10 +2,7 @@ import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
-/// How much of the board's window may swallow a pointer event. AppKit dispatches by window frame: one
-/// hit-testable tile eats every desktop click, and `allowsHitTesting(false)` only declines inside this
-/// window (no hand-off below) — so the widget-only case filters here, in `hitTest`, before AppKit sees
-/// the hosting view.
+/// Widget-only hit testing must happen in `hitTest` before AppKit sees the hosting view: `allowsHitTesting(false)` does not hand events to windows below.
 enum PointerScope: Equatable, Sendable {
     /// Click-through everywhere (the board behaves as plain wallpaper).
     case none
@@ -15,20 +12,16 @@ enum PointerScope: Equatable, Sendable {
     case wholeBoard
 }
 
-/// AppKit host that embeds the SwiftUI monitor board and connects it to the runtime.
 @MainActor
 final class HostView: NSView {
 
     private let dataModel: DataModel
-    /// Internal rather than private so a test can drive a drag through the same
-    /// model the gesture uses.
     let interactionModel: InteractionModel
     private let hostingView: NSHostingView<MonitorBoardRootContainer>
 
     private(set) var pointerScope: PointerScope
     private var reduceMotion: Bool
     private(set) var isSuspended = false
-    /// Inspector previews use frozen data and remain in edit mode without a Done button.
     private(set) var preview: MonitorBoardPreview?
 
     var isInspectorPreview: Bool {
@@ -43,16 +36,7 @@ final class HostView: NSView {
     /// Live sky for the Weather tile. Nil in the preview and in tests.
     private var weatherService: WeatherReactiveService?
 
-    /// The point size the board lays out at, when that differs from the size
-    /// this view is drawn at — the inspector draws a whole desktop into a few
-    /// hundred points. The shrinking itself is done *inside* the SwiftUI tree
-    /// this host embeds (`MonitorBoardRootContainer`), never by an AppKit
-    /// transform on the host: a `bounds`/`frame` mismatch — like an ancestor
-    /// `scaleEffect` around the representable — is invisible to the nested
-    /// `NSHostingView`, which keeps deriving pointer locations from the outer,
-    /// unscaled tree. Probed 2026-09-06: with either AppKit-side scale a drag
-    /// aimed at board (500,400) arrived as (125,100); with the scale inside,
-    /// as (500,400).
+    /// Layout size when it differs from the drawn size; shrink inside the SwiftUI tree, never via an AppKit transform on the host.
     var logicalSize: CGSize? {
         didSet {
             guard logicalSize != oldValue else { return }
@@ -60,8 +44,6 @@ final class HostView: NSView {
         }
     }
 
-    /// The configuration's own override, kept so a system change can be judged
-    /// without re-reading the configuration.
     private var reduceMotionOverride: Bool?
     private lazy var reduceMotionWatcher = ReduceMotionWatcher { [weak self] _ in
         self?.systemReduceMotionDidChange()
@@ -74,7 +56,6 @@ final class HostView: NSView {
 
     var onConfigurationEdited: ((MonitorBoardConfiguration) -> Void)?
 
-    /// Relays edit-mode transitions so the wallpaper host can force mouse interaction on while editing.
     var onEditingChanged: ((Bool) -> Void)? {
         get { interactionModel.onEditingChanged }
         set { interactionModel.onEditingChanged = newValue }
@@ -108,9 +89,6 @@ final class HostView: NSView {
         super.init(frame: frameRect)
 
         reduceMotionOverride = configuration.reduceMotionOverride
-        // Watched, not read once: the particle layer follows the system switch
-        // live, and a board that only read it at init kept animating beside a
-        // layer that had stopped.
         reduceMotionWatcher.start()
         interactionModel.safeArea = safeArea
 
@@ -139,14 +117,12 @@ final class HostView: NSView {
 
     // MARK: - Data pump (externally driven)
 
-    /// Runtime pushes at its own cadence; the host never polls.
     func push(_ snapshot: MonitorSnapshot) {
         dataModel.update(snapshot)
     }
 
     // MARK: - Live configuration
 
-    /// Push a new board configuration (rebuilds the SwiftUI root).
     func apply(configuration: MonitorBoardConfiguration, safeArea: MonitorSafeAreaInsets? = nil) {
         // Drop in-flight debounced persist: older edit would clobber this newer external config.
         pendingPersistTask?.cancel()
@@ -162,8 +138,6 @@ final class HostView: NSView {
         rebuildRootView()
     }
 
-    /// The sky is only built once a Weather tile exists, which can be after this
-    /// host is already on the desktop; `apply(configuration:)` carries no service.
     func setWeatherService(_ service: WeatherReactiveService?) {
         guard weatherService !== service else { return }
         weatherService = service
@@ -186,7 +160,6 @@ final class HostView: NSView {
         hostingView.rootView.weatherService
     }
 
-    /// Test seam, forwarded — see `ReduceMotionWatcher.override`.
     var reduceMotionWatcherOverride: Bool? {
         get { reduceMotionWatcher.override }
         set { reduceMotionWatcher.override = newValue }
@@ -195,27 +168,20 @@ final class HostView: NSView {
 
     // MARK: - Suspend
 
-    /// Stops the 1 Hz clock and repeating animations while the wallpaper is suspended.
     func setSuspended(_ suspended: Bool) {
         guard isSuspended != suspended else { return }
         isSuspended = suspended
         rebuildRootView()
     }
 
-    /// Swaps the frozen contents an inspector board draws. Ignored on the
-    /// desktop, which has no preview and must keep its live pump.
     func setPreview(_ preview: MonitorBoardPreview) {
         guard self.preview != nil, self.preview != preview else { return }
         self.preview = preview
         rebuildRootView()
     }
 
-    /// On for the length of a scheme-cover capture only; see
-    /// `MonitorBoardRootContainer.forcesOpaquePanels`.
     private(set) var forcesOpaquePanels = false
 
-    /// Whether the widget cards are currently on their Liquid Glass branch, and
-    /// so whether a bitmap capture of this board needs the opaque override.
     var usesGlassPanels: Bool {
         MonitorPanelAppearance.usesGlass(
             UserDefaults.appScoped().object(forKey: MonitorPanelAppearance.glassKey) as? Bool
@@ -253,9 +219,6 @@ final class HostView: NSView {
 
     // MARK: - Click-through
 
-    /// The scope a board should run at, given its config and edit state. Shared
-    /// with `OverlayController` so the window's `ignoresMouseEvents` and this
-    /// view's filter can never disagree.
     static func pointerScope(
         for configuration: MonitorBoardConfiguration,
         isEditing: Bool
@@ -273,8 +236,6 @@ final class HostView: NSView {
         return super.hitTest(point)
     }
 
-    /// Gate for one event, in this view's own coordinates. Split out of
-    /// `hitTest` so it can be exercised without an NSHostingView underneath.
     func acceptsPointer(atLocalPoint local: NSPoint) -> Bool {
         switch pointerScope {
         case .none:
@@ -315,7 +276,6 @@ final class HostView: NSView {
         }
     }
 
-    /// Flush debounced edit immediately (teardown / window close).
     func flushPendingEdits() {
         pendingPersistTask?.cancel()
         pendingPersistTask = nil
@@ -339,19 +299,11 @@ struct MonitorBoardRootContainer: View {
     var suspended: Bool = false
     var preview: MonitorBoardPreview?
     var weatherService: WeatherReactiveService?
-    /// Set only by the inspector preview: the desktop point size the board must
-    /// lay out at while being drawn into a canvas a fraction of that size.
     var logicalSize: CGSize?
-    /// Drives the widget cards onto their painted (non-glass) branch. Offscreen
-    /// bitmap capture skips a `glassEffect` subtree entirely — card *and* text —
-    /// so a board captured for a scheme cover with Liquid Glass on would come
-    /// back as holes. See `PanelChrome`, which gates on the same environment key.
+    /// Forces painted (non-glass) cards: offscreen capture of a `glassEffect` subtree would come back as holes.
     var forcesOpaquePanels: Bool = false
 
     var body: some View {
-        // The desktop hosts have no window chrome to inherit the app language from,
-        // so `Text(key)` in a tile followed the system language while the
-        // `String(localized:bundle:)` labels beside it followed the app's.
         scaled.appLanguageScoped(defaults: .appScoped())
             .environment(\.monitorForcesOpaquePanels, forcesOpaquePanels)
     }
@@ -393,8 +345,6 @@ struct MonitorBoardRootContainer: View {
 // MARK: - Menu-bar / Dock safe area
 
 extension MonitorSafeAreaInsets {
-    /// The one place a real display's usable area is read, so the desktop board,
-    /// the Now Playing layer and the inspector preview cannot disagree about it.
     @MainActor
     static func of(_ screen: NSScreen) -> MonitorSafeAreaInsets {
         MonitorSafeAreaInsets(frame: screen.frame, visibleFrame: screen.visibleFrame)
@@ -419,7 +369,6 @@ extension MonitorSafeAreaInsets {
 
 // MARK: - Reduce-motion environment
 
-/// System setting + config `reduceMotionOverride`.
 private struct MonitorReduceMotionKey: EnvironmentKey {
     static let defaultValue = false
 }
@@ -434,10 +383,6 @@ extension EnvironmentValues {
 // MARK: - Render scale environment
 
 extension EnvironmentValues {
-    /// The factor the whole board is drawn down by — 1 on the desktop, a
-    /// fraction in the inspector preview. Only tiles that must stay readable
-    /// regardless of preview size read it; a real widget deliberately shrinks
-    /// with the board so the preview predicts the desktop.
     @Entry var monitorRenderScale: CGFloat = 1
 }
 
@@ -451,7 +396,6 @@ extension EnvironmentValues {
 
 // MARK: - Suspend environment
 
-/// True while performance policy has the wallpaper suspended.
 private struct MonitorSuspendedKey: EnvironmentKey {
     static let defaultValue = false
 }

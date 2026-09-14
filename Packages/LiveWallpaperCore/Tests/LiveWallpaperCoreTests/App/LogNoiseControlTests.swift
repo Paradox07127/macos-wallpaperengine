@@ -2,9 +2,6 @@ import Foundation
 import Testing
 @testable import LiveWallpaperCore
 
-/// Guards the three mechanisms that decide what a user's `runtime.log` actually
-/// contains: which levels the file sink admits, which of those reach the bug
-/// report excerpt, and the repeat-suppression on the screen-count breadcrumb.
 @Suite("Log noise control")
 struct LogNoiseControlTests {
     private static func makeSink() throws -> (LogFileSink, URL, URL) {
@@ -74,8 +71,6 @@ struct LogNoiseControlTests {
             category: .wpeRender, level: .error, message: "Scene 999 failed: fileMissing",
             file: "/s/WPEMetalSceneRenderer+Load.swift", line: 124
         )
-        // A playlist switching faster than the excerpt budget: under one shared
-        // budget these push the error out entirely.
         for index in 0..<10 {
             sink.record(
                 category: .screenManager, level: .notice,
@@ -89,9 +84,6 @@ struct LogNoiseControlTests {
         #expect(excerpt.contains("[NOTICE]"))
     }
 
-    /// Rotation truncates the current file the instant it crosses the 1 MiB
-    /// threshold, so the very record that triggers it lands in `runtime.1.log`,
-    /// not the (now empty) current file `recentDiagnosticLines` used to read alone.
     @Test("A failure that triggers rotation still reaches the excerpt")
     func recentDiagnosticLinesSurvivesRotation() throws {
         let (sink, file, directory) = try Self.makeSink()
@@ -101,8 +93,7 @@ struct LogNoiseControlTests {
             (try? FileManager.default.attributesOfItem(atPath: file.path)[.size] as? UInt64) ?? 0
         }
 
-        // Fill to just under the 1 MiB rotation threshold with short filler
-        // lines (~285 bytes each), leaving a gap smaller than the padded
+        // Fill to just under the 1 MiB threshold, leaving a gap smaller than the padded
         // "boom" entry below so that entry is guaranteed to cross it.
         let filler = String(repeating: "f", count: 220)
         while currentSize() < 1_048_576 - 285 {
@@ -117,7 +108,6 @@ struct LogNoiseControlTests {
         let excerpt = sink.recentDiagnosticLines().joined(separator: "\n")
         #expect(excerpt.contains("boom"))
 
-        // Rotation left the current file empty.
         let currentContents = try String(contentsOf: file, encoding: .utf8)
         #expect(currentContents.isEmpty)
     }
@@ -185,8 +175,6 @@ struct LogNoiseControlTests {
         #expect(LogPrivacyRedactor.sanitizedTitle("Cyberpunk Girl 4K") == "Cyberpunk Girl 4K")
     }
 
-    /// The scene identity line must degrade to workshop-ID-only rather than
-    /// printing a dangling separator or falling back to `"Scene <id>"`.
     @Test("Title fragment is empty when there is no usable title")
     func titleFragmentOmitsMissingTitles() {
         #expect(LogPrivacyRedactor.titleFragment(nil).isEmpty)

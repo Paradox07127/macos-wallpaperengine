@@ -1,9 +1,7 @@
 import AppKit
 import LiveWallpaperCore
 import WebKit
-// HTMLWebView lives in LiveWallpaperCore (warn-long importer cost).
 
-/// WKWebView-backed HTML wallpaper host.
 @MainActor
 final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
 
@@ -13,33 +11,26 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
     private let bookmarkResolver: SecurityScopedBookmarkResolver
     private let onBookmarkRefresh: @MainActor (_ original: Data, _ refreshed: Data) -> Void
     private var allowMouseInteraction = false
-    /// Re-entry guard: forwarding gestures to `webView` bubbles back through
-    /// our nextResponder (`self`) and would stack-overflow without this latch
-    /// (`EXC_BAD_ACCESS` first hit in `magnify`; swipe/rotate were latent).
+    /// Re-entry guard: forwarding to webView bubbles back through nextResponder (self) and would stack-overflow without this latch.
     private var isForwardingGesture = false
     var compiledTrackerRuleList: WKContentRuleList?
     var hasTrackerRulesAttached = false
     var trackerBlockingRequested = false
     private var activeSecurityScopedURL: URL?
-    /// `WKWebsiteDataStore` is locked at WKWebView init; track live vs requested
-    /// so `apply` can warn that a store swap only takes effect on rebuild.
+    /// WKWebsiteDataStore is locked at WKWebView init; a store swap only takes effect on rebuild.
     private var currentDataStoreIsEphemeral: Bool
     private var pendingEphemeral: Bool
     var lastAppliedConfig: HTMLConfig?
     private var wallpaperEnginePropertyBootstrapScript: String?
-    /// Cached `project.json` schema; re-read only on folder swap so slider
-    /// applies re-serialize without disk I/O.
     private var wallpaperEnginePropertySchema: WallpaperEngineProjectPropertySchema?
     private var wallpaperEnginePropertySchemaFolder: URL?
     private var wallpaperEngineProjectKey: String?
     var lastSource: HTMLSource?
     /// Capped by `HTMLConfig.maxRetries`; drives exponential backoff.
     var consecutiveFailureCount: Int = 0
-    /// PKGV index load is blocking I/O — off MainActor, generation-scoped.
     var packageBackingTask: Task<Void, Never>?
     var packageBackingGeneration: UInt64 = 0
     var restartPackageBackingAfterResume = false
-    /// Outside the WebKit host so suspend cancels timers without catch-up.
     lazy var reloadScheduler = HTMLReloadScheduler { [weak self] in
         self?.reloadCurrentSource()
     }
@@ -47,15 +38,10 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
     /// Matches `SceneWallpaperSession`'s absence dwell so both wallpaper kinds
     /// release at the same point in an absence.
     static let hibernationDwell: Duration = .seconds(20)
-    /// Generous enough for a cold reload of a heavy WebGL page off a slow volume;
-    /// past it a frozen pre-absence snapshot is worse than the live document.
     static let restoreCoverDeadline: Duration = .seconds(15)
     var restoreCoverDeadlineTask: Task<Void, Never>?
     var hibernationState = HibernationPhase()
     let hibernationDwell = AbsenceDwell()
-    /// Last pushed eligibility. The dwell's cancellation covers the countdown,
-    /// but not a cover request already awaiting its snapshot reply, which is why
-    /// this is state rather than an argument.
     var hibernationEligible = false
     var mediaLifecycleState = HTMLMediaLifecycleState()
     var mediaPlaybackSuspended: Bool {
@@ -68,7 +54,6 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
     /// redirects and blocks external `.other` swaps for local/inline.
     private var currentRemoteSourceOrigin: URL?
 
-    /// Last-frame overlay while suspended so the desktop stays static.
     let snapshotOverlay: NSImageView = {
         let view = NSImageView()
         view.imageScaling = .scaleAxesIndependently
@@ -80,16 +65,11 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
     }()
     /// Drops stale `takeSnapshot` replies after a later resume/suspend flip.
     var snapshotGeneration: UInt64 = 0
-    /// Drives `.fair` RAF throttle independent of ScreenManager suspend/quality.
     /// `nonisolated(unsafe)`: only mutated from MainActor code, but deinit (released on an
     /// arbitrary queue) also removes the observer, which Swift 6 can't prove safe.
     nonisolated(unsafe) var thermalObserver: NSObjectProtocol?
     var lastRafThrottleRatio: Int = 1
-    /// User ceiling, independent of the thermal ratio above and of suspend.
-    /// Nil until a host pushes one: an unset view installs no gate and reports
-    /// the same 60 to Wallpaper Engine it always did, so nothing changes for a
-    /// screen whose limit never reaches here.
-    /// Already resolved against this view's display by `PlaybackCoordinator`.
+    /// User ceiling, independent of thermal ratio and suspend. Nil: no gate; reports 60 to Wallpaper Engine.
     var targetFrameRateLimit: Int?
     var lastRafTargetFrameIntervalMilliseconds: Double = 0
 
@@ -176,9 +156,7 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
         let controller = webView.configuration.userContentController
         controller.removeAllUserScripts()
 
-        // Every frame gets the lifecycle controller: an ad or embedded-player
-        // iframe owns its own timers, rAF and canvases, none of which the main
-        // frame's hooks can reach. The main frame relays the phase down.
+        // Every frame (not main-only): an ad/iframe owns timers, rAF and canvases the main frame's hooks cannot reach.
         controller.addUserScript(WKUserScript(
             source: HTMLWallpaperRuntimeScript.lifecycleController(
                 aggressiveSuspend: config?.aggressiveSuspend ?? false
@@ -357,7 +335,6 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
 
         webView.configuration.defaultWebpagePreferences.allowsContentJavaScript = config.allowJavaScript
         allowMouseInteraction = config.allowMouseInteraction
-        // CSP is opt-in; flip triggers documentStart reload below.
         folderHandler.cspEnforcementEnabled = config.cspEnforcementEnabled
         folderHandler.networkIsolationEnabled = config.requiresNetworkIsolation
 
@@ -425,7 +402,6 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
         lastAppliedConfig = config
 
         if needsDocumentStartReload {
-            // documentStart hooks (CSP, canvas upgrader, GPU release) need a reload.
             reloadCurrentSource()
         }
     }
@@ -540,7 +516,6 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
 
     // MARK: - Auto-Refresh
 
-    /// Scheduler adds ±10% jitter so multi-screen dashboards don't lockstep-hit APIs.
     private func applyRefreshInterval(_ seconds: Int) {
         guard !isCleaningUp else { return }
         reloadScheduler.setRefreshInterval(seconds: TimeInterval(seconds))
@@ -550,7 +525,6 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
         loadSource(source, resetFailureCount: true)
     }
 
-    /// User-driven loads reset the retry budget; `scheduleRetry` keeps it.
     private func loadSource(
         _ source: HTMLSource,
         resetFailureCount: Bool,
@@ -696,7 +670,6 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
         }
     }
 
-    /// User retry may prepare package backing while suspended; auto refresh does not.
     func loadSourceForUserRetry(_ source: HTMLSource) {
         loadSource(
             source,
@@ -705,7 +678,6 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
         )
     }
 
-    /// Utility-queue PKGV parse; typed rejection → loose-file fallback by caller.
     static func packageBacking(
         forPackageURL pkgURL: URL, inside folderURL: URL
     ) async throws -> FolderURLSchemeHandler.PackageBacking {
@@ -719,7 +691,6 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
     }
 
     private func updateWallpaperEnginePropertyBridge(for folderURL: URL?, config: HTMLConfig? = nil) {
-        // Re-parse project.json only on folder change.
         if folderURL != wallpaperEnginePropertySchemaFolder {
             wallpaperEnginePropertySchemaFolder = folderURL
             wallpaperEnginePropertySchema = folderURL.flatMap {
@@ -816,8 +787,6 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
         return target == base || target.hasPrefix(normalizedBase)
     }
 
-    /// Navigation policy: local `file://` only inside read root; remote `.other`
-    /// stays same-origin to `remoteSourceOrigin`; local/inline never swap to http(s).
     nonisolated static func navigationDecision(
         for url: URL?,
         navigationType: WKNavigationType,
@@ -829,10 +798,7 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
         switch navigationType {
         case .other, .reload:
             guard let url else { return .cancel }
-            // `about:blank` is what WebKit reports for `loadHTMLString` (every inline wallpaper) and
-            // hibernation teardown. Cancelling it silently left inline sources permanently empty —
-            // `NSURLErrorCancelled` gets swallowed by `shouldIgnoreNavigationFailure`. Exact match, not the
-            // `about:` scheme: a page navigating itself blank is the worst it allows.
+            // Allow exact about:blank (loadHTMLString / hibernation teardown); cancelling it would leave inline sources empty. Exact URL, not the about: scheme.
             if url == Self.aboutBlank { return .allow }
             if url.isFileURL {
                 return fileURL(url, isContainedIn: localReadAccessRoot) ? .allow : .cancel
@@ -1068,7 +1034,6 @@ extension HTMLWallpaperView: WKNavigationDelegate {
                 ? 1
                 : HTMLFramePacingPolicy.wallpaperEngineFPS(forCeiling: targetFrameRateLimit)
         )
-        // Suspended reload re-inits user scripts — re-apply lifecycle + snapshot.
         if mediaPlaybackSuspended {
             invokeLifecycleHook(.suspend)
             captureSuspendSnapshot()

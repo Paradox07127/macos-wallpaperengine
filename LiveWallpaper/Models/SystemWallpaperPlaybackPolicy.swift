@@ -1,13 +1,10 @@
 import Foundation
 
-/// Playback tiers for the system-wallpaper extension, decided from ambient
-/// signals the appex can observe on its own. Pure function so the truth
-/// table is unit-testable.
 enum PlaybackTier: String, Equatable {
-    case full       // normal playback
-    case reduced    // lower rate, e.g. on battery
-    case minimal    // near-still, thermal pressure
-    case paused     // fully stopped (system asked, or screen asleep)
+    case full
+    case reduced
+    case minimal
+    case paused
 }
 
 struct PlaybackPolicyInput: Equatable {
@@ -24,8 +21,6 @@ struct PlaybackPolicyInput: Equatable {
 enum PlaybackPolicy {
     static func tier(for input: PlaybackPolicyInput) -> PlaybackTier {
         if input.systemRequestedPause { return .paused }
-        // Apple's video wallpapers play on the lock screen and settle into a
-        // still once you are at the desktop; this is that behaviour, opt-in.
         if input.playbackMode == .stillOnDesktop, !input.isLockScreen { return .minimal }
         switch input.thermalState {
         case .critical: return .paused

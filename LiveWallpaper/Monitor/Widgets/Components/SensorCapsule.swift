@@ -1,8 +1,7 @@
 import SwiftUI
 
-/// Temperature chip: a band-coloured dot, the reading in the user's unit, and
-/// the "sensor" tag that says this came from hardware rather than from the
-/// utilisation model. CPU and GPU show the same thing and now draw it the same.
+/// Temperature chip; the "sensor" tag says the reading came from hardware
+/// rather than from the utilisation model.
 struct SensorCapsule: View {
     var celsius: Double
     var scale: Design.TypeScale

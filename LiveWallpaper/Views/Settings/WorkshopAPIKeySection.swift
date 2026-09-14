@@ -3,7 +3,6 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// Edits keys inline using the shared `SteamWebAPIKeyEditor`.
 struct WorkshopAPIKeySection: View {
     let services: WorkshopServices
 
@@ -29,7 +28,6 @@ struct WorkshopAPIKeySection: View {
             }
             // Keep modifiers on the row so Form recognizes the Section.
             .animation(.easeInOut(duration: 0.18), value: isEditing)
-            // Open the editor when no key is stored; collapse after saving.
             .onChange(of: services.hasWebAPIKey, initial: true) { _, hasKey in
                 isEditing = !hasKey
             }
@@ -42,7 +40,6 @@ struct WorkshopAPIKeySection: View {
         }
     }
 
-    /// Only access and validation errors need a visible explanation.
     private var subtitle: LocalizedStringKey? {
         if services.apiKeyAccessDenied {
             return "Key access denied. Allow access in macOS or enter the key again."

@@ -5,9 +5,6 @@
 
     @Suite("WPE script fault policy")
     struct WPEScriptFaultPolicyTests {
-        /// Drives the policy to the given number of consecutive failures of one
-        /// entry point, attempting only when the policy allows it. Returns the
-        /// last verdict and the advanced clock.
         private func fail(
             _ policy: inout WPEScriptFaultPolicy,
             entryPoint: String = "update",
@@ -126,9 +123,6 @@
             let (_, now) = fail(&policy, times: 4)
             let attempt = policy.shouldAttempt(entryPoint: "update", at: now)
             #expect(attempt)
-            // Regression guard: keying escalation on the exception message let a
-            // script throwing `Error("t=" + Date.now())` restart at step 1 every
-            // tick and never reach quarantine.
             let verdict = policy.recordFailure(entryPoint: "update", at: now)
             #expect(verdict == .probing)
         }

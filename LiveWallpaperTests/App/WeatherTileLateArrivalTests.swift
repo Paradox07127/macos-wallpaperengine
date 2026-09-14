@@ -3,9 +3,6 @@ import AppKit
 import LiveWallpaperCore
 import Testing
 
-/// The effects coordinator is built on first need, so a Weather tile placed
-/// after startup must be the thing that builds it — and a board already on the
-/// desktop must be handed the sky, since `apply(configuration:)` carries none.
 @Suite("Weather tile placed after startup")
 struct WeatherTileLateArrivalTests {
     @MainActor

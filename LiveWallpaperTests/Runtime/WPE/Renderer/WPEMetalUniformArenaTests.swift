@@ -5,10 +5,6 @@ import Testing
 import simd
 @testable import LiveWallpaper
 
-/// The arena replaces a per-pass `[SIMD4<Float>]` and a per-frame `makeBuffer` with
-/// bump allocations inside resident per-frame-slot storage. What has to hold: it
-/// stops allocating, it never rewinds memory the GPU may still be reading, and a
-/// reservation it cannot serve degrades to the old path instead of vanishing.
 @Suite("WPE uniform arena")
 struct WPEMetalUniformArenaTests {
 
@@ -31,7 +27,6 @@ struct WPEMetalUniformArenaTests {
         return aStart < bStart + UInt(b.byteCount) && bStart < aStart + UInt(a.byteCount)
     }
 
-    /// One complete frame on `slot`: open, reserve, submit, and let the GPU finish.
     private static func runFrame(_ arena: WPEMetalUniformArena, slot: Int, sizes: [Int]) {
         arena.beginFrame(slot: slot)
         for size in sizes {
@@ -55,9 +50,7 @@ struct WPEMetalUniformArenaTests {
             Self.runFrame(arena, slot: frame % arena.slotCount, sizes: sizes)
         }
 
-        // The point of the arena: steady state adds nothing.
         #expect(arena.bufferAllocationCount == warm)
-        // And warm-up itself is one buffer per slot, not one per frame.
         #expect(warm == arena.slotCount)
         #expect(arena.overflowCount == 0)
     }
@@ -82,12 +75,10 @@ struct WPEMetalUniformArenaTests {
         #expect(stable.offset >= speculative.offset + speculative.byteCount)
         #expect(arena.inFlightCount(ofSlot: 0) == 1)
 
-        // Writes to the re-encode must not disturb the in-flight frame's uniforms.
         speculative.storage.update(repeating: SIMD4<Float>(1, 2, 3, 4))
         stable.storage.update(repeating: SIMD4<Float>(9, 9, 9, 9))
         #expect(speculative.storage.allSatisfy { $0 == SIMD4<Float>(1, 2, 3, 4) })
 
-        // Only once the GPU reports completion may the slot be reused.
         submission.complete()
         #expect(arena.inFlightCount(ofSlot: 0) == 0)
         arena.beginFrame(slot: 0)
@@ -106,8 +97,6 @@ struct WPEMetalUniformArenaTests {
                 #expect(arena.inFlightCount(ofSlot: 0) == 1)
             }
         }
-        // A command buffer released without ever being committed never read the
-        // arena, so `deinit` freeing the slot is the correct direction.
         #expect(arena.inFlightCount(ofSlot: 0) == 0)
     }
 
@@ -150,8 +139,8 @@ struct WPEMetalUniformArenaTests {
         _ = arena.reserve(slotCount: 4, frameSlot: 0)
         let reused = try #require(arena.reserve(slotCount: 4, frameSlot: 0))
 
-        // Same memory as `first` — and the packer relies on it being zero, because it
-        // writes only the lanes a uniform's glslType covers.
+        // The packer relies on rewound memory being zero: it writes only the lanes
+        // a uniform's glslType covers.
         #expect(reused.offset == first.offset)
         #expect(reused.storage.allSatisfy { $0 == SIMD4<Float>() })
     }
@@ -182,8 +171,6 @@ struct WPEMetalUniformArenaTests {
         #expect(refused == nil)
         #expect(arena.overflowCount == 1)
 
-        // The refusal recorded what the frame wanted, so the next rewind sizes up and
-        // the scene converges to zero fallbacks.
         arena.beginSubmission(frameSlot: 0).complete()
         arena.beginFrame(slot: 0)
         let granted = try #require(arena.reserve(slotCount: 256, frameSlot: 0))
@@ -219,16 +206,8 @@ struct WPEMetalUniformArenaTests {
 
     // MARK: - Production wiring
 
-    /// Every test above drives the arena object directly, so deleting the single
-    /// `render()` line that hands it the frame's command buffer leaves them all
-    /// green while the in-flight rule they pin protects nothing — a double render
-    /// would then rewind memory the GPU is still reading.
-    ///
-    /// Source-level because there is no seam that observes the attach, and
-    /// deliberately minimal: only that the call exists inside `render(` and
-    /// precedes the first `commit()` (Metal refuses handlers after commit).
-    /// Reformatting the call across lines is expected to fail this and is a
-    /// one-line fix here.
+    /// Source-level because nothing observes the attach: reformatting the
+    /// `trackSubmission(` call across lines fails this, and is a one-line fix here.
     @Test("render() registers the arena submission before the first commit")
     func renderRegistersArenaSubmissionBeforeCommit() throws {
         let source = try RepositoryRoot.source(

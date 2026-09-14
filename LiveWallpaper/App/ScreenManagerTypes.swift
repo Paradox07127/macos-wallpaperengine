@@ -26,7 +26,6 @@ struct WallpaperSessionSummaryCache: Equatable {
     }
 }
 
-/// Equatable snapshot of the derived wallpaper-session state.
 struct WallpaperSessionState: Equatable {
     var version: UInt64 = 0
     var summaryCache: WallpaperSessionSummaryCache = WallpaperSessionSummaryCache()
@@ -46,15 +45,9 @@ struct ScreenManagerStartupOptions: Equatable {
     /// Second opinion used to clear a stale absence when an OS wake/unlock
     /// notification never arrives. Injectable so tests can drive lock state.
     var userPresenceProbe: any UserPresenceProbing = SystemUserPresenceProbe.shared
-    /// How long a freshly recorded absence is left alone before the probe is
-    /// allowed to second-guess it. OS notifications can beat the CoreGraphics
-    /// state they describe, so revalidating immediately would clear the very
-    /// absence the notification just established.
+    /// How long a freshly recorded absence is left alone before the probe is allowed to second-guess it. OS notifications can beat the CoreGraphics state they describe, so revalidating immediately would clear the very absence the notification just established.
     var absenceRevalidationGrace: Duration = .seconds(10)
-    /// Cadence of the slow poll that re-runs revalidation while absent. The
-    /// safety net for an absence whose only policy refresh landed inside the
-    /// grace window and was skipped there; injectable so tests do not have to
-    /// wait out the production cadence.
+    /// Cadence of the slow poll that re-runs revalidation while absent. Injectable so tests do not have to wait out the production cadence.
     var absenceRevalidationPollInterval: Duration = .seconds(30)
     /// SKU-driven feature toggles. Every production, test, and preview caller
     /// must explicitly choose Lite, Pro, or the fail-closed unconfigured state.
@@ -72,7 +65,6 @@ struct ScreenManagerStartupOptions: Equatable {
     }
 }
 
-/// The activity assertion used while at least one wallpaper is actively drawing.
 enum WallpaperRenderingActivityPolicy {
     static let options: ProcessInfo.ActivityOptions = .userInitiatedAllowingIdleSystemSleep
 }

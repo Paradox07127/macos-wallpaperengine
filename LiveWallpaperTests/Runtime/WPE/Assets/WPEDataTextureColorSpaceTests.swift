@@ -4,15 +4,8 @@ import LiveWallpaperProWPE
 import Metal
 import Testing
 
-/// Windows RenderDoc captures of 2370927443 / 3554161528 / 2955378002 / 3448877775
-/// bind every SRV as `*_UNORM`, while Mac built `effects/waterripplenormal`,
-/// `effects/waterflowphase`, `util/noise` and the RGBA `masks/*` as
-/// `rgba8Unorm_srgb` (trace format 71). Those are data, not colour: 0.5 decodes
-/// to 0.21 and the normal field / flow phase / noise modulation is warped.
 @Suite("WPE data texture colour space")
 struct WPEDataTextureColorSpaceTests {
-    /// Every reference the four-scene traces showed as format 71 while the same
-    /// directory's R8/RG8 siblings were already linear (format 10 / 30).
     static let dataReferences = [
         "effects/waterripplenormal",
         "effects/waterflowphase",
@@ -28,9 +21,6 @@ struct WPEDataTextureColorSpaceTests {
         "materials/masks/tint_mask_26f1dac1.tex",
     ]
 
-    /// Authored colour content from the same four traces. These must keep sRGB
-    /// decoding — the global gamma-vs-linear contract is a separate, undecided
-    /// question and this change must not pre-empt it.
     static let colorReferences = [
         "Neon cafe",
         "night cielo",
@@ -58,7 +48,6 @@ struct WPEDataTextureColorSpaceTests {
         let caps = WPEMetalTextureCapabilities(supportsBCTextureCompression: true)
         let dataSpace = WPEMetalTextureColorSpaceClassifier.colorSpace(forReference: "util/noise")
         let colorSpace = WPEMetalTextureColorSpaceClassifier.colorSpace(forReference: "Neon cafe")
-        // 70 = rgba8Unorm, 71 = rgba8Unorm_srgb in the canonical trace.
         #expect(try WPEMetalTextureFormatMapper.mapping(
             for: .rgba8888, capabilities: caps, colorSpace: dataSpace
         ).pixelFormat == .rgba8Unorm)
@@ -94,8 +83,7 @@ struct WPEDataTextureColorSpaceTests {
         #expect(abs(Int(high[0]) - 176) <= 2)
     }
 
-    /// Isolates the stock Pulse colour/Add branch: no noise, white tints,
-    /// unit amount/power. Raw mask values must not undergo a colour transfer.
+    /// mask 的原始值不能过颜色传输函数,所以它与 source 纹理格式刻意不同。
     private func pulsePixel(
         time: Float, mask: UInt8 = 255, alpha: UInt8 = 255,
         shaderName: String = "effects/pulse"

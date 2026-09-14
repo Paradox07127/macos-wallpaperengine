@@ -1,11 +1,6 @@
 import Foundation
 import LiveWallpaperCore
 
-/// The fixed reading the inspector's "Sample data" preview draws. Every metric
-/// group is marked available and every optional detail is filled in, so all 24
-/// card kind × size combinations show their full content — that is the whole
-/// point of the mode: checking long names and crowded layouts without waiting
-/// for the machine to happen to be busy.
 @MainActor
 enum MonitorBoardPreviewFixture {
     /// A stable instant, so two renders of the sample mode are byte-identical

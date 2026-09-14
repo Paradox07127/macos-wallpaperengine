@@ -4,15 +4,12 @@ import Foundation
 import LiveWallpaperCore
 import Testing
 
-/// Header chrome that every board tile shares: the kind → SF Symbol map and the
-/// gauge column both widgets pin their ring to.
 @Suite("Monitor widget chrome")
 struct MonitorWidgetChromeTests {
     private static let widgetDirectory = "LiveWallpaper/Monitor/Widgets"
 
-    /// Header glyphs that are a *reading* rather than an identity: the battery
-    /// level and the active interface type. They are deliberately not the
-    /// kind map's icon, so the single-source rule below has to let them past.
+    /// Header glyphs that are a reading rather than an identity (battery level, interface
+    /// type): deliberately not the kind map's icon, so the single-source rule lets them past.
     private static let stateDrivenHeaderGlyphs = ["powerSymbol", "headerSymbol"]
 
     // MARK: - The kind → symbol map
@@ -28,8 +25,7 @@ struct MonitorWidgetChromeTests {
         }
     }
 
-    /// Control group: without it the probe above passes on any string, including
-    /// the `trackpad` this repo once shipped as a symbol name that does not exist.
+    /// Control group: without it the probe above passes on any string.
     @Test("The symbol probe rejects names that are not SF Symbols")
     func iconProbeDiscriminates() {
         #expect(NSImage(systemSymbolName: "trackpad", accessibilityDescription: nil) == nil)
@@ -87,16 +83,9 @@ struct MonitorWidgetChromeTests {
 
     // MARK: - Gauge column alignment
 
-    /// CPU's ring used to sit ~12 pt right of GPU's because its gauge frame had
-    /// no alignment and centred the (height-limited) square inside a wider slot.
-    /// Both widgets now pin a width and align the ring to its leading edge, but
-    /// the widths come from different places, and that difference is the point:
-    ///
-    /// - GPU's is a literal (68/108 — its own budget, untouched here).
-    /// - CPU's must be `Self.gaugeSide(…)`. A literal there is what stranded
-    ///   28.3 pt beside a 67.7 pt ring, and `gaugeSide` also reserves the widest
-    ///   composition legend so the row stops reflowing when the reading crosses
-    ///   10% or 100% (measured: the column walked 67.70 → 73.50 → 80.00).
+    /// CPU and GPU size their gauge column from different places on purpose: GPU uses a
+    /// literal, CPU must use `Self.gaugeSide(…)`, which also reserves the widest composition
+    /// legend so the row stops reflowing as the reading crosses 10% or 100%.
     @Test("CPU and GPU pin their arc gauge to the same leading edge")
     func gaugeColumnsAreLeadingAligned() throws {
         let sites: [(file: String, declaration: String, literalWidth: Bool)] = [
@@ -146,7 +135,6 @@ struct MonitorWidgetChromeTests {
         return files
     }
 
-    /// The brace-matched body that follows `declaration`'s opening `{`.
     private static func body(after declaration: String, in source: String) -> String? {
         guard let start = source.range(of: declaration) else { return nil }
         var depth = 1
@@ -166,11 +154,9 @@ struct MonitorWidgetChromeTests {
         return nil
     }
 
-    /// The first `.frame(…)` modifier applied after the body's first `ArcGauge(`.
-    /// The first `.frame(...)` after the gauge that constrains WIDTH, flattened to
-    /// one line. Not simply the first frame: CPU caps the ring's height on one
-    /// call and pins the column's width on the next, and it is the second that
-    /// this file is about.
+    /// The first `.frame(...)` after the gauge that constrains WIDTH, flattened to one line.
+    /// Not simply the first frame: CPU caps the ring's height on one call and pins the
+    /// column's width on the next.
     private static func gaugeWidthFrame(in body: String) -> String? {
         guard let gauge = body.range(of: "ArcGauge(") else { return nil }
         var cursor = gauge.upperBound

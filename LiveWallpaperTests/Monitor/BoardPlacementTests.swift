@@ -4,7 +4,6 @@ import Foundation
 @testable import LiveWallpaperCore
 import Testing
 
-/// Pins shared pointer, keyboard, and accessibility semantics without requiring a hidden-window AX hierarchy.
 @Suite("Monitor board placement and accessibility characterization")
 struct MonitorBoardPlacementAccessibilityCharacterizationTests {
     private let boardSize = CGSize(width: 1600, height: 1000)
@@ -335,9 +334,6 @@ struct MonitorBoardPlacementAccessibilityCharacterizationTests {
         #expect(origin.y + footprint.height <= safe.maxY + 0.5)
     }
 
-    /// Drawing a board is a read. A stored position that predates the Dock is
-    /// clamped for the frame being drawn, and the configuration keeps the value
-    /// the user actually chose.
     @Test("laying out a board stored under the Dock emits no configuration edit")
     @MainActor
     func drawingDoesNotWriteBackTheClamp() throws {
@@ -382,10 +378,8 @@ struct MonitorBoardPlacementAccessibilityCharacterizationTests {
         abs(lhs - rhs) <= tolerance
     }
 
-    /// `RepositoryRoot` ascends to the directory holding the Xcode project, so
-    /// this survives the test file moving between directories. Counting
-    /// `deletingLastPathComponent()` calls does not — it broke silently when
-    /// this file moved into `Monitor/`.
+    /// Use `RepositoryRoot`, not a count of `deletingLastPathComponent()` calls: the count
+    /// breaks silently when this file moves between directories.
     private func source(_ relativePath: String) throws -> String {
         try RepositoryRoot.source(relativePath)
     }

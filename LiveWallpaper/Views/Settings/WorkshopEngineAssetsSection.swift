@@ -3,7 +3,6 @@ import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
-/// Links or downloads shared Wallpaper Engine assets.
 struct WorkshopEngineAssetsSection: View {
     @Environment(WorkshopSetupController.self) private var controller
 
@@ -59,7 +58,6 @@ struct WorkshopEngineAssetsSection: View {
 
     // MARK: - Download progress
 
-    /// Determinate downloads use a separate row; other phases use an inline spinner.
     private var downloadFraction: Double? {
         guard engineInstaller.isBusy, case .downloading = engineInstaller.phase else { return nil }
         return engineInstaller.progress
@@ -89,7 +87,6 @@ struct WorkshopEngineAssetsSection: View {
         .accessibilityValue(Text(verbatim: downloadProgressLabel(fraction)))
     }
 
-    /// Show both progress percentage and transferred bytes.
     private func downloadProgressLabel(_ fraction: Double) -> String {
         let percent = Int((fraction * 100).rounded())
         guard let bytes = engineInstaller.progressBytes,
@@ -198,7 +195,6 @@ struct WorkshopEngineAssetsSection: View {
         }
     }
 
-    /// Match onboarding’s download and existing-install actions.
     private var engineAssetsUnlinkedControl: some View {
         WorkshopSetupRoutes(
             primary: WorkshopSetupRoute(
@@ -217,7 +213,6 @@ struct WorkshopEngineAssetsSection: View {
 
     private func revealEngineAssetsInFinder() {
         guard let root = WPEEngineAssetsLibrary.managedInstallRoot() ?? engineAssets.resolveAuthorizedRoot() else { return }
-        // Steam-folder path: needs the same security scope as other library reads.
         let scope = root.startAccessingSecurityScopedResource()
         defer { if scope { root.stopAccessingSecurityScopedResource() } }
         NSWorkspace.shared.activateFileViewerSelecting([root])
@@ -276,7 +271,6 @@ struct WorkshopEngineAssetsSection: View {
                 tint: DesignTokens.Colors.Status.active
             )
         }
-        // Keep the download blocker visible without requiring hover.
         if let reason = controller.engineAssetsDownloadBlockReason, !controller.hasEngineAssets {
             return EngineAssetsStatusLine(message: reason, tint: .secondary)
         }

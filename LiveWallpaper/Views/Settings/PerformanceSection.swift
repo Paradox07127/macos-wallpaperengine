@@ -61,7 +61,6 @@ extension GeneralSettingsView {
                     title: "MetalFX upscaling",
                     info: "Renders scenes at a lower resolution; may blur text or increase power use. Changes reload wallpapers."
                 ) {
-                    // Render scale is read at session creation; changes require a rebuild.
                     Picker("", selection: $metalFXRenderScale) {
                         Text("Off").tag(1.0)
                         Text("Quality (0.75×)").tag(0.75)
@@ -82,7 +81,6 @@ extension GeneralSettingsView {
                     title: "HDR output",
                     info: "Scene wallpapers only. Lets HDR scenes glow brighter than white on HDR displays; changes reload wallpapers."
                 ) {
-                    // Drawable format is fixed when the surface is built; changes require a rebuild.
                     Toggle("", isOn: $displayHDROutputEnabled)
                         .labelsHidden()
                         .toggleStyle(.switch)
@@ -98,7 +96,6 @@ extension GeneralSettingsView {
                 title: "Multithreaded rendering",
                 info: "Scene wallpapers only. Disable for troubleshooting; changes reload wallpapers."
             ) {
-                // Thread mode is read at session creation; changes require a rebuild.
                 Toggle("", isOn: $offMainRenderEnabled)
                     .labelsHidden()
                     .toggleStyle(.switch)

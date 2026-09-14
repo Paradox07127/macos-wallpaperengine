@@ -1,7 +1,6 @@
 import Foundation
 import LiveWallpaperCore
 
-/// Bookmark resolve + path match for `WPEOrigin` (Pro; keeps Core free of path-safety).
 extension WPEOrigin {
     public var sourcePreviewURL: URL? {
         guard let previewFileName,
@@ -19,7 +18,7 @@ extension WPEOrigin {
         return WPEPathSafety.resourceURL(root: sourceFolder, relativePath: entryFile)
     }
 
-    /// Best-effort check that a security-scoped video/folder bookmark still points at this origin's WPE backing location.
+    /// Best-effort check.
     public static func matchesBookmark(_ bookmarkData: Data, origin: WPEOrigin) -> Bool {
         switch origin.resourceLocation {
         case .cache:

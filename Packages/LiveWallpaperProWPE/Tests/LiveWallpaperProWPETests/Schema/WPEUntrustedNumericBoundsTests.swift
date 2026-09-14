@@ -2,13 +2,8 @@ import Foundation
 import Testing
 @testable import LiveWallpaperProWPE
 
-/// Workshop scene assets are untrusted input, and `Int(_:)` traps on NaN and on
-/// any magnitude past `Int` rather than returning a wrong answer. A single
-/// out-of-range literal in `scene.pkg` therefore used to kill the wallpaper
-/// agent during load instead of failing the asset closed.
-///
-/// `1e300` is the probe value throughout because it is *finite* — an
-/// `isFinite` guard passes it and still traps.
+/// `1e300` is the probe value throughout because it is *finite* — an `isFinite` guard
+/// passes it and still traps.
 @Suite("Untrusted numeric bounds")
 struct WPEUntrustedNumericBoundsTests {
 
@@ -43,8 +38,6 @@ struct WPEUntrustedNumericBoundsTests {
 
     // MARK: - WPEValueParser.int
 
-    /// `maxcount` and `flags` rely on this: `1e300 as? Int` is nil, so the old
-    /// code fell through to a trapping `as? Double` branch.
     @Test("int saturates an out-of-range JSON number that as? Int rejects")
     func intSaturatesWhereAsIntFails() {
         let json = jsonValues(#"{"big":1e300,"small":-1e300,"ok":5}"#)
@@ -97,8 +90,6 @@ struct WPEUntrustedNumericBoundsTests {
 }
 
 extension WPEUntrustedNumericBoundsTests {
-    /// Every remaining bare `Int(Double)` in the particle parser, probed with the
-    /// same finite-but-unrepresentable `1e300` the suite header explains.
     @Test("Out-of-range particle ids, counts and audio bands saturate instead of trapping")
     func particleParserSaturatesOutOfRangeNumbers() {
         let json = jsonValues(#"""
@@ -130,16 +121,12 @@ extension WPEUntrustedNumericBoundsTests {
             #expect(audio.emissionScale(spectrum16: [Float](repeating: 0.5, count: 16)) >= 0)
         }
 
-        // Instance-override count scaling on an already-saturated maxcount must not trap either.
         #expect(definition.maxCount == Int.max, "top-level maxcount saturates at parse")
         let scaled = definition.applying(instanceOverride: WPESceneParticleInstanceOverride(count: 2))
         #expect(scaled.maxCount == Int.max, "Int.max * 2 saturates instead of trapping")
     }
 }
 
-/// `{"x":0,"y":0,"z":0}` is an authored zero vector — the camera typed IR was
-/// marking it `.unparsed` while the string spelling `"0 0 0"` parsed fine,
-/// because the dictionary path conflated "no keys present" with "all zeros".
 @Suite("Authored zero vectors")
 struct WPEVectorZeroDictionaryTests {
     private func json(_ text: String) -> Any? {

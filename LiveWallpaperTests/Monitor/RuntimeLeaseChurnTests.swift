@@ -219,9 +219,6 @@ struct RuntimeLeaseChurnCharacterizationTests {
         await runtime.shutdown()
     }
 
-    /// The barrier lives in `MonitorRuntimeLeaseHandle.release()`: the task it
-    /// returns must not complete while the source's stop is still running, or a
-    /// caller that awaits it would observe a half-torn-down pipeline.
     @MainActor
     @Test("An in-flight release keeps its settle barrier until the source stop finishes")
     func inFlightReleaseKeepsSettleBarrier() async {
@@ -351,9 +348,8 @@ struct RuntimeLeaseChurnCharacterizationTests {
         _ runtime: Runtime,
         reaches target: UInt64
     ) async -> Bool {
-        // Wait on a clock, not on a yield count: the caller deliberately blocks the rebuild
-        // worker, and on a CI runner 10,000 yields burned out in 30ms before the pending
-        // slot commands were ever scheduled (run 31726418994). Locally it settles in ~6ms.
+        // Wait on a clock, not on a yield count: the caller deliberately blocks the
+        // rebuild worker, so yields burn out before the pending slot commands run.
         let deadline = ContinuousClock.now + .seconds(5)
         var spins = 0
         while ContinuousClock.now < deadline {

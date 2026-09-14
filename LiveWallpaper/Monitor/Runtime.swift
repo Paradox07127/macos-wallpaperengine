@@ -4,9 +4,6 @@ import os
 
 let monitorSourcesLog = os.Logger(subsystem: "com.livewallpaper", category: "MonitorSources")
 
-/// The expensive samplers, keyed by whether any visible widget still displays
-/// their output. A widget's *kind* only says what it could ever need; these say
-/// what it wants right now, after its own section toggles.
 struct MonitorSampleDemand: Sendable, Equatable {
     /// SMC temperature/fan reads.
     var sensors = false
@@ -28,22 +25,12 @@ struct MonitorSampleDemand: Sendable, Equatable {
         placement.options[key]?.boolValue ?? true
     }
 
-    /// Single source of truth for "does this placement's rendered size ever
-    /// draw the top-processes column", grepped against each view's own size
-    /// dispatch so this can't drift silently:
-    /// - CPUWidgetView.swift: `topCPUProcesses` (:191) is read only inside
-    ///   `largeBody` (MARK: - L, :141) — S/M never call it.
-    /// - MemoryWidgetView.swift: `showsTopProcesses` (:156) is read only
-    ///   inside `large(cellHeight:)` (MARK: - L, :120) — S/M never call it.
-    /// - DiskWidgetView.swift: `topIOProcesses` (:191-192) is read only
-    ///   inside `large(cellHeight:)` (MARK: - Large, :196) — S/M never call it.
+    /// Only `.large` draws the top-processes column; S/M never call it.
     private static func drawsAtLargeOnly(_ widget: MonitorWidgetPlacement) -> Bool {
         widget.size == .large
     }
 
-    /// PowerWidgetView.swift: `.small` dispatches to `smallBody` (:21), which
-    /// never references `socTempC`; `.medium` and `.large` both dispatch to
-    /// `mediumBody` (:22-23), whose `temperatureChip` (:114-115) does.
+    /// `.small` never draws `socTempC`; `.medium` and `.large` do.
     private static func drawsSensorsAtMediumOrLarge(_ widget: MonitorWidgetPlacement) -> Bool {
         widget.size != .small
     }
@@ -99,9 +86,7 @@ struct MonitorRuntimeOptions: Sendable, Equatable {
     /// Board-configured seconds between system samples. Nil keeps
     /// `SystemMetricsSource`'s own default.
     var sampleIntervalSeconds: Double?
-    /// What the visible widgets still want sampled after their own section
-    /// toggles. Nil = no per-widget information available, so nothing is
-    /// narrowed (fail open — a missing demand must never starve a widget).
+    /// Nil = no per-widget demand, so nothing is narrowed (fail open).
     var sampleDemand: MonitorSampleDemand?
 
     /// Exhaustive: new widget kinds must declare metrics demand (agent-only boards skip system pipeline).
@@ -117,7 +102,6 @@ struct MonitorRuntimeOptions: Sendable, Equatable {
     }
 }
 
-/// Security-scoped grant seam — suspend tests prove resume re-opens nothing.
 struct MonitorGrantAccess: Sendable {
     var resolveRoots: @Sendable () async -> (claude: URL?, codex: URL?)
     var release: @Sendable () async -> Void
@@ -135,7 +119,6 @@ struct MonitorGrantAccess: Sendable {
     )
 }
 
-/// Caller-owned command stream for one logical runtime lease slot.
 final class MonitorRuntimeLeaseSlot: Sendable {
     private struct State: Sendable {
         var nextSequence: UInt64 = 0
@@ -157,7 +140,6 @@ final class MonitorRuntimeLeaseSlot: Sendable {
         self.runtime = runtime
     }
 
-    /// New generation + queued acquire; returned handle is sole authority for later events.
     func acquire(options: MonitorRuntimeOptions) -> MonitorRuntimeLeaseHandle {
         let generation = Self.generationCounter.withLock { value -> UInt64 in
             value &+= 1
@@ -246,7 +228,6 @@ final class MonitorRuntimeLeaseSlot: Sendable {
     }
 
     #if DEBUG
-    // Test-only introspection: no production reader, so it stays out of Release.
     var debugPendingCommandCount: Int {
         state.withLock { $0.pendingEvent == nil ? 0 : 1 }
     }
@@ -263,7 +244,6 @@ final class MonitorRuntimeLeaseSlot: Sendable {
     fileprivate var settledTask: Task<Void, Never> { Self.completedTask }
 }
 
-/// Generation-scoped authority from `MonitorRuntimeLeaseSlot.acquire`.
 final class MonitorRuntimeLeaseHandle: Sendable {
     private struct State: Sendable {
         var isReleased = false
@@ -339,12 +319,10 @@ private struct MonitorRuntimeLeaseEvent: Sendable {
     let desiredState: MonitorRuntimeLeaseDesiredState
 }
 
-/// App-wide pipeline owner: N Monitor displays share one hub + one source set.
 actor Runtime {
     static let shared = Runtime()
 
     private let grants: MonitorGrantAccess
-    /// Test seam without mutating process-global MainActor registry.
     private let sourceFactoriesOverride: [SourceFactory]?
 
     init(
@@ -375,9 +353,7 @@ actor Runtime {
     private var activeOptions: MonitorRuntimeOptions?
     /// The display cache survives a pause even though activeOptions becomes nil.
     private var retainedSnapshotOptions: MonitorRuntimeOptions?
-    /// Last shape reported by the pipeline log. Occlusion pauses the lease and
-    /// resumes it on every full-screen ⇄ desktop switch, and each resume rebuilds
-    /// an identical pipeline — worth one line the first time, noise thereafter.
+    /// Last logged pipeline shape; identical rebuilds must not re-log.
     private var loggedPipelineShape: String?
     private var resolvedRoots: (claude: URL?, codex: URL?)?
     private var rebuildTask: Task<Void, Never>?
@@ -393,7 +369,6 @@ actor Runtime {
     private var shutdownTask: Task<Void, Never>?
 
     #if DEBUG
-    // Test-only introspection: no production reader, so it stays out of Release.
     var debugActiveLeaseCount: Int { leases.count }
     var debugPausedLeaseCount: Int { leases.values.filter(\.isPaused).count }
     /// Options the live pipeline is actually running with. `nil` ⇒ no pipeline
@@ -442,14 +417,11 @@ actor Runtime {
         await rebuild()
     }
 
-    /// Re-resolves grants and rebuilds under the current leases — call after the
-    /// user authorizes a data root so live sources pick it up immediately.
     func refreshSources() async {
         guard lifecycle == .running else { return }
         await rebuild(force: true)
     }
 
-    /// Stops the complete producer graph and closes every lease/grant before returning.
     func shutdown() async {
         if let shutdownTask {
             await shutdownTask.value
@@ -468,7 +440,6 @@ actor Runtime {
         await task.value
     }
 
-    /// Union across leases: any lease wanting a module turns it on.
     static func merged(_ options: [MonitorRuntimeOptions]) -> MonitorRuntimeOptions? {
         guard !options.isEmpty else { return nil }
         var merged = MonitorRuntimeOptions(system: false)
@@ -502,20 +473,14 @@ actor Runtime {
         return merged
     }
 
-    /// How many base samples to skip between GPU reads. Must divide by the interval actually handed to
-    /// `SystemMetricsSource`, not a constant — the base tick used to be a fixed 2s, a board can now pick
-    /// anything in 0.5…5s. Rounds up, not to nearest, because sampling the GPU *more* often than asked is
-    /// the expensive direction.
+    /// GPU skip count = ceil(seconds / the interval handed to `SystemMetricsSource`); round up (sampling more often is the expensive direction).
     static func gpuCadence(forSeconds seconds: Double?, baseInterval: Double) -> Int? {
         guard let seconds, seconds.isFinite, seconds > 0,
               baseInterval.isFinite, baseInterval > 0 else { return nil }
         return max(1, Int((seconds / baseInterval).rounded(.up)))
     }
 
-    /// Maps placed widget kinds to the system source's per-concern demand gates: an expensive walk runs only when
-    /// its widget is on the board. Kind says what a widget *could* need; per-widget toggles say what it still
-    /// wants — sampling honours the narrower one, so switching a section off stops the SMC reads / process walk,
-    /// not just hides the result. `nil` demand leaves the kind baseline untouched.
+    /// `nil` demand leaves the kind baseline untouched; otherwise AND with demand.
     static func narrowed(
         _ options: SystemMetricsSource.Options,
         to demand: MonitorSampleDemand?
@@ -565,7 +530,6 @@ actor Runtime {
         await task.value
     }
 
-    /// One actor-owned rebuild worker folds every mutation that arrives while a source start/stop is suspended.
     private func runRebuildLoop() async {
         while lifecycle == .running {
             let revision = rebuildRevision
@@ -629,7 +593,6 @@ actor Runtime {
             }
             resolved.claudeRoot = resolved.claudeRoot ?? roots.claude
             resolved.codexRoot = resolved.codexRoot ?? roots.codex
-            // Why-no-data: when an AI module is wanted but a root can't resolve (no grant / stale bookmark), say so — both in the log and as a synthesized health record the widgets' empty states can read.
             if resolved.claudeRoot == nil {
                 monitorSourcesLog.warning("🛰️ claude root unresolved (no grant?) — agent sources disabled")
                 await hub.updateHealth(MonitorSourceHealth(

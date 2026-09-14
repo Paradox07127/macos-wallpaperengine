@@ -5,8 +5,8 @@ import Metal
 import MetalPerformanceShaders
 import os
 
-/// Reads back the renderer's offscreen `MTLTexture` into an `NSImage` for `SceneDetailView` (without it the detail view falls into `.previewUnavailable`).
-/// Runs on a dedicated utility-QoS queue so a 4K mip-chain readback never blocks the main thread on multi-display setups; `@unchecked Sendable` because every owned closure is pure or hops onto the main actor explicitly.
+/// Reads the renderer's offscreen `MTLTexture` back into an `NSImage` on a utility-QoS queue.
+/// `@unchecked Sendable` because every owned closure is pure or hops onto the main actor explicitly.
 final class WPEMetalTextureSnapshotter: @unchecked Sendable {
     static let shared = WPEMetalTextureSnapshotter()
 
@@ -20,8 +20,7 @@ final class WPEMetalTextureSnapshotter: @unchecked Sendable {
         self.queue = DispatchQueue(label: label, qos: .utility)
     }
 
-    /// Posters render at pane size, so a 4K rgba16Float readback (~63 MiB) is
-    /// pure waste; frames are GPU-scaled to this max dimension before `getBytes`.
+    /// Posters render at pane size, so a 4K rgba16Float readback is waste; GPU-scale to this max dimension before `getBytes`.
     static let posterMaxDimension = 1440
 
     /// Full-resolution path: debug-artifacts first-frame capture
@@ -73,9 +72,7 @@ final class WPEMetalTextureSnapshotter: @unchecked Sendable {
             }
             bytes = swizzled
         case .rgba16Float:
-            // Linear HDR output (bloom scenes): clamp to SDR and sRGB-encode —
-            // the same clamp the unorm drawable applies at present, so the poster
-            // matches the frame the user sees.
+            // Linear HDR output (bloom scenes): clamp to SDR and sRGB-encode — the same clamp the unorm drawable applies, so the poster matches the frame the user sees.
             bytes = convertRGBA16FloatToSRGB8(texture)
         default:
             Logger.warning(
@@ -132,8 +129,7 @@ final class WPEMetalTextureSnapshotter: @unchecked Sendable {
         } else if let view = texture.makeTextureView(pixelFormat: workingFormat) {
             source = view
         } else {
-            // Apple documents `.pixelFormatView` as required for a differing-format view, and the renderer's output textures are `[.renderTarget, .shaderRead]`. Measured on this GPU family the view is vended anyway (probe: both usages return non-nil), so the sRGB poster path really does reach the GPU downsample here — but that is undocumented tolerance.
-            // The output pool is per-frame 4K on the hot path, and adding a usage flag there can cost lossless compression, so the spec-legal degradation is this nil: the caller falls back to the full-resolution readback, which is slower but correct.
+            // Apple documents `.pixelFormatView` as required for a differing-format view. Adding that usage flag on the output pool can cost lossless compression, so the spec-legal degradation is this nil (full-resolution readback).
             return nil
         }
 
@@ -181,16 +177,10 @@ final class WPEMetalTextureSnapshotter: @unchecked Sendable {
         return destination
     }
 
-    /// Poster refreshes downsample on every capture; creating an MTLCommandQueue
-    /// per capture is measurable churn, so one queue per device is cached for the
-    /// process lifetime. Lock-protected because `makeImage` is callable from any
-    /// thread (poster path runs on the readback queue, tests call it directly).
     private static let downsampleQueues =
         OSAllocatedUnfairLock<[ObjectIdentifier: MTLCommandQueue]>(initialState: [:])
 
     #if DEBUG
-    /// Cache-miss count. Test seam (internal, not private, like `commandQueue(for:)`):
-    /// lets tests prove repeated poster downsamples reuse one queue per device.
     static let downsampleQueueCreationsForTesting = OSAllocatedUnfairLock<Int>(initialState: 0)
     #endif
 

@@ -3,7 +3,6 @@ import SwiftUI
 import Testing
 @testable import LiveWallpaperCore
 
-/// Verifies the standalone Core package's SKU capability surface.
 @Suite("ProductCapabilities (Core SPM)")
 struct ProductCapabilitiesTests {
 

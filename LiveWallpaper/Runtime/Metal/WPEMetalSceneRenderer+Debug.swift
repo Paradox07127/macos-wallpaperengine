@@ -27,9 +27,6 @@ extension WPEMetalSceneRenderer {
 
     // MARK: - Texture & pass PNG dumps
 
-    /// Iterate every entry in `loadedTextures` and dump each to a PNG so we
-    /// can verify whether the source-image upload actually carried bytes to
-    /// the GPU. Same gate as the GPU trace + outputTexture dump.
     func dumpLoadedTexturesIfRequested() {
         #if DEBUG
         guard gpuCaptureRequestedForCurrentScene() else { return }
@@ -43,17 +40,10 @@ extension WPEMetalSceneRenderer {
     }
 
     #if DEBUG
-    /// Dump one PNG per scene-target pass (collected by the executor when
-    /// `WPEDumpScenePasses` matches this scene) so we can see exactly which pass
-    /// introduces an artifact. PNGs land in App Support/LiveWallpaper/gpu-traces/
-    /// as `wpe-<id>-scenepass-NN-<passid>-WxH.png`, ordered by draw sequence.
     func dumpScenePassesIfRequested(suffix: String = "") {
         let wantedID = UserDefaults.standard.string(forKey: "WPEDumpScenePasses")
         let pngRequested = (wantedID?.isEmpty == false) && wantedID == descriptor.workshopID
-        // Oracle mode attaches per-pass output hashes to the canonical trace even
-        // without the workshopID-scoped PNG flag, and skips the (expensive) PNG
-        // encode. `recordPassOutputs` matches by pass id, so passing the full dump
-        // list is idempotent.
+        // `recordPassOutputs` matches by pass id, so passing the full dump list is idempotent.
         guard pngRequested || WPEOracleMode.perPassHashesEnabled else { return }
         let dumps = executor.scenePassDumps
         WPECanonicalTraceRecorder.shared.recordPassOutputs(dumps)
@@ -71,11 +61,6 @@ extension WPEMetalSceneRenderer {
         }
     }
 
-    /// One-shot per-pass + composite dump once scene time crosses a threshold
-    /// (default 6s, override via env `WPEDumpScenePassesAtTime`). Lets us see
-    /// time-animated artifacts (e.g. a face distorted by an animated effect over
-    /// time) that the first-frame dump at t≈0 misses. Same `WPEDumpScenePasses`
-    /// gate. `composite` is the post-particle/text frame the user actually sees.
     func maybeDumpScenePassesOverTime(time: Double, composite: MTLTexture) {
         guard !didDumpScenePassesOverTime else { return }
         let wantedID = UserDefaults.standard.string(forKey: "WPEDumpScenePasses")
@@ -107,7 +92,6 @@ extension WPEMetalSceneRenderer {
             overrideBytes = WPEMetalTextureSnapshotter.convertRGBA16FloatToSRGB8(rawTexture)
             texture = rawTexture
         } else if let decoded = executor.debugDecodeToRGBA(rawTexture) {
-            // BC/DXT/RG88/R8 etc. — decode by sampling into rgba8 so we can view it.
             texture = decoded
         } else {
             Logger.info(
@@ -187,10 +171,7 @@ extension WPEMetalSceneRenderer {
     }
     #endif
 
-    /// Writes the raw post-render `outputTexture` (before present blit) to disk as a PNG via
-    /// a GPU blit into a `.storageModeShared` `MTLBuffer` — the robust readback path where
-    /// `texture.getBytes(...)` can silently return stale bytes on some driver/storage combos.
-    /// Gated on the same `WPEMetalCaptureScene` UserDefault as the GPU trace capture.
+    /// GPU blit into a `.storageModeShared` `MTLBuffer` — the robust readback path where `texture.getBytes(...)` can silently return stale bytes on some driver/storage combos.
     func dumpOutputTextureIfRequested(_ texture: MTLTexture) {
         #if DEBUG
         guard gpuCaptureRequestedForCurrentScene() else { return }
@@ -283,9 +264,6 @@ extension WPEMetalSceneRenderer {
                 return
             }
             try png.write(to: url)
-            // Also probe the buffer contents directly so we have a numeric
-            // sanity check independent of CG / PNG encoding: how many of the
-            // first 64 KB of bytes are non-zero.
             let probe = buffer.contents().assumingMemoryBound(to: UInt8.self)
             let probeLength = min(64 * 1024, totalBytes)
             var nonZero = 0
@@ -305,29 +283,13 @@ extension WPEMetalSceneRenderer {
 
     // MARK: - GPU capture
 
-    /// DEBUG-only `MTLCaptureManager` wrap around `renderCurrentFrame()`: when
-    /// `UserDefaults.standard.string(forKey: "WPEMetalCaptureScene")` matches the active
-    /// scene's workshopID, the render's `MTLCommandBuffer` is captured to a `.gputrace`
-    /// file for Xcode inspection (pass attachments, bound textures, uniform buffers,
-    /// translated MSL). Lands next to the per-pass PNGs in
-    /// App Support/LiveWallpaper/gpu-traces/ — see `makeCaptureURL` (sandboxed, so this
-    /// resolves inside the container).
-    ///
-    /// Triggered via:
-    ///   defaults write com.loomscreen.pro WPEMetalCaptureScene 3669681034
-    /// (then reload the wallpaper). Clear with:
-    ///   defaults delete com.loomscreen.pro WPEMetalCaptureScene
     func beginGPUCaptureIfRequested() -> GPUCaptureHandle? {
         #if DEBUG
         guard gpuCaptureRequestedForCurrentScene() else { return nil }
         let manager = MTLCaptureManager.shared()
         guard manager.supportsDestination(.gpuTraceDocument) else {
             Logger.info(
-                // MetalCaptureEnabled is deliberately absent from the shipped
-                // Info.plists: it loads GPUToolsCapture into every launch, whose
-                // per-draw interposition grew the AGX DataBufferAllocator arena
-                // without bound (~40-60MB/min, ledger §14). Capture instead via
-                // Xcode attach or an MTL_CAPTURE_ENABLED=1 launch.
+                // MetalCaptureEnabled is deliberately absent from the shipped Info.plists: it loads GPUToolsCapture into every launch. Capture via Xcode attach or MTL_CAPTURE_ENABLED=1.
                 "[WPEMetalCaptureScene] device does not support gpuTraceDocument capture; attach Xcode or launch with MTL_CAPTURE_ENABLED=1.",
                 category: .wpeRender
             )
@@ -412,11 +374,7 @@ extension WPEMetalSceneRenderer {
 
     // MARK: - Debug staging & frame sync
 
-    /// Per-load stage breadcrumb: emits to the `wpeRender` os.Logger category AND
-    /// mirrors into the per-scene `scene.log` so the file artifact stays readable
-    /// without cross-referencing Console.app. Gated on `WPESceneDebugArtifactsEnabled`
-    /// (off by default), and `detail` is `@autoclosure` so a normal run never even
-    /// builds the per-stage interpolated strings.
+    /// `detail` is `@autoclosure` so a normal run never even builds the per-stage interpolated strings.
     func debugStage(_ stage: String, _ detail: @autoclosure () -> String) {
         guard WPESceneDebugArtifacts.shared.isEnabled else { return }
         let detail = detail()
@@ -427,10 +385,6 @@ extension WPEMetalSceneRenderer {
         WPESceneDebugArtifacts.shared.appendLog("[\(stage)] \(detail)")
     }
 
-    /// Whether the executor should submit frames synchronously (block on GPU completion) for
-    /// this scene. True only when a CPU read-back will happen (scene-debug artifacts,
-    /// GPU capture, per-pass dumps) or the operator pins it via `WPEMetalSerializeFrames`.
-    /// Production has none of these, so frames submit async and the CPU never stalls per frame.
     func shouldSynchronizeFrames() -> Bool {
         if UserDefaults.standard.bool(forKey: "WPEMetalSerializeFrames") { return true }
         if WPESceneDebugArtifacts.shared.isEnabled { return true }

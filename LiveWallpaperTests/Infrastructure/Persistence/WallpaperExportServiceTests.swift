@@ -5,9 +5,6 @@ import Testing
 
 @testable import LiveWallpaper
 
-/// File-system effects and status machine of the system-wallpaper publish
-/// path, against an injected temp root (plan §4.5 / §4.6). Thumbnails are
-/// stubbed — no real video decoding in unit tests.
 @MainActor
 @Suite("WallpaperExportService")
 struct WallpaperExportServiceTests {
@@ -37,8 +34,6 @@ struct WallpaperExportServiceTests {
         }
 
 
-        /// Mirrors what the Workshop importer produces: the bookmark points at
-        /// `scene.pkg` and the video lives inside it under `entryName`.
         func makePackagedVideoBookmark(
             entryName: String = "video.mp4",
             bytes: Data = Data("packaged-video-bytes".utf8),
@@ -79,13 +74,12 @@ struct WallpaperExportServiceTests {
         }
     }
 
-    /// Lets a test run code at the one moment a publish has yielded the main
-    /// actor — between the staged copy and the commit — which is the window a
-    /// concurrent remove has to land in.
+    /// Fires at the publish's one main-actor yield, between the staged copy and
+    /// the commit — the window a concurrent remove has to land in.
     @MainActor
     private final class PublishHook {
         var run: (() -> Void)?
-        /// Fires once: the setup publish a test does first must not trip it.
+        /// The setup publish a test does first must not trip it.
         func fire() {
             let pending = run
             run = nil
@@ -282,9 +276,8 @@ struct WallpaperExportServiceTests {
         let root = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("LockFailClosed-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        // A directory where the lock file belongs makes `open(…, O_WRONLY)`
-        // fail with EISDIR — the stand-in for any environment where the lock
-        // cannot be taken.
+        // A directory where the lock file belongs makes `open(…, O_WRONLY)` fail
+        // with EISDIR — the stand-in for a root where the lock cannot be taken.
         try FileManager.default.createDirectory(
             at: root.appendingPathComponent("manifest.lock"), withIntermediateDirectories: true
         )
@@ -318,10 +311,8 @@ struct WallpaperExportServiceTests {
         )
     }
 
-    /// `chmod 000`: present, and `Data(contentsOf:)` fails with a read error
-    /// rather than "no such file" — the case that used to be read as an empty
-    /// library. An atomic write would still succeed here, so the manifest is
-    /// checked afterwards rather than assuming the write must fail.
+    /// `chmod 000`: present, but unreadable rather than missing. An atomic write
+    /// still succeeds under it, so callers check the manifest, not the write.
     private func denyReads(_ url: URL) throws {
         try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: url.path)
     }
@@ -359,8 +350,7 @@ struct WallpaperExportServiceTests {
         let published = rig.videosDirectory.appendingPathComponent("\(first.id.uuidString).mp4")
         let thumbnail = rig.videosDirectory.appendingPathComponent("\(first.id.uuidString).jpg")
 
-        // Same bookmark ID → republish. The manifest read is the step that
-        // fails, which lands after the live copy has already been swapped.
+        // The manifest read fails after the live copy has already been swapped.
         let replacement = WallpaperBookmark(
             label: "First",
             content: try rig.makeVideoBookmark(
@@ -394,8 +384,8 @@ struct WallpaperExportServiceTests {
         let publishedVideo = rig.videosDirectory.appendingPathComponent("\(itemID).mp4")
         let thumbnail = rig.videosDirectory.appendingPathComponent("\(itemID).jpg")
 
-        // Same item, different container: the destination is `<id>.mov`, which
-        // does not exist yet, while the thumbnail keeps its one name.
+        // The destination `<id>.mov` does not exist yet, while the thumbnail
+        // keeps its one name.
         let replacement = WallpaperBookmark(
             label: "First",
             content: try rig.makeVideoBookmark(
@@ -447,8 +437,6 @@ struct WallpaperExportServiceTests {
         try await rig.service.publish(bookmark: bookmark)
         let itemID = bookmark.id.uuidString
 
-        // The user hits Remove while the republish is still copying: the
-        // commit happens after, and used to write the entry straight back.
         hook.run = { try? rig.service.remove(itemID: itemID) }
         let replacement = WallpaperBookmark(
             label: "Replacement",
@@ -611,8 +599,6 @@ struct WallpaperExportServiceTests {
         let fileName = try #require(rig.service.items.first?.fileName)
         let published = rig.videosDirectory.appendingPathComponent(fileName)
 
-        // Same shared root, but thumbnails now fail — the republish must
-        // abort before it touches the live copy.
         let failing = WallpaperExportService(dependencies: .init(
             sharedRoot: rig.root,
             resolver: SecurityScopedBookmarkResolver(
@@ -684,8 +670,6 @@ struct WallpaperExportServiceTests {
         rig.service.refresh()
         #expect(rig.service.isItemInUse(itemID), "precondition: the heartbeat says this one is on screen")
 
-        // macOS 27.0's wallpaper pane crashes in its own Remove handler for
-        // third-party choices, so refusing here would strand the files forever.
         try rig.service.remove(itemID: itemID)
 
         #expect(rig.service.items.isEmpty)
@@ -740,8 +724,6 @@ struct WallpaperExportServiceTests {
         let rig = try makeRig()
         let bookmark = try rig.makeVideoBookmark()
         try await rig.service.publish(bookmark: bookmark)
-        // Same OS build, but the verdict came from a check we have since
-        // replaced — the fixed one never runs if this keeps the app locked out.
         try rig.writeHeartbeat(SystemWallpaperHeartbeat(
             timestamp: Self.referenceNow.addingTimeInterval(-10),
             activeChoiceID: nil,
@@ -802,10 +784,8 @@ struct WallpaperExportServiceTests {
         let bookmark = try rig.makeVideoBookmark()
         try await rig.service.publish(bookmark: bookmark)
 
-        // No heartbeat at all.
         #expect(rig.service.status == .publishedNotSelected)
 
-        // Fresh heartbeat but no active choice.
         try rig.writeHeartbeat(SystemWallpaperHeartbeat(
             timestamp: Self.referenceNow.addingTimeInterval(-10),
             activeChoiceID: nil
@@ -813,7 +793,6 @@ struct WallpaperExportServiceTests {
         rig.service.refresh()
         #expect(rig.service.status == .publishedNotSelected)
 
-        // Stale heartbeat, even with a matching choice.
         try rig.writeHeartbeat(SystemWallpaperHeartbeat(
             timestamp: Self.referenceNow.addingTimeInterval(
                 -WallpaperExportService.heartbeatFreshnessInterval - 1
@@ -840,9 +819,6 @@ struct WallpaperExportServiceTests {
 
     @Test("A fresh beat from a stale appex does not read as in-use")
     func statusIgnoresForeignProvider() async throws {
-        // After an in-place update the old process keeps its 120 s keep-alive
-        // running, so the beat is recent — only the stamp separates it from the
-        // installed build's.
         let installed = SystemWallpaperProviderIdentity(
             build: "42",
             bundlePath: "/Applications/Loomscreen.app/Contents/Extensions/P.appex",
@@ -888,9 +864,6 @@ struct WallpaperExportServiceTests {
         #expect(rig.service.status == .inUse(itemTitle: "Aurora"))
     }
 
-    /// Regression: the stamp guard used to live only in `isFresh`, so a
-    /// build/w5d-dd extension left running after an in-place update put the
-    /// installed one — never asked — into "paused".
     @Test("An unhealthy verdict from a stale appex does not bar publishing")
     func statusIgnoresForeignUnhealthyVerdict() async throws {
         let installed = SystemWallpaperProviderIdentity(
@@ -915,8 +888,7 @@ struct WallpaperExportServiceTests {
         #expect(rig.service.status != .systemIncompatible)
     }
 
-    /// Control: same beat, only the stamp differs. Verified 2026-09-04 —
-    /// deleting the `barsPublishing` branch turns this red and the other green.
+    /// Control for the test above: same beat, only the stamp differs.
     @Test("An unhealthy verdict from the installed appex still bars publishing")
     func statusHonoursOwnUnhealthyVerdict() async throws {
         let installed = SystemWallpaperProviderIdentity(
@@ -959,10 +931,6 @@ struct WallpaperExportServiceTests {
 
     // MARK: - Corruption tolerance
 
-    /// Was "a corrupt manifest reads as empty and the next publish rewrites
-    /// it". That behaviour is what silently orphaned every already-published
-    /// video: the rewrite dropped their entries and the sweep deleted the
-    /// files an hour later. Refusing is the only non-destructive answer.
     @Test("A corrupt manifest is refused, not treated as an empty library")
     func corruptManifestIsRefused() async throws {
         let rig = try makeRig()
@@ -996,11 +964,8 @@ struct WallpaperExportServiceTests {
         #expect(rig.service.items.first?.title == "Second")
     }
 
-    /// The real AVFoundation path, not the injected stub every other test here
-    /// uses: a staged copy is what the thumbnail is generated from, and
-    /// AVFoundation types a file by its extension. When the staging name ended
-    /// in `.partial` this failed with "Cannot Open" on every publish, and no
-    /// contract test noticed because they all stub `makeThumbnailJPEG`.
+    /// Uses the live dependencies, not the stub every other test here uses:
+    /// AVFoundation types a file by its extension, so the staging name matters.
     @Test("A staged copy is still a video AVFoundation can open")
     func stagedCopyKeepsAThumbnailableExtension() async throws {
         let staging = SystemWallpaperLibrary.stagingFileName(
@@ -1020,8 +985,6 @@ struct WallpaperExportServiceTests {
         #expect(jpeg != nil)
     }
 
-    /// Smallest real MP4 the thumbnail path can be pointed at: one frame,
-    /// written by AVFoundation itself so the fixture cannot rot.
     private static func writeSingleFrameVideo(to url: URL) throws {
         let writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: [

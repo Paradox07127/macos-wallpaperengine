@@ -1,23 +1,17 @@
 import Foundation
 
-/// Derives agent-session signals shared by the Claude and Codex session models.
 enum AgentSignalDeriver {
     static let recentEventCap = 60
     static let recentToolCap = 8
 
-    /// Repeated names alone also describe ordinary shell-heavy work. A warning
-    /// requires forty calls in ten minutes plus at least three failed results;
-    /// successful wrappers and calls with unknown results do not prove a loop.
+    /// A warning requires forty calls in ten minutes plus at least three failed results; repeated names alone are ordinary shell-heavy work.
     static let toolLoopRun = 40
     /// Events kept per session for the detector — enough to see a whole run.
     /// Separate from `recentToolCap`, which is the display tail.
     static let toolLoopBuffer = 48
     static let toolLoopWindow: TimeInterval = 10 * 60
 
-    /// A running+alive session with no new event past this is "stale". 5 min was shorter than the work: a full test run
-    /// here is ~2 min, and a session fanning out to review subagents sits on one pending tool call for 5–9 min with
-    /// nothing to write to the transcript — the chip fired on those every time, the same way `toolLoop` at 8 stopped
-    /// meaning anything.
+    /// A running+alive session with no new event past this is "stale".
     static let staleAfter: TimeInterval = 15 * 60
 
     static let toolNameMaxLength = 64
@@ -26,7 +20,6 @@ enum AgentSignalDeriver {
         charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.:-"
     )
 
-    /// Sanitize a raw tool name pulled verbatim from a transcript before it is ever stored or rendered as a "tool name" in the UI.
     static func sanitizedToolName(_ value: String) -> String? {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed.count <= toolNameMaxLength else { return nil }
@@ -90,7 +83,6 @@ enum AgentSignalDeriver {
     }
 }
 
-/// Worktree name extraction from a session cwd.
 enum MonitorWorktree {
     static func name(fromCwd cwd: String?) -> String? {
         guard let cwd, !cwd.isEmpty else { return nil }
@@ -106,11 +98,9 @@ enum MonitorWorktree {
     }
 }
 
-/// In-memory tracker of when each session's status last flipped INTO `needsInput`, keyed by session id.
 struct MonitorAgentWaitTracker {
     private var waitSince: [String: Double] = [:]
 
-    /// Update the tracked flip time for `sessionId` given its current status and the event time to stamp a fresh transition with.
     mutating func waitSince(
         sessionID: String,
         status: MonitorAgentStatus,

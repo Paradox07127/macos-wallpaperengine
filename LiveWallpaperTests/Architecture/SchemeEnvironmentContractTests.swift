@@ -12,11 +12,8 @@ struct SchemeEnvironmentContractTests {
     private static let diagnosticsScheme =
         "LiveWallpaper.xcodeproj/xcshareddata/xcschemes/LiveWallpaper-Diagnostics.xcscheme"
 
-    /// The shipping schemes turn both checkers off so day-to-day Run is fast.
-    /// That left nothing running them at all, which is how a main-thread decode
-    /// and a per-sample disk write both survived into a release build. This
-    /// scheme exists to be the one that does; if it stops enabling them it is
-    /// worse than not existing, because its name says otherwise.
+    /// If this scheme stops enabling the checkers it is worse than not existing,
+    /// because its name says otherwise.
     @Test("The diagnostics scheme actually enables the checkers it exists for")
     func diagnosticsSchemeEnablesCheckers() throws {
         let document = try XMLDocument(contentsOf: RepositoryRoot.url(Self.diagnosticsScheme), options: [])

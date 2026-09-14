@@ -78,7 +78,6 @@ final class NowPlayingAccentTests: XCTestCase {
         XCTAssertEqual(store.extractionCount, 2)
     }
 
-    /// A monochrome miss is also cached — no repeated decode for artless tracks.
     @MainActor
     func testNilResultIsCachedToo() async {
         let store = NowPlayingAccentStore(extract: { _ in nil })

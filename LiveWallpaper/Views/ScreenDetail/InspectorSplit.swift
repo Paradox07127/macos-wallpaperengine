@@ -16,9 +16,7 @@ extension EnvironmentValues {
     }
 }
 
-/// Main column + trailing full-height inspector; widths resolve against live container width.
 struct InspectorSplit<Main: View, Inspector: View>: View {
-    /// Keep the (heavy) inspector subtree built even when collapsed.
     let isMounted: Bool
     let isVisible: Bool
     let animationTrigger: AnyHashable
@@ -29,12 +27,10 @@ struct InspectorSplit<Main: View, Inspector: View>: View {
 
     var minWidth: CGFloat = DesignTokens.Inspector.minWidth
     var maxWidth: CGFloat = DesignTokens.Inspector.maxWidth
-    /// Minimum main-column width so content never collapses under a wide inspector.
     var mainFloor: CGFloat = 360
     var onClose: (() -> Void)?
 
     @ViewBuilder var main: () -> Main
-    /// Built at full width; container clips to the animated visible width.
     @ViewBuilder var inspector: (CGFloat) -> Inspector
 
     var body: some View {
@@ -95,7 +91,6 @@ struct InspectorSplit<Main: View, Inspector: View>: View {
     /// Release below this width collapses the panel.
     private var closeArmWidth: CGFloat { max(48, minWidth - 56) }
 
-    /// Live drag floor; drag-to-close uses raw cursor travel past this.
     private var dragLowerBound: CGFloat { minWidth }
 
     private func maxWidthCap(available: CGFloat) -> CGFloat {

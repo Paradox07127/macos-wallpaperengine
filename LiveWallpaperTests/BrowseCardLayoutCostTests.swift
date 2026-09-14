@@ -5,17 +5,9 @@ import LiveWallpaperCore
 import SwiftUI
 import Testing
 
-/// Ablation bench for the Workshop browse grid's scroll cost.
-///
-/// It does NOT measure frame time — it measures what a `LazyVGrid` pays every
-/// time a card scrolls into view: constructing the SwiftUI subtree and laying it
-/// out. `LazyVGrid` does not recycle views (unlike the `NSCollectionView` the
-/// nearest competitor moved to), so this construct+layout cost is paid per cell
-/// per appearance, which is the mechanism behind the jank.
-///
-/// Read the numbers as ratios between rows, never as absolute milliseconds:
-/// the app host is a Debug build unless the run passes `-configuration Release`,
-/// and an unoptimised stack fingerprint misattributes cost.
+/// Read the numbers as ratios between rows, never as absolute milliseconds: the app
+/// host is a Debug build unless the run passes `-configuration Release`, and an
+/// unoptimised stack fingerprint misattributes cost.
 @MainActor
 @Suite("Browse card layout cost", .serialized)
 struct BrowseCardLayoutCostTests {
@@ -59,26 +51,20 @@ struct BrowseCardLayoutCostTests {
         /// Whether the thumbnail branch gets the same `aspectRatio(1, .fit)` the
         /// placeholder branch always had.
         var squareConstraint = true
-        /// `AdaptiveGlassContainer` wraps the badges in the system's glass
-        /// coordination container on macOS 26+ and never consults
-        /// `thumbnailBadgeSurface`. Inside a gallery card its badges are already
-        /// `.opaque`, so it has nothing left to coordinate — measured free (+1%),
-        /// which is why the wrapper stays.
+        /// Whether the badges get `AdaptiveGlassContainer`. Inside a gallery card its badges
+        /// are already `.opaque`, so it has nothing left to coordinate.
         var glassContainer = true
         /// What a user actually gets from the badge toggles: the pills vanish
         /// but `BrowseCard` still builds the container, its `HStack` and the
         /// padding, because only the pills sit behind the `if`s.
         var pills = true
-        /// `GalleryTileChrome` starts with `.thumbnailBadgeSurface(.opaque)`, so
-        /// ablating the chrome silently un-ablates opaque badges — 100 real
-        /// `glassEffect` surfaces reappear and the row reads as "chrome is free".
-        /// Kept separate so the two effects can be told apart.
+        /// `GalleryTileChrome` starts with `.thumbnailBadgeSurface(.opaque)`, so ablating the
+        /// chrome silently un-ablates opaque badges; kept separate to tell the two apart.
         var opaqueBadges = true
     }
 
-    /// Rebuilds the card's shape layer by layer. It deliberately mirrors
-    /// `BrowseCard.body` rather than calling it: the point is to remove one
-    /// layer at a time, which a single opaque view cannot do.
+    /// Deliberately mirrors `BrowseCard.body` rather than calling it: the point is to
+    /// remove one layer at a time, which a single opaque view cannot do.
     @ViewBuilder
     private func card(_ item: WorkshopQueryItem, _ variant: Variant, reduceMotion: Bool) -> some View {
         let base = Button {} label: {
@@ -91,17 +77,12 @@ struct BrowseCardLayoutCostTests {
                         isBlurred: false,
                         isHovered: .constant(false)
                     )
-                    // The Rectangle branch carried this and the component did
-                    // not, so the row that looked like "the thumbnail costs 48%"
-                    // was really "an unconstrained tile height costs 48%".
                     .modifier(OptionalSquare(enabled: variant.squareConstraint))
                 } else {
                     Rectangle().fill(Color.secondary.opacity(0.12)).aspectRatio(1, contentMode: .fit)
                 }
             }
             .overlay(alignment: .topLeading) {
-                // Mirrors the shipped gate: with both pills off the container,
-                // its stack and the padding are not built at all.
                 if variant.badges, variant.pills {
                     Group {
                         if variant.glassContainer {
@@ -141,7 +122,6 @@ struct BrowseCardLayoutCostTests {
         .modifier(OptionalOpaqueBadges(enabled: variant.opaqueBadges && !variant.chrome))
     }
 
-    /// Re-applies only the badge-surface half of the chrome.
     private struct OptionalOpaqueBadges: ViewModifier {
         let enabled: Bool
 
@@ -182,7 +162,6 @@ struct BrowseCardLayoutCostTests {
         }
     }
 
-    /// Wall time to build and lay out one full grid, averaged over `iterations`.
     private func measure(_ variant: Variant) -> Double {
         let items = makeItems(Self.cardCount)
         let columns = DesignTokens.LibraryGrid.columns(for: .medium)
@@ -215,19 +194,14 @@ struct BrowseCardLayoutCostTests {
             Variant(name: "no .contextMenu", contextMenu: false),
             Variant(name: "no thumbnail view", thumbnail: false),
             Variant(name: "thumbnail, unconstrained", squareConstraint: false),
-            // Confounded on purpose, kept for the record: it drops opaque badges with it.
             Variant(name: "no chrome (confounded)", chrome: false, opaqueBadges: false),
             Variant(name: "no chrome, badges opaque", chrome: false),
-            // Separates the two things the old "no glass badges" row removed at once.
             Variant(name: "badges, no GlassContainer", glassContainer: false),
-            // With the shipped gate this must now land on "no badges at all";
-            // before the fix it sat 10.4% above it, paying for an empty shell.
             Variant(name: "pills off (user toggle)", pills: false),
             Variant(name: "no badges at all", badges: false),
             Variant(name: "floor (empty tiles)", contextMenu: false, chrome: false, thumbnail: false, badges: false),
-            // Control: the same variant as row 1, run last. If it does not land
-            // near the first baseline, the table is reading sequence effects
-            // (allocator state, autorelease pressure) rather than the layers.
+            // Control: the same variant as row 1, run last — if it does not land near the first
+            // baseline, the table is reading sequence effects, not the layers.
             Variant(name: "baseline again (control)"),
         ]
 
@@ -252,16 +226,10 @@ struct BrowseCardLayoutCostTests {
         print(rows.joined(separator: "\n"))
         print("=== lower is better; read deltas, not absolutes ===\n")
 
-        // The bench is only meaningful if it measured something at all.
         #expect(baseline > 0)
     }
 }
 
-/// Second-level ablation: `AnimatedGIFThumbnail` cost 48% of a browse card in
-/// `BrowseCardLayoutCostTests`, with `previewImageURL` nil — so none of it was
-/// image decoding. Its `content` is already a plain `Image` whether or not the
-/// GIF is playing, which rules out "the animated view is heavy". This suite
-/// takes the wrapper around that image apart instead.
 @MainActor
 @Suite("Browse thumbnail wrapper cost", .serialized)
 struct BrowseThumbnailWrapperCostTests {
@@ -274,17 +242,11 @@ struct BrowseThumbnailWrapperCostTests {
         /// `.blur(radius: isBlurred ? 26 : 0)` — always attached today, and a
         /// zero radius is not necessarily free.
         var blur = true
-        /// `@State GIFAnimationController()`, one `@Observable` per card.
         var controller = true
-        /// `.task(id:)` + the three lifecycle hooks driving the playback gate.
         var lifecycle = true
-        /// The `isAnimating` overlay and its `.animation`.
         var playingOverlay = true
-        /// The four things a `ViewBuilder` replica silently drops: `@State`
-        /// storage, two `@Environment` reads, a `@Binding`, and the
-        /// `.onChange(of:)` over a six-field computed struct. These are
-        /// per-view storage and dependency tracking — exactly what a recycling
-        /// collection view does not re-establish on every scroll-in.
+        /// The four things a `ViewBuilder` replica silently drops: `@State` storage, two
+        /// `@Environment` reads, a `@Binding`, and an `.onChange(of:)`.
         var perViewStorage = false
     }
 
@@ -336,7 +298,6 @@ struct BrowseThumbnailWrapperCostTests {
         let dark: Bool
     }
 
-    /// Mirrors `AnimatedGIFThumbnail.body`'s structure, minus the parts each row drops.
     @ViewBuilder
     private func thumbnail(_ variant: Variant) -> some View {
         if variant.perViewStorage {

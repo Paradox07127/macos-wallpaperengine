@@ -3,7 +3,6 @@ import Foundation
 import LiveWallpaperCore
 import Observation
 
-/// One Apple Aerial wallpaper asset discovered under idleassetsd.
 struct AerialAsset: Identifiable, Hashable {
     let id: String
     let url: URL
@@ -13,7 +12,6 @@ struct AerialAsset: Identifiable, Hashable {
     let bookmarkData: Data
 }
 
-/// Scans Apple Aerial wallpapers after the user grants a directory bookmark.
 @MainActor
 @Observable
 final class AppleAerialsLibrary {
@@ -24,15 +22,11 @@ final class AppleAerialsLibrary {
     private(set) var lastScanError: String?
     private(set) var isScanning: Bool
 
-    /// Drops stale async scan results.
     @ObservationIgnored private var scanGeneration: UInt64 = 0
 
-    /// Cancels the in-flight scan when a newer `refresh()` supersedes it.
     @ObservationIgnored private var scanTask: Task<Result<[AerialAsset], Error>, Never>?
 
     init() {
-        // Authorized if Apple's folder is directly readable (entitlement / standard
-        // install) OR a prior Powerbox grant left a bookmark for a non-standard layout.
         self.isAuthorized = Self.defaultReadableDirectory() != nil
             || SettingsManager.shared.loadAerialsDirectoryBookmark() != nil
         self.assets = []
@@ -41,7 +35,6 @@ final class AppleAerialsLibrary {
     }
 
     func requestAccess() async -> Bool {
-        // Opportunistic direct read when sandbox allows; else Powerbox grant.
         if Self.defaultReadableDirectory() != nil {
             isAuthorized = true
             lastScanError = nil
@@ -49,7 +42,6 @@ final class AppleAerialsLibrary {
             return true
         }
 
-        // Fallback: non-standard / older layout — grant via Powerbox + bookmark.
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
@@ -83,8 +75,6 @@ final class AppleAerialsLibrary {
     func refresh() async {
         scanTask?.cancel()
 
-        // Prefer the directly-readable Apple location (no security scope needed);
-        // fall back to a user-granted bookmark for non-standard layouts.
         let directoryURL: URL
         let isSecurityScoped: Bool
         if let direct = Self.defaultReadableDirectory() {

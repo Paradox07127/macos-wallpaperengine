@@ -1,7 +1,6 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// Observe card preferences once at the window root, using the app-scoped defaults suite.
 private struct GalleryCardPreferencesReader: ViewModifier {
     @AppStorage(CardBadgeSettings.showsRating, store: .appScoped()) private var showsRating = true
     @AppStorage(CardBadgeSettings.showsType, store: .appScoped()) private var showsType = true
@@ -35,13 +34,10 @@ extension View {
     }
 }
 
-/// Defaults keys for the adult-content gate, named so the card and the reader
-/// can't drift apart on a string literal.
 enum MatureContentSettings {
     static let blursThumbnails = "loomscreen.workshop.blurMatureThumbnails.v1"
     static let confirmed = "loomscreen.workshop.matureContentConfirmed.v1"
 
-    /// Read on activation; this preference needs no per-tile observation.
     @MainActor
     static var isConfirmed: Bool {
         UserDefaults.appScoped().bool(forKey: confirmed)

@@ -235,7 +235,6 @@ struct WPEPointerPublisherTests {
         publisher.setMouseMonitoringEnabled(true)
         #expect(publisher.isRunning == runningWhileEnabled)
 
-        // Gating while stopped installs nothing.
         publisher.stop()
         publisher.setMouseMonitoringEnabled(true)
         #expect(publisher.isRunning == false)

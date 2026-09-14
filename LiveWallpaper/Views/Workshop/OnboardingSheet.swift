@@ -5,7 +5,6 @@ import SwiftUI
 struct OnboardingSheet: View {
     @AppStorage("loomscreen.workshop.onboarding.shown.v1", store: .appScoped()) private var hasShown: Bool = false
     @Environment(\.dismiss) private var dismiss
-    /// Opens optional Web API key setup.
     var onConfigureOnline: () -> Void
     /// Opens the URL/ID queue; downloading still requires Steam setup.
     var onDownloadByLink: () -> Void

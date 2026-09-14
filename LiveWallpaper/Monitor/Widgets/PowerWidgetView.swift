@@ -7,8 +7,7 @@ struct PowerWidgetView: View {
     private var system: MonitorSystemSnapshot? { context.snapshot.system }
     private var model: MonitorPowerModel { .init(system: system) }
 
-    /// SoC temperature (falls back to CPU die) for the thermal readout beside the
-    /// existing Low-Power / thermal-state chips. nil when the SMC read missed.
+    /// SoC temperature (falls back to CPU die); nil when the SMC read missed.
     private var socTempC: Double? {
         system?.sensors?.socTempC ?? system?.sensors?.cpuTempC
     }
@@ -109,7 +108,6 @@ struct PowerWidgetView: View {
 
     // MARK: - Pieces
 
-    /// Compact SoC-temperature chip (thermometer glyph + the user's temperature unit, band-coloured), shown in the M header's trailing corner when a reading is present.
     @ViewBuilder
     private func temperatureChip(scale: Design.TypeScale) -> some View {
         if let temp = socTempC {
@@ -342,8 +340,6 @@ struct MonitorPowerModel {
         }
     }
 
-    /// LPM chip whenever Low Power Mode is on; thermal chip ONLY when the state
-    /// is serious/critical (fair/nominal never warn).
     var chips: [WarnChip] {
         var out: [WarnChip] = []
         if lowPowerMode { out.append(.lowPower) }

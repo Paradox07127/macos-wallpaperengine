@@ -1,7 +1,5 @@
 import Foundation
 
-/// JSON-on-disk store: atomic write, `.bak` recovery, POSIX lock, dir/file `0700`/`0600`.
-/// Independent of UserDefaults; synchronous I/O on the caller's actor.
 public struct AtomicFileStore<Value: Codable> {
     public enum StoreError: Error, CustomStringConvertible {
         case writeFailed(underlying: Error)
@@ -49,7 +47,6 @@ public struct AtomicFileStore<Value: Codable> {
         read() != nil
     }
 
-    /// Primary, else `.bak` on missing/corrupt.
     public func read() -> Value? {
         if let value = decode(from: fileURL) {
             return value
@@ -104,7 +101,6 @@ public struct AtomicFileStore<Value: Codable> {
         }
     }
 
-    /// Seed from an existing UserDefaults JSON blob without re-encode.
     public func writeRaw(_ data: Data) throws {
         do {
             try ensureDirectoryExists()
@@ -216,10 +212,8 @@ public struct AtomicFileStore<Value: Codable> {
         fsyncParentDirectory(of: fileURL)
     }
 
-    /// After `read()` has recovered from the backup, the primary stays corrupt —
-    /// nothing heals it. Rotating in that state deletes the backup and promotes
-    /// the corrupt primary into its slot, so a later primary loss leaves nothing
-    /// readable. Keep the backup and drop the corrupt primary instead.
+    /// Rotating while the primary is corrupt would delete the backup and promote the
+    /// corrupt primary into its slot, leaving nothing readable after a later loss.
     private func backupIsSoleReadableGeneration() -> Bool {
         guard fileExists(backupURL) else { return false }
         return decode(from: fileURL) == nil && decode(from: backupURL) != nil

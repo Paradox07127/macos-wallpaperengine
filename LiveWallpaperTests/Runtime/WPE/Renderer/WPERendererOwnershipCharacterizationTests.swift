@@ -53,9 +53,6 @@
                         "let metalLayer: WPEPresentLayer",
                         "let executor: WPEMetalRenderExecutor",
                         "var outputTexture: MTLTexture?",
-                        // Mutable since committed property patches update it
-                        // (actor-side) so in-place reloads rebuild the patched
-                        // scene instead of reverting edits.
                         "var descriptor: SceneDescriptor",
                     ]
                 ),
@@ -336,8 +333,6 @@
                     "didLoad = true",
                 ]
             )
-            // The teardown body moved into `retireRuntimeState` (shared with
-            // hibernate); `reload` must stay exactly retire-then-load.
             expectOrder(
                 [
                     "await retireRuntimeState(on: actor)",
@@ -439,12 +434,7 @@
                     "previousFrameHistory = nil",
                     "outputTexturePool.removeAll()",
                     "bootstrapPreviousTextureCache.removeAll()",
-                    // Size/format-keyed; rebuilt on miss, so stale-scene entries
-                    // are dropped with the other transients instead of leaking.
                     "sceneReadHazardSnapshotCache.removeAll()",
-                    // Keyed by input/output pixel size, so a scale change or a
-                    // present-side demote never overwrites it — nothing asks for
-                    // the old key again. Its working textures are drawable-sized.
                     "metalFXUpscaler?.releaseCachedScaler()",
                     "compiledShaderResultByPassID.removeAll()",
                     "loggedUnresolvedTextureSlots.removeAll()",

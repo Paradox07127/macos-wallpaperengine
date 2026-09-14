@@ -1,9 +1,6 @@
 import Foundation
 import LiveWallpaperCore
 
-/// Where a saved library entry's media actually lives, and whether it is still
-/// there. Bookmarks and schemes both need this for two things at once — the
-/// Show in Finder action and the unavailable veil — so they resolve it once.
 struct LibraryContentLocation {
     /// Folder or file to select in Finder. Nil for content with no local file
     /// (a remote page, inline HTML) and for content whose grant no longer resolves.
@@ -34,8 +31,6 @@ enum LibraryContentLocator {
             }
             return located(bookmarkData)
         case .scene:
-            // Scene files live in the Steam library, reached only through the
-            // origin's source-folder grant; without one the scene is unusable.
             guard let wpeOrigin else {
                 return LibraryContentLocation(revealURL: nil, isAvailable: false)
             }

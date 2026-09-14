@@ -1,16 +1,12 @@
 import Foundation
 import os
 
-/// Classifies WPE scene-capture utility models shared by graph construction and render execution.
-/// Solid-layer utility materials are classified separately by the graph builder.
 public enum WPEUtilityModelKind: String, CaseIterable, Equatable, Sendable {
     case composeLayer = "composelayer"
     case projectLayer = "projectlayer"
     case fullScreenLayer = "fullscreenlayer"
 
-    /// WPE authors these paths with a leading `../<dependencyID>/` resolver
-    /// prefix, `\`-separated Windows paths, and inconsistent case. Tolerates
-    /// all three; matches on the trailing `models/util/<name>.json`.
+    /// Authors `../<dependencyID>/` prefix, `\`-separated Windows paths, and inconsistent case. Match on trailing `models/util/<name>.json`.
     public static func classify(_ path: String) -> WPEUtilityModelKind? {
         // Ordinary `.png`/`.tex` layers must not pay the memo lock.
         guard hasUtilityModelSuffix(path) else { return nil }
@@ -32,9 +28,7 @@ public enum WPEUtilityModelKind: String, CaseIterable, Equatable, Sendable {
     private static let cache = OSAllocatedUnfairLock(initialState: [String: WPEUtilityModelKind?]())
     private static let cacheLimit = 512
 
-    /// ASCII-case-insensitive `hasSuffix("layer.json")` over the raw UTF-8.
-    /// `\` never appears inside the suffix, so no separator normalization is
-    /// needed before the compare.
+    /// ASCII-case-insensitive `hasSuffix("layer.json")` over raw UTF-8. `\` never appears inside the suffix, so no separator normalization before the compare.
     private static let utilityModelSuffix = Array("layer.json".utf8)
 
     private static func hasUtilityModelSuffix(_ path: String) -> Bool {

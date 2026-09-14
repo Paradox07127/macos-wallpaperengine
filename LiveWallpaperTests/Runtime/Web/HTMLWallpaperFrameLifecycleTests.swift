@@ -5,8 +5,6 @@ import WebKit
 import LiveWallpaperCore
 @testable import LiveWallpaper
 
-/// Harness for the lifecycle controller: the globals it patches at document
-/// start, stubbed just far enough to observe suspend/resume side effects.
 private func makeLifecycleHarnessContext(isTopFrame: Bool) throws -> JSContext {
     let context = try #require(JSContext())
     context.evaluateScript(
@@ -127,7 +125,6 @@ struct HTMLWallpaperFrameLifecycleTests {
 
         #expect(context.exception?.toString() == nil)
         #expect(context.evaluateScript("workerMessages.length")?.toInt32() == 0)
-        // The wrapper must forward terminate, not swallow it.
         #expect(context.objectForKeyedSubscript("liveWorkers")?.toInt32() == 0)
     }
 
@@ -196,9 +193,8 @@ struct HTMLWallpaperFrameLifecycleTests {
             HTMLWallpaperRuntimeScript.lifecycleController(aggressiveSuspend: false)
         )
 
-        // One listener, and it is the pacing responder a late iframe pulls from.
-        // The phase relay is what the top frame must not have: a page able to
-        // post `__lwLifecycle__` at its own window could drive its own suspend.
+        // The top frame must not relay a phase to itself: a page posting
+        // `__lwLifecycle__` at its own window could drive its own suspend.
         #expect(context.evaluateScript("messageListeners.length")?.toInt32() == 1)
         context.evaluateScript(
             """
@@ -222,7 +218,7 @@ struct HTMLWallpaperFrameLifecycleTests {
         #expect(allFrameScripts.count == 1)
         #expect(allFrameScripts.first?.source.contains("window.__lwSuspend__") == true)
         #expect(allFrameScripts.first?.injectionTime == .atDocumentStart)
-        // The baseline (page CSS, transform, audio) must not leak into iframes.
+        // The baseline is page CSS, transform, and audio.
         let mainFrameScripts = scripts.filter(\.isForMainFrameOnly)
         #expect(mainFrameScripts.contains { $0.source.contains("lw-user-css") })
         #expect(!allFrameScripts.contains { $0.source.contains("lw-user-css") })
@@ -344,8 +340,6 @@ struct HTMLWallpaperHibernationStateTests {
         #expect(state.begin() == .presentCover)
         let staleGeneration = state.generation
 
-        // The source reloaded mid-capture, then the dwell armed again: the
-        // in-flight reply describes a document that is no longer on screen.
         state.noteRebuildStarted()
         #expect(state.begin() == .presentCover)
         #expect(state.generation != staleGeneration)
@@ -386,7 +380,6 @@ struct HTMLWallpaperHibernationStateTests {
         #expect(state.coverDidPresent(true, generation: state.generation) == .releaseResources)
         #expect(state.requestRestore() == .rebuild)
 
-        // The restore reload runs through the normal source path.
         state.noteRebuildStarted()
         #expect(state.phase == .restoring)
 
@@ -407,14 +400,11 @@ struct HTMLWallpaperHibernationStateTests {
 
         state.noteRebuildStarted()
         #expect(state.phase == .live)
-        // Having gone back to live, the dwell can arm again.
         #expect(state.begin() == .presentCover)
     }
 
-    /// A second resume arriving while the previous restore is still loading must
-    /// NOT uncover: what is on screen is `about:blank` or a half-built document.
-    /// This used to force `.live` and return nil, which the view reads as
-    /// "hide the overlay" — a blank desktop.
+    /// A resume during an in-flight restore must NOT uncover: the screen still holds
+    /// `about:blank` or a half-built document, so forcing `.live` would blank the desktop.
     @Test("A resume during an in-flight restore keeps the cover")
     func resumeDuringRestoreKeepsTheCover() {
         var state = HibernationPhase()
@@ -426,11 +416,8 @@ struct HTMLWallpaperHibernationStateTests {
         #expect(state.phase == .restoring, "the reload is still running underneath")
     }
 
-    /// A suspend landing mid-restore has to leave a phase the dwell can arm from.
-    /// Both runtimes' eligibility guards only arm from `.live`, and the rebuild in
-    /// flight is about to make the resources live again — so `.hibernated` here is
-    /// doubly wrong: it claims they are gone AND blocks the dwell that would
-    /// release them, so nothing ever would.
+    /// A suspend mid-restore must land on `.live`: the guards only arm from `.live`,
+    /// so `.hibernated` would block the dwell that releases the rebuilt resources.
     @Test("A suspend during an in-flight restore returns to an armable phase")
     func suspendDuringRestoreStaysArmable() {
         var state = HibernationPhase()
@@ -441,7 +428,6 @@ struct HTMLWallpaperHibernationStateTests {
         state.noteSuspendedDuringRestore()
         #expect(state.phase == .live, "the rebuild in flight will make resources live")
         #expect(!state.isPresentingCover)
-        // The dwell can arm again, which is the whole point.
         #expect(state.begin() == .presentCover)
     }
 
@@ -469,9 +455,7 @@ struct HTMLWallpaperHibernationStateTests {
 
 // MARK: - Manual-pause deep hibernation (parity with the scene session)
 
-/// Records what the session pushes down to the HTML runtime. The view's own
-/// dwell/cover/teardown are exercised by `HTMLWallpaperHibernationStateTests`;
-/// what is under test here is which eligibility the session folds and when.
+/// The view's own dwell/cover/teardown live in `HTMLWallpaperHibernationStateTests`.
 @MainActor
 private final class RecordingHibernationTarget:
     WallpaperPerformanceConfigurable,
@@ -552,8 +536,6 @@ struct HTMLManualPauseHibernationTests {
         defer { harness.session.cleanup() }
 
         harness.session.pause()
-        // Every policy refresh pushes absence ineligibility for a non-absent
-        // manual pause; the view has one dwell slot, so the fold happens here.
         harness.session.setHibernationEligible(false)
         try await ManualPauseHarness.poll("eligibility after the pause dwell") {
             harness.target.lastEligibility == true
@@ -590,7 +572,6 @@ struct HTMLManualPauseHibernationTests {
         harness.session.play()
 
         #expect(harness.target.lastEligibility == false)
-        // Resume is the view's normal restore path (reload + cover deadline).
         #expect(harness.target.appliedProfiles.last == .quality)
         #expect(harness.session.isPlaying)
     }
@@ -608,11 +589,8 @@ struct HTMLManualPauseHibernationTests {
         #expect(!harness.target.eligibilityPushes.contains(true))
     }
 
-    /// D3 parity, driven through a real view rather than the recording target:
-    /// the session's 300s dwell used to be followed by the view's own 20s
-    /// absence dwell, making the true figure 320s while the scene released at
-    /// 300s. The view keeps its production dwell here, so only an immediate
-    /// handover can flip the phase inside this test's budget.
+    /// The view keeps its production dwell, so only an immediate handover can flip
+    /// the phase inside this test's budget.
     @Test("A manual pause hibernates the HTML view without also waiting its absence dwell")
     func manualPauseReleaseDoesNotStackTheViewDwell() async throws {
         let view = HTMLWallpaperView(frame: CGRect(x: 0, y: 0, width: 64, height: 64))

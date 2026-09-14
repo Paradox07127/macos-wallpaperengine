@@ -1,13 +1,8 @@
 import SwiftUI
 
-/// The board's headline percentage: large tabular digits with a smaller unit
-/// beside them.
-///
-/// Every instrument that shows a 0…1 utilisation as its hero number draws it
-/// here, so the unit's size relationship and the three-digit shrink are decided
-/// once. Without the shrink, "100%" needs a text scale below the
-/// `minimumScaleFactor` floor in the tighter arc-gauge centres and truncates to
-/// "1…%" instead — `WidgetReadoutFitTests` measures that for every tile.
+/// The board's headline percentage: large tabular digits with a smaller unit.
+/// Without the three-digit shrink "100%" would truncate to "1…%" in the tighter
+/// arc-gauge centres (`WidgetReadoutFitTests`).
 struct HeroPercent: View {
     /// 0…1. Clamped and rounded to a whole percent.
     var fraction: Double

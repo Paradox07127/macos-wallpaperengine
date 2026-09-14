@@ -25,17 +25,10 @@ struct DetailPresetsFilterTests {
         #expect(result.presets.map(\.id) == [10])
         #expect(result.presets.first?.tags.contains("Preset") == true)
         #expect(PresetsQueryStub.childQueryCount == 1)
-        // The tag filter runs server-side (`child_publishedfileid` +
-        // `requiredtags[0]=Preset`, measured 2026-09-07: total 16701 → 16697),
-        // so a 51st preset is no longer lost behind 50 non-preset references
-        // and Steam's `total` is the preset count as it stands.
         #expect(PresetsQueryStub.lastQuery["requiredtags[0]"] == "Preset")
         #expect(result.totalAvailable == 3)
     }
 
-    /// `.task(id:)` re-runs when the key goes away, but the model's loaded
-    /// list survives the re-run; reusing it would keep listing presets the
-    /// keyed path can no longer fetch.
     @Test("Losing the key after a load re-runs the query instead of reusing the list")
     @MainActor
     func keyLossReloads() async {
@@ -85,13 +78,9 @@ struct DetailPresetsFilterTests {
         #expect(DetailPresetsQuery.presets(in: items, of: Self.wallpaperID).map(\.id) == [10])
     }
 
-    /// The preset rows show the same thumbnails the grid blurs; the row used
-    /// to hand `WorkshopPreviewImage` a bare URL, which cannot know the preset
-    /// is tagged Mature.
     @Test("A Mature preset's thumbnail is blurred under the grid's setting")
     func matureRowsBlurUnderTheSetting() {
         #expect(DetailPresetsSection.blursThumbnail(for: Self.item(id: 10, tags: ["Preset", "Mature"]), blursMature: true))
-        // Controls: the setting is off, or the preset is not Mature.
         #expect(!DetailPresetsSection.blursThumbnail(for: Self.item(id: 10, tags: ["Preset", "Mature"]), blursMature: false))
         #expect(!DetailPresetsSection.blursThumbnail(for: Self.item(id: 10, tags: ["Preset", "Everyone"]), blursMature: true))
     }
@@ -126,7 +115,6 @@ struct DetailPresetsFilterTests {
     }
 }
 
-/// Three references to the wallpaper: one Preset, one plain Scene, one Web.
 private final class PresetsQueryStub: URLProtocol, @unchecked Sendable {
     private static let lock = NSLock()
     private nonisolated(unsafe) static var childQueries = 0 // guarded by `lock`
@@ -136,7 +124,6 @@ private final class PresetsQueryStub: URLProtocol, @unchecked Sendable {
         lock.withLock { childQueries }
     }
 
-    /// Query items of the most recent request, by name.
     static var lastQuery: [String: String] {
         lock.withLock { lastQueryItems }
     }

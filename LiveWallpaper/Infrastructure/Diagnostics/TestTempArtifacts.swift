@@ -1,7 +1,6 @@
 #if DEBUG && !LITE_BUILD
 import Foundation
 
-/// DEBUG-only reclaim of test-owned tmp/ prefixes in the app container.
 enum TestTempArtifacts {
 
     struct Summary: Equatable {
@@ -64,7 +63,6 @@ enum TestTempArtifacts {
         "wpe-tex-video-test-"
     ]
 
-    /// Retired corpus-era prefixes still swept for leftover developer disks.
     static let retiredPrefixes: [String] = [
         "WPEMetalRotatedQuad-",
         "WPEMetalVisualGate-",

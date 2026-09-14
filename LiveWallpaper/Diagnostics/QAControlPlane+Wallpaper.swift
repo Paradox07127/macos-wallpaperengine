@@ -3,19 +3,11 @@ import CoreGraphics
 import Foundation
 import LiveWallpaperCore
 
-/// Wallpaper switching and per-screen playback settings for the QA control plane.
-///
-/// Everything here goes through `ScreenManager`'s own named entry points. Those already
-/// own the parts that are easy to get wrong from outside: `applyBookmark` routes to
-/// `setVideo`/`setHTMLWallpaper`/`setSceneWallpaper`, each of which calls
-/// `beginExplicitWallpaperSelection` and so bumps the transition generation that retires
-/// older in-flight loads. Writing `ScreenConfiguration` directly would skip all of it.
 @MainActor
 extension QAControlPlane {
     // MARK: - Wallpapers
 
-    /// Identity only. A bookmark's `content` carries security-scoped bookmark bytes, which
-    /// must never reach an agent; applying one is done by id.
+    /// Identity only — applying a bookmark is done by id.
     func wallpaperList() throws -> Any {
         let bookmarks = SettingsManager.shared.loadWallpaperBookmarks().map { bookmark -> [String: Any] in
             [
@@ -41,7 +33,6 @@ extension QAControlPlane {
         // A bookmark is content only — per-screen volume, fit mode and effects are left
         // alone (the whole-screen counterpart is a Scheme).
         manager.applyBookmark(bookmark, to: screen)
-        // Applying is asynchronous; the caller polls state.dump for the session it wants.
         return [
             "status": "accepted",
             "bookmarkID": rawID,
@@ -93,13 +84,6 @@ extension QAControlPlane {
         return ["screens": entries, "writableKeys": Self.screenWritableKeys.sorted()]
     }
 
-    /// What the live session reports, as opposed to what the store holds. A per-screen
-    /// setter persists AND pushes into the running session; comparing these two answers
-    /// "did it actually take effect" rather than "was it written".
-    ///
-    /// Deliberately narrow: most playback values (volume, frame-rate ceiling, fit mode) are
-    /// push-only on the runtime side — the session has a setter but no getter — so they are
-    /// absent here rather than guessed at.
     func runtimeState(_ arguments: [String: Any]) throws -> Any {
         guard let manager = screenManager else { throw QAError.message("ScreenManager unavailable") }
         let screens = try arguments["screenID"] == nil ? manager.screens : [resolveScreen(arguments)]
@@ -142,10 +126,7 @@ extension QAControlPlane {
         "fitMode", "frameRateLimit", "sceneMouseInteractionEnabled", "sceneClickCaptureEnabled",
     ]
 
-    /// Every value is parsed before any setter runs, so a bad field cannot leave half the
-    /// patch applied. Enum values are built from their `RawValue` rather than decoded —
-    /// several of these types ship tolerant decoders that fold an unknown case onto a
-    /// default, which would silently accept a typo.
+    /// Parse every value before any setter runs so a bad field cannot leave a half-applied patch. Build enums from RawValue — tolerant decoders would silently accept a typo.
     func screenPatch(_ arguments: [String: Any]) throws -> Any {
         guard let manager = screenManager else { throw QAError.message("ScreenManager unavailable") }
         let screen = try resolveScreen(arguments)

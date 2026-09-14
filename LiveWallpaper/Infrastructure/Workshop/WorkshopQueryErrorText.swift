@@ -3,19 +3,6 @@ import Foundation
 import LiveWallpaperCore
 
 extension WorkshopQueryError {
-    /// What went wrong, with no remedy attached.
-    ///
-    /// Three surfaces map this error and each had grown its own switch: browse
-    /// covered every case, key validation covered five and sent the rest to
-    /// "Validation failed.", and the presets row named none of them. A cause
-    /// belongs to the error, so a new case cannot be worded in one place and
-    /// left generic in the other two.
-    ///
-    /// Remedies stay at the call sites, because they differ: the same rejected
-    /// key means "update it in Settings" while browsing and "paste a new one"
-    /// inside the key sheet. Every sentence here is deliberately the wording
-    /// one of those surfaces already shipped, so the catalog keys — and their
-    /// translations — carry over unchanged.
     var causeDescription: String {
         switch self {
         case .missingAPIKey:

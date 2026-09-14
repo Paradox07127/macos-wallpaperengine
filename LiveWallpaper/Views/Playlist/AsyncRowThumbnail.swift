@@ -1,7 +1,6 @@
 import SwiftUI
 import LiveWallpaperCore
 
-/// First-frame poster delegated to `WallpaperThumbnailService` (already in-flight-deduplicated + NSCache-backed).
 struct AsyncRowThumbnail: View {
     let bookmark: Data
     var size: CGFloat = 36

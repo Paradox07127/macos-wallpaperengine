@@ -2,7 +2,6 @@ import SwiftUI
 import AppKit
 import LiveWallpaperCore
 
-/// Time-of-day wallpaper scheduling.
 struct ScheduleSection: View {
     @Binding var scheduleSlots: [ScheduleSlot]
     var screen: Screen
@@ -382,7 +381,6 @@ struct ScheduleSection: View {
         )
     }
 
-    /// Animate `set` now; clear after `delay` unless a newer flash superseded it.
     private func flashTransientState(
         setAnimation: Animation,
         delay: Duration,

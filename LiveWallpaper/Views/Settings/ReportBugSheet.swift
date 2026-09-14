@@ -1,7 +1,6 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// Reviews diagnostics before opening a public GitHub issue.
 struct ReportBugSheet: View {
     let report: BugReport
     var onDismiss: () -> Void
@@ -127,7 +126,6 @@ struct ReportBugSheet: View {
         }
     }
 
-    /// Scrubs the whole runtime log and writes it to a stable caches path the user can drag after the sheet dismisses.
     nonisolated private static func makeSanitizedLogCopy(from source: URL) async -> URL? {
         await Task.detached(priority: .userInitiated) {
             guard let raw = try? String(contentsOf: source, encoding: .utf8) else { return nil }

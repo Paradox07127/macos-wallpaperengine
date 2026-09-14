@@ -1,10 +1,6 @@
 #if !LITE_BUILD
 import Foundation
 
-/// Resolves Workshop items by id through the key-free
-/// `GetPublishedFileDetails` batch, so the detail inspector can show an item
-/// that is not on the current browse page (a Preset's required wallpaper, or a
-/// selection that outlived the page it came from) on either browse path.
 @MainActor
 final class WorkshopItemDetailsLoader {
     struct Outcome: Equatable {
@@ -12,9 +8,7 @@ final class WorkshopItemDetailsLoader {
         /// private, banned, not-found and foreign-app ids are failures.
         let items: [WorkshopQueryItem]
         let failedIDs: [UInt64]
-        /// The whole batch failed for a reason that says nothing about the ids
-        /// (transport, 429, 5xx, an unrecognised result code): `items` and
-        /// `failedIDs` are empty, and a retry may succeed.
+        /// Whole-batch failure that says nothing about the ids: items and failedIDs are empty, and a retry may succeed.
         var transientFailure = false
     }
 
@@ -39,7 +33,6 @@ final class WorkshopItemDetailsLoader {
                 try await metadata.post(publishedFileIDs: unique)
             }
         } catch {
-            // Transport after the retries, or a 429 the policy would not wait out.
             return Outcome(items: [], failedIDs: [], transientFailure: true)
         }
         let status = response.http.statusCode

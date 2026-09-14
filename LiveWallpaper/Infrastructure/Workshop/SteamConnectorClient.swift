@@ -3,16 +3,10 @@ import Foundation
 import LiveWallpaperCore
 import os
 
-/// Identity of the long SteamCMD operation the current task is running, so a
-/// Cancel can name the exact child in the connector instead of "whatever is
-/// running now". A task-local because the download path crosses
-/// `SteamCMDDoctorService`, which has no per-attempt identity to carry.
 enum SteamCMDOperationScope {
     @TaskLocal static var currentID: String?
 }
 
-/// XPC client for the unsandboxed Steam connector (real $HOME / STEAMROOT).
-/// One short-lived connection per call.
 @MainActor
 enum SteamConnectorClient {
     private static let serviceName = "com.loomscreen.pro.SteamConnector"
@@ -31,7 +25,6 @@ enum SteamConnectorClient {
         return try? JSONDecoder().decode(SteamCachedLoginResult.self, from: data)
     }
 
-    /// Connector-side SteamCMD hash + code signature (app never opens the binary).
     static func inspectSteamCMDBinary(path: String) async -> SteamCMDBinaryInspection? {
         let data = await call { connector, reply in
             connector.inspectSteamCMDBinary(path: path, with: reply)
@@ -39,10 +32,6 @@ enum SteamConnectorClient {
         return data.flatMap { try? JSONDecoder().decode(SteamCMDBinaryInspection.self, from: $0) }
     }
 
-    /// Points the connector at a SteamCMD the user chose themselves, for the
-    /// installs auto-detection cannot reach. The connector re-gates the path on
-    /// every run; see `SteamCMDManualBinding` for what that does and does not
-    /// buy.
     static func bindManualSteamCMDBinary(path: String) async -> SteamCMDManualBindResult? {
         let data = await call { connector, reply in
             connector.bindManualSteamCMDBinary(path: path, with: reply)
@@ -50,7 +39,6 @@ enum SteamConnectorClient {
         return data.flatMap { try? JSONDecoder().decode(SteamCMDManualBindResult.self, from: $0) }
     }
 
-    /// Returns resolution to auto-detection.
     @discardableResult
     static func clearManualSteamCMDBinary() async -> SteamCMDManualBindResult? {
         let data = await call { connector, reply in
@@ -68,9 +56,6 @@ enum SteamConnectorClient {
         return data.flatMap { try? JSONDecoder().decode(SteamCMDBinaryLocation.self, from: $0) }
     }
 
-    /// Installs SteamCMD from Valve's update manifest. The whole flow —
-    /// download, verification, unpack, first run — lives in the connector; the
-    /// app sends nothing and receives only the verdict.
     static func installManagedSteamCMD() async -> SteamCMDManagedInstallResult? {
         let data = await call { connector, reply in
             connector.installManagedSteamCMD(with: reply)
@@ -78,10 +63,7 @@ enum SteamConnectorClient {
         return data.flatMap { try? JSONDecoder().decode(SteamCMDManagedInstallResult.self, from: $0) }
     }
 
-    /// Interactive `steamcmd +login` in the connector, on a PTY. The password
-    /// crosses to the connector once and goes only to steamcmd's own prompt;
-    /// nothing on the app side persists it. Stays in flight through Steam
-    /// Guard's mobile confirmation. nil means the connector was unreachable.
+    /// nil means the connector was unreachable.
     static func signInSteamAccount(
         accountName: String,
         password: String,
@@ -97,8 +79,6 @@ enum SteamConnectorClient {
         return data.flatMap { try? JSONDecoder().decode(SteamCMDLoginResult.self, from: $0) }
     }
 
-    /// Deletes the managed install. The app cannot do this itself — the payload
-    /// is deliberately outside its container.
     static func removeManagedSteamCMD() async -> SteamCMDManagedRemovalResult? {
         let data = await call { connector, reply in
             connector.removeManagedSteamCMD(with: reply)
@@ -106,9 +86,7 @@ enum SteamConnectorClient {
         return data.flatMap { try? JSONDecoder().decode(SteamCMDManagedRemovalResult.self, from: $0) }
     }
 
-    /// Deletes only Loomscreen's own download session for this account; the
-    /// user's Steam client profile is untouched. nil means the connector was
-    /// unreachable.
+    /// nil means the connector was unreachable.
     static func removeAccountSession(accountName: String) async -> SteamAccountSessionRemovalResult? {
         let data = await call { connector, reply in
             connector.removeAccountSession(accountName: accountName, with: reply)
@@ -116,10 +94,7 @@ enum SteamConnectorClient {
         return data.flatMap { try? JSONDecoder().decode(SteamAccountSessionRemovalResult.self, from: $0) }
     }
 
-    /// Whether SteamCMD works on this Mac, decided by the one process that can
-    /// spawn it — resolution, signature, quarantine, and a real `steamcmd +quit`
-    /// run. Slow by nature; the app renders the result rather than re-deriving
-    /// any part of it. nil means the connector was unreachable.
+    /// nil means the connector was unreachable.
     static func diagnoseSteamCMD(
         launchTimeout: TimeInterval = SteamCMDDiagnosisProbe.defaultLaunchTimeout
     ) async -> SteamCMDDiagnosis? {
@@ -131,7 +106,6 @@ enum SteamConnectorClient {
         return data.flatMap { try? JSONDecoder().decode(SteamCMDDiagnosis.self, from: $0) }
     }
 
-    /// Runs one Doctor probe. Which binary it runs is the connector's call.
     static func runSteamCMDProbe(
         arguments: [String],
         timeout: TimeInterval
@@ -146,7 +120,6 @@ enum SteamConnectorClient {
 
     // MARK: - Long operations
 
-    /// Long-running app_update with progress.
     static func installWallpaperEngineAssets(
         accountName: String,
         libraryPath: String,
@@ -164,10 +137,7 @@ enum SteamConnectorClient {
         return data.flatMap { try? JSONDecoder().decode(SteamEngineAssetsResult.self, from: $0) }
     }
 
-    /// The cancel identity comes from `SteamCMDOperationScope`, not a parameter:
-    /// this call is reached through `SteamCMDDoctorService`, which carries no
-    /// per-attempt identity of its own. Outside a scope the run still registers,
-    /// under an id nobody holds — uncancellable, as unscoped runs were before.
+    /// Cancel identity comes from SteamCMDOperationScope, not a parameter. Outside a scope the run still registers under an id nobody holds — uncancellable.
     static func downloadWorkshopItem(
         workshopID: String,
         accountName: String,
@@ -187,9 +157,7 @@ enum SteamConnectorClient {
         return data.flatMap { try? JSONDecoder().decode(SteamWorkshopDownloadResult.self, from: $0) }
     }
 
-    /// The account's Workshop subscriptions, read out of the ledger SteamCMD
-    /// keeps locally. Downloads nothing. nil means the connector was
-    /// unreachable.
+    /// nil means the connector was unreachable.
     static func listSubscribedWorkshopItems(accountName: String) async -> SteamSubscribedItemsResult? {
         let data = await call { connector, reply in
             connector.listSubscribedWorkshopItems(accountName: accountName, with: reply)
@@ -197,8 +165,6 @@ enum SteamConnectorClient {
         return data.flatMap { try? JSONDecoder().decode(SteamSubscribedItemsResult.self, from: $0) }
     }
 
-    /// Real delete of the user's Steam content. The app has no code path that
-    /// can do this itself — by design.
     static func deleteWorkshopItem(workshopID: String, libraryPath: String) async -> SteamDeleteResult? {
         let data = await call { connector, reply in
             connector.deleteWorkshopItem(workshopID: workshopID, libraryPath: libraryPath, with: reply)
@@ -206,10 +172,7 @@ enum SteamConnectorClient {
         return data.flatMap { try? JSONDecoder().decode(SteamDeleteResult.self, from: $0) }
     }
 
-    /// SIGTERMs the connector's SteamCMD child if it is the one `operationID`
-    /// started. The interrupted operation returns through its own reply as a
-    /// failure. true = something was signalled; false = a different operation
-    /// (or none) holds the queue; nil = connector unreachable.
+    /// true = something was signalled; false = a different operation (or none) holds the queue; nil = connector unreachable.
     @discardableResult
     static func cancelActiveSteamCMD(operationID: String) async -> Bool? {
         let data = await call { connector, reply in
@@ -223,15 +186,13 @@ enum SteamConnectorClient {
             connector.latestWallpaperEngineBuildID(operationID: operationID, with: reply)
         }
         guard let data else { return nil }
-        // A reply we cannot decode is still a reply. Returning nil here made
-        // the caller report "the connector did not respond", which was false.
+        // A reply we cannot decode is still a reply. Returning nil here would make the caller report the connector did not respond.
         return (try? JSONDecoder().decode(SteamEngineBuildLookup.self, from: data))
             ?? SteamEngineBuildLookup(outcome: .unrecognized, buildID: nil)
     }
 
     // MARK: - Transport
 
-    /// Progress on arbitrary queue (`@Sendable`; MainActor hop is caller's job).
     private final class ProgressReceiver: NSObject, SteamConnectorProgressProtocol {
         private let handler: @Sendable (SteamOperationProgress) -> Void
 
@@ -286,7 +247,6 @@ enum SteamConnectorClient {
                 finish(nil)
                 return
             }
-            // Backstop if SteamCMD wedges without breaking the XPC connection.
             DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout) {
                 finish(nil)
             }

@@ -15,8 +15,6 @@ struct WorkshopInstalledEntryIdentity: Equatable, Hashable, Sendable {
     }
 }
 
-/// State and command owner for the Installed page. The SwiftUI view supplies
-/// environment-bound operations, while this model owns publication lifetime.
 @MainActor
 @Observable
 final class InstalledLibraryModel {
@@ -55,10 +53,9 @@ final class InstalledLibraryModel {
         let removeImportIfMatching: @MainActor (WorkshopInstalledEntryIdentity) -> Bool
         /// True while a download or update of this id is in flight.
         let isMutating: @MainActor (String) -> Bool
-        /// Real removal from the shared Steam repository, performed by the
-        /// connector — the app holds no write access to Steam's files. Throws
-        /// when the repository mutation gate refuses, which must abort the
-        /// delete instead of being folded into "nothing was freed".
+        /// Real removal from the shared Steam repository, performed by the connector —
+        /// the app holds no write access. Throws when the mutation gate refuses, which
+        /// must abort the delete instead of being folded into "nothing was freed".
         let deleteSharedRepositoryItem: @MainActor (String) async throws -> SteamDeleteResult?
     }
 
@@ -213,10 +210,8 @@ final class InstalledLibraryModel {
         pendingDelete = nil
     }
 
-    /// Deselecting a category's last chip snaps it back to all-selected:
-    /// an empty set already matched everything, but the chips all rendered
-    /// as struck-through, contradicting the full grid below (same rule as
-    /// the Browse filters).
+    /// Deselecting a category's last chip snaps back to all-selected: an empty set
+    /// already matched everything, but every chip would render struck through.
     func toggleType(_ kind: WPELibraryTypeKind) {
         if selectedTypes.contains(kind) {
             selectedTypes.remove(kind)
@@ -274,10 +269,7 @@ final class InstalledLibraryModel {
         invalidateDeletesForReimports()
     }
 
-    /// `operation` returns the error that stopped the apply, or nil on
-    /// success. It used to return `Bool`: the import tracker already held an
-    /// `AppError` naming the file, the package fault or the import failure, and
-    /// the call site reduced it to `!= nil`.
+    /// `operation` returns the error that stopped the apply, or nil on success.
     func startApply(
         entry: WPEHistoryEntry,
         operation: @escaping @MainActor () async -> AppError?
@@ -314,9 +306,8 @@ final class InstalledLibraryModel {
         let workshopID = entry.origin.workshopID
         pendingDelete = nil
 
-        // A download or update of this id holds the repository mutation gate,
-        // so the delete could only fail there — after the library record was
-        // already gone.
+        // A download or update of this id holds the repository mutation gate, so the
+        // delete would only fail there — after the library record was already gone.
         guard !services.isMutating(workshopID) else {
             errorMessage = Self.itemIsMutatingMessage
             return
@@ -334,9 +325,8 @@ final class InstalledLibraryModel {
             appearanceGeneration: appearanceGeneration,
             identity: identity
         )
-        // The row hides now but the history/bookmark removal waits for the
-        // repository call, so a refused mutation gate leaves a library record
-        // that still points at files that are still there.
+        // The row hides now but the history/bookmark removal waits for the repository
+        // call, so a refused gate would leave a record pointing at files still there.
         deletingWorkshopIDs.insert(workshopID)
         // Keep cleanup alive when the transient page disappears.
         let task = Task { @MainActor [self] in
@@ -344,9 +334,6 @@ final class InstalledLibraryModel {
                 finishDelete(ticket)
                 return
             }
-            // Deleting a wallpaper now removes Steam's own copy: the shared
-            // repository is where the files actually live, so leaving them
-            // meant "delete" never freed anything.
             let repositoryDeleted: Bool
             do {
                 repositoryDeleted = try await services.deleteSharedRepositoryItem(workshopID)?.outcome == .deleted
@@ -405,15 +392,13 @@ final class InstalledLibraryModel {
         )
     }
 
-    /// True when deleting will actually reclaim disk. A Workshop item always
-    /// will: its files live in the shared repository and the connector
-    /// removes them for real.
+    /// True when deleting will actually reclaim disk: a Workshop item's files live in
+    /// the shared repository and the connector removes them for real.
     func deletesFiles(_ entry: WPEHistoryEntry) -> Bool {
         let id = entry.origin.workshopID
         guard WPEPathSafety.isSafeProjectID(id) else { return false }
-        // A numeric id is a Steam Workshop item, whose files live in the shared repository
-        // (the connector reports `.notFound` harmlessly if already gone). Only Workshop items
-        // have files of ours to free; folder imports point at the user's own directory, which we never delete.
+        // A numeric id is a Steam Workshop item, whose files live in the shared
+        // repository; folder imports point at the user's own directory, never deleted.
         return id.allSatisfy(\.isNumber)
     }
 
@@ -611,8 +596,8 @@ final class InstalledLibraryModel {
         guard deleteHandles[ticket.identity.workshopID]?.ticket == ticket,
               !Task.isCancelled
         else { return false }
-        // The record survives until the repository call returns now, so absence
-        // is no longer the signal — only a *different* import of the same id is.
+        // The record survives until the repository call returns, so absence is not the
+        // signal — only a *different* import of the same id is.
         guard let current = dependencies.loadEntries().first(where: {
             $0.origin.workshopID == ticket.identity.workshopID
         }) else { return true }

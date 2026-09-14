@@ -2,12 +2,11 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// An available action for a Workshop setup step.
 struct WorkshopSetupRoute: Identifiable {
     let id: String
     let title: LocalizedStringKey
     var role: ButtonRole?
-    /// Disables the action; callers must also show the reason outside the tooltip.
+    /// Callers must also show the reason outside the tooltip.
     var unavailableReason: String?
     let action: () -> Void
 
@@ -26,17 +25,11 @@ struct WorkshopSetupRoute: Identifiable {
     }
 }
 
-/// Named setup actions with an overflow menu for secondary maintenance actions.
 struct WorkshopSetupRoutes: View {
     let primary: WorkshopSetupRoute?
-    /// Common alternatives stay visible as named buttons.
     var secondary: [WorkshopSetupRoute] = []
-    /// Infrequent or destructive maintenance actions.
     var overflow: [WorkshopSetupRoute] = []
-    /// Suppresses every route and shows a spinner: an install or a probe is
-    /// in flight and none of the commands would be accepted.
     var isBusy = false
-    /// Emphasize the primary action only while the setup step is incomplete.
     var emphasizesPrimary = false
 
     var body: some View {
@@ -96,7 +89,6 @@ struct WorkshopSetupRoutes: View {
     }
 }
 
-/// Omits the modifier when no reason exists to avoid empty tooltips.
 private struct RouteReasonTooltip: ViewModifier {
     let reason: String?
 

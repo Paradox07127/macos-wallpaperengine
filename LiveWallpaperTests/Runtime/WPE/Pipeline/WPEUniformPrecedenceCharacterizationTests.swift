@@ -6,21 +6,13 @@ import Metal
 import Testing
 @testable import LiveWallpaper
 
-/// Characterization of the CURRENT uniform resolution semantics, written before
-/// the dense uniform ABI replaces `packTranslatedUniforms`. Every case here
-/// describes what the renderer does today — not what Wallpaper Engine does, and
-/// not what a cleaner design would do. Section numbers refer to
-/// `.notes/research/2026-08-24-uniform-abi-spec.md`.
-///
-/// The complementary suite `WPEUniformResolutionPlanTests` proves the compiled
-/// plan equals the legacy candidate walk; this suite pins the individual rules
-/// that walk implements, so a rewrite that drops one is named by the failure.
+/// Every case pins what the renderer does TODAY — not what Wallpaper Engine does, and not what a cleaner design would do.
+/// Section numbers refer to `.notes/research/2026-08-24-uniform-abi-spec.md`.
 @Suite("WPE uniform precedence characterization")
 struct WPEUniformPrecedenceCharacterizationTests {
 
     // MARK: - A. The precedence chain (§2.2)
 
-    /// §2.2 rows 3a/3b: within ONE candidate the frame global is probed first.
     @Test("An exact frame global beats the pass value of the same name")
     func exactFrameGlobalBeatsPassValueOfTheSameName() throws {
         let executor = try makeExecutor()
@@ -31,17 +23,9 @@ struct WPEUniformPrecedenceCharacterizationTests {
             [.frameGlobal("g_Time"), .passValue("g_Time")]
         ])
         #expect(pack(layout, pass: pass, on: executor, frame: makeFrame())[0].x == 2.5)
-        // Control: with no frame context the authored value is what lands, so
-        // the 2.5 above really came from the frame tier.
         #expect(pack(layout, pass: pass, on: executor)[0].x == 999)
     }
 
-    /// §2.2 exception. A uniform carrying a `material` annotation is authorable
-    /// per material, and the pipeline builder writes the authored constant onto
-    /// the uniform's own name. Where such a uniform ALSO collides with a frame
-    /// global the authored value wins: `g_Brightness` is both the runtime pause
-    /// dimmer and generic2's "Brigtness", and the frame tier used to shadow every
-    /// authored model brightness (3470948192's star dome authors 1.5).
     @Test("An authored material constant beats the frame global of the same name")
     func authoredMaterialValueBeatsFrameGlobalOfTheSameName() throws {
         let executor = try makeExecutor()
@@ -59,9 +43,6 @@ struct WPEUniformPrecedenceCharacterizationTests {
         ])
         #expect(pack(material, pass: pass, on: executor, frame: makeFrame())[0].x == 1.5)
 
-        // Control: the SAME uniform without a material annotation keeps the frame
-        // tier in front (0.6 is the fixture's runtime brightness), so the reorder
-        // is scoped to material-authorable uniforms and nothing else moved.
         let plain = [WPEUniformSlot(name: "g_Brightness", glslType: "float", slot: 0, slotCount: 1)]
         #expect(planSteps(plain, pass: pass, on: executor) == [
             [.frameGlobal("g_Brightness"), .passValue("g_Brightness")],
@@ -69,10 +50,6 @@ struct WPEUniformPrecedenceCharacterizationTests {
         #expect(pack(plain, pass: pass, on: executor, frame: makeFrame())[0].x == 0.6)
     }
 
-    /// §2.2 "Candidate priority dominates source priority within the frame/pass
-    /// tiers": an EARLIER candidate's pass value beats a LATER candidate's
-    /// frame-global. A rewrite that grouped by source (all frame globals first)
-    /// would return the runtime clock here instead of the authored 7.
     @Test("An earlier candidate's pass value beats a later candidate's frame global")
     func earlierCandidatePassValueBeatsLaterCandidateFrameGlobal() throws {
         let executor = try makeExecutor()
@@ -90,10 +67,6 @@ struct WPEUniformPrecedenceCharacterizationTests {
         #expect(pack(layout, pass: pass, on: executor, frame: makeFrame())[0].x == 7)
     }
 
-    /// §2.2 "Every frame/pass case-insensitive hit beats every raw constant,
-    /// including an exact raw constant." This is the counter-intuitive rule the
-    /// dense ABI is most likely to "clean up" into exact-first ordering, which
-    /// would silently swap 0.8 for -1 here.
     @Test("A lowercased pass-value hit beats an EXACT raw constant")
     func lowercasedPassValueBeatsExactRawConstant() throws {
         let executor = try makeExecutor()
@@ -108,13 +81,10 @@ struct WPEUniformPrecedenceCharacterizationTests {
             [.passValue("RATIO"), .passConstant("u_Ratio")]
         ])
         #expect(pack(layout, pass: pass, on: executor)[0].x == 0.8)
-        // Control: remove the case-variant key and the exact constant does win,
-        // so the assertion above is about ORDER, not about constants being dead.
         let withoutCaseVariant = makePass(id: "a3b", constants: ["u_Ratio": .number(-1)])
         #expect(pack(layout, pass: withoutCaseVariant, on: executor)[0].x == -1)
     }
 
-    /// §2.2 rows 4a vs 5, the frame-global half of the same reversal.
     @Test("A lowercased frame-global hit beats an EXACT raw constant")
     func lowercasedFrameGlobalBeatsExactRawConstant() throws {
         let executor = try makeExecutor()
@@ -128,8 +98,6 @@ struct WPEUniformPrecedenceCharacterizationTests {
         #expect(pack(layout, pass: pass, on: executor)[0].x == -1)
     }
 
-    /// §2.2 rows 5 and 6: exact constants precede lowercased constants, and the
-    /// whole constants tier precedes the slot default.
     @Test("Exact constants beat lowercased constants, and both beat the slot default")
     func constantsTierOrder() throws {
         let executor = try makeExecutor()
@@ -154,8 +122,6 @@ struct WPEUniformPrecedenceCharacterizationTests {
         #expect(pack(layout, pass: empty, on: executor)[0].x == 3)
     }
 
-    /// §2.2 row 2 / §2.3: the `g_Texture<N>Resolution` derived probe is TERMINAL
-    /// and sits above every named source. An unbound slot falls through.
     @Test("A bound g_TextureNResolution outranks pass values and constants; unbound falls through")
     func textureResolutionProbeOutranksNamedSources() throws {
         let executor = try makeExecutor()
@@ -179,7 +145,6 @@ struct WPEUniformPrecedenceCharacterizationTests {
         let slots = pack(layout, pass: pass, on: executor, textures: textures)
         // Unregistered texture ⇒ physical size in all four components (§2.3).
         #expect(slots[0] == SIMD4<Float>(24, 6, 24, 6))
-        // Slot 5 is unbound, so the ordinary chain resumes at the raw constant.
         #expect(slots[1] == SIMD4<Float>(5, 5, 5, 5))
     }
 
@@ -217,12 +182,10 @@ struct WPEUniformPrecedenceCharacterizationTests {
         let slots = pack(layout, pass: pass, on: executor, textures: table)
         #expect(slots[0] == descriptor.rotation)
         #expect(slots[1] == SIMD4<Float>(descriptor.translation.x, descriptor.translation.y, 0, 0))
-        // Slot 7 has a texture but no TEXS descriptor, so the ordinary authored
-        // chain remains authoritative; no identity/zero fallback is invented.
+        // No identity/zero fallback is invented when a slot has a texture but no TEXS descriptor.
         #expect(slots[2] == SIMD4<Float>(7, 7, 0, 0))
     }
 
-    /// §2.3: recognition of the derived names is exact and case-sensitive.
     @Test("Derived-probe name recognition is exact and case-sensitive")
     func derivedProbeNameRecognition() {
         #expect(WPEMetalRenderExecutor.textureResolutionSlotIndex(for: "g_Texture0Resolution") == 0)
@@ -232,9 +195,7 @@ struct WPEUniformPrecedenceCharacterizationTests {
         #expect(WPEMetalRenderExecutor.textureResolutionSlotIndex(for: "g_TextureResolution") == nil)
         #expect(WPEMetalRenderExecutor.textureResolutionSlotIndex(for: "g_TextureXResolution") == nil)
 
-        // The out-of-range probe tracks `customTextureSlotLimit`, which is 16 (a hard Metal
-        // sampler-argument limit). Slot 8 became valid when the limit was raised from 8 —
-        // WPE's own chroma4/fur4/genericimage4 bind `g_Texture8`.
+        // The out-of-range probe tracks `customTextureSlotLimit` = 16, a hard Metal sampler-argument limit.
         #expect(WPEMetalRenderExecutor.textureRotationSlotIndex(for: "g_Texture0Rotation") == 0)
         #expect(WPEMetalRenderExecutor.textureRotationSlotIndex(for: "g_Texture7Rotation") == 7)
         #expect(WPEMetalRenderExecutor.textureRotationSlotIndex(for: "g_Texture8Rotation") == 8)
@@ -260,9 +221,7 @@ struct WPEUniformPrecedenceCharacterizationTests {
             == .vector([4, 2, 2]))
     }
 
-    /// §2.2 row 1: a degenerate scene size makes the `g_TexelSize` probe
-    /// non-terminal, so ordinary lookup resumes. A freshly constructed executor
-    /// has `currentScenePixelSize == .zero`, which is exactly that state.
+    /// A freshly constructed executor has `currentScenePixelSize == .zero`, which is exactly the degenerate state this pins.
     @Test("A degenerate scene size lets g_TexelSize fall through to the authored value")
     func degenerateTexelSizeFallsThrough() throws {
         let executor = try makeExecutor()
@@ -278,10 +237,7 @@ struct WPEUniformPrecedenceCharacterizationTests {
     // MARK: - B. Hit-is-terminal happens BEFORE conversion (§2.6) — and the
     //            builtin path deliberately does the opposite (§2.5)
 
-    /// §2.6 "Type mismatch and fallback": a translated slot's dictionary hit ends
-    /// the search even when the value cannot convert; it packs as zero rather
-    /// than letting the next source win. This is a DELIBERATE path difference
-    /// from `WPEMetalShaderInputs.floatScalar` — see the paired test below.
+    /// A DELIBERATE path difference from `WPEMetalShaderInputs.floatScalar` — see the paired test below.
     @Test("A wrong-type pass value ends translated resolution and packs zero")
     func wrongTypePassValueIsTerminalForTranslatedSlots() throws {
         let executor = try makeExecutor()
@@ -299,16 +255,11 @@ struct WPEUniformPrecedenceCharacterizationTests {
         ])
         #expect(pack(layout, pass: pass, on: executor)[0] == SIMD4<Float>(0, 0, 0, 0))
 
-        // Control: drop the unconvertible value and the constant does land, so
-        // the zero above is terminal-on-hit, not a missing constants tier.
         let constantOnly = makePass(id: "b1b", constants: ["u_Wrong": .vector([1, 2, 3, 4])])
         #expect(pack(layout, pass: constantOnly, on: executor)[0] == SIMD4<Float>(1, 2, 3, 4))
     }
 
-    /// §2.5 "Generic builtin scalar rule": the builtin helper converts DURING
-    /// lookup, so an unconvertible value is skipped and a later name or the raw
-    /// constant wins. Deliberately opposite to the translated path above; the
-    /// dense ABI must not unify the two.
+    /// Deliberately opposite to the translated path above; the two must not be unified.
     @Test("A wrong-type pass value falls through in the builtin scalar chain")
     func wrongTypePassValueFallsThroughForBuiltins() {
         let pass = makePass(
@@ -318,7 +269,6 @@ struct WPEUniformPrecedenceCharacterizationTests {
         )
         #expect(WPEMetalShaderInputs.floatScalar(named: "u_Wrong", in: pass, default: -5) == 3)
 
-        // The same skip applies across candidate NAMES within the dictionary tier.
         let twoNames = makePass(
             id: "b2b",
             uniformValues: ["u_First": .string("nope"), "u_Second": .number(2)]
@@ -327,7 +277,6 @@ struct WPEUniformPrecedenceCharacterizationTests {
             named: ["u_First", "u_Second"], in: twoNames, default: -5
         ) == 2)
 
-        // And a parseable string is NOT a miss — it converts and terminates.
         let parseable = makePass(
             id: "b2c",
             constants: ["u_Wrong": .number(3)],
@@ -336,9 +285,6 @@ struct WPEUniformPrecedenceCharacterizationTests {
         #expect(WPEMetalShaderInputs.floatScalar(named: "u_Wrong", in: parseable, default: -5) == 1.5)
     }
 
-    /// §2.5: the frame-aware builtin overload probes `frame ?? uniformValues`
-    /// per candidate, then all raw constants — so runtime `g_Time` wins over an
-    /// authored one, but a raw constant still beats a later candidate name.
     @Test("The frame-aware builtin chain probes frame, then pass values, then all constants")
     func frameAwareBuiltinChainOrder() {
         let pass = makePass(
@@ -353,18 +299,12 @@ struct WPEUniformPrecedenceCharacterizationTests {
             named: "g_Time", in: pass, frame: .empty, default: -5
         ) == 999)
 
-        // Constants are a separate, later tier: the second name's constant beats
-        // nothing in the dictionary tier, but it does beat the default.
         let constantsOnly = makePass(id: "b3b", constants: ["u_Second": .number(4)])
         #expect(WPEMetalShaderInputs.floatScalar(
             named: ["u_First", "u_Second"], in: constantsOnly, frame: .empty, default: -5
         ) == 4)
 
-        // The tier split is what makes the two loops observable: EVERY candidate
-        // is probed in frame/uniformValues before ANY constant is read, so the
-        // later name's pass value beats the earlier name's constant. An
-        // implementation that interleaved the two sources per candidate —
-        // `frame ?? uniformValues ?? constants`, one name at a time — returns 1.
+        // An implementation that interleaved the two sources per candidate — `frame ?? uniformValues ?? constants`, one name at a time — would return 1 here.
         let splitSources = makePass(
             id: "b3c",
             constants: ["u_First": .number(1)],
@@ -389,30 +329,20 @@ struct WPEUniformPrecedenceCharacterizationTests {
 
         #expect(names(slot("g_Multiply")) == ["g_Multiply"])
         #expect(names(slot("g_Multiply", material: "multiply1")) == ["g_Multiply", "multiply1"])
-        // `u_` stripped, then the stripped name with its first letter uppercased.
         #expect(names(slot("u_ratio")) == ["u_ratio", "ratio", "Ratio"])
-        // Already capitalized ⇒ the two stripped spellings collapse to one.
         #expect(names(slot("u_Ratio")) == ["u_Ratio", "Ratio"])
-        // Uppercase `U_` is NOT stripped (§2.4).
         #expect(names(slot("U_Ratio")) == ["U_Ratio"])
-        // An empty base after stripping adds nothing.
         #expect(names(slot("u_")) == ["u_"])
-        // An empty material name is skipped, not appended.
         #expect(names(slot("u_x", material: "")) == ["u_x", "x", "X"])
         // Duplicates are removed keeping first occurrence.
         #expect(names(slot("u_Ratio", material: "Ratio")) == ["u_Ratio", "Ratio"])
 
-        // The lowercased list is positionally parallel to the exact list.
         let candidates = executor.memoizedUniformNameCandidates(for: slot("u_ratio", material: "MiXeD"))
         #expect(candidates.names == ["u_ratio", "MiXeD", "ratio", "Ratio"])
         #expect(candidates.lowercasedNames == ["u_ratio", "mixed", "ratio", "ratio"])
     }
 
-    /// §2.8 item 2 — ACCIDENTAL behavior, pinned only so a rewrite that changes
-    /// it is visible. Swift dictionary iteration order picks the winner among
-    /// case-variant keys; nothing establishes that winner is correct. What IS
-    /// checkable is that the index and the resolved value agree, and that the
-    /// choice is frozen for the life of the cached index.
+    /// ACCIDENTAL: Swift dictionary order picks the winner among case-variant keys, so only agreement and frozenness are checkable — not which spelling wins.
     @Test("A case-variant key collision resolves to whichever spelling the index froze")
     func caseVariantCollisionIsResolvedConsistently() throws {
         let executor = try makeExecutor()
@@ -424,36 +354,28 @@ struct WPEUniformPrecedenceCharacterizationTests {
         let chosen = try #require(index.uniformKeys["foo"])
         #expect(chosen == "Foo" || chosen == "FOO")
 
-        // `u_FOo` is spelled so that NO exact candidate (`u_FOo`, `FOo`) hits the
-        // dictionary — only the lowercased round can, which is what puts the
-        // collision on the resolution path at all.
+        // `u_FOo` is spelled so that NO exact candidate (`u_FOo`, `FOo`) hits the dictionary — only the lowercased round can, which is what puts the collision on the path.
         let layout = [WPEUniformSlot(name: "u_FOo", glslType: "float", slot: 0, slotCount: 1)]
         #expect(planSteps(layout, pass: pass, on: executor) == [[.passValue(chosen)]])
         // The packed value is the CHOSEN key's value, never a merge of the two.
         let expected = try #require(pass.uniformValues[chosen]?.numberValue)
         #expect(pack(layout, pass: pass, on: executor)[0].x == Float(expected))
 
-        // Frozen: a second lookup returns the same spelling and does not rebuild.
         #expect(executor.uniformKeyIndex(for: pass).uniformKeys["foo"] == chosen)
         #expect(executor.uniformKeyIndexBuildCount == 1)
     }
 
     // MARK: - D. The six deliberate compatibility exceptions (§2.5)
 
-    /// §2.5 "Scroll speed" — `WPEMetalEffectDispatchTable.swift:89`. The
-    /// lowercase `speed` key is consulted in raw constants ONLY. Deliberate
-    /// legacy chain, kept as a pixel invariant; do not fold into the generic one.
+    /// Deliberate legacy chain in `WPEMetalEffectDispatchTable`; do not fold into the generic one.
     @Test("scroll speed reads lowercase `speed` from constants only, never from uniformValues")
     func scrollSpeedException() {
-        // The one asymmetry: `uniformValues["speed"]` is invisible…
         #expect(WPEEffectDispatchDescriptor.scrollSpeed(
             for: makePass(id: "d1a", shader: "effects/scroll", uniformValues: ["speed": .vector([9, 9])])
         ) == SIMD2<Float>(0.1, 0))
-        // …while `constants["speed"]` is honoured.
         #expect(WPEEffectDispatchDescriptor.scrollSpeed(
             for: makePass(id: "d1b", shader: "effects/scroll", constants: ["speed": .vector([9, 8])])
         ) == SIMD2<Float>(9, 8))
-        // Neither a case variant nor a `u_`-stripped spelling participates.
         #expect(WPEEffectDispatchDescriptor.scrollSpeed(
             for: makePass(
                 id: "d1c",
@@ -464,9 +386,7 @@ struct WPEUniformPrecedenceCharacterizationTests {
         ) == SIMD2<Float>(0.1, 0))
     }
 
-    /// §2.5 "Water flow direction" — `WPEMetalEffectDispatchTable.swift:77`.
-    /// Exact `u_Direction` only: no `direction` alias, no case fallback, no
-    /// scalar conversion, no frame lookup. Deliberate legacy chain.
+    /// Deliberate legacy chain in `WPEMetalEffectDispatchTable`.
     @Test("water flow direction accepts only the exact u_Direction key")
     func waterFlowDirectionException() {
         #expect(WPEEffectDispatchDescriptor.waterFlowDirection(
@@ -477,12 +397,9 @@ struct WPEUniformPrecedenceCharacterizationTests {
                 uniformValues: ["Direction": .vector([3, 3]), "g_Direction": .vector([4, 4])]
             )
         ) == SIMD2<Float>(0, 0.1))
-        // A scalar `.number` is not a vector, so it does not satisfy the chain.
         #expect(WPEEffectDispatchDescriptor.waterFlowDirection(
             for: makePass(id: "d2b", shader: "effects/waterflow", uniformValues: ["u_Direction": .number(5)])
         ) == SIMD2<Float>(0, 0.1))
-        // Control: the exact key with a vector value does land, uniformValues
-        // ahead of constants.
         #expect(WPEEffectDispatchDescriptor.waterFlowDirection(
             for: makePass(
                 id: "d2c",
@@ -493,9 +410,7 @@ struct WPEUniformPrecedenceCharacterizationTests {
         ) == SIMD2<Float>(0.25, 0.75))
     }
 
-    /// §2.5 "Color grading" / §2.8 item 3 — `WPEMetalEffectDispatchTable.swift:149`.
-    /// Raw constants are never probed. Production calls this a known gap and
-    /// preserves it; an ABI-only refactor must preserve it too.
+    /// A known gap that production preserves; an ABI-only refactor must preserve it too.
     @Test("color grading never reads raw constants")
     func colorGradingException() {
         let constantsOnly = WPEEffectDispatchDescriptor.colorGradingUniforms(
@@ -513,8 +428,6 @@ struct WPEUniformPrecedenceCharacterizationTests {
         #expect(constantsOnly.gamma == SIMD4<Float>(1, 1, 1, 1))
         #expect(constantsOnly.gain == SIMD4<Float>(1, 1, 1, 1))
 
-        // Control: the same keys in `uniformValues` are read, so the ignore
-        // above is about the SOURCE, not about the keys being wrong.
         let runtime = WPEEffectDispatchDescriptor.colorGradingUniforms(
             for: makePass(
                 id: "d3b",
@@ -523,20 +436,15 @@ struct WPEUniformPrecedenceCharacterizationTests {
             )
         )
         #expect(runtime.lift == SIMD4<Float>(0.5, 0.5, 0.5, 0.5))
-        // No case fallback either.
         let caseVariant = WPEEffectDispatchDescriptor.colorGradingUniforms(
             for: makePass(id: "d3c", shader: "effects/colorgrading", uniformValues: ["u_GAIN": .vector([3, 3, 3, 3])])
         )
         #expect(caseVariant.gain == SIMD4<Float>(1, 1, 1, 1))
     }
 
-    /// §2.5 "Water-waves/opacity mask slot" — `WPEMetalEffectDispatchTable.swift:103`.
-    /// `textureBindings[1] ?? textures[1] ?? binds[1]`: raw `binds` come LAST
-    /// here, the reverse of the translated custom-texture slot chain, which
-    /// prefers `binds` over `textures`.
+    /// The reverse of the translated custom-texture slot chain, which prefers `binds` over `textures`.
     @Test("the opacity/waterwaves mask slot puts raw binds LAST")
     func opacityMaskSlotOrderException() {
-        // textures beats binds — the inversion vs the translated slot chain.
         #expect(WPEEffectDispatchDescriptor.opacityMaskReference(
             for: makePass(
                 id: "d4a",
@@ -561,15 +469,11 @@ struct WPEUniformPrecedenceCharacterizationTests {
         ) == nil)
     }
 
-    /// §2.5 "Generic model shaders". Tint / tint alpha / emissive / brightness
-    /// read RAW CONSTANTS ONLY, while ambient and skylight read frame → pass
-    /// values with no constants fallback. Two opposite gaps in one function.
     @Test("generic model tint reads raw constants only; ambient reads frame/pass only")
     func genericModelSplitSources() throws {
         let executor = try makeExecutor()
         let layer = makeLayer(objectID: "MODEL")
 
-        // Tint: the authored constant wins and the runtime dictionary is unread.
         let tintPass = makePass(
             id: "d5a",
             shader: "models/generic4",
@@ -580,8 +484,6 @@ struct WPEUniformPrecedenceCharacterizationTests {
         #expect(tint.tintColorAlpha == SIMD4<Float>(0.2, 0.3, 0.4, 1))
         #expect(tint.brightnessFlags.x == 0.5)
 
-        // Tint from `uniformValues` alone resolves to the DEFAULT, proving the
-        // dictionary is genuinely not a source here.
         let dictionaryOnly = makePass(
             id: "d5b",
             shader: "models/generic4",
@@ -590,9 +492,7 @@ struct WPEUniformPrecedenceCharacterizationTests {
         let defaulted = executor.sceneModelGenericUniforms(for: dictionaryOnly, layer: layer, hasComponentMap: false)
         #expect(defaulted.tintColorAlpha == SIMD4<Float>(1, 1, 1, 1))
 
-        // Tint ALPHA and the emissive pair take the same constants-only route.
-        // Authored red / runtime green (and 0.25 vs 0.9) so that a switch to
-        // `uniformValues` cannot coincide with the authored answer.
+        // Authored red / runtime green (and 0.25 vs 0.9) so a switch to `uniformValues` cannot coincide with the authored answer.
         let emissivePass = makePass(
             id: "d5a2",
             shader: "models/generic4",
@@ -614,9 +514,6 @@ struct WPEUniformPrecedenceCharacterizationTests {
         // Layer alpha is 1 in the fixture, so this is the raw constant.
         #expect(emissive.tintColorAlpha.w == 0.25)
 
-        // Same control as the tint RGB above, for both added paths: fed only
-        // through the dictionary they resolve to the DEFAULTS, so the values
-        // asserted above genuinely came from the constants tier.
         let emissiveDictionaryOnly = makePass(
             id: "d5b2",
             shader: "models/generic4",
@@ -632,7 +529,6 @@ struct WPEUniformPrecedenceCharacterizationTests {
         #expect(emissiveDefaulted.emissive == SIMD4<Float>(1, 1, 1, 1))
         #expect(emissiveDefaulted.tintColorAlpha.w == 1)
 
-        // Ambient/skylight: the mirror image — raw constants are ignored.
         let lightPass = makePass(
             id: "d5c",
             shader: "models/generic4",
@@ -656,10 +552,7 @@ struct WPEUniformPrecedenceCharacterizationTests {
         #expect(unlit.ambientLighting == SIMD4<Float>(1, 1, 1, 1))
     }
 
-    /// §2.5, generic2 half. generic2 and generic4 expose the SAME uniforms under
-    /// DIFFERENT material names, and authors ship both spellings in one material,
-    /// so the two readings cannot share a priority list. 3470948192's `uc` carries
-    /// generic2's "Alpha" = 0.025 (the doppler slider) beside a stale "alpha" = 1.
+    /// Authors ship both spellings in one material, so the generic2 and generic4 readings cannot share a priority list.
     @Test("generic2 material spellings bind independently of generic4's")
     func generic2MaterialSpellings() throws {
         let executor = try makeExecutor()
@@ -681,9 +574,6 @@ struct WPEUniformPrecedenceCharacterizationTests {
         #expect(generic2.tintColorAlpha == SIMD4<Float>(0.8, 0.8, 0.8, 0.025))
         #expect(generic2.brightnessFlags.x == 1.5)
 
-        // Control: the generic4 reading of the SAME material takes the other
-        // spellings and lands on alpha = 1 / brightness = 1 / tint = default —
-        // proving the split is what makes the generic2 answer above possible.
         let generic4 = executor.sceneModelGenericUniforms(
             for: pass, layer: layer, hasComponentMap: false, materialShader: .genericImage4
         )
@@ -691,11 +581,7 @@ struct WPEUniformPrecedenceCharacterizationTests {
         #expect(generic4.brightnessFlags.x == 1)
     }
 
-    /// §2.5, generic4 REFLECTION. The combo alone is not enough: `g_Texture3` is
-    /// `_rt_MipMappedFrameBuffer`, and when that capture is missing the slot falls
-    /// back to the albedo, which would paint the model with its own texture instead
-    /// of the scene. 3470948192's droplet is entirely this term (albedo is
-    /// `util/black` × tint 0,0,0), so the gate decides between a mirror and a hole.
+    /// `g_Texture3` is `_rt_MipMappedFrameBuffer`; without that capture the slot falls back to the albedo and would paint the model with its own texture.
     @Test("REFLECTION lights up only when the mip-mapped scene capture is bound")
     func sceneModelReflectionRequiresItsCapture() throws {
         let executor = try makeExecutor()
@@ -722,13 +608,11 @@ struct WPEUniformPrecedenceCharacterizationTests {
         #expect(bound.brightnessFlags.w == 1)
         #expect(bound.reflection == SIMD4<Float>(0.5, 0.25, 1, 9))
 
-        // Control: same authored combo, no capture — the flag stays off.
         let unbound = executor.sceneModelGenericUniforms(
             for: pass, layer: layer, hasComponentMap: false, materialShader: .genericImage4
         )
         #expect(unbound.brightnessFlags.w == 0)
 
-        // Control: capture bound but the material never asked for REFLECTION.
         let unrequested = executor.sceneModelGenericUniforms(
             for: makePass(id: "d5f2", shader: "models/generic4"),
             layer: layer,
@@ -739,10 +623,7 @@ struct WPEUniformPrecedenceCharacterizationTests {
         #expect(unrequested.brightnessFlags.w == 0)
     }
 
-    /// §2.5, hemisphere. `mix(skylight, ambient, N·up*0.5+0.5)` is a PER-VERTEX
-    /// term in generic2.vert/generic4.vert. Now that the mesh carries real MDLV
-    /// normals the mix moved into the fragment, so the two colours must reach it
-    /// separately instead of pre-averaged at the hemisphere midpoint.
+    /// The hemisphere mix happens in the fragment, so the two colours must not be pre-averaged at the midpoint before they get there.
     @Test("Ambient and skylight reach the model fragment as separate colours")
     func sceneModelCarriesAmbientAndSkylightSeparately() throws {
         let executor = try makeExecutor()
@@ -761,16 +642,11 @@ struct WPEUniformPrecedenceCharacterizationTests {
         #expect(uniforms.skylightColor == SIMD4<Float>(0, 0, 1, 0))
     }
 
-    /// §2.5 "effects/skew". MODE=1 vertex params use a THIRD chain: exact
-    /// `uniformValues[name] ?? constants[name]` interleaved PER CANDIDATE, so a
-    /// constant on an earlier candidate beats a pass value on a later one —
-    /// which neither the translated chain nor the builtin scalar helper does.
     @Test("skew MODE=1 interleaves uniformValues and constants per candidate")
     func skewInterleavedChain() throws {
         let executor = try makeExecutor()
 
-        // Candidate order is ["top", "g_Top"]. The constant on `top` wins over
-        // the pass value on `g_Top`.
+        // Candidate order is ["top", "g_Top"].
         let interleaved = makePass(
             id: "d6a",
             shader: "effects/skew",
@@ -788,8 +664,6 @@ struct WPEUniformPrecedenceCharacterizationTests {
         ]
         #expect(pack(layout, pass: interleaved, on: executor)[0].x == 0.25)
 
-        // Phase 2/3: all case-insensitive uniformValues, then all
-        // case-insensitive constants.
         let caseVariant = makePass(
             id: "d6b",
             shader: "effects/skew",
@@ -809,10 +683,7 @@ struct WPEUniformPrecedenceCharacterizationTests {
 
     // MARK: - E. Frame-global sub-precedence (§2.2)
 
-    /// §2.2 "Frame-global sub-order": object (for THIS pass id) → runtime →
-    /// camera. The three key sets are disjoint in production, so this is latent;
-    /// it is tested by direct construction because a rewrite must keep it
-    /// representable.
+    /// The three key sets are disjoint in production, so this order is latent — it is pinned by direct construction so a rewrite keeps it representable.
     @Test("Frame globals resolve object, then runtime, then camera")
     func frameGlobalSubOrder() {
         let context = WPEFrameUniformContext(
@@ -821,9 +692,7 @@ struct WPEUniformPrecedenceCharacterizationTests {
             objectUniformValuesByPassID: ["pass.a": ["g_Shared": .number(1)]]
         )
         #expect(context.value(named: "g_Shared", passID: "pass.a") == .number(1))
-        // A different pass id has no object entry, so runtime wins.
         #expect(context.value(named: "g_Shared", passID: "pass.b") == .number(2))
-        // Camera is last: it is only reached when runtime lacks the name.
         #expect(context.value(named: "g_CameraOnly", passID: "pass.a") == .number(30))
         #expect(context.value(named: "g_RuntimeOnly", passID: "pass.a") == .number(20))
         #expect(context.value(named: "g_Absent", passID: "pass.a") == nil)
@@ -831,8 +700,6 @@ struct WPEUniformPrecedenceCharacterizationTests {
         // `frameValue` deliberately skips the object tier (runtime → camera).
         #expect(context.frameValue(named: "g_Shared") == .number(2))
 
-        // The lowercased entry point maps back to a canonical spelling first and
-        // returns nil for a name that is not a frame global at all.
         #expect(context.value(lowercasedName: "g_shared", passID: "pass.a") == nil)
         let canonical = WPEFrameUniformContext(
             runtimeUniformValues: ["g_Daytime": .number(0.75)],
@@ -842,8 +709,6 @@ struct WPEUniformPrecedenceCharacterizationTests {
         #expect(canonical.value(lowercasedName: "g_daytime", passID: "p") == .number(0.75))
     }
 
-    /// §2.2 "Canonical frame-global names": the index is derived from the
-    /// producers, so this pins that the three producer families are all in it.
     @Test("The canonical frame-global name set covers runtime, camera and object producers")
     func canonicalFrameGlobalNames() {
         let names = WPEFrameUniformContext.canonicalNames
@@ -932,9 +797,7 @@ struct WPEUniformPrecedenceCharacterizationTests {
         ])
     }
 
-    /// §2.8 item 4 — ACCIDENTAL: only `vec2`/`vec3`/`vec4` element types get
-    /// multiple components. `ivec2[]`/`bvec2[]` collapse to one component per
-    /// element, which is unsupported-type fallout rather than a designed ABI.
+    /// ACCIDENTAL: unsupported-type fallout, not a designed ABI.
     @Test("Integer and boolean vector arrays collapse to one component per element")
     func integerVectorArraysCollapse() throws {
         let executor = try makeExecutor()
@@ -982,10 +845,6 @@ struct WPEUniformPrecedenceCharacterizationTests {
         #expect(slots[6] == SIMD4<Float>(0, 0, 0, 0))
     }
 
-    /// §2.6 "Slot allocation" plus the MSL side of the same contract: the
-    /// transpiler's slot arithmetic and the emitted accessors must agree with
-    /// what `packTranslatedUniforms` writes, including `int(...)` truncation and
-    /// the `> 0.5` boolean threshold.
     @Test("Transpiler slot allocation and the emitted MSL accessors match the packer")
     func transpilerSlotAllocationAndAccessors() throws {
         let source = """
@@ -1031,12 +890,10 @@ struct WPEUniformPrecedenceCharacterizationTests {
         #expect(msl.contains("float3x3 g_M3 = float3x3(u.vals[2].xyz, u.vals[3].xyz, u.vals[4].xyz);"))
         #expect(msl.contains("float4x4 g_M4 = float4x4(u.vals[5], u.vals[6], u.vals[7], u.vals[8]);"))
         #expect(msl.contains("float g_F = u.vals[9].x;"))
-        // `int` truncates the float lane; `bool` uses the 0.5 threshold (§2.6).
         #expect(msl.contains("int g_I = int(u.vals[10].x);"))
         #expect(msl.contains("bool g_B = u.vals[11].x > 0.5;"))
         #expect(msl.contains("int2 g_IV2 = int2(u.vals[12].xy);"))
         #expect(msl.contains("bool3 g_BV3 = u.vals[13].xyz > float3(0.5);"))
-        // Array elements read one slot each, in the element's low lanes.
         #expect(msl.contains("g_A[0] = u.vals[14].xy;"))
         #expect(msl.contains("g_A[2] = u.vals[16].xy;"))
         #expect(msl.contains("g_BA[0] = u.vals[17].x > 0.5;"))
@@ -1045,8 +902,6 @@ struct WPEUniformPrecedenceCharacterizationTests {
 
     // MARK: - G. Invalidation inputs (§2.7)
 
-    /// §2.7 "Texture rebinding": the same slot resolves differently when the
-    /// bound texture changes, and falls back to the named sources when unbound.
     @Test("g_TextureNResolution tracks the bound texture across frames")
     func textureResolutionTracksBinding() throws {
         let executor = try makeExecutor()
@@ -1073,12 +928,7 @@ struct WPEUniformPrecedenceCharacterizationTests {
             == SIMD4<Float>(7, 7, 7, 7))
     }
 
-    /// §2.7 "Render-pixel scale or scene pixel size" and §2.2 priority 1: the
-    /// packer derives `g_TexelSize` from the scene's PIXEL size — the FBO chain
-    /// head under render scaling — and that derived value OVERRIDES an authored
-    /// one. Packed end to end (not helper-composed) because the two failures
-    /// worth catching both live in `resolvedUniformValue`: sourcing the world
-    /// size instead of the pixel size, and losing the override.
+    /// Packed end to end, not helper-composed: both failures worth catching live in `resolvedUniformValue` — sourcing the world size, and losing the override.
     @Test("g_TexelSize packs 1/scene-pixel-size and overrides an authored value")
     func texelSizeTracksRenderScale() throws {
         let executor = try makeExecutor()
@@ -1091,36 +941,27 @@ struct WPEUniformPrecedenceCharacterizationTests {
             SIMD4<Float>(Float(1 / width), Float(1 / height), 0, 0)
         }
         let layout = [WPEUniformSlot(name: "g_TexelSize", glslType: "vec2", slot: 0, slotCount: 1)]
-        // The authored value is the control AND the override probe: it is a
-        // legal pass value for this exact name, so anything but the derived
-        // reciprocal below means the derived probe stopped winning.
+        // The authored value is the control AND the override probe: anything but the derived reciprocal below means the derived probe stopped winning.
         let pass = makePass(id: "g2", uniformValues: ["g_TexelSize": .vector([-1, -1])])
 
         executor.setCurrentScenePixelSizeForTesting(world)
         #expect(pack(layout, pass: pass, on: executor)[0] == texel(3840, 2160))
 
-        // Half render scale ⇒ the texel doubles. A packer reading the WORLD size
-        // would leave this at 1/3840 — the blur-kernel-width regression.
+        // A packer reading the WORLD size would leave this at 1/3840 instead of doubling the texel.
         executor.setCurrentScenePixelSizeForTesting(half)
         #expect(pack(layout, pass: pass, on: executor)[0] == texel(1920, 1080))
 
-        // Degenerate dimensions make the probe non-terminal (§2.2 row 1), and
-        // that fallback is what proves the -1 was reachable all along.
         executor.setCurrentScenePixelSizeForTesting(.zero)
         #expect(pack(layout, pass: pass, on: executor)[0] == SIMD4<Float>(-1, -1, 0, 0))
         executor.setCurrentScenePixelSizeForTesting(CGSize(width: 100, height: 0))
         #expect(pack(layout, pass: pass, on: executor)[0] == SIMD4<Float>(-1, -1, 0, 0))
 
-        // Only this one name is derived; every other uniform keeps the chain.
         executor.setCurrentScenePixelSizeForTesting(half)
         let otherName = [WPEUniformSlot(name: "g_TexelSize2", glslType: "vec2", slot: 0, slotCount: 1)]
         let otherPass = makePass(id: "g2b", uniformValues: ["g_TexelSize2": .vector([-1, -1])])
         #expect(pack(otherName, pass: otherPass, on: executor)[0] == SIMD4<Float>(-1, -1, 0, 0))
     }
 
-    /// Official docs define these from the same screen pixel dimensions as
-    /// `g_TexelSize`. They are terminal derived probes so authored values cannot
-    /// become stale when render scale changes.
     @Test("g_TexelSizeHalf and g_Screen derive from render-pixel size")
     func halfTexelAndScreenTrackRenderScale() throws {
         let executor = try makeExecutor()
@@ -1189,24 +1030,17 @@ struct WPEUniformPrecedenceCharacterizationTests {
         #expect(executor.advanceShaderFrameTime(runtimeTime: 5) == 0)
     }
 
-    /// §2.7 "Elapsed animation time": the per-frame prepare resolves `.animated`
-    /// values at the frame clock before the packer runs, so the same slot moves
-    /// across frames. An `.animated` value that reaches the packer unresolved is
-    /// sampled at time ZERO instead (§2.6).
     @Test("Animated values move with the frame clock; an unresolved one samples at time zero")
     func animatedValuesTrackTime() throws {
         let executor = try makeExecutor()
         let animated = try #require(makeAnimatedConstant())
         let layout = [WPEUniformSlot(name: "u_Anim", glslType: "float", slot: 0, slotCount: 1)]
 
-        // The fixture is one track, fps 30, keyframes frame 0 → 0 and frame 60 → 1,
-        // mode "single" with no wraploop. `WPESceneNumericAnimation` therefore
-        // clamps rather than wraps, and interpolates linearly between the two
-        // keys, so the closed form is `min(time * 30, 60) / 60`. Exact values,
-        // not a monotonic trend: sampling at `time * 0.5` still rises.
+        // Closed form for this fixture (fps 30, keys 0→0 and 60→1, mode "single"): `min(time * 30, 60) / 60`.
+        // Exact values, not a monotonic trend: sampling at `time * 0.5` still rises.
         let expectations: [(time: Double, value: Float)] = [
-            (0, 0),        // at the first key
-            (0.5, 0.25),   // frame 15 of 60
+            (0, 0),
+            (0.5, 0.25),
             (1.0, 0.5),
             (1.5, 0.75),
             (3.0, 1)       // frame 90 clamps to the last key, it does not wrap to 0.5
@@ -1223,9 +1057,7 @@ struct WPEUniformPrecedenceCharacterizationTests {
             )
         }
 
-        // Unresolved: the packer samples the animation at time zero regardless
-        // of the frame clock, which is why the prepare step must resolve first.
-        // The frame clock here is 2.5s, which would read 1 if it were honoured.
+        // The frame clock here is 2.5s, which would read 1 if the packer honoured it.
         let unresolved = makePass(id: "g3.raw", uniformValues: ["u_Anim": animated])
         #expect(pack(layout, pass: unresolved, on: executor, frame: makeFrame())[0].x == 0)
     }

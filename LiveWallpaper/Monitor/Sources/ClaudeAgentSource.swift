@@ -14,7 +14,6 @@ final class ClaudeAgentSource: MonitorDataSource {
         engine = Engine(rootURL: rootURL, cursorStore: cursorStore)
     }
 
-    /// Reconnects the scanner-owned session identity to a privacy-minimized durable aggregate.
     static func makeTailBootstrap(
         url: URL,
         candidateSessionID: String,
@@ -70,7 +69,6 @@ private actor Engine {
     private var liveness: [String: Bool] = [:]
     private var descriptors: [ClaudePIDDescriptor] = []
 
-    /// Cadence.
     private static let rescanInterval: TimeInterval = 10
     // Drop ended sessions from the pushed list once this stale.
     private static let endedRetention: TimeInterval = 2 * 3600
@@ -249,8 +247,6 @@ private actor Engine {
             state.parentSessionID = parentID.map { "claude:" + $0 }
             state.livenessEvidence = liveness[sessionId] != nil ? "processDescriptor" : (parentID != nil ? "parentProcess" : "unknown")
             state.title = state.title ?? descriptors.first(where: { $0.sessionId == sessionId })?.name.flatMap(AgentSignalDeriver.displayMetadata)
-            // Overlay the cross-scan wait clock: stamp the flip into needsInput with
-            // the session's last event time, carry it while blocked, clear otherwise.
             state.waitSince = waitTracker.waitSince(
                 sessionID: state.id,
                 status: state.status,

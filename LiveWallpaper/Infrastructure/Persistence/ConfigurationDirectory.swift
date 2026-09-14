@@ -1,6 +1,5 @@
 import Foundation
 
-/// Resolves the sandbox-aware configuration directory shared by typed stores and migrations.
 struct ConfigurationDirectory {
     enum File: String {
         case screenConfigurations = "screen-configurations.json"
@@ -11,10 +10,8 @@ struct ConfigurationDirectory {
 
     let root: URL
 
-    /// Standard container-aware production location.
     init(fileManager: FileManager = .default) {
-        // Unit tests are hosted inside the real app, so this default path is the user's live container. A full suite run wiped global-settings.json and planted garbage screen configs (screen 77, bookmark 0x0304) through SettingsManager.shared.
-        // Under a test process, every default-constructed directory shares one throwaway per-process root instead.
+        // Unit tests are hosted inside the real app, so this default path is the user's live container. Under a test process, every default-constructed directory shares one throwaway per-process root.
         if NSClassFromString("XCTestCase") != nil {
             _ = Self.reapStaleTestRootsOnce
             self.root = fileManager.temporaryDirectory
@@ -38,7 +35,6 @@ struct ConfigurationDirectory {
             .appendingPathComponent("Configuration", isDirectory: true)
     }
 
-    /// Test/migration injection point.
     init(root: URL) {
         self.root = root
     }

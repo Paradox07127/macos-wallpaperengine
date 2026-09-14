@@ -2,9 +2,7 @@
 import Foundation
 import LiveWallpaperProWPE
 
-/// Frame-global uniforms resolved once per frame instead of being merged into
-/// every pass's `uniformValues`. Same precedence as the old merge: these were
-/// inserted last, so a frame-global name always beats authored/scripted values.
+/// Same precedence as the old merge: these were inserted last, so a frame-global name always beats authored/scripted values.
 struct WPEFrameUniformContext: Sendable {
     let runtimeUniformValues: [String: WPESceneShaderConstantValue]
     let cameraUniformValues: [String: WPESceneShaderConstantValue]

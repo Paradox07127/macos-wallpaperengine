@@ -21,8 +21,6 @@ struct PreviewArea: View {
     let onResetPlayback: () -> Void
 
     @State private var showingWebTransform = false
-    /// Off by default: the preview is a picture you look at, and a stray drag
-    /// across it should not move the wallpaper. Armed from the transform popover.
     @State private var webTransformArmed = false
     @State private var webRefreshToken = 0
     /// The preview is showing a capture of the running wallpaper, which already
@@ -56,9 +54,8 @@ struct PreviewArea: View {
                         set: { mode in
                             guard draft.selectedFitMode != mode else { return }
                             draft.selectedFitMode = mode
-                            // Not `onFitModeChange`: that is the video path
-                            // (`updateFitMode` only reaches `videoPlayer`), so a
-                            // running scene kept its old scale until reload.
+                            // Not `onFitModeChange`: that is the video path (`updateFitMode` only reaches
+                            // `videoPlayer`), so a running scene would keep its old scale until reload.
                             screenManager.updateSceneFitMode(mode, for: screen)
                         }
                     ),
@@ -69,16 +66,14 @@ struct PreviewArea: View {
                 #endif
             }
         }
-        // Allow the preview to compress within the width assigned beside the inspector.
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .layoutPriority(1)
         .overlay {
             dragHintOverlay
                 .animation(DesignTokens.motion(reduceMotion, .smooth(duration: 0.2)), value: isDraggingOver)
         }
-        // The view is not rebuilt per screen (no `.id(screen.id)` in the parent),
-        // so armed state from a previous screen would otherwise carry over and
-        // let the first drag on the new screen move its wallpaper unasked.
+        // The view is not rebuilt per screen, so armed state from a previous screen
+        // would otherwise let the first drag on the new one move its wallpaper.
         .onChange(of: screen.id) {
             webTransformArmed = false
             showingWebTransform = false
@@ -112,7 +107,6 @@ struct PreviewArea: View {
                     videoCommandBar
                 }
             } else {
-                // No preview to float over — the bar is the only content here.
                 videoCommandBar
                     .padding(DesignTokens.Spacing.lg)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -177,9 +171,6 @@ struct PreviewArea: View {
         #endif
     }
 
-    /// One row, one layer: picker, badges, diagnostics and refresh together, so
-    /// nothing above the picture overlaps anything inside it. The picker already
-    /// names the source, so the badge strip does not repeat it.
     private var webTitleRow: some View {
         HStack(spacing: DesignTokens.Spacing.sm) {
             HTMLSourceSection(
@@ -207,9 +198,6 @@ struct PreviewArea: View {
         }
     }
 
-    /// Web's viewport control. Video and scene fill this zone with a fit-mode
-    /// picker; a web wallpaper has no fit mode, but it does have scale, translate
-    /// and rotation, which are the same question about the same thing.
     private var webTransformControl: some View {
         Button {
             showingWebTransform = true
@@ -232,8 +220,6 @@ struct PreviewArea: View {
         }
     }
 
-    /// Every playback control for this display, as glyphs. Shared by all three
-    /// wallpaper types' overlays so the same setting is always in the same place.
     private var playbackControls: some View {
         PlaybackControls(
             screen: screen,
@@ -333,8 +319,6 @@ struct PreviewArea: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            // `stroked: false`: the accent strokeBorder above already draws
-            // this shape's edge, and it doubles as the drop affordance.
             .adaptiveGlassSurface(.roundedRectangle(DesignTokens.Corner.preview), stroked: false)
             .padding(20)
             .transition(.opacity)
@@ -353,8 +337,6 @@ struct PreviewArea: View {
 
 struct DetailLoadingView: View {
     var body: some View {
-        // No visible label on the spinner (HIG); the copy survives as its
-        // accessibility label.
         ProgressView()
             .scaleEffect(1.5)
             .accessibilityLabel(Text("Loading video…"))

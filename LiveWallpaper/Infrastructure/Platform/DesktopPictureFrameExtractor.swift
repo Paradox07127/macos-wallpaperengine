@@ -5,13 +5,7 @@ import LiveWallpaperCore
 
 @MainActor
 enum DesktopPictureFrameExtractor {
-    /// Reads the playing frame and installs it as the desktop picture,
-    /// answering with what actually happened.
-    ///
-    /// This used to return `true` as soon as the player had an item, before the
-    /// frame was decoded, encoded, written or installed — so every async
-    /// failure below reached the log while the UI played its "captured"
-    /// animation, and nothing ever took that animation back.
+    /// Returning true as soon as the player had an item, before decode/encode/write/install, would let every async failure below reach the log while the UI played a captured animation.
     enum Outcome: Equatable, Sendable {
         case captured
         /// Nothing is playing to capture.

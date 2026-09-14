@@ -1,11 +1,9 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// The enclosing Overlays panel owns scrolling and padding.
 struct MonitorOverlaySection: View {
     let screen: Screen
     let screenManager: ScreenManager
-    /// Whether a still frame of the current wallpaper exists to sit behind the board.
     let backdropAvailable: Bool
 
 

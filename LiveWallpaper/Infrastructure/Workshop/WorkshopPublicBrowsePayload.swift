@@ -1,25 +1,14 @@
 #if !LITE_BUILD
 import Foundation
 
-/// The browse page's own result set. Valve's SSR page embeds
-/// `window.SSR.renderContext=JSON.parse("…")`: a JS string literal holding the
-/// render-context JSON, whose `queryData` is itself a JSON string (the
-/// react-query dehydrated state). Its `workshop_browse` query is what the page
-/// renders — `state.data.results[]`, `total_count`, `total_pages`, and
-/// `creator_player_link_details[]` for author names (verified 2026-09-07, 30/30
-/// ids identical to the keyed API).
-/// Results carry `consumer_appid` but neither `banned` nor `visibility` today;
-/// both are honoured when present and read as not-banned / public when absent,
-/// since the page lists public items only.
+/// Absent `banned`/`visibility` read as not-banned / public; honoured when present.
 enum WorkshopPublicBrowsePayload {
     enum ParseFailure: Error, Equatable {
         case markerNotFound
         case malformedLiteral
         case malformedJSON
         case browseQueryNotFound
-        /// The embedded query answers different parameters than the request
-        /// (a cached or redirected page); adopting it would show another
-        /// page's items under this page's number.
+        /// Adopting a query that answers different parameters would show another page's items under this page's number.
         case identityMismatch
         case resultNotOK(Int)
     }
@@ -149,9 +138,7 @@ enum WorkshopPublicBrowsePayload {
         )
     }
 
-    /// Valve sends -1 for "not rated yet": zero stars with the vote count, so
-    /// it reads as "no ratings" rather than "unavailable". Anything outside
-    /// -1 and 1…5 is not a rating.
+    /// Valve -1 = not rated yet → 0 stars with the vote count; only -1 and 1…5 are ratings.
     private static func rating(stars: Int?, totalVotes: Int?) -> WorkshopRating? {
         guard let stars else { return nil }
         let votes = max(totalVotes ?? 0, 0)
@@ -232,13 +219,7 @@ enum WorkshopPublicBrowsePayload {
         }
     }
 
-    // Valve JSON keys are snake_case.
     // swiftlint:disable identifier_name
-    /// `queryKey[1]` of a `workshop_browse` query, e.g. `{"admin_view":false,
-    /// "appid":431960,"browse_sort":"trend","childpublishedfileid":"",
-    /// "excluded_tags":[…],"num_per_page":30,"page":1,"required_apps_preset":0,
-    /// "search_text":"","search_text_target":0,"section":"readytouseitems",
-    /// "trend_days":7}`.
     private struct BrowseKey: Decodable {
         let appid: Int?
         let browse_sort: String?

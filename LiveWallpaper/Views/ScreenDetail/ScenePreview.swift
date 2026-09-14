@@ -4,14 +4,11 @@ import AppKit
 import ImageIO
 import LiveWallpaperCore
 
-/// How large this preview has to be decoded.
-/// One cap can't serve both: a gallery tile is ~220 pt, but the detail pane takes
-/// `aspectRatio: nil` and fills the window, wanting several thousand pixels on a 2× display.
-/// `.pane` is the default because the expensive mistake is silent: a tile that decodes too much only wastes work, a pane that decodes too little visibly softens.
+/// `.pane` is the default because the expensive mistake is silent: decoding too
+/// much only wastes work, decoding too little visibly softens.
 enum WPEPreviewSize {
     /// Gallery tiles: 220 pt square, `resizeAspectFill` from 16:9, 2×.
     case tile
-    /// Detail/inspector panes that fill their container.
     case pane
 
     var maxPixelSize: Int {
@@ -22,7 +19,6 @@ enum WPEPreviewSize {
     }
 }
 
-/// `.autoPlay` is the back-compatible default; grid / list call sites pass `.hoverToPlay`.
 enum WPEPreviewPlaybackMode {
     case staticPoster
     case autoPlay
@@ -108,9 +104,8 @@ struct WPEPreviewView: View {
     /// Tap-gesture'd view, not a `Button`: the parent grid cell is itself a `Button`, and AppKit-bridged buttons nested inside another SwiftUI button race for hit-tests + confuse VoiceOver focus.
     @ViewBuilder
     private var retryBadge: some View {
-        // `ThumbnailBadge` metrics (badge font, 6/3 padding, glass backing),
-        // spelled out here because the badge carries two glyphs and a tap
-        // gesture the component doesn't model.
+        // `ThumbnailBadge` metrics spelled out here: this badge carries two glyphs and
+        // a tap gesture the component doesn't model.
         HStack(spacing: 3) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(DesignTokens.Colors.Status.warning)
@@ -166,10 +161,8 @@ private struct OptionalAspectRatio: ViewModifier {
 
 // MARK: - Aspect-fill bridge
 
-/// In-memory cache of *decoded* previews keyed by URL — caching raw bytes instead meant
-/// every hit paid a synchronous main-thread decode, exactly the cost a cache should remove.
-/// Internal, not private, only so `LocalImageCacheReclaimerTests` can observe the purge;
-/// every production reader stays in this file.
+/// Internal, not private, only so `LocalImageCacheReclaimerTests` can observe the
+/// purge; every production reader stays in this file.
 enum WPEPreviewDecodedCache {
     // NSCache is thread-safe internally; `nonisolated(unsafe)` just suppresses
     // the Swift 6 Sendable diagnostic since NSCache isn't formally Sendable.
@@ -183,7 +176,6 @@ enum WPEPreviewDecodedCache {
     }()
 }
 
-/// A preview decoded once, off the main thread, and replayed from there.
 /// `@unchecked Sendable`: every stored value is immutable, and `CGImageSource`
 /// reads are free-threaded.
 final class WPEPreviewDecodedImage: @unchecked Sendable {
@@ -218,7 +210,6 @@ final class WPEPreviewDecodedImage: @unchecked Sendable {
         return CGImageSourceCreateThumbnailAtIndex(source, index, decodeOptions)
     }
 
-    /// Runs on a cooperative-pool thread; nothing here touches the main actor.
     static func decode(
         _ data: Data,
         maxPixelSize: Int = WPEPreviewImageDecodeBudget.defaultMaxPixelSize
@@ -230,8 +221,6 @@ final class WPEPreviewDecodedImage: @unchecked Sendable {
         let count = CGImageSourceGetCount(source)
         guard count > 0,
               let dimensions = WPEPreviewImageDecodeBudget.imageDimensions(from: source, index: 0),
-              // The bomb check stays on the *source* dimensions: that is what a
-              // malicious file inflates, and it is known before any decode.
               WPEPreviewImageDecodeBudget.isWithinPixelBudget(
                   width: dimensions.width, height: dimensions.height, frameCount: 1
               ),
@@ -239,9 +228,8 @@ final class WPEPreviewDecodedImage: @unchecked Sendable {
             return nil
         }
 
-        // Priced against what playback will actually decode, not the source. A
-        // 1080p GIF over ~12 frames used to fall back to a still even though the
-        // frames it would decode are now capped at `maxPixelSize`.
+        // Priced against what playback will actually decode (the capped poster), not
+        // the source dimensions.
         let animates = count > 1 && WPEPreviewImageDecodeBudget.allowsAnimation(
             width: poster.width,
             height: poster.height,
@@ -287,13 +275,10 @@ enum WPEPreviewImageDecodeBudget {
     static let maxFrameCount = 120
     static let maxDecodedPixelBytes = 96 * 1024 * 1024
     static let minFrameDelay: TimeInterval = 0.033
-    /// Callers that don't say. `.pane` rather than `.tile`, for the same reason
-    /// `WPEPreviewSize.pane` is the view's default.
     static let defaultMaxPixelSize = WPEPreviewSize.pane.maxPixelSize
     nonisolated(unsafe) static let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
-    /// `ShouldCacheImmediately: true` is what actually moves the decode off the
-    /// main thread: without it Image I/O hands back an undecoded `CGImage` and
-    /// the pixels are produced later, on whichever thread draws the layer.
+    /// `ShouldCacheImmediately: true` is what moves the decode off the main thread:
+    /// without it Image I/O produces the pixels later, on whichever thread draws.
     static func thumbnailOptions(maxPixelSize: Int) -> CFDictionary {
         [
             kCGImageSourceShouldCache: false,
@@ -404,35 +389,26 @@ private struct AspectFillImage: NSViewRepresentable {
         coordinator.inflightTask = task
     }
 
-    /// Carries the modification date, because a Workshop update rewrites `preview.jpg` at the
-    /// same path: keyed by URL alone the grid would serve pre-update pixels until the entry
-    /// was evicted, which on a 256-entry cache is "for the rest of the session".
-    /// `nil` (no caching) when the date can't be read — true for a security-scoped URL whose
-    /// scope is only opened inside `loadAndDecode`, and an entry nothing can invalidate is worse
-    /// than a re-decode. The `stat` runs on the main actor, but only when the URL or retry counter changed, not per frame.
+    /// Carries the modification date: a Workshop update rewrites `preview.jpg` at the
+    /// same path, so a URL-only key serves pre-update pixels until eviction.
+    /// `nil` (no caching) when the date can't be read — an unevictable entry is worse.
     private static func cacheKey(for url: URL, size: WPEPreviewSize) -> NSString? {
         guard let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
             .contentModificationDate else { return nil }
         return "\(modified.timeIntervalSinceReferenceDate)|\(size.maxPixelSize)|\(url.absoluteString)" as NSString
     }
 
-    /// Disk read *and* decode on the cooperative pool. The main actor only ever
-    /// assigns the finished `CGImage` to `layer.contents`.
     private static func loadAndDecode(
         url: URL,
         bookmarkData: Data?,
         size: WPEPreviewSize
     ) async -> WPEPreviewDecodedImage? {
-        // Shares the Workshop grid's budget: both feed the same library screens,
-        // and a Scene tab scrolling next to a downloading Workshop page should
-        // not double the number of decodes in flight.
         await PreviewWorkGate.shared.run {
             guard !Task.isCancelled else { return nil }
             let reading = PreviewSignpost.begin("installed.readAndDecode")
             defer { PreviewSignpost.end("installed.readAndDecode", reading) }
-            // `Task.detached` does not inherit cancellation; without forwarding
-            // it, a preview that scrolled away kept its gate slot until the read
-            // and decode finished.
+            // `Task.detached` does not inherit cancellation; without forwarding it a
+            // preview that scrolled away keeps its gate slot until the decode finishes.
             let work = Task.detached(priority: .userInitiated) { () -> WPEPreviewDecodedImage? in
                 guard !Task.isCancelled else { return nil }
                 var scopedURL: URL?
@@ -471,7 +447,6 @@ private struct AspectFillImage: NSViewRepresentable {
     }
 }
 
-/// Used instead of `NSImageView` because the latter only offers fit-style scaling — we need fill-with-crop so square 512×512 WPE previews don't render with horizontal letterbox bars.
 private final class AspectFillAnimatedImageView: NSView {
     private var decoded: WPEPreviewDecodedImage?
     private var currentFrameIndex: Int = 0
@@ -497,8 +472,6 @@ private final class AspectFillAnimatedImageView: NSView {
 
     override var intrinsicContentSize: NSSize { .zero }
 
-    /// Main-thread work is one `layer.contents` assignment — the decode already
-    /// happened on the cooperative pool.
     func apply(_ image: WPEPreviewDecodedImage) {
         stopPlayback()
         decoded = image
@@ -507,8 +480,6 @@ private final class AspectFillAnimatedImageView: NSView {
         if wantsAnimation, image.frameCount > 1 { startPlayback() }
     }
 
-    /// Starts or freezes playback without reloading the image. Freezing
-    /// restores the poster (frame 0) so a hovered-out tile reads as static.
     func setAnimating(_ animate: Bool) {
         guard wantsAnimation != animate else {
             if animate, (decoded?.frameCount ?? 0) > 1, playbackTask == nil { startPlayback() }
@@ -538,8 +509,6 @@ private final class AspectFillAnimatedImageView: NSView {
         playbackTask = nil
     }
 
-    /// A `Task` rather than a `Timer`: each frame has to be decoded off the main
-    /// thread, and a timer callback would have to hop out and back anyway.
     private func startPlayback() {
         guard let decoded, decoded.frameCount > 1 else { return }
         playbackTask = Task { @MainActor [weak self] in

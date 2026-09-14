@@ -2,7 +2,6 @@ import CoreGraphics
 import Foundation
 import LiveWallpaperCore
 
-/// Renderer-neutral WPE IR (material/effect/pass/FBO — not named effects).
 public struct WPERenderGraph: Equatable, Sendable {
     public let layers: [WPERenderLayer]
 
@@ -11,13 +10,6 @@ public struct WPERenderGraph: Equatable, Sendable {
     }
 }
 
-/// Complete authored JSON that contributed to one render layer.
-///
-/// `sceneObjects` is ordered from the outermost authored ancestor to the
-/// rendered object itself. `imageDescriptor` is the root dictionary loaded
-/// from the object's JSON image/model path (typically `models/*.json`). These
-/// values are preservation-only metadata: their presence does not imply that
-/// unknown fields have a native runtime consumer.
 public struct WPERenderLayerAuthoredJSON: Equatable, Sendable {
     public let sceneObjects: [WPESceneJSONValue]
     public let imageDescriptor: WPESceneJSONValue?
@@ -47,10 +39,7 @@ public struct WPERenderLayer: Equatable, Sendable, Identifiable {
     public let parentObjectID: String?
     /// Named MDAT anchor on the parent puppet this layer follows. `nil` when unattached.
     public let attachment: String?
-    /// Scene `animationlayers` for this object, selecting which puppet MDLA animation(s) play.
     public let animationLayers: [WPESceneAnimationLayer]
-    /// Lossless authored object ancestry and image/model descriptor. Metadata
-    /// only; typed fields below remain the renderer's consumed representation.
     public let authoredJSON: WPERenderLayerAuthoredJSON
     public let geometry: WPERenderLayerGeometry
     /// Pre-inheritance geometry retained so an attached child can re-derive its placement from the
@@ -60,17 +49,11 @@ public struct WPERenderLayer: Equatable, Sendable, Identifiable {
     public let compositeB: String
     public let localFBOs: [WPERenderFBO]
     public let passes: [WPERenderPass]
-    /// Offscreen group target this layer's final scene pass is redirected into. The executor uses
-    /// `groupLocalGeometry` when drawing to this target, so child layers are placed inside the
-    /// composelayer-local render target instead of the global scene.
+    /// Offscreen group target for this layer's final scene pass. Executor uses `groupLocalGeometry` so children sit in the composelayer-local target, not the global scene.
     public let groupRenderTarget: String?
     public let groupLocalGeometry: WPERenderLayerGeometry?
-    /// For a composelayer that owns a child group, this names the group target sampled by its
-    /// material pass before the composelayer's own effects and final scene composite.
     public let groupCompositeSource: String?
-    /// Per-axis camera-parallax depth (WPE Vec2). Each axis scales independently;
-    /// `.zero` pins the layer. Inherited from the root attachment ancestor by the
-    /// graph builder so a rigid puppet subtree shifts as one unit.
+    /// Per-axis camera-parallax depth; `.zero` pins the layer.
     public let parallaxDepth: SIMD2<Double>
     /// Original scene-object paint index. Earlier indices paint behind later
     /// ones; particles interleave against this in the executor.
@@ -125,7 +108,6 @@ public struct WPERenderLayer: Equatable, Sendable, Identifiable {
         utilityModelKind = WPEUtilityModelKind.classify(imagePath)
     }
 
-    /// True for `composelayer` / `projectlayer` / `fullscreenlayer`.
     public var isUtilityModelLayer: Bool { utilityModelKind != nil }
 }
 
@@ -135,18 +117,14 @@ public struct WPERenderLayerGeometry: Equatable, Sendable {
     public let angles: SIMD3<Double>
     public let alignment: WPESceneAlignment
     public let size: CGSize?
-    /// Raw MDLV mesh-bbox center (puppet model coordinates) subtracted in the
-    /// puppet vertex shader so the mesh is centered in its mesh-bbox-sized local
-    /// composite. Zero for non-puppet layers and puppets that fit `size`.
+    /// Raw MDLV mesh-bbox center subtracted in the puppet vertex shader. Zero for non-puppet layers and puppets that fit `size`.
     public let puppetMeshCenter: SIMD2<Double>
     public let alpha: Double
     public let alphaAnimation: WPESceneAnimatedValue?
     public let color: SIMD3<Double>
     public let colorAnimation: WPESceneAnimatedValue?
     public let brightness: Double
-    /// Normalized perspective-quad corners (`point0..3`) for a `shape: "quad"`
-    /// DIRECTDRAW effect layer. Non-nil routes the pass through the 4-corner
-    /// `wpe_shape_quad_vertex` geometry instead of the axis-aligned object quad.
+    /// Non-nil routes through 4-corner `wpe_shape_quad_vertex` instead of the axis-aligned object quad.
     public let shapePoints: [SIMD2<Double>]?
 
     public init(
@@ -177,9 +155,7 @@ public struct WPERenderLayerGeometry: Equatable, Sendable {
         self.shapePoints = shapePoints
     }
 
-    /// Whether `resolved(at:)` can return anything but `self`. Both slots nil
-    /// makes it a field-by-field copy, so a caller rebuilding a tree per frame
-    /// can skip the layer entirely.
+    /// Both animation slots nil ⇒ `resolved(at:)` is a field-by-field copy of `self`.
     public var isTimeVarying: Bool {
         alphaAnimation != nil || colorAnimation != nil
     }
@@ -251,15 +227,7 @@ public struct WPERenderFBO: Equatable, Sendable {
     }
 }
 
-/// Marks passes contributed by an effect whose `visible` field is a SceneScript.
-/// Such an effect is baked into the graph even when authored hidden, because the
-/// script that decides its visibility routinely lives on the effect's OWN pass
-/// constants — scene 3151551777's day/night cycle computes `shared.shownight`
-/// from a constant script on the very effect that reads `shared.shownight` to
-/// decide whether to show. Dropping the hidden effect at build time drops that
-/// producer too, so the gate can never open. The executor runs the pass only
-/// while the gate resolves true; otherwise it passes the layer composite
-/// through unchanged, so a closed gate draws nothing visible.
+/// Bake a script-gated effect even when authored hidden: the visibility script often lives on this effect's own pass constants, so dropping it at build would close the gate forever. Executor runs the pass only while the gate is true; otherwise pass the composite through.
 public struct WPEPassVisibilityGate: Equatable, Sendable {
     /// Script-instance key. Authored source + seed, so the dozen clones of one
     /// effect that WPE scenes spread across objects share a single JS instance.
@@ -275,8 +243,6 @@ public struct WPEPassVisibilityGate: Equatable, Sendable {
     }
 }
 
-/// Authored dynamic texture declarations remain separated by their JSON locus.
-/// This deliberately does not guess merge precedence or bind a runtime provider.
 public struct WPERenderUserTextureBindings: Equatable, Sendable {
     public let material: [WPESceneUserTextureBinding]
     public let pass: [WPESceneUserTextureBinding]
@@ -299,11 +265,6 @@ public struct WPERenderUserTextureBindings: Equatable, Sendable {
     }
 }
 
-/// Stable authored identity for a pass contributed by an image effect.
-///
-/// `stablePassID` names the effect asset's pass/override locus and remains
-/// stable even when one effect pass expands into multiple renderer passes.
-/// `WPERenderPass.id` remains the concrete render-pass identity.
 public struct WPERenderEffectPassIdentity: Equatable, Sendable {
     public let stableEffectID: String
     public let stablePassID: String
@@ -330,13 +291,6 @@ public struct WPERenderEffectPassIdentity: Equatable, Sendable {
     }
 }
 
-/// Complete authored JSON documents that contributed a render pass.
-///
-/// The typed fields on `WPERenderPass` remain the executor's fast path. These
-/// trees preserve every material/effect key and array entry through graph and
-/// prepared-pipeline construction so a future consumer can be added without
-/// first changing the package reader. Presence here is metadata, not proof that
-/// an unsupported field already has equivalent runtime behavior.
 public struct WPERenderPassAuthoredJSON: Equatable, Sendable {
     public let materialDocument: WPESceneJSONValue?
     public let materialPass: WPESceneJSONValue?
@@ -373,19 +327,13 @@ public struct WPERenderPass: Equatable, Sendable, Identifiable {
     public let binds: [Int: WPETextureReference]
     public let constants: [String: WPESceneShaderConstantValue]
     public let combos: [String: Int]
-    /// Metadata-only preservation for material/pass/instance dynamic texture
-    /// declarations. Runtime texture-provider consumption is a separate gate.
     public let userTextureBindings: WPERenderUserTextureBindings
-    /// Lossless material/effect documents and pass dictionaries that produced
-    /// this pass. Consumers must still opt into individual fields explicitly.
     public let authoredJSON: WPERenderPassAuthoredJSON
     public let blending: String
     public let cullMode: String
     public let depthTest: String
     public let depthWrite: String
-    /// SceneScripts bound to individual shader constants on this pass. The
-    /// renderer builds one script instance per entry and overrides the authored
-    /// `constants` value each frame; empty for every pass without one.
+    /// One script instance per entry; overrides authored `constants` each frame. Empty when none.
     public let constantScripts: [String: WPESceneTransformScript]
     /// Non-nil only for passes contributed by a script-gated hidden effect.
     public let visibilityGate: WPEPassVisibilityGate?
@@ -478,11 +426,9 @@ public enum WPERenderPassPhase: Equatable, Sendable {
     case effect(file: String)
     case command(file: String)
 
-    /// Exact built-in copy asset shared by graph construction and effect-chain classification.
     public static let sceneCopyCommandFile = "materials/util/copy.json"
 }
 
-/// WPE render-target aliases that refer to the scene composed so far.
 public enum WPESceneAliasName {
     public static let fullFrameBuffer = "_rt_FullFrameBuffer"
 }
@@ -493,8 +439,6 @@ public enum WPETextureReference: Equatable, Sendable {
     case fbo(String)
     case previous
 
-    /// Classifies `_rt_*` aliases that refer to the live scene texture rather than a discrete FBO.
-    /// This shared list must stay authoritative for both graph construction and shader input binding.
     public static func isSceneAliasName(_ name: String) -> Bool {
         switch name {
         case WPESceneAliasName.fullFrameBuffer,

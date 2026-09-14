@@ -3,8 +3,6 @@ import Foundation
 @testable import LiveWallpaper
 import Testing
 
-/// Creator personas are a second Steam round trip (`GetPlayerSummaries`).
-/// They must not sit in front of the page the grid paints from.
 @Suite("WorkshopQueryService creator names")
 struct WorkshopQueryServiceCreatorNameTests {
     private static let validKey = String(repeating: "a1b2c3d4", count: 4)
@@ -24,9 +22,6 @@ struct WorkshopQueryServiceCreatorNameTests {
         )
     }
 
-    /// The second phase still has to deliver, and the cached page has to end
-    /// up holding what it delivered — otherwise every cache hit would pay
-    /// for the persona lookup again.
     @Test("Personas arrive after the page and are written into the cached copy")
     func personasArriveAfterThePageAndReachTheCache() async throws {
         let service = Self.makeService()
@@ -44,7 +39,6 @@ struct WorkshopQueryServiceCreatorNameTests {
         #expect(cached.items.first?.creatorPersonaName == "Aurora")
     }
 
-    /// Both round trips are real requests; the ribbon's tally counts each.
     @Test("Each issued HTTP request bumps the request counter exactly once")
     func everyHTTPRequestIsCounted() async throws {
         let spy = RequestCountSpy()

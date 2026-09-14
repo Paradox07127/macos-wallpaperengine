@@ -12,9 +12,7 @@ struct OracleCorpusCaptureTests {
 
     private struct Config: Codable {
         let corpusRoot: String
-        /// `ConfigurationDirectory` hands a test process its own empty root, so the
-        /// app's engine-assets bookmark is invisible here and every scene that pulls
-        /// a builtin model dies on `fileMissing`. An explicit path is the way in.
+        /// A test process gets its own empty `ConfigurationDirectory`, so without an explicit path every scene pulling a builtin model dies on `fileMissing`.
         var engineAssetsRoot: String?
         var label: String = "capture"
         var scenes: [String]?
@@ -53,11 +51,7 @@ struct OracleCorpusCaptureTests {
         }
     }
 
-    /// Opt-in gate as an `.enabled` trait: a missing config must surface as a
-    /// SKIPPED test, not a vacuous pass that reads as coverage.
-    /// The pointer WPE's capture recorded, threaded in via the same
-    /// `WPEOracleReplayPointer*` defaults `oracle.py fidelity` prints. Defaults to
-    /// centre when a capture predates pointer recording.
+    /// The pointer WPE's capture recorded, read from the `WPEOracleReplayPointer*` defaults; 0.5/0.5 when a capture predates pointer recording.
     private static func replayPointer() -> SIMD2<Double> {
         let defaults = UserDefaults.standard
         let x = (defaults.object(forKey: "WPEOracleReplayPointerX") as? Double) ?? 0.5
@@ -157,11 +151,8 @@ struct OracleCorpusCaptureTests {
                         try FileManager.default.copyItem(at: item, to: stage.appendingPathComponent(item.lastPathComponent))
                     }
                 }
-                // `project.json` lives BESIDE scene.pkg, never inside it, and it
-                // holds every user-property default. Without it each
-                // `{"user":K,"value":V}` envelope falls back to the baked literal
-                // and the capture silently renders a different wallpaper than WPE
-                // did — 3554161528's u_strength read 1.5 where the slider said 0.5.
+                // `project.json` lives BESIDE scene.pkg and holds every user-property default; without it each
+                // `{"user":K,"value":V}` envelope falls back to its baked literal and the capture renders something else.
                 let projectJSON = folder.appendingPathComponent("project.json")
                 let stagedProject = stage.appendingPathComponent("project.json")
                 if FileManager.default.fileExists(atPath: projectJSON.path),
@@ -336,9 +327,6 @@ struct OracleCorpusCaptureTests {
         #expect(malformedAuthoredPassLinks == 0, "pass-level authored JSON lost its parent document")
     }
 
-    /// Isolate a real scene layer, pin every other input, and drive its shader
-    /// uniforms with silence/full-scale spectra. A live tap is neither required
-    /// nor evidence of GPU consumption; the trace records the packed slots.
     @MainActor
     private static func verifyAudioLayer(
         renderer: WPEMetalSceneRenderer, layerID: String, outputRoot: URL
@@ -454,8 +442,7 @@ struct OracleCorpusCaptureTests {
                     shaderImplementationInventory: renderer.shaderImplementationInventory
                 )
             }
-            // Drain per frame like WPERenderThread does in-app; without this the
-            // loop accumulates every autoreleased Metal object (measured ~0.5 MB/frame).
+            // Drain per frame like WPERenderThread does in-app; without it the loop accumulates every autoreleased Metal object.
             let texture = try autoreleasepool {
                 try renderer.renderCurrentFrame(inputs: renderer.makeFrameInputs())
             }
@@ -491,9 +478,8 @@ struct OracleCorpusCaptureTests {
         return FileManager.default.fileExists(atPath: trace.path) ? trace : nil
     }
 
-    /// `recordNote` intentionally writes on the artifacts utility queue. Wait for
-    /// that bounded handoff instead of racing `fileExists` immediately after
-    /// `finishFrame`; the renderer itself remains fully asynchronous.
+    /// `recordNote` writes on the artifacts utility queue, so wait for that bounded handoff instead of
+    /// racing `fileExists` straight after `finishFrame`.
     private static func awaitLatestTrace(forID id: String, after: Date = .distantPast) -> URL? {
         let deadline = Date().addingTimeInterval(2)
         repeat {

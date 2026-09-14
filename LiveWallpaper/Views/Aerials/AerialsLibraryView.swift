@@ -26,8 +26,7 @@ struct AerialsLibraryView: View {
         .confirmDestructive($pendingDestructive)
         .toolbar {
             LibraryIdentityToolbarItem(systemImage: "sparkles.tv", title: Text("Apple Aerials"))
-            // Nothing to refresh or disconnect until a folder is linked.
-            // Separate items let macOS own toolbar grouping and spacing.
+            // Separate toolbar items let macOS own grouping and spacing.
             if library.isAuthorized {
                 if library.isScanning {
                     ToolbarItem(placement: .primaryAction) {

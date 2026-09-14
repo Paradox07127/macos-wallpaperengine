@@ -37,8 +37,8 @@ private final class ClockBox: Sendable {
     func advance(_ seconds: TimeInterval) { lock.withLock { $0 = $0.addingTimeInterval(seconds) } }
 }
 
-/// LRCLIB answers `application/json`, and the fetcher now requires it: a 200
-/// carrying anything else is not a catalogue row.
+/// The fetcher requires `application/json`: a 200 carrying anything else is not
+/// a catalogue row.
 private func ok(_ request: URLRequest, _ data: Data) -> (Data, URLResponse) {
     (data, HTTPURLResponse(
         url: request.url!, statusCode: 200, httpVersion: nil,
@@ -130,7 +130,6 @@ struct NowPlayingLyricsTests {
         let later = NowPlayingLyrics.parseLRC("[offset:-500]\n[00:10.00]a\n[00:20.00]b")
         #expect(later.map(\.time) == [10.5, 20.5])
 
-        // The tag is file-wide even when it is written below the first row.
         let trailing = NowPlayingLyrics.parseLRC("[00:10.00]a\n[offset:+1000]\n[00:20.00]b")
         #expect(trailing.map(\.time) == [9, 19])
     }
@@ -143,13 +142,11 @@ struct NowPlayingLyricsTests {
         #expect(lines[0].words?.map(\.text) == ["Hello ", "world"])
         #expect(lines[0].words?.map(\.time) == [10, 10.8])
 
-        // A repeated row replays its words at the same relative offsets.
         let repeated = NowPlayingLyrics.parseLRC("[00:10.00][00:30.00]<00:10.00>a <00:11.00>b")
         #expect(repeated.count == 2)
         #expect(repeated[0].words?.map(\.time) == [10, 11])
         #expect(repeated[1].words?.map(\.time) == [30, 31])
 
-        // No tags at all leaves `words` nil rather than an empty list.
         #expect(NowPlayingLyrics.parseLRC("[00:10.00]plain")[0].words == nil)
     }
 
@@ -173,9 +170,7 @@ struct NowPlayingLyricsTests {
         #expect(NowPlayingLyrics.parseLRC("").isEmpty)
         #expect(NowPlayingLyrics.parseLRC("\n\n   \n").isEmpty)
         #expect(NowPlayingLyrics.parseLRC("[ar:Radiohead]\n[ti:Creep]\n[al:Pablo Honey]\n[by:someone]").isEmpty)
-        // A timed row with no words is not a row worth drawing.
         #expect(NowPlayingLyrics.parseLRC("[00:10.00]").isEmpty)
-        // A bracketed word that is not a tag stays lyric text.
         #expect(NowPlayingLyrics.parseLRC("[00:10.00][chorus] sing")[0].text == "[chorus] sing")
     }
 
@@ -187,7 +182,7 @@ struct NowPlayingLyricsTests {
         #expect(NowPlayingLyrics.activeIndex(lines: [], at: 5) == nil)
         #expect(NowPlayingLyrics.activeIndex(lines: lines, at: 0) == nil)
         #expect(NowPlayingLyrics.activeIndex(lines: lines, at: 9.999) == nil)
-        #expect(NowPlayingLyrics.activeIndex(lines: lines, at: 10) == 0)      // exact boundary
+        #expect(NowPlayingLyrics.activeIndex(lines: lines, at: 10) == 0)
         #expect(NowPlayingLyrics.activeIndex(lines: lines, at: 19.9) == 0)
         #expect(NowPlayingLyrics.activeIndex(lines: lines, at: 20) == 1)
         #expect(NowPlayingLyrics.activeIndex(lines: lines, at: 30) == 2)
@@ -218,16 +213,13 @@ struct NowPlayingLyricsTests {
             )?.absoluteString ==
                 "https://lrclib.net/api/get?artist_name=Radiohead&track_name=Creep&album_name=Pablo%20Honey&duration=239"
         )
-        // A duration LRCLIB disagrees with 404s the endpoint, so an absent one
-        // is omitted rather than guessed.
         #expect(
             NowPlayingLyricsFetcher.getURL(artist: nil, title: "Creep", album: nil, duration: nil)?
                 .absoluteString == "https://lrclib.net/api/get?track_name=Creep"
         )
         #expect(NowPlayingLyricsFetcher.getURL(artist: "x", title: "", album: nil, duration: nil) == nil)
-        // The player's duration is an unvalidated number off a distributed
-        // notification, so a finite-but-absurd one must be dropped rather than
-        // converted — `Int(1e300)` traps.
+        // `Int(1e300)` traps, so a finite-but-absurd duration must be dropped rather
+        // than converted.
         for absurd in [1e300, .greatestFiniteMagnitude, -5, 0] as [Double] {
             #expect(
                 NowPlayingLyricsFetcher.getURL(artist: nil, title: "Creep", album: nil, duration: absurd)?
@@ -356,10 +348,6 @@ struct NowPlayingLyricsTests {
         #expect(log.count == 4)
     }
 
-    /// The counterpart of `noMatchIsNegativeCached`: a lookup that ended because
-    /// `cancelInFlight` cancelled it is not a miss, so the key must not enter the
-    /// negative cache — nor may the dying task evict the replacement fetch
-    /// registered under the same key after it.
     @Test("A cancelled lookup neither negative-caches nor evicts its replacement")
     func cancelledLookupLeavesNoTrace() async throws {
         let log = RequestLog()
@@ -379,7 +367,6 @@ struct NowPlayingLyricsTests {
         #expect(await waitUntil { log.count >= 1 })
         await fetcher.cancelInFlight(except: nil)
 
-        // The replacement is registered while the cancelled task is still parked.
         async let second = fetcher.lyrics(for: trackState())
         #expect(await waitUntil { log.count >= 2 })
 
@@ -447,8 +434,7 @@ struct NowPlayingLyricsTests {
         })
 
         #expect(try await fetcher.lyrics(for: trackState()) == nil)
-        // One exact call plus one search call — and no retry, because an
-        // oversize body is a decision, not a transport failure.
+        // 2 = one exact call plus one search call, and no retry.
         #expect(log.count == 2)
         #expect(try await fetcher.lyrics(for: trackState()) == nil)
         #expect(log.count == 2)
@@ -487,16 +473,12 @@ struct NowPlayingLyricsTests {
         _ = await store.lyrics(for: trackState())
         #expect(store.loadCount == 1)
 
-        // A miss is cached too, so an absent lyric is not re-fetched per tick.
         let empty = NowPlayingLyricsStore(load: { _ in nil })
         #expect(await empty.lyrics(for: trackState(title: "Other")).isEmpty)
         #expect(await empty.lyrics(for: trackState(title: "Other")).isEmpty)
         #expect(empty.loadCount == 1)
     }
 
-    /// A miss used to be stored as a permanent empty array, which outlived and
-    /// masked the fetcher's own 10-minute negative cache: one offline moment
-    /// meant that track could never show lyrics again this session.
     @MainActor
     @Test("A cached miss expires on the same TTL as the fetcher's negative cache")
     func storeMissesExpire() async {
@@ -515,10 +497,6 @@ struct NowPlayingLyricsTests {
         #expect(store.loadCount == 2, "a miss past the TTL must be retried")
     }
 
-    /// The fetcher answers a cancelled lookup with `CancellationError`, not
-    /// nil, so this layer can tell it from "no lyrics" — a track skipped past
-    /// during a playlist run (or a lock-screen pass) is asked again next time,
-    /// instead of showing nothing for the length of the miss TTL.
     @MainActor
     @Test("A cancelled load is not cached as a miss")
     func storeCancelledLoadIsRetried() async {
@@ -536,8 +514,6 @@ struct NowPlayingLyricsTests {
         #expect(store.loadCount == 2, "a cancelled ask is neither a hit nor a miss")
     }
 
-    /// The counterpart: a hit is kept for good, not re-fetched once the TTL that
-    /// only governs misses rolls past.
     @MainActor
     @Test("A cached hit is never re-fetched")
     func storeHitsAreKept() async {

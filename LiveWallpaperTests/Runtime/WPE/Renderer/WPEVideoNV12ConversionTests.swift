@@ -7,10 +7,6 @@ import simd
 import Testing
 @testable import LiveWallpaper
 
-/// NV12 (biplanar YCbCr) video decode path: coefficient pins against the
-/// published BT.601/709/2020 constants, colorimetry-attachment selection,
-/// HDR→BGRA fallback, and a hermetic shader-vs-CPU numeric check on a
-/// hand-built NV12 pixel buffer.
 @MainActor
 @Suite("WPEVideoTextureSource NV12", .serialized)
 struct WPEVideoNV12ConversionTests {
@@ -24,12 +20,12 @@ struct WPEVideoNV12ConversionTests {
         #expect(abs(c.matrix.columns.0.x - 1.1644) < 0.001)
         #expect(abs(c.matrix.columns.0.y - 1.1644) < 0.001)
         #expect(abs(c.matrix.columns.0.z - 1.1644) < 0.001)
-        #expect(abs(c.matrix.columns.2.x - 1.596) < 0.001)   // Cr → R
+        #expect(abs(c.matrix.columns.2.x - 1.596) < 0.001)
         #expect(abs(c.matrix.columns.1.y - -0.3918) < 0.001) // Cb → G
-        #expect(abs(c.matrix.columns.2.y - -0.813) < 0.001)  // Cr → G
-        #expect(abs(c.matrix.columns.1.z - 2.017) < 0.001)   // Cb → B
-        #expect(c.matrix.columns.1.x == 0)                   // Cb → R
-        #expect(c.matrix.columns.2.z == 0)                   // Cr → B
+        #expect(abs(c.matrix.columns.2.y - -0.813) < 0.001)
+        #expect(abs(c.matrix.columns.1.z - 2.017) < 0.001)
+        #expect(c.matrix.columns.1.x == 0)
+        #expect(c.matrix.columns.2.z == 0)
         #expect(abs(c.offset.x - 16.0 / 255.0) < 0.0001)
         #expect(abs(c.offset.y - 128.0 / 255.0) < 0.0001)
     }
@@ -176,7 +172,6 @@ struct WPEVideoNV12ConversionTests {
         #expect(source.lastPublishPathForTesting == nil, "HDR frame must not publish through the NV12 path")
         #expect(source.texture(at: 0) == nil)
 
-        // After the fallback, BGRA buffers take the legacy wrap path unchanged.
         let bgra = try Self.makeBGRAPixelBuffer(width: 64, height: 64, fillByte: 90)
         source.ingestForTesting(pixelBuffer: bgra)
         #expect(source.lastPublishPathForTesting == .bgra)
@@ -199,9 +194,7 @@ struct WPEVideoNV12ConversionTests {
         let deadline = Date().addingTimeInterval(3.0)
         while Date() < deadline {
             texture = source.texture(at: 0)
-            // The renderer's half of the contract: a decoded frame is staged,
-            // and its conversion pass only runs once a command buffer carries
-            // it. Nothing else in this test plays the executor.
+            // Without this nothing carries the staged conversion — no executor runs in this test.
             source.driveStagedFrameWorkForTesting()
             if texture != nil { break }
             try await Task.sleep(for: .milliseconds(30))
@@ -238,9 +231,6 @@ struct WPEVideoNV12ConversionTests {
         let second = try Self.makeNV12PixelBuffer(width: 64, height: 64, luma: 180, cb: 120, cr: 130)
         source.ingestForTesting(pixelBuffer: second)
 
-        // The first frame's wrappers moved into a pending retirement fenced by
-        // the second publish's conversion buffer — they must not have been
-        // dropped synchronously at replacement.
         #expect(source.pendingRetirementCountForTesting > 0,
                 "replaced frame must be fence-retired, not released at publish")
     }
@@ -253,9 +243,7 @@ struct WPEVideoNV12ConversionTests {
         let source = try WPEVideoTextureSource(device: device, videoURL: videoURL)
         defer { source.invalidate() }
 
-        // Publish a burst, then keep publishing slowly: once the GPU catches
-        // up, each new publish sweeps the completed fences, so the pending
-        // count must settle at 1 (only the entry appended by that publish).
+        // Settles at 1 because each publish first sweeps completed fences and then appends its own entry.
         for step in 0..<6 {
             let buffer = try Self.makeNV12PixelBuffer(
                 width: 64, height: 64, luma: UInt8(60 + step * 20), cb: 100, cr: 150
@@ -283,9 +271,7 @@ struct WPEVideoNV12ConversionTests {
         defer { try? FileManager.default.removeItem(at: videoURL) }
         let source = try WPEVideoTextureSource(device: device, videoURL: videoURL)
 
-        // One publish only: nothing has been replaced, so `pendingRetirements`
-        // is the empty case the drain used to walk right past — the published
-        // frame's wrappers were released with no fence at all.
+        // Exactly one publish, so `pendingRetirements` is the empty case this test covers.
         let only = try Self.makeNV12PixelBuffer(width: 64, height: 64, luma: 120, cb: 110, cr: 140)
         source.ingestForTesting(pixelBuffer: only)
         let fencesAfterPublish = source.retirementFencesCreatedForTesting
@@ -313,9 +299,6 @@ struct WPEVideoNV12ConversionTests {
         source.ingestForTesting(pixelBuffer: second)
         #expect(source.pendingRetirementCountForTesting > 0)
 
-        // Pausing stops publishes, so the sweep at the top of `publish` will
-        // never run again — a retired 4K NV12 plane pair (~12 MiB, ~32 MiB on
-        // BGRA) would sit there for the whole suspension.
         source.applyPerformanceProfile(.suspended)
         #expect(source.pendingRetirementCountForTesting == 0,
                 "suspend must drain fenced retirements, not hold a frame for the whole pause")
@@ -328,9 +311,7 @@ struct WPEVideoNV12ConversionTests {
         defer { try? FileManager.default.removeItem(at: videoURL) }
         let source = try WPEVideoTextureSource(device: device, videoURL: videoURL)
 
-        // Burst of publishes so conversion command buffers are still in flight
-        // when invalidate() lands — the earlier hardening attempt crashed in
-        // exactly this window (completed handler vs. pool teardown).
+        // The burst must stay large enough that conversion buffers are still in flight when `invalidate()` lands.
         for step in 0..<12 {
             let buffer = try Self.makeNV12PixelBuffer(
                 width: 256, height: 256, luma: UInt8(40 + step * 15), cb: 90, cr: 160
@@ -350,7 +331,6 @@ struct WPEVideoNV12ConversionTests {
 
     // MARK: - Helpers
 
-    /// Polls a 1-pixel (0,0) readback until `predicate` passes or 2s elapse.
     private static func pollReadbackBGRA(
         texture: MTLTexture,
         device: MTLDevice,

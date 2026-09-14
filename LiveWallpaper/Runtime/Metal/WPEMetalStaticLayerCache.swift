@@ -4,31 +4,14 @@ import Foundation
 import LiveWallpaperProWPE
 import Metal
 
-/// Plan describing how a static layer's composites are cached: every named
-/// target the layer produces (FBO/layerComposite) mapped to the index of its
-/// last producer pass. ALL of them are cached + re-seeded, because skipping the
-/// layer's compose/effect passes means a downstream consumer of ANY of them
-/// (not just the final one) must still resolve to frame-invariant pixels.
+/// `cachedTargets`: every named FBO/layerComposite → last producer pass index. All of them are cached+re-seeded — a downstream consumer of any (not just the final) must still resolve to frame-invariant pixels.
 struct WPEMetalStaticLayerCachePlan: Equatable, Sendable {
     let cachedTargets: [String: Int]
     let targetTypes: [String: WPERenderTarget]
     let compositePassCount: Int
 }
 
-/// Decides whether a layer's composites are provably frame-invariant so they can be
-/// rendered once and reused. Exact by construction only for a pure function of static
-/// inputs, so this is deliberately ULTRA-conservative: anything unprovable falls back
-/// to the normal per-frame path (slower, never wrong).
-///
-/// A layer qualifies only when EVERY pass: uses a BUILTIN shader (a custom material
-/// shader could sample g_Time/g_Pointer/g_AudioSpectrum/g_ModelMatrix even outside
-/// effects/); is not an effects/ or workshop/ animated shader; carries no animated
-/// authored constant; reads only frame-invariant textures (a non-dynamic image/asset,
-/// or an FBO this layer already produced — never `.previous` feedback, never a
-/// scene-alias FBO like `_rt_FullFrameBuffer`). The layer itself must also have no
-/// puppet, no `animationLayers`, no animated alpha/color on any geometry (base,
-/// local, group-local), exactly one `.scene` pass, and ≥2 composite passes (the cost
-/// gate).
+/// Ultra-conservative: anything unprovable falls back to the per-frame path. Builtin shaders only (a custom material could sample g_Time/g_Pointer even outside effects/). Cost gate: ≥2 composite passes.
 enum WPEMetalStaticLayerClassifier {
     static func cachePlan(
         for layer: WPEPreparedRenderLayer,
@@ -101,9 +84,7 @@ enum WPEMetalStaticLayerClassifier {
         return shader.contains("effects/") || shader.contains("workshop/")
     }
 
-    /// An authored `.animated` constant evaluates per frame, so its composite is
-    /// not invariant. (Runtime uniforms like g_Time are merged into every pass
-    /// but unused by builtin static shaders; authored constants are the signal.)
+    /// Authored `.animated` constants evaluate per frame. Runtime uniforms like g_Time are merged into every pass but unused by builtin static shaders — authored constants are the signal.
     private static func hasAnimatedConstant(_ pass: WPEPreparedRenderPass) -> Bool {
         pass.pass.constants.values.contains { value in
             if case .animated = value { return true }
@@ -112,11 +93,7 @@ enum WPEMetalStaticLayerClassifier {
     }
 }
 
-/// LRU bookkeeping for the cache's VRAM budget, separated from the texture
-/// store. Eviction policy: reject an oversized single entry outright, else
-/// admit and evict inline (unprotected — a static-layer composite has no
-/// "active this frame" exemption, unlike `WPEMetalTextureCacheLRU`).
-/// Bookkeeping itself lives in the shared `WPEMetalLRUByteBudget` core.
+/// Reject an oversized single entry outright; else admit and evict inline with no "active this frame" exemption (unlike `WPEMetalTextureCacheLRU`).
 struct WPEMetalStaticLayerCacheLRU: Equatable, Sendable {
     private var core: WPEMetalLRUByteBudget<String>
 
@@ -147,9 +124,7 @@ struct WPEMetalStaticLayerCacheLRU: Equatable, Sendable {
     }
 }
 
-/// Completion callbacks only mutate this lease; the cache dictionaries remain
-/// render-owner-only. Retired textures are freed even if rendering never resumes.
-private final class WPEMetalStaticCacheCompletionLease: @unchecked Sendable { // NSLock protects every field shared with Metal completion callbacks.
+private final class WPEMetalStaticCacheCompletionLease: @unchecked Sendable {
     private let lock = NSLock()
     private var pendingBuffers: Set<ObjectIdentifier> = []
     private var retiredTextures: [MTLTexture] = []
@@ -162,8 +137,7 @@ private final class WPEMetalStaticCacheCompletionLease: @unchecked Sendable { //
         lock.withLock { retiredTextures.reduce(0) { $0 + $1.allocatedSize } }
     }
 
-    /// Called by the render owner before commit. No command buffer is retained
-    /// here: keeping a completed buffer can also keep its encoded resources alive.
+    /// Do not retain the command buffer: a completed buffer would keep its encoded resources alive.
     func track(_ commandBuffer: MTLCommandBuffer) -> Bool {
         guard commandBuffer.status == .notEnqueued || commandBuffer.status == .enqueued else { return false }
         let id = ObjectIdentifier(commandBuffer)
@@ -182,7 +156,6 @@ private final class WPEMetalStaticCacheCompletionLease: @unchecked Sendable { //
         }
     }
 
-    /// Cancellation is only issued by the owner for a buffer it will not commit.
     func cancel(_ commandBuffer: MTLCommandBuffer) {
         finish(ObjectIdentifier(commandBuffer))
     }
@@ -201,8 +174,7 @@ private final class WPEMetalStaticCacheCompletionLease: @unchecked Sendable { //
     }
 }
 
-/// Render-thread owned. Reservations include pending producers and invalidated
-/// entries still referenced by GPU work; LRU residency alone is not a peak budget.
+/// Reservations include pending producers and GPU-referenced invalidated entries; LRU residency alone is not a peak budget.
 final class WPEMetalStaticLayerCompositeCache {
     struct CachedLayer {
         var texturesByTarget: [String: MTLTexture]
@@ -322,8 +294,7 @@ final class WPEMetalStaticLayerCompositeCache {
         return true
     }
 
-    /// Called before encoding the copy. An unexpected allocation larger than the
-    /// preflight estimate is rejected immediately, never added to GPU work.
+    /// An unexpected allocation larger than the preflight estimate is rejected immediately, never added to GPU work.
     func recordSnapshot(_ texture: MTLTexture, target: String, layerID: String,
                         commandBuffer: MTLCommandBuffer) -> Bool {
         guard var entry = entries[layerID], entry.producer === commandBuffer,

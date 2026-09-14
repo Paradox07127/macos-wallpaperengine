@@ -92,11 +92,8 @@ struct BrowseFilterTests {
         }
         let everything = Set(WorkshopContentTypeFilter.selectableCases)
 
-        // Written by a pre-snap-back build that let the user deselect them all.
         #expect(restoreTypes([]) == everything)
-        // Every raw value stopped decoding (renamed cases).
         #expect(restoreTypes(["gone", "obsolete"]) == everything)
-        // A genuine narrowing survives untouched.
         #expect(restoreTypes(["scene"]) == [.scene])
         #expect(restoreTypes(["scene", "bogus"]) == [.scene])
     }
@@ -160,8 +157,7 @@ struct BrowseFilterTests {
     }
 
     /// The Web API treats an omitted `days` as `days=1`, so a Most Popular
-    /// request must always state it; the page has no "trend, all time" — it
-    /// defaults to seven days.
+    /// request must always state it.
     @Test("Most Popular without a time frame asks for seven days explicitly")
     func mostPopularDefaultsToSevenDays() {
         let request = WorkshopQueryRequest(sort: .mostPopular)
@@ -197,7 +193,7 @@ struct BrowseFilterTests {
         #expect(items.contains { $0.name == "days" && $0.value == "7" })
     }
 
-    /// Steam's Resolution tag group, verbatim (25 values, verified 2026-09-07).
+    /// Steam's Resolution tag group, verbatim.
     static let steamResolutionTags: [String] = [
         "Standard Definition", "1280 x 720", "1366 x 768", "1920 x 1080", "2560 x 1440", "3840 x 2160",
         "Ultrawide Standard Definition", "Ultrawide 2560 x 1080", "Ultrawide 3440 x 1440",
@@ -219,15 +215,11 @@ struct BrowseFilterTests {
         let everything = Set(WorkshopResolutionFilter.selectableCases)
         #expect(restore([]) == everything)
         #expect(restore(["gone"]) == everything)
-        // Raw values written by the pre-bucket build keep decoding.
         let survivor = restore(["fullHD1080"])
         #expect(survivor.count == 1)
         #expect(survivor.first?.rawValue == "fullHD1080")
     }
 
-    /// The seven-bucket build persisted "everything" as seven raw values under
-    /// the v1 key; read against nine buckets that is a narrowing that silently
-    /// drops Triple and Other. The store starts over under v2.
     @Test("A v1 all-selected resolution store is retired, not read as a narrowing")
     @MainActor
     func legacyResolutionStoreIsRetired() throws {
@@ -346,17 +338,14 @@ struct BrowseFilterTests {
     func toggleSnapBackOnEmpty() {
         let all = WorkshopContentTypeFilter.selectableCases
 
-        // Deselecting the only member would leave an empty set → snap back to full.
         #expect(BrowseViewModel.toggled(.scene, in: [.scene], all: all) == Set(all))
 
-        // Normal toggle semantics unchanged.
         #expect(BrowseViewModel.toggled(.scene, in: Set(all), all: all) == [.video, .web])
         #expect(BrowseViewModel.toggled(.scene, in: [.video], all: all) == [.scene, .video])
     }
 
-    /// Derived labels used to carry the prefixed tags: `Triple 5760 x 1080` is
-    /// 5.33:1, which the ratio table reads as Dual, and `Ultrawide Standard
-    /// Definition` has no numbers at all.
+    /// Deriving these labels would read `Triple 5760 x 1080` (5.33:1) as Dual,
+    /// and `Ultrawide Standard Definition` has no numbers at all.
     @Test("The card badge keys on Steam's real resolution tags")
     @MainActor
     func resolutionBadgeKeysOnSteamTags() {
@@ -392,7 +381,6 @@ struct BrowseFilterTests {
         #expect(WorkshopQueryCacheKey.canonical(plain) != WorkshopQueryCacheKey.canonical(approved))
         #expect(WorkshopQueryCacheKey.canonical(approved) != WorkshopQueryCacheKey.canonical(hdr))
         #expect(WorkshopQueryCacheKey.canonical(plain) != WorkshopQueryCacheKey.canonical(titleOnly))
-        // Same values, same key — including a differently ordered tag list.
         #expect(
             WorkshopQueryCacheKey.canonical(approved)
                 == WorkshopQueryCacheKey.canonical(WorkshopQueryRequest(sort: .topRated, searchText: "cat", miscellaneousTags: [" Approved "]))
@@ -403,8 +391,6 @@ struct BrowseFilterTests {
         )
     }
 
-    /// `search_text_target` only means something with a search text, so an
-    /// empty search normalises it away — the default browse keeps one cache key.
     @Test("Control: without a search text the search target does not change the cache key")
     func searchTargetWithoutTextIsNormalised() {
         let request = WorkshopQueryRequest(sort: .topRated, searchTextTarget: .titleOnly)
@@ -423,15 +409,10 @@ struct BrowseFilterTests {
 @Suite("Workshop browse request shape")
 @MainActor
 struct BrowseRequestShapeTests {
-    /// Keyed: the genre facet only takes the `requiredtags` + `match_all_tags`
-    /// form on the QueryFiles path, so these cases have to hold a key.
     private static func makeModel(_ name: String) throws -> (BrowseViewModel, TestScratch.DefaultsSuite) {
         try makeModel(name, settings: GlobalSettings())
     }
 
-    /// Every read of Settings → Workshop goes through the injected loader: the
-    /// presets exclusion used to read the real `SettingsManager`, so whoever
-    /// ran the suite with presets shown got a different request shape.
     @Test("The presets exclusion and the default sort both read the injected settings")
     func requestShapeReadsInjectedSettings() throws {
         var settings = GlobalSettings()
@@ -508,7 +489,6 @@ struct BrowseRequestShapeTests {
         let (model, suite) = try Self.makeModel("pinnedTag")
         defer { suite.discard() }
 
-        // Mature is deselected by default; the scope must not drop that exclusion.
         model.applyScopeForTesting(pinnedTag: "Anime")
         let request = model.makeRequest(page: 1)
 
@@ -539,10 +519,6 @@ struct BrowseRequestShapeTests {
         #expect(items.contains { $0.name.hasPrefix("excludedtags[") && $0.value == "Mature" })
     }
 
-    /// GetUserFiles takes `requiredtags` (`CPublishedFile_GetUserFiles_Request`
-    /// field 10) and the profile page honours `requiredtags[]` (verified live
-    /// 2026-09-07: `Video` kept 4/4, `Scene` 0/4, `Video`+`Abstract` 3/4), so
-    /// the Miscellaneous facet follows into a creator scope on both paths.
     @Test("A creator-scoped browse carries the Miscellaneous selection on both paths")
     func creatorScopeCarriesMiscellaneousTags() throws {
         let (model, suite) = try Self.makeModel("creatorMisc")
@@ -628,9 +604,6 @@ struct BrowseRequestShapeTests {
         #expect(!request.excludedTags.contains { WorkshopGenre.allTags.contains($0) })
     }
 
-    /// The public browse page has no `match_all_tags` and multiple
-    /// `requiredtags[]` there are believed to AND, so the keyless path keeps the
-    /// exclusion form the keyed path left behind.
     @Test("A keyless genre narrowing excludes the unselected genres")
     func keylessGenreUsesExclusionForm() throws {
         let suite = try TestScratch.defaultsSuite("workshop.browse.request.keylessGenre")
@@ -647,7 +620,6 @@ struct BrowseRequestShapeTests {
         #expect(!request.excludedTags.contains("Anime"))
     }
 
-    /// Control: the same narrowing on the keyed path stays in the required-tag form.
     @Test("Control: a keyed genre narrowing still requires the selected genre")
     func keyedGenreStillUsesRequiredTags() throws {
         let (model, suite) = try Self.makeModel("keyedGenre")
@@ -706,9 +678,8 @@ struct BrowseRequestShapeTests {
 
     // MARK: - W4-A control group
 
-    /// Pinned before search-target and Miscellaneous existed: the default
-    /// request (every facet fully selected, no search text) must stay this
-    /// exact string on both paths — `WorkshopLiveParityTests` builds it too.
+    /// The default request must stay this exact string on both paths —
+    /// `WorkshopLiveParityTests` builds it too.
     @Test("Control: the default keyed query string is unchanged")
     func defaultKeyedQueryStringIsUnchanged() throws {
         let (model, suite) = try Self.makeModel("defaultShape.keyed")
@@ -757,7 +728,6 @@ struct BrowseRequestShapeTests {
         keyed.searchTextTarget = .all
         #expect(Self.queryValues(keyed)["search_text_target"] == nil)
 
-        // Control: the target is meaningless without a text, so it is not sent.
         keyed.searchTextTarget = .titleOnly
         keyed.searchInput = ""
         #expect(Self.queryValues(keyed)["search_text_target"] == nil)
@@ -806,7 +776,6 @@ struct BrowseRequestShapeTests {
         #expect(values["match_all_tags"] == nil)
         #expect(values["input_json"] == nil)
 
-        // Two feature tags: both required, canonical (sorted) order, still no match_all_tags.
         keyed.toggleMiscellaneous("HDR")
         let two = keyed.makeRequest(page: 1)
             .apiQueryItems(apiKey: "FAKEKEY", appID: 431_960)
@@ -825,9 +794,8 @@ struct BrowseRequestShapeTests {
         #expect(!items.contains { $0.hasPrefix("excludedtags[]=") && WorkshopGenre.allTags.contains(String($0.dropFirst("excludedtags[]=".count))) })
     }
 
-    /// "Any of these genres AND each of these features" needs `taggroups`,
-    /// which Steam only honours inside `input_json` (measured 2026-09-07:
-    /// the query-string forms are ignored or 400, POST is 405).
+    /// `taggroups` is only honoured inside `input_json` — the query-string
+    /// forms are ignored or 400.
     @Test("Miscellaneous with a genre narrowing sends key + input_json with taggroups")
     func miscellaneousWithGenreUsesTagGroups() throws {
         let (keyed, suite) = try Self.makeModel("misc.taggroups")
@@ -858,7 +826,6 @@ struct BrowseRequestShapeTests {
         #expect(json["match_all_tags"] == nil)
         #expect(json["search_text"] == nil)
 
-        // Keyless has no taggroups: features required, unselected genres excluded.
         let keylessSuite = try TestScratch.defaultsSuite("workshop.browse.request.misc.taggroupsKeyless")
         defer { keylessSuite.discard() }
         let keyless = BrowseViewModel(services: WorkshopServices(), defaults: keylessSuite.defaults)
@@ -876,8 +843,6 @@ struct BrowseRequestShapeTests {
         #expect(!excludedGenres.contains("Abstract"))
     }
 
-    /// Search text, target and the rest of the query travel inside the JSON
-    /// on the taggroups path — the same values the query string would carry.
     @Test("input_json carries the search text and target")
     func inputJSONCarriesSearch() throws {
         let (keyed, suite) = try Self.makeModel("misc.taggroups.search")
@@ -898,8 +863,6 @@ struct BrowseRequestShapeTests {
         #expect(groups == [["tags": ["Anime"]], ["tags": ["HDR"]]])
     }
 
-    /// A pinned tag is one required tag matched with `match_all_tags=true`, so
-    /// features join it in the query string — no taggroups needed.
     @Test("Control: a pinned tag plus a feature tag stays a plain all-of query")
     func pinnedTagWithMiscellaneousStaysAllOf() throws {
         let (keyed, suite) = try Self.makeModel("misc.pinned")
@@ -916,8 +879,7 @@ struct BrowseRequestShapeTests {
     }
 
     /// `URLComponents.queryItems` leaves `+` bare, which Steam reads as a
-    /// space inside the JSON; the taggroups URL is built with a stricter
-    /// encoding and must decode back to the same JSON.
+    /// space inside the JSON — the taggroups URL needs stricter encoding.
     @Test("The taggroups URL has no bare + and its input_json decodes back")
     func tagGroupsURLEncoding() throws {
         let request = WorkshopQueryRequest(
@@ -979,7 +941,6 @@ struct BrowseRequestShapeTests {
         model.resetFilters()
         #expect(ribbon.activeFilterCount == 0)
 
-        // Maturity counts once it leaves the Everyone default, in either direction.
         model.toggleAgeRating(.mature)
         #expect(ribbon.activeFilterCount == 1)
         model.toggleAgeRating(.mature)
@@ -1000,7 +961,6 @@ struct BrowseRequestShapeTests {
         let second = BrowseViewModel(services: services, defaults: suite.defaults)
         #expect(second.selectedMiscellaneous == ["Approved", "Video Texture"])
 
-        // A stored value outside the nine (a retired tag) is dropped, not snapped to all.
         suite.defaults.set(["Approved", "Asset Pack"], forKey: "loomscreen.workshop.filter.miscellaneous.v1")
         #expect(BrowseViewModel(services: services, defaults: suite.defaults).selectedMiscellaneous == ["Approved"])
 
@@ -1015,8 +975,6 @@ struct BrowseRequestShapeTests {
             .map { "\($0.name)=\($0.value ?? "")" }
     }
 
-    /// Mirrors the page: its time menu has no "trend, all time" — picking All
-    /// Time there switches the sort to Top Rated (All Time).
     @Test("All Time under Most Popular switches the sort to Top Rated")
     func allTimeUnderMostPopularSwitchesToTopRated() throws {
         let (model, suite) = try Self.makeModel("allTime")
@@ -1082,8 +1040,6 @@ struct BrowseRequestShapeTests {
         #expect(Self.queryValues(model)["days"] == "30")
     }
 
-    /// Relevance only ranks against a search text, so it cannot be a browse
-    /// default even if a hand-edited store says so.
     @Test("Unknown and Relevance default sorts fall back to Most Popular", arguments: ["bogus", "search"])
     func unknownDefaultSortFallsBack(raw: String) throws {
         var settings = GlobalSettings()
@@ -1120,9 +1076,6 @@ struct BrowseRequestShapeTests {
         #expect(model.preferredSort == .lastUpdated)
     }
 
-    /// The pinned-tag request drops the search text but reused `preferredSort`,
-    /// so a Relevance search followed by a tag click reached the request
-    /// layer's Top Rated fallback instead of the configured default.
     @Test(
         "Pinning a tag during a Relevance search browses the configured default sort",
         arguments: [("mostPopular", "3", "7"), ("lastUpdated", "21", nil)]
@@ -1142,8 +1095,6 @@ struct BrowseRequestShapeTests {
         #expect(values["days"] == days)
     }
 
-    /// The pane keeps one view model for the whole process, so a default
-    /// changed in Settings has to be picked up when Browse is shown again.
     @Test("Returning to Browse picks up a default sort changed in Settings")
     func onAppearRereadsDefaultSort() async throws {
         let suite = try TestScratch.defaultsSuite("workshop.browse.request.defaultSort.onAppear")
@@ -1187,12 +1138,8 @@ struct BrowseRequestShapeTests {
 
     // MARK: - W4-B: a rejected key browses keyless (D11 / D23)
 
-    /// The stubbed keychain's key, so a verdict can name the key it is about.
     private static let stubbedKey = String(repeating: "a1b2c3d4", count: 4)
 
-    /// Valve's 401/403 is permanent ("Retrying will not help") and every keyed
-    /// request after it counts against the same IP limit the keyless page
-    /// shares, so a rejected key has to browse exactly as no key would.
     @Test("A stored key Valve rejected selects the keyless request shape and the public page")
     func rejectedKeyBrowsesKeyless() async throws {
         let suite = try TestScratch.defaultsSuite("workshop.browse.request.rejectedKey")
@@ -1206,7 +1153,6 @@ struct BrowseRequestShapeTests {
         #expect(model.usesKeylessSearch)
         #expect(model.makeRequest(page: 1).numPerPage == WorkshopPublicBrowseURL.itemsPerPage)
 
-        // The genre facet takes the exclusion form on the keyless path.
         model.isolateGenre("Anime")
         #expect(model.makeRequest(page: 1).requiredTags.isEmpty)
         #expect(model.makeRequest(page: 1).excludedTags.contains("Landscape"))
@@ -1218,8 +1164,6 @@ struct BrowseRequestShapeTests {
         #expect(BrowseReloadStub.hosts(containing: marker) == ["steamcommunity.com"])
     }
 
-    /// The keyless creator page ignores `excludedtags` and states no total,
-    /// so a creator scope cannot be carried over when the key goes away.
     @Test("Losing the key leaves the creator scope")
     func keyLossLeavesCreatorScope() async throws {
         let suite = try TestScratch.defaultsSuite("workshop.browse.request.keyLossCreator")
@@ -1239,8 +1183,6 @@ struct BrowseRequestShapeTests {
         #expect(model.lastError != .missingAPIKey)
     }
 
-    /// Belt and braces under the pane's `onChange`: a creator-scoped request
-    /// that still reaches the keyless fetch is refused, not sent to the page.
     @Test("A keyless creator-scoped fetch is refused")
     func keylessCreatorFetchIsRefused() async throws {
         let suite = try TestScratch.defaultsSuite("workshop.browse.request.keylessCreatorRefused")
@@ -1272,7 +1214,6 @@ struct BrowseRequestShapeTests {
         await services.noteAuthVerdict(accepted: false, keyFingerprint: fingerprint)
         #expect(model.showsKeyRejectedNotice)
 
-        // A key Valve accepts again (saved and validated) clears it by itself.
         await services.noteAuthVerdict(accepted: true, keyFingerprint: fingerprint)
         #expect(!model.showsKeyRejectedNotice)
 
@@ -1296,9 +1237,6 @@ struct BrowseRequestShapeTests {
         )
     }
 
-    /// Everything `reload()` can touch is isolated: a scratch keychain slot
-    /// (never the developer's real key), a scratch cache, and a session whose
-    /// only transport is `BrowseReloadStub`.
     private static func makeStubbedServices() -> WorkshopServices {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("workshop-browse-reload-\(UUID().uuidString)", isDirectory: true)
@@ -1318,8 +1256,6 @@ struct BrowseRequestShapeTests {
         return WorkshopServices(keychain: keychain, cache: cache, queryService: service)
     }
 
-    /// Synchronous throughout: `WorkshopServices` refreshes `hasWebAPIKey` from
-    /// its own MainActor task, which cannot interleave without a suspension point.
     @Test("Next stays live when the client filter shrank a full page")
     func nextPageUsesRawPageCount() throws {
         let suite = try TestScratch.defaultsSuite("workshop.browse.request.rawCount")
@@ -1339,15 +1275,12 @@ struct BrowseRequestShapeTests {
     }
 }
 
-/// Answers every request with an empty page and remembers the URLs, so the
-/// reappear tests can tell a stubbed fetch from a real one. The log is
-/// process-wide (URLProtocol is registered by type); callers match on
-/// `query_type` to find their own request among parallel tests'.
+/// The log is process-wide (URLProtocol registers by type), so callers
+/// match on `query_type` to find their own request among parallel tests'.
 private final class BrowseReloadStub: URLProtocol, @unchecked Sendable {
     private static let lock = NSLock()
     private nonisolated(unsafe) static var requests: [URL] = [] // guarded by `lock`
 
-    /// Hosts of every recorded request whose URL carries `marker`.
     static func hosts(containing marker: String) -> Set<String> {
         lock.withLock { Set(requests.filter { $0.absoluteString.contains(marker) }.compactMap(\.host)) }
     }
@@ -1383,8 +1316,6 @@ private final class BrowseReloadStub: URLProtocol, @unchecked Sendable {
     override func stopLoading() {}
 }
 
-/// Stands in for `SettingsManager`: the Settings window rewrites the store
-/// behind the view model's back, which is what the reappear tests change.
 @MainActor
 private final class MutableSettings {
     var settings = GlobalSettings()
@@ -1413,11 +1344,8 @@ struct WorkshopPresetsSettingTests {
     }
 }
 
-/// The sort and time-frame copy is Steam's own (Workshop_BrowseSort_* and
-/// SharedFiles_Browse_Trend_Option_*, read from the community site's
-/// localization chunks 2026-09-07), so a Wallpaper Engine user recognises each
-/// option from the page. en and zh-Hans are pinned verbatim; the other three
-/// only have to be present.
+/// The copy is Steam's own (Workshop_BrowseSort_*,
+/// SharedFiles_Browse_Trend_Option_*).
 @Suite("Workshop sort and time-frame copy")
 struct WorkshopSortCopyTests {
     private static let steamCopy: [String: (en: String, zhHans: String)] = [
@@ -1454,7 +1382,7 @@ struct WorkshopSortCopyTests {
 
     private static let settingsCopy = ["Default sort", "Default time frame"]
 
-    /// W4-B: the Browse banner shown once Valve rejected the stored key.
+    /// The Browse banner shown once Valve rejected the stored key.
     private static let keyRejectedCopy = ["Steam rejected the saved API key. Browsing without it.", "Open Settings"]
 
     private static func catalogStrings() throws -> [String: Any] {
@@ -1498,9 +1426,6 @@ struct WorkshopSortCopyTests {
     }
 }
 
-/// Source contracts for the Browse first-paint path. Each of these is a wiring
-/// fact between a view and a view model that only a rendered pane could
-/// otherwise show, so it is pinned where it is written.
 @Suite("Workshop browse first-paint wiring")
 struct BrowseFirstPaintWiringTests {
     @Test("reload() keeps the previous grid until the new page arrives")
@@ -1541,12 +1466,9 @@ struct BrowseFirstPaintWiringTests {
         let advanced = try RepositoryRoot.source("LiveWallpaper/Views/Settings/AdvancedSection.swift")
 
         #expect(names.contains("workshopPresetVisibilityDidChange"))
-        // The page commits through GlobalSettingsCommit, which owns the post.
         #expect(settings.contains("GlobalSettingsCommit.WorkshopPageFields("))
         #expect(commit.contains(".workshopPresetVisibilityDidChange"))
         #expect(pane.contains(".workshopPresetVisibilityDidChange"))
-        // Restoring or resetting the store rewrites the setting behind the
-        // toggle's back, so both re-post it like the other cross-window ones.
         #expect(backup.contains("postSettingsNotificationAsync(.workshopPresetVisibilityDidChange)"))
         #expect(advanced.contains("postSettingsNotificationAsync(.workshopPresetVisibilityDidChange)"))
     }

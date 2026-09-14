@@ -2,20 +2,10 @@
 import Foundation
 import LiveWallpaperProWPE
 
-// Reconstruction of vertex-stage varyings for the fragment-only transpile path:
-// the auto_sway (foliage) chain and the `v_TexCoord.zw` resolution-scaled aux UV
-// families. Split out of +Render/+Substitutions so the hotspot files don't grow.
 extension WPEShaderTranspiler {
     // MARK: - auto_sway varying reconstruction
 
-    /// Fragment-side reconstruction of `auto_sway.vert` (workshop 3235948233,
-    /// `AA_VERSION == 2`) — the per-node sway state the fragment consumes. All uniform-
-    /// only except the `v_PosX`/`v_EndpointPosX` dot products, affine in the texcoord and
-    /// therefore identical when recomputed per-pixel from the interpolated UV. Without
-    /// this the varyings fell back to screen-UV ramps and swaying hair locks smeared
-    /// across the layer (3462491575: bangs rotated over the eyes on both characters).
-    /// Matched structurally (v2 varying signature + the shader's distinctive uniforms) so
-    /// repacks under other workshop IDs reconstruct too; v1/v3 keep today's fallback.
+    /// Fragment-side reconstruction of auto_sway v2 (uniform-only except UV-affine dots). v1/v3 keep the fallback.
     static func autoSwayVaryingReconstructionLines(
         varyings: [WPEVaryingDecl],
         availableUniforms: Set<String>,
@@ -43,9 +33,7 @@ extension WPEShaderTranspiler {
             && hasUniforms("g_NoiseSpeed", "g_Friction", "g_NoiseAmount", in: availableUniforms)
         let halfPi = "1.5707963267948966"
 
-        // `linearStep` & friends over compile-time constants (lower=2,
-        // upper=NODE_COUNT, x=nodeNum): fold to a literal. Division by a zero
-        // span mirrors D3D saturate: 0/0 (NaN) → 0, k/0 (+inf) → 1.
+        /// Fold `linearStep` over compile-time constants. A zero span mirrors D3D saturate: 0/0 → 0, k/0 → 1.
         func stepValue(_ x: Double) -> Double {
             let span = Double(nodeCount) - 2
             let raw = (x - 2) / span
@@ -148,12 +136,7 @@ extension WPEShaderTranspiler {
 
     // MARK: - v_TexCoord.zw resolution-scaled aux UV families
 
-    /// Engine effect `.vert`s compute a resolution-scaled aux UV into `v_TexCoord.zw`
-    /// (`uv·res.zw/res.xy` — POT-padding/aspect correction for the mask, flow, or blend
-    /// texture), which the fragment-only path synthesizes byte-for-byte via
-    /// `wpe_texcoord_with_resolution(in.uv, g_TextureNResolution)`. Families in
-    /// `texCoordZWResolutionSlot` keep the `.zw` sample; every other shader (blur-step verts,
-    /// swing/twirl's aspect+sine packing, TRANSFORMUV blends) isn't guaranteed to match, so keeps the historical `.xy` fallback.
+    /// Families in `texCoordZWResolutionSlot` keep `.zw`; every other shader keeps the historical `.xy` fallback.
     static func rewriteTexCoordMaskUVFallback(
         _ source: String,
         varyingTypesByName: [String: String],
@@ -166,40 +149,23 @@ extension WPEShaderTranspiler {
     }
 
     static func shouldPreserveTexCoordZW(shaderName: String, comboValues: [String: Int]) -> Bool {
-        // swing/twirl: .zw = aspect + sine phase, rebuilt by their varyingInitializer case —
-        // safe even when the uniform gate fails, since the float4 default leaves .zw == uv,
-        // exactly what the historical .xy downgrade produced. blur_precise_gaussian: .zw is
-        // the per-tap blur STEP, not a scaled UV; the `.xy` downgrade turned it into screen UV
-        // (six orders of magnitude past `g_Scale/resolution`), so blur13a's taps spanned the whole frame (3413921910: water reflection flattened to a solid band by the two blur passes that follow).
+        // swing/twirl: .zw is aspect + sine phase. blur_precise_gaussian: .zw is the per-tap step, not a scaled UV.
         if let family = texCoordZWFamilyName(shaderName: shaderName),
            family == "swing" || family == "twirl" || family == "blur_precise_gaussian" {
             return true
         }
-        // lens_distortion: `.zw` is the aspect·size DIVISOR the fragment divides the
-        // centred coordinate by, not a UV. The `.xy` downgrade made that divisor the
-        // screen UV, so `coord` collapsed to the constant 2 for every fragment
-        // (3647999330: the post layer's red and green channels pinned to the clamped
-        // corner texel while blue stayed an identity copy).
+        // lens_distortion: `.zw` is the aspect·size divisor, not a UV; the `.xy` downgrade would collapse `coord` to 2.
         if texCoordZWFamilyName(shaderName: shaderName) == "lens_distortion" {
             return true
         }
-        // frame_builder: `.zw` is the raw UV the fragment samples the framebuffer with, while
-        // `.xy` is the signed pixel coordinate. Both are rebuilt above, so the downgrade —
-        // which would make the sample UV follow the signed coordinate — must not run.
+        // frame_builder: `.zw` is the sample UV and `.xy` is the signed pixel coordinate; the downgrade must not run.
         if texCoordZWFamilyName(shaderName: shaderName) == "frame_builder_by_gariam" {
             return true
         }
         return texCoordZWResolutionSlot(shaderName: shaderName, comboValues: comboValues) != nil
     }
 
-    /// Effect families whose source `.vert` writes `v_TexCoord.zw = uv * resN.zw / resN.xy`
-    /// (verified line-by-line against the engine's `assets/effects/*/shaders` `.vert`s).
-    /// Returns the texture slot N whose resolution the `.vert` reads, or nil when the
-    /// family's `.zw` carries different semantics and must keep the `.xy` downgrade.
-    /// Excluded: blur_precise_gaussian/shine_gaussian/godrays_gaussian (directional blur),
-    /// shine_combine/godrays_combine (HLSL-only half-texel shift; GL `.zw` == uv),
-    /// swing/twirl (aspect+sine time packing, rebuilt by `varyingInitializer` instead),
-    /// spin (never writes `.zw`, so `.xy` is exact), fluidsimulation_clear (pressure decay).
+    /// Returns texture slot N whose resolution the `.vert` writes into `.zw`, or nil when `.zw` has different semantics.
     static func texCoordZWResolutionSlot(shaderName: String, comboValues: [String: Int]) -> Int? {
         guard let family = texCoordZWFamilyName(shaderName: shaderName) else { return nil }
         switch family {
@@ -215,9 +181,7 @@ extension WPEShaderTranspiler {
             // MODE != 0 (vertex-displacement sway) leaves .zw = (0,0) — a constant
             // mask sample we can't reproduce with a scaled UV; keep the downgrade.
             return (comboValues["MODE"] ?? 0) == 0 ? 1 : nil
-        // glitter_combine binds its mask at slot 2 but its .vert scales by
-        // g_Texture1Resolution (upstream WPE quirk; slot 1 is the built-in 256²
-        // glitter noise, ratio 1) — replicate verbatim, don't "fix" to slot 2.
+        // glitter_combine scales by g_Texture1Resolution even though the mask binds at slot 2 — replicate, don't "fix" to slot 2.
         case "glitter_combine", "waterflow", "tint", "shake", "iris",
              "localcontrast_combine", "cloudmotion", "chromatic_aberration", "fire",
              "caustics", "opacity", "blur_combine", "godrays_downsample2",
@@ -235,11 +199,7 @@ extension WPEShaderTranspiler {
 
     // MARK: - lens_distortion (workshop 2811235087)
 
-    /// Uniforms `lens_distortion.vert` declares and its fragment does not. The fragment-only
-    /// path still needs them to rebuild `v_Distorsion` / `v_Transforms` / `v_TexCoord`, and the
-    /// pipeline builder already resolved their material names across BOTH stages, so declaring
-    /// them here gives the reconstruction real values instead of a screen-UV ramp.
-    /// Same mechanism as the fluidsimulation `g_Texture0Resolution` injection.
+    /// Vertex-only uniforms the fragment-only path still needs to rebuild `v_Distorsion` / `v_Transforms` / `v_TexCoord`.
     static let lensDistortionVertexUniforms: [(name: String, glslType: String)] = [
         ("u_zoom", "float"),
         ("u_general", "float"),
@@ -261,9 +221,7 @@ extension WPEShaderTranspiler {
         ("u_ratio", "float"),
     ]
 
-    /// Only a declaration counts: `u_sizeFactor`, a comment, or a bare use of
-    /// the name must not pass for `uniform float u_size;`, or the
-    /// reconstruction reads a uniform nothing declared.
+    /// Only a `uniform` declaration counts: a comment or a bare use of the name must not pass.
     static func declaresUniform(_ name: String, in source: String) -> Bool {
         source.range(
             of: "(?m)^\\s*uniform\\s+\\w+\\s+\(name)\\s*(\\[[^\\]]*\\])?\\s*;",
@@ -293,9 +251,7 @@ extension WPEShaderTranspiler {
 
     // MARK: - audio-reactive engine effects (2370927443, issue #133)
 
-    /// The engine's audio `.vert`s (`shake`, `pulse`) keep these behind `#if AUDIOPROCESSING`
-    /// and their fragments declare none of them — the fragment carries only the varying the
-    /// `.vert` wrote. Whole declarations, not `(name, type)` pairs, because two are arrays.
+    /// Whole declarations, not (name, type) pairs, because two are arrays.
     static let audioResponseVertexUniforms: [(name: String, declaration: String)] = [
         ("g_AudioSpectrum16Left", "uniform float g_AudioSpectrum16Left[16];"),
         ("g_AudioSpectrum16Right", "uniform float g_AudioSpectrum16Right[16];"),
@@ -306,15 +262,9 @@ extension WPEShaderTranspiler {
         ("g_AudioMultiply", "uniform float g_AudioMultiply;"),
     ]
 
-    /// Varyings whose reconstruction in `varyingInitializer` calls `wpe_audio_response16`.
     static let audioResponseVaryings = ["v_AudioPulse", "v_AudioShift", "v_Pulse"]
 
-    /// Appended and guarded, unlike the three families above: the combo `#define`s live in
-    /// the preprocessed source's preamble, so a leading `#if AUDIOPROCESSING` would test an
-    /// undefined macro and always strip. `stripInactivePreprocessorBranches` runs after this
-    /// and drops the block — with its 34 uniform slots — whenever the audio mode is off.
-    /// Without the injection the uniform gate fails and the response collapses to a constant
-    /// 0, which turned 2370927443's `effects/shake` into a plain copy (issue #133).
+    /// Appended after the preamble so `#if AUDIOPROCESSING` is defined; `stripInactivePreprocessorBranches` then drops the block when audio is off.
     static func declaringAudioResponseUniforms(in source: String) -> String {
         guard audioResponseVaryings.contains(where: { source.contains($0) }) else { return source }
         let missing = audioResponseVertexUniforms
@@ -333,7 +283,6 @@ extension WPEShaderTranspiler {
         ("g_LayerModelMatrix", "mat4"),
     ]
 
-    /// Matched on the varying signature, like auto_sway and the DOF chain.
     static func isFrameBuilder(varyingNames names: Set<String>) -> Bool {
         names.isSuperset(of: ["v_TexCoord", "v_Size", "v_Transform"])
     }
@@ -343,12 +292,7 @@ extension WPEShaderTranspiler {
             && ["v_TexCoord", "v_Size", "v_Transform"].allSatisfy { source.contains($0) }
     }
 
-    /// Fragment-side reconstruction of `frame_builder_by_gariam.vert`. Everything it writes is
-    /// in PIXELS (notch radius, border thickness, half-extent), and `v_TexCoord.xy` is a
-    /// SIGNED coordinate centred on the layer — the fragment picks the corner by its sign.
-    /// The screen-UV fallback made all of them 0…1, so the shape collapsed and every pixel
-    /// took the same "bottom-right" corner branch (3647999330's launcher panels rendered as a
-    /// diagonal wedge instead of a rounded frame).
+    /// Writes are in pixels and `v_TexCoord.xy` is a signed coordinate; a 0…1 UV fallback collapses every pixel onto the same corner branch.
     static func frameBuilderVaryingReconstructionLines(
         varyings: [WPEVaryingDecl],
         availableUniforms: Set<String>,
@@ -365,9 +309,7 @@ extension WPEShaderTranspiler {
             return []
         }
 
-        // REF_RES swaps the pixel basis to the authored reference. The .vert declares
-        // `u_refResolution` as vec2 while the .frag declares it float — WPE's own
-        // inconsistency; the fragment's declaration is the one we parsed, so splat it.
+        // REF_RES: the .vert declares `u_refResolution` as vec2 and the .frag as float; splat the fragment declaration we parsed.
         let resolution = (comboValues["REF_RES"] ?? 0) == 1 && availableUniforms.contains("u_refResolution")
             ? "float2(u_refResolution)"
             : "g_Texture0Resolution.xy"
@@ -403,15 +345,11 @@ extension WPEShaderTranspiler {
     // MARK: - bokeh_blur depth of field (workshop 2798319181)
 
     enum BokehBlurStage {
-        /// `gaussian.vert` — separable pre/post blur, gated by `qualityNormalizer`.
         case gaussian
-        /// `bokeh.vert` — the disc-kernel pass, which also packs gamma and highlights.
         case bokeh
     }
 
-    /// Matched on the varying signature rather than the shader name (same choice auto_sway
-    /// makes): a repack under another workshop ID still reconstructs, and an unrelated
-    /// `effects/gaussian` from a different package does not inherit these `.vert` semantics.
+    /// Matched on the varying signature, not the shader name, so an unrelated `effects/gaussian` does not inherit these `.vert` semantics.
     static func bokehBlurStage(varyingNames names: Set<String>) -> BokehBlurStage? {
         guard names.contains("v_PixelSize"), names.contains("v_TexCoord") else {
             return nil
@@ -425,8 +363,6 @@ extension WPEShaderTranspiler {
         return nil
     }
 
-    /// Pre-parse variant: the uniform injection runs before varyings are parsed, so it can
-    /// only look at the raw text.
     static func bokehBlurStage(inSource source: String) -> BokehBlurStage? {
         let declared = ["v_PixelSize", "v_TexCoord", "qualityNormalizer",
                         "v_Aperture", "v_Gamma", "v_Highlights"]
@@ -434,12 +370,7 @@ extension WPEShaderTranspiler {
         return bokehBlurStage(varyingNames: Set(declared))
     }
 
-    /// Fragment-side reconstruction of the depth-of-field `.vert`s. `v_PixelSize` is the
-    /// per-tap step in UV — roughly `2·texel·aperture`, i.e. a few thousandths — and the
-    /// screen-UV fallback inflated it to a whole frame, so every tap of the 43-sample disc
-    /// landed somewhere else in the picture instead of on a neighbouring texel. Same shape as
-    /// the `blur_precise_gaussian` step bug. All terms are uniform-only, so recomputing them
-    /// per pixel is exact.
+    /// `v_PixelSize` is the per-tap UV step (a few thousandths); a screen-UV fallback would send every disc tap across the frame.
     static func bokehBlurVaryingReconstructionLines(
         varyings: [WPEVaryingDecl],
         availableUniforms: Set<String>,
@@ -462,12 +393,12 @@ extension WPEShaderTranspiler {
         case .gaussian:
             aperture = "u_aperture"
             if names.contains("qualityNormalizer") {
-                // gaussian.vert:20 folds the QUALITY combo, which is a compile-time constant.
+                // gaussian.vert folds the QUALITY combo, which is a compile-time constant.
                 let quality = Double(comboValues["QUALITY"] ?? 2)
                 lines.append("        qualityNormalizer = \((quality + 1.0) * 0.6);")
             }
         case .bokeh:
-            // bokeh.vert:26-30 — "Depth of field" (MODE 1) opens the aperture 5x over "Mask".
+            // "Depth of field" (MODE 1) opens the aperture 5x over "Mask".
             lines.append("        v_Aperture = \(comboValues["MODE"] == 1 ? "15.0" : "3.0") * u_aperture;")
             aperture = "v_Aperture"
             if names.contains("v_Highlights"), availableUniforms.contains("u_lightFactor") {
@@ -493,11 +424,7 @@ extension WPEShaderTranspiler {
         lensDistortionVertexUniforms.allSatisfy { availableUniforms.contains($0.name) }
     }
 
-    /// Family key = the shader basename when the path sits in an `effects/` directory
-    /// (`effects/reflection`, `workshop/…/effects/reflection`) or uses the flat
-    /// `effect_reflection` form — the same shapes the old allowlist accepted. Paths
-    /// outside `effects/` return nil so arbitrary workshop shaders that happen to share
-    /// a basename don't inherit engine `.vert` semantics.
+    /// Family key is the basename under `effects/` or `effect_*`. Paths outside `effects/` return nil so a shared basename does not inherit engine `.vert` semantics.
     static func texCoordZWFamilyName(shaderName: String) -> String? {
         let normalized = shaderName
             .lowercased()

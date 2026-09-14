@@ -13,8 +13,6 @@ struct WPETextFrameState {
 extension WPEMetalSceneRenderer {
     // MARK: - Per-frame text graph state
 
-    /// Re-layouts only strings whose layout key changed, updates graph geometry
-    /// to the exact current extent, and builds the glyph payload for the pass.
     func prepareTextFrame(
         pipeline: WPEPreparedRenderPipeline,
         liveTextByID: [String: String],
@@ -216,20 +214,14 @@ extension WPEMetalSceneRenderer {
         textRenderPlans.removeAll(keepingCapacity: false)
         textLayoutCache.removeAll(keepingCapacity: false)
         textFontResolver = nil
-        // Drop the atlas pages before the renderer, the way the suspend path
-        // does. ARC frees the same textures either way, but only this order
-        // takes them out of the weak metadata registry now instead of at its
-        // next 256-register sweep — the asymmetry made reload and suspend
-        // report different resident-texture counts for identical state.
+        // Drop the atlas pages before the renderer. ARC frees the same textures either way, but only this order takes them out of the weak metadata registry now instead of at its next 256-register sweep.
         textMeshRenderer?.releaseCachedResources()
         textMeshRenderer = nil
     }
 
     // MARK: - Live script plumbing
 
-    /// Text origin scripts address the anchor, while graph transforms address
-    /// the synthesized layer centre. Derive that offset from the current live
-    /// scale/rotation instead of freezing a load-time approximation.
+    /// Text origin scripts address the anchor, while graph transforms address the synthesized layer centre. Derive that offset from the current live scale/rotation instead of freezing a load-time approximation.
     func applyingTextLayerOriginOffsets(
         _ origins: [String: SIMD3<Double>],
         scales: [String: SIMD3<Double>],

@@ -27,7 +27,6 @@ struct WPEFrameOccupancyMeterTests {
         let report = try #require(reported)
         #expect(report == "[occupancy] 10.0s cb=600(60.0/s) passEnc=400(40.0/s)")
 
-        // Reporting resets the window: the next report carries only new counts.
         let nextReported = state.count(.bloomEncoder, by: 2, now: 120)
         let next = try #require(nextReported)
         #expect(next == "[occupancy] 10.0s bloomEnc=2(0.2/s)")

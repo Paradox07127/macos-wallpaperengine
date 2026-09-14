@@ -1,10 +1,8 @@
 @testable import LiveWallpaper
 import Testing
 
-/// MAC-09: two same-model panels (both EDID serial 0) share one legacy fingerprint key.
-/// A naive `removeValue`-in-a-loop migration lets the first screen consume the shared
-/// legacy value, leaving the second screen with nil. `migrateLegacyFingerprintKeys`
-/// must clone the shared value to every mapped screen instead.
+/// Two same-model panels (both EDID serial 0) share one legacy key, so the migration
+/// must clone the shared value to every mapped screen rather than consume it.
 @Suite("Legacy display fingerprint migration")
 struct LegacyFingerprintMigrationTests {
     @Test("Two screens sharing one legacy fingerprint both receive the value")

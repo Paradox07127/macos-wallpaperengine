@@ -110,12 +110,7 @@ extension PlaybackCoordinator {
                 "no other display is playing the same file (\(title)), so the group has one member"
         }
 
-        // A screen that asked to span but never became a candidate is only
-        // inspected when the log is going to be written anyway, and only through
-        // the pure-read `get(for:)`. The `fingerprint:` overload above can
-        // migrate/back-fill and bump the store revision, which is exactly the
-        // condition `isCandidateStillCurrent` kills in-flight candidates on —
-        // diagnostics must not be able to manufacture that.
+        // A screen that asked to span but never became a candidate is only inspected through the pure-read get(for:). The fingerprint: overload can migrate/back-fill and bump the store revision, which is exactly the condition isCandidateStillCurrent kills in-flight candidates on.
         if !spanDeclinedReasons.isEmpty || (candidates.isEmpty && screens.count > 1) {
             for screen in screens where spanDeclinedReasons[screen.id] == nil {
                 guard let configuration = configurationStore.get(for: screen.id),
@@ -134,7 +129,6 @@ extension PlaybackCoordinator {
             }
         }
 
-        // Success is silent: this runs once per commit on every screen.
         if !spanDeclinedReasons.isEmpty {
             let declined = spanDeclinedReasons
                 .sorted { $0.key < $1.key }

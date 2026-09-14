@@ -3,10 +3,6 @@ import AppKit
 import LiveWallpaperCore
 import UniformTypeIdentifiers
 
-/// The two things a display carries: what plays on it, and what floats over it.
-/// Overlays are stored per display (`ScreenManager.monitorOverlay(for:)`), so the
-/// display is their natural home — but they are not a wallpaper *type*, which is
-/// why this is a tab above the type picker rather than a fourth segment in it.
 enum DisplayDetailTab: Hashable, CaseIterable {
     case wallpaper
     case overlays
@@ -19,9 +15,6 @@ enum DisplayDetailTab: Hashable, CaseIterable {
     }
 }
 
-/// The overlays tab's own pages, picked the same way wallpaper types are —
-/// weather and the monitor board share nothing but the display they float over,
-/// so stacking both sets of controls in one panel only made it longer.
 enum OverlayKind: Hashable, CaseIterable {
     case weather
     case monitor
@@ -37,9 +30,6 @@ enum OverlayKind: Hashable, CaseIterable {
         }
     }
 
-    /// Name used in the "apply this overlay everywhere" confirmation. Resolved
-    /// here rather than passed as a `LocalizedStringKey` because it lands
-    /// inside an interpolated sentence.
     var applyToAllName: String {
         switch self {
         case .weather: String(localized: "Weather", bundle: .appLanguage, comment: "Overlay name inside the apply-to-all confirmation.")
@@ -52,7 +42,6 @@ enum OverlayKind: Hashable, CaseIterable {
     var feature: ProductFeature {
         switch self {
         case .weather: .videoEffects
-        // Decorative overlays ship wherever the monitor overlay feature does.
         case .monitor, .music, .clock: .monitorOverlay
         }
     }
@@ -63,12 +52,9 @@ struct DetailView: View {
     @Environment(ScreenManager.self) private var screenManager
     @Environment(\.featureCatalog) private var featureCatalog
 
-    /// Session state, not persisted: a display's reason for existing is its
-    /// wallpaper, so a relaunch should land there. Surviving a display switch is
-    /// deliberate though — arranging overlays across two screens shouldn't reset
-    /// the tab on every hop.
+    /// Not persisted, and deliberately survives a display switch: arranging
+    /// overlays across two screens must not reset the tab on every hop.
     @State private var selectedTab: DisplayDetailTab = .wallpaper
-    /// Raised by the Scene tab's recent-projects grid; the header hosts its actions.
     @State private var showsSceneQuickActions = false
     @State private var selectedOverlayKind: OverlayKind = .weather
 
@@ -144,8 +130,6 @@ struct DetailView: View {
         OverlayKind.allCases.filter { featureCatalog.isEnabled($0.feature) }
     }
 
-    /// Clamped to what this SKU ships, so a stale selection can't leave the page
-    /// rendering an overlay the build doesn't have.
     private var overlayKind: OverlayKind {
         availableOverlayKinds.contains(selectedOverlayKind)
             ? selectedOverlayKind
@@ -192,24 +176,17 @@ struct DetailView: View {
         }
     }
 
-    /// Collapses three booleans that were computed inline from overlapping
-    /// store/runtime state into one place so the rules stay auditable.
     private struct DerivedViewState {
         var showsGuideEmptyState: Bool
         var showsInspector: Bool
         var showsHeaderWallpaperActions: Bool
     }
 
-    /// Hidden only when neither overlay ships in this SKU.
     private var showsOverlaysTab: Bool {
         featureCatalog.isEnabled(.monitorOverlay) || featureCatalog.isEnabled(.videoEffects)
     }
 
     private var derivedState: DerivedViewState {
-        // Overlays own the whole page: their inspector is the only control
-        // surface, and it must not depend on a wallpaper being configured —
-        // that dependency is exactly what made the old overlays tab unreachable
-        // on a bare display.
         guard selectedTab == .wallpaper else {
             return DerivedViewState(
                 showsGuideEmptyState: false,
@@ -239,9 +216,6 @@ struct DetailView: View {
             case .video:
                 return config?.wallpaperType == .video && (config?.hasConfiguredVideoSource ?? false)
             case .html:
-                // Nothing loaded yet means nothing for security, options or
-                // transforms to be about; the picker in the preview is the only
-                // step, so the column should not be there to open at all.
                 return draft.htmlSource != nil
             case .scene:
                 return config?.wallpaperType == .scene
@@ -257,24 +231,16 @@ struct DetailView: View {
 
     private var shouldShowGuideEmptyState: Bool { derivedState.showsGuideEmptyState }
     private var inspectorApplicable: Bool { derivedState.showsInspector }
-    /// Final visibility = applicable AND the user hasn't collapsed the panel.
     private var showsInspector: Bool { inspectorApplicable && inspectorUserVisible }
     private var showsHeaderWallpaperActions: Bool { derivedState.showsHeaderWallpaperActions }
 
-    /// Each case carries enough context to render a meaningful retry / re-pick
-    /// action instead of a dead-end "OK" dismissal.
     private enum DropFailure: Identifiable {
         case unrecognizedDrop
-        /// A Wallpaper Engine library root: many projects, no single wallpaper
-        /// to show here. Recognized, not unsupported — the two used to share a
-        /// message that told the reader to drop a video instead.
         case sceneLibraryDrop
-        /// A scene the running build has no renderer for.
         case sceneUnsupportedInBuild
         case videoFormatUnsupported
         case videoBookmarkFailed
-        /// The file read fine and the copy into app storage failed. The alert
-        /// above blames permissions, which is the wrong thing to go check.
+        /// The file read fine and the copy into app storage failed — not permissions.
         case videoCopyFailed
         case htmlBookmarkFailed
         case htmlPickerWrongType
@@ -339,7 +305,6 @@ struct DetailView: View {
     @AppStorage("Inspector.ColorExpanded") private var isColorExpanded = false
     @AppStorage("Inspector.Width") private var inspectorWidth = Double(DesignTokens.Inspector.defaultWidth)
     @State private var liveInspectorWidth: Double?
-    /// Persisted so a collapsed inspector stays collapsed across launches.
     @AppStorage("Inspector.Visible") private var inspectorUserVisible = true
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -356,13 +321,9 @@ struct DetailView: View {
             main: { mainColumn },
             inspector: { width in inspectorPanel(width: width) }
         )
-        // Same size floor as the DetailPageScaffold pages (Bookmarks/Aerials/
-        // Workshop) — this page hand-rolls the scaffold, so it opts in here.
         .frame(minWidth: DesignTokens.LibraryPage.minWidth, minHeight: DesignTokens.LibraryPage.minHeight)
         .background(DesignTokens.Colors.pageBackground)
         .toolbar {
-            // Leading, so it reads outer-to-inner left to right: which side of
-            // the display you're editing, then which kind of wallpaper.
             if showsOverlaysTab {
                 ToolbarItem(placement: .navigation) {
                     detailTabPicker
@@ -377,8 +338,6 @@ struct DetailView: View {
                     overlayKindPicker
                 }
             }
-            // Hidden when there is no panel behind it. It is declared last, so
-            // it still returns to the trailing edge when it comes back.
             if inspectorApplicable {
                 ToolbarItem(placement: .primaryAction) {
                     Button {
@@ -492,8 +451,6 @@ struct DetailView: View {
         )
     }
 
-    /// A still of what's playing, so the board is arranged against the wallpaper
-    /// it will actually sit on rather than a blank rectangle.
     private var monitorBackdrop: MonitorPreviewBackdrop {
         if draft.selectedWallpaperType == .video, let poster = previewController.posterImage {
             return .still(poster)
@@ -568,8 +525,6 @@ struct DetailView: View {
             Button("Cancel", role: .cancel) { }
 
         case .sceneLibraryDrop:
-            // No re-pick offered: the fix is a different route into the app,
-            // not a different file, and a picker here would land right back.
             Button("Cancel", role: .cancel) {}
 
         case .videoFormatUnsupported, .videoBookmarkFailed, .videoCopyFailed:
@@ -599,23 +554,16 @@ struct DetailView: View {
     private func handleDrop(urls: [URL]) -> Bool {
         defer { isDraggingOver = false }
         guard let droppedURL = urls.first else { return false }
-        // The drop target is the whole page, so a drop can land while the
-        // overlays board is showing — surface the wallpaper it just changed
-        // instead of leaving the user on a tab that doesn't reflect it.
         selectedTab = .wallpaper
 
-        // A multi-file video drop becomes a playlist, so that case is checked
-        // before single-URL routing.
         let videoURLs = urls.filter(ResourceUtilities.isSupportedVideoURL)
         if videoURLs.count > 1 {
             handleMultipleVideoDrop(urls: videoURLs)
             return true
         }
 
-        // The router only recognizes scenes when they are enabled, so without
-        // this a dropped scene folder fell through to the HTML folder fallback
-        // and was loaded as a web wallpaper. Same pre-check the onboarding
-        // picker already does.
+        // Without this a dropped scene folder would fall through to the HTML
+        // folder fallback and load as a web wallpaper.
         let sceneCapable = featureCatalog.isEnabled(.scene)
         if !sceneCapable, WallpaperImportRouter.isWallpaperEngineProjectFolder(droppedURL) {
             dropFailure = .sceneUnsupportedInBuild
@@ -638,8 +586,6 @@ struct DetailView: View {
             return false
             #endif
         case .sceneLibrary:
-            // A library root holds many projects and no single wallpaper to show
-            // here; the toolbar's picker routes those into the Workshop library.
             dropFailure = .sceneLibraryDrop
             return false
         case .unsupported:
@@ -702,10 +648,8 @@ struct DetailView: View {
 
     private func loadScreenConfiguration() {
         let config = screenManager.inspectedWallpaperAttempt(for: screen)?.configuration ?? screenManager.getConfiguration(for: screen)
-        // Guarded: this runs on every `.wallpaperConfigurationDidChange`, which
-        // every settings commit posts. Reassigning an identical draft rebuilt
-        // the entire inspector — playback, security, HTML options, transform and
-        // the custom-settings card, including every visible combo's option list.
+        // The equality guard is load-bearing: reassigning an identical draft
+        // rebuilds the entire inspector on every settings commit.
         let next = DraftState.from(
             config: config,
             fallbackHasPreviewSource: screen.videoPlayer?.videoURL != nil
@@ -721,7 +665,6 @@ struct DetailView: View {
             previewController.cleanup()
         }
 
-        // Restart an active preview when playlist rotation changes its bookmark.
         if previewController.player != nil,
            let config,
            config.wallpaperType == .video,
@@ -774,8 +717,7 @@ struct DetailView: View {
         panel.allowsMultipleSelection = false
         panel.prompt = L10n.Panel.useAsWallpaper
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        // This picker is the Web tab's own "choose a source", so it stays
-        // HTML-only — routing here would silently switch the page's type.
+        // `sceneCapable: false` — routing here would silently switch the page's type.
         guard case .html(let source) = WallpaperImportRouter.route(url, sceneCapable: false) else {
             dropFailure = .htmlPickerWrongType
             return
@@ -791,8 +733,6 @@ struct DetailView: View {
 
         withAnimation(DesignTokens.motion(reduceMotion, .smooth(duration: 0.2))) { isLoading = true }
         cleanupPreviewPlayer()
-        // A drop routes by what the file is, so the page has to follow it — the
-        // web branch already does this in `applyHTMLDrop`.
         draft.selectedWallpaperType = .video
 
         switch ResourceUtilities.videoBookmark(for: url) {
@@ -821,7 +761,6 @@ struct DetailView: View {
         }
     }
 
-    /// Full clear: the trash button removes the screen's WHOLE wallpaper configuration and tears down the live session, whatever type is running.
     private func performClearWallpaper() {
         cleanupPreviewPlayer()
         screenManager.clearWallpaperForScreen(screen)
@@ -837,8 +776,6 @@ struct DetailView: View {
             }
             return
         }
-        // Overlay tab: the layer in front of the user, and not the wallpaper
-        // under it — nothing on this page even shows the wallpaper choice.
         let kind = overlayKind
         pendingDestructive = PendingDestructive(
             .applyOverlayToAllDisplays(overlayName: kind.applyToAllName, otherCount: others)

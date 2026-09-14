@@ -45,9 +45,8 @@ final class BoardLayoutEngineTests: XCTestCase {
         XCTAssertEqual(huge.columns, 16)
     }
 
-    /// A SMALL widget stays exactly Apple's 170×170 — that is the size parity
-    /// worth keeping. Medium and large span cells and swallow the gutter they
-    /// cross, so they come out 356 wide and (large) 356 tall.
+    /// Medium and large span cells and swallow the gutter they cross, so two cells render
+    /// 356 wide, not 2 x 170.
     func testRenderedFramesMatchAppleSmallAndSpanTheNarrowedGutter() {
         let g = makeGeometry()
         let s = g.renderRect(forRawRect: CGRect(origin: .zero, size: g.pixelSize(for: .memory, size: .small)))
@@ -98,10 +97,6 @@ final class BoardLayoutEngineTests: XCTestCase {
         XCTAssertEqual(renderedBelow.minY - rendered.maxY, 16, accuracy: 0.001)
     }
 
-    /// The board has no bottom chrome of its own, so the only thing keeping a
-    /// last-row card off the screen edge is the tile's own half-gutter. Pin it
-    /// against the left and right margins for every size — a large tile is the
-    /// one that reaches furthest down.
     func testBottomMarginMatchesSideMarginsForEverySize() {
         let g = makeGeometry()
         let far = CGPoint(x: 10_000, y: 10_000)
@@ -305,8 +300,6 @@ final class BoardLayoutEngineTests: XCTestCase {
         XCTAssertTrue(g.safeRect.insetBy(dx: -LayoutEngine.epsilon, dy: -LayoutEngine.epsilon).contains(rect))
     }
 
-    /// The preview lays the board out at the display's own point size and scales
-    /// the result; the same fractions therefore have to describe both.
     func testSafeAreaScalesWithTheBoardSoPreviewAndDesktopCorrespond() {
         let insets = MonitorSafeAreaInsets(top: 0.05, leading: 0.04, bottom: 0.1, trailing: 0.02)
         let desktop = MonitorBoardGeometry(boardSize: CGSize(width: 1512, height: 982), safeArea: insets)

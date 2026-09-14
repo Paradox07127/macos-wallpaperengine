@@ -2,11 +2,6 @@
 import Foundation
 import Metal
 
-/// Single estimator for GPU texture footprints, shared by the texture-cache LRU
-/// (`WPEMetalSceneRenderer.textureResidentBytes`) and the memory-audit census
-/// (`WPEMetalTextureMetadataRegistry`). The two previously used different math
-/// — the census billed BC-compressed textures at uncompressed rates (4-6x
-/// over), so its numbers could not explain what the LRU was budgeting.
 enum WPEMetalTextureByteEstimator {
     static func estimatedBytes(of texture: MTLTexture) -> Int {
         estimatedBytes(
@@ -19,7 +14,6 @@ enum WPEMetalTextureByteEstimator {
         )
     }
 
-    /// Descriptor-shaped overload so estimates (and tests) need no MTLDevice.
     /// For cube arrays `arrayLength` counts cubes, so the x6 face factor stacks.
     static func estimatedBytes(
         pixelFormat: MTLPixelFormat,

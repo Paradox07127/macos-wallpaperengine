@@ -39,9 +39,6 @@ extension WPEMetalSceneRenderer {
         return token.failClosed(reason)
     }
 
-    /// Load has no prior stable script frame. Any latched setup/resource
-    /// failure therefore discards partial init output and renders the baked
-    /// graph while leaving the wallpaper itself usable.
     @discardableResult
     func resetSceneScriptsToBakedIfFailed(
         _ token: WPESceneScriptInstanceLimitToken
@@ -55,9 +52,6 @@ extension WPEMetalSceneRenderer {
         return true
     }
 
-    /// Builds dynamic origin script instances for image layers whose `origin`
-    /// SceneScript depends on live input. Static origin scripts were resolved by
-    /// `WPESceneDocumentParser`, so they do not reach this path.
     func loadDynamicOriginScripts(
         from document: WPESceneDocument,
         scriptLoadToken: WPESceneScriptInstanceLimitToken
@@ -77,9 +71,6 @@ extension WPEMetalSceneRenderer {
         } + document.transformHostObjects.compactMap { object -> (String, WPESceneTransformScript)? in
             object.originScript.map { (object.id, $0) }
         } + document.textObjects.compactMap { object -> (String, WPESceneTransformScript)? in
-            // TEXT objects with a dynamic origin (3509243656's tooltip labels
-            // that track their star via `shared.xxN`). Ticked into the same
-            // live-origins map the overlay loop reads.
             object.originScript.map { (object.id, $0) }
         }
         let scaleScripts = document.imageObjects.compactMap { object -> (String, WPESceneTransformScript)? in
@@ -167,7 +158,6 @@ extension WPEMetalSceneRenderer {
                             batchDispatcher: self.sceneScriptBatchDispatcher
                         )
                     }) else { return }
-                    // Seeded after script hosts produce their first shared state.
                     instances[objectID] = instance
                 } catch {
                     _ = latchSceneScriptFailure(error, operation: .setup, token: scriptLoadToken)
@@ -185,10 +175,6 @@ extension WPEMetalSceneRenderer {
         )
     }
 
-    /// Builds one script instance per shader constant a scene binds a script to. Keyed
-    /// by render-pass id + uniform, so the per-frame tick can hand the executor a
-    /// `[passID: [uniform: value]]` map with no further lookup. Separate from
-    /// `loadDynamicOriginScripts` because these live on the PIPELINE (built after the document), not the document's objects.
     func loadEffectConstantScripts(
         from pipeline: WPEPreparedRenderPipeline,
         document: WPESceneDocument,
@@ -264,10 +250,6 @@ extension WPEMetalSceneRenderer {
         )
     }
 
-    /// Builds one script instance per DISTINCT effect-visibility gate in the
-    /// pipeline. Like `loadEffectConstantScripts` these live on the PIPELINE,
-    /// not the document — the graph builder decides which hidden effects are
-    /// kept behind a gate.
     func loadEffectVisibilityScripts(
         from pipeline: WPEPreparedRenderPipeline,
         scriptLoadToken: WPESceneScriptInstanceLimitToken
@@ -344,16 +326,7 @@ extension WPEMetalSceneRenderer {
         )
     }
 
-    /// Every node the per-frame parent walk in `applyingLayerTransforms` can pass
-    /// through. Layers present in the pipeline supply their own `localGeometry` and
-    /// take precedence; this only has to cover the nodes that never became layers.
-    ///
-    /// Image objects are in here because `WPERenderGraphBuilder.compositesToScene`
-    /// keeps an alpha-0 container out of the graph while WPE still composes its
-    /// children through it — and a parent the walk cannot resolve made it fall back
-    /// to the child's LOCAL transform, dropping the whole ancestor chain. Scene
-    /// 3326873240's media panel hangs off object 131 (alpha 0, scale 0.4) and landed
-    /// at the scene origin at 2.5x size.
+    /// Image objects are in here because an alpha-0 container stays out of the graph while WPE still composes children through it — a parent the walk cannot resolve would fall back to the child's LOCAL transform, dropping the ancestor chain.
     nonisolated static func ancestorLocalTransforms(
         in document: WPESceneDocument
     ) -> [String: WPERenderObjectTransform] {
@@ -374,15 +347,7 @@ extension WPEMetalSceneRenderer {
         return result
     }
 
-    /// Constant scripts on objects the render graph dropped (authored `visible: false`).
-    /// A script is scene semantics, not a rendering concern: WPE keeps a hidden object
-    /// ticking, and authors rely on it — scene 3151551777 computes its day/night cycle on
-    /// an invisible "DAY-NIGHT" layer and has ten visible layers read the result out of
-    /// `shared`; collecting bindings from the pipeline alone meant the producer never
-    /// registered, so every consumer read an unset key and the LUT strength stayed 0.
-    ///
-    /// These carry a synthetic pass id matching no real pass — only the script's `shared`
-    /// writes matter, no render resource is allocated for the hidden object.
+    /// A script is scene semantics: WPE keeps a hidden object ticking. Collecting bindings from the pipeline alone would miss the producer, so every consumer would read an unset key.
     nonisolated static func offscreenConstantScriptBindings(
         in document: WPESceneDocument,
         excludingObjectIDs drawn: Set<String>
@@ -418,9 +383,7 @@ extension WPEMetalSceneRenderer {
     func clearSceneScriptRuntimeState() {
         invalidateIntroPhaseAlign()
         destroySceneScriptInstances()
-        // A leaked subscription outlives the wallpaper: the monitor holds the
-        // handler, which holds this scene's mailbox, and every track change
-        // keeps posting into a scene nobody renders any more.
+        // A leaked subscription outlives the wallpaper: the monitor holds the handler, which holds this scene's mailbox, and every track change would keep posting into a scene nobody renders.
         if let dispatcher = mediaEventDispatcher {
             mediaEventDispatcher = nil
             Task { @MainActor in dispatcher.stop() }

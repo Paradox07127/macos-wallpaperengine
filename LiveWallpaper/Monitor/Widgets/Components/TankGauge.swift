@@ -12,7 +12,6 @@ enum MonitorPressure {
     }
 }
 
-/// Vertical liquid-fill gauge (memory).
 struct TankGauge: View {
     var level: Double
     var pressure: MonitorPressure = .normal

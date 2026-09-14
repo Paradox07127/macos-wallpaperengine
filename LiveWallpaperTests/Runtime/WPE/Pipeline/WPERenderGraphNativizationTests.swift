@@ -4,7 +4,6 @@ import LiveWallpaperProWPE
 import Testing
 @testable import LiveWallpaper
 
-/// Load-time `nativized()` must localize hot strings without changing values.
 @Suite("WPE render graph string nativization")
 struct WPERenderGraphNativizationTests {
     /// Same JSONSerialization path the scene parser uses.
@@ -180,8 +179,7 @@ struct WPERenderGraphNativizationTests {
                 "image": "models/layer.json"
             ]]
         ]
-        // JSONSerialization.data escapes "/" as "\/", so the parsed document's
-        // path strings start out foreign — same shape as real workshop scenes.
+        // JSONSerialization.data escapes "/" as "\/", so parsed path strings start out foreign.
         let sceneData = try JSONSerialization.data(withJSONObject: scenePayload)
         let document = try WPESceneDocumentParser.parse(data: sceneData)
 
@@ -194,8 +192,7 @@ struct WPERenderGraphNativizationTests {
         }
     }
 
-    /// Walks every string field `nativized()` covers; keep in sync with
-    /// `WPERenderGraphNativization.swift`.
+    /// Keep in sync with `WPERenderGraphNativization.swift`.
     private func assertAllStringsContiguous(
         in layer: WPERenderLayer,
         sourceLocation: SourceLocation = #_sourceLocation

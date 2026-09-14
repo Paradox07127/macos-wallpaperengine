@@ -284,9 +284,7 @@ struct WPEPuppetAnimationEvaluatorTests {
 
 @Suite("WPE MDL parser")
 struct WPEMdlParserTests {
-    /// The live Workshop content directory. Only the property-based skeleton
-    /// sweep uses it now; the three tests that pinned a model/package COUNT were
-    /// deleted — they asserted on how many items this Mac happened to have.
+    /// The live Workshop content directory: its item count varies per Mac, so nothing may pin a count over it.
     private static var workshopCorpusRoot: URL? {
         TestScratch.externalFixtureURL(pathKey: "WPE_COVERAGE_CORPUS_ROOT")
     }
@@ -320,10 +318,6 @@ struct WPEMdlParserTests {
         ])
     }
 
-    /// The normal used to be `skipKnownBytes`'d. The 3D scene-model path needs it:
-    /// generic2/generic4 evaluate `mix(skylight, ambient, N·up*0.5+0.5)` from it,
-    /// and generic4's screen-space reflection offsets its sample by it — with no
-    /// normal the 3470948192 droplet had nothing to reflect with.
     @Test("MDLV vertex normals are parsed, not skipped")
     func parsesMDLVVertexNormals() throws {
         let normals = [
@@ -349,8 +343,7 @@ struct WPEMdlParserTests {
         ])
     }
 
-    /// A mesh whose flags omit the normal keeps +Z rather than the zero vector:
-    /// both model shaders normalize it, and a zero would come back NaN.
+    /// +Z rather than the zero vector: both model shaders normalize it, and a zero would come back NaN.
     @Test("A mesh with no authored normal falls back to +Z")
     func unauthoredNormalFallsBackToPlusZ() throws {
         let mesh = try #require(
@@ -479,11 +472,7 @@ struct WPEMdlParserTests {
     }
 
     // The real header is version-branch-free: 9-byte NUL-terminated tag +
-    // u32 model flags + u32 skin count + u32 mesh count. Byte-verified against
-    // the engine's own assets/models/editor/camera/camera.mdl (MDLV0017:
-    // "MDLV0017\0" 0f000000 01000000 01000000 'm'aterials/…), which the
-    // version-branched reader mis-parsed one byte off into
-    // invalidVertexBuffer(0x726F7469 = ASCII "itor" from the material path).
+    /// u32 model flags + u32 skin count + u32 mesh count.
     @Test("Parses the real MDLV17 header layout (camera.mdl shape)")
     func parsesRealMDLV17HeaderLayout() throws {
         var data = Data()

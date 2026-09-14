@@ -2,11 +2,7 @@ import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
-/// Tracks whether a library tile is mid-drag.
-///
-/// SwiftUI's `onDrag` reports no completion, so a drag released anywhere that is
-/// not a drop target would leave the bar on screen forever. The end has to come
-/// from AppKit event monitors.
+/// SwiftUI's `onDrag` reports no completion, so a drag released anywhere that is not a drop target would leave the bar on screen forever.
 @MainActor
 @Observable
 final class LibraryDragSession {
@@ -51,13 +47,11 @@ final class LibraryDragSession {
     }
 
     #if DEBUG
-    /// Test-only introspection; no production reader.
     var activeMonitorCount: Int {
         (localMonitor == nil ? 0 : 1) + (globalMonitor == nil ? 0 : 1)
     }
     #endif
 
-    /// Returns the drag payload so call sites read as `NSItemProvider(object: session.begin(id) as NSString)`.
     @discardableResult
     func begin(payload: String) -> String {
         removeMonitorsFromAnyIsolation()
@@ -84,17 +78,10 @@ final class LibraryDragSession {
     }
 }
 
-/// The strip of display drop targets that floats over a library grid while a
-/// tile is being dragged. Shared by Workshop Installed, Bookmarks and Schemes so
-/// the three pages cannot drift into three slightly different drag-to-apply
-/// gestures.
 struct LibraryDragApplyBar: View {
     let screens: [Screen]
     let onCancel: () -> Void
-    /// Two-phase on purpose. Phase one runs synchronously when the drop lands, so
-    /// a page can snapshot a validity ticket *before* the item provider's
-    /// asynchronous read; phase two consumes the payload once it arrives
-    /// (`identifier` nil or `loadFailed` true when the provider gave nothing).
+    /// Phase one is synchronous so a page can snapshot a validity ticket before the provider read; `identifier` nil or `loadFailed` true when the provider gave nothing.
     let makeDropHandler: (Screen) -> @MainActor (_ identifier: String?, _ loadFailed: Bool) -> Void
 
     var body: some View {
@@ -103,8 +90,6 @@ struct LibraryDragApplyBar: View {
                 .font(DesignTokens.Typography.body)
                 .foregroundStyle(.secondary)
 
-            // Laid out in the system's own arrangement so the target you aim at
-            // is the panel in that physical position.
             DisplayArrangementMap(
                 items: screens.map { DisplayArrangementItem(id: $0.id, frame: $0.frame) },
                 height: 110
@@ -117,8 +102,6 @@ struct LibraryDragApplyBar: View {
         .frame(maxWidth: .infinity)
         .padding(.horizontal, DesignTokens.Spacing.lg)
         .padding(.vertical, DesignTokens.Spacing.md)
-        // Floats over the grid for the length of a drag — the one moment these
-        // pages have live content under a control strip.
         .adaptiveGlassSurface(.roundedRectangle(0), stroked: false)
         .overlay(alignment: .topTrailing) {
             Button(action: onCancel) {

@@ -34,10 +34,6 @@ struct EntitlementAuditTests {
 
     private static let sharedValues: [String: EntitlementValue] = [
         "com.apple.security.app-sandbox": .boolean(true),
-        // Two independent gates on the Now Playing layer's transport buttons:
-        // the sandbox exception names WHICH apps may be addressed, and the
-        // Hardened Runtime key allows this process to send Apple Events at all.
-        // Both SKUs ship the layer, so both are shared grants.
         "com.apple.security.automation.apple-events": .boolean(true),
         "com.apple.security.temporary-exception.apple-events": .strings([
             "com.spotify.client",
@@ -56,11 +52,8 @@ struct EntitlementAuditTests {
             "(allow process-info-pidinfo)",
             "(allow process-info-rusage)",
         ]),
-        // Sparkle's Downloader/Installer XPC services. A sandboxed app cannot
-        // replace its own bundle, so the install is brokered out of the sandbox
-        // and reaching those services is a mach-lookup. Both SKUs ship Sparkle,
-        // and the placeholder expands per-SKU at signing time so each one can
-        // only reach its own services — see `expectedHostValue`.
+        // The `$(PRODUCT_BUNDLE_IDENTIFIER)` placeholder expands per-SKU at signing time,
+        // so each SKU reaches only its own services — see `expectedHostValue`.
         "com.apple.security.temporary-exception.mach-lookup.global-name": .strings([
             "$(PRODUCT_BUNDLE_IDENTIFIER)-spks",
             "$(PRODUCT_BUNDLE_IDENTIFIER)-spki",
@@ -74,19 +67,11 @@ struct EntitlementAuditTests {
     private static let weakeningKeys: Set<String> = [
         "com.apple.security.cs.allow-dyld-environment-variables",
         "com.apple.security.cs.disable-library-validation",
-        // Dropped once SteamCMD stopped being spawned in-process; only its socket
-        // bind ever needed it. Listed here so re-granting it fails the signed
-        // audit and not just the source allowlist — a regression would mean
-        // something in this process started binding sockets again.
+        // Kept after the grant itself was dropped, so re-granting fails the signed audit
+        // and not just the source allowlist.
         "com.apple.security.network.server",
-        // Deliberately NOT listing
-        // `temporary-exception.files.absolute-path.read-only` here, though it was
-        // dropped at the same time: Xcode injects it as `["/"]` into every
-        // sandboxed test host, alongside `get-task-allow` and the testmanagerd
-        // lookups, so a runtime check can only ever fail. Its removal is guarded
-        // by `sourcePlistsExactlyMatchAllowlist` on the source plist and by
-        // `check_entitlements.sh --app` on the shipping archive, which is signed
-        // without the test injection.
+        // `temporary-exception.files.absolute-path.read-only` is deliberately absent here:
+        // Xcode injects it into every sandboxed test host, so a runtime check can only fail.
         "com.apple.security.temporary-exception.files.absolute-path.read-write",
         "com.apple.security.temporary-exception.files.home-relative-path.read-write",
     ]
@@ -224,7 +209,6 @@ struct EntitlementAuditTests {
         return EntitlementValue(rawValue)
     }
 
-    /// Accounts for the repository-root exception injected into Xcode's signed debug test host.
     private static func expectedHostValue(
         _ sourceValue: EntitlementValue,
         for key: String
@@ -235,12 +219,6 @@ struct EntitlementAuditTests {
                 return .strings(paths + ["/"])
             }
         #endif
-        // The source plist carries `$(PRODUCT_BUNDLE_IDENTIFIER)`; the signed
-        // host carries it expanded, so the two only compare equal after the
-        // same substitution Xcode performs. Under DEBUG the test host also
-        // receives Xcode's own lookup names appended, exactly like the
-        // repository-root exception handled above — the shipping archive is
-        // signed without them and is gated by `check_entitlements.sh --app`.
         if key == "com.apple.security.temporary-exception.mach-lookup.global-name",
            case let .strings(names) = sourceValue,
            let bundleID = Bundle.main.bundleIdentifier {

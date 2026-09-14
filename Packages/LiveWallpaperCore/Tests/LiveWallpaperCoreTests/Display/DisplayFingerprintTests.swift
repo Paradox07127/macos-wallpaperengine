@@ -5,7 +5,6 @@ import Testing
 @Suite("Display fingerprint identity")
 struct DisplayFingerprintTests {
 
-    /// Real values read off this project's own displays.
     private let benqSerial: UInt32 = 21573
 
     @Test("A panel with a real EDID serial keeps its existing key")
@@ -76,8 +75,6 @@ struct DisplayFingerprintTests {
         #expect(DisplayFingerprint.legacyKey(vendor: 0, model: 0, serial: 0, current: key) == nil)
     }
 
-    /// Guards the zero-migration promise: a display with a real serial must not
-    /// even consult the UUID, so its key can never drift.
     @Test("The UUID is never consulted for a panel with a real serial")
     func uuidIsNotEvaluatedForRealSerials() {
         var reads = 0

@@ -1,9 +1,7 @@
 import Foundation
 import LiveWallpaperCore
 
-/// User-visible suspension reasons; system limits take precedence over configurable policies.
 enum SuspendReasonText {
-    /// A configurable reason must not hide a higher-priority system limit.
     static func primary(from reasons: Set<WallpaperSuspendReason>) -> WallpaperSuspendReason? {
         let order: [WallpaperSuspendReason] = [
             .thermal, .memoryPressure, .userAbsent,

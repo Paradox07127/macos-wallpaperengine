@@ -52,8 +52,6 @@ private final class AerialThumbnailCache {
     }
 }
 
-/// Aerials are managed by macOS, so the tile offers no rename or delete — but it
-/// applies and drags like every other library card.
 struct ThumbnailCard: View {
     let asset: AerialAsset
     let screens: [Screen]
@@ -111,19 +109,15 @@ struct ThumbnailCard: View {
 
     // MARK: Thumbnail tile
 
-    /// The poster is an `overlay`, not a ZStack sibling: `scaledToFill` reports the *scaled*
-    /// size, so as a sibling it grew the tile to the poster's aspect ratio and bled into the
-    /// neighbouring grid column (posters are only 16:9 when the source video is). An overlay
-    /// never resizes its base, so the tile stays 16:9; `clipped()` then hides the overflowing poster, which would otherwise paint over the footer.
+    /// Must stay an `overlay`, not a ZStack sibling: `scaledToFill` reports the scaled
+    /// size, so as a sibling it would grow the tile past 16:9 into the next grid column.
     private var thumbnailTile: some View {
         tileBackground
             .overlay { tileContent }
             .aspectRatio(16.0 / 9.0, contentMode: .fit)
             .clipped()
-            // Scoped to the artwork, not the whole card: the title band carries
-            // the overflow button and, while renaming, a text field — an
-            // ancestor tap gesture over those is at best ambiguous and at worst
-            // steals the click that was meant for them.
+            // Scoped to the artwork, not the whole card: an ancestor tap gesture over the title
+            // band would steal the overflow button's click.
             .contentShape(Rectangle())
             .onTapGesture { applyFromCard() }
             .overlay {

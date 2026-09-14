@@ -3,7 +3,6 @@ import CoreGraphics
 import Foundation
 import LiveWallpaperCore
 
-/// Owns HTML wallpaper setters and multi-instance audio-leader / trust policy.
 @MainActor
 final class HTMLWallpaperCoordinator {
     typealias SourcePreparer = @MainActor (
@@ -104,7 +103,6 @@ final class HTMLWallpaperCoordinator {
         )
     }
 
-    /// Merges audio-leader muting + trust evaluation into the effective config.
     func runtimeConfig(source: HTMLSource, config: HTMLConfig, for screen: Screen) -> HTMLConfig {
         var effectiveConfig = config
 

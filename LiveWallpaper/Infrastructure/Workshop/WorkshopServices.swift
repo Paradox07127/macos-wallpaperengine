@@ -2,35 +2,21 @@
 import Foundation
 import Observation
 
-/// Bundles the Workshop online actors behind one `@Observable` host for
-/// `@Environment(WorkshopServices.self)`. Actors aren't `@Observable`, so the
-/// container mirrors `hasWebAPIKey` for UI bindings to read synchronously.
 @MainActor
 @Observable
 final class WorkshopServices {
     @ObservationIgnored let keychain: WorkshopKeychainStore
     @ObservationIgnored let queryCache: WorkshopQueryCache
     @ObservationIgnored let queryService: WorkshopQueryService
-    /// Key-free per-id lookups for the detail inspector (required items, a
-    /// selection that is no longer on the page).
     @ObservationIgnored let itemDetails: WorkshopItemDetailsLoader
 
     var hasWebAPIKey: Bool = false
-    /// True once a keychain read was refused — a denied ACL prompt, or a locked
-    /// keychain. `hasWebAPIKey` stays true alongside it (the item is there),
-    /// which is what lets the UI say "unlock it" instead of "set one".
+    /// True once a keychain read was refused. `hasWebAPIKey` stays true alongside it so the UI can say "unlock it" instead of "set one".
     private(set) var apiKeyAccessDenied = false
-    /// True once Valve explicitly rejected the stored key on a live request
-    /// (401/403/disabled) — the key file existing no longer means "ready".
-    /// Cleared by a later keyed success, or by `refreshAPIKeyStatus` once the
-    /// stored key differs from the one that was rejected.
+    /// True once Valve rejected the stored key (401/403/disabled). Cleared by a later keyed success or when the stored key differs.
     private(set) var apiKeyRejected = false
     private(set) var rejectedKeyFingerprint: String?
-    /// Bumped by every acceptance — the save path's in particular. A rejection
-    /// that was awaiting the store's fingerprint across one was answered about
-    /// the key as it was, and is discarded. Not bumped by a refresh: the
-    /// deferred one in `init` would then swallow a rejection that merely
-    /// overlapped it.
+    /// Bumped by every acceptance, not by a refresh: the deferred one in `init` would swallow a rejection that overlapped it.
     private var keyGeneration = 0
 
     /// The keyed paths need a key Valve currently accepts; a stored key it
@@ -57,9 +43,7 @@ final class WorkshopServices {
         self.itemDetails = itemDetails
         Task { @MainActor [weak self] in
             guard let self else { return }
-            // `self` owns `queryService`, which stores this handler: capturing
-            // strongly here is the cycle, and a `[weak self]` one level further in
-            // does not break it because the handler already holds the reference.
+            // `self` owns `queryService`, which stores this handler: capturing strongly is the cycle; `[weak self]` one level further in does not break it.
             await queryService.setAuthVerdictHandler { [weak self] accepted, fingerprint in
                 Task { @MainActor in
                     await self?.noteAuthVerdict(accepted: accepted, keyFingerprint: fingerprint)
@@ -70,21 +54,14 @@ final class WorkshopServices {
     }
 
     func noteAuthVerdict(accepted: Bool, keyFingerprint: String) async {
-        // A success can only clear a rejection recorded for the SAME key: a
-        // stale in-flight 200 from a replaced key must not green-light the key
-        // that was just refused.
+        // A success can only clear a rejection recorded for the SAME key: a stale in-flight 200 from a replaced key must not green-light the new refusal.
         if accepted, apiKeyRejected, keyFingerprint != rejectedKeyFingerprint, !keyFingerprint.isEmpty {
             return
         }
         if accepted {
             keyGeneration += 1
         } else {
-            // A rejection only counts against the key that is stored now: a
-            // 403 for the key the user just replaced must not mark the new one.
-            // Asked of the store at verdict time, not read from a refresh snapshot:
-            // a save-then-fetch outruns `refreshAPIKeyStatus()`, and a refresh that
-            // was in flight during the save would write the old key back over it.
-            // With no fingerprint on record the rejection is taken at face value.
+            // A rejection only counts against the key stored now. Asked of the store at verdict time, not a refresh snapshot.
             let generation = keyGeneration
             let current = await keychain.storedKeyFingerprint
             guard keyGeneration == generation else { return }
@@ -104,11 +81,7 @@ final class WorkshopServices {
             // Key removed — the rejection no longer describes anything.
             await noteAuthVerdict(accepted: true, keyFingerprint: "")
         } else if let current = await keychain.storedKeyFingerprint, current != rejectedKeyFingerprint {
-            // A different key was saved since the rejection (save() validates
-            // the candidate against Valve first, so it starts trusted). Decided
-            // from the store's record, never from a read: a read can raise the
-            // keychain ACL prompt, and this runs on every pane appearance. No
-            // record means unknown, and unknown is not different.
+            // A different key was saved since the rejection; decide from the store's fingerprint, never from a read (a read can raise the keychain ACL prompt).
             await noteAuthVerdict(accepted: true, keyFingerprint: "")
         }
     }

@@ -1,9 +1,7 @@
 import Foundation
 
-/// Mirrors `Logger` output above a threshold into a rotated text file at
-/// `~/Library/Logs/LiveWallpaper/runtime.log`, so a maintainer can `tail -f` recent warnings/errors
-/// without setting up a Console.app `log stream` filter. info/debug stay on `os_log` only — scoped
-/// to notice+ to stay small and signal-dense, so `notice` is exactly "shows up in a user's bug report".
+/// Mirrors `Logger` output into a rotated file at `~/Library/Logs/LiveWallpaper/runtime.log`.
+/// Only notice+ is admitted, so `notice` means "shows up in a user's bug report".
 public final class LogFileSink: @unchecked Sendable {
     public static let shared = LogFileSink()
 
@@ -24,8 +22,7 @@ public final class LogFileSink: @unchecked Sendable {
     private let rotationByteThreshold: UInt64 = 1_048_576  // 1 MiB
     private static let rotationKeepCount = 3
 
-    /// Persistent append handle + in-memory size, both guarded by `lock`. Avoids a
-    /// per-line open/close + `stat` on the hot warning path. Reset on rotation.
+    /// Persistent append handle + in-memory size, both guarded by `lock`. Reset on rotation.
     private var writeHandle: FileHandle?
     private var cachedSize: UInt64 = 0
 
@@ -50,8 +47,6 @@ public final class LogFileSink: @unchecked Sendable {
     }
 
     /// Gates only the file mirror; the underlying `os.Logger` always receives the call.
-    /// Public so callers that choose a level from data (particle diagnostics map
-    /// their own severity) can be tested against the real admission rule.
     public static func admitsToFile(_ level: Logger.Level) -> Bool {
         switch level {
         case .warning, .error, .fault, .notice:
@@ -130,9 +125,8 @@ public final class LogFileSink: @unchecked Sendable {
         // log predates the 0600 policy.
         try? fm.setAttributes([.posixPermissions: NSNumber(value: Int16(0o600))], ofItemAtPath: firstRotated.path)
         try? Data().write(to: url, options: .atomic)
-        // `.atomic` writes via a temp file + rename, landing on default umask
-        // permissions — reapply 0600 so a rotated file isn't laxer than the
-        // one `prepareLogFileURL` created.
+        // `.atomic` writes via temp file + rename, landing on umask permissions —
+        // reapply 0600 so a rotated file isn't laxer than the original.
         try? fm.setAttributes([.posixPermissions: NSNumber(value: Int16(0o600))], ofItemAtPath: url.path)
         cachedSize = 0
     }
@@ -148,12 +142,9 @@ public final class LogFileSink: @unchecked Sendable {
         }
     }
 
-    /// Tail recent WARNING/ERROR/FAULT lines for the bug-report sheet. Takes the write lock to avoid
-    /// observing a partial flush from concurrent `record(...)` or racing with rotation. Lines
-    /// truncated to `maxLineLength` so a pathological stack-trace can't blow past GitHub's issue-URL
-    /// body ceiling downstream. Two separate budgets on purpose: identity notices are far more
-    /// frequent than failures, so a shared budget let a few wallpaper switches evict the very error
-    /// the report is about.
+    /// Tail recent WARNING/ERROR/FAULT lines for the bug-report sheet. Takes the write lock so a
+    /// partial flush or a concurrent rotation can't be observed. Two separate budgets on purpose:
+    /// a shared one would let frequent identity notices evict the error the report is about.
     public func recentDiagnosticLines(
         maxLines: Int = 5,
         maxContextLines: Int = 3,
@@ -164,10 +155,8 @@ public final class LogFileSink: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
 
-        // Rotation truncates the current file to empty, so a failure that lands
-        // right on the threshold gets moved into `runtime.1.log` in the same
-        // call — read oldest → newest generation before the current file so
-        // that line survives here instead of vanishing until the next error.
+        // A failure landing right on the rotation threshold is already in `runtime.1.log`,
+        // so read oldest → newest generation before the current file.
         var lines: [String] = []
         for index in stride(from: Self.rotationKeepCount, through: 1, by: -1) {
             let rotated = url.deletingPathExtension().appendingPathExtension("\(index).log")

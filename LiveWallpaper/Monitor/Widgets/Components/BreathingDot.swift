@@ -15,7 +15,6 @@ struct BreathingDot: View {
         self.animated = animated
     }
 
-    /// Every condition that must hold for the dot to run its repeating animation.
     static func shouldBreathe(animated: Bool, reduceMotion: Bool, suspended: Bool) -> Bool {
         animated && !reduceMotion && !suspended
     }

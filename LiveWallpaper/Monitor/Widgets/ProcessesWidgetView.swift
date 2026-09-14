@@ -193,7 +193,6 @@ struct ProcessesWidgetView: View {
         .lineLimit(1)
     }
 
-    /// Keep process names at a consistent type size; truncate overflow.
     private func nameCell(_ process: MonitorProcessSample, scale: Design.TypeScale) -> some View {
         HStack(spacing: scale.caption * 0.5) {
             ProcessAppIcon(bundleID: process.bundleID, size: scale.caption * 1.1)
@@ -212,7 +211,6 @@ struct ProcessesWidgetView: View {
         }
     }
 
-    /// Scale the bar relative to the busiest displayed process; reserve a stable value column.
     private func cpuCell(
         _ cpuPercent: Double, maxCPU: Double, scale: Design.TypeScale,
         barWidth: CGFloat, valueWidth: CGFloat
@@ -244,8 +242,6 @@ struct ProcessesWidgetView: View {
 
     // MARK: - Derived data
 
-    /// The rows to display: sampler-ordered top apps, re-sorted by cpu%
-    /// descending defensively, capped to the resolved row limit.
     private func displayedProcesses(
         frameHeight: CGFloat, scaleHeight: CGFloat
     ) -> [MonitorProcessSample] {

@@ -21,9 +21,8 @@ public struct ScheduleSlot: Codable, Equatable, Identifiable, Sendable {
         self.label = label
     }
 
-    /// Fresh template every access — a `static let` would freeze the four
-    /// UUIDs at launch, so two displays share identical slot IDs, `ForEach`
-    /// can't distinguish rows, and per-row `@State` leaks across screen swaps.
+    /// Must stay computed: a `static let` would freeze the four UUIDs, so two displays
+    /// would share slot IDs and per-row `@State` would leak across screen swaps.
     public static var defaultSlots: [ScheduleSlot] {
         [
             ScheduleSlot(startHour: 6, endHour: 12, label: "Morning"),

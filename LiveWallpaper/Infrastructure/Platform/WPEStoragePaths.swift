@@ -2,19 +2,11 @@
 import Foundation
 import LiveWallpaperProWPE
 
-/// `du`-style allocated-size accounting for app-owned WPE data.
 enum WPEStoragePaths {
-    /// Entries one inventory pass may visit before it stops early. The Steam
-    /// library holds a folder per subscribed wallpaper, so the walk grows with
-    /// the user's library rather than with anything this app controls.
+    /// Entries one inventory pass may visit before it stops early; the walk grows with the user's library.
     static let defaultWalkBudget = 200_000
 
-    /// Sum of the allocated (`du`-equivalent) size of every regular file under
-    /// `url`. Hidden files skipped.
-    ///
-    /// Stops early when the task is cancelled or `visited` reaches `budget`, so
-    /// a caller can spend one budget across several roots and tell a complete
-    /// total from a lower bound.
+    /// Sum of allocated (`du`-equivalent) size of every regular file under `url`. Hidden files skipped. Stops when cancelled or `visited` reaches `budget`.
     static func allocatedBytes(
         at url: URL,
         fileManager fm: FileManager = .default,

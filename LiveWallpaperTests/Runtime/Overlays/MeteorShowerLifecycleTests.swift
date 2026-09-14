@@ -3,10 +3,6 @@ import AppKit
 import XCTest
 
 final class MeteorShowerLifecycleTests: XCTestCase {
-    /// Flight and removal ran on different clocks: the animation on the layer's,
-    /// which pauses with the shower, and removal on the wall clock. A removal that
-    /// came due while the shower was suspended was skipped and never rescheduled,
-    /// so every sleep left the meteors then in flight on the layer for good.
     @MainActor
     func testMeteorSuspendedPastItsFlightIsStillRemovedOnResume() async throws {
         let window = NSWindow(
@@ -28,7 +24,7 @@ final class MeteorShowerLifecycleTests: XCTestCase {
         XCTAssertNotNil(meteor.superlayer)
 
         shower.setSuspended(true)
-        // Longer than the longest flight (2.4 s): the old wall-clock removal comes due here.
+        // Longer than the longest flight (2.4 s).
         try await Task.sleep(for: .seconds(2.7))
         XCTAssertNotNil(meteor.superlayer, "a frozen meteor was swept mid-air")
 

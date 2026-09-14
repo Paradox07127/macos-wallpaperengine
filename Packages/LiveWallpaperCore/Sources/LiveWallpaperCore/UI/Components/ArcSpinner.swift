@@ -1,6 +1,5 @@
 import SwiftUI
 
-/// Counter-rotating progress arcs; only the optional progress label uses badge chrome.
 public struct ArcSpinner: View {
     public var size: CGFloat = 44
     public var lineWidth: CGFloat = 4

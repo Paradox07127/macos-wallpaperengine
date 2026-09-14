@@ -326,7 +326,6 @@ struct WidgetSettingsPopover: View {
         }
     }
 
-    /// Agent Session provider filter (`all`/`claude`/`codex`).
     private func providerPicker(key: String) -> some View {
         optionRow("Provider") {
             GlassSegmentedPicker(
@@ -360,7 +359,6 @@ struct WidgetSettingsPopover: View {
         )
     }
 
-    /// Stack the control below its label when localized content cannot fit inline.
     @ViewBuilder
     private func optionRow<Control: View>(
         _ title: LocalizedStringKey,
@@ -405,7 +403,6 @@ struct WidgetSettingsPopover: View {
 
 // MARK: - Pure draft mutations (unit-tested)
 
-/// Encode/decode helpers for a placement's option bag.
 enum MonitorWidgetDraft {
     static let countKey = "count"
 
@@ -424,7 +421,6 @@ enum MonitorWidgetDraft {
 
     static let gpuDefaultSeconds: Double = 6
 
-    /// Fastest GPU sample period across placements (runtime lease).
     static func gpuSampleSeconds(in widgets: [MonitorWidgetPlacement]) -> Double? {
         widgets.filter { $0.kind == .gpu || $0.kind == .systemOverview }
             .map { gpuSampleSeconds($0) ?? gpuDefaultSeconds }
@@ -436,7 +432,7 @@ enum MonitorWidgetDraft {
     ) -> MonitorWidgetPlacement {
         var next = placement
         if value == 6 || !gpuSampleChoices.contains(value) {
-            next.options.removeValue(forKey: gpuSampleSecondsKey)   // default drops the key
+            next.options.removeValue(forKey: gpuSampleSecondsKey)
         } else {
             next.options[gpuSampleSecondsKey] = .number(value)
         }

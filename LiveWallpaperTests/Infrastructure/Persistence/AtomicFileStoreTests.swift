@@ -154,9 +154,8 @@ struct AtomicFileStoreTests {
         #expect(store.read() == nil)
     }
 
-    /// Rotation must not consume the backup while it is the only readable
-    /// generation: after a recovery the next save would otherwise delete it and
-    /// promote the corrupt primary into the backup slot, leaving both bad.
+    /// Rotation must not consume the backup while it is the only readable generation,
+    /// or a save after recovery would leave both files bad.
     @Test("A save after backup recovery still leaves a readable generation")
     func saveAfterRecoveryKeepsAReadableGeneration() throws {
         let directory = try makeTempDirectory()
@@ -199,9 +198,6 @@ struct AtomicFileStoreTests {
         #expect(backup == TestValue(label: "v2", count: 2))
     }
 
-    /// The rollback branch: rotation has already moved the primary aside when the
-    /// temp → primary move fails. Without the restore the store would be left with
-    /// no primary at all, and a reader would silently fall back a generation.
     @Test("A failed temp → primary move restores the rotated backup")
     func failedPromotionRestoresTheRotatedPrimary() throws {
         let directory = try makeTempDirectory()
@@ -225,9 +221,8 @@ struct AtomicFileStoreTests {
         #expect(store.read() == TestValue(label: "v1", count: 1))
     }
 
-    /// Fails exactly the one move the rollback guards — promoting temp into the
-    /// primary slot — and lets rotation itself through, which is the only order
-    /// that reaches the branch.
+    /// Fails only the temp → primary move and lets rotation through — the only order
+    /// that reaches the rollback branch.
     private final class FailingMoveFileManager: FileManager, @unchecked Sendable {
         // Only ever touched from the single thread running one `write` call; the
         // store holds no queue of its own and the test does not spawn any.

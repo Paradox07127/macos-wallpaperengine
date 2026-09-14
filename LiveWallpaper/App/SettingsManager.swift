@@ -11,7 +11,6 @@ final class SettingsManager {
     private var cachedWallpaperBookmarks: [WallpaperBookmark]?
     private var cachedScreenSchemes: [ScreenScheme]?
 
-    /// Four JSON blobs that used to live in `UserDefaults`.
     private let screenConfigStore: AtomicFileStore<[ScreenConfiguration]>
     private let globalSettingsStore: AtomicFileStore<GlobalSettings>
     private let wallpaperBookmarksStore: AtomicFileStore<[WallpaperBookmark]>
@@ -21,7 +20,6 @@ final class SettingsManager {
     let persistWPEBookmarkOwnerRefresh: @MainActor (WPEOrigin, Data) -> Void
     private let defaults: UserDefaults
 
-    /// Serial off-MainActor writer for all four file stores (configs, global settings, bookmarks, schemes).
     private let configurationPersistenceActor: WallpaperPersistenceActor
 
     /// Per-store monotonic counters: the actor drops any submission whose generation is older than the last it committed, so a stale in-flight write can't overwrite a newer MainActor mutation (or resurrect a reset).
@@ -52,7 +50,6 @@ final class SettingsManager {
     /// store or schema change so the migration path re-runs on next launch.
     private static let currentMigrationVersion = 1
 
-    /// Current in-blob schema revision.
     private static let currentBlobSchemaVersion = 1
 
     init(
@@ -114,15 +111,8 @@ final class SettingsManager {
         persistConfigurations(configurations)
     }
 
-    /// Adds or replaces a preset in the library. Workshop presets key on their own workshop id, so a
-    /// re-download updates in place. `clearsDeleteTombstone`: same rule as `recordWPEImport` — `true`
-    /// only for an explicit user re-acquire, never for the passive library scan. `thenPersist` is
-    /// awaited after the library is written and *before* observers are told about it. A caller that
-    /// must also update a descriptor — saving over the applied preset clears the increment it just
-    /// absorbed — has no safe order without this: notifying first lets
-    /// `handleScenePresetLibraryChange` republish {new snapshot + the old increment still on disk} in
-    /// a Task that races the caller's own write, and persisting first is worse, because
-    /// `refreshingPresetSnapshot` drops a preset id the library does not have yet.
+    /// clearsDeleteTombstone: true only for an explicit user re-acquire, never for the passive library scan.
+    /// thenPersist is awaited after the library is written and before observers are told about it.
     func registerScenePreset(
         _ preset: ScenePreset,
         clearsDeleteTombstone: Bool = false,
@@ -137,10 +127,7 @@ final class SettingsManager {
                 changed = true
             }
         }
-        // A re-download brings Steam's title back, but the name is the one part
-        // of a Workshop preset the user owns — `renameScenePreset` treats it as
-        // a local label. Refreshing values while keeping the stored name is what
-        // makes "update in place" not mean "undo the rename".
+        // A re-download brings Steam's title back, but the name is the one part of a Workshop preset the user owns. Refreshing values while keeping the stored name is what makes update-in-place not undo the rename.
         var incoming = preset
         if let stored = settings.scenePresets[preset.id], stored.hasUserAssignedName {
             incoming = incoming.renamed(to: stored.name)
@@ -154,24 +141,15 @@ final class SettingsManager {
             return
         }
         saveGlobalSettings(settings)
-        // Awaited, not fired: the hook's whole job is to get the descriptor on
-        // disk before observers are told the library moved. A non-awaited hook
-        // returned while its own write was still in flight, so the notification
-        // below could republish {new snapshot + the old increment} and win.
+        // Awaited, not fired: a non-awaited hook returned while its own write was still in flight, so the notification below could republish {new snapshot + the old increment} and win.
         await thenPersist?()
         reconcileScenePresetSnapshots()
     }
 
-    /// Drops a preset from the library. Configurations pointing at it fall back
-    /// to their own increment on the next reconcile — `refreshingScenePresets`
-    /// treats a missing id as "no preset", so nothing is left applying values
-    /// that no longer exist.
     func removeScenePreset(id: String) {
         var settings = loadGlobalSettings()
         guard let removed = settings.scenePresets.removeValue(forKey: id) else { return }
-        // A downloaded preset's folder stays in the SteamCMD download tree, and
-        // the library scan walks that tree. Without a tombstone the next visit
-        // to the Workshop pane re-registers what was just deleted.
+        // A downloaded preset's folder stays in the SteamCMD download tree, and the library scan walks that tree. Without a tombstone the next visit to the Workshop pane re-registers what was just deleted.
         if case .workshop(let workshopID) = removed.source {
             _ = Self.insertDeleteTombstone(workshopID: workshopID, into: &settings)
         }
@@ -192,11 +170,7 @@ final class SettingsManager {
         reconcileScenePresetSnapshots()
     }
 
-    /// The locally saved preset a "save as" would replace, matched on the trimmed display name within
-    /// one base wallpaper. Without this, saving the same name twice produces two entries the picker
-    /// cannot tell apart. Workshop presets are deliberately excluded: their id *is* their workshop
-    /// id, so reusing it would overwrite a downloaded item with local values and the next re-download
-    /// would silently undo the user's work.
+    /// Matched on the trimmed display name within one base wallpaper. Workshop presets are excluded: their id is their workshop id, so reusing it would overwrite a downloaded item.
     func existingLocalScenePreset(named name: String, baseWorkshopID: String) -> ScenePreset? {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
@@ -208,28 +182,17 @@ final class SettingsManager {
         }
     }
 
-    /// Re-maps every cached configuration's preset snapshot against the current library — in memory,
-    /// not by dropping the cache, which would force a synchronous main-actor disk read on the next
-    /// access. Two callers: the incremental path (`registerScenePreset`) and configuration import,
-    /// which replaces `scenePresets` wholesale through `saveGlobalSettings`. The disk copies stay
-    /// stale until the next `loadConfigurations`, which reconciles on read.
     func reconcileScenePresetSnapshots() {
         let library = loadGlobalSettings().scenePresets
         cachedConfigurations = cachedConfigurations?.map {
             $0.refreshingScenePresets(in: library)
         }
-        // `WallpaperConfigurationStore` keeps its own per-display copies, read
-        // through this type once and then served from there. Without this the
-        // renderer keeps the old snapshot until relaunch, and the next save
-        // writes the stale values back to disk.
+        // WallpaperConfigurationStore keeps its own per-display copies. Without this the renderer keeps the old snapshot until relaunch, and the next save writes the stale values back to disk.
         NotificationCenter.default.post(name: .scenePresetLibraryDidChange, object: nil)
     }
 
     func loadConfigurations() -> [ScreenConfiguration] {
         if let cached = cachedConfigurations { return cached }
-        // Preset values ride along inside each descriptor so the renderer can
-        // stay ignorant of the library; this is where they get reconciled with
-        // what the library actually holds now.
         let library = loadGlobalSettings().scenePresets
         let configs = (screenConfigStore.read() ?? []).map {
             $0.refreshingScenePresets(in: library)
@@ -265,7 +228,6 @@ final class SettingsManager {
         }
     }
 
-    /// Drains every store routed through the persistence actor before exit so the last MainActor commits (global settings, bookmarks, screen configs) are durable.
     func flushPendingConfigurationWrites() async {
         configurationWriteGeneration &+= 1
         let configGeneration = configurationWriteGeneration
@@ -311,7 +273,6 @@ final class SettingsManager {
     
     // MARK: - Global Settings
 
-    /// Updates memory synchronously and queues the disk write off the main actor.
     func saveGlobalSettings(_ settings: GlobalSettings) {
         let previousStartOnLogin = cachedGlobalSettings?.startOnLogin ?? loadGlobalSettings().startOnLogin
         cachedGlobalSettings = settings
@@ -378,9 +339,7 @@ final class SettingsManager {
     /// Upper bound on the managed library.
     static let maxRecentWPEImports = 200
 
-    /// `clearsDeleteTombstone`: pass `true` ONLY for an explicit user re-acquire
-    /// (Browse re-download, a pasted-link download, or picking a library folder
-    /// with the toolbar's add button).
+    /// clearsDeleteTombstone: pass true only for an explicit user re-acquire (Browse re-download, a pasted-link download, or picking a library folder with the toolbar's add button).
     func recordWPEImport(
         _ entry: WPEHistoryEntry,
         clearsDeleteTombstone: Bool = false,
@@ -419,7 +378,6 @@ final class SettingsManager {
         NotificationCenter.default.post(name: .wpeHistoryDidChange, object: nil)
     }
 
-    /// Backfills a single import's measured folder size.
     func updateWPEImportSize(workshopID: String, sizeBytes: Int64) {
         var settings = loadGlobalSettings()
         guard let index = settings.recentWPEImports.firstIndex(where: {
@@ -429,7 +387,6 @@ final class SettingsManager {
         saveGlobalSettings(settings)
     }
 
-    /// Persists a refreshed source-folder bookmark into every matching WPE history row.
     @discardableResult
     func replaceWPEHistorySourceBookmark(
         workshopID: String,
@@ -467,7 +424,6 @@ final class SettingsManager {
             && !value.contains("..")
     }
 
-    /// Records that the user deleted `workshopID`, so the auto-import scan won't resurrect it from a still-present SteamCMD download or library-folder copy.
     func recordWPEDeleteTombstone(workshopID: String) {
         // Validate persisted tombstones here because the Pro-only path validator is unavailable to Lite.
         var settings = loadGlobalSettings()
@@ -475,7 +431,6 @@ final class SettingsManager {
         saveGlobalSettings(settings)
     }
 
-    /// Atomic compare-and-remove for confirmation UIs that captured a concrete library entry.
     @discardableResult
     func removeWPEImport(
         workshopID: String,
@@ -592,11 +547,7 @@ final class SettingsManager {
         defaults.removeObject(forKey: Keys.wpeEngineAssetsManagedBuildID)
         defaults.removeObject(forKey: Keys.configMigrationVersion)
         defaults.removeObject(forKey: Keys.blobSchemaVersion)
-        // Keys owned by other components; literals on purpose (see their owners).
-        // `WPELibrary.RootBookmark.v1` has no owner: no version ever wrote it, so its only reader was
-        // deleted from WPEDependencyMountResolver. This line stays because
-        // `sharedManagerIsIsolatedFromStandardDefaults` plants that key in the real domain to prove the
-        // wipe cannot reach it — delete it and that guard passes for the wrong reason.
+        // WPELibrary.RootBookmark.v1 has no owner: delete it and sharedManagerIsIsolatedFromStandardDefaults passes for the wrong reason.
         defaults.removeObject(forKey: "WPELibrary.RootBookmark.v1")
         defaults.removeObject(forKey: "loomscreen.sidebar.displayOrder.v1")  // SidebarDisplayOrder.preferencesKey
         defaults.removeObject(forKey: "monitor.source.claude.bookmark")      // SourceAuthorization
@@ -674,7 +625,6 @@ final class SettingsManager {
         }
     }
 
-    /// Reads the last-stamped in-blob schema version and advances it to `currentBlobSchemaVersion`.
     private func stampBlobSchemaVersionIfNeeded() {
         let storedVersion = defaults.integer(forKey: Keys.blobSchemaVersion)
         guard storedVersion < Self.currentBlobSchemaVersion else { return }
@@ -753,9 +703,6 @@ final class SettingsManager {
         return schemes
     }
 
-    /// Same shape as `saveWallpaperBookmarks`: the cache is updated
-    /// synchronously so a following load can't read the not-yet-flushed disk
-    /// copy, and the write is queued async behind a generation.
     func saveScreenSchemes(_ schemes: [ScreenScheme]) {
         cachedScreenSchemes = schemes
         schemesWriteGeneration &+= 1

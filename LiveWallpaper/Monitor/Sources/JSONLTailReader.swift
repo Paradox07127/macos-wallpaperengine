@@ -1,13 +1,11 @@
 import Foundation
 
-/// Result of a single `JSONLTailReader.poll()`.
 struct TailPollOutcome {
     var newLines: [Data] = []
     var didRotate = false
     var fileVanished = false
 }
 
-/// Incremental line-oriented tail reader for append-mostly JSONL transcripts.
 final class JSONLTailReader {
     private(set) var startedMidFile = false
 
@@ -15,7 +13,6 @@ final class JSONLTailReader {
     private let resumeState: TailCursorState?
 
     private static let maxBytesPerPoll = 1 << 20 // ~1 MB
-    // Full-scan threshold: files at or below this start from offset 0.
     private static let fullReadCeiling: UInt64 = 20 << 20 // 20 MB
     private static let midFileTailWindow: UInt64 = 5 << 20 // 5 MB
     private static let maxPendingBytes = 2 << 20 // 2 MB
@@ -147,7 +144,6 @@ final class JSONLTailReader {
         }
     }
 
-    /// Bounded identity hydration, independent of a resumed tail cursor.
     static func headerObjects(at url: URL) -> [[String: Any]] {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return [] }
         defer { try? handle.close() }

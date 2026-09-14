@@ -4,7 +4,6 @@ import IOKit
 import IOKit.ps
 import Metal
 
-/// Stateless C-API plumbing behind `SystemMetricsSource`.
 enum SystemMetricsSamplers {
 
     // MARK: - CPU (total + per-core)
@@ -519,11 +518,7 @@ enum SystemMetricsSamplers {
         var counters: [Int32: ProcessCPUCounters]
     }
 
-    /// `proc_listallpids` returns the number of PIDs written, not a byte count —
-    /// dividing by the element stride, as this file used to, silently examined
-    /// only a quarter of the process table. Same bug and fix as
-    /// `CodexSessionScanner.allPIDs()` (measured 2026-08-09: 1131 returned
-    /// against 1130 real PIDs).
+    /// `proc_listallpids` returns the number of PIDs written, not a byte count — dividing by the element stride would examine only a quarter of the process table (`CodexSessionScanner.allPIDs()`).
     static func pidSlice(written: Int32, capacity: Int) -> Int {
         min(Int(written), capacity)
     }
@@ -534,7 +529,6 @@ enum SystemMetricsSamplers {
         limit: Int,
         includeIO: Bool = false
     ) -> TopProcessesResult {
-        // NOTE: under the plain App Sandbox `proc_listallpids` returns 0 (the `process-info-*` operations are denied); the `temporary-exception.sbpl` entitlement (process-info-listpids/pidinfo) unblocks this walk.
         let capacity = proc_listallpids(nil, 0)
         guard capacity > 0 else { return TopProcessesResult(samples: [], ioSamples: [], counters: [:]) }
 
@@ -666,7 +660,6 @@ enum SystemMetricsSamplers {
         return TopProcessesResult(samples: samples, ioSamples: ioSamples, counters: counters)
     }
 
-    /// Finds the application PID used to aggregate helper-process metrics.
     /// Per-core percentage: a process using three cores for one second is 300%.
     static func processCPUPercent(cpuNanoseconds: UInt64, elapsedSeconds: Double) -> Double {
         guard elapsedSeconds.isFinite, elapsedSeconds > 0 else { return 0 }
@@ -742,9 +735,6 @@ enum SystemMetricsSamplers {
         var totalFootprintBytes: UInt64
     }
 
-    /// Enumerates PIDs and reads `ri_neural_footprint` via
-    /// `proc_pid_rusage(RUSAGE_INFO_V6)`. This is read-only and needs no root;
-    /// the App Sandbox build relies on its scoped process-info exceptions.
     static func sampleANE(limit: Int = 5) -> ANESample {
         let capacity = proc_listallpids(nil, 0)
         guard capacity > 0 else {

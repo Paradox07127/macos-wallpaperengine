@@ -41,9 +41,6 @@ struct VideoFormatInfoTests {
         #expect(VideoFormatBadge.proRes.displayLabel == "ProRes")
     }
 
-    /// The Workshop's online grid derives this label from a Steam tag and the
-    /// installed grid from the probed file; both go through this table so one
-    /// wallpaper never reads "4K" on one screen and "2160p" on the other.
     @Test("resolutionShortLabel maps dimensions to the shared vocabulary", arguments: [
         (3840, 2160, "4K"),
         (4096, 2160, "4K"),

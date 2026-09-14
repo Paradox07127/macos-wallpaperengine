@@ -4,11 +4,9 @@ import SwiftUI
 
 // MARK: - Typed view of the Now Playing placement options
 
-/// Everything the user can dial on the Now Playing layer, parsed from the placement's untyped `options` dictionary.
-/// Contract, both directions: `init(_:)` never fails or traps — a missing key, wrong case, a string where a number belongs,
-/// or NaN all fall back to the default, and numbers clamp into their published range. `applied(to:)` writes back onto the
-/// given dictionary, so options belonging to other widgets (or a later version of this one) survive, and drops every key
-/// back at its default so untouched layers keep an empty dictionary on disk.
+/// Parsed from the placement's untyped `options`. `init(_:)` never fails or traps:
+/// a missing key, wrong case, wrong type or NaN falls back to the default and numbers
+/// clamp. `applied(to:)` keeps foreign keys and drops every key back at its default.
 struct NowPlayingOptions: Equatable, Sendable {
     typealias Style = NowPlayingWidgetView.Style
 
@@ -146,13 +144,11 @@ struct NowPlayingOptions: Equatable, Sendable {
     var showArtist = true
     var showAlbum = true
     var showProgress = true
-    /// Off by default: it is a new feature and the only one that reaches the
-    /// network, so an untouched layer stays offline.
+    /// Off by default: the only option here that reaches the network.
     var showLyrics = false
     /// Rows the large tile shows (1 or 3); medium always shows one.
     var lyricsLines = Defaults.lyricsLines
-    /// Transport buttons. On by default because they only appear under the
-    /// pointer — an untouched layer still looks like nothing but type.
+    /// Transport buttons; on by default since they only appear under the pointer.
     var showControls = true
     var seekOnProgressDrag = true
     var artworkShape: ArtworkShape = .rounded
@@ -223,8 +219,7 @@ struct NowPlayingOptions: Equatable, Sendable {
         }
     }
 
-    /// Same reasoning as `defaultAlignment(for:)` — poster ships serif, the
-    /// other two ship rounded.
+    /// Same reasoning as `defaultAlignment(for:)`.
     static func defaultTitleFont(for style: Style) -> TitleFont {
         switch style {
         case .poster: .serif

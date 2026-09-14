@@ -1,10 +1,6 @@
 import Foundation
 import LiveWallpaperCore
 
-/// What a picked-or-dropped URL turns out to be.
-///
-/// `sceneLibrary` is the batch case the Workshop folder button used to own: a
-/// folder that is not itself a project but holds numbered project folders.
 enum WallpaperImportRoute: Equatable {
     case video(URL)
     case sceneProject(URL)
@@ -13,8 +9,7 @@ enum WallpaperImportRoute: Equatable {
     case unsupported
 }
 
-/// One classifier for every import surface — the toolbar picker, the display page's drop target, and the onboarding picker. Each of those grew its own copy of "is this a scene folder?", and they had already drifted: the drop handler checked HTML first, and `isSupportedHTMLResourceURL` answers `true` for *any* directory, so a scene folder became a web wallpaper.
-/// Classification only. Applying the result differs per caller (one display vs every display vs the Workshop library), so that stays with the caller.
+/// Scene checks must precede the HTML folder fallback: `isSupportedHTMLResourceURL` answers true for any directory, so a scene folder would become a web wallpaper.
 @MainActor
 enum WallpaperImportRouter {
     static func route(_ url: URL, sceneCapable: Bool) -> WallpaperImportRoute {
@@ -32,7 +27,6 @@ enum WallpaperImportRouter {
             return .html(source)
         }
 
-        // Scene checks precede the HTML folder fallback, which accepts anything.
         if sceneCapable {
             if isWallpaperEngineProjectFolder(url) { return .sceneProject(url) }
             if containsWallpaperEngineProjects(url) { return .sceneLibrary(url) }
@@ -52,8 +46,6 @@ enum WallpaperImportRouter {
         )
     }
 
-    /// The manifest `WorkshopFolderImportCoordinator` keys on, so a folder that
-    /// imports here imports there too.
     static func isWallpaperEngineProjectFolder(_ url: URL) -> Bool {
         guard isDirectory(url) else { return false }
         let didStart = url.startAccessingSecurityScopedResource()
@@ -63,7 +55,6 @@ enum WallpaperImportRouter {
         )
     }
 
-    /// A library root: not a project itself, but holding at least one.
     static func containsWallpaperEngineProjects(_ url: URL) -> Bool {
         let didStart = url.startAccessingSecurityScopedResource()
         defer { if didStart { url.stopAccessingSecurityScopedResource() } }

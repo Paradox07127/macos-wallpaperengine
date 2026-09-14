@@ -110,8 +110,6 @@ struct WPETexLazyAnimatedTextureSourceTests {
 
         source.applyPerformanceProfile(.suspended)
         #expect(source.debugResidentWorkingTextureCount == 0)
-        // Warm suspend: app-rule and battery pauses resume fast, so the decoded
-        // bytes survive and only the upload targets are dropped.
         #expect(source.debugDecodedImageCacheIDs == decodedBefore)
 
         let resumed = try #require(source.texture(at: 0.0))
@@ -190,9 +188,8 @@ struct WPETexLazyAnimatedTextureSourceTests {
             }
         }
 
-        // Exhaust the pool: hold every in-flight slot on a GPU wait, so the
-        // admission loop below runs against a pool at capacity regardless of
-        // what `maxFramesInFlight` is.
+        // 用 GPU 等待占住每个 in-flight 槽,下面的循环才会跑在满容量的池上,
+        // 与 `maxFramesInFlight` 的具体取值无关。
         var heldTextures: [MTLTexture] = []
         var heldBytes: [[UInt8]] = []
         for slotIndex in 0 ..< WPEMetalRenderExecutor.maxFramesInFlight {
@@ -284,7 +281,7 @@ struct WPETexLazyAnimatedTextureSourceTests {
     @Test("Rejects a decompressedByteCount past the 256MB anti-OOM cap instead of allocating it")
     func rejectsDecompressedByteCountPastAntiOOMCap() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
-        // Untrusted field from the .tex payload; must be capped before Data(count:) allocates it.
+        // 来自 .tex 载荷的不可信字段。
         let oversizedByteCount = 268_435_456 + 1
         let mip = WPETexCompressedMipmap(
             index: 0,
@@ -424,11 +421,6 @@ struct WPETexLazyAnimatedTextureSourceTests {
         #expect(source.debugPrefetchInFlightImageIDs.isEmpty)
     }
 
-    /// The prefetch work items capture only Sendable values, never `self`, so
-    /// letting the source go does not stop them. A caller that takes one frame
-    /// and drops the source — the particle loader does exactly that for a lazy
-    /// `.tex`, since it downcasts to the eager type this is not — left queued
-    /// LZ4 inflates running for a source nobody could read from.
     @Test("A dropped source cancels its queued prefetch decodes")
     func droppedSourceCancelsQueuedPrefetch() async throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
@@ -449,9 +441,8 @@ struct WPETexLazyAnimatedTextureSourceTests {
         }
 
         try? await Task.sleep(nanoseconds: 900_000_000)
-        // Not `== 1`: whether the first item had already begun executing when
-        // the source went away is a race with the queue. The invariant that
-        // matters is that they did not BOTH run.
+        // 不能写成 `== 1`:第一个 item 是否已开始执行是与队列的竞态,
+        // 真正的不变量只是两个不能都跑完。
         #expect(completions.withLock { $0 } < 2)
     }
 

@@ -1,7 +1,6 @@
 import SwiftUI
 
-/// Collapsible section with a tappable header. The `trailingAccessory` slot (e.g. a
-/// Reset button) is kept outside the expand `Button` so its taps don't fight collapse/expand.
+/// The `trailingAccessory` slot is kept outside the expand `Button` so its taps don't fight collapse/expand.
 public struct CollapsibleSection<Content: View, TrailingAccessory: View>: View {
     let title: LocalizedStringKey
     let systemImage: String

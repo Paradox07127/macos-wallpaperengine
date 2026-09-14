@@ -16,7 +16,6 @@ extension WPECacheManagementView {
         await refreshVideoStats()
     }
 
-    /// Cancel superseded scans and discard stale results after history changes.
     private func refreshInventory() async {
         inventoryScan?.cancel()
         inventoryGeneration &+= 1

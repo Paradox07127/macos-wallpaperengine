@@ -2,14 +2,6 @@
 import Foundation
 import LiveWallpaperCore
 
-/// Generation-scoped owner for on-demand static-texture reload tasks. Admission
-/// closes atomically with task detachment, so a reload can drain a stable set.
-/// Stays `@MainActor` because admission bookkeeping must order deterministically
-/// against callers — a just-`submit`ted caller observes `canPublish == true` before
-/// the spawned task runs (same-executor scheduling), which an `actor` version can't
-/// guarantee (the task could complete during the caller's hop back). The renderer
-/// reaches it via `await` from the render actor; the reload *operation* hops back to
-/// touch renderer state, so the owner itself never touches the renderer.
 @MainActor
 final class WPEStaticTextureReloadTaskOwner {
     struct Ticket: Hashable, Sendable {
@@ -46,8 +38,6 @@ final class WPEStaticTextureReloadTaskOwner {
     private var reloadWaiters: [CheckedContinuation<Void, Never>] = []
 
     private var burstDispatchCount = 0
-    /// Set alongside `burstDispatchCount` on every dispatch, so it always
-    /// holds the latest generation by the time `flushBurstLog` reads it.
     private var burstLogGeneration = 0
     private var burstLogScheduled = false
 
@@ -56,7 +46,6 @@ final class WPEStaticTextureReloadTaskOwner {
     nonisolated init() {}
 
     #if DEBUG
-    /// Test-only introspection of in-flight reload handles; no production caller.
     var pendingPaths: Set<String> {
         Set(handles.keys)
     }
@@ -101,17 +90,13 @@ final class WPEStaticTextureReloadTaskOwner {
         return handle.ticket.token == ticket.token && !handle.task.isCancelled
     }
 
-    /// Stops admission before detaching handles. Callers may await the returned
-    /// stable snapshot while attempts to schedule replacement work are rejected.
     func quiesce() -> Drain {
         isAccepting = false
         currentGeneration = nil
         let tasks = handles.values.map(\.task)
         handles.removeAll(keepingCapacity: false)
         tasks.forEach { $0.cancel() }
-        // Bypass the cap here: `cleanup()` discards this Drain without awaiting
-        // it, so a queued continuation would otherwise leak; the drained tasks
-        // are being discarded via `canPublish` anyway.
+        // Bypass the cap: `cleanup()` discards this Drain without awaiting, so a queued continuation would leak.
         releaseQueuedReloadSlotWaiters()
         return Drain(tasks: tasks)
     }
@@ -123,8 +108,6 @@ final class WPEStaticTextureReloadTaskOwner {
 
     // MARK: - Concurrency cap
 
-    /// Suspends until fewer than `maxConcurrentReloads` reloads are running.
-    /// FIFO via `reloadWaiters`; MainActor-only state, so no lock needed.
     private func acquireReloadSlot() async {
         guard activeReloadCount >= Self.maxConcurrentReloads else {
             activeReloadCount += 1
@@ -153,9 +136,7 @@ final class WPEStaticTextureReloadTaskOwner {
 
     // MARK: - Burst diagnostics
 
-    /// Coalesces same-tick submissions: callers dispatch reloads synchronously
-    /// in a loop, so this `Task` only runs once that loop yields, seeing the
-    /// whole burst rather than the first path.
+    /// Coalesce same-tick submissions: this `Task` only runs once the dispatch loop yields, seeing the whole burst.
     private func noteBurstDispatch(generation: Int) {
         burstDispatchCount += 1
         burstLogGeneration = generation

@@ -4,13 +4,8 @@ import Foundation
 import LiveWallpaperCore
 import LiveWallpaperProWPE
 
-/// Per-slot uniform SOURCE resolution, compiled once per (pass, layout).
-/// Only the winner of the old candidate walk varies with the scene, and it is
-/// fixed by the pass's key sets; values still come from live dictionaries so
-/// animated/scripted overrides keep landing as before.
 extension WPEMetalRenderExecutor {
 
-    /// One probe, in the same order the interleaved candidate walk performed it.
     enum UniformResolutionStep: Equatable {
         /// Not terminal: the context is `.empty` outside `render`, so a miss
         /// must still fall through to the pass sources.
@@ -20,7 +15,6 @@ extension WPEMetalRenderExecutor {
         case passConstant(String)
     }
 
-    /// Canonical single-slot declarations whose derived values can bypass temporary arrays.
     enum DirectUniformPacking: Equatable {
         case texelSize
         case texelSizeHalf
@@ -50,11 +44,7 @@ extension WPEMetalRenderExecutor {
     }
 
     struct PassUniformPlans {
-        /// Which keys EXIST is what the steps are compiled from, so the key set
-        /// is the cache identity — see `UniformKeyIndex`. A count compare kept a
-        /// plan alive across a same-count scripted key substitution: it went on
-        /// probing the key that vanished and never compiled a step for the one
-        /// that appeared.
+        /// Key set is the cache identity (see `UniformKeyIndex`). A count compare would keep a plan alive across a same-count scripted key substitution.
         let uniformKeySet: ShaderConstantKeys
         let constantKeySet: ShaderConstantKeys
         /// `Array ==` short-circuits on shared storage (the hot-path case).
@@ -84,24 +74,13 @@ extension WPEMetalRenderExecutor {
         return plans
     }
 
-    /// Mirrors the old walk. Within one candidate the frame context is probed
-    /// first (it was inserted last, so it won); a later candidate never beats
-    /// an earlier one. The whole probe order is emitted so a later miss still
-    /// has the fallbacks the per-frame walk would have run.
+    /// Within one candidate, frame context is probed first (it was inserted last, so it won); a later candidate never beats an earlier one. The whole probe order is emitted so a later miss still has the fallbacks.
     private func compileUniformPlan(
         for uniform: WPEUniformSlot,
         pass: WPEPreparedRenderPass,
         keyIndex: UniformKeyIndex
     ) -> UniformResolutionPlan {
-        // `require` does NOT gate runtime binding, so `uniform.requiredCombos` is
-        // deliberately not consulted here. Measured on the Windows capture of 3437487219
-        // (`.notes/oracle-runs/3437487219-97ad29d672164503b44c2c631a6001c3/windows.json`,
-        // ordinal 2): `effects/lightshafts` runs with DIRECTDRAW=1 while `g_Point0..3` are
-        // annotated `require {"DIRECTDRAW": 0}`, and WPE binds them anyway —
-        // `g_Point0 = [6.83764, -3.17560]`, `usedByShader: true`, and the same values appear
-        // again as that draw's vertex TEXCOORDs. `require` decides only whether the EDITOR
-        // exposes the field. A gate was briefly wired here on the opposite assumption and
-        // withheld values WPE was actively using.
+        // `require` does NOT gate runtime binding, so `uniform.requiredCombos` is not consulted. `require` decides only whether the editor exposes the field.
         let candidates = memoizedUniformNameCandidates(for: uniform)
         var steps: [UniformResolutionStep] = []
         func append(_ step: UniformResolutionStep) {
@@ -109,14 +88,7 @@ extension WPEMetalRenderExecutor {
             steps.append(step)
         }
 
-        // A `material`-annotated uniform is authorable per material, and the
-        // pipeline builder already translated the authored constant onto the
-        // uniform's own name. Where such a uniform ALSO collides with a frame
-        // global, the authored value has to win: `g_Brightness` is both our
-        // runtime pause dimmer and generic2's "Brigtness" / generic4's
-        // "brightness", and the frame global (a constant 1 in every performance
-        // profile) shadowed every authored model brightness down to 1 —
-        // 3470948192's star dome authors 1.5 and rendered at 1.
+        // Where a material-annotated uniform collides with a frame global, the authored value has to win; the frame global would shadow it (`g_Brightness` is both the pause dimmer and generic2/4 brightness).
         if let materialName = uniform.materialName, !materialName.isEmpty,
            WPEFrameUniformContext.canonicalNames.contains(uniform.name) {
             for name in candidates.names where pass.uniformValues[name] != nil {
@@ -247,9 +219,7 @@ extension WPEMetalRenderExecutor {
         frame: WPEFrameUniformContext,
         texturesBySlot: WPEMetalTextureSlotTable?
     ) -> WPESceneShaderConstantValue? {
-        // PIXEL size, not world size: g_TexelSize describes the FBO chain's head
-        // resolution, and under render scaling the chain head is the scaled scene
-        // output — a world-sized texel would narrow every blur kernel by the scale.
+        // PIXEL size, not world size: `g_TexelSize` is the FBO chain head, which is the scaled scene output — a world-sized texel would narrow every blur kernel by the scale.
         if plan.isTexelSize,
            let value = Self.texelSizeValue(
                named: Self.texelSizeUniformName,

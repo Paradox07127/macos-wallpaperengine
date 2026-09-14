@@ -10,21 +10,13 @@ struct WallpaperEngineProject: Sendable, Equatable {
     let type: WPEType
     let previewFileName: String?
     let propertyCount: Int
-    /// Workshop IDs declared as dependencies in `project.json`. WPE writes
-    /// these as a top-level `dependencies` array and/or per-property values
-    /// flagged as workshop references; we union both so the import service
-    /// can warn the user before mounting an unrenderable scene.
+    /// Workshop IDs declared as dependencies in `project.json`.
     let dependencyWorkshopIDs: [String]
-    /// `bin/` directory contains a Windows `.dll` plugin. macOS cannot run
-    /// these; surfaced so the UI can show a permanent "won't run" badge.
+    /// `bin/` directory contains a Windows `.dll` plugin. macOS cannot run these.
     let requiresWindowsPlugin: Bool
-    /// Workshop *preset* items carry a singular `dependency` naming the base
-    /// wallpaper they restyle. Unrelated to the plural `dependencies` array
-    /// above, which lists asset packs — do not merge the two.
+    /// Singular `dependency` is the preset's base wallpaper; do not merge with the plural `dependencies` array of asset packs.
     let presetBaseWorkshopID: String?
-    /// Property overrides the preset applies on top of the base wallpaper.
-    /// `nil` when the manifest has no `preset` key at all; an empty map is a
-    /// preset that happens to override nothing.
+    /// `nil` when the manifest has no `preset` key; an empty map is a preset that overrides nothing.
     let presetValues: [String: WallpaperEngineProjectPropertyValue]?
 
     init(
@@ -51,9 +43,7 @@ struct WallpaperEngineProject: Sendable, Equatable {
         self.presetValues = presetValues
     }
 
-    /// The library entry a downloaded preset item becomes. Returns nil for an
-    /// ordinary wallpaper, so callers can branch on the manifest alone instead
-    /// of importing a preset as a wallpaper with no renderable entry.
+    /// Returns nil for an ordinary wallpaper so callers can branch on the manifest instead of importing a preset as a wallpaper with no renderable entry.
     func scenePreset() -> ScenePreset? {
         guard let presetBaseWorkshopID, let presetValues else { return nil }
         return .workshop(
@@ -94,7 +84,6 @@ struct WallpaperEngineProject: Sendable, Equatable {
         }
         let declaresPreset = presetBase != nil && decoded.preset != nil
 
-        // A preset restyles someone else's wallpaper, so it has no renderable entry of its own. Requiring `file` here is what made downloaded presets surface as corrupt wallpapers.
         // Only an ABSENT `file` is excused. A present-but-unsafe one ("../..", an absolute path) stays malformed for presets too: treating it as "no entry" would launder a path-traversal attempt into a valid object.
         let entryFile: String
         if let file = Self.trimmed(decoded.file) {
@@ -122,7 +111,6 @@ struct WallpaperEngineProject: Sendable, Equatable {
         )
     }
 
-    /// Top-level `dependencies` array is the only manifest shape WPE actually emits in practice.
     private static func collectDependencyWorkshopIDs(from manifest: DecodedManifest) -> [String] {
         var ids = Set<String>()
         for raw in manifest.dependencies ?? [] {
@@ -184,10 +172,6 @@ struct WallpaperEngineProject: Sendable, Equatable {
 
 }
 
-/// `localizedDescription` is read by `WPEImportCoordinator`'s catch and shown
-/// to the reader. Without `errorDescription` these rendered as Foundation's
-/// generic "operation couldn't be completed" template, which named nothing.
-/// The wording is a clause because it is interpolated into a sentence.
 enum WPEProjectError: LocalizedError, Equatable, Sendable {
     case manifestNotFound
     case manifestUnreadable
@@ -224,10 +208,7 @@ private struct DecodedManifest: Decodable, Sendable {
     let dependencies: [String]?
     let dependency: String?
     let preset: [String: WallpaperEngineProjectPropertyValue]?
-    /// Whether the manifest carried a `file` key at all. `null`, `""` and a
-    /// whitespace string all decode to a nil `file`, but they are authored
-    /// mistakes rather than "this item has no entry" — only a preset with the
-    /// key genuinely absent may skip the entry requirement.
+    /// `null`, `""` and whitespace all decode to a nil `file`, but only a preset with the key genuinely absent may skip the entry requirement.
     let fileKeyPresent: Bool
 
     private enum CodingKeys: String, CodingKey {

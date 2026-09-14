@@ -52,14 +52,11 @@ struct WorkshopPreviewDiskCacheTests {
 
         await cache.store(tileBytes, for: Fixtures.url, size: .tile)
         #expect(await cache.data(for: Fixtures.url, size: .tile) == tileBytes)
-        // The point of the assertion: a tile-sized entry must never be handed
-        // out for a hero request.
         #expect(await cache.data(for: Fixtures.url, size: .hero) == nil)
     }
 
-    /// Paired with `diskHitMakesNoSecondFetch`, which is the control: that test
-    /// fails if the disk layer stops being read at all, so this one is free to
-    /// assert that a *differently sized* request does go back to the network.
+    /// `diskHitMakesNoSecondFetch` is the control: it fails if the disk layer stops being read at all,
+    /// so this one may assert that a differently sized request refetches.
     @Test("A hero request after a tile request still fetches")
     @MainActor
     func loaderCarriesSizeIntoTheDiskKey() async throws {
@@ -84,13 +81,8 @@ struct WorkshopPreviewDiskCacheTests {
 
     // MARK: - Criterion 3: atomic writes, concurrent writers
 
-    /// A stress test, not a proof: it catches an implementation that writes
-    /// straight to the destination with high probability, not with certainty.
-    /// Measured against exactly that mutation: unmutated, 3130 concurrent reads
-    /// were all whole; writing to the destination made all 3083 of them short.
-    ///
-    /// Separate instances throughout, because one instance serialises its own
-    /// queue — a single reader could never have more than one read in flight.
+    /// A stress test, not a proof: it catches a write straight to the destination with high probability,
+    /// not with certainty. Separate instances throughout: one instance serialises its own queue.
     @Test("Concurrent writes of one key never leave a spliced or partial file")
     func concurrentWritesOfOneKeyStayIntact() async throws {
         let directory = Fixtures.makeDirectory()
@@ -128,9 +120,8 @@ struct WorkshopPreviewDiskCacheTests {
             return all
         }
 
-        // `!isEmpty` is load-bearing: a torn read is dropped by the read path
-        // rather than returned, so "no bad samples" over zero samples is how
-        // this assertion would pass while proving nothing.
+        // `!isEmpty` is load-bearing: a torn read is dropped rather than returned,
+        // so zero samples would satisfy the next line while proving nothing.
         #expect(!observed.isEmpty)
         #expect(observed.allSatisfy { $0 == payloadA || $0 == payloadB })
 
@@ -181,9 +172,7 @@ struct WorkshopPreviewDiskCacheTests {
 
         await cache.store(payload, for: Fixtures.url, size: .tile)
         clock.advance(90)
-        // This read bumps the LRU stamp. If expiry shared that clock, the entry
-        // below would survive — Steam reuses a `preview_url` for a replaced
-        // image, so a viewed preview that never expires is a stale preview.
+        // This read bumps the LRU stamp: if expiry shared that clock the entry below would survive.
         #expect(await cache.data(for: Fixtures.url, size: .tile) == payload)
         clock.advance(60)
         #expect(await cache.data(for: Fixtures.url, size: .tile) == nil)
@@ -219,10 +208,6 @@ struct WorkshopPreviewDiskCacheTests {
 
     // MARK: - Criterion 6: bytes that are not an image never reach the disk
 
-    /// Pins: the disk entry is written after the decode has passed judgement,
-    /// not before it. Moving the `store` back ahead of the decode turns the
-    /// second expectation red; the control group underneath is what stops it
-    /// from passing on a loader that stopped writing to disk at all.
     @Test("A 200 image/* body that will not decode is not written to disk")
     @MainActor
     func undecodableBytesAreNotPersisted() async throws {
@@ -235,16 +220,12 @@ struct WorkshopPreviewDiskCacheTests {
         #expect(await loader.load(Fixtures.url, size: .tile) == nil)
         #expect(await disk.sizeBytes() == 0)
 
-        // Control group.
         let good = GIFTestFixtures.png(width: 24, height: 14)
         let working = WorkshopPreviewImageLoader(diskCache: disk, fetch: { _ in good })
         #expect(await working.load(Fixtures.url(index: 1), size: .tile) != nil)
         #expect(await disk.data(for: Fixtures.url(index: 1), size: .tile) == good)
     }
 
-    /// The user-visible half of the same defect: a card that came back blank
-    /// once used to stay blank, because the bytes that would not decode were on
-    /// disk and every later visit hit them instead of the network.
     @Test("A preview that failed to decode is fetched again rather than served from disk")
     @MainActor
     func undecodableBytesDoNotPoisonTheNextVisit() async throws {
@@ -269,9 +250,6 @@ struct WorkshopPreviewDiskCacheTests {
 
     // MARK: - Criterion 7: the directory is tidied without a write happening
 
-    /// Pins: expiry no longer waits for the next `store`. Deleting the
-    /// `sweepOnce()` call from `data(for:size:)` leaves the planted entry in
-    /// place and turns the second expectation red.
     @Test("A first read drops an entry that expired since the last session")
     func firstUseSweepRemovesExpiredEntries() async throws {
         let directory = Fixtures.makeDirectory()
@@ -291,8 +269,6 @@ struct WorkshopPreviewDiskCacheTests {
         #expect(await cache.sizeBytes() == 0)
     }
 
-    /// Pins the "exited between the rename and the cap check" case: a directory
-    /// that is already over the cap comes back under it without a new write.
     @Test("A first read brings an over-cap directory back under the cap")
     func firstUseSweepEnforcesTheCapWithoutAWrite() async throws {
         let directory = Fixtures.makeDirectory()
@@ -317,9 +293,6 @@ struct WorkshopPreviewDiskCacheTests {
         #expect(remaining > 0)
     }
 
-    /// Pins the crash case: a `.tmp` no total ever counted is removed once it is
-    /// older than any write that could still be in flight — and one younger than
-    /// that grace is left alone, which is the control group.
     @Test("A first read removes a scratch file a crash left behind and spares a fresh one")
     func firstUseSweepRemovesOrphanedTempFiles() async throws {
         let directory = Fixtures.makeDirectory()
@@ -403,8 +376,6 @@ private actor FetchCounter {
     func increment() { count += 1 }
 }
 
-/// Hands back one canned response per call, so a test can make the first visit
-/// fail to decode and the second one succeed.
 private actor ScriptedFetch {
     private var responses: [Data]
     private(set) var calls = 0
@@ -447,9 +418,8 @@ private enum Fixtures {
         try? FileManager.default.removeItem(at: directory)
     }
 
-    /// Puts a file straight into the cache directory, bypassing `store`, so a
-    /// test can stage the state an earlier run or a crash would have left and
-    /// then assert on what happens with no write at all.
+    /// Puts a file straight into the cache directory, bypassing `store`, so a test can stage
+    /// what an earlier run or a crash left behind.
     static func plant(
         _ bytes: Data,
         named name: String,

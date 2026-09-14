@@ -2,8 +2,6 @@ import AppKit
 import CoreGraphics
 import LiveWallpaperCore
 
-/// Renderer-independent particle layer placed above the wallpaper window and
-/// below desktop icons. One click-through panel is owned per display.
 @MainActor
 final class EnvironmentOverlayController {
     private final class Host {
@@ -16,23 +14,17 @@ final class EnvironmentOverlayController {
         }
     }
 
-    /// The same band the Monitor board uses: above every wallpaper window, below every
-    /// application window. Not the plain desktop level — an HTML wallpaper with mouse
-    /// interaction on climbs to `desktopIconWindow + 1` and would draw straight over the
-    /// particles, which are opaque enough to hide them completely.
+    /// Not the plain desktop level — an HTML wallpaper with mouse interaction on climbs to desktopIconWindow + 1 and would draw straight over the particles.
     static let overlayLevel = NSWindow.Level(
         rawValue: Int(CGWindowLevelForKey(.desktopIconWindow)) + 2
     )
 
     private var hosts: [CGDirectDisplayID: Host] = [:]
 
-    /// One watcher for every display: the setting is global, and a per-host observer would
-    /// be four registrations on a four-monitor desk. Runs only while a host exists.
     private lazy var reduceMotion = ReduceMotionWatcher { [weak self] reduced in
         self?.applyReduceMotion(reduced)
     }
 
-    /// Test seam, forwarded to the watcher — see `ReduceMotionWatcher.override`.
     var reduceMotionOverride: Bool? {
         get { reduceMotion.override }
         set { reduceMotion.override = newValue }
@@ -108,20 +100,14 @@ final class EnvironmentOverlayController {
     }
 
     #if DEBUG
-    /// Window level actually in force, for the regression test that pins the
-    /// particles below application windows.
     func debugWindowLevel(screenID: CGDirectDisplayID) -> Int? {
         hosts[screenID]?.window.level.rawValue
     }
 
-    /// Window frame actually in force, for the regression test that pins the
-    /// particle overlay to follow resolution/arrangement changes.
     func debugWindowFrame(screenID: CGDirectDisplayID) -> NSRect? {
         hosts[screenID]?.window.frame
     }
 
-    /// Every reason this display's particles are paused for, so a test can tell a runtime
-    /// pause from a Reduce Motion one instead of only seeing "stopped".
     func debugSuspensionReasons(screenID: CGDirectDisplayID) -> ParticleSuspensionReasons? {
         hosts[screenID]?.view.suspensionReasons
     }
@@ -158,10 +144,7 @@ final class EnvironmentOverlayController {
             backing: .buffered,
             defer: false
         )
-        // Order matters: `isFloatingPanel` rewrites `level` to `.floating` (3),
-        // which is above every application window — the particles then rained
-        // over other apps. Measured, not guessed: setting the flag after the
-        // level moved it from -2147483623 to 3.
+        // Order matters: isFloatingPanel rewrites level to .floating (3), which is above every application window.
         window.isFloatingPanel = true
         window.level = Self.overlayLevel
         window.hidesOnDeactivate = false

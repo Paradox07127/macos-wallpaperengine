@@ -129,10 +129,7 @@ extension WPEMetalRenderExecutor {
         attachment.isBlendingEnabled = true
         attachment.rgbBlendOperation = .add
         attachment.alphaBlendOperation = .add
-        // WPE blends text with SRC_ALPHA/INV_SRC_ALPHA on RGB *and* alpha
-        // (Windows RenderDoc fidelity-2955378002, all five text draws). The
-        // fragment premultiplies RGB, so .one is SRC_ALPHA-equivalent there,
-        // but the alpha channel must square the source alpha to match.
+        // WPE blends text with SRC_ALPHA/INV_SRC_ALPHA on RGB and alpha. The fragment premultiplies RGB so `.one` is SRC_ALPHA-equivalent there, but the alpha channel must square the source alpha.
         attachment.sourceRGBBlendFactor = .one
         attachment.destinationRGBBlendFactor = .oneMinusSourceAlpha
         attachment.sourceAlphaBlendFactor = .sourceAlpha

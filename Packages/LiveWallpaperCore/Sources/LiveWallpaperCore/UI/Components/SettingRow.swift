@@ -1,6 +1,5 @@
 import SwiftUI
 
-/// A small, uniform status seal rendered right after a `SettingRow` title (icon-only).
 public struct SettingRowTitleBadge {
     let systemImage: String
     let tint: Color
@@ -12,8 +11,7 @@ public struct SettingRowTitleBadge {
     }
 }
 
-/// A titled setting with a trailing control. Inspectors reserve subtitles for current
-/// state; static explanations use optional `info`. Action flows may show necessary consequences.
+/// Subtitles carry current state; static explanations go in `info`.
 public struct SettingRow<Content: View>: View {
     let icon: String
     let iconColor: Color
@@ -22,9 +20,8 @@ public struct SettingRow<Content: View>: View {
     let subtitle: Text?
     let info: String.LocalizationValue?
     let content: Content
-    /// Set for subtitles that carry a runtime value rather than prose. Prose
-    /// wraps; a value stays on one line so a long path can't make its row
-    /// taller than the rows around it.
+    /// Set for subtitles carrying a runtime value rather than prose: a value stays on
+    /// one line so a long path can't make its row taller.
     let subtitleIsValue: Bool
     /// Full text of a truncated value subtitle, for hover.
     let subtitleHelp: String?
@@ -49,9 +46,8 @@ public struct SettingRow<Content: View>: View {
         self.subtitleHelp = nil
     }
 
-    /// Localized title over a runtime value — a file path, an account name.
-    /// The value is rendered verbatim (never looked up in the catalog) and
-    /// truncated in the middle to one line, with the whole of it on hover.
+    /// The value is rendered verbatim — never looked up in the localization catalog —
+    /// and middle-truncated to one line.
     public init(
         icon: String,
         iconColor: Color = .accentColor,
@@ -72,10 +68,8 @@ public struct SettingRow<Content: View>: View {
         self.subtitleHelp = valueSubtitle
     }
 
-    /// Verbatim variant for already-resolved runtime/author strings (e.g. a
-    /// Wallpaper Engine property display name) that must NOT be re-looked-up in
-    /// the localization catalog. Distinct `verbatim*` labels avoid overload
-    /// ambiguity with the `LocalizedStringKey` initializer at string-literal call sites.
+    /// For already-resolved strings that must NOT be re-looked-up in the catalog; the
+    /// distinct `verbatim*` labels avoid overload ambiguity with the `LocalizedStringKey` init.
     public init(
         icon: String,
         iconColor: Color = .accentColor,
@@ -96,9 +90,6 @@ public struct SettingRow<Content: View>: View {
         self.subtitleHelp = nil
     }
 
-    /// Mixed variant: author-supplied title rendered verbatim, app-supplied
-    /// subtitle routed through the localization catalog (e.g. a WPE property
-    /// row annotated with an app-side "Not supported" note).
     public init(
         icon: String,
         iconColor: Color = .accentColor,
@@ -172,9 +163,6 @@ public struct SettingRow<Content: View>: View {
     }
 }
 
-/// ⓘ glyph that exposes the same explanation through hover (tooltip) and
-/// click (popover). Public so inspector rows that don't use `SettingRow`
-/// (e.g. compact slider grids) can adopt the same pattern.
 public struct InfoTooltipButton: View {
     let text: String.LocalizationValue
     @State private var isPresentingPopover = false

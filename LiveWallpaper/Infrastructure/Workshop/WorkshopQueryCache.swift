@@ -2,9 +2,6 @@
 import CryptoKit
 import Foundation
 
-/// On-disk cache for `WorkshopQueryService` paged results: JSON pages in a
-/// `WorkshopDiskCacheStore`, expired 5 minutes after they were written, under a
-/// 100 MB hard cap.
 actor WorkshopQueryCache {
 
     private static let ttl: TimeInterval = 300
@@ -74,11 +71,7 @@ actor WorkshopQueryCache {
 }
 
 private struct CachedPagePayload: Codable {
-    /// 2: `sourceItemCount` + `totalPages` (keyless pages moved to the SSR
-    /// payload). 3: `rating` replaces `voteScore`, plus `timeCreated`,
-    /// `commentCount`, `requiredItemIDs`. 4: `title` is the wire title (nil
-    /// when untitled), not the localized fallback. Older pages miss so a
-    /// stale page cannot outlive the upgrade for its TTL.
+    /// 4: `title` is the wire title (nil when untitled), not the localized fallback. Older pages miss.
     static let currentSchemaVersion = 4
 
     let schemaVersion: Int?

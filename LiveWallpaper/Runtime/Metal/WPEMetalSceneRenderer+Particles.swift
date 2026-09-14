@@ -173,18 +173,14 @@ extension WPEMetalSceneRenderer {
             colorSpace: colorSpace,
             on: actor
         )
-        // Only static atlases are cached. Particles read frame 0 plus the
-        // sprite-sheet rects and never tick a dynamic source, so holding one for
-        // the scene lifetime would pin a lazy `.tex`'s compressed payload — or an
-        // AVFoundation decoder — that nothing will ever read again, and none of
-        // them are in `dynamicTextureSources` for the suspend-time release.
+        // Only static atlases are cached. Particles never tick a dynamic source, so holding one for the scene lifetime would pin a payload nothing will read again, and none of them are in `dynamicTextureSources` for suspend-time release.
         if case .staticTexture = loaded {
             particleTextureLoadCache[key] = loaded
         }
         return loaded
     }
 
-    /// Missing sprite texture would leave fragment-texture(0) stale and paint the 3725117707 black+red-grid overlay.
+    /// Missing sprite texture would leave fragment-texture(0) stale and paint the black+red-grid overlay.
     func loadParticleSystems(
         from document: WPESceneDocument,
         on actor: isolated WPEDisplayRenderActor
@@ -220,8 +216,7 @@ extension WPEMetalSceneRenderer {
         prewarmParticleSystems()
     }
 
-    /// `starttime` is a simulation offset (star fields with 200 load already full). The developer flag only prewarms authored-0 emitters.
-    /// `followParent` chains must prewarm in lockstep with the frame-loop injection rule; independent prewarm empties `eventfollow` children (3226487183: 136 `matrix_trail` systems at 0 particles).
+    /// `starttime` is a simulation offset. `followParent` chains must prewarm in lockstep with the frame-loop injection rule; independent prewarm would empty `eventfollow` children.
     private func prewarmParticleSystems() {
         guard !particleSystems.isEmpty else { return }
         let oracleReplaySeconds = WPEOracleMode.isEnabled
@@ -295,7 +290,7 @@ extension WPEMetalSceneRenderer {
         for member in members { member.system.endPrewarm() }
     }
 
-    /// A `composelayer` ancestor's tint + opacity mask must be baked on (particles draw to scene). 3462491575 matrix rain is cyan-tinted and masked.
+    /// A `composelayer` ancestor's tint + opacity mask must be baked on (particles draw to scene).
     private func resolveParticleGroupEffect(
         for object: WPESceneParticleObject,
         objectParentByID: [String: String],
@@ -501,7 +496,7 @@ extension WPEMetalSceneRenderer {
                 )
             }
         }
-        // Repacked sequence atlas can lose TEXS (3462491575: 450×400 logical, gcd 50 → 72 frames). Only when `animationmode` opted into sequence; a default must not slice single-image sprites.
+        // Repacked sequence atlas can lose TEXS. Only when `animationmode` opted into sequence; a default must not slice single-image sprites.
         if spriteSheet == nil, definition.declaresSequenceAnimation {
             let resolution = WPEMetalTextureMetadataRegistry.shared.resolution(for: resolved)
             spriteSheet = Self.squareCellGridSpriteSheet(
@@ -540,7 +535,6 @@ extension WPEMetalSceneRenderer {
         system.traceObjectID = object.id
         system.traceParticlePath = object.particleRelativePath
         #endif
-        // Rigid-subtree: topmost ancestor's depth/origin drive the assembly. 3448877775 meteor authors no depth; the group chain carries -0.92.
         let parallaxRoot = parallaxRootObjectID(of: object.id)
         system.parallaxDepth = parallaxAuthoredDepthByObjectID[parallaxRoot] ?? object.parallaxDepth
         let rootOrigin = parallaxAuthoredOriginByObjectID[parallaxRoot]
@@ -574,7 +568,7 @@ extension WPEMetalSceneRenderer {
             system.groupOpacityMask = groupEffect.mask
             system.groupTint = groupEffect.tint
         }
-        // REFRACT needs the normal map; load fail → flat sprite. Frame 0 of a dynamic source is the whole atlas (TEXS sub-rects). Demanding `.staticTexture` dropped refraction on 3713073223 rain.
+        // REFRACT needs the normal map; load fail → flat sprite. Frame 0 of a dynamic source is the whole atlas (TEXS sub-rects). Demanding `.staticTexture` would drop refraction.
         if material?.isRefract == true, let normalPath = material?.normalTexturePath {
             // a normal map is DATA — sRGB gamma corrupts its vectors
             let normalPayload = try? await particleTextureResource(
@@ -607,14 +601,12 @@ extension WPEMetalSceneRenderer {
         // released-then-restored slot would leave two copies of the atlas alive.
         animatedTextureSource?.pinSlotHoldingExternally(textureFor: 0)
         if WPESceneDebugArtifacts.shared.isEnabled {
-            // Motion-driving params: split parse errors from simulation errors.
             let idx = particleSystems.count - 1
             let d = definition
             var s = "particle[\(idx)] name=\(object.name)\n"
             // def index ≠ particle-state-N traceIndex (sorted+filtered). This line pairs the two dumps.
             s += "object=\(object.id) particle=\(object.particleRelativePath)\n"
             s += "material=\(d.materialRelativePath ?? "-") blend=\(blendMode.rawValue) animationMode=\(d.animationMode)\n"
-            // Record the REFRACT chain so the dump distinguishes "combo not parsed" from "normal not loaded".
             s += "refract: combo=\(material?.isRefract == true) normal=\(material?.normalTexturePath ?? "-")"
             s += " bound=\(particleNormalTextures[ObjectIdentifier(system)] != nil) amount=\(system.refractAmount)\n"
             s += "maxCount=\(d.maxCount) rate=\(d.rate) startDelay=\(d.startDelay)\n"

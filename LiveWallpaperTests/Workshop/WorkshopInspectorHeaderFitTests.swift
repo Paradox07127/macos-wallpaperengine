@@ -5,14 +5,8 @@ import CoreText
 import LiveWallpaperCore
 import Testing
 
-/// Does the online inspector's masthead survive its narrowest column?
-///
-/// The column is resizable from `Inspector.minWidth` and the sheet insets its
-/// content by `Spacing.lg` on both sides, so a row has 236pt to live in. What
-/// a row costs is measured here rather than eyeballed: the fonts are the ones
-/// the view asks for, and the strings come out of the shipped catalog, because
-/// Spanish runs wider than English everywhere and overflows first.
-/// The shipped languages, outside the actor so `@Test(arguments:)` can read them.
+/// `Inspector.minWidth` less `Spacing.lg` on both sides: a row has 236pt to live in.
+/// The shipped languages sit outside the type so `@Test(arguments:)` can read them.
 private let shippedLocales = ["en", "zh-Hans", "zh-Hant", "ja", "es"]
 
 @MainActor
@@ -94,9 +88,7 @@ struct WorkshopInspectorHeaderFitTests {
 
     // MARK: - The rows, as the header composes them
 
-    /// One laid-out row: text segments at their own font plus the fixed gaps
-    /// between them, mirroring `WorkshopDetailIdentityHeader`. The structure
-    /// test below is what keeps the mirror honest.
+    /// Mirrors `WorkshopDetailIdentityHeader`; the structure test below keeps the mirror honest.
     private static func rows(for locale: String) throws -> [(name: String, width: CGFloat)] {
         let caption = font(.caption1)
         let subheadline = font(.subheadline)
@@ -144,8 +136,6 @@ struct WorkshopInspectorHeaderFitTests {
         }
     }
 
-    /// The measurement above models the view; this is what stops the model from
-    /// quietly describing a layout the header no longer has.
     @Test("The header still lays its rows out the way the measurement assumes")
     func structureMatchesTheModel() throws {
         let source = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/WorkshopDetailIdentityHeader.swift")

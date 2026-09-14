@@ -1,7 +1,6 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// Controls Workshop thumbnail badges; other libraries retain their own badge settings.
 struct WorkshopBadgeSection: View {
     @AppStorage(CardBadgeSettings.showsRating, store: .appScoped()) private var showsRating = true
     @AppStorage(CardBadgeSettings.showsType, store: .appScoped()) private var showsType = true

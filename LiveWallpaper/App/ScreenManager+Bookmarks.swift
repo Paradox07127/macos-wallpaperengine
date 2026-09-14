@@ -6,11 +6,7 @@ extension ScreenManager {
         guard !isTerminating else { return }
         Logger.info("Applying bookmark to screen \(screen.id): \(bookmark.wallpaperType.rawValue)", category: .ui)
 
-        // Content only. A bookmark is a favourite wallpaper, not a screen setup —
-        // applying one leaves this display's volume, effects, fit mode and overlay
-        // exactly as they were. The whole-screen counterpart is a Scheme
-        // (`ScreenManager+Schemes.swift`). `playbackSettings` on older bookmarks is
-        // deliberately left on disk, unread: see .notes/plan/screen-schemes.md D1.
+        // Content only: applying a bookmark leaves this display's volume, effects, fit mode and overlay as they were.
         switch bookmark.content {
         case .video(let bookmarkData, let packageEntryName):
             guard case .success(let resolved) = SecurityScopedBookmarkResolver.shared.resolve(

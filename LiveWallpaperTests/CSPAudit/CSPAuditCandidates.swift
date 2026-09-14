@@ -1,8 +1,7 @@
 @testable import LiveWallpaper
 
-/// CSP candidates ordered from a restrictive baseline through the shipping policy to a compatibility fallback.
-/// `v1Strict` and `v2Current` are the two policies that actually ship — the audit must measure the
-/// live strings, not copies of them, or a drifted copy certifies a policy nobody serves.
+/// `v1Strict` and `v2Current` must read the live shipping strings, never copies:
+/// a drifted copy would certify a policy nobody serves.
 enum CSPAuditCandidate: String, CaseIterable, Sendable {
     case v1Strict
     case v2Current

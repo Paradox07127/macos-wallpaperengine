@@ -64,25 +64,8 @@ enum WPEMetalTextureLoaderError: Error, Equatable, LocalizedError, Sendable {
     }
 }
 
-/// Which of Wallpaper Engine's own asset namespaces hold DATA rather than colour.
-/// Windows binds every SRV as `*_UNORM`; a Mac sRGB view decodes an authored 0.5
-/// to 0.21, which warps normal fields, flow phase and noise modulation
-/// (four-scene oracle, 2026-09-07).
-///
-/// The three prefixes are enumerable, not a substring guess — everything the
-/// engine ships under them is data:
-///   `effects/` — refractnormal, waterflowphase, waterripplenormal (all three)
-///   `util/`    — black, clouds_256, flatnormal, fur, noflow, noise, perlin_256,
-///                uniform_256, white
-///   `masks/`   — editor-generated `<effect>_mask_<hash>`. Their R8/RG8 members
-///                are ALREADY linear (Metal has no `r8Unorm_srgb`), so the RGBA
-///                ones were the only members decoded unlike their own peers.
-/// Substring matching is deliberately not used: the same corpus has authored
-/// colour art named `masking tape` and `normalcafe`.
-///
-/// Colour assets stay sRGB on purpose. The global gamma-vs-linear contract
-/// (`.notes/review/wpe-oracle-4scene-2026-09-07/SUMMARY.md` §B1) is undecided
-/// and this must not pre-empt it.
+/// Data namespaces (`effects/`, `masks/`, `util/`) stay linear: a Mac sRGB view would decode authored 0.5 to 0.21.
+/// Prefix match only — substring would catch colour art like `masking tape` / `normalcafe`.
 enum WPEMetalTextureColorSpaceClassifier {
     private static let dataPrefixes = ["effects/", "masks/", "util/"]
 
@@ -90,9 +73,7 @@ enum WPEMetalTextureColorSpaceClassifier {
         dataPrefixes.contains(where: normalized(reference).hasPrefix) ? .linear : .sRGB
     }
 
-    /// Peels the container prefixes the resolver and the workshop packer add
-    /// (`materials/`, `workshop/<id>/`, in either order and nestable) so the
-    /// authored namespace is what gets matched.
+    /// Peels `materials/` and `workshop/<id>/` (either order, nestable) so the authored namespace is matched.
     private static func normalized(_ reference: String) -> String {
         var path = Substring(reference.lowercased())
         while true {

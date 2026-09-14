@@ -1,8 +1,6 @@
 import Foundation
 
-/// Owns HTML refresh and navigation-retry timing independently from WebKit.
-/// Suspending cancels every live task while retaining only the intent needed
-/// to restart from the moment of resume; elapsed intervals are never caught up.
+/// Suspending cancels live tasks but keeps the intent; elapsed intervals are never caught up on resume.
 @MainActor
 final class HTMLReloadScheduler {
     private let reload: @MainActor () -> Void
@@ -17,7 +15,6 @@ final class HTMLReloadScheduler {
     private(set) var isInvalidated = false
 
     #if DEBUG
-    // Test-only introspection; no production reader.
     var hasScheduledRefresh: Bool { refreshTask != nil }
     var hasScheduledRetry: Bool { retryTask != nil }
     var hasPendingRetry: Bool { pendingRetryDelay != nil }

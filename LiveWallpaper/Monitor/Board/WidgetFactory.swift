@@ -89,7 +89,6 @@ enum WidgetFactory {
     }
 }
 
-/// Icon + localized name centered in panel chrome (inspector/name-only preview).
 struct MonitorWidgetNameTile: View {
     let kind: MonitorWidgetKind
     let cellHeight: CGFloat
@@ -110,11 +109,7 @@ struct MonitorWidgetNameTile: View {
         scale.caption + 1
     }
 
-    /// The label read at a fifth of a 5K desktop is under three points of text.
-    /// This mode exists *for* canvases too small to read a real tile on, so it
-    /// is the one tile that grows to meet a floor in screen points instead of
-    /// shrinking with the board — the real-widget modes still predict the
-    /// desktop exactly. Capped at what the cell can hold.
+    /// This mode grows to a screen-point floor instead of shrinking with the board; capped at what the cell can hold.
     private var typeBoost: CGFloat {
         guard renderScale > 0, renderScale < 1 else { return 1 }
         let stack = iconSize + max(4, cellHeight * 0.05) + labelSize * 1.2

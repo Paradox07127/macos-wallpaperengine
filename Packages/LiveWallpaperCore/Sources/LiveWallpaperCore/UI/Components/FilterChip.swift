@@ -1,6 +1,5 @@
 import SwiftUI
 
-/// Shared filter capsule with a fill and ring for selection.
 struct FilterChipBackground: ViewModifier {
     let isSelected: Bool
 
@@ -23,7 +22,6 @@ extension View {
     }
 }
 
-/// Translucent filter pill for toolbar-style control rows.
 public struct FilterChip: View {
     private let title: Text
     private let isSelected: Bool

@@ -2,11 +2,6 @@ import Foundation
 @testable import LiveWallpaper
 import Testing
 
-/// `lib.sceneScript.d.ts` declares `mix(other, amount: Number|Vec3)` as Vec3's
-/// instance interpolator and has no `lerp` at all — we had it backwards, with
-/// `lerp` on the instance and `mix` only as a global function. 10 of the 54
-/// installed scenes call `.mix(` on a vector, so each of them threw
-/// `TypeError: … is not a function` and got quarantined by the fault policy.
 @Suite(.serialized)
 @MainActor
 struct WPESceneScriptVectorMixTests {
@@ -31,7 +26,6 @@ struct WPESceneScriptVectorMixTests {
         #expect(result == "0.50,0.50,0.50")
     }
 
-    /// The declared amount is `Number|Vec3`, so a vector blends per component.
     @Test("A vector amount mixes each component independently")
     func vec3PerComponentMix() throws {
         let result = try evaluate("""
@@ -56,8 +50,6 @@ struct WPESceneScriptVectorMixTests {
         #expect(four == "0.25")
     }
 
-    /// The shape scene 3326873240's colour script uses: hold two colours and
-    /// cross-fade them every tick. It threw before `mix` existed.
     @Test("The authored colour cross-fade shape evaluates")
     func authoredColourCrossFadeShape() throws {
         let result = try evaluate("""

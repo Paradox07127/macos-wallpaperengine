@@ -45,8 +45,6 @@ final class NowPlayingOptionsTests: XCTestCase {
         XCTAssertTrue(Options().applied(to: [:]).isEmpty)
     }
 
-    /// Every key must disappear again when its field goes back to the default,
-    /// so an untouched layer keeps an empty dictionary on disk.
     func testEveryFieldDropsItsKeyWhenReturnedToDefault() {
         var options = Options()
         options.style = .vinyl
@@ -189,9 +187,6 @@ final class NowPlayingOptionsTests: XCTestCase {
         XCTAssertEqual(high.artworkScale, 1.6)
     }
 
-    /// Programmatic writes are clamped on the way out too, so nothing
-    /// out-of-range ever reaches the file. A value that clamps onto the
-    /// default still drops its key — the two rules compose.
     func testAppliedClampsOutOfRangeFields() {
         var options = Options()
         options.opacity = -3
@@ -252,8 +247,7 @@ final class NowPlayingOptionsTests: XCTestCase {
         XCTAssertEqual(options.artworkShape, .rounded)
     }
 
-    /// Only 1 and 3 are drawable; anything else on disk must read as the
-    /// default rather than reaching the view as an unsupported row count.
+    /// Only 1 and 3 are drawable; anything else on disk reads as the default.
     func testLyricsLinesSnapToAPublishedChoice() {
         XCTAssertEqual(Options([Key.lyricsLines: .number(1)]).lyricsLines, 1)
         XCTAssertEqual(Options([Key.lyricsLines: .number(3)]).lyricsLines, 3)
@@ -281,8 +275,6 @@ final class NowPlayingOptionsTests: XCTestCase {
         XCTAssertEqual(Options.defaultTitleFont(for: .aurora), .rounded)
     }
 
-    /// Picking the value a style already uses stores nothing, so a later style
-    /// change is still free to follow its own default.
     func testStyleDefaultChoicesDropTheirKeys() {
         var aurora = Options()
         aurora.style = .aurora
@@ -344,11 +336,10 @@ final class NowPlayingOptionsTests: XCTestCase {
         XCTAssertEqual(Options.resolvedAccent(options: options, artwork: cover), custom)
         XCTAssertEqual(Options.resolvedAccent(options: options, artwork: nil), custom)
 
-        // Source says album art: the stored custom color is remembered, not used.
         options.accentSource = .albumArt
         XCTAssertEqual(Options.resolvedAccent(options: options, artwork: cover), cover)
 
-        // Custom asked for but unusable → cover, then nothing (caller's own tint).
+        // nil here = no accent at all, so the caller falls back to its own tint.
         options.accentSource = .custom
         options.customAccentHex = "garbage"
         XCTAssertEqual(Options.resolvedAccent(options: options, artwork: cover), cover)

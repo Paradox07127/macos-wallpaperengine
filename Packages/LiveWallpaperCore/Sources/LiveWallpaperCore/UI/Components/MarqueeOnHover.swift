@@ -1,14 +1,10 @@
 import SwiftUI
 
-/// Decides whether a one-line label scrolls instead of truncating. Split out of
-/// the view so the rule can be tested without a render pass.
 public enum MarqueeMetrics {
     /// Sub-pixel overflow is rounding noise, not text the reader is missing.
     public static let threshold: CGFloat = 1
 
-    /// Points per second. Faster than `MarqueeText`'s vertical crawl (12 pt/s):
-    /// that one reveals a line at a time and the eye waits for each line, while
-    /// a path slides past continuously and 12 pt/s would take half a minute.
+    /// Points per second. Deliberately faster than `MarqueeText`'s 12 pt/s vertical crawl.
     public static let speed: CGFloat = 45
 
     /// Let the reader see what already fits before anything moves.
@@ -35,11 +31,8 @@ public enum MarqueeMetrics {
     }
 }
 
-/// Horizontal sibling of `MarqueeText`, borrowing its central trick: an
-/// invisible base owns the layout while the copy the reader sees rides in
-/// an `overlay`, which never resizes its base. Hanging `fixedSize` on the
-/// label itself instead keeps it clamped to the row's width, scrolling the
-/// *truncated* string with the tail hidden — the bug this replaced.
+/// An invisible base owns the layout; `fixedSize` on the label itself would clamp
+/// it to the row width and scroll the *truncated* string.
 private struct MarqueeOnHover: ViewModifier {
     let truncationMode: Text.TruncationMode
 
@@ -62,11 +55,8 @@ private struct MarqueeOnHover: ViewModifier {
         )
     }
 
-    /// The crawl restarts whenever this changes, not only when scrolling
-    /// flips: resizing the row changes how far the text must travel while
-    /// the pointer stays put, and an animation aimed at the old distance
-    /// would stop short. Rounded to half a point so measurement jitter
-    /// can't restart it every frame.
+    /// Distance is in the plan so a resize restarts the crawl; rounded to half a
+    /// point so measurement jitter can't restart it every frame.
     private var plan: ScrollPlan {
         ScrollPlan(isScrolling: shouldScroll, distance: (overflow * 2).rounded() / 2)
     }
@@ -77,20 +67,15 @@ private struct MarqueeOnHover: ViewModifier {
     }
 
     func body(content: Content) -> some View {
-        // At rest this modifier is one truncated `Text`. Every inspector row
-        // and gallery card carries one, so the hidden full-width copy — a
-        // whole second text layout, needed only to decide overflow — mounts
-        // only while the pointer is here. The crawl waits `startDelay`
-        // before moving, so measuring on hover-in is in time.
+        // The hidden full-width copy mounts only while hovered; the crawl waits
+        // `startDelay`, so measuring on hover-in is in time.
         content
             .lineLimit(1)
             .truncationMode(truncationMode)
             .opacity(isHovering ? 0 : 1)
             .accessibilityHidden(isHovering)
-            // `onGeometryChange` rather than a `GeometryReader` publishing into a
-            // `PreferenceKey`: it reports a value the view already has, only when
-            // that value actually changes, with no preference tree to reduce
-            // through on every layout pass. macOS 13+, so no availability gate.
+            // `onGeometryChange`, not `GeometryReader` + `PreferenceKey`: no preference tree
+            // to reduce through on every layout pass.
             .onGeometryChange(for: CGFloat.self, of: \.size.width) { boxWidth = $0 }
             .background(alignment: .leading) {
                 if isHovering {
@@ -116,8 +101,6 @@ private struct MarqueeOnHover: ViewModifier {
             }
     }
 
-    /// Scrolling shows the whole string at its natural width; at rest the
-    /// ellipsis is still the correct resting state.
     @ViewBuilder
     private func visible(_ content: Content) -> some View {
         if shouldScroll {
@@ -150,15 +133,8 @@ private struct MarqueeOnHover: ViewModifier {
 }
 
 public extension View {
-    /// One-line label that reveals its tail by scrolling while the pointer
-    /// rests on it, instead of hiding it behind an ellipsis for good. Falls
-    /// back to plain truncation when it already fits, when the pointer is
-    /// away, and under Reduce Motion — the ellipsis is still the resting
-    /// state. The multi-line card-title equivalent is `MarqueeText`. Meant
-    /// for `Text`: while hovered the label renders three times — an
-    /// invisible base owning the width, a hidden full-width copy that
-    /// measures, and the copy the reader sees — so the wrapped view must be
-    /// cheap and stateless. At rest it's a single truncated label.
+    /// While hovered the label renders three times, so the wrapped view must be cheap
+    /// and stateless. The multi-line card-title equivalent is `MarqueeText`.
     func marqueeOnHover(truncationMode: Text.TruncationMode = .middle) -> some View {
         modifier(MarqueeOnHover(truncationMode: truncationMode))
     }

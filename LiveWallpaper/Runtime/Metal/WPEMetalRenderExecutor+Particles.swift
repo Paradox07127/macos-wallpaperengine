@@ -7,9 +7,7 @@ import MetalKit
 import os
 import simd
 
-/// Applies only an explicitly authored Sprite Trail minimum. An absent/null key
-/// leaves the existing projection value untouched because its WPE default still
-/// requires L1 evidence.
+/// Applies only an explicitly authored Sprite Trail minimum. An absent/null key leaves the existing projection value untouched because its WPE default still requires L1 evidence.
 func wpeApplyingAuthoredSpriteTrailMinimum(
     from renderer: WPEParticleTrailRenderer,
     to projection: SIMD4<Float>
@@ -23,9 +21,6 @@ func wpeApplyingAuthoredSpriteTrailMinimum(
 }
 
 extension WPEMetalRenderExecutor {
-    /// One render encoder for particle draws into `output` (`.load`/`.store` so it
-    /// composites over the scene so far). Shared across consecutive non-refract
-    /// systems by `flushParticles`.
     func makeParticleOutputEncoder(
         output: MTLTexture,
         commandBuffer: MTLCommandBuffer
@@ -43,11 +38,6 @@ extension WPEMetalRenderExecutor {
         return encoder
     }
 
-    /// Encode one particle system on top of `output`, into either its own render
-    /// pass (loadAction `.load`) or a caller-owned `sharedEncoder`, on the SHARED
-    /// scene command buffer — so particles interleave with layers at their paint
-    /// index. Returns false (no encode) when the system has no drawable particles
-    /// or its texture is missing.
     @discardableResult
     func encodeParticleSystem(
         _ system: WPEParticleSystem,
@@ -68,11 +58,7 @@ extension WPEMetalRenderExecutor {
         // Systems whose texture failed to load were filtered at scene-load; skip
         // defensively so a stale texture-slot binding can't leak in.
         guard let texture = texturesByMaterial[ObjectIdentifier(system)] else { return false }
-        // REFRACT: needs the normal map AND a snapshot of the scene drawn so far
-        // (= `_rt_FullFrameBuffer`) to sample as the refracted background. The
-        // snapshot is a blit encoder that cannot coexist with a shared open render
-        // encoder, so refraction is only available on this system's OWN pass
-        // (`sharedEncoder == nil`); `flushParticles` only ever batches non-refract.
+        // REFRACT needs the normal map AND a scene-so-far snapshot (a blit encoder that cannot coexist with a shared open render encoder), so refraction is only available on this system's OWN pass (`sharedEncoder == nil`).
         let refractNormal = (sharedEncoder == nil && !system.usesRibbonGeometry)
             ? normalsByMaterial[ObjectIdentifier(system)] : nil
         let refractBackground: MTLTexture? = refractNormal == nil ? nil
@@ -111,17 +97,13 @@ extension WPEMetalRenderExecutor {
             depth: system.parallaxDepth,
             sceneSize: sceneSize
         )
-        // A keyframed ancestor `origin` shifts the whole system, exactly like the
-        // parallax offset does — ride the same channel rather than rebuilding the
-        // system's baked transform every frame.
+        // A keyframed ancestor `origin` shifts the whole system, exactly like the parallax offset — ride the same channel rather than rebuilding the system's baked transform every frame.
         projection.padding = SIMD4<Float>(
             parallax.x + system.hostOriginOffset.x,
             parallax.y + system.hostOriginOffset.y,
             0, 0
         )
-        // Windows Lofi Cafe GS g_RenderVar0 is (0.005, 100, 0, 8) for
-        // perspective rain and (0.05, 6, 0, 8) for glass trails. Perspective
-        // changes projection, not the authored velocity-to-length multiplier.
+        // Perspective changes projection, not the authored velocity-to-length multiplier.
         if let trail = system.definition.trailRenderer, trail.kind == .sprite {
             projection.trail = wpeApplyingAuthoredSpriteTrailMinimum(
                 from: trail,
@@ -170,9 +152,7 @@ extension WPEMetalRenderExecutor {
                 isRefract ? system.refractAmount : 0   // .w = g_RefractAmount (0 ⇒ non-refract)
             )
         )
-        // Compose-group opacity mask (region confine) + tint, baked from the
-        // particle's parent composelayer. Refract binds texture(1)/(2) itself;
-        // the two never co-occur (matrix rain is additive-sprite, not refract).
+        // Compose-group opacity mask + tint, baked from the parent composelayer. Refract binds texture(1)/(2) itself; the two never co-occur (matrix rain is additive-sprite, not refract).
         let groupMask = isRefract ? nil : system.groupOpacityMask
         sprite.tintAndMask = SIMD4<Float>(
             system.groupTint.x, system.groupTint.y, system.groupTint.z,
@@ -188,9 +168,7 @@ extension WPEMetalRenderExecutor {
             encoder.setFragmentTexture(groupMask, index: 1)
         }
         if isRefract {
-            // g_Texture1 = refraction normal map ; g_Texture3-equivalent = the
-            // scene-so-far snapshot. sceneSize (projection) lets the fragment turn
-            // its pixel position into a screen UV for the background sample.
+            // g_Texture1 = refraction normal map; g_Texture3-equivalent = the scene-so-far snapshot. sceneSize lets the fragment turn its pixel position into a screen UV for the background sample.
             encoder.setFragmentTexture(refractNormal, index: 1)
             encoder.setFragmentSamplerState(customShaderSamplerState(for: refractNormal, useMipmaps: (refractNormal?.mipmapLevelCount ?? 1) > 1), index: 1)
             encoder.setFragmentTexture(refractBackground, index: 2)
@@ -208,9 +186,7 @@ extension WPEMetalRenderExecutor {
         } else {
             encoder.setVertexBuffer(system.instanceBuffer, offset: 0, index: 1)
             encoder.setVertexBytes(&sprite, length: MemoryLayout<WPEParticleSpriteParams>.stride, index: 3)
-            // Buffer(4) must always be bound for the vertex function's signature.
-            // Use the system's pre-allocated frame-rect buffer (any frame count);
-            // a 1-element dummy covers the uniform-grid path.
+            // Buffer(4) must always be bound for the vertex function's signature. Use the system's pre-allocated frame-rect buffer; a 1-element dummy covers the uniform-grid path.
             if let frameRectsBuffer = system.frameRectsBuffer {
                 encoder.setVertexBuffer(frameRectsBuffer, offset: 0, index: 4)
             } else {
@@ -226,11 +202,7 @@ extension WPEMetalRenderExecutor {
         }
         if ownsEncoder {
             encoder.endEncoding()
-            // Mark the scene target written so a later scene pass loads (instead of
-            // clearing away) the particles, previous-frame history + full-frame
-            // aliases see them, and any refraction snapshot taken before this draw is
-            // invalidated before the next interleaved pass requests another. A shared
-            // run defers both to `flushParticles` when it ends the run.
+            // Mark the scene target written so a later scene pass loads (instead of clearing) the particles, and any refraction snapshot taken before this draw is invalidated. A shared run defers both to `flushParticles`.
             frameState.registerWrite(texture: output, targetID: .scene)
         }
 
@@ -250,17 +222,12 @@ extension WPEMetalRenderExecutor {
             overbright: system.overbright,
             layerID: system.traceObjectID,
             spritePath: system.definition.materialRelativePath,
-            // Mirror the binds above: REFRACT puts the normal map at 1 and the
-            // scene snapshot at 2; otherwise slot 1 is the compose-group mask.
             extraTextures: {
                 var extras: [WPECanonicalTraceRecorder.ParticleTextureInput] = []
                 if isRefract {
                     extras.append(.init(slot: 1, name: "g_Texture1", texture: refractNormal,
                                         path: nil))
-                    // WPE's `genericparticle.frag` declares the refraction
-                    // backdrop as `g_Texture3` (default `_rt_FullFrameBuffer`).
-                    // Our own Metal pipeline binds it at Metal index 2; report
-                    // the AUTHORED slot so the diff lines up. Bindings unchanged.
+                    // WPE's `genericparticle.frag` declares the refraction backdrop as `g_Texture3`. Our Metal pipeline binds it at index 2; report the AUTHORED slot so the diff lines up. Bindings unchanged.
                     extras.append(.init(slot: 3, name: "g_Texture3", texture: refractBackground,
                                         path: "fbo(_rt_FullFrameBuffer)"))
                 } else if let groupMask {

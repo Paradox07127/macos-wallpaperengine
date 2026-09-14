@@ -8,10 +8,9 @@ struct RuntimeV2PlumbingTests {
 
     @Test("GPU cadence divides by the board's real sample interval")
     func gpuCadenceFollowsTheBaseInterval() {
-        // The default board: 1s base, GPU asked for every 6s. Dividing by the
-        // old fixed 2s tick gave 3, i.e. twice the GPU reads the user asked for.
+        // The default board: 1s base, GPU asked for every 6s.
         #expect(Runtime.gpuCadence(forSeconds: 6, baseInterval: 1) == 6)
-        // Fastest board: 0.5s base was 4x over-sampling.
+        // Fastest board: 0.5s base.
         #expect(Runtime.gpuCadence(forSeconds: 6, baseInterval: 0.5) == 12)
         // Slowest board: never below one sample per tick.
         #expect(Runtime.gpuCadence(forSeconds: 6, baseInterval: 5) == 2)
@@ -69,7 +68,6 @@ struct RuntimeV2PlumbingTests {
 
     @Test("CPU's untoggleable process column keeps the walk alive")
     func cpuAlwaysDemandsTopProcesses() {
-        // CPU has no "show top processes" switch, so no combination may drop it.
         let demand = MonitorSampleDemand.of([widget(.cpu, ["showSensors": .bool(false)])])
         #expect(demand.topProcesses == true)
         #expect(demand.sensors == false)
@@ -87,9 +85,6 @@ struct RuntimeV2PlumbingTests {
         #expect(demand.sensors == true)
     }
 
-    /// The tap and its FFT are the most expensive thing a Now Playing layer can
-    /// ask for, and turning the effects off used to leave both running. The
-    /// layer is not a widget, so the demand rides the runtime options.
     @Test("The audio tap follows the Now Playing layer's reactive switch")
     func musicOptionsCarryTheAudioDemand() {
         var reactive = NowPlayingOptions()
@@ -102,8 +97,6 @@ struct RuntimeV2PlumbingTests {
         // Absent key means on, so an untouched layer still gets its effects.
         #expect(NowPlayingOptions([:]).audioReactive)
 
-        // The factory is the consumer: no music, no source; music without the
-        // effects, no tap.
         #expect(SourceRegistration.nowPlayingFactory(MonitorRuntimeOptions()).isEmpty)
         #expect(!SourceRegistration.nowPlayingFactory(
             MonitorRuntimeOptions(music: true, musicAudioReactive: false)
@@ -126,7 +119,7 @@ struct RuntimeV2PlumbingTests {
         // PowerWidgetView's smallBody never references socTempC.
         #expect(MonitorSampleDemand.of([widget(.power, size: .small)]).sensors == false)
 
-        // Control group: `.large` still demands everything, as before.
+        // Control group: `.large` still demands everything.
         #expect(MonitorSampleDemand.of([widget(.cpu, size: .large)]).topProcesses == true)
         #expect(MonitorSampleDemand.of([widget(.memory, size: .large)]).topProcesses == true)
         #expect(MonitorSampleDemand.of([widget(.disk, size: .large)]).processIO == true)

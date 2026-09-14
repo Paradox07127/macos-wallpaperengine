@@ -7,10 +7,8 @@ public enum WPEMediaSystemTexture: Sendable, Equatable, CaseIterable {
     case thumbnail
     case previousThumbnail
 
-    /// Case-insensitive, matching how every other authored name resolves in this renderer.
-    /// Matched on the name alone: the `$` prefix is itself WPE's engine-provided marker, and
-    /// gating on `type == "system"` would drop the older bare-string form for no benefit — no
-    /// author names a texture `$mediaThumbnail`.
+    /// Matched on the name alone, case-insensitively: gating on `type == "system"` would drop
+    /// the older bare-string form, and the `$` prefix is itself WPE's engine-provided marker.
     public init?(bindingName: String) {
         switch bindingName.lowercased() {
         case "$mediathumbnail": self = .thumbnail

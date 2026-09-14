@@ -2,7 +2,6 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// Unified Workshop pane: one sidebar entry, two tabs.
 struct PaneView: View {
     @Environment(WorkshopServices.self) private var services
     @Environment(SteamCMDDoctorService.self) private var doctor
@@ -38,7 +37,7 @@ struct PaneView: View {
                 WorkshopAccountAction()
             }
         }
-        // Re-confirm SteamCMD readiness (so the Download button isn't greyed out just because this launch hasn't re-run the probes), then reconcile the library with what's on disk.
+        // Without the re-confirm the Download button stays greyed out until the probes re-run.
         .task {
             await doctor.autoConfirmDownloadReadinessIfNeeded()
             await folderImport.ingestExistingDownloads(using: doctor)
@@ -80,10 +79,9 @@ struct PaneView: View {
                 SteamCMDSetupSheet(onConfirmManagedInstall: { setupController.runManagedInstall() })
             }
         }
-        // Presented off local state, not off `setupError != nil`: a Binding
-        // whose setter clears the error runs on *every* dismissal, including
-        // the one SwiftUI performs when "Configure" is tapped — so the error
-        // this hands over to Settings was being erased on the way there.
+        // Presented off local state, not off `setupError != nil`: a Binding whose setter
+        // clears the error runs on *every* dismissal, including the one SwiftUI performs
+        // when "Configure" is tapped — erasing the error on its way to Settings.
         .onChange(of: setupController.setupError) { _, error in
             isShowingSetupAlert = error != nil
         }
@@ -154,8 +152,6 @@ struct PaneView: View {
         }
     }
 
-    /// Builds the Browse view-model on demand (the Installed tab may never have
-    /// opened Browse) and remembers it for reuse.
     private func resolveBrowseViewModel() -> BrowseViewModel {
         if let existing = browseViewModel { return existing }
         let created = BrowseViewModel(services: services)
@@ -163,14 +159,12 @@ struct PaneView: View {
         return created
     }
 
-    /// Switch to Browse Online scoped to the tapped tag.
     private func browseByTag(_ tag: String) {
         let viewModel = resolveBrowseViewModel()
         selectedTab = .browseOnline
         Task { await viewModel.browseTag(tag) }
     }
 
-    /// Consumes a one-shot deep link: switch to Browse Online and search for the target.
     private func consumePendingDeepLink() {
         guard let query = WorkshopDeepLink.takePendingSearch() else { return }
         let viewModel = resolveBrowseViewModel()
@@ -180,7 +174,6 @@ struct PaneView: View {
         Task { await viewModel.searchFromDeepLink(query) }
     }
 
-    /// Presents browsing onboarding on the first visit; API key setup is optional.
     private func presentOnboardingIfNeeded() {
         guard selectedTab == .browseOnline, !onboardingShown else { return }
         isShowingOnboarding = true
@@ -194,14 +187,12 @@ struct PaneView: View {
         }
     }
 
-    /// The controller's reading, not `installer.status` alone: the install is
-    /// not done until the connector has launched the binary, and the pane used
-    /// to drop its progress state during that window.
+    /// The controller's reading, not `installer.status` alone: the install is not
+    /// done until the connector has launched the binary.
     private var isInstallingSteamCMD: Bool { setupController.isSteamCMDBusy }
 
-    /// `anchor` defaults to the API-key section, where the Installed tab's "Configure" wants to
-    /// land. A setup failure passes `.workshopConnection` instead: `.workshopSetup` is the key
-    /// section, and with the key moved to the bottom of the page it scrolled past the rows the error was about.
+    /// `anchor` defaults to the API-key section, where the Installed tab's
+    /// "Configure" lands; a setup failure passes `.workshopConnection` instead.
     private func openWorkshopSettings(anchor: SettingsSearchAnchor = .workshopSetup) {
         NotificationCenter.default.post(
             name: .openSettingsSection,
@@ -214,8 +205,6 @@ struct PaneView: View {
     }
 }
 
-/// One-time notice for users configured before downloads got their own Steam
-/// session (they used to share, and sign out, the Steam app's).
 private struct PrivateSessionNoticeBanner: View {
     let onConnect: () -> Void
     let onDismiss: () -> Void
@@ -294,14 +283,12 @@ enum WorkshopDeepLink {
         pendingSearch = trimmed.isEmpty ? nil : trimmed
     }
 
-    /// Read-and-clear the pending target (nil if none).
     static func takePendingSearch() -> String? {
         defer { pendingSearch = nil }
         return pendingSearch
     }
 }
 
-/// Page-level Workshop toolbar action: add an item by URL or ID.
 struct WorkshopPasteAction: View {
     let onPaste: () -> Void
 
@@ -316,7 +303,6 @@ struct WorkshopPasteAction: View {
     }
 }
 
-/// Page-level Workshop toolbar action: fetch subscribed items missing locally.
 struct WorkshopSubscriptionSyncAction: View {
     @State private var showingSubscriptionSync = false
 
@@ -336,7 +322,6 @@ struct WorkshopSubscriptionSyncAction: View {
     }
 }
 
-/// Page-level Workshop toolbar action: the Steam account control.
 struct WorkshopAccountAction: View {
     @Environment(WorkshopServices.self) private var services
     @Environment(SteamCMDDoctorService.self) private var doctor
@@ -372,14 +357,10 @@ struct WorkshopAccountAction: View {
             }
     }
 
-    /// An icon, not the Steam avatar: the app never learns the signed-in user's
-    /// SteamID64, so a portrait would cost a profile lookup to distinguish one
-    /// account from no others.
     @ViewBuilder
     private var accountControl: some View {
-        // Gated on having accounts to list, not on a stored username: the name
-        // outlives the Steam profile it came from, and a menu with nothing to
-        // switch between is a menu that only knows how to sign in.
+        // Gated on having accounts to list, not on a stored username: the name outlives
+        // the Steam profile it came from, and an empty menu can only offer sign-in.
         if setupController.discoveredAccounts.isEmpty {
             Button {
                 showingSignIn = true
@@ -389,10 +370,8 @@ struct WorkshopAccountAction: View {
             .help(Text("Sign In"))
             .accessibilityLabel(Text("Steam sign-in"))
         } else {
-            // Still not a Menu: an AppKit popup ignores its label's
-            // `foregroundStyle` and paints the system control colour, which goes
-            // invisible over dark chrome (probed 2026-08-31). A real Button with
-            // a popover keeps the glyph ours.
+            // Still not a Menu: an AppKit popup ignores its label's `foregroundStyle` and
+            // paints the system control colour, which goes invisible over dark chrome.
             let glyph = doctor.username == nil ? "person.crop.circle.badge.plus" : "person.crop.circle.fill"
             Button {
                 showingAccountMenu = true
@@ -407,8 +386,6 @@ struct WorkshopAccountAction: View {
         }
     }
 
-    /// A popover rather than a Menu so the control itself can be a real (glass)
-    /// Button.
     private var accountMenuPopover: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
             steamAccountMenuItems(
@@ -441,9 +418,6 @@ struct WorkshopAccountAction: View {
         .settingsPopoverChrome(width: 240)
     }
 
-    /// Key health and today's request count. Both were a caption in the page
-    /// header; they read as connection status, so they live with the account
-    /// controls rather than as a glyph wedged into the toolbar.
     private var webAPIKeyStatusLine: some View {
         HStack(spacing: DesignTokens.Spacing.xs) {
             Image(systemName: services.hasWebAPIKey ? "checkmark.seal.fill" : "key.slash")

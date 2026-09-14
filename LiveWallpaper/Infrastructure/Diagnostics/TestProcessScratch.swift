@@ -1,7 +1,5 @@
 import Foundation
 
-/// Per-PID scratch names for test processes, plus the reaper that keeps them from piling up. A test process gets its own configuration root and defaults suite so a suite run can never write into the user's real container.
-/// Nothing can delete them on the way out: cfprefsd writes a suite's plist *after* the owning process dies, so each new test process clears the ones whose owner is gone — 250 plists and 85 directories had accumulated in the container before this existed.
 enum TestProcessScratch {
     static let configurationPrefix = "LiveWallpaperTests-Configuration-"
     static let defaultsPrefix = "LiveWallpaperTests-Defaults-"

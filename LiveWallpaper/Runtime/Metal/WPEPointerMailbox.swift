@@ -4,19 +4,13 @@ import Foundation
 import os
 import simd
 
-/// Non-blocking, last-write-wins transfer of pointer state from AppKit to the render thread.
-/// A single lock provides torn-free snapshots without exposing NSView across isolation domains.
 final class WPEPointerMailbox: Sendable {
-    /// The view's frame in screen coordinates (bottom-left origin), captured on
-    /// the main thread whenever the window moves / resizes / changes screen. A
-    /// zero-size rect means "no active surface" and resolves samples to
-    /// `.inactive`, matching `sampleSceneUV`'s no-window / zero-bounds guard.
+    /// View frame in screen coordinates (bottom-left origin). A zero-size rect means no active surface and resolves samples to `.inactive`.
     struct Geometry: Equatable, Sendable {
         var viewFrameInScreen: CGRect
         static let none = Geometry(viewFrameInScreen: .zero)
     }
 
-    /// One torn-free view of everything the renderer's pointer path consumes.
     struct Reading: Equatable, Sendable {
         var pointerSample: WPEMetalPointerSample
         var pointerFrame: WPEPointerFrame
@@ -93,11 +87,7 @@ final class WPEPointerMailbox: Sendable {
 
     // MARK: - Pure mapping
 
-    /// NSView-free re-implementation of `WPEMetalPointerSampler.sampleSceneUV`
-    /// (WPEMetalRuntimeUniforms.swift), so the render thread can resolve the sample without
-    /// touching AppKit. The screen frame is a rigid translation of the view's bounds, so
-    /// `rect.contains(location)` exactly equals `bounds.contains(localPoint)` and the UV math
-    /// below is identical. Assumes the wallpaper view fills its window with an identity bounds↔frame transform (no scaling); if a view ever scales, carry the bounds size in `Geometry` and divide by it here.
+    /// Assumes the wallpaper view fills its window with an identity bounds↔frame transform (no scaling); if a view ever scales, carry the bounds size in `Geometry` and divide by it here.
     static func pointerSample(
         forScreenLocation location: CGPoint,
         geometry: Geometry

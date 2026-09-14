@@ -10,8 +10,6 @@ struct WPESceneSectionStateTests {
 
     @Test("every state equals itself")
     func equalityIsReflexive() {
-        // A hand-written `==` that forgot `.notRendering` made it unequal to
-        // itself, so `next != state` fired on every refresh.
         let states: [SceneRenderState] = [
             .idle,
             .notRendering,
@@ -92,7 +90,6 @@ struct WPESceneSectionStateTests {
         #expect(FallbackReason.sceneResourceMissing.recovery(workshopID: steamID)
             .contains(.configureEngineAssets))
         #expect(FallbackReason.sceneParseFailed("boom").recovery(workshopID: steamID).contains(.retry))
-        // Fatal reasons offer no retry on any surface.
         #expect(!FallbackReason.requiresWindowsPlugin.recovery(workshopID: steamID).contains(.retry))
         #expect(!FallbackReason.texContainerUnsupported(magic: "X").recovery(workshopID: steamID).contains(.retry))
         #expect(!FallbackReason.texUnsupportedFormat(code: 8).recovery(workshopID: steamID).contains(.retry))
@@ -111,9 +108,6 @@ struct WPESceneSectionStateTests {
     @MainActor
     @Test("The engine-assets banner is driven by setup state, not by a failure")
     func engineAssetsBannerFollowsSetupState() {
-        // Measured on 3558034522: with no install linked the scene leaves 144
-        // references unresolved, renders four passes short and reports no
-        // error at all. Waiting for a failure meant the warning never showed.
         #expect(EngineAssetsBanner.shouldShow(isFeatureEnabled: true, hasEngineAssets: false))
         #expect(!EngineAssetsBanner.shouldShow(isFeatureEnabled: true, hasEngineAssets: true))
         // Lite has no Workshop scenes to warn about.

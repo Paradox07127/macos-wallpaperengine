@@ -4,22 +4,11 @@ import CoreText
 import SwiftUI
 import XCTest
 
-/// Does a reserved slot actually hold the widest reading that can land in it?
-///
-/// `Text` with `lineLimit(1)` shrinks only down to its `minimumScaleFactor` and
-/// then TRUNCATES, so "fits" here means "needs no more shrink than the floor
-/// the view already declares". Every container width in this file was measured,
-/// not assumed: the arc-gauge sides came from hosting a line-for-line replica of
-/// the CPU widget bodies in an `NSHostingView` at the board's own tile sizes
-/// (170×170 / 356×170 / 356×356 pt, `MonitorBoardMetrics`) — a replica because
-/// the real body needs a live snapshot; the column widths are the literal
-/// `.frame(width:)` expressions read off the views.
+/// "Fits" here means "needs no more shrink than the floor the view declares":
+/// `Text` with `lineLimit(1)` shrinks only to `minimumScaleFactor`, then TRUNCATES.
 final class WidgetReadoutFitTests: XCTestCase {
     // MARK: - Text measurement
 
-    /// SwiftUI's `.system(size:weight:design:.default)` is `NSFont.systemFont`,
-    /// and `.monospacedDigit()` selects its tabular-figure variant. `Design`'s
-    /// font helpers clamp the size, so the clamp is mirrored here too.
     private func font(_ size: CGFloat, monospacedDigit: Bool, floor: CGFloat = 10) -> NSFont {
         let clamped = max(size, floor)
         return monospacedDigit
@@ -34,8 +23,7 @@ final class WidgetReadoutFitTests: XCTestCase {
         return CTLineGetTypographicBounds(line, nil, nil, nil)
     }
 
-    /// Rendered width of the shared `HeroPercent` readout — digits at `heroSize`, "%" at
-    /// `heroSize * heroUnitRatio`, `spacing: 0`.
+    /// `HeroPercent` lays out with `spacing: 0`, so its width is the plain sum.
     private func heroWidth(_ digits: String, heroSize: CGFloat) -> CGFloat {
         width(digits, font(heroSize, monospacedDigit: true))
             + width("%", font(heroSize * Design.heroUnitRatio, monospacedDigit: false))
@@ -43,16 +31,9 @@ final class WidgetReadoutFitTests: XCTestCase {
 
     // MARK: - Fixtures
 
-    /// One CPU tile: the ring's centre box is `side * 0.62` (`ArcGauge`), and
-    /// `side` is what the widget actually laid out — measured, since the ring is
-    /// `aspectRatio(1, .fit)` and its own frame does not tell you.
-    ///
-    /// GPU has no rows here on purpose. Its rings carry `.frame(width:)`
-    /// literals, but the ring is `min(width, height)` and those rows are
-    /// height-bound, so the literal is an upper bound on the drawn side — a
-    /// fixture built on it would pass while the real ring truncated. GPU's fit
-    /// is covered structurally below instead, until its rings are measured the
-    /// way CPU's were.
+    /// The ring's centre box is `side * 0.62` (`ArcGauge`); `measuredSide` is what the
+    /// widget laid out. No GPU rows: its `.frame(width:)` literals are only an upper
+    /// bound on the drawn ring, so a fixture built on them would pass while it truncated.
     private struct GaugeCase {
         let name: String
         let cellHeight: CGFloat
@@ -68,11 +49,8 @@ final class WidgetReadoutFitTests: XCTestCase {
         }
     }
 
-    /// `cellHeight` is `tileHeight / 2` (S, M) or `tileHeight / 4` (L), the
-    /// divisor `CPUWidgetView.body` applies. Board scale 1.0 is the desktop
-    /// board's own tile; 1.6 is a scaled-up display, where the hero size hits
-    /// its 46 pt ceiling while the ring stops growing at its 96 pt cap — the
-    /// second-worst ratio after M at scale 1.0.
+    /// `cellHeight` is `tileHeight / 2` (S, M) or `tileHeight / 4` (L), the divisor
+    /// `CPUWidgetView.body` applies; @1.0 is the desktop board, @1.6 a scaled-up display.
     private let gaugeCases: [GaugeCase] = [
         GaugeCase(name: "S @1.0 (sensor capsule shown)", cellHeight: 85, heroFactor: 0.9, measuredSide: 66.60),
         GaugeCase(name: WidgetReadoutFitTests.mediumTileName, cellHeight: 85, heroFactor: 1.05, measuredSide: 67.70),
@@ -82,7 +60,6 @@ final class WidgetReadoutFitTests: XCTestCase {
         GaugeCase(name: "L @1.6", cellHeight: 142.4, heroFactor: 0.92, measuredSide: 96.00),
     ]
 
-    /// The tile the reported truncation came from.
     private static let mediumTileName = "M @1.0"
 
     /// The floor `HeroPercent` declares.
@@ -104,7 +81,6 @@ final class WidgetReadoutFitTests: XCTestCase {
         XCTAssertEqual(Format.wholeNumber(0.994).count, 2)
         XCTAssertEqual(Format.wholeNumber(0.996).count, 3)
         XCTAssertEqual(Format.wholeNumber(1), "100")
-        // Out-of-range samples clamp rather than widening past three digits.
         XCTAssertEqual(Format.wholeNumber(4.2), "100")
         XCTAssertEqual(Format.wholeNumber(.nan), "0")
     }
@@ -126,9 +102,8 @@ final class WidgetReadoutFitTests: XCTestCase {
         }
     }
 
-    /// Control: the same reading at the UNSHRUNK size is what shipped before,
-    /// and on the M tile it lands under the floor. Without this the test above
-    /// could pass on a box that was never tight.
+    /// Control: without this, the test above could pass on a box that was never tight —
+    /// the same reading at the UNSHRUNK size lands under the floor on the M tile.
     func testFullLoadHeroWithoutTheDigitShrinkIsUnderTheFloor() throws {
         let medium = try XCTUnwrap(gaugeCases.first { $0.name == Self.mediumTileName })
         let unshrunk = Design.heroSize(base: medium.base, digits: 2)
@@ -138,9 +113,6 @@ final class WidgetReadoutFitTests: XCTestCase {
 
     // MARK: - Every gauge centre draws the shared readout
 
-    /// The shrink lives in `HeroPercent`, so a widget only has it while it draws
-    /// its hero through that view. GPU shipped its own copy without the shrink
-    /// and truncated; this is what stops the copy coming back.
     func testGaugeCentresUseTheSharedHeroReadout() throws {
         let widgets = [
             "LiveWallpaper/Monitor/Widgets/CPUWidgetView.swift",
@@ -155,7 +127,6 @@ final class WidgetReadoutFitTests: XCTestCase {
                 source.contains("HeroPercent("),
                 "\(path) stopped drawing its hero reading through HeroPercent"
             )
-            // Control: the shape the bug had — digits and a "%" sized by hand.
             XCTAssertFalse(
                 source.contains(#"Text(verbatim: "%")"#),
                 "\(path) hand-sizes a \"%\" again instead of using HeroPercent"
@@ -163,8 +134,6 @@ final class WidgetReadoutFitTests: XCTestCase {
         }
     }
 
-    /// The shrink must not overshoot into an illegibly small reading: three
-    /// digits stay at least half the two-digit size.
     func testDigitShrinkStaysWithinHalfTheBaseSize() {
         XCTAssertGreaterThan(Design.threeDigitHeroShrink, 0.5)
         XCTAssertLessThan(Design.threeDigitHeroShrink, 1.0)
@@ -172,9 +141,6 @@ final class WidgetReadoutFitTests: XCTestCase {
 
     // MARK: - Reserved columns in the "top process" rows
 
-    /// `MemoryTopProcessRow`'s two right-hand columns are fixed-width slots. The
-    /// widest real readings overflow them, so the row's scale floor is the only
-    /// thing standing between them and a truncated number.
     func testMemoryTopProcessColumnsHoldTheirWidestRealReadings() throws {
         let caption: CGFloat = 11 // Design.TypeScale(cellHeight: 89).caption
         let slotFont = font(caption * 0.94, monospacedDigit: true)
@@ -206,7 +172,6 @@ final class WidgetReadoutFitTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(gibSlot / width(gibText, slotFont), floor)
     }
 
-    /// Brace-matched body of `MemoryTopProcessRow`.
     private static func topProcessRowBody(in source: String) -> String? {
         guard let start = source.range(of: "struct MemoryTopProcessRow") else { return nil }
         var depth = 0
@@ -227,14 +192,12 @@ final class WidgetReadoutFitTests: XCTestCase {
         return nil
     }
 
-    /// The number inside the row's first `minimumScaleFactor(...)`.
     private static func scaleFloor(in body: String) -> CGFloat? {
         guard let match = body.range(of: #"minimumScaleFactor\([0-9.]+\)"#, options: .regularExpression)
         else { return nil }
         return trailingNumber(in: body[match])
     }
 
-    /// Every `.frame(width: scale.caption * N` in the row, in source order.
     private static func captionSlotMultipliers(in body: String) -> [CGFloat] {
         var out: [CGFloat] = []
         var cursor = body.startIndex
@@ -251,9 +214,8 @@ final class WidgetReadoutFitTests: XCTestCase {
         return out
     }
 
-    /// Only the slots that hold right-aligned text. `MemoryTopProcessRow` also
-    /// sizes a status dot and an inline bar off `scale.caption`, so taking every
-    /// match by position would read the dot's 0.5 as the cpu% column.
+    /// Only right-aligned slots: the row also sizes a status dot and an inline bar off
+    /// `scale.caption`, so taking every match by position would read the dot's 0.5 as cpu%.
     private static func trailingTextSlotMultipliers(in body: String) -> [CGFloat] {
         var out: [CGFloat] = []
         var cursor = body.startIndex
@@ -271,11 +233,8 @@ final class WidgetReadoutFitTests: XCTestCase {
         return out
     }
 
-    /// The last run of digits/dot in `text`, e.g. "2.9" from ".frame(width:
-    /// scale.caption * 2.9" and "0.7" from "minimumScaleFactor(0.7)". The
-    /// leading `drop` is what makes the second one work: without it a match that
-    /// ends in `)` scanned no digits at all and returned nil, which silently
-    /// turned `scaleFloor` into "this row has no floor" on every caller.
+    /// Skipping the trailing non-digits is load-bearing: a match ending in ")" would scan
+    /// no digits and return nil, silently turning `scaleFloor` into "this row has no floor".
     private static func trailingNumber(in text: Substring) -> CGFloat? {
         var digits = ""
         var seenDigit = false
@@ -290,7 +249,6 @@ final class WidgetReadoutFitTests: XCTestCase {
         return Double(digits).map { CGFloat($0) }
     }
 
-    /// Brace-matched body of whatever declaration starts with `declaration`.
     private static func declarationBody(_ declaration: String, in source: String) -> String? {
         guard let start = source.range(of: declaration) else { return nil }
         var depth = 0
@@ -311,7 +269,6 @@ final class WidgetReadoutFitTests: XCTestCase {
         return nil
     }
 
-    /// The multiplier in `let <name> = base * N`, the shape `processTable` uses.
     private static func baseMultiplier(_ name: String, in body: String) -> CGFloat? {
         guard let match = body.range(of: #"let \#(name) = base \* [0-9.]+"#,
                                      options: .regularExpression)
@@ -319,17 +276,12 @@ final class WidgetReadoutFitTests: XCTestCase {
         return trailingNumber(in: body[match])
     }
 
-    /// The same shape in the two widgets that already had a floor. Both sets of
-    /// slots and both floors are read out of the widgets for the same reason as
-    /// `MemoryTopProcessRow` above — narrowing a slot there has to move this
-    /// test, and a floor is only real if the row still declares it.
     func testCPUAndProcessesTopRowColumnsHoldTheirWidestRealReadings() throws {
         let caption: CGFloat = 11 // Design.TypeScale(cellHeight: 89).caption
         let memText = Format.bytes(128 * 1_073_741_824 as Double)
         XCTAssertEqual(memText, "128.0 GB")
         let memFont = font(caption * 0.94, monospacedDigit: true, floor: 11)
 
-        // CPUWidgetView.procRows: the inline bar, then the cpu% and mem slots.
         let cpuSource = try RepositoryRoot.source("LiveWallpaper/Monitor/Widgets/CPUWidgetView.swift")
         let procRows = try XCTUnwrap(Self.declarationBody("private func procRows(", in: cpuSource),
                                      "CPUWidgetView no longer declares procRows")
@@ -349,8 +301,6 @@ final class WidgetReadoutFitTests: XCTestCase {
                              "control: if this column stopped overflowing, the floor below is untested")
         XCTAssertGreaterThanOrEqual(caption * cpuSlots[2] / width(memText, memFont), cpuFloor)
 
-        // ProcessesWidgetView.processTable sizes its columns off `base`, and the
-        // two floors live one level down in the cells that draw them.
         let procSource = try RepositoryRoot.source("LiveWallpaper/Monitor/Widgets/ProcessesWidgetView.swift")
         let table = try XCTUnwrap(Self.declarationBody("private func processTable(", in: procSource),
                                   "ProcessesWidgetView no longer declares processTable")
@@ -382,15 +332,11 @@ final class WidgetReadoutFitTests: XCTestCase {
 
     // MARK: - The gauge column reports the ring, not its cap
 
-    /// `ArcGauge` is `aspectRatio(1, .fit)`, so it draws `min(width, height)`.
-    /// Under a `maxWidth` cap the frame still reports the CAP, which is how the
-    /// M column reserved 96 pt for a ring that measured 67.7 pt. A `maxHeight`
-    /// cap bounds the ring exactly as before while letting the frame report the
-    /// ring's own width, handing the difference back to the trend curve.
+    /// `ArcGauge` is `aspectRatio(1, .fit)`: under a `maxWidth` cap the frame still reports
+    /// the CAP, while under a `maxHeight` cap it reports the ring's own width.
     @MainActor
     func testHeightCappedGaugeReportsItsOwnWidthAndKeepsItsSize() {
-        // The heights the M and L gauge rows actually offer, measured by hosting
-        // the real widget bodies at the board's own 356×170 and 356×356 tiles.
+        // The heights the M and L gauge rows offer at the board's 356×170 and 356×356 tiles.
         let mediumRow: CGFloat = 67.7
         let largeRow: CGFloat = 85.15
         let wide: CGFloat = 300 // the column is never the narrow axis here
@@ -422,8 +368,6 @@ final class WidgetReadoutFitTests: XCTestCase {
             },
             CGSize(width: largeRow, height: largeRow)
         )
-        // The cap still bites on a taller row: the ring must not grow past the
-        // 96 pt the old width constants guaranteed.
         XCTAssertEqual(
             gaugeSize(proposing: CGSize(width: wide, height: 140)) { $0.frame(maxHeight: 96) },
             CGSize(width: 96, height: 96)
@@ -432,14 +376,9 @@ final class WidgetReadoutFitTests: XCTestCase {
 
     // MARK: - The gauge column is a declared width, not a measured one
 
-    /// Every ring height the M and L rows offer, measured by hosting replicas of
-    /// the two bodies (`WidgetContainer` chrome, identity row, composition
-    /// legend / bar, core strip, process rows) at the board's own tile sizes over
-    /// board scales 0.7 … 2.0. `cellHeight` is `tileHeight / 2` (M) or `/ 4` (L);
-    /// `offeredHeight` is what the row leaves the ring before any cap, which is
-    /// the whole problem: it is not proportional to the tile (the container's
-    /// 11 pt inset and the 10…12 pt label clamp are fixed costs), so a column
-    /// that reported it could not be predicted from anything.
+    /// `cellHeight` is `tileHeight / 2` (M) or `/ 4` (L); `offeredHeight` is what the row
+    /// leaves the ring before any cap, over board scales 0.7 … 2.0. It is not proportional
+    /// to the tile: the container inset and the label clamp are fixed costs.
     private struct GaugeRow {
         let name: String
         let cellHeight: CGFloat
@@ -449,9 +388,6 @@ final class WidgetReadoutFitTests: XCTestCase {
         let offeredHeight: CGFloat
     }
 
-    /// The six board scales, in each configuration that changes what is stacked
-    /// above or below the M ring; L's chrome also moves with its core strip and
-    /// process list, which is why it does not get a bound of its own.
     private let gaugeRows: [GaugeRow] = [
         GaugeRow(name: "M @0.7", cellHeight: 59.50, rows: 1, identity: true, legend: true, offeredHeight: 20.70),
         GaugeRow(name: "M @0.85", cellHeight: 72.25, rows: 1, identity: true, legend: true, offeredHeight: 45.20),
@@ -487,8 +423,7 @@ final class WidgetReadoutFitTests: XCTestCase {
         GaugeRow(name: "L @1.25", cellHeight: 111.25, rows: 2, identity: true, legend: true, offeredHeight: 121.08),
         GaugeRow(name: "L @1.6", cellHeight: 142.40, rows: 2, identity: true, legend: true, offeredHeight: 176.80),
         GaugeRow(name: "L @2.0", cellHeight: 178.00, rows: 2, identity: true, legend: true, offeredHeight: 248.00),
-        // L with its core strip and process list gone — the row that makes the
-        // cap the only bound L can take.
+        // The row that makes the cap the only bound L can take.
         GaugeRow(name: "L @0.7 bare", cellHeight: 62.30, rows: 2, identity: false, legend: false, offeredHeight: 101.10),
     ]
 
@@ -499,8 +434,7 @@ final class WidgetReadoutFitTests: XCTestCase {
         )
     }
 
-    /// The column may only ever be wider than the ring it holds. If it is ever
-    /// narrower the ring becomes width-limited and shrinks below what shipped.
+    /// A column narrower than its ring would make the ring width-limited and shrink it.
     func testGaugeSideNeverNarrowsTheRingItReserves() {
         for row in gaugeRows {
             let ring = min(CPUWidgetView.gaugeSideCap, row.offeredHeight)
@@ -509,22 +443,16 @@ final class WidgetReadoutFitTests: XCTestCase {
                 "\(row.name): the column reserves \(gaugeSide(row)) pt for a \(ring) pt ring, which clips it"
             )
         }
-        // Control: the assertion above only bites on rows where the cap is NOT
-        // what sizes the ring, and there have to be some.
         let tight = gaugeRows.filter { $0.offeredHeight < CPUWidgetView.gaugeSideCap }
         XCTAssertGreaterThanOrEqual(tight.count, 10,
                                     "every measured row is cap-limited; nothing above is tested")
     }
 
-    /// What the column strands, tile by tile. The `maxWidth: 96` this replaced
-    /// stranded 28.30 pt on the desktop board's own M tile.
     func testGaugeSideStrandsFarLessThanTheOldFixedWidth() throws {
         let medium = try XCTUnwrap(gaugeRows.first { $0.name == "M @1.0" })
         XCTAssertEqual(CPUWidgetView.gaugeSideCap - medium.offeredHeight, 28.30, accuracy: 0.01)
         XCTAssertLessThanOrEqual(gaugeSide(medium) - medium.offeredHeight, 13)
-        // The ring is untouched, so a narrower column is exactly what it hands
-        // back to the trend curve. Most M rows land under the old fixed width;
-        // the rest are rows where the ring itself reaches the cap.
+        // Not all of them: the rest are rows where the ring itself reaches the cap.
         let narrowed = gaugeRows.filter { $0.rows == 1 && gaugeSide($0) < CPUWidgetView.gaugeSideCap }
         XCTAssertGreaterThanOrEqual(
             narrowed.count, 8,
@@ -532,9 +460,6 @@ final class WidgetReadoutFitTests: XCTestCase {
         )
     }
 
-    /// L takes the cap flat because its ring reaches it: with the core strip and
-    /// the process list gone the row offered 101.10 pt at board scale 0.7, above
-    /// the cap at the smallest tile there is.
     func testLargeGaugeSideIsTheCapAtEveryInput() {
         for row in gaugeRows where row.rows == 2 {
             for identity in [true, false] {
@@ -549,9 +474,8 @@ final class WidgetReadoutFitTests: XCTestCase {
         }
     }
 
-    /// The composition legend — not the ring — is what the M column reports
-    /// below board scale 1.25, and its own width swings with the reading
-    /// ("USER 5%" … "USER 100%"). Widths measured headless at its widest.
+    /// Below board scale 1.25 the M column reports the composition legend, not the ring;
+    /// `legend` is its width at the widest reading ("USER 100%").
     func testGaugeSideReservesTheWidestCompositionLegend() {
         let measured: [(cellHeight: CGFloat, label: CGFloat, legend: CGFloat)] = [
             (59.50, 10, 80.00), (72.25, 10, 80.00), (85.00, 10, 80.00),
@@ -574,9 +498,6 @@ final class WidgetReadoutFitTests: XCTestCase {
         XCTAssertLessThan(ringTerm, 80.00)
     }
 
-    /// The whole point: the column reports the declared width whatever height
-    /// the row happens to offer. The height still comes from the row, which is
-    /// why the ring is unchanged — `gaugeSide` only ever bounds the width.
     @MainActor
     func testPinnedGaugeColumnReportsGaugeSideAtEveryOfferedHeight() {
         let side = CPUWidgetView.gaugeSide(cellHeight: 85, rows: 1,
@@ -592,10 +513,8 @@ final class WidgetReadoutFitTests: XCTestCase {
         }
     }
 
-    /// The pinned column must not make the gauge frame taller than the row it
-    /// sits in, or the M tile overflows. It cannot: `gaugeSide` only stays under
-    /// the cap while the row's own offer is under it too, so the height the cap
-    /// lets through is always the row's.
+    /// The pinned column must not make the gauge frame taller than its row, or the M tile
+    /// overflows.
     func testMediumGaugeSideIsNeverUnderWhatItsRowOffers() {
         for row in gaugeRows where row.rows == 1 {
             XCTAssertGreaterThanOrEqual(
@@ -605,8 +524,6 @@ final class WidgetReadoutFitTests: XCTestCase {
         }
     }
 
-    /// Both bodies have to actually apply it; without this the function above
-    /// could be perfect and unused.
     func testMediumAndLargeBodiesPinTheirGaugeColumn() throws {
         let source = try RepositoryRoot.source("LiveWallpaper/Monitor/Widgets/CPUWidgetView.swift")
         for declaration in ["private func mediumBody(", "private func largeBody("] {
@@ -619,9 +536,7 @@ final class WidgetReadoutFitTests: XCTestCase {
         }
     }
 
-    /// Lays the real `ArcGauge` out under `cap` against `proposing` and returns
-    /// the size it settled on. `ImageRenderer.proposedSize` is the constrained
-    /// layout pass; nothing here needs a window or a run loop.
+    /// `ImageRenderer.proposedSize` is the constrained layout pass: no window, no run loop.
     @MainActor
     private func gaugeSize(
         proposing proposal: CGSize, cap: (ArcGauge<EmptyView>) -> some View

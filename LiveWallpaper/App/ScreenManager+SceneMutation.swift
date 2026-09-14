@@ -8,7 +8,6 @@ import LiveWallpaperCore
 
 @MainActor
 extension ScreenManager {
-    /// Cancel in-flight incremental scene patches (intent boundaries / retained writes).
     func advanceScenePropertyMutationIntent(for screenID: CGDirectDisplayID) {
         #if !LITE_BUILD
             guard let screen = screens.first(where: { $0.id == screenID }),
@@ -21,7 +20,6 @@ extension ScreenManager {
         #endif
     }
 
-    /// CAS for async in-place edit vs prepared replacement (session identity closes races).
     func isCurrentExplicitWallpaperSelection(
         _ generation: Int,
         expectedConfigurationRevision: UInt64,
@@ -59,12 +57,6 @@ extension ScreenManager {
         }
     }
 
-    /// A preset was added, edited or deleted somewhere else in the app. Each running session and
-    /// each open inspector holds a descriptor with the preset's values baked in, and neither is
-    /// reachable from the library write, so both have to be pushed the reconciled descriptor here.
-    /// The pre-reconcile copies are captured before the cache is dropped: they are what the
-    /// sessions are actually rendering, so they are the only correct baseline for the incremental
-    /// property patch.
     func handleScenePresetLibraryChange() {
         guard !isTerminating else { return }
         var rendering: [CGDirectDisplayID: SceneDescriptor] = [:]
@@ -93,16 +85,11 @@ extension ScreenManager {
         }
     }
 
-    /// Replace the active scene's `SceneDescriptor` (currently used by the Pro
-    /// inspector to push user-edited `project.json` properties down).
     func updateSceneDescriptor(_ descriptor: SceneDescriptor, for screen: Screen) async {
         await updateSceneDescriptor(descriptor, previous: nil, for: screen)
     }
 
-    /// `previous` is the descriptor the running session was last handed. It differs from the stored
-    /// one only when something already wrote the new value to the store without going through a
-    /// session — preset reconcile does exactly that — and the patch has to diff against what is on
-    /// screen, not against what is on disk.
+    /// previous is the descriptor the running session was last handed. It differs from the stored one only when something already wrote the new value to the store without going through a session.
     private func updateSceneDescriptor(
         _ descriptor: SceneDescriptor,
         previous: SceneDescriptor?,
@@ -207,7 +194,6 @@ extension ScreenManager {
     }
 
     #if !LITE_BUILD
-        /// Reload only if renderer identity changed after preflight and intent is still latest.
         private func restorePersistedSceneAfterFailedPatchDelivery(
             _ descriptor: SceneDescriptor,
             committedRevision: UInt64,
@@ -236,8 +222,6 @@ extension ScreenManager {
             )
         }
 
-        /// Effective property values (schema defaults merged with the descriptor's
-        /// overrides) used to diff old vs new settings for incremental apply.
         private func effectiveSceneValues(
             for descriptor: SceneDescriptor,
             origin: WPEOrigin?

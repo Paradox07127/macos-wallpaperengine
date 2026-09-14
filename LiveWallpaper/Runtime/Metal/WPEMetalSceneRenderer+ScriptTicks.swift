@@ -10,10 +10,6 @@ extension WPEMetalSceneRenderer {
         AppLanguagePreference.current(in: .appScoped()).wallpaperEngineLanguageCode()
     }
 
-    /// The same defaults domain drives SwiftUI's `@AppStorage` language
-    /// picker. Foundation posts `didChangeNotification` for in-process
-    /// writes; locale changes cover the `.system` preference. Both flow
-    /// through the actor's FIFO config channel and are de-duplicated there.
     func installSceneScriptLanguageObservers(on actor: WPEDisplayRenderActor) {
         guard sceneScriptLanguageObservers.isEmpty else { return }
         let center = NotificationCenter.default
@@ -40,18 +36,13 @@ extension WPEMetalSceneRenderer {
         applySceneScriptGeneralSettingsIfChanged()
     }
 
-    /// Official initial-full contract. Language is currently the complete
-    /// documented settings bag; future keys must be added here, not inferred
-    /// from the HTML wallpaper listener.
     func applyInitialSceneScriptGeneralSettings() {
         dispatchSceneScriptGeneralSettings(
             language: sceneScriptGeneralSettings.takeInitialLanguage()
         )
     }
 
-    /// Subsequent contract: emit only when the language key changed. Every
-    /// JS call receives a fresh plain object with its own `language` property,
-    /// so authored `hasOwnProperty('language')` checks behave exactly as in WPE.
+    /// Subsequent contract: emit only when the language key changed. Every JS call receives a fresh plain object with its own `language` property, so authored `hasOwnProperty('language')` checks behave exactly as in WPE.
     func applySceneScriptGeneralSettingsIfChanged() {
         guard let language = sceneScriptGeneralSettings.takeChangedLanguage() else { return }
         dispatchSceneScriptGeneralSettings(language: language)
@@ -101,9 +92,6 @@ extension WPEMetalSceneRenderer {
         }
     }
 
-    // Each family applies its newest completed value and contributes its next
-    // tick to this frame's batch; `renderCurrentFrame` submits the batch once,
-    // so a scene's script count costs dispatches only up to the worker width.
 
     func tickLayerScript(
         _ instance: WPELayerScriptInstance,
@@ -146,14 +134,7 @@ extension WPEMetalSceneRenderer {
         return value
     }
 
-    /// Cursor events fire inside the frame path, so they are enqueued
-    /// fire-and-forget: the handler's output drains through the next frame's
-    /// tick (`batchTick` takes it off `asyncOutcomeSlot`), and the frame never
-    /// waits on a script engine. Returning nothing is the point — an optional
-    /// return here reads like the caller can apply the output in the same frame.
-    /// Everything one instance gets in one frame goes as ONE batch: the async
-    /// slot admits a single in-flight dispatch per instance, so a second event
-    /// sent separately in the same frame was silently dropped.
+    /// Returning nothing is the point — an optional return here reads like the caller can apply the output in the same frame. Everything one instance gets in one frame goes as one batch: a second event sent separately in the same frame would be silently dropped.
     func dispatchScriptCursorEvents(
         _ instance: WPELayerScriptInstance,
         events: [WPELayerScriptCursorEvent],
@@ -167,15 +148,9 @@ extension WPEMetalSceneRenderer {
         )
     }
 
-    /// Drains this scene's media mailbox onto every script that exported a handler. The
-    /// mailbox is empty on all but a handful of frames per song (the diff gate only posts
-    /// when a field moved), so a media scene costs one lock-protected `isEmpty` check per
-    /// frame. Layer scripts go through the fire-and-forget path like cursor events; text scripts are bounded-synchronous (no event lane).
     func drainMediaEvents(runtimeSeconds: Double) {
         guard let events = mediaEventMailbox?.drain(), !events.isEmpty else { return }
-        // The whole drain goes to each instance as ONE batch: dispatched
-        // per event, the single in-flight async slot admitted the first and
-        // silently dropped the rest of a cold-start burst.
+        // The whole drain goes to each instance as one batch: dispatched per event, the single in-flight async slot would admit the first and silently drop the rest of a cold-start burst.
         for instance in layerScriptInstances.values {
             instance.liveDispatchMediaEvents(events, runtimeSeconds: runtimeSeconds)
         }
@@ -188,15 +163,11 @@ extension WPEMetalSceneRenderer {
         for instance in textAlphaScriptInstances.values {
             instance.liveDispatchMediaEvents(events, runtimeSeconds: runtimeSeconds)
         }
-        // Text is bounded-synchronous (no event lane, nothing to drop).
         for event in events {
             for instance in textScriptInstances.values {
                 instance.dispatchMediaEvent(event, runtimeSeconds: runtimeSeconds)
             }
         }
-        // The dynamic-transform runtime hosts origin/scale/angles/color
-        // and the effect constant/visibility slots — where the corpus
-        // actually binds its media-driven scale, position and tint.
         for instance in dynamicOriginScriptInstances.values {
             instance.liveDispatchMediaEvents(events, runtimeSeconds: runtimeSeconds)
         }
@@ -231,10 +202,7 @@ extension WPEMetalSceneRenderer {
         )
     }
 
-    /// The surface owns the only real screen-size producer. This is called
-    /// only after `updateSurfaceGeometry` accepts a positive changed size;
-    /// construction merely seeds `engine.screenResolution` and never emits
-    /// the startup event prohibited by WPE's contract.
+    /// Called only after `updateSurfaceGeometry` accepts a positive changed size; construction merely seeds `engine.screenResolution` and never emits the startup event prohibited by WPE's contract.
     func dispatchSceneScriptResizeScreen(_ size: SIMD2<Double>) {
         for (objectID, instance) in layerScriptInstances.sorted(by: { $0.key < $1.key }) {
             if let output = instance.resizeScreen(size) {
@@ -279,9 +247,6 @@ extension WPEMetalSceneRenderer {
         }
     }
 
-    /// Delivers `destroy()` synchronously on each instance lane before the
-    /// dictionaries release their JSContexts. ObjectIdentifier de-duplicates
-    /// defensive aliases, while every instance also owns a one-way latch.
     func destroySceneScriptInstances() {
         var layerIDs = Set<ObjectIdentifier>()
         for instances in [
@@ -337,11 +302,6 @@ extension WPEMetalSceneRenderer {
             || !effectVisibilityScriptInstances.isEmpty
     }
 
-    /// The transform families' counterpart to the layer/text fan-out. The handler
-    /// only mutates module state — 3146703458's scale script assigns `speed` there
-    /// and nowhere else — so the next tick publishes the corrected value and
-    /// nothing is applied here. De-duplicated by identity because one instance can
-    /// sit in several tables.
     func dispatchTransformScriptUserProperties(
         _ properties: [String: WPESceneScriptPropertyValue]
     ) {

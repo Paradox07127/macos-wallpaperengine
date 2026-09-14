@@ -41,7 +41,6 @@ final class SystemAudioCaptureService: @unchecked Sendable {
         }
     }
 
-    /// Shared sink (IOProc sole writer); injected so one broker survives capture restarts.
     let broker: AudioSpectrumBroker
 
     init(broker: AudioSpectrumBroker = AudioSpectrumBroker()) {
@@ -59,7 +58,6 @@ final class SystemAudioCaptureService: @unchecked Sendable {
 
     // MARK: - Lifecycle
 
-    /// Build tap + aggregate device + IOProc. Idempotent; cleans up on failure.
     func start() throws {
         guard !isRunning else { return }
 
@@ -109,7 +107,6 @@ final class SystemAudioCaptureService: @unchecked Sendable {
             throw CaptureError.unsupportedTapFormat(asbd)
         }
 
-        // Private aggregate; TapAutoStartKey starts the sub-tap.
         let aggregateUID = UUID().uuidString
         let aggregateDescription: [String: Any] = [
             kAudioAggregateDeviceNameKey as String: "\(BundleIdentity.productDisplayName) Audio Capture",
@@ -136,13 +133,11 @@ final class SystemAudioCaptureService: @unchecked Sendable {
         }
         aggregateID = newAggregateID
 
-        // IOProc captures this context, not `self`.
         let processor = AudioSpectrumProcessor(
             configuration: AudioSpectrumProcessor.Configuration(sampleRate: Float(asbd.mSampleRate))
         )
         let ioContext = IOContext(processor: processor)
         context = ioContext
-        // Consumers' snapshot() pulls analysis from this processor while capture runs.
         broker.attachAnalyzer(processor)
 
         let channelCount = Int(asbd.mChannelsPerFrame)
@@ -182,7 +177,6 @@ final class SystemAudioCaptureService: @unchecked Sendable {
         )
     }
 
-    /// Stop capture and release Core Audio objects (idempotent).
     func stop() {
         guard isRunning || tapID != AudioObjectID(kAudioObjectUnknown) else { return }
         teardown()
@@ -297,7 +291,7 @@ final class SystemAudioCaptureService: @unchecked Sendable {
 
     // MARK: - Channel extraction (pure, unit-tested)
 
-    /// Deinterleave float buffer to stereo L/R (mono duplicated; >2 takes ch 0/1).
+    /// Mono duplicated; >2 takes ch 0/1.
     static func writeInterleavedStereo(
         _ source: UnsafePointer<Float>,
         channelCount: Int,

@@ -119,8 +119,7 @@ struct PowerWidgetTests {
         #expect(MonitorPowerModel.accessorySymbol("trackpad") == "rectangle.and.hand.point.up.left.filled")
         #expect(MonitorPowerModel.accessorySymbol("other") == "dot.radiowaves.left.and.right")
 
-        // The mapping is only useful if the symbols actually exist: `trackpad`
-        // did not, and rendered as a blank cell.
+        // The mapping is only useful if the symbols actually exist.
         for kind in ["mouse", "keyboard", "trackpad", "other"] {
             let symbol = MonitorPowerModel.accessorySymbol(kind)
             #expect(

@@ -92,7 +92,6 @@ struct SettingsSidebar: View {
     }
 }
 
-/// Uses the settings sidebar’s full-width search styling.
 private struct SettingsSidebarSearchField: View {
     @Binding var text: String
 

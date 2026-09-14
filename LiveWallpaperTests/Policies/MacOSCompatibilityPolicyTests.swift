@@ -15,11 +15,8 @@ struct MacOSCompatibilityPolicyTests {
             .matches(of: /MACOSX_DEPLOYMENT_TARGET = ([^;]+);/)
             .map { String($0.output.1) }
         #expect(!projectTargets.isEmpty)
-        // 14.6 is the app floor. The SystemWallpaperProvider appexes are the
-        // one sanctioned exception: the com.apple.wallpaper extension point
-        // does not exist before macOS 26, so their two targets (Pro + Lite,
-        // Debug + Release each) pin 26.0 — exactly four occurrences. A fifth
-        // means an app target drifted.
+        // 14.6 is the app floor; the wallpaper appexes pin 26.0 because the extension
+        // point does not exist earlier — 2 targets x 2 configs = the four occurrences.
         #expect(
             Set(projectTargets) == ["14.6", "26.0"],
             Comment(rawValue: "pbxproj has unexpected deployment targets: \(Set(projectTargets).sorted())")
@@ -74,20 +71,12 @@ struct MacOSCompatibilityPolicyTests {
         #expect(offenders.isEmpty, Comment(rawValue: offenders.joined(separator: "\n")))
     }
 
-    /// Availability is guarded above; this guards *placement*. Apple's own words:
-    /// "Limit these effects to the most important functional elements in your app",
-    /// and the section on lists / tables / forms never mentions the material at all.
-    /// Both families below sit on opaque backgrounds by construction, so glass
-    /// there buys a highlight with nothing behind it to refract.
     @Test("Liquid Glass stays off opaque surfaces")
     func liquidGlassStaysOffOpaqueSurfaces() throws {
         let entryPoints = [".adaptiveGlassButton(", ".adaptiveGlassSurface("]
 
-        // Settings is a grouped Form that draws its own section plate.
         let settingsPrefix = "LiveWallpaper/Views/Settings/"
 
-        // Every caller renders these in page flow, so the choice cannot be pushed
-        // to the caller — the component itself has to stay flat.
         let flatOnlyComponents: Set<String> = [
             "ContainerGroupBoxStyle.swift",
             "SheetFooterBar.swift",
@@ -98,8 +87,6 @@ struct MacOSCompatibilityPolicyTests {
             "LibraryFilterBar.swift",
             "DestructiveControlTint.swift",
             "CapsuleButtonStyle.swift",
-            // Card-sized glass resamples the scrolling grid behind every tile
-            // each frame; the badges floating over the artwork keep theirs.
             "GalleryTileChrome.swift",
         ]
 

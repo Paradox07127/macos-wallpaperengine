@@ -1,8 +1,5 @@
 import SwiftUI
 
-/// Sidebar-footer entry point for the system dashboard. The collapsed row keeps
-/// a live health dot; tapping expands the full gauges upward inside the sidebar
-/// on a glass surface instead of escaping into a popover.
 public struct SystemMonitorPill: View {
     private var monitor = SystemMonitor.shared
     @State private var isExpanded = false
@@ -62,7 +59,6 @@ public struct SystemMonitorPill: View {
 
                 Spacer(minLength: DesignTokens.Spacing.sm)
 
-                // Redundant once the gauges are visible, so it fades out on expand.
                 if !isExpanded {
                     Circle()
                         .fill(dotColor)

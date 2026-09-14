@@ -62,12 +62,8 @@ enum WPEMetalShaderInputs {
         return texture !== destination && texture.parent !== destination
     }
 
-    /// Requested FBO names whose fuzzy-alias resolution has already been logged,
-    /// so the once-per-name warning below doesn't repeat every frame.
     private static let loggedFuzzyFBONames = OSAllocatedUnfairLock<Set<String>>(initialState: [])
 
-    /// One-time warning when an `.fbo` lookup only succeeds via the fuzzy alias
-    /// transformations — the scene works, but the authored name didn't match.
     private static func logFuzzyFBOHit(requested: String, resolved: String) {
         guard loggedFuzzyFBONames.withLock({ $0.insert(requested).inserted }) else { return }
         Logger.warning(
@@ -106,21 +102,13 @@ enum WPEMetalShaderInputs {
                 return texture
             }
             if WPETextureReference.isSceneAliasName(name) {
-                // WPE's `_rt_FullFrameBuffer` (and other scene aliases) means "what is
-                // CURRENTLY rendered to the background's output" — never the previous frame.
-                // `currentFrameSceneTexture` is non-nil only once a scene-target pass has
-                // written this frame; before that we fall back to `output`, cleared to the
-                // scene clear color at frame start. Using last frame's content would create a positive-feedback loop (shine_combine COPYBG + `albedo.a = saturate(albedo.a + rays.a)` ramps the layer white).
+                // Scene alias = currently rendered background output, never last frame (`currentFrameSceneTexture` else `output` cleared at frame start). Last-frame content would positive-feedback (shine_combine COPYBG ramps white).
                 return frameState.currentFrameSceneTexture ?? frameState.output
             }
             if let aliased = resolveAliasedNamedTexture(name: name, frameState: frameState) {
                 return aliased
             }
-            // First-frame read of a declared-but-unwritten local FBO: WPE reads a freshly
-            // created RT as all-zero (motionblur pass0 samples its own `_rt_FullCompoBuffer1`
-            // history before pass1 writes it). Hand back a cached zero stand-in so
-            // `performLoad` prewarm doesn't kill the scene. NOTE: no `registerWrite` here —
-            // `frameState` is passed by value, so the pool caches the stand-in and the real self-heal lands when the producing pass writes the target. Only pool-DECLARED names take this path; anything else still throws below.
+            // Declared-but-unwritten local FBO: WPE reads a fresh RT as all-zero. Do not `registerWrite` — `frameState` is by value, so the pool caches the stand-in and the producer write self-heals.
             if let zero = frameState.renderTargetPool?.zeroFilledPlaceholderTexture(forDeclaredFBO: name) {
                 return zero
             }
@@ -143,9 +131,6 @@ enum WPEMetalShaderInputs {
         }
     }
 
-    /// Fuzzy fallback when an `.fbo(name)` misses the exact `latestNamedTextures`
-    /// key: WPE pass authoring is loose about `_rt_` prefixes and case, so try a
-    /// few common transformations rather than failing the whole scene.
     static func resolveAliasedNamedTexture(
         name: String,
         frameState: WPEMetalFrameState
@@ -170,7 +155,6 @@ enum WPEMetalShaderInputs {
         return nil
     }
 
-    /// Looks up `pass.uniformValues` (runtime-merged) first, then `pass.pass.constants` (authored defaults).
     static func floatScalar(
         named name: String,
         in pass: WPEPreparedRenderPass,
@@ -199,7 +183,6 @@ enum WPEMetalShaderInputs {
         return defaultValue
     }
 
-    /// Frame context first: the old merge inserted those values last, so they won.
     static func floatScalar(
         named name: String,
         in pass: WPEPreparedRenderPass,
@@ -230,8 +213,6 @@ enum WPEMetalShaderInputs {
         return defaultValue
     }
 
-    /// Authored layer tint (WPE folds it into g_Color4 for every image
-    /// material) converted to the linear space our pipeline blends in.
     static func linearLayerTint(_ rgb: SIMD3<Double>) -> SIMD3<Float> {
         SIMD3<Float>(
             sRGBToLinear(Float(rgb.x)),
@@ -240,7 +221,6 @@ enum WPEMetalShaderInputs {
         )
     }
 
-    /// Standard sRGB EOTF used by Metal's `_srgb` pixel formats.
     private static func sRGBToLinear(_ value: Float) -> Float {
         let clamped = min(max(value, 0), 1)
         if clamped <= 0.04045 {

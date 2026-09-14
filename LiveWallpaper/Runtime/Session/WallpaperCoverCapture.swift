@@ -1,20 +1,13 @@
 import AppKit
 import LiveWallpaperCore
 
-/// Stills of what a display is actually showing, used as the cover a bookmark
-/// or scheme is saved with.
-///
-/// Every source here is the app's own rendering — the scene renderer's presented
-/// texture, the player's composited frame, the live web view, the overlay hosts'
-/// own layers. Nothing reads the screen, so saving a cover never asks for screen
-/// recording.
+/// Covers are captured from the app's own rendering, never the screen, so saving never asks for screen recording.
 @MainActor
 enum WallpaperCoverCapture {
     /// Long edge of a stored cover. The largest library tile step is 408 pt, so
     /// this stays sharp at 2× without keeping a display-sized PNG per entry.
     static let coverWidth: CGFloat = 1024
 
-    /// A still of the wallpaper alone.
     static func captureWallpaper(
         screen: Screen,
         configuration: ScreenConfiguration
@@ -31,8 +24,6 @@ enum WallpaperCoverCapture {
         )
     }
 
-    /// A still of the wallpaper with the display's overlay layers on top — what
-    /// a scheme actually restores, which is more than its wallpaper.
     static func captureWithOverlay(
         screen: Screen,
         configuration: ScreenConfiguration
@@ -79,12 +70,7 @@ enum WallpaperCoverCapture {
         return frame.width / frame.height
     }
 
-    /// Draws onto a canvas with the *display's* aspect ratio, placing the
-    /// wallpaper with the display's own fit mode. Filling unconditionally would
-    /// crop a Fit wallpaper that the desktop is letterboxing — the cover is
-    /// supposed to be what is on screen, framing included. The overlay layers
-    /// were captured at the display's own size, so they line up over the canvas
-    /// whatever the backdrop does inside it.
+    /// Canvas uses the display aspect and fit mode; filling would crop a Fit wallpaper the desktop is letterboxing.
     private static func compose(
         wallpaper: NSImage,
         overlays: [NSImage],
@@ -137,13 +123,7 @@ enum WallpaperCoverCapture {
         return image
     }
 
-    /// The rect the display's fit mode puts the source in, centred — the same
-    /// four placements `VideoFitMode` names, computed by hand because the cover
-    /// is drawn into a bitmap rather than a layer with a `videoGravity`.
-    ///
-    /// The cover canvas is smaller than the display, so `.center` scales by the
-    /// canvas/display ratio rather than pinning to source pixels; pinning would
-    /// make a 4K source overflow a 1024pt cover that the desktop shows inset.
+    /// .center scales by canvas/display ratio; pinning to source pixels would overflow a 1024pt cover.
     static func placementRect(
         for source: NSSize,
         in canvas: NSRect,

@@ -27,8 +27,8 @@ public final class VideoWallpaperWindow: NSWindow {
     private func configureWindow() {
         isOpaque = false
         backgroundColor = .clear
-        // Desktop background, not app UI: `canHide` defaults to YES, so cmd+H
-        // used to take the wallpaper down along with the settings window.
+        // Desktop background, not app UI: `canHide` defaults to YES, so cmd+H would
+        // take the wallpaper down along with the settings window.
         canHide = false
         level = NSWindow.Level(rawValue: wallpaperWindowLevel)
 

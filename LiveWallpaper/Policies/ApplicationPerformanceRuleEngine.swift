@@ -15,7 +15,6 @@ enum ApplicationPerformanceRuleEngine {
         return shouldPause(frontmostBundleID: frontmost, runningBundleIDs: running, rules: rules)
     }
 
-    /// Returns whether the frontmost app vetoes discretionary pauses.
     @MainActor
     static func isFrontmostExcluded(for settings: GlobalSettings) -> Bool {
         let rules = settings.applicationPerformanceRules
@@ -31,7 +30,6 @@ enum ApplicationPerformanceRuleEngine {
         return rules.contains { $0.trigger == .neverPause && $0.bundleID == frontmostBundleID }
     }
 
-    /// Returns whether any foreground or running-app rule requests suspension.
     static func shouldPause(
         frontmostBundleID: String?,
         runningBundleIDs: Set<String>,

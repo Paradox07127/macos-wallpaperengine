@@ -18,10 +18,7 @@ enum WPESceneScriptBaseclasses {
     function number(value, fallback) {
         if (value === undefined) { return fallback || 0; }
         var n = Number(value);
-        // A real NaN must SURVIVE into the returned vector: the host's finite guards
-        // then reject the frame and keep the last good value. Laundering it to 0 made
-        // the rejection unreachable and applied a bogus zero (3146703458's titles at
-        // scale 0). The `undefined` early return keeps `new Vec3(1, 2)` at z == 0.
+        // A real NaN must survive into the returned vector so host finite guards can reject the frame; the undefined early return keeps new Vec3(1, 2) at z == 0.
         if (n !== n) { return n; }
         return isFinite(n) ? n : (fallback || 0);
     }
@@ -36,9 +33,7 @@ enum WPESceneScriptBaseclasses {
         if (typeof value === "object") {
             if (typeof value[key] !== "undefined") { return number(value[key], fallback); }
             if (typeof value[index] !== "undefined") { return number(value[index], fallback); }
-            // An object that simply lacks this axis (Vec2 widened to Vec3) takes the
-            // fallback. The old fall-through coerced the whole OBJECT to a number and
-            // only yielded 0 because `number` used to launder NaN.
+            // An object that lacks this axis (Vec2 widened to Vec3) takes the fallback; coercing the whole object to a number only yielded 0 because number used to launder NaN.
             return number(fallback, 0);
         }
         return number(value, fallback);
@@ -402,9 +397,6 @@ enum WPESceneScriptBaseclasses {
         static lerp(a, b, t) { return new Vec4(a).lerp(b, t); }
     }
 
-    // Official WEColor module. The ESM import itself is stripped before JSC
-    // evaluation, so the namespace must be present as a global. Accept object
-    // literals as well as Vec3 instances, matching the official rainbow sample.
     function rgb2hsv(rgb) {
         var c = new Vec3(rgb);
         var maximum = Math.max(c.x, c.y, c.z);

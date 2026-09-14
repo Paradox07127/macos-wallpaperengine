@@ -6,7 +6,6 @@
         let command: WPELayerVideoCommand
     }
 
-    /// Batch one-shot player mutations until traversal completes (fail-close can drop the batch).
     struct WPESceneScriptVideoCommandBuffer: Sendable {
         private(set) var isTransactionActive = false
         private(set) var pending: [WPESceneScriptBufferedVideoCommand] = []

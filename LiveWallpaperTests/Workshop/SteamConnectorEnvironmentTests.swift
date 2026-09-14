@@ -3,16 +3,8 @@ import Testing
 import os
 @testable import LiveWallpaper
 
-/// Standing proof for the connector's whole reason to exist. Everything the
-/// Steam integration plans to do — reusing the shared login, downloading into
-/// `steamapps/workshop/content/431960`, pruning the Wallpaper Engine install —
-/// depends on SteamCMD running with the user's real `$HOME`. If someone re-adds
-/// App Sandbox to the SteamConnector target, that silently stops being true and
-/// downloads go back to landing in the app container; this turns red instead.
-///
-/// Deliberately ONE test holding ONE connection, and `.serialized`: connecting
-/// concurrently from parallel tests made launchd tear the test host down
-/// mid-run, which truncated the whole suite rather than failing honestly.
+/// Deliberately ONE test holding ONE connection, and `.serialized`:
+/// connecting concurrently from parallel tests tears the test host down.
 @Suite("SteamConnector execution boundary", .serialized)
 struct SteamConnectorEnvironmentTests {
 
@@ -51,9 +43,6 @@ struct SteamConnectorEnvironmentTests {
         let data = try #require(payload.withLock { $0 }, "empty probe payload")
         let probe = try JSONDecoder().decode(SteamConnectorEnvironmentProbe.self, from: data)
 
-        // Same connection, so account discovery is checked against this Mac's
-        // real config.vdf without opening a second one. `SteamAccountsFileTests`
-        // covers the grammar; this covers "does it hold on the actual file".
         let accountsPayload = OSAllocatedUnfairLock<Data?>(initialState: nil)
         let accountsDone = DispatchSemaphore(value: 0)
         connector.discoverAccounts { data in
@@ -72,8 +61,6 @@ struct SteamConnectorEnvironmentTests {
             #expect(SteamAccountsFile.isValidAccountName(account.accountName))
             #expect(steamIDIsNumeric, "non-numeric SteamID reached the app: \(account.steamID64)")
         }
-        // A profile that exists but parses to nothing means the real file's
-        // shape drifted from what the parser expects — worth failing on.
         if probe.steamConfigExists, probe.steamConfigByteCount > 0 {
             #expect(
                 !accounts.isEmpty,
@@ -82,8 +69,7 @@ struct SteamConnectorEnvironmentTests {
         }
 
         // Under the sandbox `NSHomeDirectory()` is rewritten to the container
-        // while the POSIX user database is not, so the two agreeing is what
-        // says no sandbox is applied — no machine-specific path needed.
+        // while the POSIX user database is not — the two agreeing means no sandbox.
         #expect(
             probe.nsHomeDirectory == probe.posixHomeDirectory,
             Comment(rawValue: """
@@ -99,8 +85,6 @@ struct SteamConnectorEnvironmentTests {
         )
         #expect(probe.uid == getuid())
 
-        // Existence is probed inside the connector: the sandboxed test host
-        // cannot even stat that path, so it cannot decide this for itself.
         // Machines with no Steam install legitimately skip the read assertion.
         guard probe.steamConfigExists else { return }
         #expect(

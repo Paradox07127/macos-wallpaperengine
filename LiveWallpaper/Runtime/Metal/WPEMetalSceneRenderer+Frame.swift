@@ -8,9 +8,6 @@ import os
 extension WPEMetalSceneRenderer {
     // MARK: - Frame instrumentation
 
-    /// Phase-level os_signpost intervals for the per-frame render. Always on;
-    /// with no Instruments observer the emit cost is negligible. Read the stages
-    /// with the os_signpost template to measure off-main rendering.
     static let frameSignposter = OSSignposter(
         subsystem: Bundle.main.bundleIdentifier ?? "com.loomscreen.pro",
         category: "WPEFrame"
@@ -26,10 +23,6 @@ extension WPEMetalSceneRenderer {
 
     // MARK: - Frame rendering
 
-    /// Snapshots the pointer inputs `renderCurrentFrame` needs from the mailbox
-    /// (fed by the surface's publisher + view). The frame-rate field is the
-    /// renderer's own `effectiveFPS` — the diagnostic reader (audio log) only, and
-    /// exactly the value the surface applies to the view. See `WPEFrameInputs`.
     func makeFrameInputs() -> WPEFrameInputs {
         let pointer = mailbox.read()
         return WPEFrameInputs(
@@ -73,9 +66,6 @@ extension WPEMetalSceneRenderer {
             if !didFinishSceneScriptVideoCommands {
                 discardSceneScriptVideoCommands()
             }
-            // One hand-off for the whole frame: every family has ticked by now, so
-            // each worker gets exactly one dispatch no matter how many scripts the
-            // scene has.
             sceneScriptBatchDispatcher.submit(pendingSceneScriptBatchJobs)
             pendingSceneScriptBatchJobs.removeAll(keepingCapacity: true)
         }
@@ -140,13 +130,7 @@ extension WPEMetalSceneRenderer {
             pointerFrame: frameContext.layerScriptPointerFrame,
             runtimeSeconds: uniforms.time
         )
-        // AFTER the hover pass, not before it: a press is attributed to whatever
-        // `layerHoverStates` says is under the cursor, so dispatching it from
-        // inside the tick helper — which runs near the top of the frame — matched
-        // presses against the previous frame's hover set. Moving onto a layer and
-        // clicking within one frame then produced no `cursorClick`, or one on the
-        // layer the cursor had just left. Hover cannot move earlier instead: its
-        // hit rects have to come from this frame's live transforms.
+        // AFTER the hover pass, not before it: a press is attributed to whatever `layerHoverStates` says is under the cursor. Hover cannot move earlier: its hit rects have to come from this frame's live transforms.
         dispatchPointerButtonEdges(
             from: previousLayerScriptPointerFrame,
             to: frameContext.layerScriptPointerFrame,
@@ -210,10 +194,6 @@ extension WPEMetalSceneRenderer {
         }
         lastFramePipeline = framePipeline
         signposter.endInterval("scriptTick", scriptState)
-        // Keep only currently-visible on-demand videos resident (releases hidden
-        // ones, rebuilds revealed ones). No-op unless the scene has releasable
-        // videos; reads the final per-frame visibility so it covers script-,
-        // user-property- and condition-driven switches alike.
         withFrameSignpost("videoReconcile") {
             reconcileVideoResidency(framePipeline)
         }
@@ -330,10 +310,7 @@ extension WPEMetalSceneRenderer {
                 textPayloads: textFrame.payloads,
                 frameSubmission: frameSubmission,
                 frameProduction: frameProduction,
-                // `presetSnapshot`, not the layered map: the layered map also carries
-                // `propertyOverrides`, whatever the user moved in the settings card. A
-                // wallpaper is free to declare its own property named `volume` or `wec_e`
-                // (the repo's own fixture declares `volume`) — reading the merged map would let an author's slider drive an engine setting.
+                // `presetSnapshot`, not the layered map: the layered map also carries `propertyOverrides`, so an author's slider named `volume` would drive an engine setting.
                 colorCorrection: WPEEngineColorCorrection.parse(
                     descriptor.presetSnapshot
                 ) ?? .neutral,
@@ -351,9 +328,6 @@ extension WPEMetalSceneRenderer {
 
     // MARK: - Per-frame script & particle ticks
 
-    /// Tick layer SceneScripts (e.g. a video intro that plays once then hides):
-    /// each drives its layer's visibility/alpha + video playback. Gated so a
-    /// scene with no layer scripts pays nothing (no per-frame pipeline rebuild).
     private func applyingLayerScriptTicks(
         to pipeline: WPEPreparedRenderPipeline,
         uniforms: WPEMetalRuntimeUniforms,
@@ -403,7 +377,6 @@ extension WPEMetalSceneRenderer {
                 liveTextAlpha[objectID] = output.own.alpha
             }
         }
-        // Read back in `tickParticleSystems`, which runs later in this same frame.
         for (objectID, instance) in particleAlphaScriptInstances.sorted(by: { $0.key < $1.key }) {
             if let output = tickLayerScript(
                 instance,
@@ -444,8 +417,6 @@ extension WPEMetalSceneRenderer {
             || !sharedColorReadFans.isEmpty else { return nil }
         var transforms = LiveScriptTransforms()
         transforms.origins.reserveCapacity(dynamicOriginScriptInstances.count + sharedOriginReadFans.count)
-        // Sorted by objectID for the same shared-state-determinism reason as the
-        // layer/text script loops above.
         for (objectID, instance) in dynamicOriginScriptInstances.sorted(by: { $0.key < $1.key }) {
             if let origin = tickTransformScript(
                 instance,
@@ -485,11 +456,7 @@ extension WPEMetalSceneRenderer {
                 pointer: pointer,
                 runtimeSeconds: time
             ) {
-                // WPE's script API exposes `angles` in degrees; scene.json and the
-                // rotation math are radians (corpus-verified: all 353 nonzero static
-                // angles ≤ 2π). Convert only at this boundary — the instance's
-                // lastValue stays in script-space degrees so `value.y += k`
-                // accumulation matches WPE (3509243656 universe spin was 57.3× fast).
+                // WPE's script API exposes `angles` in degrees; scene.json and the rotation math are radians. Convert only at this boundary — the instance's lastValue stays in script-space degrees.
                 transforms.angles[objectID] = angle * (.pi / 180)
             }
         }
@@ -537,11 +504,7 @@ extension WPEMetalSceneRenderer {
         audioSpectrum16: [Float]? = nil
     ) {
         guard !particleSystems.isEmpty else { return }
-        // Cursor in the centered render frame (Y-up), or nil when Follow
-        // Cursor is off/outside this renderer — drives pointer-locked
-        // particle control points (emitter-follow + controlpointattract).
-        // Center-relative so it matches `WPEParticleSceneTransform`'s
-        // coordinate space.
+        // Cursor in the centered render frame (Y-up), or nil when Follow Cursor is off/outside. Center-relative so it matches `WPEParticleSceneTransform`'s coordinate space.
         let particlePointer: SIMD2<Float>? = followPointerIsLive
             ? SIMD2<Float>(
                 Float((pointer.x - 0.5) * sceneRenderSize.width),
@@ -564,9 +527,6 @@ extension WPEMetalSceneRenderer {
         }
     }
 
-    /// Point an `eventfollow` child's control point at its parent's live particle.
-    /// Prewarm drives the same rule (see `prewarmParticleSystems`), so this stays
-    /// the single definition of parent→child injection.
     nonisolated static func injectFollowControlPoint(into system: WPEParticleSystem) {
         if let parent = system.followParent {
             if let followPosition = parent.primaryLiveParticlePosition {
@@ -582,14 +542,10 @@ extension WPEMetalSceneRenderer {
         }
     }
 
-    /// Ticks every shader-constant script into `liveEffectConstants`, which the
-    /// executor merges over the authored values for this frame. A constant keeps
-    /// its last good value when its script returns nothing, matching how the
-    /// transform families hold their last value.
+    /// A constant keeps its last good value when its script returns nothing, matching how the transform families hold their last value.
     private func tickEffectConstantScripts(pointer: SIMD2<Double>, time: Double) {
         guard !effectConstantScriptInstances.isEmpty
             || !sharedEffectConstantReadFans.isEmpty else { return }
-        // Sorted for the same shared-state determinism as the other tick loops.
         for (key, instance) in effectConstantScriptInstances.sorted(
             by: { ($0.key.passID, $0.key.uniform) < ($1.key.passID, $1.key.uniform) }
         ) {
@@ -613,11 +569,7 @@ extension WPEMetalSceneRenderer {
         }
     }
 
-    /// Ticks each script-gated effect's visibility script. Runs AFTER the constant
-    /// scripts because the value a gate reads (`shared.shownight`) is produced by a
-    /// constant script on the very effect the gate controls, so same-frame ordering
-    /// removes a frame of lag on the day/night switch. A gate keeps its last value
-    /// when its script returns nothing, matching the other script families.
+    /// Runs AFTER the constant scripts because the value a gate reads is produced by a constant script on the same effect, so same-frame ordering removes a frame of lag. A gate keeps its last value when its script returns nothing.
     private func tickEffectVisibilityScripts(pointer: SIMD2<Double>, time: Double) {
         guard !effectVisibilityScriptInstances.isEmpty else { return }
         for (id, instance) in effectVisibilityScriptInstances.sorted(by: { $0.key < $1.key }) {
@@ -630,9 +582,6 @@ extension WPEMetalSceneRenderer {
         }
     }
 
-    /// Hand this frame's `ISoundLayer` calls to the audio runtime. Scripts enqueue
-    /// onto `shared` from their own queues; applying them here keeps AVAudioEngine
-    /// touched from one place.
     private func drainScriptSoundCommands() {
         guard let sharedState = sceneScriptSharedState, let soundRuntime else { return }
         for entry in sharedState.drainSoundCommands() {
@@ -645,7 +594,6 @@ extension WPEMetalSceneRenderer {
     private func tickTextContentScripts(runtimeSeconds: Double) -> [String: String] {
         var liveTextByID: [String: String] = [:]
         liveTextByID.reserveCapacity(textScriptInstances.count)
-        // A stable object order makes shared-state dependencies and traces deterministic.
         for (id, instance) in textScriptInstances.sorted(by: { $0.key < $1.key }) {
             liveTextByID[id] = tickTextScript(instance, runtimeSeconds: runtimeSeconds)
         }

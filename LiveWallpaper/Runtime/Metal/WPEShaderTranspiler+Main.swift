@@ -5,12 +5,8 @@ import LiveWallpaperProWPE
 extension WPEShaderTranspiler {
     // MARK: - main() handling
 
-    /// Range covering everything from `void main()` through the matching closing brace.
     static func locateMain(in source: String) -> Range<String.Index>? {
-        // Discover on a comment-masked copy so a `/* void main() {} */` or `// void main`
-        // above the real entry point can't be selected, and so `{`/`}` inside comments
-        // don't skew the brace match. The mask is length-preserving, so offsets map 1:1
-        // back onto `source` for the returned range.
+        // Discover on a comment-masked copy so a commented-out `void main` or `{`/`}` in comments cannot be selected; the mask is length-preserving.
         let masked = maskComments(source)
         guard let keywordRange = masked.range(of: "void main") else { return nil }
         guard let openBrace = masked.range(of: "{", range: keywordRange.upperBound..<masked.endIndex) else {
@@ -30,9 +26,7 @@ extension WPEShaderTranspiler {
         return lower..<upper
     }
 
-    /// Replace `//` line comments and `/* */` block comments with spaces (newlines kept),
-    /// preserving length so indices into the result map directly onto the input. Strings
-    /// aren't tracked: GLSL has no string literals, so `//` and `/*` only ever open comments.
+    /// Length-preserving: GLSL has no string literals, so `//` and `/*` only ever open comments.
     static func maskComments(_ source: String) -> String {
         var result = Array(source)
         var i = 0
@@ -70,7 +64,6 @@ extension WPEShaderTranspiler {
         return String(result)
     }
 
-    /// Strip the `void main() { ... }` wrapper and rebuild it as Metal-friendly statements.
     static func translateMain(
         _ source: String,
         varyingTypesByName: [String: String] = [:],
@@ -117,11 +110,7 @@ extension WPEShaderTranspiler {
         return inner
     }
 
-    /// Rewrite every `g_Texture<N>.sample(linearSampler|repeatSampler, …)` read to the
-    /// per-slot runtime sampler `wpeSampler<N>`, whose address mode and filter are bound from
-    /// the texture's TEXI flags in the executor — so scrolled tiling maps (water-normal, noise,
-    /// flow) repeat instead of clamping to a frozen edge. `wpeSampler<N>` is a `main` argument
-    /// and threaded helper resource, so `#define` macros expanding into main/helper bodies see it too. Runs LAST, after the `linearSampler`-keyed coordinate-narrowing and LOD rewrites, so those still match the literal name.
+    /// Runs last, after `linearSampler`-keyed narrowing/LOD rewrites, so those still match the literal name.
     static func rewriteSamplersToPerSlot(_ source: String) -> String {
         guard let regex = try? NSRegularExpression(
             pattern: #"(g_Texture(\d+)\.sample\()(?:linearSampler|repeatSampler)(\s*,)"#

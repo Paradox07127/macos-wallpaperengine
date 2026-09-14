@@ -13,7 +13,6 @@ enum HTMLWallpaperRuntimeScript {
 
     // MARK: - Audio controller
 
-    /// Master mute/volume: MO + play + `new Audio` + WebAudio GainNode (each covers a gap).
     static func masterAudioController(initialVolume: Double, initialMuted: Bool) -> String {
         let volumeLiteral = jsNumber(initialVolume)
         let mutedLiteral = initialMuted ? "true" : "false"
@@ -32,10 +31,7 @@ enum HTMLWallpaperRuntimeScript {
             var __lwOriginalAudioNodeConnect__ = null;
             var __lwMediaVolumes__ = typeof WeakMap !== 'undefined' ? new WeakMap() : null;
             var __lwMediaMutes__ = typeof WeakMap !== 'undefined' ? new WeakMap() : null;
-            // `new Audio()` elements do not belong to the DOM, so a later
-            // master-volume/unmute update cannot find them via querySelectorAll.
-            // Keep weak references where WebKit supports them; the bounded
-            // fallback prevents old one-shot sound effects from leaking forever.
+            // new Audio() elements are not in the DOM, so querySelectorAll cannot find them later. Bound the fallback list so one-shot effects cannot leak forever.
             var __lwTrackedMedia__ = [];
             var __lwKnownMedia__ = typeof WeakSet !== 'undefined' ? new WeakSet() : null;
             var __lwNativeVolumeGetter__ = null;
@@ -189,10 +185,7 @@ enum HTMLWallpaperRuntimeScript {
                 rememberMediaElement(el);
                 var requestedVolume = pageVolume(el);
                 var requestedMuted = pageMuted(el);
-                // Snapshot the page's intent before writing the master-scaled
-                // native values. Otherwise the next update mistakes our own
-                // native `muted=true` (or scaled volume) for a page request and
-                // an anonymous BGM element can never be unmuted again.
+                // Snapshot the page's volume/mute before writing master-scaled native values, or the next update treats our muted=true as a page request and anonymous BGM can never unmute.
                 rememberPageVolume(el, requestedVolume);
                 rememberPageMuted(el, requestedMuted);
                 setNativeVolume(el, requestedVolume * __lwVolume__);
@@ -518,9 +511,7 @@ enum HTMLWallpaperRuntimeScript {
 
     // MARK: - GPU canvas MSAA / backing-store upgrader
 
-    /// Default `antialias: true` for WebGL — WPE Spine often omits it (MSAA-off on WebKit).
-    /// Only fills the gap: a page that asked for `antialias:false` pays no MSAA
-    /// VRAM. WebIDL treats an absent key and an explicit `undefined` alike.
+    /// Default antialias:true only when the page omitted it. WebIDL treats an absent key and explicit undefined alike.
     static func gpuCanvasMSAAForcer() -> String {
         return """
         (function () {
@@ -722,10 +713,7 @@ enum HTMLWallpaperRuntimeScript {
 
     // MARK: - Lifecycle Controller
 
-    /// Suspend/resume/RAF throttle. Injected into every frame; the host drives
-    /// the main frame, which relays the phase to subframes over `postMessage`.
-    /// Layers visibility + rAF queue + CSS pause; `aggressiveSuspend` also
-    /// loses GPU contexts (off by default — restore often leaves black pages).
+    /// aggressiveSuspend also loses GPU contexts (off by default — restore often leaves black pages).
     static func lifecycleController(aggressiveSuspend: Bool) -> String {
         let aggressive = aggressiveSuspend ? "true" : "false"
         return """
@@ -736,10 +724,7 @@ enum HTMLWallpaperRuntimeScript {
             var rafBackup = null;
             var rafThrottleRatio = 1;
             var rafThrottleCounter = 0;
-            // Minimum milliseconds between dispatched rAF callbacks — the user's
-            // frame-rate ceiling. Separate from the thermal ratio above: an
-            // integer divisor of the display refresh cannot express 30 on a
-            // 136 Hz panel, and the two must compose instead of overwriting.
+            // Minimum ms between rAF callbacks. Separate from the thermal ratio: an integer divisor cannot express 30 on a 136 Hz panel, and the two must compose.
             var rafTargetIntervalMs = 0;
             var rafLastDispatchMs = 0;
             var rafLastTickMs = 0;
@@ -931,15 +916,13 @@ enum HTMLWallpaperRuntimeScript {
             }
 
             function installWorkerLifecycle() {
-                // Kept for pages that build workers behind their own factory.
                 window.__lwRegisterWorkerForLifecycle__ = function (worker) {
                     return trackWorker(worker);
                 };
 
                 var NativeWorker = window.Worker;
                 if (typeof NativeWorker !== 'function' || NativeWorker.__lwWorkerWrapped__) return;
-                // Registration used to be opt-in, so a page that never called the
-                // hook kept its workers running through every suspend.
+                // Registration used to be opt-in, so a page that never called the hook would keep its workers running through every suspend.
                 function LWManagedWorker(scriptURL, options) {
                     var worker = new NativeWorker(scriptURL, options);
                     trackWorker(worker);
@@ -959,9 +942,7 @@ enum HTMLWallpaperRuntimeScript {
             }
             installWorkerLifecycle();
 
-            // The host can only evaluate script in the main frame, so an ad or
-            // embedded-player iframe keeps its own timers, rAF and canvases
-            // running; relay the phase down the frame tree instead.
+            // The host can only evaluate in the main frame; iframes keep their own timers/rAF/canvases, so relay the phase down.
             function broadcastToChildFrames(phase) {
                 var children;
                 try { children = window.frames; } catch (e) { return; }
@@ -973,8 +954,6 @@ enum HTMLWallpaperRuntimeScript {
                 }
             }
 
-            // The host can only evaluate script in the main frame, so the frame
-            // pacing rides the same relay the suspend phase does.
             function currentPacingMessage() {
                 return {
                     __lwPacing__: {
@@ -1006,10 +985,7 @@ enum HTMLWallpaperRuntimeScript {
                 return false;
             }
 
-            // A broadcast only reaches the frames that exist when it is sent, so an iframe inserted
-            // after the last push used to run at the display rate until the next thermal/limit change —
-            // the newcomer asks instead. Reaches exactly the frames WebKit injects this script into
-            // (`forMainFrameOnly: false`), which is not every frame.
+            // A broadcast only reaches frames that exist when it is sent, so a later iframe must ask. Reaches exactly the frames WebKit injects this script into (forMainFrameOnly: false), which is not every frame.
             function installPacingRequestResponder() {
                 try {
                     window.addEventListener('message', function (event) {
@@ -1041,9 +1017,7 @@ enum HTMLWallpaperRuntimeScript {
                         if (event.source !== window.parent) return;
                         var pacing = data.__lwPacing__;
                         if (pacing && typeof pacing === 'object') {
-                            // Both knobs then one broadcast: going through the
-                            // public setters would post twice per level and
-                            // double the message count at every nesting depth.
+                            // Both knobs then one broadcast: public setters would post twice per level and double messages at every nesting depth.
                             installRafThrottle(clampRafRatio(pacing.ratio));
                             installRafTargetInterval(clampRafInterval(pacing.intervalMs));
                             broadcastPacingToChildFrames();
@@ -1155,10 +1129,7 @@ enum HTMLWallpaperRuntimeScript {
                 return value > 1000 ? 1000 : value;
             }
 
-            // One decision per frame timestamp: every callback scheduled for the
-            // same frame gets the same answer. Deciding per callback lets two
-            // independent loops alternate through the gate and hand the page
-            // back its full rate while each loop looks throttled.
+            // One decision per frame timestamp. Deciding per callback lets two loops alternate through the gate and hand the page its full rate.
             function rafFrameGateAllows(t) {
                 if (rafGateStampMs === t) return rafGateStampAllows;
                 rafGateStampMs = t;
@@ -1178,20 +1149,12 @@ enum HTMLWallpaperRuntimeScript {
                     if (rafLastDispatchMs === 0) {
                         rafLastDispatchMs = t;
                     } else {
-                        // Half a native frame of slack: a plain `>= interval`
-                        // test rejects the tick that lands a fraction early and
-                        // drops a 30 fps target to 20 on a 60 Hz display.
+                        // Half a native frame of slack: a plain >= interval rejects the early tick and drops a 30 fps target to 20 on 60 Hz.
                         var slack = rafNativeIntervalMs > 0 ? rafNativeIntervalMs / 2 : 0;
                         if (t - rafLastDispatchMs >= rafTargetIntervalMs - slack) {
-                            // Advance the schedule instead of restamping to `t`: restamping folds every slack-sized early
-                            // accept into the next deadline, so the error accumulates (30 fps on a 75 Hz panel ran at 37.5);
-                            // advancing leaves the deadline at most `slack` ahead of `t`, keeping the long-run rate <= the
-                            // target.
+                            // Advance the schedule instead of restamping to t: restamping folds slack into the next deadline so error accumulates (30 fps on 75 Hz ran at 37.5).
                             rafLastDispatchMs += rafTargetIntervalMs;
-                            // More than a whole interval behind means the page
-                            // was stalled (long frame, offscreen tab). Snapping
-                            // caps the catch-up at this one frame instead of
-                            // letting the backlog run ungated.
+                            // More than a whole interval behind means the page stalled. Snapping caps catch-up at this one frame.
                             if (t - rafLastDispatchMs >= rafTargetIntervalMs) {
                                 rafLastDispatchMs = t;
                             }
@@ -1215,7 +1178,6 @@ enum HTMLWallpaperRuntimeScript {
             function installRafTargetInterval(intervalMs) {
                 rafTargetIntervalMs = intervalMs;
                 rafLastDispatchMs = 0;
-                // Same suspended-keeps-the-value rule as the ratio above.
                 if (rafBackup) return;
                 reconcileRafPacing();
             }
@@ -1262,10 +1224,7 @@ enum HTMLWallpaperRuntimeScript {
                 document.documentElement.classList.toggle('__lw-suspended__', paused);
             }
 
-            // Wallpaper Engine's public web-wallpaper lifecycle callback. Keep
-            // this separate from the host's suspension mechanics so a page
-            // callback cannot prevent timers, rAF, workers, or audio from being
-            // parked/restored.
+            // Keep wallpaperPropertyListener.setPaused separate so a page callback cannot prevent timers, rAF, workers, or audio from being parked.
             function notifyWallpaperPropertyListenerPaused(paused) {
                 try {
                     var listener = window.wallpaperPropertyListener;
@@ -1369,17 +1328,7 @@ enum HTMLWallpaperRuntimeScript {
 
     // MARK: - CSP Injection
 
-    /// Removes the peer-connection constructors from an isolated page.
-    ///
-    /// Measured 2026-08-31: with the network-isolation CSP in force, a Workshop
-    /// page still built an `RTCPeerConnection`, reached `stun.l.google.com:19302`
-    /// over UDP and gathered an `srflx` candidate — its own public IP, plus a live
-    /// egress path. CSP cannot stop that: the `webrtc` directive is not
-    /// implemented in WebKit (bug 255651) and `connect-src` does not cover ICE.
-    /// `WKPreferences` exposes no `setPeerConnectionEnabled:` on this SDK either,
-    /// so the constructors are taken away in the page instead. Non-configurable so
-    /// the page cannot put them back, and a fresh realm would need an iframe,
-    /// which the same policy denies with `frame-src 'none'`.
+    /// Remove peer-connection constructors: CSP webrtc is unimplemented in WebKit and connect-src does not cover ICE. Non-configurable, and frame-src 'none' denies a fresh realm.
     static func peerConnectionBlocker() -> String {
         """
         (function () {
@@ -1402,8 +1351,6 @@ enum HTMLWallpaperRuntimeScript {
         """
     }
 
-    /// Opt-in meta CSP (paired with scheme-handler header). Permissive for WPE
-    /// corpus; off means no CSP from either path.
     static func cspInjection() -> String {
         return """
         (function () {
@@ -1444,9 +1391,7 @@ enum HTMLWallpaperRuntimeScript {
 
     // MARK: - Frame pacing
 
-    /// Pushes the user's frame-rate ceiling into the lifecycle controller's rAF
-    /// gate. JS animation only: `<video>`/`<audio>` decode is owned by the media
-    /// element and is never rate-limited from here.
+    /// JS animation only: video/audio decode is owned by the media element and is never rate-limited from here.
     static func rafTargetFrameInterval(milliseconds: Double) -> String {
         let literal = String(
             format: "%.3f",

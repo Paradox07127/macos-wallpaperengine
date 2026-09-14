@@ -4,9 +4,6 @@ import Foundation
 import Security
 import Testing
 
-/// A verdict names the key that earned it. A 403 for a key the user has
-/// since replaced must not mark the new key rejected, so the rejection is
-/// checked against the key the store last read or wrote.
 @Suite("Workshop services key verdicts")
 @MainActor
 struct WorkshopServicesTests {
@@ -43,8 +40,7 @@ struct WorkshopServicesTests {
         #expect(!services.isKeyless)
     }
 
-    /// The store tracks the key every save writes and every fetch reads, so a
-    /// verdict compares against that — not against a snapshot the last
+    /// The verdict compares against the key the store last wrote or read, not a snapshot the last
     /// `refreshAPIKeyStatus()` took, which a save-then-fetch can outrun.
     @Test("A rejection for a key saved since the last refresh marks it")
     func rejectionForKeySavedAfterRefreshCounts() async throws {
@@ -86,9 +82,8 @@ struct WorkshopServicesTests {
 
     // MARK: - Refresh under a standing rejection
 
-    /// A keychain read can raise the ACL prompt; `refreshAPIKeyStatus` runs on
-    /// every pane appearance, so under a rejection it must decide from the
-    /// fingerprint the store already holds, never from a read of its own.
+    /// A keychain read can raise the ACL prompt, and `refreshAPIKeyStatus` runs on every pane appearance,
+    /// so under a rejection it must not read.
     @Test("A refresh under a standing rejection does not read the key")
     func refreshUnderRejectionDoesNotReadKey() async throws {
         let slot = CountingKeychainSlot()
@@ -136,9 +131,8 @@ struct WorkshopServicesTests {
 
     // MARK: - Saving again
 
-    /// A key can be refused and later pass validation again (a Valve-side
-    /// disable that was lifted). Saving it must clear the rejection: the
-    /// stored fingerprint has not changed, so the refresh cannot tell.
+    /// Saving a rejected key again must clear the rejection: the stored fingerprint has not changed,
+    /// so the refresh cannot tell.
     @Test("Saving the rejected key again after it validates clears the rejection")
     func resavingRejectedKeyClearsRejection() async throws {
         let (services, keychain) = Self.makeServices()
@@ -164,9 +158,6 @@ struct WorkshopServicesTests {
 
     // MARK: - Verdict generations
 
-    /// A's late 403 asks the store for the current fingerprint and is answered
-    /// "A"; before it resumes on the main actor, B is saved and accepted. The
-    /// fingerprint snapshot alone would then mark A rejected over B.
     @Test("A rejection that straddles a save is discarded")
     func verdictStraddlingSaveIsDropped() async throws {
         let slot = CountingKeychainSlot(blockingReads: true)
@@ -208,9 +199,8 @@ struct WorkshopServicesTests {
     }
 }
 
-/// A keychain slot that counts reads, and can hold the first one open until
-/// released (only the first: a code path that reads again after the release
-/// must not hang the run).
+/// Counts reads and holds the first one open until released — only the first, so a code path that
+/// reads again cannot hang the run.
 /// @unchecked Sendable: every access to the stored state goes through `lock`.
 private final class CountingKeychainSlot: @unchecked Sendable {
     private let lock = NSLock()

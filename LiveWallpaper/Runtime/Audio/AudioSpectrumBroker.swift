@@ -7,7 +7,6 @@ protocol AudioSpectrumAnalyzing: AnyObject, Sendable {
     func analyzeIfDue(nowNanos: UInt64) -> AudioSpectrumFrame?
 }
 
-/// Latest-spectrum cache for consumers; `snapshot()` pulls fresh analysis on demand.
 final class AudioSpectrumBroker: Sendable {
     private struct State {
         var left: [Float]
@@ -32,9 +31,6 @@ final class AudioSpectrumBroker: Sendable {
 
     func snapshot() -> AudioSpectrumFrame {
         lock.withLock { state in
-            // Analysis runs on the pulling consumer's thread; concurrent
-            // snapshots dedupe on this lock plus the analyzer's generation +
-            // cadence check (later callers get the freshly cached frame).
             if let fresh = state.analyzer?.analyzeIfDue(nowNanos: DispatchTime.now().uptimeNanoseconds) {
                 Self.copyChannel(fresh.left, into: &state.left)
                 Self.copyChannel(fresh.right, into: &state.right)

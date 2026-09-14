@@ -6,18 +6,9 @@ import Testing
 import WebKit
 @testable import LiveWallpaper
 
-/// W3a: the two policy signals HTML used to ignore.
-///
-/// Frame rate: `PlaybackCoordinator.applyFrameRateLimit` only ever cast to
-/// `SceneWallpaperSession`, and the HTML view only ever read `.suspended`, so a
-/// user asking for 30 FPS still got a WebContent process running rAF, JS and
-/// WebGL at the display's refresh rate. WebKit exposes no frame-rate knob at all
-/// (`WKWebpagePreferences` has none, and `setAllMediaPlaybackSuspended` is
-/// documented as "audio or video presentation" — it cannot touch canvas/WebGL),
-/// so the ceiling lands on the injected rAF gate.
-///
-/// Critical memory pressure: the signal is dispatched by protocol since
-/// `ade11da`; the ambient session simply never conformed.
+/// WebKit exposes no frame-rate knob — `WKWebpagePreferences` has none, and
+/// `setAllMediaPlaybackSuspended` is documented as "audio or video presentation",
+/// so it cannot touch canvas/WebGL. The ceiling lands on the injected rAF gate.
 @MainActor
 @Suite("HTML performance target")
 struct HTMLPerformanceTargetTests {
@@ -56,8 +47,6 @@ struct HTMLPerformanceTargetTests {
 
     // MARK: - What the gate actually does to a running rAF loop
 
-    /// The acceptance number: a self-perpetuating rAF loop on a 60 Hz display,
-    /// one simulated second, target 30 FPS.
     @Test("A 30 FPS target dispatches ~30 rAF callbacks per simulated second")
     func targetThirtyDispatchesThirtyCallbacksPerSecond() throws {
         let context = try makeRafHarness()
@@ -79,8 +68,7 @@ struct HTMLPerformanceTargetTests {
         #expect(context.evaluateScript("dispatched")?.toInt32() == 60)
     }
 
-    /// A divisor cannot express 30 on a 136 Hz panel, which is why the ceiling is
-    /// an interval. 120 Hz makes the same point with round numbers.
+    /// A divisor cannot express 30 on a 136 Hz panel; 120 Hz shows it with round numbers.
     @Test("The ceiling holds 30 FPS on a 120 Hz display, where a divisor would give 60")
     func ceilingHoldsOnAHighRefreshDisplay() throws {
         let context = try makeRafHarness()
@@ -90,10 +78,8 @@ struct HTMLPerformanceTargetTests {
         #expect(context.evaluateScript("dispatched")?.toInt32() == 30)
     }
 
-    /// Thermal ratio and user ceiling are two knobs, not one: each writes its own
-    /// variable and the gate applies whichever is stricter. Ratio 2 alone on a
-    /// 120 Hz display is 60 FPS; adding the 30 FPS ceiling must reach 30, and
-    /// must not compound into 15.
+    /// Two knobs, not one: the gate applies whichever is stricter. Ratio 2 on a
+    /// 120 Hz display is 60 FPS; adding a 30 FPS ceiling must reach 30, not 15.
     @Test("The thermal ratio and the user ceiling compose instead of overwriting")
     func thermalRatioAndCeilingCompose() throws {
         let ratioOnly = try makeRafHarness()
@@ -108,8 +94,7 @@ struct HTMLPerformanceTargetTests {
         #expect(both.evaluateScript("dispatched")?.toInt32() == 30)
     }
 
-    /// `.suspended` stops the page; the ceiling only slows it down. A suspend
-    /// must not clear the ceiling, and the resume must not restore full speed.
+    /// `.suspended` stops the page; the ceiling only slows it down.
     @Test("A suspend/resume round trip keeps the ceiling")
     func suspendResumeKeepsTheCeiling() throws {
         let context = try makeRafHarness()
@@ -131,10 +116,8 @@ struct HTMLPerformanceTargetTests {
         #expect(context.evaluateScript("dispatched")?.toInt32() == 30)
     }
 
-    /// The host can only evaluate script in the main frame, so the ceiling rides
-    /// the same `postMessage` relay the suspend phase already uses. This covers
-    /// the frames that receive the injected script (`forMainFrameOnly: false`) —
-    /// it is not a claim about frames WebKit never injects.
+    /// Covers the frames that receive the injected script (`forMainFrameOnly: false`)
+    /// — not a claim about frames WebKit never injects.
     @Test("The main frame relays the ceiling down to child frames")
     func mainFrameRelaysTheCeilingToChildFrames() throws {
         let context = try makeRafHarness()
@@ -170,11 +153,8 @@ struct HTMLPerformanceTargetTests {
         #expect((29...31).contains(afterParent), "got \(afterParent)")
     }
 
-    /// The ceiling is a ceiling, not a target to hover around. Restamping the
-    /// deadline to the accepting timestamp folded each slack-sized early accept
-    /// into the next deadline, so the error accumulated: 30 fps asked for on a
-    /// 75 Hz panel was dispatched at 37.5. The bound below is `<=`, not "close
-    /// to" — a rate above the user's choice is the whole defect.
+    /// The bound below is `<=`, not "close to" — a rate above the user's choice is
+    /// the whole defect.
     @Test(
         "A 30 FPS ceiling never averages above 30, whatever the panel refreshes at",
         arguments: [60, 75, 120]
@@ -201,9 +181,6 @@ struct HTMLPerformanceTargetTests {
         )
     }
 
-    /// The catch-up guard. Advancing the deadline by one interval per accept is
-    /// what keeps the average down, but a page that stalled for a second would
-    /// then be a second behind schedule and run ungated until it caught up.
     @Test("A long stall does not buy the page a burst of catch-up frames")
     func aStallDoesNotBuyCatchUpFrames() throws {
         let context = try makeRafHarness()
@@ -220,10 +197,6 @@ struct HTMLPerformanceTargetTests {
 
     // MARK: - Frames that appear after the ceiling was pushed
 
-    /// F2: the ceiling is fanned out once, by the frame that receives it. An
-    /// iframe inserted afterwards was never in that broadcast and ran at the
-    /// display rate until the next thermal or limit change happened to push
-    /// again. It asks on arrival instead.
     @Test("A frame that joins after the broadcast pulls the current pacing")
     func lateChildFramePullsTheCurrentPacing() throws {
         let context = try makeRafHarness()
@@ -251,7 +224,6 @@ struct HTMLPerformanceTargetTests {
             context.evaluateScript("lateChild.received[0].__lwPacing__.intervalMs")?
                 .toDouble() == 33.333
         )
-        // Only a frame we actually embed may pull our pacing.
         #expect(context.evaluateScript("stranger.received.length")?.toInt32() == 0)
     }
 
@@ -266,9 +238,8 @@ struct HTMLPerformanceTargetTests {
         )
     }
 
-    /// The two halves joined up: what the parent answers is what paces the late
-    /// frame's loop. Covers the frames the script is injected into
-    /// (`forMainFrameOnly: false`) — not a claim about frames WebKit skips.
+    /// Covers the frames the script is injected into (`forMainFrameOnly: false`) —
+    /// not a claim about frames WebKit skips.
     @Test("The answer a late frame pulls actually paces its loop")
     func theAnswerPacesTheLateFrame() throws {
         let parent = try makeRafHarness()
@@ -321,8 +292,7 @@ struct HTMLPerformanceTargetTests {
         #expect(abs(view.lastRafTargetFrameIntervalMilliseconds - 33.333) < 0.01)
     }
 
-    /// The ceiling is a resource setting, not play intent: pushing one at a
-    /// suspended view must not wake it.
+    /// The ceiling is a resource setting, not play intent.
     @Test("A ceiling pushed at a suspended view does not resume it")
     func ceilingDoesNotResumeASuspendedView() async {
         let view = HTMLWallpaperView(frame: CGRect(x: 0, y: 0, width: 32, height: 32))
@@ -335,9 +305,6 @@ struct HTMLPerformanceTargetTests {
         #expect(abs(view.lastRafTargetFrameIntervalMilliseconds - 33.333) < 0.01)
     }
 
-    /// End to end through the real coordinator: the setter a user's 30 FPS choice
-    /// lands on has to reach the HTML runtime. This is the assertion the missing
-    /// `AmbientWallpaperSession` branch in `applyFrameRateLimit` fails.
     @Test("A user frame-rate change reaches the HTML runtime through the coordinator")
     func coordinatorRoutesTheLimitToTheHTMLRuntime() throws {
         let harness = try HTMLPacingHarness()
@@ -366,7 +333,6 @@ struct HTMLPerformanceTargetTests {
 
     // MARK: - Critical memory pressure
 
-    /// The dispatch points select on the protocol; conforming is the whole wiring.
     @Test("The ambient session satisfies the capability both dispatch points select on")
     func ambientSessionSatisfiesTheCapability() {
         #expect(
@@ -389,7 +355,6 @@ struct HTMLPerformanceTargetTests {
             harness.target.immediate.last == true,
             "the emergency must skip the dwell, not queue behind it"
         )
-        // Resource depth only — the signal must not rewrite play intent.
         #expect(harness.session.userIntendsToPlay)
     }
 
@@ -405,9 +370,7 @@ struct HTMLPerformanceTargetTests {
         #expect(harness.target.eligibility.isEmpty)
     }
 
-    /// `critical` is graded as a hard safety suspend, so the profile always lands
-    /// first. Deepening a session the profile still has at `.quality` would be
-    /// this signal overriding the profile instead of layering on it.
+    /// `critical` is graded as a hard safety suspend, so the profile always lands first.
     @Test("Critical pressure does not deepen a session the profile still has at quality")
     func criticalPressureDoesNotDeepenAQualityProfile() {
         let harness = PressureHarness()
@@ -419,10 +382,9 @@ struct HTMLPerformanceTargetTests {
         #expect(!harness.target.eligibility.contains(true))
     }
 
-    /// Fall-back race: the view's dwell is armed as a task even at zero delay, so
-    /// a clear landing in the same turn has to revoke it. Re-folding from live
-    /// state is what does that; pushing a bare `false` would also cancel an
-    /// unrelated absence countdown.
+    /// The dwell is armed as a task even at zero delay, so a clear in the same turn
+    /// must revoke it by re-folding from live state — a bare `false` would also
+    /// cancel an unrelated absence countdown.
     @Test("Clearing the pressure revokes the eligibility it armed")
     func clearingThePressureRevokesTheEligibility() {
         let harness = PressureHarness()
@@ -435,9 +397,8 @@ struct HTMLPerformanceTargetTests {
         #expect(harness.target.eligibility.last == false)
     }
 
-    /// The view owns one eligibility slot shared by absence, manual pause and
-    /// pressure, and `ScreenManager` pushes absence ineligibility on every policy
-    /// refresh. A teardown only survives if every push site OR-folds all three.
+    /// One eligibility slot is shared by absence, manual pause and pressure, so
+    /// every push site has to OR-fold all three.
     @Test("Routine absence pushes never cancel a pressure teardown")
     func routineAbsencePushesDoNotCancelThePressureTeardown() {
         let harness = PressureHarness()
@@ -452,9 +413,6 @@ struct HTMLPerformanceTargetTests {
         #expect(harness.target.eligibility.last == true)
     }
 
-    /// The deep-sleep path itself, on a real `WKWebView`: pressure drops the
-    /// document to `about:blank` behind the snapshot cover, and the ordinary
-    /// resume rebuilds the source.
     @Test("Critical pressure drops the document, and the resume rebuilds it")
     func criticalPressureDropsAndRestoresTheDocument() async throws {
         let folder = FileManager.default.temporaryDirectory
@@ -492,7 +450,6 @@ struct HTMLPerformanceTargetTests {
             view.webView.url == HTMLWallpaperView.aboutBlank
         }
 
-        // Pressure clearing releases the policy suspend; the wake is ordinary.
         session.applyPerformanceProfile(.quality)
         pushCriticalMemoryPressure(false, to: session)
         try await poll("the source is rebuilt on the way back") {
@@ -500,11 +457,8 @@ struct HTMLPerformanceTargetTests {
         }
     }
 
-    /// F3: the cover is a `takeSnapshot` round trip, so every reason to
-    /// hibernate has to be re-read when the reply lands. A wallpaper the user
-    /// had manually paused stays `mediaPlaybackSuspended` after the pressure
-    /// clears, so that check alone let the teardown run anyway — releasing the
-    /// document minutes into a 300s warm dwell the user never saw expire.
+    /// The cover is a `takeSnapshot` round trip, so every reason to hibernate has to
+    /// be re-read when the reply lands.
     @Test("A pressure clear inside the cover request leaves the document alone")
     func pressureClearInsideTheCoverRequestKeepsTheDocument() async throws {
         let folder = FileManager.default.temporaryDirectory
@@ -541,9 +495,8 @@ struct HTMLPerformanceTargetTests {
 
         session.applyPerformanceProfile(.suspended)
         try await poll("the suspend snapshot lands") { view.isSnapshotOverlayPresenting }
-        // `presentHibernationCover` answers synchronously while the overlay is
-        // already up, and then there is no window at all. Pressure arriving
-        // before the suspend snapshot settled is the case with one.
+        // `presentHibernationCover` answers synchronously while the overlay is up, so
+        // the overlay is hidden first to model pressure arriving before it settled.
         view.hideSnapshotOverlay()
 
         pushCriticalMemoryPressure(true, to: session)
@@ -598,9 +551,8 @@ struct HTMLPerformanceTargetTests {
         case timedOut(String)
     }
 
-    /// Dispatched exactly the way both `ScreenManager` sites do: through the
-    /// capability protocol on an erased session. A dropped conformance then
-    /// fails here instead of silently reaching nobody in production.
+    /// Dispatched exactly the way both `ScreenManager` sites do — through the
+    /// capability protocol on an erased session — so a dropped conformance fails here.
     private func pushCriticalMemoryPressure(
         _ active: Bool,
         to session: any WallpaperRuntimeSession
@@ -723,7 +675,6 @@ struct HTMLPerformanceTargetTests {
     }
 }
 
-/// Records what the session pushes down to the HTML runtime.
 @MainActor
 private final class RecordingHTMLPerformanceTarget:
     WallpaperPerformanceConfigurable,
@@ -754,7 +705,6 @@ private struct PressureHarness {
     let target = RecordingHTMLPerformanceTarget()
     let session: AmbientWallpaperSession
 
-    /// See `pushCriticalMemoryPressure(_:to:)`: the protocol hop is the point.
     func pushCriticalMemoryPressure(_ active: Bool) {
         let runtime: any WallpaperRuntimeSession = session
         (runtime as? any WallpaperCriticalMemoryPressureResponding)?
@@ -773,7 +723,6 @@ private struct PressureHarness {
     }
 }
 
-/// A real `PlaybackCoordinator` over a screen running an ambient HTML session.
 @MainActor
 private struct HTMLPacingHarness {
     let screen: Screen

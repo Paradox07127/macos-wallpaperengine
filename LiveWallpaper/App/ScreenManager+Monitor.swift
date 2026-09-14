@@ -4,11 +4,6 @@ import LiveWallpaperCore
 import Observation
 
 extension ScreenManager {
-    /// Reconcile the Monitor overlay for every live display against its persisted config. The
-    /// master switch counts as a reason to have none: it means "stop every wallpaper", and these
-    /// panels are drawn over the wallpaper. Particles already stopped, because
-    /// `releaseRuntimeSession` takes their layer down on the way past — the Monitor and Now Playing
-    /// panels are owned here instead and used to keep rendering over a bare desktop.
     func reconcileMonitorOverlays() {
         guard !isTerminating, wallpapersGloballyEnabled else {
             OverlayController.shared.teardownAll()
@@ -39,7 +34,6 @@ extension ScreenManager {
         updateFullScreenFallbackPolling()
     }
 
-    /// Bridge ScreenManager's lifecycle state and FullScreenDetector's 85% union-window occlusion result into the overlay-specific visibility policy.
     func refreshMonitorOverlayVisibility() {
         let occludedScreenIDs = Set(screens.compactMap { screen in
             fullScreenDetector.isDesktopOccluded(for: screen.id) ? screen.id : nil
@@ -50,7 +44,6 @@ extension ScreenManager {
         )
     }
 
-    /// Reconcile on the NEXT runloop tick.
     private func scheduleMonitorOverlayReconcile() {
         Task { @MainActor [weak self] in
             guard let self, !self.isTerminating else { return }
@@ -70,8 +63,6 @@ extension ScreenManager {
         monitorOverlays[screen.displayFingerprint] ?? .default
     }
 
-    /// A live display's enabled board shows a Weather tile, so the sky has to
-    /// be fetched even when no display leans its particles on the weather.
     var hasEnabledWeatherWidget: Bool {
         wallpapersGloballyEnabled && screens.contains { screen in
             let overlay = monitorOverlay(for: screen)
@@ -99,7 +90,6 @@ extension ScreenManager {
         mutateMonitorOverlays(of: [screen]) { $0.music.level = level }
     }
 
-    /// Position, size and appearance of the Now Playing layer.
     func setMusicOverlay(_ music: MusicOverlayConfiguration, for screen: Screen) {
         mutateMonitorOverlays(of: [screen]) { $0.music = music }
     }
@@ -108,19 +98,11 @@ extension ScreenManager {
         mutateMonitorOverlays(of: [screen]) { $0.clock = clock.normalized }
     }
 
-    /// Whole-struct overwrite, for applying a saved scheme. Assigns the config
-    /// rather than copying its four fields across so a field added to
-    /// `MonitorOverlayConfiguration` later cannot be silently dropped on apply.
+    /// Whole-struct overwrite so a field added to MonitorOverlayConfiguration later cannot be silently dropped on apply.
     func setMonitorOverlay(_ overlay: MonitorOverlayConfiguration, for screen: Screen) {
         mutateMonitorOverlays(of: [screen]) { $0 = overlay }
     }
 
-    /// Copies one overlay from `source` onto every other display, leaving each target's wallpaper —
-    /// and the overlays the user is not looking at — exactly as they were. Deliberately not folded
-    /// into "Apply to All Displays" on the wallpaper header: that action means "put this picture on
-    /// every screen", and quietly taking a carefully arranged board along with it would destroy work
-    /// the user never offered up. On the overlay tab the same button means the layer in front of you,
-    /// and only that one.
     func applyOverlayToAllDisplays(_ kind: OverlayKind, from source: Screen) {
         guard !isTerminating, screens.count > 1 else { return }
         let targets = screens.filter { $0.id != source.id }
@@ -162,10 +144,6 @@ extension ScreenManager {
         )
     }
 
-    /// Pure configuration query used to keep FullScreenDetector's fallback poll
-    /// alive whenever a desktop-level overlay depends on its occlusion cache.
-    /// Either module counts: a desktop-level Music layer needs the same
-    /// occlusion cache even with the Monitor board switched off.
     var hasEnabledDesktopMonitorOverlay: Bool {
         screens.contains {
             let overlay = monitorOverlay(for: $0)
@@ -175,7 +153,6 @@ extension ScreenManager {
         }
     }
 
-    /// Sole writer of `monitorOverlays`; write-through to global settings.
     private func mutateMonitorOverlays(
         of targets: [Screen],
         reconcile: Bool = true,
@@ -190,9 +167,7 @@ extension ScreenManager {
         guard next != monitorOverlays else { return }
         monitorOverlays = next
         SettingsManager.shared.saveMonitorOverlays(next)
-        // A Weather tile dropped on the desktop arrives with `reconcile: false`,
-        // so this is where a board already built gets the sky — and where the
-        // coordinator is first built, before the guard below starts its polling.
+        // A Weather tile dropped on the desktop arrives with reconcile: false, so this is where a board already built gets the sky.
         OverlayController.shared.updateWeatherService(hasEnabledWeatherWidget ? weatherService : nil)
         if effectsCoordinatorWasInitialized {
             effectsCoordinator.monitorBoardsDidChange()
@@ -312,10 +287,7 @@ extension ScreenManager {
                     effectiveCommitConfiguration = updated
                 }
             }
-            // Seeded here for the same reason the scene branch seeds its own
-            // controller below: the coordinator only pushes the limit when the
-            // user changes it, so a session rebuilt by a wallpaper switch or a
-            // relaunch would otherwise run unthrottled until the next edit.
+            // Seeded here: the coordinator only pushes the limit when the user changes it, so a session rebuilt by a wallpaper switch or a relaunch would otherwise run unthrottled until the next edit.
             session.setFrameRateCeiling(
                 configuration.frameRateLimit.frameRate(
                     forRefreshRate: Double(getScreenRefreshRate(for: screen.id))
@@ -456,7 +428,6 @@ extension ScreenManager {
         )
     }
 
-    /// Persists a local HTML refresh into every screen that still owns the original grant.
     func persistRuntimeHTMLBookmarkRefresh(
         matching original: Data,
         with refreshed: Data,
@@ -517,7 +488,6 @@ extension ScreenManager {
         }
     }
 
-    /// MainActor owner for scene/history stale refreshes.
     func persistRuntimeWPEBookmarkRefresh(
         origin: WPEOrigin,
         with refreshed: Data

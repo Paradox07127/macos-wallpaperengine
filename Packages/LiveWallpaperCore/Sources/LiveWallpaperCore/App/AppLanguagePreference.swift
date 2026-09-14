@@ -33,11 +33,8 @@ public enum AppLanguagePreference: String, CaseIterable, Identifiable, Sendable 
         localeIdentifier.map(Locale.init(identifier:)) ?? .autoupdatingCurrent
     }
 
-    /// Wallpaper Engine's SceneScript locale identifier for the language the
-    /// Loomscreen UI is actually using. The app ships exactly these five
-    /// localizations (English is the development fallback); keeping the mapping
-    /// here makes the renderer consume the same preference as SwiftUI rather
-    /// than guessing from an unrelated process locale.
+    /// Wallpaper Engine's SceneScript locale identifier for the language the Loomscreen
+    /// UI is actually using.
     public func wallpaperEngineLanguageCode(
         preferredLocalization: String? = Bundle.main.preferredLocalizations.first
     ) -> String {
@@ -158,12 +155,10 @@ public struct AppLanguageScope<Content: View>: View {
 }
 
 extension Bundle {
-    /// The `.lproj` for the language the user picked in Settings. `String(localized:, bundle:
-    /// .appLanguage)` resolves against `Locale.current` — the *system* language — and ignores both
-    /// SwiftUI's `\.locale` environment and its own `locale:` argument (measured; see
-    /// `AppLanguageRuntimeProbeTests`). Passing this bundle is what actually re-routes the lookup, so
-    /// every `String(localized:, bundle: .appLanguage)` site that renders user-facing copy has to
-    /// name it. Cached because the lookup runs on every call site, every render.
+    /// The `.lproj` for the language the user picked in Settings. Without
+    /// `String(localized:, bundle: .appLanguage)` the lookup resolves against the *system*
+    /// language and ignores both SwiftUI's `\.locale` and its own `locale:` argument
+    /// (see `AppLanguageRuntimeProbeTests`). Cached: it runs on every call site, every render.
     public static var appLanguage: Bundle {
         let preference = AppLanguagePreference.current
         return appLanguageBundleCache.withLock { cache in

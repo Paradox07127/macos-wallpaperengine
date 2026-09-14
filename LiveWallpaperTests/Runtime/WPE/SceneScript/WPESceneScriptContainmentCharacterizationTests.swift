@@ -7,18 +7,13 @@ struct WPESceneScriptContainmentCharacterizationTests {
 
     @Test("Production post-fix: four evaluators retain serial queues and bounded engines share global admission")
     func productionEvaluatorsUseGlobalAdmission() throws {
-        // The scene-script subsystem lives in two files since the layer-script
-        // engine was split out; these counts are contracts on the subsystem, not
-        // on one file, so both halves are read together.
         let runtime = try RR10ProductionSource.combined([
             "LiveWallpaper/Runtime/Scene/WPESceneScriptRuntime.swift",
             "LiveWallpaper/Runtime/Scene/WPELayerScriptRuntime.swift",
         ])
 
-        // The parse-time evaluator still owns a private queue; the three
-        // per-object engines take theirs from the batch dispatcher. That is what
-        // keeps "one context, one queue" true while a frame costs one dispatch
-        // per worker instead of one per script.
+        // 1 = the parse-time evaluator's own private queue; 3 = the per-object
+        // engines taking theirs from the batch dispatcher.
         #expect(RR10ProductionSource.occurrences(
             of: "com.livewallpaper.wpe-transform-evaluator",
             in: runtime
@@ -31,10 +26,6 @@ struct WPESceneScriptContainmentCharacterizationTests {
             of: "governor.makeParticipant()",
             in: runtime
         ) == 4)
-        // Scene, layer, and dynamic-transform engines deliberately share one
-        // bounded synchronous runner. Protect the extraction and every
-        // operation-specific admission policy instead of counting the three
-        // formerly duplicated governor call sites.
         #expect(RR10ProductionSource.occurrences(
             of: "func runWithBudget<T>(",
             in: runtime
@@ -43,8 +34,6 @@ struct WPESceneScriptContainmentCharacterizationTests {
             of: "@unchecked Sendable, WPESceneScriptEngineExecutionGuarding",
             in: runtime
         ) == 3)
-        // Media event handlers plus lifecycle/general-settings events retain a
-        // bounded synchronous entry point on all three live engines.
         #expect(RR10ProductionSource.occurrences(
             of: "return runWithBudget(",
             in: runtime
@@ -63,10 +52,8 @@ struct WPESceneScriptContainmentCharacterizationTests {
             of: "return runWithBudget(budget, operation: .event, admission: .failFast)",
             in: runtime
         ) == 4)
-        // resizeScreen/destroy/applyGeneralSettings are lifecycle or settings
-        // events for all three live engines, plus the transform engine's
-        // applyUserProperties. They wait within the same bounded deadline so a
-        // transiently saturated worker cannot silently drop the event edge.
+        // 10 = resizeScreen/destroy/applyGeneralSettings on all three live engines,
+        // plus the transform engine's applyUserProperties.
         #expect(RR10ProductionSource.occurrences(
             of: "return runWithBudget(budget, operation: .event, admission: .waitUntilDeadline)",
             in: runtime
@@ -79,9 +66,8 @@ struct WPESceneScriptContainmentCharacterizationTests {
             of: "governor: WPESceneScriptExecutionGovernor = .processShared",
             in: runtime
         ) == 4)
-        // The fourth evaluator intentionally keeps a distinct synchronous
-        // implementation, but it must still use the same global governor and
-        // one deadline for blocking admission.
+        // 1 = the fourth evaluator's distinct synchronous implementation, which must
+        // still use the same global governor and one deadline.
         #expect(RR10ProductionSource.occurrences(
             of: "guard let permit = governor.acquire(for: participant, until: deadline) else {",
             in: runtime
@@ -121,16 +107,10 @@ struct WPESceneScriptContainmentCharacterizationTests {
         #expect(runtime.contains("case capacityUnavailable(operation: WPESceneScriptOperation)"))
     }
 
-    // `asyncExecutionSafety.begin` parks its reservation in a one-slot owner,
-    // so an attempt the governor refuses must be released through that owner.
-    // Releasing only the reservation leaves the slot armed: every later begin()
-    // on that engine is refused, and quarantineIfOverdue then charges the stale
-    // start time to an engine that never ran. Regression from ed51b687.
+    /// Releasing only the reservation leaves the one-slot owner armed: every later
+    /// begin() on that engine would be refused.
     @Test("Production post-fix: refused async attempts release the dispatch slot through its owner")
     func productionAsyncRejectionReleasesThroughOwner() throws {
-        // The scene-script subsystem lives in two files since the layer-script
-        // engine was split out; these counts are contracts on the subsystem, not
-        // on one file, so both halves are read together.
         let runtime = try RR10ProductionSource.combined([
             "LiveWallpaper/Runtime/Scene/WPESceneScriptRuntime.swift",
             "LiveWallpaper/Runtime/Scene/WPELayerScriptRuntime.swift",
@@ -140,14 +120,9 @@ struct WPESceneScriptContainmentCharacterizationTests {
             of: "                safety.complete()\n                return false",
             in: runtime
         ) == 0)
-        // Only the live event paths (layer cursor, layer media, transform media)
-        // still refuse an attempt after reserving: batch ticks reserve inside the
-        // worker closure, so a refusal there releases through the same owner in
-        // the `slot.rejectTick` branch.
-        // 5 = the two single-event lanes (layer media, transform media), the two
-        // batch variants added for the cold-start burst fix, and the layer cursor
-        // batch that replaced its single-event lane (same-release up+click);
-        // every one releases the safety claim on the permit-refused path.
+        // 5 = the two single-event lanes (layer media, transform media), the two batch
+        // variants, and the layer cursor batch; every one releases the safety claim on
+        // the permit-refused path.
         #expect(RR10ProductionSource.occurrences(
             of: "                asyncExecutionSafety.complete(safety)\n                return false",
             in: runtime
@@ -162,9 +137,6 @@ struct WPESceneScriptContainmentCharacterizationTests {
 
     @Test("Production post-fix: non-frame operations cannot fabricate traversal challenges")
     func productionNonFrameAdmissionStrategyIsExplicit() throws {
-        // The scene-script subsystem lives in two files since the layer-script
-        // engine was split out; these counts are contracts on the subsystem, not
-        // on one file, so both halves are read together.
         let runtime = try RR10ProductionSource.combined([
             "LiveWallpaper/Runtime/Scene/WPESceneScriptRuntime.swift",
             "LiveWallpaper/Runtime/Scene/WPELayerScriptRuntime.swift",
@@ -181,9 +153,6 @@ struct WPESceneScriptContainmentCharacterizationTests {
 
     @Test("Production B2b: frame watchdog quarantines async overrun without per-tick timers")
     func productionAsyncOverrunUsesSharedOwner() throws {
-        // The scene-script subsystem lives in two files since the layer-script
-        // engine was split out; these counts are contracts on the subsystem, not
-        // on one file, so both halves are read together.
         let runtime = try RR10ProductionSource.combined([
             "LiveWallpaper/Runtime/Scene/WPESceneScriptRuntime.swift",
             "LiveWallpaper/Runtime/Scene/WPELayerScriptRuntime.swift",
@@ -202,10 +171,6 @@ struct WPESceneScriptContainmentCharacterizationTests {
         #expect(!resources.contains("asyncAfter"))
     }
 
-    /// destroy() must bar every later event: the tick/cursor/userProperties
-    /// entries all guard `isDestroyed`, and the media entries once did not —
-    /// a post-destroy dispatch still ran the JS handler, held up only by
-    /// teardown call ordering. Every media entry point carries the same guard.
     @Test("Every media entry point is barred after destroy()")
     func mediaEntriesGuardIsDestroyed() throws {
         let runtime = try RR10ProductionSource.combined([
@@ -223,8 +188,7 @@ struct WPESceneScriptContainmentCharacterizationTests {
         for pattern in mediaGuards {
             #expect(runtime.contains(pattern), "missing destroy barrier: \(pattern)")
         }
-        // No media entry may guard on poison alone — that shape is exactly the
-        // pre-fix hole. (`isPoisoned, handles(` without `isDestroyed`.)
+        // No media entry may guard on poison alone (`isPoisoned, handles(` without `isDestroyed`).
         #expect(!runtime.contains("guard !isPoisoned, handles(event)"),
                 "a media entry lost its destroy barrier")
         #expect(!runtime.contains("guard !isPoisoned, !engine.hasRuntimeFault,\n              mediaHandlers.handles"),
@@ -270,12 +234,8 @@ struct WPESceneScriptContainmentCharacterizationTests {
         let seam = try RR10ProductionSource.read(
             "LiveWallpaper/Runtime/Metal/WPEMetalSceneRenderer+ScriptContainment.swift"
         )
-        // The owned-failure branch tears the whole partial scene down rather
-        // than clearing scripts alone: `retireRuntimeState` is what reaches the
-        // script runtime families, and it also collects the textures, decoders
-        // and particle buffers `performLoad` had already published. The branch
-        // itself is the invariant — an un-owned failure belongs to a newer load,
-        // whose resources must survive.
+        // The branch itself is the invariant: an un-owned failure belongs to a newer
+        // load, whose resources must survive.
         #expect(load.contains("let ownedFailedLoad = isCurrentSceneScriptLoad(scriptLoadToken)"))
         #expect(load.contains("if ownedFailedLoad {"))
         #expect(RR10ProductionSource.occurrences(of: "await retireRuntimeState(on: actor)", in: load) == 1)
@@ -570,9 +530,6 @@ struct WPESceneScriptContainmentCharacterizationTests {
 
     @Test("Production post-fix: late async completions use the scene publish gate")
     func productionLateCompletionGateIsWiredAcrossRuntimeFamilies() throws {
-        // The scene-script subsystem lives in two files since the layer-script
-        // engine was split out; these counts are contracts on the subsystem, not
-        // on one file, so both halves are read together.
         let runtime = try RR10ProductionSource.combined([
             "LiveWallpaper/Runtime/Scene/WPESceneScriptRuntime.swift",
             "LiveWallpaper/Runtime/Scene/WPELayerScriptRuntime.swift",
@@ -606,9 +563,6 @@ struct WPESceneScriptContainmentCharacterizationTests {
 
     @Test("B2a a script-heavy scene constructs every runtime — there is no count cap")
     func sceneRuntimeInventoryHasNoInstanceCap() throws {
-        // 2955378002 has 676 bindings and used to be failed closed by the cap.
-        // Binding count alone does not predict runtime cost, so this characterization
-        // pins only the no-cap construction contract.
         let state = WPESceneScriptLoadState()
         let heavy = WPESceneScriptInstanceInventory(text: 300, layer: 200, transform: 176)
         #expect(heavy.total == 676)
@@ -868,10 +822,6 @@ struct WPESceneScriptContainmentCharacterizationTests {
         #expect(!blocker.hitHardDeadline)
     }
 
-    /// The particle-alpha family reached tick, user properties and frame demand
-    /// without reaching teardown: its JSContexts and governor lanes are only
-    /// released by `destroy()`, and unload goes through
-    /// `clearSceneScriptRuntimeState()` rather than the load path's `= [:]`.
     @Test("Particle alpha scripts are destroyed and dropped on unload")
     func particleAlphaScriptsReachTeardown() throws {
         let ticks = try RR10ProductionSource.read(
@@ -1023,12 +973,6 @@ private enum RR10ProductionSource {
     }
 }
 
-/// Objects autoreleased inside a batch job must not outlive the job while the
-/// worker stays busy. GCD only guarantees pool drain "at unspecified times"
-/// unless the queue was built with `.workItem` — under a 30 fps tick stream the
-/// worker rarely idles, so per-tick ObjC temporaries (JSValue boxing in the
-/// audio bridge: ~432 buffers × 3 arrays × bands per frame on 2955378002)
-/// accumulate for the whole session. Sampled in Release at 6.3 GB (peak 12.5).
 @Suite("SceneScript batch queue autorelease drain")
 struct WPESceneScriptBatchAutoreleaseTests {
 
@@ -1069,11 +1013,6 @@ struct WPESceneScriptBatchAutoreleaseTests {
         #expect(alive == 0, "autoreleased job temporaries must drain per work item, got \(alive) alive")
     }
 
-    /// A `JSVirtualMachine` owns a GC heap (~1.15 MB measured), and every engine
-    /// used to build its own: 1104 live contexts across two scenes = 1.27 GB,
-    /// more than all GPU textures combined. One VM per WORKER is safe because a
-    /// lane is serial — JSC serialises contexts sharing a VM, and contexts on
-    /// one lane already never run concurrently, so nothing is lost.
     @Test("A worker lane reuses one JSVirtualMachine; separate workers keep separate ones")
     func laneSharesOneVirtualMachinePerWorker() {
         let dispatcher = WPESceneScriptBatchDispatcher(width: 2)

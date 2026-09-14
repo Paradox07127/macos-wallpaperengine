@@ -77,7 +77,6 @@ final class VideoEffectsApplicationService {
     }
 
     #if DEBUG
-    // Test-only introspection; no production reader.
     func hasInflightTask(for screenID: CGDirectDisplayID) -> Bool {
         inflightTasks.keys.contains { $0.screenID == screenID }
     }
@@ -89,7 +88,6 @@ final class VideoEffectsApplicationService {
         inflightTasks[WorkKey(screenID: screenID, player: player)] != nil
     }
 
-    // Test-only introspection; no production reader.
     func hasPendingRequest(
         for screenID: CGDirectDisplayID,
         player: WallpaperVideoPlayer
@@ -114,7 +112,6 @@ final class VideoEffectsApplicationService {
     }
 
     #if DEBUG
-    // Test-only introspection; no production reader.
     func hasTrackedWorkKey(
         for screenID: CGDirectDisplayID,
         player: WallpaperVideoPlayer
@@ -128,7 +125,6 @@ final class VideoEffectsApplicationService {
     #endif
 
     #if DEBUG
-    // Test-only introspection; no production reader.
     func trackedWorkKeyCount(for screenID: CGDirectDisplayID) -> Int {
         trackedWorkKeys(for: screenID).count
     }
@@ -190,9 +186,7 @@ final class VideoEffectsApplicationService {
             return
         }
 
-        // Disabling effects is asset-independent. In particular, an
-        // AVPlayerLooper nil-currentItem seam must still cancel the old build
-        // and route to the plain-FPS fallback immediately.
+        // Disabling effects is asset-independent; a nil currentItem must still cancel the old build.
         if !hasEffects {
             cancelWork(for: key)
             Logger.info("Applying effects for screen \(screenID): hasEffects=false", category: .videoPlayer)

@@ -2,34 +2,19 @@ import CoreGraphics
 import Foundation
 import LiveWallpaperCore
 
-/// Runtime model of a Wallpaper Engine `scene.json`; unsupported fields remain available as diagnostics.
 public struct WPESceneDocument: Equatable, Sendable {
-    /// Complete authored `scene.json`, including unknown and currently unsupported
-    /// fields. Typed properties below are resolved runtime views; this tree remains
-    /// unchanged so future consumers and diagnostics can inspect every parameter.
     public let sourceJSON: WPESceneJSONValue
     public let camera: WPESceneCamera
-    /// Authored editor/root-camera metadata. This is intentionally separate from
-    /// `camera`, which is the currently selected runtime projection. In particular,
-    /// `paths` is only a lossless ordered list of asset references here; loading and
-    /// playing those files requires a package/VFS consumer and an L1 timing oracle.
     public let authoredCamera: WPESceneAuthoredCamera
-    /// Camera assets in authored `objects` order. `sourceObjectIndex` retains their
-    /// exact interleave with non-camera objects, while every typed field distinguishes
-    /// missing, null, decoded, and unexpected JSON without inventing defaults.
     public let authoredCameraObjects: [WPESceneAuthoredCameraObject]
     public let general: WPESceneGeneral
-    /// `var` so the renderer can append the synthetic image layers it derives
-    /// from `textObjects` before the render graph is built (WPETextLayerSynthesis);
-    /// nothing else mutates a parsed document.
+    /// `var` so the renderer can append synthetic image layers from `textObjects` before the graph is built; nothing else mutates a parsed document.
     public var imageObjects: [WPESceneImageObject]
     public let scriptHostObjects: [WPESceneScriptHostObject]
     public let transformHostObjects: [WPESceneTransformHostObject]
     public let particleObjects: [WPESceneParticleObject]
     public let textObjects: [WPESceneTextObject]
     public let soundObjects: [WPESceneSoundObject]
-    /// Typed light objects are preserved even while the native light/shadow
-    /// renderer is gated behind its uniform and attachment oracles.
     public let lightObjects: [WPESceneLightObject]
     /// WPE objects-array paint order (earlier behind later) for z-interleave.
     public let objectPaintOrder: [String: Int]
@@ -39,10 +24,6 @@ public struct WPESceneDocument: Equatable, Sendable {
     /// so a script cannot show under a hidden group.
     public let objectParentByID: [String: String]
     public let ownVisibilityByID: [String: Bool]
-    /// Parser evidence, not a runtime signal: preflight used to derive capability
-    /// flags by string-matching these messages and now reads the typed object
-    /// arrays instead, so nothing in the app consumes this. It is kept because the
-    /// parser suites and the official-docs corpus audit assert against it.
     public let diagnostics: [WPESceneDiagnostic]
 
     public init(
@@ -84,7 +65,6 @@ public struct WPESceneDocument: Equatable, Sendable {
     }
 }
 
-/// Non-drawn group that carries transform scripts for descendants.
 public struct WPESceneTransformHostObject: Equatable, Sendable, Identifiable {
     public let id: String
     public let name: String
@@ -95,18 +75,12 @@ public struct WPESceneTransformHostObject: Equatable, Sendable, Identifiable {
     public let localOrigin: SIMD3<Double>
     public let localScale: SIMD3<Double>
     public let localAngles: SIMD3<Double>
-    /// Keyframed `origin` (WPE authors emitter sweeps this way). `origin` above
-    /// holds only the authored static `value` seed — 3448877775's meteor emitter
-    /// parks off-screen and returns to (0,0) for ~18s of a 90s loop, which is
-    /// what makes its shooting stars periodic rather than permanent.
+    /// Keyframed `origin`; the `origin` field is only the authored static `value` seed.
     public let originAnimation: WPESceneAnimatedValue?
     public let originScript: WPESceneTransformScript?
     public let scaleScript: WPESceneTransformScript?
     public let anglesScript: WPESceneTransformScript?
-    /// Camera-parallax depth authored ON THE GROUP. WPE moves a parented subtree rigidly by its
-    /// topmost ancestor's depth, and that ancestor is usually a group — 3448877775's clock/date/
-    /// weekday assembly rides its group's "-0.408" while the leaf texts author -0.7 / 0 / 1.0, all of
-    /// which the Windows captures prove are ignored. Dropping the field here severed that chain.
+    /// Camera-parallax depth authored on the group: WPE moves a parented subtree by its topmost ancestor's depth, usually a group.
     public let parallaxDepth: SIMD2<Double>
 
     public init(
@@ -142,10 +116,7 @@ public struct WPESceneTransformHostObject: Equatable, Sendable, Identifiable {
     }
 }
 
-/// A non-rendered SceneScript host: WPE permits objects such as `solid:true`
-/// controller layers to carry a `visible.script` whose only job is updating
-/// globals like `shared.*`. They must run with the layer scripts but do not
-/// produce draw passes.
+/// Non-rendered SceneScript host (`solid:true` controllers). Must run with layer scripts but produces no draw passes.
 public struct WPESceneScriptHostObject: Equatable, Sendable, Identifiable {
     public let id: String
     public let name: String
@@ -165,11 +136,7 @@ public struct WPESceneScriptHostObject: Equatable, Sendable, Identifiable {
     }
 }
 
-/// `action` decides whether changing the property can be patched in place (`.incremental`) or
-/// requires a full pipeline reload (`.reload`). `condition` carries the expected literal for
-/// *condition-form* bindings — `{"user":{"name":K,"condition":"2"},"value":...}` (WPE style
-/// selectors): when non-nil the target is visible only while `userValues[propertyKey]` matches
-/// `condition`; when nil the property drives the target directly (simple `{"user":K,"value":...}` form).
+/// `action` is `.incremental` (in-place patch) or `.reload`. `condition` non-nil ⇒ visible only while `userValues[propertyKey]` matches; nil ⇒ the property drives the target directly.
 public struct WPEScenePropertyBinding: Equatable, Sendable {
     public let propertyKey: String
     public let target: WPEScenePropertyBindingTarget
@@ -194,9 +161,7 @@ public struct WPEScenePropertyBinding: Equatable, Sendable {
 
 public enum WPEScenePropertyBindingTarget: Equatable, Sendable {
     case generalField(name: String)
-    /// A non-rendered group/controller object's direct user-bound visibility.
-    /// It deliberately reloads the scene so the parser can re-fold the group
-    /// through every descendant; there is no duplicate incremental planner.
+    /// Reloads the scene so the parser can re-fold the group through every descendant; there is no duplicate incremental planner.
     case groupObject(id: String)
     case imageObject(id: String)
     case textObject(id: String)
@@ -208,10 +173,7 @@ public enum WPEScenePropertyBindingTarget: Equatable, Sendable {
     case shaderCombo(objectID: String, effectID: String?, passID: Int?, name: String)
     case textureSlot(objectID: String, effectID: String?, passID: Int?, index: Int)
     case objectResource(objectID: String, field: String)
-    /// A user property injected into an authored SceneScript's global
-    /// `scriptProperties` object. Keeping the property name and consumer role
-    /// prevents a nested script binding from being mistaken for a direct
-    /// visible/alpha binding, and gives the renderer an exact live-patch target.
+    /// User property injected into a SceneScript's `scriptProperties`. Keeping name + role prevents mistaking it for a direct visible/alpha binding.
     case scriptProperty(WPESceneScriptPropertyTarget)
 }
 
@@ -268,8 +230,6 @@ public enum WPEScenePropertyBindingAction: String, Equatable, Sendable {
     case reload
 }
 
-/// Consumers ask `requiresReload` first; if false they apply
-/// `incrementalBindings` live.
 public struct WPEScenePropertyPatch: Equatable, Sendable {
     public let bindingsByProperty: [String: [WPEScenePropertyBinding]]
     public let oldValues: [String: WallpaperEngineProjectPropertyValue]
@@ -315,13 +275,8 @@ public struct WPESceneSoundObject: Equatable, Sendable, Identifiable {
     public let volume: Double
     public let playbackMode: String
     public let startSilent: Bool
-    /// Effective initial visibility after folding the object's own authored or
-    /// user-bound value with its ancestor groups. WPE only auto-starts while
-    /// this is true; later user-property visibility changes address the sound
-    /// control directly.
+    /// Effective initial visibility after folding own value with ancestor groups. WPE only auto-starts while this is true.
     public let visible: Bool
-    /// Lossless typed views of the authored envelopes. The scalar properties
-    /// above remain the resolved runtime values for source compatibility.
     public let volumeField: WPESceneAuthoredField<Double>
     public let visibleField: WPESceneAuthoredField<Bool>
 
@@ -348,14 +303,7 @@ public struct WPESceneSoundObject: Equatable, Sendable, Identifiable {
     }
 }
 
-/// Typed WPE light kind. Unknown authored values remain explicit so a future
-/// renderer cannot silently pack them as point lights.
-///
-/// `knownShaderArrayValue` has no consumer yet — nothing renders lights. It is
-/// carried because this enum used to be `Int`-raw-valued, so the 0/1/2 shader
-/// contract was free; dropping it now would mean re-deriving it from the
-/// reference implementation when the light pass lands. Only the parser suites
-/// read it today.
+/// Unknown authored values stay explicit so a future renderer cannot silently pack them as point lights.
 public enum WPESceneLightType: Equatable, Sendable {
     case point
     case spot
@@ -401,10 +349,6 @@ public struct WPESceneLightConfiguration: Equatable, Sendable {
     public static let empty = WPESceneLightConfiguration()
 }
 
-/// Provenance for a light field that may carry animation, a user-property
-/// envelope, or SceneScript. Runtime consumers may use `resolvedValue`, while
-/// `seed` and the authored binding metadata remain available for reloads and
-/// future per-frame light evaluation.
 public struct WPESceneLightFieldBinding: Equatable, Sendable {
     public let seed: WPESceneShaderConstantValue?
     public let resolvedValue: WPESceneShaderConstantValue?
@@ -427,9 +371,6 @@ public struct WPESceneLightFieldBinding: Equatable, Sendable {
     }
 }
 
-/// Typed preservation of a WPE light object. These values intentionally do not
-/// imply that lighting or shadows are already rendered: uniform packing and
-/// shadow-atlas consumption have separate L1 gates.
 public struct WPESceneLightObject: Equatable, Sendable, Identifiable {
     public let id: String
     public let name: String
@@ -466,7 +407,6 @@ public struct WPESceneLightObject: Equatable, Sendable, Identifiable {
     public let disablePropagation: Bool
     public let solid: Bool
     public let dependencies: [String]
-    /// Every authored light field with its seed/resolved/dynamic provenance.
     public let fieldBindings: [String: WPESceneLightFieldBinding]
 
     public init(
@@ -546,18 +486,14 @@ public struct WPESceneLightObject: Equatable, Sendable, Identifiable {
     }
 }
 
-/// One resolved scriptProperty binding (a WPE SceneScript editor property the
-/// scene configures per object — e.g. a clock's `dayFormat`/`showDay`). WPE
-/// sliders are numeric, but checkboxes are bools and combos/text are strings.
+/// WPE sliders are numeric; checkboxes are bools and combos/text are strings.
 public enum WPESceneScriptPropertyValue: Equatable, Sendable {
     case number(Double)
     case bool(Bool)
     case string(String)
 }
 
-/// WPE SceneScript attached to a transform field such as `origin`.
-/// Static scripts are evaluated once by the parser; dynamic scripts are retained
-/// here so the renderer can tick them with live inputs such as the cursor.
+/// Static scripts are evaluated once by the parser; dynamic scripts are retained for the renderer to tick with live inputs.
 public struct WPESceneTransformScript: Equatable, Sendable {
     public let script: String
     public let scriptProperties: [String: WPESceneScriptPropertyValue]
@@ -579,49 +515,32 @@ public struct WPESceneTextObject: Equatable, Sendable, Identifiable {
     public let name: String
     public let text: String
     public let textScript: String?
-    /// The scene's per-object scriptProperty overrides (e.g. `dayFormat`,
-    /// `showDay`), so the text script renders with the scene's configuration
-    /// instead of the script's own declared defaults.
+    /// Per-object scriptProperty overrides so the text script uses the scene's configuration, not the script's declared defaults.
     public let scriptProperties: [String: WPESceneScriptPropertyValue]
     public let fontRelativePath: String?
     public let pointSize: Double
     public let color: SIMD3<Double>
-    /// Object-level `brightness` colour multiplier — the same generic field
-    /// image objects carry (3460973721's Clock/Date/Day author 2.39/1.98/1.4).
-    /// Multiplied into the text colour by both draw paths; 1 = unchanged.
+    /// Object-level `brightness` colour multiplier; 1 = unchanged. Multiplied into the text colour by both draw paths.
     public let brightness: Double
     public let alpha: Double
     public let alphaAnimation: WPESceneAnimatedValue?
     public let origin: SIMD3<Double>
     public let scale: SIMD3<Double>
-    /// Static author-space rotation (radians, `angles` in scene.json). Text
-    /// objects rotate like image layers — 2986828130's Clock/Date carry a
-    /// standalone z of 0.5236 (30°) with no parent chain.
+    /// Static author-space rotation in radians (`angles` in scene.json). Text objects rotate like image layers.
     public let angles: SIMD3<Double>
     public let visible: Bool
     public let horizontalAlignment: String
     public let verticalAlignment: String
     public let maxWidth: Double?
-    /// WPE "Limit rows" + "Max rows". `maxRows` is nil when the toggle is off,
-    /// mirroring how `maxWidth` is gated by `limitWidth` — without a cap the
-    /// CoreText path wraps until every character fits, so a long song title
-    /// grows downward without bound instead of clipping to one line.
+    /// `maxRows` is nil when the Limit-rows toggle is off. Without a cap CoreText wraps until every character fits.
     public let maxRows: Int?
     /// WPE "Use ellipsis": append "…" when the text was clipped by `maxRows`.
     public let limitUseEllipsis: Bool
-    /// Per-axis camera-parallax depth (WPE stores this as a Vec2 "x y"). Each
-    /// axis scales independently, so "1 0" parallaxes horizontally only and
-    /// "0 1" vertically only. `.zero` pins the layer (no parallax).
+    /// Per-axis camera-parallax depth (Vec2 "x y"). "1 0" horizontal only, "0 1" vertical only. `.zero` pins the layer.
     public let parallaxDepth: SIMD2<Double>
-    /// WPE's `size`: the text FBO dimensions the EDITOR last measured, written back into scene.json
-    /// — layout OUTPUT, not input, and stale the moment a scripted clock/date changes length.
-    /// **Nothing in the render path may read it** (glyphs are laid out at pointsize×300/72 anchored
-    /// on `origin`; see `WPETextLayoutEngine`). Kept only because SceneScript's `layer.size` reports it.
+    /// Editor-measured text FBO size: layout OUTPUT, not input. Nothing in the render path may read it (glyphs at pointsize×300/72 on `origin`; see `WPETextLayoutEngine`). Kept only because SceneScript `layer.size` reports it.
     public let boxSize: SIMD2<Double>?
-    /// Transparent margin (scene pixels) the runtime adds AROUND the glyph block when rendering text
-    /// effects into an intermediate target (official docs: "increases the geometry around the font
-    /// characters"). It does NOT shift the text anchor; the authored `size` box is an editor artifact
-    /// and is deliberately not parsed (oracle-verified, memory wpe-text-windows-model).
+    /// Transparent margin in scene pixels around the glyph block. Does not shift the text anchor; the authored `size` box is an editor artifact and is not parsed.
     public let padding: Double
     /// Copies the scene region behind the text into the offscreen surface before
     /// glyph drawing. This is also an offscreen-rendering discriminator in WPE.
@@ -631,41 +550,24 @@ public struct WPESceneTextObject: Equatable, Sendable, Identifiable {
     public let opaqueBackground: Bool
     public let backgroundColor: SIMD3<Double>
     public let backgroundBrightness: Double
-    /// Effect chain on the text object. WPE renders a text layer's glyphs into
-    /// an intermediate target and then runs it through the SAME chain as an
-    /// image layer (blurprecise / opacity / pulse dominate the corpus).
     public let effects: [WPESceneImageEffect]
     public let letterSpacing: Double
-    /// Parent object id + this object's LOCAL origin (pre-composition). `origin`
-    /// above is the parse-time WORLD origin; when the parent chain moves at
-    /// runtime (script-driven menu panels), the renderer re-composes
-    /// `localOrigin` through the live parent transforms instead.
+    /// `origin` is parse-time WORLD; `localOrigin` is pre-composition LOCAL. When the parent chain moves, re-compose `localOrigin` through live parent transforms.
     public let parentObjectID: String?
     public let localOrigin: SIMD3<Double>?
-    /// This object's OWN authored scale, before the parent chain folds in.
-    /// `scale` above is the parse-time WORLD scale; a `scale` SceneScript
-    /// returns a LOCAL value (WPE scripts read/write the object's own
-    /// property), so the renderer needs both to swap one out for the other.
+    /// `scale` is parse-time WORLD; `localScale` is this object's own authored scale. A `scale` SceneScript returns LOCAL, so the renderer needs both.
     public let localScale: SIMD3<Double>?
-    /// Script-driven alpha/visible on TEXT objects (3509243656's login-intro
-    /// texts fade themselves out via alpha scripts; the clock gates visibility).
-    /// Ticked by the renderer through the same layer-script machinery as image
-    /// layers — the baked `alpha`/`visible` above are only the load-time seeds.
+    /// Script-driven alpha/visible on text. The baked `alpha`/`visible` fields are only load-time seeds.
     public let alphaScript: String?
     public let alphaScriptProperties: [String: WPESceneScriptPropertyValue]
     public let visibleScript: String?
     public let visibleScriptProperties: [String: WPESceneScriptPropertyValue]
-    /// Dynamic `origin` SceneScript (reads `shared`/`input`/time), ticked live by
-    /// the renderer — 3509243656's star-coordinate tooltip labels track their
-    /// body via `shared.xxN`. Nil when the origin is static (resolved at parse).
+    /// Dynamic `origin` SceneScript; nil when the origin is static (resolved at parse).
     public let originScript: WPESceneTransformScript?
     /// WPE SceneScript attached to `color`. Returns a Vec3 in 0…1 linear RGB, so
     /// the renderer ticks it through the same Vec3 machinery as scale/angles.
     public let colorScript: WPESceneTransformScript?
-    /// WPE SceneScript attached to `scale` / `angles`. Text objects never became
-    /// transform hosts (the parse loop excludes them), so these are their only
-    /// route to a scripted scale — the corpus binds 259 of them, almost all the
-    /// audio-response template.
+    /// Text objects are not transform hosts; these scripts are their only route to a scripted scale.
     public let scaleScript: WPESceneTransformScript?
     public let anglesScript: WPESceneTransformScript?
     public init(
@@ -756,9 +658,7 @@ public struct WPESceneTextObject: Equatable, Sendable, Identifiable {
         alphaAnimation?.scalar(at: time) ?? alpha
     }
 
-    /// Returns a copy carrying the live (scripted) text + resolved alpha while
-    /// preserving every other field. `liveColor` is the `color` SceneScript's
-    /// output; nil keeps the authored tint.
+    /// `liveColor` is the `color` SceneScript output; nil keeps the authored tint.
     public func withLiveText(
         _ liveText: String,
         alpha liveAlpha: Double,
@@ -812,11 +712,7 @@ public struct WPESceneTextObject: Equatable, Sendable, Identifiable {
 public struct WPESceneParticleObject: Equatable, Sendable, Identifiable {
     public let id: String
     public let name: String
-    /// Parent object, so a transform host with a keyframed `origin` can move this
-    /// emitter. Image layers get that through the render graph's parent→child
-    /// composition; particles are not render layers, so without this the meteor's
-    /// emitter stayed frozen at its parse-time origin and rained shooting stars
-    /// non-stop instead of only while its host sweeps on-screen.
+    /// Parent object so a transform host with keyframed `origin` can move this emitter. Particles are not render layers, so without this the emitter stays at parse-time origin.
     public let parentObjectID: String?
     public let particleRelativePath: String
     public let origin: SIMD3<Double>
@@ -826,13 +722,9 @@ public struct WPESceneParticleObject: Equatable, Sendable, Identifiable {
     public let alpha: Double
     public let alphaAnimation: WPESceneAnimatedValue?
     public let color: SIMD3<Double>
-    /// Object-level `brightness` colour multiplier — the same generic field
-    /// image objects carry (WPE applies it to any renderable object). Rendered
-    /// by folding into the particle overbright uniform; 1 = unchanged.
+    /// Object-level `brightness` colour multiplier; 1 = unchanged. Folded into the particle overbright uniform.
     public let brightness: Double
-    /// Per-axis camera-parallax depth (WPE stores this as a Vec2 "x y"). Each
-    /// axis scales independently, so "1 0" parallaxes horizontally only and
-    /// "0 1" vertically only. `.zero` pins the layer (no parallax).
+    /// Per-axis camera-parallax depth (Vec2 "x y"). "1 0" horizontal only, "0 1" vertical only. `.zero` pins the layer.
     public let parallaxDepth: SIMD2<Double>
     public let instanceOverride: WPESceneParticleInstanceOverride?
 
@@ -862,29 +754,15 @@ public struct WPESceneParticleInstanceOverride: Equatable, Sendable {
     public let size: Double?
     public let speed: Double?
     public let alpha: Double?
-    /// HDR multiplier applied to the generated particle vertex RGB. Windows
-    /// WPE keeps the material `g_Overbright` unchanged and bakes this value
-    /// into COLOR.rgb instead (3509243656: sibling systems author 2 and 4).
+    /// HDR multiplier on generated particle vertex RGB. Windows keeps material `g_Overbright` unchanged and bakes this into COLOR.rgb instead.
     public let brightness: Double?
     /// Override color in the same 0...255 space as particle definitions.
     public let color: SIMD3<Double>?
-    /// Keyframed `alpha` override. WPE authors these as the usual four-key
-    /// `{animation, script, scriptproperties, value}` dict; `alpha` above is only
-    /// the static seed, so a scene that ramps its particles in over a loop
-    /// (3448877775's star field: 0.01 → 1.0) sat at full brightness without this.
+    /// Keyframed `alpha` override; `alpha` above is only the static seed.
     public let alphaAnimation: WPESceneAnimatedValue?
-    /// `controlpointN`: per-instance replacement for the particle definition's own control-point
-    /// offsets, keyed by N. One particle file is reused across objects and each object moves the
-    /// control points from here. Dropping them left `controlpointattract` pulling toward the emitter
-    /// itself (an authored control point with no `offset` defaults to 0,0,0), which pins the whole
-    /// system in place — scene 3596044309's two `31.json` instances sit in a ~15px clump because of
-    /// it, with attract `scale` 1000 against a ~223 gravity.
+    /// `controlpointN`: per-instance replacement of the definition's control-point offsets, keyed by N. An authored control point with no `offset` defaults to 0,0,0.
     public let controlPointOffsets: [Int: SIMD3<Double>]
-    /// Script-driven `alpha` override — the same `{script, scriptproperties, value}`
-    /// envelope image and text objects use, so `alpha` above is only the seed.
-    /// 2955378002's "Blinking Stars 23"/"00" gate their whole system on
-    /// `engine.timeOfDay` and read 0 at noon; dropping the script left them lit
-    /// at the seed's 1.0 all day (Windows capture at 0-5 h has COLOR.a = 0).
+    /// Script-driven `alpha` override; `alpha` above is only the seed.
     public let alphaScript: String?
     public let alphaScriptProperties: [String: WPESceneScriptPropertyValue]
 
@@ -917,7 +795,6 @@ public struct WPESceneParticleInstanceOverride: Equatable, Sendable {
     }
 }
 
-/// Presence-preserving metadata from the root `camera` object.
 public struct WPESceneAuthoredCamera: Equatable, Sendable {
     public let sourceJSON: WPESceneJSONValue
     /// Ordered camera-path asset references. No default is inferred: nil means
@@ -935,11 +812,6 @@ public struct WPESceneAuthoredCamera: Equatable, Sendable {
     public static let empty = WPESceneAuthoredCamera()
 }
 
-/// Presence-preserving metadata for an authored camera asset in `objects`.
-///
-/// The official docs define camera-path selection and Center/Eye/Up semantics,
-/// but do not define the serialized track format. Therefore `path` remains an
-/// asset reference and none of these fields is consumed by playback here.
 public struct WPESceneAuthoredCameraObject: Equatable, Sendable {
     public let sourceObjectIndex: Int
     public let sourceJSON: WPESceneJSONValue
@@ -1001,10 +873,7 @@ public struct WPESceneCamera: Equatable, Sendable {
     )
 }
 
-/// WPE HDR scene bloom (`general.bloom` + `bloomhdr*`). Values are the raw
-/// scene.json numbers; the executor derives the cbuffer forms RenderDoc-verified
-/// on 3509243656 (g_BloomStrength = strength/17, knee curve from
-/// threshold/feather, per-level texel offsets, scatter-weighted additive upsample).
+/// Raw scene.json bloom numbers. Executor derives cbuffer forms: `g_BloomStrength = strength/17`, knee from threshold/feather.
 public struct WPESceneBloomSettings: Equatable, Sendable {
     public let strength: Double
     public let threshold: Double
@@ -1030,9 +899,7 @@ public struct WPESceneBloomSettings: Equatable, Sendable {
     }
 }
 
-/// A user-property dependency preserved from an authored WPE field envelope.
-/// `condition` is non-nil for selector-form bindings such as
-/// `{ "user": { "name": "style", "condition": "2" }, "value": ... }`.
+/// `condition` is non-nil for selector-form `{ user: { name, condition }, value }`.
 public struct WPESceneAuthoredUserBinding: Equatable, Sendable {
     public let propertyKey: String
     public let condition: String?
@@ -1043,10 +910,6 @@ public struct WPESceneAuthoredUserBinding: Equatable, Sendable {
     }
 }
 
-/// Typed preservation view of a WPE field that may be a literal, user-property
-/// envelope, or SceneScript envelope. `seed` is the serialized fallback while
-/// `resolvedValue` reflects the user values supplied to this parse. Runtime
-/// consumers remain separate and must pass their own L1 behavior gate.
 public struct WPESceneAuthoredField<Value: Equatable & Sendable>: Equatable, Sendable {
     public let seed: Value
     public let resolvedValue: Value
@@ -1125,38 +988,19 @@ public struct WPESceneGeneral: Equatable, Sendable {
     public let clearColor: SIMD3<Double>
     public let orthogonalProjection: WPESceneOrthogonalProjection
     public let usesPerspectiveProjection: Bool
-    /// Authored WPE `general.zoom` value. Retained as scene metadata only: the
-    /// projection/camera consumption rule still needs an L1 oracle before the
-    /// renderer may use it.
     public let zoom: Double
-    /// Full authored wrapper for `general.zoom`; `zoom` remains the compatible
-    /// resolved scalar API while this retains user/SceneScript provenance.
     public let zoomField: WPESceneAuthoredField<Double>
-    /// Metadata-only until the per-object perspective camera domain has L1.
     public let perspectiveOverrideFOV: WPESceneAuthoredField<Double>
-    /// Metadata-only; no camera jitter is generated from this state yet.
     public let cameraShake: WPESceneCameraShakeSettings
-    /// Metadata-only; the render-pass clear policy does not consume it yet.
     public let clearEnabled: WPESceneAuthoredField<Bool>
-    /// Metadata-only scene environment fields; particle/render algorithms do
-    /// not consume these values without an independent behavior oracle.
     public let wind: WPESceneWindSettings
     public let gravity: WPESceneGravitySettings
     public let cameraParallax: WPESceneCameraParallaxSettings
-    /// WPE `general.supportsaudioprocessing`: the scene declares audio-reactive
-    /// content (a shader/effect samples `g_AudioSpectrum*`). Used by the renderer
-    /// to keep the view on the continuous-frame path so the visualizer animates
-    /// with audio instead of freezing on the static/on-demand path.
+    /// `general.supportsaudioprocessing`: a shader/effect samples `g_AudioSpectrum*`. Keeps the view on the continuous-frame path so the visualizer does not freeze on the static/on-demand path.
     public let supportsAudioProcessing: Bool
-    /// WPE `general.ambientcolor` / `general.skylightcolor` — the scene light
-    /// uniforms (`g_LightAmbientColor` / `g_LightSkylightColor`), uploaded RAW
-    /// (no sRGB conversion; RenderDoc-verified on 3509243656). Default WHITE so
-    /// scenes that never author them keep the pre-lighting model look.
+    /// `g_LightAmbientColor` / `g_LightSkylightColor`, uploaded raw (no sRGB). Default white so unauthored scenes keep the pre-lighting look.
     public let lightAmbientColor: SIMD3<Double>
     public let lightSkylightColor: SIMD3<Double>
-    /// Authored light/shadow capacity declarations. Preserved independently
-    /// from the renderer so a missing uniform/shadow implementation cannot
-    /// silently erase the scene's lighting contract.
     public let lightConfiguration: WPESceneLightConfiguration
     /// WPE `general.hdr`: gates the HDR branches of model materials
     /// (brightness multiply + emissive overbright in generic4).
@@ -1208,10 +1052,7 @@ public struct WPESceneGeneral: Equatable, Sendable {
     )
 }
 
-/// WPE scene-level camera parallax: the whole scene follows the cursor, each
-/// layer shifting by its `parallaxDepth`. `amount`/`delay`/`mouseInfluence`
-/// mirror the WPE general settings; defaults match WPE so an enabled scene that
-/// omits them behaves like Wallpaper Engine. Disabled by default (no-op).
+/// Scene-level camera parallax: the scene follows the cursor; each layer shifts by its `parallaxDepth`. Defaults match WPE. Disabled (no-op) by default.
 public struct WPESceneCameraParallaxSettings: Equatable, Sendable {
     public let enabled: Bool
     public let amount: Double
@@ -1247,18 +1088,11 @@ public struct WPESceneOrthogonalProjection: Equatable, Sendable {
     }
 }
 
-/// WPE `objects[].instance.usertextures` binding. A missing `type` represents
-/// the older bare-string form; typed entries name system media or user-shortcut
-/// texture providers that the native renderer may resolve separately.
+/// Missing `type` is the older bare-string form; typed entries name system media or user-shortcut providers.
 public struct WPESceneUserTextureBinding: Equatable, Sendable {
     public let name: String
     public let type: String?
-    /// The `usertextures` array position, which IS the texture slot it overrides: the array is
-    /// positional against the sibling `textures` array and authors leave `null` in every slot they
-    /// do not override (2955378002 `objects[201]/effects[0]/passes[0]`: `[null,
-    /// {$mediaPreviousThumbnail}, {$mediaThumbnail}]` against three `textures` entries). Parsing used
-    /// to `compactMap` the nulls away, which collapsed slot 1/2 to 0/1. nil only for bindings
-    /// constructed outside a parsed array.
+    /// `slot` IS the texture slot: the array is positional against sibling `textures`, and authors leave `null` in slots they do not override. nil only for bindings constructed outside a parsed array.
     public let slot: Int?
 
     public init(name: String, type: String? = nil, slot: Int? = nil) {
@@ -1268,9 +1102,7 @@ public struct WPESceneUserTextureBinding: Equatable, Sendable {
     }
 }
 
-/// Per-object material binding overrides serialized in WPE
-/// `objects[].instance`. These are merged over the image asset's base material
-/// after it loads; empty texture slots intentionally do not replace the base.
+/// Merged over the image asset's base material after load; empty texture slots do not replace the base.
 public struct WPESceneMaterialInstance: Equatable, Sendable {
     public let id: Int?
     public let combos: [String: Int]
@@ -1290,9 +1122,6 @@ public struct WPESceneMaterialInstance: Equatable, Sendable {
     }
 }
 
-/// WPE `objects[].config` metadata for image layers. `passthrough` is kept
-/// typed for diagnostics and future render-graph planning, but is deliberately
-/// not interpreted until its topology semantics have L1 evidence.
 public struct WPESceneImageConfig: Equatable, Sendable {
     public let passthrough: Bool
 
@@ -1306,22 +1135,11 @@ public struct WPESceneImageObject: Equatable, Sendable, Identifiable {
     public let name: String
     public let imageRelativePath: String
     public let materialRelativePath: String?
-    /// Per-object compiled-material binding overrides (`objects[].instance`).
     public let materialInstance: WPESceneMaterialInstance?
-    /// Authored `objects[].config`, retained without changing pass topology.
     public let config: WPESceneImageConfig
-    /// Authored WPE `disablepropagation` flag. Retained for a future hierarchy
-    /// planner, but deliberately not applied to parallax propagation until the
-    /// native behavior has an L1 mutation capture.
     public let disablePropagation: Bool
-    /// Whether this image participates in WPE cursor hit-testing. Preserved as
-    /// authored input; the renderer does not change dispatch policy until the
-    /// overlapping-layer order has an L1 oracle.
     public let solid: Bool
-    /// Authored `objects[].perspective`. In an otherwise orthographic scene this object is
-    /// projected through the scene's perspective camera instead of the ortho canvas matrix
-    /// — RenderDoc 3437487219 ordinals 5/8 (the Earth and cloud models) carry a perspective
-    /// `g_ViewProjectionMatrix` while every image layer in the same frame is orthographic.
+    /// In an otherwise orthographic scene this object is projected through the scene's perspective camera instead of the ortho canvas matrix.
     public let usesPerspectiveProjection: Bool
     /// Whether utility composition layers should seed their pass chain from the current scene.
     public let copyBackground: Bool
@@ -1344,57 +1162,36 @@ public struct WPESceneImageObject: Equatable, Sendable, Identifiable {
     /// Keyframed color track; `color` remains the authored static seed.
     public let colorAnimation: WPESceneAnimatedValue?
     public let brightness: Double
-    /// A blend that reads the destination, so it cannot ride a Metal blend descriptor and must go
-    /// through the programmable composite. `blendMode` is `.normal` for these — drawing them with it
-    /// paints an opaque rectangle over the scene (3448877775's full-screen Overlay tint erased the
-    /// whole wallpaper this way).
+    /// A blend that reads the destination cannot ride a Metal blend descriptor. `blendMode` is `.normal` for these — drawing with it paints an opaque rectangle over the scene.
     public var usesProgrammableBlend: Bool {
         WPESceneBlendMode.fixedFunction(forWPEBlendMode: colorBlendMode) == nil
     }
     public let blendMode: WPESceneBlendMode
-    /// Raw WPE `common_blending.h` BLENDMODE index. `blendMode` above is only the
-    /// fixed-function-expressible approximation; modes outside that subset (11
-    /// Overlay, 12 Soft Light, …) read the destination and must run the
-    /// programmable `ApplyBlending` path keyed on this number.
+    /// Raw `common_blending.h` BLENDMODE index. `blendMode` is only the fixed-function subset; modes 11 Overlay, 12 Soft Light, … must run programmable `ApplyBlending` keyed on this number.
     public let colorBlendMode: Int
     public let alignment: WPESceneAlignment
     public let size: CGSize?
     public let dependencies: [String]
     public let effects: [WPESceneImageEffect]
     public let animationLayers: [WPESceneAnimationLayer]
-    /// Per-axis camera-parallax depth (WPE stores this as a Vec2 "x y"). Each
-    /// axis scales independently, so "1 0" parallaxes horizontally only and
-    /// "0 1" vertically only. `.zero` pins the layer (no parallax).
+    /// Per-axis camera-parallax depth (Vec2 "x y"). "1 0" horizontal only, "0 1" vertical only. `.zero` pins the layer.
     public let parallaxDepth: SIMD2<Double>
-    /// WPE SceneScript attached to this layer's `visible` field (a JS program
-    /// with `init()`/`update()` that drives the layer's visibility/alpha and any
-    /// video texture). `nil` for the common static-visibility case.
+    /// SceneScript on `visible`; `nil` for static visibility. May drive visibility/alpha and any video texture.
     public let visibleScript: String?
-    /// WPE SceneScript attached to this layer's `alpha` field. These scripts
-    /// return the live alpha value from `update(value)` and must not change
-    /// layer visibility.
+    /// Alpha scripts return the live alpha from `update(value)` and must not change layer visibility.
     public let alphaScript: String?
     public let alphaScriptProperties: [String: WPESceneScriptPropertyValue]
     /// Dynamic WPE SceneScript attached to this layer's `origin` field. Static
     /// origin scripts are resolved at parse time and leave this nil.
     public let originScript: WPESceneTransformScript?
-    /// WPE SceneScript attached to this layer's `scale` field. Scale scripts are
-    /// evaluated at runtime because authored scenes often use shared state or
-    /// frame-local state even when the serialized fallback value looks static.
+    /// Scale scripts are evaluated at runtime even when the serialized fallback looks static.
     public let scaleScript: WPESceneTransformScript?
-    /// WPE SceneScript attached to this layer's `angles` field. Runtime
-    /// evaluation drives scene-control rigs such as mouse drag rotation.
     public let anglesScript: WPESceneTransformScript?
     /// WPE SceneScript attached to this layer's `color` field. Returns a Vec3 in
     /// 0…1 linear RGB, ticked by the same runtime as scale/angles.
     public let colorScript: WPESceneTransformScript?
-    /// Resolved scriptProperty overrides for `visibleScript` (user-bound values
-    /// like `ruchang` overlaid on the script's declared defaults).
     public let scriptProperties: [String: WPESceneScriptPropertyValue]
-    /// Perspective-quad corners for a `shape: "quad"` layer that has no image and draws a DIRECTDRAW
-    /// effect (e.g. lightshafts light beams). Each entry is a normalized `point0..3` from the
-    /// effect's `EffectPerspectiveUV` gizmo. When present the renderer synthesizes a 4-corner quad
-    /// from these instead of the axis-aligned object quad. `nil` for ordinary image/model layers.
+    /// Normalized `point0..3` for a `shape: "quad"` DIRECTDRAW layer. When present the renderer synthesizes a 4-corner quad instead of the axis-aligned object quad. `nil` for ordinary image/model layers.
     public let shapePoints: [SIMD2<Double>]?
 
     public init(
@@ -1490,10 +1287,7 @@ public struct WPESceneImageEffect: Equatable, Sendable, Identifiable {
     public let fileRelativePath: String
     public let visible: Bool
     public let passOverrides: [WPESceneEffectPassOverride]
-    /// SceneScript bound to this effect's visibility. Parsed and preserved; the renderer does NOT
-    /// yet re-gate on its live value, because the graph bakes the composite ping-pong from the
-    /// visible set at build time — skipping an effect's passes mid-chain leaves the next pass
-    /// sampling an FBO nothing wrote. `visible` above is the authored seed and IS honoured.
+    /// Parsed and preserved; the renderer does not yet re-gate on the live value, because skipping an effect mid-chain leaves the next pass sampling an FBO nothing wrote. Authored `visible` seed IS honoured.
     public let visibleScript: WPESceneTransformScript?
 
     public init(
@@ -1518,13 +1312,8 @@ public struct WPESceneEffectPassOverride: Equatable, Sendable {
     public let combos: [String: Int]
     public let constants: [String: WPESceneShaderConstantValue]
     public let textures: [Int: String]
-    /// Dynamic texture-provider declarations at the object/effect override
-    /// locus. Kept separate from static texture slots until provider precedence
-    /// and lifetime have an L1 contract.
     public let userTextures: [WPESceneUserTextureBinding]
-    /// SceneScripts bound to individual shader constants ("bind a script to any
-    /// shader property"). `constants` still carries the authored seed, so a
-    /// script that fails to load leaves the pass exactly as authored.
+    /// `constants` still carries the authored seed, so a script that fails to load leaves the pass exactly as authored.
     public let constantScripts: [String: WPESceneTransformScript]
 
     public init(
@@ -1544,10 +1333,7 @@ public struct WPESceneEffectPassOverride: Equatable, Sendable {
     }
 }
 
-/// Presence-preserving typed JSON field. An absent dictionary key is represented
-/// by an absent (`nil`) field; an authored JSON null, a decoded typed value, and
-/// a present value with an unexpected shape remain distinct. Timeline metadata
-/// has no runtime defaults until a consumer acquires its own behavior contract.
+/// Absent dictionary key ⇒ absent (`nil`) field; authored JSON null, a decoded value, and an unexpected shape remain distinct.
 public enum WPESceneAuthoredJSONField<Value: Equatable & Sendable>: Equatable, Sendable {
     case null
     case value(Value)
@@ -1558,9 +1344,7 @@ public struct WPESceneAnimationTangent: Equatable, Sendable {
     public let enabled: WPESceneAuthoredJSONField<Bool>?
     public let x: WPESceneAuthoredJSONField<Double>?
     public let y: WPESceneAuthoredJSONField<Double>?
-    /// Opaque editor marker. The current corpus authors JSON booleans while an
-    /// independent parser models an integer, so retaining the JSON type is the
-    /// only evidence-backed lossless representation.
+    /// Opaque editor marker. Corpus authors JSON booleans while another parser models an integer, so retaining the JSON type is the lossless representation.
     public let magic: WPESceneJSONValue?
 
     public init(
@@ -1654,12 +1438,7 @@ public struct WPESceneNumericAnimation: Equatable, Sendable {
 
     private func effectiveFrame(at time: Double) -> Double {
         let rawFrame = max(0, time) * fps
-        // Official timeline semantics define Mirror as one full forward traversal
-        // followed by one equally long reverse traversal, repeating forever. Keep
-        // both turn-around endpoints in the phase: at `length` the last frame is
-        // sampled, and at `2 * length` the first frame is sampled before the next
-        // forward leg. A zero-length/single-frame animation bypasses the remainder
-        // calculation below and falls through to the ordinary clamped sampler.
+        // Mirror is one full forward traversal then an equally long reverse, repeating. Keep both turn-around endpoints: at `length` sample the last frame; at `2 * length` sample the first before the next forward leg. Zero-length/single-frame bypasses the remainder and uses the clamped sampler.
         if mode == "mirror", length > 0 {
             let period = 2 * length
             let phase = rawFrame.truncatingRemainder(dividingBy: period)
@@ -1843,13 +1622,7 @@ public enum WPESceneBlendMode: String, Equatable, Sendable {
         }
     }
 
-    /// The subset of WPE's `common_blending.h` BLENDMODE enum that a Metal fixed-function blend
-    /// descriptor can express exactly. `nil` means the mode is a *function of the destination*
-    /// (Overlay, Soft Light, Color Burn, …) and can only be reproduced by sampling the scene and
-    /// running `ApplyBlending` in the fragment shader, exactly as WPE itself does
-    /// (`genericimage4.frag` binds `_rt_FullFrameBuffer` to `g_Texture4` under `#if BLENDMODE` —
-    /// RenderDoc-confirmed on 3448877775 pass 41). Returning `.normal` for an unmapped mode is NOT a
-    /// safe default: a full-screen tint layer then paints opaque over the whole wallpaper.
+    /// `nil` means the mode is a function of the destination and can only be reproduced by sampling the scene and running `ApplyBlending`. Returning `.normal` for an unmapped mode is not a safe default: a full-screen tint then paints opaque over the wallpaper.
     public static func fixedFunction(forWPEBlendMode raw: Int) -> WPESceneBlendMode? {
         switch raw {
         case 0:     return .normal

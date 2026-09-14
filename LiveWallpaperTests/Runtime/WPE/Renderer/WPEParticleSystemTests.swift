@@ -73,7 +73,6 @@ struct WPEParticleSystemTests {
         _ = WPEParticleDefinitionParser.parse(dictionary: json, diagnostics: &diagnostics)
         #expect(diagnostics.contains { $0.message.contains("notarealinitializer") })
         #expect(diagnostics.contains { $0.message.contains("notarealoperator") })
-        // Recognized names must NOT be flagged.
         #expect(!diagnostics.contains { $0.message.contains("lifetimerandom") })
         #expect(!diagnostics.contains { $0.message.contains("alphafade") })
     }
@@ -1499,10 +1498,7 @@ struct WPEParticleSystemTests {
             fadeInSeconds: 0
         )
 
-        // `starttime` pre-simulates exactly itself — no steady-state padding on
-        // top (this used to be 205 = 200 + a 5s tail, which matched neither WPE
-        // nor a plain delay). 200 clamps to the 120s substep bound; every real
-        // lifetime is far shorter, so the system is at steady state either way.
+        // 200 clamps to the 120s substep bound, so the expected value is the cap.
         #expect(WPEMetalSceneRenderer.particlePrewarmSeconds(
             for: delayed,
             manualPrewarmEnabled: false
@@ -1518,8 +1514,6 @@ struct WPEParticleSystemTests {
             colorMin: SIMD3(255, 255, 255), colorMax: SIMD3(255, 255, 255),
             fadeInSeconds: 0
         )
-        // Under the clamp it is the authored value verbatim, NOT the old
-        // `starttime + min(max(lifetimeMax, 2), 15)` = 18.
         #expect(WPEMetalSceneRenderer.particlePrewarmSeconds(
             for: shortDelay,
             manualPrewarmEnabled: false
@@ -1533,20 +1527,11 @@ struct WPEParticleSystemTests {
             manualPrewarmEnabled: true
         ) == 2)
 
-        // Oracle capture is a single frozen frame: dt is 0, so a `starttime: 0`
-        // rate emitter spawns nothing and reports 0 alive while WPE reports
-        // rate x elapsed. The replay instant overrides both gates — without it
-        // the particle half of every fidelity diff compares against an empty pool.
         #expect(WPEMetalSceneRenderer.particlePrewarmSeconds(
             for: immediate,
             manualPrewarmEnabled: false,
             oracleReplaySeconds: 6.845
         ) == 6.845, "a starttime:0 emitter must still prewarm under the oracle")
-        // `starttime` PRE-SIMULATES rather than delaying (WPE docs: "as if it has
-        // already been running for the configured time"), so at frame time T the
-        // system has run for `starttime + T`. RenderDoc agrees: 3448877775's
-        // snowperspective (starttime 15) holds 344 particles at T=4.851s where
-        // dead-zoning the 15s predicts 121.
         let presimulated = WPEParticleDefinition(
             materialRelativePath: nil, maxCount: 360,
             rate: 25, startDelay: 15,
@@ -1563,7 +1548,6 @@ struct WPEParticleSystemTests {
             manualPrewarmEnabled: false,
             oracleReplaySeconds: 4.851
         ) == 15 + 4.851, "starttime adds to the replay instant, it does not gate it")
-        // `delayed` authors starttime 200, which exceeds the loop bound and clamps.
         #expect(WPEMetalSceneRenderer.particlePrewarmSeconds(
             for: delayed,
             manualPrewarmEnabled: false,
@@ -2177,9 +2161,8 @@ struct WPEParticleSystemTests {
         let def = try #require(WPEParticleDefinitionParser.parse(data: Data(json.utf8)))
         #expect(def.instantaneousCount == 50)
         #expect(def.rate == 15)
-        // The editor stamps `duration: 0` onto every emitter; it is the unset
-        // marker, not a zero-second window. Reading it literally silenced every
-        // rate emitter in the corpus after one tick.
+        // The editor stamps `duration: 0` onto every emitter; it is the unset marker,
+        // not a zero-second window.
         #expect(def.duration == nil)
     }
 
@@ -2276,7 +2259,6 @@ struct WPEParticleSystemTests {
     @Test("Emission scale follows the reference defaults, bounds, exponent and clamps")
     func emitterAudioEmissionScaleSemantics() {
         let half = [Float](repeating: 0.5, count: 16)
-        // Disabled or empty inputs are the neutral scale.
         #expect(WPEParticleEmitterAudioState(mode: 0).emissionScale(spectrum16: half) == 1)
         #expect(WPEParticleEmitterAudioState(mode: 1).emissionScale(spectrum16: []) == 1)
         // Defaults (freq 0…15, bounds 0…1, exponent 1, amount 1): 1 + level.
@@ -2375,11 +2357,6 @@ struct WPEParticleSystemTests {
         #expect(system.liveInstanceCount == 20)
     }
 
-    // A-03 changed more than `duration`: the emission gate now anchors at zero
-    // once `starttime` has been consumed as authored history. Without this the
-    // delay was charged twice — once inside prewarm, once again live — and a
-    // prewarm window shorter than `starttime` left the emitter silent. Pinned
-    // here because it fires with `duration == nil`, outside A-03's headline.
     @Test("A presimulated start delay is authored history, not a second live delay")
     func nilDurationEmitsImmediatelyWhenStartDelayWasPresimulated() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
@@ -2391,7 +2368,7 @@ struct WPEParticleSystemTests {
             lifetime: 100
         )
 
-        // Prewarm window (2 s) is deliberately shorter than starttime (10 s).
+        // The prewarm window is deliberately shorter than starttime.
         let presimulated = try #require(WPEParticleSystem(definition: def, device: device, seed: 0xA03))
         presimulated.prewarm(simulatedSeconds: 2, presimulateDelay: true)
         presimulated.tick(now: 0)
@@ -2403,7 +2380,6 @@ struct WPEParticleSystemTests {
             "starttime already spent as history must not gate the first live second"
         )
 
-        // Control: the same starttime with no presimulation is still a real delay.
         let gated = try #require(WPEParticleSystem(definition: def, device: device, seed: 0xA03))
         gated.tick(now: 0)
         for step in 1...10 { gated.tick(now: Double(step) / 10) }
@@ -2471,10 +2447,6 @@ struct WPEParticleSystemTests {
         #expect(authoredHistory.liveInstanceCount == historyCount,
                 "starttime history must not restart duration at the first live frame")
 
-        // Authored `duration: 0` must survive the parser as "unbounded" and keep
-        // emitting. This is the shape every corpus emitter actually has
-        // (bird_child.json: `"duration": 0, "rate": 1`), so it is checked
-        // end-to-end through the parser rather than by constructing a definition.
         let authoredZeroJSON = #"""
         {
             "maxcount": 100,
@@ -2842,21 +2814,17 @@ struct WPEParticleSystemTests {
             """
             return try #require(WPEParticleDefinitionParser.parse(data: Data(json.utf8)))
         }
-        // WPE's own reference scene for the operator authors it bare, and the editor
-        // writes 0.1 / 0.3 when it creates one.
         let bare = try def(#"[{"name":"alphafade"}]"#)
         #expect(bare.fadeInSeconds == 0.1)
         #expect(bare.fadeOutSeconds == 0.3)
 
-        // Control group 1: an authored value still wins, including an explicit 0.
         let explicit = try def(#"[{"name":"alphafade","fadeintime":0.4,"fadeouttime":0.9}]"#)
         #expect(explicit.fadeInSeconds == 0.4)
         #expect(explicit.fadeOutSeconds == 0.9)
         let zeroed = try def(#"[{"name":"alphafade","fadeouttime":0}]"#)
         #expect(zeroed.fadeOutSeconds == 0)
 
-        // Control group 2: no alphafade operator at all keeps the old no-fade-out
-        // behavior — the default belongs to the operator, not to every particle.
+        // The fade default belongs to the alphafade operator, not to every particle.
         let none = try def(#"[{"name":"movement"}]"#)
         #expect(none.fadeOutSeconds == 0)
     }
@@ -2885,7 +2853,7 @@ struct WPEParticleSystemTests {
                 .bindMemory(to: WPEParticleInstance.self, capacity: 1)[0].color.w
         }
         #expect(abs(alpha(upTo: 3.0) - 1) < 0.001, "full brightness up to the fade-out point")
-        let late = alpha(upTo: 6.5)                       // 65% of a 10 s life
+        let late = alpha(upTo: 6.5)
         #expect(late > 0.4 && late < 0.6, "ramping down, got \(late)")
         #expect(alpha(upTo: 9.5) < 0.1, "nearly gone by the end of life")
     }
@@ -2914,7 +2882,6 @@ struct WPEParticleSystemTests {
         #expect(zeroDefinition.rawComponents.renderers[0]["minlength"] == .number(0))
         #expect(wpeApplyingAuthoredSpriteTrailMinimum(from: explicitZero, to: sentinel).z == 0)
 
-        // Workshop 3713073223 authors `minlength: 1` in two Sprite Trail renderers.
         let (_, authored) = try parsed(#"{"name":"spritetrail","minlength":1}"#)
         #expect(authored.minLength == 1)
         #expect(wpeApplyingAuthoredSpriteTrailMinimum(from: authored, to: sentinel).z == 1)
@@ -3044,15 +3011,13 @@ struct WPEParticleSystemTests {
         #expect(defaulted.liveInstanceCount == 2)
         #expect(defaulted.ropeVertexCount == 2 * 4 * 2 + 2)
 
-        // Control group: `length` is unchanged, only `subdivision` moves the count.
         let subdivided = try system(#"{"name":"ropetrail","length":3,"subdivision":5}"#)
         subdivided.tick(now: 0)
         #expect(subdivided.liveInstanceCount == 2)
         #expect(subdivided.ropeVertexCount == 2 * 6 * 2 + 2)
 
-        // The one corpus definition that authors `subdivision` (3521337568
-        // `particles/短.json`): a fractional `length` next to 2 segments = 3 points.
-        // Reading the count off `length` would collapse it to a 1-segment stub.
+        // A fractional `length` next to 2 segments is 3 points; reading the count off
+        // `length` would collapse it to a 1-segment stub.
         let authored = try system(#"{"name":"ropetrail","length":0.2,"subdivision":2}"#)
         authored.tick(now: 0)
         #expect(authored.liveInstanceCount == 2)
@@ -3090,8 +3055,8 @@ struct WPEParticleSystemTests {
         #expect(sawShrink, "particles must have expired during the sweep")
     }
 
-    /// Width of the ribbon along X. The helper definition flies straight +X, so the
-    /// ribbon's own thickness lies entirely on Y and this reads as its length.
+    /// The helper definition flies straight +X, so the ribbon's own thickness lies
+    /// entirely on Y and the X span reads as its length.
     private static func ribbonSpanX(_ system: WPEParticleSystem) throws -> Float {
         let count = system.ropeVertexCount
         guard count > 0 else { return 0 }
@@ -3131,11 +3096,8 @@ struct WPEParticleSystemTests {
             return try Self.ribbonSpanX(system)
         }
 
-        // clamp(200·3, 1, 10) = 10 ⇒ 10 × 10 = 100 px
         #expect(abs(try span(length: 3) - 100) < 2)
-        // clamp(200·0.01, 1, 10) = 2 ⇒ 20 px — `length` alone moved it 5×
         #expect(abs(try span(length: 0.01) - 20) < 2)
-        // `maxlength` caps the same authored length back down to the 20 px ribbon
         #expect(abs(try span(length: 3, maxLength: 2) - 20) < 2)
         // Our floor: a stalled-slow particle still draws one sprite length, never zero
         #expect(abs(try span(length: 0.0001) - 10) < 2)
@@ -3302,7 +3264,6 @@ struct WPEParticleSystemTests {
         #expect(children[2].probability == 0)
         #expect(children[3].probability == 1, "out-of-range probability clamps to 1")
 
-        // Which children re-roll per event vs once at creation.
         #expect(children[0].rollsProbabilityPerEvent, "eventfollow")
         #expect(!children[1].rollsProbabilityPerEvent, "static rolls once")
         #expect(children[2].rollsProbabilityPerEvent, "eventdeath")
@@ -3411,9 +3372,8 @@ struct WPEParticleSystemTests {
     @Test("eventfollow probability is rolled per parent event, not once per system")
     func eventFollowProbabilityRollsPerEvent() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
-        /// Runs the parent's births past a child at `probability`, returns child
-        /// alive count. The child pool is deliberately far larger than the parent's
-        /// so saturation can't mask the difference between 0.5 and 1.
+        /// The child pool is deliberately far larger than the parent's so saturation
+        /// can't mask the difference between 0.5 and 1.
         func bursts(probability: Double, seed: UInt64) throws -> Int {
             let parent = try #require(
                 WPEParticleSystem(definition: Self.eventFollowParentDefinition(), device: device)
@@ -3435,14 +3395,11 @@ struct WPEParticleSystemTests {
             return child.liveInstanceCount
         }
 
-        // Control group at the ends: 1 fires on every event, 0 on none.
         // The parent's own pool (maxCount 32) bounds how many events exist.
         let all = try bursts(probability: 1, seed: 0xC0FF_EE01)
         #expect(all == 32, "one burst per parent birth")
         #expect(try bursts(probability: 0, seed: 0xC0FF_EE01) == 0)
 
-        // The real case (Valve's thunderbolt ships eventfollow @ 0.2, the corpus
-        // has six eventfollow @ 0.5): a fraction of the events, not all-or-nothing.
         // Two seeds so one lucky draw can't carry the assertion.
         for seed in [UInt64(0xC0FF_EE01), 0xC0FF_EE02] {
             let half = try bursts(probability: 0.5, seed: seed)
@@ -3514,9 +3471,6 @@ struct WPEParticleSystemTests {
     @Test("Prewarm past lifetimeMax lands on the same population as a short window")
     func prewarmConvergesRegardlessOfWindowLength() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
-        // Everything alive at the end was born within the last `lifetime`
-        // seconds, so a 5s and a 90s window must agree — the extra 85s is a
-        // treadmill that only costs time.
         let short = try #require(
             WPEParticleSystem(definition: Self.convergenceDefinition(lifetime: 4), device: device)
         )
@@ -3535,8 +3489,6 @@ struct WPEParticleSystemTests {
     @Test("A one-shot burst does not re-fire when the prewarm head is skipped")
     func truncatedPrewarmDoesNotReplayBurst() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
-        // instantaneous 3, lifetime 100: the burst fires once at t=0 and those
-        // particles are still alive, so nothing is skipped and the count is 3.
         let live = try #require(
             WPEParticleSystem(definition: Self.burstChildDefinition(instantaneous: 3), device: device)
         )
@@ -3544,8 +3496,6 @@ struct WPEParticleSystemTests {
         live.tick(now: 0)
         #expect(live.liveInstanceCount == 3, "one burst, still within its lifetime")
 
-        // Same burst but the window runs far past the particles' lifetime: they
-        // are long dead, and the skipped head must not resurrect them.
         let expired = try #require(
             WPEParticleSystem(definition: Self.convergenceDefinition(lifetime: 2), device: device)
         )
@@ -3559,8 +3509,8 @@ struct WPEParticleSystemTests {
 
     // MARK: - eventfollow prewarm (scene 3226487183 matrix_trail)
 
-    /// Rate-based `eventfollow` child, shaped like 3226487183's `matrix_trail`:
-    /// it rides the parent continuously rather than bursting on birth events.
+    /// Rate-based `eventfollow` child: it rides the parent continuously rather
+    /// than bursting on birth events.
     private static func rateFollowChildDefinition() -> WPEParticleDefinition {
         WPEParticleDefinition(
             materialRelativePath: nil,
@@ -3636,9 +3586,8 @@ struct WPEParticleSystemTests {
         )
         child.tick(now: 0)
 
-        // The parent moves at +100 x/s from `trailSpawnOrigin`, so its children
-        // must be strewn along x. Spawning at the child's own (0,0,0) origin —
-        // the failure mode `spawn` guards against — would collapse them onto one point.
+        // The parent moves at +100 x/s from `trailSpawnOrigin`, so children must be strewn
+        // along x; spawning at the child's own (0,0,0) origin would collapse them onto one point.
         let count = child.liveInstanceCount
         try #require(count >= 2)
         let instances = child.instanceBuffer.contents()
@@ -3732,9 +3681,8 @@ struct WPEParticleSystemTests {
         }
     }
 
-    /// `oscillatesize` shares `FrequencyValue`/`GetScale` with `oscillatealpha`, but
-    /// `WPParticleParser.cpp`'s `ReadFromJson` gives it its own scale defaults (0.8…1.2 instead of
-    /// the base 0…1). `particles/presets/fireflies.json` authors only `frequencymin`.
+    /// `oscillatesize` shares `GetScale` with `oscillatealpha` but has its own scale
+    /// defaults (0.8…1.2, not the base 0…1).
     @Test("oscillatesize parses with its own scale defaults and no diagnostic")
     func parsesOscillateSizeDefaults() throws {
         let json = """
@@ -3754,9 +3702,8 @@ struct WPEParticleSystemTests {
         #expect(!diagnostics.contains { $0.message.contains("oscillatesize") })
     }
 
-    /// The alpha oscillator clamps its factor into 0…1 because alpha cannot exceed 1. Size can:
-    /// `deku_twinkle_star_shine.json` authors `scalemax: 1.5`, and reusing the alpha clamp would
-    /// silently flatten every enlargement to 1.0.
+    /// Size is not clamped to 1 the way alpha is: reusing the alpha clamp would
+    /// silently flatten every enlargement.
     @Test("oscillatesize factor spans the authored scale range above 1.0")
     func oscillateSizeFactorIsNotClampedToOne() throws {
         let json = """
@@ -3775,9 +3722,8 @@ struct WPEParticleSystemTests {
         #expect(osc.factor(age: 1, frequency: 0, phase: 0) == 1)
     }
 
-    /// Parsing the operator is not the same as applying it. `scalemin == scalemax` pins the
-    /// cosine's output to a constant, so the rendered sprite size is checked against an exact
-    /// multiple with no dependence on the per-particle frequency/phase draw.
+    /// `scalemin == scalemax` pins the cosine's output to a constant, so the size check
+    /// does not depend on the per-particle frequency/phase draw.
     @Test("oscillatesize multiplies the rendered sprite size")
     func oscillateSizeScalesRenderedSprite() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
@@ -3809,8 +3755,8 @@ struct WPEParticleSystemTests {
         #expect(abs(oscillated - plain * 2) < 1e-3)
     }
 
-    /// Both per-instance copy helpers are hand-written field lists; dropping one silently loses
-    /// the operator (this has bitten twice before).
+    /// Both per-instance copy helpers are hand-written field lists; dropping one
+    /// silently loses the operator.
     @Test("oscillatesize survives both per-instance copy helpers")
     func oscillateSizeSurvivesCopies() throws {
         let json = """
@@ -3822,10 +3768,8 @@ struct WPEParticleSystemTests {
         #expect(def.offsettingOrigin(by: SIMD3<Double>(1, 2, 3)).oscillateSize == def.oscillateSize)
     }
 
-    /// Third drop through the same hand-written field list (after `shapePoints` and
-    /// `colorAnimation`): `offsettingOrigin` omitted `overrideAlphaAnimation`. It stayed
-    /// invisible only because the one production call site runs `applying` last — swap the
-    /// two and the 3448877775-style alpha ramp silently flattens.
+    /// Order-dependent: the one production call site runs `applying` last, so a drop
+    /// in `offsettingOrigin` stays invisible until the two are swapped.
     @Test("overrideAlphaAnimation survives offsettingOrigin")
     func overrideAlphaAnimationSurvivesOriginOffset() throws {
         let json = """

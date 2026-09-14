@@ -317,9 +317,8 @@ struct WPEMetalSolidSceneRunTests {
         #expect(executor.lastSolidSceneBatchStats.draws == 4)
     }
 
-    /// A full-frame effect layer's shape: capture the scene into the layer's own
-    /// composite, then copy that composite back to the scene. `leadingScenePass`
-    /// prepends a solid scene write so the capture follows an own-layer scene write.
+    /// A full-frame effect layer: capture the scene into the layer's own composite,
+    /// then copy it back. `leadingScenePass` prepends a solid scene write first.
     private func sceneAliasReaderLayer(
         _ index: Int, leadingScenePass: Bool = false, previousBind: Bool = false, readerTarget: String? = nil
     ) -> WPEPreparedRenderLayer {
@@ -386,9 +385,8 @@ struct WPEMetalSolidSceneRunTests {
         #expect(actual == expected)
         #expect(direct.lastDiagnosticFrameStats.sceneAliasSnapshotBlits == 1)
         #expect(direct.lastDiagnosticFrameStats.sceneAliasDirectBinds == 0)
-        // The capture is taken at the read, after this layer's own solid pass, so the
-        // full-frame round trip is an identity over [layer 0, solid 1]. Had it seen the
-        // pre-write scene, the copy-back would have erased the solid.
+        // The capture happens at the read, after this layer's own solid pass, so the
+        // round trip is an identity over [layer 0, solid 1].
         let afterOwnWrite = try renderBytes(direct, pipeline: .init(layers: [layer(0), layer(1, transformed: false)]), hdr: true)
         let beforeOwnWrite = try renderBytes(direct, pipeline: .init(layers: [layer(0)]), hdr: true)
         #expect(actual == afterOwnWrite)
@@ -401,9 +399,8 @@ struct WPEMetalSolidSceneRunTests {
         let pipeline = WPEPreparedRenderPipeline(layers: [
             layer(0), sceneAliasReaderLayer(1), layer(4), sceneAliasReaderLayer(5),
         ])
-        // Each full-frame reader is an identity round trip, so a fresh second read leaves
-        // the frame equal to [layer 0, layer 4]; a stale read of layer 1's capture would
-        // copy back the scene as it stood before layer 4 (layer 0 alone).
+        // Each full-frame reader is an identity round trip, so a fresh second read
+        // leaves the frame equal to [layer 0, layer 4]; a stale one to [layer 0].
         let forced = try sceneAliasExecutor(device, forceSnapshot: true)
         let fresh = try renderBytes(forced, pipeline: .init(layers: [layer(0), layer(4)]), hdr: true)
         let stale = try renderBytes(forced, pipeline: .init(layers: [layer(0)]), hdr: true)
@@ -437,18 +434,16 @@ struct WPEMetalSolidSceneRunTests {
         #expect(actual == expected)
         #expect(direct.lastDiagnosticFrameStats.sceneAliasSnapshotBlits == 0)
         #expect(direct.lastDiagnosticFrameStats.sceneAliasDirectBinds == 0)
-        // Documents why the byte comparison alone cannot catch a stale bind here: the
-        // initial-clear elision rejects a scene-alias read in the first layer's prefix,
-        // so `output` is cleared up front. The counter is the load-bearing assertion.
+        // Bytes alone cannot catch a stale bind here - the initial-clear elision clears
+        // `output` up front, so the counter is the load-bearing assertion.
         #expect(direct.lastInitialSceneClearStats.rejectReason == "unproven-fbo-read")
     }
 
     @Test("A raw `.previous` bind on a non-scene target still binds the live scene, byte-identical to a snapshot")
     func sceneAliasDirectBindSurvivesPreviousBindOnOwnTarget() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
-        // The reader targets its own composite and carries a raw `bind: previous` (bloom's
-        // light_map/apply shape): `.previous` resolves to that composite's history, which
-        // is independent of which texture the scene-alias slot binds.
+        // The reader targets its own composite and carries a raw `bind: previous`, which
+        // resolves to that composite's history, not to the scene-alias slot.
         let pipeline = WPEPreparedRenderPipeline(layers: [
             layer(0), sceneAliasReaderLayer(1, previousBind: true), layer(4),
         ])
@@ -1253,15 +1248,12 @@ struct WPEMetalDeclaredFBOZeroFillTests {
 
 @Suite("WPEMetalRenderTargetPool — FBO format mapping")
 struct WPEMetalFBOFormatMappingTests {
-    // Official engine effects author these (survey of oracle-engine-root
-    // assets/effects/*/effect.json): r16f ×4 (fluidsimulation pressure),
-    // rg1616f ×2 (velocity). Falling back to 8-bit RGBA destroys the
-    // simulation's precision and channel count.
+    /// Official engine effects author r16f (fluidsimulation pressure) and rg1616f
+    /// (velocity); an 8-bit RGBA fallback would destroy precision and channel count.
     @Test("r16f and rg1616f map to single/dual-channel float formats")
     func floatFormatsKeepChannelShape() {
         #expect(WPEMetalRenderTargetPool.pixelFormat(forFBOFormat: "r16f", promoteLDRToHDR: false) == .r16Float)
         #expect(WPEMetalRenderTargetPool.pixelFormat(forFBOFormat: "rg1616f", promoteLDRToHDR: false) == .rg16Float)
-        // Already-float formats must not be re-promoted or demoted under HDR.
         #expect(WPEMetalRenderTargetPool.pixelFormat(forFBOFormat: "r16f", promoteLDRToHDR: true) == .r16Float)
         #expect(WPEMetalRenderTargetPool.pixelFormat(forFBOFormat: "rg1616f", promoteLDRToHDR: true) == .rg16Float)
     }

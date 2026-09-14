@@ -4,19 +4,7 @@ import Metal
 import Testing
 
 /// `require` is parsed and preserved. It must never gate uniform resolution.
-///
-/// Measured, not assumed — Windows capture of 3437487219 ordinal 2
-/// (`.notes/oracle-runs/3437487219-97ad29d672164503b44c2c631a6001c3/windows.json`):
-/// `effects/lightshafts` runs with `DIRECTDRAW: 1` while `g_Point0..3` are annotated
-/// `require {"DIRECTDRAW": 0}`, and WPE binds them anyway — `g_Point0 = [6.83764, -3.17560]`
-/// with `usedByShader: true`, and the same values appear again as the draw's vertex
-/// TEXCOORDs. So `require` decides only whether the EDITOR exposes the field; the authored
-/// constant stays live regardless.
-///
-/// A gate was briefly wired into `compileUniformPlan` on the assumption those constants were
-/// stale leftovers. It withheld values WPE was actively using and made the frame worse. The
-/// parse stays; the gating does not come back without a capture showing WPE dropping such a
-/// value.
+/// The gating does not come back without a capture showing WPE dropping such a value.
 @Suite("WPE uniform require annotation")
 struct WPEUniformRequireGateTests {
     /// Verbatim from assets/effects/lightshafts/shaders/effects/lightshafts.vert.
@@ -24,7 +12,7 @@ struct WPEUniformRequireGateTests {
     uniform vec2 g_Point0; // {"material":"point0","label":"p0","default":"0.67728 0.01297","require":{"DIRECTDRAW":0}}
     """
 
-    /// Verbatim from the same shader — no `require`, so it stays unconditional either way.
+    /// Verbatim from the same shader.
     private static let radiusDeclaration = """
     uniform float g_Radius; // {"material":"rayradius","label":"ui_editor_properties_radius","default":0.2,"range":[0.0, 1.0]}
     """
@@ -40,8 +28,6 @@ struct WPEUniformRequireGateTests {
         #expect(radius.requiredCombos.isEmpty, "no require annotation must mean unconditional")
     }
 
-    /// A non-numeric require value is dropped rather than guessed, so an unparsable
-    /// annotation can never be mistaken for a satisfied one.
     @Test("A non-numeric require value is left out")
     func nonNumericRequireIsDropped() throws {
         let decl = try #require(WPEUniformDecl.parse(
@@ -50,8 +36,6 @@ struct WPEUniformRequireGateTests {
         #expect(decl.requiredCombos.isEmpty)
     }
 
-    /// The map survives onto the layout slot the executor reads, so a future consumer has
-    /// the authored value available without re-parsing.
     @Test("The parsed map reaches the uniform slot")
     func requireReachesTheSlot() throws {
         let point = try #require(WPEUniformDecl.parse(line: Self.pointDeclaration))
@@ -133,7 +117,6 @@ struct WPEUniformRequireGateTests {
         #expect(executor.uniformPlans(for: pass, layout: [slot])[0].directPacking == .textureResolution(0))
         #expect(executor.packTranslatedUniforms(for: pass, layout: [slot], texturesBySlot: table)
             == [SIMD4<Float>(8, 4, 8, 4)])
-        // No GPU sampling is needed: this tests the live binding's resolution metadata.
         table.reset()
         #expect(executor.packTranslatedUniforms(for: pass, layout: [slot], texturesBySlot: table)
             == [SIMD4<Float>(71, 72, 73, 74)])

@@ -1,7 +1,6 @@
 #if !LITE_BUILD
 import Foundation
 
-/// Workshop item metadata from GetPublishedFileDetails (partial responses OK).
 struct SteamWorkshopMetadata: Equatable, Sendable {
     let publishedFileID: UInt64
     let title: String
@@ -19,13 +18,7 @@ struct SteamWorkshopMetadata: Equatable, Sendable {
     let isBanned: Bool
     let appID: UInt32
     let steamCommunityURL: URL
-    /// Author tags. Carried because the mature-content blur is derived from
-    /// them: without tags a keyless Browse would silently defeat a preference
-    /// that defaults to on.
     let tags: [String]
-    /// Lifetime (total unique) subscriptions, falling back to current — the
-    /// same preference the keyed path applies, so the two agree on what
-    /// "Most Subscribed" ranks by.
     let subscriptionCount: Int?
     let viewCount: Int?
     let favoriteCount: Int?
@@ -49,12 +42,10 @@ struct SteamWorkshopMetadata: Equatable, Sendable {
     }
 }
 
-/// Failure modes surfaced by Workshop metadata requests.
 enum SteamWorkshopMetadataError: Error, Equatable, Sendable {
     case invalidInput(WorkshopURLParser.InvalidReason)
     case networkUnreachable
     case timeout
-    /// Steam denied metadata access; callers fall back to opening the item in Steam.
     case unauthorized
     case http(status: Int)
     case rateLimited(retryAfter: TimeInterval?)
@@ -67,13 +58,9 @@ enum SteamWorkshopMetadataError: Error, Equatable, Sendable {
     case unknown(String)
 }
 
-/// GetPublishedFileDetails client (no key today; 401/403 → degrade). One POST
-/// carries every requested id; callers chunk.
 @MainActor
 final class SteamWorkshopMetadataService {
 
-    /// Ephemeral by default — no cookies, no shared cache, no credential
-    /// storage. ATS is enforced by the URLSession configuration.
     private let session: URLSession
     private let now: @Sendable () -> Date
 
@@ -88,16 +75,11 @@ final class SteamWorkshopMetadataService {
         self.now = now
     }
 
-    /// Errors are pre-mapped onto `SteamWorkshopMetadataError` — no raw
-    /// URLError / decoding errors leak to the UI.
     func fetch(publishedFileID id: UInt64) async -> Result<SteamWorkshopMetadata, SteamWorkshopMetadataError> {
         let results = await fetch(publishedFileIDs: [id])
         return results[id] ?? .failure(.responseParseFailure)
     }
 
-    /// One POST for the whole array — the caller chunks. Transport and HTTP
-    /// failures fan out to every requested id; per-item outcomes come from
-    /// `decodeBatch`.
     func fetch(publishedFileIDs ids: [UInt64]) async -> [UInt64: Result<SteamWorkshopMetadata, SteamWorkshopMetadataError>] {
         guard !ids.isEmpty else { return [:] }
         do {
@@ -120,10 +102,7 @@ final class SteamWorkshopMetadataService {
         }
     }
 
-    /// The bare request: transport failures come back as the raw `URLError`
-    /// so a caller can hand them to `WorkshopRetryPolicy`. Replaying this POST
-    /// is safe — GetPublishedFileDetails is a read-only lookup that Valve
-    /// happens to expose as POST.
+    /// Replaying this POST is safe — GetPublishedFileDetails is a read-only lookup that Valve exposes as POST.
     func post(publishedFileIDs ids: [UInt64]) async throws -> WorkshopRetryPolicy.Response {
         var request = URLRequest(url: Self.endpoint)
         request.httpMethod = "POST"
@@ -164,8 +143,6 @@ final class SteamWorkshopMetadataService {
         }
     }
 
-    /// Form-encoded request body matches every shipping third-party Workshop
-    /// tool: `itemcount=N` + `publishedfileids[i]=<id>`, brackets pre-escaped.
     nonisolated static func formBody(publishedFileIDs ids: [UInt64]) -> String {
         var parts = ["itemcount=\(ids.count)"]
         for (index, id) in ids.enumerated() {
@@ -197,9 +174,7 @@ final class SteamWorkshopMetadataService {
         } catch {
             return uniformFailure(.responseParseFailure, ids: requestedIDs)
         }
-        // Steam encodes `publishedfileid` as a string in JSON. First payload
-        // wins on a duplicated id, matching the single-item path's `.first` —
-        // otherwise a trailing failure entry could flip an earlier success.
+        // publishedfileid is a JSON string. First payload wins on a duplicated id — a trailing failure would flip an earlier success.
         var payloadsByID: [UInt64: GetPublishedFileDetailsEnvelope.Payload] = [:]
         for payload in envelope.response.publishedfiledetails {
             guard let id = UInt64(payload.publishedfileid), payloadsByID[id] == nil else { continue }
@@ -222,11 +197,7 @@ final class SteamWorkshopMetadataService {
         payload: GetPublishedFileDetailsEnvelope.Payload,
         publishedFileID id: UInt64
     ) -> Result<SteamWorkshopMetadata, SteamWorkshopMetadataError> {
-        // Steam result code: 1 = OK, 9 = not found, 15 = access denied. Only
-        // those two say the item is invisible for good; any other code (2 =
-        // generic failure, …) is transient and must not drop the item.
-        // Checked before the app-id guard: non-OK payloads legitimately omit
-        // `consumer_app_id` and must not surface as schema mismatches.
+        // Steam result: 1 OK, 9 not found, 15 access denied — only 9/15 are permanently invisible; other codes are transient. Check before the app-id guard: non-OK payloads omit consumer_app_id.
         switch payload.result {
         case 1:
             break
@@ -237,10 +208,7 @@ final class SteamWorkshopMetadataService {
         default:
             return .failure(.unknown("result \(payload.result)"))
         }
-        // GetPublishedFileDetails is looked up by id alone — it will happily return
-        // an item that belongs to a different Steam app. `UInt32(exactly:)` (not the
-        // trapping `UInt32(_:)`) also rejects negative/overflowing values instead of
-        // crashing on a hostile response.
+        // Looked up by id alone — a different Steam app would come back. UInt32(exactly:) (not UInt32(_:)) rejects negative/overflow instead of crashing.
         guard let consumerAppID = payload.consumer_app_id,
               let appID = UInt32(exactly: consumerAppID),
               appID == UInt32(WorkshopQueryService.wallpaperEngineAppID)
@@ -310,7 +278,6 @@ final class SteamWorkshopMetadataService {
 
 // MARK: - JSON Envelope
 
-/// Lenient Valve envelope (optional keys; 64-bit ids as decimal strings).
 private struct GetPublishedFileDetailsEnvelope: Decodable {
     let response: ResponseBody
 

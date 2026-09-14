@@ -1,8 +1,5 @@
 import Foundation
 
-/// Bridges the app-lifetime `NowPlayingMonitor` into one pipeline build. The
-/// source owns only its subscription — the DNC observer stays with the monitor
-/// across pipeline teardowns.
 final actor NowPlayingSource: MonitorDataSource {
     nonisolated let sourceID = "nowPlaying"
 
@@ -12,8 +9,7 @@ final actor NowPlayingSource: MonitorDataSource {
     private var monitor: NowPlayingMonitor?
     private var sink: (any MonitorSnapshotSink)?
     private var lastForwardedOrdinal: UInt64?
-    /// Generation token (invariant 6): artwork may only attach to the track
-    /// key that is still current when the fetch lands.
+    /// Artwork may only attach to the track key that is still current when the fetch lands.
     private var currentTrackKey: String?
     /// Key the running/finished artwork task was started for, so repeated
     /// frames of one track do not spawn repeated fetch tasks.
@@ -42,9 +38,7 @@ final actor NowPlayingSource: MonitorDataSource {
     /// Reads a player's playhead in seconds, or nil if it cannot be read.
     typealias PositionProvider = @MainActor @Sendable (String) async -> Double?
 
-    /// The widget interpolates between anchors on its own wall clock, so this only corrects drift and
-    /// catches in-player scrubs. 5 s = one Apple Event per 5 s while a track is up, and only while an
-    /// overlay is alive — this lives on the pipeline-scoped source, not the app-lifetime monitor.
+    /// 5 s: one Apple Event per 5 s while a track is up, only while an overlay is alive.
     static let defaultPositionPollInterval: Duration = .seconds(5)
 
     private let positionProvider: PositionProvider
@@ -123,9 +117,6 @@ final actor NowPlayingSource: MonitorDataSource {
     /// capture tap regardless would run the FFT for nobody.
     private let audioReactive: Bool
 
-    /// The capture manager only runs the tap while a consumer retain is held;
-    /// without this the widget's audio-reactive layer never sees `.capturing`
-    /// unless an audio wallpaper happens to be running too.
     private static let defaultAudioDemand: @MainActor @Sendable (Bool) -> Void = { wanted in
         #if !LITE_BUILD
             if wanted {
@@ -146,8 +137,6 @@ final actor NowPlayingSource: MonitorDataSource {
         let override = monitorOverride
         monitor = await MainActor.run { () -> NowPlayingMonitor in
             let monitor = override ?? NowPlayingMonitor.shared
-            // Subscribing replays the current state, so resume shows the track
-            // that changed while the pipeline was down.
             monitor.subscribe(id: id, handler: forward)
             return monitor
         }
@@ -174,10 +163,7 @@ final actor NowPlayingSource: MonitorDataSource {
     }
 
     private func push(_ state: MonitorNowPlayingState, ordinal: UInt64) async {
-        // MainActor→actor hops are unordered Tasks; the ordinal keeps a stale frame from overwriting a newer
-        // one. Generation is re-read after every suspension (this actor yields at the cache lookup and the
-        // sink call), so an interleaved stop() must win — otherwise a stopped source publishes into a dead
-        // hub and re-retains the audio tap with nobody left to release it (both review models hit this).
+        // MainActor→actor hops are unordered; the ordinal drops a stale frame. Re-read generation after every suspension so an interleaved stop() wins.
         let gen = generation
         guard let sink else { return }
         if let last = lastForwardedOrdinal, ordinal <= last { return }
@@ -255,10 +241,7 @@ final actor NowPlayingSource: MonitorDataSource {
         await audioDemand(wanted)
     }
 
-    /// Releases the per-track fetch token whatever the outcome — leaving it set on failure made a miss
-    /// permanent for the process's life. Clearing it is safe only because `NowPlayingArtworkFetcher` keeps
-    /// its own TTL'd negative cache; that, not this token, is what stops a failed key from hitting the
-    /// network again next frame.
+    /// Clear the per-track fetch token on any outcome; a leftover set token would make a miss permanent. Safe because the fetcher keeps its own TTL'd negative cache.
     private func finishArtworkFetch(_ data: Data?, key: String) async {
         if artworkTaskKey == key { artworkTaskKey = nil }
         guard let data else { return }
@@ -266,9 +249,7 @@ final actor NowPlayingSource: MonitorDataSource {
     }
 
     private func applyFetchedArtwork(_ data: Data, key: String) async {
-        // Token check: a slow response for a previous track, or one landing
-        // after stop() (sink and track key are both cleared), must never
-        // publish (invariant 6).
+        // A slow response for a previous track, or one landing after stop(), must never publish.
         guard let sink, key == currentTrackKey else { return }
         guard var state = lastPublishedState, state.artwork == nil else { return }
         state.artwork = data

@@ -2,22 +2,16 @@ import CoreGraphics
 import Foundation
 import LiveWallpaperCore
 
-/// Per-screen playback config mutations + async-transition registry.
 @MainActor
 final class PlaybackCoordinator {
     let transition = PlaybackTransitionRegistry()
 
-    // Module-internal for same-type extensions across source files.
     let configurationStore: WallpaperConfigurationStore
     let playableVideoLoader: any PlayableVideoLoading
     let bookmarkResolver: SecurityScopedBookmarkResolver
-    /// Keep candidate construction and post-save validation injectable without
-    /// changing the shipping AVFoundation path or SettingsManager validation.
     let makeVideoPlayer: VideoWallpaperSession.RetryPlayerFactory
     let validateSavedVideoConfiguration: @MainActor (CGDirectDisplayID) -> Bool
-    /// Injected from `ScreenManager` (policy source of truth).
     let applyPolicy: @MainActor (Screen) -> Void
-    /// Callbacks into ScreenManager-owned lifetimes.
     let applyVideoEffects: @MainActor (Screen, ScreenConfiguration) -> Void
     let prepareVideoEffects: @MainActor (
         WallpaperVideoPlayer,
@@ -33,36 +27,25 @@ final class PlaybackCoordinator {
         CGDirectDisplayID,
         WallpaperVideoPlayer
     ) -> Bool
-    /// Drops async effects state (incl. WorkKey tombstone) when a player loses its screen.
     let retireVideoEffectsWork: @MainActor (
         CGDirectDisplayID,
         WallpaperVideoPlayer
     ) -> Void
-    /// Hook for ScreenManager's cached `CGDisplayCopyDisplayMode` lookup.
     let refreshRateLookup: @MainActor (CGDirectDisplayID) -> Int
-    /// Matches `ScreenManager.screens` so async work can resolve a live screen.
     let screensProvider: @MainActor () -> [Screen]
-    /// Refreshes inspector/sidebar state after deferred playback changes.
     let markSessionStateChanged: @MainActor () -> Void
-    /// Owned by ScreenManager so the session lifecycle stays single-source.
     let releaseRuntimeSession: @MainActor (Screen) -> Void
     /// A committed session replacement must reset the per-screen playback
     /// state machine, or the outgoing session's intent would leak into it.
     let resetPlaybackStateMachine: @MainActor (Screen) -> Void
     let notifyWallpaperSessionChanged: @MainActor () -> Void
-    /// Reconciles non-video audio ownership after a cross-type commit.
     let refreshOtherAudioLeadership: @MainActor () -> Void
-    /// Deferred configuration-change notification seam.
     let notifyConfigurationChanged: @MainActor (CGDirectDisplayID) -> Void
     /// Invalidates queued scene-property mutations before store revision advances.
     let advanceSceneMutationIntent: @MainActor (CGDirectDisplayID) -> Void
-    /// Surfaces validation/setup failures before a session exists.
     let reportRuntimeError: @MainActor (CGDirectDisplayID, WallpaperRuntimeError?) -> Void
-    /// Injected so Lite can swap in a no-op variant.
     let originReconciler: any OriginReconciler
-    /// Master render gate.
     let isGloballyEnabled: @MainActor () -> Bool
-    /// Process-lifecycle gate owned by `ScreenManager`.
     let isRuntimeInstallationAllowed: @MainActor () -> Bool
 
     init(

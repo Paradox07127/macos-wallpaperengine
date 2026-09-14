@@ -1,6 +1,5 @@
 import Foundation
 
-/// Fan-in point for all `MonitorDataSource`s.
 actor DataHub: MonitorSnapshotSink {
     private let broker: SnapshotBroker
     private let throttleInterval: TimeInterval

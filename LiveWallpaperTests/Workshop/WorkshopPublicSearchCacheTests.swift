@@ -3,8 +3,6 @@ import Foundation
 @testable import LiveWallpaper
 import Testing
 
-/// The keyless path pays ~0.7 MB of HTML plus a details POST per call, so
-/// paging back to a page already fetched has to come off the disk cache.
 @Suite("Workshop keyless search cache")
 @MainActor
 struct WorkshopPublicSearchCacheTests {
@@ -59,8 +57,6 @@ struct WorkshopPublicSearchCacheTests {
     }
 }
 
-/// Counts what actually leaves the process: one browse-page GET and one
-/// details POST per uncached page.
 private class WorkshopPublicStub: URLProtocol, @unchecked Sendable {
     private static let lock = NSLock()
     nonisolated(unsafe) static var browseCount = 0

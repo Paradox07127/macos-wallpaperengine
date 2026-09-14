@@ -17,9 +17,8 @@ struct WallpaperPlaybackStateMachineTests {
         profile: .suspended,
         suspendReasons: [.thermal, .memoryPressure]
     )
-    /// The engine never emits this shape (it drops throttle at suspension);
-    /// fed here to pin the machine's own mirror of that rule, which the
-    /// differential suite cannot see for exactly that reason.
+    /// A shape the engine never emits (it drops throttle at suspension), fed here
+    /// to pin the machine's own mirror of that rule.
     private static let suspendedWithLeftoverThrottle = WallpaperPolicyDecision(
         profile: .suspended,
         suspendReasons: [.memoryPressure],
@@ -28,8 +27,8 @@ struct WallpaperPlaybackStateMachineTests {
 
     @Test("Only user events change intent; policy events never do")
     func intentTransitions() {
-        // (initial intent, event, expected intent). policyChanged uses a
-        // safety suspend on purpose: even the hardest gate must not rewrite intent.
+        // policyChanged uses a safety suspend on purpose: even the hardest gate
+        // must not rewrite intent.
         let table: [(initial: Bool, event: (WallpaperPlaybackStateMachine) -> Void, expected: Bool, label: String)] = [
             (true, { $0.userPlay() }, true, "play while playing"),
             (true, { $0.userPause() }, false, "pause while playing"),
@@ -103,7 +102,6 @@ struct WallpaperPlaybackStateMachineTests {
         machine.policyChanged(Self.qualityClean)
         #expect(machine.userIntendsToPlay == false)
         #expect(machine.outputs.userPaused == true)
-        // Gate reopened but the user still wants pause: stays suspended.
         #expect(machine.outputs.effectiveProfile == .suspended)
     }
 
@@ -115,7 +113,6 @@ struct WallpaperPlaybackStateMachineTests {
         #expect(machine.userIntendsToPlay == true)
         #expect(outputs.userPaused == false)
         #expect(outputs.effectiveProfile == .suspended)
-        // The moment the gate lifts, the stored intent takes effect.
         #expect(machine.policyChanged(Self.qualityClean).effectiveProfile == .quality)
     }
 

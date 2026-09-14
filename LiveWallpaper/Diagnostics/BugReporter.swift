@@ -16,15 +16,9 @@ enum BugReporter {
     /// must survive even if `Bundle` lookups fail.
     private static let newIssueURLString = "https://github.com/Paradox07127/macos-wallpaperengine/issues/new"
 
-    /// File names under `.github/ISSUE_TEMPLATE/`. `BugReporterTemplateTests`
-    /// checks both still exist, because a renamed template fails as a GitHub
-    /// 404 long after the rename, with nothing on this side to notice.
     static let englishTemplateName = "bug_report.yml"
     static let simplifiedChineseTemplateName = "bug_report_zh.yml"
 
-    /// The two issue forms that exist. Both the GitHub template and the
-    /// pre-filled body follow this one choice, so a reporter never lands on a
-    /// Chinese form holding an English body.
     enum IssueForm: Sendable {
         case english
         case simplifiedChinese
@@ -37,11 +31,6 @@ enum BugReporter {
         }
     }
 
-    /// Which form the in-app report opens. Simplified Chinese is the only language with a form of its own,
-    /// so it is the only one that gets it; Traditional Chinese, Japanese and Spanish readers land on the
-    /// English form because that is the only other one that exists. Following the app's own language rather
-    /// than the system's matters when someone has overridden it — the form should match the UI they are
-    /// describing.
     static func issueForm(
         preference: AppLanguagePreference = .current,
         systemLocalizations: [String] = Bundle.main.preferredLocalizations
@@ -56,7 +45,6 @@ enum BugReporter {
         URL(string: "\(newIssueURLString)?template=\(template)")!
     }
 
-    /// How many recent warning/error lines we lift from the runtime log into the markdown preview.
     private static let recentLogLineCount = 5
     private static let maxLogLineLength = 500
     /// Hard cap on the markdown body before URL encoding.
@@ -98,10 +86,6 @@ enum BugReporter {
         }
     }
 
-    /// Wallpaper names cross the process boundary into a GitHub issue: a local
-    /// HTML source's display name can be a full `file://` URL and Workshop
-    /// titles are author-controlled, so both go through the same redactor as
-    /// the log excerpt below them.
     private static func scrubbedWallpaperNames(_ names: [String]) -> [String] {
         names.map { LogPrivacyRedactor.scrub(LogPrivacyRedactor.sanitizedTitle($0)) }
     }
@@ -150,10 +134,6 @@ enum BugReporter {
         return sections.joined(separator: "\n\n")
     }
 
-    /// Mirrors `englishMarkdown` line for line. Kept as a separate template
-    /// rather than a table of localized fragments because the body is prose
-    /// pasted into a GitHub form, and the two forms under
-    /// `.github/ISSUE_TEMPLATE/` are maintained the same way.
     private static func simplifiedChineseMarkdown(snapshot: SystemSnapshot, recentLogLines: [String]) -> String {
         var sections: [String] = []
 
@@ -220,7 +200,6 @@ enum BugReporter {
         return "\(fence)\n\(lines.joined(separator: "\n"))\n\(fence)"
     }
 
-    /// Picks the shortest fence (`` ``` ``, `` ```` ``, …) that does not appear inside any of the lines — preventing user content from prematurely closing the code block.
     private static func safeCodeFence(for lines: [String]) -> String {
         var fence = "```"
         while lines.contains(where: { $0.contains(fence) }) {
@@ -259,7 +238,6 @@ enum BugReporter {
         return FileManager.default.fileExists(atPath: url.path)
     }
 
-    /// Pulls the most recent WARNING/ERROR/FAULT lines from `LogFileSink` (which holds the lock so we never observe a torn write or stale rotation).
     private static func sanitizedRecentLogLines() -> [String] {
         LogFileSink.shared
             .recentDiagnosticLines(maxLines: recentLogLineCount, maxLineLength: maxLogLineLength)

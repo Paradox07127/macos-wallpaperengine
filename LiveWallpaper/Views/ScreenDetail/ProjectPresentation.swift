@@ -109,8 +109,6 @@ struct WPEProjectSettingsPresentation: Equatable {
 
     static let ungroupedSectionID = "__ungrouped"
 
-    /// A scene whose author grouped nothing gets a flat list: one collapsible
-    /// group wrapping every property is a lid with nothing beside it.
     func rows(expandedSectionIDs: Set<String>) -> [SettingsRow] {
         if sections.count == 1, sections.first?.id == Self.ungroupedSectionID {
             guard let section = sections.first else { return [] }

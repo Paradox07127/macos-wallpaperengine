@@ -101,8 +101,7 @@ struct AudioSpectrumProcessorTests {
         let expectedRight = analyzed.right.map { $0 }
         #expect(expectedLeft.contains { $0 > 0 })
 
-        // Cache the frame (whose arrays share storage with the processor's
-        // output buffers), then make the processor reuse those buffers.
+        // The frame's arrays share storage with the processor's output buffers.
         broker.attachAnalyzer(SpectrumAnalyzerStub(analyzed))
         _ = broker.snapshot()
 

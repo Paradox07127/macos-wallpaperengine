@@ -1,7 +1,6 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// Canvas controls in fixed order: viewport, playback, actions.
 /// Fixed-width labels keep control positions stable across languages.
 struct WallpaperPreviewHUD<Viewport: View, Playback: View, Actions: View>: View {
     @ViewBuilder var viewport: Viewport

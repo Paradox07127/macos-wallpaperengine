@@ -3,19 +3,13 @@ import LiveWallpaperCore
 @preconcurrency import WebKit
 import UniformTypeIdentifiers
 
-/// Serves a security-scoped folder under `livewallpaper://` so WKWebView sees
-/// same-origin content (file:// breaks ES modules via CORS). Top-level loads
-/// require `?n=<nonce>` so a previous folder's URL cannot be replayed;
-/// subresources inherit the document. `@unchecked Sendable`: WebKit calls on
-/// main thread; mutable state is only touched from MainActor by the host.
+/// Top-level loads require ?n=<nonce> so a previous folder's URL cannot be replayed. @unchecked Sendable: WebKit calls on main; host mutates only from MainActor.
 final class FolderURLSchemeHandler: NSObject, WKURLSchemeHandler, @unchecked Sendable {
     nonisolated static let scheme = "livewallpaper"
     nonisolated static let host = "wallpaper"
     nonisolated static let responseChunkSize = 64 * 1024
 
-    /// Enforced CSP when enabled. Locks frame/object/form/base; keeps
-    /// unsafe-inline/eval + https connect for the WPE web corpus. No Swift
-    /// bridge — residual exfiltration risk is threat-model only.
+    /// Locks frame/object/form/base; keeps unsafe-inline/eval + https connect for the WPE web corpus. No Swift bridge.
     nonisolated static let contentSecurityPolicy: String = [
         "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: livewallpaper:;",
         "connect-src 'self' https: livewallpaper: data: blob:;",
@@ -28,11 +22,7 @@ final class FolderURLSchemeHandler: NSObject, WKURLSchemeHandler, @unchecked Sen
         "form-action 'none';"
     ].joined(separator: " ")
 
-    /// `contentSecurityPolicy` minus every remote origin. Imported Workshop code
-    /// may render — it is a JS medium, and the shipped corpus loads all of its
-    /// assets relatively — but it may not reach the network. Local file reads are
-    /// already refused by path containment, so this closes the egress path that
-    /// made a downloaded page usable as a resident tracking client.
+    /// contentSecurityPolicy minus every remote origin. Local reads are already refused by path containment; this closes network egress.
     nonisolated static let networkIsolatedContentSecurityPolicy: String = [
         "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: livewallpaper:;",
         "connect-src 'self' livewallpaper: data: blob:;",
@@ -48,7 +38,6 @@ final class FolderURLSchemeHandler: NSObject, WKURLSchemeHandler, @unchecked Sen
     /// Test override (often Report-Only); nil defers to `cspEnforcementEnabled`.
     var cspOverride: ContentSecurityPolicyOverride?
 
-    /// Opt-in CSP header on scheme responses; host reloads on flip.
     var cspEnforcementEnabled = false
 
     /// Provenance-driven, not user-driven: set for Workshop imports and it
@@ -82,9 +71,7 @@ final class FolderURLSchemeHandler: NSObject, WKURLSchemeHandler, @unchecked Sen
         let url: URL
         let package: WallpaperEnginePackage
     }
-    /// Dedupe missing-resource logs (WPE loops often 404 placeholders every tick).
     private var reportedMissingResources: Set<String> = []
-    /// Dedupe Ogg→mp3/m4a substitution logs once per filename per session.
     private var reportedOggSubstitutions: Set<String> = []
 
     /// Folder swap cancels in-flight tasks so workers cannot read past scope end.
@@ -108,7 +95,6 @@ final class FolderURLSchemeHandler: NSObject, WKURLSchemeHandler, @unchecked Sen
         activePackageBacking = backing
     }
 
-    /// Embedded as `?n=<nonce>` on the top-level folder navigation URL.
     var currentSessionNonce: String? {
         sessionNonce
     }
@@ -131,7 +117,6 @@ final class FolderURLSchemeHandler: NSObject, WKURLSchemeHandler, @unchecked Sen
             return
         }
 
-        // Loose file wins (path-traversal checked); else package entry.
         let primaryURL: URL
         do {
             primaryURL = try Self.resolvedFileURL(for: url, inside: folderURL)
@@ -258,7 +243,6 @@ final class FolderURLSchemeHandler: NSObject, WKURLSchemeHandler, @unchecked Sen
         }
     }
 
-    /// Package entry lookup; nil → loose-folder fallback. Path safety via canonicalLookupName.
     private func packageByteSource(for url: URL) -> (source: ByteSource, mime: String)? {
         guard let backing = activePackageBacking else { return nil }
         // Normalize Windows `\` paths; canonicalLookupName still rejects `..`.
@@ -270,7 +254,6 @@ final class FolderURLSchemeHandler: NSObject, WKURLSchemeHandler, @unchecked Sen
         if let entry = backing.package.entry(named: lookup) {
             return (Self.packageSource(for: entry, in: backing), Self.mimeType(forEntryName: entry.name))
         }
-        // Same Ogg sibling substitution as the loose-folder path.
         if let fallback = Self.packageOggFallbackEntry(for: lookup, in: backing.package) {
             let requested = (lookup as NSString).lastPathComponent
             if !reportedOggSubstitutions.contains(requested) {
@@ -311,7 +294,6 @@ final class FolderURLSchemeHandler: NSObject, WKURLSchemeHandler, @unchecked Sen
         return nil
     }
 
-    /// One log per filename: request path, resolved path, siblings, codec hints.
     @MainActor
     private func logMissingResource(fileURL: URL, requestURL: URL) {
         guard reportedMissingResources.insert(fileURL.lastPathComponent).inserted else { return }

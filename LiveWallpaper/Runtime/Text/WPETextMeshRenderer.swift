@@ -24,19 +24,13 @@ struct WPETextMeshPayload {
     var color: SIMD4<Float>
 }
 
-/// Placement of a text object for one frame, in author conventions: `origin`
-/// in top-left y-down scene pixels, `rotation` in author-space CCW radians,
-/// `scale` including live scripts, parents and perspective depth.
+/// `origin` in top-left y-down scene pixels, `rotation` in author-space CCW radians, `scale` including live scripts, parents and perspective depth.
 struct WPETextMeshPlacement {
     let originTopLeft: SIMD2<Double>
     let scale: SIMD2<Double>
     let rotation: Double
 }
 
-/// The unified WPE text renderer: FreeType-rule layout (`WPETextLayoutEngine`)
-/// + R8 coverage atlas, drawn as one glyph mesh per object — the same
-/// bitmap-atlas pipeline Windows WPE runs (see memory `wpe-text-windows-model`).
-/// Not `@MainActor`: lives inside the renderer's actor isolation.
 final class WPETextMeshRenderer {
     private let device: MTLDevice
     private let fonts: WPETextFontResolver
@@ -57,10 +51,6 @@ final class WPETextMeshRenderer {
         self.atlas = WPETextGlyphAtlas(device: device)
     }
 
-    /// Reclaims all text-owned GPU resources without imposing a glyph-size or
-    /// page-count ceiling. System/lifecycle suspension calls this only after
-    /// frame production stops; the next frame rebuilds meshes and atlas cells
-    /// from the then-current live strings (time, weekday, scripts, and so on).
     @discardableResult
     func releaseCachedResources() -> Int {
         meshCache.removeAll(keepingCapacity: false)
@@ -114,9 +104,7 @@ final class WPETextMeshRenderer {
             horizontalAlignment: object.horizontalAlignment,
             verticalAlignment: object.verticalAlignment
         )
-        // Author +y-up block space → top-left y-down screen space: negate y,
-        // then scale and rotate about the origin (author CCW = screen CW, so
-        // -rotation here), matching the oracle's pivot-at-origin semantics.
+        // Author +y-up → top-left y-down: negate y, then scale and rotate about the origin (author CCW = screen CW, so -rotation here).
         let cosR = cos(-placement.rotation)
         let sinR = sin(-placement.rotation)
         let place: (Double, Double) -> SIMD2<Float> = { xUp, yUp in

@@ -1,25 +1,9 @@
 import AppKit
 import QuartzCore
 
-/// Shooting stars, flown one sprite at a time rather than emitted.
-///
-/// A meteor's light rises before it falls: it comes in faint, brightens as it ablates,
-/// and dies away. Every particle library models that as an alpha envelope over the
-/// particle's own lifetime — Wallpaper Engine's Alpha Fade operator takes a fade-in and
-/// a fade-out time as fractions of lifetime, and this repo's own `WPEParticleSystem`
-/// implements the same envelope. `CAEmitterCell` cannot: it offers `alphaSpeed`, a single
-/// straight line, so an emitted particle can only ever get dimmer. Working around that
-/// with a sub-cell train ran into two more macOS 27 defects — a cell carrying sub-cells
-/// has its whole sprite box filled in by the compositor, and sub-cells emit at most once
-/// per frame, which beads the train at speed.
-///
-/// So a meteor is what a sprite library ships: one pre-rendered streak on its own layer,
-/// flown down a straight path with a keyframed `opacity` envelope. Meteors are rare (about
-/// one a second at most), so a handful of layers costs far less than an emitter would.
+/// `CAEmitterCell` only offers a straight-line `alphaSpeed`, so a meteor is one pre-rendered streak with a keyframed opacity envelope rather than an emitted particle.
 @MainActor
 final class MeteorShower {
-    /// Everything about one flight, decided up front. Pure, so the geometry and the
-    /// light curve can be checked without putting anything on screen.
     struct Flight: Equatable {
         var start: CGPoint
         var end: CGPoint
@@ -31,16 +15,10 @@ final class MeteorShower {
         var brightness: CGFloat
     }
 
-    /// Radians from vertical, positive towards the right of the screen. Shallow enough
-    /// to read as "across the sky" rather than "falling", and fixed rather than
-    /// wind-driven: meteors come in on their own path, and one shared angle is what
-    /// reads as a radiant shower rather than as noise.
+    /// Radians from vertical, positive towards the right of the screen. Fixed rather than wind-driven.
     static let slant: CGFloat = 1.0
 
-    /// The alpha envelope, as fractions of the flight. Rise fast, hold, fall slowly —
-    /// the shape of a real meteor's light curve, and the shape `CAEmitterCell` cannot
-    /// express. Starting and ending at zero is what makes one arrive and leave rather
-    /// than switch on and off.
+    /// Alpha envelope as fractions of the flight. Starting and ending at zero is what makes one arrive and leave rather than switch on and off.
     static let opacityKeyTimes: [Double] = [0, 0.13, 0.5, 1]
     static let opacityValues: [Double] = [0, 1, 0.82, 0]
 
@@ -96,9 +74,7 @@ final class MeteorShower {
         self.density = density
     }
 
-    /// Freezes what is in flight and stops launching more. Same `speed`/`timeOffset`
-    /// dance the emitter uses, so a resumed meteor picks up where it stopped instead
-    /// of jumping forward by however long the wallpaper was suspended.
+    /// Same `speed`/`timeOffset` dance the emitter uses, so a resumed meteor picks up where it stopped instead of jumping forward.
     func setSuspended(_ suspended: Bool) {
         guard isSuspended != suspended else { return }
         isSuspended = suspended
@@ -145,9 +121,6 @@ final class MeteorShower {
 
     // MARK: - One flight
 
-    /// A flight across `bounds`, entering above the top edge and burning out before it
-    /// would reach the bottom. `roll` supplies the randomness so the geometry can be
-    /// exercised with fixed values.
     static func flight(in bounds: CGRect, roll: (ClosedRange<CGFloat>) -> CGFloat) -> Flight {
         let speed = roll(620 ... 980)
         let duration = Double(roll(1.5 ... 2.4))
@@ -157,9 +130,7 @@ final class MeteorShower {
         let width = roll(2.6 ... 4.4)
 
         let heading = CGVector(dx: sin(slant), dy: -cos(slant))
-        // Far enough above the frame that the whole sprite is outside it at birth: the
-        // envelope fades a meteor in, and a sprite already astride the edge would show
-        // that fade happening in plain view instead of out of sight.
+        // Far enough above the frame that the whole sprite is outside it at birth: otherwise the fade-in happens in plain view.
         let entry = length
         let start = CGPoint(
             x: bounds.minX + roll(-0.35 ... 0.95) * bounds.width - heading.dx * entry,
@@ -204,10 +175,7 @@ final class MeteorShower {
         group.duration = flight.duration
         group.isRemovedOnCompletion = false
         group.fillMode = .forwards
-        // Removal rides the layer's own clock: the delegate fires when the flight
-        // ends in layer time, so a shower frozen mid-flight keeps its meteor and
-        // one frozen past the flight still sheds it on resume. A wall-clock
-        // `asyncAfter` did neither — it skipped while suspended and never came back.
+        // Removal rides the layer's own clock: a wall-clock `asyncAfter` would skip while suspended and never come back.
         group.delegate = FlightEnd(meteor: meteor)
         meteor.add(group, forKey: "flight")
         return meteor
@@ -229,8 +197,6 @@ final class MeteorShower {
 
     // MARK: - Sprite
 
-    /// Sprites are cached by their drawn size: a shower reuses a handful of shapes, and
-    /// rasterising a fresh gradient per meteor would be the only real cost here.
     private static var spriteCache: [String: CGImage] = [:]
 
     private static func sprite(for flight: Flight) -> CGImage? {
@@ -252,7 +218,6 @@ final class MeteorShower {
     }
 
     #if DEBUG
-    /// Launches one meteor immediately, so a test does not have to wait out a random gap.
     func debugLaunchNow() -> CALayer? {
         launch()
     }

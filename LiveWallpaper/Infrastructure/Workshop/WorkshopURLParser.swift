@@ -1,10 +1,8 @@
 #if !LITE_BUILD
 import Foundation
 
-/// Parses canonical Steam Community URLs, Steam deep links, and numeric Workshop IDs.
 enum WorkshopURLParser {
 
-    /// Result of parsing a single token.
     enum ParsedItem: Equatable, Sendable {
         case ok(publishedFileID: UInt64, original: String)
         case invalid(reason: InvalidReason, original: String)
@@ -19,7 +17,6 @@ enum WorkshopURLParser {
         case unknownHost
     }
 
-    /// Splits a pasted blob into tokens on whitespace/newline/comma/semicolon.
     /// Order-preserving and duplicate-tolerant; callers handle dedupe.
     static func tokenize(_ blob: String) -> [String] {
         let separators = CharacterSet(charactersIn: ",;\n\r\t ")
@@ -29,14 +26,12 @@ enum WorkshopURLParser {
             .filter { !$0.isEmpty }
     }
 
-    /// Public so the import sheet can preview the outcome before staging the row.
     static func parse(_ raw: String) -> ParsedItem {
         let token = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !token.isEmpty else {
             return .invalid(reason: .empty, original: raw)
         }
 
-        // Bare numeric id (most common shortcut).
         if token.allSatisfy({ $0.isASCII && $0.isNumber }) {
             return parseNumericID(token, original: raw)
         }
@@ -53,9 +48,7 @@ enum WorkshopURLParser {
         return .invalid(reason: .unsupportedURL, original: raw)
     }
 
-    /// Bulk-parse + dedupe. Returns parsed items in input order; duplicates
-    /// (same `publishedFileID`) collapse to the first occurrence with a
-    /// second-result count for UI display.
+    /// Bulk-parse + dedupe in input order; duplicate `publishedFileID`s collapse to the first occurrence.
     static func parseAll(_ blob: String) -> [ParsedItem] {
         var seen: Set<UInt64> = []
         var results: [ParsedItem] = []
@@ -76,7 +69,6 @@ enum WorkshopURLParser {
     // MARK: - Private
 
     private static func parseNumericID(_ token: String, original: String) -> ParsedItem {
-        // Reject "00...", "0", and overflow.
         guard token.count <= 20,
               !(token.count > 1 && token.first == "0"),
               token != "0" else {
@@ -95,9 +87,7 @@ enum WorkshopURLParser {
             return .invalid(reason: .unsupportedURL, original: original)
         }
         let tail = String(token.dropFirst(prefix.count))
-        // Reject trailing junk like `…/123abc` — historically users have
-        // pasted partial copies and we want a clean error rather than a
-        // silent prefix-match.
+        // Reject trailing junk like `…/123abc` — a prefix-match would silently accept a partial paste.
         guard tail.allSatisfy({ $0.isASCII && $0.isNumber }) else {
             return .invalid(reason: .malformedID, original: original)
         }
@@ -108,9 +98,7 @@ enum WorkshopURLParser {
         guard let components = URLComponents(string: token) else {
             return .invalid(reason: .unsupportedURL, original: original)
         }
-        // Reject embedded credentials and non-standard ports — the canonical
-        // Steam community URL never carries either, so anything that does is
-        // almost certainly an attempt to disguise a redirect.
+        // Reject embedded credentials and non-standard ports — the canonical Steam community URL never carries either.
         guard components.user == nil, components.password == nil else {
             return .invalid(reason: .unsupportedURL, original: original)
         }
@@ -121,9 +109,7 @@ enum WorkshopURLParser {
             return .invalid(reason: .unknownHost, original: original)
         }
 
-        // Path forms (with or without trailing slash):
-        //   /sharedfiles/filedetails        /sharedfiles/filedetails/
-        //   /workshop/filedetails           /workshop/filedetails/
+        // Path forms with or without trailing slash: `sharedfiles/filedetails` and `workshop/filedetails`.
         let normalizedPath = components.path
             .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
             .lowercased()

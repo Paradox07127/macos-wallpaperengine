@@ -19,10 +19,6 @@ struct AgentSignalsTests {
         #expect(warning == "toolLoop")
     }
 
-    /// The threshold used to be 8, which is normal work, not a loop: 23 of the
-    /// 58 most recent local sessions tripped it, one of them on eight `Bash`
-    /// calls inside 61 seconds. Anything at or under a routine burst has to
-    /// stay quiet or the widget's warn chip means nothing.
     @Test("a routine burst of identical tools is not a loop")
     func routineBurstIsNotALoop() {
         #expect(!AgentSignalDeriver.isToolLoop(run("Bash", 8, spacing: 7)))
@@ -37,13 +33,11 @@ struct AgentSignalsTests {
             MonitorAgentToolEvent(name: $0 % 2 == 0 ? "Bash" : "Read", at: 1000 + Double($0), ok: true)
         }
         #expect(!AgentSignalDeriver.isToolLoop(mixed))
-        // Same run, spread past the 10-minute window.
+        // Past the 10-minute window.
         #expect(!AgentSignalDeriver.isToolLoop(run("Bash", n, spacing: 120)))
     }
 
-    /// The detector can only see what the models keep, so the buffer has to be
-    /// able to hold a whole run — a cap below `toolLoopRun` would make the
-    /// warning unreachable rather than rare.
+    /// A buffer cap below `toolLoopRun` would make the warning unreachable rather than rare.
     @Test("the retained buffer can hold a full run")
     func bufferHoldsAFullRun() {
         #expect(AgentSignalDeriver.toolLoopBuffer >= AgentSignalDeriver.toolLoopRun)
@@ -59,8 +53,6 @@ struct AgentSignalsTests {
             )
         }
         #expect(warn(silentFor: AgentSignalDeriver.staleAfter + 60) == "stale")
-        // A long build, a full test run, or a fan-out to review subagents all
-        // sit on one pending tool call for minutes with nothing to write.
         #expect(warn(silentFor: 9 * 60) == nil)
     }
 

@@ -7,9 +7,7 @@ public struct WPEParticleSpriteSheet: Sendable, Equatable {
     public let rows: Int
     /// Cycle length; with `frameRects`, equals rect count (CPU/GPU stay in sync).
     public let frameCount: Int
-    /// `.tex-json` frames/duration metadata. The current WPE particle path
-    /// advances frames from normalized lifetime and `sequencemultiplier`;
-    /// `baseFrameRate` is intentionally not a runtime timing input.
+    /// `baseFrameRate` is not a runtime timing input; frames advance from normalized lifetime and `sequencemultiplier`.
     public let baseFrameRate: Double
     public let isAlphaMask: Bool
     /// Explicit UVs for non-uniform grids; nil → cols×rows grid path.
@@ -76,10 +74,7 @@ public enum WPEParticleSpriteSheetParser {
         return nil
     }
 
-    /// Frame extents are pixel-scale (see the sample sidecar above), so a sheet
-    /// can never hold more cells than the atlas has pixels along that axis.
-    /// The clamp is what keeps a malformed sub-pixel `width` from overflowing
-    /// the division past `Int` and trapping the conversion.
+    /// Frame extents are pixel-scale; clamp so a malformed sub-pixel `width` cannot overflow the division past `Int`.
     private static func cellCount(atlasExtent: Int, frameExtent: Double) -> Int {
         let limit = max(1, atlasExtent)
         let ratio = (Double(atlasExtent) / frameExtent).rounded()

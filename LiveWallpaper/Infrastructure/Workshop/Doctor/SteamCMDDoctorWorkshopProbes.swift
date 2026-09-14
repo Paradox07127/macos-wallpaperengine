@@ -2,8 +2,6 @@
 import Foundation
 import LiveWallpaperCore
 
-/// The Workshop-wide checks, as opposed to the SteamCMD-specific ones. All three are advisory: `downloadBlocker` does not read them, so nothing here can take a command away from the user.
-/// They exist because each one fails silently in production — a stale assets bookmark simply skips layers, an unreachable connector only surfaces as "the download did nothing".
 extension SteamCMDDoctorService {
 
     // MARK: - Workshop content folder

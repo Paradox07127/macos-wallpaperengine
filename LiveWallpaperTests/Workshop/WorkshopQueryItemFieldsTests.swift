@@ -97,8 +97,8 @@ struct WorkshopURLEncodingTests {
 struct WorkshopQueryItemFieldsTests {
     private static let validKey = String(repeating: "a1b2c3d4", count: 4)
 
-    /// First entry of the captured `QueryFiles` page (`q_preset_children.json`,
-    /// 2026-09-07): a Preset whose single child is the wallpaper it restyles.
+    /// From the captured `QueryFiles` page (`q_preset_children.json`): a Preset whose single child
+    /// is the wallpaper it restyles.
     @Test("Keyed items carry vote data, creation time, comment count and children")
     func keyedItemFields() async throws {
         let service = Self.makeService()
@@ -131,7 +131,7 @@ struct WorkshopQueryItemFieldsTests {
                 .map { ($0.name, $0.value ?? "") }
         )
         #expect(query["return_children"] == "true")
-        // `return_details=true` drops `vote_data` and `short_description` from the response (verified 2026-09-07).
+        // `return_details=true` drops `vote_data` and `short_description` from the response.
         #expect(query["return_details"] == nil)
         #expect(query["return_vote_data"] == "true")
 
@@ -148,9 +148,7 @@ struct WorkshopQueryItemFieldsTests {
         #expect(userQuery["return_details"] == nil)
     }
 
-    /// Expected values computed from the fixture's SSR payload
-    /// (`results[0]`: star_rating 5, total_votes 175, num_comments_public 23,
-    /// time_created 1788435379, children []).
+    /// Expected values computed from the fixture's SSR payload `results[0]`.
     @Test("Keyless items map star_rating/total_votes to stars plus the same fields")
     func keylessItemFields() throws {
         let page = try WorkshopPublicBrowsePayload.page(
@@ -192,7 +190,6 @@ struct WorkshopQueryItemFieldsTests {
         let first = try #require(page.items.first)
         #expect(first.id == 3_794_937_077)
         #expect(first.requiredItemIDs == [42, 1_081_733_658])
-        // Control: the rest of the page is untouched.
         #expect(page.items.dropFirst().flatMap(\.requiredItemIDs).isEmpty)
     }
 

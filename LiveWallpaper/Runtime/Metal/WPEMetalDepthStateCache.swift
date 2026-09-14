@@ -3,10 +3,6 @@ import CoreGraphics
 import Foundation
 import Metal
 
-/// Owns Metal depth state for one `WPEMetalRenderExecutor` lifetime. The
-/// per-frame depth texture dictionary stays on `WPEMetalFrameState`, but its
-/// allocation goes through here so descriptor + storage mode stay aligned
-/// with the rest of the pipeline.
 final class WPEMetalDepthStateCache {
     private let device: MTLDevice
     private var depthStencilStates: [WPEMetalDepthKey: MTLDepthStencilState] = [:]
@@ -16,11 +12,7 @@ final class WPEMetalDepthStateCache {
     }
 
     static let memorylessDepthDefaultsKey = "WPEMetalMemorylessDepthEnabled"
-    /// Internal kill-switch, default ON: `.memoryless` (tile-only) depth on Apple GPUs saves
-    /// depth-texture bandwidth/footprint but is precision-sensitive, so
-    /// `defaults write com.loomscreen.pro WPEMetalMemorylessDepthEnabled -bool NO` stays as
-    /// the per-user escape hatch (suite-first so it's honoured even in a process whose
-    /// standard domain isn't the app's). Frozen read-once (restart to apply) — this was the last per-frame UserDefaults read in the release render loop; no in-app code writes or expects a live toggle.
+    /// Internal kill-switch, default ON. Frozen read-once (restart to apply); `defaults write com.loomscreen.pro WPEMetalMemorylessDepthEnabled -bool NO` is the per-user escape hatch (suite-first).
     static let isMemorylessDepthEnabled: Bool = {
         let suite = UserDefaults.appSuite
         if suite.object(forKey: memorylessDepthDefaultsKey) != nil {
@@ -29,18 +21,12 @@ final class WPEMetalDepthStateCache {
         return UserDefaults.standard.object(forKey: memorylessDepthDefaultsKey) as? Bool ?? true
     }()
 
-    /// Whether the flag permits memoryless (tile-only) depth at all. The caller
-    /// additionally opts a target out (`allowTransient: false`) when more than
-    /// one pass writes its depth, since those can load depth across encoders.
-    /// (arm64-only distribution: every Mac GPU is Apple family / TBDR.)
+    /// The caller additionally opts a target out (`allowTransient: false`) when more than one pass writes its depth, since those can load depth across encoders.
     var depthAttachmentIsTransient: Bool {
         Self.isMemorylessDepthEnabled
     }
 
-    /// Derive load/store from the actual texture, never from the flag: pairing a
-    /// memoryless texture (cached for the frame) with a `.store` action is a Metal
-    /// validation crash. The flag is frozen read-once, so a mid-process flip can't
-    /// happen anymore, but the texture's own storage mode stays the source of truth.
+    /// Derive load/store from the actual texture, never from the flag: pairing a memoryless texture with a `.store` action is a Metal validation crash.
     func isTransientDepthAttachment(_ texture: MTLTexture) -> Bool {
         texture.storageMode == .memoryless
     }
@@ -51,7 +37,6 @@ final class WPEMetalDepthStateCache {
             || pass.pass.depthTest.lowercased() != "disabled"
     }
 
-    /// Keys depth textures by target and exact dimensions so scaled FBO color and depth attachments match.
     func attachmentTexture(
         for destination: (id: WPEMetalTargetID, texture: MTLTexture),
         frameState: inout WPEMetalFrameState,
@@ -113,14 +98,7 @@ final class WPEMetalDepthStateCache {
 
     static func compareFunction(for raw: String, reversedZ: Bool = false) -> MTLCompareFunction {
         switch raw.lowercased() {
-        // WPE materials express depth testing as a boolean string: every `depthtest` in
-        // the corpus is "enabled" (33) or "disabled" (799), never a GL compare name.
-        // "enabled" means "occlude by depth", so it must map to a real comparison — the
-        // old `default: .always` silently disabled depth testing while depth WRITE stayed
-        // on, so a no-cull mesh (sphere) drew in index order (half the surface "fault"ed)
-        // and a nearer object (three-body stars) was overwritten by a farther one (the
-        // skybox). "disabled" correctly keeps `.always`: those passes carry no depth
-        // attachment, so the compare is moot.
+        // WPE `depthtest` is a boolean string, not a GL compare name. "enabled" means occlude by depth, so it must map to a real comparison — `default: .always` would disable testing while depth WRITE stayed on.
         case "enabled", "true":
             return reversedZ ? .greaterEqual : .lessEqual
         case "always", "disabled", "false":

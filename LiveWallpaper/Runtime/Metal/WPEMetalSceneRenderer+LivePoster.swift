@@ -7,10 +7,6 @@ extension WPEMetalSceneRenderer {
 
     // MARK: - Capture batch
 
-    /// Sendable because it holds the render actor (Sendable) and value types only —
-    /// never the non-Sendable renderer. The present-completion callback fires on a
-    /// GPU thread, so this must cross threads; it re-enters the actor to check the
-    /// scene is still current before delivering the poster.
     final class LivePosterCaptureBatch: Sendable {
         let actor: WPEDisplayRenderActor
         let captures: [UUID: CheckedContinuation<NSImage?, Never>]
@@ -55,10 +51,7 @@ extension WPEMetalSceneRenderer {
     }
     // MARK: - Capture requests
 
-    /// Reuses the next frame the renderer was already going to present as the
-    /// inspector poster. This deliberately avoids forcing a fresh synchronous
-    /// `renderCurrentFrame()` on the display render actor. Dynamic scenes resolve on
-    /// their next natural frame; static scenes re-present the retained output texture.
+    /// Reuses the next frame already going to present; do not force a fresh synchronous `renderCurrentFrame()` on the display render actor.
     func captureLivePosterFromNextFrame(on actor: isolated WPEDisplayRenderActor) async -> NSImage? {
         guard didLoad, hasPresentedFrame, renderPipeline != nil, currentProfile == .quality else {
             Logger.info(

@@ -5,10 +5,6 @@ import Foundation
 import LiveWallpaperCore
 import Metal
 
-/// R8 coverage-glyph atlas mirroring WPE's runtime font atlas: glyphs are rasterized once at
-/// their final pixel size and sampled 1:1 by the text mesh. Rasterization is synchronous — a
-/// CoreText coverage fill is cheap, so there's no warm-up frame and no fallback path. Not
-/// `@MainActor`: lives inside the renderer's actor isolation.
 final class WPETextGlyphAtlas {
     struct Entry {
         let page: Int
@@ -45,16 +41,11 @@ final class WPETextGlyphAtlas {
         self.pageSize = pageSize
     }
 
-    /// Fetches (or rasterizes) the glyph cell. `cell` is the glyph's OWN
-    /// integral raster box around its pen (`WPETextGlyphQuad.cell`) — its
-    /// origin is the pen→bearing offset used to draw, its size the cell size.
-    /// Placement stays in the mesh.
+    /// `cell` is the glyph's own integral raster box around its pen — origin is the pen→bearing offset, size the cell size. Placement stays in the mesh.
     func entry(glyph: CGGlyph, font: CTFont, cell: CGRect) -> Entry? {
         let width = Int(cell.width)
         let height = Int(cell.height)
-        // +1: the allocator reserves a 1px isolation strip, so the largest
-        // representable glyph is pageSize−1. Oversized glyphs are dropped —
-        // log once so missing characters are diagnosable, not silent.
+        // +1: the allocator reserves a 1px isolation strip, so the largest representable glyph is pageSize−1.
         guard width > 0, height > 0, width + 1 <= pageSize, height + 1 <= pageSize else {
             if width > 0, height > 0, loggedOversizedDrop == false {
                 loggedOversizedDrop = true
@@ -94,10 +85,7 @@ final class WPETextGlyphAtlas {
         pages.indices.contains(page) ? pages[page] : nil
     }
 
-    /// Drops every atlas allocation. The shelf allocator cannot safely recycle
-    /// individual cells because cached meshes retain their UVs; its owner first
-    /// discards those meshes, then calls this at a renderer suspension boundary.
-    /// The next visible frame rasterizes only the glyphs that are still live.
+    /// The shelf allocator cannot safely recycle individual cells because cached meshes retain their UVs.
     @discardableResult
     func removeAllPages() -> Int {
         let removedPageCount = pages.count
@@ -112,9 +100,7 @@ final class WPETextGlyphAtlas {
 
     // MARK: - Rasterization
 
-    /// Alpha-only CoreText fill of the glyph into its integer raster box.
-    /// CG memory row 0 is the cell's TOP scanline, which lands on texture
-    /// v=uvRect.minY — the mesh maps its quad's top edge there.
+    /// CG memory row 0 is the cell's TOP scanline, which lands on texture v=uvRect.minY — the mesh maps its quad's top edge there.
     private func rasterize(
         glyph: CGGlyph,
         font: CTFont,
@@ -138,9 +124,7 @@ final class WPETextGlyphAtlas {
             context.setAllowsAntialiasing(true)
             context.setShouldAntialias(true)
             var g = glyph
-            // Pen position inside the cell: `cell` is the glyph's bearing box
-            // around its pen, so drawing at (-minX, -minY) lands the glyph's
-            // bounding box inside [0, size].
+            // `cell` is the glyph's bearing box around its pen, so drawing at (-minX, -minY) lands the bounding box inside [0, size].
             var position = CGPoint(x: -cell.minX, y: -cell.minY)
             CTFontDrawGlyphs(font, &g, &position, 1, context)
             return true
@@ -185,9 +169,7 @@ final class WPETextGlyphAtlas {
         guard let texture = device.makeTexture(descriptor: descriptor) else { return false }
         texture.label = "WPE text glyph atlas \(pages.count)"
         WPEMetalTextureMetadataRegistry.shared.register(texture: texture)
-        // New MTLTexture contents are undefined; the 1px isolation strips
-        // between cells are never written by glyph uploads, and linear
-        // sampling reads them at every cell edge — zero the page once.
+        // New MTLTexture contents are undefined; the 1px isolation strips are never written by glyph uploads, and linear sampling reads them at every cell edge — zero the page once.
         let zeroRow = [UInt8](repeating: 0, count: pageSize * pageSize)
         zeroRow.withUnsafeBytes { raw in
             texture.replace(

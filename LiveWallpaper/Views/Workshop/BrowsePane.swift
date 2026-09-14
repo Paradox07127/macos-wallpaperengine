@@ -3,17 +3,13 @@ import Combine
 import LiveWallpaperCore
 import SwiftUI
 
-/// The "Browse Online" tab content, embedded headerless inside `PaneView`.
 struct BrowsePane: View {
     @Environment(\.libraryTileSize) private var tileSize
     let viewModel: BrowseViewModel
     let doctor: SteamCMDDoctorService
     let onRequestKeyEntry: () -> Void
-    /// Opens the paste sheet. Downloading a pasted id needs SteamCMD but no Web
-    /// API key, so this is the way through for a user who won't get one.
+    /// Downloading a pasted id needs SteamCMD but no Web API key.
     var onDownloadByLink: (() -> Void)?
-    /// nil when embedded without the tabbed pane chrome (e.g. the standalone
-    /// Browse sheet), which then renders no header and contributes no toolbar items.
 
     @Environment(WorkshopServices.self) private var services
     /// An id, not a value copy: the inspector follows the grid when a page
@@ -28,27 +24,21 @@ struct BrowsePane: View {
     /// Tells two opens of the same id apart, so the first fetch landing cannot
     /// settle the second.
     @State private var openGeneration = 0
-    /// User collapsed the detail panel via the header toggle while keeping the card selected.
     @State private var inspectorHidden = false
     @State private var rateLimitRemaining: TimeInterval = 0
     /// Read here, once, and handed to every tile: the cards are `EquatableView`s
     /// and cannot observe the environment from inside their own `body`.
     @Environment(\.galleryCardPreferences) private var cardPreferences
     @State private var pageJumpText: String = "1"
-    /// Workshop ids already in the local library, for the "In Library" badge.
     @State private var installedWorkshopIDs: Set<String> = []
-    /// "Hide already-downloaded items" preference — owned by Settings → Steam
-    /// Workshop; mirrored here and pushed into the view-model so the grid reacts.
     @AppStorage("loomscreen.workshop.hidesDownloaded.v1", store: .appScoped()) private var hidesDownloadedPref = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// Persisted detail-panel width + the transient width during a drag-resize.
     @AppStorage("Workshop.Browse.InspectorWidth", store: .appScoped()) private var inspectorWidth = Double(DesignTokens.Inspector.defaultWidth)
     @State private var liveInspectorWidth: Double?
 
     private let ticker = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
-    /// Stable scroll anchor pinned at the top of the grid (for page steps).
     private static let gridTopAnchor = "workshop.browse.grid.top"
 
     private var gridColumns: [GridItem] {
@@ -95,17 +85,15 @@ struct BrowsePane: View {
         .onChange(of: hidesDownloadedPref) { _, hide in
             viewModel.hidesDownloadedInBrowse = hide
         }
-        // Either direction changes which backend serves Browse — a key added,
-        // removed, or rejected by Valve — so rebuild the query from page 1
-        // (page size and the genre form differ per path) rather than leaving
-        // results from the other path on screen.
+        // Either direction changes which backend serves Browse, and page size and the
+        // genre form differ per path — so rebuild the query from page 1 rather than
+        // leaving results from the other path on screen.
         .onChange(of: services.isKeyless) { _, _ in
             Task { await viewModel.browsePathChanged() }
         }
-        // Guarded: this fires every second for the whole session, and writing
-        // `@State` invalidates the grid's `ForEach` — every visible card then
-        // rebuilds its tooltip, context menu, accessibility actions and badge
-        // glass once a second, whether or not Steam is rate-limiting anything.
+        // Guarded: this fires every second for the whole session, and writing `@State`
+        // invalidates the grid's `ForEach` — every visible card would rebuild its
+        // tooltip, context menu, accessibility actions and badge glass once a second.
         .onReceive(ticker) { _ in
             let next = currentRateLimitRemaining
             guard next != rateLimitRemaining else { return }
@@ -119,8 +107,6 @@ struct BrowsePane: View {
         .onReceive(NotificationCenter.default.publisher(for: .workshopPresetVisibilityDidChange)) { _ in
             Task { await viewModel.reload() }
         }
-        // The grid moved on (page turn, new filter) and the selected card
-        // went with it — unless it was opened detached from the grid.
         .onChange(of: viewModel.items) { _, items in
             guard !BrowseSelection.keepsSelection(
                 id: selectedID, in: items, detached: detachedItem, pending: pendingOpen?.id
@@ -137,9 +123,8 @@ struct BrowsePane: View {
         selectedID != nil && !inspectorHidden
     }
 
-    /// Opens an item by id — from a Required items row, so it may not be on
-    /// this page. Off-page ids are fetched once; an id Steam will not describe
-    /// leaves the previous selection in place.
+    /// Opens an item by id, which may not be on this page. Off-page ids are fetched
+    /// once; an id Steam will not describe leaves the previous selection in place.
     private func openItem(_ id: UInt64) {
         inspectorHidden = false
         guard !viewModel.items.contains(where: { $0.id == id }), detachedItem?.id != id else {
@@ -168,9 +153,6 @@ struct BrowsePane: View {
         gridColumn
     }
 
-    /// The ribbon and the creator/tag banners float over the grid on one plate;
-    /// only one of the three is ever showing, so the plate stays a single row
-    /// tall except while the ribbon's own second row is open.
     private var gridColumn: some View {
         VStack(spacing: 0) {
             filterBand
@@ -181,8 +163,6 @@ struct BrowsePane: View {
         }
     }
 
-    /// Valve refused the stored key, so Browse silently went keyless; say so
-    /// once, and stay until dismissed — the switch is otherwise invisible.
     @ViewBuilder
     private var keyRejectedBanner: some View {
         if viewModel.showsKeyRejectedNotice {
@@ -237,9 +217,8 @@ struct BrowsePane: View {
                 .padding(.horizontal, DesignTokens.LibraryFilterBar.horizontalPadding)
                 .padding(.vertical, DesignTokens.LibraryFilterBar.verticalPadding)
         } else {
-            // The keyless path applies the same server-side filters
-            // (browsesort / days / requiredtags / excludedtags), so the ribbon
-            // stays live without a key.
+            // The keyless path applies the same server-side filters (browsesort / days /
+            // requiredtags / excludedtags), so the ribbon stays live without a key.
             BrowseFilterRibbon(
                 viewModel: viewModel,
                 hasWebAPIKey: services.hasWebAPIKey || viewModel.usesKeylessSearch
@@ -279,21 +258,16 @@ struct BrowsePane: View {
 
     @ViewBuilder
     private var content: some View {
-        // A failure with the pager live (a page turn off an all-filtered or
-        // later page) belongs to the grid branch, whose error bar keeps
-        // Previous reachable; the full-pane error state has no way back.
+        // A failure with the pager live (a page turn off an all-filtered or later page)
+        // belongs to the grid branch; the full-pane error state has no way back.
         if let error = viewModel.lastError, viewModel.items.isEmpty, !viewModel.isRateLimited,
            !viewModel.currentPageIsFilteredOut {
-            // A keyless failure is the public page's, not a missing key — but
-            // the key is the sturdier route, so offer it there instead.
             if viewModel.usesKeylessSearch {
                 publicSearchFailedState(error)
             } else {
                 errorState(error)
             }
         } else if !viewModel.hasLoadedPage, viewModel.isLoading {
-            // Only the very first load gets the skeleton; a reload keeps the
-            // previous grid and dims it instead of blanking the pane.
             loadingSkeleton
         } else if viewModel.items.isEmpty, !viewModel.currentPageIsFilteredOut {
             emptyState
@@ -377,8 +351,6 @@ struct BrowsePane: View {
         )
     }
 
-    /// A failed page turn keeps the previous grid, so the empty-grid error
-    /// state never shows it; this names the failure next to the pager.
     @ViewBuilder
     private var pagingErrorBar: some View {
         if let error = viewModel.lastError, viewModel.showsPagingError, !viewModel.isRateLimited {
@@ -412,7 +384,6 @@ struct BrowsePane: View {
         }
     }
 
-    /// Cursor-based prev/next pager.
     @ViewBuilder
     private var paginationBar: some View {
         if viewModel.pageIndex > 1 || viewModel.canGoNextPage {
@@ -506,13 +477,8 @@ struct BrowsePane: View {
         .accessibilityLabel(Text("Loading Workshop results"))
     }
 
-    /// Keyless browse failed on Valve's public page. Retrying, adding a key and
-    /// pasting a link are all ways through, so all three live here.
-    ///
-    /// The title is the classified cause, exactly as the keyed path reports it:
-    /// the public page produces timeouts, unreachable hosts and HTTP statuses
-    /// that a reader can act on differently, and collapsing them into one
-    /// sentence made every one of them read as "try again later".
+    /// The title is the classified cause, exactly as the keyed path reports it: the
+    /// public page's timeouts, unreachable hosts and HTTP statuses are acted on differently.
     private func publicSearchFailedState(_ error: WorkshopQueryError) -> some View {
         IllustratedEmptyState(
             symbol: "exclamationmark.triangle.fill",
@@ -590,8 +556,6 @@ struct BrowsePane: View {
         )
     }
 
-    /// Shown inside the grid when "Hide items already in my library" excludes
-    /// every item on the loaded page.
     private var scopeEmptyNote: some View {
         IllustratedEmptyState(
             symbol: "sparkles",
@@ -633,7 +597,6 @@ struct BrowsePane: View {
         )
     }
 
-    /// Shown in place of the filter ribbon while the grid is scoped to one creator or tag.
     private func scopeBanner(icon: String, label: Text, clear: @escaping () async -> Void) -> some View {
         HStack(spacing: DesignTokens.Spacing.sm) {
             Button {
@@ -785,9 +748,8 @@ struct BrowsePane: View {
     }
 }
 
-/// Which item the inspector shows for a selected id: the grid's copy when the
-/// id is on the page (it carries the persona pass), else a detached copy for
-/// that same id, else nothing.
+/// Which item the inspector shows for a selected id: the grid's copy when the id
+/// is on the page (it carries the persona pass), else the detached copy.
 enum BrowseSelection {
     static func resolve(id: UInt64?, in items: [WorkshopQueryItem], detached: WorkshopQueryItem?) -> WorkshopQueryItem? {
         guard let id else {
@@ -799,9 +761,8 @@ enum BrowseSelection {
         return detached?.id == id ? detached : nil
     }
 
-    /// Whether the selection survives the grid replacing its items: it is on
-    /// the new page, already detached from it, or still being fetched for an
-    /// off-page open (`openItem` clears `detached` before that fetch).
+    /// Whether the selection survives the grid replacing its items: on the new page,
+    /// already detached from it, or still being fetched for an off-page open.
     static func keepsSelection(
         id: UInt64?, in items: [WorkshopQueryItem], detached: WorkshopQueryItem?, pending: UInt64?
     ) -> Bool {
@@ -811,7 +772,6 @@ enum BrowseSelection {
         return pending == id || detached?.id == id || items.contains { $0.id == id }
     }
 
-    /// An off-page open whose details are still being fetched.
     struct PendingOpen: Equatable {
         let id: UInt64
         /// The pane's open counter at the time; two opens of the same id from
@@ -820,9 +780,8 @@ enum BrowseSelection {
         let previousSelectedID: UInt64?
         let previousDetached: WorkshopQueryItem?
 
-        /// The inspector's selection once Steam answered: the fetched item, or
-        /// what was showing before — an id Steam will not describe must not
-        /// close the details the user was reading.
+        /// The inspector's selection once Steam answered: the fetched item, or what was
+        /// showing before — an id Steam will not describe must not close open details.
         func settle(
             with item: WorkshopQueryItem?, in items: [WorkshopQueryItem]
         ) -> (selectedID: UInt64?, detached: WorkshopQueryItem?) {
@@ -837,9 +796,7 @@ enum BrowseSelection {
     }
 }
 
-/// Placeholder for a `BrowseCard` while browse results load: one square thumbnail
-/// with the title laid over its bottom edge. Same footprint as the real card, so
-/// results arriving do not reflow the grid.
+/// Same footprint as the real card, so results arriving do not reflow the grid.
 private struct WorkshopSkeletonCard: View {
     var body: some View {
         WorkshopShimmer()
@@ -860,7 +817,6 @@ private struct WorkshopSkeletonCard: View {
     }
 }
 
-/// Pulsing skeleton fill.
 private struct WorkshopShimmer: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pulsed = false

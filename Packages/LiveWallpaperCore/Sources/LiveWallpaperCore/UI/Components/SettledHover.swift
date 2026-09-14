@@ -1,6 +1,5 @@
 import SwiftUI
 
-/// Delay hover-in to avoid activating cards passed during scrolling; leave immediately.
 /// This owns hover debounce, so thumbnail playback must not add another delay.
 public extension View {
     func settledHover(

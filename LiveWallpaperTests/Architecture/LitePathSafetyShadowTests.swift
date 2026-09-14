@@ -1,17 +1,8 @@
 import Foundation
 import Testing
 
-/// `AmbientWallpaperSessionBuilder` carries a `#if LITE_BUILD` copy of
-/// `WPEPathSafety` because the Lite SKU does not link `LiveWallpaperProWPE`.
-/// The two copies are byte-identical today, but nothing enforced that — and the
-/// app test target always compiles with `LITE_BUILD` *undefined*, so the shadow
-/// is never type-checked, let alone exercised, by any other test in this suite.
-/// A path-containment primitive that silently drifts in the SKU nobody tests is
-/// the failure this guards against.
-///
-/// If Lite ever needs one of the functions this shadow omits — notably the
-/// `isStrictSafeRelativePath` / `strictResourceURL` pair — copy it verbatim
-/// rather than writing a second version.
+/// If Lite needs a function this shadow omits, copy it verbatim rather than
+/// writing a second version.
 @Suite("Lite WPEPathSafety shadow")
 struct LitePathSafetyShadowTests {
 
@@ -24,7 +15,6 @@ struct LitePathSafetyShadowTests {
         "normalizedPath",
     ]
 
-    /// Extracts one `func <name>` declaration and its body by brace balance.
     private func body(of function: String, in source: String) throws -> String {
         let signature = try #require(
             source.range(of: "func \(function)("),

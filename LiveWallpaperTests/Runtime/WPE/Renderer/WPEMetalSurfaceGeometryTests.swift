@@ -8,9 +8,6 @@ import MetalKit
 import Testing
 @testable import LiveWallpaper
 
-/// Surface-geometry plumbing for the MetalFX plan. Every other plan input is a
-/// value the loader already holds; the drawable size is the one that arrives
-/// asynchronously from window layout, which is why it needs its own guard.
 @Suite("WPE surface geometry feeding the upscale plan", .serialized)
 @MainActor
 struct WPEMetalSurfaceGeometryTests {
@@ -43,10 +40,6 @@ struct WPEMetalSurfaceGeometryTests {
         return (renderer, root)
     }
 
-    /// The production fact the whole drawable-propagation bug turned on, locked
-    /// as an assertion instead of a comment: an MTKView knows its backing size
-    /// from construction, while its CAMetalLayer reports 0x0 until something
-    /// calls `nextDrawable()`. Four rounds of fixes assumed the opposite.
     @Test("MTKView knows its backing size at construction; its layer does not")
     func layerReportsZeroUntilFirstDrawable() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
@@ -55,11 +48,9 @@ struct WPEMetalSurfaceGeometryTests {
         )
         let layer = try #require(view.layer as? CAMetalLayer)
 
-        // Never entered a window, never laid out, never drawn.
         #expect(layer.drawableSize == .zero, "layer reported a size before nextDrawable()")
         #expect(view.drawableSize.width > 0, "MTKView should size itself from its frame")
         #expect(view.convertToBacking(view.bounds).size.width > 0)
-        // Both view-side sources agree; only the layer is the odd one out.
         #expect(view.drawableSize == view.convertToBacking(view.bounds).size)
     }
 
@@ -68,14 +59,9 @@ struct WPEMetalSurfaceGeometryTests {
         let (renderer, root) = try Self.makeRenderer()
         defer { try? FileManager.default.removeItem(at: root) }
 
-        // Real-machine regression: `WPERenderSurface.attach` pushes the layer's
-        // size the moment the client is wired — before the view is in a window,
-        // so it is 0x0. Accepting it wiped the builder's seed and left the plan
-        // permanently on `drawableUnknown`, with the whole feature inert.
         renderer.updateSurfaceGeometry(drawableSize: .zero)
         #expect(renderer.surfaceDrawableSize == CGSize(width: 3840, height: 2160))
 
-        // A real layout report still lands.
         renderer.updateSurfaceGeometry(drawableSize: CGSize(width: 2560, height: 1440))
         #expect(renderer.surfaceDrawableSize == CGSize(width: 2560, height: 1440))
     }
@@ -85,11 +71,6 @@ struct WPEMetalSurfaceGeometryTests {
         let (renderer, root) = try Self.makeRenderer()
         defer { try? FileManager.default.removeItem(at: root) }
 
-        // A present-time decline is written by `encodePresent` on the executor.
-        // While the renderer kept a second copy, that decline never reached the
-        // re-planning path, which then read a stale `.active` and un-stuck it —
-        // re-activating a scene the scaler had already refused, once per
-        // geometry change, invalidating the static layer cache each time.
         let active = WPEMetalUpscalePlan.make(
             worldCanvas: CGSize(width: 3840, height: 2160),
             drawableSize: CGSize(width: 3840, height: 2160),
@@ -113,8 +94,6 @@ struct WPEMetalSurfaceGeometryTests {
         let surface = WPERenderSurface(
             frame: CGRect(x: 0, y: 0, width: 1920, height: 1080), device: device
         )
-        // What the builder now seeds the renderer with. The layer beside it is
-        // still zero — reading THAT is what kept the feature inert.
         #expect(surface.backingDrawableSize.width > 0)
         #expect(surface.backingDrawableSize.height > 0)
         #expect(surface.metalLayer.drawableSize == .zero)
@@ -128,9 +107,6 @@ struct WPEMetalSurfaceGeometryTests {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
-        // The convenience initializer builds its own surface. It read the layer
-        // too — a second copy of the same bug, which would have left every scene
-        // built through it (including most renderer tests) unable to plan.
         let renderer = try WPEMetalSceneRenderer(
             descriptor: SceneDescriptor(
                 workshopID: "surface-geometry-convenience",
@@ -156,14 +132,9 @@ struct WPEMetalSurfaceGeometryTests {
         let key = WPEMetalFXSpatialUpscaler.renderScaleDefaultsKey
         defer { scoped.removeObject(forKey: key) }
 
-        // Scaling off: the layer must stay `framebufferOnly`, which is what lets
-        // macOS keep the drawable on its display-only path. Measured cost of
-        // giving that up is part of why MetalFX loses on light scenes.
         scoped.removeObject(forKey: key)
         #expect(WPERenderSurface(frame: frame, device: device).metalLayer.framebufferOnly)
 
-        // Scaling on: the scaler writes the drawable directly, which framebufferOnly
-        // forbids — so it must be relaxed, and only then.
         scoped.set(0.5, forKey: key)
         let expected = !WPEMetalFXSpatialUpscaler.deviceSupportsSpatialScaler
         #expect(WPERenderSurface(frame: frame, device: device).metalLayer.framebufferOnly == expected)
@@ -177,9 +148,6 @@ struct WPEMetalSurfaceGeometryTests {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
-        // The MetalFX plan reads the fit mode during `load()`. While it defaulted
-        // to `.cover` and the real value arrived on an async config submit, a
-        // `.center` screen could plan (and cap textures) as if it were Fill.
         let renderer = try WPEMetalSceneRenderer(
             descriptor: SceneDescriptor(
                 workshopID: "fit-mode-fixture",
@@ -220,25 +188,17 @@ struct WPEMetalSurfaceGeometryTests {
         let device = try #require(MTLCreateSystemDefaultDevice())
         renderer.executor.outputTexturePool = [try #require(device.makeTexture(descriptor: descriptor))]
 
-        // Turning the setting off changes the scale, which must purge them.
-        // Asserting only that `releaseRenderScaleDependentResources` works leaves
-        // the wiring untested — a caller that clears just the composite cache
-        // would still pass.
+        // Drive the purge through the real path: asserting
+        // `releaseRenderScaleDependentResources` directly would pass with broken wiring.
         scoped.set(1.0, forKey: key)
         renderer.refreshUpscalePlan(reason: "test")
         #expect(renderer.upscalePlan.renderPixelScale == 1.0)
         #expect(renderer.executor.outputTexturePool.isEmpty)
     }
 
-    /// The sibling of `scaleChangePurgesThroughTheRealPath` on the OTHER
-    /// transition. A present-time decline demotes the plan from inside
-    /// `encodePresent`, and `refreshUpscalePlan` structurally cannot clean up
-    /// after it: `demotedToNative()` already wrote scale 1.0 and `adopting`
-    /// keeps `.declinedAtPresent` sticky, so the next refresh sees no change and
-    /// returns before its purge. Everything pixel-keyed would stay stranded, and
-    /// `previousFrameHistory` — validated against the unchanged WORLD size —
-    /// would keep serving smaller textures to `.previous` reads, where
-    /// `copyTexture` sizes the blit from the destination.
+    /// `refreshUpscalePlan` structurally cannot clean up after a present-time
+    /// demote: scale is already 1.0 and `.declinedAtPresent` is sticky, so the
+    /// refresh sees no change and returns before its purge.
     @Test("A present-time demote purges and forces a redraw, like a scale change")
     func presentDemotePurgesThroughTheRealPath() throws {
         let (renderer, root) = try Self.makeRenderer()
@@ -275,8 +235,6 @@ struct WPEMetalSurfaceGeometryTests {
         renderer.adoptPresentSideDemotion()
         #expect(renderer.executor.outputTexturePool.isEmpty)
         #expect(renderer.executor.previousFrameHistory == nil)
-        // A static scene re-presents its cached output forever otherwise — the
-        // permanently bilinear-stretched frame the demote exists to avoid.
         #expect(renderer.pendingForcedRerender)
 
         // One-shot: a later frame must not purge again.
@@ -292,8 +250,6 @@ struct WPEMetalSurfaceGeometryTests {
         let (renderer, root) = try Self.makeRenderer()
         defer { try? FileManager.default.removeItem(at: root) }
 
-        // The plan the loader would decide with the size the builder seeded —
-        // as opposed to the 0x0 the layer reports before layout.
         let plan = WPEMetalUpscalePlan.make(
             worldCanvas: CGSize(width: 3840, height: 2160),
             drawableSize: renderer.surfaceDrawableSize,

@@ -18,10 +18,7 @@ struct LyricLine: Equatable, Sendable {
 // MARK: - Parsing and lookup (pure)
 
 enum NowPlayingLyrics {
-    /// LRC → timed lines. Never throws or traps: anything unparseable is skipped, so a malformed entry
-    /// yields fewer lines, not a crash. Handles what real catalogue rows contain: BOM, CRLF,
-    /// `[mm:ss.xx]`/`[mm:ss.xxx]`, multiple time tags per line (expanded to one line each), `[ar:]`-style
-    /// metadata, applied `[offset:]`, blank lines, `<mm:ss.xx>` word tags, and out-of-order timestamps.
+    /// LRC → timed lines. Unparseable rows are skipped. Applies `[offset:]` after the pass.
     nonisolated static func parseLRC(_ text: String) -> [LyricLine] {
         var body = text
         if body.hasPrefix("\u{FEFF}") { body.removeFirst() }
@@ -88,7 +85,6 @@ enum NowPlayingLyrics {
     }
 
     /// Index of the line being sung at `time`, or nil before the first line.
-    /// Binary search: the view asks on every tick, and a long lyric is ~100 rows.
     nonisolated static func activeIndex(lines: [LyricLine], at time: Double) -> Int? {
         guard let first = lines.first, time >= first.time else { return nil }
         var low = 0
@@ -188,14 +184,9 @@ enum NowPlayingLyrics {
 
 // MARK: - Fetcher
 
-/// Resolves synced lyrics from LRCLIB, under the same network discipline as `NowPlayingArtworkFetcher`:
-/// positive LRU cache, in-flight merging per track key, one retry, and a TTL'd negative cache. LRCLIB
-/// is keyless and needs no OAuth; it asks callers to identify themselves in `User-Agent`, which every
-/// request here carries.
 actor NowPlayingLyricsFetcher {
     typealias Transport = @Sendable (URLRequest) async throws -> (Data, URLResponse)
 
-    /// One process-wide instance so the caches survive pipeline rebuilds.
     static let shared = NowPlayingLyricsFetcher()
 
     /// Text, not images: a long LRC is a few KB, so anything near this is junk.
@@ -222,9 +213,7 @@ actor NowPlayingLyricsFetcher {
 
     // MARK: URLs and scoring (pure, test-visible)
 
-    /// Exact-match endpoint. A duration that disagrees with LRCLIB's record
-    /// 404s it, so the parameter is only sent when the player reported one;
-    /// album is likewise optional (both were probed live on 2026-08-20).
+    /// Exact-match endpoint. Duration is only sent when the player reported one (a disagreeing duration 404s).
     static func getURL(artist: String?, title: String, album: String?, duration: Double?) -> URL? {
         guard !title.isEmpty else { return nil }
         var components = URLComponents(string: "https://lrclib.net/api/get")
@@ -304,10 +293,6 @@ actor NowPlayingLyricsFetcher {
 
     // MARK: Cache and fetch
 
-    /// Resolves lyrics for the state, merging concurrent calls per track key.
-    /// nil means "no lyrics for this track", cached either way. A lookup that
-    /// `cancelInFlight` retired throws `CancellationError` instead — to every
-    /// caller merged onto it, so none of them can mistake it for a miss.
     func lyrics(for state: MonitorNowPlayingState) async throws -> [LyricLine]? {
         guard let key = NowPlayingArtworkFetcher.trackKey(for: state) else { return nil }
         if let hit = memo.cached(key) {
@@ -407,17 +392,11 @@ actor NowPlayingLyricsFetcher {
 
 // MARK: - Store (main-actor cache the view can ask on every track change)
 
-/// Lyrics stay out of `MonitorSnapshot` — the snapshot is a wire type shared by
-/// every widget, and only this layer wants a whole song's text. The view asks
-/// here with `.task(id: trackKey)` instead.
 @MainActor
 final class NowPlayingLyricsStore {
     static let shared = NowPlayingLyricsStore()
 
     private let load: @Sendable (MonitorNowPlayingState) async throws -> [LyricLine]?
-    /// Retires the fetcher's merged work for every other track before starting
-    /// a new one, so skipping through a playlist does not leave one live
-    /// request per skipped track.
     private let cancelOthers: @Sendable (String?) async -> Void
     private let now: @Sendable () -> Date
     /// Positive results only — a permanent empty entry here would outlive and
@@ -430,7 +409,6 @@ final class NowPlayingLyricsStore {
     /// two layers agree on when a retry is due.
     private var missExpiry: [String: Date] = [:]
     private let capacity = 8
-    /// Test seam: how many times the loader actually ran.
     private(set) var loadCount = 0
 
     init(

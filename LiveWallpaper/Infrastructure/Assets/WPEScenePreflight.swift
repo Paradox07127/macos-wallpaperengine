@@ -3,8 +3,6 @@ import Foundation
 import LiveWallpaperCore
 import LiveWallpaperProWPE
 
-/// Pre-render capability gate for a single scene project. The tier reflects what the SCENE asks for, not what the renderer currently supports.
-/// The dispatch layer downgrades `nativePlayable` to `degradedPlayable` when a feature hasn't shipped yet, so scenes never need re-classifying as features land.
 enum WPEScenePreflight {
     static func classify(
         document: WPESceneDocument,
@@ -23,9 +21,7 @@ enum WPEScenePreflight {
             flags.insert(.customShaderSource)
         }
 
-        // Capability derives from typed parser output, never localized/logging
-        // prose. Diagnostics are presentation evidence and may change wording
-        // independently of the document contract.
+        // Capability derives from typed parser output, never localized/logging prose.
         if !document.particleObjects.isEmpty {
             flags.insert(.particleObject)
         }
@@ -85,9 +81,6 @@ struct WPEScenePreflightResult: Equatable, Sendable {
     let shaderImplementationInventory: [WPEShaderImplementationInventoryEntry]
 }
 
-/// Why authored shader/effect metadata has no runtime consumer. Kept separate
-/// from execution classification so a pass may still render while one preserved
-/// contract item (currently `usertextures`) is metadata-only.
 enum WPEShaderConsumerDisposition: String, Equatable, Sendable {
     case noRuntimeTextureProviderConsumer = "no-runtime-texture-provider-consumer"
 }
@@ -111,10 +104,7 @@ struct WPEShaderImplementationInventoryEntry: Equatable, Sendable {
 }
 
 enum WPEShaderImplementationInventory {
-    /// `$mediaThumbnail` and `$mediaPreviousThumbnail` are backed by the scene's
-    /// demand-gated media texture store. Keep only declarations with no runtime
-    /// consumer in the unsupported-metadata inventory; otherwise a working
-    /// builtin image pass is reported as unsupported during preflight.
+    /// `$mediaThumbnail` and `$mediaPreviousThumbnail` have a runtime consumer; only declarations without one go in the unsupported-metadata inventory.
     static func containsUnsupportedUserTexture(
         _ bindings: [WPESceneUserTextureBinding]
     ) -> Bool {
@@ -159,9 +149,7 @@ enum WPEShaderImplementationInventory {
                         authoredOverrideID: identity.authoredOverrideID,
                         renderPassID: nil,
                         authoredEffectPath: identity.authoredEffectPath,
-                        // The scene document names the effect asset, not the
-                        // material shader nested inside it. Graph resolution
-                        // fills this without guessing from filenames.
+                        // The scene document names the effect asset, not the nested material shader; graph resolution fills this.
                         authoredShaderPath: nil,
                         classification: .unsupportedMetadataOnly,
                         consumerDisposition: .noRuntimeTextureProviderConsumer,

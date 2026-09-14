@@ -4,9 +4,6 @@ import LiveWallpaperCore
 import SwiftUI
 import Testing
 
-/// The two surfaces (`FallbackCard`, `SceneDetailView`) had drifted into two
-/// severity tables, two copies of the same sentence and two different action
-/// sets for the same `FallbackReason`. These lock the single table.
 @Suite("Scene failure presentation")
 struct SceneFailurePresentationTests {
     /// Every case, so a newly added reason cannot ship without a mapping.
@@ -63,8 +60,6 @@ struct SceneFailurePresentationTests {
         }
     }
 
-    /// The bug this whole file exists for: the same reason used to produce a
-    /// different title, colour and action set depending on which view asked.
     @Test("Both surfaces read the same presentation for the same reason")
     func presentationIsSurfaceIndependent() {
         let origin = WPEOrigin(

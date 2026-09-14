@@ -1,7 +1,5 @@
 import LiveWallpaperCore
 
-/// Defines the expected ownership boundaries for general-settings state.
-/// Moving a field between domains requires an explicit fixture review.
 enum OwnershipFixture {
     enum Domain: String, CaseIterable {
         case behavior

@@ -1,8 +1,7 @@
 import Foundation
 
-/// A favourite wallpaper — content only. Applying one never touches the target
-/// display's settings; `playbackSettings` is kept for older files and never read
-/// (`.notes/plan/screen-schemes.md` D1).
+/// Applying one never touches the target display's settings; `playbackSettings` is
+/// kept for older files and never read (see `.notes/plan/screen-schemes.md`).
 public struct WallpaperBookmark: Identifiable, Codable, Equatable, Sendable {
     public let id: UUID
     public var label: String
@@ -12,10 +11,8 @@ public struct WallpaperBookmark: Identifiable, Codable, Equatable, Sendable {
     public var playbackSettings: BookmarkPlaybackSettings?
     /// Workshop provenance for scene dependency / source-folder restore on apply.
     public var wpeOrigin: WPEOrigin?
-    /// File name of the still captured off the display when this was saved, in
-    /// the app's cover directory. Nil for entries saved before covers existed,
-    /// and for saves where the capture did not come back in time — both fall
-    /// back to the computed thumbnail.
+    /// File name of the still captured when this was saved, in the app's cover directory.
+    /// Nil for older entries and for captures that did not come back in time.
     public var coverFileName: String?
 
     public init(
@@ -40,7 +37,6 @@ public struct WallpaperBookmark: Identifiable, Codable, Equatable, Sendable {
 
     public var wallpaperType: WallpaperType { content.wallpaperType }
 
-    /// CAS local-HTML grant (id + original Data). Advances matching `wpeOrigin` too.
     public func replacingHTMLBookmark(
         id bookmarkID: UUID,
         matching original: Data,
@@ -65,7 +61,6 @@ public struct WallpaperBookmark: Identifiable, Codable, Equatable, Sendable {
         return copy
     }
 
-    /// CAS WPE source-folder grant; advances matching HTML content copies.
     public func replacingWPEOriginBookmark(
         workshopID: String,
         matching original: Data,

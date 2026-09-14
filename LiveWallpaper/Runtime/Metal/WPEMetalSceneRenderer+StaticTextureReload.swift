@@ -3,10 +3,6 @@
     import LiveWallpaperCore
 
     extension WPEMetalSceneRenderer {
-        /// Reload an evicted static texture off-actor, then republish on the display
-        /// render actor under a `loadGeneration` guard so a reload from a prior scene
-        /// is ignored. Triggers a redraw so the placeholder is replaced once resident.
-        /// Failed attempts back off per path (`WPEStaticTextureReloadThrottle`).
         func scheduleStaticTextureReload(for path: String) {
             guard didLoad,
                   let record = staticTextureCacheRecords[path],
@@ -18,9 +14,6 @@
             let loader = textureLoader
             let threshold = Self.lazyAnimationRawByteThreshold
             let owner = staticTextureReloadTaskOwner
-            // Submit is an async actor method now, so spawn to reach it. The
-            // operation captures only Sendable values (path/record/resolver/loader/
-            // threshold + the actor) and hops to the render actor to run the reload.
             Task { [owner, actor] in
                 _ = await owner.submit(path: path, generation: generation) { ticket in
                     await actor.performStaticReload(
@@ -35,9 +28,6 @@
             }
         }
 
-        /// Body of one static-texture reload, run on the render actor. Resolves +
-        /// uploads off-actor, then republishes here under a `loadGeneration` +
-        /// `canPublish` guard so a reload from a prior scene is ignored.
         func performStaticTextureReload(
             path: String,
             record: StaticTextureCacheRecord,

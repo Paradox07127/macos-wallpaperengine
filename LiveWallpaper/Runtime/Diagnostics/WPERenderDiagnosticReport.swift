@@ -3,8 +3,6 @@ import AppKit
 import LiveWallpaperCore
 import Metal
 
-/// Builds the renderer report shown by the scene inspector without making the
-/// SwiftUI view own renderer diagnostics, system inventory, or defaults keys.
 @MainActor
 enum WPERenderDiagnosticReport {
     static func make(
@@ -130,10 +128,6 @@ enum WPERenderDiagnosticReport {
     }
 }
 
-/// System and renderer-flag inventory appended to diagnostic reports.
-///
-/// Keeping this outside the View makes the defaults registry reusable and
-/// keeps Metal/UserDefaults discovery out of SwiftUI compilation.
 @MainActor
 enum WPERenderDiagnosticEnvironment {
     nonisolated static let renderFlagKeys = [

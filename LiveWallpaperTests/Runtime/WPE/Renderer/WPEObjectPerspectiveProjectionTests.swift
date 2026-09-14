@@ -6,24 +6,6 @@ import Metal
 import simd
 import Testing
 
-/// WPE's perspective camera inside an otherwise orthographic scene.
-///
-/// A 2D scene whose `general.perspectiveoverridefov` is non-zero still publishes a
-/// PERSPECTIVE `g_ViewProjectionMatrix`; objects carrying `perspective: true` are projected
-/// through it while every image layer keeps the ortho canvas matrix. 3437487219's Earth and
-/// cloud models were being projected with the ortho matrix instead, which put a
-/// 6500-unit-radius sphere in the wrong half of the frame and upside down.
-///
-/// Every expected number below is read off a Windows RenderDoc capture, not derived from
-/// this renderer. The four captures span two canvases and three authored FOVs, which is what
-/// separates the general rule from a curve fitted to one scene:
-///
-/// | scene      | canvas    | perspectiveoverridefov | g_ViewProjectionMatrix [1][1] | [3][3]    |
-/// |------------|-----------|------------------------|-------------------------------|-----------|
-/// | 3437487219 | 7680x4320 | 21                     | 5.395517                      | 11654.317 |
-/// | 3448877775 | 3840x2160 | 95                     | 0.916331                      |   989.638 |
-/// | 3554161528 | 3840x2160 | 90                     | 1.000000                      |  1080.000 |
-/// | 2370927443 | 3840x2160 | 95                     | 0.916331                      |   989.638 |
 @Suite("WPE per-object perspective projection")
 struct WPEObjectPerspectiveProjectionTests {
     /// Column-major, matching `WPEMetalCameraUniforms.viewProjectionMatrix`.
@@ -37,8 +19,7 @@ struct WPEObjectPerspectiveProjectionTests {
         )
     }
 
-    /// Verbatim from `.notes/oracle-runs/3437487219-97ad29d672164503b44c2c631a6001c3/windows.json`,
-    /// ordinal 5 (`models/Earth/Earth.mdl`), vertex `g_ViewProjectionMatrix`, in row order.
+    /// Capture values in row order (source under `.notes/oracle-runs/`).
     @Test("The 3437487219 model view-projection is reproduced element for element")
     func matchesEarthCapture() {
         let m = Self.matrix(canvas: CGSize(width: 7680, height: 4320), fov: 21)
@@ -62,9 +43,8 @@ struct WPEObjectPerspectiveProjectionTests {
         }
     }
 
-    /// The three other captures. Only the values a model-view-projection cannot hide are
-    /// asserted: the two axis scales, the depth row, and the eye distance. (Those captures
-    /// expose `g_ModelViewProjectionMatrix`, whose translation carries the model transform.)
+    /// Only the terms a model-view-projection cannot hide: these captures expose
+    /// `g_ModelViewProjectionMatrix`, whose translation carries the model transform.
     @Test("The scale, depth and eye-distance terms match the other three captures")
     func matchesRemainingCaptures() {
         let cases: [(scene: String, canvas: CGSize, fov: Double, x: Double, y: Double, distance: Double)] = [
@@ -77,20 +57,17 @@ struct WPEObjectPerspectiveProjectionTests {
             #expect(abs(Self.element(m, row: 0, column: 0) - testCase.x) < 1e-5, "\(testCase.scene) x scale")
             #expect(abs(Self.element(m, row: 1, column: 1) - testCase.y) < 1e-5, "\(testCase.scene) y scale")
             #expect(abs(Self.element(m, row: 3, column: 3) - testCase.distance) < 1e-3, "\(testCase.scene) eye distance")
-            // The depth row is identical in all four captures despite eye distances from
-            // 990 to 11654 — near/far are engine constants, not the scene's nearz/farz.
             #expect(abs(Self.element(m, row: 2, column: 2) - 0.00033344447729177773) < 1e-9, "\(testCase.scene) depth scale")
             // The projection's own bias, recovered from P·V by adding back the eye
-            // translation: identical in all four captures.
+            // translation.
             let depthScale = Self.element(m, row: 2, column: 2)
             let projectionBias = Self.element(m, row: 2, column: 3) + depthScale * testCase.distance
             #expect(abs(projectionBias - 5.0016669233304185) < 1e-4, "\(testCase.scene) depth bias")
         }
     }
 
-    /// The scene's own `nearz`/`farz` (0.01 / 10000 in all four captures) are NOT what the
-    /// matrix uses. Using them would put the canvas plane behind the far plane and clip the
-    /// whole scene away, which is how the constants were found in the first place.
+    /// The scene's own `nearz`/`farz` are NOT what the matrix uses: using them would
+    /// put the canvas plane behind the far plane and clip the whole scene away.
     @Test("Near and far are engine constants, reversed-Z")
     func nearFarAreEngineConstants() {
         let m = Self.matrix(canvas: CGSize(width: 7680, height: 4320), fov: 21)
@@ -103,9 +80,6 @@ struct WPEObjectPerspectiveProjectionTests {
         #expect(abs(depthBias / depthScale - 15000.0) < 1.0, "far plane")
     }
 
-    /// The z = 0 plane is exactly framed: that is what fixes the eye distance once the FOV
-    /// is known, and it is why an ortho-authored canvas keeps its footprint under the
-    /// perspective camera.
     @Test("The canvas plane at z = 0 maps to the full viewport")
     func canvasPlaneFillsTheViewport() {
         let canvas = CGSize(width: 7680, height: 4320)
@@ -161,9 +135,6 @@ struct WPEObjectPerspectiveProjectionTests {
         #expect(uniforms.objectViewProjectionMatrix(objectID: "112") == uniforms.viewProjectionMatrix)
     }
 
-    /// The eye WPE feeds those draws is the canvas centre at z = 2000 — identical in all
-    /// four captures, and not the authored `camera.eye` (3437487219 authors
-    /// `-783.539 -454.321 0`).
     @Test("The perspective eye is the canvas centre at z = 2000")
     func perspectiveEyeIsCanvasCentre() {
         let uniforms = WPEMetalCameraUniforms(
@@ -184,21 +155,13 @@ struct WPEObjectPerspectiveProjectionTests {
 
     // MARK: - Raster state
 
-    /// From RenderDoc on 3437487219: the two model passes declare `cullmode: "normal"` and
-    /// rasterize `cullMode: back`; every image layer in the same frame declares
-    /// `cullmode: "nocull"` and rasterizes `cullMode: none`.
-    ///
-    /// That evidence covers the SCENE-MODEL MESH path and nothing else, so the `normal`
-    /// mapping lives in a separate accessor used only there. Applying it library-wide put
-    /// back-face culling on paths with no capture behind them — measured on this machine's
-    /// 58-scene library, 37 material passes declare `normal` and 16 of them are 2D image
-    /// shaders (`genericimage4`/`genericimage2`) plus 2 particle shaders, all of which build
-    /// their own NDC and can carry a mirrored (`scale.x < 0`) transform that inverts winding.
+    /// Do not apply the `normal` → back-face mapping outside the scene-model mesh
+    /// path: 2D image and particle shaders build their own NDC, and a mirrored
+    /// (`scale.x < 0`) transform inverts their winding.
     @Test("cullmode normal culls only on the scene-model mesh path")
     func cullModeMapping() {
         #expect(WPEMetalPipelineCache.sceneModelCullMode(for: "normal") == .back)
         #expect(WPEMetalPipelineCache.cullMode(for: "normal") == MTLCullMode.none)
-        // An explicitly authored side is honoured on every path either way.
         for mapping in [WPEMetalPipelineCache.cullMode, WPEMetalPipelineCache.sceneModelCullMode] {
             #expect(mapping("back") == .back)
             #expect(mapping("front") == .front)
@@ -216,9 +179,9 @@ struct WPEObjectPerspectiveProjectionTests {
         #expect(uniforms.projectionFlipsWinding(objectID: "191"))
     }
 
-    /// A mirrored model transform inverts winding just as a Y-negating projection does, and
-    /// the two compose. Without the model term a `scale.x = -1` object under `cullmode:
-    /// "normal"` has every front face culled and renders as nothing.
+    /// A mirrored model transform inverts winding like a Y-negating projection, and
+    /// the two compose; without the model term a `scale.x = -1` object under
+    /// `cullmode: "normal"` would render as nothing.
     @Test("Front-facing winding also follows the model transform's handedness")
     func windingFollowsModelTransform() {
         let uniforms = Self.orthoSceneWithPerspectiveObject

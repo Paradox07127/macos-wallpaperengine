@@ -1,6 +1,5 @@
 import Foundation
 
-/// Per-app pause rule (bundle ID). Event-driven via NSWorkspace — no polling.
 public struct ApplicationPerformanceRule: Codable, Equatable, Sendable, Identifiable {
     public enum Trigger: String, Codable, Sendable {
         case frontmost

@@ -5,10 +5,7 @@ import LiveWallpaperProWPE
 import Metal
 import os
 
-/// On-demand multi-frame `.tex`: LZ4 in CPU RAM, crop + upload to rotating MTLTexture (BC stays compressed).
-/// Not `@MainActor`; prefetch writes Sendable lock-boxes harvested on the render actor.
 final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
-    /// Off-thread prefetch result; harvested on the render actor.
     private enum PrefetchOutcome: Sendable {
         case pending
         case done(Data?)
@@ -37,7 +34,6 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
     private let maximumTextureDimension2D: Int
     private let frameStartTimes: [TimeInterval]
     private let totalDuration: TimeInterval
-    /// Off-main LZ4 prefetch (`.userInitiated`) so loop-seam decode stays off the render thread.
     private let prefetchQueue = DispatchQueue(
         label: "com.livewallpaper.wpe.lazy-tex-prefetch",
         qos: .userInitiated
@@ -56,7 +52,6 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
         repeating: WorkingTextureSlot(),
         count: WPEMetalRenderExecutor.maxFramesInFlight
     )
-    /// Process-wide decoded-frame byte budget (shared across all lazy sources).
     private let frameByteCache: WPEAnimatedFrameByteCache
     private let cacheToken: WPEAnimatedFrameByteCache.SourceToken
     /// Reusable sub-rect crop target per frame slot — steady state allocates
@@ -65,7 +60,6 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
         repeating: Data(),
         count: WPEMetalRenderExecutor.maxFramesInFlight
     )
-    /// In-flight prefetch jobs (dedup + bounded backlog; drop when leaving look-ahead).
     private var prefetchJobs: [Int: (item: DispatchWorkItem, box: OSAllocatedUnfairLock<PrefetchOutcome>)] = [:]
     /// Failed image IDs — never re-scheduled (corrupt frame thrash guard).
     private var prefetchFailedImageIDs: Set<Int> = []
@@ -73,7 +67,6 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
     private var prefetchWantedImageIDs: Set<Int> = []
     private var lastScheduledFrameIndex = -1
     private var lastErrorDescription: String?
-    /// Prefetch completion pump → harvest immediately (renderer installs actor hop).
     var onPrefetchComplete: (@Sendable () -> Void)?
 
 #if DEBUG
@@ -148,11 +141,7 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
     deinit {
         // Return the process-cache lease; entries must not outlive the source.
         frameByteCache.unregisterSource(cacheToken)
-        // In-flight prefetch items capture only Sendable values, never `self`, so dropping the
-        // dictionary doesn't stop them — a queued LZ4 inflate still runs for a source nobody can
-        // read from. Reached when a caller takes one frame and lets the source go: the particle
-        // loader (for a lazy `.tex`, downcasting to the eager type, which this isn't) retains
-        // nothing past `texture(at: 0)`, whose `defer` just scheduled a look-ahead.
+        // In-flight prefetch captures only Sendable values, never self; dropping the dictionary does not stop a queued LZ4 inflate.
         for job in prefetchJobs.values { job.item.cancel() }
     }
 
@@ -187,12 +176,7 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
                 )
             }
             workingTextureSlots[frameSlot].lastUploadedFrameIndex = index
-            // This source binds a frame-sized crop, not the authored atlas.
-            // Applying the atlas-space descriptor again would double-crop.
-            // Identity/zero is the exact transform for this axis-aligned bound
-            // representation, and is produced only when the TEXS frame carried
-            // a descriptor. Cross-axis TEXS is routed to the eager atlas source
-            // before construction (`shouldUseLazyAnimationRepresentation`).
+            // This source binds a frame-sized crop; applying the atlas-space descriptor again would double-crop, so use identity when the TEXS frame carried a descriptor.
             workingTextureSlots[frameSlot].samplingDescriptor = frame.samplingDescriptor == nil
                 ? nil
                 : .identity
@@ -236,10 +220,6 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
         }
     }
 
-    /// Warm release: upload targets, crop scratch and in-flight prefetch go; the
-    /// decoded-byte cache stays. App-rule and battery suspends are designed to
-    /// resume fast (ScreenManager+Observers), and absence-like ones reach
-    /// `invalidate()` through the session's dwell countdown instead.
     private func releaseWorkingSlots() {
         workingTextureSlots = Array(
             repeating: WorkingTextureSlot(),
@@ -277,7 +257,6 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
             throw Failure.missingMipmap(imageID)
         }
 
-        // Prefetch miss: cancel in-flight job and decode synchronously (rare).
         cancelPrefetch(for: imageID)
         let decoded: Data
         do {
@@ -297,7 +276,6 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
         return decoded
     }
 
-    /// Prefetch next distinct images (wrap-aware); cancel jobs that left the window.
     private func scheduleDecodedImagePrefetch(after frameIndex: Int) {
         // Harvest completed decodes every tick (even if frame index unchanged).
         harvestCompletedPrefetches()
@@ -336,7 +314,7 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
 #endif
                 let decoded = try? Self.decodedBytes(from: mipmap)
                 box.withLock { $0 = .done(decoded) }
-                // Harvest now via owner hop (pre-3c contract tests lock).
+                // Harvest now via owner hop (contract tests lock).
                 pump?()
             }
             prefetchJobs[imageID] = (item, box)
@@ -344,7 +322,6 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
         }
     }
 
-    /// Fold completed prefetches into cache; drop stale/failed results.
     func harvestCompletedPrefetches() {
         guard !prefetchJobs.isEmpty else { return }
         for (imageID, job) in prefetchJobs {
@@ -409,9 +386,7 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
         let bytesPerRow: Int
     }
 
-    /// Crop sub-rect (row copy or 4×4 BC blocks). Non-block-aligned BC rects throw.
-    /// A frame covering the whole image uploads the decoded buffer directly —
-    /// no second full-frame copy (P1.4); sub-rects reuse a per-slot scratch.
+    /// Crop sub-rect (row copy or 4×4 BC blocks). Non-block-aligned BC rects throw. A full-image frame uploads the decoded buffer directly.
     private func crop(image: Data, frame: WPETexStreamingFrame, frameSlot: Int) throws -> Cropped {
         guard compressedImages.indices.contains(frame.imageID),
               let mipmap = compressedImages[frame.imageID].payloads.first else {

@@ -8,7 +8,6 @@ import LiveWallpaperProWPE
 #endif
 
 extension ScreenManager {
-    /// Replaces the primary video while preserving per-screen settings.
     func setVideo(url: URL, bookmarkData: Data, packageEntryName: String? = nil, for screen: Screen) {
         guard !isTerminating else { return }
         beginExplicitWallpaperSelection(for: screen)
@@ -78,7 +77,6 @@ extension ScreenManager {
         wallpaperSessionSummaryCache.summary(for: screen.id, fallback: effectiveSummary(for: screen))
     }
 
-    /// Per-screen summary that accounts for the master render gate.
     private func effectiveSummary(for screen: Screen) -> WallpaperSessionSummary {
         if screen.runtimeSession != nil {
             return screen.wallpaperSessionSummary
@@ -94,7 +92,6 @@ extension ScreenManager {
         return screen.wallpaperSessionSummary
     }
 
-    /// The wallpaper type a screen would render from its persisted configuration, or `nil` when nothing valid is assigned.
     private func persistedWallpaperType(for screen: Screen) -> WallpaperType? {
         guard let config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint),
               WallpaperSessionDefinition(configuration: config) != nil else { return nil }
@@ -180,9 +177,7 @@ extension ScreenManager {
         return definition.displayName(using: { bookmarkDisplayName(for: $0) })
     }
 
-    /// Author-supplied Workshop title for this screen's scene, sanitized for a
-    /// log line or a bug report. Separate from `wallpaperDisplayName`, whose
-    /// scene case only ever yields `"Scene <id>"`.
+    /// Author-supplied Workshop title for this screen's scene, sanitized for a log line or a bug report. Separate from wallpaperDisplayName, whose scene case only ever yields "Scene <id>".
     func wallpaperOriginTitle(for screen: Screen) -> String? {
         guard let configuration = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint),
               let title = configuration.wpeOrigin?.title, !title.isEmpty else { return nil }
@@ -212,7 +207,6 @@ extension ScreenManager {
         persistence.primeDisplayNames(from: configuration)
     }
 
-    /// Builds the next session-state snapshot and commits it iff something actually changed.
     func commitWallpaperSessionState(includePollingRefresh: Bool = false) {
         var next = wallpaperSessionState
         next.summaryCache = WallpaperSessionSummaryCache(
@@ -246,16 +240,11 @@ extension ScreenManager {
         }
     }
 
-    /// Whether a toggle should stop this one wallpaper. Intent alone is the wrong test: during a
-    /// safety suspend intent stays true while playback is stopped, so the button reads Play — an
-    /// intent-only toggle would run `pause()`, clearing intent and leaving the wallpaper dead after
-    /// the suspend lifts.
+    /// Intent alone is the wrong test: during a safety suspend intent stays true while playback is stopped, so an intent-only toggle would run pause(), clearing intent and leaving the wallpaper dead after the suspend lifts.
     static func shouldPauseOnToggle(_ playback: any WallpaperPlaybackControllable) -> Bool {
         playback.userIntendsToPlay && playback.isPlaying
     }
 
-    /// Direction for the all-screens toggle: pause only while something is
-    /// genuinely running.
     static func globalToggleWantsPause(_ controllers: [any WallpaperPlaybackControllable]) -> Bool {
         controllers.contains(where: shouldPauseOnToggle)
     }
@@ -271,9 +260,7 @@ extension ScreenManager {
         for screen in screens {
             guard let playback = screen.playbackController else { continue }
             if wantsPause {
-                // Skip the ones policy is already holding down: pausing them
-                // would clear an intent nothing restores, so they would stay
-                // dead after the suspend lifted.
+                // Skip the ones policy is already holding down: pausing them would clear an intent nothing restores, so they would stay dead after the suspend lifted.
                 if Self.shouldPauseOnToggle(playback) {
                     playback.pause()
                 }
@@ -285,12 +272,9 @@ extension ScreenManager {
         markWallpaperSessionStateChanged()
     }
 
-    /// Per-screen play/pause toggle.
     func togglePlayback(for screen: Screen) {
         guard let playback = screen.playbackController else { return }
-        // Matches the button's own label, which is drawn from actual playback:
-        // pause only when something is really running, otherwise play (a no-op
-        // that preserves intent while policy still holds the session down).
+        // Pause only when something is really running, otherwise play (a no-op that preserves intent while policy still holds the session down).
         if playback.userIntendsToPlay, playback.isPlaying {
             playback.pause()
         } else {
@@ -300,7 +284,6 @@ extension ScreenManager {
         refreshAppNapAssertion()
     }
 
-    /// Master render gate.
     func setWallpapersEnabled(_ enabled: Bool) {
         guard !isTerminating else { return }
         wallpapersGloballyEnabled = enabled
@@ -311,7 +294,6 @@ extension ScreenManager {
         markWallpaperSessionStateChanged()
     }
 
-    /// Apply the master gate to every screen.
     func applyGlobalRenderGate() {
         guard !isTerminating else { return }
         for screen in screens {
@@ -389,7 +371,6 @@ extension ScreenManager {
         restoreProposedWallpaperSession(for: screen, configuration: config)
     }
 
-    /// Restore previously-applied HTML source after the user toggles the type picker back to HTML.
     func switchToHTMLWallpaper(for screen: Screen) {
         guard !isTerminating else { return }
         beginExplicitWallpaperSelection(for: screen)

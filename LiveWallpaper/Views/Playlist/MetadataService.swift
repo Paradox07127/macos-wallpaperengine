@@ -2,7 +2,6 @@ import Foundation
 @preconcurrency import AVFoundation
 import LiveWallpaperCore
 
-/// Resolves bookmark → URL → AVURLAsset metadata (resolution + duration + folder).
 actor MetadataService {
     static let shared = MetadataService()
 

@@ -10,7 +10,6 @@ final class WallpaperAutomationCoordinator {
     /// one-minute clock when this is nil.
     private let tickStreamFactory: (() -> AsyncStream<Date>)?
     #if DEBUG
-    /// Test-only introspection; no production reader.
     private(set) var taskStartCountForTesting = 0
     #endif
 
@@ -19,7 +18,6 @@ final class WallpaperAutomationCoordinator {
     }
 
     #if DEBUG
-    // Test-only introspection; no production reader.
     var hasActiveTaskForTesting: Bool {
         automationTask != nil
     }
@@ -65,7 +63,6 @@ final class WallpaperAutomationCoordinator {
         #if DEBUG
         taskStartCountForTesting += 1
         #endif
-        // One 60s tick while demand exists; no timer when idle.
         automationTask = Task { @MainActor [weak self] in
             defer {
                 if let self, self.taskGeneration == generation {

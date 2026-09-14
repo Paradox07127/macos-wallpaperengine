@@ -2,12 +2,8 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// In-app Steam sign-in for SteamCMD downloads.
-/// The password field's contents go to the connector once per attempt and end at steamcmd's
-/// own prompt; the sheet keeps them only in `@State` for the attempt's lifetime (a Guard retry
-/// reuses them, so they aren't cleared between rounds), and the window's teardown drops them. Nothing here or downstream writes them anywhere.
 struct SteamSignInSheet: View {
-    /// Called with the signed-in account name so the caller can select it.
+    /// Called with the signed-in account name.
     let onSignedIn: (String) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -162,7 +158,6 @@ struct SteamSignInSheet: View {
             )
         case .failed:
             phase = .form
-            // Prefer Steam's rejection reason when present.
             errorText = result?.failureReason.map {
                 String(
                     localized: "Steam refused the sign-in: \($0)",

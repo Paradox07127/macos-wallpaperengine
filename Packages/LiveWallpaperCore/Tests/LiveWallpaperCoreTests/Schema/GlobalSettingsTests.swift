@@ -7,8 +7,6 @@ struct GlobalSettingsTests {
 
     @Test("Legacy JSON without globalShortcutsEnabled decodes to true")
     func legacyDecodeDefaultsToTrue() throws {
-        // Snapshot from before the flag existed: missing key must default to
-        // true so users upgrading from an older build keep their hot keys.
         let legacyJSON = """
         {
           "globalPauseOnBattery": false,
@@ -25,9 +23,6 @@ struct GlobalSettingsTests {
         #expect(decoded.globalShortcuts.isEmpty)
     }
 
-    /// Its *value* is no longer ignored — it now seeds `pauseInLowPowerMode`
-    /// (see `retiredOptOutCarriesForward`). What this guards is that the key
-    /// itself never round-trips back out.
     @Test("Legacy game-mode preference is not re-encoded on the next save")
     func legacyGameModePreferenceIsDiscarded() throws {
         let legacyJSON = """
@@ -102,21 +97,18 @@ struct GlobalSettingsTests {
         var settings = GlobalSettings()
         settings.recentWPEImports = [good, alsoGood]
 
-        // Encode, corrupt the FIRST history element into an object missing the
-        // required WPEOrigin fields, then re-encode and decode.
         let data = try JSONEncoder().encode(settings)
         var object = try #require(
             JSONSerialization.jsonObject(with: data) as? [String: Any]
         )
         var imports = try #require(object["recentWPEImports"] as? [[String: Any]])
         try #require(imports.count == 2)
-        imports[0] = ["origin": ["not": "a valid origin"]]  // malformed row
+        imports[0] = ["origin": ["not": "a valid origin"]]
         object["recentWPEImports"] = imports
         let corrupted = try JSONSerialization.data(withJSONObject: object)
 
         let decoded = try JSONDecoder().decode(GlobalSettings.self, from: corrupted)
 
-        // The good row survives; only the malformed one is dropped.
         #expect(decoded.recentWPEImports.map(\.origin.workshopID) == ["200"])
     }
 
@@ -147,13 +139,12 @@ struct GlobalSettingsTests {
         )
         var rules = try #require(object["applicationPerformanceRules"] as? [[String: Any]])
         try #require(rules.count == 2)
-        rules[1]["trigger"] = "pauseWhenIdle" // unknown trigger, not in ApplicationPerformanceRule.Trigger
+        rules[1]["trigger"] = "pauseWhenIdle"
         object["applicationPerformanceRules"] = rules
         let corrupted = try JSONSerialization.data(withJSONObject: object)
 
         let decoded = try JSONDecoder().decode(GlobalSettings.self, from: corrupted)
 
-        // The good rule survives; only the malformed one is dropped.
         #expect(decoded.applicationPerformanceRules.map(\.bundleID) == ["com.apple.Safari"])
     }
 
@@ -173,10 +164,6 @@ struct GlobalSettingsTests {
         )
     }
 
-    /// The retired toggle's own subtitle read "…or macOS enters Low Power Mode",
-    /// so someone who switched it off was opting out of this behaviour too.
-    /// Defaulting them back to on would silently re-enable something they had
-    /// turned off.
     @Test("An explicit opt-out on the retired game/Low-Power toggle carries forward")
     func retiredOptOutCarriesForward() throws {
         let legacy = Data("""

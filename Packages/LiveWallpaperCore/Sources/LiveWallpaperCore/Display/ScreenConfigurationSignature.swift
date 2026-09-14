@@ -1,8 +1,6 @@
 import AppKit
 import CoreGraphics
 
-/// Quantized snapshot of `NSScreen` geometry for deduping
-/// `didChangeScreenParametersNotification` storms.
 public struct ScreenConfigurationSignature: Equatable, Hashable, Sendable {
     public let displayID: CGDirectDisplayID
     public let originX: Int
@@ -10,9 +8,8 @@ public struct ScreenConfigurationSignature: Equatable, Hashable, Sendable {
     public let width: Int
     public let height: Int
     public let scale: Int
-    /// Part of the signature because frame-rate caps are divisors of it: a panel
-    /// switched from 60 Hz to 120 Hz with the same geometry has to re-resolve
-    /// every ceiling, and without this field the change dedupes away.
+    /// In the signature because frame-rate caps are divisors of it: without this field a
+    /// 60→120 Hz change with the same geometry would dedupe away.
     public let maximumFramesPerSecond: Int
 
     public init(screen: NSScreen) {

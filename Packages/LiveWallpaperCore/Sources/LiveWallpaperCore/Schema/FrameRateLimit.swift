@@ -1,24 +1,11 @@
 import SwiftUI
 
-/// A cap expressed as a target frame rate, plus one case that declines to cap at
-/// all and follows the panel.
-///
-/// Scene and web wallpapers pace frames with `CADisplayLink`, which only wakes on
-/// a divisor of the refresh rate and snaps anything else — measured on a 60 Hz
-/// panel: a request of 40 lands on 60, 36 and 24 both land on 30, 20/15/12/10 land
-/// on themselves. So a target is never requested raw: it is resolved to the
-/// fastest divisor that does not exceed it, and every label reports the rate that
-/// divisor actually delivers (a 60 target reads "48 FPS" on a 144 Hz panel).
-///
-/// The cap was briefly stored as the divisor itself. That form cannot express this
-/// setting, because the same divisor means different rates on different panels: a
-/// 240 Hz display's four divisors are 240/120/80/60, so 30 fps was unreachable
-/// there while being the second step on a 60 Hz display. A target is panel
-/// independent, which is what a stored default has to be.
+/// A cap expressed as a target frame rate, plus one case that declines to cap and follows
+/// the panel. Scene and web pace with `CADisplayLink`, which only wakes on a divisor of the
+/// refresh rate, so a target resolves to the fastest divisor not exceeding it.
 public enum FrameRateLimit: Int, CaseIterable, Identifiable, Codable, Sendable {
-    // Declared low-to-high: the per-display control is a slider that indexes the
-    // cases available on that display, so the order is the order the user drags
-    // through.
+    // Declared low-to-high: the per-display slider indexes these cases in order, so the
+    // order is the order the user drags through.
     case fps15 = 15
     case fps30 = 30
     case fps60 = 60
@@ -32,9 +19,8 @@ public enum FrameRateLimit: Int, CaseIterable, Identifiable, Codable, Sendable {
         rawValue > 0 ? Double(rawValue) : nil
     }
 
-    /// Label for a control that knows which display it is for. Always the rate the
-    /// display will actually run at, never the target — the two differ whenever the
-    /// refresh rate is not a multiple of the target.
+    /// Always the rate the display will actually run at, never the target — the two differ
+    /// whenever the refresh rate is not a multiple of the target.
     public func title(forRefreshRate refreshRate: Double) -> String {
         Self.fpsTitle(frameRate(forRefreshRate: refreshRate))
     }
@@ -52,16 +38,9 @@ public enum FrameRateLimit: Int, CaseIterable, Identifiable, Codable, Sendable {
         )
     }
 
-    /// Raw values written by earlier builds. The absolute era (0/60/30/24/15) maps
-    /// onto the same numbers, so only 24 needs a rule — it measurably snapped to 30
-    /// on a 60 Hz panel and saved nothing.
-    ///
-    /// The divisor era (1…4) is the interesting one. It is read against a 60 Hz
-    /// panel because that is what the overwhelming majority of these saves were
-    /// written on, and because guessing high would raise someone's frame rate — the
-    /// opposite of what this setting is for. `full` becomes `matchDisplay` rather
-    /// than `fps60`, which is what keeps a 120/240 Hz display running exactly as it
-    /// did before this change instead of dropping to 60 on its own.
+    /// Raw values written by earlier builds. The absolute era (0/60/30/24/15) maps onto the
+    /// same numbers; only 24 needs a rule. The divisor era (1…4) is read against a 60 Hz panel,
+    /// and `full` becomes `matchDisplay` so a 120/240 Hz display keeps running as it did.
     private static let legacyRates: [Int: FrameRateLimit] = [
         24: .fps30,
         1: .matchDisplay,
@@ -80,9 +59,8 @@ public enum FrameRateLimit: Int, CaseIterable, Identifiable, Codable, Sendable {
         }
     }
 
-    /// The rate this cap produces on a display. Scene and web divide the panel:
-    /// their ceiling *is* vsync, so the target is rounded down onto a divisor
-    /// rather than requested as-is.
+    /// The rate this cap produces on a display: scene and web divide the panel, so the target
+    /// is rounded down onto a divisor rather than requested as-is.
     public func frameRate(forRefreshRate refreshRate: Double) -> Int {
         let panel = panelRate(refreshRate)
         guard let target = targetFrameRate else { return max(1, Int(panel.rounded())) }
@@ -90,9 +68,8 @@ public enum FrameRateLimit: Int, CaseIterable, Identifiable, Codable, Sendable {
         return max(1, Int((panel / divisor).rounded()))
     }
 
-    /// Video is not quantised by vsync — it re-times through `AVVideoComposition`,
-    /// which honours any whole frame rate — so the target applies directly. It is
-    /// still bounded by the file: capping a 30 fps source at 60 is not a cap.
+    /// Video re-times through `AVVideoComposition`, which honours any whole rate, so the
+    /// target applies directly — still bounded by the source file.
     public func videoFrameRate(forRefreshRate refreshRate: Double, sourceFrameRate: Double) -> Int {
         let panel = panelRate(refreshRate)
         let base = sourceFrameRate > 0 ? min(panel, sourceFrameRate) : panel
@@ -105,24 +82,20 @@ public enum FrameRateLimit: Int, CaseIterable, Identifiable, Codable, Sendable {
         refreshRate > 0 ? refreshRate : 60
     }
 
-    /// The cases worth offering on a display, low to high. `matchDisplay` drops out
-    /// at 60 Hz and below, where it resolves to the same rate as `fps60` and would
-    /// otherwise put two identical entries in the menu.
+    /// The cases worth offering on a display, low to high. `matchDisplay` drops out at 60 Hz
+    /// and below, where it resolves to the same rate as `fps60`.
     public static func availableCases(forRefreshRate refreshRate: Double) -> [FrameRateLimit] {
         var seen: Set<Int> = []
         return allCases.filter { seen.insert($0.frameRate(forRefreshRate: refreshRate)).inserted }
     }
 
-    /// True when `self` and `other` produce the same on-screen rate on this
-    /// display — e.g. `.matchDisplay` and `.fps60` at 60 Hz, the pair
-    /// `availableCases` collapses into one slider step.
+    /// True when both produce the same on-screen rate — e.g. `.matchDisplay` and `.fps60` at 60 Hz.
     public func resolvesToSameRate(as other: FrameRateLimit, forRefreshRate refreshRate: Double) -> Bool {
         frameRate(forRefreshRate: refreshRate) == other.frameRate(forRefreshRate: refreshRate)
     }
 
-    /// Plain video only: anything below the source pays for an `AVVideoComposition`
-    /// pass; `matchDisplay` stays on the native path. Effects already require
-    /// composition regardless.
+    /// Plain video only: anything below the source pays for an `AVVideoComposition` pass;
+    /// `matchDisplay` stays on the native path.
     public var enforcesCompositionCap: Bool {
         self != .matchDisplay
     }

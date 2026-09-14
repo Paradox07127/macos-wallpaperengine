@@ -87,9 +87,7 @@ extension PlaybackCoordinator {
                         }
                         return true
                     }
-                    // Validation completed against this generation/revision. A
-                    // disabled renderer still accepts the user's saved selection,
-                    // but must not allocate a player or first-frame candidate.
+                    // A disabled renderer still accepts the user's saved selection, but must not allocate a player or first-frame candidate.
                     guard isGloballyEnabled() else {
                         guard commitConfiguration() else { return }
                         releaseRuntimeSession(liveScreen)
@@ -158,11 +156,7 @@ extension PlaybackCoordinator {
                     )
                     removeConfiguration(for: screen.id)
                     releaseRuntimeSession(screen)
-                    // After the release, not before: `releaseRuntimeSession`
-                    // calls `setTransientRuntimeError(nil, …)`, so a report
-                    // made above it is wiped before anything can render it.
-                    // Both cases end in "re-pick the source", which is the
-                    // action, but they are different stories about why.
+                    // After the release, not before: releaseRuntimeSession calls setTransientRuntimeError(nil), so a report made above it is wiped before anything can render it.
                     switch failure {
                     case .missing:
                         reportRuntimeError(screen.id, .wallpaperPreparationFailed(
@@ -274,8 +268,6 @@ extension PlaybackCoordinator {
             }
             // Trailing applyPolicy owns play/pause so re-apply never unpauses the user.
         } else {
-            // Only identity line on the startup-restore path — `setVideo` never
-            // runs when a saved video is brought back at launch.
             Logger.notice("Preparing video wallpaper for screen \(screen.id): \(LogPrivacyRedactor.sanitizedTitle(url.lastPathComponent))", category: .screenManager)
             let generation = transition.bumpTransition(for: screen.id)
             beginPreparedVideoSession(
@@ -381,8 +373,7 @@ extension PlaybackCoordinator {
                 session.cleanup()
                 return
             }
-            // Evaluated conjunct-by-conjunct only so a dropped candidate names the
-            // reason: success and every failure mode used to look identical here.
+            // Evaluated conjunct-by-conjunct only so a dropped candidate names the reason: success and every failure mode would look identical here.
             let isCandidateStillCurrent: @MainActor () -> Bool = {
                 [weak self, weak liveScreen] in
                 guard let self, let liveScreen else {

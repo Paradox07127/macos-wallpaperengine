@@ -6,7 +6,6 @@ import Foundation
 public enum MonitorOverlayLevel: String, Codable, Sendable, CaseIterable {
     /// Below app windows; click-through so desktop icons stay usable.
     case desktop
-    /// Always-on-top dashboard.
     case front
 }
 
@@ -15,7 +14,6 @@ public struct MonitorOverlayConfiguration: Codable, Equatable, Sendable {
     /// the Now Playing layer has its own switch so either can run alone.
     public var enabled: Bool
     public var level: MonitorOverlayLevel
-    /// The Now Playing layer: its own switch, level, position and options.
     public var music: MusicOverlayConfiguration
     public var clock: ClockOverlayConfiguration
     /// Monitor widgets only.
@@ -47,13 +45,10 @@ public struct MonitorOverlayConfiguration: Codable, Equatable, Sendable {
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? false
-        // Unknown future level → desktop rather than failing overlay decode.
         level = (try? c.decodeIfPresent(MonitorOverlayLevel.self, forKey: .level)) ?? .desktop
         music = ((try? c.decodeIfPresent(MusicOverlayConfiguration.self, forKey: .music)) ?? nil) ?? .default
-        // A board that is present but unreadable makes the whole display entry
-        // corrupt, and `decodeLossyStringDictionary` drops it. Substituting a
-        // default board instead would resurrect the display wearing a layout the
-        // user never chose. Absent or null stays absent → default board.
+        // Strict on purpose: substituting a default for an unreadable board would resurrect the
+        // display wearing a layout the user never chose. Absent or null → default board.
         board = try c.decodeIfPresent(MonitorBoardConfiguration.self, forKey: .board) ?? .default
         let legacy = board.widgets.first(where: { $0.kind == .nixieClock })
         let migrated: ClockOverlayConfiguration = if let legacy {
@@ -61,9 +56,8 @@ public struct MonitorOverlayConfiguration: Codable, Equatable, Sendable {
         } else {
             .default
         }
-        // Lenient like `music`, not strict like `board`: a clock nobody can read is
-        // one missing decoration, while throwing here would drop the display's whole
-        // entry — widgets and Now Playing with it.
+        // Lenient unlike `board`: a clock nobody can read is one missing decoration, while
+        // throwing here would drop the display's whole entry.
         clock = ((try? c.decodeIfPresent(ClockOverlayConfiguration.self, forKey: .clock)) ?? nil) ?? migrated
         board.widgets.removeAll { $0.kind == .nixieClock }
     }

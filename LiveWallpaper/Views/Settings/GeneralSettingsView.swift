@@ -15,7 +15,6 @@ enum GeneralSettingsPage: Equatable {
     case about
 }
 
-/// Shared settings state; page content is defined in sibling extensions.
 struct GeneralSettingsView: View {
     enum SystemStatusScope {
         case loginItem
@@ -27,7 +26,6 @@ struct GeneralSettingsView: View {
     @AppStorage(AppLanguagePreference.storageKey, store: .appScoped()) var appLanguageRawValue = AppLanguagePreference.system.rawValue
     @AppStorage(AppAppearance.defaultsKey, store: .appScoped()) var appearanceRawValue = AppAppearance.system.rawValue
     @AppStorage(LibraryTileSize.preferencesKey, store: .appScoped()) var libraryTileSizeRaw = LibraryTileSize.medium.rawValue
-    /// Sparkle owns persistence for this mirrored preference.
     @State var checksUpdatesAtLaunch: Bool = SparkleUpdaterController.shared.automaticallyChecksForUpdates
     @State var globalPauseOnBattery: Bool
     @State var startOnLogin: Bool
@@ -54,13 +52,9 @@ struct GeneralSettingsView: View {
     #endif
     @State var adaptiveFrameRateEnabled: Bool
     #if !LITE_BUILD
-    /// Runtime reads this at session build (`WPEOffMainRenderFlag`).
     @AppStorage(WPEOffMainRenderFlag.defaultsKey) var offMainRenderEnabled = true
-    /// Runtime reads this at executor init (`WPEMetalFXSpatialUpscaler.renderScale`);
-    /// unset and 1.0 both mean upscaling off.
+    /// Unset and 1.0 both mean upscaling off.
     @AppStorage(WPEMetalFXSpatialUpscaler.renderScaleDefaultsKey, store: .appScoped()) var metalFXRenderScale = 1.0
-    /// Runtime reads this once per surface construction (`WPEDisplayHDROutput`), so a
-    /// change only lands on the next session rebuild — same shape as the two flags above.
     @AppStorage(WPEDisplayHDROutput.defaultsKey) var displayHDROutputEnabled = false
     #endif
     @State var weatherLocation: WeatherLocationPreference
@@ -73,7 +67,6 @@ struct GeneralSettingsView: View {
 
     @State private var loginItemAlert: LoginItemFailure?
 
-    /// Staged confirm-then-apply for settings import.
     @State var pendingImportBundle: ConfigurationBundle?
     @State var pendingImportSource: URL?
     @State var importFeedback: String?
@@ -81,7 +74,6 @@ struct GeneralSettingsView: View {
     @State var exportErrorMessage: String?
     @State private var diagnosticsExportErrorMessage: String?
 
-    /// Native file sheets manage type filtering and sandbox access.
     @State var isPresentingExporter = false
     @State var isPresentingImporter = false
     @State var isPresentingDiagnosticsExporter = false
@@ -270,7 +262,6 @@ struct GeneralSettingsView: View {
 
     // MARK: - System Status Refresh
 
-    /// System privacy/capability probes belong to the page that presents their state.
     private func refreshSystemStatusIndicators() {
         for scope in systemStatusScopes {
             refreshSystemStatus(for: scope)
@@ -396,8 +387,6 @@ struct GeneralSettingsView: View {
 
     // MARK: - Settings Persistence
 
-    /// Commits through `GlobalSettingsCommit` so a non-UI writer reaches the same
-    /// persistence and apply chain this page does.
     func updateGlobalSettings() {
         GlobalSettingsCommit.apply(
             GlobalSettingsCommit.GeneralPageFields(

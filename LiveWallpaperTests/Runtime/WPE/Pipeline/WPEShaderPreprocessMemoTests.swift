@@ -3,21 +3,11 @@ import Foundation
 import LiveWallpaperProWPE
 import Testing
 
-/// The two GLSL preprocess stages are memoized, and a memo is only as safe as
-/// its key: drop one dimension and two different shaders silently share one
-/// processed source, which renders the wrong thing without an error anywhere.
-///
-/// Every test below varies exactly ONE key dimension and asserts the second call
-/// did not receive the first call's value. Each is therefore also the mutation
-/// probe for its dimension — delete that dimension from the key and the matching
-/// test fails, which is what proves the memo is live rather than a no-op.
 @Suite("Shader program source fingerprint")
 struct WPEShaderProgramFingerprintTests {
     @Test("Builtins skip the fingerprint; authored programs carry one")
     func builtinsSkipFingerprint() {
-        // Builtins are guarded out of `makeCompileRequest`, so they never reach the
-        // stage-4 memo and their fingerprint would never be read; the builder's own
-        // `builtinProgram` memo keys on (name, combos) and needs no hash either.
+        // nil is intentional: builtins never reach the stage-4 memo, so the fingerprint is never read.
         let builtin = WPEShaderProgram(
             name: "copy",
             vertexSource: "void main() {}",
@@ -160,9 +150,7 @@ struct WPEShaderPreprocessMemoTests {
     func stageFourPremultipliedAlphaAppliedAfterMemo() throws {
         let namespace = UUID().uuidString
         let straight = try #require(try Self.compileRequest(Self.probe(namespace: namespace, blending: "normal")))
-        // Identical process inputs, so this is a memo hit — but the blend mode
-        // is not a `process` input, so the flag must be re-applied on top of the
-        // memoized value rather than inherited from it.
+        // Identical process inputs, so the second call is a memo hit.
         let premultiplied = try #require(
             try Self.compileRequest(Self.probe(namespace: namespace, blending: "premultiplied"))
         )
@@ -304,8 +292,6 @@ struct WPEShaderPreprocessMemoTests {
             comboValues: ["WPEPROBE": 3]
         )
         #expect(miss == hit)
-        // A fresh builder has its own memo (the included headers' contents are
-        // NOT in the key — only the per-scene resolver scope makes that sound).
         let coldBuilder = WPERenderPipelineBuilder(cacheRootURL: fixture.root)
         let cold = try coldBuilder.preprocessShaderStageForTesting(
             source: source,
@@ -316,8 +302,6 @@ struct WPEShaderPreprocessMemoTests {
         #expect(cold == miss)
     }
 
-    /// Stage 4 (`WPEShaderPreprocessor`) does no `#include` resolution of its
-    /// own; that is sound only while stage 3 hands it fully expanded source.
     @Test("Stage-3 output carries no #include line")
     func stageThreeOutputHasNoIncludeLines() throws {
         let fixture = try Self.makeFixture(files: [
@@ -355,7 +339,6 @@ struct WPEShaderPreprocessMemoTests {
         #expect(miss.isBuiltin)
         #expect(miss.fragmentSource.contains("#define WPEPROBE 1"))
         #expect(miss == hit)
-        // A fresh loader computes the same value: the memo is a pure-function cache.
         let cold = try #require(
             WPERenderPipelineBuilder(cacheRootURL: fixture.root)
                 .builtinProgramForTesting(shaderName: "genericimage2", combos: combos)
@@ -391,10 +374,8 @@ struct WPEShaderPreprocessMemoTests {
         try WPEMetalRenderExecutor.makeCompileRequest(for: pass, recordFailure: false)
     }
 
-    /// One probe pass. Every parameter that is not overridden is byte-identical
-    /// across calls sharing a `namespace`, so a test varying one parameter is
-    /// varying exactly one memo-key dimension. The namespace keeps each test's
-    /// entries out of the other tests' — the stage-4 memo is process-global.
+    /// Unoverridden parameters stay byte-identical within one `namespace`, so a test varies exactly one memo-key dimension.
+    /// `namespace` must be unique per test: the stage-4 memo is process-global.
     private static func probe(
         namespace: String,
         passID: String = "memo.probe",

@@ -1,7 +1,6 @@
 import AppKit
 import Combine
 
-/// Bridges workspace session notifications into a single lock-screen callback.
 @MainActor
 final class LockScreenSnapshotCoordinator {
     private var cleanupTasks: Set<AnyCancellable> = []

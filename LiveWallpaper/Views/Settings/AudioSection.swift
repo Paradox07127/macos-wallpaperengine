@@ -2,7 +2,6 @@ import LiveWallpaperCore
 import SwiftUI
 
 extension GeneralSettingsView {
-    /// Toggle starts/stops the live capture tap and persists for next launch.
     @ViewBuilder
     var audioResponseSection: some View {
         #if !LITE_BUILD

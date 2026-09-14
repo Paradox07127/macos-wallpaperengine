@@ -2,7 +2,6 @@ import Foundation
 import SwiftUI
 import LiveWallpaperCore
 
-/// Time-of-day presets for the Add Slot menu.
 enum Preset: String, Identifiable, CaseIterable {
     case morning
     case midday
@@ -79,7 +78,6 @@ enum Preset: String, Identifiable, CaseIterable {
     }
 }
 
-/// Locale-aware hour formatting for the schedule UI.
 enum ScheduleTimeFormatter {
     static func hourLabel(_ hour: Int) -> String {
         let calendar = Calendar.autoupdatingCurrent
@@ -90,7 +88,6 @@ enum ScheduleTimeFormatter {
         return date.formatted(.dateTime.hour())
     }
 
-    /// Appends `(next day)` when the range wraps midnight.
     static func rangeLabel(startHour: Int, endHour: Int) -> String {
         let start = hourLabel(startHour)
         let end = hourLabel(endHour)
@@ -105,7 +102,6 @@ enum ScheduleTimeFormatter {
         return "\(start) — \(end)"
     }
 
-    /// Picker end-hour label; `(next day)` only when end would wrap past `start`.
     static func endHourMenuLabel(end: Int, start: Int) -> String {
         let base = hourLabel(end)
         if end <= start && start > 0 {

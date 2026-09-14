@@ -2,12 +2,7 @@ import AppKit
 import Foundation
 import LiveWallpaperCore
 
-/// Serializes cover captures per entry.
-///
-/// A capture is asynchronous and its entry keeps its id across a replace, so two
-/// captures for the same id can be in flight at once — and the *older* one can
-/// finish last. Without a token the stale frame wins and the cover shows the
-/// setup that was just overwritten.
+/// Serializes cover captures per entry so a stale in-flight capture cannot overwrite a newer one.
 @MainActor
 private enum CoverCaptureGenerations {
     private static var generations: [UUID: UInt64] = [:]
@@ -27,13 +22,6 @@ private enum CoverCaptureGenerations {
 }
 
 extension ScreenManager {
-    /// Grabs a still of what `screen` is showing and records it as the entry's
-    /// cover, once the capture comes back.
-    ///
-    /// Detached from the save on purpose: a scene has to present a frame and a
-    /// web view has to be snapshotted, which takes long enough that making the
-    /// user wait for it would turn an instant action into a stall. The entry is
-    /// saved immediately and shows its computed thumbnail until the cover lands.
     func captureCover(forBookmark id: UUID, from screen: Screen) {
         guard let configuration = getConfiguration(for: screen) else { return }
         let expectedContent = configuration.activeWallpaper
@@ -48,9 +36,7 @@ extension ScreenManager {
             guard getConfiguration(for: screen)?.activeWallpaper == expectedContent else { return }
             guard CoverCaptureGenerations.claim(token, for: id),
                   BookmarkStore.shared.bookmarks.contains(where: { $0.id == id }) else { return }
-            // One expression, no suspension point: the file lands and its name is
-            // recorded before anything else — including the orphan sweep, which
-            // also runs on this actor — can observe a file no entry names yet.
+            // One expression, no suspension point: the file lands and its name is recorded before the orphan sweep can observe a file no entry names yet.
             BookmarkStore.shared.setCover(
                 WallpaperCoverStore.shared.store(image, for: id),
                 for: id
@@ -58,7 +44,6 @@ extension ScreenManager {
         }
     }
 
-    /// The scheme flavour: a scheme restores overlays too, so its cover shows them.
     func captureCover(forScheme id: UUID, from screen: Screen) {
         guard let configuration = getConfiguration(for: screen) else { return }
         let token = CoverCaptureGenerations.begin(id)

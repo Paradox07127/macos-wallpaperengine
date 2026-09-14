@@ -2,7 +2,6 @@ import AppKit
 import Foundation
 import LiveWallpaperCore
 
-/// Snapshot of host system + runtime state for the "Report a Bug" sheet.
 struct SystemSnapshot: Sendable {
     let appVersion: String
     let appBuild: String
@@ -54,10 +53,7 @@ struct SystemSnapshot: Sendable {
         )
     }
 
-    /// One-line launch banner. Without it, call-site line numbers in a user's runtime log are unreadable:
-    /// the file spans upgrades silently, and a log that covers two versions attributes lines to the wrong
-    /// source. Deliberately avoids the `capture(...)` path — no NSScreen or sysctl work on the launch path,
-    /// just the four fields that date the log.
+    /// Launch banner: avoid capture(...) — no NSScreen or sysctl on the launch path, just the four fields that date the log.
     static var launchBanner: String {
         let version = bundleString(forKey: "CFBundleShortVersionString") ?? "unknown"
         let build = bundleString(forKey: "CFBundleVersion") ?? "unknown"

@@ -5,11 +5,8 @@ import Testing
 
 @testable import LiveWallpaper
 
-/// P0 wiring tests: a policy profile handed to a real session must actually
-/// reach the resource that plays, and must never touch the user's intent.
-/// Video is observed through the player's own drive flags (`loadImmediately:
-/// false` keeps AVFoundation out of the loop); HTML through the effective
-/// profile the session pushes at its performance target.
+/// Video is observed through the player's own drive flags; `loadImmediately: false`
+/// keeps AVFoundation out of the loop.
 @MainActor
 @Suite("Policy propagation into real sessions")
 struct PolicyPropagationTests {
@@ -87,7 +84,6 @@ struct PolicyPropagationTests {
         #expect(target.applied.last == .quality)
         #expect(session.isPlaying)
 
-        // And a lifted gate still respects a manual pause.
         session.pause()
         session.applyPerformanceProfile(.quality)
         #expect(target.applied.last == .suspended, "Effective output folds intent, not just policy")

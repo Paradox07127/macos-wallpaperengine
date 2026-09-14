@@ -48,8 +48,6 @@
         }
     }
 
-    /// The keyed `QueryFiles` path, which the keyless public-search suite can't
-    /// cover: it reaches Steam with an API key and decodes a different payload.
     @Suite("WorkshopQueryService keyed fields")
     struct WorkshopQueryServiceKeyedFieldsTests {
         private static let validKey = String(repeating: "a1b2c3d4", count: 4)

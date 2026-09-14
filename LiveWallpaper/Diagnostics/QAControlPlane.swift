@@ -3,14 +3,7 @@ import Darwin
 import Foundation
 import LiveWallpaperCore
 
-/// DEBUG-only local command channel for automated QA. An external MCP server connects
-/// to a UNIX socket inside this app's container and drives the same entry points the
-/// Settings UI uses, so what an agent exercises is the shipping path rather than a
-/// back door into the stores.
-///
-/// Off unless the `LoomscreenQAControlPlane` default is true. Release builds contain none
-/// of this; the socket lives at `<container>/tmp/` because the Application Support path is
-/// 115 bytes, over `sockaddr_un.sun_path`'s 104.
+/// Socket lives at <container>/tmp/ because Application Support is 115 bytes, over sockaddr_un.sun_path's 104.
 @MainActor
 final class QAControlPlane {
     static let shared = QAControlPlane()
@@ -27,16 +20,12 @@ final class QAControlPlane {
     /// Set on shutdown so a request that was already queued cannot commit into a dying app.
     private var isStopped = false
     private let queue = DispatchQueue(label: "com.loomscreen.qa-control-plane")
-    /// One worker per connection: serving them in turn let a client that connects and
-    /// never speaks hold everyone else behind it.
+    /// One worker per connection: serial serving would let a silent client hold everyone else.
     private let workers = DispatchQueue(label: "com.loomscreen.qa-control-plane.worker", attributes: .concurrent)
 
     private init() {}
 
     static func startIfEnabled(screenManager: ScreenManager) {
-        // The flag lives in `.standard`, which a test host shares with the real app: without
-        // this a developer who left the flag on would have every test run open the socket
-        // and fight the running instance for it.
         guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil,
               NSClassFromString("XCTestCase") == nil else { return }
         guard UserDefaults.standard.bool(forKey: "LoomscreenQAControlPlane") else { return }
@@ -51,10 +40,7 @@ final class QAControlPlane {
             atPath: (path as NSString).deletingLastPathComponent,
             withIntermediateDirectories: true
         )
-        // One socket path per container. A connect-probe alone leaves a window between
-        // "looks stale" and bind, in which another instance can bind and then have its
-        // fresh socket unlinked by our stale cleanup. An flock held for the process's life
-        // closes that window and is released by the kernel even on SIGKILL.
+        // A connect-probe alone leaves a window between looks-stale and bind; flock for process life closes it.
         guard let lock = Self.acquireLock(at: Self.lockPath) else {
             Logger.notice(
                 "[QA] another instance already holds the control plane; this one will not open it",
@@ -63,13 +49,8 @@ final class QAControlPlane {
             return
         }
         lockFD = lock
-        // SO_NOSIGPIPE on the accepted fd did not stop the signal in practice (verified:
-        // an app launched with `open -n`, i.e. the default SIG_DFL, still died when writing
-        // to a bridge that had hung up). Ignore it process-wide instead — for a GUI app the
-        // default action, killing the process, is never the wanted behaviour, and `write`
-        // then reports EPIPE where the code can handle it.
+        // SO_NOSIGPIPE on the accepted fd would not stop SIGPIPE; ignore it process-wide so write reports EPIPE.
         signal(SIGPIPE, SIG_IGN)
-        // We own the path now, so anything left here is from a process that already died.
         if FileManager.default.fileExists(atPath: path) {
             Logger.notice("[QA] removing a stale control-plane socket at \(path)", category: .lifecycle)
             unlink(path)
@@ -89,9 +70,7 @@ final class QAControlPlane {
         queue.async { Self.acceptLoop(listener: fd, workers: workers, handle: handle) }
     }
 
-    /// `DispatchQueue.main.sync` + `assumeIsolated` traps here: the isolation check runs
-    /// on the socket queue's thread, not the main one. Hop properly instead and block the
-    /// socket thread (never the main one) until the answer comes back.
+    /// DispatchQueue.main.sync + assumeIsolated traps: the isolation check runs on the socket thread. Hop and block the socket thread (never main) until the answer returns.
     private nonisolated static func respondOnMain(to line: String) -> String {
         // Written once on the main actor before `signal()`, read once after `wait()`:
         // the semaphore is the happens-before edge, so the box is never concurrently accessed.
@@ -108,8 +87,7 @@ final class QAControlPlane {
 
     // MARK: - Socket
 
-    /// Caller decides whether the path may be removed first; unlinking unconditionally here
-    /// is what let a second instance steal a live socket.
+    /// Caller decides whether the path may be removed first; unlinking unconditionally here would let a second instance steal a live socket.
     private static func makeListener(at path: String) -> Int32? {
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd >= 0 else { return nil }
@@ -143,9 +121,7 @@ final class QAControlPlane {
     /// Non-blocking exclusive flock, held for the life of the process. Returns nil when
     /// another live instance holds it.
     private nonisolated static func acquireLock(at path: String) -> Int32? {
-        // Read-only on purpose: flock needs no write access, so nothing here can ever put
-        // bytes into the file. (The content-surface write fence audits write-capable opens
-        // by matching the flag names as plain text, so even naming them in a comment counts.)
+        // Read-only on purpose: flock needs no write access, so nothing here can ever put bytes into the file.
         let fd = open(path, O_CREAT | O_RDONLY, 0o600)
         guard fd >= 0 else { return nil }
         guard flock(fd, LOCK_EX | LOCK_NB) == 0 else {
@@ -161,8 +137,6 @@ final class QAControlPlane {
         case occupied
     }
 
-    /// Kept for diagnostics: a path that exists tells us nothing, since a crashed instance
-    /// leaves the file behind and connects with ECONNREFUSED.
     private nonisolated static func probe(_ path: String) -> SocketState {
         guard FileManager.default.fileExists(atPath: path) else { return .free }
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
@@ -188,8 +162,6 @@ final class QAControlPlane {
         return stat(path, &info) == 0 ? info.st_ino : nil
     }
 
-    /// Called from the app's termination path so the next launch sees a free path rather
-    /// than a stale file that refuses connections.
     static func shutdown() {
         shared.stop()
     }
@@ -198,9 +170,7 @@ final class QAControlPlane {
         guard listenerFD >= 0 else { return }
         isStopped = true
         let path = Self.socketPath
-        // Unlink BEFORE close: once the listener is closed another instance can take the
-        // lock and bind, and a later unlink would delete that fresh socket instead of ours.
-        // While we still hold the listener the inode check is meaningful.
+        // Unlink BEFORE close: once the listener is closed another instance can bind, and a later unlink would delete that fresh socket.
         if let boundInode, Self.inode(of: path) == boundInode {
             unlink(path)
         }
@@ -250,12 +220,9 @@ final class QAControlPlane {
                 }
                 return
             }
-            // A silent client must not outlive its usefulness even on its own worker.
             var timeout = timeval(tv_sec: 15, tv_usec: 0)
             setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
-            // Without this, writing a response to a bridge that already gave up raises
-            // SIGPIPE, whose default action kills the whole app — a Swift `throw` cannot
-            // catch a signal.
+            // Without SO_NOSIGPIPE, writing to a hung-up bridge raises SIGPIPE and would kill the app — a Swift throw cannot catch a signal.
             var noSigPipe: Int32 = 1
             if setsockopt(
                 client, SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe, socklen_t(MemoryLayout<Int32>.size)
@@ -269,10 +236,7 @@ final class QAControlPlane {
         }
     }
 
-    /// One newline-delimited JSON request per line, one response line each — the same
-    /// framing MCP stdio uses, so the bridge does not re-frame.
-    /// `nonisolated` is load-bearing: a static method on a `@MainActor` type inherits that
-    /// isolation, and running it off the main queue traps in `dispatch_assert_queue`.
+    /// nonisolated is load-bearing: a static method on a @MainActor type inherits that isolation, and running it off the main queue traps in dispatch_assert_queue.
     private nonisolated static func serve(client: Int32, handle: @escaping @Sendable (String) -> String) {
         var pending = Data()
         var buffer = [UInt8](repeating: 0, count: 8192)
@@ -378,8 +342,6 @@ final class QAControlPlane {
                 "workshop": Array(workshopKeys).sorted(),
             ],
             "screenWritableKeys": Array(screenWritableKeys).sorted(),
-            // Typed so the bridge can expand settings.patch into real properties instead
-            // of an untyped blob — an agent that cannot see a field's type guesses it.
             "writableFields": writableFieldTypes(),
             "unwritableReason": [
                 "globalShortcuts": "Binding table is not exposed yet; edit it from the Shortcuts page.",
@@ -390,8 +352,6 @@ final class QAControlPlane {
         ]
     }
 
-    /// JSON type plus the live value for every writable field, derived from the encoded
-    /// settings so it cannot drift from the actual `Codable` shape.
     private static func writableFieldTypes() -> [String: Any] {
         guard let json = try? encodeToJSON(SettingsManager.shared.loadGlobalSettings()) else { return [:] }
         var fields: [String: Any] = [:]
@@ -440,9 +400,6 @@ final class QAControlPlane {
         ]
     }
 
-    /// Merges the patch into the persisted settings, re-decodes to reject a bad value
-    /// before anything is written, then routes each touched key to the page commit that
-    /// owns it — never straight to the store.
     private func settingsPatch(_ patch: [String: Any]) throws -> Any {
         guard !patch.isEmpty else { throw QAError.message("Empty patch") }
         let unknown = patch.keys.filter {
@@ -457,10 +414,7 @@ final class QAControlPlane {
             json[key] = value
         }
         let merged: GlobalSettings = try Self.decodeFromJSON(json)
-        // `GlobalSettings.init(from:)` is a migration decoder: `(try? …) ?? default`,
-        // `decodeLossyArray`, and unknown enum cases folded onto a default. Decoding
-        // therefore proves nothing about the patch. Re-encode and compare each patched key
-        // instead — a value the decoder swallowed comes back changed.
+        // GlobalSettings.init(from:) is a migration decoder; decoding proves nothing about the patch. Re-encode and compare each patched key — a swallowed value comes back changed.
         let roundTrip = try Self.encodeToJSON(merged)
         for (key, value) in patch {
             guard Self.jsonEqual(roundTrip[key], value) else {
@@ -531,9 +485,7 @@ final class QAControlPlane {
             entry["displayName"] = screenManager.wallpaperDisplayName(for: screen) ?? NSNull()
             entry["runtimeError"] = screenManager.runtimeError(for: screen)
                 .map { String(describing: $0) } ?? NSNull()
-            // A load that never produced a session reports through wallpaperLoads, not
-            // runtimeError. Reading only the latter made a failed apply look like nothing
-            // had happened at all.
+            // A load that never produced a session reports through wallpaperLoads, not runtimeError. Reading only the latter would make a failed apply look like nothing happened.
             if let attempt = screenManager.wallpaperLoads.attempt(for: screen) {
                 var load: [String: Any] = [
                     "phase": String(describing: attempt.phase),

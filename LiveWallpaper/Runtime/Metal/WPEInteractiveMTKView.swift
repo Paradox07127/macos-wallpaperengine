@@ -3,16 +3,6 @@ import AppKit
 import MetalKit
 import simd
 
-/// `MTKView` subclass that captures real mouse events for clickable WPE scenes.
-/// Parallax (`g_PointerPosition`) only needs the *global* cursor position and works
-/// independently via the renderer's global pointer sampler; click interaction differs
-/// — the wallpaper window must stop ignoring mouse events (which steals desktop
-/// clicks), and the events must reach the renderer. This view latches the captured
-/// pointer/button state for the per-frame uniforms.
-///
-/// All capture is gated on `clickCaptureEnabled`; when off, events fall through to
-/// `super` (and the hosting window keeps `ignoresMouseEvents = true`, so they never
-/// arrive anyway).
 @MainActor
 final class WPEInteractiveMTKView: MTKView {
     /// Flipped by the renderer from the per-screen "Interaction" toggle. Only
@@ -23,20 +13,13 @@ final class WPEInteractiveMTKView: MTKView {
         didSet { onPointerFrameChange?(pointerFrame) }
     }
 
-    /// Set by `WPERenderSurface` so every latched pointer frame reaches the
-    /// render-path mailbox. The view stays mailbox-agnostic; the surface owns the
-    /// wiring. `didSet` above fires this on each event-driven mutation (never on
-    /// the `.neutral` initializer, which doesn't trigger `didSet`).
+    /// `didSet` fires this on each event-driven mutation (never on the `.neutral` initializer, which doesn't trigger `didSet`).
     var onPointerFrameChange: (@MainActor (WPEPointerFrame) -> Void)?
 
     override var acceptsFirstResponder: Bool { clickCaptureEnabled }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { clickCaptureEnabled }
 
-    /// AppKit only delivers `mouseMoved(with:)` to a view that owns a tracking
-    /// area with `.mouseMoved`. Without this, hovering (no button down) never
-    /// updates the captured pointer — only `mouseDragged` would. `.activeAlways`
-    /// because the wallpaper window is never key; the window itself still only
-    /// forwards moved events while capturing (`acceptsMouseMovedEvents`).
+    /// AppKit only delivers `mouseMoved(with:)` to a view with a `.mouseMoved` tracking area; without this, hovering never updates the pointer. `.activeAlways` because the wallpaper window is never key.
     private var trackingArea: NSTrackingArea?
 
     override func updateTrackingAreas() {

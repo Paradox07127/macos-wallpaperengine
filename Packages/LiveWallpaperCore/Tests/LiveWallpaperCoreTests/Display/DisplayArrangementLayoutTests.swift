@@ -43,8 +43,6 @@ struct DisplayArrangementLayoutTests {
         #expect(abs(mainRect.maxX - rightRect.minX) < 0.001)
     }
 
-    /// The bug this guards: global display space is y-up while the map draws
-    /// y-down, so a missing flip silently renders stacked displays upside down.
     @Test("A display physically above the main one is drawn above it")
     func verticalAxisIsFlippedForDrawing() {
         let bounds = DisplayArrangementLayout.bounds(of: [main, above])

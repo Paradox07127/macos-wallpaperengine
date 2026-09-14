@@ -1,7 +1,6 @@
 import AppKit
 import LiveWallpaperCore
 
-/// Borderless non-activating panel for the Monitor board over one display's wallpaper.
 final class OverlayWindow: NSPanel {
 
     /// Above desktop icons, below application windows.
@@ -29,9 +28,7 @@ final class OverlayWindow: NSPanel {
         isRestorable = false
         isMovable = false
         animationBehavior = .none
-        // Must match the wallpaper underneath: a capturable overlay over a
-        // hidden wallpaper screenshots as widgets floating on the system
-        // desktop picture.
+        // Must match the wallpaper underneath: a capturable overlay over a hidden wallpaper screenshots as widgets floating on the system desktop picture.
         sharingType = WallpaperCapturePolicy.windowSharingType
         collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
 
@@ -49,7 +46,6 @@ final class OverlayWindow: NSPanel {
         }
     }
 
-    /// Non-interactive ⇒ click-through to desktop/apps underneath.
     func setInteractive(_ interactive: Bool) {
         ignoresMouseEvents = !interactive
     }

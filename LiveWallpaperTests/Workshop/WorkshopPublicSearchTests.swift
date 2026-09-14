@@ -6,9 +6,7 @@ import Testing
 @Suite("Workshop keyless public search")
 struct WorkshopPublicSearchTests {
 
-    /// Href samples copied verbatim from a live
-    /// `steamcommunity.com/workshop/browse/?appid=431960` response (2026-08-29):
-    /// every result contributes two anchors (thumbnail + title) with the same id,
+    /// Every result contributes two anchors (thumbnail + title) with the same id,
     /// and the desktop layout appends `&searchtext=` to them.
     @Test("Detail-page hrefs collapse to a de-duplicated, order-preserving id list")
     func hrefsCollapseToOrderedUniqueIDs() {
@@ -33,14 +31,11 @@ struct WorkshopPublicSearchTests {
     func navigationAllowListRejectsEverythingElse() {
         #expect(WorkshopPublicNavigationPolicy.allows(URL(string: "https://steamcommunity.com/workshop/browse/?appid=431960")))
         #expect(WorkshopPublicNavigationPolicy.allows(URL(string: "https://cdn.steamcommunity.com/x.css")))
-        // Controls: wrong scheme, look-alike host, unrelated host.
         #expect(!WorkshopPublicNavigationPolicy.allows(URL(string: "http://steamcommunity.com/workshop/browse/")))
         #expect(!WorkshopPublicNavigationPolicy.allows(URL(string: "https://steamcommunity.com.evil.example/workshop/browse/")))
         #expect(!WorkshopPublicNavigationPolicy.allows(URL(string: "https://example.com/")))
     }
 
-    /// Pins the query parameters verified live on 2026-08-29: `browsesort`,
-    /// `p`, `searchtext`, `requiredtags[]`, `excludedtags[]`.
     @Test("Browse URL carries the verified public-page parameters")
     func browseURLUsesVerifiedParameters() throws {
         let request = WorkshopQueryRequest(
@@ -66,9 +61,8 @@ struct WorkshopPublicSearchTests {
         ])
     }
 
-    /// The browse page silently ignores `created_by` (verified live), so a
-    /// creator scope has to use the profile's workshop-files page — which in
-    /// turn defaults to a 9-item preview unless `numperpage` is set.
+    /// The browse page silently ignores `created_by`, so a creator scope uses the profile's
+    /// workshop-files page — which defaults to a 9-item preview unless `numperpage` is set.
     @Test("Creator-scoped requests use the profile workshop page")
     func creatorScopeUsesProfilePage() throws {
         let request = WorkshopQueryRequest(
@@ -90,8 +84,6 @@ struct WorkshopPublicSearchTests {
 
     // MARK: - Mature tag hand-off
 
-    /// Tag shape copied from a live `GetPublishedFileDetails` response
-    /// (2026-08-29): `tags` is an array of objects, each with a `tag` string.
     private static func detailsPayload(id: String, tags: [String]) -> Data {
         let encoded = tags.map { "{\"tag\":\"\($0)\"}" }.joined(separator: ",")
         return Data("""
@@ -137,7 +129,6 @@ struct WorkshopPublicSearchTests {
         let entry = try #require(SteamWorkshopMetadataService.decodeBatch(data: payload, requestedIDs: [555])[555]).get()
         #expect(entry.shortDescription == "")
 
-        // Control: a short description is carried as is.
         let summarised = try #require(
             SteamWorkshopMetadataService.decodeBatch(data: Self.detailsPayload(id: "556", tags: []), requestedIDs: [556])[556]
         ).get()
@@ -156,12 +147,9 @@ struct WorkshopPublicSearchTests {
         #expect(WorkshopPublicSearchSource.queryItem(from: entry).title.contains("333"))
     }
 
-    /// Only links on Valve's own host may contribute ids: the browse page also
-    /// renders author-supplied markup.
     @Test("Detail links off the community host contribute no ids")
     func offHostDetailLinksAreDropped() {
         let hrefs = [
-            // Control: the real thing still counts.
             "https://steamcommunity.com/sharedfiles/filedetails/?id=2489045207",
             "https://evil.example/sharedfiles/filedetails/?id=9999999999",
             "https://steamcommunity.com.evil.example/sharedfiles/filedetails/?id=8888888888"
@@ -172,11 +160,6 @@ struct WorkshopPublicSearchTests {
 
     // MARK: - HTML harvesting
 
-    /// Markup shape copied from a live browse response (2026-08-29): each result
-    /// is a preview anchor plus a title anchor carrying the same id, the query
-    /// separator arrives HTML-escaped, and the page also renders author-supplied
-    /// links. Steam serves all of this without running a single script, which is
-    /// why a plain GET replaced the offscreen web view.
     private static let browseHTMLFragment = """
     <div class="workshopBrowseItems">
     <a href="https://steamcommunity.com/sharedfiles/filedetails/?id=2489045207&amp;searchtext=" class="item_link">
@@ -199,12 +182,11 @@ struct WorkshopPublicSearchTests {
 
     // MARK: - Paging
 
-    /// A full page is not always 30 (p=2 returned 29 on 2026-08-29), so counting
-    /// ids against `itemsPerPage` ended browsing early. Only an empty page ends it.
+    /// A full page is not always 30, so counting ids against `itemsPerPage` would end browsing early;
+    /// only an empty page ends it.
     @Test("A short-but-non-empty page still offers the next one")
     func shortPageStillHasANextPage() {
         #expect(WorkshopPublicSearchSource.nextCursor(after: 2, idCount: 29) == "3")
-        // Control: nothing on the page means the result set is exhausted.
         #expect(WorkshopPublicSearchSource.nextCursor(after: 7, idCount: 0) == nil)
     }
 

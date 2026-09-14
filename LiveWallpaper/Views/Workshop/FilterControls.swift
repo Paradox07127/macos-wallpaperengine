@@ -2,7 +2,6 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// Shared filter chrome for the Workshop tabs.
 struct WorkshopFiltersToggle: View {
     @Binding var isExpanded: Bool
     let activeFilterCount: Int
@@ -11,9 +10,8 @@ struct WorkshopFiltersToggle: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        // The plate that holds the drawer animates the change declaratively, so
-        // the toggle only flips state — an imperative `withAnimation` here would
-        // run a second, competing curve on the same layout pass.
+        // The plate holding the drawer animates this declaratively — an imperative
+        // `withAnimation` here would run a second, competing curve on the same pass.
         Button {
             isExpanded.toggle()
         } label: {
@@ -49,8 +47,7 @@ struct WorkshopFiltersToggle: View {
     }
 }
 
-/// A category label pinned to the first chip row (top-aligned so it stays put
-/// when chips wrap onto several lines).
+/// Top-aligned so the label stays put when chips wrap onto several lines.
 struct WorkshopFilterRow<Content: View>: View {
     private let title: LocalizedStringKey
     private let content: Content

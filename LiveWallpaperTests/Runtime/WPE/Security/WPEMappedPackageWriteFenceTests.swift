@@ -2,14 +2,6 @@ import Foundation
 import Testing
 @testable import LiveWallpaper
 
-/// The renderer keeps a Workshop `scene.pkg` memory-mapped for the whole scene
-/// lifetime (`WPEPackageSceneAssetProvider.mappedWindow`). On APFS, deleting or
-/// rename-replacing the file under a live mapping is safe — the vnode survives —
-/// but rewriting or truncating it in place SIGBUSes the mapping process on the
-/// next page fault. This suite pins both halves of that invariant:
-/// the sanctioned operations (delete, write-temp + rename) keep a live window
-/// readable, and the production tree keeps no write-capable open that could hit
-/// a mapped file in place.
 @Suite("WPE mapped package write fence")
 struct WPEMappedPackageWriteFenceTests {
     /// Large enough that `.mappedIfSafe` genuinely maps instead of heap-reading,
@@ -81,16 +73,12 @@ struct WPEMappedPackageWriteFenceTests {
         let provider = try WPEPackageSceneAssetProvider(packageURL: pkgURL)
         let window = try provider.mappedWindow(atRelativePath: "materials/a.tex")
 
-        // The sanctioned replacement idiom: write the new package to a temp
-        // sibling, then swap it in by rename.
         let replacement = dir.appendingPathComponent("scene.pkg.tmp")
         try Self.makePackageData([(name: "materials/a.tex", data: newPayload)]).write(to: replacement)
         _ = try FileManager.default.replaceItemAt(pkgURL, withItemAt: replacement)
 
-        // The live window still reads the superseded vnode, byte for byte.
         #expect(window.materializedData() == oldPayload)
 
-        // A fresh open sees the replacement.
         let reopened = try WPEPackageSceneAssetProvider(packageURL: pkgURL)
         let newWindow = try reopened.mappedWindow(atRelativePath: "materials/a.tex")
         #expect(newWindow.materializedData() == newPayload)
@@ -122,25 +110,9 @@ struct WPEMappedPackageWriteFenceTests {
     }
 
     // MARK: - Source fence: no in-place writer may appear
-    //
-    // The behaviour tests above cannot police the write side: `.mappedIfSafe`
-    // maps MAP_PRIVATE, so a same-inode rewrite is snapshot-isolated from an
-    // already-created window (probed 2026-08-16 — even unfaulted pages keep the
-    // old bytes). The remaining hazard is a SIGBUS while the file is truncated
-    // mid-rewrite, a cross-process race no in-process test can stage. The two
-    // source audits below are therefore the enforcement, mutation-verified: a
-    // planted `FileHandle(forUpdating:)` + bare `data.write(to:)` in
-    // WPECachedContentResolver turned both red.
 
-    /// Sweeps `roots`, and names any that resolved to nothing.
-    ///
-    /// `swiftFiles(under:)` returns an empty array for a path that does not
-    /// exist and reports no error, so a root left stale by a directory rename
-    /// stops being scanned without failing anything. That is exactly how
-    /// `LiveWallpaper/VideoPlayback` kept reporting green for a whole refactor
-    /// after the directory was split into `Playback/` and `Runtime/*`. An
-    /// aggregate file count cannot catch it — one root going empty costs nine
-    /// files out of several hundred.
+    /// `swiftFiles(under:)` returns [] for a path that does not exist and reports no error, so a renamed root
+    /// must be named, not merely folded into an aggregate file count.
     private static func sweep(_ roots: [String]) -> (files: [URL], emptyRoots: [String]) {
         var files: [URL] = []
         var emptyRoots: [String] = []
@@ -165,9 +137,6 @@ struct WPEMappedPackageWriteFenceTests {
         "Packages/LiveWallpaperProWPE/Sources",
     ]
 
-    /// `FileHandle(forUpdating:)` / `forUpdatingAtPath:` open an existing file
-    /// for in-place rewriting — exactly the operation that SIGBUSes a mapped
-    /// reader. There is no legitimate use anywhere in production.
     @Test("The in-place update API is absent from all production sources")
     func inPlaceUpdateAPIIsAbsent() throws {
         let (files, emptyRoots) = Self.sweep(Self.productionRoots)
@@ -186,11 +155,8 @@ struct WPEMappedPackageWriteFenceTests {
         )
     }
 
-    /// Content-handling surface: everything that touches workshop items,
-    /// installed scenes, scene caches, or the Steam library. Any write-capable
-    /// file open added here must be re-audited against the mmap invariant
-    /// (mapped files may be deleted or rename-replaced, never rewritten in
-    /// place) and then recorded below with its occurrence count.
+    /// Every write-capable open under these roots must be audited against the mmap invariant (delete or
+    /// rename-replace only, never an in-place rewrite) and then recorded in `auditedWriteSites` with its count.
     private static let fencedRoots = [
         "LiveWallpaper/Infrastructure",
         "LiveWallpaper/Playback",
@@ -211,23 +177,9 @@ struct WPEMappedPackageWriteFenceTests {
         "O_RDWR",
     ]
 
-    /// Audited 2026-08-16: every entry writes to a fresh temp/staging/cache
-    /// path or uses `.atomic` (write-temp + rename). None opens an existing
-    /// mapped file for writing.
     private static let auditedWriteSites: [String: [String: Int]] = [
-        // Audited 2026-08-24: writes a `<sha256>.<uuid>.tmp` under the app's own
-        // Caches / Application Support dir and renames it into place. Never touches
-        // a mapped package — the bytes are Workshop preview images and query pages
-        // fetched over the network, and the directory is created by this type, not
-        // opened from scene content. (Shared by WorkshopPreviewDiskCache and
-        // WorkshopQueryCache since 2026-09-02.)
         "LiveWallpaper/Infrastructure/Workshop/WorkshopDiskCacheStore.swift": [".write(to": 1],
         "LiveWallpaper/Infrastructure/Platform/DesktopPictureFrameExtractor.swift": [".write(to": 1],
-        // Audited 2026-09-14: writes a library entry's cover PNG to
-        // `Application Support/<bundle>/Configuration/Covers/<uuid>.png` —
-        // the app's own directory, created by this type, named after a
-        // bookmark/scheme id, and written `.atomic` (write-temp + rename).
-        // No scene content path is reachable from here.
         "LiveWallpaper/Infrastructure/Persistence/WallpaperCoverStore.swift": [".write(to": 1],
         "LiveWallpaper/Infrastructure/Diagnostics/WPESceneDebugArtifacts.swift": [
             "createFile(": 1,
@@ -243,30 +195,16 @@ struct WPEMappedPackageWriteFenceTests {
             "FileHandle(forWritingTo": 1,
         ],
         "LiveWallpaper/Infrastructure/Assets/WPEVideoTextureDiskCache.swift": [".write(to": 1],
-        // Audited 2026-08-18: extraction streams into a fresh dot-prefixed
-        // staging file in the app's own Videos/ dir (never the mapped pkg,
-        // which stays open read-only); the two `.write(to` are the thumbnail
-        // JPEG and the manifest, both `.atomic`.
         "LiveWallpaper/Infrastructure/Services/WallpaperExportService.swift": [
             "createFile(": 1,
             "FileHandle(forWritingTo": 1,
             ".write(to": 2,
         ],
         "LiveWallpaper/Runtime/Audio/OggAudioTranscoder.swift": ["forWriting:": 1],
-        // Audited 2026-08-22: the MSL translation cache writes JSON under the
-        // app's own Caches/wpe-msl/v<schema> dir — never a scene content path,
-        // and `.atomic`, so a concurrent reader never sees a partial file.
         "LiveWallpaper/Runtime/Metal/WPEShaderCompiler.swift": [".write(to": 1],
         "LiveWallpaper/Runtime/Metal/WPEMetalSceneRenderer+Debug.swift": [".write(to": 2],
         "LiveWallpaper/Runtime/Metal/WPEMetalPassGPUProfiler.swift": [".write(to": 1],
-        // Audited 2026-09-05: `.loomscreen.lock` is the per-account flock
-        // carrier inside Loomscreen's own private SteamCMD profile — never a
-        // content path, and nothing is ever written into it.
         "SteamConnector/SteamConnectorProtocol.swift": [".write(to": 1, "O_RDWR": 1],
-        // Audited 2026-09-05: `publishContent` copies into a freshly created
-        // `.loomscreen-<uuid>` sibling (`O_CREAT|O_EXCL`, so it can only ever
-        // land on a new file) and then swaps that whole tree in. A mapped
-        // package is replaced by rename, never opened for in-place writing.
         "SteamConnector/SteamLibraryWriter.swift": ["O_WRONLY": 1],
     ]
 

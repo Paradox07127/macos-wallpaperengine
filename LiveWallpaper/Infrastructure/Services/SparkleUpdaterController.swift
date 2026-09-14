@@ -27,17 +27,12 @@ struct SparkleUpdateStartup {
     }
 }
 
-/// Owns the one Sparkle updater for the app. A scheduled check that finds
-/// something gets Sparkle's own alert (default behaviour, since the menu bar
-/// badge alone is easy to miss) — the badge still lights too, because
-/// `standardUserDriverWillHandleShowingUpdate` fires either way, keeping it and the About page in sync.
 @MainActor
 @Observable
 final class SparkleUpdaterController {
     static let shared = SparkleUpdaterController()
 
-    /// Version string of an update Sparkle has found and is holding back, or
-    /// `nil` when there is nothing to show. Drives the menu bar button.
+    /// Version string of an update Sparkle has found and is holding back, or `nil` when there is nothing to show.
     private(set) var availableVersion: String?
 
     @ObservationIgnored private var controller: SPUStandardUpdaterController!
@@ -59,9 +54,7 @@ final class SparkleUpdaterController {
         updaterDelegate.onNoUpdateFound = { [weak self] in
             self?.noteNoUpdateFound()
         }
-        // Also from the user driver, not just `didFindValidUpdate`: an update that
-        // was already downloaded is shown again on the next launch by resuming the
-        // session, and no new check runs, so the updater-side callback never fires.
+        // Also from the user driver, not just `didFindValidUpdate`: an already-downloaded update is shown on next launch by resuming the session, so the updater-side callback never fires.
         driverDelegate.onUpdateFound = { [weak self] version in
             self?.noteUpdateFound(version: version)
         }
@@ -70,29 +63,19 @@ final class SparkleUpdaterController {
         }
     }
 
-    /// Sparkle found a release newer than this build.
     func noteUpdateFound(version: String) {
         availableVersion = version
     }
 
-    /// A completed check that turned up nothing — the only thing that withdraws
-    /// a pending update. Also covers "the newest release needs a newer macOS"
-    /// and "you already have it", which are the same fact to every surface here.
+    /// A completed check that turned up nothing — the only thing that withdraws a pending update.
     func noteNoUpdateFound() {
         availableVersion = nil
     }
 
-    /// Sparkle's update-alert session ended: installed, skipped, or dismissed
-    /// with "Remind Me Later". Deliberately leaves `availableVersion` alone.
-    /// Clearing it here is what made dismissing the alert flip the About line to
-    /// a checkmark and drop the menu bar Update button, telling a user on 0.6.1
-    /// that 0.6.1 was current. Availability belongs to `SPUUpdaterDelegate`;
-    /// this callback only reports that the UI session is over. An install ends
-    /// with a relaunch, so the new process starts with no pending update anyway.
+    /// Deliberately leaves `availableVersion` alone. Clearing it here would make dismissing the alert look like already current.
     func noteUpdateSessionFinished() {}
 
-    /// Starts Sparkle and immediately checks once if the General settings toggle
-    /// is enabled. Kept out of `init` so construction never reaches the network.
+    /// Kept out of `init` so construction never reaches the network.
     func start() {
         guard !startup.hasStarted else { return }
         if let carried = Self.legacyOptOutToCarryOver(
@@ -109,15 +92,9 @@ final class SparkleUpdaterController {
     }
 
     nonisolated static let legacyCheckAtLaunchKey = "loomscreen.update.checkAtLaunch.v1"
-    /// Read from the user-defaults layer alone. `SUEnableAutomaticChecks` is also
-    /// in both Info.plists, so Sparkle's merged value is never unset and cannot
-    /// tell us whether the user has chosen anything.
+    /// Read from the user-defaults layer alone. `SUEnableAutomaticChecks` is also in both Info.plists, so Sparkle's merged value is never unset.
     nonisolated static let sparkleAutomaticChecksKey = "SUEnableAutomaticChecks"
 
-    /// 0.5.7 kept the launch-check opt-out in its own key, and Sparkle defaults
-    /// to on, so an upgrade would re-enable network checks for someone who had
-    /// turned them off. Consumes the old key either way: a choice already made in
-    /// Sparkle's settings wins, and this must not reapply on the next launch.
     nonisolated static func legacyOptOutToCarryOver(
         defaults: UserDefaults,
         sparkleChoiceIsStored: Bool
@@ -127,8 +104,6 @@ final class SparkleUpdaterController {
         return sparkleChoiceIsStored ? nil : legacy
     }
 
-    /// Shows Sparkle's own update UI — used by the menu bar button and the
-    /// About page's manual check.
     func checkForUpdates() {
         controller.checkForUpdates(nil)
     }
@@ -137,8 +112,6 @@ final class SparkleUpdaterController {
         controller.updater.canCheckForUpdates
     }
 
-    /// Sparkle persists this itself (`SUEnableAutomaticChecks`), so the General
-    /// settings toggle reads and writes it rather than keeping a parallel key.
     var automaticallyChecksForUpdates: Bool {
         get { controller.updater.automaticallyChecksForUpdates }
         set { controller.updater.automaticallyChecksForUpdates = newValue }
@@ -149,11 +122,6 @@ final class SparkleUpdaterController {
     }
 }
 
-/// Separate object because `SPUStandardUserDriverDelegate` requires NSObject
-/// conformance, which does not mix with `@Observable`'s generated storage.
-/// Availability, as opposed to UI-session lifetime. Sparkle reports the two
-/// through different delegates and only this one means "there is / is not an
-/// update".
 @MainActor
 final class UpdateAvailabilityDelegate: NSObject, SPUUpdaterDelegate {
     var onUpdateFound: ((String) -> Void)?
@@ -186,10 +154,7 @@ final class GentleReminderDelegate: NSObject, SPUStandardUserDriverDelegate {
     var onUpdateFound: ((String) -> Void)?
     var onSessionFinished: (() -> Void)?
 
-    /// Sparkle 2.9.6 calls the delegate on the main thread — `SPUStandardUserDriver.m`
-    /// asserts `NSThread.isMainThread` per call site, but that assert is compiled
-    /// out of release builds and absent from the protocol header, so a version bump
-    /// could move a callback off-thread, where `assumeIsolated` traps (unlike a merely-late banner); the failed-check path reaches `standardUserDriverWillFinishUpdateSession`.
+    /// Sparkle 2.9.6 calls the delegate on the main thread, but that assert is compiled out of release builds and absent from the protocol header, so a version bump could move a callback off-thread, where `assumeIsolated` traps.
     private nonisolated func onMain(_ body: @escaping @MainActor () -> Void) {
         if Thread.isMainThread {
             MainActor.assumeIsolated(body)
@@ -198,15 +163,10 @@ final class GentleReminderDelegate: NSObject, SPUStandardUserDriverDelegate {
         }
     }
 
-    /// Still true — the menu bar badge is a gentle reminder layered on top of
-    /// Sparkle's alert, not replacing it. Sparkle reads this flag only to decide
-    /// whether to log its "background app with no gentle reminder" warning
-    /// (`SPUStandardUserDriver.logGentleScheduledUpdateReminderWarningIfNeeded`), which would be a false alarm here.
+    /// Still true — the menu bar badge is a gentle reminder layered on Sparkle's alert, not replacing it. Returning false would log a false 'background app with no gentle reminder' warning.
     nonisolated var supportsGentleScheduledUpdateReminders: Bool { true }
 
-    /// `true` = Sparkle's own default: it puts the update alert on screen for a
-    /// scheduled check. 0.6.0 and earlier returned `false` and left the menu bar
-    /// badge as the only signal, which users missed.
+    /// `true` = Sparkle's default: it puts the update alert on screen for a scheduled check.
     nonisolated func standardUserDriverShouldHandleShowingScheduledUpdate(
         _ update: SUAppcastItem,
         andInImmediateFocus immediateFocus: Bool
@@ -214,9 +174,7 @@ final class GentleReminderDelegate: NSObject, SPUStandardUserDriverDelegate {
         true
     }
 
-    /// Fires on both paths — Sparkle calls it before showing the alert itself as
-    /// well as when the delegate would have shown it — so the badge tracks the
-    /// found version either way.
+    /// Fires on both paths — Sparkle calls it before showing the alert itself as well as when the delegate would have shown it.
     nonisolated func standardUserDriverWillHandleShowingUpdate(
         _ handleShowingUpdate: Bool,
         forUpdate update: SUAppcastItem,

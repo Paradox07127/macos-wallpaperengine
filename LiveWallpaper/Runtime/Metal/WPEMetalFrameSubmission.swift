@@ -1,6 +1,5 @@
 #if !LITE_BUILD
 import Foundation
-/// Nonblocking ownership pool for CPU-mutable logical-frame resources.
 final class WPEMetalFrameSubmissionPool: @unchecked Sendable {
     private let semaphore: DispatchSemaphore
     private let lock = NSLock()
@@ -34,7 +33,6 @@ final class WPEMetalFrameSubmissionPool: @unchecked Sendable {
     }
 }
 
-/// Holds one resource slot until a logical frame seals and all buffers finish.
 final class WPEMetalFrameSubmissionLease: @unchecked Sendable {
     let slot: Int
 
@@ -108,8 +106,6 @@ final class WPEMetalFrameSubmissionCompletion: @unchecked Sendable {
     }
 }
 
-/// Aggregates the producer chain for the final texture actually presented.
-/// The resource lease separately covers speculative and stable fail-close work.
 final class WPEMetalFrameProductionCompletion: @unchecked Sendable {
     typealias Observer = @Sendable (Bool) -> Void
 

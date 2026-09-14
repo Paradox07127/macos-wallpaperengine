@@ -4,8 +4,6 @@ import SwiftUI
 struct PanelChrome: ViewModifier {
     var cornerRadius: CGFloat = MonitorBoardGeometry.appleCornerRadius
 
-    // Board-wide appearance, read here because this is the single place every
-    // widget paints its card.
     @AppStorage(MonitorPanelAppearance.tintKey, store: .appScoped())
     private var tintHex = MonitorPanelAppearance.defaultTintHex
     @AppStorage(MonitorPanelAppearance.opacityKey, store: .appScoped())
@@ -176,12 +174,7 @@ struct MonitorGrain: View {
 }
 
 extension EnvironmentValues {
-    /// Forces every widget card onto its painted branch. Set only while a board
-    /// is being read into a bitmap for a scheme cover: `cacheDisplay` skips a
-    /// `glassEffect` subtree outright — card *and* the text inside it — so a
-    /// glass board would be captured as holes.
-    ///
-    /// A key of its own because `accessibilityReduceTransparency`, which gates
-    /// the same branch, is read-only in `EnvironmentValues`.
+    /// Forces every widget card onto its painted branch: `cacheDisplay` skips a
+    /// `glassEffect` subtree outright, so a glass board is captured as holes.
     @Entry var monitorForcesOpaquePanels: Bool = false
 }

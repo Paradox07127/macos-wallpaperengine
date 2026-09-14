@@ -1,7 +1,6 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// Source selection finishes onboarding by opening the selected app destination.
 private enum OnboardingStep: Hashable {
     case welcome
     case workshopSetup
@@ -23,11 +22,8 @@ struct Flow: View {
     @Environment(\.featureCatalog) private var featureCatalog
 
     let onClose: () -> Void
-    /// Opens the usable app surface after onboarding completes or is skipped.
     var onFinish: (CGDirectDisplayID?) -> Void = { _ in }
-    /// Opens Apple Aerials library; no-op default for previews/tests.
     var onShowAppleAerials: () -> Void = {}
-    /// Opens the Workshop library; no-op default for previews/tests.
     var onShowSteamWorkshop: () -> Void = {}
 
     var body: some View {
@@ -35,8 +31,6 @@ struct Flow: View {
             background
 
             VStack(spacing: 0) {
-                // Clears the top chrome (back / skip) so a page's title does
-                // not start level with them.
                 Spacer().frame(height: DesignTokens.Spacing.xl + DesignTokens.Spacing.md)
                 stepContent
                     .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -11,9 +11,6 @@ enum NowPlayingCommand: Hashable, Sendable {
     case seek(seconds: Double)
 }
 
-/// Per-player AppleScript vocabulary — a data row, not a code branch, mirroring
-/// `NowPlayingPlayerMapping`: a new player is a new row and the send path stays
-/// untouched. `seekPhrase` is nil for a player with no position vocabulary.
 struct NowPlayingControlMapping: Sendable {
     let bundleID: String
     /// The name `tell application "…"` addresses.
@@ -22,12 +19,7 @@ struct NowPlayingControlMapping: Sendable {
     let nextPhrase: String
     let previousPhrase: String
     let seekPhrase: String?
-    /// Reads the playhead. Present even for players whose notification already
-    /// carries a position — the script is the only route for the ones that
-    /// don't, and having the row filled in keeps the two lists symmetric.
     let positionQueryPhrase: String?
-    /// Reads a cover URL straight off the player instead of resolving one over
-    /// the network. Only some players expose it.
     let artworkURLQueryPhrase: String?
 
     static let all: [NowPlayingControlMapping] = [
@@ -39,8 +31,6 @@ struct NowPlayingControlMapping: Sendable {
             previousPhrase: "previous track",
             seekPhrase: "set player position to",
             positionQueryPhrase: "player position",
-            // Spotify's dictionary hands out the cover URL directly, which
-            // saves the oEmbed lookup that otherwise stands between us and it.
             artworkURLQueryPhrase: "artwork url of current track"
         ),
         NowPlayingControlMapping(
@@ -50,14 +40,8 @@ struct NowPlayingControlMapping: Sendable {
             nextPhrase: "next track",
             previousPhrase: "previous track",
             seekPhrase: "set player position to",
-            // The one field Music's notification never sends. Its dictionary
-            // has always had it (`sdef /System/Applications/Music.app`:
-            // `<property name="player position" code="pPos" type="real">`), so
-            // the missing progress bar was us not asking, not Music not telling.
+            // The one field Music's notification never sends; the dictionary has `player position`.
             positionQueryPhrase: "player position",
-            // Music's dictionary exposes artwork as raw image data, not a URL;
-            // pulling a picture through an Apple Event is not worth it when
-            // the iTunes Search route already works.
             artworkURLQueryPhrase: nil
         ),
     ]
@@ -84,18 +68,11 @@ enum NowPlayingControlFailure: Error, Equatable, Sendable {
     case scriptFailed(OSStatus)
 }
 
-/// A read of a player's own state. Unlike a transport command, a query is never a result of the user
-/// clicking anything, so it must never provoke the Automation consent dialog — a modal nobody asked for
-/// is worse than a missing progress bar — so `value(for:from:)` answers nil until consent already
-/// exists for that target.
+/// A query must not provoke the Automation consent dialog; `value(for:from:)` answers nil until consent already exists.
 enum NowPlayingQuery: Sendable, Hashable {
     case playerPosition
     case artworkURL
-    /// Cold-start read of the whole now-playing tuple (state, title, artist,
-    /// album) in one round trip. DNC only pushes on change, so a launch
-    /// mid-song otherwise stays blind until the next track — the one gap a
-    /// query can close. String fields only: numbers would need the descriptor
-    /// path per field, and the seed works without position/duration.
+    /// Cold-start read of state/title/artist/album in one round trip. String fields only.
     case launchSnapshot
 }
 
@@ -130,10 +107,6 @@ struct NowPlayingScriptError: Error, Equatable, Sendable {
 
 // MARK: - Controller
 
-/// Sends transport commands to whichever player the Now Playing layer is
-/// showing. Execution is AppleScript through `NSAppleScript` — an Apple Event
-/// is a synchronous round trip to another process, so it never runs on the main
-/// thread; the result hops back here before any UI reads it.
 @MainActor
 final class NowPlayingController: ObservableObject {
     static let shared = NowPlayingController()
@@ -144,18 +117,12 @@ final class NowPlayingController: ObservableObject {
         case notDetermined
     }
 
-    /// Script text in, outcome out. The only impure part of this class, so
-    /// tests can exercise every rule without an Apple Event ever leaving the
-    /// process.
     typealias Executor = @Sendable (String) -> Result<Void, NowPlayingScriptError>
     /// Same round trip, but the descriptor's value comes back.
     typealias QueryExecutor = @Sendable (String) -> Result<NowPlayingScriptValue, NowPlayingScriptError>
     /// Bundle ID in, `AEDeterminePermissionToAutomateTarget` status out.
     typealias PermissionProbe = @Sendable (String) -> OSStatus
 
-    /// Carbon `MacErrors.h` values. Spelled out rather than imported so the
-    /// mapping below is readable and does not depend on which of these Apple
-    /// currently surfaces to Swift.
     enum Status {
         static let notPermitted: OSStatus = -1743
         static let wouldRequireUserConsent: OSStatus = -1744
@@ -198,9 +165,6 @@ final class NowPlayingController: ObservableObject {
         var command: NowPlayingCommand
     }
 
-    /// Apple Events are a synchronous IPC round trip: a serial queue of our own
-    /// keeps them off both the main thread and the cooperative pool, and keeps
-    /// two `NSAppleScript` executions from overlapping.
     private static let executionQueue = DispatchQueue(label: "com.loomscreen.nowplaying.control")
 
     init(
@@ -318,16 +282,9 @@ final class NowPlayingController: ObservableObject {
         }
     }
 
-    /// Reads one value off a player; nil whenever nothing was asked (no vocabulary, or consent not
-    /// established) — deliberate, so a caller can't tell a refusal from an unasked question, both meaning
-    /// "carry on without it". Unthrottled on purpose: the throttle exists to swallow button double-clicks,
-    /// and would silently starve a poller running its own cadence.
+    /// nil whenever nothing was asked. Unthrottled: the throttle would starve a poller.
     func value(for query: NowPlayingQuery, from bundleID: String?) async -> NowPlayingScriptValue? {
         guard let bundleID, let script = Self.script(for: query, bundleID: bundleID) else { return nil }
-        // Consent is granted per target in System Settings and survives relaunches, but this map
-        // starts empty every launch — without this the playhead only appeared after the user pressed
-        // a transport button in a session where consent was already granted months ago. The probe
-        // reads the existing answer and never prompts.
         if authorization(for: bundleID) == .notDetermined {
             await refreshAuthorization(for: bundleID)
         }
@@ -347,8 +304,6 @@ final class NowPlayingController: ObservableObject {
         }
     }
 
-    /// Reads the current Automation permission without ever asking the user, so
-    /// Settings can explain a denial without provoking a prompt.
     func refreshAuthorization(for bundleID: String?) async {
         guard let bundleID, NowPlayingControlMapping.mapping(for: bundleID) != nil else { return }
         let probe = self.probe
@@ -366,7 +321,6 @@ final class NowPlayingController: ObservableObject {
     }
 
     #if DEBUG
-    // Test-only introspection; no production reader.
     var debugThrottleKeyCount: Int { lastSent.count }
     #endif
 

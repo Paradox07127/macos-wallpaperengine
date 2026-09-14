@@ -22,8 +22,7 @@ struct SceneResourceResolverTests {
         let capped = try resolver.resolveImage(relativePath: "huge.png", maxSourceEdge: 64)
         #expect(max(capped.image.width, capped.image.height) <= 64)
         #expect(min(capped.image.width, capped.image.height) > 0)
-        // The registry's world size comes from here; reporting the thumbnail
-        // would lay a layer with no authored size out at a quarter scale.
+        // 必须是缩略前的源尺寸:否则无 authored size 的图层会按四分之一比例排版。
         #expect(capped.sourcePixelWidth == 256)
         #expect(capped.sourcePixelHeight == 256)
     }
@@ -241,8 +240,7 @@ struct SceneResourceResolverTests {
             _ = try resolver.resolveImage(relativePath: "models/util/solidlayer.json").image
             Issue.record("Expected materialUnresolved")
         } catch SceneResourceResolver.ResolveError.materialUnresolved(let reason) {
-            // The path, not the English wording: the reason is user-facing copy
-            // and now renders in the picked language.
+            // 断言路径而非英文措辞:reason 是会本地化的用户文案。
             #expect(reason.contains("models/util/solidlayer.json"))
         } catch {
             Issue.record("Expected materialUnresolved, got \(error)")

@@ -65,7 +65,6 @@ struct BoardSettingsView: View {
         .groupBoxStyle(ContainerGroupBoxStyle())
     }
 
-    /// Read-only grants for local agent session history.
     private var authorizationSection: some View {
         GroupBox {
             CollapsibleSection(
@@ -83,7 +82,6 @@ struct BoardSettingsView: View {
 
     // MARK: - Board-level controls
 
-    /// A full-width slider keeps the 19-step interval grid usable in a narrow inspector.
     private var refreshRateRow: some View {
         VStack(alignment: .leading, spacing: 6) {
             SettingRow(
@@ -180,7 +178,6 @@ struct BoardSettingsView: View {
 
     // MARK: - Widget appearance
 
-    /// Liquid Glass requires macOS 26 or later.
     @ViewBuilder
     private var widgetGlassRow: some View {
         if #available(macOS 26.0, *) {
@@ -249,7 +246,6 @@ struct BoardSettingsView: View {
 
     // MARK: - Layout management (reset / import / export)
 
-    /// Keep all three layout actions on a full-width line.
     private var layoutManagementRow: some View {
         VStack(alignment: .leading, spacing: 6) {
             SettingRow(
@@ -280,7 +276,6 @@ struct BoardSettingsView: View {
         }
     }
 
-    /// Reset is disabled only when widget kinds, sizes and positions match the default.
     private var isDefaultLayout: Bool {
         let defaults = MonitorBoardConfiguration.defaultSystemPlacements()
         let current = draft.widgets
@@ -328,7 +323,6 @@ struct BoardSettingsView: View {
         )
     }
 
-    /// Places authorization actions on a full-width row at inspector widths.
     @ViewBuilder
     private func authorizationRow(
         title: LocalizedStringKey,
@@ -402,7 +396,6 @@ struct BoardSettingsView: View {
         commit(next)
     }
 
-    /// Write the whole board config (widgets + board-level settings) as JSON to a user-chosen file.
     private func exportLayout() {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.json]
@@ -476,14 +469,12 @@ struct BoardSettingsView: View {
         codexAuthorized = SourceAuthorization.shared.isAuthorized(.codex)
     }
 
-    /// Use the same host for authorization sheets and layout error alerts.
     private func hostWindow() -> NSWindow? {
         NSApp.keyWindow ?? NSApp.mainWindow ?? NSApp.windows.first
     }
 
     // MARK: - Formatting helpers
 
-    /// Omit decimals for whole seconds; preserve tenths for the fine interval steps.
     nonisolated static func refreshIntervalLabel(_ seconds: Double) -> String {
         let snapped = MonitorBoardConfiguration.snappedRefreshInterval(seconds)
         return snapped == snapped.rounded()
@@ -505,8 +496,6 @@ struct BoardSettingsView: View {
 
 // MARK: - Reduce-motion tri-state
 
-/// Tri-state mapping for `reduceMotionOverride`: follow system (nil) / force on
-/// (true) / force off (false).
 enum ReduceMotionChoice: Hashable {
     case system
     case on
