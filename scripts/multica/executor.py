@@ -260,7 +260,7 @@ def _run_attempt(cfg, req, commands):
         env['GIT_LFS_SKIP_SMUDGE'] = '1'
         env['GIT_TERMINAL_PROMPT'] = '0'
         phase = 'fetch'
-        fetched = subprocess.run(['git', '-C', str(source), 'fetch', '-q', '--filter=blob:none', 'origin',
+        fetched = subprocess.run(['git', '-C', str(source), 'fetch', '-q', '--no-filter', 'origin',
                                   req['base_sha'], req['head_sha']], env=env,
                                  stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=180)
         if fetched.returncode:

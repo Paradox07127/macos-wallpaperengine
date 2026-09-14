@@ -317,6 +317,22 @@ class ExecutorTests(unittest.TestCase):
                 self.assertEqual(executor.failed_execution(self.job_dir, self.job_id)['verdict'], 'FAILED')
         self.assertEqual(self.publish()['state'], 'failure')
 
+    def test_fetch_explicitly_disables_inherited_partial_clone_filter(self):
+        (self.review_dir / 'manifest.json').unlink()
+        origin = 'https://github.com/' + self.cfg['repository'] + '.git'
+        responses = [subprocess.CompletedProcess([], 0, stdout='', stderr=''),
+                     subprocess.CompletedProcess([], 1, stdout=json.dumps({
+                         'job_id': self.job_id, 'verdict': 'FAILED', 'reasons': []}))]
+        with patch.object(executor.bridge, 'Commands', return_value=self.commands), \
+                patch.object(executor.runner, 'git', return_value=origin), \
+                patch.object(executor.subprocess, 'run', side_effect=responses) as process:
+            executor.run_job(self.cfg, self.job_id)
+        fetch = process.call_args_list[0].args[0]
+        self.assertEqual(fetch, ['git', '-C', self.cfg['repository_path'], 'fetch', '-q',
+                                 '--no-filter', 'origin', self.base, self.head])
+        self.assertFalse(any(argument.startswith('--filter') for argument in fetch))
+        self.assertNotIn('blob:none', ' '.join(fetch))
+
     def test_target_read_failure_is_recorded_after_identity_validation(self):
         with patch.object(executor.bridge, 'Commands', return_value=self.commands), \
                 patch.object(self.commands, 'gh', side_effect=executor.bridge.BridgeError('private token')):
