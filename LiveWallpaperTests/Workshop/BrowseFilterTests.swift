@@ -1535,12 +1535,15 @@ struct BrowseFirstPaintWiringTests {
             "Packages/LiveWallpaperCore/Sources/LiveWallpaperCore/App/NotificationNames.swift"
         )
         let settings = try RepositoryRoot.source("LiveWallpaper/Views/Settings/WorkshopSettingsView.swift")
+        let commit = try RepositoryRoot.source("LiveWallpaper/App/GlobalSettingsCommit.swift")
         let pane = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/BrowsePane.swift")
         let backup = try RepositoryRoot.source("LiveWallpaper/Views/Settings/BackupSection.swift")
         let advanced = try RepositoryRoot.source("LiveWallpaper/Views/Settings/AdvancedSection.swift")
 
         #expect(names.contains("workshopPresetVisibilityDidChange"))
-        #expect(settings.contains(".workshopPresetVisibilityDidChange"))
+        // The page commits through GlobalSettingsCommit, which owns the post.
+        #expect(settings.contains("GlobalSettingsCommit.WorkshopPageFields("))
+        #expect(commit.contains(".workshopPresetVisibilityDidChange"))
         #expect(pane.contains(".workshopPresetVisibilityDidChange"))
         // Restoring or resetting the store rewrites the setting behind the
         // toggle's back, so both re-post it like the other cross-window ones.

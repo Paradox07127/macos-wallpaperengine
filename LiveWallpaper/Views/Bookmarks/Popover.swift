@@ -133,7 +133,11 @@ struct Popover: View {
             store.add(
                 label: trimmed,
                 content: content,
-                sourceDisplayName: sourceDisplayName(for: content)
+                sourceDisplayName: sourceDisplayName(for: content),
+                // Scene content lives in the Steam library, not the container: without the
+                // origin the saved bookmark cannot be resolved back to its files and
+                // applying it fails. The Workshop-side add has always passed this.
+                wpeOrigin: screenManager.getConfiguration(for: screen)?.wpeOrigin
             )
         }
         dismiss()

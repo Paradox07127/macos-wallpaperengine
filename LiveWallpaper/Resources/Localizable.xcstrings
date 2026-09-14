@@ -66797,38 +66797,38 @@
         }
       }
     },
-    "Use Save as Scheme in display details to save wallpapers, overlays, and settings." : {
-      "comment" : "Empty scheme library: names the existing Save as Scheme action in display details.",
+    "Use Save as Scheme in display details to capture a display's wallpaper, overlays, and settings together. Applying one replaces all of them." : {
+      "comment" : "Empty scheme library: names the Save as Scheme action and states that a scheme replaces the whole display setup.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Use Save as Scheme in display details to save wallpapers, overlays, and settings."
+            "value" : "Use Save as Scheme in display details to capture a display's wallpaper, overlays, and settings together. Applying one replaces all of them."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Selecciona «Guardar como esquema» en los detalles de la pantalla para guardar el fondo, las superposiciones y los ajustes."
+            "value" : "Selecciona «Guardar como esquema» en los detalles de la pantalla para guardar juntos el fondo, las superposiciones y los ajustes. Al aplicarlo se reemplazan todos."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ディスプレイの詳細で「構成として保存」を選ぶと、壁紙、オーバーレイ、設定を保存できます。"
+            "value" : "ディスプレイの詳細で「構成として保存」を選ぶと、壁紙、オーバーレイ、設定をまとめて保存できます。適用するとそれらがすべて置き換わります。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在显示器详情中选择“保存为方案”，保存壁纸、叠加层和设置。"
+            "value" : "在显示器详情中选择“保存为方案”，将壁纸、叠加层和设置一并保存。套用方案会整套替换。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在顯示器詳細資訊中選擇「儲存為方案」，儲存桌布、疊加層與設定。"
+            "value" : "在顯示器詳細資訊中選擇「儲存為方案」，將桌布、疊加層與設定一併儲存。套用方案會整套取代。"
           }
         }
       }
@@ -66992,38 +66992,38 @@
         }
       }
     },
-    "Use the bookmark button on a display to save its wallpaper and settings." : {
-      "comment" : "Bookmarks empty state: no add action here; explains the source control and what is saved.",
+    "Use the bookmark button on a display to save its wallpaper. Applying one swaps the wallpaper and leaves that display's settings alone." : {
+      "comment" : "Bookmarks empty state: names the source control and states that a bookmark carries content only, unlike a scheme.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Use the bookmark button on a display to save its wallpaper and settings."
+            "value" : "Use the bookmark button on a display to save its wallpaper. Applying one swaps the wallpaper and leaves that display's settings alone."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Usa el botón de marcadores de una pantalla para guardar su fondo y ajustes."
+            "value" : "Usa el botón de marcadores de una pantalla para guardar su fondo. Al aplicarlo solo cambia el fondo; los ajustes de esa pantalla no se tocan."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ディスプレイのブックマークボタンで壁紙と設定を保存します。"
+            "value" : "ディスプレイのブックマークボタンで壁紙を保存します。適用すると壁紙だけが入れ替わり、そのディスプレイの設定はそのままです。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "使用显示器上的书签按钮保存壁纸及其设置。"
+            "value" : "使用显示器上的书签按钮保存其壁纸。套用书签只更换壁纸，不改动该显示器的设置。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "使用顯示器上的書籤按鈕儲存桌布及其設定。"
+            "value" : "使用顯示器上的書籤按鈕儲存其桌布。套用書籤只更換桌布，不會改動該顯示器的設定。"
           }
         }
       }

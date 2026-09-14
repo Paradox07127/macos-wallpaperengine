@@ -214,32 +214,74 @@ struct GeneralSettingsOwnershipCharacterizationTests {
             from: "func updateGlobalSettings() {",
             until: "/// Defers the post"
         )
+        let commitSource = try RepositoryRoot.source("LiveWallpaper/App/GlobalSettingsCommit.swift")
+        let commit = try Self.slice(
+            commitSource,
+            from: "static func apply(",
+            until: "/// Deferred so the post"
+        )
+
+        // The page hands every field it owns to the commit; the persistence mapping and
+        // the apply chain live in the commit, which non-UI writers also go through.
+        let expectedArguments = [
+            "globalPauseOnBattery: globalPauseOnBattery",
+            "preservePlaybackOnLock: preservePlaybackOnLock",
+            "startOnLogin: startOnLogin",
+            "pauseOnFullScreen: pauseOnFullScreen",
+            "pauseOnWindowOcclusion: pauseOnWindowOcclusion",
+            "pauseInLowPowerMode: pauseInLowPowerMode",
+            "applicationPerformanceRules: applicationRules",
+            "showInDock: showInDock",
+            "wallpaperVisibleInScreenCapture: wallpaperVisibleInScreenCapture",
+            "videoCacheMaxBytesPerScreen: Int(videoCacheBudgetMB) * 1024 * 1024",
+            "audioResponseEnabled: audioResponseEnabled",
+            "adaptiveFrameRateEnabled: adaptiveFrameRateEnabled",
+            "weatherLocation: weatherLocation",
+        ]
         let expectedAssignments = [
-            "settings.globalPauseOnBattery = globalPauseOnBattery",
-            "settings.preservePlaybackOnLock = preservePlaybackOnLock",
-            "settings.startOnLogin = startOnLogin",
-            "settings.pauseOnFullScreen = pauseOnFullScreen",
-            "settings.pauseOnWindowOcclusion = pauseOnWindowOcclusion",
-            "settings.pauseInLowPowerMode = pauseInLowPowerMode",
-            "settings.applicationPerformanceRules = applicationRules",
-            "settings.showInDock = showInDock",
-            "settings.videoCacheMaxBytesPerScreen = Int(videoCacheBudgetMB) * 1024 * 1024",
-            "settings.audioResponseEnabled = audioResponseEnabled",
-            "settings.adaptiveFrameRateEnabled = adaptiveFrameRateEnabled",
-            "settings.weatherLocation = weatherLocation",
+            "settings.globalPauseOnBattery = fields.globalPauseOnBattery",
+            "settings.preservePlaybackOnLock = fields.preservePlaybackOnLock",
+            "settings.startOnLogin = fields.startOnLogin",
+            "settings.pauseOnFullScreen = fields.pauseOnFullScreen",
+            "settings.pauseOnWindowOcclusion = fields.pauseOnWindowOcclusion",
+            "settings.pauseInLowPowerMode = fields.pauseInLowPowerMode",
+            "settings.applicationPerformanceRules = fields.applicationPerformanceRules",
+            "settings.showInDock = fields.showInDock",
+            "settings.wallpaperVisibleInScreenCapture = fields.wallpaperVisibleInScreenCapture",
+            "settings.videoCacheMaxBytesPerScreen = fields.videoCacheMaxBytesPerScreen",
+            "settings.audioResponseEnabled = fields.audioResponseEnabled",
+            "settings.adaptiveFrameRateEnabled = fields.adaptiveFrameRateEnabled",
+            "settings.weatherLocation = fields.weatherLocation",
         ]
 
-        #expect(update.contains("var settings = SettingsManager.shared.loadGlobalSettings()"))
-        #expect(update.contains("SettingsManager.shared.saveGlobalSettings(settings)"))
+        #expect(update.contains("GlobalSettingsCommit.apply("))
+        #expect(update.contains("screenManager: screenManager"))
+        for argument in expectedArguments {
+            #expect(update.contains(argument), "Page stopped forwarding: \(argument)")
+        }
+
+        #expect(commit.contains("var settings = SettingsManager.shared.loadGlobalSettings()"))
+        #expect(commit.contains("SettingsManager.shared.saveGlobalSettings(settings)"))
+        #expect(commit.contains("screenManager.handleGlobalSettingsChanged()"))
         #expect(
-            !update.contains("var settings = GlobalSettings("),
-            "Page writes must remain read-modify-write"
+            !commit.contains("var settings = GlobalSettings("),
+            "Commit must remain read-modify-write"
         )
         for assignment in expectedAssignments {
-            #expect(update.contains(assignment), "Missing persistence mapping: \(assignment)")
+            #expect(commit.contains(assignment), "Missing persistence mapping: \(assignment)")
         }
-        #expect(update.contains("if dockChanged"))
-        #expect(update.contains("if weatherChanged"))
+        #expect(commit.contains("if outcome.dockVisibilityChanged"))
+        #expect(commit.contains("if outcome.weatherLocationChanged"))
+        #expect(commit.contains("if outcome.audioResponseChanged"))
+
+        // The other two pages that write GlobalSettings go through the same commit, so a
+        // non-UI writer reaches their apply chains too. Without this, dropping either call
+        // would silently go back to a disk write nothing reacted to.
+        let shortcuts = try RepositoryRoot.source("LiveWallpaper/Views/Settings/ShortcutsView.swift")
+        #expect(shortcuts.contains("GlobalSettingsCommit.ShortcutsPageFields("))
+        #expect(commitSource.contains("postAsync(.globalShortcutsDidChange)"))
+        let workshop = try RepositoryRoot.source("LiveWallpaper/Views/Settings/WorkshopSettingsView.swift")
+        #expect(workshop.contains("GlobalSettingsCommit.WorkshopPageFields("))
 
         let backup = try RepositoryRoot.source("LiveWallpaper/Views/Settings/BackupSection.swift")
         #expect(backup.contains("let summary = ConfigurationPorter.apply(bundle)"))

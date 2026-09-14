@@ -73,16 +73,8 @@ struct WorkshopSettingsView: View {
                     Toggle("", isOn: $showsPresetsInBrowse)
                         .labelsHidden()
                         .toggleStyle(.switch)
-                        .onChange(of: showsPresetsInBrowse) { _, newValue in
-                            var settings = SettingsManager.shared.loadGlobalSettings()
-                            settings.showsWorkshopPresetsInBrowse = newValue
-                            SettingsManager.shared.saveGlobalSettings(settings)
-                            // Defer notification until after SwiftUI reconciliation.
-                            Task { @MainActor in
-                                NotificationCenter.default.post(
-                                    name: .workshopPresetVisibilityDidChange, object: nil
-                                )
-                            }
+                        .onChange(of: showsPresetsInBrowse) { _, _ in
+                            persistBrowsePreferences()
                         }
                         .accessibilityLabel(Text("Show presets as wallpapers in Browse"))
                 }
@@ -99,10 +91,8 @@ struct WorkshopSettingsView: View {
                     .pickerStyle(.menu)
                     .labelsHidden()
                     .fixedSize()
-                    .onChange(of: defaultSort) { _, newValue in
-                        var settings = SettingsManager.shared.loadGlobalSettings()
-                        settings.workshopDefaultSort = newValue.rawValue
-                        SettingsManager.shared.saveGlobalSettings(settings)
+                    .onChange(of: defaultSort) { _, _ in
+                        persistBrowsePreferences()
                     }
                     .accessibilityLabel(Text("Default sort"))
                 }
@@ -121,10 +111,8 @@ struct WorkshopSettingsView: View {
                     .labelsHidden()
                     .fixedSize()
                     .disabled(defaultSort != .mostPopular)
-                    .onChange(of: defaultTimeFrame) { _, newValue in
-                        var settings = SettingsManager.shared.loadGlobalSettings()
-                        settings.workshopDefaultTimeFrame = newValue.rawValue
-                        SettingsManager.shared.saveGlobalSettings(settings)
+                    .onChange(of: defaultTimeFrame) { _, _ in
+                        persistBrowsePreferences()
                     }
                     .accessibilityLabel(Text("Default time frame"))
                 }
@@ -204,6 +192,18 @@ struct WorkshopSettingsView: View {
 
     private var engineAssetsState: WorkshopStepState {
         .engineAssets(library: engineAssets, installer: engineInstaller)
+    }
+
+    /// All three browse preferences commit together; the commit posts the
+    /// preset-visibility notification only when that field actually moved.
+    private func persistBrowsePreferences() {
+        GlobalSettingsCommit.apply(
+            GlobalSettingsCommit.WorkshopPageFields(
+                showsPresetsInBrowse: showsPresetsInBrowse,
+                defaultSort: defaultSort.rawValue,
+                defaultTimeFrame: defaultTimeFrame.rawValue
+            )
+        )
     }
 }
 #endif

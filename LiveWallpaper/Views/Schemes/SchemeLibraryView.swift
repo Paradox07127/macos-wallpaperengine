@@ -82,7 +82,7 @@ struct SchemeLibraryView: View {
             icon: "square.stack.3d.up",
             tint: DesignTokens.Colors.LibraryTint.schemes,
             title: "No schemes yet",
-            message: "Use Save as Scheme in display details to save wallpapers, overlays, and settings."
+            message: "Use Save as Scheme in display details to capture a display's wallpaper, overlays, and settings together. Applying one replaces all of them."
         )
     }
 
