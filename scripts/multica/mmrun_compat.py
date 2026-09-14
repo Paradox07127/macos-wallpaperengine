@@ -153,12 +153,13 @@ def patched_source(source, helper, python):
 
 
 def file_hash(path):
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    return hashlib.sha256(input_snapshot(path)[0]).hexdigest()
 
 
 CLAUDE_ANCHORS = {
     "binary": 'CODEX_BIN="${CODEX_BIN:-codex}"',
     "models": 'ALL_MODELS="codex grok agy"',
+    "selection": '  local models="codex,grok" wd="$PWD" tag="" gm="" cm="" am="" mode="start" schema="" wt="" rid=""',
     "start": 'case "$m" in codex|grok|agy) ;; *) die "unsupported model: $m ($ALL_MODELS)";; esac',
     "workdir": '  [ -d "$wd" ] || die "workdir not found: $wd"',
     "case": '    agy)\n',

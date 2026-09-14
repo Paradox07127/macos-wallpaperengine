@@ -33,6 +33,7 @@ ALLOWED_REPOSITORY = "Paradox07127/macos-wallpaperengine"
 SHA = re.compile(r"^[0-9a-f]{40}$")
 UUID = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 RELEASE_VERSION = runner.RELEASE_VERSION
+HTML_SYNTAX = re.compile(r"<[A-Za-z!/?]")
 TRUNCATION_SUFFIX = "\n[Truncated; evidence missing beyond this point.]"
 
 
@@ -49,6 +50,32 @@ class CommandError(BridgeError):
         self.http_status = http_status
         self.returncode = returncode
         super().__init__(f"{program} exited {returncode}; remote outcome may be uncertain")
+
+
+def parse_json(text):
+    """Bound structural depth before decoding; JSON strings are not structure."""
+    depth = 0
+    quoted = escaped = False
+    for char in text:
+        if quoted:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                quoted = False
+        elif char == '"':
+            quoted = True
+        elif char in "[{":
+            depth += 1
+            if depth > 64:
+                raise BridgeError("JSON nesting exceeds supported depth")
+        elif char in "]}":
+            depth -= 1
+    try:
+        return json.loads(text)
+    except (json.JSONDecodeError, RecursionError) as exc:
+        raise BridgeError("Response was not supported JSON") from exc
 
 
 def status_context(request):
@@ -250,7 +277,7 @@ def public_user(item):
 
 
 def command_text(value, limit):
-    if not isinstance(value, str):
+    if not isinstance(value, str) or HTML_SYNTAX.search(value):
         return ""
     if len(value) <= limit:
         return value
@@ -263,7 +290,10 @@ def requests_triage(text):
     """Conservative Markdown authorization: one unindented top-level paragraph."""
     fence = None
     container = False
-    html_end = None
+    # Authorization is intentionally unavailable for any HTML-like source,
+    # including tags in quoted examples or after the retained text boundary.
+    if HTML_SYNTAX.search(text):
+        return False
     lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
     for index, line in enumerate(lines):
         stripped = line.lstrip()
@@ -279,10 +309,6 @@ def requests_triage(text):
             close = re.fullmatch(r" {0,3}(" + re.escape(delimiter[0]) + r"{" + str(len(delimiter)) + r",})[ \t]*", candidate)
             if close:
                 fence = None
-            continue
-        if html_end:
-            if re.search(html_end, line, re.I):
-                html_end = None
             continue
         if not line.strip(" \t"):
             container = False
@@ -301,22 +327,6 @@ def requests_triage(text):
                 # A list marker continues as indentation on subsequent lines.
                 prefix = re.sub(r"(?:[-+*]|\d+[.)])[ \t]+$", lambda m: " " * len(m[0]), prefix)
                 fence = (delimiter, "" if re.fullmatch(r" {0,3}", line[:position]) else prefix)
-            continue
-        html_text = normalized.lstrip()
-        html = re.match(r"<(pre|code|script|style|textarea|[A-Za-z][A-Za-z0-9-]*)(?:\s|>|/)", html_text)
-        if html_text.startswith("<!--"):
-            html_end = r"-->"
-        elif html and (html[1].lower() in {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"}
-                       or (html[1].lower() not in {"pre", "code", "script", "style", "textarea"}
-                           and re.match(r"<[^>]+/\s*>[ \t]*$", html_text))):
-            continue
-        elif html:
-            html_end = r"</" + re.escape(html[1]) + r"\s*>"
-        elif html_text.startswith(("<?", "<!")):
-            html_end = r">"
-        if html_end:
-            if re.search(html_end, line, re.I):
-                html_end = None
             continue
         if (not container and re.fullmatch(r"/multica-triage[ \t]*", line)
                 and (index == 0 or not lines[index - 1].strip(" \t"))
@@ -346,7 +356,7 @@ def object_id(value):
 
 
 def load_config(path):
-    cfg = json.loads(Path(path).read_text(encoding="utf-8"))
+    cfg = parse_json(Path(path).read_text(encoding="utf-8"))
     if not isinstance(cfg, dict):
         raise BridgeError("Config must be a JSON object")
     def reject_secrets(value):
@@ -489,10 +499,7 @@ class Commands:
                     match = re.search(rb"\bHTTP ([1-5][0-9]{2})\b", outputs["stderr"][:8192])
                     raise CommandError(Path(argv[0]).name, code, int(match.group(1)) if match else None)
                 raw = outputs["stdout"].decode("utf-8")
-                try:
-                    value = (json.loads(raw) if raw.strip() else {}) if json_output else raw
-                except json.JSONDecodeError as exc:
-                    raise BridgeError("CLI response was not JSON") from exc
+                value = (parse_json(raw) if raw.strip() else {}) if json_output else raw
                 finished = True
                 return value
         except (OSError, UnicodeError, subprocess.TimeoutExpired) as exc:
@@ -536,7 +543,7 @@ class Commands:
         return value.astimezone(dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
     def gh(self, endpoint, payload=None):
-        args = [self.cfg["gh_path"], "api", "--method", "POST" if payload is not None else "GET", endpoint]
+        args = [self.cfg["gh_path"], "api", "--hostname", "github.com", "--method", "POST" if payload is not None else "GET", endpoint]
         if payload is not None:
             args += ["--input", "-"]
         return self.run(args, json.dumps(payload) if payload is not None else None)
@@ -612,8 +619,9 @@ def process_lock(path, dry_run=False):
         yield
         return
     runner.durable_mkdir(Path(path).parent)
-    with open(str(path) + ".lock", "a") as handle:
-        os.chmod(handle.name, 0o600)
+    fd = os.open(str(path) + ".lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, "r+") as handle:
+        os.fchmod(handle.fileno(), 0o600)
         try:
             fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
@@ -675,7 +683,7 @@ class Bridge:
             saved = self.state.get("meta", "create-body:" + source)
             if saved is None:
                 raise BridgeError("Matching issue has no trusted local creation intent; explicit mapping required")
-            expected = json.loads(saved)
+            expected = parse_json(saved)
             issue = self.commands.multica(["issue", "get", remote_id, "--output", "json"])
             if isinstance(issue, dict):
                 issue = issue.get("issue", issue.get("data", issue))
@@ -837,7 +845,7 @@ class Bridge:
         saved = self.state.get("meta", "initial-delivery:" + source)
         if (saved and self.state.get("meta", "initial-triage:" + source) == "done"
                 and self.state.get("meta", "history-receipts:" + source) != "done"):
-            self.initial_receipts(source, remote_id, json.loads(saved))
+            self.initial_receipts(source, remote_id, parse_json(saved))
 
     def triage_snapshot(self, item, history):
         return self.source_body("github_issue", item, {
@@ -888,7 +896,7 @@ class Bridge:
         if initial_pending:
             saved = self.state.get("meta", "initial-delivery:" + source)
             if saved:
-                initial_record = json.loads(saved)
+                initial_record = parse_json(saved)
             else:
                 history, included_events = self.initial_history(item)
                 initial_record = {"event": event, "fingerprint": fingerprint, "updated_at": item["updated_at"],
@@ -948,7 +956,7 @@ class Bridge:
         event = version_event = self.comment_event(item)
         initial = self.state.get("meta", "initial-delivery:" + source)
         if initial and self.state.get("meta", "initial-triage:" + source) == "pending":
-            if event in json.loads(initial)["included_events"]:
+            if event in parse_json(initial)["included_events"]:
                 raise BridgeError("Comment is in an unconfirmed initial delivery; follow-up authorization deferred")
         if self.state.get("meta", "triage-command:" + version_event) == "included_in_initial_context":
             return
@@ -1237,7 +1245,7 @@ class Bridge:
         body = marker("comment:" + event) + "\n" + body
         if delivery == "create" and existing:
             saved_create = self.state.get("meta", "create-body:" + source)
-            created_event = json.loads(saved_create)["description"].split("\n", 3)[2:3] if saved_create else []
+            created_event = parse_json(saved_create)["description"].split("\n", 3)[2:3] if saved_create else []
             if created_event != [marker("comment:" + event)]:
                 delivery = "comment"
                 self.state.meta(delivery_key, delivery)
@@ -1346,7 +1354,7 @@ class Bridge:
                 break
             try:
                 self.observation = key
-                item = json.loads(payload)
+                item = parse_json(payload)
                 if not isinstance(item, dict):
                     raise BridgeError("Source event must be an object")
                 source, updated = self.event_source(kind, item)

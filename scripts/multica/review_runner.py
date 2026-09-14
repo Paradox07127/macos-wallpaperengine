@@ -20,6 +20,8 @@ import math
 import os
 from pathlib import Path
 import re
+import selectors
+import signal
 import stat
 import subprocess
 import sys
@@ -27,7 +29,7 @@ import tempfile
 import time
 from typing import Any
 
-POLICY_VERSION = "multica-mmrun-static-v7"
+POLICY_VERSION = "multica-mmrun-static-v8"
 RELEASE_VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.]+)?\Z")
 SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 SHA = re.compile(r"[0-9a-f]{40}\Z")
@@ -36,6 +38,9 @@ RUN = re.compile(r"^RUN ([A-Za-z0-9][A-Za-z0-9_.-]{0,95})\s+models=", re.M)
 MODEL_NAMES = {"codex", "grok", "claude", "agy"}
 MAX_REPORT_BYTES = 8 * 1024 * 1024
 MAX_ATTESTATION_BYTES = MAX_REPORT_BYTES * (2 * len(MODEL_NAMES)) + 1024 * 1024
+MAX_COMMAND_STDOUT_BYTES = 16 * 1024 * 1024
+MAX_COMMAND_STDERR_BYTES = 1024 * 1024
+MAX_OBJECT_INVENTORY_BYTES = 64 * 1024 * 1024
 MAX_INLINE_TREE_BYTES = 256 * 1024
 CAPTURE_LIMITS = {"stdout_bytes": 32 * 1024 * 1024, "stderr_bytes": 8 * 1024 * 1024, "file_bytes": 32 * 1024 * 1024}
 EXIT_CODES = {"PASS": 0, "NEEDS_REVIEW": 2, "FAILED": 1, "RUNNING_TIMEOUT": 3}
@@ -105,7 +110,10 @@ def fsync_directory(path: Path) -> None:
 
 
 def durable_mkdir(path: Path, *, mode: int = 0o700) -> None:
-    if path.exists():
+    if path.exists() or path.is_symlink():
+        if path.is_symlink() or not path.is_dir():
+            raise ReviewError("DURABLE_DIRECTORY_REPLACED")
+        reject_symlink_ancestors(path)
         return
     durable_mkdir(path.parent, mode=mode)
     try:
@@ -193,18 +201,8 @@ def failed_result(job_dir: Path, manifest: Any, reason: str, *, artifacts=None, 
     except (ReviewError, OSError, KeyError, TypeError, ValueError):
         return {"job_id": job_dir.name, "verdict": "FAILED", "attestation_path": None, "reasons": [reason]}
 
-def digest(path: Path) -> str:
-    check_deadline()
-    if path.suffix == ".raw" or ".raw." in path.name:
-        raise ReviewError("Raw event streams are deliberately not read")
-    if path.is_symlink() or not path.is_file():
-        raise ReviewError("ARTIFACT_NOT_REGULAR")
-    h = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(65536), b""):
-            check_deadline()
-            h.update(chunk)
-    return h.hexdigest()
+def digest(path: Path, *, max_bytes: int = MAX_REPORT_BYTES) -> str:
+    return read_bytes_snapshot(path, max_bytes=max_bytes, consumer=lambda chunk: None)[1]
 
 
 def write_json(path: Path, value: Any) -> None:
@@ -466,10 +464,64 @@ def git_environment() -> dict[str, str]:
     return env
 
 
+def bounded_command(argv, *, cwd=None, env=None, timeout=30,
+                    stdout_limit=MAX_COMMAND_STDOUT_BYTES, stderr_limit=MAX_COMMAND_STDERR_BYTES, stdout_sink=None):
+    """Bound controller output before allocation; own and clean up this process group."""
+    deadline = time.monotonic() + timeout
+    proc = subprocess.Popen(argv, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True, shell=False)
+    buffers = {"stdout": bytearray(), "stderr": bytearray()}
+    limits = {"stdout": stdout_limit, "stderr": stderr_limit}
+    sizes = {"stdout": 0, "stderr": 0}
+    try:
+        with selectors.DefaultSelector() as selector:
+            for name in buffers:
+                stream = getattr(proc, name)
+                os.set_blocking(stream.fileno(), False)
+                selector.register(stream, selectors.EVENT_READ, name)
+            while selector.get_map():
+                check_deadline()
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise subprocess.TimeoutExpired(argv, timeout)
+                for key, _ in selector.select(min(0.1, remaining)):
+                    name = key.data
+                    try:
+                        chunk = os.read(key.fileobj.fileno(), min(65536, limits[name] - sizes[name] + 1))
+                    except BlockingIOError:
+                        continue
+                    if not chunk:
+                        selector.unregister(key.fileobj)
+                    elif sizes[name] + len(chunk) > limits[name]:
+                        raise ReviewError("PREPARATION_COMMAND_OUTPUT_LIMIT")
+                    else:
+                        sizes[name] += len(chunk)
+                        if name == "stdout" and stdout_sink is not None:
+                            stdout_sink.write(chunk)
+                        else:
+                            buffers[name].extend(chunk)
+            rc = proc.wait(timeout=max(0.001, deadline - time.monotonic()))
+        try:
+            stdout = bytes(buffers["stdout"]).decode("utf-8")
+        except UnicodeError as exc:
+            raise ReviewError("PREPARATION_COMMAND_INVALID_UTF8") from exc
+        return subprocess.CompletedProcess(argv, rc, stdout=stdout, stderr="")
+    except BaseException:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        proc.wait(timeout=5)
+        raise
+    finally:
+        proc.stdout.close()
+        proc.stderr.close()
+
+
 def command(argv: list[str], cwd: Path | None = None, *, timeout: float = 30,
             env: dict[str, str] | None = None) -> str:
     try:
-        result = subprocess.run(argv, cwd=cwd, env=env, text=True, encoding="utf-8", capture_output=True, timeout=command_timeout(timeout), check=False)
+        result = bounded_command(argv, cwd=cwd, env=env, timeout=command_timeout(timeout))
     except subprocess.TimeoutExpired as exc:
         check_deadline()
         raise CollectionUnavailable("PREPARATION_COMMAND_TIMEOUT") from exc
@@ -499,10 +551,9 @@ def require_local_objects(repo: Path, base: str, head: str) -> None:
         raise ReviewError("base/head must be full lowercase 40-character commit SHAs")
     with tempfile.TemporaryFile() as inventory:
         try:
-            result = subprocess.run(["git", "-C", str(repo), "rev-list", "--objects",
-                                     "--missing=print", base, head], env=git_environment(),
-                                    stdout=inventory, stderr=subprocess.DEVNULL,
-                                    timeout=300, check=False)
+            result = bounded_command(["git", "-C", str(repo), "rev-list", "--objects",
+                                      "--missing=print", base, head], env=git_environment(),
+                                     stdout_sink=inventory, stdout_limit=MAX_OBJECT_INVENTORY_BYTES, timeout=300)
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise ReviewError("SOURCE_OBJECT_SCAN_FAILED: provide a complete local clone; automatic lazy fetch is disabled") from exc
         if result.returncode:
@@ -521,9 +572,9 @@ def freeze_repository(repo: Path, frozen: Path, base: str, head: str) -> None:
 
 def empty_delta(repo: Path, base: str, head: str) -> bool:
     try:
-        result = subprocess.run(["git", "-C", str(repo), "diff", "--no-ext-diff", "--no-textconv",
-                                 "--quiet", f"{base}...{head}"], env=git_environment(),
-                                capture_output=True, timeout=300, check=False)
+        result = bounded_command(["git", "-C", str(repo), "diff", "--no-ext-diff", "--no-textconv",
+                                  "--quiet", f"{base}...{head}"], env=git_environment(),
+                                 stdout_limit=4096, timeout=300)
     except subprocess.TimeoutExpired as exc:
         raise ReviewError("DELTA_CHECK_TIMEOUT") from exc
     if result.returncode not in (0, 1):
@@ -706,35 +757,47 @@ def environment(args: argparse.Namespace) -> tuple[dict[str, str], dict[str, Any
 
 @contextmanager
 def preparing(args: argparse.Namespace):
-    if args.kind == "release" and (type(getattr(args, "version", None)) is not str or not RELEASE_VERSION.fullmatch(args.version)):
-        raise ReviewError("RELEASE_VERSION_REQUIRED")
     if not JOB.fullmatch(args.job_id) or args.job_id in (".", ".."):
         raise ReviewError("Invalid job ID")
-    policy = review_policy(args.kind, args.models)
-    args.models = list(policy["models"])
-    validate_capture_timeout(args.timeout)
-    if not all(math.isfinite(value) and value > 0 for value in (args.timeout, args.poll_interval)):
-        raise ReviewError("timeout and poll interval must be positive")
-    repo = Path(args.repo).expanduser().resolve()
-    if Path(git(repo, "rev-parse", "--show-toplevel")).resolve() != repo.resolve():
-        raise ReviewError("--repo must name the repository root")
-    require_local_objects(repo, args.base, args.head)
-    tree = check_target(repo, args.base, args.head, kind=args.kind)
-    merge_base = git(repo, "merge-base", args.base, args.head)
-    env, provenance = environment(args)
     job_dir = Path(args.state_dir).expanduser().resolve() / args.job_id
     if job_dir.exists() or job_dir.is_symlink():
         raise ReviewError("Job already exists: use collect or choose a new job ID")
-    durable_mkdir(job_dir)
+    durable_mkdir(job_dir.parent)
+    try:
+        job_dir.mkdir(mode=0o700)
+    except FileExistsError as exc:
+        raise ReviewError("Job already exists: use collect or choose a new job ID") from exc
+    fsync_directory(job_dir.parent)
     with job_lock(job_dir) as locked:
         if not locked:
             raise ReviewError("Preparation already locked")
-        write_json(job_dir / "preparing.json", {"controller_pid": os.getpid(),
-                   "controller_identity": process_identity(os.getpid()), "job_id": args.job_id})
-        yield _prepare_checkout(args, repo, tree, merge_base, env, provenance, job_dir, policy)
-
-
-
+        record = {"schema_version": 1, "controller_pid": os.getpid(),
+                  "controller_identity": process_identity(os.getpid()), "job_id": args.job_id,
+                  "base_sha": args.base, "head_sha": args.head, "kind": args.kind,
+                  "version": getattr(args, "version", None)}
+        write_json(job_dir / "preparing.json", record)
+        try:
+            if args.kind == "release" and (type(getattr(args, "version", None)) is not str or not RELEASE_VERSION.fullmatch(args.version)):
+                raise ReviewError("RELEASE_VERSION_REQUIRED")
+            policy = review_policy(args.kind, args.models)
+            args.models = list(policy["models"])
+            validate_capture_timeout(args.timeout)
+            if not math.isfinite(args.poll_interval) or args.poll_interval <= 0:
+                raise ReviewError("poll interval must be positive")
+            repo = Path(args.repo).expanduser().resolve()
+            if Path(git(repo, "rev-parse", "--show-toplevel")).resolve() != repo.resolve():
+                raise ReviewError("--repo must name the repository root")
+            require_local_objects(repo, args.base, args.head)
+            tree = check_target(repo, args.base, args.head, kind=args.kind)
+            merge_base = git(repo, "merge-base", args.base, args.head)
+            env, provenance = environment(args)
+            prepared = _prepare_checkout(args, repo, tree, merge_base, env, provenance, job_dir, policy)
+        except (ReviewError, OSError, ValueError, TypeError, KeyError):
+            # Only this pre-yield block can certify that dispatch never began.
+            write_json_once(job_dir / "preparation-result.json", dict(record, verdict="FAILED", dispatch_started=False,
+                            preparing_sha256=artifact_digest(job_dir / "preparing.json")))
+            raise
+        yield prepared
 
 
 FENCE_ARTIFACT_WRITE_DENY = b'\n; Multica v6: provider STATE may contain MMRUNS; peer artifacts stay unwritable.\n(deny file-write* (subpath (param "MMRUNS")))\n'
@@ -819,15 +882,20 @@ def validate_input_files(provenance: dict[str, Any], *, include_prompts=True) ->
         required.add("fence")
     if not required <= inputs.keys():
         raise ReviewError("EXECUTION_INPUT_MANIFEST_INCOMPLETE")
-    for record in inputs.values():
+    for name, record in inputs.items():
         if (type(record) is not dict or type(record.get("path")) is not str
                 or not Path(record["path"]).is_absolute() or type(record.get("sha256")) is not str
                 or not SHA256.fullmatch(record["sha256"])):
             raise ReviewError("EXECUTION_INPUT_RECORD_INVALID")
         path = Path(record["path"])
-        reject_symlink_ancestors(path)
-        if str(path.resolve()) != record["path"] or artifact_digest(path) != record["sha256"]:
-            raise ReviewError("EXECUTION_INPUT_CHANGED")
+        try:
+            reject_symlink_ancestors(path)
+            if str(path.resolve()) != record["path"] or artifact_digest(path) != record["sha256"]:
+                raise ReviewError("EXECUTION_INPUT_CHANGED")
+        except (ReviewError, OSError) as exc:
+            if name == "codex_profile":
+                raise CollectionUnavailable("LIVE_CODEX_PROFILE_CHANGED_OR_UNAVAILABLE") from exc
+            raise
 
 def validate_execution_environment(env: dict[str, str], provenance: dict[str, Any]) -> None:
     require_object(provenance, "PROVENANCE_NOT_OBJECT")
@@ -854,8 +922,15 @@ def validate_execution_provenance(provenance: dict[str, Any]) -> None:
     for key, hash_key in (("mmrun_path", "mmrun_sha256"), ("dispatch_helper", "dispatch_helper_sha256"),
                           ("review_runner_path", "review_runner_sha256")):
         value = provenance.get(key)
-        if type(value) is not str or not value or digest(Path(value)) != provenance.get(hash_key):
+        if type(value) is not str or not value:
             raise ReviewError("EXECUTION_PROVENANCE_CHANGED")
+        try:
+            if digest(Path(value)) != provenance.get(hash_key):
+                raise ReviewError("EXECUTION_PROVENANCE_CHANGED")
+        except (ReviewError, OSError) as exc:
+            if key == "mmrun_path" and provenance["mmrun_kind"] == "upstream":
+                raise CollectionUnavailable("LIVE_MMRUN_CHANGED_OR_UNAVAILABLE") from exc
+            raise
     if provenance["mmrun_kind"] == "compat" or "compatibility" in provenance:
         compat = require_object(load_json(Path(provenance["mmrun_path"] + ".provenance.json")), "COMPAT_PROVENANCE_NOT_OBJECT")
         if (compat != provenance.get("compatibility") or compat.get("version") != "mmrun-provider-transport-v4"
@@ -865,8 +940,13 @@ def validate_execution_provenance(provenance: dict[str, Any]) -> None:
                 or compat.get("output_sha256") != provenance["mmrun_sha256"]):
             raise ReviewError("COMPAT_PROVENANCE_CHANGED")
         for key in ("source", "helper"):
-            if digest(Path(compat[key])) != compat.get(key + "_sha256"):
-                raise ReviewError("COMPAT_DEPENDENCY_CHANGED")
+            try:
+                if digest(Path(compat[key])) != compat.get(key + "_sha256"):
+                    raise ReviewError("COMPAT_DEPENDENCY_CHANGED")
+            except (ReviewError, OSError) as exc:
+                if key == "source":
+                    raise CollectionUnavailable("LIVE_MMRUN_SOURCE_CHANGED_OR_UNAVAILABLE") from exc
+                raise
 
 def prepare(args: argparse.Namespace) -> tuple[Path, dict[str, Any], dict[str, str]]:
     with preparing(args) as prepared:
@@ -901,7 +981,8 @@ def _prepare_checkout(args, repo, tree, merge_base, env, provenance, job_dir, po
                   "changed lines. Existing defects and unchanged lines are eligible findings when they block "
                   "release readiness. The supplied delta is orientation, not the scope limit. "
                   "No build/runtime/archive evidence is asserted by this static review.\n")
-    notes += (f"Source repository (identity only; do not review this checkout): {repo}\n"
+    notes += (f"Review kind: {args.kind}\nRelease version: {getattr(args, 'version', None) if args.kind == 'release' else 'not applicable'}\n"
+              f"Source repository (identity only; do not review this checkout): {repo}\n"
               f"Review only this frozen checkout: {frozen}\nBase tip (for target identity): {args.base}\n"
               f"Head: {args.head}\nReviewed merge-base for triple-dot delta: {merge_base}\nTree: {tree}\n")
     (job_dir / "review-notes.txt").write_text(notes, encoding="utf-8")
@@ -968,12 +1049,22 @@ def attest(job_dir: Path, manifest: dict[str, Any], verdict: str, *, reasons: li
               for model, report in (reports or {}).items() for finding in report["findings"]],
               "reasons": reasons or [], "limitations": ["Static review only; no build, runtime, archive, or release certification.",
                   "Raw event streams are not read or hashed.", "Frozen checkout retained; no automatic cleanup."]}
+    if destination.exists():
+        original = require_object(load_json(destination, max_bytes=MAX_ATTESTATION_BYTES), "EXISTING_ATTESTATION_INVALID")
+        if original.get("verdict") in ("PASS", "NEEDS_REVIEW"):
+            if (verdict == original["verdict"] and artifacts == original.get("artifacts")
+                    and manifest.get("terminal_evidence_sha256") == original.get("terminal_evidence_sha256")):
+                return original
+            # Preserve the original completed review. This return value describes
+            # current validity only and cannot advertise historical PASS as fresh.
+            result["attestation_path"] = None
+            return result
     if len((json.dumps(result, ensure_ascii=False, indent=2) + "\n").encode()) > MAX_ATTESTATION_BYTES:
         result.update(verdict="FAILED", reports={}, findings=[], artifacts=[], reasons=["ATTESTATION_SIZE_LIMIT"])
     write_json(destination, result)
     # Never create a second, model-readable copy of a peer's report.
     write_json(job_dir / "attestation.json", {"schema_version": 1, "job_id": manifest["job_id"],
-               "verdict": result["verdict"], "attestation_path": str(destination), "sha256": digest(destination)})
+               "verdict": result["verdict"], "attestation_path": str(destination), "sha256": digest(destination, max_bytes=MAX_ATTESTATION_BYTES)})
     return result
 
 
@@ -1154,8 +1245,41 @@ def refresh_worker_status(manifest: dict[str, Any]) -> None:
 
 
 
+def candidate_identity(manifest):
+    return {key: manifest.get(key) for key in ("kind", "version", "base_sha", "head_sha", "tree_sha")}
+
+
+def reject_terminal_failure(job_dir: Path, manifest) -> None:
+    path = job_dir / "terminal-failure.json"
+    if not path.exists():
+        if manifest.get("terminal_failure_sha256") is not None:
+            raise ReviewError("TERMINAL_FAILURE_BASELINE_MISSING")
+        return
+    proof, hashed, _ = read_json_snapshot(path, max_bytes=1024 * 1024)
+    if (type(proof) is not dict or proof.get("schema_version") != 1
+            or proof.get("job_id") != manifest.get("job_id") or proof.get("candidate") != candidate_identity(manifest)
+            or proof.get("verdict") != "FAILED" or type(proof.get("reason")) is not str
+            or (manifest.get("terminal_failure_sha256") is not None and manifest["terminal_failure_sha256"] != hashed)):
+        raise ReviewError("TERMINAL_FAILURE_BASELINE_INVALID")
+    raise ReviewError("ATTEMPT_PREVIOUSLY_FAILED")
+
+
+def record_terminal_failure(job_dir: Path, manifest, reason: str, artifacts=None) -> None:
+    path = job_dir / "terminal-failure.json"
+    proof = {"schema_version": 1, "job_id": manifest["job_id"], "candidate": candidate_identity(manifest),
+             "verdict": "FAILED", "reason": reason, "dispatch_receipt_sha256": manifest.get("dispatch_receipt_sha256"),
+             "dispatch_request_sha256": manifest.get("dispatch_request_sha256"), "artifacts": artifacts or []}
+    write_json_once(path, proof)
+    recorded, hashed, _ = read_json_snapshot(path, max_bytes=1024 * 1024)
+    if recorded != proof:
+        raise ReviewError("TERMINAL_FAILURE_BASELINE_INVALID")
+    manifest.update(terminal_failure_path=str(path), terminal_failure_sha256=hashed)
+    write_json(job_dir / "manifest.json", manifest)
+
+
 def validate_dispatch_contract(job_dir: Path, manifest: dict[str, Any]) -> None:
     """Shared collector/gate contract: actual request and all execution inputs."""
+    reject_terminal_failure(job_dir, manifest)
     provenance = require_object(manifest.get("provenance"), "PROVENANCE_NOT_OBJECT")
     validate_execution_provenance(provenance)
     request, hashed, _ = read_json_snapshot(job_dir / "dispatch-request.json")
@@ -1164,6 +1288,7 @@ def validate_dispatch_contract(job_dir: Path, manifest: dict[str, Any]) -> None:
     if (hashed != manifest.get("dispatch_request_sha256")
             or type(request.get("schema_version")) is not int or request["schema_version"] != 1
             or request.get("job_id") != manifest.get("job_id")
+            or request.get("candidate") != candidate_identity(manifest)
             or request.get("provenance") != provenance
             or request.get("executable_sha256") != provenance.get("mmrun_sha256")
             or type(argv) is not list or not argv or any(type(v) is not str for v in argv)
@@ -1195,6 +1320,7 @@ def validate_terminal_evidence(job_dir: Path, manifest: dict[str, Any], artifact
     path = job_dir / "terminal-evidence.json"
     expected = {"schema_version": 1, "job_id": manifest.get("job_id"),
                 "run_id": manifest.get("mmrun_run_id"), "policy": manifest.get("policy"),
+                "candidate": candidate_identity(manifest),
                 "base_sha": manifest.get("base_sha"), "head_sha": manifest.get("head_sha"),
                 "tree_sha": manifest.get("tree_sha"),
                 "dispatch_request_sha256": manifest.get("dispatch_request_sha256"),
@@ -1251,11 +1377,16 @@ def _collect_locked(job_dir: Path, *, initial_wait=False) -> dict[str, Any]:
             raise ReviewError("Attestation repository must be the frozen reviewed checkout")
         if Path(manifest["frozen_checkout"]) != job_dir / "frozen":
             raise ReviewError("Frozen checkout escaped this job directory")
+        reject_terminal_failure(job_dir, manifest)
         previously_completed = manifest.get("completion_observed") is True or bool(manifest.get("dispatch_receipt_sha256"))
         recover_dispatch(job_dir, manifest)
         if manifest.get("dispatch_error"):
+            if manifest["dispatch_error"] == "DISPATCH_SUPERVISOR_START_FAILED":
+                record_terminal_failure(job_dir, manifest, "DISPATCH_NOT_STARTED")
             raise ReviewError("DISPATCH_FAILED")
         if "dispatch_exit" in manifest and (type(manifest["dispatch_exit"]) is not int or manifest["dispatch_exit"] != 0):
+            if type(manifest["dispatch_exit"]) is int and manifest.get("dispatch_result"):
+                record_terminal_failure(job_dir, manifest, "DISPATCH_NONZERO_EXIT")
             raise ReviewError("DISPATCH_NONZERO_EXIT")
         if not manifest.get("dispatch_result") or not manifest.get("dispatch_receipt_sha256"):
             if any(recorded_process_alive(manifest, role) for role in ("supervisor", "dispatch", "controller")):
@@ -1295,6 +1426,10 @@ def _collect_locked(job_dir: Path, *, initial_wait=False) -> dict[str, Any]:
             status_snapshots = {model: read_text_snapshot(root / f"{model}.status") for model in models}
         statuses = {model: item[0].strip() for model, item in status_snapshots.items()}
         if any(s != "DONE" and s != "RUNNING" for s in statuses.values()):
+            if any(re.fullmatch(r"FAIL:-?[0-9]+", value) or value in {"STALE", "TIMEOUT"} for value in statuses.values()):
+                observed = [{"path": "run.meta", "sha256": meta_hash}] + [
+                    {"path": f"{model}.status", "sha256": item[1]} for model, item in status_snapshots.items()]
+                record_terminal_failure(job_dir, manifest, "MODEL_TERMINAL_FAILURE", observed)
             raise ReviewError("MODEL_EXECUTION_FAILED_OR_STALE")
         if any(s == "RUNNING" for s in statuses.values()):
             return pending(job_dir, "Models still running; full evidence validation deferred until terminal status")
@@ -1353,8 +1488,9 @@ def _collect_locked(job_dir: Path, *, initial_wait=False) -> dict[str, Any]:
 
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
-    deadline = time.monotonic() + args.timeout
     with preparing(args) as (job_dir, manifest, env):
+        # timeout is the model/capture budget; preparation has separate limits.
+        deadline = time.monotonic() + args.timeout
         result = _dispatch_locked(args, job_dir, manifest, env, deadline)
     if result is not None:
         return result
@@ -1375,7 +1511,7 @@ def _dispatch_locked(args, job_dir, manifest, env, deadline):
     else:
         argv = [executable, "review", "--base", args.base, "--exhaustive", "--dir", manifest["frozen_checkout"],
                 "--models", ",".join(args.models), "--notes-file", str(job_dir / "review-notes.txt")]
-    request = {"schema_version": 1, "job_id": manifest["job_id"], "argv": argv,
+    request = {"schema_version": 1, "job_id": manifest["job_id"], "candidate": candidate_identity(manifest), "argv": argv,
                "executable_sha256": manifest["provenance"]["mmrun_sha256"],
                "provenance": manifest["provenance"],
                "cwd": manifest["controller_checkout"],
@@ -1499,6 +1635,13 @@ def require_quiescent(job_dir: Path, models: list[str] | None = None) -> None:
             raise ReviewError("PREPARATION_STILL_ACTIVE_OR_UNKNOWN")
         if (job_dir / "dispatch-request.json").exists():
             raise ReviewError("DISPATCH_IDENTITY_UNKNOWN")
+        result_path = job_dir / "preparation-result.json"
+        if result_path.exists():
+            result = require_object(load_json(result_path), "PREPARATION_RESULT_NOT_OBJECT")
+            expected = dict(preparing_state, verdict="FAILED", dispatch_started=False,
+                            preparing_sha256=artifact_digest(preparing_path))
+            if result != expected:
+                raise ReviewError("PREPARATION_RESULT_MISMATCH")
         return
     manifest = load_json(path)
     if type(manifest) is not dict:

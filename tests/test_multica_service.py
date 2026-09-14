@@ -22,7 +22,7 @@ class ServiceTests(unittest.TestCase):
     def setUp(self):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
-        self.cfg = {'enabled': True, 'state_path': str(Path(temp.name) / 'state.sqlite'),
+        self.cfg = {'enabled': True, 'state_path': str(Path(temp.name).resolve() / 'state.sqlite'),
                     'multica_path': '/example/multica', 'multica_profile': 'profile',
                     'workspace_id': 'workspace', 'workspaces_root': temp.name,
                     'python_path': '/example/python'}
@@ -114,6 +114,11 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(self.invoke(), 0)
         self.assertEqual(parent.stat().st_mode & 0o777, 0o700)
         self.assertEqual(parent.parent.stat().st_mode & 0o777, 0o700)
+
+    def test_deep_daemon_status_remains_controlled_and_still_collects(self):
+        self.assertEqual(self.invoke(status='[' * 2000 + '0' + ']' * 2000), 1)
+        self.assertFalse(any('start' in call for call in self.calls))
+        self.assertEqual(self.calls[-1][-1], 'collect-all')
 
 
 if __name__ == '__main__':

@@ -88,7 +88,8 @@ class ReleaseGateTests(unittest.TestCase):
             dispatch_helper=str(helper), dispatch_helper_sha256=gate.file_hash(helper),
             codex_home=str(self.root), mmrun_d_snapshot=str(self.root))
         request = {'schema_version': 1, 'job_id': self.evidence['job_id'], 'argv': [str(executable)],
-                   'provenance': self.evidence['provenance'], 'executable_sha256': gate.file_hash(executable)}
+                   'provenance': self.evidence['provenance'], 'executable_sha256': gate.file_hash(executable),
+                   'candidate': runner.candidate_identity(self.evidence)}
         runner.write_json(self.root / 'dispatch-request.json', request)
         hashed = gate.file_hash(self.root / 'dispatch-request.json')
         self.evidence['dispatch_request_sha256'] = hashed
@@ -181,10 +182,13 @@ class ReleaseGateTests(unittest.TestCase):
 
     def test_no_skip_checks_or_dry_run_bypass(self):
         for argument in ("--skip-checks", "--dry-run", "--skip"):
-            with self.subTest(argument=argument), contextlib.redirect_stderr(io.StringIO()):
+            with self.subTest(argument=argument), contextlib.redirect_stderr(io.StringIO()) as stderr:
                 with self.assertRaises(SystemExit) as caught:
-                    gate.main(["check", argument])
+                    gate.main(["check", "--repo", str(self.repo), "--attestation", str(self.attestation),
+                               "--base-sha", self.base, "--head-sha", self.head, argument])
                 self.assertEqual(caught.exception.code, 2)
+                self.assertIn("unrecognized arguments: " + argument, stderr.getvalue())
+                self.assertNotIn("required", stderr.getvalue().split("error:")[-1])
 
     def test_forged_pass_with_incomplete_model_run_blocks(self):
         for suffix, content in (("status", "TIMEOUT\n"), ("meta", "exit=1\n"),
@@ -196,8 +200,10 @@ class ReleaseGateTests(unittest.TestCase):
                 for record in self.evidence["artifacts"]:
                     record["sha256"] = hashlib.sha256(
                         (self.artifact_root / record["path"]).read_bytes()).hexdigest()
+                self.refresh_contract()
                 self.save()
-                with self.assertRaises(gate.GateError):
+                expected = {"status": "not DONE", "meta": "one successful exit", "out": "ARTIFACT_OUTPUT_EMPTY"}[suffix]
+                with self.assertRaisesRegex((gate.GateError, gate.ReviewError), expected):
                     self.validate()
                 path.write_text(original)
 
@@ -213,8 +219,9 @@ class ReleaseGateTests(unittest.TestCase):
                 for record in self.evidence["artifacts"]:
                     record["sha256"] = hashlib.sha256(
                         (self.artifact_root / record["path"]).read_bytes()).hexdigest()
+                self.refresh_contract()
                 self.save()
-                with self.assertRaises(gate.GateError):
+                with self.assertRaisesRegex(gate.GateError, "model review requires human resolution: codex"):
                     self.validate()
 
     def test_missing_model_or_weaker_scope_blocks(self):
@@ -492,6 +499,28 @@ class V7GateContractTests(unittest.TestCase):
     def test_deep_attestation_is_controlled(self):
         self.attestation.write_text('[' * 2000 + '0' + ']' * 2000)
         with self.assertRaisesRegex(gate.ReviewError, 'JSON_(INVALID|TOO_DEEP)'):
+            self.validate()
+
+
+class V8GateIdentityTests(unittest.TestCase):
+    setUp = ReleaseGateTests.setUp
+    refresh_contract = ReleaseGateTests.refresh_contract
+    git = ReleaseGateTests.git
+    save = ReleaseGateTests.save
+    validate = ReleaseGateTests.validate
+
+    def test_attestation_version_cannot_relabel_an_existing_release_review(self):
+        self.assertEqual(self.validate()['status'], 'STATIC_REVIEW_VERIFIED')
+        self.evidence['version'] = '9.9.9'; self.save()
+        with self.assertRaisesRegex(gate.GateError, 'DISPATCH_REQUEST_CONTRACT_MISMATCH'):
+            self.validate()
+
+    def test_gate_reuses_collector_ignored_file_cleanliness_rule(self):
+        self.assertEqual(self.validate()['status'], 'STATIC_REVIEW_VERIFIED')
+        (self.repo / '.git/info').mkdir(exist_ok=True)
+        (self.repo / '.git/info/exclude').write_text('ignored-artifact\n')
+        (self.repo / 'ignored-artifact').write_text('unreviewed')
+        with self.assertRaisesRegex(gate.GateError, 'unreviewed ignored files'):
             self.validate()
 
 

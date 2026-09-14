@@ -27,12 +27,31 @@ class JobError(RuntimeError):
     pass
 
 
+class RunnerNotStarted(JobError):
+    """Popen failed before a runner process existed."""
+
+
+def execute_runner(argv, *, env, timeout):
+    try:
+        proc = subprocess.Popen(argv, env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    except OSError as exc:
+        raise RunnerNotStarted('Runner process could not be created') from exc
+    with proc:
+        try:
+            stdout, stderr = proc.communicate(timeout=timeout)
+        except BaseException:
+            proc.kill()
+            proc.communicate()
+            raise
+        return subprocess.CompletedProcess(argv, proc.returncode, stdout, stderr)
+
+
 def atomic(path, value):
     path = Path(path)
     runner.durable_mkdir(path.parent)
     fd, name = tempfile.mkstemp(dir=path.parent, prefix='.record-')
     try:
-        with os.fdopen(fd, 'w') as stream:
+        with os.fdopen(fd, 'w', encoding='utf-8') as stream:
             json.dump(value, stream, ensure_ascii=False, indent=2)
             stream.write('\n')
             stream.flush()
@@ -97,6 +116,12 @@ def request(cfg, job_id, *, allow_retired=False):
     return path.parent, data
 
 
+def validate_issue_mapping(req):
+    issue_id = req.get('multica_issue_id')
+    if issue_id is not None and (not isinstance(issue_id, str) or not bridge.UUID.fullmatch(issue_id)):
+        raise JobError('Multica issue mapping must be a UUID or null')
+
+
 def current_policy(cfg, req):
     return (req.get('policy_version') == cfg['policy_version']
             and req.get('policy_fingerprint') == bridge.policy_fingerprint(cfg, req['kind'])
@@ -106,15 +131,21 @@ def current_policy(cfg, req):
 def current_target(cfg, req, commands):
     if req['kind'] == 'pr':
         pr = commands.gh(f"repos/{cfg['repository']}/pulls/{req['pr_number']}")
-        head = pr.get('head') or {}
-        base = pr.get('base') or {}
+        if not isinstance(pr, dict) or not isinstance(pr.get('head'), dict) or not isinstance(pr.get('base'), dict):
+            raise JobError('PR target response must contain head/base objects')
+        head, base = pr['head'], pr['base']
+        repository = head.get('repo')
+        if repository is not None and not isinstance(repository, dict):
+            raise JobError('PR source repository must be an object or null')
         return (pr.get('state') == 'open' and not pr.get('draft')
-                and (head.get('repo') or {}).get('full_name') == cfg['repository']
+                and (repository or {}).get('full_name') == cfg['repository']
                 and base.get('ref') == cfg.get('target_branch', 'main')
                 and head.get('sha') == req['head_sha']
                 and base.get('sha') == req['base_sha'])
     # A release job names a fixed candidate; moving main is not an implicit replacement.
     commit = commands.gh(f"repos/{cfg['repository']}/commits/{req['head_sha']}")
+    if not isinstance(commit, dict):
+        raise JobError('Release target response must be an object')
     return commit.get('sha') == req['head_sha']
 
 
@@ -224,10 +255,8 @@ def collect_verified(cfg, req):
                             time.monotonic() + cfg.get('collection_job_budget_seconds', 60)))
     if not isinstance(result, dict):
         raise JobError('Collector result must be an object')
-    # The runner owns the protected evidence path. Never point agents to a local
-    # full-report copy outside that protected root.
-    if result.get('verdict') in ('PASS', 'NEEDS_REVIEW', 'FAILED') and not result.get('attestation_path'):
-        result['attestation_path'] = str(runner.attestation_path(manifest))
+    # The runner owns this path. A null path on a fresh failure/pending result
+    # must stay null: a retained historical PASS is not current evidence.
     if active_attempt(cfg, req)[0] != runner_id:
         raise JobError('Active review attempt changed during collection')
     result['runner_job_id'] = runner_id
@@ -270,7 +299,7 @@ def _run_attempt(cfg, req, commands, *, dispatch_reserved=False):
     """Called with the logical executor lock held; never automatically retries."""
     job_id = req['job_id']
     runner_id, directory = active_attempt(cfg, req)
-    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    runner.durable_mkdir(directory)
     already_started = (directory / 'execution.json').exists()
     if dispatch_reserved:
         reservation = runner.load_json(directory / 'execution.json')
@@ -330,8 +359,12 @@ def _run_attempt(cfg, req, commands, *, dispatch_reserved=False):
             # Preparation has independently bounded Git stages before the
             # runner's model deadline. Bound this wrapper too, without treating
             # detached workers as stopped or authorizing an automatic retry.
-            completed = subprocess.run(argv, env=env, text=True, capture_output=True,
-                                       timeout=cfg.get('review_timeout_seconds', 3600) + 1200)
+            completed = execute_runner(argv, env=env, timeout=cfg.get('review_timeout_seconds', 3600) + 1200)
+        except RunnerNotStarted:
+            execution['phase'] = 'NOT_DISPATCHED'
+            execution['launch_failure'] = 'POPEN_FAILED'
+            atomic(directory / 'execution.json', execution)
+            raise
         except subprocess.TimeoutExpired:
             result = {'verdict': 'RUNNING_TIMEOUT', 'job_id': job_id, 'runner_job_id': runner_id,
                       'reasons': ['Executor wrapper deadline elapsed; retained supervisor/worker evidence must be collected or explicitly recovered']}
@@ -556,6 +589,7 @@ def retry_job(cfg, job_id):
         with bridge.status_lock(cfg, req) as locked:
             if not locked:
                 raise JobError('Status context is busy; no retry was selected')
+            validate_issue_mapping(req)
             issue_id = req.get('multica_issue_id')
             if not issue_id:
                 raise JobError('Retry requires a current issue generation mapping')
@@ -599,6 +633,9 @@ def retry_job(cfg, job_id):
                               'reasons': ['Retry pending write failed: ' + type(exc).__name__]}
                     atomic(records / 'execution-result.json', result)
                     return result
+        # The selection and pending write are durable. Publication may observe
+        # this attempt while the executor lock still prevents another dispatch.
+        fcntl.flock(publish_lock, fcntl.LOCK_UN)
         return _run_attempt(cfg, req, commands, dispatch_reserved=True)
 
 
@@ -711,10 +748,9 @@ def publish_locked(cfg, req, commands, records, runner_id):
             raise JobError('Invalid publication status intent')
     target_current = confirmed_target(cfg, req, runner_id, commands)
     if not target_current:
-        if previous is not None or intent is not None:
-            revoke_owned_status(cfg, req, runner_id, commands)
-            if intent is not None:
-                atomic(status_intent, dict(intent, state='revoked'))
+        revoke_owned_status(cfg, req, runner_id, commands)
+        if intent is not None:
+            atomic(status_intent, dict(intent, state='revoked'))
         return {'job_id': job_id, 'state': 'superseded'}
     # A matching remote status never substitutes for fresh evidence validation.
     try:
@@ -724,8 +760,7 @@ def publish_locked(cfg, req, commands, records, runner_id):
             raise
         result = {'verdict': 'FAILED', 'reasons': ['Previously published evidence failed validation']}
     if result is None or result.get('verdict') in ('RUNNING', 'RUNNING_TIMEOUT'):
-        if previous is not None or intent is not None:
-            revoke_owned_status(cfg, req, runner_id, commands)
+        revoke_owned_status(cfg, req, runner_id, commands)
         return {'job_id': job_id, 'state': 'pending'}
     verdict = result.get('verdict')
     if verdict not in ('PASS', 'NEEDS_REVIEW', 'FAILED'):
@@ -865,10 +900,12 @@ def publish_result(cfg, job_id, commands=None):
                 if not current_policy(cfg, req):
                     revoke_job_status(cfg, req, commands)
                     return {'job_id': job_id, 'state': 'retired'}
+                validate_issue_mapping(req)
                 if not req.get('multica_issue_id'):
+                    revoke_job_status(cfg, req, commands)
                     return {'job_id': job_id, 'state': 'awaiting_issue_mapping'}
                 runner_id, records = active_attempt(cfg, req)
-                records.mkdir(parents=True, exist_ok=True, mode=0o700)
+                runner.durable_mkdir(records)
                 return publish_locked(cfg, req, commands, records, runner_id)
             except (JobError, runner.ReviewError, OSError, ValueError, TypeError, KeyError, AttributeError, RecursionError) as exc:
                 # Request identity and the ownership lock precede all local

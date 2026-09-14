@@ -1452,9 +1452,9 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(len(candidates), 100)
         self.assertTrue(candidates[1][0].startswith("fresh-"))
 
-    def test_void_and_selfclosing_html_allow_next_independent_command(self):
+    def test_html_comments_require_a_separate_plaintext_command(self):
         for html in ("<br>", '<img src="example">', "<hr/>", "<custom-element />"):
-            self.assertTrue(bridge.requests_triage(html + "\n\n/multica-triage"))
+            self.assertFalse(bridge.requests_triage(html + "\n\n/multica-triage"))
         for html in ("<pre>", "<code>", "<script>", "<div>", "<pre/>", "<script />"):
             self.assertFalse(bridge.requests_triage(html + "\n\n/multica-triage"))
 
@@ -1511,6 +1511,114 @@ class BridgeTests(unittest.TestCase):
             os.umask(old)
         for path in (self.root / "new", self.root / "new/nested", self.root / "new/nested/status-locks"):
             self.assertEqual(path.stat().st_mode & 0o777, 0o700)
+
+    def test_gh_api_host_cannot_be_redirected_by_environment(self):
+        command = bridge.Commands(self.cfg)
+        with patch.dict(os.environ, {"GH_HOST": "enterprise.example.invalid"}), patch.object(command, "run", return_value={}) as run:
+            command.gh("repos/" + bridge.ALLOWED_REPOSITORY)
+            command.gh("repos/" + bridge.ALLOWED_REPOSITORY + "/statuses/" + HEAD, {"state": "pending"})
+        self.assertEqual(len(run.call_args_list), 2)
+        for call in run.call_args_list:
+            args = call.args[0]
+            self.assertEqual(args[args.index("--hostname") + 1], "github.com")
+
+    def test_html_attribute_fake_close_never_authorizes_a_command(self):
+        for text in ('<pre title="</pre>">\n\n/multica-triage\n\n</pre>',
+                     '<div title="</div>"><pre>\n\n/multica-triage\n\n</pre></div>',
+                     '<!-- --> <pre>\n\n/multica-triage\n\n</pre>',
+                     '/multica-triage\n\nplain ' + 'x' * 200 + '<br>'):
+            self.assertFalse(bridge.requests_triage(text))
+            self.assertFalse(bridge.requests_triage(bridge.command_text(text, 100)))
+        self.assertTrue(bridge.requests_triage('/multica-triage'))
+        self.assertTrue(bridge.requests_triage('Please reassess.\n\n/multica-triage\n\nThank you.'))
+        self.assertTrue(bridge.requests_triage('value < 2\n\n/multica-triage'))
+
+    def test_html_example_is_still_stored_as_note_but_never_queued(self):
+        self.app.intake_issue(self.issue(), BEFORE)
+        self.followup(body='<pre title="</pre>">\n\n/multica-triage\n\n</pre>')
+        self.assertEqual(self.queue_status(), {})
+        comments = self.remote.comments['00000000-0000-0000-0000-000000000001']
+        self.assertEqual(len(comments), 1)
+        self.assertTrue(comments[0]['content'].startswith('/note\n'))
+
+    def test_json_depth_limit_ignores_brackets_and_escapes_inside_strings(self):
+        value = {'body': '[{\\"' * 2000}
+        self.assertEqual(bridge.parse_json(json.dumps(value)), value)
+        self.assertEqual(bridge.parse_json('[' * 64 + '0' + ']' * 64)[0][0][0],
+                         json.loads('[' * 61 + '0' + ']' * 61))
+        with self.assertRaisesRegex(bridge.BridgeError, "nesting"):
+            bridge.parse_json('[' * 65 + '0' + ']' * 65)
+
+    def test_deep_cli_capture_fails_controlled_and_existing_inbox_is_serviced(self):
+        self.seed()
+        self.state.db.execute("INSERT INTO intake_events(key,kind,payload) VALUES (?,?,?)",
+                              ('prior-capture', 'issue', json.dumps(self.issue())))
+        self.state.db.commit()
+        original = self.remote.gh
+        def deep_response(endpoint, payload=None):
+            if '/issues?' in endpoint:
+                return bridge.Commands(self.cfg).run([sys.executable, '-c', "print('[' * 2000 + '0' + ']' * 2000)"])
+            return original(endpoint, payload)
+        with patch.object(self.remote, 'gh', side_effect=deep_response):
+            with self.assertRaisesRegex(bridge.BridgeError, 'existing queues'):
+                self.app.poll_once()
+        self.assertEqual(self.state.get('meta', 'checkpoint'), BEFORE)
+        self.assertEqual(len(self.remote.issues), 1)
+        self.assertIn('Triage follow-up queue', '\n'.join(self.log))
+
+    def test_deep_persisted_event_does_not_block_next_event(self):
+        self.state.db.execute("INSERT INTO intake_events(key,kind,payload) VALUES (?,?,?)",
+                              ('deep', 'issue', '[' * 2000 + '0' + ']' * 2000))
+        self.state.db.execute("INSERT INTO intake_events(key,kind,payload) VALUES (?,?,?)",
+                              ('normal', 'issue', json.dumps(self.issue())))
+        self.state.db.commit()
+        self.app.drain_intake_events(BEFORE, time.monotonic() + 10)
+        self.assertEqual(dict(self.state.db.execute('SELECT key,status FROM intake_events')),
+                         {'deep': 'pending', 'normal': 'done'})
+
+    def test_old_policy_inbox_recomputes_current_job_and_preserves_its_success(self):
+        item = self.pr()
+        old_fingerprint = bridge.policy_fingerprint(self.cfg)
+        self.cfg['policy_version'] = 'new-deployment'
+        self.app.intake_pr(item)
+        job = self.app.job(HEAD, BASE, 'pr', pr_number=8)
+        self.remote.statuses[HEAD] = [{'context': bridge.status_context(job), 'state': 'success',
+                                      'description': job['job_id'] + ': approved'}]
+        writes = len(self.writes())
+        self.state.db.execute("INSERT INTO intake_events(key,kind,payload) VALUES (?,?,?)",
+                              ('pr:' + old_fingerprint + ':old-capture', 'pr', json.dumps(item)))
+        self.state.db.commit()
+        self.app.drain_intake_events(BEFORE, time.monotonic() + 10)
+        self.assertEqual(len(self.writes()), writes)
+        self.assertEqual(self.remote.statuses[HEAD][0]['state'], 'success')
+        self.assertEqual(self.state.db.execute("SELECT status FROM intake_events").fetchone()[0], 'done')
+
+    def test_new_policy_must_replace_previous_generation_terminal_status(self):
+        self.app.intake_pr(self.pr())
+        old_job = self.app.job(HEAD, BASE, 'pr', pr_number=8)
+        self.remote.statuses[HEAD] = [{'context': bridge.status_context(old_job), 'state': 'success',
+                                      'description': old_job['job_id'] + ': approved'}]
+        self.cfg['policy_version'] = 'new-deployment'
+        self.app.intake_pr(self.pr())
+        new_job = self.app.job(HEAD, BASE, 'pr', pr_number=8)
+        self.assertNotEqual(old_job['job_id'], new_job['job_id'])
+        self.assertEqual(self.remote.statuses[HEAD][0]['state'], 'pending')
+        self.assertTrue(self.remote.statuses[HEAD][0]['description'].startswith(new_job['job_id'] + ':'))
+
+    def test_process_lock_refuses_symlink_and_never_changes_target(self):
+        target = self.root / 'target'
+        target.write_text('unchanged', encoding='utf-8')
+        target.chmod(0o644)
+        lock = Path(self.cfg['state_path'] + '.lock')
+        lock.symlink_to(target)
+        with self.assertRaises(OSError):
+            with bridge.process_lock(self.cfg['state_path']):
+                self.fail('symlink lock accepted')
+        self.assertEqual(target.read_text(encoding='utf-8'), 'unchanged')
+        self.assertEqual(target.stat().st_mode & 0o777, 0o644)
+        lock.unlink()
+        with bridge.process_lock(self.cfg['state_path']):
+            self.assertEqual(lock.stat().st_mode & 0o777, 0o600)
 
 
 if __name__ == "__main__":

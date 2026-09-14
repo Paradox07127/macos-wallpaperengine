@@ -117,7 +117,7 @@ class LocalCopyTests(unittest.TestCase):
                 + compat.SESSION_ANCHOR + '\n      env "${GROK_ENV[@]}" "$SELF" __fence "$w" "$HOME/.grok" "$rd/prompt.md" "$ro" \\\n'
                 + compat.OUTPUT_ANCHOR + '\n      ;;\n' + anchors['case']
                 + compat.AGY_CAPTURE + '\n      ;;\n  esac\n}\nstart_fixture() {\n'
-                + anchors['workdir'] + '\n    ' + anchors['start']
+                + anchors['selection'] + '\n' + anchors['workdir'] + '\n    ' + anchors['start']
                 + '\n}\nrun_fixture() {\n  ' + anchors['run'] + '\n}\n')
 
     def test_claude_adapter_is_fenced_static_only_and_parseable(self):

@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts/multica"))
 import executor
 
 REAL_COLLECT = executor.runner.collect
+REAL_EXECUTE_RUNNER = executor.execute_runner
 
 
 class FakeCommands:
@@ -64,6 +65,8 @@ class FakeCommands:
 
 class ExecutorTests(unittest.TestCase):
     def setUp(self):
+        self.runner_process = self.enterContext(patch.object(executor, 'execute_runner',
+            side_effect=lambda argv, **kwargs: executor.subprocess.run(argv, **kwargs)))
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name).resolve()
@@ -86,7 +89,7 @@ class ExecutorTests(unittest.TestCase):
             "schema_version": 1, "job_id": self.job_id, "repository": self.cfg["repository"],
             "repository_path": self.cfg["repository_path"], "policy_version": "1", "kind": "pr",
             "pr_number": 7, "head_sha": self.head, "base_sha": self.base,
-            "multica_issue_id": "internal-issue-id",
+            "multica_issue_id": "22222222-2222-4222-8222-222222222222",
             "policy_fingerprint": executor.bridge.policy_fingerprint(self.cfg),
             "review_policy": executor.bridge.effective_policy(self.cfg),
         }
@@ -1378,6 +1381,69 @@ class ExecutorTests(unittest.TestCase):
         self.assertEqual(executor.collect_job(self.cfg, self.job_id)['recorded_verdict'], 'UNKNOWN')
         self.collector.assert_not_called()
 
+    def test_fresh_failure_or_pending_never_points_to_retained_historical_pass(self):
+        protected = self.root / 'retained-pass.json'
+        protected.write_text(json.dumps({'verdict': 'PASS', 'job_id': self.job_id}))
+        before = protected.read_bytes()
+        for verdict in ('FAILED', 'RUNNING_TIMEOUT'):
+            with self.subTest(verdict=verdict):
+                self.collector.return_value = {'verdict': 'PASS', 'reasons': [],
+                                               'attestation_path': str(protected)}
+                self.publish()
+                self.collector.return_value = {'verdict': verdict, 'reasons': ['Evidence currently unavailable'],
+                                               'attestation_path': None}
+                result = executor.collect_verified(self.cfg, self.req)
+                self.assertIsNone(result['attestation_path'])
+                self.assertEqual(result['verdict'], verdict)
+                self.publish()
+                self.assertNotEqual(self.commands.statuses[-1][1]['state'], 'success')
+                self.assertEqual(protected.read_bytes(), before)
+
+    def test_atomic_uses_explicit_utf8_for_non_ascii_diagnostics(self):
+        target = self.root / 'unicode.json'
+        original = os.fdopen
+        def fdopen(fd, mode, **kwargs):
+            self.assertEqual(kwargs.get('encoding'), 'utf-8')
+            return original(fd, mode, **kwargs)
+        with patch.object(executor.os, 'fdopen', side_effect=fdopen):
+            executor.atomic(target, {'reason': '审查尚未通过'})
+        self.assertEqual(json.loads(target.read_bytes().decode('utf-8'))['reason'], '审查尚未通过')
+
+    def test_invalid_issue_mapping_is_rejected_before_remote_operations(self):
+        for issue_id in ('', 'another-issue', 123, [], {}):
+            with self.subTest(issue_id=issue_id):
+                self.req['multica_issue_id'] = issue_id
+                self.write_request()
+                with self.assertRaisesRegex(executor.JobError, 'Publication could not be validated'):
+                    self.publish()
+        self.assertEqual(self.commands.statuses, [])
+        self.assertEqual(self.commands.comments, [])
+        self.assertEqual(self.commands.updates, [])
+
+    def test_corrupt_issue_mapping_revokes_owned_success_inside_status_lock(self):
+        self.publish()
+        self.req['multica_issue_id'] = []
+        self.write_request()
+        with self.assertRaises(executor.JobError):
+            self.publish()
+        self.assertEqual(self.commands.statuses[-1][1]['state'], 'pending')
+        self.assertEqual(len(self.commands.comments), 1)
+
+    def test_retry_releases_publication_lock_before_waiting_for_runner(self):
+        self.collector.return_value = {'verdict': 'NEEDS_REVIEW', 'reasons': []}
+        def running(*args, **kwargs):
+            with (self.job_dir / 'publish.lock').open('a') as publication:
+                executor.fcntl.flock(publication, executor.fcntl.LOCK_EX | executor.fcntl.LOCK_NB)
+            with (self.job_dir / 'executor.lock').open('a') as execution:
+                with self.assertRaises(BlockingIOError):
+                    executor.fcntl.flock(execution, executor.fcntl.LOCK_EX | executor.fcntl.LOCK_NB)
+            self.assertNotEqual(executor.active_attempt(self.cfg, self.req)[0], self.job_id)
+            return {'verdict': 'RUNNING_TIMEOUT'}
+        with patch.object(executor.bridge, 'Commands', return_value=self.commands), \
+                patch.object(executor, 'require_quiescent'), \
+                patch.object(executor, '_run_attempt', side_effect=running):
+            self.assertEqual(executor.retry_job(self.cfg, self.job_id)['verdict'], 'RUNNING_TIMEOUT')
+
     def test_atomic_creates_every_new_parent_with_private_mode(self):
         target = self.root / 'new-state' / 'nested' / 'records' / 'record.json'
         previous_umask = os.umask(0o022)
@@ -1388,6 +1454,88 @@ class ExecutorTests(unittest.TestCase):
         for parent in (target.parent, target.parent.parent, target.parent.parent.parent):
             self.assertEqual(parent.stat().st_mode & 0o777, 0o700)
         self.assertEqual(target.stat().st_mode & 0o777, 0o600)
+
+
+    def test_missing_mapping_revokes_owned_success_without_receipts(self):
+        self.publish()
+        (self.job_dir / 'published.json').unlink()
+        (self.job_dir / 'publish-status-intent.json').unlink()
+        self.req['multica_issue_id'] = None
+        self.write_request()
+        self.assertEqual(self.publish()['state'], 'awaiting_issue_mapping')
+        self.assertEqual(self.commands.statuses[-1][1]['state'], 'pending')
+        self.assertEqual(self.collector.call_count, 1)
+
+    def test_lost_receipts_cannot_preserve_success_for_stale_or_missing_evidence(self):
+        for scenario in ('stale_target', 'missing_manifest', 'pending_collection'):
+            with self.subTest(scenario=scenario):
+                self.commands.pr = copy.deepcopy(self.pr)
+                self.write_manifest()
+                self.collector.return_value = {'verdict': 'PASS', 'reasons': [], 'head_sha': self.head}
+                self.publish()
+                (self.job_dir / 'published.json').unlink()
+                (self.job_dir / 'publish-status-intent.json').unlink()
+                if scenario == 'stale_target':
+                    self.commands.pr['base']['sha'] = 'c' * 40
+                elif scenario == 'missing_manifest':
+                    (self.review_dir / 'manifest.json').unlink()
+                else:
+                    self.collector.return_value = {'verdict': 'RUNNING_TIMEOUT'}
+                self.assertIn(self.publish()['state'], ('pending', 'superseded'))
+                self.assertEqual(self.commands.statuses[-1][1]['state'], 'pending')
+
+    def test_missing_mapping_never_revokes_another_job_status(self):
+        newer = dict(self.req, job_id='pr-7-' + 'f' * 24)
+        self.commands.gh('newer-generation', executor.status_payload(newer, 'PASS'))
+        self.req['multica_issue_id'] = None
+        self.write_request()
+        self.assertEqual(self.publish()['state'], 'awaiting_issue_mapping')
+        self.assertEqual(len(self.commands.statuses), 1)
+        self.assertEqual(self.commands.statuses[-1][1]['state'], 'success')
+
+    def test_malformed_target_shapes_persist_controlled_prelaunch_failure(self):
+        malformed = [None, [], 'text', dict(self.pr, head='bad'), dict(self.pr, base=[])]
+        bad_repo = copy.deepcopy(self.pr)
+        bad_repo['head']['repo'] = ['not a repository']
+        malformed.append(bad_repo)
+        for value in malformed:
+            with self.subTest(value=value):
+                (self.job_dir / 'execution.json').unlink(missing_ok=True)
+                (self.job_dir / 'execution-result.json').unlink(missing_ok=True)
+                self.commands.pr = value
+                with patch.object(executor.bridge, 'Commands', return_value=self.commands), \
+                        patch.object(executor.subprocess, 'run') as launch:
+                    result = executor.run_job(self.cfg, self.job_id)
+                self.assertEqual(result['verdict'], 'FAILED')
+                self.assertIn('target validation', result['reasons'][0])
+                self.assertEqual(json.loads((self.job_dir / 'execution.json').read_text())['phase'], 'NOT_DISPATCHED')
+                self.assertEqual(json.loads((self.job_dir / 'execution-result.json').read_text())['verdict'], 'FAILED')
+                launch.assert_not_called()
+
+    def test_release_target_malformed_shape_is_controlled(self):
+        request = dict(self.req, kind='release')
+        with patch.object(self.commands, 'gh', return_value=[]), self.assertRaises(executor.JobError):
+            executor.current_target(self.cfg, request, self.commands)
+
+    def test_confirmed_popen_failure_keeps_explicit_retry_possible(self):
+        (self.review_dir / 'manifest.json').unlink()
+        self.review_dir.rmdir()
+        self.runner_process.side_effect = REAL_EXECUTE_RUNNER
+        with patch.object(executor.bridge, 'Commands', return_value=self.commands), \
+                patch.object(executor, 'fetch_origin', return_value='https://github.com/' + self.cfg['repository']), \
+                patch.object(executor.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0)), \
+                patch.object(executor.subprocess, 'Popen', side_effect=FileNotFoundError('fixture cannot spawn')), \
+                patch.object(executor, 'no_active_controller'):
+            result = executor.run_job(self.cfg, self.job_id)
+            self.assertEqual(result['verdict'], 'FAILED')
+            original = (self.job_dir / 'execution.json').read_bytes()
+            self.assertEqual(json.loads(original)['phase'], 'NOT_DISPATCHED')
+            retried = executor.retry_job(self.cfg, self.job_id)
+            self.assertEqual(retried['verdict'], 'FAILED')
+            self.assertNotEqual(retried['runner_job_id'], self.job_id)
+            self.assertEqual((self.job_dir / 'execution.json').read_bytes(), original)
+        _, records = executor.active_attempt(self.cfg, self.req)
+        self.assertEqual(json.loads((records / 'execution.json').read_text())['phase'], 'NOT_DISPATCHED')
 
 
 
@@ -1481,6 +1629,52 @@ class FetchEnvironmentTests(unittest.TestCase):
         self.assertTrue(self.missing())
         self.git(self.mirror, 'fetch', '-q', '--no-filter', '--refetch', 'origin', 'main:main', env=env)
         self.assertEqual(self.missing(), [])
+
+
+    def test_real_runner_preflight_failure_has_retriable_no_dispatch_proof(self):
+        head = self.git(self.mirror, 'rev-parse', 'HEAD').stdout.strip()
+        cfg = {'repository': 'Paradox07127/macos-wallpaperengine', 'repository_path': str(self.mirror),
+               'policy_version': 'fixture', 'review_models': ['claude', 'codex'], 'target_branch': 'main',
+               'jobs_dir': str(self.root / 'jobs'), 'review_state_dir': str(self.root / 'reviews'),
+               'state_path': str(self.root / 'state.json'), 'bridge_actor_id': 'trusted-actor',
+               'gh_path': str(self.helper), 'codex_home': str(self.root / 'unused-codex')}
+        req = {'schema_version': 1, 'repository': cfg['repository'], 'repository_path': cfg['repository_path'],
+               'head_sha': head, 'base_sha': head, 'kind': 'pr', 'pr_number': 7, 'policy_version': cfg['policy_version'],
+               'review_policy': executor.bridge.effective_policy(cfg),
+               'policy_fingerprint': executor.bridge.policy_fingerprint(cfg), 'multica_issue_id': '33333333-3333-4333-8333-333333333333'}
+        req['job_id'] = executor.bridge.job_id_for(req)
+        records = Path(cfg['jobs_dir']) / req['job_id']
+        executor.atomic(records / 'request.json', req)
+        executor.atomic(records / 'execution.json', {'job_id': req['job_id'], 'runner_job_id': req['job_id'],
+                                                    'phase': 'RUNNER_LAUNCH_INTENT'})
+        # A real child executes only preflight: this isolated partial mirror lacks
+        # blobs, and a nonexistent mmrun path independently prevents any dispatch.
+        process = subprocess.run([sys.executable, str(Path(executor.runner.__file__).resolve()), 'run',
+            '--repo', str(self.mirror), '--base', head, '--head', head, '--kind', 'pr',
+            '--models', 'claude,codex', '--job-id', req['job_id'], '--state-dir', cfg['review_state_dir'],
+            '--mmrun', str(self.root / 'missing-mmrun'), '--codex-home', cfg['codex_home'], '--timeout', '1'],
+            env=self.clean, capture_output=True, text=True, timeout=20)
+        self.assertEqual(process.returncode, 1, process.stderr)
+        result = json.loads(process.stdout)
+        self.assertEqual(result['verdict'], 'FAILED')
+        review = Path(cfg['review_state_dir']) / req['job_id']
+        proof_path = review / 'preparation-result.json'
+        proof = json.loads(proof_path.read_text())
+        self.assertIs(proof['dispatch_started'], False)
+        self.assertFalse((review / 'dispatch-request.json').exists())
+        executor.atomic(records / 'execution-result.json', dict(result, runner_job_id=req['job_id']))
+        with executor.bridge.issue_generation_lock(cfg, req['multica_issue_id']):
+            executor.bridge.set_generation(cfg, req['multica_issue_id'], req['job_id'])
+        commands = FakeCommands({'state': 'open', 'draft': False,
+            'head': {'sha': head, 'repo': {'full_name': cfg['repository']}}, 'base': {'sha': head, 'ref': 'main'}})
+        original = proof_path.read_bytes()
+        with patch.object(executor.bridge, 'Commands', return_value=commands), \
+                patch.object(executor, '_run_attempt', return_value={'verdict': 'RUNNING_TIMEOUT'}) as dispatch:
+            retried = executor.retry_job(cfg, req['job_id'])
+        self.assertEqual(retried['verdict'], 'RUNNING_TIMEOUT')
+        dispatch.assert_called_once()
+        self.assertTrue(dispatch.call_args.kwargs['dispatch_reserved'])
+        self.assertEqual(proof_path.read_bytes(), original)
 
 
 

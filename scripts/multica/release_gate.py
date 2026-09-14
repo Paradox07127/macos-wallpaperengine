@@ -14,7 +14,7 @@ from review_runner import (POLICY_VERSION, MAX_ATTESTATION_BYTES, ReviewError,
                            validate_report, git as controlled_git, job_lock, validate_dispatch_receipt,
                            RELEASE_VERSION, read_json_snapshot, JOB, parse_kv,
                            TEXT_LIMITS, artifact_limit, read_text_snapshot, read_output_snapshot, artifact_digest,
-                           validate_dispatch_contract, validate_terminal_evidence, review_policy)
+                           validate_dispatch_contract, validate_terminal_evidence, review_policy, verify_frozen)
 
 
 class GateError(ValueError):
@@ -130,8 +130,7 @@ def _validate_locked(repo, evidence, base_sha, head_sha):
     git(repo, "merge-base", "--is-ancestor", base_sha, head_sha)
     if git(repo, "rev-parse", "HEAD^{tree}") != evidence["tree_sha"]:
         raise GateError("reviewed tree does not match HEAD")
-    if git(repo, "status", "--porcelain=v1", "--untracked-files=all", "--ignore-submodules=none"):
-        raise GateError("worktree must be clean, including untracked files and submodules")
+    enforce_contract(verify_frozen, dict(evidence, frozen_checkout=str(repo)))
     outcome = evidence.get("dispatch_result")
     if (type(outcome) is not dict or type(outcome.get("exit_code")) is not int
             or outcome["exit_code"] != 0 or outcome.get("started") is not True):
@@ -236,8 +235,10 @@ def _validate_locked(repo, evidence, base_sha, head_sha):
                  if line.partition("=")[0].strip() == "exit"]
         if exits != ["0"]:
             raise GateError("model review must have one successful exit: " + model)
-        if not snapshot(model + ".out", read_output_snapshot):
-            raise GateError("model output is empty: " + model)
+        try:
+            snapshot(model + ".out", read_output_snapshot)
+        except ReviewError as exc:
+            raise GateError(model + ": " + str(exc)) from exc
         report = validate_report(snapshot(model + ".json", read_json_snapshot))
         if report["verdict"] != "approve" or report["not_expanded"] != 0 or any(
             finding["severity"] in ("critical", "major") for finding in report["findings"]
@@ -249,10 +250,7 @@ def _validate_locked(repo, evidence, base_sha, head_sha):
         if file_hash(verified[artifact["path"]]) != artifact["sha256"]:
             raise GateError("evidence changed during validation")
     # Recheck Git after hashing evidence, so ordinary concurrent edits fail closed.
-    if git(repo, "rev-parse", "HEAD") != head_sha or git(
-        repo, "status", "--porcelain=v1", "--untracked-files=all", "--ignore-submodules=none"
-    ):
-        raise GateError("repository changed while validating evidence")
+    enforce_contract(verify_frozen, dict(evidence, frozen_checkout=str(repo)))
     reject_symlinks(Path(receipt_path))
     receipt_final_value, receipt_final_hash, receipt_final = read_json_snapshot(Path(receipt_path))
     if ((receipt_identity.st_dev, receipt_identity.st_ino, receipt_identity.st_size, receipt_identity.st_mtime_ns)

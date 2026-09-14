@@ -48,9 +48,9 @@ def main(argv=None):
     state = None
     try:
         if status is not None and status.returncode == 0:
-            payload = json.loads(status.stdout)
+            payload = github_bridge.parse_json(status.stdout)
             state = payload.get('status') if isinstance(payload, dict) else None
-    except (json.JSONDecodeError, TypeError):
+    except (github_bridge.BridgeError, TypeError):
         pass
     failed = state not in ('running', 'stopped')
     if state == 'stopped':

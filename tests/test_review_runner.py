@@ -119,7 +119,7 @@ class CollectTests(unittest.TestCase):
         self.manifest["provenance"].update(dispatch_helper=str(helper), dispatch_helper_sha256=runner.digest(helper))
         runner.write_json(self.job / "dispatch-request.json", {"schema_version": 1, "job_id": "job-1",
             "argv": [str(self.executable)], "executable_sha256": self.manifest["provenance"]["mmrun_sha256"],
-            "provenance": self.manifest["provenance"]})
+            "provenance": self.manifest["provenance"], "candidate": runner.candidate_identity(self.manifest)})
         self.manifest["dispatch_request_sha256"] = runner.digest(self.job / "dispatch-request.json")
         self.outcome = {"schema_version": 1, "job_id": "job-1", "started": True, "exit_code": 0,
                         "request_sha256": self.manifest["dispatch_request_sha256"]}
@@ -381,19 +381,19 @@ class CollectTests(unittest.TestCase):
         (self.artifacts / "codex.status").write_text("RUNNING\n")
         self.executable.write_text("changed")
         with patch.object(runner.subprocess, "run") as call:
-            self.assertEqual(runner.collect(self.job)["verdict"], "FAILED")
+            self.assertEqual(runner.collect(self.job)["verdict"], "RUNNING_TIMEOUT")
         call.assert_not_called()
 
 
 class LaunchTests(unittest.TestCase):
     def test_subprocess_command_failure_is_checked(self):
-        with patch.object(runner.subprocess, "run", return_value=Mock(returncode=1, stderr="no commit", stdout="")) as call:
+        with patch.object(runner, "bounded_command", return_value=Mock(returncode=1, stderr="no commit", stdout="")) as call:
             with self.assertRaises(runner.ReviewError):
                 runner.git(Path("/repo"), "rev-parse", "HEAD")
             self.assertEqual(call.call_args.kwargs["timeout"], 30)
 
     def test_worktree_command_can_have_longer_preparation_timeout(self):
-        with patch.object(runner.subprocess, "run", return_value=Mock(returncode=0, stdout="", stderr="")) as call:
+        with patch.object(runner, "bounded_command", return_value=Mock(returncode=0, stdout="", stderr="")) as call:
             runner.git(Path("/repo"), "worktree", "add", "--detach", "/frozen", HEAD, timeout=300)
             self.assertEqual(call.call_args.kwargs["timeout"], 300)
 
@@ -824,7 +824,9 @@ class IsolationTests(unittest.TestCase):
         freeze.assert_not_called()
         environment.assert_not_called()
         self.assertFalse(marker.exists())
-        self.assertFalse((Path(self.args.state_dir) / self.args.job_id).exists())
+        job = Path(self.args.state_dir) / self.args.job_id
+        self.assertTrue((job / "preparation-result.json").is_file())
+        self.assertFalse((job / "dispatch-request.json").exists())
 
     def test_hydrated_promisor_repository_is_allowed(self):
         runner.git(self.repo, "config", "remote.origin.promisor", "true")
@@ -933,16 +935,16 @@ class SupervisorTests(unittest.TestCase):
 
     def test_empty_delta_checks_exit_status_without_materializing_patch(self):
         for rc, empty in ((0, True), (1, False)):
-            with patch.object(runner.subprocess, "run", return_value=Mock(returncode=rc)) as call:
+            with patch.object(runner, "bounded_command", return_value=Mock(returncode=rc)) as call:
                 self.assertIs(runner.empty_delta(Path("/repo"), BASE, HEAD), empty)
                 self.assertIn("--quiet", call.call_args.args[0])
                 self.assertIn("--no-textconv", call.call_args.args[0])
-        with patch.object(runner.subprocess, "run", return_value=Mock(returncode=2)):
+        with patch.object(runner, "bounded_command", return_value=Mock(returncode=2)):
             with self.assertRaises(runner.ReviewError):
                 runner.empty_delta(Path("/repo"), BASE, HEAD)
 
     def test_external_command_stderr_never_becomes_attestation_reason(self):
-        with patch.object(runner.subprocess, "run", return_value=Mock(returncode=1, stderr="SECRET_REPOSITORY_DATA", stdout="")):
+        with patch.object(runner, "bounded_command", return_value=Mock(returncode=1, stderr="SECRET_REPOSITORY_DATA", stdout="")):
             with self.assertRaises(runner.ReviewError) as caught:
                 runner.git(Path("/repo"), "status")
             self.assertEqual(str(caught.exception), "PREPARATION_COMMAND_EXIT_1")
@@ -971,7 +973,7 @@ class InputAndRecoveryBoundaryTests(unittest.TestCase):
         runner.validate_execution_provenance(manifest["provenance"])
         actual_profile = Path(inputs["codex_profile"]["path"])
         actual_profile.write_text("changed permissions")
-        with self.assertRaisesRegex(runner.ReviewError, "EXECUTION_INPUT_CHANGED"):
+        with self.assertRaisesRegex(runner.CollectionUnavailable, "LIVE_CODEX_PROFILE_CHANGED"):
             runner.validate_execution_provenance(manifest["provenance"])
 
     def test_modified_notes_are_rejected_before_supervisor_spawn(self):
@@ -984,8 +986,9 @@ class InputAndRecoveryBoundaryTests(unittest.TestCase):
                 runner._dispatch_locked(self.args, job, manifest, env, time.monotonic() + 1)
         spawn.assert_not_called()
 
-    def test_release_version_required_before_any_preparation(self):
-        for value in (None, "", "1_2_3"):
+    def test_release_version_required_before_git_or_dispatch(self):
+        for index, value in enumerate((None, "", "1_2_3")):
+            self.args.job_id = "invalid-version-" + str(index)
             self.args.version = value
             with patch.object(runner, "git") as call:
                 with self.assertRaisesRegex(runner.ReviewError, "RELEASE_VERSION_REQUIRED"):
@@ -1048,7 +1051,7 @@ class CollectionBudgetTests(unittest.TestCase):
 
     def test_git_subprocess_receives_remaining_budget(self):
         with runner.collection_budget(time.monotonic() + 0.25), patch.object(
-                runner.subprocess, "run", return_value=Mock(returncode=0, stdout="")) as call:
+                runner, "bounded_command", return_value=Mock(returncode=0, stdout="")) as call:
             runner.command(["git", "status"], timeout=30)
         self.assertGreater(call.call_args.kwargs["timeout"], 0)
         self.assertLessEqual(call.call_args.kwargs["timeout"], 0.25)
@@ -1082,7 +1085,7 @@ class CollectionBudgetTests(unittest.TestCase):
             path = Path(inputs[name]["path"])
             original = path.read_bytes()
             path.write_text("replaced " + name)
-            self.assertEqual(runner.collect(self.job)["verdict"], "FAILED", name)
+            self.assertEqual(runner.collect(self.job)["verdict"], "RUNNING_TIMEOUT" if name == "codex_profile" else "FAILED", name)
             path.write_bytes(original)
 
 
@@ -1169,7 +1172,7 @@ class ClaudeReviewRegressionTests(unittest.TestCase):
         self.assertEqual(result["verdict"], "RUNNING_TIMEOUT")
         self.assertIsNone(result["attestation_path"])
         self.assertEqual(destination.read_bytes(), before)
-        with patch.object(runner.subprocess, "run", side_effect=subprocess.TimeoutExpired("git", 30)):
+        with patch.object(runner, "bounded_command", side_effect=subprocess.TimeoutExpired("git", 30)):
             with self.assertRaises(runner.CollectionUnavailable):
                 runner.command(["git", "status"])
 
@@ -1304,7 +1307,8 @@ class V6ControlShapeTests(unittest.TestCase):
                 runner.write_json(path, value)
                 result = runner.collect(self.job)
                 self.assertEqual(result['verdict'], 'FAILED')
-                self.assertEqual(runner.load_json(self.job / 'attestation.json')['verdict'], 'FAILED')
+                self.assertEqual(runner.load_json(self.job / 'attestation.json')['verdict'], 'PASS')
+                self.assertIsNone(result['attestation_path'])
 
     def test_manifest_nested_shapes_never_break_failure_path(self):
         cases = [dict(self.manifest, provenance=value) for value in (None, [], 'invalid', {})]
@@ -1476,7 +1480,7 @@ class V7EvidenceSnapshotTests(unittest.TestCase):
         self.assertEqual(runner.collect(self.job)['verdict'], 'FAILED')
 
     def test_empty_delta_timeout_becomes_controlled_error(self):
-        with patch.object(runner.subprocess, 'run', side_effect=subprocess.TimeoutExpired('git', 300)):
+        with patch.object(runner, 'bounded_command', side_effect=subprocess.TimeoutExpired('git', 300)):
             with self.assertRaisesRegex(runner.ReviewError, 'DELTA_CHECK_TIMEOUT'):
                 runner.empty_delta(self.frozen, BASE, HEAD)
 
@@ -1550,6 +1554,163 @@ class V7ProfileAllowlistTests(unittest.TestCase):
                     else:
                         with self.assertRaisesRegex(runner.ReviewError, 'CODEX_PERMISSION_VALUE_INVALID'):
                             runner.environment(args)
+
+
+class V8TerminalAndIdentityTests(unittest.TestCase):
+    setUp = CollectTests.setUp
+    git_reply = CollectTests.git_reply
+
+    def test_failed_model_status_cannot_be_repaired_into_same_attempt_pass(self):
+        status = self.artifacts / 'codex.status'; status.write_text('FAIL:1')
+        (self.artifacts / 'codex.meta').write_text('exit=1\n')
+        self.assertEqual(runner.collect(self.job)['verdict'], 'FAILED')
+        proof_path = self.job / 'terminal-failure.json'; original = proof_path.read_bytes()
+        self.assertIn({'path': 'codex.status', 'sha256': runner.artifact_digest(status)}, runner.load_json(proof_path)['artifacts'])
+        status.write_text('DONE')
+        (self.artifacts / 'codex.meta').write_text('exit=0\n')
+        runner.write_json(self.artifacts / 'codex.json', report())
+        for _ in range(2):
+            result = runner.collect(self.job)
+            self.assertEqual(result['verdict'], 'FAILED')
+            self.assertIn('ATTEMPT_PREVIOUSLY_FAILED', result['reasons'])
+        self.assertEqual(proof_path.read_bytes(), original)
+        self.assertFalse((self.job / 'terminal-evidence.json').exists())
+
+    def test_nonzero_dispatch_cannot_be_repaired_into_same_attempt_pass(self):
+        runner.write_json(self.job / 'dispatch-result.json', dict(self.outcome, exit_code=17))
+        self.assertEqual(runner.collect(self.job)['verdict'], 'FAILED')
+        proof = runner.load_json(self.job / 'terminal-failure.json')
+        self.assertEqual(proof['dispatch_receipt_sha256'], runner.artifact_digest(self.job / 'dispatch-result.json'))
+        runner.write_json(self.job / 'dispatch-result.json', self.outcome)
+        self.assertEqual(runner.collect(self.job)['reasons'], ['ATTEMPT_PREVIOUSLY_FAILED'])
+
+    def test_transient_status_read_does_not_create_failed_terminal_latch(self):
+        original = runner.read_text_snapshot
+        def transient(path):
+            if path.name == 'codex.status':
+                raise runner.CollectionUnavailable('temporarily unavailable')
+            return original(path)
+        with patch.object(runner, 'read_text_snapshot', side_effect=transient):
+            self.assertEqual(runner.collect(self.job)['verdict'], 'RUNNING_TIMEOUT')
+        self.assertFalse((self.job / 'terminal-failure.json').exists())
+        self.assertEqual(runner.collect(self.job)['verdict'], 'PASS')
+
+    def test_release_version_is_bound_to_original_request_and_terminal_baseline(self):
+        self.manifest.update(kind='release', version='1.2.3', policy=runner.review_policy('release', ['codex', 'grok']))
+        request = runner.load_json(self.job / 'dispatch-request.json')
+        request['candidate'] = runner.candidate_identity(self.manifest)
+        runner.write_json(self.job / 'dispatch-request.json', request)
+        self.manifest['dispatch_request_sha256'] = runner.artifact_digest(self.job / 'dispatch-request.json')
+        runner.write_json(self.job / 'dispatch-result.json', dict(self.outcome, request_sha256=self.manifest['dispatch_request_sha256']))
+        runner.write_json(self.job / 'manifest.json', self.manifest)
+        self.assertEqual(runner.collect(self.job)['verdict'], 'PASS')
+        self.assertEqual(runner.load_json(self.job / 'terminal-evidence.json')['candidate']['version'], '1.2.3')
+        changed = runner.load_json(self.job / 'manifest.json'); changed['version'] = '9.9.9'
+        runner.write_json(self.job / 'manifest.json', changed)
+        self.assertEqual(runner.collect(self.job)['reasons'], ['DISPATCH_REQUEST_CONTRACT_MISMATCH'])
+
+    def test_model_budget_starts_after_preparation_completes(self):
+        clock = [0]
+        @contextlib.contextmanager
+        def prepared(args):
+            clock[0] = 90
+            yield self.job, self.manifest, {}
+        args = argparse.Namespace(timeout=60)
+        def dispatched(args, job, manifest, env, deadline):
+            self.assertEqual(deadline, 150)
+            return {'verdict': 'RUNNING_TIMEOUT'}
+        with patch.object(runner, 'preparing', prepared), patch.object(runner.time, 'monotonic', side_effect=lambda: clock[0]), patch.object(
+                runner, '_dispatch_locked', side_effect=dispatched):
+            self.assertEqual(runner.run(args)['verdict'], 'RUNNING_TIMEOUT')
+
+
+class V8BoundedControllerTests(unittest.TestCase):
+    def test_real_command_stream_caps_kill_and_reap_owned_group(self):
+        original_spawn = runner.subprocess.Popen
+        for fd in (1, 2):
+            spawned = []
+            def spawn(*args, **kwargs):
+                child = original_spawn(*args, **kwargs); spawned.append(child); return child
+            with self.subTest(fd=fd), patch.object(runner.subprocess, 'Popen', side_effect=spawn), patch.object(
+                    runner.os, 'killpg', wraps=runner.os.killpg) as kill:
+                with self.assertRaisesRegex(runner.ReviewError, 'PREPARATION_COMMAND_OUTPUT_LIMIT'):
+                    runner.bounded_command([sys.executable, '-c', 'import os;os.write(' + str(fd) + ',b"x"*65536)'],
+                                           stdout_limit=1024, stderr_limit=1024, timeout=10)
+            self.assertIsNotNone(spawned[0].poll())
+            kill.assert_called_with(spawned[0].pid, runner.signal.SIGKILL)
+
+    def test_real_closed_pipes_do_not_allow_unbounded_wait(self):
+        original_spawn = runner.subprocess.Popen; spawned = []
+        def spawn(*args, **kwargs):
+            child = original_spawn(*args, **kwargs); spawned.append(child); return child
+        with patch.object(runner.subprocess, 'Popen', side_effect=spawn):
+            with self.assertRaises(subprocess.TimeoutExpired):
+                runner.bounded_command([sys.executable, '-c', 'import os,time;os.close(1);os.close(2);time.sleep(30)'], timeout=0.2)
+        self.assertIsNotNone(spawned[0].poll())
+
+
+class V8ReleasePromptTests(unittest.TestCase):
+    setUp = OfflineGitPreparationTests.setUp
+    cleanup = OfflineGitPreparationTests.cleanup
+
+    def test_release_kind_and_version_are_in_both_notes_and_empty_delta_prompt(self):
+        with patch.object(runner, 'environment', return_value=(self.env, self.provenance)):
+            job, manifest, _ = runner.prepare(self.args)
+        for filename in ('review-notes.txt', 'release-prompt.txt'):
+            text = (job / filename).read_text()
+            self.assertIn('Review kind: release', text)
+            self.assertIn('Release version: 1.2.3', text)
+
+
+class V8HistoricalEvidenceTests(unittest.TestCase):
+    setUp = CollectTests.setUp
+    git_reply = CollectTests.git_reply
+
+    def test_live_profile_change_withholds_current_approval_and_preserves_history(self):
+        first = runner.collect(self.job); self.assertEqual(first['verdict'], 'PASS')
+        path = runner.attestation_path(self.manifest); original = path.read_bytes()
+        profile = Path(self.manifest['provenance']['input_files']['codex_profile']['path'])
+        profile_bytes = profile.read_bytes(); profile.write_text('new personal configuration')
+        current = runner.collect(self.job)
+        self.assertEqual(current['verdict'], 'RUNNING_TIMEOUT'); self.assertIsNone(current['attestation_path'])
+        self.assertEqual(path.read_bytes(), original)
+        profile.write_bytes(profile_bytes)
+        self.assertEqual(runner.collect(self.job)['verdict'], 'PASS')
+        self.assertEqual(path.read_bytes(), original)
+
+    def test_live_upstream_change_preserves_original_completed_report(self):
+        self.assertEqual(runner.collect(self.job)['verdict'], 'PASS')
+        path = runner.attestation_path(self.manifest); original = path.read_bytes()
+        self.executable.write_text('upgraded personal upstream')
+        current = runner.collect(self.job)
+        self.assertEqual(current['verdict'], 'RUNNING_TIMEOUT'); self.assertIsNone(current['attestation_path'])
+        self.assertEqual(path.read_bytes(), original)
+
+    def test_current_invalid_evidence_does_not_overwrite_completed_needs_review(self):
+        runner.write_json(self.artifacts / 'codex.json', dict(report(), verdict='request_changes'))
+        self.assertEqual(runner.collect(self.job)['verdict'], 'NEEDS_REVIEW')
+        path = runner.attestation_path(self.manifest); original = path.read_bytes()
+        (self.artifacts / 'codex.json').unlink()
+        current = runner.collect(self.job)
+        self.assertEqual(current['verdict'], 'FAILED'); self.assertIsNone(current['attestation_path'])
+        self.assertEqual(current['job_id'], self.job.name)
+        self.assertEqual(path.read_bytes(), original)
+        self.assertIn('codex', runner.load_json(path, max_bytes=runner.MAX_ATTESTATION_BYTES)['reports'])
+
+    def test_digest_and_durable_directory_reject_unsafe_or_oversized_inputs(self):
+        regular = self.root / 'regular'; regular.write_text('fixture')
+        link = self.root / 'directory-link'; link.symlink_to(self.job, target_is_directory=True)
+        for path in (regular, link):
+            with self.subTest(path=path), self.assertRaises(runner.ReviewError):
+                runner.durable_mkdir(path)
+        with self.assertRaises(runner.ReviewError):
+            runner.digest(link / 'manifest.json')
+        with regular.open('wb') as stream:
+            stream.truncate(runner.MAX_REPORT_BYTES + 1)
+        with patch.object(os, 'open', wraps=os.open) as opened:
+            with self.assertRaisesRegex(runner.ReviewError, 'NOT_REGULAR_OR_OVERSIZED'):
+                runner.digest(regular)
+            opened.assert_not_called()
 
 
 if __name__ == "__main__":
