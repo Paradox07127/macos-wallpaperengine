@@ -322,9 +322,9 @@ struct MonitorBoardConfigurationTests {
     // MARK: - packedPlacements geometry invariants
 
     /// Mirrors `MonitorBoardConfiguration.packedPlacements`' own math so tests
-    /// assert against an independently derived reference rather than
-    /// hardcoded floats that would silently drift from the production
-    /// formula. `columns` here is the packer's own reference-board basis.
+    /// assert against a reference derived from the shipped cell pitch rather
+    /// than hardcoded floats that would silently drift from the production
+    /// formula.
     private struct ReferenceAABB {
         let x: Double
         let y: Double
@@ -339,12 +339,12 @@ struct MonitorBoardConfigurationTests {
         }
     }
 
-    // Square cells at the 16:10 reference: cellW = 1/10 = 0.1,
-    // cellH_norm = aspect/columns = 1.6/10 = 0.16 (so cellH_px == cellW_px).
-    private static let referenceColumns = 10.0
-    private static let referenceAspect = 16.0 / 10.0
-    private static let referenceCellW = 1.0 / referenceColumns
-    private static let referenceCellH = referenceAspect / referenceColumns
+    /// Normalized cell extents. The cell is square in points, so the two axes
+    /// differ by the reference board's aspect.
+    private static let referenceCellW =
+        MonitorBoardMetrics.cellPitch / MonitorBoardConfiguration.referenceBoard.width
+    private static let referenceCellH =
+        MonitorBoardMetrics.cellPitch / MonitorBoardConfiguration.referenceBoard.height
 
     private func referenceAABB(for placement: MonitorWidgetPlacement) -> ReferenceAABB {
         let cells = placement.kind.cellSize(for: placement.size)
@@ -365,7 +365,7 @@ struct MonitorBoardConfigurationTests {
             #expect(aabb.x >= 0)
             #expect(aabb.y >= 0)
             // Packing is cell-exact (gutters are the renderer's job), so a
-            // full 10-column row ends exactly at x=1, never past it.
+            // full row ends at or before x=1, never past it.
             #expect(aabb.maxX <= 1.0 + 1e-9)
             #expect(aabb.maxY <= 1.0 + 1e-9)
         }
