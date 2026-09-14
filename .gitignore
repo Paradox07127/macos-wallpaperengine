@@ -124,6 +124,7 @@ LiveWallpaperTests/Fixtures/*
 
 # Keep portable CI/release contracts; all other maintainer-local scripts remain ignored.
 scripts/*
+!scripts/multica/
 !scripts/release_candidate_check.sh
 !scripts/fast_app_contract_tests.sh
 !scripts/app_tests.sh
