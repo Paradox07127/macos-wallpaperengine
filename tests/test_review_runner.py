@@ -1,4 +1,4 @@
-"""Offline review runner tests: subprocesses/models are mocked, no mmrun invocation."""
+"""Offline tests use temporary Git repos and local fixture subprocesses; no real models, daemon, or network."""
 
 import argparse
 import copy
@@ -549,7 +549,7 @@ class OfflineGitPreparationTests(unittest.TestCase):
         self.addCleanup(self.cleanup)
         self.repo = self.root / "repo"
         self.repo.mkdir()
-        runner.git(self.repo, "init", "-q")
+        runner.git(self.repo, "init", "-q", "--template=")
         (self.repo / "file.txt").write_text("release fixture\n")
         runner.git(self.repo, "add", "file.txt")
         runner.git(self.repo, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
@@ -1243,6 +1243,122 @@ class CanonicalModelPreparationTests(unittest.TestCase):
             runner._dispatch_locked(self.args, job, manifest, env, time.monotonic() + 1)
         argv = runner.load_json(job / "dispatch-request.json")["argv"]
         self.assertEqual(argv[argv.index("--models") + 1], "codex,grok")
+
+
+class V6ControlShapeTests(unittest.TestCase):
+    setUp = CollectTests.setUp
+    git_reply = CollectTests.git_reply
+
+    def test_identity_top_and_nested_shapes_revoke_existing_pass(self):
+        valid = dict(self.outcome)
+        cases = [None, [], 'invalid', 3]
+        cases.extend(dict(valid, **fields) for fields in [
+            {'supervisor_pid': 12, 'supervisor_identity': []},
+            {'dispatch_pid': 12, 'dispatch_identity': 'invalid'},
+            {'controller_pid': True}, {'spawn_intent': []},
+            {'worker_identities': []}, {'worker_identities': {'codex': None}},
+            {'worker_identities': {'codex': {'pid': 12, 'start': [], 'platform': 'darwin'}}},
+            {'worker_identities': {'codex': {'pid': 12, 'reused': True, 'worker_started': None}}},
+        ])
+        path = self.job / 'dispatch-identity.json'
+        for value in cases:
+            with self.subTest(value=value):
+                path.unlink(missing_ok=True)
+                runner.write_json(self.job / 'manifest.json', self.manifest)
+                self.assertEqual(runner.collect(self.job)['verdict'], 'PASS')
+                runner.write_json(path, value)
+                result = runner.collect(self.job)
+                self.assertEqual(result['verdict'], 'FAILED')
+                self.assertEqual(runner.load_json(self.job / 'attestation.json')['verdict'], 'FAILED')
+
+    def test_manifest_nested_shapes_never_break_failure_path(self):
+        cases = [dict(self.manifest, provenance=value) for value in (None, [], 'invalid', {})]
+        cases += [dict(self.manifest, provenance=dict(self.manifest['provenance'], mmrun_home=value))
+                  for value in (None, [], {}, 12)]
+        cases += [dict(self.manifest, **{key:value}) for key,value in (
+            ('policy', []), ('worker_identities', []), ('controller_identity', []),
+            ('completion_observed', 'yes'), ('mmrun_run_id', {}))]
+        for value in cases:
+            with self.subTest(value=value):
+                runner.write_json(self.job / 'manifest.json', value)
+                self.assertEqual(runner.collect(self.job)['verdict'], 'FAILED')
+
+    def test_receipt_nested_identity_and_preparing_shapes_fail_closed(self):
+        for fields in ({'supervisor_pid': 12, 'supervisor_identity': []},
+                       {'worker_identities': {'codex': None}}, {'dispatch_pid': '12'}):
+            with self.subTest(fields=fields):
+                runner.write_json(self.job / 'dispatch-result.json', dict(self.outcome, **fields))
+                self.assertEqual(runner.collect(self.job)['verdict'], 'FAILED')
+        (self.job / 'manifest.json').unlink()
+        for value in (None, [], {'controller_pid': 12, 'controller_identity': []}):
+            runner.write_json(self.job / 'preparing.json', value)
+            with self.assertRaises(runner.ReviewError):
+                runner.require_quiescent(self.job)
+
+    def test_completion_observation_survives_repeated_missing_receipt_collection(self):
+        runner.write_json(self.job / 'manifest.json', dict(self.manifest, spawn_intent=True))
+        self.assertEqual(runner.collect(self.job)['verdict'], 'PASS')
+        (self.job / 'dispatch-result.json').unlink()
+        for _ in range(3):
+            self.assertEqual(runner.collect(self.job)['verdict'], 'FAILED')
+            self.assertIs(runner.load_json(self.job / 'manifest.json')['completion_observed'], True)
+
+    def test_non_object_compat_sidecar_is_controlled(self):
+        provenance = copy.deepcopy(self.manifest['provenance'])
+        provenance['mmrun_kind'] = 'compat'
+        for value in (None, [], 'invalid'):
+            runner.write_json(Path(str(self.executable) + '.provenance.json'), value)
+            with self.assertRaisesRegex(runner.ReviewError, 'COMPAT_PROVENANCE_NOT_OBJECT'):
+                runner.validate_execution_provenance(provenance)
+
+
+class V6FrozenInputTests(unittest.TestCase):
+    setUp = OfflineGitPreparationTests.setUp
+    cleanup = OfflineGitPreparationTests.cleanup
+
+    def test_derived_fence_binds_source_and_copy_without_changing_source(self):
+        source = Path(self.provenance['input_files']['fence']['path'])
+        original = source.read_bytes()
+        with patch.object(runner, 'environment', return_value=(self.env, self.provenance)):
+            job, manifest, env = runner.prepare(self.args)
+        record = manifest['provenance']['input_files']['fence']
+        self.assertEqual(source.read_bytes(), original)
+        self.assertEqual(record['source_sha256'], runner.digest(source))
+        self.assertNotEqual(record['source_sha256'], record['sha256'])
+        self.assertEqual(Path(record['path']).read_bytes(), runner.harden_fence_bytes(original))
+        self.assertTrue(Path(record['path']).read_bytes().endswith(runner.FENCE_ARTIFACT_WRITE_DENY))
+        runner.validate_execution_provenance(manifest['provenance'])
+
+    def test_collection_target_survives_source_mirror_removal(self):
+        with patch.object(runner, 'environment', return_value=(self.env, self.provenance)):
+            job, manifest, env = runner.prepare(self.args)
+        self.repo.rename(self.root / 'removed-source')
+        runner.validate_target_evidence(manifest)
+
+    def test_git_fixture_ignores_inherited_repo_and_hook_configuration(self):
+        sentinel_head = runner.git(self.repo, 'rev-parse', 'HEAD')
+        sentinel_config = (self.repo / '.git/config').read_bytes()
+        other = self.root / 'other'; other.mkdir()
+        hooks = self.root / 'hooks'; hooks.mkdir()
+        marker = self.root / 'hook-ran'
+        hook = hooks / 'pre-commit'
+        hook.write_text('#!/bin/sh\ntouch "' + str(marker) + '"\n'); hook.chmod(0o700)
+        global_config = self.root / 'inherited.gitconfig'
+        global_config.write_text('[core]\n hooksPath = ' + str(hooks) + '\n')
+        pollution = {'GIT_DIR': str(self.repo / '.git'), 'GIT_WORK_TREE': str(self.repo),
+                     'GIT_CONFIG_GLOBAL': str(global_config), 'GIT_CONFIG_COUNT': '1',
+                     'GIT_CONFIG_KEY_0': 'core.hooksPath', 'GIT_CONFIG_VALUE_0': str(hooks),
+                     'GIT_TEMPLATE_DIR': str(hooks)}
+        with patch.dict(os.environ, pollution):
+            runner.git(other, 'init', '-q', '--template=')
+            (other / 'new.txt').write_text('fixture')
+            runner.git(other, 'add', '.')
+            runner.git(other, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
+                       'commit', '-qm', 'isolated fixture')
+        self.assertTrue((other / '.git').is_dir())
+        self.assertEqual(runner.git(self.repo, 'rev-parse', 'HEAD'), sentinel_head)
+        self.assertEqual((self.repo / '.git/config').read_bytes(), sentinel_config)
+        self.assertFalse(marker.exists())
 
 
 if __name__ == "__main__":

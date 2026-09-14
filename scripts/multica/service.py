@@ -31,7 +31,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         cfg = github_bridge.load_config(args.config)
-    except (github_bridge.BridgeError, ValueError, KeyError, TypeError, OSError) as exc:
+    except (github_bridge.BridgeError, github_bridge.runner.ReviewError, ValueError, KeyError, TypeError, OSError) as exc:
         print(f'Bridge configuration rejected: {type(exc).__name__}', file=sys.stderr)
         return 1
     enabled = cfg.get('enabled', False)

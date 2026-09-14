@@ -109,7 +109,7 @@ class FakeCommands:
             return self.issues[args[2]]
         if args[:3] == ["issue", "comment", "add"]:
             identifier = args[3]
-            result = {"id": "comment-1", "content": body, "author_type": "member", "author_id": AGENT}
+            result = {"id": "33333333-3333-3333-3333-333333333333", "content": body, "author_type": "member", "author_id": AGENT}
             target = self.initial_comments if "\nInitial bridge-authorized triage." in body else self.comments
             target.setdefault(identifier, []).append(result)
             if self.lose_comment_ack:
@@ -1032,11 +1032,15 @@ class BridgeTests(unittest.TestCase):
             command.run([sys.executable, "-c", parent_code])
         pid = int(pid_file.read_text())
         try:
-            time.sleep(0.05)
-            before = heartbeat.stat().st_size
-            self.assertGreater(before, 0)
-            time.sleep(0.1)
-            self.assertEqual(heartbeat.stat().st_size, before)
+            deadline = time.monotonic() + 2
+            previous, stable = None, 0
+            while time.monotonic() < deadline and stable < 5:
+                size = heartbeat.stat().st_size
+                stable = stable + 1 if size == previous else 0
+                previous = size
+                time.sleep(0.05)
+            self.assertGreater(previous, 0)
+            self.assertEqual(stable, 5, "descendant heartbeat did not stop after timeout")
         finally:
             try:
                 os.kill(pid, 9)
@@ -1233,6 +1237,129 @@ class BridgeTests(unittest.TestCase):
         self.assertIn("comment:uncertain-safe-id", log)
         self.assertIn("never automatically cleared", log)
         self.assertNotIn("private body", log)
+
+    def test_dry_run_preserves_every_state_file_and_generation(self):
+        self.app.intake_pr(self.pr())
+        def snapshot():
+            return {str(p.relative_to(self.root)): (p.stat().st_mode, p.read_bytes() if p.is_file() else None)
+                    for p in self.root.rglob("*")}
+        before = snapshot()
+        copied = bridge.State(self.cfg["state_path"], dry_run=True)
+        try:
+            preview = bridge.Bridge(self.cfg, copied, self.remote, dry_run=True, report=self.log.append)
+            preview.intake_pr(self.pr(head={"sha": "c" * 40, "repo": {"full_name": bridge.ALLOWED_REPOSITORY}}))
+            preview.request_release(HEAD, BASE, "1.2.3")
+        finally:
+            copied.db.close()
+        self.assertEqual(snapshot(), before)
+
+    def test_a_b_a_restores_generation_without_replaying_delivery(self):
+        self.app.intake_pr(self.pr())
+        first = bridge.current_generation(self.cfg, "remote-1")
+        self.app.intake_pr(self.pr(head={"sha": "c" * 40, "repo": {"full_name": bridge.ALLOWED_REPOSITORY}}))
+        self.assertNotEqual(bridge.current_generation(self.cfg, "remote-1"), first)
+        writes = len(self.writes())
+        self.app.intake_pr(self.pr())
+        self.assertEqual(bridge.current_generation(self.cfg, "remote-1"), first)
+        self.assertEqual(len(self.writes()), writes)
+
+    def test_initial_completion_is_atomic_and_recoverable_without_second_trigger(self):
+        item = self.comment(body="/multica-triage")
+        self.remote.issue_threads[7] = [item]
+        # Crash the transaction at its last write, after history receipts and done.
+        self.state.db.execute("CREATE TEMP TRIGGER fail_snapshot BEFORE INSERT ON meta "
+                              "WHEN NEW.key LIKE 'snapshot-time:%' BEGIN SELECT RAISE(ABORT,'crash'); END")
+        with self.assertRaises(bridge.sqlite3.IntegrityError):
+            self.app.intake_issue(self.issue(comments=1), BEFORE)
+        source = f"github:{bridge.ALLOWED_REPOSITORY}:issue:7"
+        self.assertEqual(self.state.get("meta", "initial-triage:" + source), "pending")
+        self.assertIsNone(self.state.get("meta", "history-receipts:" + source))
+        self.assertIsNone(self.state.get("meta", "triage-command:" + self.app.comment_event(item)))
+        self.state.db.execute("DROP TRIGGER fail_snapshot")
+        self.app.intake_issue(self.issue(comments=1), BEFORE)
+        self.app.intake_comment(item)
+        self.assertEqual(len(self.remote.initial_comments["remote-1"]), 1)
+        self.assertEqual(self.queue_status(), {})
+
+    def test_legacy_initial_done_repairs_history_before_command_intake(self):
+        item = self.comment(body="/multica-triage")
+        self.remote.issue_threads[7] = [item]
+        self.app.intake_issue(self.issue(comments=1), BEFORE)
+        self.state.db.execute("DELETE FROM meta WHERE key LIKE 'history-receipts:%' OR key LIKE 'triage-command:%'")
+        self.state.db.commit()
+        self.app.intake_comment(item)
+        self.assertEqual(self.queue_status(), {})
+        self.assertEqual(len(self.remote.initial_comments["remote-1"]), 1)
+
+    def test_malformed_job_is_deferred_without_blocking_other_events(self):
+        self.seed()
+        req = self.app.job(HEAD, BASE, "pr", pr_number=8)
+        (Path(self.cfg["jobs_dir"]) / req["job_id"] / "request.json").write_text("{broken", encoding="utf-8")
+        self.remote.prs = [self.pr(), self.pr(number=9)]
+        self.app.poll_once()
+        statuses = {json.loads(payload)["number"]: status for payload, status in
+                    self.state.db.execute("SELECT payload,status FROM intake_events WHERE kind='pr'")}
+        self.assertEqual(statuses, {8: "pending", 9: "done"})
+        self.assertIn("Triage follow-up queue", "\n".join(self.log))
+
+    def test_list_fence_can_close_before_independent_top_level_command(self):
+        for opening, close in (("- ```", "  ```"), ("1. ~~~", "   ~~~"), ("> - ```", ">   ```")):
+            self.assertTrue(bridge.requests_triage(opening + "\nexample\n" + close + "\n\n/multica-triage"))
+        self.assertFalse(bridge.requests_triage("```\n  - ```\n\n/multica-triage"))
+
+    def test_preview_sqlite_uri_escapes_reserved_path_characters(self):
+        path = self.root / "state #?%.sqlite"
+        original = bridge.State(path)
+        original.meta("baseline", BEFORE)
+        original.db.close()
+        copied = bridge.State(path, dry_run=True)
+        try:
+            self.assertEqual(copied.get("meta", "baseline"), BEFORE)
+        finally:
+            copied.db.close()
+
+    def test_invalid_comment_ack_stays_uncertain_then_reconciles_once(self):
+        real = self.remote.multica
+        def lost_identity(args, body=None):
+            result = real(args, body)
+            return {} if args[:3] == ["issue", "comment", "add"] else result
+        with patch.object(self.remote, "multica", side_effect=lost_identity):
+            with self.assertRaisesRegex(bridge.BridgeError, "identity"):
+                self.app.append("remote-1", "ack-test", "evidence")
+        self.assertEqual(self.state.get("operations", "comment:ack-test", valuecol="state"), "intent")
+        self.app.append("remote-1", "ack-test", "evidence")
+        self.assertEqual(len(self.remote.comments["remote-1"]), 1)
+
+    def test_comment_ack_validates_available_identity_and_body_fields(self):
+        good = {"id": AGENT, "issue_id": REVIEW, "content": "body", "author_type": "member", "author_id": AGENT}
+        self.assertEqual(bridge.comment_ack(self.cfg, {"data": {"comment": good}}, REVIEW, "body"), AGENT)
+        for field, value in (("id", "bad"), ("issue_id", AGENT), ("content", "different"),
+                             ("author_type", "agent"), ("author_id", REVIEW), ("content_truncated", True)):
+            with self.subTest(field=field), self.assertRaises(bridge.BridgeError):
+                bridge.comment_ack(self.cfg, {**good, field: value}, REVIEW, "body")
+
+    def test_generation_record_must_be_an_object_with_nonempty_job(self):
+        path = bridge.generation_path(self.cfg, "remote-1")
+        path.parent.mkdir()
+        for value in ([], "text", {"issue_id": "remote-1", "job_id": None}):
+            path.write_text(json.dumps(value), encoding="utf-8")
+            with self.assertRaises(bridge.BridgeError):
+                bridge.current_generation(self.cfg, "remote-1")
+
+    def test_source_defangs_case_variants_of_mention_scheme(self):
+        encoded = self.app.source_body("github_issue", self.issue(body="Mention://agent/x MENTION://agent/y"))
+        self.assertNotIn("mention://", encoded.lower())
+
+    def test_spurious_read_readiness_retries_without_losing_command(self):
+        read = bridge.os.read
+        failures = [BlockingIOError(), InterruptedError()]
+        def flaky(fd, size):
+            if size == 65536 and failures:
+                raise failures.pop()
+            return read(fd, size)
+        with patch.object(bridge.os, "read", side_effect=flaky):
+            result = bridge.Commands(self.cfg).run([sys.executable, "-c", "print('{}')"])
+        self.assertEqual(result, {})
 
 
 if __name__ == "__main__":

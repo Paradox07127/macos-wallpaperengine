@@ -18,6 +18,7 @@ sys.path.insert(0, str(TOOL_DIR))
 SPEC = importlib.util.spec_from_file_location("release_gate", TOOL_DIR / "release_gate.py")
 gate = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(gate)
+import review_runner as runner
 
 
 class ReleaseGateTests(unittest.TestCase):
@@ -27,7 +28,7 @@ class ReleaseGateTests(unittest.TestCase):
         self.root = Path(self.temp.name).resolve()
         self.repo = self.root / "repo"
         self.repo.mkdir()
-        self.git("init", "-q")
+        self.git("init", "-q", "--template=")
         self.git("config", "user.email", "fixture@example.invalid")
         self.git("config", "user.name", "Fixture")
         self.git("config", "commit.gpgsign", "false")
@@ -48,11 +49,14 @@ class ReleaseGateTests(unittest.TestCase):
                                   "status": "DONE\n", "meta": "exit=0\n",
                                   "out": "review complete\n"}.items():
                 (self.artifact_root / (model + "." + suffix)).write_text(value)
+        (self.artifact_root / "run.meta").write_text(
+            f"runid=evidence\nmode=review\nworkdir={self.repo}\nmodels=codex,grok\nsession=fixture-session\n")
         self.evidence = {
             "schema_version": 1, "kind": "release", "verdict": "PASS", "version": "1.2.3",
             "repo": str(self.repo), "base_sha": self.base, "head_sha": self.head,
             "tree_sha": self.git("rev-parse", "HEAD^{tree}"),
-            "artifact_root": str(self.artifact_root),
+            "artifact_root": str(self.artifact_root), "mmrun_run_id": "evidence",
+            "provenance": {"mmrun_home": str(self.root), "session": "fixture-session"},
             "policy": {"version": gate.POLICY_VERSION, "models": ["codex", "grok"],
                        "scope": "release_tree_and_base_delta", "all_models_approve": True,
                        "blocked_severities": ["critical", "major"],
@@ -71,7 +75,7 @@ class ReleaseGateTests(unittest.TestCase):
 
     def git(self, *args):
         return subprocess.run(["git", "-C", str(self.repo), *args], check=True,
-                              capture_output=True, text=True).stdout.strip()
+                              capture_output=True, text=True, env=runner.git_environment()).stdout.strip()
 
     def save(self):
         self.attestation.write_text(json.dumps(self.evidence))
@@ -289,9 +293,18 @@ class ReleaseGateTests(unittest.TestCase):
                 old = self.artifact_root / artifact["path"]
                 artifact["path"] = artifact["path"].replace("grok.", "claude.")
                 old.rename(self.artifact_root / artifact["path"])
+        meta = self.artifact_root / "run.meta"
+        meta.write_text(meta.read_text().replace("models=codex,grok", "models=" + ",".join(self.evidence["policy"]["models"])))
+        for artifact in self.evidence["artifacts"]:
+            if artifact["path"] == "run.meta":
+                artifact["sha256"] = hashlib.sha256(meta.read_bytes()).hexdigest()
         self.save()
         self.assertEqual(self.validate()["status"], "STATIC_REVIEW_VERIFIED")
         self.evidence["policy"]["models"].append("grok")
+        meta.write_text(meta.read_text().replace("models=codex,claude", "models=codex,claude,grok"))
+        for artifact in self.evidence["artifacts"]:
+            if artifact["path"] == "run.meta":
+                artifact["sha256"] = hashlib.sha256(meta.read_bytes()).hexdigest()
         self.save()
         with self.assertRaisesRegex(gate.GateError, "required model evidence missing"):
             self.validate()
@@ -319,6 +332,93 @@ class ReleaseGateTests(unittest.TestCase):
         self.assertEqual(identity.st_ino, self.attestation.stat().st_ino)
         self.assertTrue(opened.call_args.args[1] & os.O_NOFOLLOW)
         self.assertTrue(opened.call_args.args[1] & os.O_NONBLOCK)
+
+
+class V6ArtifactBoundaryTests(unittest.TestCase):
+    setUp = ReleaseGateTests.setUp
+    git = ReleaseGateTests.git
+    save = ReleaseGateTests.save
+    validate = ReleaseGateTests.validate
+
+    def test_oversized_text_artifacts_fail_before_their_hash(self):
+        original_hash = gate.file_hash
+        for suffix in ('.status', '.meta', '.out'):
+            path = self.artifact_root / ('codex' + suffix)
+            original = path.read_bytes()
+            with self.subTest(suffix=suffix):
+                with path.open('wb') as stream:
+                    stream.truncate(gate.TEXT_LIMITS[suffix] + 1)
+                def guarded_hash(candidate):
+                    self.assertNotEqual(candidate, path, 'oversized artifact must not be hashed')
+                    return original_hash(candidate)
+                with patch.object(gate, 'file_hash', side_effect=guarded_hash):
+                    with self.assertRaisesRegex(gate.GateError, 'OVERSIZED'):
+                        self.validate()
+                path.write_bytes(original)
+
+    def test_streamed_output_requires_text_and_complete_utf8(self):
+        path = self.artifact_root / 'codex.out'
+        for data, expected in ((b' \n' * 40000, False),
+                               (b' ' * 65535 + '\u4e2d'.encode(), True)):
+            path.write_bytes(data)
+            self.assertIs(gate.output_has_text(path), expected)
+        path.write_bytes(b'valid prefix\xff')
+        with self.assertRaises(UnicodeDecodeError):
+            gate.output_has_text(path)
+
+    def test_artifact_root_and_rehashed_run_metadata_remain_bound(self):
+        original = copy.deepcopy(self.evidence)
+        for field, value in (('mmrun_run_id', 'different-run'),
+                             ('provenance', {'mmrun_home': str(self.root / 'other'), 'session': 'fixture-session'})):
+            with self.subTest(field=field):
+                self.evidence = dict(original, **{field:value}); self.save()
+                with self.assertRaisesRegex(gate.GateError, 'ARTIFACT_RUN_IDENTITY_MISMATCH'):
+                    self.validate()
+        self.evidence = copy.deepcopy(original)
+        path = self.artifact_root / 'run.meta'; content = path.read_text()
+        for key in ('runid', 'session', 'workdir', 'models', 'mode'):
+            with self.subTest(key=key):
+                path.write_text('\n'.join(key + '=different' if line.startswith(key + '=') else line
+                                          for line in content.splitlines()) + '\n')
+                next(a for a in self.evidence['artifacts'] if a['path'] == 'run.meta')['sha256'] = gate.file_hash(path)
+                self.save()
+                with self.assertRaisesRegex(gate.GateError, 'RUN_METADATA_IDENTITY_MISMATCH'):
+                    self.validate()
+
+    def test_git_fixture_ignores_inherited_repository_and_global_hooks(self):
+        sentinel = self.repo
+        head = self.git('rev-parse', 'HEAD')
+        config = (sentinel / '.git/config').read_bytes()
+        hooks = self.root / 'evil-hooks'; hooks.mkdir()
+        marker = self.root / 'hook-ran'
+        hook = hooks / 'pre-commit'; hook.write_text('#!/bin/sh\ntouch "' + str(marker) + '"\n'); hook.chmod(0o700)
+        global_config = self.root / 'global.config'
+        global_config.write_text('[core]\n hooksPath = ' + str(hooks) + '\n')
+        self.repo = self.root / 'other-fixture'; self.repo.mkdir()
+        with patch.dict(os.environ, {'GIT_DIR': str(sentinel / '.git'), 'GIT_WORK_TREE': str(sentinel),
+                                    'GIT_CONFIG_GLOBAL': str(global_config), 'GIT_TEMPLATE_DIR': str(hooks),
+                                    'GIT_CONFIG_COUNT': '1', 'GIT_CONFIG_KEY_0': 'core.hooksPath',
+                                    'GIT_CONFIG_VALUE_0': str(hooks)}):
+            self.git('init', '-q', '--template=')
+            (self.repo / 'new.txt').write_text('fixture')
+            self.git('add', '.')
+            self.git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'fixture')
+        self.assertTrue((self.repo / '.git').is_dir())
+        self.repo = sentinel
+        self.assertEqual(self.git('rev-parse', 'HEAD'), head)
+        self.assertEqual((sentinel / '.git/config').read_bytes(), config)
+        self.assertFalse(marker.exists())
+
+    def test_plan_requires_separate_writable_packaging_checkout(self):
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            code = gate.main(['plan', '--repo', str(self.repo), '--attestation', str(self.attestation),
+                              '--base-sha', self.base, '--head-sha', self.head, '--sku', 'pro', '--version', '1.2.3'])
+        self.assertEqual(code, 0)
+        result = json.loads(output.getvalue())
+        self.assertIn('<CLEAN_WRITABLE_CHECKOUT>', result['manual_packaging_command'])
+        self.assertNotIn(str(self.repo), result['manual_packaging_command'])
+        self.assertEqual(result['packaging_checkout_head'], self.head)
 
 
 if __name__ == "__main__":

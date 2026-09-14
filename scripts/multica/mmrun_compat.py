@@ -23,6 +23,7 @@ import tempfile
 
 VERSION = "mmrun-provider-transport-v3"
 MAX_OUTPUT_BYTES = 32 * 1024 * 1024
+MAX_SCRIPT_BYTES = 16 * 1024 * 1024
 SESSION_ANCHOR = '      sid=$(cat "$rd/grok.session")'
 OUTPUT_ANCHOR = '''        "$GROK_BIN" --prompt-file "$rd/prompt.md" -s "$sid" "${args[@]}" > "$rd/grok.raw" 2>&1
       rc=$?
@@ -203,13 +204,18 @@ def atomic_text(path, text, mode):
             os.unlink(temporary)
 
 
-def input_snapshot(path):
-    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+def input_snapshot(path, *, max_bytes=MAX_SCRIPT_BYTES):
+    initial = path.lstat()
+    if not stat.S_ISREG(initial.st_mode) or initial.st_size > max_bytes:
+        raise CompatibilityError("Input must be a bounded regular file")
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     with os.fdopen(fd, "rb") as stream:
         before = os.fstat(stream.fileno())
-        if not stat.S_ISREG(before.st_mode):
-            raise CompatibilityError("Preparation inputs must be regular files")
-        data = stream.read()
+        if not stat.S_ISREG(before.st_mode) or before.st_size > max_bytes:
+            raise CompatibilityError("Input must be a bounded regular file")
+        data = stream.read(max_bytes + 1)
+        if len(data) > max_bytes:
+            raise CompatibilityError("Input exceeds size limit")
         after = os.fstat(stream.fileno())
     identity = lambda v: (v.st_dev, v.st_ino, v.st_size, v.st_mtime_ns)
     if identity(before) != identity(after) or identity(after) != identity(path.stat()):
@@ -259,9 +265,11 @@ def prepare(source_path, output_path):
                       "added_providers": ["claude"], "security_flags_changed": False}
         contents = ((output_path, rendered, 0o700),
                     (sidecar, json.dumps(provenance, indent=2) + "\n", 0o600))
-        for path, content, _ in contents:
-            if path.is_symlink() or (path.exists() and path.read_bytes() != content.encode()):
+        for path, content, mode in contents:
+            if path.is_symlink() or (path.exists() and input_snapshot(path)[0] != content.encode()):
                 raise CompatibilityError("Destination already contains different content; use a new output path")
+            if path.exists() and stat.S_IMODE(path.stat().st_mode) != mode:
+                raise CompatibilityError("Existing destination permissions differ; use a new output path")
         def verify_inputs():
             if (input_snapshot(source_path) != (source_bytes, source_identity)
                     or input_snapshot(helper) != (helper_bytes, helper_identity)):
@@ -273,8 +281,8 @@ def prepare(source_path, output_path):
             if input_snapshot(path)[0] != content.encode():
                 raise CompatibilityError("Preparation destination changed during publication")
             verify_inputs()
-        for path, content, _ in contents:
-            if input_snapshot(path)[0] != content.encode():
+        for path, content, mode in contents:
+            if input_snapshot(path)[0] != content.encode() or stat.S_IMODE(path.stat().st_mode) != mode:
                 raise CompatibilityError("Preparation destination changed during publication")
         return provenance
 
@@ -296,9 +304,10 @@ def main(argv=None):
             path = Path(args.input)
             if path.is_symlink() or path.suffix == ".raw" or ".raw." in path.name:
                 raise CompatibilityError("Only a dedicated, non-symlink stdout capture may be normalized")
-            if path.stat().st_size > MAX_OUTPUT_BYTES:
-                raise CompatibilityError("Provider stdout exceeds the transport size limit")
-            result = normalize(path.read_text(encoding="utf-8"), args.provider)
+            raw, _ = input_snapshot(path, max_bytes=MAX_OUTPUT_BYTES)
+            text = raw.decode("utf-8")
+            del raw
+            result = normalize(text, args.provider)
         print(json.dumps(result, ensure_ascii=False))
         return 0
     except (OSError, UnicodeError, ValueError, CompatibilityError) as exc:

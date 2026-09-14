@@ -7,12 +7,12 @@ import sys
 import time
 
 from review_runner import (ReviewError, digest, load_json, write_json,
-                           validate_execution_provenance, validate_execution_environment, process_identity)
+                           validate_execution_provenance, validate_execution_environment, process_identity, require_object)
 
 
 def supervise(job_dir: Path) -> int:
     request_path = job_dir / 'dispatch-request.json'
-    request = load_json(request_path)
+    request = require_object(load_json(request_path), "DISPATCH_REQUEST_NOT_OBJECT")
     identity = {'schema_version': 1, 'job_id': job_dir.name,
                 'request_sha256': digest(request_path), 'supervisor_pid': os.getpid(),
                 'supervisor_identity': process_identity(os.getpid()), 'started': False}
@@ -57,7 +57,11 @@ def main(argv=None):
     if len(argv) != 1:
         print("usage: runner_dispatch.py <job-dir>", file=sys.stderr)
         return 2
-    return supervise(Path(argv[0]).resolve())
+    try:
+        return supervise(Path(argv[0]).resolve())
+    except (ReviewError, OSError, KeyError, TypeError, ValueError):
+        print("DISPATCH_REQUEST_INVALID", file=sys.stderr)
+        return 1
 
 
 if __name__ == '__main__':

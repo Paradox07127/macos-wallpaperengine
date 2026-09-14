@@ -27,7 +27,7 @@ import tempfile
 import time
 from typing import Any
 
-POLICY_VERSION = "multica-mmrun-static-v5"
+POLICY_VERSION = "multica-mmrun-static-v6"
 RELEASE_VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.]+)?\Z")
 SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 SHA = re.compile(r"[0-9a-f]{40}\Z")
@@ -122,12 +122,82 @@ def reject_symlink_ancestors(path: Path) -> None:
         if part.is_symlink():
             raise ReviewError("SYMLINK_EVIDENCE_PATH")
 
+
+def require_object(value: Any, code: str) -> dict[str, Any]:
+    if type(value) is not dict:
+        raise ReviewError(code)
+    return value
+
+
+def validate_process_identity(identity: Any, *, expected_pid=None) -> None:
+    require_object(identity, "PROCESS_IDENTITY_NOT_OBJECT")
+    if (type(identity.get("pid")) is not int or identity["pid"] <= 0
+            or type(identity.get("start")) is not str or not identity["start"]
+            or identity.get("platform") not in ("darwin", "linux")
+            or (expected_pid is not None and identity["pid"] != expected_pid)):
+        raise ReviewError("PROCESS_START_IDENTITY_REQUIRED")
+    if "started_at" in identity and (type(identity["started_at"]) not in (int, float)
+            or not math.isfinite(identity["started_at"]) or identity["started_at"] <= 0):
+        raise ReviewError("PROCESS_START_TIME_INVALID")
+
+
+def validate_process_fields(record: Any) -> None:
+    require_object(record, "PROCESS_RECORD_NOT_OBJECT")
+    for role in ("controller", "supervisor", "dispatch"):
+        pid = record.get(role + "_pid")
+        if pid is not None and (type(pid) is not int or pid <= 0):
+            raise ReviewError("PROCESS_PID_INVALID")
+        identity = record.get(role + "_identity")
+        if identity is not None:
+            if pid is None:
+                raise ReviewError("PROCESS_PID_REQUIRED")
+            validate_process_identity(identity, expected_pid=pid)
+    for field in ("spawn_intent", "completion_observed"):
+        if field in record and type(record[field]) is not bool:
+            raise ReviewError("PROCESS_STATE_FLAG_INVALID")
+    if "worker_identities" in record:
+        workers = require_object(record["worker_identities"], "WORKER_IDENTITIES_NOT_OBJECT")
+        for model, identity in workers.items():
+            if model not in MODEL_NAMES:
+                raise ReviewError("WORKER_MODEL_INVALID")
+            require_object(identity, "WORKER_IDENTITY_NOT_OBJECT")
+            if identity.get("reused") is True:
+                if (type(identity.get("pid")) is not int or identity["pid"] <= 0
+                        or type(identity.get("worker_started")) is not int or identity["worker_started"] <= 0):
+                    raise ReviewError("WORKER_REUSE_IDENTITY_INVALID")
+            else:
+                if "reused" in identity:
+                    raise ReviewError("WORKER_REUSE_FLAG_INVALID")
+                validate_process_identity(identity)
+
+
+def validate_dispatch_identity(identity: Any, job_id: str, request_hash: str) -> None:
+    require_object(identity, "DISPATCH_IDENTITY_NOT_OBJECT")
+    if (type(identity.get("schema_version")) is not int or identity["schema_version"] != 1
+            or identity.get("job_id") != job_id or identity.get("request_sha256") != request_hash
+            or type(identity.get("started")) is not bool):
+        raise ReviewError("DISPATCH_IDENTITY_MISMATCH")
+    validate_process_fields(identity)
+
+
+def failed_result(job_dir: Path, manifest: Any, reason: str, *, artifacts=None, reports=None):
+    """Invalid routing metadata must not make the error path throw a second error."""
+    try:
+        require_object(manifest, "MANIFEST_NOT_OBJECT")
+        provenance = require_object(manifest.get("provenance"), "PROVENANCE_NOT_OBJECT")
+        root = provenance.get("mmrun_home")
+        if type(root) is not str or not Path(root).is_absolute():
+            raise ReviewError("ATTESTATION_ROOT_INVALID")
+        return attest(job_dir, manifest, "FAILED", reasons=[reason], artifacts=artifacts, reports=reports)
+    except (ReviewError, OSError, KeyError, TypeError, ValueError):
+        return {"job_id": job_dir.name, "verdict": "FAILED", "attestation_path": None, "reasons": [reason]}
+
 def digest(path: Path) -> str:
     check_deadline()
     if path.suffix == ".raw" or ".raw." in path.name:
         raise ReviewError("Raw event streams are deliberately not read")
     if path.is_symlink() or not path.is_file():
-        raise ReviewError(f"Expected a regular, non-symlink artifact: {path}")
+        raise ReviewError("ARTIFACT_NOT_REGULAR")
     h = hashlib.sha256()
     with path.open("rb") as stream:
         for chunk in iter(lambda: stream.read(65536), b""):
@@ -194,6 +264,14 @@ def review_policy(kind: str, models: list[str]) -> dict[str, Any]:
 def validate_manifest_policy(manifest: dict[str, Any]) -> None:
     if type(manifest) is not dict:
         raise ReviewError("MANIFEST_NOT_OBJECT")
+    validate_process_fields(manifest)
+    provenance = require_object(manifest.get("provenance"), "PROVENANCE_NOT_OBJECT")
+    if (type(provenance.get("mmrun_home")) is not str or not Path(provenance["mmrun_home"]).is_absolute()
+            or type(provenance.get("session")) is not str or not provenance["session"]):
+        raise ReviewError("EXECUTION_ARTIFACT_IDENTITY_INVALID")
+    run_id = manifest.get("mmrun_run_id")
+    if run_id is not None and (type(run_id) is not str or not JOB.fullmatch(run_id) or run_id.startswith(".")):
+        raise ReviewError("DISPATCH_RUN_ID_INVALID")
     if manifest.get("kind") == "release" and (type(manifest.get("version")) is not str or not RELEASE_VERSION.fullmatch(manifest["version"])):
         raise ReviewError("RELEASE_VERSION_REQUIRED")
     if type(manifest.get("schema_version")) is not int or manifest["schema_version"] != 1:
@@ -501,7 +579,7 @@ def environment(args: argparse.Namespace) -> tuple[dict[str, str], dict[str, Any
     if provenance["mmrun_kind"] not in ("upstream", "compat"):
         raise ReviewError("Unknown mmrun executable kind")
     if provenance["mmrun_kind"] == "compat" or compat_sidecar.exists() or compat_sidecar.is_symlink():
-        compat = load_json(compat_sidecar)
+        compat = require_object(load_json(compat_sidecar), "COMPAT_PROVENANCE_NOT_OBJECT")
         if (compat.get("version") != "mmrun-provider-transport-v3"
                 or compat.get("security_flags_changed") is not False
                 or compat.get("output") != provenance["mmrun_path"]
@@ -525,6 +603,7 @@ def environment(args: argparse.Namespace) -> tuple[dict[str, str], dict[str, Any
             import tomllib
             config = tomllib.loads(profile.read_text(encoding="utf-8"))
             filesystem = config["permissions"][config["default_permissions"]]["filesystem"]
+            require_object(filesystem, "CODEX_PERMISSION_TABLE_INVALID")
         except (ImportError, OSError, ValueError, KeyError, TypeError) as exc:
             raise ReviewError("Python 3.11+ and a readable mm.config.toml permission profile are required") from exc
         required_denies = (str(mmrun_home), str(home / ".claude/projects"), str(home / ".grok/sessions"))
@@ -575,16 +654,28 @@ def preparing(args: argparse.Namespace):
 
 
 
+
+FENCE_ARTIFACT_WRITE_DENY = b'\n; Multica v6: provider STATE may contain MMRUNS; peer artifacts stay unwritable.\n(deny file-write* (subpath (param "MMRUNS")))\n'
+
+
+def harden_fence_bytes(source: bytes) -> bytes:
+    """Append after STATE/temp allowances; never change the personal source file."""
+    return source + FENCE_ARTIFACT_WRITE_DENY
+
 def snapshot_inputs(job_dir: Path, env: dict[str, str], provenance: dict[str, Any]) -> None:
     """Snapshot mmrun data inputs, preserving the existing authenticated Codex home."""
     snapshots = job_dir / "input-snapshots"
     durable_mkdir(snapshots)
-    inputs = provenance["input_files"]
+    require_object(provenance, "PROVENANCE_NOT_OBJECT")
+    inputs = require_object(provenance["input_files"], "EXECUTION_INPUTS_NOT_OBJECT")
     for name, filename in (("schema", "review.schema.json"), ("fence", "fence.sb"),
                            ("codex_profile", "mm.config.toml")):
         if name not in inputs:
             continue
-        record = inputs[name]
+        record = require_object(inputs[name], "EXECUTION_INPUT_RECORD_INVALID")
+        if (type(record.get("path")) is not str or not Path(record["path"]).is_absolute()
+                or type(record.get("sha256")) is not str or not SHA256.fullmatch(record["sha256"])):
+            raise ReviewError("EXECUTION_INPUT_RECORD_INVALID")
         source = Path(record["path"])
         reject_symlink_ancestors(source)
         if digest(source) != record["sha256"]:
@@ -598,13 +689,20 @@ def snapshot_inputs(job_dir: Path, env: dict[str, str], provenance: dict[str, An
         destination.chmod(0o400)
         if digest(destination) != record["sha256"] or digest(source) != record["sha256"]:
             raise ReviewError("EXECUTION_INPUT_CHANGED_DURING_SNAPSHOT")
-        snapshot = {"path": str(destination), "sha256": record["sha256"]}
+        if name == "fence":
+            destination.chmod(0o600)
+            with destination.open("ab") as out:
+                out.write(FENCE_ARTIFACT_WRITE_DENY)
+                out.flush()
+                os.fsync(out.fileno())
+            destination.chmod(0o400)
+        snapshot = {"path": str(destination), "sha256": digest(destination)}
         if name == "codex_profile":
             # Upstream exec -p mm uses this user's existing CODEX_HOME/auth.
             # Preserve it; revalidate the actual profile plus its evidence copy.
             inputs["codex_profile_snapshot"] = snapshot
         else:
-            inputs[name] = dict(snapshot, source_path=str(source))
+            inputs[name] = dict(snapshot, source_path=str(source), source_sha256=record["sha256"])
     snapshots.chmod(0o500)
     fsync_directory(snapshots)
     fsync_directory(job_dir)
@@ -621,11 +719,12 @@ def record_prompt_input(path: Path, provenance: dict[str, Any], name: str) -> No
 
 
 def validate_input_files(provenance: dict[str, Any], *, include_prompts=True) -> None:
+    require_object(provenance, "PROVENANCE_NOT_OBJECT")
     inputs = provenance.get("input_files")
     if type(inputs) is not dict:
         raise ReviewError("EXECUTION_INPUT_MANIFEST_REQUIRED")
     models = provenance.get("models")
-    if type(models) is not list or not models or not set(models) <= MODEL_NAMES:
+    if type(models) is not list or not models or any(type(model) is not str for model in models) or not set(models) <= MODEL_NAMES:
         raise ReviewError("EXECUTION_MODEL_MANIFEST_REQUIRED")
     required = {"schema"}
     if include_prompts:
@@ -649,8 +748,11 @@ def validate_input_files(provenance: dict[str, Any], *, include_prompts=True) ->
             raise ReviewError("EXECUTION_INPUT_CHANGED")
 
 def validate_execution_environment(env: dict[str, str], provenance: dict[str, Any]) -> None:
+    require_object(provenance, "PROVENANCE_NOT_OBJECT")
     if env.get("MMRUN_D") != provenance.get("mmrun_d_snapshot"):
         raise ReviewError("EXECUTION_SCHEMA_ENVIRONMENT_CHANGED")
+    if type(provenance.get("models")) is not list or any(type(model) is not str for model in provenance["models"]):
+        raise ReviewError("EXECUTION_MODEL_MANIFEST_REQUIRED")
     if "codex" in provenance["models"] and env.get("CODEX_HOME") != provenance.get("codex_home"):
         raise ReviewError("EXECUTION_CODEX_HOME_CHANGED")
 
@@ -664,10 +766,10 @@ def validate_execution_provenance(provenance: dict[str, Any]) -> None:
     for key, hash_key in (("mmrun_path", "mmrun_sha256"), ("dispatch_helper", "dispatch_helper_sha256"),
                           ("review_runner_path", "review_runner_sha256")):
         value = provenance.get(key)
-        if not value or digest(Path(value)) != provenance.get(hash_key):
+        if type(value) is not str or not value or digest(Path(value)) != provenance.get(hash_key):
             raise ReviewError("EXECUTION_PROVENANCE_CHANGED")
     if provenance["mmrun_kind"] == "compat" or "compatibility" in provenance:
-        compat = load_json(Path(provenance["mmrun_path"] + ".provenance.json"))
+        compat = require_object(load_json(Path(provenance["mmrun_path"] + ".provenance.json")), "COMPAT_PROVENANCE_NOT_OBJECT")
         if (compat != provenance.get("compatibility") or compat.get("version") != "mmrun-provider-transport-v3"
                 or compat.get("security_flags_changed") is not False
                 or compat.get("output") != provenance["mmrun_path"]
@@ -689,7 +791,7 @@ def _prepare_checkout(args, repo, tree, merge_base, env, provenance, job_dir, po
                                "merge_base_sha": merge_base, "tree_sha": tree, "frozen_checkout": str(frozen), "policy": policy,
                                "provenance": provenance, "mmrun_run_id": None,
                                "created_at": time.time(), "controller_pid": os.getpid(),
-                               "controller_identity": process_identity(os.getpid()), "phase": "PREPARED",
+                               "controller_identity": process_identity(os.getpid()), "phase": "PREPARED", "completion_observed": False,
                                "controller_checkout": str(Path(__file__).resolve().parent)}
     snapshot_inputs(job_dir, env, provenance)
     freeze_repository(repo, frozen, args.base, args.head)
@@ -737,7 +839,7 @@ def _prepare_checkout(args, repo, tree, merge_base, env, provenance, job_dir, po
 
 def kv(path: Path) -> dict[str, str]:
     if path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_REPORT_BYTES:
-        raise ReviewError(f"Missing/invalid metadata: {path}")
+        raise ReviewError("METADATA_NOT_REGULAR_OR_OVERSIZED")
     result: dict[str, str] = {}
     for line in path.read_text(encoding="utf-8").splitlines():
         key, sep, value = line.partition("=")
@@ -764,6 +866,8 @@ def attestation_path(manifest: dict[str, Any]) -> Path:
 def attest(job_dir: Path, manifest: dict[str, Any], verdict: str, *, reasons: list[str] | None = None,
            artifacts: list[dict[str, str]] | None = None, reports: dict[str, Any] | None = None) -> dict[str, Any]:
     run_id = manifest.get("mmrun_run_id")
+    if run_id is not None and (type(run_id) is not str or not JOB.fullmatch(run_id) or run_id in (".", "..")):
+        raise ReviewError("INVALID_MMRUN_RUN_ID")
     root = Path(manifest["provenance"]["mmrun_home"]) / run_id if run_id else None
     destination = attestation_path(manifest)
     durable_mkdir(destination.parent)
@@ -853,17 +957,16 @@ def process_identity(pid: int) -> dict[str, Any] | None:
 
 
 def identity_alive(identity: Any) -> bool:
-    if (type(identity) is not dict or type(identity.get("pid")) is not int or identity["pid"] <= 0
-            or type(identity.get("start")) is not str or not identity["start"]
-            or identity.get("platform") not in ("darwin", "linux")):
-        raise ReviewError("PROCESS_START_IDENTITY_REQUIRED")
+    validate_process_identity(identity)
     current = process_identity(identity["pid"])
     return current is not None and (current["platform"], current["start"]) == (identity["platform"], identity["start"])
 
 
 def recorded_process_alive(manifest: dict[str, Any], role: str) -> bool:
+    validate_process_fields(manifest)
     identity = manifest.get(role + "_identity")
     if identity is not None:
+        require_object(identity, "PROCESS_IDENTITY_NOT_OBJECT")
         if identity.get("pid") != manifest.get(role + "_pid"):
             raise ReviewError("PROCESS_IDENTITY_PID_MISMATCH")
         return identity_alive(identity)
@@ -881,6 +984,7 @@ def bind_worker_identities(manifest: dict[str, Any], root: Path) -> None:
     Upstream records epoch seconds in <model>.started before writing <model>.pid.
     A process born later cannot be that worker. Missing birth metadata is unknown.
     """
+    validate_process_fields(manifest)
     identities = manifest.setdefault("worker_identities", {})
     for model in manifest["policy"]["models"]:
         check_deadline()
@@ -930,6 +1034,7 @@ def validate_dispatch_receipt(outcome: Any, job_id: Any, request_hash: Any) -> N
             or outcome.get("request_sha256") != request_hash or type(outcome.get("exit_code")) is not int
             or type(outcome.get("started")) is not bool):
         raise ReviewError("DISPATCH_RECEIPT_INVALID")
+    validate_process_fields(outcome)
 
 def refresh_worker_status(manifest: dict[str, Any]) -> None:
     """Use upstream's PID check and 30s startup grace; never kill workers."""
@@ -941,6 +1046,10 @@ def refresh_worker_status(manifest: dict[str, Any]) -> None:
     env = git_environment()
     env["MMRUN_HOME"] = provenance["mmrun_home"]
     env["MMRUN_SESSION"] = provenance["session"]
+    env["MMRUN_D"] = provenance["mmrun_d_snapshot"]
+    if "codex" in provenance["models"]:
+        env["CODEX_HOME"] = provenance["codex_home"]
+    validate_execution_environment(env, provenance)
     try:
         result = subprocess.run([str(executable), "status", manifest["mmrun_run_id"]], env=env,
                                 text=True, encoding="utf-8", capture_output=True, timeout=command_timeout(30), check=False)
@@ -954,7 +1063,9 @@ def refresh_worker_status(manifest: dict[str, Any]) -> None:
 
 def validate_target_evidence(manifest: dict[str, Any]) -> None:
     validate_execution_provenance(manifest["provenance"])
-    source = Path(manifest["source_repo"])
+    # The independent frozen object store retains both targets. Source mirrors
+    # may be refreshed or garbage-collected without invalidating this evidence.
+    source = Path(manifest["frozen_checkout"])
     check_target(source, manifest["base_sha"], manifest["head_sha"], kind=manifest["kind"])
     actual_merge_base = git(source, "merge-base", manifest["base_sha"], manifest["head_sha"])
     if manifest.get("merge_base_sha") != actual_merge_base:
@@ -984,7 +1095,7 @@ def _collect_locked(job_dir: Path, *, initial_wait=False) -> dict[str, Any]:
             raise ReviewError("Attestation repository must be the frozen reviewed checkout")
         if Path(manifest["frozen_checkout"]) != job_dir / "frozen":
             raise ReviewError("Frozen checkout escaped this job directory")
-        previously_completed = bool(manifest.get("dispatch_receipt_sha256"))
+        previously_completed = manifest.get("completion_observed") is True or bool(manifest.get("dispatch_receipt_sha256"))
         recover_dispatch(job_dir, manifest)
         if manifest.get("dispatch_error"):
             raise ReviewError("DISPATCH_FAILED")
@@ -1073,7 +1184,7 @@ def _collect_locked(job_dir: Path, *, initial_wait=False) -> dict[str, Any]:
     except (ReviewError, OSError, KeyError, TypeError, ValueError) as exc:
         if isinstance(exc, OSError) and temporary_os_error(exc):
             return pending(job_dir, "EVIDENCE_TEMPORARILY_UNAVAILABLE")
-        return attest(job_dir, manifest, "FAILED", reasons=[str(exc) if isinstance(exc, ReviewError) else "EVIDENCE_VALIDATION_FAILED"], artifacts=artifacts, reports=reports)
+        return failed_result(job_dir, manifest, str(exc) if isinstance(exc, ReviewError) else "EVIDENCE_VALIDATION_FAILED", artifacts=artifacts, reports=reports)
 
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
@@ -1143,10 +1254,15 @@ def recover_dispatch(job_dir: Path, manifest: dict[str, Any]) -> None:
 
     Caller holds job_lock. No liveness guess can synthesize a successful exit.
     """
+    require_object(manifest, "MANIFEST_NOT_OBJECT")
+    validate_process_fields(manifest)
+    require_object(manifest.get("provenance"), "PROVENANCE_NOT_OBJECT")
     receipt = job_dir / "dispatch-result.json"
     identity_path = job_dir / "dispatch-identity.json"
     request_path = job_dir / "dispatch-request.json"
     request_hash = manifest.get("dispatch_request_sha256")
+    if manifest.get("dispatch_receipt_sha256"):
+        manifest["completion_observed"] = True
     # Cached manifest fields are not completion evidence if the receipt was removed.
     for key in ("dispatch_result", "dispatch_receipt_path", "dispatch_receipt_sha256", "dispatch_exit"):
         manifest.pop(key, None)
@@ -1155,15 +1271,14 @@ def recover_dispatch(job_dir: Path, manifest: dict[str, Any]) -> None:
             raise ReviewError("DISPATCH_REQUEST_CHANGED")
         if identity_path.exists():
             identity = load_json(identity_path)
-            if identity.get("job_id") != manifest["job_id"] or identity.get("request_sha256") != request_hash:
-                raise ReviewError("DISPATCH_IDENTITY_MISMATCH")
+            validate_dispatch_identity(identity, manifest["job_id"], request_hash)
             for key in ("supervisor_pid", "dispatch_pid", "supervisor_identity", "dispatch_identity", "spawn_intent"):
                 if key in identity:
                     manifest[key] = identity[key]
         if receipt.exists():
             outcome = load_json(receipt)
             validate_dispatch_receipt(outcome, manifest["job_id"], request_hash)
-            manifest.update(dispatch_exit=outcome["exit_code"], dispatch_result=outcome,
+            manifest.update(completion_observed=True, dispatch_exit=outcome["exit_code"], dispatch_result=outcome,
                             dispatch_receipt_path=str(receipt), dispatch_receipt_sha256=digest(receipt),
                             phase="DISPATCHED" if outcome["exit_code"] == 0 else "DISPATCH_FAILED")
     # Recover before judging nonzero exit: mmrun can create workers and then
@@ -1211,7 +1326,8 @@ def require_quiescent(job_dir: Path, models: list[str] | None = None) -> None:
         preparing_path = job_dir / "preparing.json"
         if not preparing_path.exists():
             raise ReviewError("PREPARATION_IDENTITY_UNKNOWN")
-        preparing_state = load_json(preparing_path)
+        preparing_state = require_object(load_json(preparing_path), "PREPARING_STATE_NOT_OBJECT")
+        validate_process_fields(preparing_state)
         if (type(preparing_state.get("controller_pid")) is not int or preparing_state["controller_pid"] <= 0
                 or preparing_state.get("job_id") != job_dir.name
                 or recorded_process_alive(preparing_state, "controller")):
@@ -1222,6 +1338,7 @@ def require_quiescent(job_dir: Path, models: list[str] | None = None) -> None:
     manifest = load_json(path)
     if type(manifest) is not dict:
         raise ReviewError("MANIFEST_NOT_OBJECT")
+    validate_manifest_policy(manifest)
     recover_dispatch(job_dir, manifest)
     if type(manifest.get("controller_pid")) is not int or manifest["controller_pid"] <= 0:
         raise ReviewError("CONTROLLER_IDENTITY_UNKNOWN")

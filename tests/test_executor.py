@@ -51,11 +51,11 @@ class FakeCommands:
         if argv[:3] == ["issue", "comment", "list"]:
             return [] if self.hide_comments else copy.deepcopy(self.comments)
         if argv[:3] == ["issue", "comment", "add"]:
-            self.comments.append({"id": "comment-id", "content": body, "author_type": "member", "author_id": "trusted-actor"})
+            self.comments.append({"id": "11111111-1111-4111-8111-111111111111", "content": body, "author_type": "member", "author_id": "trusted-actor"})
             if self.lose_comment_ack:
                 self.lose_comment_ack = False
                 raise executor.bridge.BridgeError("Response lost after comment was written")
-            return {"id": "comment-id"}
+            return {"id": "11111111-1111-4111-8111-111111111111"}
         if argv[:2] == ["issue", "update"]:
             self.updates.append(argv)
             return {}
@@ -1129,6 +1129,119 @@ class ExecutorTests(unittest.TestCase):
         self.assertEqual((records / 'attempt.json').stat().st_mode & 0o777, 0o600)
 
 
+    def test_all_malformed_publication_records_withhold_owned_success(self):
+        self.publish()
+        receipt = self.job_dir / 'published.json'
+        status_intent = self.job_dir / 'publish-status-intent.json'
+        comment_intent = next((self.job_dir / 'comment-intents').glob('*.json'))
+        selector = self.job_dir / 'attempt.json'
+        originals = {path: path.read_bytes() for path in (receipt, status_intent, comment_intent)}
+        cases = [(receipt, 'null'), (receipt, '[]'), (receipt, '{'),
+                 (status_intent, 'null'), (status_intent, '[]'), (status_intent, '{'),
+                 (comment_intent, 'null'), (comment_intent, '[]'), (selector, '[]')]
+        status_row = json.loads(originals[status_intent])
+        cases += [(status_intent, json.dumps(dict(status_row, payload=None))),
+                  (status_intent, json.dumps(dict(status_row, state=[])))]
+        for path, content in cases:
+            with self.subTest(path=path.name, content=content):
+                for original_path, original in originals.items():
+                    original_path.write_bytes(original)
+                selector.unlink(missing_ok=True)
+                self.commands.gh('restore-owned-status', status_row['payload'])
+                path.write_text(content)
+                with self.assertRaises(executor.JobError):
+                    self.publish()
+                self.assertEqual(self.commands.statuses[-1][1]['state'], 'pending')
+        self.assertEqual(len(self.commands.comments), 1)
+
+    def test_corrupt_attempt_record_never_revokes_another_generation(self):
+        self.publish()
+        newer = dict(self.req, job_id='pr-7-' + 'f' * 24)
+        self.commands.gh('newer-policy', executor.status_payload(newer, 'PASS'))
+        count = len(self.commands.statuses)
+        (self.job_dir / 'attempt.json').write_text('null')
+        with self.assertRaises(executor.JobError):
+            self.publish()
+        self.assertEqual(len(self.commands.statuses), count)
+        self.assertEqual(self.commands.statuses[-1][1]['state'], 'success')
+
+    def test_first_send_and_confirmed_send_never_read_comment_history(self):
+        original = self.commands.multica
+        def capped_history(argv, body=None):
+            if argv[:3] == ['issue', 'comment', 'list']:
+                raise executor.bridge.BridgeError('history exceeds output cap')
+            return original(argv, body)
+        with patch.object(self.commands, 'multica', side_effect=capped_history):
+            self.assertEqual(self.publish()['state'], 'success')
+            self.assertEqual(self.publish()['state'], 'already_published')
+            self.commands.gh('replayed-pending', {'context': executor.bridge.status_context(self.req),
+                             'state': 'pending', 'description': 'replay'})
+            self.assertEqual(self.publish()['state'], 'success')
+        self.assertEqual(len(self.commands.comments), 1)
+
+    def test_uncertain_comment_reads_only_send_window_with_full_body(self):
+        self.commands.lose_comment_ack = True
+        with self.assertRaises(executor.bridge.BridgeError):
+            self.publish()
+        intent_path = next((self.job_dir / 'comment-intents').glob('*.json'))
+        created = json.loads(intent_path.read_text())['at']
+        with patch.object(self.commands, 'multica', wraps=self.commands.multica) as calls:
+            self.assertEqual(self.publish()['state'], 'success')
+        reads = [call.args[0] for call in calls.call_args_list if call.args[0][:3] == ['issue', 'comment', 'list']]
+        self.assertEqual(len(reads), 1)
+        self.assertEqual(reads[0][reads[0].index('--since') + 1], executor.bridge.since_overlap(created))
+        self.assertIn('--roots-only', reads[0])
+        self.assertNotIn('--summary', reads[0])
+        self.assertEqual(len(self.commands.comments), 1)
+
+    def test_invalid_comment_ack_remains_uncertain_until_trusted_match(self):
+        original = self.commands.multica
+        def bad_ack(argv, body=None):
+            response = original(argv, body)
+            return {} if argv[:3] == ['issue', 'comment', 'add'] else response
+        with patch.object(self.commands, 'multica', side_effect=bad_ack):
+            self.assertEqual(self.publish()['state'], 'awaiting_comment_reconciliation')
+        intent_path = next((self.job_dir / 'comment-intents').glob('*.json'))
+        self.assertEqual(json.loads(intent_path.read_text())['state'], 'sending')
+        self.assertFalse((self.job_dir / 'published.json').exists())
+        self.assertEqual(self.publish()['state'], 'success')
+        self.assertEqual(len(self.commands.comments), 1)
+        self.assertEqual(json.loads(intent_path.read_text())['comment_id'], self.commands.comments[0]['id'])
+
+    def test_corrupt_disposable_cursor_never_blocks_job_collection(self):
+        cursor = self.root / 'executor-collection.json'
+        for invalid in ('{', 'null', '[]', '{"last_job_id":42}', '{"last_job_id":"../bad"}'):
+            with self.subTest(invalid=invalid):
+                cursor.write_text(invalid)
+                with patch.object(executor.bridge, 'Commands', return_value=self.commands):
+                    results = executor.collect_all(self.cfg)
+                self.assertEqual(results[0]['state'], 'cursor_reset')
+                self.assertEqual(results[1]['job_id'], self.job_id)
+                self.assertIn(results[1]['state'], ('success', 'already_published'))
+                self.assertEqual(json.loads(cursor.read_text())['last_job_id'], self.job_id)
+                self.assertEqual(executor.exit_code(results), 0)
+
+    def test_stray_job_directory_is_diagnostic_not_tick_failure(self):
+        stray = Path(self.cfg['jobs_dir']) / 'backup-copy'
+        stray.mkdir()
+        (stray / 'request.json').write_text('private backup')
+        with patch.object(executor.bridge, 'Commands', return_value=self.commands):
+            results = executor.collect_all(self.cfg)
+        self.assertEqual(results[0]['state'], 'skipped_invalid_job_dirs')
+        self.assertEqual(results[1]['job_id'], self.job_id)
+        self.assertEqual(executor.exit_code(results), 0)
+        self.assertEqual((stray / 'request.json').read_text(), 'private backup')
+
+
+    def test_invalid_generation_record_withholds_newly_written_success(self):
+        executor.bridge.generation_path(self.cfg, self.req['multica_issue_id']).write_text('[]')
+        with self.assertRaises(executor.JobError):
+            self.publish()
+        self.assertEqual(self.commands.statuses[-1][1]['state'], 'pending')
+        self.assertEqual(self.commands.updates, [])
+        self.assertFalse((self.job_dir / 'published.json').exists())
+
+
 
 class FetchEnvironmentTests(unittest.TestCase):
     """Real Git/file transport tests; no GitHub credentials or network are used."""
@@ -1139,7 +1252,7 @@ class FetchEnvironmentTests(unittest.TestCase):
         self.clean = executor.runner.git_environment()
         self.author = self.root / 'author'
         self.author.mkdir()
-        self.git(self.author, 'init', '-q', '-b', 'main')
+        self.git(self.author, 'init', '--template=', '-q', '-b', 'main')
         self.git(self.author, 'config', 'user.name', 'Fixture')
         self.git(self.author, 'config', 'user.email', 'fixture@example.invalid')
         (self.author / 'initial.txt').write_text('initial blob')

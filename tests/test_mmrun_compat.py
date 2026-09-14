@@ -176,6 +176,35 @@ class LocalCopyTests(unittest.TestCase):
             with self.assertRaises(compat.CompatibilityError):
                 compat.prepare(source, output)
 
+    def test_nonexecutable_or_public_restored_copy_is_rejected(self):
+        for altered in ('copy', 'copy.provenance.json'):
+            with self.subTest(altered=altered), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                source, output = root / 'original', root / 'copy'
+                source.write_text(self.source())
+                compat.prepare(source, output)
+                (root / altered).chmod(0o644)
+                with self.assertRaises(compat.CompatibilityError):
+                    compat.prepare(source, output)
+                self.assertEqual(source.read_text(), self.source())
+
+    def test_fifo_source_and_destination_are_rejected_without_open(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            fifo = root / 'fifo'
+            os.mkfifo(fifo)
+            real_open = compat.os.open
+            def no_fifo_open(path, *args, **kwargs):
+                self.assertNotEqual(Path(path), fifo, 'FIFO must be rejected before open')
+                return real_open(path, *args, **kwargs)
+            with mock.patch.object(compat.os, 'open', side_effect=no_fifo_open):
+                with self.assertRaises(compat.CompatibilityError):
+                    compat.prepare(fifo, root / 'copy')
+                source = root / 'original'
+                source.write_text(self.source())
+                with self.assertRaises(compat.CompatibilityError):
+                    compat.prepare(source, fifo)
+
     def test_source_alias_records_the_exact_canonical_target(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

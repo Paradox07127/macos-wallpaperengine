@@ -8,11 +8,13 @@ import re
 import shlex
 import subprocess
 import sys
+import stat
+import os
 from pathlib import Path
 
 from review_runner import (POLICY_VERSION, MAX_ATTESTATION_BYTES, ReviewError, load_json,
                            validate_report, git as controlled_git, job_lock, validate_dispatch_receipt,
-                           RELEASE_VERSION, read_json_snapshot)
+                           RELEASE_VERSION, read_json_snapshot, MAX_REPORT_BYTES, JOB, kv)
 
 
 class GateError(ValueError):
@@ -45,6 +47,58 @@ def file_hash(path):
             digest.update(chunk)
     return digest.hexdigest()
 
+
+
+TEXT_LIMITS = {".status": 4096, ".meta": 64 * 1024, ".out": 2 * MAX_REPORT_BYTES}
+
+
+def artifact_limit(path: Path) -> int:
+    return TEXT_LIMITS.get(path.suffix, MAX_REPORT_BYTES)
+
+
+def check_artifact_size(path: Path) -> None:
+    info = path.lstat()
+    if not stat.S_ISREG(info.st_mode) or info.st_size > artifact_limit(path):
+        raise GateError("ARTIFACT_NOT_REGULAR_OR_OVERSIZED")
+
+
+def read_bounded_text(path: Path) -> str:
+    check_artifact_size(path)
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    try:
+        info = os.fstat(fd)
+        maximum = artifact_limit(path)
+        if not stat.S_ISREG(info.st_mode) or info.st_size > maximum:
+            raise GateError("ARTIFACT_NOT_REGULAR_OR_OVERSIZED")
+        with os.fdopen(fd, "rb", closefd=False) as stream:
+            data = stream.read(maximum + 1)
+        if len(data) > maximum:
+            raise GateError("ARTIFACT_OVERSIZED")
+        return data.decode("utf-8")
+    finally:
+        os.close(fd)
+
+
+def output_has_text(path: Path) -> bool:
+    check_artifact_size(path)
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    try:
+        info = os.fstat(fd)
+        limit = artifact_limit(path)
+        if not stat.S_ISREG(info.st_mode) or info.st_size > limit:
+            raise GateError("ARTIFACT_NOT_REGULAR_OR_OVERSIZED")
+        import codecs
+        decoder = codecs.getincrementaldecoder("utf-8")()
+        total = 0
+        nonempty = False
+        while chunk := os.read(fd, 65536):
+            total += len(chunk)
+            if total > limit:
+                raise GateError("ARTIFACT_OVERSIZED")
+            nonempty = bool(decoder.decode(chunk).strip()) or nonempty
+        return bool(decoder.decode(b"", final=True).strip()) or nonempty
+    finally:
+        os.close(fd)
 
 def validate(repo, attestation, base_sha, head_sha):
     """Hold the collector lifecycle lock and pin both control evidence files."""
@@ -127,6 +181,14 @@ def _validate_locked(repo, evidence, base_sha, head_sha):
     root_value = evidence.get("artifact_root")
     if not isinstance(root_value, str) or not Path(root_value).is_absolute():
         raise GateError("artifact_root must be an absolute path")
+    provenance = evidence.get("provenance")
+    run_id = evidence.get("mmrun_run_id")
+    if (type(provenance) is not dict or type(provenance.get("mmrun_home")) is not str
+            or not Path(provenance["mmrun_home"]).is_absolute()
+            or type(provenance.get("session")) is not str or not provenance["session"]
+            or type(run_id) is not str or not JOB.fullmatch(run_id) or run_id in (".", "..")
+            or Path(root_value) != Path(provenance["mmrun_home"]) / run_id):
+        raise GateError("ARTIFACT_RUN_IDENTITY_MISMATCH")
     root = Path(root_value)
     reject_symlinks(root)
     root = root.resolve(strict=True)
@@ -154,6 +216,7 @@ def _validate_locked(repo, evidence, base_sha, head_sha):
             raise GateError("missing artifact: " + name) from exc
         if not path.is_relative_to(root) or not path.is_file() or path in seen:
             raise GateError("artifact must be a unique regular file inside artifact_root")
+        check_artifact_size(path)
         seen.add(path)
         expected_hash = full_sha(artifact.get("sha256"), "artifact sha256", 64)
         if file_hash(path) != expected_hash:
@@ -174,18 +237,25 @@ def _validate_locked(repo, evidence, base_sha, head_sha):
         or not set(models).issubset({"codex", "grok", "claude", "agy"})
     ):
         raise GateError("release review must use codex plus grok or claude")
+    if "run.meta" not in verified:
+        raise GateError("RUN_METADATA_REQUIRED")
+    run_meta = kv(verified["run.meta"])
+    if (run_meta.get("runid") != run_id or run_meta.get("session") != provenance["session"]
+            or run_meta.get("workdir") != str(repo) or run_meta.get("mode") != "review"
+            or run_meta.get("models") != ",".join(models)):
+        raise GateError("RUN_METADATA_IDENTITY_MISMATCH")
     for model in models:
         for suffix in ("json", "status", "meta", "out"):
             if model + "." + suffix not in verified:
                 raise GateError("required model evidence missing: " + model + "." + suffix)
-        if verified[model + ".status"].read_text(encoding="utf-8").strip() != "DONE":
+        if read_bounded_text(verified[model + ".status"]).strip() != "DONE":
             raise GateError("model review is not DONE: " + model)
         exits = [line.partition("=")[2].strip() for line in
-                 verified[model + ".meta"].read_text(encoding="utf-8").splitlines()
+                 read_bounded_text(verified[model + ".meta"]).splitlines()
                  if line.partition("=")[0].strip() == "exit"]
         if exits != ["0"]:
             raise GateError("model review must have one successful exit: " + model)
-        if not verified[model + ".out"].read_text(encoding="utf-8").strip():
+        if not output_has_text(verified[model + ".out"]):
             raise GateError("model output is empty: " + model)
         report = validate_report(load_json(verified[model + ".json"]))
         if report["verdict"] != "approve" or report["not_expanded"] != 0 or any(
@@ -194,6 +264,7 @@ def _validate_locked(repo, evidence, base_sha, head_sha):
             raise GateError("model review requires human resolution: " + model)
     for artifact in artifacts:
         reject_symlinks(verified[artifact["path"]])
+        check_artifact_size(verified[artifact["path"]])
         if file_hash(verified[artifact["path"]]) != artifact["sha256"]:
             raise GateError("evidence changed during validation")
     # Recheck Git after hashing evidence, so ordinary concurrent edits fail closed.
@@ -236,8 +307,9 @@ def main(argv=None):
             if not script.is_file():
                 raise GateError("existing release-app.sh is missing")
             result["manual_packaging_command"] = shlex.join(
-                [str(script), "--sku", args.sku, "--version", args.version]
+                ["<CLEAN_WRITABLE_CHECKOUT>/scripts/release-app.sh", "--sku", args.sku, "--version", args.version]
             )
+            result["packaging_checkout_head"] = result["head_sha"]
             result["remaining"] = ["Run existing release checks and packaging manually",
                                    "Verify and archive built assets and review evidence",
                                    "Obtain human approval for final publication"]

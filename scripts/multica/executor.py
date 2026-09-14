@@ -382,7 +382,7 @@ def require_quiescent(cfg, req, runner_id):
 
 
 def no_active_controller(runner_id):
-    """Prove no matching controller survived a crash; never kill any process."""
+    """Inspect controller argv only; runner.require_quiescent proves worker/session liveness."""
     try:
         table = subprocess.run(['/bin/ps', '-axww', '-o', 'pid=,command='], text=True,
                                capture_output=True, timeout=20, check=False)
@@ -400,7 +400,7 @@ def no_active_controller(runner_id):
             args = shlex.split(fields[1])
         except ValueError:
             raise JobError('Cannot parse a possible orphan controller command')
-        if runner_id in args or 'multica-' + runner_id in args:
+        if runner_id in args:
             raise JobError('A controller for this attempt is still alive')
 
 
@@ -609,17 +609,51 @@ def result_revision(req, runner_id, result):
     return bridge.digest(json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=False))
 
 
+def publication_record(path):
+    if not path.exists() and not path.is_symlink():
+        return None
+    record = runner.load_json(path)
+    if not isinstance(record, dict):
+        raise JobError('Publication record must be an object')
+    return record
+
+
+def revoke_job_status(cfg, req, commands):
+    """A validated logical request can revoke its own generation despite bad logs."""
+    latest = remote_status(cfg, req, commands)
+    owner = re.match(r'^(' + re.escape(req['job_id']) + r'(?:-retry-[0-9a-f]{12})?):',
+                     str(latest.get('description', '')) if latest else '')
+    if owner:
+        revoke_owned_status(cfg, req, owner.group(1), commands)
+
+
 def publish_locked(cfg, req, commands, records, runner_id):
     job_id = req['job_id']
     receipt = records / 'published.json'
     status_intent = records / 'publish-status-intent.json'
-    previous = runner.load_json(receipt) if receipt.exists() else None
-    intent = runner.load_json(status_intent) if status_intent.exists() else None
+    previous = publication_record(receipt)
+    intent = publication_record(status_intent)
     for record in (previous, intent):
         if record is not None and (not isinstance(record, dict) or record.get('job_id') != job_id
                                    or record.get('head_sha') != req['head_sha']
                                    or record.get('runner_job_id') != runner_id):
             raise JobError('Invalid publication identity')
+        if record is not None and (not isinstance(record.get('revision'), str)
+                                   or not re.fullmatch(r'[0-9a-f]{64}', record['revision'])):
+            raise JobError('Invalid publication revision')
+    if previous is not None and (previous.get('state') not in ('success', 'failure')
+            or previous.get('verdict') not in ('PASS', 'NEEDS_REVIEW', 'FAILED')
+            or previous['state'] != ('success' if previous['verdict'] == 'PASS' else 'failure')
+            or previous.get('context') != bridge.status_context(req)):
+        raise JobError('Invalid publication receipt state')
+    if intent is not None:
+        payload_record = intent.get('payload')
+        if (intent.get('state') not in ('sending', 'verified', 'revoked', 'complete')
+                or not isinstance(payload_record, dict)
+                or payload_record.get('context') != bridge.status_context(req)
+                or payload_record.get('state') not in ('success', 'failure')
+                or not isinstance(payload_record.get('description'), str)):
+            raise JobError('Invalid publication status intent')
     target_current = confirmed_target(cfg, req, runner_id, commands)
     if not target_current:
         if previous is not None or intent is not None:
@@ -645,6 +679,18 @@ def publish_locked(cfg, req, commands, records, runner_id):
     payload = status_payload(req, verdict, runner_id, revision)
     matches = remote_status_matches(cfg, req, payload, commands)
     if previous and previous.get('revision') == revision and matches:
+        confirmation = publication_record(records / 'comment-intents' / (revision + '.json'))
+        if (confirmation is None or confirmation.get('state') != 'confirmed'
+                or any(confirmation.get(key) != value for key, value in {
+                    'job_id': job_id, 'runner_job_id': runner_id,
+                    'issue_id': req['multica_issue_id'], 'revision': revision}.items())
+                or not isinstance(confirmation.get('body_sha256'), str)
+                or not re.fullmatch(r'[0-9a-f]{64}', confirmation['body_sha256'])):
+            raise JobError('Published result lacks a valid comment confirmation')
+        try:
+            bridge.comment_ack(cfg, {'id': confirmation.get('comment_id')}, req['multica_issue_id'], '')
+        except bridge.BridgeError as exc:
+            raise JobError('Published comment acknowledgement is invalid') from exc
         if not confirmed_target(cfg, req, runner_id, commands):
             revoke_owned_status(cfg, req, runner_id, commands)
             if intent is not None:
@@ -681,34 +727,61 @@ def publish_locked(cfg, req, commands, records, runner_id):
             'This record describes only the head and attempt above; after a newer review starts, it is historical.\n'
             'This is a static-review result only. Build/runtime/release checks and maintainer approval remain required.')
     intent_path = records / 'comment-intents' / (revision + '.json')
-    comment_intent = runner.load_json(intent_path) if intent_path.exists() else None
+    comment_intent = publication_record(intent_path)
     identity = {'job_id': job_id, 'runner_job_id': runner_id, 'issue_id': req['multica_issue_id'],
                 'revision': revision, 'body_sha256': bridge.digest(body)}
     if comment_intent is not None and (not isinstance(comment_intent, dict)
                                       or any(comment_intent.get(key) != value for key, value in identity.items())):
         raise JobError('Publication comment intent identity mismatch')
-    comments = bridge.rows(commands.multica(['issue', 'comment', 'list', req['multica_issue_id'], '--output', 'json']))
-    found = any(bridge.trusted_comment(cfg, item, body) for item in comments)
-    if found:
-        atomic(intent_path, dict(identity, state='confirmed'))
-    elif comment_intent is not None and comment_intent.get('state') == 'sending':
-        return {'job_id': job_id, 'state': 'awaiting_comment_reconciliation'}
+    if comment_intent is not None and comment_intent.get('state') == 'sending':
+        created = comment_intent.get('at')
+        if not isinstance(created, str):
+            raise JobError('Uncertain comment intent is missing its send timestamp')
+        # The installed CLI supports --since, not a limit/page for this mode.
+        # Query only uncertain sends in their time window; never read the full
+        # history on a first send or when a valid acknowledgement was recorded.
+        try:
+            since = bridge.since_overlap(created)
+        except (bridge.BridgeError, ValueError, TypeError) as exc:
+            raise JobError('Invalid uncertain comment send timestamp') from exc
+        comments = bridge.rows(commands.multica(['issue', 'comment', 'list', req['multica_issue_id'],
+                    '--since', since, '--roots-only', '--output', 'json']))
+        found = next((item for item in comments if bridge.trusted_comment(cfg, item, body)), None)
+        if found is None:
+            return {'job_id': job_id, 'state': 'awaiting_comment_reconciliation'}
+        comment_id = bridge.comment_ack(cfg, found, req['multica_issue_id'], body)
+        atomic(intent_path, dict(identity, state='confirmed', comment_id=comment_id, at=created))
     elif comment_intent is None or comment_intent.get('state') == 'not_started':
-        atomic(intent_path, dict(identity, state='sending', at=bridge.utcnow()))
+        created = bridge.utcnow()
+        atomic(intent_path, dict(identity, state='sending', at=created))
         try:
             response = commands.multica(['issue', 'comment', 'add', req['multica_issue_id'], '--content-stdin', '--output', 'json'], body)
         except bridge.CommandNotStarted:
             atomic(intent_path, dict(identity, state='not_started'))
             return {'job_id': job_id, 'state': 'pending'}
-        atomic(intent_path, dict(identity, state='confirmed', comment_id=response.get('id') if isinstance(response, dict) else None))
-    elif comment_intent.get('state') != 'confirmed':
+        try:
+            comment_id = bridge.comment_ack(cfg, response, req['multica_issue_id'], body)
+        except bridge.BridgeError:
+            # The CLI may have submitted the comment despite a malformed ACK.
+            # Retain sending; a later trusted full-body match must confirm it.
+            return {'job_id': job_id, 'state': 'awaiting_comment_reconciliation'}
+        atomic(intent_path, dict(identity, state='confirmed', comment_id=comment_id, at=created))
+    elif comment_intent.get('state') == 'confirmed':
+        try:
+            bridge.comment_ack(cfg, {'id': comment_intent.get('comment_id')}, req['multica_issue_id'], body)
+        except bridge.BridgeError as exc:
+            raise JobError('Confirmed comment record lacks a valid acknowledgement') from exc
+    else:
         raise JobError('Unknown publication comment intent state')
     # A PR's Multica issue is shared across head SHAs. Its generation lock is
     # distinct from the per-head GitHub status lock and is shared with intake.
     with bridge.issue_generation_lock(cfg, req['multica_issue_id']) as locked:
         if not locked:
             return {'job_id': job_id, 'state': 'busy'}
-        generation = bridge.current_generation(cfg, req['multica_issue_id'])
+        try:
+            generation = bridge.current_generation(cfg, req['multica_issue_id'])
+        except bridge.BridgeError as exc:
+            raise JobError('Shared issue generation record is invalid') from exc
         if generation is None:
             return {'job_id': job_id, 'state': 'awaiting_issue_generation'}
         if generation != job_id or not confirmed_target(cfg, req, runner_id, commands):
@@ -730,40 +803,61 @@ def publish_result(cfg, job_id, commands=None):
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             return {'job_id': job_id, 'state': 'busy'}
-        if not current_policy(cfg, req):
-            with bridge.status_lock(cfg, req) as locked:
-                if not locked:
-                    return {'job_id': job_id, 'state': 'busy'}
-                latest = remote_status(cfg, req, commands)
-                owner = re.match(r'^(' + re.escape(job_id) + r'(?:-retry-[0-9a-f]{12})?):',
-                                 str(latest.get('description', '')) if latest else '')
-                if owner:
-                    revoke_owned_status(cfg, req, owner.group(1), commands)
-            return {'job_id': job_id, 'state': 'retired'}
-        if not req.get('multica_issue_id'):
-            return {'job_id': job_id, 'state': 'awaiting_issue_mapping'}
-        runner_id, records = active_attempt(cfg, req)
-        records.mkdir(parents=True, exist_ok=True, mode=0o700)
         with bridge.status_lock(cfg, req) as locked:
             if not locked:
                 return {'job_id': job_id, 'state': 'busy'}
-            return publish_locked(cfg, req, commands, records, runner_id)
+            try:
+                if not current_policy(cfg, req):
+                    revoke_job_status(cfg, req, commands)
+                    return {'job_id': job_id, 'state': 'retired'}
+                if not req.get('multica_issue_id'):
+                    return {'job_id': job_id, 'state': 'awaiting_issue_mapping'}
+                runner_id, records = active_attempt(cfg, req)
+                records.mkdir(parents=True, exist_ok=True, mode=0o700)
+                return publish_locked(cfg, req, commands, records, runner_id)
+            except (JobError, runner.ReviewError, OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
+                # Request identity and the ownership lock precede all local
+                # publication/attempt record reads. Corruption never preserves
+                # our green status merely because its own receipt is unreadable.
+                revoke_job_status(cfg, req, commands)
+                raise JobError('Publication could not be validated; owned result withheld') from exc
 
 
 def collect_all(cfg):
     """Rotate before each job so a killed service tick cannot starve later jobs."""
-    paths = sorted(Path(cfg['jobs_dir']).glob('*/request.json'))
+    candidates = sorted(Path(cfg['jobs_dir']).glob('*/request.json'))
+    paths = [path for path in candidates if JOB.fullmatch(path.parent.name)]
+    results = []
+    if len(paths) != len(candidates):
+        results.append({'state': 'skipped_invalid_job_dirs', 'reasons': [
+            f'Ignored {len(candidates) - len(paths)} directories without a valid immutable job ID']})
     cursor_path = Path(cfg['state_path']).parent / 'executor-collection.json'
-    cursor = runner.load_json(cursor_path).get('last_job_id', '') if cursor_path.exists() else ''
+    cursor = ''
+    if cursor_path.exists() or cursor_path.is_symlink():
+        try:
+            record = runner.load_json(cursor_path)
+            if not isinstance(record, dict) or not isinstance(record.get('last_job_id'), str):
+                raise JobError('Invalid disposable cursor')
+            cursor = record['last_job_id']
+            if cursor and not JOB.fullmatch(cursor):
+                raise JobError('Invalid disposable cursor value')
+        except (JobError, runner.ReviewError, OSError, ValueError, TypeError):
+            cursor = ''
+            results.append({'state': 'cursor_reset', 'reasons': ['Discarded an invalid collection cursor; starting from the default position']})
     paths.sort(key=lambda p: (p.parent.name <= cursor, p.parent.name))
     deadline = time.monotonic() + cfg.get('collection_budget_seconds', 210)
     commands = bridge.Commands(cfg)
     commands.deadline = deadline  # Commands applies this absolute deadline to every child.
-    results = []
+    cursor_write_warned = False
     for path in paths[:cfg.get('collection_max_jobs', 20)]:
         if time.monotonic() >= deadline:
             break
-        atomic(cursor_path, {'last_job_id': path.parent.name})
+        try:
+            atomic(cursor_path, {'last_job_id': path.parent.name})
+        except OSError:
+            if not cursor_write_warned:
+                results.append({'state': 'cursor_unavailable', 'reasons': ['Collection cursor could not be saved; jobs are still being processed']})
+                cursor_write_warned = True
         try:
             now = time.monotonic()
             remaining = deadline - now

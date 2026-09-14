@@ -1,4 +1,4 @@
-"""Supervision tests; no real subprocesses, daemons or network calls."""
+"""Supervision tests use temporary local fixture subprocesses; no real models, daemons or network."""
 import importlib.util
 import io
 from pathlib import Path
