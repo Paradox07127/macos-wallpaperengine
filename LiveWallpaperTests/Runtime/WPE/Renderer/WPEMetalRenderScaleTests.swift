@@ -287,13 +287,47 @@ struct WPEMetalRenderScaleTests {
         #expect(WPEMetalTextureLoader.uploadMipStartIndex(mipmaps: chain, maxEdge: 0) == 0)
     }
 
+    /// Pins `WPEMetalMipChainEnabled` in `UserDefaults.standard` — the domain
+    /// `mipChainOverride` actually reads, which in a test host is this machine's
+    /// real `com.loomscreen.pro` prefs — and returns the restore closure.
+    private static func pinMipChainDefault(_ value: Bool?) -> () -> Void {
+        let defaults = UserDefaults.standard
+        let key = WPEMetalTextureLoader.mipChainDefaultsKey
+        let previous = defaults.object(forKey: key)
+        if let value {
+            defaults.set(value, forKey: key)
+        } else {
+            defaults.removeObject(forKey: key)
+        }
+        return {
+            if let previous {
+                defaults.set(previous, forKey: key)
+            } else {
+                defaults.removeObject(forKey: key)
+            }
+        }
+    }
+
     @Test("Mip-chain upload follows the scene's plan, not the global setting")
     func mipChainDefaultFollowsPlan() {
+        // Pinned, not guarded on: this used to skip itself on any machine where
+        // the knob had ever been written, which is every machine that exercised
+        // the feature — and it is the only coverage of the unset default.
+        let restore = Self.pinMipChainDefault(nil)
+        defer { restore() }
+
         // Unset override: a scene that is NOT scaling must keep its historical
         // level-0-only upload even while another scene on the same machine is.
-        guard WPEMetalTextureLoader.mipChainOverride == nil else { return }
         #expect(WPEMetalTextureLoader.uploadsMipChain(scalingActive: true))
         #expect(WPEMetalTextureLoader.uploadsMipChain(scalingActive: false) == false)
+
+        // An explicit setting overrides the per-scene plan in both directions.
+        let restoreOn = Self.pinMipChainDefault(true)
+        #expect(WPEMetalTextureLoader.uploadsMipChain(scalingActive: false))
+        restoreOn()
+        let restoreOff = Self.pinMipChainDefault(false)
+        #expect(WPEMetalTextureLoader.uploadsMipChain(scalingActive: true) == false)
+        restoreOff()
     }
 
     // MARK: - Render-scale changes must not strand pixel-keyed resources

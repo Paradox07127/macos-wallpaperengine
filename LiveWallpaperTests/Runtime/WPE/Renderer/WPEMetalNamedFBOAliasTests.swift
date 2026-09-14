@@ -924,18 +924,30 @@ struct WPEMetalNamedFBOAliasTests {
         }
         var frameState = Self.makeFrameState(output: texture)
 
+        // A capture taken now is stamped with the generation it saw.
+        let baseline = frameState.sceneWriteGeneration
         frameState.latestNamedTextures["_rt_FullFrameBuffer"] = texture
-        frameState.sceneAliasSnapshotGenerations["_rt_FullFrameBuffer"] = frameState.sceneWriteGeneration
-        #expect(frameState.sceneAliasSnapshotGenerations["_rt_FullFrameBuffer"] == frameState.sceneWriteGeneration)
+        frameState.sceneAliasSnapshotGenerations["_rt_FullFrameBuffer"] = baseline
 
+        // One scene write, one step. Staleness is decided by an equality test
+        // against this counter, so it has to move on every scene write and only
+        // by a step the stamp above cannot accidentally land on again.
         frameState.registerWrite(texture: texture, targetID: .scene)
+        #expect(frameState.sceneWriteGeneration == baseline + 1)
         #expect(frameState.sceneAliasSnapshotGenerations["_rt_FullFrameBuffer"] != frameState.sceneWriteGeneration)
 
+        // A named-FBO write is not scene content, so it must leave the counter
+        // alone — otherwise every intermediate chain target would invalidate a
+        // capture that is still perfectly current. Baseline taken BEFORE the
+        // write; reading it afterwards compares the value to itself.
+        frameState.sceneAliasSnapshotGenerations["_rt_FullFrameBuffer"] = frameState.sceneWriteGeneration
+        let generationBeforeFBOWrite = frameState.sceneWriteGeneration
         frameState.registerWrite(texture: texture, targetID: .named("_rt_imageLayerComposite_x_a"))
-        let generationAfterFBOWrite = frameState.sceneWriteGeneration
-        frameState.sceneAliasSnapshotGenerations["_rt_FullFrameBuffer"] = generationAfterFBOWrite
-        #expect(frameState.sceneWriteGeneration == generationAfterFBOWrite)
+        #expect(frameState.sceneWriteGeneration == generationBeforeFBOWrite)
+        #expect(frameState.sceneAliasSnapshotGenerations["_rt_FullFrameBuffer"] == frameState.sceneWriteGeneration)
 
+        // Writing an alias name as a REAL target drops its snapshot marker, so
+        // the capture path can tell owned content from a stale capture.
         frameState.sceneAliasSnapshotGenerations["_rt_HalfFrameBuffer"] = frameState.sceneWriteGeneration
         frameState.registerWrite(texture: texture, targetID: .named("_rt_HalfFrameBuffer"))
         #expect(frameState.sceneAliasSnapshotGenerations["_rt_HalfFrameBuffer"] == nil)

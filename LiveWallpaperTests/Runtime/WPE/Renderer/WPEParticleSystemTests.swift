@@ -2810,7 +2810,12 @@ struct WPEParticleSystemTests {
         )
         let system = try #require(WPEParticleSystem(definition: def, device: device))
         system.tick(now: 0)
-        for step in 1...10 { system.tick(now: Double(step) * 0.05) }
+        for step in 1 ... 10 {
+            system.tick(now: Double(step) * 0.05)
+        }
+        // Vanishing is the other half of the degeneracy this pins: a rope that
+        // emits nothing also draws no area, so the strip has to exist first.
+        #expect(system.ropeVertexCount >= 4, "a stationary rope must still emit a strip")
         guard system.ropeVertexCount >= 4 else { return }
 
         let verts = try #require(system.ropeVertexBuffer).contents()
