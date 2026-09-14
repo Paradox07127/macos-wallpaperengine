@@ -617,6 +617,73 @@ final class OverlayController: NSObject {
     /// module was enabled second landed on top and stayed there, so opening
     /// Monitor after Music let it steal Music's transport-control clicks with
     /// no way to recover short of disabling and re-enabling both.
+    // MARK: - Cover capture
+
+    /// Serializes overlay captures. `forcesOpaquePanels` is one flag per board,
+    /// so two overlapping captures would have the first one's restore put the
+    /// glass back while the second is still reading — and that second cover
+    /// comes back with holes where the widgets are.
+    private var overlayCaptureChain: Task<[NSImage], Never>?
+
+    /// Bitmaps of this display's visible overlay layers, bottom-to-top, for
+    /// compositing into a scheme cover. Reads the live host views, so the
+    /// widgets carry the readings they were showing at that moment.
+    func captureOverlayLayers(screenID: CGDirectDisplayID) async -> [NSImage] {
+        let previous = overlayCaptureChain
+        let task = Task { @MainActor [weak self] in
+            _ = await previous?.value
+            guard let self else { return [NSImage]() }
+            return await performOverlayCapture(screenID: screenID)
+        }
+        overlayCaptureChain = task
+        return await task.value
+    }
+
+    /// `cacheDisplay` skips a `glassEffect` subtree outright, so a board drawn
+    /// with Liquid Glass on has to be pushed to its painted branch first. That
+    /// happens **once for the whole capture**, not per module: the boards are on
+    /// the desktop, and flipping them module by module makes the widgets visibly
+    /// blink from glass to painted and back once per layer.
+    private func performOverlayCapture(screenID: CGDirectDisplayID) async -> [NSImage] {
+        let modules = Self.stackingOrder(MonitorOverlayModule.allCases)
+        let visible = modules.compactMap { module -> Host? in
+            let host = hosts[MonitorOverlayHostKey(screenID: screenID, module: module)]
+            return host?.isVisible == true ? host : nil
+        }
+        guard !visible.isEmpty else { return [] }
+
+        let glassBoards = visible.compactMap(\.board).filter(\.usesGlassPanels)
+        defer {
+            for board in glassBoards {
+                board.setForcesOpaquePanels(false)
+            }
+        }
+        if !glassBoards.isEmpty {
+            for board in glassBoards {
+                board.setForcesOpaquePanels(true)
+            }
+            // The rebuilt roots have to be committed *and* laid out before the
+            // bitmap read; `Task.yield()` alone can come back before SwiftUI has
+            // drawn, and the capture then still holds the glass tree.
+            try? await Task.sleep(for: .milliseconds(32))
+            for board in glassBoards {
+                board.layoutSubtreeIfNeeded()
+            }
+        }
+
+        return visible.compactMap { Self.bitmap(of: $0.view) }
+    }
+
+    private static func bitmap(of view: NSView) -> NSImage? {
+        let bounds = view.bounds
+        guard bounds.width >= 1, bounds.height >= 1,
+              let rep = view.bitmapImageRepForCachingDisplay(in: bounds) else { return nil }
+        view.cacheDisplay(in: bounds, to: rep)
+        let image = NSImage(size: bounds.size)
+        image.addRepresentation(rep)
+        return image
+    }
+
     nonisolated static func stackingOrder(_ modules: [MonitorOverlayModule]) -> [MonitorOverlayModule] {
         let order: [MonitorOverlayModule] = [.monitor, .clock, .music]
         return order.filter { modules.contains($0) }

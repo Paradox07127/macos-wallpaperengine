@@ -9,7 +9,11 @@ struct SchemeLibraryView: View {
     @State private var renamingID: UUID?
     @State private var renameDraft: String = ""
     @State private var searchText: String = ""
+    @State private var typeFilter: SchemeTypeFilter = .all
     @State private var pendingDestructive: PendingDestructive?
+    @State private var dragSession = LibraryDragSession()
+    @AppStorage(SavedLibrarySortOrder.preferencesKey, store: .appScoped())
+    private var sortOrder: SavedLibrarySortOrder = .recent
 
     var body: some View {
         DetailPageScaffold { content }
@@ -25,14 +29,57 @@ struct SchemeLibraryView: View {
             emptyState
         } else {
             VStack(spacing: 0) {
-                LibraryFilterBar(
-                    searchText: $searchText,
-                    searchPrompt: "Search schemes",
-                    resultCount: filteredSchemes.count,
-                    totalCount: store.schemes.count
-                )
+                filterBar
                 Divider()
                 gallery
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var filterBar: some View {
+        if showsTypeChips {
+            LibraryFilterBar(
+                searchText: $searchText,
+                searchPrompt: "Search schemes",
+                resultCount: filteredSchemes.count,
+                totalCount: store.schemes.count
+            ) {
+                HStack(spacing: DesignTokens.LibraryFilterBar.contentSpacing) {
+                    typeChipRow
+                    Spacer(minLength: 0)
+                    SavedLibrarySortPicker(selection: $sortOrder)
+                }
+                .frame(maxWidth: .infinity)
+            }
+        } else {
+            LibraryFilterBar(
+                searchText: $searchText,
+                searchPrompt: "Search schemes",
+                resultCount: filteredSchemes.count,
+                totalCount: store.schemes.count
+            ) {
+                HStack(spacing: DesignTokens.LibraryFilterBar.contentSpacing) {
+                    Spacer(minLength: 0)
+                    SavedLibrarySortPicker(selection: $sortOrder)
+                }
+                .frame(maxWidth: .infinity)
+            }
+        }
+    }
+
+    private var typeChipRow: some View {
+        HStack(spacing: 6) {
+            FilterChip(title: Text("All"),
+                       isSelected: typeFilter == .all,
+                       action: { typeFilter = .all })
+
+            ForEach(WallpaperType.allCases) { type in
+                if availableTypes.contains(type) {
+                    FilterChip(title: Text(type.titleKey),
+                               isSelected: typeFilter == .type(type),
+                               action: { typeFilter = .type(type) })
+                }
             }
         }
     }
@@ -67,14 +114,47 @@ struct SchemeLibraryView: View {
                                 pendingDestructive = PendingDestructive(
                                     .deleteScheme(schemeName: scheme.name)
                                 ) { store.remove(scheme.id) }
-                            }
+                            },
+                            onReplace: { screen in requestReplace(scheme, from: screen) }
                         )
+                        .onDrag {
+                            NSItemProvider(object: dragSession.begin(payload: scheme.id.uuidString) as NSString)
+                        } preview: {
+                            LibraryDragPreview(systemImage: scheme.iconName)
+                        }
                     }
                 }
                 .padding(.horizontal, DesignTokens.Spacing.xl)
                 .padding(.vertical, DesignTokens.Spacing.cardInset)
             }
+            .overlay(alignment: .top) {
+                if dragSession.isDragging, !screenManager.screens.isEmpty {
+                    dropBar
+                }
+            }
+            .animation(.easeInOut(duration: 0.2), value: dragSession.isDragging)
         }
+    }
+
+    private var dropBar: some View {
+        LibraryDragApplyBar(
+            screens: screenManager.screens,
+            onCancel: { dragSession.end() },
+            makeDropHandler: { screen in
+                { identifier, loadFailed in
+                    dragSession.end()
+                    guard !loadFailed,
+                          let identifier,
+                          let id = UUID(uuidString: identifier),
+                          // Re-read both sides: the archive and the display list can
+                          // both change while the provider read is in flight.
+                          let scheme = store.schemes.first(where: { $0.id == id }),
+                          let target = screenManager.screens.first(where: { $0.id == screen.id })
+                    else { return }
+                    requestApply(scheme, to: target)
+                }
+            }
+        )
     }
 
     private var emptyState: some View {
@@ -88,13 +168,35 @@ struct SchemeLibraryView: View {
 
     // MARK: - Filtering
 
+    private var showsTypeChips: Bool {
+        availableTypes.count > 1
+    }
+
+    private var availableTypes: Set<WallpaperType> {
+        Set(store.schemes.map(\.configuration.activeWallpaper.wallpaperType))
+    }
+
     private var filteredSchemes: [ScreenScheme] {
-        let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return store.schemes }
-        return store.schemes.filter {
-            $0.name.localizedCaseInsensitiveContains(trimmed)
-                || ($0.sourceDisplayName?.localizedCaseInsensitiveContains(trimmed) ?? false)
+        var result = store.schemes
+        // Honor the type filter only while chips are visible and that type still exists.
+        if showsTypeChips, case let .type(type) = typeFilter, availableTypes.contains(type) {
+            result = result.filter { $0.configuration.activeWallpaper.wallpaperType == type }
         }
+        let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty {
+            result = result.filter {
+                $0.name.localizedCaseInsensitiveContains(trimmed)
+                    || ($0.sourceDisplayName?.localizedCaseInsensitiveContains(trimmed) ?? false)
+            }
+        }
+        return sortOrder.sorted(
+            result,
+            name: \.name,
+            // A scheme's "recent" is its last capture, not its creation: the
+            // whole point of replace-in-place is that the slot was just redone.
+            date: \.updatedAt,
+            type: \.configuration.activeWallpaper.wallpaperType
+        )
     }
 
     // MARK: - Apply
@@ -107,6 +209,24 @@ struct SchemeLibraryView: View {
             screenManager.applyScheme(scheme, to: screen)
         }
     }
+
+    /// The reverse direction: the display overwrites the scheme. One display can
+    /// hold several schemes, so this replaces the one you picked rather than
+    /// updating "the" scheme for that display.
+    private func requestReplace(_ scheme: ScreenScheme, from screen: Screen) {
+        pendingDestructive = PendingDestructive(
+            .replaceScheme(schemeName: scheme.name, displayName: screen.name)
+        ) {
+            screenManager.recaptureScheme(scheme, from: screen)
+        }
+    }
+}
+
+// MARK: - Type filter
+
+private enum SchemeTypeFilter: Hashable {
+    case all
+    case type(WallpaperType)
 }
 
 // MARK: - Tile
@@ -121,9 +241,12 @@ private struct SchemeTile: View {
     let onCommitRename: () -> Void
     let onCancelRename: () -> Void
     let onDelete: () -> Void
+    let onReplace: (Screen) -> Void
 
     @State private var isHovering = false
     @State private var thumbnail: NSImage?
+    @State private var location = LibraryContentLocation.unknown
+    @State private var showingTargets = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -131,8 +254,26 @@ private struct SchemeTile: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .galleryTileChrome(isHovering: isHovering, reduceMotion: reduceMotion)
             .settledHover { isHovering = $0 }
+            .popover(isPresented: $showingTargets, arrowEdge: .bottom) {
+                LibraryApplyTargetList(
+                    screens: screens,
+                    onApply: onApply,
+                    dismiss: { showingTargets = false }
+                )
+            }
+            .help(applyHelp)
             .contextMenu { contextMenu }
-            .task(id: scheme.id) { await loadThumbnail() }
+            // Keyed on the cover *and* the capture time: the cover is written
+            // asynchronously after the capture, and a replace-in-place keeps the
+            // id — so without `updatedAt` a scheme overwritten while it had no
+            // cover would keep the previous content's artwork and availability.
+            .task(id: TileContentKey(
+                id: scheme.id,
+                coverFileName: scheme.coverFileName,
+                version: scheme.updatedAt
+            )) {
+                await loadTileContent()
+            }
             .accessibilityElement(children: .combine)
             .accessibilityLabel(accessibilityLabel)
             .accessibilityActions {
@@ -142,6 +283,21 @@ private struct SchemeTile: View {
                 Button("Rename", action: onStartRename)
             }
             .accessibilityAction(.delete, onDelete)
+    }
+
+    private var applyHelp: Text {
+        location.isAvailable
+            ? Text("Apply")
+            : Text("This wallpaper's file is missing")
+    }
+
+    private func applyFromCard() {
+        guard !isRenaming, location.isAvailable else { return }
+        if screens.count == 1, let only = screens.first {
+            onApply(only)
+        } else if screens.count > 1 {
+            showingTargets = true
+        }
     }
 
     private var accessibilityLabel: Text {
@@ -165,6 +321,17 @@ private struct SchemeTile: View {
             .overlay { tileContent }
             .aspectRatio(16.0 / 9.0, contentMode: .fit)
             .clipped()
+            // Scoped to the artwork, not the whole card: the title band carries
+            // the overflow button and, while renaming, a text field — an
+            // ancestor tap gesture over those is at best ambiguous and at worst
+            // steals the click that was meant for them.
+            .contentShape(Rectangle())
+            .onTapGesture { applyFromCard() }
+            .overlay {
+                if !location.isAvailable {
+                    LibraryTileUnavailableVeil()
+                }
+            }
             .overlay(alignment: .topLeading) {
                 sourceBadge
                     .padding(DesignTokens.Spacing.sm)
@@ -218,7 +385,6 @@ private struct SchemeTile: View {
                 .adaptiveGlassSurface(.roundedRectangle(0), stroked: false)
         } else {
             ThumbnailTitleBand(title: scheme.name, isHovering: isHovering) {
-                LibraryTileApplyControl(screens: screens, tint: tint, onApply: onApply)
                 overflowButton
             }
         }
@@ -251,46 +417,100 @@ private struct SchemeTile: View {
 
     // MARK: Overflow
 
-    /// A real `Button` + popover, never a `Menu`: an AppKit popup paints its
-    /// label in the system control colour, which is invisible over artwork.
     private var overflowButton: some View {
-        SchemeOverflowButton(onStartRename: onStartRename, onDelete: onDelete)
+        LibraryTileOverflowButton { dismiss in
+            Button("Rename") {
+                dismiss()
+                onStartRename()
+            }
+            if let revealURL = location.revealURL {
+                Button("Show in Finder") {
+                    dismiss()
+                    NSWorkspace.shared.activateFileViewerSelecting([revealURL])
+                }
+            }
+            replaceActions(dismiss: dismiss)
+            Divider()
+            Button("Delete", role: .destructive) {
+                dismiss()
+                onDelete()
+            }
+            .destructiveControlTint()
+        }
+    }
+
+    /// Overwrites this scheme with a display's current setup. Listed per display
+    /// rather than as one "update" action: a display can hold several schemes, so
+    /// which slot is being overwritten has to be the user's choice, not ours.
+    @ViewBuilder
+    private func replaceActions(dismiss: @escaping () -> Void) -> some View {
+        if !screens.isEmpty {
+            Divider()
+            ForEach(screens, id: \.id) { screen in
+                Button {
+                    dismiss()
+                    onReplace(screen)
+                } label: {
+                    screens.count == 1
+                        ? Text("Replace with Current Setup")
+                        : Text("Replace with \(screen.name)")
+                }
+            }
+        }
     }
 
     @ViewBuilder
     private var contextMenu: some View {
-        if !screens.isEmpty {
+        if !screens.isEmpty, location.isAvailable {
             ForEach(screens, id: \.id) { screen in
                 Button("Apply to \(screen.name)") { onApply(screen) }
             }
             Divider()
         }
         Button("Rename", action: onStartRename)
+        if let revealURL = location.revealURL {
+            Button("Show in Finder") {
+                NSWorkspace.shared.activateFileViewerSelecting([revealURL])
+            }
+        }
+        replaceActions(dismiss: {})
+        Divider()
         Button("Delete", role: .destructive, action: onDelete)
     }
 
     // MARK: Presentation
 
     private var tint: Color {
-        switch scheme.configuration.activeWallpaper {
-        case .video: DesignTokens.Colors.ContentType.video
-        case .html: DesignTokens.Colors.ContentType.html
-        case .scene: DesignTokens.Colors.ContentType.scene
-        }
+        scheme.presentationTint
     }
 
     private var iconName: String {
-        switch scheme.configuration.activeWallpaper {
-        case .video: "play.rectangle"
-        case let .html(source, _): source.iconName
-        case .scene: "cube.transparent"
-        }
+        scheme.iconName
     }
 
     // MARK: Thumbnail loader
 
     /// Run via `.task(id:)` so SwiftUI cancels the decode + security-scoped
     /// resolve when the tile leaves the viewport on fast-scroll.
+    @MainActor
+    private func loadTileContent() async {
+        thumbnail = nil
+        // Resolved before the artwork: Show in Finder and the unavailable veil
+        // both read it, and neither should wait on a decode.
+        location = LibraryContentLocator.locate(
+            content: scheme.configuration.activeWallpaper,
+            wpeOrigin: scheme.configuration.wpeOrigin
+        )
+        // A scheme's cover also carries its overlay layers, which no recomputed
+        // thumbnail can show — so it wins outright when one exists.
+        if let coverFileName = scheme.coverFileName,
+           let cover = WallpaperCoverStore.shared.cover(named: coverFileName) {
+            thumbnail = cover
+            return
+        }
+        await loadThumbnail()
+    }
+
     @MainActor
     private func loadThumbnail() async {
         thumbnail = nil
@@ -329,8 +549,9 @@ private struct SchemeTile: View {
         }
     }
 
-    /// Includes the content type so a thumbnail cached for one kind can never be
-    /// served for another if the scheme is re-captured onto the same id.
+    /// Includes the content type *and* the capture time: the id survives a
+    /// replace-in-place, so keying on it alone served the overwritten video's
+    /// poster for the video that replaced it.
     private var cacheKey: String {
         let typeTag = switch scheme.configuration.activeWallpaper {
         case .video: "video"
@@ -338,47 +559,6 @@ private struct SchemeTile: View {
             "html::" + HTMLPreviewKey.key(for: source, config: config)
         case .scene: "scene"
         }
-        return "scheme::\(typeTag)::\(scheme.id.uuidString)"
-    }
-}
-
-// MARK: - Tile controls
-
-private struct SchemeOverflowButton: View {
-    let onStartRename: () -> Void
-    let onDelete: () -> Void
-
-    @State private var isHovering = false
-    @State private var showingActions = false
-
-    var body: some View {
-        Button { showingActions = true } label: {
-            Image(systemName: "ellipsis")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(DesignTokens.Colors.overlayForeground)
-                .frame(width: 22, height: 22)
-                .floatingGlyphGlass(hovered: isHovering)
-                .onHover { isHovering = $0 }
-        }
-        .buttonStyle(.plain)
-        .help(Text("More actions"))
-        .accessibilityLabel(Text("More actions"))
-        .popover(isPresented: $showingActions, arrowEdge: .bottom) {
-            VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
-                Button("Rename") {
-                    showingActions = false
-                    onStartRename()
-                }
-                Divider()
-                Button("Delete", role: .destructive) {
-                    showingActions = false
-                    onDelete()
-                }
-                .destructiveControlTint()
-            }
-            .buttonStyle(.borderless)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .settingsPopoverChrome(width: 180)
-        }
+        return "scheme::\(typeTag)::\(scheme.id.uuidString)::\(scheme.updatedAt.timeIntervalSinceReferenceDate)"
     }
 }

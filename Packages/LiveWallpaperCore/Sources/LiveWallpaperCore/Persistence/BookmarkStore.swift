@@ -57,6 +57,16 @@ public final class BookmarkStore {
         return bookmark
     }
 
+    /// Records the cover captured for an entry. Separate from `add` because the
+    /// capture is asynchronous — the bookmark has to exist (and be on screen)
+    /// before the frame comes back.
+    public func setCover(_ fileName: String?, for id: UUID) {
+        guard let index = bookmarks.firstIndex(where: { $0.id == id }),
+              bookmarks[index].coverFileName != fileName else { return }
+        bookmarks[index].coverFileName = fileName
+        persist()
+    }
+
     public func remove(_ id: UUID) {
         let removedType = bookmarks.first(where: { $0.id == id })?.wallpaperType.rawValue ?? "Unknown"
         bookmarks.removeAll { $0.id == id }

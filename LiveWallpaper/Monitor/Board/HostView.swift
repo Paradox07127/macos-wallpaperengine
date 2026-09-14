@@ -210,6 +210,26 @@ final class HostView: NSView {
         rebuildRootView()
     }
 
+    /// On for the length of a scheme-cover capture only; see
+    /// `MonitorBoardRootContainer.forcesOpaquePanels`.
+    private(set) var forcesOpaquePanels = false
+
+    /// Whether the widget cards are currently on their Liquid Glass branch, and
+    /// so whether a bitmap capture of this board needs the opaque override.
+    var usesGlassPanels: Bool {
+        MonitorPanelAppearance.usesGlass(
+            UserDefaults.appScoped().object(forKey: MonitorPanelAppearance.glassKey) as? Bool
+                ?? MonitorPanelAppearance.defaultGlass,
+            reduceTransparency: NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
+        )
+    }
+
+    func setForcesOpaquePanels(_ forced: Bool) {
+        guard forcesOpaquePanels != forced else { return }
+        forcesOpaquePanels = forced
+        rebuildRootView()
+    }
+
     private func rebuildRootView() {
         hostingView.rootView = MonitorBoardRootContainer(
             model: interactionModel,
@@ -218,7 +238,8 @@ final class HostView: NSView {
             suspended: isSuspended,
             preview: preview,
             weatherService: weatherService,
-            logicalSize: logicalSize
+            logicalSize: logicalSize,
+            forcesOpaquePanels: forcesOpaquePanels
         )
     }
 
@@ -321,12 +342,18 @@ struct MonitorBoardRootContainer: View {
     /// Set only by the inspector preview: the desktop point size the board must
     /// lay out at while being drawn into a canvas a fraction of that size.
     var logicalSize: CGSize?
+    /// Drives the widget cards onto their painted (non-glass) branch. Offscreen
+    /// bitmap capture skips a `glassEffect` subtree entirely — card *and* text —
+    /// so a board captured for a scheme cover with Liquid Glass on would come
+    /// back as holes. See `PanelChrome`, which gates on the same environment key.
+    var forcesOpaquePanels: Bool = false
 
     var body: some View {
         // The desktop hosts have no window chrome to inherit the app language from,
         // so `Text(key)` in a tile followed the system language while the
         // `String(localized:bundle:)` labels beside it followed the app's.
         scaled.appLanguageScoped(defaults: .appScoped())
+            .environment(\.monitorForcesOpaquePanels, forcesOpaquePanels)
     }
 
     @ViewBuilder

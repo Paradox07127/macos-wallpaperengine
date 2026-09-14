@@ -223,6 +223,12 @@ struct WPEMappedPackageWriteFenceTests {
         // WorkshopQueryCache since 2026-09-02.)
         "LiveWallpaper/Infrastructure/Workshop/WorkshopDiskCacheStore.swift": [".write(to": 1],
         "LiveWallpaper/Infrastructure/Platform/DesktopPictureFrameExtractor.swift": [".write(to": 1],
+        // Audited 2026-09-14: writes a library entry's cover PNG to
+        // `Application Support/<bundle>/Configuration/Covers/<uuid>.png` —
+        // the app's own directory, created by this type, named after a
+        // bookmark/scheme id, and written `.atomic` (write-temp + rename).
+        // No scene content path is reachable from here.
+        "LiveWallpaper/Infrastructure/Persistence/WallpaperCoverStore.swift": [".write(to": 1],
         "LiveWallpaper/Infrastructure/Diagnostics/WPESceneDebugArtifacts.swift": [
             "createFile(": 1,
             "FileHandle(forWritingTo": 1,

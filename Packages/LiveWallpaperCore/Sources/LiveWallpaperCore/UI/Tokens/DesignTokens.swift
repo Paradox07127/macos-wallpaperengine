@@ -163,16 +163,19 @@ public enum DesignTokens {
     /// window while Workshop's stayed capped, so the library looked denser
     /// on one page than another.
     public enum LibraryGrid {
-        public static let minimumColumnWidth: CGFloat = 184
-        public static let maximumColumnWidth: CGFloat = 220
+        public static let minimumColumnWidth: CGFloat = 240
+        public static let maximumColumnWidth: CGFloat = 288
 
-        /// Tile-size steps for every library grid. The medium step is the pair
-        /// above, kept as the default so existing windows look unchanged.
+        /// Tile-size steps for every library grid. The 16:9 pages (bookmarks,
+        /// schemes, system wallpaper) draw a tile barely half the height of the
+        /// square Workshop card at the same column width, so the whole ladder
+        /// sits one step higher than the 128/184/248 it started at; `.small` is
+        /// now roughly the old `.medium`.
         public static func columnWidths(for size: LibraryTileSize) -> (min: CGFloat, max: CGFloat) {
             switch size {
-            case .small: (128, 152)
+            case .small: (168, 200)
             case .medium: (minimumColumnWidth, maximumColumnWidth)
-            case .large: (248, 300)
+            case .large: (336, 408)
             }
         }
 

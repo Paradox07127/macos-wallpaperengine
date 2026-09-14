@@ -13,6 +13,9 @@ public enum DestructiveAction: Identifiable, Equatable {
     /// per-display setting land at once, so the target's current setup is gone
     /// unless it was saved as a scheme first.
     case applyScheme(schemeName: String, displayName: String)
+    /// Re-capturing a display over a scheme that already exists: the saved
+    /// wallpaper, overlay and settings in that slot are overwritten in place.
+    case replaceScheme(schemeName: String, displayName: String)
     case removeScheduleSlot(slotLabel: String)
     case disableSchedule(slotCount: Int)
     case clearAllStorageCaches(byteSize: String)
@@ -45,6 +48,7 @@ public enum DestructiveAction: Identifiable, Equatable {
         case .deleteBookmark(let n): return "deleteBookmark-\(n)"
         case let .deleteScheme(n): return "deleteScheme-\(n)"
         case let .applyScheme(n, d): return "applyScheme-\(n)-\(d)"
+        case let .replaceScheme(n, d): return "replaceScheme-\(n)-\(d)"
         case .removeScheduleSlot(let l): return "removeScheduleSlot-\(l)"
         case .disableSchedule(let c): return "disableSchedule-\(c)"
         case .clearAllStorageCaches(let b): return "clearAllStorageCaches-\(b)"
@@ -70,6 +74,7 @@ public enum DestructiveAction: Identifiable, Equatable {
         case .deleteBookmark:            return "Delete this bookmark?"
         case .deleteScheme: return "Delete this scheme?"
         case .applyScheme: return "Replace this display's entire setup?"
+        case .replaceScheme: return "Overwrite this saved scheme?"
         case .removeScheduleSlot:        return "Remove this schedule slot?"
         case .disableSchedule:           return "Disable schedule?"
         case .clearAllStorageCaches:      return "Clear all storage caches?"
@@ -129,6 +134,11 @@ public enum DestructiveAction: Identifiable, Equatable {
             return String(
                 localized: "'\(schemeName)' replaces the wallpaper, overlay layout, and every setting on \(displayName). Save that display's current setup as a scheme first if you want it back.",
                 bundle: .appLanguage, comment: "Confirm message for applying a saved scheme. Placeholders are the scheme name and the target display name."
+            )
+        case let .replaceScheme(schemeName, displayName):
+            return String(
+                localized: "'\(schemeName)' is overwritten with what \(displayName) is showing now. The setup saved under that name cannot be recovered.",
+                bundle: .appLanguage, comment: "Confirm message for overwriting a saved scheme with a display's current setup. Placeholders are the scheme name and the source display name."
             )
         case .removeScheduleSlot(let slotLabel):
             return String(
@@ -203,6 +213,7 @@ public enum DestructiveAction: Identifiable, Equatable {
         case .deleteBookmark:            return "Delete"
         case .deleteScheme: return "Delete"
         case .applyScheme: return "Replace Setup"
+        case .replaceScheme: return "Overwrite Scheme"
         case .removeScheduleSlot:        return "Remove Slot"
         case .disableSchedule:           return "Disable Schedule"
         case .clearAllStorageCaches:      return "Clear All Caches"

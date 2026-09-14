@@ -8,6 +8,7 @@ struct AerialsLibraryView: View {
     @Environment(ScreenManager.self) private var screenManager
     @State private var searchText: String = ""
     @State private var pendingDestructive: PendingDestructive?
+    @State private var dragSession = LibraryDragSession()
 
 
     var body: some View {
@@ -180,12 +181,43 @@ struct AerialsLibraryView: View {
                                 onApply: { screen in apply(asset, to: screen) },
                                 onApplyToAll: { applyToAll(asset) }
                             )
+                            .onDrag {
+                                NSItemProvider(object: dragSession.begin(payload: asset.id) as NSString)
+                            } preview: {
+                                LibraryDragPreview(systemImage: "sparkles.tv")
+                            }
                         }
                     }
                 }
                 .padding(20)
             }
+            .overlay(alignment: .top) {
+                if dragSession.isDragging, !screenManager.screens.isEmpty {
+                    dropBar
+                }
+            }
+            .animation(.easeInOut(duration: 0.2), value: dragSession.isDragging)
         }
+    }
+
+    private var dropBar: some View {
+        LibraryDragApplyBar(
+            screens: screenManager.screens,
+            onCancel: { dragSession.end() },
+            makeDropHandler: { screen in
+                { identifier, loadFailed in
+                    dragSession.end()
+                    guard !loadFailed,
+                          let identifier,
+                          // Re-read both sides: a rescan and a display change can
+                          // both land while the provider read is in flight.
+                          let asset = library.assets.first(where: { $0.id == identifier }),
+                          let target = screenManager.screens.first(where: { $0.id == screen.id })
+                    else { return }
+                    apply(asset, to: target)
+                }
+            }
+        )
     }
 
     // MARK: - Apply

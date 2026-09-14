@@ -233,9 +233,11 @@ struct InstalledView: View {
                             hasUpdate: model.updatedWorkshopIDs.contains(entry.origin.workshopID),
                             onUpdate: doctor.isDownloadReady ? { updateEntry(entry) } : nil
                         )
-                        .onDrag({
+                        .onDrag {
                             NSItemProvider(object: model.beginEntryDrag(entry) as NSString)
-                        }, preview: { dragPreview(entry) })
+                        } preview: {
+                            LibraryDragPreview(systemImage: entry.origin.originalType.symbolName)
+                        }
                     }
                 }
                 .padding(.horizontal, 20)
@@ -445,104 +447,25 @@ struct InstalledView: View {
     /// Floats in only while a card is being dragged, listing the open displays
     /// as drop targets. (Click-to-apply lives in the inspector's Apply popover.)
     private var screenDropBar: some View {
-        VStack(spacing: DesignTokens.Spacing.sm) {
-            Text("Drop onto a display to apply")
-                .font(DesignTokens.Typography.body)
-                .foregroundStyle(.secondary)
-
-            // Laid out in the system's own arrangement so the target you aim at
-            // is the panel in that physical position.
-            DisplayArrangementMap(
-                items: screenManager.screens.map {
-                    DisplayArrangementItem(id: $0.id, frame: $0.frame)
-                },
-                height: 110
-            ) { item, size in
-                if let screen = screenManager.screens.first(where: { $0.id == item.id }) {
-                    screenDropTarget(screen, size: size)
+        LibraryDragApplyBar(
+            screens: screenManager.screens,
+            onCancel: { model.endEntryDrag() },
+            makeDropHandler: { screen in
+                // The ticket is taken here, synchronously with the drop, so a page
+                // that disappears and comes back during the provider read cannot
+                // have the stale payload applied to it.
+                let ticket = model.makeDropTicket()
+                return { workshopID, loadFailed in
+                    guard let entry = model.consumeDrop(
+                        ticket,
+                        workshopID: workshopID,
+                        loadFailed: loadFailed
+                    ) else { return }
+                    guard let target = screenManager.screens.first(where: { $0.id == screen.id }) else { return }
+                    apply(entry, to: target)
                 }
             }
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.horizontal, DesignTokens.Spacing.lg)
-        .padding(.vertical, DesignTokens.Spacing.md)
-        // Floats over the thumbnail grid for the length of a drag — the one
-        // moment this page has live content under a control strip.
-        .adaptiveGlassSurface(.roundedRectangle(0), stroked: false)
-        .overlay(alignment: .topTrailing) {
-            Button { model.endEntryDrag() } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 16))
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.borderless)
-            .padding(DesignTokens.Spacing.sm)
-            .help(Text("Cancel"))
-            .accessibilityLabel(Text("Cancel"))
-        }
-        .overlay(alignment: .bottom) { Divider() }
-        .transition(.move(edge: .top).combined(with: .opacity))
-    }
-
-    private func screenDropTarget(_ screen: Screen, size: CGSize) -> some View {
-        RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
-            .strokeBorder(Color.accentColor.opacity(0.6), style: StrokeStyle(lineWidth: 2, dash: [5]))
-            .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous))
-            .overlay {
-                VStack(spacing: 4) {
-                    Image(systemName: "display")
-                        .font(.system(size: size.height >= 60 ? 24 : 16))
-                        .foregroundStyle(Color.accentColor)
-                    // A short panel has no room for both glyph and name.
-                    if size.height >= 46 {
-                        Text(verbatim: screen.name)
-                            .font(DesignTokens.Typography.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .padding(.horizontal, 4)
-                    }
-                }
-            }
-            .contentShape(Rectangle())
-            .onDrop(of: [.plainText], isTargeted: nil) { providers in
-                handleScreenDrop(providers, to: screen)
-            }
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel(Text("Apply to \(screen.name)"))
-    }
-
-    /// Small icon shown under the cursor while dragging — deliberately NOT the
-    /// preview image, so it doesn't obscure which display you're hovering.
-    private func dragPreview(_ entry: WPEHistoryEntry) -> some View {
-        Image(systemName: entry.origin.originalType.symbolName)
-            .font(.system(size: 22, weight: .semibold))
-            .foregroundStyle(DesignTokens.Colors.onAccentFill)
-            .frame(width: 54, height: 54)
-            .background(Color.accentColor, in: RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous))
-    }
-
-    private func handleScreenDrop(_ providers: [NSItemProvider], to screen: Screen) -> Bool {
-        guard let provider = providers.first(where: { $0.canLoadObject(ofClass: NSString.self) }) else {
-            model.endEntryDrag()
-            return false
-        }
-        let ticket = model.makeDropTicket()
-        _ = provider.loadObject(ofClass: NSString.self) { value, error in
-            // Extract Sendable values (String / Bool) before crossing to the main
-            // actor — NSString and Error are not Sendable under Swift 6.
-            let workshopID = value as? String
-            let loadFailed = error != nil
-            Task { @MainActor in
-                guard let entry = model.consumeDrop(
-                    ticket,
-                    workshopID: workshopID,
-                    loadFailed: loadFailed
-                ) else { return }
-                guard let target = screenManager.screens.first(where: { $0.id == screen.id }) else { return }
-                apply(entry, to: target)
-            }
-        }
-        return true
+        )
     }
 }
 

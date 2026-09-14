@@ -12,6 +12,11 @@ public struct WallpaperBookmark: Identifiable, Codable, Equatable, Sendable {
     public var playbackSettings: BookmarkPlaybackSettings?
     /// Workshop provenance for scene dependency / source-folder restore on apply.
     public var wpeOrigin: WPEOrigin?
+    /// File name of the still captured off the display when this was saved, in
+    /// the app's cover directory. Nil for entries saved before covers existed,
+    /// and for saves where the capture did not come back in time — both fall
+    /// back to the computed thumbnail.
+    public var coverFileName: String?
 
     public init(
         label: String,
@@ -20,7 +25,8 @@ public struct WallpaperBookmark: Identifiable, Codable, Equatable, Sendable {
         createdAt: Date = Date(),
         sourceDisplayName: String? = nil,
         playbackSettings: BookmarkPlaybackSettings? = nil,
-        wpeOrigin: WPEOrigin? = nil
+        wpeOrigin: WPEOrigin? = nil,
+        coverFileName: String? = nil
     ) {
         self.id = id
         self.label = label
@@ -29,6 +35,7 @@ public struct WallpaperBookmark: Identifiable, Codable, Equatable, Sendable {
         self.sourceDisplayName = sourceDisplayName
         self.playbackSettings = playbackSettings
         self.wpeOrigin = wpeOrigin
+        self.coverFileName = coverFileName
     }
 
     public var wallpaperType: WallpaperType { content.wallpaperType }

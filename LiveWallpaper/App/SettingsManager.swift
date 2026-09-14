@@ -604,6 +604,8 @@ final class SettingsManager {
 
         BookmarkStore.shared.resetAfterSettingsCleared()
         SchemeStore.shared.resetAfterSettingsCleared()
+        // The archives are gone, so every cover file they named is orphaned.
+        WallpaperCoverStore.shared.removeAll()
         TrustedHostStore.shared.resetAfterSettingsCleared()
         if applyLoginSetting {
             loginItemController.apply(startOnLogin: false)

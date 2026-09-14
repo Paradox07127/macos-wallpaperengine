@@ -36,6 +36,18 @@ struct SavedLibraryPane: View {
             case .schemes: SchemeLibraryView()
             }
         }
+        .task {
+            // Covers are files beside the JSON archives, written by a path the
+            // stores know nothing about. The archive is the authority, so a
+            // cover no entry names any more is swept when the page opens —
+            // which is also where entries get deleted.
+            WallpaperCoverStore.shared.removeOrphans(
+                keeping: Set(
+                    BookmarkStore.shared.bookmarks.compactMap(\.coverFileName)
+                        + SchemeStore.shared.schemes.compactMap(\.coverFileName)
+                )
+            )
+        }
         .toolbar {
             ToolbarItem(placement: .principal) {
                 Picker("Saved library tab", selection: $selectedTab) {
