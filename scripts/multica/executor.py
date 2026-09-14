@@ -239,6 +239,7 @@ def summary(result):
     """Do not copy peer reports/findings into executor logs or Multica run output."""
     return {key: result[key] for key in ('verdict', 'job_id', 'runner_job_id', 'state', 'head_sha', 'base_sha',
                                         'mmrun_run_id', 'attestation_path', 'frozen_checkout',
+                                        'recorded_verdict', 'recorded_policy', 'recorded_policy_fingerprint',
                                         'reasons', 'error') if key in result}
 
 
@@ -318,7 +319,17 @@ def _run_attempt(cfg, req, commands):
         phase = 'runner process'
         execution['phase'] = 'RUNNER_LAUNCH_INTENT'
         atomic(directory / 'execution.json', execution)
-        completed = subprocess.run(argv, env=env, text=True, capture_output=True)
+        try:
+            # Preparation has independently bounded Git stages before the
+            # runner's model deadline. Bound this wrapper too, without treating
+            # detached workers as stopped or authorizing an automatic retry.
+            completed = subprocess.run(argv, env=env, text=True, capture_output=True,
+                                       timeout=cfg.get('review_timeout_seconds', 3600) + 1200)
+        except subprocess.TimeoutExpired:
+            result = {'verdict': 'RUNNING_TIMEOUT', 'job_id': job_id, 'runner_job_id': runner_id,
+                      'reasons': ['Executor wrapper deadline elapsed; retained supervisor/worker evidence must be collected or explicitly recovered']}
+            atomic(directory / 'execution-result.json', result)
+            return result
         phase = 'runner result validation'
         result = json.loads(completed.stdout)
         if (not isinstance(result, dict) or result.get('job_id') != runner_id
@@ -373,7 +384,7 @@ def require_quiescent(cfg, req, runner_id):
 def no_active_controller(runner_id):
     """Prove no matching controller survived a crash; never kill any process."""
     try:
-        table = subprocess.run(['/bin/ps', '-axo', 'pid=,command='], text=True,
+        table = subprocess.run(['/bin/ps', '-axww', '-o', 'pid=,command='], text=True,
                                capture_output=True, timeout=20, check=False)
     except (OSError, subprocess.SubprocessError) as exc:
         raise JobError('Cannot inspect orphan controller identity') from exc
@@ -400,6 +411,43 @@ def attempt_result(cfg, req):
     if result is None or (result.get('verdict') in ('RUNNING', 'RUNNING_TIMEOUT')
                           and failed is not None and failed.get('recovered')):
         return failed or result
+    return result
+
+
+def collect_job(cfg, job_id):
+    """Inspect retired metadata without re-adjudicating or rewriting old evidence."""
+    _, req = request(cfg, job_id, allow_retired=True)
+    runner_id, records = active_attempt(cfg, req)
+    if current_policy(cfg, req):
+        return attempt_result(cfg, req) or {
+            'verdict': 'RUNNING_TIMEOUT' if (records / 'execution.json').exists() else 'NOT_STARTED',
+            'job_id': job_id, 'runner_job_id': runner_id}
+    result = {'state': 'retired', 'job_id': job_id, 'runner_job_id': runner_id,
+              'head_sha': req['head_sha'], 'base_sha': req['base_sha'],
+              'recorded_policy': req['policy_version'],
+              'recorded_policy_fingerprint': req.get('policy_fingerprint'),
+              'reasons': ['Historical metadata only; evidence has not been revalidated under the current policy']}
+    reference = Path(cfg['review_state_dir']) / runner_id / 'attestation.json'
+    if reference.exists():
+        record = runner.load_json(reference)
+        expected_id = runner_id
+    else:
+        reference = records / 'execution-result.json'
+        if not reference.exists():
+            result['recorded_verdict'] = 'NOT_STARTED' if not (records / 'execution.json').exists() else 'RUNNING_TIMEOUT'
+            return result
+        record = runner.load_json(reference)
+        expected_id = job_id
+    if (not isinstance(record, dict) or record.get('job_id') != expected_id
+            or record.get('runner_job_id', runner_id) != runner_id):
+        raise JobError('Historical record does not match the selected attempt')
+    if record.get('verdict') not in runner.EXIT_CODES:
+        raise JobError('Historical record has an unsupported verdict')
+    result['recorded_verdict'] = record['verdict']
+    # A reference is reported as historical; no reports or findings are copied
+    # into the agent-readable CLI output and no current approval is asserted.
+    if isinstance(record.get('attestation_path'), str):
+        result['attestation_path'] = record['attestation_path']
     return result
 
 
@@ -475,7 +523,8 @@ def retry_job(cfg, job_id):
             raise JobError('Retry attempt ID collision; existing evidence was preserved')
         if records.parent.is_symlink():
             raise JobError('Attempt records directory may not be a symlink')
-        records.mkdir(parents=True, mode=0o700)
+        runner.durable_mkdir(records.parent)
+        records.mkdir(mode=0o700)
         selection = {'schema_version': 1, 'job_id': job_id, 'runner_job_id': runner_id,
                      'previous_runner_job_id': prior_id, 'previous_verdict': prior['verdict'],
                      'created_at': bridge.utcnow()}
@@ -544,6 +593,15 @@ def revoke_owned_status(cfg, req, runner_id, commands):
                      'description': runner_id + ': target verification incomplete; result withheld'})
 
 
+def confirmed_target(cfg, req, runner_id, commands):
+    """Unknown target identity withholds any status owned by this generation."""
+    try:
+        return current_target(cfg, req, commands)
+    except (bridge.BridgeError, JobError, OSError, ValueError, TypeError, AttributeError, subprocess.SubprocessError) as exc:
+        revoke_owned_status(cfg, req, runner_id, commands)
+        raise JobError('Current review target could not be confirmed; owned result withheld') from exc
+
+
 def result_revision(req, runner_id, result):
     value = {'runner_job_id': runner_id, 'head': req['head_sha'], 'base': req['base_sha'],
              'policy': req['policy_fingerprint'],
@@ -562,12 +620,7 @@ def publish_locked(cfg, req, commands, records, runner_id):
                                    or record.get('head_sha') != req['head_sha']
                                    or record.get('runner_job_id') != runner_id):
             raise JobError('Invalid publication identity')
-    try:
-        target_current = current_target(cfg, req, commands)
-    except (bridge.BridgeError, JobError, OSError, ValueError, TypeError, subprocess.SubprocessError):
-        if intent and intent.get('state') != 'complete':
-            revoke_owned_status(cfg, req, runner_id, commands)
-        raise
+    target_current = confirmed_target(cfg, req, runner_id, commands)
     if not target_current:
         if previous is not None or intent is not None:
             revoke_owned_status(cfg, req, runner_id, commands)
@@ -592,7 +645,7 @@ def publish_locked(cfg, req, commands, records, runner_id):
     payload = status_payload(req, verdict, runner_id, revision)
     matches = remote_status_matches(cfg, req, payload, commands)
     if previous and previous.get('revision') == revision and matches:
-        if not current_target(cfg, req, commands):
+        if not confirmed_target(cfg, req, runner_id, commands):
             revoke_owned_status(cfg, req, runner_id, commands)
             if intent is not None:
                 atomic(status_intent, dict(intent, state='revoked'))
@@ -611,11 +664,7 @@ def publish_locked(cfg, req, commands, records, runner_id):
             # The server may have accepted this POST. Keep intent until an
             # authoritative read resolves it; never assume a transport error means no write.
             write_error = exc
-    try:
-        still_current = current_target(cfg, req, commands)
-    except (bridge.BridgeError, JobError, OSError, ValueError, TypeError, subprocess.SubprocessError) as exc:
-        revoke_owned_status(cfg, req, runner_id, commands)
-        raise JobError('Target verification after status write failed; owned result withheld') from exc
+    still_current = confirmed_target(cfg, req, runner_id, commands)
     if not still_current:
         revoke_owned_status(cfg, req, runner_id, commands)
         atomic(status_intent, dict(journal, state='revoked'))
@@ -629,6 +678,7 @@ def publish_locked(cfg, req, commands, records, runner_id):
     body = (f'/note\n{marker}\n\nStatic review result: {verdict}\n'
             f"Head: {req['head_sha']}\nBase: {req['base_sha']}\nAttempt: {runner_id}\n"
             f'Result revision: {revision} (supersedes earlier results for this attempt).\n'
+            'This record describes only the head and attempt above; after a newer review starts, it is historical.\n'
             'This is a static-review result only. Build/runtime/release checks and maintainer approval remain required.')
     intent_path = records / 'comment-intents' / (revision + '.json')
     comment_intent = runner.load_json(intent_path) if intent_path.exists() else None
@@ -641,14 +691,31 @@ def publish_locked(cfg, req, commands, records, runner_id):
     found = any(bridge.trusted_comment(cfg, item, body) for item in comments)
     if found:
         atomic(intent_path, dict(identity, state='confirmed'))
-    elif comment_intent is not None:
-        if comment_intent.get('state') != 'confirmed':
-            return {'job_id': job_id, 'state': 'awaiting_comment_reconciliation'}
-    else:
+    elif comment_intent is not None and comment_intent.get('state') == 'sending':
+        return {'job_id': job_id, 'state': 'awaiting_comment_reconciliation'}
+    elif comment_intent is None or comment_intent.get('state') == 'not_started':
         atomic(intent_path, dict(identity, state='sending', at=bridge.utcnow()))
-        response = commands.multica(['issue', 'comment', 'add', req['multica_issue_id'], '--content-stdin', '--output', 'json'], body)
+        try:
+            response = commands.multica(['issue', 'comment', 'add', req['multica_issue_id'], '--content-stdin', '--output', 'json'], body)
+        except bridge.CommandNotStarted:
+            atomic(intent_path, dict(identity, state='not_started'))
+            return {'job_id': job_id, 'state': 'pending'}
         atomic(intent_path, dict(identity, state='confirmed', comment_id=response.get('id') if isinstance(response, dict) else None))
-    commands.multica(['issue', 'update', req['multica_issue_id'], '--status', 'in_review', '--no-start', '--output', 'json'])
+    elif comment_intent.get('state') != 'confirmed':
+        raise JobError('Unknown publication comment intent state')
+    # A PR's Multica issue is shared across head SHAs. Its generation lock is
+    # distinct from the per-head GitHub status lock and is shared with intake.
+    with bridge.issue_generation_lock(cfg, req['multica_issue_id']) as locked:
+        if not locked:
+            return {'job_id': job_id, 'state': 'busy'}
+        generation = bridge.current_generation(cfg, req['multica_issue_id'])
+        if generation is None:
+            return {'job_id': job_id, 'state': 'awaiting_issue_generation'}
+        if generation != job_id or not confirmed_target(cfg, req, runner_id, commands):
+            revoke_owned_status(cfg, req, runner_id, commands)
+            atomic(status_intent, dict(journal, state='revoked'))
+            return {'job_id': job_id, 'state': 'superseded'}
+        commands.multica(['issue', 'update', req['multica_issue_id'], '--status', 'in_review', '--no-start', '--output', 'json'])
     atomic(receipt, {'job_id': job_id, 'runner_job_id': runner_id, 'state': payload['state'], 'verdict': verdict,
                      'revision': revision, 'head_sha': req['head_sha'], 'context': payload['context'], 'at': bridge.utcnow()})
     atomic(status_intent, dict(journal, state='complete'))
@@ -698,7 +765,12 @@ def collect_all(cfg):
             break
         atomic(cursor_path, {'last_job_id': path.parent.name})
         try:
-            job_cfg = dict(cfg, _collection_deadline=min(deadline - 10, time.monotonic() +
+            now = time.monotonic()
+            remaining = deadline - now
+            if remaining <= 0:
+                break
+            reserve = min(10, remaining * 0.1)
+            job_cfg = dict(cfg, _collection_deadline=min(deadline - reserve, now +
                             cfg.get('collection_job_budget_seconds', 60)))
             results.append(publish_result(job_cfg, path.parent.name, commands))
         except Exception as exc:
@@ -717,7 +789,7 @@ def exit_code(result):
     if verdict == 'SUPERSEDED' or result.get('state') == 'superseded':
         return 4
     if verdict in ('RUNNING', 'NOT_STARTED') or result.get('state') in (
-            'pending', 'busy', 'awaiting_issue_mapping', 'awaiting_comment_reconciliation'):
+            'pending', 'busy', 'awaiting_issue_mapping', 'awaiting_issue_generation', 'awaiting_comment_reconciliation'):
         return 3
     return 0
 
@@ -743,9 +815,7 @@ def main(argv=None):
         elif args.action == 'recover':
             result = recover_job(cfg, args.job_id, args.runner_job_id)
         elif args.action == 'collect':
-            _, req = request(cfg, args.job_id)
-            runner_id, records = active_attempt(cfg, req)
-            result = attempt_result(cfg, req) or {'verdict': 'RUNNING_TIMEOUT' if (records / 'execution.json').exists() else 'NOT_STARTED', 'job_id': args.job_id, 'runner_job_id': runner_id}
+            result = collect_job(cfg, args.job_id)
         elif args.action == 'publish':
             result = publish_result(cfg, args.job_id)
         else:

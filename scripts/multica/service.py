@@ -11,13 +11,16 @@ import github_bridge
 
 
 def run_stage(command, timeout, label, capture_output=False):
-    """A failed/timed-out stage must not strand completed review collection."""
+    """Bound both streams and log only controlled stage summaries."""
     try:
-        return subprocess.run(command, text=True, capture_output=capture_output,
-                              timeout=timeout, shell=False)
-    except (subprocess.TimeoutExpired, OSError) as exc:
-        # CLI diagnostics can contain credentials or user source data. Log only
-        # the failing stage and exception category, never command output.
+        result = github_bridge.Commands({'command_timeout': timeout, 'max_output_bytes': 1024 * 1024}).run(
+            command, json_output=capture_output)
+        print(f'{label}: completed', flush=True)
+        return subprocess.CompletedProcess(command, 0, json.dumps(result) if capture_output else '')
+    except github_bridge.CommandError as exc:
+        print(f'{label} failed: exit {exc.returncode}', file=sys.stderr, flush=True)
+        return subprocess.CompletedProcess(command, exc.returncode, '')
+    except (github_bridge.BridgeError, OSError) as exc:
         print(f'{label} failed: {type(exc).__name__}', file=sys.stderr, flush=True)
         return None
 

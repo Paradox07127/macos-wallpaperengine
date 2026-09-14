@@ -91,6 +91,9 @@ class ExecutorTests(unittest.TestCase):
             "review_policy": executor.bridge.effective_policy(self.cfg),
         }
         self.write_request()
+        with executor.bridge.issue_generation_lock(self.cfg, self.req['multica_issue_id']) as locked:
+            self.assertTrue(locked)
+            executor.bridge.set_generation(self.cfg, self.req['multica_issue_id'], self.job_id)
         self.review_dir = Path(self.cfg["review_state_dir"]) / self.job_id
         self.review_dir.mkdir(parents=True)
         self.manifest = {
@@ -971,6 +974,159 @@ class ExecutorTests(unittest.TestCase):
         self.assertEqual(evidence.read_text(), 'preserved previous evidence')
         self.assertEqual(self.commands.statuses[-1][1]['state'], 'pending')
         self.assertEqual(json.loads((self.job_dir / 'published.json').read_text())['verdict'], 'PASS')
+
+
+    def test_small_collection_budgets_leave_positive_local_deadline(self):
+        for total in (1, 10):
+            cfg = dict(self.cfg, collection_budget_seconds=total, collection_job_budget_seconds=total)
+            with self.subTest(total=total), patch.object(executor.time, 'monotonic', return_value=100), \
+                    patch.object(executor.bridge, 'Commands', return_value=self.commands):
+                results = executor.collect_all(cfg)
+            self.assertEqual(results[0]['state'], 'success' if total == 1 else 'already_published')
+            deadline = self.collector.call_args.kwargs['deadline']
+            self.assertGreater(deadline, 100)
+            self.assertLess(deadline, 100 + total)
+            self.assertAlmostEqual(deadline, 100 + total * 0.9)
+
+    def test_completed_success_target_query_error_revokes_on_first_and_second_check(self):
+        original = self.commands.gh
+        for failed_read in (1, 2):
+            with self.subTest(failed_read=failed_read):
+                self.assertEqual(self.publish()['state'], 'success')
+                reads = 0
+                def unavailable(endpoint, payload=None):
+                    nonlocal reads
+                    if '/pulls/' in endpoint and payload is None:
+                        reads += 1
+                        if reads == failed_read:
+                            raise executor.bridge.BridgeError('target lookup unavailable')
+                    return original(endpoint, payload)
+                with patch.object(self.commands, 'gh', side_effect=unavailable), self.assertRaises(executor.JobError):
+                    self.publish()
+                self.assertEqual(self.commands.statuses[-1][1]['state'], 'pending')
+                self.assertEqual(len(self.commands.comments), 1)
+
+    def test_known_not_started_comment_is_retryable_not_ambiguous(self):
+        original = self.commands.multica
+        attempts = 0
+        def before_start(argv, body=None):
+            nonlocal attempts
+            if argv[:3] == ['issue', 'comment', 'add']:
+                attempts += 1
+                if attempts == 1:
+                    raise executor.bridge.CommandNotStarted('deadline before launch')
+            return original(argv, body)
+        with patch.object(self.commands, 'multica', side_effect=before_start):
+            self.assertEqual(self.publish()['state'], 'pending')
+            intent_path = next((self.job_dir / 'comment-intents').glob('*.json'))
+            self.assertEqual(json.loads(intent_path.read_text())['state'], 'not_started')
+            self.assertEqual(self.commands.comments, [])
+            self.assertEqual(self.publish()['state'], 'success')
+        self.assertEqual(attempts, 2)
+        self.assertEqual(len(self.commands.comments), 1)
+
+    def test_new_generation_during_result_comment_cannot_update_shared_issue(self):
+        new_job = 'pr-7-' + 'f' * 24
+        original = self.commands.multica
+        def changed_generation(argv, body=None):
+            result = original(argv, body)
+            if argv[:3] == ['issue', 'comment', 'add']:
+                with executor.bridge.issue_generation_lock(self.cfg, self.req['multica_issue_id']) as locked:
+                    self.assertTrue(locked)
+                    executor.bridge.set_generation(self.cfg, self.req['multica_issue_id'], new_job)
+            return result
+        with patch.object(self.commands, 'multica', side_effect=changed_generation):
+            self.assertEqual(self.publish()['state'], 'superseded')
+        self.assertEqual(self.commands.updates, [])
+        self.assertEqual(len(self.commands.comments), 1)
+        self.assertIn(self.head, self.commands.comments[0]['content'])
+        self.assertIn('it is historical', self.commands.comments[0]['content'])
+        self.assertEqual(self.commands.statuses[-1][1]['state'], 'pending')
+        self.assertFalse((self.job_dir / 'published.json').exists())
+
+    def test_target_change_after_comment_cannot_update_issue_even_before_intake(self):
+        original = self.commands.multica
+        def changed_head(argv, body=None):
+            result = original(argv, body)
+            if argv[:3] == ['issue', 'comment', 'add']:
+                self.commands.pr['head']['sha'] = 'c' * 40
+            return result
+        with patch.object(self.commands, 'multica', side_effect=changed_head):
+            self.assertEqual(self.publish()['state'], 'superseded')
+        self.assertEqual(self.commands.updates, [])
+        self.assertEqual(self.commands.statuses[-1][1]['state'], 'pending')
+
+    def test_shared_generation_lock_blocks_final_update_across_heads(self):
+        with executor.bridge.issue_generation_lock(self.cfg, self.req['multica_issue_id']) as locked:
+            self.assertTrue(locked)
+            self.assertEqual(self.publish()['state'], 'busy')
+        self.assertEqual(self.commands.updates, [])
+        self.assertFalse((self.job_dir / 'published.json').exists())
+        self.assertEqual(self.publish()['state'], 'success')
+        self.assertEqual(len(self.commands.comments), 1)
+
+
+    def test_orphan_scan_requests_unlimited_width_and_detects_long_argv(self):
+        line = '999999 python ' + 'x' * 500 + ' review_runner.py run --job-id ' + self.job_id
+        with patch.object(executor.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, stdout=line)) as process:
+            with self.assertRaises(executor.JobError):
+                executor.no_active_controller(self.job_id)
+        self.assertEqual(process.call_args.args[0], ['/bin/ps', '-axww', '-o', 'pid=,command='])
+
+    def test_runner_wrapper_timeout_is_pending_and_never_relaunches(self):
+        (self.review_dir / 'manifest.json').unlink()
+        responses = [subprocess.CompletedProcess([], 0), subprocess.TimeoutExpired('runner', 4800)]
+        with patch.object(executor.bridge, 'Commands', return_value=self.commands), \
+                patch.object(executor, 'fetch_origin', return_value='https://github.com/' + self.cfg['repository']), \
+                patch.object(executor.subprocess, 'run', side_effect=responses) as process:
+            result = executor.run_job(self.cfg, self.job_id)
+            self.assertEqual(result['verdict'], 'RUNNING_TIMEOUT')
+            self.assertEqual(process.call_args.kwargs['timeout'], 4800)
+            self.assertEqual(executor.run_job(self.cfg, self.job_id)['verdict'], 'RUNNING_TIMEOUT')
+            with self.assertRaises(executor.JobError):
+                executor.retry_job(self.cfg, self.job_id)
+            self.assertEqual(process.call_count, 2)
+        self.assertEqual(json.loads((self.job_dir / 'execution-result.json').read_text())['verdict'], 'RUNNING_TIMEOUT')
+        self.assertFalse((self.job_dir / 'recovery.json').exists())
+        self.assertFalse((self.job_dir / 'attempt.json').exists())
+
+    def test_retired_collect_reports_history_without_current_pass_or_mutation(self):
+        evidence = self.review_dir / 'attestation.json'
+        record = {'job_id': self.job_id, 'verdict': 'PASS',
+                  'attestation_path': str(self.root / 'protected.json'),
+                  'reports': {'claude': 'PRIVATE_PEER_REPORT'}}
+        evidence.write_text(json.dumps(record))
+        original = evidence.read_bytes()
+        self.cfg['policy_version'] = 'next'
+        result = executor.collect_job(self.cfg, self.job_id)
+        self.assertEqual(result['state'], 'retired')
+        self.assertEqual(result['recorded_verdict'], 'PASS')
+        self.assertEqual(result['recorded_policy'], '1')
+        self.assertNotIn('verdict', result)
+        self.assertNotIn('reports', result)
+        self.assertEqual(evidence.read_bytes(), original)
+        self.collector.assert_not_called()
+        output = io.StringIO()
+        with patch.object(executor.bridge, 'load_config', return_value=self.cfg), contextlib.redirect_stdout(output):
+            code = executor.main(['--config', 'fixture', 'collect', '--job-id', self.job_id])
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(output.getvalue())['recorded_verdict'], 'PASS')
+        self.assertNotIn('PRIVATE_PEER_REPORT', output.getvalue())
+
+    def test_retry_parent_and_leaf_directories_are_private_under_normal_umask(self):
+        self.collector.return_value = {'verdict': 'NEEDS_REVIEW', 'reasons': []}
+        previous_umask = os.umask(0o022)
+        try:
+            with patch.object(executor.bridge, 'Commands', return_value=self.commands), \
+                    patch.object(executor, 'require_quiescent'), \
+                    patch.object(executor, '_run_attempt', return_value={'verdict': 'RUNNING_TIMEOUT'}):
+                executor.retry_job(self.cfg, self.job_id)
+        finally:
+            os.umask(previous_umask)
+        _, records = executor.active_attempt(self.cfg, self.req)
+        self.assertEqual(records.parent.stat().st_mode & 0o777, 0o700)
+        self.assertEqual(records.stat().st_mode & 0o777, 0o700)
+        self.assertEqual((records / 'attempt.json').stat().st_mode & 0o777, 0o600)
 
 
 

@@ -29,18 +29,17 @@ class ServiceTests(unittest.TestCase):
         self.calls = []
 
     def invoke(self, status='{"status":"running"}', fail=None, exit_code=0):
-        def run(command, **kwargs):
+        def run(command, timeout, label, capture_output=False):
             self.calls.append(command)
-            self.assertFalse(kwargs['shell'])
             stage = ('status' if 'status' in command else 'start' if 'start' in command
                      else 'collect' if 'collect-all' in command else 'poll')
             if stage == fail:
                 if exit_code:
                     return subprocess.CompletedProcess(command, exit_code, '')
-                raise subprocess.TimeoutExpired(command, kwargs['timeout'])
+                return None
             return subprocess.CompletedProcess(command, 0, status if stage == 'status' else '')
         with patch.object(service.github_bridge, 'load_config', return_value=self.cfg), \
-             patch.object(service.subprocess, 'run', side_effect=run), \
+             patch.object(service, 'run_stage', side_effect=run), \
              patch('sys.stdout', new_callable=io.StringIO), patch('sys.stderr', new_callable=io.StringIO):
             return service.main(['--config', '/example/config.json'])
 
@@ -94,6 +93,20 @@ class ServiceTests(unittest.TestCase):
             self.assertEqual(service.main(['--config', '/example/config.json']), 1)
         run.assert_not_called()
         self.assertNotIn('sensitive text', output.getvalue())
+
+    def test_stage_never_logs_child_stdout_or_stderr(self):
+        with patch('sys.stdout', new_callable=io.StringIO) as output, patch('sys.stderr', new_callable=io.StringIO) as errors:
+            result = service.run_stage([sys.executable, '-c',
+                "import sys;print('private stdout');sys.stderr.write('private stderr')"], 5, 'Daemon start')
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, '')
+        self.assertNotIn('private', output.getvalue() + errors.getvalue())
+
+    def test_stage_output_limit_is_enforced_without_logging_payload(self):
+        with patch('sys.stdout', new_callable=io.StringIO) as output, patch('sys.stderr', new_callable=io.StringIO) as errors:
+            result = service.run_stage([sys.executable, '-c', "print('private-data' * 200000)"], 5, 'Daemon start')
+        self.assertIsNone(result)
+        self.assertNotIn('private-data', output.getvalue() + errors.getvalue())
 
 
 if __name__ == '__main__':

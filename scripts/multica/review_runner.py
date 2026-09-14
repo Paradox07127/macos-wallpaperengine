@@ -13,6 +13,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 import fcntl
 import ctypes
+import errno
 import hashlib
 import json
 import math
@@ -26,7 +27,7 @@ import tempfile
 import time
 from typing import Any
 
-POLICY_VERSION = "multica-mmrun-static-v4"
+POLICY_VERSION = "multica-mmrun-static-v5"
 RELEASE_VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.]+)?\Z")
 SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 SHA = re.compile(r"[0-9a-f]{40}\Z")
@@ -53,6 +54,14 @@ EXHAUSTIVE_REVIEW_INSTRUCTIONS = """你是一名资深工程师,审查下面给�
 class ReviewError(Exception):
     """An input, process, version, or evidence invariant failed."""
 
+
+
+class CollectionUnavailable(ReviewError):
+    """Evidence could not be checked now; preserve the previous attestation."""
+
+
+def temporary_os_error(exc: OSError) -> bool:
+    return exc.errno in {errno.EAGAIN, errno.EBUSY, errno.EINTR, errno.EIO, errno.ETIMEDOUT, errno.EACCES, errno.EPERM}
 
 
 class CollectionDeadline(Exception):
@@ -131,7 +140,7 @@ def write_json(path: Path, value: Any) -> None:
     fd, name = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=path.parent)
     temporary = Path(name)
     try:
-        with os.fdopen(fd, "w") as stream:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
             json.dump(value, stream, ensure_ascii=False, indent=2)
             stream.write("\n")
             stream.flush()
@@ -176,13 +185,15 @@ def review_policy(kind: str, models: list[str]) -> dict[str, Any]:
         raise ReviewError("models must be a nonempty unique list of codex,grok,claude,agy")
     if kind == "release" and ("codex" not in models or not {"grok", "claude"}.intersection(models)):
         raise ReviewError("Release static review requires codex plus grok or claude baseline reviewers")
-    return {"version": POLICY_VERSION, "models": models,
+    return {"version": POLICY_VERSION, "models": sorted(models),
             "scope": "release_tree_and_base_delta" if kind == "release" else "merge_base_to_head_delta",
             "all_models_approve": True, "blocked_severities": ["critical", "major"],
             "not_expanded_must_equal": 0, "static_only": True}
 
 
 def validate_manifest_policy(manifest: dict[str, Any]) -> None:
+    if type(manifest) is not dict:
+        raise ReviewError("MANIFEST_NOT_OBJECT")
     if manifest.get("kind") == "release" and (type(manifest.get("version")) is not str or not RELEASE_VERSION.fullmatch(manifest["version"])):
         raise ReviewError("RELEASE_VERSION_REQUIRED")
     if type(manifest.get("schema_version")) is not int or manifest["schema_version"] != 1:
@@ -196,26 +207,65 @@ def validate_manifest_policy(manifest: dict[str, Any]) -> None:
         raise ReviewError("Manifest does not match the complete current review policy")
 
 
-def load_json(path: Path, *, max_bytes: int = MAX_REPORT_BYTES) -> Any:
+def read_json_snapshot(path: Path, *, max_bytes: int = MAX_REPORT_BYTES):
+    """Bound type/size before hashing; parse and hash bytes from one safe fd."""
     check_deadline()
-    if path.is_symlink() or not path.is_file() or path.stat().st_size > max_bytes:
-        raise ReviewError(f"Missing, oversized, or symlink JSON: {path}")
+    try:
+        before = path.lstat()
+    except OSError as exc:
+        if temporary_os_error(exc):
+            raise CollectionUnavailable("JSON_ARTIFACT_TEMPORARILY_UNAVAILABLE") from exc
+        raise ReviewError("JSON_ARTIFACT_UNAVAILABLE") from exc
+    if not stat.S_ISREG(before.st_mode) or before.st_size > max_bytes:
+        raise ReviewError("JSON_ARTIFACT_NOT_REGULAR_OR_OVERSIZED")
+    flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
+    fd = os.open(path, flags)
+    try:
+        opened = os.fstat(fd)
+        if (not stat.S_ISREG(opened.st_mode) or opened.st_size > max_bytes
+                or (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino)):
+            raise ReviewError("JSON_ARTIFACT_CHANGED_DURING_OPEN")
+        chunks = []
+        total = 0
+        hashed = hashlib.sha256()
+        while True:
+            check_deadline()
+            chunk = os.read(fd, min(65536, max_bytes - total + 1))
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > max_bytes:
+                raise ReviewError("JSON_ARTIFACT_OVERSIZED")
+            chunks.append(chunk)
+            hashed.update(chunk)
+        after = os.fstat(fd)
+        if (opened.st_size, opened.st_mtime_ns, opened.st_ctime_ns) != (after.st_size, after.st_mtime_ns, after.st_ctime_ns):
+            raise ReviewError("JSON_ARTIFACT_CHANGED_DURING_READ")
+    finally:
+        os.close(fd)
 
     def pairs(items: list[tuple[str, Any]]) -> dict[str, Any]:
         result: dict[str, Any] = {}
         for key, value in items:
+            check_deadline()
             if key in result:
-                raise ReviewError(f"Duplicate JSON key: {key}")
+                raise ReviewError("JSON_DUPLICATE_KEY")
             result[key] = value
         return result
 
     def bad_constant(value: str) -> None:
-        raise ReviewError(f"Non-finite JSON value: {value}")
+        raise ReviewError("JSON_NON_FINITE_VALUE")
 
     try:
-        return json.loads(path.read_text(), object_pairs_hook=pairs, parse_constant=bad_constant)
+        value = json.loads(b"".join(chunks), object_pairs_hook=pairs, parse_constant=bad_constant)
+        check_deadline()
+        return value, hashed.hexdigest(), opened
     except (ValueError, UnicodeError) as exc:
-        raise ReviewError(f"Invalid JSON in {path.name}: {exc}") from exc
+        raise ReviewError("JSON_INVALID") from exc
+
+
+def load_json(path: Path, *, max_bytes: int = MAX_REPORT_BYTES) -> Any:
+    return read_json_snapshot(path, max_bytes=max_bytes)[0]
 
 
 def validate_report(report: Any) -> dict[str, Any]:
@@ -274,14 +324,14 @@ def git_environment() -> dict[str, str]:
 def command(argv: list[str], cwd: Path | None = None, *, timeout: float = 30,
             env: dict[str, str] | None = None) -> str:
     try:
-        result = subprocess.run(argv, cwd=cwd, env=env, text=True, capture_output=True, timeout=command_timeout(timeout), check=False)
+        result = subprocess.run(argv, cwd=cwd, env=env, text=True, encoding="utf-8", capture_output=True, timeout=command_timeout(timeout), check=False)
     except subprocess.TimeoutExpired as exc:
         check_deadline()
-        raise ReviewError("PREPARATION_COMMAND_TIMEOUT") from exc
+        raise CollectionUnavailable("PREPARATION_COMMAND_TIMEOUT") from exc
     except OSError as exc:
         # Command output can contain credentials or hostile repository text.
         # Never copy argv/stderr into an attestation or a public comment.
-        raise ReviewError("PREPARATION_COMMAND_UNAVAILABLE") from exc
+        raise CollectionUnavailable("PREPARATION_COMMAND_UNAVAILABLE") from exc
     if result.returncode:
         raise ReviewError(f"PREPARATION_COMMAND_EXIT_{result.returncode}")
     check_deadline()
@@ -441,6 +491,8 @@ def environment(args: argparse.Namespace) -> tuple[dict[str, str], dict[str, Any
                                   "mmrun_kind": getattr(args, "mmrun_kind", "compat"),
                                   "dispatch_helper": str(Path(__file__).with_name("runner_dispatch.py").resolve()),
                                   "dispatch_helper_sha256": digest(Path(__file__).with_name("runner_dispatch.py").resolve()),
+                                  "review_runner_path": str(Path(__file__).resolve()),
+                                  "review_runner_sha256": digest(Path(__file__).resolve()),
                                   "mmrun_home": str(mmrun_home), "session": env["MMRUN_SESSION"],
                                   "models": list(args.models), "input_files": {}}
     if "claude" in args.models and provenance["mmrun_kind"] != "compat":
@@ -471,7 +523,7 @@ def environment(args: argparse.Namespace) -> tuple[dict[str, str], dict[str, Any
         profile = codex_home / "mm.config.toml"
         try:
             import tomllib
-            config = tomllib.loads(profile.read_text())
+            config = tomllib.loads(profile.read_text(encoding="utf-8"))
             filesystem = config["permissions"][config["default_permissions"]]["filesystem"]
         except (ImportError, OSError, ValueError, KeyError, TypeError) as exc:
             raise ReviewError("Python 3.11+ and a readable mm.config.toml permission profile are required") from exc
@@ -499,6 +551,7 @@ def preparing(args: argparse.Namespace):
     if not JOB.fullmatch(args.job_id) or args.job_id in (".", ".."):
         raise ReviewError("Invalid job ID")
     policy = review_policy(args.kind, args.models)
+    args.models = list(policy["models"])
     if not all(math.isfinite(value) and value > 0 for value in (args.timeout, args.poll_interval)):
         raise ReviewError("timeout and poll interval must be positive")
     repo = Path(args.repo).expanduser().resolve()
@@ -606,7 +659,10 @@ def validate_execution_provenance(provenance: dict[str, Any]) -> None:
     validate_input_files(provenance)
     if provenance.get("mmrun_kind") not in ("upstream", "compat"):
         raise ReviewError("MMRUN_KIND_REQUIRED")
-    for key, hash_key in (("mmrun_path", "mmrun_sha256"), ("dispatch_helper", "dispatch_helper_sha256")):
+    if provenance.get("review_runner_path") != str(Path(__file__).resolve()):
+        raise ReviewError("REVIEW_RUNNER_MODULE_MISMATCH")
+    for key, hash_key in (("mmrun_path", "mmrun_sha256"), ("dispatch_helper", "dispatch_helper_sha256"),
+                          ("review_runner_path", "review_runner_sha256")):
         value = provenance.get(key)
         if not value or digest(Path(value)) != provenance.get(hash_key):
             raise ReviewError("EXECUTION_PROVENANCE_CHANGED")
@@ -657,7 +713,7 @@ def _prepare_checkout(args, repo, tree, merge_base, env, provenance, job_dir, po
     notes += (f"Source repository (identity only; do not review this checkout): {repo}\n"
               f"Review only this frozen checkout: {frozen}\nBase tip (for target identity): {args.base}\n"
               f"Head: {args.head}\nReviewed merge-base for triple-dot delta: {merge_base}\nTree: {tree}\n")
-    (job_dir / "review-notes.txt").write_text(notes)
+    (job_dir / "review-notes.txt").write_text(notes, encoding="utf-8")
     manifest["provenance"]["notes_sha256"] = digest(job_dir / "review-notes.txt")
     record_prompt_input(job_dir / "review-notes.txt", provenance, "notes")
     manifest["empty_delta"] = empty_delta(frozen, args.base, args.head)
@@ -670,7 +726,7 @@ def _prepare_checkout(args, repo, tree, merge_base, env, provenance, job_dir, po
                   + "\n## Complete target tree inventory (git ls-tree)\n" + git(frozen, "ls-tree", "-r", "--full-tree", args.head)
                   + "\n\n## Optional base-to-head delta\n[empty delta]\n"
                   "\n## 待审内容\n" + inline_small_tree(frozen, args.head))
-        (job_dir / "release-prompt.txt").write_text(prompt)
+        (job_dir / "release-prompt.txt").write_text(prompt, encoding="utf-8")
         manifest["provenance"]["release_prompt_sha256"] = digest(job_dir / "release-prompt.txt")
         record_prompt_input(job_dir / "release-prompt.txt", provenance, "full_tree_prompt")
     validate_input_files(provenance)
@@ -683,7 +739,7 @@ def kv(path: Path) -> dict[str, str]:
     if path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_REPORT_BYTES:
         raise ReviewError(f"Missing/invalid metadata: {path}")
     result: dict[str, str] = {}
-    for line in path.read_text().splitlines():
+    for line in path.read_text(encoding="utf-8").splitlines():
         key, sep, value = line.partition("=")
         if not sep or key in result:
             raise ReviewError(f"Malformed metadata: {path.name}")
@@ -726,7 +782,7 @@ def attest(job_dir: Path, manifest: dict[str, Any], verdict: str, *, reasons: li
     return result
 
 
-def collect(job_dir: Path, *, deadline=None) -> dict[str, Any]:
+def collect(job_dir: Path, *, deadline=None, _initial_wait=False) -> dict[str, Any]:
     if job_dir.is_symlink():
         raise ReviewError("Job directory may not be a symlink")
     job_dir = job_dir.resolve()
@@ -736,7 +792,7 @@ def collect(job_dir: Path, *, deadline=None) -> dict[str, Any]:
                 return pending(job_dir, "Preparation, dispatch, or collection in progress; processes retained")
             if not (job_dir / "manifest.json").exists():
                 return pending(job_dir, "No prepared manifest has been published")
-            return _collect_locked(job_dir)
+            return _collect_locked(job_dir, initial_wait=_initial_wait)
     except CollectionDeadline:
         return pending(job_dir, "Collection budget exhausted; evidence retained for the next pass")
 
@@ -754,6 +810,19 @@ def process_alive(pid: Any) -> bool:
 
 
 
+
+_LIBPROC = None
+
+
+def libproc():
+    global _LIBPROC
+    if _LIBPROC is None:
+        library = ctypes.CDLL("/usr/lib/libproc.dylib")
+        library.proc_pidinfo.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_uint64, ctypes.c_void_p, ctypes.c_int]
+        library.proc_pidinfo.restype = ctypes.c_int
+        _LIBPROC = library
+    return _LIBPROC
+
 def process_identity(pid: int) -> dict[str, Any] | None:
     """Kernel process birth identity; PID alone is never sufficient for recovery."""
     if type(pid) is not int or pid <= 0:
@@ -766,16 +835,15 @@ def process_identity(pid: int) -> dict[str, Any] | None:
                         ("name", ctypes.c_char * 32), ("tail", ctypes.c_uint32 * 6),
                         ("started_sec", ctypes.c_uint64), ("started_usec", ctypes.c_uint64)]
         info = BSDInfo()
-        lib = ctypes.CDLL("/usr/lib/libproc.dylib", use_errno=True)
-        result = lib.proc_pidinfo(pid, 3, 0, ctypes.byref(info), ctypes.sizeof(info))
+        result = libproc().proc_pidinfo(pid, 3, 0, ctypes.byref(info), ctypes.sizeof(info))
         if result == ctypes.sizeof(info) and info.started_sec:
             return {"pid": pid, "platform": "darwin", "start": f"{info.started_sec}:{info.started_usec}",
                     "started_at": info.started_sec + info.started_usec / 1_000_000}
     elif sys.platform.startswith("linux"):
         try:
-            raw = Path(f"/proc/{pid}/stat").read_text()
+            raw = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8")
             ticks = int(raw[raw.rfind(")") + 2:].split()[19])
-            boot = Path("/proc/sys/kernel/random/boot_id").read_text().strip()
+            boot = Path("/proc/sys/kernel/random/boot_id").read_text(encoding="utf-8").strip()
             return {"pid": pid, "platform": "linux", "start": boot + ":" + str(ticks)}
         except (OSError, ValueError, IndexError):
             pass
@@ -823,7 +891,7 @@ def bind_worker_identities(manifest: dict[str, Any], root: Path) -> None:
             continue
         if pid_path.is_symlink() or pid_path.stat().st_size > 32:
             raise ReviewError("WORKER_PID_UNKNOWN")
-        raw = pid_path.read_text().strip()
+        raw = pid_path.read_text(encoding="utf-8").strip()
         if not raw.isdecimal() or int(raw) <= 0:
             raise ReviewError("WORKER_PID_UNKNOWN")
         current = process_identity(int(raw))
@@ -832,12 +900,12 @@ def bind_worker_identities(manifest: dict[str, Any], root: Path) -> None:
         started_path = root / f"{model}.started"
         if started_path.is_symlink() or not started_path.is_file() or started_path.stat().st_size > 32:
             raise ReviewError("WORKER_START_TIME_UNKNOWN")
-        started = started_path.read_text().strip()
+        started = started_path.read_text(encoding="utf-8").strip()
         if not started.isdecimal():
             raise ReviewError("WORKER_START_TIME_UNKNOWN")
         if current["platform"] == "linux":
             # Linux's boot timestamp + ticks resolves the same epoch used upstream.
-            boot_line = next((line for line in Path("/proc/stat").read_text().splitlines() if line.startswith("btime ")), None)
+            boot_line = next((line for line in Path("/proc/stat").read_text(encoding="utf-8").splitlines() if line.startswith("btime ")), None)
             if boot_line is None:
                 raise ReviewError("WORKER_START_TIME_UNKNOWN")
             birth = int(boot_line.split()[1]) + int(current["start"].rsplit(":", 1)[1]) / os.sysconf("SC_CLK_TCK")
@@ -875,16 +943,37 @@ def refresh_worker_status(manifest: dict[str, Any]) -> None:
     env["MMRUN_SESSION"] = provenance["session"]
     try:
         result = subprocess.run([str(executable), "status", manifest["mmrun_run_id"]], env=env,
-                                text=True, capture_output=True, timeout=command_timeout(30), check=False)
+                                text=True, encoding="utf-8", capture_output=True, timeout=command_timeout(30), check=False)
     except (OSError, subprocess.TimeoutExpired) as exc:
         check_deadline()
-        raise ReviewError("MODEL_LIVENESS_UNAVAILABLE") from exc
+        raise CollectionUnavailable("MODEL_LIVENESS_UNAVAILABLE") from exc
     if result.returncode:
         raise ReviewError("mmrun status failed to verify model liveness")
 
 
-def _collect_locked(job_dir: Path) -> dict[str, Any]:
-    manifest = load_json(job_dir / "manifest.json")
+
+def validate_target_evidence(manifest: dict[str, Any]) -> None:
+    validate_execution_provenance(manifest["provenance"])
+    source = Path(manifest["source_repo"])
+    check_target(source, manifest["base_sha"], manifest["head_sha"], kind=manifest["kind"])
+    actual_merge_base = git(source, "merge-base", manifest["base_sha"], manifest["head_sha"])
+    if manifest.get("merge_base_sha") != actual_merge_base:
+        raise ReviewError("Review merge-base does not match the bound base/head commits")
+    verify_frozen(manifest)
+
+def _collect_locked(job_dir: Path, *, initial_wait=False) -> dict[str, Any]:
+    try:
+        manifest = load_json(job_dir / "manifest.json")
+    except CollectionUnavailable:
+        return pending(job_dir, "MANIFEST_TEMPORARILY_UNAVAILABLE")
+    except (ReviewError, OSError) as exc:
+        if isinstance(exc, OSError) and temporary_os_error(exc):
+            return pending(job_dir, "MANIFEST_TEMPORARILY_UNAVAILABLE")
+        return {"job_id": job_dir.name, "verdict": "FAILED", "attestation_path": None,
+                "reasons": ["MANIFEST_UNREADABLE"]}
+    if type(manifest) is not dict:
+        return {"job_id": job_dir.name, "verdict": "FAILED", "attestation_path": None,
+                "reasons": ["MANIFEST_NOT_OBJECT"]}
     reports: dict[str, Any] = {}
     artifacts: list[dict[str, str]] = []
     try:
@@ -895,6 +984,7 @@ def _collect_locked(job_dir: Path) -> dict[str, Any]:
             raise ReviewError("Attestation repository must be the frozen reviewed checkout")
         if Path(manifest["frozen_checkout"]) != job_dir / "frozen":
             raise ReviewError("Frozen checkout escaped this job directory")
+        previously_completed = bool(manifest.get("dispatch_receipt_sha256"))
         recover_dispatch(job_dir, manifest)
         if manifest.get("dispatch_error"):
             raise ReviewError("DISPATCH_FAILED")
@@ -903,16 +993,13 @@ def _collect_locked(job_dir: Path) -> dict[str, Any]:
         if not manifest.get("dispatch_result") or not manifest.get("dispatch_receipt_sha256"):
             if any(recorded_process_alive(manifest, role) for role in ("supervisor", "dispatch", "controller")):
                 return attest(job_dir, manifest, "RUNNING_TIMEOUT", reasons=["Awaiting dispatcher completion receipt"])
+            if manifest.get("spawn_intent") and not previously_completed:
+                return pending(job_dir, "DISPATCH_OUTCOME_UNKNOWN: spawn intent exists; recovery remains blocked")
             raise ReviewError("DISPATCH_COMPLETION_UNKNOWN")
         if manifest["dispatch_result"].get("started") is not True:
             raise ReviewError("DISPATCH_NOT_STARTED")
-        validate_execution_provenance(manifest["provenance"])
-        source = Path(manifest["source_repo"])
-        check_target(source, manifest["base_sha"], manifest["head_sha"], kind=manifest["kind"])
-        actual_merge_base = git(source, "merge-base", manifest["base_sha"], manifest["head_sha"])
-        if manifest.get("merge_base_sha") != actual_merge_base:
-            raise ReviewError("Review merge-base does not match the bound base/head commits")
-        verify_frozen(manifest)
+        if not initial_wait:
+            validate_target_evidence(manifest)
         if not manifest.get("mmrun_run_id"):
             raise ReviewError("DISPATCH_RUN_ID_MISSING")
         run_id = manifest["mmrun_run_id"]
@@ -937,17 +1024,19 @@ def _collect_locked(job_dir: Path) -> dict[str, Any]:
         for model in models:
             status_file = root / f"{model}.status"
             digest(status_file)
-            statuses[model] = status_file.read_text().strip()
+            statuses[model] = status_file.read_text(encoding="utf-8").strip()
         if any(s == "RUNNING" for s in statuses.values()):
             refresh_worker_status(manifest)
             for model in models:
                 status_file = root / f"{model}.status"
                 digest(status_file)
-                statuses[model] = status_file.read_text().strip()
+                statuses[model] = status_file.read_text(encoding="utf-8").strip()
         if any(s != "DONE" and s != "RUNNING" for s in statuses.values()):
             raise ReviewError(f"Model execution failed/stale: {statuses}")
         if any(s == "RUNNING" for s in statuses.values()):
-            return attest(job_dir, manifest, "RUNNING_TIMEOUT", reasons=["Models still running; no process killed or checkout removed"])
+            return pending(job_dir, "Models still running; full evidence validation deferred until terminal status")
+        if initial_wait:
+            validate_target_evidence(manifest)
         names = ["run.meta"] + [f"{m}.{suffix}" for m in models for suffix in ("status", "meta", "json", "out")]
         for provider in ("grok", "claude"):
             if provider in models and (root / f"{provider}.normalized.json").exists():
@@ -979,7 +1068,11 @@ def _collect_locked(job_dir: Path) -> dict[str, Any]:
                 reasons.append(f"{model}: blocking findings")
         check_deadline()
         return attest(job_dir, manifest, "NEEDS_REVIEW" if reasons else "PASS", reasons=reasons, artifacts=artifacts, reports=reports)
+    except CollectionUnavailable as exc:
+        return pending(job_dir, str(exc))
     except (ReviewError, OSError, KeyError, TypeError, ValueError) as exc:
+        if isinstance(exc, OSError) and temporary_os_error(exc):
+            return pending(job_dir, "EVIDENCE_TEMPORARILY_UNAVAILABLE")
         return attest(job_dir, manifest, "FAILED", reasons=[str(exc) if isinstance(exc, ReviewError) else "EVIDENCE_VALIDATION_FAILED"], artifacts=artifacts, reports=reports)
 
 
@@ -990,7 +1083,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     if result is not None:
         return result
     while True:
-        result = collect(job_dir, deadline=deadline)
+        result = collect(job_dir, deadline=deadline, _initial_wait=True)
         if result["verdict"] != "RUNNING_TIMEOUT" or time.monotonic() >= deadline:
             return result
         time.sleep(min(args.poll_interval, max(0, deadline - time.monotonic())))
@@ -1012,33 +1105,37 @@ def _dispatch_locked(args, job_dir, manifest, env, deadline):
                "cwd": manifest["controller_checkout"],
                "stdin": str(job_dir / "release-prompt.txt") if manifest.get("empty_delta") else os.devnull}
     write_json(job_dir / "dispatch-request.json", request)
-    manifest.update(phase="DISPATCHING", dispatch_request_sha256=digest(job_dir / "dispatch-request.json"))
+    manifest.update(phase="DISPATCHING", spawn_intent=True, dispatch_request_sha256=digest(job_dir / "dispatch-request.json"))
     write_json(job_dir / "manifest.json", manifest)
     helper = Path(manifest["provenance"]["dispatch_helper"])
     if digest(helper) != manifest["provenance"]["dispatch_helper_sha256"]:
         raise ReviewError("DISPATCH_HELPER_CHANGED")
+    # Only an exception from Popen itself proves that no supervisor started.
     try:
-        # A separate session survives controller timeout/exit. It owns wait()
-        # and a durable result; no secret environment is persisted in files.
         proc = subprocess.Popen([sys.executable, str(helper), str(job_dir)],
                                 cwd=manifest["controller_checkout"], env=env,
                                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                                 stderr=subprocess.DEVNULL, start_new_session=True, shell=False)
-        manifest["supervisor_pid"] = proc.pid
-        manifest["supervisor_identity"] = process_identity(proc.pid)
-        write_json(job_dir / "manifest.json", manifest)
-        try:
-            proc.wait(timeout=max(0.01, deadline - time.monotonic()))
-        except subprocess.TimeoutExpired:
-            return attest(job_dir, manifest, "RUNNING_TIMEOUT", reasons=["Dispatch supervisor still running; use collect"])
-        recover_dispatch(job_dir, manifest)
-        return None
     except OSError:
-        # No supervisor was launched; this is the only parent-owned terminal
-        # failure. The receipt protocol handles failures after launch.
         manifest.update(dispatch_error="DISPATCH_SUPERVISOR_START_FAILED", phase="DISPATCH_FAILED")
         write_json(job_dir / "manifest.json", manifest)
         return attest(job_dir, manifest, "FAILED", reasons=["DISPATCH_SUPERVISOR_START_FAILED"])
+    manifest["supervisor_pid"] = proc.pid
+    try:
+        # The durable spawn intent already exists. Identity/persistence errors
+        # after this point must never be reclassified as a failed Popen.
+        manifest["supervisor_identity"] = process_identity(proc.pid)
+        write_json(job_dir / "manifest.json", manifest)
+    except (OSError, ReviewError):
+        return pending(job_dir, "SUPERVISOR_STARTED_IDENTITY_UNKNOWN")
+    try:
+        proc.wait(timeout=max(0.01, deadline - time.monotonic()))
+    except subprocess.TimeoutExpired:
+        return pending(job_dir, "Dispatch supervisor still running; use collect")
+    except OSError:
+        return pending(job_dir, "SUPERVISOR_WAIT_UNAVAILABLE")
+    recover_dispatch(job_dir, manifest)
+    return None
 
 
 def recover_dispatch(job_dir: Path, manifest: dict[str, Any]) -> None:
@@ -1060,7 +1157,7 @@ def recover_dispatch(job_dir: Path, manifest: dict[str, Any]) -> None:
             identity = load_json(identity_path)
             if identity.get("job_id") != manifest["job_id"] or identity.get("request_sha256") != request_hash:
                 raise ReviewError("DISPATCH_IDENTITY_MISMATCH")
-            for key in ("supervisor_pid", "dispatch_pid", "supervisor_identity", "dispatch_identity"):
+            for key in ("supervisor_pid", "dispatch_pid", "supervisor_identity", "dispatch_identity", "spawn_intent"):
                 if key in identity:
                     manifest[key] = identity[key]
         if receipt.exists():
@@ -1077,7 +1174,7 @@ def recover_dispatch(job_dir: Path, manifest: dict[str, Any]) -> None:
         if output.exists():
             if output.is_symlink() or output.stat().st_size > MAX_REPORT_BYTES:
                 raise ReviewError("INVALID_DISPATCH_OUTPUT")
-            matches = RUN.findall(output.read_text())
+            matches = RUN.findall(output.read_text(encoding="utf-8"))
         if len(matches) > 1:
             raise ReviewError("Dispatch produced ambiguous run IDs")
         root = Path(manifest["provenance"]["mmrun_home"])
@@ -1123,6 +1220,8 @@ def require_quiescent(job_dir: Path, models: list[str] | None = None) -> None:
             raise ReviewError("DISPATCH_IDENTITY_UNKNOWN")
         return
     manifest = load_json(path)
+    if type(manifest) is not dict:
+        raise ReviewError("MANIFEST_NOT_OBJECT")
     recover_dispatch(job_dir, manifest)
     if type(manifest.get("controller_pid")) is not int or manifest["controller_pid"] <= 0:
         raise ReviewError("CONTROLLER_IDENTITY_UNKNOWN")
@@ -1154,7 +1253,7 @@ def require_quiescent(job_dir: Path, models: list[str] | None = None) -> None:
         pid_path = root / f"{model}.pid"
         if pid_path.is_symlink() or not pid_path.is_file() or pid_path.stat().st_size > 32:
             raise ReviewError("WORKER_PID_UNKNOWN")
-        raw = pid_path.read_text().strip()
+        raw = pid_path.read_text(encoding="utf-8").strip()
         if not raw.isdecimal() or int(raw) <= 0:
             raise ReviewError("WORKER_ACTIVE_OR_UNKNOWN")
         identity = manifest.get("worker_identities", {}).get(model)
@@ -1180,9 +1279,9 @@ def parser() -> argparse.ArgumentParser:
     launch.add_argument("--base", required=True)
     launch.add_argument("--head", required=True)
     launch.add_argument("--kind", choices=("pr", "release"), required=True)
-    launch.add_argument("--models", default="codex,claude", type=lambda value: value.split(","))
+    launch.add_argument("--models", default="codex,claude", type=lambda value: sorted(value.split(",")))
     launch.add_argument("--timeout", type=float, default=3600)
-    launch.add_argument("--poll-interval", type=float, default=2)
+    launch.add_argument("--poll-interval", type=float, default=10)
     launch.add_argument("--mmrun-kind", choices=("compat", "upstream"), default="compat")
     launch.add_argument("--version", help="Release version bound to this review")
     launch.add_argument("--mmrun", default=str(Path.home() / ".claude/bin/mmrun"))

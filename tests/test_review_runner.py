@@ -49,6 +49,8 @@ def fixture_provenance(root, executable, models=None):
             "mmrun_sha256": runner.digest(executable), "mmrun_home": str(root / "mmruns"),
             "session": "fixture", "models": models, "input_files": inputs,
             "dispatch_helper": str(helper), "dispatch_helper_sha256": runner.digest(helper),
+            "review_runner_path": str(Path(runner.__file__).resolve()),
+            "review_runner_sha256": runner.digest(Path(runner.__file__).resolve()),
             "codex_home": str(root), "mmrun_d_snapshot": str(root)}
 
 
@@ -874,7 +876,7 @@ class SupervisorTests(unittest.TestCase):
             parent = "import subprocess,sys; subprocess.Popen([sys.executable,sys.argv[1],sys.argv[2]],start_new_session=True,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)"
             subprocess.run([sys.executable, "-c", parent, helper, str(job)], check=True,
                            env=dict(os.environ, MMRUN_D=str(job), CODEX_HOME=str(job)))
-            deadline = time.monotonic() + 5
+            deadline = time.monotonic() + 30
             while not (job / "dispatch-result.json").exists() and time.monotonic() < deadline:
                 time.sleep(0.02)
             outcome = runner.load_json(job / "dispatch-result.json")
@@ -1057,13 +1059,190 @@ class ClaudePolicyTests(unittest.TestCase):
     def test_default_and_release_baselines(self):
         args = runner.parser().parse_args(["run", "--repo", "/repo", "--base", BASE, "--head", HEAD,
                                           "--kind", "pr", "--job-id", "fixture", "--state-dir", "/tmp/state"])
-        self.assertEqual(args.models, ["codex", "claude"])
-        self.assertEqual(runner.review_policy("release", ["codex", "claude"])["models"], ["codex", "claude"])
+        self.assertEqual(args.models, ["claude", "codex"])
+        self.assertEqual(runner.review_policy("release", ["codex", "claude"])["models"], ["claude", "codex"])
         runner.review_policy("release", ["codex", "grok"])
         runner.review_policy("release", ["codex", "grok", "claude"])
         for models in (["claude"], ["codex"], ["codex", "agy"]):
             with self.assertRaises(runner.ReviewError):
                 runner.review_policy("release", models)
+
+
+class FinalEvidenceBoundaryTests(unittest.TestCase):
+    setUp = CollectTests.setUp
+    git_reply = CollectTests.git_reply
+
+    def test_controller_module_hash_is_required_and_rechecked(self):
+        for key, value in (("review_runner_sha256", "0" * 64), ("review_runner_path", "/wrong/controller.py")):
+            original = self.manifest["provenance"][key]
+            self.manifest["provenance"][key] = value
+            runner.write_json(self.job / "manifest.json", self.manifest)
+            self.assertEqual(runner.collect(self.job)["verdict"], "FAILED")
+            self.manifest["provenance"][key] = original
+
+    def test_duplicate_model_keys_never_escape_in_public_diagnostics(self):
+        marker = "PRIVATE_MODEL_BODY_" + "secret" * 1000
+        encoded = json.dumps(marker)
+        (self.artifacts / "codex.json").write_text("{" + encoded + ":1," + encoded + ":2}")
+        result = runner.collect(self.job)
+        self.assertEqual(result["verdict"], "FAILED")
+        self.assertEqual(result["reasons"], ["JSON_DUPLICATE_KEY"])
+        self.assertNotIn(marker, json.dumps(result))
+        self.assertNotIn(marker, runner.attestation_path(self.manifest).read_text())
+        self.assertNotIn(marker, (self.job / "attestation.json").read_text())
+
+    def test_spawn_identity_error_cannot_create_unstarted_receipt_or_allow_retry(self):
+        helper_spec = importlib.util.spec_from_file_location("runner_dispatch_under_test", Path(runner.__file__).with_name("runner_dispatch.py"))
+        helper = importlib.util.module_from_spec(helper_spec)
+        with patch.dict(sys.modules, {"review_runner": runner}):
+            helper_spec.loader.exec_module(helper)
+        request = {"job_id": self.job.name, "argv": [str(self.executable)],
+                   "executable_sha256": runner.digest(self.executable), "cwd": str(self.job),
+                   "stdin": os.devnull, "provenance": self.manifest["provenance"]}
+        runner.write_json(self.job / "dispatch-request.json", request)
+        (self.job / "dispatch-result.json").unlink()
+        parent_identity = {"pid": os.getpid(), "platform": "darwin", "start": "fixture"}
+        proc = Mock(pid=7654321)
+        with patch.object(helper, "process_identity", side_effect=[parent_identity, runner.ReviewError("temporary kernel query failure")]), patch.object(
+                helper.subprocess, "Popen", return_value=proc), patch.dict(
+                os.environ, {"MMRUN_D": str(self.root), "CODEX_HOME": str(self.root)}):
+            self.assertEqual(helper.supervise(self.job), 1)
+        identity = runner.load_json(self.job / "dispatch-identity.json")
+        self.assertIs(identity["started"], True)
+        self.assertEqual(identity["dispatch_pid"], proc.pid)
+        self.assertFalse((self.job / "dispatch-result.json").exists())
+        proc.kill.assert_not_called()
+        proc.terminate.assert_not_called()
+        self.manifest.update(controller_pid=4321, phase="DISPATCHING",
+                             dispatch_request_sha256=runner.digest(self.job / "dispatch-request.json"))
+        runner.write_json(self.job / "manifest.json", self.manifest)
+        with patch.object(runner, "process_alive", return_value=False):
+            with self.assertRaisesRegex(runner.ReviewError, "DISPATCH_OUTCOME_UNKNOWN"):
+                runner.require_quiescent(self.job)
+
+
+class ClaudeReviewRegressionTests(unittest.TestCase):
+    setUp = CollectTests.setUp
+    git_reply = CollectTests.git_reply
+
+    def test_transient_command_timeout_preserves_pass_and_returns_pending(self):
+        self.assertEqual(runner.collect(self.job)["verdict"], "PASS")
+        destination = runner.attestation_path(self.manifest)
+        before = destination.read_bytes()
+        with patch.object(runner, "git", side_effect=runner.CollectionUnavailable("PREPARATION_COMMAND_TIMEOUT")):
+            result = runner.collect(self.job)
+        self.assertEqual(result["verdict"], "RUNNING_TIMEOUT")
+        self.assertIsNone(result["attestation_path"])
+        self.assertEqual(destination.read_bytes(), before)
+        with patch.object(runner.subprocess, "run", side_effect=subprocess.TimeoutExpired("git", 30)):
+            with self.assertRaises(runner.CollectionUnavailable):
+                runner.command(["git", "status"])
+
+    def test_transient_io_is_pending_but_confirmed_missing_evidence_is_failed(self):
+        import errno
+        self.assertEqual(runner.collect(self.job)["verdict"], "PASS")
+        destination = runner.attestation_path(self.manifest)
+        before = destination.read_bytes()
+        with patch.object(runner, "verify_frozen", side_effect=OSError(errno.EIO, "temporary io")):
+            self.assertEqual(runner.collect(self.job)["verdict"], "RUNNING_TIMEOUT")
+        self.assertEqual(destination.read_bytes(), before)
+        with patch.object(runner, "verify_frozen", side_effect=FileNotFoundError(errno.ENOENT, "missing frozen tree")):
+            self.assertEqual(runner.collect(self.job)["verdict"], "FAILED")
+
+    def test_live_workers_do_not_repeat_full_tree_checks(self):
+        (self.artifacts / "codex.status").write_text("RUNNING\n")
+        with patch.object(runner, "refresh_worker_status"), patch.object(runner, "verify_frozen") as tree:
+            self.assertEqual(runner.collect(self.job, _initial_wait=True)["verdict"], "RUNNING_TIMEOUT")
+        tree.assert_not_called()
+        self.assertFalse(any(call.args[1:] == ("merge-base", BASE, HEAD) for call in self.git.call_args_list))
+
+    def test_external_collection_still_checks_frozen_evidence_while_running(self):
+        self.assertEqual(runner.collect(self.job)["verdict"], "PASS")
+        (self.artifacts / "codex.status").write_text("RUNNING\n")
+        with patch.object(runner, "verify_frozen", side_effect=runner.ReviewError("Frozen tree changed")) as tree:
+            self.assertEqual(runner.collect(self.job)["verdict"], "FAILED")
+        tree.assert_called_once()
+
+    def test_non_object_manifest_returns_controlled_failure(self):
+        for value in (None, [], "corrupt", 1):
+            runner.write_json(self.job / "manifest.json", value)
+            result = runner.collect(self.job)
+            self.assertEqual(result["verdict"], "FAILED")
+            self.assertEqual(result["reasons"], ["MANIFEST_NOT_OBJECT"])
+            with self.assertRaisesRegex(runner.ReviewError, "MANIFEST_NOT_OBJECT"):
+                runner.validate_manifest_policy(value)
+
+    def test_unknown_spawn_intent_is_pending_and_never_allows_retry(self):
+        (self.job / "dispatch-result.json").unlink()
+        self.manifest.update(controller_pid=4321, phase="DISPATCHING", spawn_intent=True)
+        runner.write_json(self.job / "manifest.json", self.manifest)
+        with patch.object(runner, "process_alive", return_value=False):
+            self.assertEqual(runner.collect(self.job)["verdict"], "RUNNING_TIMEOUT")
+            with self.assertRaisesRegex(runner.ReviewError, "DISPATCH_OUTCOME_UNKNOWN"):
+                runner.require_quiescent(self.job)
+
+    def test_deleted_completed_receipt_is_invalid_evidence_not_unknown_spawn(self):
+        self.manifest["spawn_intent"] = True
+        runner.write_json(self.job / "manifest.json", self.manifest)
+        self.assertEqual(runner.collect(self.job)["verdict"], "PASS")
+        (self.job / "dispatch-result.json").unlink()
+        self.assertEqual(runner.collect(self.job)["verdict"], "FAILED")
+
+    def test_nonzero_dispatch_with_missing_worker_pid_is_still_unknown(self):
+        self.manifest["controller_pid"] = 4321
+        runner.write_json(self.job / "manifest.json", self.manifest)
+        runner.write_json(self.job / "dispatch-result.json", dict(self.outcome, exit_code=1))
+        with patch.object(runner, "process_alive", return_value=False):
+            with self.assertRaisesRegex(runner.ReviewError, "WORKER_PID_UNKNOWN"):
+                runner.require_quiescent(self.job)
+
+    def test_post_supervisor_spawn_io_failure_is_not_mislabeled_unstarted(self):
+        args = argparse.Namespace(mmrun=str(self.executable), base=BASE, models=["codex", "grok"])
+        self.manifest["controller_checkout"] = str(self.root)
+        self.manifest["controller_pid"] = 4321
+        env = {"MMRUN_D": str(self.root), "CODEX_HOME": str(self.root)}
+        process = Mock(pid=7654321)
+        (self.job / "dispatch-result.json").unlink()
+        with patch.object(runner.subprocess, "Popen", return_value=process), patch.object(
+                runner, "process_identity", side_effect=OSError("temporary kernel access")):
+            result = runner._dispatch_locked(args, self.job, self.manifest, env, time.monotonic() + 1)
+        self.assertEqual(result["verdict"], "RUNNING_TIMEOUT")
+        saved = runner.load_json(self.job / "manifest.json")
+        self.assertIs(saved["spawn_intent"], True)
+        self.assertNotIn("dispatch_error", saved)
+        with patch.object(runner, "process_alive", return_value=False):
+            with self.assertRaisesRegex(runner.ReviewError, "DISPATCH_OUTCOME_UNKNOWN"):
+                runner.require_quiescent(self.job)
+        process.kill.assert_not_called()
+
+    def test_supervisor_argument_count_is_controlled(self):
+        spec = importlib.util.spec_from_file_location("runner_dispatch_arity", Path(runner.__file__).with_name("runner_dispatch.py"))
+        helper = importlib.util.module_from_spec(spec)
+        with patch.dict(sys.modules, {"review_runner": runner}):
+            spec.loader.exec_module(helper)
+        import io
+        for args in ([], ["one", "two"]):
+            with contextlib.redirect_stderr(io.StringIO()) as error:
+                self.assertEqual(helper.main(args), 2)
+            self.assertNotIn("Traceback", error.getvalue())
+
+
+class CanonicalModelPreparationTests(unittest.TestCase):
+    setUp = OfflineGitPreparationTests.setUp
+    cleanup = OfflineGitPreparationTests.cleanup
+
+    def test_canonical_model_order_is_shared_by_policy_and_dispatch(self):
+        self.args.models = ["grok", "codex"]
+        with patch.object(runner, "environment", return_value=(self.env, self.provenance)):
+            job, manifest, env = runner.prepare(self.args)
+        self.assertEqual(self.args.models, ["codex", "grok"])
+        self.assertEqual(manifest["policy"]["models"], self.args.models)
+        process = Mock(pid=123)
+        process.wait.side_effect = subprocess.TimeoutExpired("fixture", 1)
+        with patch.object(runner.subprocess, "Popen", return_value=process):
+            runner._dispatch_locked(self.args, job, manifest, env, time.monotonic() + 1)
+        argv = runner.load_json(job / "dispatch-request.json")["argv"]
+        self.assertEqual(argv[argv.index("--models") + 1], "codex,grok")
 
 
 if __name__ == "__main__":

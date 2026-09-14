@@ -27,9 +27,18 @@ def supervise(job_dir: Path) -> int:
         if digest(Path(argv[0])) != request['executable_sha256']:
             raise ReviewError('DISPATCH_EXECUTABLE_CHANGED')
         with Path(request['stdin']).open('rb') as stdin, (job_dir / 'dispatch.stdout').open('wb') as stdout, (job_dir / 'dispatch.stderr').open('wb') as stderr:
+            identity["spawn_intent"] = True
+            write_json(job_dir / 'dispatch-identity.json', identity)
             proc = subprocess.Popen(argv, cwd=request['cwd'], stdin=stdin, stdout=stdout, stderr=stderr,
                                     env=os.environ.copy(), shell=False)
-            identity.update(started=True, dispatch_pid=proc.pid, dispatch_identity=process_identity(proc.pid))
+            # Record the irreversible spawn before any fallible identity query.
+            # A query or persistence failure must never fabricate started=False.
+            identity['started'] = True
+            identity['dispatch_pid'] = proc.pid
+            write_json(job_dir / 'dispatch-identity.json', identity)
+            identity['dispatch_identity'] = process_identity(proc.pid)
+            if identity['dispatch_identity'] is None:
+                raise ReviewError('DISPATCH_PROCESS_IDENTITY_UNKNOWN')
             write_json(job_dir / 'dispatch-identity.json', identity)
             rc = proc.wait()
         result = dict(identity, exit_code=rc, finished_at=time.time())
@@ -43,5 +52,13 @@ def supervise(job_dir: Path) -> int:
     return 0
 
 
+def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
+    if len(argv) != 1:
+        print("usage: runner_dispatch.py <job-dir>", file=sys.stderr)
+        return 2
+    return supervise(Path(argv[0]).resolve())
+
+
 if __name__ == '__main__':
-    sys.exit(supervise(Path(sys.argv[1]).resolve()))
+    sys.exit(main())

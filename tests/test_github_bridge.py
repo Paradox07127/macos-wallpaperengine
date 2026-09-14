@@ -869,13 +869,17 @@ class BridgeTests(unittest.TestCase):
 
     def test_replayed_current_job_does_not_downgrade_its_terminal_retry_status(self):
         item = self.pr()
+        self.app.intake_pr(item)
         req = self.app.job(HEAD, BASE, "pr", pr_number=8)
         success = {"context": bridge.status_context(req), "state": "success",
                    "description": req["job_id"] + "-retry-123456789abc: passed"}
         self.remote.statuses[HEAD] = [success]
+        self.state.db.execute("DELETE FROM operations WHERE key LIKE '%:review:%'")
+        self.state.db.commit()
+        before = len(self.writes())
         self.app.intake_pr(item)
         self.assertEqual(self.remote.statuses[HEAD], [success])
-        self.assertEqual(self.writes(), [])
+        self.assertEqual(len(self.writes()), before)
 
     def test_comment_waits_for_failed_selected_issue_initialization(self):
         self.seed()
@@ -1053,6 +1057,182 @@ class BridgeTests(unittest.TestCase):
         with patch.object(bridge.os, "fsync", wraps=os.fsync) as sync:
             self.app.job(HEAD, BASE, "pr", pr_number=8)
         self.assertGreaterEqual(sync.call_count, 3)
+
+    def test_known_unstarted_create_and_comment_remain_retryable(self):
+        original = self.remote.multica
+        fail = [True]
+        def create(args, body=None):
+            if args[:2] == ["issue", "create"] and fail[0]:
+                fail[0] = False
+                raise bridge.CommandNotStarted("no process")
+            return original(args, body)
+        with patch.object(self.remote, "multica", side_effect=create):
+            with self.assertRaises(bridge.CommandNotStarted):
+                self.app.ensure_issue("known-source", "title", "body")
+            self.assertEqual(self.state.get("operations", "create:known-source", valuecol="state"), "retryable")
+            remote = self.app.ensure_issue("known-source", "title", "body")
+        fail[0] = True
+        def comment(args, body=None):
+            if args[:3] == ["issue", "comment", "add"] and fail[0]:
+                fail[0] = False
+                raise bridge.CommandNotStarted("no process")
+            return original(args, body)
+        with patch.object(self.remote, "multica", side_effect=comment):
+            with self.assertRaises(bridge.CommandNotStarted):
+                self.app.append(remote, "known-comment", "data")
+            self.assertEqual(self.state.get("operations", "comment:known-comment", valuecol="state"), "retryable")
+            self.app.append(remote, "known-comment", "data")
+        self.assertEqual(len(self.remote.issues), 1)
+        self.assertEqual(len(self.remote.comments[remote]), 1)
+
+    def test_missing_executable_is_distinct_from_postlaunch_failure(self):
+        with self.assertRaises(bridge.CommandNotStarted):
+            bridge.Commands(self.cfg).run([str(self.root / "missing-cli")])
+        with self.assertRaises(bridge.CommandError) as error:
+            bridge.Commands(self.cfg).run([sys.executable, "-c", "raise SystemExit(1)"])
+        self.assertNotIsInstance(error.exception, bridge.CommandNotStarted)
+
+    def test_initial_pr_creation_ack_loss_does_not_add_second_trigger(self):
+        item = self.pr()
+        self.remote.lose_create_ack = True
+        with self.assertRaises(bridge.BridgeError):
+            self.app.intake_pr(item)
+        self.app.intake_pr(item)
+        self.assertEqual(len(self.remote.issues), 1)
+        self.assertEqual(self.remote.comments, {})
+        req = json.loads(next(Path(self.cfg["jobs_dir"]).glob("*/request.json")).read_text())
+        self.assertEqual(bridge.current_generation(self.cfg, "remote-1"), req["job_id"])
+
+    def test_initial_pr_done_receipt_loss_does_not_add_second_trigger(self):
+        original = self.state.operation
+        failed = [False]
+        def lose(key, state, remote_id=None):
+            if ":review:" in key and state == "done" and not failed[0]:
+                failed[0] = True
+                raise OSError("local acknowledgement lost")
+            return original(key, state, remote_id)
+        item = self.pr()
+        with patch.object(self.state, "operation", side_effect=lose):
+            with self.assertRaises(OSError):
+                self.app.intake_pr(item)
+        self.app.intake_pr(item)
+        self.assertEqual(len(self.remote.issues), 1)
+        self.assertEqual(self.remote.comments, {})
+
+    def test_initial_history_command_waits_for_uncertain_first_delivery(self):
+        command = self.comment(body="/multica-triage", user={"id": 55, "login": "public-maintainer", "type": "User"})
+        self.remote.issue_threads[7] = [command]
+        self.remote.source_comments[command["id"]] = command
+        self.remote.permissions["public-maintainer"] = "write"
+        self.remote.lose_comment_ack = True
+        with self.assertRaises(bridge.BridgeError):
+            self.app.intake_issue(self.issue(comments=1), BEFORE)
+        with self.assertRaisesRegex(bridge.BridgeError, "unconfirmed initial"):
+            self.app.intake_comment(command)
+        self.app.drain_triage_pending()
+        self.assertEqual(self.queue_status(), {})
+        self.app.intake_issue(self.issue(comments=1), BEFORE)
+        self.app.intake_comment(command)
+        self.assertEqual(self.queue_status(), {})
+        self.assertEqual(len(self.remote.initial_comments["remote-1"]), 1)
+
+    def test_moving_updated_pagination_keeps_checkpoint_until_verified_rescan(self):
+        self.seed()
+        records = [self.issue(id=n, number=n, labels=[]) for n in range(1, 106)]
+        moved = [False]
+        original = self.remote.gh
+        def pages(endpoint, payload=None):
+            if "/issues?" not in endpoint:
+                return original(endpoint, payload)
+            page = int(parse_qs(urlsplit(endpoint).query)["page"][0])
+            result = list(records[(page - 1) * 100:page * 100])
+            if not moved[0]:
+                moved[0] = True
+                changed = {**records.pop(0), "updated_at": "2026-09-15T10:01:00Z"}
+                records.append(changed)
+            return result
+        with patch.object(self.remote, "gh", side_effect=pages), patch.object(bridge, "utcnow", return_value=TIME):
+            with self.assertRaises(bridge.BridgeError):
+                self.app.poll_once()
+            self.assertEqual(self.state.get("meta", "checkpoint"), BEFORE)
+            self.app.poll_once()
+        ids = {json.loads(row[0])["number"] for row in self.state.db.execute("SELECT payload FROM intake_events WHERE kind='issue'")}
+        self.assertIn(101, ids)
+        self.assertEqual(len(ids), 105)
+        self.assertEqual(self.state.get("meta", "checkpoint"), TIME)
+
+    def test_inbox_remote_calls_receive_subdeadline_and_followup_budget_is_restored(self):
+        self.seed()
+        observed = []
+        def inbox(baseline, deadline):
+            observed.append(deadline)
+            self.assertEqual(self.remote.deadline, deadline)
+        def followups(deadline):
+            self.assertGreater(deadline, observed[0])
+            self.assertEqual(self.remote.deadline, deadline)
+        with patch.object(self.app, "drain_intake_events", side_effect=inbox), \
+             patch.object(self.app, "drain_triage_pending", side_effect=followups):
+            self.app.poll_once()
+
+    def test_same_second_a_b_a_is_a_new_observation_not_a_dropped_duplicate(self):
+        self.seed()
+        self.app.intake_issue(self.issue(), BEFORE)
+        for body in ("state-A", "state-B", "state-A", "state-A"):
+            self.remote.github_issues = [self.issue(body=body)]
+            with patch.object(bridge, "utcnow", return_value=TIME):
+                self.app.poll_once()
+        bodies = [comment["content"] for comment in self.remote.comments["remote-1"]]
+        self.assertEqual(len(bodies), 3)
+        self.assertIn("state-A", bodies[0])
+        self.assertIn("state-B", bodies[1])
+        self.assertIn("state-A", bodies[2])
+
+    def test_local_profile_default_and_shared_release_contract(self):
+        self.assertEqual(self.cfg["multica_profile"], "desktop-127.0.0.1-8080")
+        self.assertIs(bridge.RELEASE_VERSION, bridge.runner.RELEASE_VERSION)
+
+    def test_queue_queries_use_history_and_due_indexes(self):
+        source_plan = self.state.db.execute("EXPLAIN QUERY PLAN SELECT 1 FROM intake_events WHERE source=? AND source_updated>? LIMIT 1", ("source", 0)).fetchall()
+        due_plan = self.state.db.execute("EXPLAIN QUERY PLAN SELECT key FROM intake_events WHERE status='pending' AND next_attempt_at<=? ORDER BY next_attempt_at,attempts,kind,key LIMIT 100", (TIME,)).fetchall()
+        triage_plan = self.state.db.execute("EXPLAIN QUERY PLAN SELECT event FROM triage_pending WHERE status='pending' AND next_attempt_at<=? ORDER BY next_attempt_at,attempts,created_at,event LIMIT 100", (TIME,)).fetchall()
+        self.assertIn("intake_source_version", str(source_plan))
+        self.assertIn("intake_due", str(due_plan))
+        self.assertIn("triage_due", str(triage_plan))
+
+    def test_rate_limit_deferral_does_not_age_attempt_priority(self):
+        self.app.intake_issue(self.issue(), BEFORE)
+        with patch.object(bridge, "utcnow", return_value=TIME):
+            item = self.followup()
+            event = self.app.comment_event(item)
+            self.app.queue_result(event, "pending", "tick_limit", count=False)
+            self.app.queue_result(event, "pending", "issue_cooldown", 60, count=False)
+        self.assertEqual(self.state.db.execute("SELECT attempts FROM triage_pending WHERE event=?", (event,)).fetchone()[0], 0)
+
+    def test_existing_job_schema_and_symlinks_are_rejected_before_pending(self):
+        req = self.app.job(HEAD, BASE, "pr", pr_number=8)
+        path = Path(self.cfg["jobs_dir"]) / req["job_id"] / "request.json"
+        original = path.read_text()
+        for version in (2, True):
+            path.write_text(json.dumps({**req, "schema_version": version}))
+            with self.assertRaises(bridge.BridgeError):
+                self.app.job(HEAD, BASE, "pr", pr_number=8)
+        other = self.root / "other.json"
+        other.write_text(original)
+        path.unlink()
+        path.symlink_to(other)
+        with self.assertRaisesRegex(bridge.BridgeError, "symlinks"):
+            self.app.job(HEAD, BASE, "pr", pr_number=8)
+
+    def test_doctor_exposes_uncertain_operation_keys_without_payloads(self):
+        self.state.operation("comment:uncertain-safe-id", "intent")
+        self.state.db.execute("INSERT INTO intake_events(key,kind,payload,last_error) VALUES (?,?,?,?)",
+                              ("event-key", "comment", '"private body"', "Uncertain operation comment:uncertain-safe-id"))
+        self.state.db.commit()
+        self.app.doctor()
+        log = "\n".join(self.log)
+        self.assertIn("comment:uncertain-safe-id", log)
+        self.assertIn("never automatically cleared", log)
+        self.assertNotIn("private body", log)
 
 
 if __name__ == "__main__":

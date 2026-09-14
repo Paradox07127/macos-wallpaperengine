@@ -10,9 +10,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-from github_bridge import RELEASE_VERSION
 from review_runner import (POLICY_VERSION, MAX_ATTESTATION_BYTES, ReviewError, load_json,
-                           validate_report, git as controlled_git, job_lock, validate_dispatch_receipt, JOB)
+                           validate_report, git as controlled_git, job_lock, validate_dispatch_receipt,
+                           RELEASE_VERSION, read_json_snapshot)
 
 
 class GateError(ValueError):
@@ -50,9 +50,7 @@ def validate(repo, attestation, base_sha, head_sha):
     """Hold the collector lifecycle lock and pin both control evidence files."""
     attestation = Path(attestation).absolute()
     reject_symlinks(attestation)
-    initial_hash = file_hash(attestation)
-    identity = attestation.stat()
-    evidence = load_json(attestation, max_bytes=MAX_ATTESTATION_BYTES)
+    evidence, initial_hash, identity = read_json_snapshot(attestation, max_bytes=MAX_ATTESTATION_BYTES)
     if type(evidence) is not dict:
         raise GateError("attestation must be a JSON object")
     receipt_path = evidence.get("dispatch_receipt_path")
@@ -67,26 +65,26 @@ def validate(repo, attestation, base_sha, head_sha):
         if not locked:
             raise GateError("review lifecycle is busy; retry validation")
         reject_symlinks(attestation)
-        if file_hash(attestation) != initial_hash:
+        locked_evidence, locked_hash, _ = read_json_snapshot(attestation, max_bytes=MAX_ATTESTATION_BYTES)
+        if locked_hash != initial_hash:
             raise GateError("attestation changed before lifecycle lock")
-        result = _validate_locked(repo, attestation, base_sha, head_sha)
+        result = _validate_locked(repo, locked_evidence, base_sha, head_sha)
         reject_symlinks(attestation)
-        final_identity = attestation.stat()
+        _, final_hash, final_identity = read_json_snapshot(attestation, max_bytes=MAX_ATTESTATION_BYTES)
         if ((identity.st_dev, identity.st_ino, identity.st_size, identity.st_mtime_ns)
                 != (final_identity.st_dev, final_identity.st_ino, final_identity.st_size, final_identity.st_mtime_ns)
-                or file_hash(attestation) != initial_hash):
+                or final_hash != initial_hash):
             raise GateError("attestation changed during validation")
         return result
 
 
-def _validate_locked(repo, attestation, base_sha, head_sha):
+def _validate_locked(repo, evidence, base_sha, head_sha):
     """Fail closed; return an evidence summary, not authorization to publish."""
     repo = Path(repo).resolve(strict=True)
     if Path(git(repo, "rev-parse", "--show-toplevel")).resolve() != repo:
         raise GateError("--repo must name the repository root")
     full_sha(base_sha, "base_sha")
     full_sha(head_sha, "head_sha")
-    evidence = load_json(Path(attestation), max_bytes=MAX_ATTESTATION_BYTES)
     if not isinstance(evidence, dict):
         raise GateError("attestation must be a JSON object")
     if type(evidence.get("schema_version")) is not int or evidence["schema_version"] != 1:
@@ -120,9 +118,9 @@ def _validate_locked(repo, attestation, base_sha, head_sha):
     validate_dispatch_receipt(outcome, evidence.get("job_id"), evidence.get("dispatch_request_sha256"))
     full_sha(evidence.get("dispatch_receipt_sha256"), "dispatch_receipt_sha256", 64)
     reject_symlinks(Path(receipt_path))
-    receipt_identity = Path(receipt_path).stat()
-    if (load_json(Path(receipt_path)) != outcome
-            or file_hash(Path(receipt_path)) != evidence.get("dispatch_receipt_sha256")
+    receipt_value, receipt_hash, receipt_identity = read_json_snapshot(Path(receipt_path))
+    if (receipt_value != outcome
+            or receipt_hash != evidence.get("dispatch_receipt_sha256")
             or outcome.get("request_sha256") != evidence.get("dispatch_request_sha256")
             or outcome.get("job_id") != evidence.get("job_id")):
         raise GateError("dispatcher receipt does not match reviewed job")
@@ -180,14 +178,14 @@ def _validate_locked(repo, attestation, base_sha, head_sha):
         for suffix in ("json", "status", "meta", "out"):
             if model + "." + suffix not in verified:
                 raise GateError("required model evidence missing: " + model + "." + suffix)
-        if verified[model + ".status"].read_text().strip() != "DONE":
+        if verified[model + ".status"].read_text(encoding="utf-8").strip() != "DONE":
             raise GateError("model review is not DONE: " + model)
         exits = [line.partition("=")[2].strip() for line in
-                 verified[model + ".meta"].read_text().splitlines()
+                 verified[model + ".meta"].read_text(encoding="utf-8").splitlines()
                  if line.partition("=")[0].strip() == "exit"]
         if exits != ["0"]:
             raise GateError("model review must have one successful exit: " + model)
-        if not verified[model + ".out"].read_text().strip():
+        if not verified[model + ".out"].read_text(encoding="utf-8").strip():
             raise GateError("model output is empty: " + model)
         report = validate_report(load_json(verified[model + ".json"]))
         if report["verdict"] != "approve" or report["not_expanded"] != 0 or any(
@@ -204,11 +202,11 @@ def _validate_locked(repo, attestation, base_sha, head_sha):
     ):
         raise GateError("repository changed while validating evidence")
     reject_symlinks(Path(receipt_path))
-    receipt_final = Path(receipt_path).stat()
+    receipt_final_value, receipt_final_hash, receipt_final = read_json_snapshot(Path(receipt_path))
     if ((receipt_identity.st_dev, receipt_identity.st_ino, receipt_identity.st_size, receipt_identity.st_mtime_ns)
             != (receipt_final.st_dev, receipt_final.st_ino, receipt_final.st_size, receipt_final.st_mtime_ns)
-            or file_hash(Path(receipt_path)) != evidence["dispatch_receipt_sha256"]
-            or load_json(Path(receipt_path)) != outcome):
+            or receipt_final_hash != evidence["dispatch_receipt_sha256"]
+            or receipt_final_value != outcome):
         raise GateError("dispatcher receipt changed during validation")
     return {"status": "STATIC_REVIEW_VERIFIED", "repo": str(repo), "base_sha": base_sha,
             "head_sha": head_sha, "artifacts_verified": len(seen), "published": False,

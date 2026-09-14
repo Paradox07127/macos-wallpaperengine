@@ -9,12 +9,14 @@ available only for static review, with restricted file tools and the same fence.
 from __future__ import annotations
 
 import argparse
+import fcntl
 import hashlib
 import json
 import os
 from pathlib import Path
 import re
 import shlex
+import stat
 import sys
 import tempfile
 
@@ -37,7 +39,7 @@ def pairs(items):
     result = {}
     for key, value in items:
         if key in result:
-            raise CompatibilityError("Duplicate JSON key: " + key)
+            raise CompatibilityError("Duplicate JSON key")
         result[key] = value
     return result
 
@@ -159,7 +161,7 @@ def add_claude_provider(source, helper, python):
                   --strict-mcp-config --mcp-config '{"mcpServers":{}}'
                   --tools "Read,Grep,Glob" --permission-mode plan
                   --no-session-persistence --system-prompt-snapshot off)
-      [ -n "$schema" ] && args+=(--json-schema "$(cat "$schema")")
+      if [ -n "$schema" ]; then args+=(--json-schema "$(cat "$schema")"); fi
       (cd "$wd" && "$SELF" __fence "$ROOT/.no-write" "$HOME/.claude" "$rd/prompt.md" "$wd" \\
         "$CLAUDE_BIN" "${args[@]}" < "$rd/prompt.md") > "$rd/claude.stdout" 2> "$rd/claude.raw"
       rc=$?
@@ -184,12 +186,13 @@ def add_claude_provider(source, helper, python):
 def atomic_text(path, text, mode):
     fd, temporary = tempfile.mkstemp(prefix="." + path.name + "-", dir=path.parent)
     try:
-        with os.fdopen(fd, "w") as stream:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
             os.fchmod(stream.fileno(), mode)
             stream.write(text)
             stream.flush()
             os.fsync(stream.fileno())
-        os.replace(temporary, path)
+        # Publish without replacing a destination created by another writer.
+        os.link(temporary, path)
         directory = os.open(path.parent, os.O_RDONLY)
         try:
             os.fsync(directory)
@@ -200,16 +203,34 @@ def atomic_text(path, text, mode):
             os.unlink(temporary)
 
 
+def input_snapshot(path):
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    with os.fdopen(fd, "rb") as stream:
+        before = os.fstat(stream.fileno())
+        if not stat.S_ISREG(before.st_mode):
+            raise CompatibilityError("Preparation inputs must be regular files")
+        data = stream.read()
+        after = os.fstat(stream.fileno())
+    identity = lambda v: (v.st_dev, v.st_ino, v.st_size, v.st_mtime_ns)
+    if identity(before) != identity(after) or identity(after) != identity(path.stat()):
+        raise CompatibilityError("Preparation input changed while reading")
+    return data, identity(after)
+
+
 def prepare(source_path, output_path):
     source_path = Path(source_path).expanduser().resolve()
     output_path = Path(output_path).expanduser().absolute()
-    helper = Path(__file__).resolve()
-    if output_path.is_symlink() or output_path.resolve() == source_path:
+    if output_path.is_symlink():
         raise CompatibilityError("Output must be a separate non-symlink local copy")
-    source = source_path.read_text()
-    rendered = add_claude_provider(patched_source(source, helper, sys.executable), helper, sys.executable)
-    if output_path.exists() and output_path.read_text() != rendered:
-        raise CompatibilityError("Output already contains different content; use a new output path")
+    output_path = output_path.parent.resolve() / output_path.name
+    helper = Path(__file__).resolve()
+    sidecar = output_path.with_name(output_path.name + ".provenance.json")
+    lock_path = output_path.with_name(output_path.name + ".prepare.lock")
+    protected = (source_path, helper)
+    for destination in (output_path, sidecar, lock_path):
+        if destination.is_symlink() or any(destination == item or (
+                destination.exists() and destination.samefile(item)) for item in protected):
+            raise CompatibilityError("Preparation destination overlaps a protected input")
     missing = []
     directory = output_path.parent
     while not directory.exists():
@@ -222,22 +243,40 @@ def prepare(source_path, output_path):
             os.fsync(parent)
         finally:
             os.close(parent)
-    if not output_path.exists():
-        atomic_text(output_path, rendered, 0o700)
-    output_path.chmod(0o700)
-    provenance = {"version": VERSION, "source": str(source_path), "source_sha256": file_hash(source_path),
-                  "output": str(output_path.resolve()), "output_sha256": file_hash(output_path),
-                  "helper": str(helper), "helper_sha256": file_hash(helper), "python": sys.executable,
-                  "changes": ["fresh Grok session UUID for every attempt", "separate stdout and stderr",
-                              "normalize terminal structuredOutput/structured_output envelope",
-                              "static-only Claude Opus with restricted Read/Grep/Glob tools, empty MCP and filesystem fence"],
-                  "added_providers": ["claude"],
-                  "security_flags_changed": False}
-    sidecar = output_path.with_name(output_path.name + ".provenance.json")
-    if sidecar.is_symlink():
-        raise CompatibilityError("Provenance sidecar may not be a symlink")
-    atomic_text(sidecar, json.dumps(provenance, indent=2) + "\n", 0o600)
-    return provenance
+    fd = os.open(lock_path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        source_bytes, source_identity = input_snapshot(source_path)
+        helper_bytes, helper_identity = input_snapshot(helper)
+        rendered = add_claude_provider(patched_source(source_bytes.decode("utf-8"), helper, sys.executable), helper, sys.executable)
+        provenance = {"version": VERSION, "source": str(source_path),
+                      "source_sha256": hashlib.sha256(source_bytes).hexdigest(),
+                      "output": str(output_path), "output_sha256": hashlib.sha256(rendered.encode()).hexdigest(),
+                      "helper": str(helper), "helper_sha256": hashlib.sha256(helper_bytes).hexdigest(), "python": sys.executable,
+                      "changes": ["fresh Grok session UUID for every attempt", "separate stdout and stderr",
+                                  "normalize terminal structuredOutput/structured_output envelope",
+                                  "static-only Claude Opus with restricted Read/Grep/Glob tools, empty MCP and filesystem fence"],
+                      "added_providers": ["claude"], "security_flags_changed": False}
+        contents = ((output_path, rendered, 0o700),
+                    (sidecar, json.dumps(provenance, indent=2) + "\n", 0o600))
+        for path, content, _ in contents:
+            if path.is_symlink() or (path.exists() and path.read_bytes() != content.encode()):
+                raise CompatibilityError("Destination already contains different content; use a new output path")
+        def verify_inputs():
+            if (input_snapshot(source_path) != (source_bytes, source_identity)
+                    or input_snapshot(helper) != (helper_bytes, helper_identity)):
+                raise CompatibilityError("Preparation input changed; use a newly verified copy")
+        verify_inputs()
+        for path, content, mode in contents:
+            if not path.exists():
+                atomic_text(path, content, mode)
+            if input_snapshot(path)[0] != content.encode():
+                raise CompatibilityError("Preparation destination changed during publication")
+            verify_inputs()
+        for path, content, _ in contents:
+            if input_snapshot(path)[0] != content.encode():
+                raise CompatibilityError("Preparation destination changed during publication")
+        return provenance
 
 
 def main(argv=None):
@@ -259,7 +298,7 @@ def main(argv=None):
                 raise CompatibilityError("Only a dedicated, non-symlink stdout capture may be normalized")
             if path.stat().st_size > MAX_OUTPUT_BYTES:
                 raise CompatibilityError("Provider stdout exceeds the transport size limit")
-            result = normalize(path.read_text(), args.provider)
+            result = normalize(path.read_text(encoding="utf-8"), args.provider)
         print(json.dumps(result, ensure_ascii=False))
         return 0
     except (OSError, UnicodeError, ValueError, CompatibilityError) as exc:

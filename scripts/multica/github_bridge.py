@@ -31,7 +31,7 @@ import review_runner as runner
 ALLOWED_REPOSITORY = "Paradox07127/macos-wallpaperengine"
 SHA = re.compile(r"^[0-9a-f]{40}$")
 UUID = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
-RELEASE_VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.]+)?\Z")
+RELEASE_VERSION = runner.RELEASE_VERSION
 TRUNCATION_SUFFIX = "\n[Truncated; evidence missing beyond this point.]"
 
 
@@ -39,9 +39,14 @@ class BridgeError(RuntimeError):
     pass
 
 
+class CommandNotStarted(BridgeError):
+    """No local process was created, so a remote write could not have occurred."""
+
+
 class CommandError(BridgeError):
     def __init__(self, program, returncode, http_status=None):
         self.http_status = http_status
+        self.returncode = returncode
         super().__init__(f"{program} exited {returncode}; remote outcome may be uncertain")
 
 
@@ -123,6 +128,51 @@ def trusted_comment(cfg, item, body):
     return (isinstance(item, dict) and bool(cfg.get("bridge_actor_id"))
             and item.get("author_type") == "member" and item.get("author_id") == cfg["bridge_actor_id"]
             and item.get("content") == body)
+
+
+def generation_path(cfg, issue_id):
+    return Path(cfg["state_path"]).parent / "issue-generations" / (digest(issue_id) + ".json")
+
+
+@contextlib.contextmanager
+def issue_generation_lock(cfg, issue_id):
+    path = generation_path(cfg, issue_id)
+    runner.durable_mkdir(path.parent)
+    fd = os.open(path.with_suffix(".lock"), os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    try:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            yield False
+        else:
+            yield True
+    finally:
+        os.close(fd)
+
+
+def set_generation(cfg, issue_id, job_id):
+    runner.write_json(generation_path(cfg, issue_id), {"issue_id": issue_id, "job_id": job_id})
+
+
+def current_generation(cfg, issue_id):
+    path = generation_path(cfg, issue_id)
+    if not path.exists():
+        return None
+    value = runner.load_json(path)
+    if value.get("issue_id") != issue_id:
+        raise BridgeError("Issue generation identity mismatch")
+    return value.get("job_id")
+
+
+def pr_matches(cfg, current, request):
+    if not isinstance(current, dict):
+        return False
+    head, base = current.get("head"), current.get("base")
+    return (isinstance(head, dict) and isinstance(base, dict)
+            and current.get("state") == "open" and not current.get("draft")
+            and head.get("sha") == request["head_sha"] and base.get("sha") == request["base_sha"]
+            and base.get("ref") == cfg["target_branch"]
+            and isinstance(head.get("repo"), dict) and head["repo"].get("full_name") == cfg["repository"])
 
 
 def marker(key):
@@ -236,7 +286,7 @@ def object_id(value):
 
 
 def load_config(path):
-    cfg = json.loads(Path(path).read_text())
+    cfg = json.loads(Path(path).read_text(encoding="utf-8"))
     if not isinstance(cfg, dict):
         raise BridgeError("Config must be a JSON object")
     def reject_secrets(value):
@@ -254,7 +304,7 @@ def load_config(path):
     defaults = {
         "gh_path": "/opt/homebrew/bin/gh",
         "multica_path": "/Applications/Multica.app/Contents/Resources/app.asar.unpacked/resources/bin/multica",
-        "multica_profile": "desktop-api.multica.ai",
+        "multica_profile": "desktop-127.0.0.1-8080",
         "triage_label": "agent-triage", "triage_all_new": False,
         "max_pages": 20, "interval_seconds": 60, "max_body_chars": 12000,
         "command_timeout": 60, "max_output_bytes": 8 * 1024 * 1024,
@@ -322,7 +372,7 @@ class Commands:
     def __init__(self, cfg):
         self.cfg = cfg
 
-    def run(self, argv, input_text=None):
+    def run(self, argv, input_text=None, *, json_output=True):
         # Bound both streams while the process runs, before bytes can fill disk.
         outputs = {"stdout": bytearray(), "stderr": bytearray()}
         maximum = self.cfg["max_output_bytes"]
@@ -331,13 +381,13 @@ class Commands:
         finished = False
         try:
             if time.monotonic() >= deadline:
-                raise BridgeError("CLI deadline expired before launch; no process started")
+                raise CommandNotStarted("CLI deadline expired before launch; no process started")
             with tempfile.TemporaryFile() as source, selectors.DefaultSelector() as selector:
                 if input_text is not None:
                     source.write(input_text.encode())
                 source.seek(0)
                 if time.monotonic() >= deadline:
-                    raise BridgeError("CLI deadline expired before launch; no process started")
+                    raise CommandNotStarted("CLI deadline expired before launch; no process started")
                 proc = subprocess.Popen(argv, stdin=source, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                         shell=False, start_new_session=True)
                 for name in outputs:
@@ -362,12 +412,14 @@ class Commands:
                     raise CommandError(Path(argv[0]).name, proc.returncode, int(match.group(1)) if match else None)
                 raw = outputs["stdout"].decode("utf-8")
                 try:
-                    value = json.loads(raw) if raw.strip() else {}
+                    value = (json.loads(raw) if raw.strip() else {}) if json_output else raw
                 except json.JSONDecodeError as exc:
                     raise BridgeError("CLI response was not JSON") from exc
                 finished = True
                 return value
         except (OSError, UnicodeError, subprocess.TimeoutExpired) as exc:
+            if proc is None:
+                raise CommandNotStarted(f"CLI process not started ({type(exc).__name__})") from exc
             raise BridgeError(f"Command failed ({type(exc).__name__}); remote outcome may be uncertain") from exc
         finally:
             if proc is not None:
@@ -425,6 +477,11 @@ class State:
         for name, declaration in (("source", "TEXT NOT NULL DEFAULT ''"), ("source_updated", "REAL")):
             if name not in columns:
                 self.db.execute(f"ALTER TABLE intake_events ADD COLUMN {name} {declaration}")
+        self.db.executescript("""
+            CREATE INDEX IF NOT EXISTS intake_source_version ON intake_events(source,source_updated);
+            CREATE INDEX IF NOT EXISTS intake_due ON intake_events(next_attempt_at,attempts,kind,key) WHERE status='pending';
+            CREATE INDEX IF NOT EXISTS triage_due ON triage_pending(next_attempt_at,attempts,created_at,event) WHERE status='pending';
+        """)
         self.db.commit()
 
     def get(self, table, key, keycol="key", valuecol="value"):
@@ -480,6 +537,23 @@ class Bridge:
                 return
         raise BridgeError("Pagination limit reached; checkpoint preserved. Increase max_pages or narrow intake.")
 
+    def stable_capture(self, resource, params):
+        """Revalidate each complete page/boundary before committing a watermark."""
+        pages = []
+        for page in range(1, self.cfg["max_pages"] + 1):
+            endpoint = f"repos/{self.repo}/{resource}?" + urlencode({**params, "per_page": 100, "page": page})
+            batch = rows(self.commands.gh(endpoint))
+            pages.append((endpoint, batch))
+            if len(batch) < 100:
+                break
+        else:
+            raise BridgeError("Pagination limit reached; checkpoint preserved")
+        for endpoint, original in pages:
+            verified = rows(self.commands.gh(endpoint))
+            if verified != original:
+                raise BridgeError("Pagination moved during capture; checkpoint preserved for a fresh scan")
+        return [item for _, batch in pages for item in batch]
+
     def remote_issue(self, source):
         known = self.state.get("mappings", source, "source", "remote_id")
         if known:
@@ -514,7 +588,7 @@ class Bridge:
             return remote_id
         op = "create:" + source
         if self.state.get("operations", op, valuecol="state") == "intent":
-            raise BridgeError("Prior issue creation outcome uncertain and marker not found; retry after indexing or reconcile manually")
+            raise BridgeError("Uncertain operation " + op + ": creation marker not found; explicit reconciliation required")
         token = marker(source)
         self.report(f"{'PLAN ' if self.dry_run else ''}create issue {source}")
         if self.dry_run:
@@ -529,7 +603,11 @@ class Bridge:
             self.state.meta("create-body:" + source, json.dumps({"title": args[args.index("--title") + 1],
                                                                 "description": token + "\n\n" + body}))
             self.state.operation(op, "intent")
-            result = self.commands.multica(args, token + "\n\n" + body)
+            try:
+                result = self.commands.multica(args, token + "\n\n" + body)
+            except CommandNotStarted:
+                self.state.operation(op, "retryable")
+                raise
             remote_id = object_id(result)
         self.state.mapping(source, remote_id)
         self.state.operation(op, "done", remote_id)
@@ -555,7 +633,7 @@ class Bridge:
             if original_body is not None and any(trusted_comment(self.cfg, item, original_body) for item in comments):
                 self.state.operation(op, "done", remote_id)
                 return
-            raise BridgeError("Prior comment outcome uncertain; refusing an automatic duplicate or duplicate agent trigger")
+            raise BridgeError("Uncertain operation " + op + ": authenticated full comment not found; explicit reconciliation required")
         self.report(f"{'PLAN ' if self.dry_run else ''}append {event_key}")
         if not self.dry_run:
             # Mention only trusted configured IDs; source text is quoted JSON.
@@ -564,8 +642,12 @@ class Bridge:
             # first token to activate its server-side no-trigger path.
             self.state.meta("comment-body:" + op, expected_body)
             self.state.operation(op, "intent")
-            self.commands.multica(["issue", "comment", "add", remote_id, "--content-stdin", "--output", "json"],
-                                  expected_body)
+            try:
+                self.commands.multica(["issue", "comment", "add", remote_id, "--content-stdin", "--output", "json"],
+                                      expected_body)
+            except CommandNotStarted:
+                self.state.operation(op, "retryable")
+                raise
         self.state.operation(op, "done", remote_id)
 
     def source_body(self, kind, item, extra=None):
@@ -669,6 +751,8 @@ class Bridge:
             self.state.meta("snapshot-time:" + source, item["updated_at"])
             return
         event = source + ":updated:" + item["updated_at"] + ":" + fingerprint[:16]
+        if getattr(self, "observation", None):
+            event += ":observation:" + digest(self.observation)[:24]
         if self.state.get("operations", event, valuecol="state") == "done":
             return
         existing = self.remote_issue(source)
@@ -737,10 +821,20 @@ class Bridge:
             if selected or initializing or pending_issue:
                 raise BridgeError("Selected issue mapping is still initializing; comment retained")
             return  # Explicitly unselected/legacy sources are not imported.
-        event = self.comment_event(item)
-        self.append(remote, event, self.source_body("github_issue_comment", item))
-        if self.state.get("meta", "triage-command:" + event) == "included_in_initial_context":
+        event = version_event = self.comment_event(item)
+        initial = self.state.get("meta", "initial-delivery:" + source)
+        if initial and self.state.get("meta", "initial-triage:" + source) == "pending":
+            if event in json.loads(initial)["included_events"]:
+                raise BridgeError("Comment is in an unconfirmed initial delivery; follow-up authorization deferred")
+        if self.state.get("meta", "triage-command:" + version_event) == "included_in_initial_context":
             return
+        if getattr(self, "observation", None):
+            comment_source, _ = self.event_source("comment", item)
+            count = self.state.db.execute("SELECT COUNT(*) FROM intake_events WHERE source=?", (comment_source,)).fetchone()[0]
+            if count <= 1 and self.state.get("operations", "comment:" + event, valuecol="state") == "done":
+                return
+            event += ":observation:" + digest(self.observation)[:24]
+        self.append(remote, event, self.source_body("github_issue_comment", item))
         # Inspect only the same bounded source text that was retained. A command
         # hidden past the truncation boundary must not authorize execution.
         if requests_triage(command_text(item.get("body"), self.cfg["max_body_chars"])):
@@ -754,13 +848,13 @@ class Bridge:
                                   (event, source, remote, login if valid_login else "", utcnow(),
                                    "pending" if valid_identity else "denied",
                                    "awaiting_permission" if valid_identity else "invalid_public_identity",
-                                   item["id"], author_id if type(author_id) is int else None, event))
+                                   item["id"], author_id if type(author_id) is int else None, version_event))
             self.state.db.commit()
 
-    def queue_result(self, event, status, reason, delay=0):
+    def queue_result(self, event, status, reason, delay=0, *, count=True):
         due = (timestamp(utcnow()) + dt.timedelta(seconds=delay)).isoformat().replace("+00:00", "Z") if delay else ""
-        self.state.db.execute("UPDATE triage_pending SET status=?, reason=?, next_attempt_at=?, attempts=attempts+1 WHERE event=?",
-                              (status, reason, due, event))
+        self.state.db.execute("UPDATE triage_pending SET status=?, reason=?, next_attempt_at=?, attempts=attempts+? WHERE event=?",
+                              (status, reason, due, int(count), event))
         self.state.db.commit()
         self.report(f"Triage follow-up {status}: {event} ({reason})")
 
@@ -784,7 +878,7 @@ class Bridge:
             if deadline is not None and time.monotonic() >= deadline:
                 break
             if sent >= self.cfg["max_triage_followups_per_tick"]:
-                self.queue_result(event, "pending", "tick_limit")
+                self.queue_result(event, "pending", "tick_limit", count=False)
                 continue
             trigger_event = event + ":authorized-triage"
             trigger_op = "comment:" + trigger_event
@@ -800,7 +894,7 @@ class Bridge:
                 elapsed = (dt.datetime.fromisoformat(utcnow().replace("Z", "+00:00"))
                            - dt.datetime.fromisoformat(last.replace("Z", "+00:00"))).total_seconds()
                 if elapsed < self.cfg["triage_cooldown_seconds"]:
-                    self.queue_result(event, "pending", "issue_cooldown", self.cfg["triage_cooldown_seconds"] - int(elapsed))
+                    self.queue_result(event, "pending", "issue_cooldown", self.cfg["triage_cooldown_seconds"] - int(elapsed), count=False)
                     continue
             if login not in permissions:
                 try:
@@ -875,11 +969,7 @@ class Bridge:
                     raise BridgeError("GitHub status writer busy; durable event retained")
                 if request["kind"] == "pr":
                     current = self.commands.gh(f"repos/{self.repo}/pulls/{request['pr_number']}")
-                    current_head, current_base = current.get("head") or {}, current.get("base") or {}
-                    if (current.get("state") != "open" or current.get("draft")
-                            or current_head.get("sha") != head or current_base.get("sha") != request["base_sha"]
-                            or current_base.get("ref") != self.cfg["target_branch"]
-                            or (current_head.get("repo") or {}).get("full_name") != self.repo):
+                    if not pr_matches(self.cfg, current, request):
                         self.report("Superseded PR intake skipped: " + request["job_id"])
                         return False
                 for page in range(1, self.cfg["max_pages"] + 1):
@@ -891,7 +981,7 @@ class Bridge:
                     if matching is not None:
                         if (matching.get("state") in ("success", "failure")
                                 and re.match(re.escape(request["job_id"]) + r"(?:-retry-[0-9a-f]{12})?:", str(matching.get("description", "")))):
-                            return False
+                            return True  # Keep the final status; finish local delivery/generation recovery.
                         break
                     if len(statuses) < 100:
                         break
@@ -915,9 +1005,13 @@ class Bridge:
             manifest["version"] = version
         job_id = manifest["job_id"] = job_id_for(manifest)
         path = Path(self.cfg["jobs_dir"]) / job_id / "request.json"
+        if path.is_symlink() or path.parent.is_symlink() or Path(self.cfg["jobs_dir"]).is_symlink():
+            raise BridgeError("Job manifest paths may not be symlinks")
         if path.exists():
-            existing = json.loads(path.read_text())
-            for field in ("job_id", "repository", "repository_path", "head_sha", "base_sha", "kind", "policy_version", "pr_number", "version",
+            existing = runner.load_json(path)
+            if not isinstance(existing, dict) or type(existing.get("schema_version")) is not int:
+                raise BridgeError("Existing job manifest has an invalid schema")
+            for field in ("schema_version", "job_id", "repository", "repository_path", "head_sha", "base_sha", "kind", "policy_version", "pr_number", "version",
                           "review_policy", "policy_fingerprint"):
                 if existing.get(field) != manifest.get(field):
                     raise BridgeError("Existing job manifest conflicts with requested immutable input")
@@ -929,10 +1023,12 @@ class Bridge:
         if self.dry_run:
             return
         path = Path(self.cfg["jobs_dir"]) / manifest["job_id"] / "request.json"
+        if path.is_symlink() or path.parent.is_symlink() or Path(self.cfg["jobs_dir"]).is_symlink():
+            raise BridgeError("Job manifest paths may not be symlinks")
         runner.durable_mkdir(path.parent)
         fd, temporary = tempfile.mkstemp(prefix=".request-", dir=path.parent)
         try:
-            with os.fdopen(fd, "w") as handle:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
                 json.dump(manifest, handle, indent=2)
                 handle.write("\n")
                 handle.flush()
@@ -967,11 +1063,18 @@ class Bridge:
         source = f"github:{self.repo}:pr:{number}"
         event = (source + ":review:" + head + ":" + base + ":" + policy_fingerprint(self.cfg, "pr")
                  + ":" + str(own))
+        if not own and getattr(self, "observation", None):
+            event += ":metadata:" + digest(self.observation)[:24]
         if item.get("draft"):
             return
         if self.state.get("operations", event, valuecol="state") == "done":
             return
         existing = self.remote_issue(source)
+        delivery_key = "pr-delivery:" + event
+        delivery = self.state.get("meta", delivery_key)
+        if delivery is None:
+            delivery = "comment" if existing else "create"
+            self.state.meta(delivery_key, delivery)
         body = self.source_body("github_pr_review" if own else "pr_metadata_only", item,
                                 {"head_sha": head, "base_sha": base, "execute_code": own,
                                  "required_attestation": "Bind repository, PR, head/base SHA and explicit verdict; DONE is not approval."})
@@ -982,13 +1085,28 @@ class Bridge:
                 return
             body = self.job_instructions(manifest) + body
         body = marker("comment:" + event) + "\n" + body
+        if delivery == "create" and existing:
+            saved_create = self.state.get("meta", "create-body:" + source)
+            created_event = json.loads(saved_create)["description"].split("\n", 3)[2:3] if saved_create else []
+            if created_event != [marker("comment:" + event)]:
+                delivery = "comment"
+                self.state.meta(delivery_key, delivery)
         remote = self.ensure_issue(source, f"{'Review' if own else 'Manual PR triage'} PR #{number}: {item.get('title', '')}",
                                    body, self.cfg["review_agent_id"] if own else None, backlog=not own)
         if own:
             manifest["multica_issue_id"] = remote
             self.save_job(manifest)
-        if existing:
-            self.append(remote, event, body, self.cfg["review_agent_id"] if own else None)
+            with issue_generation_lock(self.cfg, remote) as locked:
+                if not locked:
+                    raise BridgeError("Issue generation is busy; PR delivery retained")
+                current = self.commands.gh(f"repos/{self.repo}/pulls/{number}")
+                if not pr_matches(self.cfg, current, manifest):
+                    return
+                set_generation(self.cfg, remote, manifest["job_id"])
+                if delivery == "comment":
+                    self.append(remote, event, body, self.cfg["review_agent_id"])
+        elif delivery == "comment":
+            self.append(remote, event, body)
         self.state.operation(event, "done", remote)
 
     def poll_once(self):
@@ -1030,7 +1148,7 @@ class Bridge:
                 ("comment", "issues/comments", {"since": since, "sort": "updated", "direction": "asc"}),
                 ("pr", "pulls", {"state": "open", "sort": "updated", "direction": "desc"}),
             ):
-                captured.append((kind, list(self.pages(resource, params))))
+                captured.append((kind, self.stable_capture(resource, params)))
             # The entire capture and watermark commit together; no partial-page
             # checkpoint can discard records. Queued work is a separate stage.
             with self.state.db:
@@ -1039,8 +1157,17 @@ class Bridge:
                         payload = json.dumps(item, sort_keys=True, separators=(",", ":"))
                         identity = payload + (policy_fingerprint(self.cfg, "pr") if kind == "pr" else "")
                         source, updated = self.event_source(kind, item)
-                        self.state.db.execute("INSERT OR IGNORE INTO intake_events(key,kind,payload,source,source_updated) VALUES (?,?,?,?,?)",
-                                              (kind + ":" + digest(identity), kind, payload, source, updated))
+                        fingerprint = digest(identity)
+                        observation_key = "last-observation:" + source
+                        last = self.state.get("meta", observation_key) if source else None
+                        if last == fingerprint:
+                            continue
+                        sequence = self.state.db.execute("SELECT COALESCE(MAX(rowid),0)+1 FROM intake_events").fetchone()[0]
+                        key = kind + ":" + fingerprint + ":" + str(sequence)
+                        self.state.db.execute("INSERT INTO intake_events(key,kind,payload,source,source_updated) VALUES (?,?,?,?,?)",
+                                              (key, kind, payload, source, updated))
+                        if source:
+                            self.state.db.execute("INSERT OR REPLACE INTO meta VALUES (?,?)", (observation_key, fingerprint))
                 self.state.db.execute("INSERT OR REPLACE INTO meta VALUES ('checkpoint', ?)", (now,))
         except (BridgeError, ValueError, TypeError, KeyError, OSError) as exc:
             capture_error = exc
@@ -1048,7 +1175,11 @@ class Bridge:
         finally:
             self.commands.deadline = deadline
         inbox_deadline = min(deadline, time.monotonic() + max(0, deadline - time.monotonic()) / 2)
-        self.drain_intake_events(baseline, inbox_deadline)
+        self.commands.deadline = inbox_deadline
+        try:
+            self.drain_intake_events(baseline, inbox_deadline)
+        finally:
+            self.commands.deadline = deadline
         self.drain_triage_pending(deadline)
         waiting = self.state.db.execute("SELECT COUNT(*) FROM intake_events WHERE status='pending'").fetchone()[0]
         self.report(f"Poll finished; deferred events={waiting}")
@@ -1064,6 +1195,7 @@ class Bridge:
             if time.monotonic() >= deadline:
                 break
             try:
+                self.observation = key
                 item = json.loads(payload)
                 if not isinstance(item, dict):
                     raise BridgeError("Source event must be an object")
@@ -1086,9 +1218,12 @@ class Bridge:
                 self.state.db.execute("UPDATE intake_events SET status='done',last_error='' WHERE key=?", (key,))
             except (BridgeError, ValueError, KeyError, TypeError, AttributeError, OSError) as exc:
                 due = (timestamp(utcnow()) + dt.timedelta(seconds=min(3600, 30 * 2 ** min(attempts, 7)))).isoformat().replace("+00:00", "Z")
+                reason = str(exc) if isinstance(exc, BridgeError) else type(exc).__name__
                 self.state.db.execute("UPDATE intake_events SET attempts=attempts+1,next_attempt_at=?,last_error=? WHERE key=?",
-                                      (due, type(exc).__name__, key))
+                                      (due, reason, key))
                 self.report(f"Deferred intake event {key}: {type(exc).__name__}")
+            finally:
+                self.observation = None
             self.state.db.commit()
 
     def request_release(self, head, base, version):
@@ -1113,6 +1248,11 @@ class Bridge:
                                    self.job_instructions(manifest) + body, self.cfg["review_agent_id"])
         manifest["multica_issue_id"] = remote
         self.save_job(manifest)
+        if not self.dry_run:
+            with issue_generation_lock(self.cfg, remote) as locked:
+                if not locked:
+                    raise BridgeError("Issue generation is busy; release delivery retained")
+                set_generation(self.cfg, remote, manifest["job_id"])
         status_key = "release-pending:" + manifest["job_id"]
         if self.state.get("operations", status_key, valuecol="state") != "done":
             self.pending(manifest)
@@ -1125,6 +1265,10 @@ class Bridge:
         self.commands.multica(["agent", "get", self.cfg["review_agent_id"], "--output", "json"])
         self.report("Doctor passed: allowed repository and configured agents are readable. No writes or agent runs were triggered.")
         self.triage_summary()
+        uncertain = self.state.db.execute("SELECT key,created_at FROM operations WHERE state='intent' ORDER BY created_at LIMIT 20").fetchall()
+        self.report("Uncertain operations (never automatically cleared): " + json.dumps(uncertain))
+        deferred = self.state.db.execute("SELECT key,attempts,last_error FROM intake_events WHERE status='pending' ORDER BY attempts DESC LIMIT 20").fetchall()
+        self.report("Deferred intake reasons: " + json.dumps(deferred))
 
 
 def main(argv=None):

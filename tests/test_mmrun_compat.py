@@ -176,6 +176,113 @@ class LocalCopyTests(unittest.TestCase):
             with self.assertRaises(compat.CompatibilityError):
                 compat.prepare(source, output)
 
+    def test_source_alias_records_the_exact_canonical_target(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target, alias, output = root / 'original', root / 'alias', root / 'copy'
+            target.write_text(self.source())
+            alias.symlink_to(target)
+            result = compat.prepare(alias, output)
+            self.assertEqual(result['source'], str(target.resolve()))
+            self.assertEqual(result['source_sha256'], compat.file_hash(target))
+            newer = root / 'newer'
+            newer.write_text(self.source() + '# newer\n')
+            alias.unlink()
+            alias.symlink_to(newer)
+            # A repointed alias cannot change this already frozen copy or its source.
+            self.assertEqual(result['source_sha256'], compat.file_hash(Path(result['source'])))
+            self.assertEqual(result['output_sha256'], compat.file_hash(output))
+
+    def test_sidecar_and_lock_cannot_overlap_source_or_helper(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for suffix in ('.provenance.json', '.prepare.lock'):
+                source, output = root / ('copy' + suffix), root / 'copy'
+                source.write_text(self.source())
+                with self.subTest(suffix=suffix), self.assertRaises(compat.CompatibilityError):
+                    compat.prepare(source, output)
+                self.assertEqual(source.read_text(), self.source())
+                self.assertFalse(output.exists())
+            source = root / 'original'
+            source.write_text(self.source())
+            output = root / 'hardlink'
+            os.link(source, output)
+            with self.assertRaises(compat.CompatibilityError):
+                compat.prepare(source, output)
+            self.assertEqual(source.read_text(), self.source())
+
+    def test_source_change_between_render_and_publish_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source, output = Path(tmp) / 'original', Path(tmp) / 'copy'
+            source.write_text(self.source())
+            real_render = compat.add_claude_provider
+            def change_source(*args):
+                rendered = real_render(*args)
+                source.write_text(self.source() + '# newer source\n')
+                return rendered
+            with mock.patch.object(compat, 'add_claude_provider', side_effect=change_source):
+                with self.assertRaises(compat.CompatibilityError):
+                    compat.prepare(source, output)
+            self.assertFalse(output.exists())
+            self.assertFalse(output.with_name(output.name + '.provenance.json').exists())
+
+    def test_source_change_after_copy_never_publishes_wrong_provenance(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source, output = Path(tmp) / 'original', Path(tmp) / 'copy'
+            source.write_text(self.source())
+            real_atomic = compat.atomic_text
+            def change_source(path, text, mode):
+                real_atomic(path, text, mode)
+                source.write_text(self.source() + '# newer source\n')
+            with mock.patch.object(compat, 'atomic_text', side_effect=change_source):
+                with self.assertRaises(compat.CompatibilityError):
+                    compat.prepare(source, output)
+            self.assertTrue(output.exists())
+            self.assertFalse(output.with_name(output.name + '.provenance.json').exists())
+
+    def test_racing_destination_is_never_replaced(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / 'copy'
+            real_link = compat.os.link
+            def competing_link(source, destination):
+                target.write_text('other writer')
+                return real_link(source, destination)
+            with mock.patch.object(compat.os, 'link', side_effect=competing_link):
+                with self.assertRaises(FileExistsError):
+                    compat.atomic_text(target, 'our copy', 0o700)
+            self.assertEqual(target.read_text(), 'other writer')
+
+    def test_destination_created_after_precheck_cannot_claim_success(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source, output = Path(tmp) / 'original', Path(tmp) / 'copy'
+            source.write_text(self.source())
+            real_snapshot = compat.input_snapshot
+            helper_reads = 0
+            def late_writer(path):
+                nonlocal helper_reads
+                result = real_snapshot(path)
+                if path == Path(compat.__file__).resolve():
+                    helper_reads += 1
+                    if helper_reads == 2:
+                        output.write_text('other writer after precheck')
+                return result
+            with mock.patch.object(compat, 'input_snapshot', side_effect=late_writer):
+                with self.assertRaises(compat.CompatibilityError):
+                    compat.prepare(source, output)
+            self.assertEqual(output.read_text(), 'other writer after precheck')
+            self.assertFalse(output.with_name(output.name + '.provenance.json').exists())
+
+    def test_concurrent_prepare_preserves_one_matching_pair(self):
+        from concurrent.futures import ThreadPoolExecutor
+        with tempfile.TemporaryDirectory() as tmp:
+            source, output = Path(tmp) / 'original', Path(tmp) / 'copy'
+            source.write_text(self.source())
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                results = list(pool.map(lambda _: compat.prepare(source, output), range(2)))
+            self.assertEqual(results[0], results[1])
+            self.assertEqual(json.loads(output.with_name(output.name + '.provenance.json').read_text()), results[0])
+            self.assertEqual(compat.file_hash(output), results[0]['output_sha256'])
+
     def test_directory_sync_failure_does_not_claim_prepared_copy(self):
         with tempfile.TemporaryDirectory() as tmp:
             source, output = Path(tmp) / 'original', Path(tmp) / 'copy'

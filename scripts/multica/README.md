@@ -21,7 +21,7 @@ The stable local root is `$HOME/Documents/Codex/Multica`:
 | Path beneath the root | Purpose |
 | --- | --- |
 | `local/config.json` | Local routing, paths, models and the service `enabled` switch |
-| `bridge-v4/` | Installed copies of these helpers and `mmrun-compat-v3` |
+| `bridge-v5/` | Installed copies of these helpers and `mmrun-compat-v3` |
 | `repository-v3/` | Dedicated complete Git mirror used to fetch review targets |
 | `local/state/intake.sqlite3` | Intake checkpoint, mappings and write reconciliation |
 | `local/state/jobs/<job-id>/` | Immutable request and executor/publication receipts |
@@ -39,8 +39,8 @@ guarantee. This local path requires a logged-in user session, an awake Mac, netw
 access and valid GitHub/Multica/model authentication. Check `launchctl` for the live
 installation and execution state rather than inferring that the job is running
 from this README. Initial provisioning leaves `enabled: false` until activation. Do not enable a second
-cloud bridge in parallel. Old `bridge/`, `bridge-v3/` and root `config.json`, if retained from a
-migration, are historical; all active examples use `bridge-v4/` and `local/config.json`.
+cloud bridge in parallel. Old `bridge/`, `bridge-v3/`, `bridge-v4/` and root `config.json`, if retained from a
+migration, are historical; all active examples use `bridge-v5/` and `local/config.json`.
 
 Issue intake uses the `agent-triage` label, with `triage_all_new: false`.
 Set `bridge_actor_id` to the local Multica member UUID used by the CLI. Recovery
@@ -124,7 +124,11 @@ including ticks without new GitHub activity. A permission 404 or insufficient
 permission becomes an observable `denied` record; transient API failures remain
 `pending`. After fixing a denied request's permission, post a new explicit request.
 Before delivery, the original GitHub comment is read again: a deleted or withdrawn
-command does not remain authorization. `doctor` prints the queue totals. For individual reasons, inspect the local state
+command does not remain authorization. `doctor` also lists pending reconciliation
+operation keys and deferred-event errors. For an uncertain write, inspect the
+matching Multica issue and the exact saved body/author receipt before taking action;
+do not clear the intent or resend merely because a response was lost. A command
+that is proven not to have started remains safely retryable. `doctor` prints the queue totals. For individual reasons, inspect the local state
 read-only:
 
 ```sh
@@ -159,8 +163,8 @@ MULTICA_ROOT="$HOME/Documents/Codex/Multica"
 MULTICA_PYTHON=/opt/homebrew/opt/python@3.14/bin/python3.14
 MULTICA_CONFIG="$MULTICA_ROOT/local/config.json"
 
-"$MULTICA_PYTHON" "$MULTICA_ROOT/bridge-v4/github_bridge.py" --config "$MULTICA_CONFIG" doctor
-"$MULTICA_PYTHON" "$MULTICA_ROOT/bridge-v4/github_bridge.py" --config "$MULTICA_CONFIG" poll --once --dry-run
+"$MULTICA_PYTHON" "$MULTICA_ROOT/bridge-v5/github_bridge.py" --config "$MULTICA_CONFIG" doctor
+"$MULTICA_PYTHON" "$MULTICA_ROOT/bridge-v5/github_bridge.py" --config "$MULTICA_CONFIG" poll --once --dry-run
 launchctl print "gui/$(id -u)/ai.multica.github-bridge"
 ls -lt "$MULTICA_ROOT/logs"
 ```
@@ -207,7 +211,7 @@ preparation process.
 mmrun dispatcher exit result even when the foreground wait times out. Missing
 completion evidence remains incomplete; finished model files alone cannot make
 an attempt pass. Keep the controller directory, request, supervisor receipt and
-model artifacts together when diagnosing interrupted work. The v4 contract snapshots
+model artifacts together when diagnosing interrupted work. The v5 contract snapshots
 the review schema and filesystem fence into each job, retains a profile evidence
 copy, and rechecks the canonical paths and hashes of execution inputs before dispatch
 and collection. Codex continues using its existing authenticated profile; these
@@ -234,14 +238,16 @@ does not turn an error response or incomplete report into approval.
 Prepare the copy after placing `mmrun_compat.py` at its stable installed path:
 
 ```sh
-"$MULTICA_PYTHON" "$MULTICA_ROOT/bridge-v4/mmrun_compat.py" prepare \
+"$MULTICA_PYTHON" "$MULTICA_ROOT/bridge-v5/mmrun_compat.py" prepare \
   --source "$HOME/.claude/bin/mmrun" \
-  --output "$MULTICA_ROOT/bridge-v4/mmrun-compat-v3"
+  --output "$MULTICA_ROOT/bridge-v5/mmrun-compat-v3"
 ```
 
-`prepare` invokes no model and writes only the separate copy and its
-`.provenance.json` sidecar. The installed config must set `mmrun_path` to
-`$HOME/Documents/Codex/Multica/bridge-v4/mmrun-compat-v3`; the executor passes
+`prepare` invokes no model and writes the separate copy, its
+`.provenance.json` sidecar and a coordination lock. It rejects input/destination
+path collisions, snapshots and rechecks the source, and publishes without replacing
+a concurrently created destination. The installed config must set `mmrun_path` to
+`$HOME/Documents/Codex/Multica/bridge-v5/mmrun-compat-v3`; the executor passes
 that value as `review_runner.py run --mmrun ...`. A direct runner invocation must
 also explicitly pass `--mmrun` because its default remains the original installed
 script. With a redirected `CODEX_HOME`, pass the configured real profile home as
@@ -249,7 +255,9 @@ script. With a redirected `CODEX_HOME`, pass the configured real profile home as
 
 Set `mmrun_kind` to `compat` in the config (and `--mmrun-kind compat` for direct
 runner commands). A missing compatibility sidecar is an error. The runner verifies
-the copy, source and helper hashes against that required provenance sidecar.
+the copy, source and helper hashes against that required provenance sidecar. Source aliases
+are resolved to a canonical target; the frozen copy stays bound to that target
+when an alias is later repointed. Updating the source requires preparing a new copy.
 Grok must provide an explicit normal terminal stop reason. Claude must provide
 `type: result`, `subtype: success` and `is_error: false`. A parseable partial result
 is insufficient. Compatibility version `mmrun-provider-transport-v3` is required
@@ -268,7 +276,7 @@ upload or publish a release. Replace all placeholders in this **disabled example
 with maintainer-selected values before use:
 
 ```text
-"$MULTICA_PYTHON" "$MULTICA_ROOT/bridge-v4/github_bridge.py" --config "$MULTICA_CONFIG" \
+"$MULTICA_PYTHON" "$MULTICA_ROOT/bridge-v5/github_bridge.py" --config "$MULTICA_CONFIG" \
   request-release --base FULL_40_CHARACTER_BASE_COMMIT \
   --head FULL_40_CHARACTER_REVIEWED_HEAD_COMMIT --version MAJOR.MINOR.PATCH --dry-run
 ```
@@ -298,13 +306,13 @@ The following are **disabled examples**, not commands to run until real, verifie
 values replace every placeholder:
 
 ```text
-"$MULTICA_PYTHON" "$MULTICA_ROOT/bridge-v4/release_gate.py" check \
+"$MULTICA_PYTHON" "$MULTICA_ROOT/bridge-v5/release_gate.py" check \
   --repo "$MULTICA_ROOT/local/state/reviews/RELEASE_JOB_ID/frozen" \
   --attestation ABSOLUTE_ATTESTATION_PATH_FROM_VERIFIED_EXECUTOR_RECEIPT \
   --base-sha FULL_40_CHARACTER_BASE_COMMIT \
   --head-sha FULL_40_CHARACTER_REVIEWED_HEAD_COMMIT
 
-"$MULTICA_PYTHON" "$MULTICA_ROOT/bridge-v4/release_gate.py" plan \
+"$MULTICA_PYTHON" "$MULTICA_ROOT/bridge-v5/release_gate.py" plan \
   --repo "$MULTICA_ROOT/local/state/reviews/RELEASE_JOB_ID/frozen" \
   --attestation ABSOLUTE_ATTESTATION_PATH_FROM_VERIFIED_EXECUTOR_RECEIPT \
   --base-sha FULL_40_CHARACTER_BASE_COMMIT \
@@ -379,8 +387,8 @@ implemented here.
 python3 -m unittest discover -s tests -p 'test_*.py'
 ```
 
-Python 3.12 is the supported minimum. CI runs the contracts on both 3.12 and
-3.14; the deployed Mac uses Homebrew Python 3.14.
+Python 3.12 is the supported minimum. CI runs the contracts on Linux with both 3.12 and
+3.14 and on macOS with 3.14; the deployed Mac uses Homebrew Python 3.14.
 
 Bridge and service tests mock the CLIs, network and daemon operations. Gate tests
 create disposable Git repositories and evidence files. They do not build the app,
@@ -393,7 +401,7 @@ paid model run. After inspecting an actual `FAILED` or `NEEDS_REVIEW` result, an
 operator can explicitly request a new attempt:
 
 ```text
-python3 "$MULTICA_ROOT/bridge-v4/executor.py" --config "$MULTICA_ROOT/local/config.json" \
+python3 "$MULTICA_ROOT/bridge-v5/executor.py" --config "$MULTICA_ROOT/local/config.json" \
   retry --job-id LOGICAL_JOB_ID
 ```
 
@@ -406,7 +414,7 @@ If an attempt was interrupted before it could record a terminal result, use the
 explicit recovery entry point before retrying:
 
 ```text
-python3 "$MULTICA_ROOT/bridge-v4/executor.py" --config "$MULTICA_CONFIG" \
+python3 "$MULTICA_ROOT/bridge-v5/executor.py" --config "$MULTICA_CONFIG" \
   recover --job-id LOGICAL_JOB_ID
 ```
 

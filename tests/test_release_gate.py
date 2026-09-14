@@ -5,6 +5,7 @@ import hashlib
 import importlib.util
 import io
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -294,6 +295,30 @@ class ReleaseGateTests(unittest.TestCase):
         self.save()
         with self.assertRaisesRegex(gate.GateError, "required model evidence missing"):
             self.validate()
+
+    def test_fifo_and_oversize_attestation_rejected_before_open_or_hash(self):
+        fifo = self.root / "attestation.fifo"
+        os.mkfifo(fifo)
+        oversized = self.root / "oversized.json"
+        with oversized.open("wb") as stream:
+            stream.truncate(gate.MAX_ATTESTATION_BYTES + 1)
+        for path in (fifo, oversized):
+            with self.subTest(path=path), patch.object(os, "open") as opened, patch.object(gate, "file_hash") as hashed:
+                with self.assertRaisesRegex(gate.ReviewError, "NOT_REGULAR_OR_OVERSIZED"):
+                    gate.validate(self.repo, path, self.base, self.head)
+            opened.assert_not_called()
+            hashed.assert_not_called()
+
+    def test_json_snapshot_reads_hashes_and_parses_one_bounded_descriptor(self):
+        original = os.open
+        with patch.object(os, "open", wraps=original) as opened:
+            value, hashed, identity = gate.read_json_snapshot(self.attestation, max_bytes=gate.MAX_ATTESTATION_BYTES)
+        opened.assert_called_once()
+        self.assertEqual(value, self.evidence)
+        self.assertEqual(hashed, hashlib.sha256(self.attestation.read_bytes()).hexdigest())
+        self.assertEqual(identity.st_ino, self.attestation.stat().st_ino)
+        self.assertTrue(opened.call_args.args[1] & os.O_NOFOLLOW)
+        self.assertTrue(opened.call_args.args[1] & os.O_NONBLOCK)
 
 
 if __name__ == "__main__":
