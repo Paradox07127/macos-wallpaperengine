@@ -201,7 +201,7 @@ struct SceneDetailView: View {
                 // error state, so the HUD row right below already shows
                 // Diagnostics into the same sheet. A second entry point 20pt
                 // away only crowded the recovery actions off the edge.
-                SceneFailureRecoveryActions(
+                WallpaperFailureRecoveryActions(
                     recovery: presentation.recovery,
                     onRetry: { reloadScene() }
                 )

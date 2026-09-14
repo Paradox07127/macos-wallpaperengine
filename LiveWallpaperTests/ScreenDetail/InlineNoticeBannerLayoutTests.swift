@@ -42,7 +42,7 @@ struct InlineNoticeBannerLayoutTests {
                     code: presentation.code,
                     surface: surface
                 ) {
-                    SceneFailureRecoveryActions(recovery: presentation.recovery, onRetry: {})
+                    WallpaperFailureRecoveryActions(recovery: presentation.recovery, onRetry: {})
                 }
                 let host = NSHostingView(rootView: AppLanguageScope(defaults: .appScoped()) {
                     banner.frame(width: width).padding(DesignTokens.Spacing.lg)

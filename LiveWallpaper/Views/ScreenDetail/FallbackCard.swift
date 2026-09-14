@@ -81,14 +81,14 @@ struct FallbackCard: View {
             // session to reload, so `onRetry: nil` drops that one action rather
             // than the card growing a second, divergent set of buttons.
             HStack(spacing: DesignTokens.Spacing.sm) {
-                SceneFailureRecoveryActions(
+                WallpaperFailureRecoveryActions(
                     recovery: presentation.recovery,
                     onRetry: nil,
                     isCompact: false
                 )
             }
         }
-        .padding(32)
+        .padding(DesignTokens.Spacing.xl)
         .frame(maxWidth: 480)
         .background(
             RoundedRectangle(cornerRadius: DesignTokens.Corner.xl, style: .continuous)
