@@ -54,6 +54,10 @@ enum Design {
 
     static let loadSteel = oklch(0.62, 0.045, 250)
 
+    /// Peak marker — the swatch and tick that mark a window's high-water mark,
+    /// board-wide. `oklch(0.72 0.09 60)`.
+    static let peakMarker = oklch(0.72, 0.09, 60)
+
     // MARK: - Panel material
 
     static let panelFillTop = oklch(0.212, 0.013, 74, alpha: 0.72)
@@ -64,10 +68,42 @@ enum Design {
 
     // MARK: - Load band mapping
 
-    static func loadBandColor(_ pct: Double) -> Color {
-        if pct > 0.8 { return signalCoral }
-        if pct >= 0.4 { return signalAmber }
+    /// The board's one load standard. Every instrument that draws a 0…1
+    /// utilisation — arc wedges, header state dots, bar tints — bands it here,
+    /// so a reading cannot be "hot" in one element and "fine" in another.
+    ///
+    /// Three bands, not more: colour answers only "fine / climbing / hot" while
+    /// the lit-wedge count and the digits carry the magnitude, and extra steps
+    /// would claim a precision the colour cannot deliver.
+    enum Load {
+        /// Climbing — worth a glance, not worth acting on.
+        static let elevated: Double = 0.60
+        /// Hot — sustained work at this level is what a user would want to see.
+        static let hot: Double = 0.85
+    }
+
+    /// Wedge/bar colour for a live metric: steel at rest, so the instrument
+    /// still reads as "measuring something" rather than "nothing to report".
+    static func loadBandColor(_ fraction: Double) -> Color {
+        if fraction > Load.hot {
+            return signalCoral
+        }
+        if fraction >= Load.elevated {
+            return signalAmber
+        }
         return loadSteel
+    }
+
+    /// State-dot colour: same bands, but resting is the neutral idle grey —
+    /// a dot is an alert affordance, and a lit one at idle would be noise.
+    static func loadDotColor(_ fraction: Double) -> Color {
+        if fraction > Load.hot {
+            return signalCoral
+        }
+        if fraction >= Load.elevated {
+            return signalAmber
+        }
+        return signalIdle
     }
 
     static func temperatureColor(_ celsius: Double) -> Color {
@@ -131,6 +167,31 @@ enum Design {
     static let hairlineWidth: CGFloat = 1
 
     static let cornerRadiusMin: CGFloat = 9  // chips / session cards
+
+    /// Legend/peak swatch: a square with just enough radius to stop the corners
+    /// reading as sharp at 5–6 pt.
+    static let swatchCornerRadius: CGFloat = 1
+
+    /// Header state dot, in points. Fixed rather than scaled: it is an alert
+    /// affordance with a legibility floor, not type.
+    static let stateDotSize: CGFloat = 6
+
+    /// The "%" (or other unit) beside a hero number is drawn at this fraction of
+    /// the digits' size, everywhere on the board.
+    static let heroUnitRatio: CGFloat = 0.4
+
+    /// Three-digit hero readings shrink by this much to clear the arc-gauge
+    /// centre box; measured across board scales 0.85…2.0.
+    static let threeDigitHeroShrink: CGFloat = 0.68
+
+    /// Hero size for a `digits`-digit readout. Only a full 100% reaches three.
+    static func heroSize(base: CGFloat, digits: Int) -> CGFloat {
+        digits >= 3 ? base * threeDigitHeroShrink : base
+    }
+
+    /// The board's one "no reading" glyph. An em dash — the en dash and the
+    /// ASCII hyphen read as different widths next to each other.
+    static let noData = "—"
 }
 
 // MARK: - Annotation chip (shared board-wide aesthetic)

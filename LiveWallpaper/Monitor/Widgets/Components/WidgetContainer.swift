@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct WidgetContainer<Content: View, Status: View>: View {
+    /// Already-localised display name — `WidgetFactory.displayName(_:)`, so the
+    /// header and the widget picker can never name the same widget differently.
     var label: String
     /// Optional SF Symbol name shown before the label.
     var systemImage: String?
@@ -47,11 +49,13 @@ struct WidgetContainer<Content: View, Status: View>: View {
                     .font(Design.labelFont(size: titleSize))
                     .foregroundStyle(Design.inkFaint)
             }
-            Text(LocalizedStringKey(label))
+            Text(verbatim: label)
                 .textCase(.uppercase)
                 .font(Design.labelFont(size: titleSize))
                 .tracking(Design.labelTracking(size: titleSize))
                 .foregroundStyle(Design.inkFaint)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
             Spacer(minLength: 4)
             status()
                 .font(Design.labelFont(size: scale.label))
@@ -63,7 +67,7 @@ struct WidgetContainer<Content: View, Status: View>: View {
 #Preview("Widget container") {
     let previewNow = Date().timeIntervalSince1970
     HStack(spacing: 24) {
-        WidgetContainer(label: "CPU", systemImage: "cpu", cellHeight: 150) {
+        WidgetContainer(label: WidgetFactory.displayName(.cpu), systemImage: "cpu", cellHeight: 150) {
             HStack(spacing: 5) {
                 BreathingDot(color: Design.signalAmber, size: 6)
                 Text(verbatim: "42%").foregroundStyle(Design.inkMuted)
@@ -77,7 +81,7 @@ struct WidgetContainer<Content: View, Status: View>: View {
         }
         .frame(width: 150, height: 150)
 
-        WidgetContainer(label: "NETWORK", systemImage: "wifi", cellHeight: 150) {
+        WidgetContainer(label: WidgetFactory.displayName(.network), systemImage: "wifi", cellHeight: 150) {
             Text(verbatim: "6.2 MB/s").foregroundStyle(Design.inkMuted)
         } content: {
             MirroredAreaChart(

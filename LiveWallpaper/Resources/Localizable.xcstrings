@@ -18734,6 +18734,42 @@
         }
       }
     },
+    "Device" : {
+      "comment" : "GPU widget: whole-device utilisation row in the load breakdown.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Device"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dispositivo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "デバイス"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "整卡"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "整卡"
+          }
+        }
+      }
+    },
     "Device − Renderer gap ≈ compute (Metal / GPU ML) load" : {
       "comment" : "GPU widget: explains the compute-gap estimate.",
       "extractionState" : "manual",
@@ -32125,6 +32161,42 @@
         }
       }
     },
+    "Memory used" : {
+      "comment" : "Memory widget: VoiceOver label for the used-percentage reading.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Memory used"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Memoria usada"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "メモリ使用量"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "内存已用"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "記憶體已用"
+          }
+        }
+      }
+    },
     "Metal pipeline '%@' rejected (likely stage_in mismatch): %@" : {
       "comment" : "Scene failure reason. Placeholders are the pipeline name and the Metal error.",
       "extractionState" : "manual",
@@ -42234,6 +42306,42 @@
         }
       }
     },
+    "Pressure" : {
+      "comment" : "Memory widget: label on the memory-pressure state chip.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pressure"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Presión"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "プレッシャー"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "压力"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "壓力"
+          }
+        }
+      }
+    },
     "Prev" : {
       "localizations" : {
         "en" : {
@@ -43674,6 +43782,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "重新執行"
+          }
+        }
+      }
+    },
+    "Read rate" : {
+      "comment" : "Disk widget: VoiceOver label for a per-process read-rate column.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Read rate"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Velocidad de lectura"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "読み込み速度"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "读取速率"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "讀取速率"
           }
         }
       }
@@ -46157,6 +46301,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "渲染目標「%@」未被任何渲染通道產出。"
+          }
+        }
+      }
+    },
+    "Renderer" : {
+      "comment" : "GPU widget: renderer-stage utilisation row in the load breakdown.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Renderer"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Renderizador"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "レンダラー"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "渲染器"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "算繪器"
           }
         }
       }
@@ -64120,6 +64300,42 @@
         }
       }
     },
+    "Tiler" : {
+      "comment" : "GPU widget: tiler-stage utilisation row in the load breakdown.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tiler"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Teselador"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タイラー"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分块器"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "分塊器"
+          }
+        }
+      }
+    },
     "Time Frame" : {
       "localizations" : {
         "en" : {
@@ -71412,6 +71628,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "創意工坊 標籤頁"
+          }
+        }
+      }
+    },
+    "Write rate" : {
+      "comment" : "Disk widget: VoiceOver label for a per-process write-rate column.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Write rate"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Velocidad de escritura"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "書き込み速度"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "写入速率"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "寫入速率"
           }
         }
       }

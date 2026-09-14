@@ -18,12 +18,6 @@ struct GPUWidgetView: View {
         return raw
     }
 
-    nonisolated static func stateDotColor(_ pct: Double) -> Color {
-        if pct > 0.85 { return Design.signalCoral }
-        if pct > 0.60 { return Design.signalAmber }
-        return Design.signalIdle.opacity(0.6)
-    }
-
     /// Device − Renderer difference (not measured compute), clamped ≥ 0. nil when
     /// either input is missing (the gap is undefined without both).
     nonisolated static func computePercent(device: Double?, renderer: Double?) -> Int? {
@@ -38,7 +32,7 @@ struct GPUWidgetView: View {
     }
 
     nonisolated static func freshnessText(sampledAt: Double?, now: Date) -> String {
-        guard let age = freshnessSeconds(sampledAt: sampledAt, now: now) else { return "-" }
+        guard let age = freshnessSeconds(sampledAt: sampledAt, now: now) else { return Design.noData }
         return Format.ago(age)
     }
 
@@ -66,7 +60,7 @@ private struct GPUWidgetBody: View {
 
     var body: some View {
         WidgetContainer(
-            label: "GPU",
+            label: WidgetFactory.displayName(.gpu),
             systemImage: WidgetFactory.icon(.gpu),
             cellHeight: cellHeight,
             status: { statusAccessory }
@@ -87,7 +81,7 @@ private struct GPUWidgetBody: View {
         switch context.placement.size {
         case .small:
             if gpuUsage == nil {
-                Text(verbatim: "-")
+                Text(verbatim: Design.noData)
                     .tracking(0.5)
                     .foregroundStyle(Design.inkFaint)
             } else {
@@ -95,7 +89,7 @@ private struct GPUWidgetBody: View {
             }
         case .medium, .large:
             if gpuUsage == nil {
-                Text(verbatim: "-")
+                Text(verbatim: Design.noData)
                     .tracking(0.5)
                     .foregroundStyle(Design.inkFaint)
             } else {
@@ -109,10 +103,7 @@ private struct GPUWidgetBody: View {
 
     @ViewBuilder
     private var stateDot: some View {
-        let pct = gpuUsage ?? 0
-        Circle()
-            .fill(GPUWidgetView.stateDotColor(pct))
-            .frame(width: 6, height: 6)
+        LoadStateDot(fraction: gpuUsage ?? 0)
     }
 
     private var freshnessChip: some View {
@@ -145,14 +136,14 @@ private struct GPUWidgetBody: View {
             let pct = gpuUsage ?? 0
             let hasTemp = tempC != nil && showSensorsPreference
             VStack(spacing: scale.label * 0.55) {
-                ArcGauge(value: pct, peak: peakFraction, lineWidth: 9) {
+                ArcGauge(value: pct, peak: peakFraction) {
                     arcCenter(scale: hasTemp ? 0.9 : 1)
                 }
                 .frame(maxWidth: 138)
                 .frame(maxHeight: .infinity)
 
                 if hasTemp, let t = tempC {
-                    temperatureCapsule(t)
+                    SensorCapsule(celsius: t, scale: scale)
                 }
 
                 if showTrend {
@@ -169,14 +160,14 @@ private struct GPUWidgetBody: View {
 
     private var unavailableBody: some View {
         VStack(spacing: scale.label * 0.6) {
-            ArcGauge(value: nil, lineWidth: 9) {
+            ArcGauge(value: nil) {
                 VStack(spacing: 1) {
-                    Text(verbatim: "-")
+                    Text(verbatim: Design.noData)
                         .font(Design.heroFont(size: scale.hero * 1.02))
                         .foregroundStyle(Design.naval)
                     Text(verbatim: "GPU")
                         .font(Design.labelFont(size: scale.label * 0.94))
-                        .tracking(scale.label * 0.14)
+                        .tracking(Design.labelTracking(size: scale.label))
                         .foregroundStyle(Design.inkFaint)
                 }
             }
@@ -203,7 +194,7 @@ private struct GPUWidgetBody: View {
                 if hasIdentity || memUsedBytes != nil { identityRow }
 
                 HStack(alignment: .center, spacing: scale.label) {
-                    ArcGauge(value: gpuUsage ?? 0, peak: peakFraction, lineWidth: 9) {
+                    ArcGauge(value: gpuUsage ?? 0, peak: peakFraction) {
                         arcCenter(scale: 0.8)
                     }
                     .frame(width: 68, alignment: .leading)
@@ -236,7 +227,7 @@ private struct GPUWidgetBody: View {
                 if hasIdentity || memUsedBytes != nil { identityRow }
 
                 HStack(alignment: .center, spacing: scale.label * 1.2) {
-                    ArcGauge(value: gpuUsage ?? 0, peak: peakFraction, lineWidth: 9) {
+                    ArcGauge(value: gpuUsage ?? 0, peak: peakFraction) {
                         arcCenter(scale: 0.92)
                     }
                     .frame(width: 108, alignment: .leading)
@@ -394,13 +385,16 @@ private struct GPUWidgetBody: View {
 
     /// L's stacked sub-metric row beside the ring — swatch + whisper name, value
     /// right-aligned against the content edge. Always single-line.
-    private func subMetricRow(name: String, value: Double?, color: Color, dashed: Bool) -> some View {
+    private func subMetricRow(
+        name: LocalizedStringKey, value: Double?, color: Color, dashed: Bool
+    ) -> some View {
         HStack(spacing: scale.label * 0.55) {
             SwatchLine(color: color, dashed: dashed)
                 .frame(width: 14, height: 3)
-            Text(verbatim: name.uppercased())
+            Text(name)
                 .font(Design.labelFont(size: scale.label))
-                .tracking(scale.label * 0.1)
+                .tracking(Design.labelTracking(size: scale.label))
+                .textCase(.uppercase)
                 .foregroundStyle(Design.inkFaint)
             Spacer(minLength: 4)
             Text(verbatim: Format.percent(value ?? 0))
@@ -410,6 +404,8 @@ private struct GPUWidgetBody: View {
         }
         .lineLimit(1)
         .minimumScaleFactor(0.7)
+        .accessibilityElement(children: .combine)
+        .accessibilityValue(Text(verbatim: Format.percent(value ?? 0)))
     }
 
     private var computeGapNote: some View {
@@ -432,7 +428,7 @@ private struct GPUWidgetBody: View {
                 // below it, so the problem was only ever contrast.
                 Text(verbatim: "GPU")
                     .font(Design.labelFont(size: scale.label))
-                    .tracking(scale.label * 0.12)
+                    .tracking(Design.labelTracking(size: scale.label))
                     .foregroundStyle(Design.inkMuted)
                 if let t {
                     sensorReading(dotColor: Design.temperatureColor(t),
@@ -476,58 +472,15 @@ private struct GPUWidgetBody: View {
     // MARK: - Shared pieces
 
     private func arcCenter(scale factor: CGFloat) -> some View {
-        let pct = Int(((gpuUsage ?? 0) * 100).rounded())
-        return HStack(alignment: .firstTextBaseline, spacing: 1) {
-            Text(verbatim: "\(pct)")
-                .font(Design.heroFont(size: scale.hero * factor))
-                .monospacedDigit()
-                .foregroundStyle(Design.inkPrimary)
-            Text(verbatim: "%")
-                .font(Design.labelFont(size: scale.hero * factor * 0.5))
-                .foregroundStyle(Design.inkFaint)
-        }
-        .lineLimit(1)
-        .minimumScaleFactor(0.6)
+        let fraction = gpuUsage ?? 0
+        return HeroPercent(fraction: fraction, baseSize: scale.hero * factor)
+            .accessibilityElement()
+            .accessibilityLabel(Text("GPU"))
+            .accessibilityValue(Text(verbatim: Format.percent(fraction)))
     }
 
     private func peakTag(size: CGFloat) -> some View {
-        HStack(spacing: 4) {
-            RoundedRectangle(cornerRadius: 1)
-                .fill(Design.peakMarker)
-                .frame(width: 5, height: 5)
-                .opacity(0.85)
-            Text("peak")
-                .font(Design.labelFont(size: size))
-                .tracking(size * 0.12)
-                .foregroundStyle(Design.inkFaint)
-            Text(verbatim: "\(peakPercent)%")
-                .font(Design.labelFont(size: size))
-                .monospacedDigit()
-                .foregroundStyle(Design.inkMuted)
-        }
-        .monitorChip(scale)
-    }
-
-    private func temperatureCapsule(_ t: Double) -> some View {
-        HStack(spacing: 6) {
-            Circle()
-                .fill(Design.temperatureColor(t))
-                .frame(width: 7, height: 7)
-                .shadow(color: Design.temperatureColor(t).opacity(0.6), radius: 3)
-            (Text(verbatim: MonitorTemperature.valueText(t))
-             + Text(verbatim: MonitorTemperature.symbol)
-                .font(Design.labelFont(size: scale.caption * 0.68))
-                .foregroundStyle(Design.inkFaint))
-                .font(Design.subFont(size: scale.caption))
-                .monospacedDigit()
-                .foregroundStyle(Design.inkPrimary)
-            Text("Sensor")
-                .font(Design.labelFont(size: scale.label * 0.94))
-                .tracking(scale.label * 0.12)
-                .foregroundStyle(Design.inkFaint)
-                .textCase(.uppercase)
-        }
-        .monitorChip(scale)
+        PeakTag(value: "\(peakPercent)%", scale: scale, size: size)
     }
 
     // MARK: - Derived values
@@ -758,8 +711,6 @@ private extension Design {
     static let computeViolet = oklch(0.82, 0.07, 300)
     static let computeChipStroke = oklch(0.5, 0.06, 300, alpha: 0.6)
     static let computeChipFill = oklch(0.24, 0.02, 300, alpha: 0.28)
-    /// Peak marker square — `oklch(0.72 0.09 60)`.
-    static let peakMarker = oklch(0.72, 0.09, 60)
     /// Freshness "stale" warm — `oklch(0.6 0.05 60)`.
     static let staleWarm = oklch(0.6, 0.05, 60)
 }

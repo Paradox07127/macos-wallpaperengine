@@ -25,7 +25,7 @@ struct ProcessesWidgetView: View {
                 frameHeight: geo.size.height, scaleHeight: scaleHeight
             )
             WidgetContainer(
-                label: "Processes",
+                label: WidgetFactory.displayName(.processes),
                 systemImage: WidgetFactory.icon(.processes),
                 cellHeight: scaleHeight,
                 status: { headerStatus(rows: rows, scale: scale) },
@@ -171,7 +171,7 @@ struct ProcessesWidgetView: View {
         HStack(spacing: colGap) {
             nameCell(proc, scale: scale)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            Text(verbatim: proc.pid.map(String.init) ?? "—")
+            Text(verbatim: proc.pid.map(String.init) ?? Design.noData)
                 .font(Design.captionFont(size: scale.caption * 0.94))
                 .monospacedDigit()
                 .foregroundStyle(Design.inkMuted)

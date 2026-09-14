@@ -44,7 +44,7 @@ enum WidgetFactory {
         if let notice = context.readingsNotice {
             WidgetContainer(label: displayName(context.placement.kind), systemImage: icon(context.placement.kind)) {
                 VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
-                    Text(verbatim: "—")
+                    Text(verbatim: Design.noData)
                         .font(DesignTokens.Typography.hero)
                     Text(notice)
                         .font(DesignTokens.Typography.body)

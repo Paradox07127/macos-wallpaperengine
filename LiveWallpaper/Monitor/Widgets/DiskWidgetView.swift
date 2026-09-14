@@ -6,7 +6,6 @@ struct DiskWidgetView: View {
 
     private static let readColor = Design.signalSage
     private static let writeColor = Design.oklch(0.62, 0.07, 288)
-    private static let peakSwatch = Design.oklch(0.72, 0.09, 60)
 
     /// L's "Top by I/O" list cap (the sampler already ranks and caps its feed).
     private static let topIORowCap = 5
@@ -38,7 +37,7 @@ struct DiskWidgetView: View {
 
     private func small(cellHeight: CGFloat) -> some View {
         let scale = Design.TypeScale(cellHeight: cellHeight)
-        return WidgetContainer(label: "Disk", systemImage: WidgetFactory.icon(.disk), cellHeight: cellHeight) {
+        return WidgetContainer(label: WidgetFactory.displayName(.disk), systemImage: WidgetFactory.icon(.disk), cellHeight: cellHeight) {
             Text("ALL DISKS")
                 .foregroundStyle(Design.inkFaint)
         } content: {
@@ -53,9 +52,11 @@ struct DiskWidgetView: View {
                 )
                 .frame(maxHeight: .infinity)
                 .frame(minHeight: scale.caption * 2.4)
-                Self.peakTag(label: String(localized: "R peak", bundle: .appLanguage, comment: "Disk widget: recent read-rate peak label."),
-                             value: history.values(history.diskRead, in: chartWindow).max().map { Format.rate($0) } ?? "—",
-                             scale: scale)
+                PeakTag(
+                    label: "R peak",
+                    value: history.values(history.diskRead, in: chartWindow).max().map { Format.rate($0) } ?? Design.noData,
+                    scale: scale
+                )
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         }
@@ -90,7 +91,7 @@ struct DiskWidgetView: View {
 
     private func medium(cellHeight: CGFloat) -> some View {
         let scale = Design.TypeScale(cellHeight: cellHeight)
-        return WidgetContainer(label: "Disk", systemImage: WidgetFactory.icon(.disk), cellHeight: cellHeight) {
+        return WidgetContainer(label: WidgetFactory.displayName(.disk), systemImage: WidgetFactory.icon(.disk), cellHeight: cellHeight) {
             Text("ALL DISKS")
                 .foregroundStyle(Design.inkFaint)
         } content: {
@@ -106,9 +107,11 @@ struct DiskWidgetView: View {
                 .frame(maxHeight: .infinity)
                 .frame(minHeight: scale.caption * 3)
                 .overlay(alignment: .topTrailing) {
-                    Self.peakTag(label: String(localized: "R peak", bundle: .appLanguage, comment: "Disk widget: recent read-rate peak label."),
-                                 value: history.values(history.diskRead, in: chartWindow).max().map { Format.rate($0) } ?? "—",
-                                 scale: scale)
+                    PeakTag(
+                        label: "R peak",
+                        value: history.values(history.diskRead, in: chartWindow).max().map { Format.rate($0) } ?? Design.noData,
+                        scale: scale
+                    )
                         .padding(scale.label * 0.3)
                 }
                 footerRow(scale: scale)
@@ -214,7 +217,7 @@ struct DiskWidgetView: View {
     private func large(cellHeight: CGFloat) -> some View {
         let scale = Design.TypeScale(cellHeight: cellHeight)
         let topIO = topIOProcesses
-        return WidgetContainer(label: "Disk", systemImage: WidgetFactory.icon(.disk), cellHeight: cellHeight) {
+        return WidgetContainer(label: WidgetFactory.displayName(.disk), systemImage: WidgetFactory.icon(.disk), cellHeight: cellHeight) {
             Text("ALL DISKS")
                 .foregroundStyle(Design.inkFaint)
         } content: {
@@ -231,13 +234,19 @@ struct DiskWidgetView: View {
                 .frame(maxHeight: .infinity)
                 .frame(minHeight: scale.caption * (topIO.isEmpty ? 5 : 3))
                 .overlay(alignment: .topTrailing) {
-                    Self.peakTag(label: String(localized: "R peak", bundle: .appLanguage, comment: "Disk widget: recent read-rate peak label."),
-                                 value: history.values(history.diskRead, in: chartWindow).max().map { Format.rate($0) } ?? "—", scale: scale)
+                    PeakTag(
+                        label: "R peak",
+                        value: history.values(history.diskRead, in: chartWindow).max().map { Format.rate($0) } ?? Design.noData,
+                        scale: scale
+                    )
                         .padding(scale.label * 0.3)
                 }
                 .overlay(alignment: .bottomTrailing) {
-                    Self.peakTag(label: String(localized: "W peak", bundle: .appLanguage, comment: "Disk widget: recent write-rate peak label."),
-                                 value: history.values(history.diskWrite, in: chartWindow).max().map { Format.rate($0) } ?? "—", scale: scale)
+                    PeakTag(
+                        label: "W peak",
+                        value: history.values(history.diskWrite, in: chartWindow).max().map { Format.rate($0) } ?? Design.noData,
+                        scale: scale
+                    )
                         .padding(scale.label * 0.3)
                 }
                 sessionSectionLabel(scale: scale)
@@ -288,27 +297,33 @@ struct DiskWidgetView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             ioRateColumn(letter: "R", color: Self.readColor,
-                         rate: proc.ioReadBytesPerSec, scale: scale)
+                         rate: proc.ioReadBytesPerSec, scale: scale,
+                         accessibilityName: "Read rate")
             ioRateColumn(letter: "W", color: Self.writeColor,
-                         rate: proc.ioWriteBytesPerSec, scale: scale)
+                         rate: proc.ioWriteBytesPerSec, scale: scale,
+                         accessibilityName: "Write rate")
         }
     }
 
     /// One hue-lettered rate column (the widget's R/W letter idiom, matching the mirrored scope's up/down assignment).
     private func ioRateColumn(
-        letter: String, color: Color, rate: Double?, scale: Design.TypeScale
+        letter: String, color: Color, rate: Double?, scale: Design.TypeScale,
+        accessibilityName: LocalizedStringKey
     ) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: scale.caption * 0.3) {
             Text(verbatim: letter)
                 .font(Design.captionFont(size: scale.caption * 0.86))
                 .foregroundStyle(color)
-            Text(verbatim: rate.map { Format.rate($0) } ?? "—")
+            Text(verbatim: rate.map { Format.rate($0) } ?? Design.noData)
                 .font(Design.subFont(size: scale.caption * 0.94)).monospacedDigit()
                 .foregroundStyle(Design.inkMuted)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
                 .frame(width: scale.caption * 5.3, alignment: .trailing)
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(accessibilityName))
+        .accessibilityValue(Text(verbatim: rate.map { Format.rate($0) } ?? Design.noData))
     }
 
     /// L's "now" read: both current rates at hero weight on one baseline, letters
@@ -415,27 +430,7 @@ struct DiskWidgetView: View {
     /// The current-rate readout falls back to the peak tag's own "—" when the
     /// sampler has no reading yet (or the last one failed) — never a fake 0 B/s.
     nonisolated static func rateText(_ bytesPerSec: Double, available: Bool) -> String {
-        available ? Format.rate(bytesPerSec) : "—"
-    }
-
-    static func peakTag(label: String, value: String, scale: Design.TypeScale) -> some View {
-        let size = scale.label
-        return HStack(alignment: .firstTextBaseline, spacing: size * 0.35) {
-            RoundedRectangle(cornerRadius: 1)
-                .fill(peakSwatch.opacity(0.85))
-                .frame(width: size * 0.5, height: size * 0.5)
-                .alignmentGuide(.firstTextBaseline) { $0[.bottom] - size * 0.08 }
-            Text(verbatim: label)
-                .font(Design.labelFont(size: size))
-                .tracking(Design.labelTracking(size: size))
-                .textCase(.uppercase)
-                .foregroundStyle(Design.inkFaint)
-            Text(verbatim: value)
-                .font(Design.subFont(size: size)).monospacedDigit()
-                .foregroundStyle(Design.inkMuted)
-        }
-        .lineLimit(1)
-        .monitorChip(scale)
+        available ? Format.rate(bytesPerSec) : Design.noData
     }
 
     /// Last `count` samples of a series (never fewer than the series has) — the

@@ -30,7 +30,10 @@ struct WeatherWidgetView: View {
     var body: some View {
         GeometryReader { geo in
             let rows = context.placement.kind.cellSize(for: context.placement.size).rows
-            let scale = Design.TypeScale(cellHeight: geo.size.height / CGFloat(max(rows, 1)))
+            // Half a grid row is the board-wide type-scale unit — every other
+            // widget divides by `2 * rows`, and a tile that does not sits at a
+            // visibly larger type size than the ones beside it.
+            let scale = Design.TypeScale(cellHeight: geo.size.height / (2 * CGFloat(max(rows, 1))))
             ZStack(alignment: .topLeading) {
                 if let scene {
                     WeatherSceneCanvas(scene: scene, paused: context.reduceMotion || suspended)

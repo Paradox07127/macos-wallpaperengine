@@ -14,7 +14,7 @@ struct MemoryWidgetView: View {
             let rowSpan: CGFloat = context.placement.size == .large ? 2 : 1
             let cellHeight = geo.size.height / (2 * rowSpan)
             WidgetContainer(
-                label: "MEM",
+                label: WidgetFactory.displayName(.memory),
                 systemImage: WidgetFactory.icon(.memory),
                 cellHeight: cellHeight,
                 status: { statusDot }
@@ -51,18 +51,12 @@ struct MemoryWidgetView: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Spacer(minLength: 0)
-                HStack(alignment: .firstTextBaseline, spacing: 1) {
-                    Text(verbatim: "\(usedPercentInt)")
-                        .font(Design.heroFont(size: scale.hero * 0.86))
-                        .foregroundStyle(Design.inkPrimary)
-                    Text(verbatim: "%")
-                        .font(Design.heroFont(size: scale.hero * 0.86 * 0.4))
-                        .foregroundStyle(Design.inkFaint)
-                }
-                .monospacedDigit()
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
-                Text(verbatim: "USED")
+                HeroPercent(fraction: memUsedFraction, baseSize: scale.hero * 0.86)
+                    .accessibilityElement()
+                    .accessibilityLabel(Text("Memory used"))
+                    .accessibilityValue(Text(verbatim: Format.percent(memUsedFraction)))
+                Text("used")
+                    .textCase(.uppercase)
                     .font(Design.labelFont(size: scale.label))
                     .tracking(Design.labelTracking(size: scale.label))
                     .foregroundStyle(Design.inkFaint)
@@ -241,7 +235,7 @@ struct MemoryWidgetView: View {
                 .font(Design.heroFont(size: scale.hero * factor))
                 .foregroundStyle(Design.inkPrimary)
             Text(verbatim: "/ \(totalGiBString)G")
-                .font(Design.subFont(size: scale.hero * factor * 0.4))
+                .font(Design.subFont(size: scale.hero * factor * Design.heroUnitRatio))
                 .foregroundStyle(Design.inkMuted)
         }
         .monospacedDigit()
@@ -258,8 +252,6 @@ struct MemoryWidgetView: View {
         guard let system, system.memTotalBytes > 0 else { return 0 }
         return min(1, max(0, Double(system.memUsedBytes) / Double(system.memTotalBytes)))
     }
-
-    private var usedPercentInt: Int { Int((memUsedFraction * 100).rounded()) }
 
     private var usedGiBString: String {
         String(format: "%.1f", Format.gib(Double(system?.memUsedBytes ?? 0)))
@@ -372,9 +364,9 @@ struct MemoryWidgetView: View {
         return min(1, max(0, Double(bytes) / Double(top)))
     }
 
-    /// cpu% column for the Top-by-memory rows: whole-number "N%" when the sample carries a reading, an en-dash when it doesn't — the column keeps its reserved width either way so the GiB column never shifts.
+    /// cpu% column for the Top-by-memory rows: whole-number "N%" when the sample carries a reading, the no-data glyph when it doesn't — the column keeps its reserved width either way so the GiB column never shifts.
     nonisolated static func cpuColumnText(_ cpuPercent: Double) -> String {
-        guard cpuPercent.isFinite, cpuPercent > 0 else { return "–" }
+        guard cpuPercent.isFinite, cpuPercent > 0 else { return Design.noData }
         return "\(Int(cpuPercent.rounded()))%"
     }
 
@@ -460,9 +452,10 @@ private struct PressureChip: View {
                 .fill(dotColor)
                 .frame(width: labelSize * 0.6, height: labelSize * 0.6)
                 .shadow(color: dotColor.opacity(0.7), radius: 3)
-            Text(verbatim: "PRESSURE")
+            Text("Pressure")
+                .textCase(.uppercase)
                 .font(Design.labelFont(size: labelSize * 0.9))
-                .tracking(labelSize * 0.11)
+                .tracking(Design.labelTracking(size: labelSize))
                 .foregroundStyle(Design.inkFaint)
             Text(MemoryWidgetView.pressureDisplayKey(pressure))
                 .font(Design.labelFont(size: labelSize))

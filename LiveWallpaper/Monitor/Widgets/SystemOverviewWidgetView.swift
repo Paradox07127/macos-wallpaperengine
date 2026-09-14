@@ -25,7 +25,7 @@ struct SystemOverviewWidgetView: View {
             let cellHeight = geometry.size.height / (large ? 4 : 2)
             let scale = Design.TypeScale(cellHeight: cellHeight)
             WidgetContainer(
-                label: "System Overview",
+                label: WidgetFactory.displayName(.systemOverview),
                 systemImage: WidgetFactory.icon(.systemOverview),
                 cellHeight: cellHeight,
                 status: { powerStatus },
@@ -71,7 +71,7 @@ struct SystemOverviewWidgetView: View {
             } else if readings.powerSource == "ups" {
                 Text(verbatim: "UPS")
             } else {
-                Text(verbatim: "—")
+                Text(verbatim: Design.noData)
             }
         }
         .lineLimit(1)
@@ -131,14 +131,10 @@ struct SystemOverviewWidgetView: View {
             .lineLimit(1)
             ArcGauge(value: fraction, color: gaugeColor(kind, fraction: fraction)) {
                 gaugeReadout(fraction, scale: scale)
-                    .monospacedDigit()
-                    .foregroundStyle(Design.inkPrimary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .accessibilityLabel(Text(title))
-            .accessibilityValue(Text(verbatim: fraction.map(Format.percent) ?? "—"))
+            .accessibilityValue(Text(verbatim: fraction.map(Format.percent) ?? Design.noData))
 
             if large {
                 detail(kind)
@@ -168,11 +164,16 @@ struct SystemOverviewWidgetView: View {
         return Design.loadBandColor(fraction ?? 0)
     }
 
-    private func gaugeReadout(_ fraction: Double?, scale: Design.TypeScale) -> Text {
-        let font = Design.heroFont(size: scale.hero * (large ? 0.7 : 0.6))
-        guard let fraction else { return Text(verbatim: "—").font(font) }
-        return Text(verbatim: String(Int((fraction * 100).rounded()))).font(font)
-            + Text(verbatim: "%").font(Design.labelFont(size: scale.label))
+    @ViewBuilder
+    private func gaugeReadout(_ fraction: Double?, scale: Design.TypeScale) -> some View {
+        let baseSize = scale.hero * (large ? 0.7 : 0.6)
+        if let fraction {
+            HeroPercent(fraction: fraction, baseSize: baseSize, minimumScale: 0.7)
+        } else {
+            Text(verbatim: Design.noData)
+                .font(Design.heroFont(size: baseSize))
+                .foregroundStyle(Design.inkPrimary)
+        }
     }
 
     private func detail(_ kind: MonitorWidgetKind) -> Text {
@@ -180,16 +181,16 @@ struct SystemOverviewWidgetView: View {
         case .cpu:
             guard readings.cpu != nil,
                   let load = CPUWidgetView.loadText(system: context.snapshot.system, triple: false)
-            else { return Text(verbatim: "—") }
+            else { return Text(verbatim: Design.noData) }
             return Text("load") + Text(verbatim: " " + load)
         case .memory:
-            guard let used = readings.memoryUsed, let total = readings.memoryTotal else { return Text(verbatim: "—") }
+            guard let used = readings.memoryUsed, let total = readings.memoryTotal else { return Text(verbatim: Design.noData) }
             return Text(verbatim: String(format: "%.1f / %.0f GiB", Format.gib(Double(used)), Format.gib(Double(total))))
         case .gpu:
-            guard readings.gpu != nil, let cores = context.snapshot.system?.gpuCoreCount else { return Text(verbatim: "—") }
+            guard readings.gpu != nil, let cores = context.snapshot.system?.gpuCoreCount else { return Text(verbatim: Design.noData) }
             return Text("\(cores) cores")
         default:
-            return Text(verbatim: "—")
+            return Text(verbatim: Design.noData)
         }
     }
 
@@ -230,7 +231,7 @@ struct SystemOverviewWidgetView: View {
         HStack(spacing: DesignTokens.Spacing.xs) {
             Text(title).foregroundStyle(Design.inkMuted)
             Spacer(minLength: 0)
-            Text(verbatim: value.map(Format.rate) ?? "—")
+            Text(verbatim: value.map(Format.rate) ?? Design.noData)
                 .monospacedDigit()
                 .foregroundStyle(Design.inkPrimary)
         }
@@ -244,7 +245,7 @@ struct SystemOverviewWidgetView: View {
     ) -> some View {
         HStack(spacing: DesignTokens.Spacing.xxs) {
             Image(systemName: direction).foregroundStyle(Design.inkFaint)
-            Text(verbatim: value.map(Format.rate) ?? "—")
+            Text(verbatim: value.map(Format.rate) ?? Design.noData)
                 .monospacedDigit()
                 .foregroundStyle(Design.inkMuted)
         }
@@ -254,19 +255,19 @@ struct SystemOverviewWidgetView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(label))
-        .accessibilityValue(Text(verbatim: value.map(Format.rate) ?? "—"))
+        .accessibilityValue(Text(verbatim: value.map(Format.rate) ?? Design.noData))
     }
 
     private func sensors(scale: Design.TypeScale) -> some View {
         HStack(spacing: DesignTokens.Spacing.sm) {
             sensor("CPU", value: temperature(readings.cpuTemperature), scale: scale)
             sensor("GPU", value: temperature(readings.gpuTemperature), scale: scale)
-            sensor("Fan speed", value: readings.fanRPM.map { String(format: "%.0f rpm", $0) } ?? "—", scale: scale)
+            sensor("Fan speed", value: readings.fanRPM.map { String(format: "%.0f rpm", $0) } ?? Design.noData, scale: scale)
         }
     }
 
     private func temperature(_ value: Double?) -> String {
-        value.map { MonitorTemperature.valueText($0) + MonitorTemperature.symbol } ?? "—"
+        value.map { MonitorTemperature.valueText($0) + MonitorTemperature.symbol } ?? Design.noData
     }
 
     private func sensor(_ title: LocalizedStringKey, value: String, scale: Design.TypeScale) -> some View {

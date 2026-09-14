@@ -66,10 +66,10 @@ struct CPUWidgetView: View {
     private func smallBody(cellHeight: CGFloat) -> some View {
         let scale = Design.TypeScale(cellHeight: cellHeight)
         WidgetContainer(
-            label: "CPU",
+            label: WidgetFactory.displayName(.cpu),
             systemImage: WidgetFactory.icon(.cpu),
             cellHeight: cellHeight,
-            status: { CPUStateDot(fraction: cpuFraction) }
+            status: { LoadStateDot(fraction: cpuFraction) }
         ) {
             VStack(spacing: scale.label * 0.55) {
                 Spacer(minLength: 0)
@@ -80,7 +80,7 @@ struct CPUWidgetView: View {
                 .frame(maxWidth: hasTemp ? 126 : 138)
 
                 if let temp = tempCapsuleTemp {
-                    temperatureCapsule(temp, scale: scale)
+                    SensorCapsule(celsius: temp, scale: scale)
                 }
 
                 Spacer(minLength: 0)
@@ -104,10 +104,10 @@ struct CPUWidgetView: View {
         let sys = system?.cpuSystem ?? 0
         let (userPct, sysPct, _) = Self.compositionPercents(user: user, system: sys)
         WidgetContainer(
-            label: "CPU",
+            label: WidgetFactory.displayName(.cpu),
             systemImage: WidgetFactory.icon(.cpu),
             cellHeight: cellHeight,
-            status: { CPUStateDot(fraction: cpuFraction) }
+            status: { LoadStateDot(fraction: cpuFraction) }
         ) {
             let identity = Self.identityLine(system?.cpuInfo)
             VStack(alignment: .leading, spacing: scale.label * 0.5) {
@@ -164,10 +164,10 @@ struct CPUWidgetView: View {
     private func largeBody(cellHeight: CGFloat) -> some View {
         let scale = Design.TypeScale(cellHeight: cellHeight)
         WidgetContainer(
-            label: "CPU",
+            label: WidgetFactory.displayName(.cpu),
             systemImage: WidgetFactory.icon(.cpu),
             cellHeight: cellHeight,
-            status: { CPUStateDot(fraction: cpuFraction) }
+            status: { LoadStateDot(fraction: cpuFraction) }
         ) {
             let identity = Self.identityLine(system?.cpuInfo)
             VStack(alignment: .leading, spacing: scale.label * 0.6) {
@@ -245,19 +245,10 @@ struct CPUWidgetView: View {
     // MARK: - Shared subviews
 
     private func heroReadout(fraction: Double, baseSize: CGFloat) -> some View {
-        let text = Self.wholeNumber(fraction)
-        let heroSize = Self.heroSize(base: baseSize, digits: text.count)
-        return HStack(alignment: .firstTextBaseline, spacing: 0) {
-            Text(verbatim: text)
-                .font(Design.heroFont(size: heroSize))
-                .monospacedDigit()
-                .foregroundStyle(Design.inkPrimary)
-            Text(verbatim: "%")
-                .font(Design.heroFont(size: heroSize * Self.heroUnitRatio))
-                .foregroundStyle(Design.inkFaint)
-        }
-        .lineLimit(1)
-        .minimumScaleFactor(0.6)
+        HeroPercent(fraction: fraction, baseSize: baseSize)
+            .accessibilityElement()
+            .accessibilityLabel(Text("CPU"))
+            .accessibilityValue(Text(verbatim: Format.percent(fraction)))
     }
 
     /// Whisper section header (L's "Cores · N" / "Top by CPU" column titles).
@@ -270,37 +261,6 @@ struct CPUWidgetView: View {
             .lineLimit(1)
     }
 
-    /// B-tier temperature capsule (S) — cool→warm dot plus the reading in the user's unit.
-    @ViewBuilder
-    private func temperatureCapsule(_ celsius: Double, scale: Design.TypeScale) -> some View {
-        HStack(spacing: scale.label * 0.5) {
-            Circle()
-                .fill(Design.temperatureColor(celsius))
-                .frame(width: scale.caption * 0.62, height: scale.caption * 0.62)
-                .shadow(color: Design.temperatureColor(celsius).opacity(0.7), radius: 2)
-            HStack(alignment: .firstTextBaseline, spacing: 1) {
-                Text(verbatim: MonitorTemperature.valueText(celsius))
-                    .font(Design.subFont(size: scale.caption))
-                    .monospacedDigit()
-                    .foregroundStyle(Design.inkPrimary)
-                Text(verbatim: MonitorTemperature.symbol)
-                    .font(Design.captionFont(size: scale.caption * 0.68))
-                    .foregroundStyle(Design.inkFaint)
-            }
-            Text("Sensor")
-                .font(Design.labelFont(size: scale.label * 0.94))
-                .tracking(scale.label * 0.12)
-                .foregroundStyle(Design.inkFaint)
-        }
-        .padding(.vertical, scale.label * 0.3)
-        .padding(.leading, scale.label * 0.55)
-        .padding(.trailing, scale.label * 0.7)
-        .background(
-            Capsule(style: .continuous)
-                .fill(Design.bg2.opacity(0.5))
-                .overlay(Capsule(style: .continuous).strokeBorder(Design.hairlineHi.opacity(0.55), lineWidth: 1))
-        )
-    }
 
     @ViewBuilder
     private func compositionBar(scale: Design.TypeScale, centeredLegend: Bool, legendScale: CGFloat) -> some View {
@@ -377,19 +337,8 @@ struct CPUWidgetView: View {
     /// Peak reading inside the load curve.
     @ViewBuilder
     private func peakInlineTag(scale: Design.TypeScale) -> some View {
-        let size = scale.label * 0.9
-        HStack(alignment: .firstTextBaseline, spacing: size * 0.3) {
-            Text(verbatim: "PEAK")
-                .font(Design.labelFont(size: size))
-                .tracking(size * 0.1)
-                .foregroundStyle(Design.inkFaint)
-            Text(verbatim: Self.wholePercent(peakFraction))
-                .font(Design.subFont(size: size))
-                .monospacedDigit()
-                .foregroundStyle(Design.inkMuted)
-        }
-        .monitorChip(scale)
-        .padding(size * 0.3)
+        PeakTag(value: Format.percent(peakFraction), scale: scale, size: scale.label * 0.9)
+            .padding(scale.label * 0.27)
     }
 
     /// Per-core heat strip (M, compact): clusters side by side.
@@ -540,9 +489,10 @@ struct CPUWidgetView: View {
             Circle().fill(Design.signalAmber)
                 .frame(width: scale.label * 0.5, height: scale.label * 0.5)
                 .shadow(color: Design.signalAmber.opacity(0.6), radius: 2)
-            Text(verbatim: "thermal")
+            Text("Thermal")
+                .textCase(.lowercase)
                 .font(Design.labelFont(size: scale.label * 0.92))
-                .tracking(scale.label * 0.1)
+                .tracking(Design.labelTracking(size: scale.label))
                 .foregroundStyle(Design.inkFaint)
             Text(verbatim: state.capitalized)
                 .font(Design.subFont(size: scale.label))
@@ -729,17 +679,6 @@ private struct CPUStackChart: View {
     }
 }
 
-private struct CPUStateDot: View {
-    var fraction: Double
-
-    var body: some View {
-        let pct = fraction * 100
-        let color: Color = pct > 85 ? Design.signalCoral
-            : (pct > 60 ? Design.signalAmber : Design.signalIdle)
-        BreathingDot(color: color, size: 6, animated: pct > 60)
-    }
-}
-
 // MARK: - Per-widget options (read side + pure draft mutations, unit-tested)
 
 enum MonitorCPUDraft {
@@ -804,20 +743,6 @@ extension CPUWidgetView {
         var loads: [Double]
     }
 
-    nonisolated static func wholePercent(_ fraction: Double) -> String {
-        "\(wholeNumber(fraction))%"
-    }
-
-    /// 0…1 → whole-number string with no "%" ("37"); same clamp/round as
-    /// `wholePercent`, for callers that append their own separately-styled unit.
-    nonisolated static func wholeNumber(_ fraction: Double) -> String {
-        let f = fraction.isFinite ? min(max(fraction, 0), 1) : 0
-        return "\(Int((f * 100).rounded()))"
-    }
-
-    /// The "%" is drawn at this fraction of the digits' size at every call site.
-    nonisolated static let heroUnitRatio: CGFloat = 0.4
-
     /// Tallest ring the M and L tiles draw, at every board scale.
     nonisolated static let gaugeSideCap: CGFloat = 96
 
@@ -852,15 +777,6 @@ extension CPUWidgetView {
             ? Design.TypeScale(cellHeight: cellHeight).label * gaugeLegendSlots
             : 0
         return min(gaugeSideCap, max(0, legend, cellHeight * 2 - chrome))
-    }
-
-    /// Scale three-digit hero values to fit the ring while staying above the 0.6 text-scale floor.
-    /// The 0.68 factor was measured across board scales 0.85…2.0.
-    nonisolated static let threeDigitHeroShrink: CGFloat = 0.68
-
-    /// Hero size for a `digits`-digit readout. Only full load reaches three.
-    nonisolated static func heroSize(base: CGFloat, digits: Int) -> CGFloat {
-        digits >= 3 ? base * threeDigitHeroShrink : base
     }
 
     nonisolated static func rpmValue(_ rpm: Double) -> String {
