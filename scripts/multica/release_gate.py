@@ -2,23 +2,30 @@
 """Validate static review evidence and print a packaging plan; never publish."""
 
 import argparse
-import hashlib
 import json
 import re
 import shlex
 import subprocess
 import sys
 import stat
-import os
 from pathlib import Path
 
-from review_runner import (POLICY_VERSION, MAX_ATTESTATION_BYTES, ReviewError, load_json,
+from review_runner import (POLICY_VERSION, MAX_ATTESTATION_BYTES, ReviewError,
                            validate_report, git as controlled_git, job_lock, validate_dispatch_receipt,
-                           RELEASE_VERSION, read_json_snapshot, MAX_REPORT_BYTES, JOB, kv)
+                           RELEASE_VERSION, read_json_snapshot, JOB, parse_kv,
+                           TEXT_LIMITS, artifact_limit, read_text_snapshot, read_output_snapshot, artifact_digest,
+                           validate_dispatch_contract, validate_terminal_evidence, review_policy)
 
 
 class GateError(ValueError):
     """A required release precondition is absent or invalid."""
+
+
+def enforce_contract(function, *args):
+    try:
+        return function(*args)
+    except ReviewError as exc:
+        raise GateError(str(exc)) from exc
 
 
 def git(repo, *args):
@@ -41,19 +48,7 @@ def reject_symlinks(path):
 
 
 def file_hash(path):
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-
-TEXT_LIMITS = {".status": 4096, ".meta": 64 * 1024, ".out": 2 * MAX_REPORT_BYTES}
-
-
-def artifact_limit(path: Path) -> int:
-    return TEXT_LIMITS.get(path.suffix, MAX_REPORT_BYTES)
+    return artifact_digest(path)
 
 
 def check_artifact_size(path: Path) -> None:
@@ -63,42 +58,17 @@ def check_artifact_size(path: Path) -> None:
 
 
 def read_bounded_text(path: Path) -> str:
-    check_artifact_size(path)
-    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-    try:
-        info = os.fstat(fd)
-        maximum = artifact_limit(path)
-        if not stat.S_ISREG(info.st_mode) or info.st_size > maximum:
-            raise GateError("ARTIFACT_NOT_REGULAR_OR_OVERSIZED")
-        with os.fdopen(fd, "rb", closefd=False) as stream:
-            data = stream.read(maximum + 1)
-        if len(data) > maximum:
-            raise GateError("ARTIFACT_OVERSIZED")
-        return data.decode("utf-8")
-    finally:
-        os.close(fd)
+    return read_text_snapshot(path)[0]
 
 
 def output_has_text(path: Path) -> bool:
-    check_artifact_size(path)
-    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     try:
-        info = os.fstat(fd)
-        limit = artifact_limit(path)
-        if not stat.S_ISREG(info.st_mode) or info.st_size > limit:
-            raise GateError("ARTIFACT_NOT_REGULAR_OR_OVERSIZED")
-        import codecs
-        decoder = codecs.getincrementaldecoder("utf-8")()
-        total = 0
-        nonempty = False
-        while chunk := os.read(fd, 65536):
-            total += len(chunk)
-            if total > limit:
-                raise GateError("ARTIFACT_OVERSIZED")
-            nonempty = bool(decoder.decode(chunk).strip()) or nonempty
-        return bool(decoder.decode(b"", final=True).strip()) or nonempty
-    finally:
-        os.close(fd)
+        return read_output_snapshot(path)[0]
+    except ReviewError as exc:
+        if str(exc) == "ARTIFACT_OUTPUT_EMPTY":
+            return False
+        raise
+
 
 def validate(repo, attestation, base_sha, head_sha):
     """Hold the collector lifecycle lock and pin both control evidence files."""
@@ -178,6 +148,7 @@ def _validate_locked(repo, evidence, base_sha, head_sha):
             or outcome.get("request_sha256") != evidence.get("dispatch_request_sha256")
             or outcome.get("job_id") != evidence.get("job_id")):
         raise GateError("dispatcher receipt does not match reviewed job")
+    enforce_contract(validate_dispatch_contract, Path(receipt_path).parent, evidence)
     root_value = evidence.get("artifact_root")
     if not isinstance(root_value, str) or not Path(root_value).is_absolute():
         raise GateError("artifact_root must be an absolute path")
@@ -199,6 +170,7 @@ def _validate_locked(repo, evidence, base_sha, head_sha):
         raise GateError("nonempty artifact manifest required")
     seen = set()
     verified = {}
+    verified_hashes = {}
     for artifact in artifacts:
         if not isinstance(artifact, dict):
             raise GateError("invalid artifact record")
@@ -222,6 +194,7 @@ def _validate_locked(repo, evidence, base_sha, head_sha):
         if file_hash(path) != expected_hash:
             raise GateError("artifact hash mismatch: " + name)
         verified[name] = path
+        verified_hashes[name] = expected_hash
     policy = evidence.get("policy")
     if not isinstance(policy, dict) or policy.get("version") != POLICY_VERSION:
         raise GateError("unsupported review policy version")
@@ -237,9 +210,17 @@ def _validate_locked(repo, evidence, base_sha, head_sha):
         or not set(models).issubset({"codex", "grok", "claude", "agy"})
     ):
         raise GateError("release review must use codex plus grok or claude")
+    if policy != review_policy("release", models):
+        raise GateError("release policy does not match the complete current contract")
     if "run.meta" not in verified:
         raise GateError("RUN_METADATA_REQUIRED")
-    run_meta = kv(verified["run.meta"])
+    def snapshot(name, reader):
+        value, hashed, _ = reader(verified[name])
+        if hashed != verified_hashes[name]:
+            raise GateError("ARTIFACT_SEMANTIC_SNAPSHOT_CHANGED")
+        return value
+    enforce_contract(validate_terminal_evidence, Path(receipt_path).parent, evidence, artifacts)
+    run_meta = parse_kv(snapshot("run.meta", read_text_snapshot))
     if (run_meta.get("runid") != run_id or run_meta.get("session") != provenance["session"]
             or run_meta.get("workdir") != str(repo) or run_meta.get("mode") != "review"
             or run_meta.get("models") != ",".join(models)):
@@ -248,16 +229,16 @@ def _validate_locked(repo, evidence, base_sha, head_sha):
         for suffix in ("json", "status", "meta", "out"):
             if model + "." + suffix not in verified:
                 raise GateError("required model evidence missing: " + model + "." + suffix)
-        if read_bounded_text(verified[model + ".status"]).strip() != "DONE":
+        if snapshot(model + ".status", read_text_snapshot).strip() != "DONE":
             raise GateError("model review is not DONE: " + model)
         exits = [line.partition("=")[2].strip() for line in
-                 read_bounded_text(verified[model + ".meta"]).splitlines()
+                 snapshot(model + ".meta", read_text_snapshot).splitlines()
                  if line.partition("=")[0].strip() == "exit"]
         if exits != ["0"]:
             raise GateError("model review must have one successful exit: " + model)
-        if not output_has_text(verified[model + ".out"]):
+        if not snapshot(model + ".out", read_output_snapshot):
             raise GateError("model output is empty: " + model)
-        report = validate_report(load_json(verified[model + ".json"]))
+        report = validate_report(snapshot(model + ".json", read_json_snapshot))
         if report["verdict"] != "approve" or report["not_expanded"] != 0 or any(
             finding["severity"] in ("critical", "major") for finding in report["findings"]
         ):
@@ -279,6 +260,8 @@ def _validate_locked(repo, evidence, base_sha, head_sha):
             or receipt_final_hash != evidence["dispatch_receipt_sha256"]
             or receipt_final_value != outcome):
         raise GateError("dispatcher receipt changed during validation")
+    enforce_contract(validate_dispatch_contract, Path(receipt_path).parent, evidence)
+    enforce_contract(validate_terminal_evidence, Path(receipt_path).parent, evidence, artifacts)
     return {"status": "STATIC_REVIEW_VERIFIED", "repo": str(repo), "base_sha": base_sha,
             "head_sha": head_sha, "artifacts_verified": len(seen), "published": False,
             "version": evidence.get("version")}

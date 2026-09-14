@@ -108,6 +108,13 @@ class ServiceTests(unittest.TestCase):
         self.assertIsNone(result)
         self.assertNotIn('private-data', output.getvalue() + errors.getvalue())
 
+    def test_new_service_state_ancestors_are_private(self):
+        parent = Path(self.cfg['state_path']).parent.resolve() / 'new' / 'nested'
+        self.cfg['state_path'] = str(parent / 'state.sqlite')
+        self.assertEqual(self.invoke(), 0)
+        self.assertEqual(parent.stat().st_mode & 0o777, 0o700)
+        self.assertEqual(parent.parent.stat().st_mode & 0o777, 0o700)
+
 
 if __name__ == '__main__':
     unittest.main()

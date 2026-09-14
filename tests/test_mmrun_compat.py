@@ -6,6 +6,8 @@ from pathlib import Path
 import os
 import stat
 import subprocess
+import sys
+import time
 import tempfile
 import unittest
 from unittest import mock
@@ -111,10 +113,10 @@ class LocalCopyTests(unittest.TestCase):
         anchors = compat.CLAUDE_ANCHORS
         return ('#!/usr/bin/env bash\n# --tools read_file,grep,list_dir\n# sandbox-exec original guard\n'
                 + anchors['binary'] + '\n' + anchors['models']
-                + '\nrun_once() {\n  case "$m" in\n    grok)\n'
+                + '\nrun_once() {\n  case "$m" in\n    codex)\n' + compat.CODEX_CAPTURE + '\n      ;;\n    grok)\n'
                 + compat.SESSION_ANCHOR + '\n      env "${GROK_ENV[@]}" "$SELF" __fence "$w" "$HOME/.grok" "$rd/prompt.md" "$ro" \\\n'
                 + compat.OUTPUT_ANCHOR + '\n      ;;\n' + anchors['case']
-                + '      :\n      ;;\n  esac\n}\nstart_fixture() {\n'
+                + compat.AGY_CAPTURE + '\n      ;;\n  esac\n}\nstart_fixture() {\n'
                 + anchors['workdir'] + '\n    ' + anchors['start']
                 + '\n}\nrun_fixture() {\n  ' + anchors['run'] + '\n}\n')
 
@@ -143,7 +145,7 @@ class LocalCopyTests(unittest.TestCase):
         self.assertIn('"$SELF" __fence "$w" "$HOME/.grok" "$rd/prompt.md" "$ro"', patched)
         self.assertIn("# --tools read_file,grep,list_dir", patched)
         self.assertIn("'/helper with spaces.py' normalize", patched)
-        self.assertIn('> "$rd/grok.stdout" 2> "$rd/grok.raw"', patched)
+        self.assertIn('--stdout "$rd/grok.stdout" --stderr "$rd/grok.raw"', patched)
         self.assertNotIn("--always-approve", patched)
         self.assertNotIn("--no-plan", patched)
 
@@ -328,6 +330,71 @@ class LocalCopyTests(unittest.TestCase):
                     compat.prepare(source, output)
             self.assertFalse(output.with_name(output.name + '.provenance.json').exists())
             self.assertEqual(source.read_text(), self.source())
+
+
+class CaptureTests(unittest.TestCase):
+    def test_exact_streams_input_cwd_and_nonzero_status(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prompt = root / 'prompt'
+            prompt.write_text('input data')
+            code = 'import sys,os;print(sys.stdin.read());print(os.getcwd());print("diagnostic",file=sys.stderr);sys.exit(7)'
+            result = compat.capture([sys.executable, '-c', code], root / 'stdout', root / 'stderr', stdin_path=prompt, cwd=root)
+            self.assertEqual(result, 7)
+            self.assertEqual((root / 'stdout').read_text(), 'input data\n' + str(root.resolve()) + '\n')
+            self.assertEqual((root / 'stderr').read_text(), 'diagnostic\n')
+
+    def test_each_stream_and_shared_file_are_bounded_before_process_exit(self):
+        for stream, shared in ((1, False), (2, False), (1, True), (2, True)):
+            with self.subTest(stream=stream, shared=shared), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                out, err = root / 'out', root / ('out' if shared else 'err')
+                code = f'import os;data=b"x"*65536\nwhile True: os.write({stream},data)'
+                before = time.monotonic()
+                with self.assertRaisesRegex(compat.CompatibilityError, 'PROVIDER_OUTPUT_LIMIT'):
+                    compat.capture([sys.executable, '-c', code], out, err, stdout_limit=4096, stderr_limit=2048, file_limit=3072)
+                self.assertLess(time.monotonic() - before, 10)
+                self.assertLessEqual(out.stat().st_size, 3072)
+                self.assertLessEqual(err.stat().st_size, 3072 if shared else 2048)
+                if stream == 2:
+                    self.assertEqual(err.stat().st_size, 2048)
+
+    def test_unrelated_provider_database_is_not_size_limited(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            code = 'from pathlib import Path;Path("provider-state").write_bytes(b"x"*65536);print("ok")'
+            result = compat.capture([sys.executable, '-c', code], root / 'out', root / 'err', cwd=root, stdout_limit=100, stderr_limit=100, file_limit=100)
+            self.assertEqual(result, 0)
+            self.assertEqual((root / 'provider-state').stat().st_size, 65536)
+
+    def test_timeout_also_applies_after_both_output_pipes_close(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            code = 'import os,time;os.close(1);os.close(2);time.sleep(30)'
+            before = time.monotonic()
+            with self.assertRaisesRegex(compat.CompatibilityError, 'PROVIDER_CAPTURE_TIMEOUT'):
+                compat.capture([sys.executable, '-c', code], root / 'out', root / 'err', timeout=0.2)
+            self.assertLess(time.monotonic() - before, 10)
+
+    def test_missing_command_and_input_output_collision_fail(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prompt = root / 'prompt'
+            prompt.write_text('keep')
+            with self.assertRaises(compat.CompatibilityError):
+                compat.capture([sys.executable, '-c', 'pass'], prompt, root / 'err', stdin_path=prompt)
+            self.assertEqual(prompt.read_text(), 'keep')
+            with self.assertRaises(OSError):
+                compat.capture([str(root / 'not-a-command')], root / 'out', root / 'err')
+
+    def test_descendant_holding_pipe_cannot_keep_capture_open_forever(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            code = 'import subprocess,sys;subprocess.Popen([sys.executable,"-c","import time;time.sleep(30)"]);print("done",flush=True)'
+            before = time.monotonic()
+            with self.assertRaisesRegex(compat.CompatibilityError, 'PROVIDER_DESCENDANT_STREAM_UNKNOWN'):
+                compat.capture([sys.executable, '-c', code], root / 'out', root / 'err', exit_grace=0.2)
+            self.assertLess(time.monotonic() - before, 10)
 
 
 if __name__ == "__main__":

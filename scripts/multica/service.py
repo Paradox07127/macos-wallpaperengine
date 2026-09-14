@@ -41,7 +41,7 @@ def main(argv=None):
     if not enabled:
         print('Multica bridge paused by local config')
         return 0
-    Path(cfg['state_path']).parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    github_bridge.runner.durable_mkdir(Path(cfg['state_path']).parent)
     cli = [cfg['multica_path'], '--profile', cfg['multica_profile']]
     status = run_stage(cli + ['daemon', 'status', '--output', 'json'], 20,
                        'Daemon status', capture_output=True)

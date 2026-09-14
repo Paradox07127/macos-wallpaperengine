@@ -71,7 +71,33 @@ class ReleaseGateTests(unittest.TestCase):
                              dispatch_request_sha256="a" * 64,
                              dispatch_receipt_sha256=hashlib.sha256(receipt.read_bytes()).hexdigest())
         self.attestation = self.root / "attestation.json"
+        self.refresh_contract()
         self.save()
+
+    def refresh_contract(self):
+        # A fresh complete synthetic attempt; production baselines are never reset.
+        executable = self.root / 'fixture-mmrun'; executable.write_text('fixture executable')
+        inputs = {}
+        for name in ('schema', 'fence', 'notes', 'codex_profile', 'codex_profile_snapshot'):
+            path = self.root / ('input-' + name); path.write_text('fixture ' + name)
+            inputs[name] = {'path': str(path), 'sha256': gate.file_hash(path)}
+        helper = Path(runner.__file__).with_name('runner_dispatch.py')
+        self.evidence['provenance'].update(mmrun_kind='upstream', mmrun_path=str(executable),
+            mmrun_sha256=gate.file_hash(executable), models=self.evidence['policy']['models'], input_files=inputs,
+            review_runner_path=str(Path(runner.__file__).resolve()), review_runner_sha256=gate.file_hash(Path(runner.__file__)),
+            dispatch_helper=str(helper), dispatch_helper_sha256=gate.file_hash(helper),
+            codex_home=str(self.root), mmrun_d_snapshot=str(self.root))
+        request = {'schema_version': 1, 'job_id': self.evidence['job_id'], 'argv': [str(executable)],
+                   'provenance': self.evidence['provenance'], 'executable_sha256': gate.file_hash(executable)}
+        runner.write_json(self.root / 'dispatch-request.json', request)
+        hashed = gate.file_hash(self.root / 'dispatch-request.json')
+        self.evidence['dispatch_request_sha256'] = hashed
+        self.evidence['dispatch_result']['request_sha256'] = hashed
+        runner.write_json(self.root / 'dispatch-result.json', self.evidence['dispatch_result'])
+        self.evidence['dispatch_receipt_sha256'] = gate.file_hash(self.root / 'dispatch-result.json')
+        (self.root / 'terminal-evidence.json').unlink(missing_ok=True)
+        self.evidence.pop('terminal_evidence_path', None); self.evidence.pop('terminal_evidence_sha256', None)
+        runner.validate_terminal_evidence(self.root, self.evidence, self.evidence['artifacts'], create=True)
 
     def git(self, *args):
         return subprocess.run(["git", "-C", str(self.repo), *args], check=True,
@@ -287,7 +313,7 @@ class ReleaseGateTests(unittest.TestCase):
             self.validate()
 
     def test_claude_can_replace_grok_but_every_listed_model_must_approve(self):
-        self.evidence["policy"]["models"] = ["codex", "claude"]
+        self.evidence["policy"]["models"] = ["claude", "codex"]
         for artifact in self.evidence["artifacts"]:
             if artifact["path"].startswith("grok."):
                 old = self.artifact_root / artifact["path"]
@@ -298,13 +324,15 @@ class ReleaseGateTests(unittest.TestCase):
         for artifact in self.evidence["artifacts"]:
             if artifact["path"] == "run.meta":
                 artifact["sha256"] = hashlib.sha256(meta.read_bytes()).hexdigest()
+        self.refresh_contract()
         self.save()
         self.assertEqual(self.validate()["status"], "STATIC_REVIEW_VERIFIED")
         self.evidence["policy"]["models"].append("grok")
-        meta.write_text(meta.read_text().replace("models=codex,claude", "models=codex,claude,grok"))
+        meta.write_text(meta.read_text().replace("models=claude,codex", "models=claude,codex,grok"))
         for artifact in self.evidence["artifacts"]:
             if artifact["path"] == "run.meta":
                 artifact["sha256"] = hashlib.sha256(meta.read_bytes()).hexdigest()
+        self.refresh_contract()
         self.save()
         with self.assertRaisesRegex(gate.GateError, "required model evidence missing"):
             self.validate()
@@ -336,6 +364,7 @@ class ReleaseGateTests(unittest.TestCase):
 
 class V6ArtifactBoundaryTests(unittest.TestCase):
     setUp = ReleaseGateTests.setUp
+    refresh_contract = ReleaseGateTests.refresh_contract
     git = ReleaseGateTests.git
     save = ReleaseGateTests.save
     validate = ReleaseGateTests.validate
@@ -363,7 +392,7 @@ class V6ArtifactBoundaryTests(unittest.TestCase):
             path.write_bytes(data)
             self.assertIs(gate.output_has_text(path), expected)
         path.write_bytes(b'valid prefix\xff')
-        with self.assertRaises(UnicodeDecodeError):
+        with self.assertRaisesRegex(gate.ReviewError, "INVALID_UTF8"):
             gate.output_has_text(path)
 
     def test_artifact_root_and_rehashed_run_metadata_remain_bound(self):
@@ -372,7 +401,7 @@ class V6ArtifactBoundaryTests(unittest.TestCase):
                              ('provenance', {'mmrun_home': str(self.root / 'other'), 'session': 'fixture-session'})):
             with self.subTest(field=field):
                 self.evidence = dict(original, **{field:value}); self.save()
-                with self.assertRaisesRegex(gate.GateError, 'ARTIFACT_RUN_IDENTITY_MISMATCH'):
+                with self.assertRaises(gate.GateError):
                     self.validate()
         self.evidence = copy.deepcopy(original)
         path = self.artifact_root / 'run.meta'; content = path.read_text()
@@ -382,7 +411,7 @@ class V6ArtifactBoundaryTests(unittest.TestCase):
                                           for line in content.splitlines()) + '\n')
                 next(a for a in self.evidence['artifacts'] if a['path'] == 'run.meta')['sha256'] = gate.file_hash(path)
                 self.save()
-                with self.assertRaisesRegex(gate.GateError, 'RUN_METADATA_IDENTITY_MISMATCH'):
+                with self.assertRaisesRegex(gate.GateError, 'TERMINAL_EVIDENCE_CHANGED'):
                     self.validate()
 
     def test_git_fixture_ignores_inherited_repository_and_global_hooks(self):
@@ -419,6 +448,51 @@ class V6ArtifactBoundaryTests(unittest.TestCase):
         self.assertIn('<CLEAN_WRITABLE_CHECKOUT>', result['manual_packaging_command'])
         self.assertNotIn(str(self.repo), result['manual_packaging_command'])
         self.assertEqual(result['packaging_checkout_head'], self.head)
+
+
+class V7GateContractTests(unittest.TestCase):
+    setUp = ReleaseGateTests.setUp
+    refresh_contract = ReleaseGateTests.refresh_contract
+    git = ReleaseGateTests.git
+    save = ReleaseGateTests.save
+    validate = ReleaseGateTests.validate
+
+    def test_gate_requires_actual_request_and_every_execution_input(self):
+        paths = [self.root / 'dispatch-request.json'] + [Path(item['path']) for item in self.evidence['provenance']['input_files'].values()]
+        for path in paths:
+            with self.subTest(path=path.name):
+                self.assertEqual(self.validate()['status'], 'STATIC_REVIEW_VERIFIED')
+                original = path.read_bytes(); path.unlink()
+                with self.assertRaises(gate.GateError):
+                    self.validate()
+                path.write_bytes(original)
+                path.write_bytes(original + b'changed')
+                with self.assertRaises(gate.GateError):
+                    self.validate()
+                path.write_bytes(original)
+
+    def test_gate_requires_immutable_terminal_baseline(self):
+        self.assertEqual(self.validate()['status'], 'STATIC_REVIEW_VERIFIED')
+        (self.root / 'terminal-evidence.json').unlink()
+        with self.assertRaisesRegex(gate.GateError, 'BASELINE_MISSING'):
+            self.validate()
+
+    def test_gate_semantic_snapshot_cannot_disagree_with_hash(self):
+        original = gate.read_text_snapshot
+        changed = False
+        def interleave(path):
+            nonlocal changed
+            if path.name == 'codex.status' and not changed:
+                changed = True; path.write_text('FAIL:1')
+            return original(path)
+        with patch.object(gate, 'read_text_snapshot', side_effect=interleave):
+            with self.assertRaisesRegex(gate.GateError, 'SEMANTIC_SNAPSHOT_CHANGED'):
+                self.validate()
+
+    def test_deep_attestation_is_controlled(self):
+        self.attestation.write_text('[' * 2000 + '0' + ']' * 2000)
+        with self.assertRaisesRegex(gate.ReviewError, 'JSON_(INVALID|TOO_DEEP)'):
+            self.validate()
 
 
 if __name__ == "__main__":

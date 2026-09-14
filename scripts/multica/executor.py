@@ -29,7 +29,7 @@ class JobError(RuntimeError):
 
 def atomic(path, value):
     path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    runner.durable_mkdir(path.parent)
     fd, name = tempfile.mkstemp(dir=path.parent, prefix='.record-')
     try:
         with os.fdopen(fd, 'w') as stream:
@@ -266,12 +266,19 @@ def failed_execution(directory, job_id, runner_job_id=None):
                         'Inspect this job\'s execution-result.json; no review approval exists.']}
 
 
-def _run_attempt(cfg, req, commands):
+def _run_attempt(cfg, req, commands, *, dispatch_reserved=False):
     """Called with the logical executor lock held; never automatically retries."""
     job_id = req['job_id']
     runner_id, directory = active_attempt(cfg, req)
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     already_started = (directory / 'execution.json').exists()
+    if dispatch_reserved:
+        reservation = runner.load_json(directory / 'execution.json')
+        if (runner_id == job_id or not isinstance(reservation, dict)
+                or reservation.get('job_id') != job_id or reservation.get('runner_job_id') != runner_id
+                or reservation.get('phase') != 'NOT_DISPATCHED'):
+            raise JobError('Retry dispatch requires an intact, unused reservation')
+        already_started = False
     phase = 'target validation'
     try:
         if not current_target(cfg, req, commands):
@@ -343,7 +350,7 @@ def _run_attempt(cfg, req, commands):
         atomic(directory / 'execution-result.json', result)
         return result
     except (JobError, runner.ReviewError, bridge.BridgeError, OSError, ValueError,
-            TypeError, KeyError, subprocess.SubprocessError) as exc:
+            TypeError, KeyError, RecursionError, subprocess.SubprocessError) as exc:
         # Persist only controlled diagnostics, never captured model output,
         # process stderr, credentials or peer findings.
         reason = str(exc) if isinstance(exc, JobError) else type(exc).__name__
@@ -352,7 +359,7 @@ def _run_attempt(cfg, req, commands):
         if not already_started:
             if not (directory / 'execution.json').exists():
                 atomic(directory / 'execution.json', {'job_id': job_id, 'runner_job_id': runner_id,
-                                                      'started_at': bridge.utcnow()})
+                                                      'phase': 'NOT_DISPATCHED', 'started_at': bridge.utcnow()})
             atomic(directory / 'execution-result.json', result)
         return result
 
@@ -370,7 +377,23 @@ def run_job(cfg, job_id):
 def require_quiescent(cfg, req, runner_id):
     """Delegate session/dispatcher recovery to the runner's authoritative journal."""
     directory = Path(cfg['review_state_dir']) / runner_id
+    if directory.is_symlink():
+        raise JobError('Review evidence directory may not be a symlink')
     if not directory.exists():
+        job_dir = Path(cfg['jobs_dir']).resolve() / req['job_id']
+        if runner_id != req['job_id'] and not re.fullmatch(re.escape(req['job_id']) + r'-retry-[0-9a-f]{12}', runner_id):
+            raise JobError('Unknown runner identity for missing review directory')
+        records = job_dir if runner_id == req['job_id'] else job_dir / 'attempts' / runner_id
+        if records.is_symlink() or records.parent.is_symlink():
+            raise JobError('Attempt records may not be symlinked')
+        execution = runner.load_json(records / 'execution.json')
+        if (not isinstance(execution, dict) or execution.get('job_id') != req['job_id']
+                or execution.get('runner_job_id', req['job_id']) != runner_id
+                or execution.get('phase') not in ('PREPARING', 'NOT_DISPATCHED')):
+            raise JobError('Review evidence is missing after possible dispatch; process state is unknown')
+        # Only these durable pre-launch phases prove this controller did not
+        # start a runner. A missing directory or empty ps match alone cannot.
+        no_active_controller(runner_id)
         return
     with runner.job_lock(directory) as locked:
         if not locked:
@@ -428,8 +451,9 @@ def collect_job(cfg, job_id):
               'recorded_policy_fingerprint': req.get('policy_fingerprint'),
               'reasons': ['Historical metadata only; evidence has not been revalidated under the current policy']}
     reference = Path(cfg['review_state_dir']) / runner_id / 'attestation.json'
-    if reference.exists():
-        record = runner.load_json(reference)
+    is_reference = reference.exists()
+    if is_reference:
+        record, reference_hash, _ = runner.read_json_snapshot(reference)
         expected_id = runner_id
     else:
         reference = records / 'execution-result.json'
@@ -443,6 +467,23 @@ def collect_job(cfg, job_id):
         raise JobError('Historical record does not match the selected attempt')
     if record.get('verdict') not in runner.EXIT_CODES:
         raise JobError('Historical record has an unsupported verdict')
+    if is_reference:
+        try:
+            target = record.get('attestation_path')
+            expected_hash = record.get('sha256')
+            if (not isinstance(target, str) or not Path(target).is_absolute()
+                    or not isinstance(expected_hash, str) or not re.fullmatch(r'[0-9a-f]{64}', expected_hash)):
+                raise JobError('Historical attestation pointer lacks a valid path/hash')
+            actual, actual_hash, _ = runner.read_json_snapshot(Path(target), max_bytes=runner.MAX_ATTESTATION_BYTES)
+            if (actual_hash != expected_hash or not isinstance(actual, dict)
+                    or actual.get('job_id') != runner_id or actual.get('verdict') != record['verdict']
+                    or actual.get('head_sha') != req['head_sha'] or actual.get('base_sha') != req['base_sha']
+                    or runner.read_json_snapshot(reference)[1] != reference_hash):
+                raise JobError('Historical attestation pointer does not match its evidence')
+        except (JobError, runner.ReviewError, runner.CollectionUnavailable, OSError, ValueError, TypeError, RecursionError):
+            result['recorded_verdict'] = 'UNKNOWN'
+            result['reasons'].append('Historical attestation reference is unavailable or inconsistent; no recorded verdict can be confirmed')
+            return result
     result['recorded_verdict'] = record['verdict']
     # A reference is reported as historical; no reports or findings are copied
     # into the agent-readable CLI output and no current approval is asserted.
@@ -511,40 +552,54 @@ def retry_job(cfg, job_id):
         prior = attempt_result(cfg, req)
         if prior is None or prior.get('verdict') not in ('FAILED', 'NEEDS_REVIEW'):
             raise JobError('Explicit retry requires a completed FAILED or NEEDS_REVIEW attempt')
-        if not (Path(cfg['review_state_dir']) / prior_id).exists():
-            no_active_controller(prior_id)
         require_quiescent(cfg, req, prior_id)
-        runner_id = job_id + '-retry-' + secrets.token_hex(6)
-        if len(runner_id) > 96:
-            raise JobError('Retry runner ID exceeds the supported length')
-        records = directory / 'attempts' / runner_id
-        review_dir = Path(cfg['review_state_dir']) / runner_id
-        if records.exists() or records.is_symlink() or review_dir.exists() or review_dir.is_symlink():
-            raise JobError('Retry attempt ID collision; existing evidence was preserved')
-        if records.parent.is_symlink():
-            raise JobError('Attempt records directory may not be a symlink')
-        runner.durable_mkdir(records.parent)
-        records.mkdir(mode=0o700)
-        selection = {'schema_version': 1, 'job_id': job_id, 'runner_job_id': runner_id,
-                     'previous_runner_job_id': prior_id, 'previous_verdict': prior['verdict'],
-                     'created_at': bridge.utcnow()}
-        atomic(records / 'attempt.json', selection)
-        atomic(directory / 'attempt.json', selection)
-        try:
-            with bridge.status_lock(cfg, req) as locked:
-                if not locked:
-                    raise JobError('Status context is busy; retry was not dispatched')
-                commands.gh(f"repos/{cfg['repository']}/statuses/{req['head_sha']}",
-                            {'state': 'pending', 'context': bridge.status_context(req),
-                             'description': runner_id + ': explicit review retry requested'})
-        except (JobError, bridge.BridgeError, OSError, ValueError, TypeError, subprocess.SubprocessError) as exc:
-            result = {'job_id': job_id, 'runner_job_id': runner_id, 'verdict': 'FAILED',
-                      'reasons': ['Retry pending write failed: ' + type(exc).__name__]}
-            atomic(records / 'execution.json', {'job_id': job_id, 'runner_job_id': runner_id,
-                                                'started_at': bridge.utcnow()})
-            atomic(records / 'execution-result.json', result)
-            return result
-        return _run_attempt(cfg, req, commands)
+        with bridge.status_lock(cfg, req) as locked:
+            if not locked:
+                raise JobError('Status context is busy; no retry was selected')
+            issue_id = req.get('multica_issue_id')
+            if not issue_id:
+                raise JobError('Retry requires a current issue generation mapping')
+            with bridge.issue_generation_lock(cfg, issue_id) as generation_locked:
+                if not generation_locked:
+                    raise JobError('Issue generation is busy; no retry was selected')
+                if not current_target(cfg, req, commands):
+                    raise JobError('Retry target changed while prior evidence was checked')
+                if bridge.current_generation(cfg, issue_id) != job_id:
+                    raise JobError('Retry belongs to a superseded or unknown issue generation')
+                latest = remote_status(cfg, req, commands)
+                if latest and not re.match(r'^' + re.escape(job_id) + r'(?:-retry-[0-9a-f]{12})?:',
+                                           str(latest.get('description', ''))):
+                    raise JobError('Status context belongs to another generation; retry withheld')
+                runner_id = job_id + '-retry-' + secrets.token_hex(6)
+                if len(runner_id) > 96:
+                    raise JobError('Retry runner ID exceeds the supported length')
+                records = directory / 'attempts' / runner_id
+                review_dir = Path(cfg['review_state_dir']) / runner_id
+                if records.exists() or records.is_symlink() or review_dir.exists() or review_dir.is_symlink():
+                    raise JobError('Retry attempt ID collision; existing evidence was preserved')
+                if records.parent.is_symlink():
+                    raise JobError('Attempt records directory may not be a symlink')
+                runner.durable_mkdir(records.parent)
+                records.mkdir(mode=0o700)
+                selection = {'schema_version': 1, 'job_id': job_id, 'runner_job_id': runner_id,
+                             'previous_runner_job_id': prior_id, 'previous_verdict': prior['verdict'],
+                             'created_at': bridge.utcnow()}
+                # Reserve before selecting: a crash never leaves an apparently
+                # empty attempt that could conceal a previously dispatched runner.
+                atomic(records / 'execution.json', {'job_id': job_id, 'runner_job_id': runner_id,
+                       'phase': 'NOT_DISPATCHED', 'started_at': bridge.utcnow()})
+                atomic(records / 'attempt.json', selection)
+                atomic(directory / 'attempt.json', selection)
+                try:
+                    commands.gh(f"repos/{cfg['repository']}/statuses/{req['head_sha']}",
+                                {'state': 'pending', 'context': bridge.status_context(req),
+                                 'description': runner_id + ': explicit review retry requested'})
+                except (bridge.BridgeError, OSError, ValueError, TypeError, subprocess.SubprocessError) as exc:
+                    result = {'job_id': job_id, 'runner_job_id': runner_id, 'verdict': 'FAILED',
+                              'reasons': ['Retry pending write failed: ' + type(exc).__name__]}
+                    atomic(records / 'execution-result.json', result)
+                    return result
+        return _run_attempt(cfg, req, commands, dispatch_reserved=True)
 
 
 def status_payload(req, verdict, runner_id=None, revision=''):
@@ -664,7 +719,7 @@ def publish_locked(cfg, req, commands, records, runner_id):
     # A matching remote status never substitutes for fresh evidence validation.
     try:
         result = attempt_result(cfg, req)
-    except (JobError, runner.ReviewError, OSError, ValueError, TypeError, KeyError):
+    except (JobError, runner.ReviewError, OSError, ValueError, TypeError, KeyError, RecursionError):
         if previous is None and intent is None:
             raise
         result = {'verdict': 'FAILED', 'reasons': ['Previously published evidence failed validation']}
@@ -815,7 +870,7 @@ def publish_result(cfg, job_id, commands=None):
                 runner_id, records = active_attempt(cfg, req)
                 records.mkdir(parents=True, exist_ok=True, mode=0o700)
                 return publish_locked(cfg, req, commands, records, runner_id)
-            except (JobError, runner.ReviewError, OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
+            except (JobError, runner.ReviewError, OSError, ValueError, TypeError, KeyError, AttributeError, RecursionError) as exc:
                 # Request identity and the ownership lock precede all local
                 # publication/attempt record reads. Corruption never preserves
                 # our green status merely because its own receipt is unreadable.
@@ -841,7 +896,7 @@ def collect_all(cfg):
             cursor = record['last_job_id']
             if cursor and not JOB.fullmatch(cursor):
                 raise JobError('Invalid disposable cursor value')
-        except (JobError, runner.ReviewError, OSError, ValueError, TypeError):
+        except (JobError, runner.ReviewError, OSError, ValueError, TypeError, RecursionError):
             cursor = ''
             results.append({'state': 'cursor_reset', 'reasons': ['Discarded an invalid collection cursor; starting from the default position']})
     paths.sort(key=lambda p: (p.parent.name <= cursor, p.parent.name))
@@ -917,7 +972,7 @@ def main(argv=None):
         printable = [summary(row) for row in result] if isinstance(result, list) else summary(result)
         print(json.dumps(printable, ensure_ascii=False))
         return exit_code(result)
-    except (JobError, runner.ReviewError, bridge.BridgeError, ValueError, TypeError, KeyError, OSError, subprocess.SubprocessError) as exc:
+    except (JobError, runner.ReviewError, bridge.BridgeError, ValueError, TypeError, KeyError, RecursionError, OSError, subprocess.SubprocessError) as exc:
         print(json.dumps({'verdict': 'FAILED', 'error': str(exc)}, ensure_ascii=False))
         return 1
 

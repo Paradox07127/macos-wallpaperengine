@@ -12,18 +12,24 @@ import argparse
 import fcntl
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import re
+import selectors
+import signal
+import subprocess
+import time
 import shlex
 import stat
 import sys
 import tempfile
 
 
-VERSION = "mmrun-provider-transport-v3"
+VERSION = "mmrun-provider-transport-v4"
 MAX_OUTPUT_BYTES = 32 * 1024 * 1024
 MAX_SCRIPT_BYTES = 16 * 1024 * 1024
+MAX_STDERR_BYTES = 8 * 1024 * 1024
 SESSION_ANCHOR = '      sid=$(cat "$rd/grok.session")'
 OUTPUT_ANCHOR = '''        "$GROK_BIN" --prompt-file "$rd/prompt.md" -s "$sid" "${args[@]}" > "$rd/grok.raw" 2>&1
       rc=$?
@@ -74,7 +80,7 @@ def normalize(text, provider="grok"):
         raise CompatibilityError("Expected a top-level provider JSON result envelope")
     try:
         envelope, end = decoder.raw_decode(text, offset)
-    except (ValueError, CompatibilityError) as exc:
+    except (ValueError, RecursionError, CompatibilityError) as exc:
         raise CompatibilityError("Malformed provider JSON result envelope") from exc
     if not isinstance(envelope, dict) or text[end:].strip():
         raise CompatibilityError("Expected exactly one terminal provider JSON result envelope")
@@ -102,7 +108,7 @@ def normalize(text, provider="grok"):
             stripped = stripped[8:-4]
         try:
             report = json.loads(stripped, object_pairs_hook=pairs, parse_constant=constant)
-        except (ValueError, CompatibilityError) as exc:
+        except (ValueError, RecursionError, CompatibilityError) as exc:
             raise CompatibilityError("Provider result text is not a single JSON object") from exc
     if not isinstance(report, dict) or not report:
         raise CompatibilityError("Provider structured result is missing or not an object")
@@ -118,14 +124,19 @@ def normalize(text, provider="grok"):
     return result
 
 
+GROK_PREFIX = '      env "${GROK_ENV[@]}" "$SELF" __fence "$w" "$HOME/.grok" "$rd/prompt.md" "$ro" \\\n'
+CODEX_CAPTURE = '''      "$CODEX_BIN" exec --json --skip-git-repo-check "${args[@]}" -o "$rd/codex.out" - \\\n        < "$rd/prompt.md" > "$rd/codex.raw" 2>&1'''
+AGY_CAPTURE = '''      (cd "$cwd" && "$SELF" __fence "$w" "$HOME/.gemini" "$rd/prompt.md" "$ro" \\\n        "$AGY_BIN" -p "$(cat "$rd/prompt.md")" "${args[@]}") > "$rd/agy.raw" 2>&1'''
+
+
 def patched_source(source, helper, python):
-    for anchor in (SESSION_ANCHOR, OUTPUT_ANCHOR):
+    for anchor in (SESSION_ANCHOR, OUTPUT_ANCHOR, GROK_PREFIX + OUTPUT_ANCHOR, CODEX_CAPTURE, AGY_CAPTURE):
         if source.count(anchor) != 1:
-            raise CompatibilityError("Installed mmrun changed: expected Grok patch anchor once; refusing to guess")
+            raise CompatibilityError("Installed mmrun changed: expected capture patch anchor once; refusing to guess")
     session = '''      sid=$(uuidgen | tr 'A-Z' 'a-z')
       printf '%s\\n' "$sid" > "$rd/grok.session"'''
     normalizer = " ".join(shlex.quote(str(value)) for value in (python, helper))
-    output = '''        "$GROK_BIN" --prompt-file "$rd/prompt.md" -s "$sid" "${args[@]}" > "$rd/grok.stdout" 2> "$rd/grok.raw"
+    output = '''      NORMALIZER capture --stdout "$rd/grok.stdout" --stderr "$rd/grok.raw" -- env "${GROK_ENV[@]}" "$SELF" __fence "$w" "$HOME/.grok" "$rd/prompt.md" "$ro" \\\n        "$GROK_BIN" --prompt-file "$rd/prompt.md" -s "$sid" "${args[@]}"
       rc=$?
       local transport_rc=0
       NORMALIZER normalize --input "$rd/grok.stdout" > "$rd/grok.normalized.json" 2>> "$rd/grok.raw" || transport_rc=$?
@@ -133,8 +144,12 @@ def patched_source(source, helper, python):
       jq -r 'if .structured_output then (.structured_output|tojson) else (.text // empty) end' "$rd/grok.normalized.json" > "$rd/grok.out" 2>/dev/null
       jq -r '.total_cost_usd // empty' "$rd/grok.normalized.json" > "$rd/grok.cost" 2>/dev/null
       jq -c '.usage // empty' "$rd/grok.normalized.json" > "$rd/grok.usage" 2>/dev/null'''
-    # Arguments before the output redirection (including __fence) remain verbatim.
-    return source.replace(SESSION_ANCHOR, session).replace(OUTPUT_ANCHOR, output.replace("NORMALIZER", normalizer))
+    codex = '''      NORMALIZER capture --stdout "$rd/codex.raw" --stderr "$rd/codex.raw" --stdin "$rd/prompt.md" -- \\\n        "$CODEX_BIN" exec --json --skip-git-repo-check "${args[@]}" -o "$rd/codex.out" -'''
+    agy = '''      NORMALIZER capture --stdout "$rd/agy.raw" --stderr "$rd/agy.raw" --cwd "$cwd" -- \\\n        "$SELF" __fence "$w" "$HOME/.gemini" "$rd/prompt.md" "$ro" \\\n        "$AGY_BIN" -p "$(cat "$rd/prompt.md")" "${args[@]}"'''
+    return (source.replace(SESSION_ANCHOR, session)
+            .replace(GROK_PREFIX + OUTPUT_ANCHOR, output.replace("NORMALIZER", normalizer))
+            .replace(CODEX_CAPTURE, codex.replace("NORMALIZER", normalizer))
+            .replace(AGY_CAPTURE, agy.replace("NORMALIZER", normalizer)))
 
 
 def file_hash(path):
@@ -163,8 +178,8 @@ def add_claude_provider(source, helper, python):
                   --tools "Read,Grep,Glob" --permission-mode plan
                   --no-session-persistence --system-prompt-snapshot off)
       if [ -n "$schema" ]; then args+=(--json-schema "$(cat "$schema")"); fi
-      (cd "$wd" && "$SELF" __fence "$ROOT/.no-write" "$HOME/.claude" "$rd/prompt.md" "$wd" \\
-        "$CLAUDE_BIN" "${args[@]}" < "$rd/prompt.md") > "$rd/claude.stdout" 2> "$rd/claude.raw"
+      NORMALIZER capture --stdout "$rd/claude.stdout" --stderr "$rd/claude.raw" --stdin "$rd/prompt.md" --cwd "$wd" -- \\
+        "$SELF" __fence "$ROOT/.no-write" "$HOME/.claude" "$rd/prompt.md" "$wd" "$CLAUDE_BIN" "${args[@]}"
       rc=$?
       local transport_rc=0
       NORMALIZER normalize --provider claude --input "$rd/claude.stdout" > "$rd/claude.normalized.json" 2>> "$rd/claude.raw" || transport_rc=$?
@@ -261,8 +276,10 @@ def prepare(source_path, output_path):
                       "helper": str(helper), "helper_sha256": hashlib.sha256(helper_bytes).hexdigest(), "python": sys.executable,
                       "changes": ["fresh Grok session UUID for every attempt", "separate stdout and stderr",
                                   "normalize terminal structuredOutput/structured_output envelope",
-                                  "static-only Claude Opus with restricted Read/Grep/Glob tools, empty MCP and filesystem fence"],
-                      "added_providers": ["claude"], "security_flags_changed": False}
+                                  "static-only Claude Opus with restricted Read/Grep/Glob tools, empty MCP and filesystem fence",
+                                  "bounded runtime stdout/stderr capture for every provider"],
+                      "added_providers": ["claude"], "security_flags_changed": False,
+                      "capture_limits": {"stdout_bytes": MAX_OUTPUT_BYTES, "stderr_bytes": MAX_STDERR_BYTES, "file_bytes": MAX_OUTPUT_BYTES}}
         contents = ((output_path, rendered, 0o700),
                     (sidecar, json.dumps(provenance, indent=2) + "\n", 0o600))
         for path, content, mode in contents:
@@ -287,6 +304,143 @@ def prepare(source_path, output_path):
         return provenance
 
 
+def kill_capture_group(proc):
+    """Call only while our child has not been reaped, so its PGID cannot be reused."""
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    except PermissionError:
+        # Darwin returns EPERM for a zombie-only group. A live leader must
+        # never be treated as stopped merely because signalling was denied.
+        observed = os.waitid(os.P_PID, proc.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+        if sys.platform != "darwin" or observed is None:
+            raise
+
+
+def capture(argv, stdout_path, stderr_path, *, stdin_path=None, cwd=None,
+            stdout_limit=MAX_OUTPUT_BYTES, stderr_limit=MAX_STDERR_BYTES,
+            file_limit=MAX_OUTPUT_BYTES, exit_grace=30.0, timeout=3600.0):
+    """Bound only captured streams; never cap the provider's existing databases."""
+    if not argv or any(type(v) is not int or v <= 0 for v in (stdout_limit, stderr_limit, file_limit)):
+        raise CompatibilityError("Invalid capture command or limits")
+    if type(timeout) not in (int, float) or not math.isfinite(timeout) or not 0 < timeout <= 86400:
+        raise CompatibilityError("Invalid capture timeout")
+    deadline = time.monotonic() + timeout
+    targets = [Path(stdout_path).absolute(), Path(stderr_path).absolute()]
+    protected = [Path(__file__).resolve()]
+    if stdin_path is not None:
+        protected.append(Path(stdin_path).resolve())
+    for path in targets:
+        if path.is_symlink() or path.resolve() in protected or any(
+                path.exists() and path.samefile(item) for item in protected):
+            raise CompatibilityError("Capture destination overlaps protected input")
+    target_keys = [str(path.resolve()) for path in targets]
+    if target_keys[0] != target_keys[1] and all(path.exists() for path in targets) and targets[0].samefile(targets[1]):
+        raise CompatibilityError("Capture destinations alias the same file")
+    outputs = {}
+    proc = None
+    stdin = None
+    can_signal = True
+    try:
+        for path in targets:
+            key = str(path.resolve())
+            if key not in outputs:
+                fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600)
+                stream = os.fdopen(fd, "wb", buffering=0)
+                outputs[key] = [stream, 0]
+                if not stat.S_ISREG(os.fstat(fd).st_mode):
+                    raise CompatibilityError("Capture destination must be a regular file")
+                os.fchmod(fd, 0o600)
+                os.ftruncate(fd, 0)
+        if stdin_path:
+            initial = Path(stdin_path).lstat()
+            if not stat.S_ISREG(initial.st_mode) or initial.st_size > MAX_OUTPUT_BYTES:
+                raise CompatibilityError("Capture stdin must be a bounded regular file")
+            fd = os.open(stdin_path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            stdin = os.fdopen(fd, "rb")
+            current = os.fstat(fd)
+            if not stat.S_ISREG(current.st_mode) or current.st_size > MAX_OUTPUT_BYTES:
+                raise CompatibilityError("Capture stdin must be a bounded regular file")
+        proc = subprocess.Popen(argv, cwd=cwd, stdin=stdin if stdin else subprocess.DEVNULL,
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                start_new_session=True, bufsize=0)
+        limits = [stdout_limit, stderr_limit]
+        counts = [0, 0]
+        exit_seen = None
+        with selectors.DefaultSelector() as selector:
+            for index, stream in enumerate((proc.stdout, proc.stderr)):
+                if stream is None:
+                    continue
+                os.set_blocking(stream.fileno(), False)
+                selector.register(stream, selectors.EVENT_READ, index)
+            while selector.get_map() or exit_seen is None:
+                if time.monotonic() >= deadline:
+                    raise CompatibilityError("PROVIDER_CAPTURE_TIMEOUT")
+                for key, _ in selector.select(min(0.1, max(0, deadline - time.monotonic()))):
+                    index = key.data
+                    try:
+                        data = os.read(key.fileobj.fileno(), 65536)
+                    except (BlockingIOError, InterruptedError):
+                        continue
+                    if not data:
+                        selector.unregister(key.fileobj)
+                        key.fileobj.close()
+                        continue
+                    target = outputs[target_keys[index]]
+                    allowed = min(len(data), limits[index] - counts[index], file_limit - target[1])
+                    if allowed:
+                        view = memoryview(data)[:allowed]
+                        while view:
+                            written = target[0].write(view)
+                            if not written:
+                                raise CompatibilityError("Capture write could not progress")
+                            view = view[written:]
+                        counts[index] += allowed
+                        target[1] += allowed
+                    if allowed < len(data):
+                        raise CompatibilityError("PROVIDER_OUTPUT_LIMIT")
+                # Observe without reaping: retaining the child PID prevents a
+                # reused, unrelated process group from being signalled during cleanup.
+                try:
+                    observed = os.waitid(os.P_PID, proc.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+                except ChildProcessError:
+                    can_signal = False
+                    raise CompatibilityError("CAPTURE_CHILD_IDENTITY_LOST")
+                if observed is not None:
+                    if exit_seen is None:
+                        exit_seen = time.monotonic()
+                    if selector.get_map() and time.monotonic() - exit_seen >= exit_grace:
+                        raise CompatibilityError("PROVIDER_DESCENDANT_STREAM_UNKNOWN")
+            kill_capture_group(proc)
+            code = proc.wait(timeout=10)
+            can_signal = False
+        for stream, _ in outputs.values():
+            os.fsync(stream.fileno())
+        return code if code >= 0 else 128 - code
+    finally:
+        cleanup_error = None
+        if proc is not None and can_signal:
+            try:
+                kill_capture_group(proc)
+            except OSError as exc:
+                cleanup_error = exc
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired as exc:
+                cleanup_error = exc
+        if proc is not None:
+            for stream in (proc.stdout, proc.stderr):
+                if stream and not stream.closed:
+                    stream.close()
+        if stdin:
+            stdin.close()
+        for stream, _ in outputs.values():
+            stream.close()
+        if cleanup_error is not None:
+            raise CompatibilityError("CAPTURE_CLEANUP_UNCONFIRMED") from cleanup_error
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -296,8 +450,18 @@ def main(argv=None):
     convert = commands.add_parser("normalize", allow_abbrev=False)
     convert.add_argument("--input", required=True)
     convert.add_argument("--provider", choices=("grok", "claude"), default="grok")
+    bounded = commands.add_parser("capture", allow_abbrev=False)
+    bounded.add_argument("--stdout", required=True)
+    bounded.add_argument("--stderr", required=True)
+    bounded.add_argument("--stdin")
+    bounded.add_argument("--cwd")
+    bounded.add_argument("argv", nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
     try:
+        if args.command == "capture":
+            command = args.argv[1:] if args.argv[:1] == ["--"] else args.argv
+            return capture(command, args.stdout, args.stderr, stdin_path=args.stdin, cwd=args.cwd,
+                           timeout=float(os.environ.get("MMRUN_CAPTURE_TIMEOUT", "3600")))
         if args.command == "prepare":
             result = prepare(args.source, args.output)
         else:
@@ -310,6 +474,9 @@ def main(argv=None):
             result = normalize(text, args.provider)
         print(json.dumps(result, ensure_ascii=False))
         return 0
+    except subprocess.SubprocessError:
+        print("mmrun compatibility: CAPTURE_PROCESS_ERROR", file=sys.stderr)
+        return 65
     except (OSError, UnicodeError, ValueError, CompatibilityError) as exc:
         # Deliberately do not print captured model/log output or credentials.
         print("mmrun compatibility: " + str(exc), file=sys.stderr)

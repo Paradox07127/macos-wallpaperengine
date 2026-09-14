@@ -1092,9 +1092,11 @@ class ExecutorTests(unittest.TestCase):
 
     def test_retired_collect_reports_history_without_current_pass_or_mutation(self):
         evidence = self.review_dir / 'attestation.json'
+        protected = self.root / 'protected.json'
+        protected.write_text(json.dumps({'job_id': self.job_id, 'verdict': 'PASS',
+            'head_sha': self.head, 'base_sha': self.base, 'reports': {'claude': 'PRIVATE_PEER_REPORT'}}))
         record = {'job_id': self.job_id, 'verdict': 'PASS',
-                  'attestation_path': str(self.root / 'protected.json'),
-                  'reports': {'claude': 'PRIVATE_PEER_REPORT'}}
+                  'attestation_path': str(protected), 'sha256': executor.runner.digest(protected)}
         evidence.write_text(json.dumps(record))
         original = evidence.read_bytes()
         self.cfg['policy_version'] = 'next'
@@ -1240,6 +1242,152 @@ class ExecutorTests(unittest.TestCase):
         self.assertEqual(self.commands.statuses[-1][1]['state'], 'pending')
         self.assertEqual(self.commands.updates, [])
         self.assertFalse((self.job_dir / 'published.json').exists())
+
+
+    def test_missing_review_directory_after_launch_is_unknown_not_quiescent(self):
+        self.review_dir.rename(self.root / 'moved-review-evidence')
+        executor.atomic(self.job_dir / 'execution.json', {'job_id': self.job_id,
+                        'runner_job_id': self.job_id, 'phase': 'RUNNER_LAUNCH_INTENT'})
+        executor.atomic(self.job_dir / 'execution-result.json', {'job_id': self.job_id,
+                        'runner_job_id': self.job_id, 'verdict': 'RUNNING_TIMEOUT'})
+        with patch.object(executor, 'no_active_controller'), self.assertRaises(executor.JobError):
+            executor.recover_job(self.cfg, self.job_id)
+        self.assertFalse((self.job_dir / 'recovery.json').exists())
+        executor.atomic(self.job_dir / 'execution-result.json', {'job_id': self.job_id,
+                        'runner_job_id': self.job_id, 'verdict': 'FAILED'})
+        with patch.object(executor.bridge, 'Commands', return_value=self.commands), \
+                patch.object(executor, 'no_active_controller'), self.assertRaises(executor.JobError):
+            executor.retry_job(self.cfg, self.job_id)
+        self.assertFalse((self.job_dir / 'attempt.json').exists())
+        self.assertEqual(self.commands.statuses, [])
+
+    def test_missing_review_directory_requires_explicit_predispatch_record(self):
+        (self.review_dir / 'manifest.json').unlink()
+        self.review_dir.rmdir()
+        for record in ({'job_id': self.job_id}, {'job_id': self.job_id, 'phase': 'RUNNING'},
+                       {'job_id': self.job_id, 'phase': 'NOT_DISPATCHED', 'runner_job_id': 'other'}):
+            executor.atomic(self.job_dir / 'execution.json', record)
+            with self.subTest(record=record), patch.object(executor, 'no_active_controller'), self.assertRaises(executor.JobError):
+                executor.require_quiescent(self.cfg, self.req, self.job_id)
+        executor.atomic(self.job_dir / 'execution.json', {'job_id': self.job_id, 'phase': 'PREPARING'})
+        executor.atomic(self.job_dir / 'execution-result.json', {'job_id': self.job_id, 'verdict': 'FAILED'})
+        with patch.object(executor.bridge, 'Commands', return_value=self.commands), \
+                patch.object(executor, 'no_active_controller'), \
+                patch.object(executor, '_run_attempt', return_value={'verdict': 'RUNNING_TIMEOUT'}) as dispatch:
+            self.assertEqual(executor.retry_job(self.cfg, self.job_id)['verdict'], 'RUNNING_TIMEOUT')
+        self.assertTrue(dispatch.call_args.kwargs['dispatch_reserved'])
+        _, records = executor.active_attempt(self.cfg, self.req)
+        self.assertEqual(json.loads((records / 'execution.json').read_text())['phase'], 'NOT_DISPATCHED')
+
+    def test_retry_rechecks_target_inside_status_lock_before_selecting(self):
+        newer = dict(self.req, base_sha='c' * 40)
+        newer['job_id'] = executor.bridge.job_id_for(newer)
+        def collected(directory, **kwargs):
+            self.commands.pr['base']['sha'] = newer['base_sha']
+            self.commands.gh('new-generation', executor.status_payload(newer, 'PASS'))
+            return {'verdict': 'FAILED', 'reasons': []}
+        self.collector.side_effect = collected
+        with patch.object(executor.bridge, 'Commands', return_value=self.commands), \
+                patch.object(executor, 'require_quiescent'), self.assertRaises(executor.JobError):
+            executor.retry_job(self.cfg, self.job_id)
+        self.assertEqual(len(self.commands.statuses), 1)
+        self.assertEqual(self.commands.statuses[0][1]['state'], 'success')
+        self.assertFalse((self.job_dir / 'attempt.json').exists())
+        self.assertFalse((self.job_dir / 'attempts').exists())
+
+    def test_retry_rechecks_issue_generation_and_remote_owner_before_selecting(self):
+        for change in ('generation', 'remote_status'):
+            with self.subTest(change=change):
+                newer = dict(self.req, job_id='pr-7-' + 'f' * 24)
+                def collected(directory, **kwargs):
+                    if change == 'generation':
+                        with executor.bridge.issue_generation_lock(self.cfg, self.req['multica_issue_id']):
+                            executor.bridge.set_generation(self.cfg, self.req['multica_issue_id'], newer['job_id'])
+                    else:
+                        self.commands.gh('new-policy', executor.status_payload(newer, 'PASS'))
+                    return {'verdict': 'FAILED', 'reasons': []}
+                self.collector.side_effect = collected
+                with executor.bridge.issue_generation_lock(self.cfg, self.req['multica_issue_id']):
+                    executor.bridge.set_generation(self.cfg, self.req['multica_issue_id'], self.job_id)
+                self.commands.statuses.clear()
+                with patch.object(executor.bridge, 'Commands', return_value=self.commands), \
+                        patch.object(executor, 'require_quiescent'), self.assertRaises(executor.JobError):
+                    executor.retry_job(self.cfg, self.job_id)
+                self.assertFalse((self.job_dir / 'attempt.json').exists())
+                self.assertFalse((self.job_dir / 'attempts').exists())
+                self.assertFalse(any(payload['state'] == 'pending' for _, payload in self.commands.statuses))
+
+    def test_retry_busy_status_lock_cannot_select_an_attempt(self):
+        self.collector.return_value = {'verdict': 'FAILED', 'reasons': []}
+        with executor.bridge.status_lock(self.cfg, self.req) as locked:
+            self.assertTrue(locked)
+            with patch.object(executor.bridge, 'Commands', return_value=self.commands), \
+                    patch.object(executor, 'require_quiescent'), self.assertRaises(executor.JobError):
+                executor.retry_job(self.cfg, self.job_id)
+        self.assertFalse((self.job_dir / 'attempt.json').exists())
+        self.assertFalse((self.job_dir / 'attempts').exists())
+
+    def test_retry_crash_before_pending_has_recoverable_unused_reservation(self):
+        self.collector.return_value = {'verdict': 'FAILED', 'reasons': []}
+        original = self.commands.gh
+        def crash(endpoint, payload=None):
+            if payload is not None:
+                raise KeyboardInterrupt('crash before remote request')
+            return original(endpoint)
+        with patch.object(executor.bridge, 'Commands', return_value=self.commands), \
+                patch.object(executor, 'require_quiescent'), patch.object(self.commands, 'gh', side_effect=crash), \
+                self.assertRaises(KeyboardInterrupt):
+            executor.retry_job(self.cfg, self.job_id)
+        runner_id, records = executor.active_attempt(self.cfg, self.req)
+        self.assertEqual(json.loads((records / 'execution.json').read_text())['phase'], 'NOT_DISPATCHED')
+        self.assertFalse((records / 'execution-result.json').exists())
+        with patch.object(executor, 'no_active_controller'), patch.object(executor.subprocess, 'run') as launch:
+            recovered = executor.recover_job(self.cfg, self.job_id)
+        self.assertEqual(recovered['verdict'], 'FAILED')
+        self.assertEqual(recovered['runner_job_id'], runner_id)
+        launch.assert_not_called()
+
+    def test_deep_json_publication_record_is_controlled_and_revokes_success(self):
+        self.publish()
+        (self.job_dir / 'published.json').write_text('[' * 2000 + 'null' + ']' * 2000)
+        with self.assertRaises(executor.JobError):
+            self.publish()
+        self.assertEqual(self.commands.statuses[-1][1]['state'], 'pending')
+
+
+    def test_retired_pointer_hash_or_verdict_mismatch_reports_unknown(self):
+        self.cfg['policy_version'] = 'next'
+        target = self.root / 'protected-attestation.json'
+        reference = self.review_dir / 'attestation.json'
+        target.write_text(json.dumps({'job_id': self.job_id, 'verdict': 'NEEDS_REVIEW',
+                          'head_sha': self.head, 'base_sha': self.base}))
+        record = {'job_id': self.job_id, 'verdict': 'NEEDS_REVIEW',
+                  'attestation_path': str(target), 'sha256': executor.runner.digest(target)}
+        reference.write_text(json.dumps(record))
+        original_reference = reference.read_bytes()
+        # Protected file committed first; local reference still names the old bytes.
+        target.write_text(json.dumps({'job_id': self.job_id, 'verdict': 'PASS',
+                          'head_sha': self.head, 'base_sha': self.base}))
+        result = executor.collect_job(self.cfg, self.job_id)
+        self.assertEqual(result['recorded_verdict'], 'UNKNOWN')
+        self.assertNotIn('attestation_path', result)
+        self.assertEqual(reference.read_bytes(), original_reference)
+        # Even a current hash cannot authenticate a contradictory recorded verdict.
+        record['sha256'] = executor.runner.digest(target)
+        reference.write_text(json.dumps(record))
+        self.assertEqual(executor.collect_job(self.cfg, self.job_id)['recorded_verdict'], 'UNKNOWN')
+        self.collector.assert_not_called()
+
+    def test_atomic_creates_every_new_parent_with_private_mode(self):
+        target = self.root / 'new-state' / 'nested' / 'records' / 'record.json'
+        previous_umask = os.umask(0o022)
+        try:
+            executor.atomic(target, {'value': 'fixture'})
+        finally:
+            os.umask(previous_umask)
+        for parent in (target.parent, target.parent.parent, target.parent.parent.parent):
+            self.assertEqual(parent.stat().st_mode & 0o777, 0o700)
+        self.assertEqual(target.stat().st_mode & 0o777, 0o600)
 
 
 

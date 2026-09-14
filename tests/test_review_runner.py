@@ -80,7 +80,7 @@ class ReportSchemaTests(unittest.TestCase):
 
     def test_duplicate_keys_and_nan_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "report.json"
+            path = Path(tmp).resolve() / "report.json"
             for text in ('{"verdict":"approve","verdict":"request_changes"}', '{"x":NaN}'):
                 path.write_text(text)
                 with self.assertRaises(runner.ReviewError):
@@ -88,7 +88,7 @@ class ReportSchemaTests(unittest.TestCase):
 
     def test_raw_streams_never_read(self):
         with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "codex.raw"
+            path = Path(tmp).resolve() / "codex.raw"
             path.write_text("not evidence")
             with self.assertRaises(runner.ReviewError):
                 runner.digest(path)
@@ -117,7 +117,9 @@ class CollectTests(unittest.TestCase):
                                            session="multica-job-1", mmrun_home=str(self.root / "mmruns"))
         helper = Path(runner.__file__).with_name("runner_dispatch.py")
         self.manifest["provenance"].update(dispatch_helper=str(helper), dispatch_helper_sha256=runner.digest(helper))
-        runner.write_json(self.job / "dispatch-request.json", {"job_id": "job-1"})
+        runner.write_json(self.job / "dispatch-request.json", {"schema_version": 1, "job_id": "job-1",
+            "argv": [str(self.executable)], "executable_sha256": self.manifest["provenance"]["mmrun_sha256"],
+            "provenance": self.manifest["provenance"]})
         self.manifest["dispatch_request_sha256"] = runner.digest(self.job / "dispatch-request.json")
         self.outcome = {"schema_version": 1, "job_id": "job-1", "started": True, "exit_code": 0,
                         "request_sha256": self.manifest["dispatch_request_sha256"]}
@@ -163,6 +165,9 @@ class CollectTests(unittest.TestCase):
 
     def test_blocking_findings_override_approve(self):
         for severity in ("critical", "major"):
+            # Each severity is an independent synthetic attempt.
+            (self.job / "terminal-evidence.json").unlink(missing_ok=True)
+            runner.write_json(self.job / "manifest.json", self.manifest)
             runner.write_json(self.artifacts / "codex.json", dict(report(), findings=[finding(severity)]))
             result = runner.collect(self.job)
             self.assertEqual(result["verdict"], "NEEDS_REVIEW")
@@ -446,7 +451,7 @@ class LaunchTests(unittest.TestCase):
 
     def test_atomic_json_writers_use_independent_temporary_files(self):
         with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "state.json"
+            path = Path(tmp).resolve() / "state.json"
             values = [{"worker": n, "text": str(n) * 10000} for n in range(30)]
             with ThreadPoolExecutor(max_workers=8) as pool:
                 list(pool.map(lambda value: runner.write_json(path, value), values))
@@ -468,7 +473,7 @@ class LaunchTests(unittest.TestCase):
                 path.write_text("trusted fixture\n")
             (root / "review.schema.json").write_text("{}")
             (root / "fence.sb").write_text("unchanged fixture")
-            sidecar = {"version": "mmrun-provider-transport-v3", "security_flags_changed": False,
+            sidecar = {"version": "mmrun-provider-transport-v4", "capture_limits": runner.CAPTURE_LIMITS, "security_flags_changed": False,
                        "output": str(executable), "output_sha256": runner.digest(executable),
                        "source": str(source), "source_sha256": runner.digest(source),
                        "helper": str(helper), "helper_sha256": runner.digest(helper)}
@@ -477,6 +482,31 @@ class LaunchTests(unittest.TestCase):
                                       mmrun=str(executable), mmrun_kind="upstream", models=["grok"], codex_home=None)
             _, provenance = runner.environment(args)
             self.assertEqual(provenance["compatibility"], sidecar)
+            for invalid in (None, {}, dict(runner.CAPTURE_LIMITS, stdout_bytes=1)):
+                runner.write_json(Path(str(executable) + ".provenance.json"), dict(sidecar, capture_limits=invalid))
+                with self.assertRaisesRegex(runner.ReviewError, "provenance"):
+                    runner.environment(args)
+            runner.write_json(Path(str(executable) + ".provenance.json"), sidecar)
+            args.mmrun_kind = "compat"
+            args.timeout = 71.5
+            env, bound = runner.environment(args)
+            self.assertEqual(env["MMRUN_CAPTURE_TIMEOUT"], "71.5")
+            self.assertEqual(bound["capture_timeout_seconds"], 71.5)
+            bound["mmrun_d_snapshot"] = str(root)
+            runner.validate_execution_environment(env, bound)
+            for changed in (None, "3600", "nan"):
+                modified = dict(env)
+                if changed is None:
+                    modified.pop("MMRUN_CAPTURE_TIMEOUT")
+                else:
+                    modified["MMRUN_CAPTURE_TIMEOUT"] = changed
+                with self.assertRaisesRegex(runner.ReviewError, "CAPTURE_TIMEOUT_ENVIRONMENT_CHANGED"):
+                    runner.validate_execution_environment(modified, bound)
+            for invalid in (True, None, 0.2, 0, float("inf"), float("nan"), 86401):
+                args.timeout = invalid
+                with self.assertRaisesRegex(runner.ReviewError, "CAPTURE_TIMEOUT_INVALID"):
+                    runner.environment(args)
+            args.timeout = 71.5
             helper.write_text("changed helper\n")
             with self.assertRaisesRegex(runner.ReviewError, "helper changed"):
                 runner.environment(args)
@@ -773,8 +803,9 @@ class IsolationTests(unittest.TestCase):
         # The ordinary diff has no empty external executable configured.
         config = runner.git(Path(manifest["frozen_checkout"]), "config", "--list")
         self.assertNotIn("diff.external=", config)
-        # uploadpack.packObjectsHook='' remains safe: the real local upload-pack
-        # used by preparation above completed instead of trying an empty command.
+        # The source-local hook is ignored by protected config scope; the real
+        # local upload-pack above succeeds without an empty-value override.
+        self.assertNotIn("uploadpack.packobjectshook=", config.lower())
 
     def test_missing_promisor_blob_fails_before_freeze_without_lazy_fetch(self):
         marker = self.root / "lazy-fetch-must-not-run"
@@ -1096,28 +1127,32 @@ class FinalEvidenceBoundaryTests(unittest.TestCase):
         helper = importlib.util.module_from_spec(helper_spec)
         with patch.dict(sys.modules, {"review_runner": runner}):
             helper_spec.loader.exec_module(helper)
-        request = {"job_id": self.job.name, "argv": [str(self.executable)],
+        request = {"schema_version": 1, "job_id": self.job.name, "argv": [str(self.executable)],
                    "executable_sha256": runner.digest(self.executable), "cwd": str(self.job),
                    "stdin": os.devnull, "provenance": self.manifest["provenance"]}
         runner.write_json(self.job / "dispatch-request.json", request)
         (self.job / "dispatch-result.json").unlink()
         parent_identity = {"pid": os.getpid(), "platform": "darwin", "start": "fixture"}
         proc = Mock(pid=7654321)
+        proc.wait.return_value = 0
         with patch.object(helper, "process_identity", side_effect=[parent_identity, runner.ReviewError("temporary kernel query failure")]), patch.object(
                 helper.subprocess, "Popen", return_value=proc), patch.dict(
                 os.environ, {"MMRUN_D": str(self.root), "CODEX_HOME": str(self.root)}):
-            self.assertEqual(helper.supervise(self.job), 1)
+            self.assertEqual(helper.supervise(self.job), 0)
         identity = runner.load_json(self.job / "dispatch-identity.json")
         self.assertIs(identity["started"], True)
         self.assertEqual(identity["dispatch_pid"], proc.pid)
-        self.assertFalse((self.job / "dispatch-result.json").exists())
+        receipt = runner.load_json(self.job / "dispatch-result.json")
+        self.assertIs(receipt["started"], True)
+        self.assertEqual(receipt["exit_code"], 0)
+        proc.wait.assert_called_once()
         proc.kill.assert_not_called()
         proc.terminate.assert_not_called()
         self.manifest.update(controller_pid=4321, phase="DISPATCHING",
                              dispatch_request_sha256=runner.digest(self.job / "dispatch-request.json"))
         runner.write_json(self.job / "manifest.json", self.manifest)
         with patch.object(runner, "process_alive", return_value=False):
-            with self.assertRaisesRegex(runner.ReviewError, "DISPATCH_OUTCOME_UNKNOWN"):
+            with self.assertRaisesRegex(runner.ReviewError, "WORKER_PID_UNKNOWN"):
                 runner.require_quiescent(self.job)
 
 
@@ -1306,6 +1341,7 @@ class V6ControlShapeTests(unittest.TestCase):
     def test_non_object_compat_sidecar_is_controlled(self):
         provenance = copy.deepcopy(self.manifest['provenance'])
         provenance['mmrun_kind'] = 'compat'
+        provenance['capture_timeout_seconds'] = 3600
         for value in (None, [], 'invalid'):
             runner.write_json(Path(str(self.executable) + '.provenance.json'), value)
             with self.assertRaisesRegex(runner.ReviewError, 'COMPAT_PROVENANCE_NOT_OBJECT'):
@@ -1359,6 +1395,161 @@ class V6FrozenInputTests(unittest.TestCase):
         self.assertEqual(runner.git(self.repo, 'rev-parse', 'HEAD'), sentinel_head)
         self.assertEqual((self.repo / '.git/config').read_bytes(), sentinel_config)
         self.assertFalse(marker.exists())
+
+
+class V7EvidenceSnapshotTests(unittest.TestCase):
+    setUp = CollectTests.setUp
+    git_reply = CollectTests.git_reply
+
+    def test_first_needs_review_baseline_cannot_be_replaced_with_approve(self):
+        path = self.artifacts / 'codex.json'
+        runner.write_json(path, dict(report(), verdict='request_changes'))
+        first = runner.collect(self.job)
+        self.assertEqual(first['verdict'], 'NEEDS_REVIEW')
+        baseline = self.job / 'terminal-evidence.json'; original = baseline.read_bytes()
+        runner.write_json(path, report())
+        for _ in range(2):
+            result = runner.collect(self.job)
+            self.assertEqual(result['verdict'], 'FAILED')
+            self.assertIn('TERMINAL_EVIDENCE_CHANGED', result['reasons'])
+        self.assertEqual(baseline.read_bytes(), original)
+        self.assertEqual(baseline.stat().st_mode & 0o222, 0)
+        runner.write_json_once(baseline, {'replacement': True})
+        self.assertEqual(baseline.read_bytes(), original)
+
+    def test_missing_bound_terminal_baseline_never_recreates(self):
+        self.assertEqual(runner.collect(self.job)['verdict'], 'PASS')
+        (self.job / 'terminal-evidence.json').unlink()
+        self.assertEqual(runner.collect(self.job)['verdict'], 'FAILED')
+        self.assertFalse((self.job / 'terminal-evidence.json').exists())
+
+    def test_semantic_status_and_metadata_are_bound_to_recorded_snapshot(self):
+        original_read = runner.read_bytes_snapshot
+        for name in ('codex.status', 'run.meta', 'codex.meta'):
+            target = self.artifacts / name; original = target.read_bytes()
+            mutated = False
+            def interleave(path, **kwargs):
+                nonlocal mutated
+                result = original_read(path, **kwargs)
+                if path == self.artifacts / 'codex.json' and not mutated:
+                    mutated = True; target.write_text('FAIL:1' if name.endswith('status') else 'different=value\n')
+                return result
+            with self.subTest(name=name), patch.object(runner, 'read_bytes_snapshot', side_effect=interleave):
+                result = runner.collect(self.job)
+                self.assertEqual(result['verdict'], 'FAILED')
+                self.assertIn('Evidence changed during collection', result['reasons'])
+            target.write_bytes(original)
+
+    def test_deep_json_report_and_control_records_are_controlled(self):
+        deep = '[' * 2000 + '0' + ']' * 2000
+        for path in (self.artifacts / 'codex.json', self.job / 'manifest.json'):
+            original = path.read_bytes(); path.write_text(deep)
+            self.assertEqual(runner.collect(self.job)['verdict'], 'FAILED')
+            with self.assertRaises(runner.ReviewError):
+                runner.load_json(path)
+            path.write_bytes(original)
+        with self.assertRaisesRegex(runner.ReviewError, 'JSON_TOO_DEEP'):
+            runner.parse_json_bytes(('[' * 150 + '0' + ']' * 150).encode())
+
+    def test_artifact_limits_precede_reads_and_hashes(self):
+        for name in ('codex.status', 'run.meta', 'codex.json', 'codex.out'):
+            target = self.artifacts / name; original = target.read_bytes()
+            with target.open('wb') as stream:
+                stream.truncate(runner.artifact_limit(target) + 1)
+            with self.subTest(name=name), patch.object(os, 'open', wraps=os.open) as opened:
+                with self.assertRaisesRegex(runner.ReviewError, 'NOT_REGULAR_OR_OVERSIZED'):
+                    runner.artifact_digest(target)
+                opened.assert_not_called()
+            result = runner.collect(self.job)
+            self.assertEqual(result['verdict'], 'FAILED')
+            target.write_bytes(original)
+
+    def test_output_requires_utf8_nonwhitespace_text(self):
+        path = self.artifacts / 'codex.out'
+        for value in (b' \n\t', b'valid prefix\xff'):
+            path.write_bytes(value)
+            self.assertEqual(runner.collect(self.job)['verdict'], 'FAILED')
+
+    def test_dispatch_request_and_inputs_remain_required_after_pass(self):
+        self.assertEqual(runner.collect(self.job)['verdict'], 'PASS')
+        request = self.job / 'dispatch-request.json'; request.unlink()
+        self.assertEqual(runner.collect(self.job)['verdict'], 'FAILED')
+
+    def test_empty_delta_timeout_becomes_controlled_error(self):
+        with patch.object(runner.subprocess, 'run', side_effect=subprocess.TimeoutExpired('git', 300)):
+            with self.assertRaisesRegex(runner.ReviewError, 'DELTA_CHECK_TIMEOUT'):
+                runner.empty_delta(self.frozen, BASE, HEAD)
+
+    def test_real_child_is_reaped_after_identity_query_failure(self):
+        spec = importlib.util.spec_from_file_location('v7_real_dispatch', Path(runner.__file__).with_name('runner_dispatch.py'))
+        helper = importlib.util.module_from_spec(spec)
+        with patch.dict(sys.modules, {'review_runner': runner}):
+            spec.loader.exec_module(helper)
+        self.executable.write_text('#!' + sys.executable + '\nimport sys\nprint("local fixture completed")\nsys.exit(17)\n')
+        self.executable.chmod(0o700)
+        provenance = self.manifest['provenance']
+        provenance['mmrun_sha256'] = runner.digest(self.executable)
+        request = {'schema_version': 1, 'job_id': self.job.name, 'argv': [str(self.executable)],
+                   'stdin': os.devnull, 'cwd': str(self.job), 'provenance': provenance,
+                   'executable_sha256': provenance['mmrun_sha256']}
+        runner.write_json(self.job / 'dispatch-request.json', request)
+        parent_identity = runner.process_identity(os.getpid())
+        with patch.object(helper, 'process_identity', side_effect=[parent_identity, runner.ReviewError('temporary query failure')]), patch.dict(
+                os.environ, {'MMRUN_D': str(self.root), 'CODEX_HOME': str(self.root)}):
+            self.assertEqual(helper.supervise(self.job), 0)
+        outcome = runner.load_json(self.job / 'dispatch-result.json')
+        self.assertIs(outcome['started'], True)
+        self.assertEqual(outcome['exit_code'], 17)
+        self.assertEqual((self.job / 'dispatch.stdout').read_text(), 'local fixture completed\n')
+
+    def test_post_spawn_identity_persistence_failure_still_records_actual_exit(self):
+        spec = importlib.util.spec_from_file_location('v7_dispatch', Path(runner.__file__).with_name('runner_dispatch.py'))
+        helper = importlib.util.module_from_spec(spec)
+        with patch.dict(sys.modules, {'review_runner': runner}):
+            spec.loader.exec_module(helper)
+        request = runner.load_json(self.job / 'dispatch-request.json')
+        request.update(stdin=os.devnull, cwd=str(self.job))
+        runner.write_json(self.job / 'dispatch-request.json', request)
+        proc = Mock(pid=7654321); proc.wait.return_value = 17
+        write = helper.write_json; failed = False
+        def write_with_failure(path, value):
+            nonlocal failed
+            if path.name == 'dispatch-identity.json' and value.get('started') is True and not failed:
+                failed = True; raise OSError('transient write')
+            return write(path, value)
+        identity = {'pid': os.getpid(), 'platform': 'darwin', 'start': 'fixture'}
+        with patch.object(helper, 'write_json', side_effect=write_with_failure), patch.object(
+                helper, 'process_identity', return_value=identity), patch.object(helper.subprocess, 'Popen', return_value=proc), patch.dict(
+                os.environ, {'MMRUN_D': str(self.root), 'CODEX_HOME': str(self.root)}):
+            self.assertEqual(helper.supervise(self.job), 0)
+        outcome = runner.load_json(self.job / 'dispatch-result.json')
+        self.assertIs(outcome['started'], True)
+        self.assertEqual(outcome['exit_code'], 17)
+        proc.wait.assert_called_once(); proc.kill.assert_not_called(); proc.terminate.assert_not_called()
+
+
+class V7ProfileAllowlistTests(unittest.TestCase):
+    def test_filesystem_permission_values_are_explicit_read_or_deny_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve(); codex_home = root / 'codex'; codex_home.mkdir()
+            executable = root / 'mmrun'; executable.write_text('fixture')
+            (root / 'review.schema.json').write_text('{}')
+            args = argparse.Namespace(mmrun_home=str(root / 'mmruns'), job_id='fixture', mmrun_d=str(root),
+                                      mmrun=str(executable), mmrun_kind='upstream', models=['codex'], codex_home=str(codex_home))
+            home = Path.home()
+            base = 'sandbox_mode="read-only"\ndefault_permissions="fixture"\n[permissions.fixture.filesystem]\n":root"="read"\n'
+            for path in (root / 'mmruns', home / '.claude/projects', home / '.grok/sessions'):
+                base += json.dumps(str(path)) + '="deny"\n'
+            for value, accepted in [('"read"', True), ('"deny"', True), ('"write"', False),
+                                    ('"rw"', False), ('"read-write"', False), ('{mode="write"}', False),
+                                    ('true', False), ('["read"]', False), ('42', False)]:
+                with self.subTest(value=value):
+                    (codex_home / 'mm.config.toml').write_text(base + '"/fixture-extra"=' + value + '\n')
+                    if accepted:
+                        runner.environment(args)
+                    else:
+                        with self.assertRaisesRegex(runner.ReviewError, 'CODEX_PERMISSION_VALUE_INVALID'):
+                            runner.environment(args)
 
 
 if __name__ == "__main__":

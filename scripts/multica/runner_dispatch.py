@@ -35,12 +35,23 @@ def supervise(job_dir: Path) -> int:
             # A query or persistence failure must never fabricate started=False.
             identity['started'] = True
             identity['dispatch_pid'] = proc.pid
-            write_json(job_dir / 'dispatch-identity.json', identity)
-            identity['dispatch_identity'] = process_identity(proc.pid)
-            if identity['dispatch_identity'] is None:
-                raise ReviewError('DISPATCH_PROCESS_IDENTITY_UNKNOWN')
-            write_json(job_dir / 'dispatch-identity.json', identity)
-            rc = proc.wait()
+            try:
+                write_json(job_dir / 'dispatch-identity.json', identity)
+                child_identity = process_identity(proc.pid)
+                if child_identity is None:
+                    raise ReviewError('DISPATCH_PROCESS_IDENTITY_UNKNOWN')
+                identity['dispatch_identity'] = child_identity
+                write_json(job_dir / 'dispatch-identity.json', identity)
+            except (OSError, ValueError, KeyError, TypeError, ReviewError):
+                # Supplementary identity/persistence failure cannot relinquish
+                # our known direct child or invent an unstarted receipt.
+                identity['identity_observation_failed'] = True
+            while True:
+                try:
+                    rc = proc.wait()
+                    break
+                except InterruptedError:
+                    continue
         result = dict(identity, exit_code=rc, finished_at=time.time())
     except (OSError, ValueError, KeyError, TypeError, ReviewError):
         # Parent must distinguish a proven spawn failure from ambiguous loss
@@ -48,8 +59,15 @@ def supervise(job_dir: Path) -> int:
         if identity['started']:
             return 1
         result = dict(identity, exit_code=127, error='DISPATCH_START_FAILED', finished_at=time.time())
-    write_json(job_dir / 'dispatch-result.json', result)
-    return 0
+    for attempt in range(3):
+        try:
+            write_json(job_dir / 'dispatch-result.json', result)
+            return 0
+        except OSError:
+            if attempt == 2:
+                raise
+            time.sleep(0.05 * (attempt + 1))
+    return 1
 
 
 def main(argv=None):

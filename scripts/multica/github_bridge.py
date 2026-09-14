@@ -12,6 +12,7 @@ from collections import deque
 import contextlib
 import datetime as dt
 import fcntl
+from email.utils import parsedate_to_datetime
 import hashlib
 import json
 import os
@@ -110,7 +111,7 @@ def job_id_for(request):
 @contextlib.contextmanager
 def status_lock(cfg, request):
     root = Path(cfg["state_path"]).parent / "status-locks"
-    root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    runner.durable_mkdir(root)
     key = "|".join([cfg["repository"], request["head_sha"], status_context(request)])
     fd = os.open(root / (digest(key) + ".lock"), os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
     try:
@@ -148,6 +149,41 @@ def comment_ack(cfg, response, issue_id, body):
         if key in item and item[key] != expected:
             raise BridgeError("Comment acknowledgement conflicts with the intended write")
     return item["id"]
+
+
+def issue_ack(cfg, response, title, description):
+    """Validate an issue creation acknowledgement without clearing uncertain writes."""
+    item = response
+    for _ in range(4):
+        if not isinstance(item, dict):
+            break
+        wrapped = next((item[key] for key in ("issue", "data") if isinstance(item.get(key), dict)), None)
+        if wrapped is None:
+            break
+        item = wrapped
+    if not isinstance(item, dict) or not isinstance(item.get("id"), str) or not UUID.fullmatch(item["id"]):
+        raise BridgeError("Issue acknowledgement lacks a valid UUID")
+    for key, expected in (("title", title), ("description", description),
+                          ("creator_type", "member"), ("creator_id", cfg["bridge_actor_id"])):
+        if key in item and item[key] != expected:
+            raise BridgeError("Issue acknowledgement conflicts with the intended write")
+    return item["id"]
+
+
+def fair_candidates(db, table, columns, fresh_order):
+    # Both buckets are bounded; alternate due retries and fresh work so neither
+    # a continuous intake stream nor a backlog of retries owns the whole tick.
+    retry = deque(db.execute(f"SELECT {columns} FROM {table} WHERE status='pending' "
+                             "AND next_attempt_at!='' AND next_attempt_at<=? "
+                             "ORDER BY next_attempt_at,rowid LIMIT 100", (utcnow(),)).fetchall())
+    fresh = deque(db.execute(f"SELECT {columns} FROM {table} WHERE status='pending' "
+                             f"AND next_attempt_at='' ORDER BY {fresh_order} LIMIT 100").fetchall())
+    result = []
+    while (retry or fresh) and len(result) < 100:
+        for bucket in (retry, fresh):
+            if bucket and len(result) < 100:
+                result.append(bucket.popleft())
+    return result
 
 
 def generation_path(cfg, issue_id):
@@ -270,6 +306,10 @@ def requests_triage(text):
         html = re.match(r"<(pre|code|script|style|textarea|[A-Za-z][A-Za-z0-9-]*)(?:\s|>|/)", html_text)
         if html_text.startswith("<!--"):
             html_end = r"-->"
+        elif html and (html[1].lower() in {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"}
+                       or (html[1].lower() not in {"pre", "code", "script", "style", "textarea"}
+                           and re.match(r"<[^>]+/\s*>[ \t]*$", html_text))):
+            continue
         elif html:
             html_end = r"</" + re.escape(html[1]) + r"\s*>"
         elif html_text.startswith(("<?", "<!")):
@@ -385,6 +425,8 @@ def load_config(path):
         raise BridgeError("Invalid policy_version")
     if cfg["mmrun_kind"] not in ("compat", "upstream"):
         raise BridgeError("Invalid mmrun_kind")
+    if cfg["mmrun_kind"] == "upstream" and "claude" in models:
+        raise BridgeError("Claude reviewers require mmrun_kind=compat")
     return cfg
 
 
@@ -429,10 +471,23 @@ class Commands:
                         if sum(len(value) for value in outputs.values()) + len(chunk) > maximum:
                             raise BridgeError("CLI output exceeded configured limit; remote outcome may be uncertain")
                         outputs[key.data].extend(chunk)
-                proc.wait(timeout=max(0.01, deadline - time.monotonic()))
-                if proc.returncode:
+                # Observe exit without reaping: the zombie keeps this PID/PGID
+                # reserved until our finally block kills the owned group.
+                while True:
+                    try:
+                        exited = os.waitid(os.P_PID, proc.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+                    except InterruptedError:
+                        continue
+                    if exited is not None:
+                        break
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise BridgeError("CLI timed out; remote outcome may be uncertain")
+                    time.sleep(min(0.01, remaining))
+                code = exited.si_status if exited.si_code == os.CLD_EXITED else -exited.si_status
+                if code:
                     match = re.search(rb"\bHTTP ([1-5][0-9]{2})\b", outputs["stderr"][:8192])
-                    raise CommandError(Path(argv[0]).name, proc.returncode, int(match.group(1)) if match else None)
+                    raise CommandError(Path(argv[0]).name, code, int(match.group(1)) if match else None)
                 raw = outputs["stdout"].decode("utf-8")
                 try:
                     value = (json.loads(raw) if raw.strip() else {}) if json_output else raw
@@ -446,14 +501,39 @@ class Commands:
             raise BridgeError(f"Command failed ({type(exc).__name__}); remote outcome may be uncertain") from exc
         finally:
             if proc is not None:
-                if not finished or proc.poll() is None:
-                    try:
-                        os.killpg(proc.pid, signal.SIGKILL)
-                    except ProcessLookupError:
-                        pass
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                except PermissionError:
+                    # Darwin reports EPERM for a zombie-only group. Keep the
+                    # PID reserved while confirming its leader has exited;
+                    # an active leader's cleanup failure must still surface.
+                    if (sys.platform != "darwin" or os.waitid(os.P_PID, proc.pid,
+                            os.WEXITED | os.WNOHANG | os.WNOWAIT) is None):
+                        raise
+                try:
                     proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    if finished:
+                        raise BridgeError("CLI cleanup did not complete; remote outcome may be uncertain")
                 for name in outputs:
                     getattr(proc, name).close()
+
+    def github_time(self):
+        headers = self.run([self.cfg["gh_path"], "api", "--hostname", "github.com", "--method", "GET",
+                            "--include", "--silent", "meta", "--header", "Cache-Control: no-cache"], json_output=False)
+        lines = headers.replace("\r\n", "\n").split("\n")
+        dates = [line.partition(":")[2].strip() for line in lines if line.lower().startswith("date:")]
+        if not lines or not re.fullmatch(r"HTTP/[0-9.]+ 200(?: .*)?", lines[0]) or len(dates) != 1:
+            raise BridgeError("GitHub server time is unavailable")
+        try:
+            value = parsedate_to_datetime(dates[0])
+            if value.tzinfo is None:
+                raise ValueError("Date lacks timezone")
+        except (ValueError, TypeError, OverflowError) as exc:
+            raise BridgeError("GitHub server Date is invalid") from exc
+        return value.astimezone(dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
     def gh(self, endpoint, payload=None):
         args = [self.cfg["gh_path"], "api", "--method", "POST" if payload is not None else "GET", endpoint]
@@ -590,6 +670,8 @@ class Bridge:
             raise BridgeError("Multiple remote issues contain the source marker; manual reconciliation required")
         if exact:
             remote_id = object_id(exact[0])
+            if not UUID.fullmatch(remote_id):
+                raise BridgeError("Issue search returned an invalid UUID")
             saved = self.state.get("meta", "create-body:" + source)
             if saved is None:
                 raise BridgeError("Matching issue has no trusted local creation intent; explicit mapping required")
@@ -601,6 +683,8 @@ class Bridge:
                     or issue.get("creator_id") != self.cfg["bridge_actor_id"]
                     or issue.get("title") != expected["title"] or issue.get("description") != expected["description"]):
                 raise BridgeError("Issue creator/content does not match the local creation intent")
+            if issue_ack(self.cfg, issue, expected["title"], expected["description"]) != remote_id:
+                raise BridgeError("Recovered issue identity conflicts with search result")
             self.state.mapping(source, remote_id)
             return remote_id
         return None
@@ -631,7 +715,7 @@ class Bridge:
             except CommandNotStarted:
                 self.state.operation(op, "retryable")
                 raise
-            remote_id = object_id(result)
+            remote_id = issue_ack(self.cfg, result, args[args.index("--title") + 1], token + "\n\n" + body)
         self.state.mapping(source, remote_id)
         self.state.operation(op, "done", remote_id)
         return remote_id
@@ -844,7 +928,10 @@ class Bridge:
         # Ignore bot output to prevent an eventual outbound adapter echo loop.
         if public_user(item).get("type") == "Bot":
             return
-        match = re.fullmatch(r"https://api\.github\.com/repos/" + re.escape(self.repo) + r"/issues/(\d+)", item.get("issue_url", ""))
+        issue_url = item.get("issue_url")
+        if not isinstance(issue_url, str):
+            return  # Invalid source routing is terminal, not a transient API error.
+        match = re.fullmatch(r"https://api\.github\.com/repos/" + re.escape(self.repo) + r"/issues/(\d+)", issue_url)
         if not match:
             return
         source = f"github:{self.repo}:issue:{int(match[1])}"
@@ -907,10 +994,9 @@ class Bridge:
         """
         sent = 0
         permissions = {}
-        pending = self.state.db.execute(
-            "SELECT event, source, remote_id, login, comment_id, author_id, comment_version FROM triage_pending "
-            "WHERE status='pending' AND (next_attempt_at='' OR next_attempt_at<=?) "
-            "ORDER BY next_attempt_at, attempts, created_at, event LIMIT 100", (utcnow(),)).fetchall()
+        pending = fair_candidates(self.state.db, "triage_pending",
+                                  "event, source, remote_id, login, comment_id, author_id, comment_version",
+                                  "attempts,created_at,event")
         for event, source, remote, login, comment_id, author_id, version in pending:
             if deadline is not None and time.monotonic() >= deadline:
                 break
@@ -933,6 +1019,9 @@ class Bridge:
                 if elapsed < self.cfg["triage_cooldown_seconds"]:
                     self.queue_result(event, "pending", "issue_cooldown", self.cfg["triage_cooldown_seconds"] - int(elapsed), count=False)
                     continue
+            if not isinstance(login, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]{0,38}", login):
+                self.queue_result(event, "denied", "invalid_public_identity")
+                continue
             if login not in permissions:
                 try:
                     response = self.commands.gh(f"repos/{self.repo}/collaborators/{login}/permission")
@@ -1186,20 +1275,25 @@ class Bridge:
         return source, updated
 
     def _poll_once(self):
-        now = utcnow()
         checkpoint = self.state.get("meta", "checkpoint")
         if not checkpoint:
-            self.state.meta("baseline", now)
-            self.state.meta("checkpoint", now)
+            now = self.commands.github_time()
+            with self.state.db:
+                self.state.db.execute("INSERT OR REPLACE INTO meta VALUES ('baseline', ?)", (now,))
+                self.state.db.execute("INSERT OR REPLACE INTO meta VALUES ('checkpoint', ?)", (now,))
             self.report("Initialized intake baseline; existing issues and PRs were not imported")
             return
         baseline = self.state.get("meta", "baseline") or checkpoint
-        since = since_overlap(checkpoint)
         deadline = self.commands.deadline
         self.commands.deadline = min(deadline, time.monotonic() + self.cfg["intake_tick_budget_seconds"] / 3)
         captured = []
         capture_error = None
         try:
+            now = self.commands.github_time()
+            # Never query beyond the service clock, including legacy local-clock state.
+            checkpoint = min(checkpoint, now, key=timestamp)
+            baseline = min(baseline, now, key=timestamp)
+            since = since_overlap(checkpoint)
             for kind, resource, params in (
                 ("issue", "issues", {"state": "all", "since": since, "sort": "updated", "direction": "asc"}),
                 ("comment", "issues/comments", {"since": since, "sort": "updated", "direction": "asc"}),
@@ -1226,6 +1320,7 @@ class Bridge:
                         if source:
                             self.state.db.execute("INSERT OR REPLACE INTO meta VALUES (?,?)", (observation_key, fingerprint))
                 self.state.db.execute("INSERT OR REPLACE INTO meta VALUES ('checkpoint', ?)", (now,))
+                self.state.db.execute("INSERT OR REPLACE INTO meta VALUES ('baseline', ?)", (baseline,))
         except (BridgeError, runner.ReviewError, ValueError, TypeError, KeyError, OSError) as exc:
             capture_error = exc
             self.report("Capture deferred; prior checkpoint retained: " + type(exc).__name__)
@@ -1244,10 +1339,8 @@ class Bridge:
             raise BridgeError("New capture failed; existing queues were still serviced") from capture_error
 
     def drain_intake_events(self, baseline, deadline):
-        candidates = self.state.db.execute(
-            "SELECT rowid,key,kind,payload,attempts FROM intake_events WHERE status='pending' AND "
-            "(next_attempt_at='' OR next_attempt_at<=?) ORDER BY next_attempt_at,attempts,"
-            "CASE kind WHEN 'issue' THEN 0 WHEN 'comment' THEN 1 ELSE 2 END,key LIMIT 100", (utcnow(),)).fetchall()
+        candidates = fair_candidates(self.state.db, "intake_events", "rowid,key,kind,payload,attempts",
+                                     "attempts,CASE kind WHEN 'issue' THEN 0 WHEN 'comment' THEN 1 ELSE 2 END,rowid")
         for sequence, key, kind, payload, attempts in candidates:
             if time.monotonic() >= deadline:
                 break
