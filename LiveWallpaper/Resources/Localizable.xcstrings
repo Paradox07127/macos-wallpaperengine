@@ -65849,7 +65849,7 @@
       }
     },
     "Unavailable" : {
-      "comment" : "Login item service unavailable.",
+      "comment" : "Login item service unavailable.\nWorkshop item removed or hidden on Steam.",
       "localizations" : {
         "es" : {
           "stringUnit" : {

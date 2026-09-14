@@ -337,6 +337,18 @@ struct WPE28ShaderCompatibilityTests {
     void main() { gl_FragColor = vec4(v_Cycles.xz, v_Blend); }
     """
 
+    /// Writes both helpers' raw Float words per thread: `cycles` then `blend` padded to
+    /// float4, so one dispatch yields 8 words at `tid * 8`.
+    private static let waterflowProbeKernel = """
+    kernel void phase_probe(constant float4* inputs [[buffer(0)]],
+                            device float4* outputs [[buffer(1)]],
+                            uint tid [[thread_position_in_grid]]) {
+        float4 values = inputs[tid];
+        outputs[tid * 2] = wpe_waterflow_cycles(values.x, values.y);
+        outputs[tid * 2 + 1] = float4(wpe_waterflow_blend(values.x, values.y, values.z), 0.0, 1.0);
+    }
+    """
+
     @Test("Waterflow inlining preserves existing varying eligibility across shader names and combos")
     func waterflowInliningKeepsVaryingEligibility() throws {
         for shaderName in ["effects/waterflow", "workshop/custom/effects/waterflow", "other_shader"] {
@@ -372,18 +384,11 @@ struct WPE28ShaderCompatibilityTests {
         )
         let marker = "__attribute__((always_inline)) inline float2 wpe_waterflow_blend"
         #expect(translated.mslSource.components(separatedBy: marker).count == 2)
-        let kernel = """
-        kernel void phase_probe(constant float4* inputs [[buffer(0)]],
-                                device float4* outputs [[buffer(1)]],
-                                uint tid [[thread_position_in_grid]]) {
-            float4 values = inputs[tid];
-            outputs[tid * 2] = wpe_waterflow_cycles(values.x, values.y);
-            outputs[tid * 2 + 1] = float4(wpe_waterflow_blend(values.x, values.y, values.z), 0.0, 1.0);
-        }
-        """
-        let candidate = translated.mslSource + "\n" + kernel
+        let candidate = translated.mslSource + "\n" + Self.waterflowProbeKernel
         // Change only the new hint: the reference keeps the production helper
         // formula and compiler options, without a CPU approximation of Metal math.
+        // Both sides therefore move together when the formula changes — the formula
+        // itself is pinned by `waterflowHelperMathMatchesModel`.
         let reference = candidate.replacingOccurrences(
             of: marker,
             with: "inline float2 wpe_waterflow_blend"
@@ -405,10 +410,246 @@ struct WPE28ShaderCompatibilityTests {
         let expected = try waterflowProbeBits(reference, device: device, inputs: inputs, fastMath: fastMath)
         let actual = try waterflowProbeBits(candidate, device: device, inputs: inputs, fastMath: fastMath)
         #expect(Set(expected).count > 4)
-        let differences = zip(expected, actual).enumerated().compactMap { index, values in
-            values.0 == values.1 ? nil : index
+        guard fastMath else {
+            // Default math: the hint has to be bit-neutral, and is.
+            let differences = zip(expected, actual).enumerated().compactMap { index, values in
+                values.0 == values.1 ? nil : index
+            }
+            #expect(differences.isEmpty, Comment(rawValue: "GPU Float mismatch indices: \(differences.prefix(8))"))
+            return
         }
-        #expect(differences.isEmpty, Comment(rawValue: "GPU Float mismatch indices: \(differences.prefix(8))"))
+        // Production compiles with fast math (`WPESwiftShaderCompiler.assemble`), which
+        // lets the optimizer reassociate the `t` / `fract` expressions the two helpers
+        // share — the CSE this hint exists to enable. 606 of 12672 words move, all of
+        // them in `cycles.x` / `cycles.z` and the blends built from them; `cycles.y` /
+        // `cycles.w`, which the blend does not recompute, never move.
+        let violations = waterflowFastMathViolations(expected: expected, actual: actual, inputs: inputs)
+        #expect(violations.isEmpty, Comment(rawValue: violations.prefix(8).joined(separator: "\n")))
+    }
+
+    /// What fast math is allowed to cost here, stated as a property rather than a
+    /// tolerance. Each build may land up to one float ULP of `t` from the exact phase;
+    /// `b = 2 * |fract(phase) - 0.5|` doubles that, so `b` is admitted over
+    /// `+/- 2 * 2 * ulp(t)` and a blend output is admissible exactly when it falls in
+    /// `wpe_smoothstep`'s image of that interval. An output tolerance cannot express
+    /// this: at `feather` near zero the helper degenerates to a hard step and one ULP
+    /// legitimately becomes a 0->1 flip, while at `feather = 0.1` it is worth 3e-5.
+    ///
+    /// Two phase ULPs is the knee — the production pair first passes there — and seeded
+    /// changes to the phase offset, the amplitude, the band centre and the feather width
+    /// all still fail at twice that slack, so the slack is not what makes this pass.
+    private func waterflowFastMathViolations(
+        expected: [UInt32], actual: [UInt32], inputs: [SIMD4<Float>]
+    ) -> [String] {
+        let outputSlack = 4 * Double(Float(1).ulp)
+        var violations: [String] = []
+        for (tid, input) in inputs.enumerated() {
+            let phaseSlack = max(abs(input.x * input.y), 1).ulp
+            for component in 0 ..< 4 {
+                let index = tid * 8 + component
+                let lhs = Float(bitPattern: expected[index]), rhs = Float(bitPattern: actual[index])
+                guard abs(lhs - rhs) > phaseSlack else { continue }
+                violations.append(
+                    "cycles[\(component)] tid=\(tid) time=\(input.x) speed=\(input.y): "
+                        + "\(lhs) vs \(rhs) exceeds one ULP (\(phaseSlack))"
+                )
+            }
+            let low = Double(0.5 - input.z), high = Double(0.5 + input.z)
+            let width = high - low
+            func smoothstep(_ x: Double) -> Double {
+                if abs(width) <= 1.0e-7 {
+                    return x < low ? 0 : 1
+                }
+                let u = min(max((x - low) / width, 0), 1)
+                return u * u * (3 - 2 * u)
+            }
+            let bandSlack = 4 * Double(phaseSlack)
+            let t = Double(input.x) * Double(input.y)
+            for component in 4 ..< 6 {
+                let index = tid * 8 + component
+                guard expected[index] != actual[index] else { continue }
+                let phase = component == 4 ? t : 0.25 + t
+                let band = 2 * abs((phase - floor(phase)) - 0.5)
+                let image = [smoothstep(band - bandSlack), smoothstep(band), smoothstep(band + bandSlack)]
+                let lower = image.min()! - outputSlack, upper = image.max()! + outputSlack
+                for value in [expected[index], actual[index]].map({ Double(Float(bitPattern: $0)) })
+                    where value < lower || value > upper {
+                    violations.append(
+                        "blend[\(component - 4)] tid=\(tid) time=\(input.x) speed=\(input.y) "
+                            + "feather=\(input.z): \(value) outside [\(lower), \(upper)]"
+                    )
+                }
+            }
+        }
+        return violations
+    }
+
+    /// Pins the helper arithmetic itself. `waterflowInliningPreservesGPUValues` compares two
+    /// builds of the same translated source, so an edit to `wpe_waterflow_cycles` /
+    /// `wpe_waterflow_blend` lands on both sides and cancels; this compares the GPU against an
+    /// independent Double model of the phases the helpers stand for — `fract(time * speed +
+    /// {0, 0.5, 0.25, 0.75}) - 0.5` and the smoothstep cross-fade over `2 * |fract(phase) - 0.5|`
+    /// banded by `0.5 +/- g_PhaseFeather`. It is a restatement of that formula in Double, so it
+    /// pins the numbers against drift; waterflow.vert remains the oracle for the semantics.
+    ///
+    /// The model admits an interval rather than a value, because a Float build may land off the
+    /// exact phase (one ULP per Float add in that component's expression, which fast math may
+    /// also reassociate) and `fract` turns that into a wrapped interval. `waterflowMeasure`
+    /// caps how wide the admitted set may get, so widening the slack fails the test instead of
+    /// silently disarming it: phases are pinned to 1e-3 and blend weights to 1e-2, both far
+    /// below the quantities at stake (a 0.01 phase offset, a 5% amplitude or band shift).
+    @Test("Waterflow helper phases and blend weights match an independent CPU model", arguments: [false, true])
+    func waterflowHelperMathMatchesModel(fastMath: Bool) throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let translated = try WPEShaderTranspiler.translateFragment(
+            shaderName: "effects/waterflow",
+            preprocessedSource: Self.waterflowProbeSource
+        )
+        let speeds: [Float] = [1, -1, 0.5, 3]
+        let feathers: [Float] = [0, 0.05, 0.1, 0.25, 0.4, 0.5, -0.1]
+        var inputs: [SIMD4<Float>] = []
+        for time in Self.waterflowModelTimes {
+            for speed in speeds {
+                for feather in feathers {
+                    inputs.append(SIMD4(time, speed, feather, 0))
+                }
+            }
+        }
+        let words = try waterflowProbeBits(
+            translated.mslSource + "\n" + Self.waterflowProbeKernel,
+            device: device,
+            inputs: inputs,
+            fastMath: fastMath
+        )
+        var failures: [String] = []
+        var interiorBlends = 0
+        for (tid, input) in inputs.enumerated() {
+            let phases = Self.waterflowPhases(time: input.x, speed: input.y)
+            for component in 0 ..< 4 {
+                let admitted = Self.waterflowCycleAdmissible(phases[component])
+                let value = Double(Float(bitPattern: words[tid * 8 + component]))
+                if Self.waterflowMeasure(admitted) > 1.0e-3 {
+                    failures.append(
+                        "cycles[\(component)] tid=\(tid) time=\(input.x) speed=\(input.y): "
+                            + "admitted \(admitted) is too wide to pin the phase"
+                    )
+                }
+                if !Self.waterflowAdmits(admitted, value) {
+                    failures.append(
+                        "cycles[\(component)] tid=\(tid) time=\(input.x) speed=\(input.y): "
+                            + "\(value) outside \(admitted)"
+                    )
+                }
+            }
+            for component in 0 ..< 2 {
+                let admitted = Self.waterflowBlendAdmissible(
+                    phases[component == 0 ? 0 : 2], feather: input.z
+                )
+                let value = Double(Float(bitPattern: words[tid * 8 + 4 + component]))
+                // A feather this narrow degenerates to a hard step, where a legitimate phase ULP
+                // is a 0->1 flip; those rows only assert membership.
+                if abs(input.z) >= 0.05, Self.waterflowMeasure(admitted) > 1.0e-2 {
+                    failures.append(
+                        "blend[\(component)] tid=\(tid) time=\(input.x) speed=\(input.y) "
+                            + "feather=\(input.z): admitted \(admitted) is too wide to pin the weight"
+                    )
+                }
+                if !Self.waterflowAdmits(admitted, value) {
+                    failures.append(
+                        "blend[\(component)] tid=\(tid) time=\(input.x) speed=\(input.y) "
+                            + "feather=\(input.z): \(value) outside \(admitted)"
+                    )
+                }
+                if value > 0.001, value < 0.999 {
+                    interiorBlends += 1
+                }
+            }
+        }
+        // Report a handful: a broken formula misses on thousands of rows, and Swift Testing
+        // expands whole arrays into the diagnostic.
+        let reported = Array(failures.prefix(8))
+        #expect(
+            reported.isEmpty,
+            Comment(rawValue: "\(failures.count) of \(inputs.count * 6) probes off model:\n"
+                + reported.joined(separator: "\n"))
+        )
+        // Without rows inside the feather band the smoothstep shape is never evaluated, and the
+        // band edges would be pinned only through the 0/1 plateaus.
+        #expect(interiorBlends > 100)
+    }
+
+    /// Phases on the exact 1/32 grid (so most rows pin bit-exactly), each repeated at integer
+    /// offsets to cover `fract` wrapping, plus values that are not representable in Float so
+    /// the rounding path is exercised too.
+    private static let waterflowModelTimes: [Float] = {
+        var times: [Float] = []
+        for step in 0 ..< 32 {
+            for offset in [Float(0), 3, -5, 40] {
+                times.append(Float(step) / 32 + offset)
+            }
+        }
+        return times + [0.1, 0.3, 0.7, 1.2345, 7.77, -0.123]
+    }()
+
+    /// The four `wpe_waterflow_cycles` phases as `(exact value, how far a Float build may land
+    /// from it)`. `t = time * speed` is a single correctly-rounded multiply, so it carries no
+    /// slack; each Float add after it may round, and `fract(0.25 + t + 0.5)` has two.
+    private static func waterflowPhases(time: Float, speed: Float) -> [(phase: Double, slack: Double)] {
+        let t = Double(time * speed)
+        return zip([0.0, 0.5, 0.25, 0.75], [0.0, 1, 1, 2]).map { offset, adds in
+            let phase = t + offset
+            return (phase, adds * Double(Float(phase).ulp))
+        }
+    }
+
+    /// `fract`'s image of a phase interval, as a union because the interval can wrap an integer.
+    private static func waterflowFractImage(_ phase: (phase: Double, slack: Double)) -> [ClosedRange<Double>] {
+        let lo = phase.phase - phase.slack, hi = phase.phase + phase.slack
+        guard hi - lo < 1 else { return [0 ... 1] }
+        let low = lo - floor(lo), high = hi - floor(hi)
+        return low <= high ? [low ... high] : [0 ... high, low ... 1]
+    }
+
+    private static func waterflowCycleAdmissible(_ phase: (phase: Double, slack: Double)) -> [ClosedRange<Double>] {
+        // `cycles - 0.5` rounds once more, and Metal's `fract` clamps its result to the largest
+        // Float below 1 — both are worth well under a ULP of 0.5.
+        let slack = 2 * Double(Float(0.5).ulp)
+        return waterflowFractImage(phase).map {
+            ($0.lowerBound - 0.5 - slack) ... ($0.upperBound - 0.5 + slack)
+        }
+    }
+
+    private static func waterflowBlendAdmissible(
+        _ phase: (phase: Double, slack: Double), feather: Float
+    ) -> [ClosedRange<Double>] {
+        // Edges in Float, exactly as the helper builds them, including the degenerate-width
+        // branch `wpe_smoothstep` takes at `|edge1 - edge0| <= 1e-7`.
+        let edge0 = 0.5 - feather, edge1 = 0.5 + feather
+        let width = edge1 - edge0
+        let bandSlack = 2 * Double(Float(1).ulp)
+        let outputSlack = 8 * Double(Float(1).ulp)
+        func smoothstep(_ x: Double) -> Double {
+            guard abs(width) > 1.0e-7 else { return x < Double(edge0) ? 0 : 1 }
+            let u = min(max((x - Double(edge0)) / Double(width), 0), 1)
+            return u * u * (3 - 2 * u)
+        }
+        return waterflowFractImage(phase).map { range in
+            let ends = [2 * abs(range.lowerBound - 0.5), 2 * abs(range.upperBound - 0.5)]
+            // `2 * |x - 0.5|` folds at x = 0.5, so a range spanning it reaches down to 0.
+            let band = (range.contains(0.5) ? 0 : ends.min()!) ... ends.max()!
+            // `wpe_smoothstep` is monotone in x (rising or, for a negative feather, falling),
+            // so the band's endpoints bound its image.
+            let image = [smoothstep(band.lowerBound - bandSlack), smoothstep(band.upperBound + bandSlack)]
+            return (image.min()! - outputSlack) ... (image.max()! + outputSlack)
+        }
+    }
+
+    private static func waterflowMeasure(_ ranges: [ClosedRange<Double>]) -> Double {
+        ranges.reduce(0) { $0 + ($1.upperBound - $1.lowerBound) }
+    }
+
+    private static func waterflowAdmits(_ ranges: [ClosedRange<Double>], _ value: Double) -> Bool {
+        ranges.contains { $0.contains(value) }
     }
 
     private func waterflowProbeBits(
