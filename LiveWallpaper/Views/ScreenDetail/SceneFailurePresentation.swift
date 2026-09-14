@@ -3,43 +3,19 @@ import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
-/// What the user can still do about a failure, which is what actually decides
-/// the colour and the action set — not how alarming the error sounds. Split out
-/// because `FallbackCard` and `SceneDetailView` had drifted into two different
-/// severity tables for the same `FallbackReason`.
-enum SceneFailureClass: Equatable {
-    /// Nothing on this Mac can render it, ever. No recovery action exists.
-    case fatal
-    /// The scene will not run, but there is a way out.
-    case blocked
-    /// Something is missing; supplying it fixes the scene.
-    case needsParts
-    /// One layer was skipped — the wallpaper is still playing.
-    case degraded
-}
-
-/// The recovery affordances a reason earns. Both surfaces read this list, so a
-/// reason cannot offer "subscribe in Steam" on one screen and no button on the other.
-enum SceneFailureRecovery: Equatable, Hashable {
-    case retry
-    case copyDependencyIDs([String])
-    case openWorkshop(String)
-    case configureEngineAssets
-}
-
 /// Everything the UI needs to render one failure. Single source of truth.
 struct SceneFailurePresentation {
-    let failureClass: SceneFailureClass
+    let failureClass: WallpaperFailureClass
     let tint: Color
     let symbol: String
     let code: String
     let title: Text
     let message: Text
-    let recovery: [SceneFailureRecovery]
+    let recovery: [WallpaperFailureRecovery]
 }
 
 extension FallbackReason {
-    var failureClass: SceneFailureClass {
+    var failureClass: WallpaperFailureClass {
         switch self {
         case .unsupportedType, .sceneShaderUnsupported, .requiresWindowsPlugin, .texContainerUnsupported:
             .fatal
@@ -53,15 +29,8 @@ extension FallbackReason {
     }
 
     /// Mapped through `failureClass`, so a reason cannot carry two colours.
-    /// Matches the DESIGN.md gloss: danger = errors, warning = "won't run"
-    /// blockers, caution = "needs deps" / pending.
     var tint: Color {
-        switch failureClass {
-        case .fatal: DesignTokens.Colors.Status.danger
-        case .blocked: DesignTokens.Colors.Status.warning
-        case .needsParts: DesignTokens.Colors.Status.caution
-        case .degraded: DesignTokens.Colors.Status.caution
-        }
+        failureClass.tint
     }
 
     /// Paired with a title on every surface (DESIGN.md rule 6 — colour alone
@@ -92,11 +61,11 @@ extension FallbackReason {
         }
     }
 
-    func recovery(workshopID: String) -> [SceneFailureRecovery] {
+    func recovery(workshopID: String) -> [WallpaperFailureRecovery] {
         let isSteamItem = !workshopID.isEmpty && workshopID.allSatisfy(\.isNumber)
         switch self {
         case let .missingDependency(ids):
-            var actions: [SceneFailureRecovery] = [.copyDependencyIDs(ids), .retry]
+            var actions: [WallpaperFailureRecovery] = [.copyDependencyIDs(ids), .retry]
             if isSteamItem {
                 actions.insert(.openWorkshop(workshopID), at: 1)
             }
@@ -208,104 +177,4 @@ extension FallbackReason {
     }
 }
 
-/// Renders a reason's `recovery` list. Kept here so both surfaces emit the same
-/// buttons in the same order for the same reason.
-struct SceneFailureRecoveryActions: View {
-    let recovery: [SceneFailureRecovery]
-    let onRetry: (() -> Void)?
-    var isCompact = true
-
-    @State private var didCopy = false
-
-    var body: some View {
-        ForEach(Array(recovery.enumerated()), id: \.element) { index, action in
-            // Only the first action can be prominent (DESIGN.md rule 8).
-            control(for: action, isPrimary: index == 0)
-        }
-    }
-
-    @ViewBuilder
-    private func control(for action: SceneFailureRecovery, isPrimary: Bool) -> some View {
-        switch action {
-        case .retry:
-            if let onRetry {
-                emphasised(isPrimary) {
-                    Button(action: onRetry) {
-                        Label("Retry", systemImage: "arrow.clockwise")
-                    }
-                    .accessibilityHint(Text("Reloads the current scene."))
-                }
-            }
-        case let .copyDependencyIDs(ids):
-            emphasised(isPrimary) {
-                Button {
-                    let pasteboard = NSPasteboard.general
-                    pasteboard.clearContents()
-                    pasteboard.setString(ids.joined(separator: "\n"), forType: .string)
-                    didCopy = true
-                } label: {
-                    // Two literal Labels rather than a ternary inside one: a
-                    // ternary's type is inferred, and which Label overload wins
-                    // then decides whether the string is localised at all.
-                    if didCopy {
-                        Label("Copied", systemImage: "checkmark")
-                    } else {
-                        Label("Copy IDs", systemImage: "doc.on.doc")
-                    }
-                }
-                .task(id: didCopy) {
-                    guard didCopy else { return }
-                    try? await Task.sleep(for: .seconds(2))
-                    didCopy = false
-                }
-                .accessibilityHint(Text("Copies every missing workshop ID to your clipboard so you can subscribe in Steam"))
-            }
-        case let .openWorkshop(id):
-            // Never prominent: leaving the app is not the recovery, it is a
-            // detour on the way to one.
-            Button {
-                openWorkshop(workshopID: id)
-            } label: {
-                Label("Workshop", systemImage: "safari")
-            }
-            .buttonStyle(.bordered)
-            .controlSize(isCompact ? .small : .regular)
-            .accessibilityHint(Text("Opens this wallpaper's Steam Workshop page in your browser"))
-        case .configureEngineAssets:
-            emphasised(isPrimary) {
-                Button {
-                    NotificationCenter.default.post(
-                        name: .openSettingsSection,
-                        object: nil,
-                        userInfo: [
-                            "destination": SettingsNavigation.workshopSetup.rawValue,
-                            "anchor": SettingsSearchAnchor.workshopAssets.rawValue,
-                        ]
-                    )
-                } label: {
-                    Label("Set Up Assets", systemImage: "shippingbox.and.arrow.backward")
-                }
-                .accessibilityHint(Text("Opens the Workshop settings page to download or link Wallpaper Engine assets"))
-            }
-        }
-    }
-
-    /// `buttonStyle` takes a concrete type, so the prominent/plain choice has to
-    /// branch on whole views rather than on the style value.
-    @ViewBuilder
-    private func emphasised(_ isPrimary: Bool, @ViewBuilder content: () -> some View) -> some View {
-        if isPrimary {
-            content().buttonStyle(.borderedProminent).controlSize(isCompact ? .small : .regular)
-        } else {
-            content().buttonStyle(.bordered).controlSize(isCompact ? .small : .regular)
-        }
-    }
-
-    private func openWorkshop(workshopID: String) {
-        var components = URLComponents(string: "https://steamcommunity.com/sharedfiles/filedetails/")
-        components?.queryItems = [URLQueryItem(name: "id", value: workshopID)]
-        guard let url = components?.url else { return }
-        NSWorkspace.shared.open(url)
-    }
-}
 #endif

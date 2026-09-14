@@ -167,7 +167,7 @@ public enum DestructiveAction: Identifiable, Equatable {
             )
         case .clearCurrentWallpaper(let displayName):
             return String(
-                localized: "Only removes the current wallpaper from \(displayName). Source files, bookmarks, and library items are not deleted.",
+                localized: "Clears everything saved for \(displayName): the wallpaper, its playlist and schedule, and this display's settings. Source files, bookmarks, and library items are not deleted.",
                 bundle: .appLanguage, comment: "Destructive confirm message. Placeholder is the display name."
             )
         case .resetDisplaySettings(let displayName):

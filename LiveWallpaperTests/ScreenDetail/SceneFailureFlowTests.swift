@@ -129,22 +129,77 @@ struct SceneFailureFlowTests {
         #expect(cause.reason == WPESceneDocumentError.invalidUTF8.localizedDescription)
     }
 
+    /// The page carries three zones now — diagnosis, recovery, and the display's
+    /// own destructive escape — so it has to survive both appearances at the
+    /// narrow width where the zones stop fitting side by side.
     @MainActor
-    @Test("Failure page lays out in native light and dark appearances")
-    func previewLayout() throws {
-        let snapshot = WallpaperFailureSnapshot(id: UUID(), title: "Night Sky · Failed Scene B", workshopID: "1234", displayName: "Built-in Display", stage: "loading", cause: WallpaperFailureCause(code: "scene.file_missing", reason: "A file required by the Stars layer is missing: materials/stars.tex."), previousWallpaper: "Mountain Lake · Scene A", timestamp: Date(), diagnostics: "Missing source texture", wallpaperType: .scene)
-        for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", NSAppearance.Name.darkAqua)] {
-            let host = NSHostingView(rootView: AppLanguageScope(defaults: .appScoped()) { WallpaperFailureView(failure: snapshot, onRetry: {}, onViewDesktop: {}).frame(width: 660, height: 520) })
-            host.appearance = NSAppearance(named: appearance)
-            host.frame = CGRect(x: 0, y: 0, width: 660, height: 520)
-            host.layoutSubtreeIfNeeded()
-            let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
-            host.cacheDisplay(in: host.bounds, to: bitmap)
-            let png = try #require(bitmap.representation(using: .png, properties: [:]))
-            let destination = FileManager.default.temporaryDirectory.appendingPathComponent("SceneFailurePreview-\(name).png")
-            try png.write(to: destination)
-            print("Scene failure UI snapshot: \(destination.path)")
-            #expect(host.fittingSize.width <= 660)
+    @Test("Failure page lays out in native light and dark appearances", arguments: [CGFloat(420), CGFloat(660)])
+    func previewLayout(width: CGFloat) throws {
+        let cases: [(String, WallpaperFailureCause, String?)] = [
+            ("needsparts", WallpaperFailureCause(code: "scene.file_missing", reason: "A file required by the Stars layer is missing: materials/stars.tex."), "Mountain Lake · Scene A"),
+            ("fatal", WallpaperFailureCause(code: "texture.metal_unavailable", reason: "This Mac's GPU cannot decode BC7 textures.", canRetry: false), nil),
+            ("blocked", WallpaperFailureCause(code: "scene.parse", reason: "Unexpected token at line 42 of scene.json.", canRetry: false), nil),
+        ]
+        for (name, cause, previous) in cases {
+            let snapshot = WallpaperFailureSnapshot(
+                id: UUID(), title: "Night Sky · Failed Scene B", workshopID: "1234567890",
+                displayName: "Built-in Display", stage: "loading", cause: cause,
+                previousWallpaper: previous, timestamp: Date(),
+                diagnostics: "Missing source texture", wallpaperType: .scene
+            )
+            for (appearanceName, appearance) in [("light", NSAppearance.Name.aqua), ("dark", NSAppearance.Name.darkAqua)] {
+                let page = WallpaperFailureView(
+                    failure: snapshot,
+                    onRetry: {},
+                    onViewDesktop: {},
+                    onChooseSource: {},
+                    onClearDisplay: {}
+                )
+                let host = NSHostingView(rootView: AppLanguageScope(defaults: .appScoped()) {
+                    page.frame(width: width, height: 560)
+                })
+                host.appearance = NSAppearance(named: appearance)
+                host.frame = CGRect(x: 0, y: 0, width: width, height: 560)
+                host.layoutSubtreeIfNeeded()
+                let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+                host.cacheDisplay(in: host.bounds, to: bitmap)
+                let png = try #require(bitmap.representation(using: .png, properties: [:]))
+                let destination = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("SceneFailurePreview-\(Int(width))-\(name)-\(appearanceName).png")
+                try png.write(to: destination)
+                print("Scene failure UI snapshot: \(destination.path)")
+
+                // Nothing overflows the width it was given, in either appearance.
+                #expect(host.fittingSize.width <= width)
+            }
         }
+    }
+
+    /// `ContentView` shows the same view in a sheet for a *historic* failure with
+    /// every callback nil. That path has no recovery row and no display actions,
+    /// so the zones have to collapse instead of leaving empty scaffolding.
+    @MainActor
+    @Test("A historic failure still reads as a page with no actions to offer")
+    func historicFailureLayout() throws {
+        let snapshot = WallpaperFailureSnapshot(
+            id: UUID(), title: "Night Sky · Failed Scene B", workshopID: nil,
+            displayName: "Built-in Display", stage: "runtime",
+            cause: WallpaperFailureCause(code: "scene.parse", reason: "Unexpected token at line 42 of scene.json.", canRetry: false),
+            previousWallpaper: nil, timestamp: Date(), diagnostics: "", wallpaperType: .scene
+        )
+        let host = NSHostingView(rootView: AppLanguageScope(defaults: .appScoped()) {
+            WallpaperFailureView(failure: snapshot, isCurrentAttempt: false)
+                .frame(width: 600, height: 480)
+        })
+        host.frame = CGRect(x: 0, y: 0, width: 600, height: 480)
+        host.layoutSubtreeIfNeeded()
+        let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+        host.cacheDisplay(in: host.bounds, to: bitmap)
+        let png = try #require(bitmap.representation(using: .png, properties: [:]))
+        let destination = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SceneFailurePreview-historic.png")
+        try png.write(to: destination)
+        print("Scene failure UI snapshot: \(destination.path)")
+        #expect(host.fittingSize.width <= 600)
     }
 }

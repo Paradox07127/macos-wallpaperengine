@@ -9845,6 +9845,41 @@
         }
       }
     },
+    "Can't run on this Mac" : {
+      "comment" : "Kicker above a failed wallpaper's name: nothing on this Mac can render it.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Can't run on this Mac"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No puede ejecutarse en este Mac"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この Mac では実行できません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法在这台 Mac 上运行"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法在這台 Mac 上執行"
+          }
+        }
+      }
+    },
     "Can't use %@" : {
       "comment" : "Add-wallpaper failure alert title. The placeholder is the chosen file name.",
       "extractionState" : "manual",
@@ -12833,6 +12868,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "清除網頁"
+          }
+        }
+      }
+    },
+    "Clears everything saved for %@: the wallpaper, its playlist and schedule, and this display's settings. Source files, bookmarks, and library items are not deleted." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clears everything saved for %@: the wallpaper, its playlist and schedule, and this display's settings. Source files, bookmarks, and library items are not deleted."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Borra todo lo guardado para %@: el fondo de pantalla, su lista de reproducción y su programación, y los ajustes de esta pantalla. No se eliminan los archivos de origen, los marcadores ni los elementos de la biblioteca."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ に保存されている内容をすべて消去します。壁紙、そのプレイリストとスケジュール、このディスプレイの設定が対象です。ソース、ブックマーク、ライブラリ項目は削除されません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除为 %@ 保存的全部内容：壁纸、它的播放列表与排程，以及这台显示器的设置。源文件、书签与库项目不会删除。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除為 %@ 儲存的全部內容：桌布、它的播放清單與排程，以及這台顯示器的設定。來源檔案、書籤與媒體庫項目不會刪除。"
           }
         }
       }
@@ -37442,6 +37512,41 @@
         }
       }
     },
+    "On this display" : {
+      "comment" : "Section label above the display-scoped block of the wallpaper failure page.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On this display"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En esta pantalla"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このディスプレイ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这台显示器"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "這台顯示器"
+          }
+        }
+      }
+    },
     "One Week" : {
       "comment" : "Workshop Most Popular window (Steam's SharedFiles_Browse_Trend_Option_Week).",
       "localizations" : {
@@ -37508,41 +37613,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "1 年"
-          }
-        }
-      }
-    },
-    "Only removes the current wallpaper from %@. Source files, bookmarks, and library items are not deleted." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Only removes the current wallpaper from %@. Source files, bookmarks, and library items are not deleted."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Solo quita el fondo de pantalla actual de %@. No se eliminan los archivos de origen, los marcadores ni los elementos de la biblioteca."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ の現在の壁紙のみを外します。ソース、ブックマーク、ライブラリ項目は削除されません。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "仅从 %@ 移除当前壁纸。源文件、书签与库项目不会删除。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "僅從 %@ 移除目前桌布。來源檔案、書籤與媒體庫項目不會刪除。"
           }
         }
       }
@@ -38350,42 +38420,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在 Steam 中開啟"
-          }
-        }
-      }
-    },
-    "Open in Workshop" : {
-      "comment" : "A button that opens a Steam workshop page.",
-      "isCommentAutoGenerated" : true,
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Open in Workshop"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Abrir en Workshop"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ワークショップで開く"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在创意工坊中打开"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在創意工坊中開啟"
           }
         }
       }
@@ -50395,41 +50429,6 @@
         }
       }
     },
-    "Scene could not be loaded" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Scene could not be loaded"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No se pudo cargar la escena"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "シーンを読み込めませんでした"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "场景加载失败"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "場景載入失敗"
-          }
-        }
-      }
-    },
     "Scene debug artifacts" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -55117,6 +55116,41 @@
         }
       }
     },
+    "Something is missing" : {
+      "comment" : "Kicker above a failed wallpaper's name: supplying the missing content fixes it.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Something is missing"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Falta algo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不足しているものがあります"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "缺少内容"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "缺少內容"
+          }
+        }
+      }
+    },
     "Something went wrong." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -58926,6 +58960,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "關聯項目已達下載上限。仍缺少：%@"
+          }
+        }
+      }
+    },
+    "Stops this display's wallpaper and forgets its settings. Downloaded files are kept." : {
+      "comment" : "Tooltip and accessibility hint on the destructive clear button of the wallpaper failure page.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stops this display's wallpaper and forgets its settings. Downloaded files are kept."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Detiene el fondo de esta pantalla y olvida su configuración. Los archivos descargados se conservan."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このディスプレイの壁紙を停止し、設定を破棄します。ダウンロード済みのファイルは保持されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "停止这台显示器的壁纸并清除它的设置。已下载的文件会保留。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "停止這台顯示器的桌布並清除它的設定。已下載的檔案會保留。"
           }
         }
       }
@@ -63954,6 +64023,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "此桌布包含 Windows `.dll` 外掛程式（例如音訊視覺化工具或螢幕保護程式執行階段）。macOS 無法載入 Windows 原生程式碼，因此此專案在此永久不受支援。"
+          }
+        }
+      }
+    },
+    "This wallpaper didn't load" : {
+      "comment" : "Kicker above a failed wallpaper's name: it is blocked but recoverable.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This wallpaper didn't load"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este fondo no se cargó"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この壁紙を読み込めませんでした"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这张壁纸没有加载成功"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "這張桌布沒有載入成功"
           }
         }
       }
@@ -69122,41 +69226,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "桌布包含 Windows DLL 外掛程式，無法在 macOS 上執行"
-          }
-        }
-      }
-    },
-    "Wallpaper could not be loaded" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wallpaper could not be loaded"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No se pudo cargar el fondo"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "壁紙を読み込めませんでした"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "壁纸加载失败"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "背景圖片載入失敗"
           }
         }
       }
