@@ -29,7 +29,88 @@ struct WPEParticleCoordinateTests {
             system.tick(now: 0.05)
             try #require(system.liveInstanceCount == 1)
             let instance = system.instanceBuffer.contents().bindMemory(to: WPEParticleInstance.self, capacity: 4)[0]
-            #expect(abs(instance.positionAndSize.w - 15) < 0.001)
+            #expect(abs(instance.positionAndSize.w - 7.5) < 0.001)
+        }
+    }
+
+    @Test("Perspective rain preserves its authored two-to-one horizontal emission extent")
+    func rainEmissionExtent() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let definition = try #require(WPEParticleDefinitionParser.parse(dictionary: [
+            "maxcount": 2048,
+            "emitter": [["name": "sphererandom", "instantaneous": 2048, "rate": 0,
+                         "directions": "2 1 1", "distancemin": 0, "distancemax": 1024]],
+            "initializer": [["name": "lifetimerandom", "min": 10, "max": 10]],
+        ]))
+        let system = try #require(WPEParticleSystem(definition: definition, device: device, seed: 133))
+        system.tick(now: 0)
+        let particles = system.instanceBuffer.contents().bindMemory(to: WPEParticleInstance.self, capacity: 2048)
+        var maxX: Float = 0
+        var xSquare: Float = 0
+        var zSquare: Float = 0
+        for i in 0 ..< system.liveInstanceCount {
+            let x = particles[i].positionAndSize.x + 0.5
+            let y = particles[i].positionAndSize.y + 0.5
+            let z = particles[i].velocity.w
+            maxX = max(maxX, abs(x))
+            xSquare += x * x
+            zSquare += z * z
+            #expect(x * x / 4 + y * y + z * z <= 1024 * 1024 + 1)
+        }
+        #expect(system.liveInstanceCount == 2048)
+        #expect(maxX > 1800 && maxX <= 2048)
+        #expect(xSquare / zSquare > 3.5 && xSquare / zSquare < 4.5)
+    }
+
+    @Test("Short-lived rain stays stable across render frame intervals", arguments: [15, 30, 60, 0])
+    func rainPopulationAcrossFrameIntervals(fps: Int) throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let definition = try #require(WPEParticleDefinitionParser.parse(dictionary: [
+            "maxcount": 4096,
+            "emitter": [["name": "boxrandom", "rate": 2000]],
+            "initializer": [["name": "lifetimerandom", "min": 0.31, "max": 0.31],
+                            ["name": "velocityrandom", "min": "0 -3000 0", "max": "0 -3000 0"],
+                            ["name": "alpharandom", "min": 1, "max": 1]],
+            "operator": [["name": "alphafade", "fadeintime": 0.15, "fadeouttime": 0.15]],
+        ]))
+        let system = try #require(WPEParticleSystem(definition: definition, device: device, seed: 133))
+        system.tick(now: 0)
+        var now = 0.0
+        var frame = 0
+        let irregular = [0.08, 0.02, 0.06, 0.04]
+        while now < 2 {
+            now = min(2, now + (fps == 0 ? irregular[frame % irregular.count] : 1 / Double(fps)))
+            system.tick(now: now)
+            frame += 1
+        }
+        #expect((580 ... 640).contains(system.liveInstanceCount))
+        let particles = system.instanceBuffer.contents().bindMemory(to: WPEParticleInstance.self, capacity: 4096)
+        var meanAlpha: Float = 0
+        var zeroAge = 0
+        for i in 0 ..< system.liveInstanceCount {
+            let fraction = particles[i].rotationAndLife.y
+            if fraction < 0.00001 {
+                zeroAge += 1
+            }
+            #expect(abs(particles[i].positionAndSize.y + 0.5 + 930 * fraction) < 0.01)
+            meanAlpha += particles[i].color.w
+        }
+        meanAlpha /= Float(system.liveInstanceCount)
+        #expect(zeroAge == 0)
+        #expect(meanAlpha > 0.46 && meanAlpha < 0.56)
+    }
+
+    @Test("Resuming after a long gap keeps particle catch-up bounded")
+    func resumeCatchUpRemainsBounded() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let system = try #require(WPEParticleSystem(definition: makeDefinition(), device: device, seed: 133))
+        system.tick(now: 0)
+        system.tick(now: 30)
+        #expect(system.liveInstanceCount == 4)
+        let particles = system.instanceBuffer.contents().bindMemory(to: WPEParticleInstance.self, capacity: 4)
+        for i in 0 ..< system.liveInstanceCount {
+            #expect(particles[i].rotationAndLife.y > 0)
+            #expect(particles[i].rotationAndLife.y <= 0.01001)
         }
     }
 
@@ -310,17 +391,17 @@ struct WPEParticleCoordinateTests {
         #expect(abs(def.directionMask.z - 0) < 0.0001)
     }
 
-    @Test("Sphere surface direction matches WPE GenSphereSurfaceNormal: gaussian(0, directions.axis) per enabled axis, disabled axis forced to 0, result normalized")
-    func sphereSurfaceDirectionMatchesGenSphereSurfaceNormal() {
+    @Test("Sphere directions select active axes before independent axis scaling")
+    func sphereSurfaceDirectionUsesUnitVariance() {
         var requestedStddevs: [Double] = []
         let normal = WPEParticleSystem.sphereSurfaceDirection(directions: SIMD3<Double>(3, 4, 0)) { mean, stddev in
             #expect(mean == 0)
             requestedStddevs.append(stddev)
             return stddev
         }
-        #expect(requestedStddevs == [3, 4], "the disabled Z axis must not be sampled")
-        #expect(abs(normal.x - 0.6) < 0.0001)
-        #expect(abs(normal.y - 0.8) < 0.0001)
+        #expect(requestedStddevs == [1, 1], "the disabled Z axis must not be sampled")
+        #expect(abs(normal.x - 1 / sqrt(2)) < 0.0001)
+        #expect(abs(normal.y - 1 / sqrt(2)) < 0.0001)
         #expect(abs(normal.z) < 0.0001)
     }
 

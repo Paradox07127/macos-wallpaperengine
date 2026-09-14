@@ -1425,7 +1425,7 @@ struct WPEParticleInstance {
     float4 positionAndSize;   // x, y, signed sprite X scale, size in pixels
     float4 color;             // rgb 0..1, a = current alpha
     float4 rotationAndLife;   // x = rotationZ rad, y = lifetimeFraction, z = spriteFrameIndex, w = signed sprite Y scale
-    float4 velocity;          // xy = local velocity, z = local 3D speed for trail stretch
+    float4 velocity;          // xyz = local velocity, w = scene-centered depth
 };
 
 struct WPEParticleVertexOut {
@@ -1456,6 +1456,10 @@ struct WPEParticleProjection {
     // trail path at all.
     float4 trail;
     float4 modelShape;        // signed XY scale / baked average, cos(model Z), sin(model Z)
+    float4x4 viewProjection;
+    float4x4 modelToWorld;
+    float4x4 worldToModel;
+    float4 eyeAndSizeScale;
 };
 
 // Sprite-sheet slice + format hint. `grid.w == 1` means the atlas is an
@@ -1499,9 +1503,7 @@ vertex WPEParticleVertexOut wpe_particle_vertex(
     // flattened every 200x200 petal 13x (scene 3554161528). Reinstating it needs
     // the per-FRAME pixel aspect from frameRects, not cols/rows or the texture.
     // Spin the quad in screen space around its center. Z is the only
-    // rotation axis we honour for 2D sprite particles; X/Y would need
-    // a perspective particle pipeline (flags & 4 in the WPE JSON) that
-    // we don't render yet.
+    // rotation axis used for the screen-facing sprite expansion.
     float rot = instance.rotationAndLife.x;
     float c = cos(rot);
     float s = sin(rot);
@@ -1535,30 +1537,29 @@ vertex WPEParticleVertexOut wpe_particle_vertex(
     // on the local position and inverse-model eye position.
     // Sprite trails retain authored stretch in both orthographic and perspective
     // systems. Rope trails use their separate history-ribbon geometry.
+    float frameAspect = projection.padding.z;
+    if (sprite.frameRectMode.x > 0.5 && sprite.frameRectMode.y > 0.5) {
+        uint frame = uint(clamp(floor(instance.rotationAndLife.z), 0.0, sprite.frameRectMode.y - 1.0));
+        float4 rect = frameRects[frame];
+        frameAspect *= abs(rect.w - rect.y) / max(abs(rect.z - rect.x), 1e-6);
+    } else {
+        frameAspect *= max(sprite.grid.x, 1.0) / max(sprite.grid.y, 1.0);
+    }
     if (projection.trail.w > 0.5) {
         float2 v = instance.velocity.xy;
         float speed = length(v);
         if (speed > 1e-4) {
             float2 dir = v / speed;
             float2 right = float2(dir.y, -dir.x);
-            float localSpeed = instance.velocity.z > 0.0 ? instance.velocity.z : speed;
+            float localSpeed = length(instance.velocity.xyz);
             float stretch = max(projection.trail.z, min(localSpeed * projection.trail.x, projection.trail.y));
-            float frameAspect = projection.padding.z;
-            if (sprite.frameRectMode.x > 0.5 && sprite.frameRectMode.y > 0.5) {
-                uint frame = uint(clamp(floor(instance.rotationAndLife.z), 0.0, sprite.frameRectMode.y - 1.0));
-                float4 rect = frameRects[frame];
-                frameAspect *= abs(rect.w - rect.y) / max(abs(rect.z - rect.x), 1e-6);
-            } else {
-                frameAspect *= max(sprite.grid.x, 1.0) / max(sprite.grid.y, 1.0);
-            }
-            corner.y *= frameAspect;
             float size = instance.positionAndSize.w;
             // WPE: `size*right*(u-.5) - size*up*(v-.5)*ratio`, where `up` already
             // carries the stretch — so `stretch` MULTIPLIES the sprite size, it is
-            // not an absolute length. corner.y already carries textureRatio.
+            // not an absolute length. The local up axis carries textureRatio.
             // Expand in local space, then apply the model, as the Windows GS
             // does. Trail tangents ignore particle spin; modelShape carries signs.
-            float2 localCorner = corner * spriteSign;
+            float2 localCorner = corner * spriteSign * float2(1.0, frameAspect);
             float2 offsetPixels = right * (localCorner.x * size) + dir * (localCorner.y * size * stretch);
             offsetPixels *= projection.modelShape.xy;
             offsetPixels = float2(mc * offsetPixels.x - ms * offsetPixels.y,
@@ -1594,6 +1595,30 @@ vertex WPEParticleVertexOut wpe_particle_vertex(
     WPEParticleVertexOut out;
     float2 screenNDC = centerNDC + cornerNDC;
     out.position = float4(screenNDC, 0.0, 1.0);
+    if (projection.sceneSize.z > 0.5) {
+        float3 center = float3(instance.positionAndSize.xy, instance.velocity.w);
+        float3 offset = float3(cornerNDC * projection.sceneSize.xy * 0.5, 0.0);
+        float speed3D = length(instance.velocity.xyz);
+        if (projection.trail.w > 0.5 && speed3D > 1e-4) {
+            float3 eyeDirection = (projection.worldToModel
+                * float4(center - projection.eyeAndSizeScale.xyz, 0.0)).xyz;
+            float3 right = cross(eyeDirection, instance.velocity.xyz);
+            float rightLength = length(right);
+            right = rightLength > 1e-6 ? right / rightLength : float3(1.0, 0.0, 0.0);
+            float stretch = max(projection.trail.z,
+                min(speed3D * projection.trail.x, projection.trail.y));
+            float3 up = instance.velocity.xyz * (stretch / speed3D);
+            float2 localCorner = corner * spriteSign * float2(1.0, frameAspect);
+            float size = instance.positionAndSize.w / projection.eyeAndSizeScale.w;
+            offset = (projection.modelToWorld
+                * float4(size * (right * localCorner.x + up * localCorner.y), 0.0)).xyz;
+        }
+        float3 world = center + offset;
+        world.xy += projection.sceneSize.xy * 0.5 + parallaxPixels;
+        out.position = projection.viewProjection * float4(world, 1.0);
+        screenNDC = out.position.xy / (abs(out.position.w) > 1e-6 ? out.position.w : 1e-6);
+    }
+
     // NDC (y up, -1..1) → full-frame UV (y down, 0..1) for the group opacity mask.
     out.maskUV = float2(screenNDC.x * 0.5 + 0.5, 0.5 - screenNDC.y * 0.5);
     if (useFrameRects) {
@@ -1628,11 +1653,12 @@ fragment half4 wpe_particle_instanced_fragment(
     WPEParticleVertexOut in [[stage_in]],
     texture2d<half, access::sample> texture0 [[texture(0)]],
     constant WPEParticleSpriteParams& sprite [[buffer(0)]],
+    sampler particleSampler [[sampler(0)]],
     texture2d<half, access::sample> groupOpacityMask [[texture(1)]]
 ) {
     constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
-    half4 sLo = texture0.sample(linearSampler, in.uvCurrent);
-    half4 sHi = texture0.sample(linearSampler, in.uvNext);
+    half4 sLo = texture0.sample(particleSampler, in.uvCurrent);
+    half4 sHi = texture0.sample(particleSampler, in.uvNext);
     half blend = half(in.frameBlend);
     half4 sampled = mix(sLo, sHi, blend);
     // Single-channel alpha-mask atlases (WPE fog particles, format=r8)
@@ -1676,14 +1702,16 @@ fragment half4 wpe_particle_refract_fragment(
     texture2d<half, access::sample> normalTex [[texture(1)]],
     texture2d<half, access::sample> backgroundTex [[texture(2)]],
     constant WPEParticleSpriteParams& sprite [[buffer(0)]],
-    constant WPEParticleProjection& projection [[buffer(1)]]
+    constant WPEParticleProjection& projection [[buffer(1)]],
+    sampler particleSampler [[sampler(0)]],
+    sampler normalSampler [[sampler(1)]]
 ) {
     constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
-    half4 sLo = albedoTex.sample(linearSampler, in.uvCurrent);
-    half4 sHi = albedoTex.sample(linearSampler, in.uvNext);
+    half4 sLo = albedoTex.sample(particleSampler, in.uvCurrent);
+    half4 sHi = albedoTex.sample(particleSampler, in.uvNext);
     half4 albedo = mix(sLo, sHi, half(in.frameBlend));
     // WPE RGBA8888 normal+mask packing: x in alpha, y in green, mask in red.
-    half4 nt = normalTex.sample(linearSampler, in.uvCurrent);
+    half4 nt = normalTex.sample(normalSampler, in.uvCurrent);
     float nx = float(nt.a) * 2.0 - 1.0;
     float ny = float(nt.g) * 2.0 - 1.0;
     float mask = float(nt.r);

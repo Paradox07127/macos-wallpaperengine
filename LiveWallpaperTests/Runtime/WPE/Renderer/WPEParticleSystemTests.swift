@@ -1053,7 +1053,7 @@ struct WPEParticleSystemTests {
         #expect(!none.isPerspective)
     }
 
-    @Test("Perspective particles draw with depth-varied size")
+    @Test("Perspective particles preserve unprojected size and per-instance depth")
     func perspectiveDepthVariesSize() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let json = #"""
@@ -1081,12 +1081,13 @@ struct WPEParticleSystemTests {
             minSize = Swift.min(minSize, s)
             maxSize = Swift.max(maxSize, s)
         }
-        #expect(minSize <= 45, "far particles stay near the base size (min \(minSize))")
-        #expect(maxSize > 60, "near particles are boosted bigger (max \(maxSize))")
-        #expect(maxSize - minSize > 20, "depth should spread sizes (span \(maxSize - minSize))")
+        #expect(abs(minSize - 20) < 0.001)
+        #expect(abs(maxSize - 20) < 0.001)
+        let depths = (0 ..< n).map { buf[$0].velocity.w }
+        #expect((depths.max() ?? 0) - (depths.min() ?? 0) > 100)
     }
 
-    @Test("Perspective particles keep depth projection when Z comes from gravity")
+    @Test("Gravity depth reaches the GPU without CPU perspective approximation")
     func perspectiveDepthAccountsForGravityTravel() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let def = WPEParticleDefinition(
@@ -1107,24 +1108,24 @@ struct WPEParticleSystemTests {
         system.tick(now: 0)
         system.tick(now: 0.05)
         let near = system.instanceBuffer.contents()
-            .bindMemory(to: WPEParticleInstance.self, capacity: 1)[0].positionAndSize
+            .bindMemory(to: WPEParticleInstance.self, capacity: 1)[0]
 
         for step in 2...12 {
             system.tick(now: Double(step) * 0.05)
         }
         let mid = system.instanceBuffer.contents()
-            .bindMemory(to: WPEParticleInstance.self, capacity: 1)[0].positionAndSize
+            .bindMemory(to: WPEParticleInstance.self, capacity: 1)[0]
 
         for step in 13...40 {
             system.tick(now: Double(step) * 0.05)
         }
         let late = system.instanceBuffer.contents()
-            .bindMemory(to: WPEParticleInstance.self, capacity: 1)[0].positionAndSize
+            .bindMemory(to: WPEParticleInstance.self, capacity: 1)[0]
 
-        #expect(mid.x > near.x + 1)
-        #expect(mid.w > near.w + 0.1)
-        #expect(late.x > mid.x + 5)
-        #expect(late.w > mid.w + 0.5)
+        #expect(mid.velocity.w > near.velocity.w + 1)
+        #expect(late.velocity.w > mid.velocity.w + 5)
+        #expect(mid.positionAndSize == near.positionAndSize)
+        #expect(late.positionAndSize == near.positionAndSize)
     }
 
     @Test("Turbulence produces non-zero position delta")
@@ -1213,7 +1214,7 @@ struct WPEParticleSystemTests {
             system.tick(now: 0.1)
             let n = system.liveInstanceCount
             try #require(n >= 8)
-            let spawned = (0..<n).map { SIMD2(buf[$0].positionAndSize.x, buf[$0].positionAndSize.y) }
+            let spawned = (0 ..< n).map { SIMD2(buf[$0].positionAndSize.x, buf[$0].positionAndSize.y) }
             for step in 2...6 { system.tick(now: Double(step) * 0.1) }
             var travel: Float = 0
             for i in 0..<n {
@@ -1279,7 +1280,7 @@ struct WPEParticleSystemTests {
         system.tick(now: 0)
         system.tick(now: 0.1)
         let n = system.liveInstanceCount
-        let spawned = (0..<n).map { SIMD2(buf[$0].positionAndSize.x, buf[$0].positionAndSize.y) }
+        let spawned = (0 ..< n).map { SIMD2(buf[$0].positionAndSize.x, buf[$0].positionAndSize.y) }
         system.tick(now: 0.2)
         return (0..<n).compactMap { i in
             let delta = SIMD2(buf[i].positionAndSize.x, buf[i].positionAndSize.y) - spawned[i]
@@ -1865,8 +1866,8 @@ struct WPEParticleSystemTests {
         let early = pointer[0].positionAndSize.w
         for step in 1...8 { system.tick(now: 0.05 + Double(step) * 0.1) }
         let late = pointer[0].positionAndSize.w
-        #expect(early < 2)
-        #expect(late > 6)
+        #expect(early < 1)
+        #expect(late > 3)
         #expect(late > early)
     }
 
@@ -2080,7 +2081,7 @@ struct WPEParticleSystemTests {
         system.tick(now: 0); system.tick(now: 0.05)
         let w = system.instanceBuffer.contents()
             .bindMemory(to: WPEParticleInstance.self, capacity: 1)[0].positionAndSize.w
-        #expect(abs(w - 100) < 1)
+        #expect(abs(w - 50) < 1)
     }
 
     @Test("additive sprite size is capped near scene height; translucent is not")
@@ -2108,8 +2109,8 @@ struct WPEParticleSystemTests {
             return system.instanceBuffer.contents()
                 .bindMemory(to: WPEParticleInstance.self, capacity: 1)[0].positionAndSize.w
         }
-        #expect(abs(try makeSized(blend: .additive) - 1000) < 1)
-        #expect(try makeSized(blend: .translucent) > 4000)
+        #expect(try abs(makeSized(blend: .additive) - 500) < 1)
+        #expect(try makeSized(blend: .translucent) > 2000)
     }
 
     @Test("additive sprite cap also applies after sizechange growth")
@@ -2136,7 +2137,7 @@ struct WPEParticleSystemTests {
         system.tick(now: 0); system.tick(now: 0.05)
         let w = system.instanceBuffer.contents()
             .bindMemory(to: WPEParticleInstance.self, capacity: 1)[0].positionAndSize.w
-        #expect(abs(w - 1000) < 1)
+        #expect(abs(w - 500) < 1)
     }
 
     @Test("Parser captures sizerandom exponent; spawn biases size toward min")
@@ -2156,10 +2157,10 @@ struct WPEParticleSystemTests {
         let n = system.liveInstanceCount
         let ptr = system.instanceBuffer.contents()
             .bindMemory(to: WPEParticleInstance.self, capacity: n)
-        let mean = (0..<n).map { ptr[$0].positionAndSize.w }.reduce(0, +) / Float(max(1, n))
+        let mean = (0 ..< n).map { ptr[$0].positionAndSize.w }.reduce(0, +) / Float(max(1, n))
         #expect(n > 30)
-        #expect(mean < 58)
-        #expect(mean > 40)
+        #expect(mean < 29)
+        #expect(mean > 20)
     }
 
     @Test("Parser captures instantaneous burst from a verbatim WPE emitter (scene 3460973721)")
@@ -3249,6 +3250,28 @@ struct WPEParticleSystemTests {
         #expect(child.liveInstanceCount == 6, "2 per birth × 3 births — not a single one-shot")
     }
 
+    @Test("Substeps keep eventfollow child ages aligned with each parent birth")
+    func eventFollowBirthTimesSurviveSubsteps() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let parent = try #require(WPEParticleSystem(definition: Self.eventFollowParentDefinition(), device: device))
+        let child = try #require(WPEParticleSystem(definition: Self.burstChildDefinition(), device: device))
+        child.followParent = parent
+        child.requiresFollowParent = true
+        parent.tick(now: 0)
+        child.tick(now: 0)
+        parent.tick(now: 0.1)
+        child.tick(now: 0.1)
+        try #require(parent.liveInstanceCount == 2)
+        try #require(child.liveInstanceCount == 4)
+        let parents = parent.instanceBuffer.contents().bindMemory(to: WPEParticleInstance.self, capacity: 32)
+        let children = child.instanceBuffer.contents().bindMemory(to: WPEParticleInstance.self, capacity: 16)
+        let parentAges = (0 ..< 2).map { parents[$0].rotationAndLife.y }.sorted()
+        let childAges = (0 ..< 4).map { children[$0].rotationAndLife.y }.sorted()
+        for i in 0 ..< 4 {
+            #expect(abs(childAges[i] - parentAges[i / 2]) < 0.000001)
+        }
+    }
+
     @Test("Child probability and scale parse, with engine defaults and a clamp")
     func childProbabilityAndScaleParse() throws {
         let json = #"""
@@ -3377,7 +3400,7 @@ struct WPEParticleSystemTests {
         #expect(abs(instance.positionAndSize.y - 28) < 0.0001)
         // Particle quads carry one scalar size, so match the existing scene-object
         // rule: mean(abs(scale.x), abs(scale.y)) = 3.
-        #expect(abs(instance.positionAndSize.w - 30) < 0.0001)
+        #expect(abs(instance.positionAndSize.w - 15) < 0.0001)
     }
 
     @Test("eventfollow probability is rolled per parent event, not once per system")

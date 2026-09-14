@@ -41,7 +41,7 @@ struct WPEShaderTranslationCacheSchemaTests {
     ]
 
     /// Bump together with `schemaVersion`.
-    static let expectedSchemaVersion = 10
+    static let expectedSchemaVersion = 11
     /// 2026-08-30: comment-only compression across eight of the files above moved the
     /// fingerprint without touching a line of code, so the MSL is byte-identical and
     /// `schemaVersion` deliberately stayed at 1 — bumping it would have thrown away every
@@ -73,7 +73,7 @@ struct WPEShaderTranslationCacheSchemaTests {
     /// 2026-09-09: schema 9 forces the small waterflow blend helper inline so the
     /// compiler can share phase expressions with cycles; no shader math is changed.
     /// 2026-09-10: schema 10 adds guarded water power and single-mip sampling fast paths.
-    static let expectedFingerprint = "761a24e38b3cc71069dc9d84fdf8c1ed61d1ab1f4c0d8be591a920249f85a01c"
+    static let expectedFingerprint = "80516915d6dabd8ee063e12d4825674bec9dfe84af519a320b2df9f361e13be5"
 
     @Test("Hosted shader cache defaults stay in the process configuration scratch tree")
     func defaultCacheRootIsIsolated() {

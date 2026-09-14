@@ -43,28 +43,23 @@ struct WPETexAnimatedAtlasProvider {
     private let device: MTLDevice
     private let label: String
     private let format: WPETexFormat
-    private let mapping: WPEMetalTextureFormatMapping
-    private let needsRG88Swizzle: Bool
+    private let colorSpace: WPEMetalColorSpace
 
     init?(
         payload: WPETexStreamingPayload, device: MTLDevice, label: String,
         colorSpace: WPEMetalColorSpace = .sRGB
     ) {
         guard let format = payload.info.format,
-              let mapping = try? WPEMetalTextureFormatMapper.mapping(
+              (try? WPEMetalTextureFormatMapper.mapping(
                   for: format,
                   capabilities: WPEMetalTextureCapabilities(device: device),
                   colorSpace: colorSpace
-              ) else { return nil }
+              )) != nil else { return nil }
         self.payload = payload
         self.device = device
         self.label = label
         self.format = format
-        self.mapping = mapping
-        self.needsRG88Swizzle = WPEMetalTextureLoader.rg88NeedsLuminanceAlphaSwizzle(
-            isLuminanceAlpha: payload.info.isRG88LuminanceAlpha,
-            label: label
-        )
+        self.colorSpace = colorSpace
     }
 
     func atlasDimensions(imageID: Int) -> (width: Int, height: Int)? {
@@ -77,54 +72,21 @@ struct WPETexAnimatedAtlasProvider {
         guard payload.compressedImages.indices.contains(imageID) else {
             throw Failure.missingImage(imageID)
         }
-        guard let mipmap = payload.compressedImages[imageID].payloads.first else {
-            throw Failure.missingMipmap(imageID)
+        let sourceMipmaps = payload.compressedImages[imageID].payloads
+        guard !sourceMipmaps.isEmpty else { throw Failure.missingMipmap(imageID) }
+        let mipmaps = try sourceMipmaps.map { mipmap in
+            let bytes = try decodedBytes(from: mipmap)
+            let expected = format.expectedByteCount(width: mipmap.width, height: mipmap.height)
+            guard bytes.count >= expected else { throw Failure.truncatedImageBytes(imageID) }
+            return WPETexTextureMipmap(index: mipmap.index, width: mipmap.width,
+                                       height: mipmap.height, bytes: bytes)
         }
-        let bytes = try decodedBytes(from: mipmap)
-        let expected = format.expectedByteCount(width: mipmap.width, height: mipmap.height)
-        guard bytes.count >= expected else { throw Failure.truncatedImageBytes(imageID) }
-
-        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: mapping.pixelFormat,
-            width: mipmap.width,
-            height: mipmap.height,
-            mipmapped: false
+        return try WPEMetalTextureLoader.makeTextureSynchronously(
+            from: WPETexTexturePayload(info: payload.info, mipmaps: mipmaps, hasAnimationFrames: false),
+            label: "\(label) image \(imageID)", device: device,
+            capabilities: WPEMetalTextureCapabilities(device: device),
+            colorSpace: colorSpace, preserveMipmaps: true
         )
-        descriptor.usage = [.shaderRead]
-        descriptor.storageMode = .shared
-        if needsRG88Swizzle {
-            descriptor.swizzle = MTLTextureSwizzleChannels(red: .red, green: .red, blue: .red, alpha: .green)
-        }
-        guard let texture = device.makeTexture(descriptor: descriptor) else {
-            throw Failure.textureAllocationFailed
-        }
-        texture.label = "\(label) image \(imageID)"
-        WPEMetalTextureMetadataRegistry.shared.register(
-            texture: texture,
-            imageWidth: payload.info.imageWidth > 0 ? payload.info.imageWidth : mipmap.width,
-            imageHeight: payload.info.imageHeight > 0 ? payload.info.imageHeight : mipmap.height,
-            clampUVs: payload.info.clampUVs,
-            noInterpolation: payload.info.noInterpolation
-        )
-
-        let bytesPerRow: Int
-        if let bytesPerPixel = mapping.bytesPerPixel {
-            bytesPerRow = mipmap.width * bytesPerPixel
-        } else if let bytesPerBlock = mapping.bytesPerBlock {
-            bytesPerRow = max((mipmap.width + 3) / 4, 1) * bytesPerBlock
-        } else {
-            throw Failure.missingMipmap(imageID)
-        }
-        bytes.withUnsafeBytes { raw in
-            guard let base = raw.baseAddress else { return }
-            texture.replace(
-                region: MTLRegionMake2D(0, 0, mipmap.width, mipmap.height),
-                mipmapLevel: 0,
-                withBytes: base,
-                bytesPerRow: bytesPerRow
-            )
-        }
-        return texture
     }
 
     private func decodedBytes(from mipmap: WPETexCompressedMipmap) throws -> Data {

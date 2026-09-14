@@ -23,6 +23,10 @@ extension WPEShaderTranspiler {
         premultipliedOutput: Bool = false,
         waterOptimizationsEnabled: Bool = Self.waterOptimizationsEnabled
     ) -> String {
+        // Stock Pulse blends authored colour values; the host's colour targets are linear.
+        // Its mask/noise inputs remain data, and alpha stays outside the transfer function.
+        let encodedPulse = shaderName.lowercased() == "effects/pulse"
+            && premultipliedInputSlots == [0] && premultipliedOutput
         let warningCleanHelpers = neutralizeMetalStdlibMacroRedefinitions(helpers)
         let waterMain = waterOptimizationsEnabled
             ? specializingWaterWavePower(mainBody, uniforms: uniforms, helpers: helpers) : mainBody
@@ -91,6 +95,10 @@ extension WPEShaderTranspiler {
             out.append("inline float4 wpe_unpremultiply_sample(float4 color) {")
             out.append("    float a = color.a;")
             out.append("    color.rgb = a > 0.00001 ? color.rgb / a : float3(0.0);")
+            if encodedPulse {
+                out.append("    float3 rgb = max(color.rgb, float3(0.0));")
+                out.append("    color.rgb = select(1.055 * pow(rgb, float3(1.0 / 2.4)) - 0.055, rgb * 12.92, rgb <= 0.0031308);")
+            }
             out.append("    return color;")
             out.append("}")
         }
@@ -99,6 +107,10 @@ extension WPEShaderTranspiler {
             // premultiplied render-target pipeline.
             out.append("inline float4 wpe_premultiply_output(float4 color) {")
             out.append("    float a = metal::clamp(color.a, 0.0, 1.0);")
+            if encodedPulse {
+                out.append("    float3 rgb = max(color.rgb, float3(0.0));")
+                out.append("    color.rgb = select(pow((rgb + 0.055) / 1.055, float3(2.4)), rgb / 12.92, rgb <= 0.04045);")
+            }
             out.append("    return float4(color.rgb * a, a);")
             out.append("}")
         }

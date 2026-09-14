@@ -114,8 +114,8 @@ enum WPEShaderCompilerError: Error, Sendable, Equatable {
 /// Memory hits serve a second display / new executor; disk hits serve cold start.
 /// All mutable state sits behind `lock`.
 final class WPEShaderTranslationCache: @unchecked Sendable {
-    /// 10: rebuild generated water shaders with guarded arithmetic/texture fast paths.
-    static let schemaVersion = 10
+    /// 11: rebuild Pulse colour arithmetic at the managed linear/encoded boundary.
+    static let schemaVersion = 11
     static let shared = WPEShaderTranslationCache()
 
     struct Payload: Codable, Equatable, Sendable {

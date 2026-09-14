@@ -506,6 +506,10 @@ struct WPEParticleProjection {
     var trail: SIMD4<Float> = SIMD4<Float>(0, 0, 0, 0)
     /// Signed model XY scale divided by the size's baked average; cos/sin of model Z rotation.
     var modelShape = SIMD4<Float>(1, 1, 1, 0)
+    var viewProjection = matrix_identity_float4x4
+    var modelToWorld = matrix_identity_float4x4
+    var worldToModel = matrix_identity_float4x4
+    var eyeAndSizeScale = SIMD4<Float>(0, 0, 0, 1)
 }
 
 /// Layout MUST match `WPESkewParams` in WPEMetalBuiltins.metal. Normalized
