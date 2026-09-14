@@ -184,7 +184,7 @@ def git_environment() -> dict[str, str]:
     env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
     env.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull,
                GIT_ATTR_NOSYSTEM="1", GIT_TERMINAL_PROMPT="0", GIT_ALLOW_PROTOCOL="file",
-               GIT_NO_REPLACE_OBJECTS="1")
+               GIT_NO_REPLACE_OBJECTS="1", GIT_NO_LAZY_FETCH="1")
     # These also reach upload-pack subprocesses. A fresh frozen repo has no
     # source-local filter config, templates, alternates, or shared objects.
     overrides = {"core.hooksPath": os.devnull, "core.fsmonitor": "false",
@@ -214,6 +214,30 @@ def command(argv: list[str], cwd: Path | None = None, *, timeout: float = 30,
 def git(repo: Path, *args: str, timeout: float = 30) -> str:
     return command(["git", "-C", str(repo), *args], timeout=timeout, env=git_environment())
 
+
+
+def require_local_objects(repo: Path, base: str, head: str) -> None:
+    """Freeze needs every object reachable from the two commits locally present.
+
+    A complete clone is the recommended controller source. A fully hydrated
+    partial clone is allowed, but this check never invokes promisor fetching.
+    Stream the inventory through a temporary file, not an in-memory patch/list.
+    """
+    if any(type(value) is not str or not SHA.fullmatch(value) for value in (base, head)):
+        raise ReviewError("base/head must be full lowercase 40-character commit SHAs")
+    with tempfile.TemporaryFile() as inventory:
+        try:
+            result = subprocess.run(["git", "-C", str(repo), "rev-list", "--objects",
+                                     "--missing=print", base, head], env=git_environment(),
+                                    stdout=inventory, stderr=subprocess.DEVNULL,
+                                    timeout=300, check=False)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise ReviewError("SOURCE_OBJECT_SCAN_FAILED: provide a complete local clone; automatic lazy fetch is disabled") from exc
+        if result.returncode:
+            raise ReviewError("SOURCE_OBJECT_SCAN_FAILED: provide a complete local clone containing base/head; automatic lazy fetch is disabled")
+        inventory.seek(0)
+        if any(line.startswith(b"?") for line in inventory):
+            raise ReviewError("SOURCE_OBJECTS_MISSING: prepare a complete local clone or explicitly hydrate it before retrying; automatic lazy fetch is disabled")
 
 def freeze_repository(repo: Path, frozen: Path, base: str, head: str) -> None:
     frozen.mkdir()
@@ -392,6 +416,7 @@ def preparing(args: argparse.Namespace):
     repo = Path(args.repo).expanduser().resolve()
     if Path(git(repo, "rev-parse", "--show-toplevel")).resolve() != repo.resolve():
         raise ReviewError("--repo must name the repository root")
+    require_local_objects(repo, args.base, args.head)
     tree = check_target(repo, args.base, args.head, kind=args.kind)
     merge_base = git(repo, "merge-base", args.base, args.head)
     env, provenance = environment(args)

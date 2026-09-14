@@ -708,6 +708,40 @@ class HardenedCollectionTests(unittest.TestCase):
 class IsolationTests(unittest.TestCase):
     setUp = OfflineGitPreparationTests.setUp
     cleanup = OfflineGitPreparationTests.cleanup
+    def test_missing_promisor_blob_fails_before_freeze_without_lazy_fetch(self):
+        marker = self.root / "lazy-fetch-must-not-run"
+        upload = self.root / "fake-upload-pack"
+        upload.write_text("#!/bin/sh\ntouch '" + str(marker) + "'\nexit 1\n")
+        upload.chmod(0o700)
+        runner.git(self.repo, "config", "remote.origin.url", str(self.repo))
+        runner.git(self.repo, "config", "remote.origin.promisor", "true")
+        runner.git(self.repo, "config", "remote.origin.partialclonefilter", "blob:none")
+        runner.git(self.repo, "config", "remote.origin.uploadpack", str(upload))
+        blob = runner.git(self.repo, "rev-parse", "HEAD:file.txt")
+        (self.repo / ".git/objects" / blob[:2] / blob[2:]).unlink()
+        with patch.object(runner, "freeze_repository") as freeze, patch.object(runner, "environment") as environment:
+            with self.assertRaisesRegex(runner.ReviewError, "SOURCE_OBJECTS_MISSING.*lazy fetch is disabled"):
+                runner.prepare(self.args)
+        freeze.assert_not_called()
+        environment.assert_not_called()
+        self.assertFalse(marker.exists())
+        self.assertFalse((Path(self.args.state_dir) / self.args.job_id).exists())
+
+    def test_hydrated_promisor_repository_is_allowed(self):
+        runner.git(self.repo, "config", "remote.origin.promisor", "true")
+        runner.git(self.repo, "config", "remote.origin.partialclonefilter", "blob:none")
+        runner.require_local_objects(self.repo, self.args.base, self.args.head)
+        with patch.object(runner, "environment", return_value=(self.env, self.provenance)):
+            _, manifest, _ = runner.prepare(self.args)
+        runner.verify_frozen(manifest)
+
+    def test_missing_commit_reports_actionable_object_preflight_failure(self):
+        self.args.head = "1" * 40
+        with patch.object(runner, "freeze_repository") as freeze:
+            with self.assertRaisesRegex(runner.ReviewError, "SOURCE_OBJECT(?:S_MISSING|_SCAN_FAILED).*complete local clone"):
+                runner.prepare(self.args)
+        freeze.assert_not_called()
+
     def test_source_hook_and_filter_do_not_execute_or_transfer(self):
         marker = self.root / "must-not-exist"
         hooks = self.repo / ".githooks"

@@ -22,7 +22,7 @@ The stable local root is `$HOME/Documents/Codex/Multica`:
 | --- | --- |
 | `local/config.json` | Local routing, paths, models and the service `enabled` switch |
 | `bridge-v3/` | Installed copies of these helpers and `mmrun-compat-v2` |
-| `repository/` | Dedicated Git mirror/checkout used to fetch review targets |
+| `repository-v3/` | Dedicated complete Git mirror used to fetch review targets |
 | `local/state/intake.sqlite3` | Intake checkpoint, mappings and write reconciliation |
 | `local/state/jobs/<job-id>/` | Immutable request and executor/publication receipts |
 | `local/state/reviews/<job-id>/` | Frozen checkout, review manifest and model evidence |
@@ -194,6 +194,14 @@ The runner prepares each target in an independent Git object repository with
 system/global configuration and executable Git extensions disabled. Hooks or
 filters configured in the source checkout cannot run during preparation. The
 frozen worktree is read-only for review and is preserved as evidence.
+
+The source mirror must already contain every object reachable from the chosen
+base/head. A normal complete clone meets this requirement; a blob-filtered clone
+may not. Preparation disables lazy fetching and checks completeness before
+creating a job or launching a model. If it reports missing objects, create a
+complete dedicated mirror or explicitly hydrate it with trusted GitHub access,
+then update `repository_path`; do not enable network fallback inside the isolated
+preparation process.
 
 `runner_dispatch.py` is a trusted, hash-bound supervisor. It records the final
 mmrun dispatcher exit result even when the foreground wait times out. Missing
