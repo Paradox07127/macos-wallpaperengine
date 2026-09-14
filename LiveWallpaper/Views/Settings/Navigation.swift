@@ -10,7 +10,6 @@ enum SettingsSearchAnchor: String, Hashable, Identifiable, Sendable {
     case shortcutsGlobal
     case storageDashboard
     case storageCaches
-    /// Stable anchor for Steam Web API key search results.
     case workshopSetup
     case workshopConnection
     case workshopAssets
@@ -58,7 +57,6 @@ enum SettingsNavigation: String, CaseIterable, Hashable, Identifiable {
         allItems.filter { item in
             switch item.destination {
             case .audioResponse:
-                // Lite excludes system audio capture.
                 capabilities.sku == .pro
             case .storage:
                 capabilities.enabledFeatures.contains(.wpeImport)
@@ -204,7 +202,6 @@ struct SettingsNavigationItem: Identifiable, Equatable {
 
     var id: SettingsNavigation { destination }
 
-    /// Index both the rendered label and English key; the bundle supports language-specific tests.
     func searchableText(in bundle: Bundle = .appLanguage) -> String {
         ([title, title.localized(in: bundle)] + keywords).joined(separator: " ")
     }
@@ -379,7 +376,6 @@ private struct SettingsNavigationSearchTarget: Equatable {
 }
 
 extension String {
-    /// Resolve the label shown in the sidebar for search matching.
     func localized(in bundle: Bundle) -> String {
         String(localized: String.LocalizationValue(self), bundle: bundle)
     }

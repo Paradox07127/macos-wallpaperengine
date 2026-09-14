@@ -2,13 +2,11 @@ import Foundation
 import Testing
 @testable import LiveWallpaper
 
-/// Maps SteamCMD's cached-login output to a verdict. Pure, so every branch is
-/// exercised without spawning SteamCMD or owning a Steam account.
 @Suite("Steam cached-login parser")
 struct SteamCachedLoginParserTests {
 
-    /// Captured verbatim from `steamcmd +@NoPromptForPassword 1 +login <acct>
-    /// +quit` against a HOME with no cached session.
+    /// Verbatim `steamcmd +@NoPromptForPassword 1 +login <acct> +quit` output
+    /// with no cached session.
     private static let noCachedSessionOutput = """
     Steam Console Client (c) Valve Corporation - version 1785186678
     -- type 'quit' to exit --
@@ -19,10 +17,6 @@ struct SteamCachedLoginParserTests {
     Unloading Steam API...OK
     """
 
-    /// Reconstructed from the matcher that shipped in the retired in-app probe,
-    /// with the SteamID3 this Mac's `connection_log.txt` actually recorded. The
-    /// success line is printed to stdout only, so it cannot be captured from a
-    /// log after the fact.
     private static let sessionValidOutput = """
     Steam Console Client (c) Valve Corporation - version 1785186678
     Loading Steam API...OK
@@ -58,8 +52,6 @@ struct SteamCachedLoginParserTests {
         #expect(SteamCachedLoginParser.parse(stdout: Self.noCachedSessionOutput).steamID64 == nil)
     }
 
-    /// Guessing "signed in" from output nobody has seen before is how the old
-    /// Doctor produced confident-but-wrong greens.
     @Test("Unfamiliar output is reported as unrecognized, not assumed good")
     func unfamiliarOutputIsNotAssumedGood() {
         #expect(SteamCachedLoginParser.parse(stdout: "").outcome == .unrecognized)
@@ -68,9 +60,7 @@ struct SteamCachedLoginParserTests {
         #expect(SteamCachedLoginParser.parse(stdout: "Logging in using cached credentials.").outcome == .unrecognized)
     }
 
-    /// SteamID3 → SteamID64 is `accountID + 76561197960265728`. This pair is
-    /// cross-checked: `1267132100` appears in this Mac's connection log and
-    /// `76561199227397828` is the SteamID recorded in its `config.vdf`.
+    /// SteamID3 → SteamID64 is `accountID + 76561197960265728`.
     @Test("SteamID3 in the login line converts to the SteamID64 config.vdf records")
     func convertsSteamID3ToSteamID64() {
         #expect(SteamCachedLoginParser.steamID64(inLoginLine: Self.sessionValidOutput) == "76561199227397828")
@@ -88,9 +78,6 @@ struct SteamCachedLoginParserTests {
         #expect(SteamCachedLoginParser.parse(stdout: noisy).diagnosticTail.count == 500)
     }
 
-    /// Captured verbatim 2026-09-03 from `steamcmd +login <acct> +quit` under
-    /// `sandbox-exec (deny network*)` with a scratch HOME: the CM connection is
-    /// retried four times over ~34s and then reported on the login line.
     private static let noConnectionOutput = """
     Loading Steam API...OK
     Cached credentials not found.
@@ -103,16 +90,11 @@ struct SteamCachedLoginParserTests {
     Unloading Steam API...OK
     """
 
-    /// A blocked network is the one failure whose remedy is not "sign in
-    /// again"; reporting it as unrecognized output sent users to Terminal.
     @Test("An unreachable Steam is its own verdict, not unrecognized output")
     func recognisesNoConnection() {
         let result = SteamCachedLoginParser.parse(stdout: Self.noConnectionOutput)
         #expect(result.outcome == .noConnection)
         #expect(result.failureReason == "No Connection")
-        // Reconstructed cached-credentials variant: same login line, a real
-        // SteamID3, the same ERROR tail. Cached credentials plus no answer is
-        // not a valid session, and not an account either.
         let cached = """
         Logging in using cached credentials.
         Logging in user 'alice_01' [U:1:1267132100] to Steam Public...Retrying... Retrying... ERROR (No Connection)
@@ -121,16 +103,12 @@ struct SteamCachedLoginParserTests {
         #expect(SteamCachedLoginParser.parse(stdout: cached).steamID64 == nil)
     }
 
-    /// Reason strings from Steam's `FAILED (…)` line, as reported on the
-    /// community forums (Rate Limit Exceeded, Account Logon Denied).
     @Test("Any other Steam refusal keeps its reason instead of the raw tail")
     func keepsRefusalReason() {
         let denied = "Logging in user 'x' [U:1:0] to Steam Public...FAILED (Account Logon Denied)"
         let result = SteamCachedLoginParser.parse(stdout: denied)
         #expect(result.outcome == .loginFailed)
         #expect(result.failureReason == "Account Logon Denied")
-        // Throttling is its own verdict: waiting is the remedy, so it must not
-        // inherit `loginFailed`'s "sign in again" instruction.
         let throttled = "Logging in user 'x' [U:1:0] to Steam Public...FAILED (Rate Limit Exceeded)"
         #expect(SteamCachedLoginParser.parse(stdout: throttled).outcome == .rateLimited)
         #expect(SteamCachedLoginParser.parse(stdout: throttled).failureReason == "Rate Limit Exceeded")

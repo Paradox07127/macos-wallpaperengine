@@ -1,6 +1,6 @@
 import Foundation
 
-/// Parent/child composition of a WPE object transform (origin, scale, XYZ Euler angles).
+/// XYZ Euler order.
 public enum WPEEulerTransform {
     public static func combine(
         origin: SIMD3<Double>,

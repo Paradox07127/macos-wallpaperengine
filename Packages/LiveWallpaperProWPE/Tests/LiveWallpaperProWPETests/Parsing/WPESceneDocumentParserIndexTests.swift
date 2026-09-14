@@ -3,10 +3,6 @@ import LiveWallpaperCore
 import Testing
 @testable import LiveWallpaperProWPE
 
-/// Locks the single-canonical-index behavior shared by the transform, visibility,
-/// hierarchy and attachment passes: duplicate object ids resolve last-write-wins
-/// across every field, and a deeply nested group's attachment is inherited by a
-/// descendant image through the memoized ancestor walk.
 @Suite("WPESceneDocumentParser object index")
 struct WPESceneDocumentParserIndexTests {
 
@@ -66,7 +62,6 @@ struct WPESceneDocumentParserIndexTests {
             #expect(abs(object.origin.x - 222) < 0.001)
             #expect(object.visible == false)
         }
-        // Hierarchy resolves the last duplicate's parent too.
         #expect(document.objectParentByID["100"] == "20")
     }
 
@@ -122,9 +117,6 @@ struct WPESceneDocumentParserIndexTests {
     }
 }
 
-/// One malformed element in an authored array used to fail the whole
-/// `as? [[String: Any]]` cast: every valid sibling silently vanished while
-/// `sourceJSON` kept them all — two truths, and the visible one was empty.
 @Suite("Malformed array elements")
 struct WPESceneMalformedArrayElementTests {
     private struct NoScriptResolver: WPESceneTransformScriptResolving {

@@ -515,7 +515,6 @@ struct TailCursorStoreTests {
         let transcript = URL(fileURLWithPath: "/Users/example/.codex/sessions/rollout-session.jsonl")
         let original = makeAggregate()
         let store = TailCursorStore(directory: dir, debounceInterval: 60)
-        // A fixed cursor so only the aggregate half of the atomic commit varies.
         let cursor = TailCursorState(inode: 1, size: 2, offset: 2)
 
         store.set(cursor, aggregate: original, for: transcript)

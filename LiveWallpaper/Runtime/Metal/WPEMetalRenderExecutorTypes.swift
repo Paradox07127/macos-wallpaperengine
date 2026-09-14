@@ -7,7 +7,6 @@ import MetalKit
 import os
 import simd
 
-/// Frame-local evidence for the conservative initial scene clear optimization.
 struct WPEMetalInitialSceneClearStats: Equatable {
     var passID: String?
     var skipped = 0
@@ -15,7 +14,6 @@ struct WPEMetalInitialSceneClearStats: Equatable {
     var rejectReason: String?
 }
 
-/// Frame-local accounting for the opt-in extension to independent textured quads.
 struct WPEMetalSceneQuadBatchStats {
     var encoders = 0
     var draws = 0
@@ -25,8 +23,6 @@ struct WPEMetalSceneQuadBatchStats {
     var rejectedLayers: [String: Int] { rejectedPasses }
 }
 
-/// One frame's consecutive scene quads. The original solid-only policy remains
-/// the default; independent copy/image draws are a separately gated extension.
 /// Only the owner closes borrowed encoders.
 final class WPEMetalSolidSceneRun {
     var encoder: MTLRenderCommandEncoder?
@@ -56,9 +52,6 @@ final class WPEMetalSolidSceneRun {
     }
 
     /// This is admission to a shared attachment, never an identity-copy proof.
-    /// Ordinary single-pass image layers may continue a run. A layer's final
-    /// copy may start one from a named FBO written this frame; end-pass leases
-    /// then remain deferred until the shared encoder closes.
     static func texturedRejectionReason(
         _ layer: WPEPreparedRenderLayer, textures: [String: MTLTexture],
         output: MTLTexture, hasMediaSubstitution: Bool,
@@ -162,7 +155,6 @@ final class WPEMetalSolidSceneRun {
     }
 }
 
-/// Indexed fragment-texture slots for one transpiled-shader dispatch.
 final class WPEMetalTextureSlotTable {
     private var textures: ContiguousArray<MTLTexture?>
     private var samplingDescriptors: ContiguousArray<WPETexSpriteSamplingDescriptor?>
@@ -209,9 +201,6 @@ final class WPEMetalTextureSlotTable {
         return samplingDescriptors[slot]
     }
 
-    /// Metadata is registered before texture publication; the only explicit removal
-    /// is the owning renderer's atlas teardown. A synchronous draw cannot interleave
-    /// that lifecycle boundary. Reset/set invalidate this snapshot before the next draw.
     func resolution(at slot: Int) -> WPEMetalTextureResolution? {
         guard textures.indices.contains(slot), textures[slot] != nil else { return nil }
         return resolutions[slot]
@@ -244,10 +233,7 @@ final class WPEMetalTextureSlotTable {
 enum WPEMetalSceneCaptureUtilityModels {
     enum OutputGeometry { case fullscreen, subregion }
 
-    /// Fullscreen/project always cover the frame. A composelayer stays fullscreen
-    /// unless its authored footprint is a safe sub-rect: oversized coverage keeps
-    /// 3479521040's 5000×2300 rotated passthrough fullscreen (98f79b5); small
-    /// z-rotated compose (2986828130) stays `.subregion`.
+    /// Fullscreen/project always cover the frame. A composelayer stays fullscreen unless its authored footprint is a safe sub-rect.
     static func outputGeometry(
         path: String,
         geometry: WPERenderLayerGeometry,
@@ -260,7 +246,6 @@ enum WPEMetalSceneCaptureUtilityModels {
         )
     }
 
-    /// Same rule, using the classification already on the layer.
     static func outputGeometry(
         kind: WPEUtilityModelKind?,
         geometry: WPERenderLayerGeometry,
@@ -346,10 +331,9 @@ final class WPESceneCaptureOutputGeometryMemo {
     }
 }
 
-/// Thread-safe sink for GPU command-buffer errors. They surface in the
-/// completed handler on a GPU thread *after* the frame call returned, so they
-/// can't throw — recorded here and surfaced in the scene diagnostic log. Bounded
-/// to count + last message so a persistently-failing GPU never grows memory.
+/// Thread-safe sink for GPU command-buffer errors: they surface in the completed handler on a
+/// GPU thread AFTER the frame call returned, so they can't throw. Bounded to count + last
+/// message so a persistently-failing GPU never grows memory.
 final class WPEGPUErrorSink: @unchecked Sendable {
     private let lock = NSLock()
     private var errorCount = 0
@@ -377,15 +361,6 @@ final class WPEGPUErrorSink: @unchecked Sendable {
     }
 }
 
-/// Custom-shader compile failures, deduped by shader name, surfaced in the scene
-/// diagnostic log — the `WPESceneDebugArtifacts` dump is hard-off in Release, so
-/// otherwise a skipped (non-compiling) pass is invisible in a bug report.
-///
-/// Scoped to the CURRENT scene: `reset()` runs alongside the other pass-keyed
-/// reload state, so a shader that failed before a reload does not keep haunting
-/// the inspector for a scene that no longer contains it. Corpus-wide translation
-/// statistics come from the opt-in test report, never from this sink —
-/// name-deduping makes it the wrong shape for counting.
 final class WPEShaderErrorSink: @unchecked Sendable {
     private let lock = NSLock()
     private var failures: [String: String] = [:]

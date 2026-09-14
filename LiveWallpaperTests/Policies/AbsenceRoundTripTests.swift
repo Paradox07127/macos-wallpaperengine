@@ -5,10 +5,8 @@ import Testing
 
 @testable import LiveWallpaper
 
-/// P0 wiring tests for the absence round trip, driven through `ScreenManager`
-/// into a real `AmbientWallpaperSession`. The recording target below sees the
-/// session's *effective* profile (intent folded with policy), which is the
-/// output the whole pause framework exists to compute.
+/// The recording target sees the session's *effective* profile: intent folded
+/// with policy.
 @MainActor
 @Suite("Absence round trip through a real session")
 struct AbsenceRoundTripTests {
@@ -43,16 +41,14 @@ struct AbsenceRoundTripTests {
         let screen = Screen(nsScreen: nsScreen)
         screen.installRuntimeSession(session)
         manager.screens = [screen]
-        // Production adoption, same as the coordinators' afterCommit hooks: the
-        // session must share the manager's per-screen machine, or this rig
-        // would pass with the session folding intent on a private machine.
+        // The session must share the manager's per-screen machine, or this rig would
+        // pass with the session folding intent on a private machine.
         manager.resetPlaybackStateMachine(for: screen)
         return Rig(manager: manager, probe: probe, screen: screen, session: session, target: target)
     }
 
-    /// Directly recorded, never via `absenceMarkedAt`: an unmarked reason is
-    /// already settled, so revalidation stays live and the probe is the only
-    /// thing keeping the absence alive.
+    /// Recorded directly, never via `absenceMarkedAt`: an unmarked reason is settled,
+    /// so the probe is the only thing keeping the absence alive.
     private func beginAbsence(_ rig: Rig) {
         rig.manager.userAbsenceReasons.insert(.displaySleep)
         rig.probe.allDisplaysAsleep = true

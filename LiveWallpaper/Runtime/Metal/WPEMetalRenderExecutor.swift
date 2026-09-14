@@ -9,9 +9,7 @@ import os
 import simd
 
 extension MTLCommandEncoder {
-    /// Names the encoder so an Instruments capture reads as scene layers instead
-    /// of "Render Command 37". The autoclosure keeps the string unbuilt while the
-    /// flag is off, which is every shipping frame.
+    /// Autoclosure keeps the string unbuilt while the flag is off.
     func applyTraceLabel(_ makeLabel: @autoclosure () -> String) {
         if WPEMetalRenderExecutor.tracePassLabels { label = makeLabel() }
     }
@@ -58,17 +56,11 @@ final class WPEMetalRenderExecutor {
     var initialSceneClearElisionEnabled = true
     private(set) var lastInitialSceneClearStats = WPEMetalInitialSceneClearStats()
     var solidSceneBatchingEnabled = true
-    /// Experimental until scene-level A/B validation shows a net benefit.
-    /// Environment-only activation makes diagnostic runs reproducible and reversible.
     var sceneQuadBatchingEnabled = ProcessInfo.processInfo.environment["WPE_SCENE_QUAD_BATCHING"] == "1"
     private(set) var lastSceneQuadBatchStats = WPEMetalSceneQuadBatchStats()
     private(set) var lastSolidSceneBatchStats = (encoders: 0, draws: 0)
 
-    /// Names each render/blit encoder so an Instruments capture reads as scene
-    /// layers instead of "Render Command 37". Off by default and read once: a
-    /// frame encodes ~82 encoders, and the label only earns its bridge while
-    /// someone is reading a trace.
-    /// `defaults write com.loomscreen.pro WPETracePassLabels -bool YES`
+    /// Off by default and read once. `defaults write com.loomscreen.pro WPETracePassLabels -bool YES`
     static let tracePassLabels: Bool = {
         let key = "WPETracePassLabels"
         for suite in [UserDefaults.appSuite, UserDefaults.standard] where suite.object(forKey: key) != nil {
@@ -76,23 +68,11 @@ final class WPEMetalRenderExecutor {
         }
         return false
     }()
-    /// Every offscreen target and the on-screen swapchain share
-    /// a single sRGB pixel format so render pipelines built for the offscreen
-    /// pass can be reused by `present()` without re-creation, and so the
-    /// rendered gamma stays stable across offscreen and onscreen passes.
     static let outputPixelFormat: MTLPixelFormat = .rgba8Unorm_srgb
-    /// Per-scene output format: `.rgba16Float` for HDR scenes so >1 emissive
-    /// survives to the bloom prefilter (an 8-bit target clamps at scene write,
-    /// which killed the sun glow); SDR scenes keep the 8-bit sRGB target.
-    /// `WPEMetalTextureSnapshotter` clamp+sRGB-encodes rgba16Float, so HDR
-    /// scenes get posters/first-frame.png too (fixed 2026-07-06).
+    /// `.rgba16Float` for HDR so >1 emissive survives to the bloom prefilter (an 8-bit target clamps at scene write); SDR keeps 8-bit sRGB.
     var currentOutputPixelFormat: MTLPixelFormat = WPEMetalRenderExecutor.outputPixelFormat
 
-    /// Optional developer override for the per-puppet deferred-warp decision (see
-    /// `shouldDeferPuppetMeshWarp`). `nil` (the default, and always in Release) means "decide
-    /// automatically per puppet"; an explicit DEBUG `defaults write com.loomscreen.pro
-    /// WPEPuppetDeferMeshWarp -bool YES|NO` forces the warp deferred/direct for every non-clip puppet
-    /// (A/B testing). Clip-composite puppets ignore this and never defer.
+    /// `nil` (the default, and always in Release) means decide automatically per puppet. Clip-composite puppets ignore this and never defer.
     static var deferPuppetMeshWarpOverride: Bool? {
         #if DEBUG
         return puppetDefaultsFlagOptional("WPEPuppetDeferMeshWarp")
@@ -101,16 +81,10 @@ final class WPEMetalRenderExecutor {
         #endif
     }
 
-    /// WPE genericimage4 puppet clip-composite (clip-mask RT + CLIPPINGTARGET) so an eye
-    /// puppet's pupil is occluded when the blink closes. Default ON; opt out with
-    /// `defaults write com.loomscreen.pro WPEPuppetClipComposite -bool NO`.
-    /// Still only takes effect when the builder injected a clip-mask binding (texture slot 8).
+    /// Default ON; opt out with `defaults write com.loomscreen.pro WPEPuppetClipComposite -bool NO`. Only takes effect when the builder injected a clip-mask binding (texture slot 8).
     static let puppetClipCompositeEnabled: Bool = puppetDefaultsFlagOptional("WPEPuppetClipComposite") ?? true
 
-    /// Reads a puppet bool override from the app's `com.loomscreen.pro` suite first, falling back to
-    /// the process `.standard` domain while preserving "unset" (`nil`). Puppet flags MUST share this
-    /// so `defaults write com.loomscreen.pro …` is honoured uniformly even when the renderer runs in
-    /// a process whose standard domain isn't the app's.
+    /// Preserves unset (`nil`). Suite first, then `.standard`.
     static func puppetDefaultsFlagOptional(
         _ key: String,
         suite: UserDefaults = .appSuite,
@@ -128,11 +102,7 @@ final class WPEMetalRenderExecutor {
     static let staticLayerCacheDefaultsKey = "WPEMetalStaticLayerCacheEnabled"
     static let staticLayerCacheBudgetMiBDefaultsKey = "WPEMetalStaticLayerCacheBudgetMiB"
 
-    /// Opt-in exact composite cache for static WPE layers. Default OFF so the
-    /// existing render path stays byte-identical unless explicitly enabled
-    /// (`defaults write … WPEMetalStaticLayerCacheEnabled -bool YES`).
-    /// Read once on first use, then cached — restart to apply. `readStaticLayerCacheEnabled()`
-    /// exposes the live read for tests.
+    /// Default OFF so the existing render path stays byte-identical unless explicitly enabled. Read once on first use — restart to apply.
     static let isStaticLayerCacheEnabled: Bool = readStaticLayerCacheEnabled()
     static func readStaticLayerCacheEnabled() -> Bool {
         UserDefaults.standard.object(forKey: staticLayerCacheDefaultsKey) == nil
@@ -140,9 +110,7 @@ final class WPEMetalRenderExecutor {
             : UserDefaults.standard.bool(forKey: staticLayerCacheDefaultsKey)
     }
 
-    /// VRAM budget for cached composites (MiB; default 256). Over budget → LRU
-    /// eviction, and the evicted layer falls back to re-rendering (slower, never wrong).
-    /// Read once on first use, then cached — restart to apply.
+    /// VRAM budget for cached composites (MiB; default 256). Over budget → LRU eviction, never wrong.
     static let staticLayerCacheBudgetBytes: Int = {
         let raw = UserDefaults.standard.object(forKey: staticLayerCacheBudgetMiBDefaultsKey)
         let mib = (raw as? NSNumber)?.intValue ?? 256
@@ -163,33 +131,22 @@ final class WPEMetalRenderExecutor {
     let shaderCompiler: WPESwiftShaderCompiler
     var translatedShaderCache: [String: WPEShaderCompileResult] = [:]
 
-    /// Per-pass fast path keyed by `WPEPreparedRenderPass.id`, not by a hash of the
-    /// preprocessed source like `translatedShaderCache` — computing that hash means
-    /// running the (expensive) GLSL preprocessor every frame, which dominated the main
-    /// thread in profiling. The prepared pipeline is built once at load and reused per
-    /// frame, so a pass's result is invariant; cleared on reload
-    /// (`releaseTransientResources`) since pass ids can recur across scenes.
+    /// Keyed by `WPEPreparedRenderPass.id`, not by a hash of the preprocessed source — computing that hash means running the GLSL preprocessor every frame.
     var compiledShaderResultByPassID: [String: WPEShaderCompileResult] = [:]
 
-    /// Frame-global uniforms for the current `render` call. Single render thread.
     var frameUniformContext: WPEFrameUniformContext = .empty
     /// Previous logical shader timestamp and its derived delta. A fail-close
     /// frame can call `render` twice with the same timestamp; the second encode
     /// must reuse the first encode's `g_Frametime`, not collapse it to zero.
     private var lastShaderRuntimeTime: Double?
     private(set) var currentShaderFrameTime: Double = 0
-    /// One per executor = one per display's off-main render thread, which is
-    /// what makes the non-`Sendable` cache safe to hold here.
     private let objectUniformCache = WPEObjectUniformCache()
 
     typealias ShaderConstantKeys = Dictionary<String, WPESceneShaderConstantValue>.Keys
 
     /// Case-insensitive uniform-key index, keyed by pass id. Cleared on reload.
     struct UniformKeyIndex {
-        /// The cache identity is the KEY SET, not its size: a script dropping one key and
-        /// writing another in the same frame leaves the count unchanged, freezing a stale
-        /// index. `Dictionary.Keys ==` short-circuits on shared storage, so a pass reusing
-        /// its load-time dictionary (no animated value/script) is still a pointer compare.
+        /// The cache identity is the KEY SET, not its size: dropping one key and writing another leaves the count unchanged, freezing a stale index.
         let uniformKeySet: ShaderConstantKeys
         let constantKeySet: ShaderConstantKeys
         /// lowercased → canonical. Case-variant collisions pick one and freeze it.
@@ -224,7 +181,6 @@ final class WPEMetalRenderExecutor {
         uniformKeyIndexBuildCount = 0
     }
 
-    /// Compiled per-slot uniform source plans. Cleared on reload.
     var uniformPlansByPassID: [String: PassUniformPlans] = [:]
 
     /// Test seam: cache hit vs silent per-frame recompile.
@@ -278,7 +234,6 @@ final class WPEMetalRenderExecutor {
 
     let fboAliasIntervalScratch = FBOAliasIntervalScratch()
 
-    /// Structural half of the alias-interval scan. Revalidated against the pipeline.
     var cachedFBOAliasTopology: FBOAliasTopology?
     /// Test seam: cache hit vs silent rebuild.
     var fboAliasTopologyRebuildCount = 0
@@ -290,7 +245,6 @@ final class WPEMetalRenderExecutor {
         case genericImage2, genericImage4, godraysCombine, effect
     }
 
-    /// First-level PSO cache. A miss still goes through `WPEMetalPipelineCache`.
     struct PassPSOKey: Hashable {
         let passID: String
         let variant: PassPSOVariant
@@ -348,18 +302,12 @@ final class WPEMetalRenderExecutor {
         passPipelineStates.removeAll()
     }
 
-    /// Reusable fragment-texture slot table for one dispatch.
     let customTextureSlotScratch = WPEMetalTextureSlotTable()
 
-    /// Album art for `$mediaThumbnail` / `$mediaPreviousThumbnail`, non-nil only
-    /// for scenes whose pipeline declares one. Written on this display's render
-    /// thread at load; the store itself is lock-serialised against the main-actor
-    /// now-playing delivery that fills it.
+    /// non-nil only for scenes whose pipeline declares one.
     var mediaTextureStore: WPEMediaTextureStore?
 
-    /// Frame-scoped TEXS sampling transforms, keyed by the same asset path as
-    /// the render call's texture dictionary. This is deliberately not a
-    /// per-MTLTexture registry: eager sprite frames reuse one atlas texture.
+    /// Deliberately not a per-MTLTexture registry: eager sprite frames reuse one atlas texture.
     private var currentTextureSamplingDescriptors: [String: WPETexSpriteSamplingDescriptor] = [:]
 
     func textureSamplingDescriptor(
@@ -383,15 +331,10 @@ final class WPEMetalRenderExecutor {
         return facts
     }
 
-    /// Sampler states for transpiled shaders' per-slot `wpeSampler<slot>` bindings,
-    /// keyed by (clampUVs, noInterpolation). Only four combinations exist, so this
-    /// stays tiny; created lazily on first use.
+    /// Keyed by (clampUVs, noInterpolation). Only four combinations exist.
     private var customSamplerStateCache: [Int: MTLSamplerState] = [:]
 
-    /// The `MTLSamplerState` for a custom-shader texture slot, driven by the bound
-    /// texture's TEXI flags (registered at load in `WPEMetalTextureMetadataRegistry`).
-    /// Unregistered textures (render targets / framebuffers) and unbound slots fall
-    /// back to clamp-to-edge + linear — the safe default that never wraps.
+    /// Unregistered textures and unbound slots fall back to clamp-to-edge + linear — the safe default that never wraps.
     func customShaderSamplerState(for texture: MTLTexture?, useMipmaps: Bool = false) -> MTLSamplerState {
         let resolution = texture.map { WPEMetalTextureMetadataRegistry.shared.resolution(for: $0) }
         return customShaderSamplerState(resolution: resolution, useMipmaps: useMipmaps)
@@ -410,20 +353,13 @@ final class WPEMetalRenderExecutor {
         return state
     }
 
-    /// The single source of truth for the custom-pass sampler. The oracle's
-    /// trace describes THIS descriptor rather than re-deriving address/filter,
-    /// so a recorded sampler can never drift from the bound one.
     func customShaderSamplerDescriptor(clamp: Bool, nearest: Bool, useMipmaps: Bool = false) -> MTLSamplerDescriptor {
         let descriptor = MTLSamplerDescriptor()
         let filter: MTLSamplerMinMagFilter = nearest ? .nearest : .linear
         descriptor.minFilter = filter
         descriptor.magFilter = filter
         if useMipmaps || WPEMetalTextureLoader.allowsMipFiltering, !nearest {
-            // Default `.notMipmapped` samples level 0 only, matching today's
-            // level-0-only upload; opt in to trilinear filtering across the
-            // chain the loader now uploads under the same flag. Nearest
-            // (noInterpolation) textures stay level-0-only: they hold discrete
-            // data, and a fractional LOD would blend adjacent mips' entries.
+            // Default `.notMipmapped` samples level 0 only. Nearest (noInterpolation) textures stay level-0-only: a fractional LOD would blend adjacent mips' entries.
             descriptor.mipFilter = .linear
         }
         let address: MTLSamplerAddressMode = clamp ? .clampToEdge : .repeat
@@ -433,10 +369,6 @@ final class WPEMetalRenderExecutor {
     }
 
     #if !LITE_BUILD && DEBUG
-    /// Trace-only: the bound sampler's address/filter/mip as strings, read off
-    /// the same descriptor `customShaderSamplerState` binds. Windows records a
-    /// full D3D11_SAMPLER_DESC; without this the diff is blind to wrap-mode
-    /// divergence — the exact failure that froze scrolling ripple UVs.
     func customShaderSamplerDescription(for texture: MTLTexture?) -> [String: String] {
         let resolution = texture.map { WPEMetalTextureMetadataRegistry.shared.resolution(for: $0) }
         return customShaderSamplerDescription(resolution: resolution)
@@ -460,19 +392,12 @@ final class WPEMetalRenderExecutor {
     }
     #endif
 
-    /// Merge pre-warmed transpile results into the shader cache. Called on the
-    /// main actor AFTER the warm task group drains and BEFORE the first
-    /// `render()`, so it never races the lazy compile path (which also runs on
-    /// the main actor during render). Idempotent: same source-hash key ⇒ same
-    /// deterministic result, so an existing entry is left untouched.
     func seedTranslatedShaderCache(_ entries: [(key: String, result: WPEShaderCompileResult)]) {
         for entry in entries where translatedShaderCache[entry.key] == nil {
             translatedShaderCache[entry.key] = entry.result
         }
     }
 
-    /// Load-time pass-id index so the first encode skips GLSL preprocess.
-    /// Same idempotency as `seedTranslatedShaderCache`: an existing entry wins.
     func seedCompiledShaderResultsByPassID(
         _ entries: [(passID: String, result: WPEShaderCompileResult)]
     ) {
@@ -481,11 +406,7 @@ final class WPEMetalRenderExecutor {
         }
     }
 
-    /// Splits prewarm work against the content-keyed cache that intentionally survives
-    /// scene reloads. Returning the canonical cached result matters for PSO prewarm too:
-    /// pipeline keys include `MTLLibrary` identity, so recompiling an already-cached shader
-    /// would build an unreachable PSO for a throwaway library, even though
-    /// `seedTranslatedShaderCache` refuses to replace the canonical entry.
+    /// Pipeline keys include `MTLLibrary` identity, so recompiling an already-cached shader would build an unreachable PSO for a throwaway library.
     func partitionTranslatedShaderPrewarmRequests(
         _ requests: [WPEShaderCompileRequest]
     ) -> (
@@ -525,16 +446,9 @@ final class WPEMetalRenderExecutor {
     /// Auxiliary texture slots that failed to resolve, so the fall-back-to-primary
     /// warning is emitted once per pass+slot instead of every frame.
     var loggedUnresolvedTextureSlots: Set<String> = []
-    /// Reason per pass whose shader will never translate, so the (multi-second) GLSL→MSL
-    /// attempt happens once instead of on every frame that re-encodes the skipped pass.
     var untranslatableShaderReasonByPassID: [String: String] = [:]
 
-    /// Scene-output ring: per-frame outputs are recycled instead of freshly allocated
-    /// every `render()` (~32 MB alloc/free per frame at 4K). Reused only when (a) no
-    /// async present of it is still in flight and (b) it isn't among the most recently
-    /// vended outputs (`maxFramesInFlight`, min 2) — the renderer re-presents the latest
-    /// output for static scenes, `previousFrameHistory` may still read the prior one, and
-    /// an in-flight async render may still be writing it.
+    /// Reused only when (a) no async present of it is still in flight and (b) it isn't among the most recently vended outputs (`maxFramesInFlight`, min 2).
     var outputTexturePool: [MTLTexture] = []
     /// The most recently vended output textures (newest last); retained count is
     /// `max(2, maxFramesInFlight)` — see `noteVendedOutputTexture`.
@@ -542,33 +456,19 @@ final class WPEMetalRenderExecutor {
     let presentTracker = PresentInFlightTracker()
     let gpuErrorSink = WPEGPUErrorSink()
     let shaderErrorSink = WPEShaderErrorSink()
-    /// Max frames whose command buffers may be in flight at once when submitting async.
-    /// MUST equal the `recentOutputTextureIDs` retention: a vended output stays out of the
-    /// reuse set for exactly that many vends, and the semaphore guarantees its render has
-    /// completed by the time it falls out (see `isOutputTextureReusable`/`noteVendedOutputTexture`).
+    /// MUST equal the `recentOutputTextureIDs` retention: a vended output stays out of the reuse set for exactly that many vends.
     static let maxFramesInFlight = 2
     private let frameSubmissionPool = WPEMetalFrameSubmissionPool(
         slotCount: WPEMetalRenderExecutor.maxFramesInFlight
     )
-    /// Resident storage for translated-shader uniform packing, partitioned by frame
-    /// slot. Lazy so the buffers only exist for executors that actually render.
     private(set) lazy var uniformArena = WPEMetalUniformArena(
         device: device, slotCount: Self.maxFramesInFlight
     )
-    /// This frame's arena slot, taken from the frame-submission lease. Nil whenever
-    /// the caller passed no lease — sync/readback and not-yet-migrated async callers
-    /// have no slot identity, so they keep the per-pass allocation path.
+    /// Nil whenever the caller passed no lease — those callers keep the per-pass allocation path.
     var currentUniformArenaSlot: Int?
-    /// Backpressure for asynchronous frame submission: gates the render caller
-    /// once `maxFramesInFlight` frames are queued so the CPU cannot outrun the GPU
-    /// (which would starve the output ring and grow latency unboundedly).
     private let inFlightSemaphore = DispatchSemaphore(value: maxFramesInFlight)
 
-    /// When true, `render()` and text passes block on GPU completion (`waitUntilCompleted`)
-    /// so a CPU read-back (scene-debug snapshot, visual-stats, GPU capture, oracle/readback)
-    /// observes finished pixels; when false (production live path) frames submit async and
-    /// the CPU stalls only via `inFlightSemaphore`, letting frame N+1 overlap frame N's GPU
-    /// work. The live renderer sets this per scene; defaults to safe synchronous otherwise.
+    /// True: `render()` and text passes block on GPU completion. False: frames submit async and the CPU stalls only via `inFlightSemaphore`.
     var synchronizeFrameCompletion = true
     #if DEBUG
     /// Test seam: remaining `encodePresent` calls that skip `nextDrawable()`.
@@ -633,25 +533,18 @@ final class WPEMetalRenderExecutor {
         let texture: MTLTexture
     }
 
-    /// Per-puppet skinning decision for the current frame. `enabled` is false (and `palette` empty)
-    /// whenever the validation gate rejects skinning, so the pass renders the static assembled mesh.
+    /// `enabled` is false (and `palette` empty) whenever the validation gate rejects skinning, so the pass renders the static assembled mesh.
     struct PuppetSkinningState {
         let enabled: Bool
         let palette: [simd_float4x4]
         let attachmentsByName: [String: WPEPuppetAttachment]
-        /// Parent puppet's RAW MDLS bind-world per bone — the basis the palette (`current · rawBind⁻¹`)
-        /// was built on, so `palette · (rawBind · MDAT)` recovers the anchor's CURRENT world position.
+        /// RAW MDLS bind-world per bone — the basis the palette (`current · rawBind⁻¹`) was built on, so `palette · (rawBind · MDAT)` recovers the anchor's CURRENT world position.
         let boneBindByIndex: [Int: simd_float4x4]
-        /// Parent puppet's ASSEMBLED bind-world per bone: the frame-0 pose for character-sheet puppets
-        /// (raw MDLS is the exploded sheet there), the raw bind for pre-assembled. This is the anchor's
-        /// REST position — matching the graph builder's static placement — so the follow adds only the
-        /// animated `current − rest` delta (zero at rest) instead of double-counting the assembly.
+        /// ASSEMBLED bind-world per bone: frame-0 pose for character-sheet puppets (raw MDLS is the exploded sheet), raw bind for pre-assembled. Follow adds only the animated `current − rest` delta.
         let assembledBoneBindByIndex: [Int: simd_float4x4]
         let reason: String
     }
 
-    /// Per-frame attachment/skinning context, built once before the layer loop so a parent puppet's
-    /// animated bone palette is available before its attached children render.
     struct PuppetAttachmentFrameContext {
         let layersByObjectID: [String: WPEPreparedRenderLayer]
         let skinningByObjectID: [String: PuppetSkinningState]
@@ -689,59 +582,30 @@ final class WPEMetalRenderExecutor {
         self.targetPool = WPEMetalRenderTargetPool(device: device)
         self.depthCache = WPEMetalDepthStateCache(device: device)
         self.pipelineCache = WPEMetalPipelineCache(device: device, library: library)
-        // The Swift transpiler is the only Metal-side translator we ship; shaders
-        // it can't handle surface as the scene's metalRendererUnsupported load error.
         self.shaderCompiler = WPESwiftShaderCompiler(device: device)
     }
 
-    /// Lets `WPEMetalSceneRenderer` hand the executor's device
-    /// to `WPEVideoTextureSource` (which needs it to build a
-    /// `CVMetalTextureCache`) without exposing the device publicly.
     var textureSourceDevice: MTLDevice {
         device
     }
 
-    /// Only `WPEVideoTextureSource.invalidate()` still builds a command buffer
-    /// of its own; it goes on the frame queue so its teardown fence lands
-    /// behind every render buffer that could be reading a retired plane.
     var textureSourceCommandQueue: MTLCommandQueue {
         commandQueue
     }
 
-    /// Dynamic sources that decoded a frame whose GPU work has to ride the next `render`
-    /// call's scene command buffer. Handed over by `texturesForCurrentFrame` (the only
-    /// thing that ticks those sources) and consumed once: a `render` that throws before
-    /// building a buffer leaves the sources staged, so the next frame's walk collects them again.
     private var stagedTextureWork: [any WPEDynamicTextureSource] = []
 
     func stageTextureWork(_ sources: [any WPEDynamicTextureSource]) {
         stagedTextureWork = sources
     }
 
-    /// One-shot guard so the waterwaves dispatch logs its first live execution per renderer
-    /// (confirms the builtin effect_waterwaves path actually runs). Internal —
-    /// flipped by the waterwaves `bind` closure in `WPEMetalEffectDispatchTable`.
     var loggedWaterWavesDispatch = false
-    /// Scene size (ortho-projection pixels) for the frame currently encoding.
-    /// Stashed at frame start so `usesObjectQuadGeometry` can judge a
-    /// scene-capture utility layer's footprint without threading `sceneSize`
-    /// through its dozen call sites. Safe because the render loop encodes one
-    /// frame at a time.
     private(set) var currentSceneSize: CGSize = .zero
 
-    /// Render-scale decision for this scene, handed down by the renderer at load
-    /// (`WPEMetalUpscalePlan`) BEFORE any target or source texture is sized.
-    /// `.inactive` until then, so an executor that is never planned renders at
-    /// full resolution — the pre-feature path, bit for bit.
+    /// `.inactive` until planned, so an executor that is never planned renders at full resolution — the pre-feature path, bit for bit.
     var upscalePlan: WPEMetalUpscalePlan = .inactive
-    /// Drawable size the last presented frame actually used. `nextDrawable()` is
-    /// what finally sizes the layer, so this is the first moment the true size
-    /// is knowable — the renderer adopts it to correct a bad seed.
     var lastPresentedDrawableSize: CGSize = .zero
-    /// Set when `encodePresent` gave scaling up mid-scene. The renderer drains it
-    /// at the end of the same frame — NOT at the demote site — so the pixel-keyed
-    /// purge happens after the frame's command buffer is committed rather than
-    /// between its encode and commit.
+    /// Drain at the end of the same frame — NOT at the demote site — so the pixel-keyed purge happens after the command buffer is committed rather than between encode and commit.
     private var presentSideDemotionPending = false
 
     /// One-shot: true exactly once per present-side demote.
@@ -751,65 +615,27 @@ final class WPEMetalRenderExecutor {
     }
 
     func notePresentSideDemotion() { presentSideDemotionPending = true }
-    /// The scene output's actual pixel size for the frame currently encoding
-    /// (= `scaledCanvasSize(currentSceneSize, outputPixelScale)`). This is the
-    /// resolution of the FBO chain's head, which `g_TexelSize`,
-    /// `g_TexelSizeHalf`, and `g_Screen` must describe. WPE feeds
-    /// head-resolution-derived globals to every pass of the chain.
+    /// Resolution of the FBO chain's head, which `g_TexelSize`, `g_TexelSizeHalf`, and `g_Screen` must describe. WPE feeds head-resolution-derived globals to every pass of the chain.
     private(set) var currentScenePixelSize: CGSize = .zero
 
-    /// Internal test seam, also available to same-binary Release microbenchmarks.
-    /// `g_TexelSize` is derived from this rather than from any
-    /// dictionary, so without a way to set it a characterization test can only
-    /// chain the helpers and would stay green if `resolvedUniformValue` started
-    /// reading world size instead — which is exactly what two reviewers caught.
+    /// `g_TexelSize` is derived from this rather than from any dictionary, so without a way to set it a characterization test can only chain the helpers.
     func setCurrentScenePixelSizeForTesting(_ size: CGSize) {
         currentScenePixelSize = size
     }
 
-    // Object IDs that parent at least one child which paints FLAT INTO THE SCENE.
-    // Such a `composelayer` is a layer group (transform/opacity container), not a
-    // scene-capture effect box, so its own sub-rect passthrough must be suppressed
-    // or it paints a picture-in-picture scene copy (3632513108's control panel).
-    // Not "parents anything": a composite-only child never reaches the scene, so its
-    // parent stays a real sub-rect box — the blanket rule stretched 3554161528's
-    // 220×220 media cover over the whole 3840×2160 frame (oracle before/after).
+    // Not "parents anything": a composite-only child never reaches the scene, so its parent stays a real sub-rect box.
     private var groupingContainerObjectIDs: Set<String> = []
-    /// Scene-centred origin of each parented layer's parallax ROOT, keyed by object id.
-    /// WPE shifts a parented subtree by ONE offset — the root's — so a child must
-    /// evaluate the static `(nodePos - camPos)` term at its root's origin, never at
-    /// its own. Recomputed per render from the prepared pipeline; roots are absent
-    /// and keep their own centre. See `parallaxRootCenters`.
+    /// WPE shifts a parented subtree by ONE offset — the root's — so a child must evaluate the static `(nodePos - camPos)` term at its root's origin, never at its own.
     var parallaxRootCenterByObjectID: [String: SIMD2<Float>] = [:]
-    /// Load-time object hierarchy for the root walk above: the full parent map
-    /// (groups included) and the authored origins of ALL objects, the fallback
-    /// anchor when a subtree's root never became a live layer (group hosts,
-    /// filtered-out ancestors). Set by the renderer at load.
     var parallaxObjectParentByID: [String: String] = [:]
     var parallaxHostDepthByObjectID: [String: SIMD2<Double>] = [:]
     var parallaxHostOriginByObjectID: [String: SIMD2<Double>] = [:]
-    /// Logical targets rendered by >1 depth-using pass: their depth may be loaded
-    /// across encoders (e.g. a `depthTest:less` pass reading a prior pass's depth),
-    /// so they keep persistent depth rather than transient/memoryless. Recomputed
-    /// per render from the prepared pipeline.
+    /// Logical targets rendered by >1 depth-using pass keep persistent depth rather than transient/memoryless.
     private var persistentDepthTargetIDs: Set<WPEMetalTargetID> = []
 
     #if DEBUG
-    /// Diagnostic: when `WPEDumpScenePasses` (UserDefault) equals the sceneID,
-    /// holds one snapshot of the scene output after EACH scene-target pass so
-    /// `WPEMetalSceneRenderer` can PNG-dump them and localize which pass draws
-    /// a given artifact. Memory-bounded — cleared at the start of every render().
     private(set) var scenePassDumps: [(label: String, texture: MTLTexture)] = []
-    /// Diagnostic: when `WPEDumpLayerPasses` (UserDefault) equals a layer
-    /// objectID, snapshot that ONE layer's destination texture after EVERY
-    /// pass (base image + each effect FBO), so we can localize which pass on a
-    /// single puppet/layer introduces an artifact. Scoped to one object to
-    /// stay memory-safe (capturing every pass scene-wide would OOM the GPU).
     private var dumpLayerPassesID: String?
-    /// Both dump defaults read once at executor init instead of twice per frame.
-    /// Safe for the oracle gate: OracleCorpusCaptureTests.swift sets
-    /// `WPEDumpScenePasses` per scene BEFORE constructing WPEMetalSceneRenderer
-    /// (which builds this executor in its init), so an init-time read observes it.
     private let dumpScenePassesDefaultID: String? =
         UserDefaults.standard.string(forKey: "WPEDumpScenePasses")
     private let dumpLayerPassesDefaultID: String? = {
@@ -827,12 +653,9 @@ final class WPEMetalRenderExecutor {
         dynamicLayerIDs: Set<String> = [],
         runtimeUniforms: WPEMetalRuntimeUniforms = .zero,
         cameraUniforms: WPEMetalCameraUniforms = .identity,
-        /// This frame's scripted shader constants, keyed by pass id. Merged over
-        /// the authored values; empty for every scene without a bound script.
+        /// Merged over the authored values; empty for every scene without a bound script.
         scriptedConstants: [String: [String: WPESceneShaderConstantValue]] = [:],
-        /// This frame's resolved effect-visibility gates, keyed by
-        /// `WPEPassVisibilityGate.id`. A missing entry falls back to the gate's
-        /// authored seed; empty for every scene without a script-gated effect.
+        /// A missing entry falls back to the gate's authored seed; empty for every scene without a script-gated effect.
         passVisibility: [String: Bool] = [:],
         sceneID: String? = nil,
         particleSystems: [WPEParticleSystem] = [],
@@ -842,8 +665,6 @@ final class WPEMetalRenderExecutor {
         textPayloads: [String: WPETextRenderPayload] = [:],
         frameSubmission: WPEMetalFrameSubmissionLease? = nil,
         frameProduction: WPEMetalFrameProductionCompletion? = nil,
-        /// Wallpaper Engine's per-wallpaper colour grade, from the applied preset.
-        /// Defaulted so the many call sites that never carry one stay unchanged.
         colorCorrection: WPEEngineColorCorrection = .neutral,
         /// Encode present into this scene command buffer. Nil on sync/readback.
         deferredPresent: DeferredPresentEncoder? = nil
@@ -856,24 +677,13 @@ final class WPEMetalRenderExecutor {
         defer { lastDiagnosticFrameStats = diagnostics }
         currentTextureSamplingDescriptors = textureSamplingDescriptors
         defer { currentTextureSamplingDescriptors.removeAll(keepingCapacity: true) }
-        // Async submission: take a permit up front so the CPU blocks here (rather
-        // than queuing another frame) once `maxFramesInFlight` are outstanding.
-        // The matching signal is emitted from the command buffer's completion
-        // handler on success; the `defer` releases it on any early throw so a
-        // permit is never lost.
         let asyncSubmission = !synchronizeFrameCompletion
         let stagedTextureWork = self.stagedTextureWork
         self.stagedTextureWork = []
-        // A renderer-owned frame lease already accounts for every command buffer
-        // in this logical frame. Retain the historical semaphore only for callers
-        // that have not migrated to that lease; applying both budgets can reject
-        // a legitimate second buffer in the same fail-close frame.
+        // Retain the historical semaphore only for callers that have not migrated to that lease; applying both budgets can reject a legitimate second buffer in the same fail-close frame.
         let usesLegacyCommandBufferBudget = asyncSubmission && frameSubmission == nil
         if usesLegacyCommandBufferBudget {
-            // Poll, don't block: a blocking wait would stall this display's frame
-            // loop — and in `.main` backing mode the shared main thread, stalling
-            // other displays' callbacks and dropping dual-60fps to 30fps.
-            // Thrown before the `defer` below is armed, so no stray signal.
+            // Poll, don't block: a blocking wait would stall this display's frame loop — and in `.main` backing mode the shared main thread.
             if inFlightSemaphore.wait(timeout: .now()) == .timedOut {
                 throw WPEMetalFrameInFlightBudgetExhausted()
             }
@@ -884,11 +694,6 @@ final class WPEMetalRenderExecutor {
                 inFlightSemaphore.signal()
             }
         }
-        // Uniform packing writes into the arena partition this lease owns. Without a
-        // lease there is no slot identity to partition by, so those callers keep the
-        // per-pass allocation path. `beginFrame` decides for itself whether the slot
-        // may be rewound — on the fail-close second `render()` the lease is the same
-        // one, and the speculative command buffer is still in flight.
         if let frameSubmission {
             uniformArena.beginFrame(slot: frameSubmission.slot)
             currentUniformArenaSlot = frameSubmission.slot
@@ -896,11 +701,6 @@ final class WPEMetalRenderExecutor {
         defer { currentUniformArenaSlot = nil }
         #if DEBUG
         scenePassDumps.removeAll()
-        // Collect per-pass scene-target snapshots when the workshopID-scoped dump
-        // flag matches OR the render oracle is on (which hashes every pass into the
-        // trace). Oracle collection forces particles standalone (below) — a render-
-        // encoder boundary change only, byte-identical composite, consistent across
-        // both before/after oracle runs.
         let dumpScenePasses = (sceneID.map { !$0.isEmpty && dumpScenePassesDefaultID == $0 } ?? false)
             || WPEOracleMode.perPassHashesEnabled
         dumpLayerPassesID = dumpLayerPassesDefaultID
@@ -923,10 +723,7 @@ final class WPEMetalRenderExecutor {
             ? .rgba16Float
             : Self.outputPixelFormat
         targetPool.promotesLDRFormatsToHDR = cameraUniforms.sceneHDR
-        // ONE pixel scale for the whole frame: scene output, every pool target and the
-        // alias plan must shrink together or `copyTexture` blits mismatched extents.
-        // `size` stays WORLD-sized everywhere below (projection, quad NDC, particles,
-        // scripts, text); only allocations and g_TexelSize go through the scaled-canvas conversion.
+        // ONE pixel scale for the whole frame: scene output, every pool target and the alias plan must shrink together or `copyTexture` blits mismatched extents. `size` stays WORLD-sized; only allocations and g_TexelSize go through the scaled-canvas conversion.
         let outputPixelScale = upscalePlan.renderPixelScale
         targetPool.pixelScale = outputPixelScale
         let outputPixelSize = WPEMetalFXSpatialUpscaler.scaledCanvasSize(
@@ -953,10 +750,7 @@ final class WPEMetalRenderExecutor {
             if staticLayerCacheEnabled { staticLayerCompositeCache.discardUnsubmittedWork(for: commandBuffer) }
         }
         WPEFrameOccupancyMeter.count(.sceneCommandBuffer)
-        // Video conversions first: they write textures the scene passes below
-        // sample, and same-buffer order is what guarantees write-before-read.
-        // Nothing is published yet — a buffer this frame never commits must
-        // leave the sources on their previously published frame.
+        // Video conversions first: they write textures the scene passes below sample, and same-buffer order is what guarantees write-before-read.
         var didPublishStagedTextureWork = stagedTextureWork.isEmpty
         for source in stagedTextureWork {
             source.encodeStagedFrameWork(into: commandBuffer)
@@ -984,28 +778,18 @@ final class WPEMetalRenderExecutor {
             previousFrameHistory = nil
         }
 
-        // Aliasing is disabled while the debug bypass path is active — bypass
-        // skips a layer's passes, which would break the lockstep pass index the
-        // alias plan relies on.
+        // Aliasing is disabled while the debug bypass path is active — bypass skips a layer's passes, which would break the lockstep pass index the alias plan relies on.
         let plannedAliasIntervals = fboAliasIntervals(pipeline: preparedPipeline, sceneSize: size)
         let aliasIntervals = diagnosticControls.disableFBOAliasing ? [] : plannedAliasIntervals
         diagnostics.plannedAliasIntervalCount = plannedAliasIntervals.count
         diagnostics.aliasIntervalCount = aliasIntervals.count
-        // `fboAliasIntervals` above has already revalidated the pipeline's
-        // structure this frame, so its rebuild counter is the pipeline identity
-        // the pool needs to skip a whole stable-frame prepare.
         targetPool.prepare(
             pipeline: preparedPipeline,
             aliasIntervals: aliasIntervals,
             pipelineIdentity: fboAliasTopologyRebuildCount
         )
         targetPool.beginAliasFrame()
-        // The per-frame output texture is `.private` and NOT zeroed by Metal. A scene-alias
-        // read of `_rt_FullFrameBuffer` before any scene-target pass writes (e.g.
-        // shine_combine's COPYBG, sampling the full-frame buffer while still rendering into
-        // a layer composite) would sample this garbage and, via shine's
-        // `albedo.a = saturate(albedo.a + rays.a)` accumulation, ramp the whole layer white
-        // within seconds. Clear to the scene clear color so any pre-write alias read sees black.
+        // The per-frame output texture is `.private` and NOT zeroed by Metal. A scene-alias read before any scene-target pass writes would sample this garbage. Clear to the scene clear color so any pre-write alias read sees black.
         var initialClearStats = initialSceneClearPlan(
             pipeline: preparedPipeline, textures: textures, output: output,
             liveParticleSortIndices: particleSystems.lazy.filter { $0.liveInstanceCount > 0 }.map(\.sortIndex),
@@ -1023,8 +807,6 @@ final class WPEMetalRenderExecutor {
             cameraUniforms: cameraUniforms,
             previousSceneTexture: reusableHistory?.sceneTexture,
             previousNamedTextures: reusableHistory?.namedTextures ?? [:],
-            // Threaded so `resolve(.fbo)` can zero-fill a declared-but-unwritten
-            // local FBO on its first read instead of failing the scene at load.
             renderTargetPool: targetPool
         )
         frameState.cameraParallax = runtimeUniforms.cameraParallax
@@ -1078,9 +860,7 @@ final class WPEMetalRenderExecutor {
             }
             initialClearPending = false
         }
-        // Particles composite at their scene paint index, interleaved between
-        // layers: a particle with sortIndex P draws after every layer with a
-        // lower sortIndex and before any higher one (background → rain → character).
+        // A particle with sortIndex P draws after every layer with a lower sortIndex and before any higher one.
         let sortedParticles = particleSystems.enumerated()
             .filter { $0.element.liveInstanceCount > 0 }
             .sorted { lhs, rhs in
@@ -1090,12 +870,7 @@ final class WPEMetalRenderExecutor {
             }
             .map(\.element)
         var particleCursor = 0
-        // Batch consecutive non-refract systems (same `output`, no intervening scene pass)
-        // into ONE render encoder instead of a render pass + full-target load/store per
-        // system. Refract systems need a pre-draw blit snapshot (no open encoder allowed)
-        // and DEBUG per-pass dumping needs a boundary per system, so both end the run and
-        // render standalone; a run never spans `flushParticles` calls (a layer pass renders
-        // between them), so it's closed before returning.
+        // Refract systems need a pre-draw blit snapshot (no open encoder allowed) and DEBUG per-pass dumping needs a boundary per system, so both end the run and render standalone.
         func flushParticles(before threshold: Int) throws {
             if particleCursor < sortedParticles.count, sortedParticles[particleCursor].sortIndex < threshold {
                 solidRun.end()
@@ -1107,8 +882,7 @@ final class WPEMetalRenderExecutor {
                 particleRunEncoder = nil
                 frameState.registerWrite(texture: output, targetID: .scene)
             }
-            // Close the run on EVERY exit — a thrown `particlePipelineState`/encoder
-            // failure mid-run must not leak an open encoder (Metal validation asserts).
+            // Close the run on EVERY exit — a thrown failure mid-run must not leak an open encoder (Metal validation asserts).
             defer { endParticleRun() }
             while particleCursor < sortedParticles.count,
                   sortedParticles[particleCursor].sortIndex < threshold {
@@ -1141,10 +915,7 @@ final class WPEMetalRenderExecutor {
                         diagnostics.particleSystemsEncoded += 1
                         diagnostics.particleEncoderCount += 1
                         #if DEBUG
-                        // Label MUST equal the trace passId `recordParticlePass`
-                        // emits (`particle.<traceIndex>`) so `recordPassOutputs`
-                        // matches by id and the flushed snapshot's hash lands on
-                        // this pass; the old `.<sortIndex>.` form never matched.
+                        // Label MUST equal the trace passId `recordParticlePass` emits (`particle.<traceIndex>`); the old `.<sortIndex>.` form never matched.
                         captureScenePassIfDumping(dumpScenePasses, label: "particle.\(traceIndex)", output: output, commandBuffer: commandBuffer)
                         #endif
                     }
@@ -1173,9 +944,7 @@ final class WPEMetalRenderExecutor {
             }
         }
 
-        // Flattened pass index for FBO aliasing — MUST advance in lockstep with
-        // the same `for layer { for pass in layer.passes }` order the alias plan
-        // used, across every branch below, or makeAliasable could fire early.
+        // Flattened pass index for FBO aliasing — MUST advance in lockstep with the same `for layer { for pass in layer.passes }` order the alias plan used.
         var aliasPassCounter = 0
         for (layerIndex, layer) in preparedPipeline.layers.enumerated() {
             if layerIndex > 0 { try finishInitialSceneClear() }
@@ -1196,10 +965,6 @@ final class WPEMetalRenderExecutor {
             #endif
             if !batchesSolid { solidRun.end() }
             try flushParticles(before: layer.graphLayer.sortIndex)
-            // Static-layer cache: a provably-static layer's composites are
-            // rendered once and reused. On a hit we seed frameState with every
-            // cached composite so the layer's `.scene` copy (and any downstream
-            // consumer) resolves them, then skip its compose/effect passes.
             let staticCachePlan = staticLayerCacheEnabled
                 ? WPEMetalStaticLayerClassifier.cachePlan(
                     for: layer,
@@ -1226,20 +991,13 @@ final class WPEMetalRenderExecutor {
                     )
                 }
             }
-            // Accumulates first-frame snapshots for a cache miss until all of the
-            // plan's targets are captured, then inserts them as one layer entry.
             var pendingStaticSnapshots: [String: MTLTexture] = [:]
             var pendingStaticBytes = 0
             frameState.layerEntrySceneWriteGeneration = frameState.sceneWriteGeneration
-            // Attached children (face/hair on a body-split rig) follow the parent puppet's animated
-            // anchor bone; `graphLayer` carries the followed transform, falling back to the static
-            // layer when there is no resolved attachment. Skinning is validated/cached once per frame.
             let graphLayer = layerApplyingAttachmentFollow(layer.graphLayer, context: attachmentContext)
             let skinningState = attachmentContext.skinningByObjectID[layer.graphLayer.objectID]
             if layer.passes.isEmpty {
-                // Hidden plain-image layer: nothing composites elsewhere, so
-                // simply skip the scene blit. `didEncode` stays satisfied so an
-                // all-hidden scene renders empty instead of erroring.
+                // Hidden plain-image layer: skip the scene blit. `didEncode` stays satisfied so an all-hidden scene renders empty instead of erroring.
                 guard layer.graphLayer.visible else {
                     didEncode = true
                     continue
@@ -1259,11 +1017,7 @@ final class WPEMetalRenderExecutor {
                 continue
             }
             for (layerPassIndex, pass) in layer.passes.enumerated() {
-                // Advance the alias index for EVERY pass (defer fires endPass at
-                // iteration exit, including the hidden-pass `continue` below), so
-                // makeAliasable only happens AFTER this pass is encoded. The
-                // static-layer skip below keeps this lockstep: it `continue`s
-                // AFTER the index advances + defer is armed.
+                // Advance the alias index for EVERY pass (defer fires endPass at iteration exit, including the hidden-pass `continue`).
                 let passAliasIndex = aliasPassCounter
                 aliasPassCounter += 1
                 var sharesSceneEncoder = false
@@ -1274,14 +1028,7 @@ final class WPEMetalRenderExecutor {
                         targetPool.endPass(passIndex: passAliasIndex)
                     }
                 }
-                // Hidden layer: still encode passes that write a composite/FBO (dependents
-                // may sample them), but skip the final scene draw so the layer is invisible.
-                // Toggling `visible` true re-includes it without a pipeline rebuild. A pass
-                // targeting the shared group buffer (`_rt_layerGroup_*`) is a group child's
-                // VISIBLE output — the group-child analogue of the scene draw — so skip it
-                // too; otherwise a condition-hidden variant kept in the graph for live script
-                // toggling paints into the group buffer and overlaps the selected variant
-                // (scene 3226487183's mutually-exclusive poses).
+                // Hidden layer: still encode passes that write a composite/FBO, but skip the final scene draw and group-buffer writes (`_rt_layerGroup_*`).
                 if !graphLayer.visible {
                     switch pass.pass.target {
                     case .scene:
@@ -1294,10 +1041,7 @@ final class WPEMetalRenderExecutor {
                         break
                     }
                 }
-                // Script-gated effect (authored hidden, visibility bound to a SceneScript).
-                // Passes stay baked into the graph so their own constant scripts keep ticking
-                // (that's where the gate's value comes from), but while the gate is closed the
-                // effect must not alter a pixel, so the pass hands its input straight to its target.
+                // While the gate is closed the effect must not alter a pixel, so the pass hands its input straight to its target.
                 if let gate = pass.pass.visibilityGate,
                    !(passVisibility[gate.id] ?? gate.initialVisible) {
                     try encodeGatedPassthrough(
@@ -1310,9 +1054,6 @@ final class WPEMetalRenderExecutor {
                     didEncode = true
                     continue
                 }
-                // Cache hit: composites are already in `frameState` (seeded above),
-                // so skip the compose/effect passes and run only the `.scene` copy
-                // (which applies parallax from the cached texture).
                 if cachedStaticLayer != nil {
                     switch pass.pass.target {
                     case .scene:
@@ -1353,12 +1094,7 @@ final class WPEMetalRenderExecutor {
                         solidRun: sharesSceneEncoder ? solidRun : nil
                     )
                 } catch let error as WPEMetalRenderExecutorError where error.untranslatableShaderReason != nil {
-                    // The pass opened (and therefore cleared) its render target before the shader
-                    // failed, and `encode` published that cleared texture, so a downstream pass
-                    // sampling it reads transparent black instead of failing the scene.
-                    // Logged once per pass: an unlogged skip is how a routing bug that sent a
-                    // BUILTIN pass down the custom-shader path surfaced as a downstream "named FBO
-                    // miss" instead of naming the pass that actually failed (3660962877).
+                    // The pass opened (and therefore cleared) its render target before the shader failed, and `encode` published that cleared texture, so a downstream pass sampling it reads transparent black instead of failing the scene.
                     try finishInitialSceneClear()
                     let reason = error.untranslatableShaderReason ?? ""
                     if untranslatableShaderReasonByPassID.updateValue(reason, forKey: pass.id) == nil {
@@ -1372,9 +1108,6 @@ final class WPEMetalRenderExecutor {
                     continue
                 }
                 didEncode = true
-                // First-time miss: snapshot each composite into a persistent
-                // texture right after its last producer pass; once every planned
-                // target is captured, commit them to the cache as one layer entry.
                 if let staticCachePlan, cachedStaticLayer == nil {
                     captureStaticLayerSnapshots(
                         at: layerPassIndex,
@@ -1388,16 +1121,12 @@ final class WPEMetalRenderExecutor {
                 }
                 #if DEBUG
                 if dumpScenePasses {
-                    // Dump BOTH the scene target and each layer's intermediate composite target, so a
-                    // per-layer effect chain (e.g. 840's face → opacity/waterripple/…) can be inspected
-                    // pass-by-pass to see exactly which pass drops/moves content.
                     let dumpTarget: MTLTexture?
                     switch pass.pass.target {
                     case .scene:
                         dumpTarget = output
                     case .layerComposite(let name), .fbo(let name):
-                        // Use the texture the pass ACTUALLY wrote to (FBO pooling/aliasing means
-                        // re-resolving the name by `targetTexture` can vend a different/cleared one).
+                        // Use the texture the pass ACTUALLY wrote to (FBO pooling/aliasing means re-resolving the name by `targetTexture` can vend a different/cleared one).
                         dumpTarget = frameState.latestNamedTextures[name]
                     }
                     if let dumpTarget {
@@ -1421,21 +1150,17 @@ final class WPEMetalRenderExecutor {
             output: output,
             commandBuffer: commandBuffer
         )
-        // Last, so it grades the finished frame — bloom included — the way
-        // Wallpaper Engine's own correction sits after the scene, not inside it.
+        // Last, so it grades the finished frame — bloom included — the way Wallpaper Engine's own correction sits after the scene, not inside it.
         let graded = try encodeColorCorrectionIfNeeded(
             colorCorrection, output: output, commandBuffer: commandBuffer
         )
 
-        // Late drawable acquire: a throw here drops the un-committed buffer
-        // before any completed handler / lease is attached.
         if asyncSubmission, let deferredPresent {
             _ = try deferredPresent(graded, commandBuffer)
         }
 
         recyclePaletteBuffersOnCompletion(of: commandBuffer)
-        // Pin this frame's arena regions until the GPU is done reading them. Must be
-        // registered before `commit()` — the last moment Metal accepts a handler.
+        // Pin this frame's arena regions until the GPU is done reading them. Must be registered before `commit()` — the last moment Metal accepts a handler.
         if let frameSlot = currentUniformArenaSlot {
             uniformArena.trackSubmission(of: commandBuffer, frameSlot: frameSlot)
         }
@@ -1452,18 +1177,10 @@ final class WPEMetalRenderExecutor {
             }
         }
         if asyncSubmission {
-            // Bound in-flight depth (signal mirrors the wait above) and surface
-            // GPU errors from the handler — they land after we've returned, so we
-            // log rather than throw; the wallpaper just renders the next frame.
-            // GPU-side ordering on the shared queue still guarantees any buffer
-            // committed later (sync-path present, static re-present) observes
-            // this frame's writes.
             let semaphore = usesLegacyCommandBufferBudget ? inFlightSemaphore : nil
             let sink = gpuErrorSink
             commandBuffer.addCompletedHandler { cb in
                 semaphore?.signal()
-                // Logged in every build (the old synchronous path threw on error,
-                // which the caller logged) so a GPU failure isn't silent in release.
                 if cb.status == .error {
                     let detail = cb.error?.localizedDescription ?? "unknown"
                     let n = sink.record("async-frame: \(detail)")
@@ -1490,28 +1207,18 @@ final class WPEMetalRenderExecutor {
         previousFrameHistory = PreviousFrameHistory(
             sceneSize: size,
             sceneTexture: frameState.latestSceneTexture,
-            // Never carry named FBOs across frames: they're per-frame scratch
-            // (`_rt_HalfCompoBuffer*` shine cast/gaussian) or same-frame ping-pong composites
-            // (`_rt_imageLayerComposite_*`) — carrying them let the shine chain re-blend its
-            // own output and, via `saturate(albedo.a + rays.a)`, ramp the layer white in ~5s
-            // (3526278753). Cross-frame scene feedback still works via `sceneTexture` above. A
-            // precise "carry only `.previous`-read targets" filter was tried and REGRESSED:
-            // effect-bind `{name:"previous"}` lowers to the SAME `.previous` token as true
-            // cross-frame feedback, mis-carrying the shine composite and bringing the white-out back.
+            // Never carry named FBOs across frames. A precise "carry only `.previous`-read targets" filter was tried and REGRESSED: effect-bind `{name:"previous"}` lowers to the SAME `.previous` token as true cross-frame feedback.
             namedTextures: [:]
         )
         return graded
     }
 
-    /// Slots this layout occupies, matching the per-shader `WPEUniforms.vals[]` the transpiler emits.
     /// Slots are assigned sequentially, so the max `slot + slotCount` is the total.
     static func translatedSlotCount(for layout: [WPEUniformSlot]) -> Int {
         max(layout.reduce(0) { Swift.max($0, $1.slot + $1.slotCount) }, 1)
     }
 
-    /// What one `bindTranslatedUniformSlots` call actually bound. `.allocationFailed`
-    /// used to be unrepresentable: the `>4 KB` branch was an `else if let` with no
-    /// `else`, so a failed allocation left the slot unbound and silent.
+    /// `.allocationFailed` used to be unrepresentable: the `>4 KB` branch was an `else if let` with no `else`, so a failed allocation left the slot unbound and silent.
     enum TranslatedUniformBinding: Equatable {
         case empty
         case inline(byteCount: Int)
@@ -1519,11 +1226,7 @@ final class WPEMetalRenderExecutor {
         case allocationFailed(byteCount: Int)
     }
 
-    /// macOS caps `setFragmentBytes` at 4 KB (256 × 16-byte slots). Shaders under that ride the inline
-    /// fast path; audio visualizers above it (e.g. a 258-slot oscilloscope) bind a transient shared
-    /// buffer instead. The buffer is retained by the command buffer until GPU completion.
-    ///
-    /// `allocate` is a test seam for the out-of-memory branch; production passes `nil`.
+    /// macOS caps `setFragmentBytes` at 4 KB (256 × 16-byte slots). Shaders under that ride the inline fast path; above it bind a transient shared buffer.
     @discardableResult
     func bindTranslatedUniformSlots(
         _ slots: [SIMD4<Float>],
@@ -1544,11 +1247,7 @@ final class WPEMetalRenderExecutor {
             return device.makeBuffer(bytes: base, length: byteCount, options: .storageModeShared)
         }
         guard let buffer else {
-            // Nothing correct is left to bind: >4 KB cannot ride `setFragmentBytes`,
-            // and a zero-filled stand-in needs the allocation that just failed. The
-            // pass draws with an unbound uniform slot, same as before — but it is now
-            // reported, because a silent one reads as a shader bug. Rate-limited like
-            // the async command-buffer errors so a stuck allocator cannot flood the log.
+            // Nothing correct is left to bind: >4 KB cannot ride `setFragmentBytes`, and a zero-filled stand-in needs the allocation that just failed.
             let n = gpuErrorSink.record("uniform-buffer: \(byteCount) bytes (\(slots.count) slots)")
             if WPEGPUErrorSink.shouldLogOccurrence(n) {
                 Logger.warning(
@@ -1591,9 +1290,6 @@ final class WPEMetalRenderExecutor {
         }
     }
 
-    /// Packs a pass's uniforms into this frame's arena when one is open, and into a
-    /// freshly allocated array otherwise. The arena reservation is exactly
-    /// `translatedSlotCount(for:)` slots, which is what the packer indexes.
     func packTranslatedUniformsForBinding(
         for pass: WPEPreparedRenderPass,
         layout: [WPEUniformSlot],
@@ -1614,10 +1310,7 @@ final class WPEMetalRenderExecutor {
         )
     }
 
-    /// Binds whichever storage the packer used, keeping the same 4 KB split as the array
-    /// path: under the cap `setFragmentBytes` copies into the command buffer's own argument
-    /// storage (no residency entry, one copy less than the old path's array + `var inline`
-    /// copy); over the cap the arena buffer is bound in place, removing the per-frame `makeBuffer`.
+    /// Under the cap `setFragmentBytes` copies into the command buffer's own argument storage; over the cap the arena buffer is bound in place.
     @discardableResult
     func bindTranslatedUniformSlots(
         _ packed: PackedTranslatedUniforms,
@@ -1645,17 +1338,9 @@ final class WPEMetalRenderExecutor {
     var textBackgroundPipelineCache: [UInt: MTLRenderPipelineState] = [:]
 
     var particlePipelineCache: [ParticlePipelineKey: MTLRenderPipelineState] = [:]
-    /// Reused scene snapshot storage for REFRACT particle passes; reallocated when
-    /// the output size/format changes. A frame-local freshness guard decides
-    /// whether the contents can be reused without another full-frame blit.
     var refractionBackground: MTLTexture?
 
-    /// Whether a pass should `.load` the existing attachment instead of `.clear`ing. A
-    /// ping-pong composite's physical texture is reused across passes, so a later
-    /// source-over pass writing the SAME named target would otherwise blend over an
-    /// earlier pass's stale result (the hair/staff "double displacement" ghost). Only load
-    /// when genuinely needed: a self/previous-target read (feedback), the scene framebuffer
-    /// (layer compositing), or an accumulation blend.
+    /// A ping-pong composite's physical texture is reused across passes, so a later source-over pass writing the SAME named target would otherwise blend over an earlier pass's stale result. Only load when genuinely needed.
     private func shouldLoadExistingAttachment(
         for pass: WPEPreparedRenderPass,
         targetID: WPEMetalTargetID,
@@ -1770,10 +1455,7 @@ final class WPEMetalRenderExecutor {
             case (nil, _):
                 clearsDestination = false
             }
-            // WORLD canvas for glyph-vertex normalization (the vertices are
-            // world-pixel coordinates): under render scaling the destination
-            // texture is `pixelScale` smaller than the canvas, and normalizing
-            // by its dimensions would blow the text up by 1/pixelScale.
+            // WORLD canvas for glyph-vertex normalization: under render scaling the destination texture is `pixelScale` smaller than the canvas, and normalizing by its dimensions would blow the text up by 1/pixelScale.
             let textCanvasSize: CGSize
             if case .scene = pass.pass.target {
                 textCanvasSize = frameState.sceneSize
@@ -1799,9 +1481,6 @@ final class WPEMetalRenderExecutor {
         }
 
         #if DEBUG
-        // Per-pass FBO isolation for one layer: snapshot this pass's destination
-        // after the draw (function-scope defer runs at encode() exit) so we can
-        // see exactly which pass on the layer introduces an artifact.
         let shouldDumpLayerPass = dumpLayerPassesID != nil && layer.objectID == dumpLayerPassesID
         defer {
             if shouldDumpLayerPass {
@@ -1847,14 +1526,7 @@ final class WPEMetalRenderExecutor {
             previousTextureForTarget = initialPreviousTextureForTarget
         }
 
-        // A pass reading `.previous` while ALSO targeting the scene would bind `.previous` to
-        // `latestSceneTexture` — the SAME live `output` it's drawing into
-        // (`targetTexture(.scene)` always returns `output`), an undefined GPU read-write
-        // (scene 3470764447's rotated `compose source=previous target=scene` sampled the
-        // pixels it was writing, recursing the frame into itself and flickering). `.previous`
-        // doesn't traverse `snapshotFullFrameBufferIfAliasingScene` (only covers
-        // `_rt_FullFrameBuffer` aliases), so snapshot the scene-so-far into a scratch here and
-        // rebind `.previous` to it — the write still targets `output`, the read is now frozen.
+        // A pass reading `.previous` while ALSO targeting the scene would bind `.previous` to the SAME live `output` it's drawing into, an undefined GPU read-write. Snapshot the scene-so-far into a scratch and rebind `.previous` to it.
         if readsCurrentTarget, case .scene = targetID,
            let prev = previousTextureForTarget,
            ObjectIdentifier(prev) == ObjectIdentifier(destination.texture) {
@@ -1880,10 +1552,7 @@ final class WPEMetalRenderExecutor {
         }
 
         let needsDepth = depthCache.needsAttachment(for: pass)
-        // WPE's perspective projection is reversed-Z. An otherwise orthographic scene gets
-        // it too for the objects that author `perspective: true` — and in such a scene those
-        // models are the only depth-writing content, since 2D layers author
-        // `depthtest: disabled`.
+        // WPE's perspective projection is reversed-Z. An otherwise orthographic scene gets it too for objects that author `perspective: true`.
         let usesReversedZ = frameState.cameraUniforms.usesPerspectiveProjection
             || frameState.cameraUniforms.usesObjectPerspective(objectID: drawLayer.objectID)
 
@@ -1938,11 +1607,7 @@ final class WPEMetalRenderExecutor {
                     descriptor.depthAttachment.loadAction = .clear
                     descriptor.depthAttachment.storeAction = .dontCare
                 } else {
-                    // Depth is keyed independently of the color target (`WPEMetalDepthTextureKey`)
-                    // and allocated fresh on first use per frame, so the color's
-                    // `shouldLoadExistingAttachment` must NOT decide it: a bootstrapped color
-                    // paired with a virgin depth texture would otherwise `.load` undefined GPU
-                    // memory. `.load` only once this exact depth texture was written this frame.
+                    // Depth is keyed independently of the color target and allocated fresh on first use per frame, so the color's `shouldLoadExistingAttachment` must NOT decide it. `.load` only once this exact depth texture was written this frame.
                     let depthInitialized = frameState.hasInitialized(depth)
                     descriptor.depthAttachment.loadAction = depthInitialized ? .load : .clear
                     descriptor.depthAttachment.storeAction = .store
@@ -1974,8 +1639,7 @@ final class WPEMetalRenderExecutor {
         }
         defer { if solidRun == nil { encoder.endEncoding() } }
 
-        // Builtin quads and puppet atlas/composite vertices construct NDC directly.
-        // Only the scene-model mesh path applies the camera matrix and overrides this.
+        // Builtin quads and puppet atlas/composite vertices construct NDC directly. Only the scene-model mesh path applies the camera matrix and overrides this.
         encoder.setFrontFacing(.counterClockwise)
         encoder.setCullMode(WPEMetalPipelineCache.cullMode(for: pass.pass.cullMode))
         encoder.setDepthStencilState(depthCache.stencilState(
@@ -2050,11 +1714,7 @@ final class WPEMetalRenderExecutor {
                     fetchSceneColor: fetchSceneColor
                 )
             } catch let error as WPEMetalRenderExecutorError where error.untranslatableShaderReason != nil {
-                // The encoder is already open and has cleared this target, so hand the
-                // cleared texture to `frameState`: the caller skips this pass, and a later
-                // pass sampling the same name reads transparent black instead of failing
-                // the WHOLE scene on an unresolved FBO (3660962877's music-cover layer took
-                // its 127-layer scene down this way).
+                // The encoder is already open and has cleared this target, so hand the cleared texture to `frameState`: a later pass sampling the same name reads transparent black instead of failing the WHOLE scene.
                 frameState.registerWrite(texture: destination.texture, targetID: destination.id)
                 throw error
             }
@@ -2068,9 +1728,7 @@ final class WPEMetalRenderExecutor {
         frameState.registerWrite(texture: destination.texture, targetID: destination.id)
     }
 
-    /// Resolves the object's visible animation layers into evaluator layers. The scene can stack
-    /// several (e.g. a base idle-sway layer + an ADDITIVE blink/face layer); we play them all so
-    /// blinks/mouth motion compose on top of the body sway, instead of only the first layer.
+    /// The scene can stack several animation layers; play them all so blinks/mouth motion compose on top of the body sway, instead of only the first layer.
     func puppetAnimationLayers(
         for layer: WPERenderLayer,
         model: WPEPuppetModel
@@ -2094,8 +1752,6 @@ final class WPEMetalRenderExecutor {
         }
     }
 
-    /// Validates skinning for every puppet and caches each parent's animated palette once, so an
-    /// attached child can read its parent's anchor-bone transform before the child itself renders.
     private func makeAttachmentFrameContext(
         for pipeline: WPEPreparedRenderPipeline,
         runtimeUniforms: WPEMetalRuntimeUniforms,
@@ -2107,9 +1763,7 @@ final class WPEMetalRenderExecutor {
                   let attachment = layer.graphLayer.attachment else { continue }
             attachedChildNamesByParent[parentID, default: []].insert(attachment)
         }
-        // The objectID→layer index is only ever read to resolve a child's parent
-        // puppet in `layerApplyingAttachmentFollow`; a scene with no attached
-        // children never touches it, so skip building it there.
+        // The objectID→layer index is only ever read to resolve a child's parent puppet; a scene with no attached children never touches it, so skip building it there.
         let layersByID: [String: WPEPreparedRenderLayer] = attachedChildNamesByParent.isEmpty
             ? [:]
             : Dictionary(
@@ -2134,15 +1788,8 @@ final class WPEMetalRenderExecutor {
         )
     }
 
-    /// Per-objectID dedup so the skinning-gate reason logs once per change, not per frame.
-    /// Reset on graph rebuild so every scene load leaves one breadcrumb per puppet.
     var lastLoggedPuppetSkinningReason: [String: String] = [:]
 
-    /// Gate validation runs per frame, so its two expensive pieces memoize per objectID
-    /// (reset on graph rebuild via `releaseTransientResources`, since reload can reuse an
-    /// objectID for a different puppet): the clip-wide displacement scan (6 palette
-    /// evaluations) keys by the animation-layer stack's signature; the per-frame palette
-    /// evaluation keys by frame A/B plus interpolation weight, bit-exact for an unchanged tuple.
     var characterSheetWarnedReasonByObjectID: [String: String] = [:]
     struct PuppetBoundScanCacheEntry {
         let stackSignature: [UInt64]
@@ -2155,15 +1802,12 @@ final class WPEMetalRenderExecutor {
     }
     var puppetPaletteCacheByObjectID: [String: PuppetPaletteCacheEntry] = [:]
 
-    /// Cache-hit counters proving the memoization actually short-circuits (a recompute-only path
-    /// would still pass the output-equality tests). Production cost is one Int increment.
+    /// Cache-hit counters proving the memoization actually short-circuits (a recompute-only path would still pass the output-equality tests).
     var puppetPaletteCacheHitsForTesting = 0
     var puppetBoundScanCacheHitsForTesting = 0
 
-    /// Recycles bone-palette buffers across frames instead of `makeBuffer` per draw. Buffers are
-    /// power-of-two bucketed so puppets with different bone counts share them; the shader only reads
-    /// `paletteCount` entries (`indices < paletteCount` guards every tap), so a bucket's stale tail is
-    /// never sampled. Lock-protected: `recycle` runs on Metal completion threads.
+    /// Power-of-two bucketed. The shader only reads `paletteCount` entries (`indices < paletteCount` guards every tap), so a bucket's stale tail is never sampled.
+    /// Lock-protected: `recycle` runs on Metal completion threads.
     final class PuppetBonePaletteBufferPool: @unchecked Sendable {
         private let lock = NSLock()
         private var freeBuffersByLength: [Int: [MTLBuffer]] = [:]
@@ -2202,21 +1846,11 @@ final class WPEMetalRenderExecutor {
     }
 
     let bonePaletteBufferPool = PuppetBonePaletteBufferPool()
-    /// Palette buffers bound while encoding the current frame; handed to the frame command buffer's
-    /// completion handler at commit so they return to the pool only after the GPU has consumed them.
-    /// A frame aborted before commit leaves its buffers here — they ride along with the next commit
-    /// (never executed by the GPU, so recycling them late is safe, early would be too).
+    /// A frame aborted before commit leaves its buffers here — they ride along with the next commit (never executed by the GPU, so recycling them late is safe, early would be too).
     var bonePaletteBuffersInFlight: [MTLBuffer] = []
 
-    /// Puppet mesh vertex/index topology is immutable for the scene's lifetime (skinning is applied
-    /// per-frame in the vertex shader via the bone palette, not by re-baking geometry), so the GPU
-    /// buffers are built once per mesh and reused every frame. Dropped on reload via
-    /// `releaseTransientResources`.
     struct PuppetMeshBufferKey: Hashable {
-        /// The resolved scene-relative model path is stable for the prepared
-        /// pipeline's lifetime and unique within one scene. The cache is cleared
-        /// on every reload, so path + mesh index identifies immutable topology
-        /// without hashing millions of vertex/index elements on every draw.
+        /// Path + mesh index identifies immutable topology without hashing millions of vertex/index elements on every draw. The cache is cleared on every reload.
         let modelPath: String
         let meshIndex: Int
     }
@@ -2233,7 +1867,6 @@ final class WPEMetalRenderExecutor {
         let buffers: [MTLBuffer]
     }
 
-    /// Breaks the `_rt_*` scene-alias hazard.
     private func snapshotFullFrameBufferIfAliasingScene(
         pass: WPEPreparedRenderPass,
         destinationTexture: MTLTexture,
@@ -2241,11 +1874,7 @@ final class WPEMetalRenderExecutor {
         commandBuffer: MTLCommandBuffer,
         frameState: inout WPEMetalFrameState
     ) throws {
-        // Any pass sampling a scene alias participates — not only scene-target draws. WPE
-        // re-captures the frame (CopyResource) for EVERY layer that samples it, so a stale
-        // snapshot from one layer corrupts later ones. 3521337568: the shine chain captured
-        // at pass 48, then the filmgrain layer (copy at pass 63) reused that capture and its
-        // full-frame redraw erased the beams/halo/shine drawn in between.
+        // Any pass sampling a scene alias participates — not only scene-target draws. WPE re-captures the frame for EVERY layer that samples it, so a stale snapshot from one layer corrupts later ones.
         func needsSnapshot(_ name: String) -> Bool {
             // A real same-frame render target (has a texture but no snapshot
             // marker — e.g. a chain rendering INTO `_rt_HalfFrameBuffer`) owns
@@ -2259,17 +1888,7 @@ final class WPEMetalRenderExecutor {
             return frameState.sceneAliasSnapshotGenerations[name] != frameState.sceneWriteGeneration
         }
 
-        // A layer's first alias read before any own-layer scene write, drawn into a target
-        // that shares no storage with the scene, sees exactly what a capture would copy —
-        // so `resolve(.fbo)` binds the live scene (its no-entry fallback) and the blit is
-        // skipped. Layers that already wrote the scene and scene-targeted draws keep the
-        // capture (the read-write hazard paths). A raw `.previous` bind resolves to the
-        // pass's OWN target history (`latestTexture(for: targetID)`), never the scene once
-        // scene targets are excluded, so it only collides with this bind when the target
-        // is the alias name itself. Before the frame's first scene write `output` may
-        // still hold the previous frame (the initial clear can be deferred to the first
-        // scene pass), so only a written scene is bindable; the capture path clears the
-        // snapshot in that case.
+        // A layer's first alias read before any own-layer scene write, drawn into a target that shares no storage with the scene, binds the live scene and skips the blit. Scene-targeted draws and layers that already wrote the scene keep the capture.
         let liveScene = frameState.currentFrameSceneTexture ?? frameState.output
         let bindsLiveScene = !diagnosticControls.disableSceneAliasDirectBind
             && frameState.currentFrameSceneTexture != nil
@@ -2364,11 +1983,7 @@ final class WPEMetalRenderExecutor {
         blit.endEncoding()
     }
 
-    /// WPE's `_rt_MipMappedFrameBuffer` (generic4 `g_Texture3`): the scene as
-    /// rendered SO FAR, with a mip chain so `roughness × g_Texture3MipMapInfo`
-    /// blurs the mirror. It must be a separate texture, not the live scene target
-    /// — this pass draws into that target, and sampling it would be an undefined
-    /// read-write of the surface being written.
+    /// It must be a separate texture, not the live scene target — this pass draws into that target, and sampling it would be an undefined read-write.
     private func captureReflectionSourceIfNeeded(
         pass: WPEPreparedRenderPass,
         layer: WPERenderLayer,
@@ -2415,11 +2030,7 @@ final class WPEMetalRenderExecutor {
         return texture
     }
 
-    /// Keeps the layer's ping-pong composite chain intact for a pass whose visibility gate
-    /// is closed: the target must end the pass holding exactly what the source held, or the
-    /// next chain pass samples an FBO nothing wrote this frame. Only composite targets need
-    /// this — an effect-local `.fbo` is read solely by later passes of the SAME gated-off
-    /// effect, and the graph builder guarantees a gated pass never targets `.scene`.
+    /// The target must end the pass holding exactly what the source held, or the next chain pass samples an FBO nothing wrote this frame. Only composite targets need this.
     private func encodeGatedPassthrough(
         pass: WPEPreparedRenderPass,
         layer: WPERenderLayer,
@@ -2498,10 +2109,7 @@ final class WPEMetalRenderExecutor {
             frameState.markInitialized(destination.texture)
         }
 
-        // Resolved BEFORE the encoder exists: with `.dontCare` below, an encoder
-        // that ends without drawing leaves the attachment undefined rather than
-        // untouched, so a missing texture or pipeline must abort while the
-        // destination is still whole.
+        // Resolved BEFORE the encoder exists: with `.dontCare` below, an encoder that ends without drawing leaves the attachment undefined, so a missing texture or pipeline must abort while the destination is still whole.
         let pipelineState = try renderPipeline(
             fragmentName: "wpe_copy_fragment",
             blendMode: "disabled",
@@ -2516,10 +2124,7 @@ final class WPEMetalRenderExecutor {
 
         let descriptor = MTLRenderPassDescriptor()
         descriptor.colorAttachments[0].texture = destination.texture
-        // Fullscreen quad, blending disabled, full write mask: every texel of the
-        // attachment is overwritten, so neither the previous contents nor a clear
-        // is ever observable. `.dontCare` drops the attachment read this used to
-        // pay on the scene target.
+        // Fullscreen quad, blending disabled, full write mask: every texel is overwritten, so neither previous contents nor a clear is ever observable. `.dontCare` drops the attachment read.
         descriptor.colorAttachments[0].loadAction = .dontCare
         descriptor.colorAttachments[0].storeAction = .store
 
@@ -2536,16 +2141,11 @@ final class WPEMetalRenderExecutor {
 
         encoder.setRenderPipelineState(pipelineState)
         encoder.setFragmentTexture(sourceTexture, index: 0)
-        // Parallax is a geometry translation applied in object-quad scene
-        // passes; raw-pointer UV shifts are intentionally not applied here.
-        // (Plain full-frame layers routed through this fullscreen copy don't
-        // parallax — see the camera-parallax limitations note.) The copy
-        // fragment samples 1:1 and takes no fragment uniform buffer.
+        // Parallax is a geometry translation applied in object-quad scene passes; raw-pointer UV shifts are intentionally not applied here.
         encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
         frameState.registerWrite(texture: destination.texture, targetID: destination.id)
     }
 
-    /// Thin delegate so call sites — including `WPEMetalShaderDispatcher` across files — keep the same call shape after the pipeline cache became a separate type.
     func renderPipeline(
         vertexName: String = "wpe_fullscreen_vertex",
         fragmentName: String,
@@ -2564,10 +2164,7 @@ final class WPEMetalRenderExecutor {
         )
     }
 
-    /// True when this pass is WPE `effects/skew` in MODE=1 (Vertex): the quad
-    /// geometry must be displaced in the vertex stage (the fragment leaves the UV
-    /// untouched in MODE=1, so a fragment-only transpile drops the effect
-    /// entirely). MODE=0 (UV) is handled by the ordinary transpiled fragment.
+    /// True when this pass is WPE `effects/skew` in MODE=1 (Vertex): the quad geometry must be displaced in the vertex stage. MODE=0 (UV) is handled by the ordinary transpiled fragment.
     func isVertexSkewPass(_ pass: WPEPreparedRenderPass) -> Bool {
         guard isSkewShaderPath(pass.pass.shader) else {
             return false
@@ -2590,10 +2187,7 @@ final class WPEMetalRenderExecutor {
         return isSkew
     }
 
-    /// The MODE=1 skew corner-displacement params (top/bottom/left/right) as fractions of the
-    /// quad extent. WPE's `skew.vert` multiplies the displacement by `g_TextureReductionScale`
-    /// (`textureScale = g_Texture0Resolution.zw * g_TextureReductionScale`), folded in here; it
-    /// defaults to 1.0 (full resolution), the case for the FBO-composite textures skew samples.
+    /// MODE=1 skew corner-displacement as fractions of the quad extent. WPE's `skew.vert` multiplies the displacement by `g_TextureReductionScale`, folded in here; it defaults to 1.0.
     func vertexSkewParams(for pass: WPEPreparedRenderPass) -> WPESkewParams {
         let keyIndex = uniformKeyIndex(for: pass)
         func value(_ names: [String], default fallback: Float = 0) -> Float {
@@ -2602,8 +2196,7 @@ final class WPEMetalRenderExecutor {
                     return Self.scalarValue(v, default: fallback)
                 }
             }
-            // Same precedence as the scan this replaces: any uniformValues
-            // case-variant match wins over any constants one.
+            // Same precedence as the scan this replaces: any uniformValues case-variant match wins over any constants one.
             for name in names {
                 if let canonical = keyIndex.uniformKeys[name.lowercased()],
                    let v = pass.uniformValues[canonical] {
@@ -2637,20 +2230,12 @@ final class WPEMetalRenderExecutor {
         }
         guard case .scene = pass.pass.target else { return false }
         if layer.geometry == .identity {
-            // Identity full-frame layers normally take the fullscreen copy path; route through
-            // the object quad only when there's an actual parallax shift to apply, leaving the
-            // no-parallax path unchanged. Gated on `amount != 0` AND a live cursor: the smoother
-            // keeps tracking `g_ParallaxPosition` even when parallax is disabled, so a nonzero
-            // `smoothed` alone would drag full-frame layers off the fullscreen path for a zero shift.
+            // Route identity full-frame layers through the object quad only when there's an actual parallax shift. Gated on `amount != 0` AND a live cursor: a nonzero `smoothed` alone would drag full-frame layers off the fullscreen path for a zero shift.
             return layer.parallaxDepth != SIMD2<Double>(0, 0)
                 && cameraParallax.amount != 0
                 && cameraParallax.smoothed != SIMD2<Float>(0, 0)
         }
-        // WPE fullscreen/passthrough utility layers (project/fullscreen and
-        // oversized compose) capture + copy the full frame 1:1. A plain
-        // `composelayer.json` authored into a safe sub-rect captures the
-        // matching scene area into its layer composite, then its final scene
-        // output is confined to that box via the object quad.
+        // WPE fullscreen/passthrough utility layers capture + copy the full frame 1:1. A `composelayer.json` in a safe sub-rect captures the matching scene area, then its final scene output is confined to that box via the object quad.
         if layer.isUtilityModelLayer {
             if layer.groupCompositeSource != nil { return true }
             return sceneCaptureUtilityOutputGeometry(for: layer) == .subregion
@@ -2664,10 +2249,7 @@ final class WPEMetalRenderExecutor {
         guard layer.isUtilityModelLayer else {
             return .fullscreen
         }
-        // A compose layer that parents children is a layer-group container, not
-        // a scene-effect box: its children render flat, so confining its own
-        // passthrough to the authored box would paint a scene-copy PiP. Keep it
-        // fullscreen (identity passthrough = invisible).
+        // A compose layer that parents children is a layer-group container, not a scene-effect box: confining its own passthrough to the authored box would paint a scene-copy PiP. Keep it fullscreen.
         if groupingContainerObjectIDs.contains(layer.objectID) { return .fullscreen }
         return targetPool.sceneCaptureGeometryMemo.outputGeometry(
             layer: layer,
@@ -2690,10 +2272,7 @@ final class WPEMetalRenderExecutor {
         guard isGroupRenderTarget(pass.pass.target, layer: layer) else {
             return frameState.sceneSize
         }
-        // WORLD canvas, never `destination.texture` dimensions: with render
-        // scaling active the group RT is allocated `pixelScale` smaller than
-        // its authored canvas, and quad NDC math built on the texture size
-        // would grow every group member by 1/pixelScale.
+        // WORLD canvas, never `destination.texture` dimensions: with render scaling the group RT is allocated `pixelScale` smaller, and quad NDC math built on the texture size would grow every group member by 1/pixelScale.
         return targetPool.worldCanvasSize(
             for: pass.pass.target,
             layer: layer,
@@ -2709,15 +2288,7 @@ final class WPEMetalRenderExecutor {
         isGroupRenderTarget(pass.pass.target, layer: layer) ? .identity : frameState.cameraUniforms
     }
 
-    /// Scene-centred origin of a layer's parallax root. `parallaxDepth` is already
-    /// inherited down a parented subtree (`WPERenderGraphBuilder.propagatingParallaxDepthThroughParents`)
-    /// so it shifts as one unit; the static half of the shift, `(nodePos - camPos) * depth
-    /// * amount`, must be evaluated ONCE at the root — feeding each child its own origin
-    /// turns the rigid translation into an anisotropic scale of the subtree about the
-    /// scene centre by `(1 + depth * amount)`. Ground truth, scene 3719111841 (Windows
-    /// RenderDoc, both captures): root (475 长发3) and child (91 主体)
-    /// `g_ModelViewProjectionMatrix` translations differ from authored origins by the SAME
-    /// vector to 3.5e-5 scene px.
+    /// The static half of the shift, `(nodePos - camPos) * depth * amount`, must be evaluated ONCE at the root — feeding each child its own origin turns the rigid translation into an anisotropic scale of the subtree about the scene centre by `(1 + depth * amount)`.
     static func parallaxRootCenters(
         for layers: [WPERenderLayer],
         sceneSize: CGSize,
@@ -2729,9 +2300,7 @@ final class WPEMetalRenderExecutor {
         let geometryByID = Dictionary(
             layers.map { ($0.objectID, $0.geometry) }, uniquingKeysWith: { first, _ in first }
         )
-        // Same anchor-node selection as the depth propagation, so the depth and
-        // the static-term origin always come from the SAME node — a non-drawn
-        // group host counts, anchored at its authored origin.
+        // Same anchor-node selection as the depth propagation, so the depth and the static-term origin always come from the SAME node — a non-drawn group host counts.
         var depthByID = hostDepthByObjectID
         for layer in layers where depthByID[layer.objectID] == nil {
             depthByID[layer.objectID] = layer.parallaxDepth
@@ -2761,8 +2330,7 @@ final class WPEMetalRenderExecutor {
         return centers
     }
 
-    /// The object-quad anchor: authored origin measured from the scene centre,
-    /// accepting the normalized 0...1 origin form the parser can emit.
+    /// The object-quad anchor: authored origin measured from the scene centre, accepting the normalized 0...1 origin form the parser can emit.
     static func centeredOrigin(
         of geometry: WPERenderLayerGeometry,
         sceneSize: CGSize
@@ -2786,10 +2354,7 @@ final class WPEMetalRenderExecutor {
         return SIMD2<Double>(Double(center.x), Double(center.y))
     }
 
-    /// World-pixel size of a source texture for quad layout: the AUTHORED image
-    /// size from the metadata registry, which survives the loader uploading a
-    /// reduced mip under render scaling. Unregistered textures fall back to
-    /// their own dimensions — identical to reading `texture.width` directly.
+    /// AUTHORED image size from the metadata registry, which survives the loader uploading a reduced mip under render scaling. Unregistered textures fall back to their own dimensions.
     static func worldSourceSize(of texture: MTLTexture) -> (width: Float, height: Float) {
         let resolution = WPEMetalTextureMetadataRegistry.shared.resolution(for: texture)
         return (Float(resolution.worldWidth), Float(resolution.worldHeight))
@@ -2805,14 +2370,9 @@ final class WPEMetalRenderExecutor {
         let geometry = layer.geometry
         let sceneWidth = Float(max(sceneSize.width, 1))
         let sceneHeight = Float(max(sceneSize.height, 1))
-        // Identity (full-frame) layers map to a scene-sized quad centered at the
-        // origin — identical coverage + UV to `wpe_fullscreen_vertex` — plus the
-        // camera-parallax shift. (Only reached when parallax is active; see
-        // `usesObjectQuadGeometry`.)
+        // Identity (full-frame) layers map to a scene-sized quad centered at the origin — identical coverage + UV to `wpe_fullscreen_vertex` — plus the camera-parallax shift. Only reached when parallax is active.
         if geometry == .identity {
-            // Full-frame layer: its origin IS the scene centre, so the static
-            // parallax term is zero and only the cursor moves it — unless it is
-            // parented, in which case it rides its root's offset.
+            // Full-frame layer: its origin IS the scene centre, so the static parallax term is zero and only the cursor moves it — unless it is parented, in which case it rides its root's offset.
             let parallax = cameraParallax.pixelOffset(
                 objectCenter: parallaxObjectCenter(for: layer, fallback: .zero),
                 depth: layer.parallaxDepth,
@@ -2850,11 +2410,7 @@ final class WPEMetalRenderExecutor {
             )
             return projected
         }
-        // Scene-capture utility subregion layers use the SAME object-quad geometry as the
-        // normal placed-layer path. `geometry.origin` is already top-left-pixel convention
-        // (parser/builder-resolved), so `originX - sceneWidth*0.5` places the box correctly.
-        // An earlier center-origin special-case pushed the box off-screen (origin (1089,1862)
-        // → NDC (0.57,1.72)) and blanked the bars; raw scene.json center-origin never reaches here.
+        // `geometry.origin` is already top-left-pixel convention, so `originX - sceneWidth*0.5` places the box correctly. An earlier center-origin special-case pushed the box off-screen.
         let sourceWorldSize = Self.worldSourceSize(of: sourceTexture)
         let baseWidth = geometry.size.map { Float($0.width) } ?? sourceWorldSize.width
         let baseHeight = geometry.size.map { Float($0.height) } ?? sourceWorldSize.height
@@ -2942,10 +2498,7 @@ final class WPEMetalRenderExecutor {
         )
     }
 
-    /// A DIRECTDRAW `shape: "quad"` layer draws through the 4-corner geometry
-    /// (light beams etc.), not the axis-aligned object quad. Gated to the
-    /// orthographic scene draw — the corners are pre-projected here so a live
-    /// perspective camera falls back to the object quad.
+    /// A DIRECTDRAW `shape: "quad"` layer draws through the 4-corner geometry, not the axis-aligned object quad. Gated to the orthographic scene draw — the corners are pre-projected here so a live perspective camera falls back to the object quad.
     func usesShapeQuadGeometry(
         for pass: WPEPreparedRenderPass,
         layer: WPERenderLayer,
@@ -2956,11 +2509,7 @@ final class WPEMetalRenderExecutor {
         return !frameState.cameraUniforms.usesPerspectiveProjection
     }
 
-    /// Builds the four perspective-quad corners for a shape-quad layer: each WPE point maps
-    /// to a model-space corner `((p.x-0.5)·H, (0.5-p.y)·H)` in a square base of the scene
-    /// height, then layer scale/rotation/origin/parallax apply (identical to the object quad,
-    /// so unit-square points reduce to its rectangle). Corners emit in triangle-strip order
-    /// (p0, p1, p3, p2), carrying the point value as UV for fragment perspective reconstruction.
+    /// Each WPE point maps to a model-space corner `((p.x-0.5)·H, (0.5-p.y)·H)` in a square base of the scene height, then layer scale/rotation/origin/parallax apply. Corners emit in triangle-strip order (p0, p1, p3, p2).
     func shapeQuadUniforms(
         for layer: WPERenderLayer,
         sceneSize: CGSize,
@@ -3063,9 +2612,6 @@ final class WPEMetalRenderExecutor {
     }
 
     #if DEBUG
-    /// Blit a copy of the current scene output into a fresh texture and stash it
-    /// for `WPEDumpScenePasses` PNG dumping. The blit is encoded inline so it
-    /// captures the output exactly as of this pass in the command stream.
     private func captureScenePassIfDumping(
         _ enabled: Bool,
         label: String,
@@ -3117,9 +2663,6 @@ final class WPEMetalRenderExecutor {
     #endif
 
     #if DEBUG
-    /// Decode any sampleable texture (incl. BC/DXT, RG88, R8) into rgba8 by
-    /// sampling it through a fullscreen copy, so the PNG dumper can visualize
-    /// compressed character/scene textures that the raw byte dumper skips.
     func debugDecodeToRGBA(_ source: MTLTexture) -> MTLTexture? {
         // Dedicated `.shared` target: the caller reads it back with `getBytes`,
         // and the output ring is `.private` (and must not vend debug scratch).
@@ -3161,8 +2704,6 @@ final class WPEMetalRenderExecutor {
     }
     #endif
 
-    /// Developer-only image brightness/color diagnostic; gated by its own key so it
-    /// is independent of the unrelated audio-reactive DSP log toggle.
     private static let imageUniformDebugEnabled = UserDefaults.standard.bool(forKey: "WPEImageUniformDebugLog")
     private static let loggedImageUniformNames = OSAllocatedUnfairLock<Set<String>>(initialState: [])
 
@@ -3173,10 +2714,7 @@ final class WPEMetalRenderExecutor {
         sourceTexture: MTLTexture? = nil,
         maskTexture: MTLTexture? = nil
     ) -> WPEGenericImageUniforms {
-        // WPE bakes the object's authored `color` into g_Color4 for every
-        // image material (RenderDoc: 90/116 distinct captured values are
-        // non-white), so the layer tint multiplies the material's own g_Color
-        // — same channel the brightness field already rides.
+        // WPE bakes the object's authored `color` into g_Color4 for every image material, so the layer tint multiplies the material's own g_Color — same channel the brightness field already rides.
         let materialColor = WPEMetalShaderInputs.colorVector(for: pass)
         let layerTint = WPEMetalShaderInputs.linearLayerTint(layer.geometry.color)
         let color = SIMD4<Float>(
@@ -3208,10 +2746,7 @@ final class WPEMetalRenderExecutor {
                 level: .notice
             )
         }
-        // Diagnostic for the "black silhouette" bug: genericimage shaders do
-        // `rgb = sampled.rgb * color.rgb * brightness`, so brightness==0 OR
-        // color==0 blacks out the layer while alpha (a separate term) survives.
-        // One line per object so the log isn't spammed.
+        // genericimage shaders do `rgb = sampled.rgb * color.rgb * brightness`, so brightness==0 OR color==0 blacks out the layer while alpha (a separate term) survives.
         if Self.imageUniformDebugEnabled,
            Self.loggedImageUniformNames.withLock({ $0.insert(layer.objectName).inserted }) {
             Logger.notice(
@@ -3231,11 +2766,7 @@ final class WPEMetalRenderExecutor {
         )
     }
 
-    /// generic4 scene-model material constants → fragment uniforms. Bindings use the
-    /// shader-annotation names ("color" → g_TintColor, "emissivecolor" → g_EmissiveColor…),
-    /// NOT the g_* names, uploaded RAW (no sRGB conversion, RenderDoc-verified). The emissive
-    /// term requires BOTH the slot-2 component map and authored emissive constants: WPE's
-    /// EMISSIVE_MAP combo is baked by the editor from a mask asset we can't read, so authored intent is the safe gate.
+    /// Bindings use the shader-annotation names ("color" → g_TintColor), NOT the g_* names, uploaded RAW (no sRGB conversion). The emissive term requires BOTH the slot-2 component map and authored emissive constants.
     func sceneModelGenericUniforms(
         for pass: WPEPreparedRenderPass,
         layer: WPERenderLayer,
@@ -3267,15 +2798,7 @@ final class WPEMetalRenderExecutor {
             return SIMD3<Float>(Float(v[0]), Float(v[1]), Float(v[2]))
         }
 
-        // generic2 and generic4 expose the SAME uniforms under DIFFERENT material
-        // names: generic4 annotates "color"/"alpha"/"brightness", generic2
-        // annotates "Color"/"Alpha"/"Brigtness" (WPE's own typo in
-        // assets/shaders/generic2.frag — match it verbatim, do not "fix" it).
-        // The spellings cannot share one priority list: authors ship BOTH keys in
-        // one material and only the shader's own is bound. In 3470948192 the
-        // generic2 `uc` carries "Alpha" = 0.025 (the doppler slider) next to a
-        // stale "alpha" = 1, and the generic4 droplet `sd` carries "color" = black
-        // next to "Color" = white. Probing the other spelling flips each of those.
+        // generic2 and generic4 expose the SAME uniforms under DIFFERENT material names. generic2 annotates "Brigtness" (WPE's own typo — match it verbatim, do not "fix" it). The spellings cannot share one priority list: authors ship BOTH keys and only the shader's own is bound.
         let isGeneric2 = materialShader == .generic2
         let tint = constantVector3(
             isGeneric2 ? ["Color", "g_TintColor"] : ["color", "g_TintColor"],
@@ -3360,10 +2883,6 @@ final class WPEMetalRenderExecutor {
     private var reflectionCaptureCache: MTLTexture?
 
     var bloomLevelTextures: [MTLTexture] = []
-    /// Backs `bloomLevelTextures` from one placement heap (same `.tracked` mechanism as the FBO
-    /// aliasing pool) so the whole pyramid's memory is reclaimed in a single drop on reload. The
-    /// pyramid is regenerated from the scene output every frame, so it needs no cross-frame content
-    /// persistence — only the allocation is reused until the resolution/level count changes.
     var bloomLevelHeap: MTLHeap?
     var bloomLevelBaseWidth = 0
     var bloomLevelBaseHeight = 0
@@ -3402,7 +2921,6 @@ final class WPEMetalRenderExecutor {
             || pass.textureBindings.values.contains(where: reads)
     }
 
-    /// Build (or fetch from cache) an `MTLRenderPipelineState` for a translated shader's fragment function.
     func translatedPipelineState(
         for result: WPEShaderCompileResult,
         vertexName: String? = nil,
@@ -3455,10 +2973,9 @@ final class WPEMetalRenderExecutor {
         return state
     }
 
-    /// One translated-shader pipeline combo to pre-compile off the render thread.
-    /// `@unchecked Sendable`: the Metal handles it carries (device, library, functions)
-    /// are all documented thread-safe — this lets the whole request cross into the
-    /// prewarm task group as one Sendable value, so no bare `MTLDevice` is captured.
+    /// `@unchecked Sendable`: the Metal handles it carries (device, library, functions) are all
+    /// documented thread-safe, so the whole request crosses into the prewarm task group as one
+    /// Sendable value and no bare `MTLDevice` is captured.
     struct WPETranslatedPipelinePrewarm: @unchecked Sendable {
         let device: MTLDevice
         let result: WPEShaderCompileResult
@@ -3469,19 +2986,12 @@ final class WPEMetalRenderExecutor {
         let depthPixelFormat: MTLPixelFormat
     }
 
-    /// Opaque, `Sendable` result of an off-thread pipeline pre-compile — wraps the private
-    /// cache key so the renderer can carry it across the task boundary and hand it back to
-    /// `seedTranslatedPipelines` without seeing the key type.
     struct WPEPrewarmedPipeline: @unchecked Sendable {
         fileprivate let key: TranslatedPipelineKey
         fileprivate let state: MTLRenderPipelineState
     }
 
-    /// Pure, thread-safe pipeline compile — mirrors `translatedPipelineState`'s descriptor
-    /// construction but does NO cache mutation, so it runs concurrently off-actor in the
-    /// prewarm task group. A pipeline is FULLY determined by its cache key, so a prewarmed
-    /// state is byte-identical to the lazy one (an imperfect prediction only costs a cache
-    /// miss, never correctness); returns nil to skip, and the real first-frame render re-hits and records it.
+    /// Does NO cache mutation, so it runs concurrently off-actor. A pipeline is FULLY determined by its cache key; an imperfect prediction only costs a cache miss, never correctness.
     nonisolated static func buildTranslatedPipeline(
         _ prewarm: WPETranslatedPipelinePrewarm
     ) -> WPEPrewarmedPipeline? {
@@ -3515,21 +3025,12 @@ final class WPEMetalRenderExecutor {
         return WPEPrewarmedPipeline(key: key, state: state)
     }
 
-    /// Seed pre-compiled pipeline states built by the parallel prewarm. Synchronous and
-    /// isolation-free (called on the render context before the first frame), so it never
-    /// sends the non-`Sendable` executor across an await. Idempotent: never overwrites a
-    /// key the render thread already built.
     func seedTranslatedPipelines(_ prewarmed: [WPEPrewarmedPipeline]) {
         for entry in prewarmed where translatedPipelineCache[entry.key] == nil {
             translatedPipelineCache[entry.key] = entry.state
         }
     }
 
-    /// Packs runtime uniforms into the transpiler's one-to-four-float4 slot layout.
-    ///
-    /// Kept as the array-returning entry point every test and diagnostic already
-    /// calls; the frame path goes through `packTranslatedUniformsForBinding`, which
-    /// writes the same bytes straight into the uniform arena.
     func packTranslatedUniforms(
         for pass: WPEPreparedRenderPass,
         layout: [WPEUniformSlot],
@@ -3643,14 +3144,7 @@ final class WPEMetalRenderExecutor {
         }
     }
 
-    /// `g_TexelSize` is a SCENE-level constant, not a per-pass one. RenderDoc, scene
-    /// 3554161528 bloom chain (`workshop/2822917890`): WPE renders 3840x2160 →
-    /// 1920x1080 → 960x540 → 480x270 → 240x135 and feeds the SAME `g_TexelSize` =
-    /// 1/(3840, 2160) to all eight `blur_gaussian` passes — keeping the blur kernel a
-    /// fixed width in SCREEN space as the chain downsamples. Nothing fed this before,
-    /// so it packed as 0 and the transpiler substituted `1/g_Texture0Resolution.xy`
-    /// (per-pass) in `v_SizeMultiplier` — a fixed TEXEL count, diverging from WPE by
-    /// 2x/4x/8x/16x down the chain.
+    /// `g_TexelSize` is a SCENE-level constant, not a per-pass one. WPE feeds the SAME `g_TexelSize` = 1/(head width, head height) to every downsample in the bloom chain — a fixed width in SCREEN space.
     static let texelSizeUniformName = "g_TexelSize"
     static let texelSizeHalfUniformName = "g_TexelSizeHalf"
     static let screenUniformName = "g_Screen"
@@ -3679,9 +3173,7 @@ final class WPEMetalRenderExecutor {
         return .vector([width, height, width / height])
     }
 
-    /// Advances the official shader `g_Frametime` clock. Equal timestamps are
-    /// the same logical frame (the fail-close re-encode path) and therefore keep
-    /// the already-derived delta. A rewind starts a new clock epoch at zero.
+    /// Equal timestamps are the same logical frame and therefore keep the already-derived delta. A rewind starts a new clock epoch at zero.
     @discardableResult
     func advanceShaderFrameTime(runtimeTime: Double) -> Double {
         guard runtimeTime.isFinite else {
@@ -3749,11 +3241,7 @@ final class WPEMetalRenderExecutor {
         }
     }
 
-    /// Packs a GLSL array uniform (`elemType name[length]`) into `length` consecutive
-    /// `float4` slots — one element per slot, components in `.x`/`.xy`/`.xyz`/`.xyzw` —
-    /// mirroring the transpiler's per-element read `u.vals[slot + i].<swizzle>`
-    /// (`WPEShaderTranspiler.renderMSL`). The production packer is the only caller: a previous
-    /// `values:` overload packed every array as `vec4[N]`, silently corrupting scalar `float[N]` uniforms like `g_AudioSpectrum*[N]`.
+    /// Packs a GLSL array uniform into `length` consecutive `float4` slots — one element per slot. A previous `values:` overload packed every array as `vec4[N]`, silently corrupting scalar `float[N]` uniforms like `g_AudioSpectrum*[N]`.
     private static func packArrayUniform(
         _ value: WPESceneShaderConstantValue?,
         glslType: String,
@@ -3801,10 +3289,7 @@ final class WPEMetalRenderExecutor {
         }
     }
 
-    /// Texture slots whose bound source is a WPE render target (an FBO/layer
-    /// composite or the previous-frame buffer). Those targets already store
-    /// premultiplied RGB, so a transpiled straight-alpha shader must
-    /// un-premultiply them before running its original math.
+    /// Those targets already store premultiplied RGB, so a transpiled straight-alpha shader must un-premultiply them before running its original math.
     private static func premultipliedInputSlots(for pass: WPEPreparedRenderPass) -> Set<Int> {
         var slots = Set<Int>()
         for slot in 0..<WPEShaderTranspiler.customTextureSlotLimit {
@@ -3839,11 +3324,7 @@ final class WPEMetalRenderExecutor {
             .hasPrefix("premultiplied")
     }
 
-    /// Build the deterministic, runtime-independent compile request for a custom-shader pass
-    /// — the cheap preprocess half of `compileCustomShader`, factored out so the off-thread
-    /// pre-warm computes the IDENTICAL `translationCacheKey` (guaranteeing a first-frame cache
-    /// hit). Returns nil for built-in/shader-less passes. `recordFailure` gates the scene-debug
-    /// artifact so the warm stays silent; static + value-only inputs let it run off the main actor without capturing the executor.
+    /// Returns nil for built-in/shader-less passes. `recordFailure` gates the scene-debug artifact so the warm stays silent.
     static func makeCompileRequest(
         for pass: WPEPreparedRenderPass,
         recordFailure: Bool
@@ -3861,14 +3342,7 @@ final class WPEMetalRenderExecutor {
             }
         )
         do {
-            // Memoized on the four inputs of `process` (see
-            // `WPEShaderPreprocessMemoKey`). A shader is preprocessed once per
-            // PASS, so a scene re-derives the same processed source dozens of
-            // times; the memo is upstream of every shader cache, which is why a
-            // warm disk cache does not already cover this.
-            // Builtins carry no fingerprint and are already excluded above; a nil
-            // here would mean the source identity is unknown, so degrade to the
-            // uncached path rather than key on a placeholder.
+            // Memoized on the four inputs of `process`. Builtins carry no fingerprint; a nil here degrades to the uncached path rather than key on a placeholder.
             let key = program.sourceFingerprint.map { fingerprint in
                 WPEShaderPreprocessMemoKey(
                     shaderName: program.name,
@@ -3949,9 +3423,6 @@ final class WPEMetalRenderExecutor {
                 case .glslPreprocessFailed(let reason),
                      .translationFailed(let reason),
                      .mslLibraryFailed(let reason):
-                    // The compiler already dumped processed sources; tack on the
-                    // pre-preprocess originals so a maintainer can diff to see
-                    // exactly which fixup turned the source unparseable.
                     WPESceneDebugArtifacts.shared.recordShaderFailure(
                         shaderName: program.name,
                         originalVertex: program.vertexSource,
@@ -3968,9 +3439,6 @@ final class WPEMetalRenderExecutor {
                 }
             }
         } catch {
-            // Surface every custom-shader failure (preprocess OR compile) in the
-            // scene diagnostic log: the WPESceneDebugArtifacts dump above is
-            // hard-off in Release, so otherwise the skipped pass is invisible.
             let reason: String
             switch error {
             case WPEMetalRenderExecutorError.shaderTranslatorUnavailable(_, let r): reason = r

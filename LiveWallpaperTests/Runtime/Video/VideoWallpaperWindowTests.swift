@@ -4,8 +4,6 @@ import AppKit
 import Security
 import Testing
 
-/// The wallpaper window carries every wallpaper type (video, HTML, Metal scene,
-/// ambient), so one wrong flag here silently changes behaviour for all of them.
 @Suite("Wallpaper window capture policy", .serialized)
 @MainActor
 struct VideoWallpaperWindowTests {
@@ -17,8 +15,6 @@ struct VideoWallpaperWindowTests {
         OverlayWindow(screenFrame: NSRect(x: 0, y: 0, width: 800, height: 600), level: .desktop)
     }
 
-    /// Shipped hard-coded as `.none` until 2026-08-23, which excluded the
-    /// wallpaper from every capture — including the user's own screenshots.
     @Test("Default policy leaves the wallpaper capturable")
     func defaultPolicyIsCapturable() {
         #expect(GlobalSettings().wallpaperVisibleInScreenCapture)
@@ -42,8 +38,6 @@ struct VideoWallpaperWindowTests {
         #expect(makeWindow().sharingType == .none)
     }
 
-    /// The Monitor board sits directly above the wallpaper; if the two disagree
-    /// a screenshot shows widgets floating over the system desktop picture.
     @Test("The Monitor overlay tracks the wallpaper's capture policy in both directions")
     func overlayMatchesWallpaperCapturePolicy() {
         let restore = WallpaperCapturePolicy.allowsScreenCapture
@@ -54,8 +48,8 @@ struct VideoWallpaperWindowTests {
             #expect(makeOverlay().sharingType == makeWindow().sharingType)
         }
     }
-    /// `NSWindow.canHide` defaults to YES (AppKit `NSWindow.h`), so cmd+H took
-    /// the wallpaper and the desktop decorations down with the app's UI.
+    /// `NSWindow.canHide` defaults to YES (AppKit `NSWindow.h`), so cmd+H would
+    /// take the wallpaper and the desktop decorations down with the app's UI.
     @Test("Desktop-level windows survive NSApplication.hide")
     func desktopWindowsSurviveApplicationHide() {
         #expect(makeWindow().canHide == false)
@@ -82,7 +76,6 @@ struct VideoWallpaperWindowTests {
         #expect(oldSession.wallpaperWindow == nil)
         #expect(currentSession.wallpaperWindow == nil)
         #expect(screen.activeWallpaperWindow == nil, "The existing non-video UI contract must stay intact")
-        // No AVPlayer is installed, matching the owner shape during deep sleep.
         #expect(currentPlayer.player == nil)
         for sharing: NSWindow.SharingType in [.none, .readOnly] {
             screen.applyCapturePolicy(sharing)
@@ -117,7 +110,7 @@ struct VideoWallpaperWindowTests {
         #expect(window.sharingType == .none)
         #expect(player.playbackWindow === window)
         WallpaperCapturePolicy.allowsScreenCapture = true
-        player.orderWindowBack() // Retry publishes through the same player entry point.
+        player.orderWindowBack()
         #expect(window.sharingType == .readOnly)
         #expect(player.playbackWindow === window)
     }
@@ -139,8 +132,6 @@ struct VideoWallpaperWindowTests {
 
 @Suite("Screen-capture setting persistence")
 struct WallpaperCaptureSettingTests {
-    /// Installs predating the key inherit the new default (visible), which is
-    /// deliberately the opposite of the behaviour they shipped with.
     @Test("A settings blob without the key decodes as visible")
     func legacyBlobDecodesAsVisible() throws {
         let legacy = Data(#"{"showInDock":true}"#.utf8)
@@ -203,10 +194,8 @@ struct CaptureSharingAppKitControlTests {
     }
 }
 
-/// Measured with the same test code: the ad-hoc host accepts `.none` but
-/// cannot restore `.readOnly`; project signing passes both directions.
-/// Gate only this known host condition. Unknown signing information must
-/// run the assertions, so a failed lookup cannot silently waive a regression.
+/// Gate only the known ad-hoc host condition: unknown signing information must
+/// still run the assertions, so a failed lookup cannot silently waive a regression.
 private enum CaptureSharingTestHost {
     static var isAdHocSigned: Bool {
         var code: SecCode?

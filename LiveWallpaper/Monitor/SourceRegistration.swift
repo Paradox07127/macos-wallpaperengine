@@ -3,7 +3,6 @@ import Foundation
 enum SourceRegistration {
     @MainActor private static var registered = false
 
-    /// Shared across pipeline rebuilds; termination flushes so debounce can't drop last cursor writes.
     static let sharedCursorStore = TailCursorStore()
 
     static func flushCursorStoreForTermination() {
@@ -17,13 +16,9 @@ enum SourceRegistration {
         return [NowPlayingSource(audioReactive: options.musicAudioReactive)]
     }
 
-    /// Must run on MainActor before the first `Runtime.acquire`.
     @MainActor static func registerDefaultFactories() {
         guard !registered else { return }
         registered = true
-        // Prime the app-lifetime observer now, not on first pipeline build: an
-        // app launched behind the lock screen builds no pipeline until unlock,
-        // and track changes in that window would otherwise be lost.
         _ = NowPlayingMonitor.shared
         Runtime.extraSourceFactories.append(nowPlayingFactory)
         Runtime.extraSourceFactories.append { options in

@@ -1,36 +1,22 @@
 import Foundation
 
-/// A named set of `project.json` property values for one base wallpaper. Workshop presets and "save
-/// my current tweaks" are the same object: a Workshop preset item is a published file whose manifest
-/// carries `dependency` (the base wallpaper) plus a `preset` map, which is exactly what a locally
-/// authored preset holds. Keeping one model is what lets a downloaded preset be edited, re-saved,
-/// and exported like any other. Values are applied as a layer, not baked into the descriptor: scene
-/// defaults → preset → the user's per-screen increment. That ordering is what makes "reset to
-/// preset" a matter of dropping the increment.
 public struct ScenePreset: Identifiable, Codable, Equatable, Sendable {
     public enum Source: Equatable, Sendable {
-        /// Downloaded Workshop preset item; the payload is its own workshop id,
-        /// distinct from `baseWorkshopID`.
+        /// Its own workshop id, distinct from `baseWorkshopID`.
         case workshop(workshopID: String)
         case local
     }
 
-    /// Workshop presets key on their workshop id so re-downloading updates in
-    /// place instead of accumulating duplicates; local presets get a UUID.
+    /// Workshop presets key on their workshop id; local presets get a UUID.
     public let id: String
     public var name: String
-    /// Workshop id of the wallpaper these values belong to. A preset is
-    /// meaningless without it — applying one to a different scene would push
-    /// unrelated keys at the renderer.
+    /// Workshop id of the wallpaper these values belong to; applying a preset to a
+    /// different scene would push unrelated keys at the renderer.
     public let baseWorkshopID: String
     public var values: [String: WallpaperEngineProjectPropertyValue]
     public let source: Source
     public let createdAt: Date
-    /// Set once the user renames this preset, and only then. Re-downloading a Workshop preset brings
-    /// its published title back. Keeping the stored name unconditionally would also pin a title the
-    /// author later changed upstream; adopting the incoming one unconditionally would discard the
-    /// user's label. Neither is recoverable from the names alone — "differs from what we hold"
-    /// describes both cases — so the rename records itself.
+    /// Set once the user renames this preset, and only then.
     public private(set) var hasUserAssignedName: Bool
 
     private init(
@@ -51,7 +37,6 @@ public struct ScenePreset: Identifiable, Codable, Equatable, Sendable {
         self.hasUserAssignedName = hasUserAssignedName
     }
 
-    /// The rename itself, so the flag can never drift from the name it explains.
     public func renamed(to newName: String) -> ScenePreset {
         var copy = self
         copy.name = newName
@@ -99,10 +84,8 @@ public struct ScenePreset: Identifiable, Codable, Equatable, Sendable {
         case id, name, baseWorkshopID, values, source, createdAt, hasUserAssignedName
     }
 
-    /// Hand-written only because `hasUserAssignedName` arrived after presets
-    /// were already on disk. The synthesized decoder throws on a missing key,
-    /// and `GlobalSettings` decodes the library entry-by-entry — so a throw here
-    /// would not surface as an error, it would silently drop every stored preset.
+    /// Do not fall back to the synthesized decoder: it throws on a missing key, and the
+    /// entry-by-entry library decode would silently drop every stored preset.
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(String.self, forKey: .id)
@@ -117,8 +100,6 @@ public struct ScenePreset: Identifiable, Codable, Equatable, Sendable {
             try container.decodeIfPresent(Bool.self, forKey: .hasUserAssignedName) ?? false
     }
 
-    /// Keys whose value the user changed away from the preset. Drives "reset to
-    /// preset" affordances without having to diff against the schema defaults.
     public static func incrementDivergingFromPreset(
         preset: ScenePreset?,
         increment: [String: WallpaperEngineProjectPropertyValue]

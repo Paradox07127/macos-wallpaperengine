@@ -3,13 +3,6 @@ import Testing
 import LiveWallpaperCore
 @testable import LiveWallpaper
 
-/// A metric group no placed widget reads is not sampled at all — the source
-/// fills its slot with a literal `0` (`"normal"` for pressure). Those
-/// placeholders are indistinguishable from a real idle reading once they are in
-/// the series, so a widget added to a running board drew a fabricated flat
-/// history. Nothing asserted the reset that fixes it, and
-/// `SampleDemandTests.noCPUWidgetSkipsCPUSampling` characterizes the sentinel
-/// itself, so deleting the reset left every test green.
 @Suite("Monitor history placeholder handling")
 @MainActor
 struct MonitorHistoryPlaceholderTests {
@@ -56,9 +49,6 @@ struct MonitorHistoryPlaceholderTests {
         #expect(context.readingsNotice != nil)
     }
 
-    /// The six situations R01 has to keep apart, in one series: nothing yet,
-    /// a real idle reading, a failed read, recovery, and a re-push of an
-    /// instant already recorded.
     @Test("Baseline, a real zero, a failed read, recovery, and a re-push stay distinct")
     func availabilityTransitionsAreDistinguishable() {
         let store = MonitorHistoryStore()
@@ -71,7 +61,6 @@ struct MonitorHistoryPlaceholderTests {
 
         #expect(store.current.sampleTimes == [100, 101, 102, 103])
         #expect(store.current.cpuTotal == [0.4, 0, nil, 0.2])
-        // The failed read must not add a "0%" segment, nor move the peak.
         #expect(store.current.cpuPeak == 0.4)
     }
 
@@ -177,9 +166,8 @@ struct MonitorHistoryPlaceholderTests {
         #expect(history.values(history.diskRead, in: window) == [0, 42])
     }
 
-    /// Provenance-carrying frame: `metricSamples` is how a snapshot already says
-    /// a group produced no reading, so the history reads that rather than
-    /// guessing from the placeholder zero beside it.
+    /// Provenance-carrying frame: `metricSamples` is how a snapshot says a group produced
+    /// no reading.
     private static func provenanced(
         at time: Double, cpuTotal: Double, cpuAvailable: Bool
     ) -> MonitorSnapshot {
@@ -217,11 +205,9 @@ struct MonitorHistoryPlaceholderTests {
     func resetClearsPlaceholderSeries() {
         let store = MonitorHistoryStore(capacity: 120)
 
-        // Board showing only network: CPU arrives as a placeholder zero every tick.
-        // Strictly increasing and non-zero: `ingest` treats 0 as "absent" and
-        // drops any sample that does not advance the clock. Each tick carries
-        // its own measurement time, as a real poll does — without one an
-        // unchanged reading is a republish, not a sample.
+        // Times must be strictly increasing and non-zero: `ingest` treats 0 as absent and drops
+        // a sample that does not advance the clock, and without a measurement time an unchanged
+        // reading is a republish, not a sample.
         for index in 1...10 {
             var placeholder = Self.snapshot(cpuTotal: 0)
             placeholder.timestamp = Double(index)
@@ -233,14 +219,12 @@ struct MonitorHistoryPlaceholderTests {
 
         store.reset()
 
-        // A CPU widget added now must start from nothing, not from ten fake zeros.
         #expect(store.current.cpuTotal.isEmpty)
         #expect(store.current.sampleTimes.isEmpty)
     }
 
-    /// Control: a real zero reading is byte-identical to the placeholder, which is
-    /// exactly why the series cannot be filtered after the fact and the reset has
-    /// to happen when the sampled set grows.
+    /// Control: a real zero reading is byte-identical to the placeholder, so the series
+    /// cannot be filtered after the fact.
     @Test("A real idle reading is indistinguishable from the placeholder")
     func realIdleReadingLooksLikeThePlaceholder() {
         let store = MonitorHistoryStore(capacity: 120)
@@ -251,11 +235,6 @@ struct MonitorHistoryPlaceholderTests {
     }
 }
 
-/// Every board host is pushed the same snapshot from the same broker, so a
-/// history store per display kept N copies of one series — and they drifted,
-/// because a display that is hidden stops being pushed while the visible one
-/// keeps accumulating. Two screens showing the same CPU widget then drew two
-/// different charts.
 @Suite("Monitor history sharing across displays")
 @MainActor
 struct MonitorHistorySharingTests {
@@ -282,8 +261,6 @@ struct MonitorHistorySharingTests {
         #expect(hidden.historyStore.current.cpuTotal == visible.historyStore.current.cpuTotal)
     }
 
-    /// What makes sharing safe without touching the push path: N hosts each
-    /// ingesting the same snapshot must record one sample, not N.
     @Test("the same snapshot ingested by every host is recorded once")
     func repeatedIngestOfOneSnapshotIsIdempotent() {
         let shared = MonitorHistoryStore()
@@ -300,8 +277,6 @@ struct MonitorHistorySharingTests {
         #expect(shared.current.cpuTotal == [0.42])
     }
 
-    /// The preview builds its own board with no store handed in, and must not
-    /// end up writing into the desktop's series.
     @Test("a model given no store gets one of its own")
     func unsharedModelIsIndependent() {
         let mine = DataModel()

@@ -3,9 +3,6 @@ import Foundation
 @testable import LiveWallpaper
 import Testing
 
-/// Behavior guard for the manual-bookmark resolution path. The security-scope
-/// open/close around validation is not observable headless (plain file URLs
-/// no-op startAccessing); these only pin the validation semantics around it.
 @Suite("WPE engine-assets manual bookmark resolution") @MainActor
 struct WPEEngineAssetsBookmarkResolutionTests {
     private func withSavedBookmarkState(_ body: () -> Void) {

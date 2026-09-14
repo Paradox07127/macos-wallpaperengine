@@ -3,18 +3,8 @@
 import Metal
 import Testing
 
-/// The transpile path is fragment-only: it never runs a workshop `.vert`, and rebuilds the
-/// varyings that `.vert` would have written from a per-family table. A family with no entry
-/// gets a screen-UV ramp, which the shader then uses as whatever the varying meant.
-///
-/// `lens_distortion` (workshop 2811235087) reads three of them, and the ramp made the
-/// distortion strength EQUAL to the chromatic-aberration strength: the `amount - ca` tap
-/// cancelled to an identity sample while the other two ran off the edge and clamped, so on
-/// 3647999330 the post layer came out with red pinned to 171 (95% of pixels) and green to
-/// 162 (92%) — the input's corner texel — over an untouched blue channel.
 @Suite("WPE workshop varying reconstruction")
 struct WPEWorkshopVaryingReconstructionTests {
-    /// Mirrors the declarations and the reads of the real `lens_distortion.frag`.
     private static let lensSource = """
     uniform sampler2D g_Texture0;
     uniform float u_alpha;
@@ -40,9 +30,7 @@ struct WPEWorkshopVaryingReconstructionTests {
         ).mslSource
     }
 
-    /// The "already declared" check was a substring match, so a shader carrying
-    /// `u_sizeFactor` was taken to have `u_size` and the reconstruction referenced a
-    /// uniform nothing declared — the whole layer went to `mslLibraryFailed`.
+    /// A substring "already declared" check would take `u_sizeFactor` for `u_size` and reference a uniform nothing declared.
     @Test("A uniform whose name merely contains a needed one does not stand in for it")
     func lookalikeUniformDoesNotSuppressInjection() throws {
         let lookalike = "uniform float u_sizeFactor;\n" + Self.lensSource
@@ -62,8 +50,6 @@ struct WPEWorkshopVaryingReconstructionTests {
         #expect(!msl.contains("v_Transforms = float4(in.uv, in.uv)"))
         #expect(!msl.contains("varying 'v_Distorsion'"))
         #expect(!msl.contains("varying 'v_Transforms'"))
-        // lens_distortion.vert:29 / :35 — the uniforms only the .vert declared, injected so
-        // the reconstruction has real values instead of reading nothing.
         #expect(msl.contains("float2(u_distorsion1, u_distorsion2 + u_distorsion2) * -u_general"))
         #expect(msl.contains("(1.0 - u_center - 0.5) * u_general - 0.5"))
         // `.zw` is the aspect·size divisor, so the `.xy` downgrade must not apply here.
@@ -89,8 +75,6 @@ struct WPEWorkshopVaryingReconstructionTests {
         #expect(on.contains("u_aberration * 0.1"))
     }
 
-    /// Control: the rule is keyed on the effect family, so a shader that merely declares the
-    /// same varyings keeps the old fallback AND the diagnostic that marks it as unreconstructed.
     @Test("A shader outside the family keeps the screen-UV fallback")
     func otherShadersKeepTheFallback() throws {
         let msl = try translate(shaderName: "workshop/9999999999/effects/something_else")
@@ -132,9 +116,7 @@ struct WPEWorkshopVaryingReconstructionTests {
     }
     """
 
-    /// `v_PixelSize` is the per-tap STEP in UV — a few thousandths. The screen-UV fallback
-    /// made it a whole frame, so the 43-tap disc averaged the entire picture: on 3647999330
-    /// the composite sat 30/255 off the pre-DOF frame with contrast crushed from 68 to 50.
+    /// `v_PixelSize` is the per-tap STEP in UV — a few thousandths, not a full frame.
     @Test("The depth-of-field step comes from g_TexelSize, not the screen UV")
     func reconstructsDepthOfFieldStep() throws {
         let gaussian = try translate(
@@ -142,10 +124,9 @@ struct WPEWorkshopVaryingReconstructionTests {
             source: Self.gaussianSource,
             comboValues: ["QUALITY": 1, "ANAMORPHIC": 0]
         )
-        // The declaration keeps its default initializer; the reconstruction assigns over it.
         #expect(!gaussian.contains("varying 'v_PixelSize'"))
         #expect(gaussian.contains("v_PixelSize = (g_TexelSize + g_TexelSize)"))
-        // gaussian.vert:20 `(QUALITY + 1.0) * 0.6`, folded because QUALITY is compile-time.
+        // gaussian.vert's `(QUALITY + 1.0) * 0.6`, folded because QUALITY is compile-time.
         #expect(gaussian.contains("qualityNormalizer = 1.2"))
 
         let bokeh = try translate(
@@ -156,7 +137,6 @@ struct WPEWorkshopVaryingReconstructionTests {
         #expect(bokeh.contains("v_Aperture = 3.0 * u_aperture"))
         #expect(bokeh.contains("v_Gamma = float2(u_gamma, 1.0 / u_gamma)"))
         #expect(bokeh.contains("v_Highlights = float2(-0.999, 0.999) * u_lightFactor"))
-        // bokeh.frag declares neither, so both must be injected for the step to resolve.
         #expect(bokeh.contains("g_TexelSize"))
         #expect(bokeh.contains("g_Texture0Resolution"))
 
@@ -169,8 +149,6 @@ struct WPEWorkshopVaryingReconstructionTests {
         #expect(depthOfField.contains("v_Aperture = 15.0 * u_aperture"))
     }
 
-    /// Control: the DOF rule is keyed on the varying signature, so a shader that only shares
-    /// the `v_PixelSize` name keeps its fallback.
     @Test("A lone v_PixelSize does not claim the depth-of-field rule")
     func depthOfFieldNeedsItsFullSignature() throws {
         let msl = try translate(
@@ -188,8 +166,6 @@ struct WPEWorkshopVaryingReconstructionTests {
 
     // MARK: - fade (3124095265) and Simple_Audio_Bars (3082978660)
 
-    /// fade's gradient coordinate carries its own offset/rotate/scale. It is only identity
-    /// while those sit at their defaults — 3647999330's first fade layer authors scale 0.95.
     @Test("fade rebuilds its gradient coordinate from the authored transform")
     func reconstructsFadeCoordinate() throws {
         let msl = try translate(
@@ -208,9 +184,7 @@ struct WPEWorkshopVaryingReconstructionTests {
         #expect(msl.contains("wpe_rotate_vec2(in.uv - g_Offset - 0.5, -g_Direction) * g_Scale + 0.5"))
     }
 
-    /// Simple_Audio_Bars writes `p_TexCoord = a_TexCoord`, so its screen-UV default is exact
-    /// and it deliberately has no rule — the diagnostic marker there is conservative, not a
-    /// defect. Its `v_TexCoord` and `i_DCorrectingFactor` are NOT identity and do have rules.
+    /// `p_TexCoord = a_TexCoord` upstream, so its screen-UV default is exact and it deliberately has no rule — the diagnostic there is conservative, not a defect.
     @Test("Audio bars rebuild the aspect factor and the transformed coordinate only")
     func reconstructsAudioBarsFactors() throws {
         let source = """
@@ -233,20 +207,15 @@ struct WPEWorkshopVaryingReconstructionTests {
             "i_DCorrectingFactor = wpe_safe_ratio(g_Texture0Resolution.x, g_Texture0Resolution.y)"
         ))
         #expect(!transformed.contains("v_TexCoord = in.uv;"))
-        // The documented exception: this one really is the raw texcoord.
         #expect(transformed.contains("p_TexCoord = in.uv;"))
 
-        // Control: without TRANSFORM the .vert leaves v_TexCoord raw, so the default is exact.
         let plain = try translate(shaderName: name, source: source, comboValues: [:])
         #expect(plain.contains("v_TexCoord = in.uv;"))
     }
 
     // MARK: - frame_builder (workshop 3647393229)
 
-    /// Everything frame_builder's `.vert` writes is in PIXELS, and `v_TexCoord.xy` is SIGNED
-    /// around the layer centre — the fragment picks a corner by its sign. The 0…1 fallback
-    /// collapsed the shape and sent every pixel down the same corner branch, which drew
-    /// 3647999330's launcher panels as a diagonal wedge instead of a rounded frame.
+    /// frame_builder's `.vert` writes PIXELS, and `v_TexCoord.xy` is SIGNED around the layer centre — the fragment picks a corner by its sign.
     @Test("frame_builder rebuilds its pixel-space shape and keeps the raw UV in .zw")
     func reconstructsFrameBuilderShape() throws {
         let msl = try translate(
@@ -277,17 +246,13 @@ struct WPEWorkshopVaryingReconstructionTests {
         #expect(msl.contains("length(g_LayerModelMatrix[0].xy)"))
         // TYPE 0 is a round shape, so the notch is measured on the diagonal.
         #expect(msl.contains("v_Transform.x = length(float2(v_Transform.x))"))
-        // `.zw` is the framebuffer UV; the historical `.xy` downgrade must not run here,
-        // so the fragment's own read still names `.zw` after the texture rewrite.
+        // `.zw` is the framebuffer UV; the `.xy` downgrade must not run here, so the fragment's own read still names `.zw` after the texture rewrite.
         #expect(msl.contains("g_Texture0.sample(wpeSampler0, v_TexCoord.zw)"))
     }
 
     // MARK: - audio-reactive engine effects (2370927443 / issue #133)
 
-    /// `shake.frag` declares only `varying float v_AudioPulse;` — every audio uniform the
-    /// response needs lives in `shake.vert`, which the fragment-only path never runs. Without
-    /// the injection the reconstruction's uniform gate fails, the pulse collapses to a
-    /// constant 0 and `effects/shake` degrades into a plain copy (2370927443 looked deaf).
+    /// `shake.frag` declares only `varying float v_AudioPulse;` — every audio uniform lives in `shake.vert`, which the fragment-only path never runs.
     private static let shakeSource = """
     #version 410 core
     #define AUDIOPROCESSING 3
@@ -336,8 +301,6 @@ struct WPEWorkshopVaryingReconstructionTests {
         #expect(msl.contains("wpe_audio_response16(g_AudioSpectrum16Left, g_AudioSpectrum16Right, 3,"))
         #expect(!msl.contains("v_AudioPulse = 0.0"))
         #expect(!msl.contains("WPE-DIAGNOSTIC: varying 'v_AudioPulse'"))
-        // All seven .vert-only uniforms reach the MSL, spectra as arrays and the rest as
-        // scalars/vectors read out of the packed uniform buffer.
         #expect(msl.contains("float g_AudioSpectrum16Left[16];"))
         #expect(msl.contains("float g_AudioSpectrum16Right[16];"))
         #expect(msl.contains("float g_AudioFrequencyMin = u.vals["))
@@ -357,9 +320,6 @@ struct WPEWorkshopVaryingReconstructionTests {
         #expect(left.contains("wpe_audio_response16(g_AudioSpectrum16Left, g_AudioSpectrum16Right, 1,"))
     }
 
-    /// Control: at AUDIOPROCESSING 0 `shake.vert` neither declares nor writes `v_AudioPulse`,
-    /// and the fragment's reads are behind the same guard — so the varying is gone and the
-    /// injected block must be stripped with it instead of spending 34 uniform slots.
     @Test("shake at AUDIOPROCESSING 0 carries no audio uniform and no diagnostic")
     func shakeWithoutAudioProcessingDeclaresNoAudioUniforms() throws {
         let msl = try translate(

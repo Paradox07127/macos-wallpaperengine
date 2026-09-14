@@ -1,9 +1,6 @@
 import AppKit
 import LiveWallpaperCore
 
-/// Independently switchable overlay modules. Each owns its own window
-/// per display, so Music can float on top while the Monitor board stays on the
-/// desktop — or run with the Monitor board switched off entirely.
 enum MonitorOverlayModule: String, CaseIterable, Hashable, Sendable {
     case monitor
     case music
@@ -26,7 +23,6 @@ enum MonitorOverlayModule: String, CaseIterable, Hashable, Sendable {
     }
 }
 
-/// Identifies one overlay window: a display plus the module rendering into it.
 struct MonitorOverlayHostKey: Hashable, Sendable {
     var screenID: CGDirectDisplayID
     var module: MonitorOverlayModule
@@ -54,7 +50,6 @@ struct MonitorOverlayVisibilityDecision: Equatable, Sendable {
     }
 }
 
-/// Pure visibility policy shared by the live controller and characterization tests.
 enum MonitorOverlayVisibilityPolicy {
     static func resolve(
         hosts: [MonitorOverlayVisibilityInput],
@@ -95,18 +90,14 @@ enum MonitorOverlayVisibilityPolicy {
     }
 }
 
-/// Owns one monitor-widget overlay panel per display.
 @MainActor
 final class OverlayController: NSObject {
     static let shared = OverlayController()
 
-    /// ScreenManager stores into the screen's `monitorOverlay.board`.
     var onOverlayEdited: ((CGDirectDisplayID, MonitorBoardConfiguration) -> Void)?
 
-    /// Global + local mouse monitors, live only while a host is `.widgetsOnly`.
     private var pointerMonitors: [Any] = []
 
-    /// Each module owns its content independently of the widget board.
     private enum HostContent {
         case monitor(HostView, MonitorBoardConfiguration)
         case music(MusicHostView, MusicOverlayConfiguration)
@@ -192,23 +183,14 @@ final class OverlayController: NSObject {
     }
 
     private var hosts: [MonitorOverlayHostKey: Host] = [:]
-    /// One series per metric for the whole machine, not one per display. Every
-    /// board host is pushed the same snapshot from the same broker, so a store
-    /// each meant N copies of one history — and they drifted, because a hidden
-    /// display stops being pushed while the visible one keeps accumulating.
+    /// One series per machine, not per display: per-host stores drifted because a hidden display stops being pushed.
     private let sharedBoardHistory = MonitorHistoryStore()
 
-    /// Everything the settings inspector's frozen preview may draw: the last
-    /// snapshot the desktop was actually handed, plus the series built from it.
-    /// Reading it starts nothing — the preview takes no runtime lease, so this
-    /// is only ever whatever the desktop already collected.
     var lastDeliveredData: (snapshot: MonitorSnapshot, history: MonitorHistorySnapshot)? {
         guard let update = runtime.broker.latest(after: 0) else { return nil }
         return (update.snapshot, sharedBoardHistory.current)
     }
 
-    /// Pushes a changed capture policy onto overlays that already exist; new
-    /// ones read it in `OverlayWindow.init`.
     func applyCapturePolicyToLiveOverlays() {
         let sharing = WallpaperCapturePolicy.windowSharingType
         for host in hosts.values {
@@ -253,13 +235,8 @@ final class OverlayController: NSObject {
         super.init()
     }
 
-    /// Handed to every board host so a Weather tile can read the live sky.
-    /// Set by `ScreenManager` before it applies overlays; a host built earlier
-    /// keeps nil until it is rebuilt.
     var weatherService: WeatherReactiveService?
 
-    /// Boards already on the desktop get it too; `apply` for an existing host
-    /// only pushes configuration.
     func updateWeatherService(_ service: WeatherReactiveService?) {
         weatherService = service
         for host in hosts.values {
@@ -386,9 +363,7 @@ final class OverlayController: NSObject {
         }
     }
 
-    /// `animated: false` for displays that are going away — AppKit constrains a
-    /// still-visible window onto a surviving screen, so a fade there parks the
-    /// panel on the wrong display for its duration.
+    /// `animated: false` for displays that are going away — a fade would park the panel on the wrong display because AppKit constrains a still-visible window onto a surviving screen.
     private func teardown(key: MonitorOverlayHostKey, animated: Bool = true) {
         guard let host = hosts.removeValue(forKey: key) else { return }
         defer { refreshPointerTracking() }
@@ -405,7 +380,6 @@ final class OverlayController: NSObject {
         reconcileVisibilityAndRuntime()
     }
 
-    /// Config override wins over the system setting, matching `HostView`.
     private func reducesMotion(for host: Host) -> Bool {
         if let override = host.boardConfig?.reduceMotionOverride {
             return override
@@ -448,7 +422,6 @@ final class OverlayController: NSObject {
         }
     }
 
-    /// Drop overlays for displays no longer live (`ScreenManager` pairs with per-screen `apply`).
     func retainOnly(_ liveScreenIDs: Set<CGDirectDisplayID>) {
         // Snapshot keys — teardown mutates `hosts` (can't iterate live key view).
         for key in Array(hosts.keys) where !liveScreenIDs.contains(key.screenID) {
@@ -474,7 +447,6 @@ final class OverlayController: NSObject {
     }
 
     #if DEBUG
-    // Test-only introspection; no production reader.
     var hasActiveOverlay: Bool {
         !hosts.isEmpty
     }
@@ -491,8 +463,6 @@ final class OverlayController: NSObject {
         hosts[MonitorOverlayHostKey(screenID: screenID, module: .music)]?.musicConfig
     }
 
-    /// The very callback `apply` installed on that module's board view, so a
-    /// test drives the real write-back path instead of restating it.
     func boardEditCallback(
         screenID: CGDirectDisplayID,
         module: MonitorOverlayModule
@@ -507,10 +477,7 @@ final class OverlayController: NSObject {
     #endif
 
     private func updateInteractive(_ host: Host) {
-        // A widget can claim the pointer on its own (Now Playing's transport) without the whole board opting in.
-        // That window flag is display-wide, and `HostView.hitTest` can't narrow it — nil doesn't hand the click to
-        // the window below, it just leaves it unhandled, which once froze the whole desktop under an interactive
-        // full-screen overlay. So the window stays click-through until the pointer is over a live control.
+        // The window stays click-through until the pointer is over a live control: `hitTest` nil does not hand the click through and would freeze the desktop.
         if case .monitor(let view, let config) = host.content {
             view.setPointerScope(HostView.pointerScope(for: config, isEditing: view.isEditing))
         }
@@ -518,7 +485,6 @@ final class OverlayController: NSObject {
         refreshPointerTracking()
     }
 
-    /// Sets one window's mouse-event flag from the pointer's current position.
     private func applyWindowMouseEvents(to host: Host, screenPoint: NSPoint? = nil) {
         guard !OverlayPointerGate.pointerIsCaptured else { return }
         let scope = host.pointerScope
@@ -535,12 +501,7 @@ final class OverlayController: NSObject {
         return host.acceptsPointer(atLocalPoint: host.view.convert(inWindow, from: nil))
     }
 
-    /// One monitor per host: only `.widgetsOnly` needs the pointer followed, and only while such a host
-    /// exists. The local monitor covers the window just made interactive — once the pointer is ours, the
-    /// global monitor stops seeing it, and without the local one it could never leave.
-    /// Pure predicate behind `refreshPointerTracking`: a hidden host has no
-    /// window on screen to receive events, so it must not keep the pointer
-    /// monitors (and their per-event hit-testing work) alive.
+    /// Hidden hosts must not keep pointer monitors alive. Once the pointer is ours the global monitor stops seeing it, so a local monitor is required or it could never leave.
     nonisolated static func needsPointerTracking(_ hosts: [(scope: PointerScope, isVisible: Bool)]) -> Bool {
         hosts.contains { $0.scope == .widgetsOnly && $0.isVisible }
     }
@@ -613,21 +574,11 @@ final class OverlayController: NSObject {
         scheduleRuntimeReconciliation()
     }
 
-    /// Same-level, same-screen z-order used to be creation order — whichever
-    /// module was enabled second landed on top and stayed there, so opening
-    /// Monitor after Music let it steal Music's transport-control clicks with
-    /// no way to recover short of disabling and re-enabling both.
     // MARK: - Cover capture
 
-    /// Serializes overlay captures. `forcesOpaquePanels` is one flag per board,
-    /// so two overlapping captures would have the first one's restore put the
-    /// glass back while the second is still reading — and that second cover
-    /// comes back with holes where the widgets are.
+    /// Serializes overlay captures: overlapping captures would restore glass while the second is still reading, punching holes in the cover.
     private var overlayCaptureChain: Task<[NSImage], Never>?
 
-    /// Bitmaps of this display's visible overlay layers, bottom-to-top, for
-    /// compositing into a scheme cover. Reads the live host views, so the
-    /// widgets carry the readings they were showing at that moment.
     func captureOverlayLayers(screenID: CGDirectDisplayID) async -> [NSImage] {
         let previous = overlayCaptureChain
         let task = Task { @MainActor [weak self] in
@@ -639,11 +590,7 @@ final class OverlayController: NSObject {
         return await task.value
     }
 
-    /// `cacheDisplay` skips a `glassEffect` subtree outright, so a board drawn
-    /// with Liquid Glass on has to be pushed to its painted branch first. That
-    /// happens **once for the whole capture**, not per module: the boards are on
-    /// the desktop, and flipping them module by module makes the widgets visibly
-    /// blink from glass to painted and back once per layer.
+    /// `cacheDisplay` skips a `glassEffect` subtree, so push to the painted branch once for the whole capture — per-module flips would blink widgets on the desktop.
     private func performOverlayCapture(screenID: CGDirectDisplayID) async -> [NSImage] {
         let modules = Self.stackingOrder(MonitorOverlayModule.allCases)
         let visible = modules.compactMap { module -> Host? in
@@ -662,9 +609,7 @@ final class OverlayController: NSObject {
             for board in glassBoards {
                 board.setForcesOpaquePanels(true)
             }
-            // The rebuilt roots have to be committed *and* laid out before the
-            // bitmap read; `Task.yield()` alone can come back before SwiftUI has
-            // drawn, and the capture then still holds the glass tree.
+            // `Task.yield()` alone can return before SwiftUI has drawn; the rebuilt roots must be committed and laid out before the bitmap read.
             try? await Task.sleep(for: .milliseconds(32))
             for board in glassBoards {
                 board.layoutSubtreeIfNeeded()
@@ -708,10 +653,7 @@ final class OverlayController: NSObject {
         }
     }
 
-    /// A metric group no placed widget reads isn't sampled at all — the source still emits a literal 0 for
-    /// it (`"normal"` for pressure), indistinguishable from a real idle reading once in the series. A
-    /// widget added later would draw a fabricated flat history, so the series restarts whenever the sampled
-    /// set grows.
+    /// Restart the series when the sampled set grows: unsampled groups emit 0 / `"normal"`, indistinguishable from idle, so a later widget would draw fabricated flat history.
     nonisolated static func historyResetRequired(
         previous: Set<MonitorWidgetKind>,
         next: Set<MonitorWidgetKind>
@@ -766,7 +708,6 @@ final class OverlayController: NSObject {
         }
     }
 
-    /// Sole mutator of this controller's Runtime lease.
     private func runRuntimeReconciliationLoop() async {
         while true {
             let revision = runtimeReconciliationRevision
@@ -811,10 +752,7 @@ final class OverlayController: NSObject {
                 appliedRuntimeState.lease = lease
                 appliedRuntimeState.isPaused = false
                 appliedRuntimeState.options = options
-                // A new session, not a resume: the store outlives every host
-                // now, so without this the first board opened after the last
-                // one closed drew the previous session's curves as if they
-                // were current, until the new samples pushed them off.
+                // Reset on a new session: the store outlives hosts, so the first board after the last closed would draw the previous session's curves.
                 sharedBoardHistory.reset()
                 return
             }
@@ -822,19 +760,12 @@ final class OverlayController: NSObject {
             guard let lease = appliedRuntimeState.lease else { return }
 
             if appliedRuntimeState.options != options {
-                // A metric group no placed widget reads isn't sampled — the source still emits a literal 0
-                // (`"normal"` for pressure), indistinguishable from real idle data once in the series. A widget
-                // added later would draw a fabricated flat history, so restart the series when the sampled set
-                // grows. Both edit paths (overlay-side, Settings-side) funnel here.
                 let resetsHistory = Self.historyResetRequired(
                     previous: appliedRuntimeState.options?.activeWidgetKinds ?? [],
                     next: options.activeWidgetKinds ?? []
                 )
                 await lease.updateOptions(options).value
-                // After the await, not before: the pump can push a pre-rebuild
-                // frame while it is suspended, and that frame still carries the
-                // placeholder zeros this reset exists to remove — clearing
-                // first just let them back in.
+                // Reset after the await, not before: a pre-rebuild frame still carries the placeholder zeros this reset exists to remove.
                 if resetsHistory { sharedBoardHistory.reset() }
                 appliedRuntimeState.options = options
             }
@@ -845,7 +776,6 @@ final class OverlayController: NSObject {
         }
     }
 
-    /// Enable delivery only after matching runtime state applied (hidden boards already suspended sync).
     private func applyDeliveryState() {
         var newlyVisibleHosts: [Host] = []
         for host in hosts.values {
@@ -883,10 +813,7 @@ final class OverlayController: NSObject {
         guard pumpTask == nil else { return }
         pumpTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
-                // Re-read every turn rather than capturing once: the board's
-                // refresh slider moves without the visibility change that is the
-                // only thing which restarts this task. A fixed 1s here is what
-                // made the sub-second steps sample power and deliver nothing.
+                // Re-read every turn rather than capturing once: the refresh slider moves without the visibility change that restarts this task.
                 let interval = self?.pumpIntervalSeconds ?? 1
                 do {
                     try await Task.sleep(for: .seconds(interval))
@@ -906,20 +833,13 @@ final class OverlayController: NSObject {
         pumpTask = nil
     }
 
-    /// Paint immediately on a newly visible host (don't wait for next generation).
     private func primeHost(_ host: Host) {
         guard host.isVisible, host.isDeliveringSnapshots else { return }
         guard let update = runtime.broker.latest(after: 0) else { return }
         pushTrackingPointerScope(update.snapshot, to: host)
     }
 
-    /// Now Playing's `wantsPointer` is snapshot-driven (it needs a drawn track),
-    /// so a push can flip a host's `pointerScope` without any config change.
-    /// Skipping the refresh left two states behind: an overlay created mid-song
-    /// drew transport controls on a still click-through window, and a pointer
-    /// parked on the controls when the track ended kept the window interactive
-    /// while `hitTest` returned nil — the frozen-desktop failure `updateInteractive`
-    /// documents, resurrected through the data path.
+    /// A snapshot push can flip `pointerScope` without a config change; skipping the refresh would resurrect the frozen-desktop failure.
     private func pushTrackingPointerScope(_ snapshot: MonitorSnapshot, to host: Host) {
         let scopeBefore = host.pointerScope
         host.push(snapshot)

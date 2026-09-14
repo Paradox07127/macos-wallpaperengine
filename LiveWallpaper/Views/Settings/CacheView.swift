@@ -22,14 +22,12 @@ struct WPECacheManagementView: View {
     @Binding private var pendingSearchAnchor: SettingsSearchAnchor?
 
     #if DEBUG
-    /// DEBUG-only temp dirs left by test runs.
     @State var testArtifacts: TestTempArtifacts.Summary = .empty
     @State var lastTestArtifactFreedBytes: UInt64?
     #endif
 
     /// Workshop browse JSON cache (folded into Storage total + Clear All).
     @Environment(WorkshopServices.self) var workshopServices
-    /// Steam library sizes need the Doctor security-scoped bookmark.
     @Environment(SteamCMDDoctorService.self) var doctorService
     /// Includes the separate video copies used by macOS System Wallpaper.
     @Environment(WallpaperExportService.self) var exportService
@@ -62,7 +60,6 @@ struct WPECacheManagementView: View {
             ]
         )
         .onAppear {
-            // Refresh disk sizes after changes outside this page.
             exportService.refresh()
             Task { await refreshStats() }
         }
@@ -82,7 +79,6 @@ struct WPECacheManagementView: View {
             .fixedSize(horizontal: false, vertical: true)
     }
 
-    // Shared formatters — list refreshes often; don't rebuild per row.
     var byteFormatter: ByteCountFormatter {
         WorkshopByteFormatter.kilobytesAndUp
     }

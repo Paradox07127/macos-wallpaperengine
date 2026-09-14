@@ -2,9 +2,6 @@ import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
-/// One overlay page's preview. A peer of the wallpaper preview, not one of its
-/// type branches — overlays sit *over* whatever wallpaper is playing, so both
-/// pages keep the wallpaper as backdrop and layer their own thing on it.
 struct OverlayPreviewArea: View {
     let screen: Screen
     let draft: DraftState
@@ -21,20 +18,13 @@ struct OverlayPreviewArea: View {
     @State private var musicDragTranslation: CGSize = .zero
     @State private var isDraggingMusicLayer = false
 
-    /// Stable frame of reference for the layer drag (see the gesture).
     private static let canvasSpace = "musicPreviewCanvas"
 
     var body: some View {
         Group {
             switch kind {
             case .monitor:
-                // Off means off on every page: drawing a live board for a
-                // display that is not showing one invites arranging widgets
-                // that will not appear, and left this the only overlay whose
-                // preview ignored its own switch.
                 if screenManager.monitorOverlay(for: screen).enabled {
-                    // The board preview owns drag-to-arrange, and already draws
-                    // itself on the shared canvas.
                     BoardPreviewArea(
                         screen: screen,
                         screenManager: screenManager,
@@ -68,19 +58,13 @@ struct OverlayPreviewArea: View {
     private var musicLayer: some View {
         let music = screenManager.monitorOverlay(for: screen).music
         if music.enabled {
-            // 1 Hz tick advances `context.now`, which is what drives the
-            // widget's own progress interpolation — no .animation needed.
-            // Paused while dragging: a rebuild mid-gesture re-runs the layout
-            // that the drag is reading from, which reads as a stutter.
+            // 1 Hz tick drives the widget's own progress interpolation; 3600 parks it
+            // while dragging, since a rebuild mid-gesture restarts the layout the drag reads.
             TimelineView(.periodic(from: .now, by: isDraggingMusicLayer ? 3600 : 1)) { timeline in
                 musicWidgetPreview(music: music, now: timeline.date)
-                    // The live readout rides the preview rather than the
-                    // inspector list: it describes what is on this canvas, and
-                    // over there it read as one more setting row.
                     .overlay(alignment: .topLeading) { nowPlayingReadout }
-                    // Full track key, not `trackID`: Apple Music reports no ID
-                    // at all, so keying on it never changed and the preview
-                    // kept the first track's artwork for the whole session.
+                    // Full track key, not `trackID`: Apple Music reports no ID, so keying on it
+                    // would never change and the preview would keep the first track's artwork.
                     .task(id: NowPlayingArtworkFetcher.trackKey(
                         for: NowPlayingMonitor.shared.currentState
                     )) {
@@ -92,9 +76,7 @@ struct OverlayPreviewArea: View {
         }
     }
 
-    /// Polled, not subscribed: the listener only pushes on change, and a 2 s
-    /// re-read of an in-memory value is cheaper than threading a subscription
-    /// down here. Never hit-testable — the layer under it is draggable.
+    /// Never hit-testable — the layer under it is draggable.
     private var nowPlayingReadout: some View {
         TimelineView(.periodic(from: .now, by: 2)) { _ in
             MusicStatusBadge(state: NowPlayingMonitor.shared.currentState, onGlass: true)
@@ -107,10 +89,8 @@ struct OverlayPreviewArea: View {
         .allowsHitTesting(false)
     }
 
-    /// The real widget view, sized and positioned by the same geometry the
-    /// board itself uses (`referenceWidth` = this display's width), so the
-    /// preview is WYSIWYG with the Monitor page rather than scaled against a
-    /// fixed reference board.
+    /// Sized by the same geometry the board uses (`referenceWidth` = this display's
+    /// width), so the preview is WYSIWYG with the Monitor page.
     private func musicWidgetPreview(music: MusicOverlayConfiguration, now: Date) -> some View {
         GeometryReader { geo in
             let geometry = MonitorBoardGeometry(
@@ -120,9 +100,8 @@ struct OverlayPreviewArea: View {
             )
             let cells = MusicOverlayLayout.cells(for: music.size)
             let footprint = geometry.pixelSize(columns: cells.columns, rows: cells.rows)
-            // Clamped into the safe area exactly as the desktop layer is, or a tile
-            // dropped against the preview's edge lands inside the menu bar there
-            // and under the Dock on the desktop.
+            // Clamped into the safe area exactly as the desktop layer is, or a tile at
+            // the edge lands under the menu bar or the Dock.
             let raw = CGRect(
                 origin: geometry.clampOrigin(
                     CGPoint(x: music.x * geo.size.width, y: music.y * geo.size.height),
@@ -155,9 +134,6 @@ struct OverlayPreviewArea: View {
             )
         }
         .coordinateSpace(name: Self.canvasSpace)
-        // A preview must not run a second copy of the live animations: the
-        // audio Canvas and the platter spin both stand down when suspended,
-        // mirroring the weather page's refusal to simulate particles here.
         .environment(\.monitorSuspended, true)
     }
 
@@ -167,8 +143,7 @@ struct OverlayPreviewArea: View {
         canvas: CGSize,
         geometry: MonitorBoardGeometry
     ) -> some Gesture {
-        // `.named` on the canvas, never the default `.local`: this gesture is
-        // attached to the very view that `.position` moves by the translation,
+        // `.named` on the canvas, never `.local`: `.position` moves this very view,
         // so a view-local origin re-bases every frame and the layer strobes.
         DragGesture(minimumDistance: 2, coordinateSpace: .named(Self.canvasSpace))
             .onChanged { value in
@@ -179,8 +154,6 @@ struct OverlayPreviewArea: View {
                 isDraggingMusicLayer = false
                 musicDragTranslation = .zero
                 guard canvas.width > 0, canvas.height > 0 else { return }
-                // Persist what the desktop will draw: the drop clamped into the
-                // safe area, not the raw canvas position.
                 let dropped = geometry.clampOrigin(
                     CGPoint(
                         x: music.x * canvas.width + value.translation.width,
@@ -201,9 +174,8 @@ struct OverlayPreviewArea: View {
     private func musicPreviewContext(music: MusicOverlayConfiguration, now: Date) -> MusicOverlayContext {
         let live = NowPlayingMonitor.shared.currentState
         var state = live.title.isEmpty ? Self.sampleNowPlayingState : live
-        // The monitor never carries artwork — that is attached downstream by
-        // the source — so borrow whatever the fetcher already has for this
-        // track; otherwise the desktop shows a cover and the preview doesn't.
+        // The monitor never carries artwork (attached downstream), so borrow the
+        // fetcher's copy or the preview shows no cover where the desktop does.
         if state.artwork == nil, let key = NowPlayingArtworkFetcher.trackKey(for: state) {
             state.artwork = previewArtwork[key]
         }
@@ -228,9 +200,8 @@ struct OverlayPreviewArea: View {
         previewArtwork = [key: data]
     }
 
-    /// Stand-in track when nothing real is playing, so style/size edits still
-    /// have something to react to. `positionSampledAt` is re-anchored on every
-    /// read so the sample never runs past its own duration and freezes full.
+    /// Stand-in track when nothing is playing. `positionSampledAt` is re-anchored
+    /// on every read so the sample never runs past its duration and freezes full.
     private static var sampleNowPlayingState: MonitorNowPlayingState {
         var state = MonitorNowPlayingState(phase: .playing, title: "Midnight Drive")
         state.artist = "The Neon Coast"
@@ -242,9 +213,6 @@ struct OverlayPreviewArea: View {
         return state
     }
 
-    /// Drawn once, not shipped as an asset: without a cover the poster style
-    /// has nothing to show while vinyl still draws its platter, which reads as
-    /// "poster lost its artwork" rather than "this stand-in has no cover".
     private static let sampleArtwork: Data? = {
         let side = 256
         let image = NSImage(size: NSSize(width: side, height: side))
@@ -275,10 +243,8 @@ struct OverlayPreviewArea: View {
         }
     }
 
-    /// Deliberately a static marker, not a particle simulation. Running a second
-    /// copy of the particle system just to fill a preview would cost real GPU
-    /// time for a surface the user looks at for a few seconds — and a fake
-    /// animation that didn't match the real one would be worse than none.
+    /// Deliberately a static marker, not a particle simulation: a second copy of
+    /// the particle system would cost real GPU time for a few seconds of looking.
     private var resolvedWeatherEffect: ParticleEffect {
         WeatherReactivePolicy.resolvedParticleEffect(
             chosen: draft.selectedParticleEffect,
@@ -313,7 +279,6 @@ struct OverlayPreviewArea: View {
 }
 
 private extension ParticleEffect {
-    /// Static stand-in glyph. Only used to mark the overlay in the preview.
     var previewSymbol: String {
         switch self {
         case .none: return "circle.dashed"
@@ -333,10 +298,6 @@ private extension ParticleEffect {
     }
 }
 
-/// What a preview shows when its overlay is switched off for this display.
-///
-/// Same recipe as the active badges, dialled down: this is the "nothing is
-/// running" state, not a live readout.
 struct OverlayOffNotice: View {
     let text: LocalizedStringKey
 

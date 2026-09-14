@@ -1,8 +1,6 @@
 import Foundation
 import LiveWallpaperCore
 
-/// WPE web bridge: deliver `window.wallpaperPropertyListener` defaults.
-/// `forFolder:` cold-start; `schema:` hot apply without re-parsing project.json.
 enum WallpaperEngineWebPropertyBridge {
     static func bootstrapScript(
         schema: WallpaperEngineProjectPropertySchema,
@@ -28,11 +26,9 @@ enum WallpaperEngineWebPropertyBridge {
                 }
             }
 
-            // Stage 1 — listener already defined.
             deliver(window.wallpaperPropertyListener);
             if (delivered) return;
 
-            // Stage 2 — intercept the page's assignment of the listener.
             try {
                 var current;
                 Object.defineProperty(window, 'wallpaperPropertyListener', {
@@ -141,8 +137,6 @@ enum WallpaperEngineWebPropertyBridge {
         """
     }
 
-    /// Synchronous disk read + JSON parse. Callers on hot paths should
-    /// cache the result and use the `schema:` overloads above.
     static func parseSchema(forFolder folderURL: URL) -> WallpaperEngineProjectPropertySchema? {
         let manifestURL = folderURL.appendingPathComponent("project.json")
         guard let data = try? Data(contentsOf: manifestURL),

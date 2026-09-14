@@ -8,9 +8,7 @@ public struct VideoEffectConfig: Codable, Equatable, Sendable {
     public var vignetteIntensity: Double = 0
     public var autoTimeTint: Bool = false
     public var weatherReactive: Bool = false
-    /// Whether live wind leans the particles. Off by default: the lean is
-    /// honest for the whole fall now that rain no longer accelerates, and an
-    /// ordinary breeze then reads as a gale across the desktop. Opt-in.
+    /// Whether live wind leans the particles. Off by default.
     public var weatherWind: Bool = false
     /// Whether the reported rain/snow intensity scales the density.
     public var weatherIntensity: Bool = true

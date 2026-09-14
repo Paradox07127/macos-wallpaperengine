@@ -9,7 +9,6 @@ struct WorkshopSettingsView: View {
 
     @AppStorage("loomscreen.workshop.blurMatureThumbnails.v1", store: .appScoped()) private var blurMatureThumbnails = true
     @AppStorage("loomscreen.workshop.hidesDownloaded.v1", store: .appScoped()) private var hidesDownloadedInBrowse = false
-    /// Stored in GlobalSettings for backup and restore.
     @State private var showsPresetsInBrowse: Bool
     @State private var defaultSort: WorkshopSortMode
     @State private var defaultTimeFrame: WorkshopTimeFrame
@@ -27,7 +26,6 @@ struct WorkshopSettingsView: View {
         _defaultTimeFrame = State(initialValue: BrowseViewModel.defaultTimeFrame(from: settings.workshopDefaultTimeFrame))
     }
 
-    /// Page overview summarizes readiness; failing steps show their reasons inline.
     var body: some View {
         Form {
             Section {
@@ -155,7 +153,6 @@ struct WorkshopSettingsView: View {
 
     // MARK: - Status bar
 
-    /// Uses the same readiness sources as the setup rows.
     private var facets: [WorkshopSetupFacet] {
         [
             WorkshopSetupFacet(
@@ -177,7 +174,6 @@ struct WorkshopSettingsView: View {
                 title: "Scene resources",
                 state: engineAssetsState
             ),
-            // Browsing works without an API key.
             WorkshopSetupFacet(
                 key: "apiKey",
                 anchor: .workshopSetup,
@@ -194,8 +190,6 @@ struct WorkshopSettingsView: View {
         .engineAssets(library: engineAssets, installer: engineInstaller)
     }
 
-    /// All three browse preferences commit together; the commit posts the
-    /// preset-visibility notification only when that field actually moved.
     private func persistBrowsePreferences() {
         GlobalSettingsCommit.apply(
             GlobalSettingsCommit.WorkshopPageFields(

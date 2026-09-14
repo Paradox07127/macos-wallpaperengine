@@ -202,9 +202,7 @@ struct WPERenderPipelineBuilderTests {
 
     @Test("TEXnFORMAT for an FBO slot comes from the layer's authored FBO format")
     func textureFormatsForFBOSlotsComeFromTheGraph() throws {
-        // Corpus shape: `bokeh_blur/effect.json` declares an `rg88` target and
-        // `glitter/effect.json` an `r8` one. Reporting RGBA8888 for those would
-        // send a branch-on-format shader down the wrong channel swizzle.
+        /// Reporting RGBA8888 for an rg88 or r8 target would send a branch-on-format shader down the wrong channel swizzle.
         func makeGraph(scratchFormat: String) -> WPERenderGraph {
             WPERenderGraph(layers: [
                 WPERenderLayer(
@@ -288,8 +286,7 @@ struct WPERenderPipelineBuilderTests {
 
     @Test("TEXnFORMAT for a `.previous` slot inherits the pass target's authored FBO format")
     func textureFormatsForPreviousSlotsInheritThePassTargetFormat() throws {
-        /// `.previous` samples the prior frame of the pass's OWN target (the
-        /// executor rebinds the target's history texture 1:1), so a feedback
+        /// `.previous` samples the prior frame of the pass's OWN target, so a feedback
         /// pass into an rg1616f FBO must compile with that format, not RGBA.
         func makeGraph(targetFormat: String) -> WPERenderGraph {
             WPERenderGraph(layers: [
@@ -352,11 +349,9 @@ struct WPERenderPipelineBuilderTests {
             builder.build(graph: makeGraph(targetFormat: "rg1616f")).layers.first?.passes.first
         )
         #expect(rg1616fPass.comboValues["TEX1FORMAT"] == WPEOfficialTextureFormatABI.rg1616F)
-        // Sibling slots keep their own resolutions alongside the target inheritance.
         #expect(rg1616fPass.comboValues["TEX2FORMAT"] == WPEOfficialTextureFormatABI.r8)
         #expect(rg1616fPass.comboValues["TEX3FORMAT"] == WPEOfficialTextureFormatABI.rg88)
 
-        // Same graph, different authored target format ⇒ different compile identity.
         let r16fPass = try #require(
             builder.build(graph: makeGraph(targetFormat: "r16f")).layers.first?.passes.first
         )
@@ -370,16 +365,13 @@ struct WPERenderPipelineBuilderTests {
         #expect(rg1616fRequest.sourceHash != r16fRequest.sourceHash)
         #expect(rg1616fRequest.translationCacheKey != r16fRequest.translationCacheKey)
 
-        // A pass whose target has no non-RGBA authored format stays RGBA,
-        // matching the pre-existing `.previous` fallback for scene targets.
         let rgbaPass = try #require(
             builder.build(graph: makeGraph(targetFormat: "rgba8888")).layers.first?.passes.first
         )
         #expect(rgbaPass.comboValues["TEX1FORMAT"] == WPEOfficialTextureFormatABI.rgba8888)
 
-        // Regression guard: the target format may influence ONLY the `.previous`
-        // slot — every .tex/FBO/sparse slot must resolve identically across
-        // target formats, or target plumbing leaked into unrelated compile keys.
+        // The target format may influence ONLY the `.previous` slot: every other slot must
+        // resolve identically across target formats, or plumbing leaked into unrelated keys.
         for slot in 0 ..< WPEShaderTranspiler.customTextureSlotLimit where slot != 1 {
             let macro = "TEX\(slot)FORMAT"
             #expect(rg1616fPass.comboValues[macro] == rgbaPass.comboValues[macro])
@@ -2412,9 +2404,8 @@ struct WPERenderPipelineBuilderTests {
     }
 
     private func makeLegacyPuppetMDLBelow19() -> Data {
-        // Real MDLV0017 header layout (9-byte NUL-terminated tag + flags +
-        // skin count + mesh count) so the parser accepts it and the version
-        // guard — not a parse failure — is what refuses the scene.
+        // Real MDLV0017 header layout (9-byte NUL-terminated tag + flags + skin count +
+        // mesh count), so the version guard — not a parse failure — is what refuses the scene.
         var data = Data()
         data.append(contentsOf: Array("MDLV0017".utf8))
         data.append(UInt8(0))

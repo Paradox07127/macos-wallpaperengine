@@ -3,7 +3,6 @@ import CoreGraphics
 import Foundation
 import LiveWallpaperCore
 
-/// Live drag state for the widget under the pointer.
 struct MonitorBoardDragState: Equatable {
     var widgetID: UUID
     /// Pointer offset at grab so the ghost tracks 1:1.
@@ -19,7 +18,6 @@ struct MonitorBoardDragState: Equatable {
     var didMove: Bool
 }
 
-/// User-facing move/delete commands before mutating the persisted widget array.
 enum MonitorBoardPlacementCommand: Equatable {
     case move(id: UUID, pixelOrigin: CGPoint)
     case delete(id: UUID)
@@ -32,7 +30,6 @@ enum MonitorBoardPlacementDirection {
     case down
 }
 
-/// Board placements, edit mode, selection, and in-flight drag for `RootView`.
 @MainActor
 final class InteractionModel: ObservableObject {
     @Published private(set) var placements: [MonitorWidgetPlacement]
@@ -40,12 +37,10 @@ final class InteractionModel: ObservableObject {
     @Published var selectedID: UUID?
     @Published private(set) var drag: MonitorBoardDragState?
     @Published var isCatalogOpen: Bool = false
-    /// Cleared on edit-exit, drag-start, removal, and empty-space tap.
     @Published var settingsOpenID: UUID?
 
     @Published var boardSize: CGSize = .zero
 
-    /// Menu-bar / Dock avoidance; folded into every `geometry` so clamp/snap/reflow stay inside it.
     var safeArea: MonitorSafeAreaInsets = .none
 
     /// Committing edits only (drag-end, add, remove, resize) — never per mouse-move.
@@ -75,7 +70,6 @@ final class InteractionModel: ObservableObject {
 
     // MARK: - External config application
 
-    /// Live config change: cancel in-flight drag; drop selection that no longer exists.
     func apply(configuration: MonitorBoardConfiguration) {
         baseConfiguration = configuration
         placements = configuration.widgets
@@ -103,7 +97,6 @@ final class InteractionModel: ObservableObject {
         )
     }
 
-    /// Sibling set the engine sees during drag/resolve (optional exclude).
     private func items(excluding excludedID: UUID?) -> [MonitorBoardItem] {
         placements.compactMap { placement in
             guard placement.id != excludedID else { return nil }
@@ -269,7 +262,6 @@ final class InteractionModel: ObservableObject {
         ))
     }
 
-    /// Keyboard/VoiceOver share targeted-move; focus alone supplies selected id.
     @discardableResult
     func moveSelectedWidget(
         _ direction: MonitorBoardPlacementDirection,
@@ -305,7 +297,6 @@ final class InteractionModel: ObservableObject {
         return true
     }
 
-    /// Settings-card writeback (`onUpdate`).
     func updateWidget(_ updated: MonitorWidgetPlacement) {
         guard let index = placements.firstIndex(where: { $0.id == updated.id }) else { return }
         let current = placements[index]
@@ -329,7 +320,6 @@ final class InteractionModel: ObservableObject {
         emitConfiguration()
     }
 
-    /// Re-fits around the anchor after a size change.
     @discardableResult
     func setSize(_ id: UUID, to size: MonitorWidgetSize) -> Bool {
         guard let index = placements.firstIndex(where: { $0.id == id }) else { return false }

@@ -4,10 +4,7 @@ import Foundation
 import LiveWallpaperCore
 import SwiftUI
 
-/// Trailing detail inspector for an installed item. Apply happens here
-/// (per-display via the mini-map, or "All"); drag-onto-display is the quick path.
 struct WPEInstalledInspectorContent: View {
-    /// Derived boolean state for the item (bookmark + update availability), grouped so the caller sets a labelled bundle rather than four loose same-typed flags.
     struct ItemState {
         let isBookmarked: Bool
         let canBookmark: Bool
@@ -15,8 +12,7 @@ struct WPEInstalledInspectorContent: View {
         let canUpdate: Bool
     }
 
-    /// Per-item callbacks. `onSelectTag` is wired only when tags should be
-    /// tappable (jump to Browse Online by tag).
+    /// `onSelectTag` is wired only when tags should be tappable.
     struct Actions {
         let onApply: (Screen) -> Void
         let onApplyToAll: () -> Void
@@ -84,8 +80,6 @@ struct WPEInstalledInspectorContent: View {
         .onDisappear { localInfoLoadOwner.invalidate() }
     }
 
-    /// Uncarded on purpose: it names the thing the cards below act on, so a
-    /// container around it would read as one more peer section.
     private var identityBlock: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
             Text(verbatim: entry.origin.title)
@@ -120,8 +114,7 @@ struct WPEInstalledInspectorContent: View {
         .groupBoxStyle(ContainerGroupBoxStyle())
     }
 
-    /// Presets for a wallpaper you already own are worth reaching without going
-    /// back to the online tab. Workshop items only — a folder import has no id.
+    /// Workshop items only — a folder import has no id.
     @ViewBuilder
     private var presetsGroup: some View {
         if let itemID, let steamURL {
@@ -171,8 +164,7 @@ struct WPEInstalledInspectorContent: View {
         .padding([.horizontal, .top], DesignTokens.Spacing.lg)
     }
 
-    /// All local (no API). Size shows instantly from the persisted measurement,
-    /// or once the first off-main folder scan lands; the date is always available.
+    /// All local (no API): the persisted size, else the first off-main folder scan.
     private var metaRow: some View {
         HStack(spacing: DesignTokens.Spacing.sm) {
             Group {
@@ -378,7 +370,6 @@ struct WPEInstalledInspectorContent: View {
         }
     }
 
-    /// Tappable accent chip when `onSelectTag` is wired; otherwise inert.
     /// Raw tag on the wire — Steam matches the English form.
     @ViewBuilder
     private func tagChip(_ tag: String) -> some View {

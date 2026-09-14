@@ -40,9 +40,8 @@ struct WallpaperPolicyEngineThermalTests {
         let thermalExpectations: [(state: ProcessInfo.ThermalState, suspends: Bool)] = [
             (.nominal, false),
             (.fair, false),
-            // `.serious` throttles instead of suspending: on a busy scene this
-            // app sits near it in ordinary use, and suspending there stopped
-            // wallpapers with no setting able to opt out.
+            // `.serious` throttles instead of suspending: a busy scene sits near it in
+            // ordinary use, so suspending there would stop wallpapers with no opt-out.
             (.serious, false),
             (.critical, true),
         ]

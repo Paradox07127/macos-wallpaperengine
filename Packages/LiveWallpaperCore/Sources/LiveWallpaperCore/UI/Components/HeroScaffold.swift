@@ -1,8 +1,5 @@
-// Hero-type sheet/page scaffold (centered illustration + title + vertical action stack), W3 landed.
 import SwiftUI
 
-/// Accent gradient disc behind an SF Symbol — the shared illustration style
-/// for hero sheets. Decorative, so it is hidden from accessibility.
 public struct HeroGlyph: View {
     let systemImage: String
 
@@ -35,10 +32,7 @@ public struct HeroGlyph: View {
     }
 }
 
-/// Hero scaffold: centered illustration + title + optional message + a free
-/// mid slot (bullets, chips) + one prominent primary action with 0–3
-/// borderless alternatives stacked under it. Horizontal inset only — width
-/// and vertical inset stay with the caller (sheet vs page).
+/// Horizontal inset only — width and vertical inset stay with the caller (sheet vs page).
 public struct HeroScaffold<Illustration: View, Content: View>: View {
     private let illustration: Illustration
     private let title: LocalizedStringKey

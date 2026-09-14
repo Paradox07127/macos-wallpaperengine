@@ -4,10 +4,7 @@ import LiveWallpaperCore
 
 // MARK: - Monitor board layout engine
 
-/// The strip each display edge loses to the menu bar or the Dock, as a fraction
-/// of the display's own size, counted y-down from the top-left like every other
-/// board coordinate. Fractions rather than points so one value describes both
-/// the desktop board and the inspector's scaled-down copy of the same display.
+/// Edge insets as fractions of the display, y-down from the top-left, so one value describes the desktop and the inspector copy.
 struct MonitorSafeAreaInsets: Equatable, Sendable {
     var top: CGFloat
     var leading: CGFloat
@@ -23,11 +20,7 @@ struct MonitorSafeAreaInsets: Equatable, Sendable {
         self.trailing = Self.fraction(trailing)
     }
 
-    /// `visibleFrame` is the display's frame minus the menu bar and the Dock,
-    /// wherever the Dock happens to be — so measuring all four edges against it
-    /// covers a left, right or bottom Dock without asking AppKit about the Dock
-    /// at all, and without special-casing the top. Both rects are AppKit's
-    /// y-up screen coordinates, which is why `top` reads off `maxY`.
+    /// Both rects are AppKit y-up, so `top` reads off `maxY`. Measuring all four edges against `visibleFrame` covers a left, right or bottom Dock.
     init(frame: CGRect, visibleFrame visible: CGRect) {
         guard frame.width > 0, frame.height > 0 else {
             self.init()
@@ -57,15 +50,9 @@ struct MonitorBoardGeometry: Equatable {
     /// HALF-gutter, both axes: neighbours end up `2 * tileInset` apart.
     let tileInset: CGFloat
     let cornerRadius: CGFloat
-    /// Menu-bar / Dock avoidance in board pixels: the part of the board a widget
-    /// may be placed into. Equal to the whole board when the host passes no
-    /// insets.
     let safeRect: CGRect
 
-    /// Pitch = tile + one gutter (`tile == pitch - 2 * inset`), so a small widget stays exactly Apple's
-    /// 170×170; spans absorb the gutter they cross (medium 356×170, large 356×356). Numbers live in
-    /// `MonitorBoardMetrics` so the schema's default packer measures in the same cell the renderer draws
-    /// in.
+    /// Pitch = tile + one gutter (`tile == pitch - 2 * inset`); spans absorb the gutter they cross.
     static let appleCellPitch = CGSize(
         width: MonitorBoardMetrics.cellPitch, height: MonitorBoardMetrics.cellPitch
     )
@@ -152,7 +139,6 @@ struct MonitorSnapGuide: Equatable {
     var partner: CGRect?
 }
 
-/// Magnetic snap solve for one drag frame.
 struct MonitorSnapResult: Equatable {
     var origin: CGPoint
     var snappedX: Bool
@@ -169,7 +155,6 @@ struct MonitorBoardItem: Equatable {
     var rect: CGRect
 }
 
-/// Pure layout algorithms (static; no stored state).
 enum LayoutEngine {
 
     static let snapThreshold: CGFloat = 14

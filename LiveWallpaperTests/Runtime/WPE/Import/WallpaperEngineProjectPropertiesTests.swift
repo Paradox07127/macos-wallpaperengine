@@ -569,10 +569,7 @@ struct WallpaperEngineProjectPropertiesTests {
     }
 
     /// `JSONSerialization` hands back JSON `0`/`1` as `NSNumber`, and `NSNumber as? Bool`
-    /// succeeds for those — so a slider whose default happens to be 0 or 1 collapsed to
-    /// `.bool(false)`. The envelope `{"user":K,"value":V}` then resolved to `false`, the bound
-    /// uniform fell back to its shader default, and scene 3413921910's water blur ran at full
-    /// strength (author default 0), smearing the finished reflection into a flat band.
+    /// succeeds for those — so a slider whose default is 0 or 1 would collapse to `.bool(false)`.
     @Test("A slider defaulting to 0 or 1 stays numeric instead of collapsing to a bool")
     func sliderDefaultsOfZeroOrOneStayNumeric() throws {
         let manifest = """
@@ -597,7 +594,6 @@ struct WallpaperEngineProjectPropertiesTests {
         #expect(values["reflection"] == .number(0.9))
         #expect(values["water"] == .bool(true))
         #expect(values["stars"] == .bool(false))
-        // Combo option values go through the same coercion.
         let interp = try #require(schema.properties.first { $0.key == "interp" })
         #expect(interp.options.map(\.value) == [.number(0), .number(1)])
     }
@@ -748,16 +744,13 @@ struct WallpaperEnginePresetEntryFileTests {
         #expect(preset.name == "Sunset")
         #expect(preset.source == .workshop(workshopID: preset.id))
 
-        // Control: without both preset halves there is nothing to convert.
         let ordinary = try project(#"{ "workshopid": "3509243656", "type": "Scene", "file": "scene.pkg" }"#)
         #expect(ordinary.scenePreset() == nil)
     }
 }
 
 /// A Workshop preset's `preset` map mirrors the manifest's whole property list,
-/// decorative rows included. Those rows carry an empty string, and merging them
-/// over the schema defaults is what blanked every image layer in a scene once
-/// the preset layer started reaching the renderer.
+/// decorative rows included; those rows carry an empty string.
 @Suite("Preset layer is filtered to declared editable properties")
 struct ScenePresetLayerFilterTests {
     private let manifest = """
@@ -781,8 +774,6 @@ struct ScenePresetLayerFilterTests {
     @Test("A decorative row's empty value cannot clobber a real default")
     func decorativeEmptyValuesAreDropped() throws {
         let schema = try schema()
-        // Exactly the shape observed on disk: every row present, decorative
-        // ones empty.
         let presetLayer: [String: WallpaperEngineProjectPropertyValue] = [
             "brightness": .number(0.4),
             "_2222": .string(""),
@@ -804,8 +795,6 @@ struct ScenePresetLayerFilterTests {
     @Test("An empty value the user really typed into a text field survives")
     func editableEmptyStringSurvives() throws {
         let filtered = try schema().declaredEditableValues(["caption": .string("")])
-        // `textinput` is editable, so clearing it is a real edit — this is why
-        // the filter keys on the declared type rather than on emptiness.
         #expect(filtered["caption"] == .string(""))
     }
 
@@ -823,7 +812,6 @@ struct ScenePresetLayerFilterTests {
     func emptySchemaIsPassThrough() throws {
         let empty = try WallpaperEngineProjectPropertySchema.parse(data: Data("{}".utf8))
         let layer: [String: WallpaperEngineProjectPropertyValue] = ["anything": .number(1)]
-        // A wallpaper we cannot read a schema for must not lose its overrides.
         #expect(empty.declaredEditableValues(layer) == layer)
     }
 }

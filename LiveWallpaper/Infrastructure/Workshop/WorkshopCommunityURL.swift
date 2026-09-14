@@ -1,9 +1,7 @@
 #if !LITE_BUILD
 import Foundation
 
-/// Steam Community pages the detail inspector links out to. Shapes are the
-/// detail page's own anchors (captured 2026-09-07 from
-/// `sharedfiles/filedetails/?id=3737237256`), pinned by `WorkshopCommunityURLTests`.
+/// Steam Community pages the detail inspector links out to. Shapes are the detail page's own anchors (see WorkshopCommunityURLTests).
 enum WorkshopCommunityURL {
     private static let host = "steamcommunity.com"
 

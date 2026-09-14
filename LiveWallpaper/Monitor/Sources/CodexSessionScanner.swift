@@ -15,7 +15,6 @@ struct CodexSessionScanner: Sendable {
     private static let scanWindow: TimeInterval = 48 * 60 * 60
     private static let liveFileWindow: TimeInterval = 10 * 60
     private static let maxFiles = 40
-    /// Compatibility budgets for layouts that do not use `sessions/YYYY/MM/DD`.
     private static let fallbackTopLevelEntryLimit = 96
     private static let fallbackDescendantEntryLimit = 256
     private static let fallbackRootLimit = 32
@@ -148,7 +147,6 @@ struct CodexSessionScanner: Sendable {
             }
         }
 
-        // Older Codex builds or hand-migrated stores may have a non-date layout.
         guard let topLevelEnumerator = fileManager.enumerator(
             at: sessionsURL,
             includingPropertiesForKeys: Array(fileKeys),
@@ -198,7 +196,6 @@ struct CodexSessionScanner: Sendable {
             }
         }
 
-        // Round-robin across unexpected roots.
         while fallbackDescendantEntries < Self.fallbackDescendantEntryLimit,
               walkers.contains(where: { !$0.exhausted }) {
             for index in walkers.indices
@@ -260,8 +257,6 @@ struct CodexSessionScanner: Sendable {
         return result
     }
 
-    /// Direct date-leaf access must not follow a symlink out of the granted
-    /// Codex root. Validate each existing path component from year through day.
     private static func isNonSymlinkDirectory(_ url: URL, beneath root: URL) -> Bool {
         let root = root.standardizedFileURL
         let target = url.standardizedFileURL
@@ -288,9 +283,7 @@ enum CodexProcessProbe {
     private static let pathBufferSize = 4096
     private static let codexNameBytes: [CChar] = "codex".utf8.map { CChar(bitPattern: $0) }
 
-    /// Working directories of the running `codex` processes.
-    /// `complete` is false when any codex process refused the cwd query, because
-    /// then an absent directory means "unknown", not "not running".
+    /// `complete` is false when any codex process refused the cwd query, because then an absent directory means "unknown", not "not running".
     static func codexWorkingDirectories() -> (directories: Set<String>, complete: Bool) {
         var result: Set<String> = []
         var complete = true
@@ -308,9 +301,6 @@ enum CodexProcessProbe {
         return (result, complete)
     }
 
-    /// One 4 KB buffer for the whole process table: this walks ~1100 PIDs on
-    /// every 1.5 s monitor tick. Ablated 2026-08-23 — reuse is worth ~0.1 ms of
-    /// the 4.9 ms walk; the `URL` build in `hasCodexBasename` was the other 3.4.
     private static func codexPIDs() -> [Int32] {
         var buffer = [CChar](repeating: 0, count: pathBufferSize)
         var result: [Int32] = []
@@ -320,10 +310,7 @@ enum CodexProcessProbe {
         return result
     }
 
-    /// `proc_listallpids` returns the number of PIDs written, not a byte count —
-    /// measured 2026-08-09: 1131 returned against 1130 real PIDs. Dividing by the
-    /// element stride, as this file used to, silently examined only a quarter of
-    /// the process table.
+    /// `proc_listallpids` returns the number of PIDs written, not a byte count — dividing by the element stride would examine only a quarter of the process table.
     private static func allPIDs() -> [Int32] {
         let capacity = proc_listallpids(nil, 0)
         guard capacity > 0 else { return [] }
@@ -365,9 +352,7 @@ enum CodexProcessProbe {
         return hasCodexBasename(buffer, length: length)
     }
 
-    /// Whether the last path component of `path[0..<length]` is exactly `codex`. Measured 2026-08-23 over 1079
-    /// PIDs: decoding a `String` and building a `URL` just to read `lastPathComponent` cost 5.2 ms per walk vs
-    /// 0.97 ms for this comparison. Bytes past `length` are stale from the previous PID and must never be read.
+    /// Bytes past `length` are stale from the previous PID and must never be read.
     static func hasCodexBasename(_ path: [CChar], length: Int) -> Bool {
         let name = codexNameBytes
         guard length >= name.count, length <= path.count else { return false }

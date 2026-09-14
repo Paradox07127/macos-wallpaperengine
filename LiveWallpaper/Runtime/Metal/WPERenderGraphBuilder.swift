@@ -12,8 +12,6 @@ private func isImplicitFBOTextureName(_ name: String) -> Bool {
 struct WPERenderGraphBuilder: Sendable {
     private let resolver: WPEMultiRootResourceResolver
 
-    /// Uses hierarchy-composed MDAT bind points for split-puppet attachments.
-    /// Disable with `defaults write com.loomscreen.pro WPEPuppetAttachmentBindAnchor -bool NO`.
     private static var useAttachmentBindAnchor: Bool {
         WPEMetalRenderExecutor.puppetDefaultsFlagOptional("WPEPuppetAttachmentBindAnchor") ?? true
     }
@@ -64,8 +62,6 @@ struct WPERenderGraphBuilder: Sendable {
         let liveVisibilityIDs = Self.userToggleableVisibilityIDs(in: document)
             .union(Self.layerScriptControlledVisibilityIDs(in: document))
         let dynamicCreatedLayerTemplateIDs = Self.createLayerImageTemplateIDs(in: document)
-        // Drop particle-only compose wrappers (3462491575), empty compose
-        // hotspots, and identity fullscreen/project passthroughs (3470764447).
         let noOpFullFrameDrops = Self.noOpFullFramePassthroughIDs(in: document)
         let composeWrappersToDrop = Self.particleOnlyComposeWrapperIDs(
             in: document
@@ -120,16 +116,13 @@ struct WPERenderGraphBuilder: Sendable {
             hostDepthByObjectID: Self.authoredParallaxDepthByObjectID(document)
         )
         let attachmentAligned = applyAttachmentAnchorOffsets(to: parallaxAligned)
-        // Load-time UTF-8 nativization; last stop before the per-frame path.
         return WPERenderGraph(layers: applyComposelayerGroups(
             to: attachmentAligned,
             objectParentByID: document.objectParentByID
         )).nativized()
     }
 
-    /// Indexes the authored (pre-user-property-resolution) objects retained by
-    /// `WPESceneDocument.sourceJSON`. Later duplicate ids win, matching the
-    /// parser's canonical typed-object index.
+    /// Later duplicate ids win, matching the parser's canonical typed-object index.
     private static func authoredSceneObjectByID(
         in sourceJSON: WPESceneJSONValue
     ) -> [String: WPESceneJSONValue] {
@@ -201,8 +194,7 @@ struct WPERenderGraphBuilder: Sendable {
         let layersByID = Dictionary(layers.map { ($0.objectID, $0) }, uniquingKeysWith: { first, _ in first })
         var nearestGroupByLayer: [String: String] = [:]
         for layer in layers {
-            // No in-graph descendant: empty composite, and rerouting as a child
-            // writes an ancestor buffer that does not exist yet (3554161528).
+            // No in-graph descendant: empty composite, and rerouting as a child writes an ancestor buffer that does not exist yet.
             if candidateGroups.contains(layer.objectID), !groupIDs.contains(layer.objectID) {
                 continue
             }
@@ -230,9 +222,7 @@ struct WPERenderGraphBuilder: Sendable {
                 if !localFBOs.contains(where: { $0.name == groupTarget }) {
                     localFBOs.append(fbo)
                 }
-                // `materialRespectingCopyBackground` may have already rewritten
-                // `_rt_FullFrameBuffer` to `.previous`; map both to the group
-                // buffer or a scene-targeting pass paints PiP (3470764447 layer 249).
+                // `materialRespectingCopyBackground` may have already rewritten `_rt_FullFrameBuffer` to `.previous`; map both to the group buffer or a scene-targeting pass paints PiP.
                 let composited = layer
                     .replacingLocalFBOs(localFBOs)
                     .replacingPasses(layer.passes.enumerated().map { index, pass in
@@ -327,9 +317,7 @@ struct WPERenderGraphBuilder: Sendable {
             emitted.append(groupLayer)
         }
 
-        // Groups left pending here had a group as their own last descendant (skipped
-        // inline above); emit deeper groups first so an inner buffer renders before
-        // the ancestor group that samples it.
+        // Groups left pending had a group as their own last descendant (skipped inline above); emit deeper groups first so an inner buffer renders before the ancestor that samples it.
         var depthByGroup: [String: Int] = [:]
         func nestingDepth(_ id: String) -> Int {
             if let cached = depthByGroup[id] { return cached }
@@ -410,11 +398,7 @@ struct WPERenderGraphBuilder: Sendable {
         return depths
     }
 
-    /// Windows pin: 3719111841 parent/child MVPs share one vector; 3448877775
-    /// clock texts all shift (5.31, 7.97) px = top GROUP -0.408 (5.31/11.97 =
-    /// 0.408/0.92 vs -0.92 bg) while leaves author -0.7 / 0 / 1.0, ignored.
-    /// Non-zero, not topmost: a key-less root parses to zero, and zeroing 93
-    /// corpus objects under those roots (3151551777, 3351072238) is a regression.
+    /// Walk to the last non-zero ancestor, not the topmost: a key-less root parses to zero, and treating that as the anchor would regress objects under those roots.
     static func parallaxAnchorNodeID(
         of id: String,
         parentByID: [String: String],
@@ -500,10 +484,7 @@ struct WPERenderGraphBuilder: Sendable {
         // The hierarchy-composed bind-world transform plus MDAT matrix locates the joint;
         // the skin-weighted centroid is only a fallback when bind data is unavailable.
         let anchorPoint: SIMD2<Double>
-        // Character-sheet puppets (MDLV0019/0020) MUST use the bind-anchor pivot: their mesh vertices
-        // are the exploded source sheet, so the skin-weighted centroid fallback is meaningless. The
-        // assembled anchor comes from the frame-0 pose inside `assembledBindWorldByBone`. Pre-assembled
-        // puppets use the default-on flag; `-bool NO` restores the centroid path.
+        // Character-sheet puppets (MDLV0019/0020) must use the bind-anchor pivot: mesh vertices are the exploded source sheet, so the skin-weighted centroid is meaningless.
         let isCharacterSheet = parentModel.version >= 19 && parentModel.version <= 20
         if useAttachmentBindAnchor || isCharacterSheet,
            let bindAnchor = bindAnchorPoint(for: attachment, model: parentModel) {
@@ -567,8 +548,7 @@ struct WPERenderGraphBuilder: Sendable {
     }
 
     static func compositesToScene(_ object: WPESceneImageObject, liveVisibilityIDs: Set<String>) -> Bool {
-        // Alpha-0 base with no alpha animation is a no-op UNLESS a visible
-        // effect draws its own content (3719111841 alpha-0 `audioline`).
+        // Alpha-0 base with no alpha animation is a no-op unless a visible effect draws its own content.
         let hasVisibleEffect = object.effects.contains { $0.visible }
         if !object.copyBackground,
            isComposelayerModelPath(object.imageRelativePath),
@@ -635,8 +615,7 @@ struct WPERenderGraphBuilder: Sendable {
         return ids
     }
 
-    /// `getLayer` args are usually variables, so match any script string literal
-    /// against a layer name; names never mentioned still prune (3226487183).
+    /// `getLayer` args are usually variables, so match any script string literal against a layer name; names never mentioned still prune.
     private static func layerScriptControlledVisibilityIDs(in document: WPESceneDocument) -> Set<String> {
         // Script hosts are non-renderable script containers that still drive other
         // layers via getLayer(); mirror createLayerImageTemplateIDs and consult them.
@@ -646,8 +625,7 @@ struct WPERenderGraphBuilder: Sendable {
         let combined = scripts.joined(separator: "\n")
         var ids = Set<String>()
         for object in document.imageObjects {
-            // Own visible-script objects stay even when authored hidden:
-            // 2955378002 seeds 143 calendar sprites `visible:false`.
+            // Own visible-script objects stay even when authored hidden.
             if object.visibleScript != nil {
                 ids.insert(object.id)
                 continue
@@ -708,10 +686,7 @@ struct WPERenderGraphBuilder: Sendable {
         }
 
     private static func referencedLayerIDs(in object: WPESceneImageObject) -> Set<String> {
-        // Ghost edge: every authored effect is out of the graph, so nothing
-        // samples the producer, yet the edge still reorders paint (3151551777
-        // triangle-date covered the weekday it "depended" on). No-effect
-        // objects keep their edges — the material is the consumer.
+        // Ghost edge: every authored effect is out of the graph, so nothing samples the producer, yet the edge still reorders paint. No-effect objects keep their edges — the material is the consumer.
         let ghostDependencies = !object.effects.isEmpty
             && !object.effects.contains(where: Self.buildsIntoGraph)
         var ids = ghostDependencies ? [] : Set(object.dependencies)
@@ -815,9 +790,7 @@ struct WPERenderGraphBuilder: Sendable {
         )
         guard !composeLayerIDs.isEmpty else { return [] }
         let parentByID = document.objectParentByID
-        // ALL compose ancestors (not just the nearest): a particle nested under `outer -> inner`
-        // must drop BOTH wrappers, else `outer` survives with no built child and still draws the
-        // full-frame passthrough.
+        /// All compose ancestors (not just the nearest): a particle nested under outer→inner must drop both wrappers, else outer survives with no built child and still draws the full-frame passthrough.
         func composeAncestors(of startID: String) -> Set<String> {
             var result: Set<String> = []
             var current = parentByID[startID]
@@ -889,9 +862,7 @@ struct WPERenderGraphBuilder: Sendable {
         }
     }
 
-    /// Identity `_rt_FullFrameBuffer`→scene copy re-injects the persistent pool
-    /// snapshot as nested PiP (3470764447). A fullscreenlayer with a visible
-    /// effect (DoF, 3479521040) is a real post-process and stays.
+    /// Identity `_rt_FullFrameBuffer`→scene copy re-injects the persistent pool snapshot as nested PiP. A fullscreenlayer with a visible effect is a real post-process and stays.
     private static func noOpFullFramePassthroughIDs(
         in document: WPESceneDocument
     ) -> Set<String> {
@@ -1090,9 +1061,7 @@ struct WPERenderGraphBuilder: Sendable {
         )
     }
 
-    /// `copybackground: false` composelayers seed `.previous` instead of the
-    /// scene snapshot. `applyComposelayerGroups` must map that base-pass
-    /// `.previous` to the group buffer or it paints PiP (3470764447 layer 249).
+    /// `copybackground: false` composelayers seed `.previous` instead of the scene snapshot. `applyComposelayerGroups` must map that base-pass `.previous` to the group buffer or it paints PiP.
     private static func materialRespectingCopyBackground(
         _ material: WPEMaterialAsset,
         object: WPESceneImageObject
@@ -1394,8 +1363,7 @@ struct WPERenderGraphBuilder: Sendable {
             path: path,
             passes: [
                 WPEMaterialPass(
-                    // `solidlayer` is premultiplied (rgb*alpha); `solidcolor` is
-                    // straight and blew 3719111841's audio-line base to opaque white.
+                    // `solidlayer` is premultiplied (rgb*alpha); `solidcolor` is straight and would blow an audio-line base to opaque white.
                     shader: WPEBuiltinShaderKind.solidLayer.rawValue,
                     textures: [:],
                     constants: [
@@ -1674,7 +1642,6 @@ struct WPERenderGraphBuilder: Sendable {
     }
 }
 
-/// Runs after shader default textures are resolved, before lifetime/heap analysis.
 /// Public A stays A: only the closed producer's private A/B roles are permuted.
 extension WPERenderGraphBuilder {
     struct CanonicalCompositeRotationResult {
@@ -1689,10 +1656,7 @@ extension WPERenderGraphBuilder {
         var decisions: [String: String] = [:]
         let layers = pipeline.layers.map { layer -> WPEPreparedRenderLayer in
             guard let index = canonicalCopyIndex(in: layer) else { return layer }
-            // The removed render copy samples through half precision. SDR sRGB
-            // decode/filter/encode is not a proven identity (observed corpus
-            // difference); only the runtime's explicit RGBA16Float promotion is
-            // currently verified. Unknown callers retain their copy.
+            // The removed copy samples through half precision. SDR sRGB decode/filter/encode is not a proven identity; only the runtime's explicit RGBA16Float promotion is verified.
             guard sceneHDR else {
                 decisions[layer.id] = "unsupported-composite-format"
                 return layer
@@ -1815,9 +1779,7 @@ extension WPERenderGraphBuilder {
                   pass.depthTest == "disabled", pass.depthWrite == "disabled",
                   !containsScript(pass.authoredJSON.materialPass ?? .null),
                   !containsScript(pass.authoredJSON.effectPass ?? .null) else { return "dynamic-or-special-pass" }
-            // Match executor hazard analysis, which also scans raw slots/binds.
-            // Even an overridden raw previous/self reference requests attachment
-            // history/load, so resolved shader bindings alone are insufficient.
+            // Match executor hazard analysis (raw slots/binds too). An overridden raw previous/self reference still requests attachment history/load — resolved bindings alone are insufficient.
             for reference in prepared.textureReferences {
                 switch reference {
                 case .previous:
@@ -1879,10 +1841,7 @@ extension WPERenderGraphBuilder {
     }
 }
 
-/// Runs after canonical rotation. A fullscreen/project utility layer opens with a
-/// passthrough that copies `_rt_FullFrameBuffer` 1:1 into its composite (cleared
-/// destination, premultiplied over, same size and format ⇒ texel-identical), so its
-/// readers up to the composite's next write can sample the scene alias directly.
+/// A fullscreen/project utility passthrough copies `_rt_FullFrameBuffer` 1:1 into its composite (cleared dest, premultiplied over, same size/format ⇒ texel-identical), so readers up to the composite's next write can sample the scene alias directly.
 extension WPERenderGraphBuilder {
     struct FullFramePassthroughElisionResult {
         let pipeline: WPEPreparedRenderPipeline
@@ -2041,8 +2000,7 @@ private struct LayerBuildContext {
     var passes: [WPERenderPass] = []
     var passTargetsWereExplicit: [Bool] = []
 
-    /// Destination-reading blend samples the layer plus `_rt_FullFrameBuffer`
-    /// at slot 4 (`g_Texture4`). RenderDoc-confirmed on 3448877775 pass 41.
+    /// Destination-reading blend samples the layer plus `_rt_FullFrameBuffer` at slot 4 (`g_Texture4`).
     func sceneCompositePass(
         index: Int,
         source: WPETextureReference,
@@ -2125,9 +2083,7 @@ private struct LayerBuildContext {
             )
         }
 
-        // Ordinary effects finish in layer space; promoting the last one to
-        // `.scene` changes viewport/texel size. `shape:quad` DIRECTDRAW is
-        // already scene geometry — do not warp it a second time.
+        // Ordinary effects finish in layer space; promoting the last one to `.scene` changes viewport/texel size. `shape:quad` DIRECTDRAW is already scene geometry — do not warp it a second time.
         let hasLayerResolutionEffect = object.shapePoints == nil && passes.contains { pass in
             switch pass.phase {
             case .effect:
@@ -2139,9 +2095,7 @@ private struct LayerBuildContext {
             }
         }
         let lastPassIsWorkshopEffect = lastPass.shader.contains("workshop/")
-        // A script-gated pass must never BE the scene draw: closing the gate would
-        // leave the layer undrawn entirely instead of merely un-effected. Force the
-        // separate composite→scene copy so the gate only ever removes the effect.
+        // A script-gated pass must never be the scene draw: closing the gate would leave the layer undrawn entirely. Force the separate composite→scene copy so the gate only ever removes the effect.
         let lastPassIsGated = lastPass.visibilityGate != nil
         if preserveFinalCompositeForScene || hasLayerResolutionEffect
             || lastPassIsWorkshopEffect || lastPassIsGated,

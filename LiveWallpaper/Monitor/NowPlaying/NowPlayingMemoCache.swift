@@ -1,10 +1,5 @@
 import Foundation
 
-/// The single-flight skeleton both Now Playing fetchers share: positive LRU
-/// cache, per-key in-flight merging, TTL'd negative cache. Plain state with no
-/// synchronization of its own — each fetcher actor holds one inside its own
-/// isolation and creates the merged `Task` itself, so the task inherits that
-/// isolation instead of hopping to a second actor.
 struct NowPlayingMemoCache<Value: Sendable> {
     let capacity: Int
     let negativeTTL: TimeInterval

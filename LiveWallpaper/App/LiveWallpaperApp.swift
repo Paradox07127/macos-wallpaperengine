@@ -47,7 +47,6 @@ struct AppStartupPlan: Equatable {
             originReconciler: PreservingOriginReconciler()
         )
         #else
-        // Build-target-only capabilities are layered on here rather than baked into the shipping Pro catalog because Xcode does not propagate app compilation conditions into local SwiftPM packages.
         let proCapabilities = ProductCapabilities.pro.withWorkshopOnline()
         screenManagerOptions = ScreenManagerStartupOptions(
             restoreSavedWallpapers: runtimeOptions.shouldRestoreSavedWallpapers,
@@ -76,26 +75,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @ObservationIgnored private let runtimeOptions = AppRuntimeOptions()
     @ObservationIgnored private var settingsWindowController: NSWindowController?
-    /// Lifecycle-probe seam for SettingsWindowLifecycleTests; production code
-    /// must not present or mutate through this.
     var settingsWindowControllerForTesting: NSWindowController? { settingsWindowController }
     @ObservationIgnored private var settingsOwnsSystemMonitorLease = false
     @ObservationIgnored private var onboardingWindowController: NSWindowController?
-    /// See `WeatherReactiveService.preferenceObserver` — same pattern.
     @ObservationIgnored nonisolated(unsafe) private var dockVisibilityObserver: NSObjectProtocol?
     @ObservationIgnored nonisolated(unsafe) private var showOnboardingObserver: NSObjectProtocol?
     @ObservationIgnored private var globalShortcutManager: GlobalShortcutManager?
     @ObservationIgnored private let lifecycle = ApplicationLifecycleController()
-    /// Not private: the menu-bar scene lives in the App struct and injects it too.
     @ObservationIgnored let wallpaperExportService = WallpaperExportService()
     #if !LITE_BUILD
-    /// Pro only: lives for the lifetime of the app so the Doctor's probe state survives Settings-window close / re-open and the Workshop tab can read it without re-running probes.
     @ObservationIgnored private let workshopDoctorService = SteamCMDDoctorService()
-    /// Owns the Keychain, query service, and disk cache used for Workshop browsing.
     @ObservationIgnored private let workshopServices = WorkshopServices()
-    /// The setup actions shared by the Workshop settings page, the onboarding
-    /// step and the Workshop pane. App-lifetime for the same reason the Doctor
-    /// is: an install started from one surface has to be visible from the others.
     @ObservationIgnored private lazy var workshopSetupController = WorkshopSetupController(doctor: workshopDoctorService)
     #endif
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -149,8 +139,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #if !LITE_BUILD
         if !runtimeOptions.isTesting, manager.featureCatalog.isEnabled(.wpeImport) {
             lifecycle.schedule(after: .seconds(2)) {
-                // Wallpapers are read in place from the Steam library now, so the
-                // only disk cache left to sweep is the decoded-video one.
                 let keepIDs = WPESceneReachability.referencedWorkshopIDs()
                 await WPEVideoTextureDiskCache.shared.collectOrphans(referencedWorkshopIDs: keepIDs)
             }
@@ -208,8 +196,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             lifecycle.schedule(after: .seconds(3)) { [workshopDoctorService] in
                 await workshopDoctorService.prepareAtLaunch()
                 guard workshopDoctorService.workdirBookmarkData != nil else { return }
-                // Opt-in, and only a version read — nothing downloads until the
-                // user acts on the result.
                 guard UserDefaults.standard.bool(forKey: "loomscreen.workshop.checkAssetsUpdateAtLaunch.v1"),
                       WPEEngineAssetsInstaller.shared.hasManagedInstall else { return }
                 WPEEngineAssetsInstaller.shared.checkForUpdate(using: workshopDoctorService)
@@ -217,8 +203,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         #endif
 
-        // Start even during onboarding so manual updates and the automatic schedule remain available.
-        // The initial automatic check respects the saved preference.
         if !runtimeOptions.isTesting {
             SparkleUpdaterController.shared.start()
         }
@@ -300,7 +284,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         true
     }
 
-    /// Stops renderers and monitor producers before flushing cursor and settings persistence.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         switch lifecycle.beginTermination() {
         case .wait:
@@ -418,15 +401,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.titleVisibility = .hidden
         window.backgroundColor = .windowBackgroundColor
         window.isMovableByWindowBackground = false
-        // ARC owns the window through the controller; `windowWillClose` drops
-        // both so closing destroys the whole hierarchy instead of AppKit
-        // double-releasing it.
+        // ARC owns the window through the controller; windowWillClose drops both so closing destroys the whole hierarchy instead of AppKit double-releasing it.
         window.isReleasedWhenClosed = false
         window.delegate = self
-        // The saved frame has to land BEFORE the hosting view goes in. With the old order SwiftUI laid
-        // the whole tree out at the 1180pt default and then again at the restored width, which the
-        // user sees as everything reflowing the moment the window opens. `center()` is only the first-
-        // run fallback — a successful restore replaces it.
+        // The saved frame has to land BEFORE the hosting view goes in.
+        // center() is only the first-run fallback — a successful restore replaces it.
         window.setFrameAutosaveName("LiveWallpaperSettingsWindow")
         if !window.setFrameUsingName("LiveWallpaperSettingsWindow") {
             window.center()
@@ -489,8 +468,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Onboarding Window
 
-    /// Shows the first-run onboarding flow. Also used by the General Settings
-    /// "Welcome Tour" tile to re-trigger the tour after first-run.
     func showOnboarding() {
         guard lifecycle.allowsWork else { return }
         Logger.info("Onboarding window requested", category: .ui)
@@ -583,17 +560,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 extension AppDelegate: NSWindowDelegate {
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         if sender == onboardingWindowController?.window {
-            // Closing is an intentional skip. Respect it on future launches;
-            // the tour remains available from About.
             UserDefaults.standard.set(true, forKey: "Onboarding.Completed")
         }
         return true
     }
 
-    /// Destroys the settings window on close: a background app must not keep the whole SwiftUI
-    /// settings tree (previews, Workshop pages, caches) resident. Long-running work (Workshop
-    /// downloads, SteamCMD installs) lives in app-lifetime services and survives; `showSettings`
-    /// cold-builds the next window.
     func windowWillClose(_ notification: Notification) {
         guard let closingWindow = notification.object as? NSWindow else { return }
         LocalImageCacheReclaimer.shared.windowWillClose(closingWindow)
@@ -601,9 +572,7 @@ extension AppDelegate: NSWindowDelegate {
         if closingWindow == settingsWindowController?.window {
             releaseSettingsSystemMonitorLeaseIfNeeded()
             closingWindow.delegate = nil
-            // Detaching the hosting view before dropping the controller is what
-            // deterministically fires SwiftUI `onDisappear` (audio consumer
-            // release, preview teardown); a plain dealloc is not guaranteed to.
+            // Detach the hosting view before dropping the controller so SwiftUI onDisappear fires; a plain dealloc is not guaranteed to.
             closingWindow.contentView = nil
             settingsWindowController = nil
             Logger.info("Settings window destroyed on close", category: .ui)

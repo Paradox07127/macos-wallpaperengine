@@ -1,13 +1,10 @@
 import SwiftUI
 
-/// Track width policy for inspector controls.
 public enum CoalescedSliderSizing {
     case fixed(CGFloat)
     case flexible(minimum: CGFloat, maximum: CGFloat)
 }
 
-/// Stage gesture samples locally; commit after a quiet interval and on release.
-/// Use the caller’s custom commit protocol when edits must merge a preset layer.
 public struct CoalescedSlider<Readout: View>: View {
     private let committedValue: Double
     private let range: ClosedRange<Double>
@@ -22,11 +19,8 @@ public struct CoalescedSlider<Readout: View>: View {
     private let readout: (Double) -> Readout
 
     /// - Parameters:
-    ///   - owner: what the value belongs to — typically the display, plus the wallpaper. A row keeps
-    ///     its `@State` when the surrounding list re-uses it for a different subject, so without
-    ///     this a drag started on one display can commit onto another.
-    ///   - quietWindow: matches the WPE inspector's 180 ms, the interval already proven to keep a
-    ///     live preview tracking a drag.
+    ///   - owner: what the value belongs to (display, plus the wallpaper). A reused row
+    ///     keeps its `@State`, so without this a drag can commit onto another subject.
     public init(
         value: Double,
         in range: ClosedRange<Double>,
@@ -55,10 +49,8 @@ public struct CoalescedSlider<Readout: View>: View {
 
     @State private var draggingValue: Double?
     @State private var commitTask: Task<Void, Never>?
-    /// What the quiet window last sent. Releasing the mouse after the window has
-    /// already fired would otherwise write the same value a second time, and not
-    /// every destination filters equal writes — the particle overlay rebuilt
-    /// itself twice for one gesture.
+    /// What the quiet window last sent: releasing after it has fired would write the
+    /// same value twice, and not every destination filters equal writes.
     @State private var lastWrittenValue: Double?
 
     private var value: Double { draggingValue ?? committedValue }

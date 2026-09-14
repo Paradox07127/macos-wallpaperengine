@@ -272,11 +272,6 @@ struct WPESoundRuntimeTests {
         #expect(!snapshot.isEnabled)
     }
 
-    /// `scheduleBuffer(options: [.loops])` looped inside the node, so the seam was
-    /// inaudible. Streaming with `scheduleFile` gives that up: if the next segment
-    /// is only scheduled from the previous one's completion handler, the queue is
-    /// empty for a render quantum plus a queue hop and a lock acquisition every
-    /// time the loop wraps. Keeping a segment queued ahead is what restores it.
     @Test("A looping sound keeps the next segment queued so the wrap has no gap")
     func loopKeepsNextSegmentQueued() throws {
         let root = FileManager.default.temporaryDirectory
@@ -306,8 +301,6 @@ struct WPESoundRuntimeTests {
         )
     }
 
-    /// `single` must not gain a second segment from the look-ahead — that would
-    /// turn "play once" into "play twice".
     @Test("A single-shot sound queues exactly one segment")
     func singleQueuesOneSegment() throws {
         let root = FileManager.default.temporaryDirectory
@@ -409,7 +402,6 @@ struct WPESoundRuntimeTests {
         snapshot = try #require(runtime.debugTrackSnapshots().first)
         #expect(snapshot.playerVolume == 0)
 
-        // A volume binding arriving while muted must not leak through the mute.
         runtime.setVolume(0.75, forSoundID: "gain")
         snapshot = try #require(runtime.debugTrackSnapshots().first)
         #expect(snapshot.playerVolume == 0)
@@ -485,7 +477,6 @@ struct WPESoundRuntimeTests {
         // AVAudioEngine.start() needs an output device; bail on headless hosts.
         guard runtime.play() else { return }
 
-        // Both reasons active; clearing only one must not resume playback.
         runtime.setMuted(true)
         runtime.pause()
         #expect(!runtime.debugEngineIsRunning())
@@ -560,19 +551,15 @@ struct WPESoundRuntimeTests {
         #expect(runtime.prepare(sounds: [sound]) == 1)
         // AVAudioEngine.start() needs an output device; bail on headless hosts.
         guard runtime.play() else { return }
-        // Control group: unmuted, this loop demonstrably keeps rendering. Three
-        // delivered completions prove a refilled segment rendered end-to-end,
-        // since prepare() only queues two.
+        // Control group: prepare() only queues two segments, so three delivered
+        // completions prove a refilled one rendered end-to-end.
         let runningDeadline = Date().addingTimeInterval(3)
         while runtime.debugRenderedCompletionCount() < 3, Date() < runningDeadline {
             try await Task.sleep(nanoseconds: 20_000_000)
         }
         let controlCompletions = runtime.debugRenderedCompletionCount()
         // Zero deliveries while engine.isRunning is true is a warm-host
-        // AVAudioPlayerNode startup race: AVFoundation dropped the scheduled
-        // segments and the node renders a silent timeline forever. Nothing our
-        // runtime did — bail like the headless guard above. A single delivered
-        // completion re-arms the assertions.
+        // AVAudioPlayerNode race, not ours — bail like the headless guard above.
         guard controlCompletions > 0 else { return }
         #expect(controlCompletions >= 3, "control group: an unmuted loop must keep scheduling segments")
 
@@ -609,10 +596,8 @@ struct WPESoundRuntimeTests {
             startSilent: false
         )
 
-        // The failure mode below (no completion after unmute) and warm-host
-        // deafness both look like zero deliveries, so the discrimination must
-        // run before the mute: prove this host delivers rendered completions
-        // with a throwaway loop, then hold the later assertions unconditionally.
+        // Warm-host deafness and the failure this test hunts both look like zero
+        // deliveries, so probe the host with a throwaway loop before muting.
         try Self.writeTinyWAV(to: root.appendingPathComponent("probe.wav"))
         let probe = WPESceneSoundObject(
             id: "probe",

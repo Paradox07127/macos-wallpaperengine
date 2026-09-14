@@ -1,8 +1,5 @@
 import SwiftUI
 
-/// The lyric rows under a Now Playing type block. Only this subview knows the lyric time base: word-level
-/// highlighting needs finer ticks than the 1 Hz board clock, so it wraps itself — and only itself — in a 10fps
-/// `TimelineView`, the same containment the audio-reactive layer uses for its 30fps canvas.
 struct NowPlayingLyricsView: View {
     /// Where the playhead was at `date`, and whether it keeps running from
     /// there. Absent when the player reports no position at all.
@@ -39,8 +36,6 @@ struct NowPlayingLyricsView: View {
         }
     }
 
-    /// The first rows of the song, with the top one at full weight: used both
-    /// before the first line starts and when the player reports no position.
     private var opening: some View {
         rows(slots: Array(lines.prefix(max(1, lineCount)).map { Optional($0) }), current: 0, at: nil)
     }

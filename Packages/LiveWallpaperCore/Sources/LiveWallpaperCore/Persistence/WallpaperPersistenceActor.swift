@@ -1,8 +1,7 @@
 import Foundation
 
-/// Serial off-MainActor writer for screen / global / bookmark / scheme file stores.
-/// Callers pass a per-store generation; older generations are dropped so
-/// reordered tasks cannot resurrect superseded state (including Reset deletes).
+/// Callers pass a per-store generation; older generations are dropped so reordered
+/// tasks cannot resurrect superseded state (including Reset deletes).
 public actor WallpaperPersistenceActor {
     private let store: AtomicFileStore<[ScreenConfiguration]>
     private let globalSettingsStore: AtomicFileStore<GlobalSettings>

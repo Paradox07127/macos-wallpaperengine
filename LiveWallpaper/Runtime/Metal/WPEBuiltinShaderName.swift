@@ -3,11 +3,7 @@ import Foundation
 import os
 
 enum WPEBuiltinShaderName {
-    /// `compute` walks a ~20-branch effect cascade allocating dozens of throwaway
-    /// interpolated strings per call, on the per-pass dispatch path every frame (trace:
-    /// `isEffectAlias` + `DefaultStringInterpolation` ≈ 5% of one core). The result is
-    /// invariant for a shader name → memoize, keyed on the raw input so hits skip even
-    /// lowercase/path canonicalization (equivalent spellings may take separate entries, never a wrong collision). Lock-guarded for per-display threads on the roadmap; capped against unbounded scenes.
+    /// Memoize `compute`, keyed on the raw input so hits skip even lowercase/path canonicalization (equivalent spellings may take separate entries, never a wrong collision).
     private static let normalizedCache = OSAllocatedUnfairLock(initialState: [String: String]())
     private static let normalizedCacheLimit = 512
 
@@ -153,13 +149,6 @@ enum WPEBuiltinShaderName {
     }
 }
 
-/// Typed identity for the builtin shader names `dispatch` matches by exact string
-/// equality (typed identity + decomposition, strictly behavior-preserving). Raw values
-/// are fixed-point outputs of `WPEBuiltinShaderName.normalized`; case order mirrors the
-/// legacy switch. Names matched by pattern rather than exact equality stay string
-/// checks: `isGodraysCombine` (dispatch + source-aliasing), the wave/flutter substring
-/// check (diagnostics only), and the raw `commands/copy` spelling probed inside the copy
-/// case body. `WPEMetalShaderDispatcherTests` pins the exact raw-value set.
 enum WPEBuiltinShaderKind: String, CaseIterable {
     case solidColor = "solidcolor"
     case solidLayer = "solidlayer"
@@ -192,11 +181,7 @@ enum WPEBuiltinShaderKind: String, CaseIterable {
 }
 
 extension WPEBuiltinShaderKind {
-    /// The judgment-site form shared by dispatcher, graph builder, and renderer preload:
-    /// normalize an authored shader name once, then match the typed builtin identity; nil =
-    /// open-set custom (workshop) shader. Uses the identity-preserving normalizer variant
-    /// (`genericImageAsCopy: false`), the same one every judgment site already used. Never
-    /// write the normalized string back into `WPERenderPass.shader`: custom shaders' disk paths, cache keys, and diagnostics need the authored string.
+    /// nil = open-set custom (workshop) shader. Never write the normalized string back into `WPERenderPass.shader`: custom shaders' disk paths, cache keys, and diagnostics need the authored string.
     init?(normalizing shaderName: String) {
         self.init(rawValue: WPEBuiltinShaderName.normalized(shaderName))
     }

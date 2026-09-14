@@ -5,7 +5,6 @@ protocol WallpaperPerformanceConfigurable: AnyObject, Sendable {
     func applyPerformanceProfile(_ profile: WallpaperPerformanceProfile)
 }
 
-/// Renderers that own a display-link-equivalent and can retarget tempo at runtime.
 @MainActor
 protocol WallpaperFrameRateConfigurable: AnyObject {
     /// Already resolved against the display this session runs on: `FrameRateLimit`
@@ -15,18 +14,13 @@ protocol WallpaperFrameRateConfigurable: AnyObject {
     func setAdaptiveFrameRateThrottle(_ active: Bool)
 }
 
-/// Non-video audio owner (e.g. scene `WPESoundRuntime`); inspector mute/volume routes here.
 @MainActor
 protocol WallpaperAudioConfigurable: AnyObject {
     func setAudioMuted(_ muted: Bool)
     func setAudioVolume(_ volume: Double)
 }
 
-/// Runtimes that own a deep-hibernate teardown behind their own dwell, so the session can
-/// drive eligibility without casting to a concrete view type. `immediately` skips that dwell
-/// for a caller that already served an equivalent (or longer) wait of its own — today only the
-/// manual-pause countdown, which must release at the same wall-clock mark for every wallpaper
-/// kind instead of stacking the two delays.
+/// immediately skips the runtime's dwell when the caller already waited as long or longer.
 @MainActor
 protocol WallpaperHibernationEligible: AnyObject {
     func setHibernationEligible(_ eligible: Bool, immediately: Bool)
@@ -38,21 +32,14 @@ extension WallpaperHibernationEligible {
     }
 }
 
-/// Runtimes that can shed resident resources on *critical* system memory pressure, ahead of
-/// the dwell countdowns they normally release behind. Taken as state, not a one-shot trigger:
-/// the level is pushed on every change so a runtime can revoke whatever it armed once the
-/// emergency clears. Orthogonal to `applyPerformanceProfile`, never a substitute for it — the
-/// profile decides *whether* a wallpaper runs and owns play intent, this only decides *how
-/// deep* an already-suspended one goes, and implementations must not write the profile or
-/// intent back from here, or the two signals start overwriting each other.
+/// State, not a one-shot: push every change. Must not write profile or play intent back.
 @MainActor
 protocol WallpaperCriticalMemoryPressureResponding: AnyObject {
     func setCriticalMemoryPressureActive(_ active: Bool)
 }
 
 #if !LITE_BUILD
-/// Conformance only — the scene session already had this method and its body is
-/// unchanged. Declared here so `SceneWallpaperSession.swift` stays untouched.
+/// Conformance only — SceneWallpaperSession already implements the method.
 extension SceneWallpaperSession: WallpaperCriticalMemoryPressureResponding {}
 #endif
 
@@ -73,10 +60,6 @@ protocol HTMLWallpaperRetrying: AnyObject {
     func retryCurrentSource(timeout: Duration) async -> WallpaperPreparationResult
 }
 
-/// Sessions that can swap their self-built intent machine for the screen's
-/// shared one at install time. Adoption syncs the incoming machine to the
-/// session's current intent before the reference swap, so an install/replace
-/// never rewrites user intent.
 @MainActor
 protocol WallpaperIntentMachineAdopting: AnyObject {
     var playbackMachine: WallpaperPlaybackStateMachine { get set }

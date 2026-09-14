@@ -1,16 +1,12 @@
 import SwiftUI
 import AppKit
 
-/// Centralised design tokens for spacing, corners, and visual metrics.
 public enum DesignTokens {
     public enum Colors {
-        // Surfaces — automatically adapt to light/dark and Increase Contrast.
         public static let pageBackground = Color(nsColor: .windowBackgroundColor)
 
-        /// One step off the page, in both appearances. `controlBackgroundColor` used to back this
-        /// but resolves to *exactly* `windowBackgroundColor` (#FFFFFF light, #1E1E1E dark), so every
-        /// card matched the page behind it with only a hairline stroke to tell them apart. Measured
-        /// after this change: #F6F6F6 on white, #303030 on #1E1E1E.
+        /// One step off the page in both appearances. Not `controlBackgroundColor`: it resolves
+        /// to exactly `windowBackgroundColor`, so cards would match the page behind them.
         public static let surfaceRaised = Color(nsColor: NSColor(name: "surfaceRaised") { appearance in
             let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
             let base = NSColor.windowBackgroundColor
@@ -26,24 +22,20 @@ public enum DesignTokens {
         public static let separator = Color(nsColor: .separatorColor)
         public static let accent = Color(nsColor: .controlAccentColor)
 
-        /// Dark green for white-glyph "active / in-library" badges over bright
-        /// artwork — system green is too light to clear WCAG AA there. Fixed RGB
-        /// (not adaptive) on purpose; the badge sits on its own glass backing.
+        /// Fixed RGB, not adaptive, on purpose: system green is too light to clear WCAG AA
+        /// for white glyphs over bright artwork.
         public static let badgeActive = Color(red: 0.08, green: 0.35, blue: 0.15)
 
-        /// Fixed white for icons/text/badges layered directly over user media
-        /// (video, thumbnails, scene previews) — must contrast the content's
-        /// own colors, not the app theme, so it can't be an adaptive token.
+        /// Fixed white for content layered over user media: it must contrast the media,
+        /// not the app theme, so it can't be an adaptive token.
         public static let overlayForeground = Color.white
 
-        /// Fixed white for icons/text sitting on a solid accent-color fill
-        /// (circle/capsule/chip) — contrasts the flat brand fill itself,
-        /// independent of light/dark theme.
+        /// Fixed white for content on a solid accent fill: it contrasts the brand fill
+        /// itself, independent of light/dark.
         public static let onAccentFill = Color.white
 
-        /// Gold for rating stars and bookmark/favorite glyphs. Named separately
-        /// from `Status.caution` — same hue family, but this carries no "needs
-        /// attention" meaning, just the rating/favorite affordance.
+        /// Named separately from `Status.caution`: same hue, but this carries no
+        /// "needs attention" meaning.
         public static let rating = Color.yellow
 
         public enum Status {
@@ -64,45 +56,32 @@ public enum DesignTokens {
             public static let schemes = Color(nsColor: .systemPurple)
         }
 
-        /// Ring-gauge palette (CPU/GPU/RAM/power dashboards). Clear, legible hues
-        /// just slightly softer than `Status.*`; paired with a thin 3.5pt ring so
-        /// the always-busy usage rings read calmly without going muddy/grey.
+        /// Deliberately softer than `Status.*`: paired with a thin ring, the always-busy
+        /// gauges would read harshly otherwise.
         public enum Gauge {
             public static let low = Color(red: 0.24, green: 0.72, blue: 0.40)
             public static let medium = Color(red: 0.95, green: 0.60, blue: 0.16)
             public static let high = Color(red: 0.90, green: 0.33, blue: 0.31)
         }
 
-        /// Monitor board edit-mode amber. Merges three near-identical values
-        /// (0.85/0.66/0.30, 0.82/0.63/0.30, 0.80/0.62/0.30) found at the
-        /// drag-ghost fill/border and the snap-guide line — hand-tuning drift,
-        /// not intentional variation — collapsed to their middle value.
         public static let boardEditAccent = Color(red: 0.82, green: 0.63, blue: 0.30)
-        /// Selection border around live widget content in board edit mode. Kept
-        /// separate from `boardEditAccent`: its RGB (0.62/0.5/0.28) is
-        /// deliberately darker, where the lighter amber washed out.
+        /// Kept separate from `boardEditAccent`: deliberately darker, where the lighter
+        /// amber washed out.
         public static let boardEditBorder = Color(red: 0.62, green: 0.50, blue: 0.28)
 
-        /// Board edit chrome floats over the user's wallpaper and is always
-        /// dark regardless of system appearance — semantic surface tokens
-        /// would flip it to white over a light wallpaper. Replaces
-        /// `Color(white: 0.12/0.14/0.3)` literals the control bar, settings
-        /// card and size toggle each carried their own copy of.
+        /// Always dark regardless of system appearance: a semantic surface token would
+        /// flip it to white over a light wallpaper.
         public enum BoardChrome {
-            /// Settings card / control bar fill.
             public static let surface = Color(white: 0.14)
             /// The card body, a touch darker so a card over the bar reads as behind it.
             public static let panel = Color(white: 0.12)
-            /// Selected segment inside the size toggle.
             public static let selected = Color(white: 0.30)
-            /// Well behind an unselected segment group.
             public static let well = Color.black.opacity(0.30)
             /// One hairline value for every border in the chrome.
             public static let hairline = Color.white.opacity(0.12)
         }
 
-        /// Scene-diagnostic log line coloring (`SceneDetailView`) — fixed
-        /// values tuned against the panel's own black background, systematically
+        /// Fixed values tuned against the panel's own black background — systematically
         /// lighter than `Status.*` so they stay legible there.
         public enum Log {
             public static let error = Color(red: 1.0, green: 0.45, blue: 0.42)
@@ -122,10 +101,8 @@ public enum DesignTokens {
         }
     }
 
-    /// Prefer Dynamic Type styles so text auto-scales with accessibility
-    /// settings; only `badge` is fixed-size (floats in tight, fixed-geometry
-    /// chips). Never inline `.font(.system(size:))` on text — standalone SF
-    /// Symbol glyph sizing is the documented exemption (DESIGN.md hard rule 1).
+    /// Never inline `.font(.system(size:))` on text; standalone SF Symbol glyph sizing
+    /// is the documented exemption (DESIGN.md hard rule 1).
     public enum Typography {
         public static let badge = Font.system(.caption2).weight(.semibold)
 
@@ -142,35 +119,23 @@ public enum DesignTokens {
 
         public static let hero = Font.largeTitle
 
-        /// Tabular digits so dense numeric columns stay compact and don't jitter.
         public static let metric = Font.caption.monospacedDigit()
 
-        /// Emphasized 12pt-equivalent readout for compact headline metrics.
         public static let metricEmphasized = Font.system(.callout, design: .monospaced)
             .weight(.semibold)
             .monospacedDigit()
 
         public static let code = Font.system(.body, design: .monospaced)
 
-        /// Caption-scale `code` for dense technical text: log lines, paths, IDs.
         public static let codeCaption = Font.system(.caption, design: .monospaced)
     }
 
-    /// The one grid every full-page wallpaper library uses — Aerials,
-    /// Bookmarks, Workshop Browse, Workshop Installed. They had three
-    /// different column definitions and spacings for the same grid kind;
-    /// the two without a `maximum` grew cards without limit on a wide
-    /// window while Workshop's stayed capped, so the library looked denser
-    /// on one page than another.
     public enum LibraryGrid {
         public static let minimumColumnWidth: CGFloat = 240
         public static let maximumColumnWidth: CGFloat = 288
 
-        /// Tile-size steps for every library grid. The 16:9 pages (bookmarks,
-        /// schemes, system wallpaper) draw a tile barely half the height of the
-        /// square Workshop card at the same column width, so the whole ladder
-        /// sits one step higher than the 128/184/248 it started at; `.small` is
-        /// now roughly the old `.medium`.
+        /// The 16:9 pages draw a tile barely half the height of the square Workshop card at
+        /// the same column width, so the whole ladder sits one step higher.
         public static func columnWidths(for size: LibraryTileSize) -> (min: CGFloat, max: CGFloat) {
             switch size {
             case .small: (168, 200)
@@ -196,9 +161,8 @@ public enum DesignTokens {
         public static let md: CGFloat = 12
         public static let lg: CGFloat = 16
         public static let xl: CGFloat = 24
-        /// Content inset for cards, tiles, and floating chrome. Promoted from a
-        /// 14pt literal that 22 call sites had independently converged on —
-        /// it sits between `md` and `lg` deliberately; don't fold it into either.
+        /// Content inset for cards, tiles and floating chrome. Sits between `md` and `lg`
+        /// deliberately; don't fold it into either.
         public static let cardInset: CGFloat = 14
     }
 
@@ -207,46 +171,31 @@ public enum DesignTokens {
         public static let md: CGFloat = 10
         public static let lg: CGFloat = 14
         public static let xl: CGFloat = 18
-        /// Radius for preview containers (screen previews, hero media, drop
-        /// targets). Promoted from a 16pt literal already used by
-        /// `ScreenPreviewChrome` and every large preview surface.
+        /// Radius for preview containers (screen previews, hero media, drop targets).
         public static let preview: CGFloat = 16
-        /// Inspector panel cards, promoted from the literal both
-        /// `ContainerGroupBoxStyle` and `HTMLSourceChrome` carried.
+        /// Inspector panel cards.
         public static let panel: CGFloat = 12
     }
 
-    /// Semantic opacity steps for state-conveying alpha (hover / drag / selected /
-    /// disabled / alert). Fixed decorative strokes, shadows, and media scrims stay
-    /// literal by design — only interaction-state opacity routes through these.
+    /// Only interaction-state alpha routes through these; decorative strokes, shadows
+    /// and media scrims stay literal by design.
     public enum Opacity {
-        /// Hovered row/chip background fill.
         public static let hoverFill: Double = 0.05
-        /// Background fill while the element is being dragged.
         public static let dragFill: Double = 0.08
         /// Active / playing / conflict background; also the unselected stroke.
         public static let activeFill: Double = 0.10
-        /// Selected-state tinted fill.
         public static let selectedFill: Double = 0.12
-        /// Quiet outline in its resting / not-armed state.
         public static let quietStroke: Double = 0.28
-        /// Strong stroke around selected or dragged elements.
         public static let strongStroke: Double = 0.55
-        /// Conflict / warning border.
         public static let alertStroke: Double = 0.75
-        /// Emphasis border for alert / blocked states.
         public static let emphasisStroke: Double = 0.85
-        /// Unselected or empty content dimming.
         public static let dimmedContent: Double = 0.45
-        /// Whole-control dimming for disabled / ended states.
         public static let disabledContent: Double = 0.55
         /// Dimmed glyph in its off state; empty-slot strokes.
         public static let dimmedIcon: Double = 0.70
     }
 
-    /// Page-top status bars (storage breakdown, Workshop setup). Shared because the
-    /// two panels already drifted once — 9pt/r4 against 6pt/r3 — while agreeing on
-    /// every constant of the card around them.
+    /// Page-top status bars (storage breakdown, Workshop setup).
     public enum StatusBar {
         public static let height: CGFloat = 6
         public static let corner: CGFloat = 3
@@ -255,16 +204,11 @@ public enum DesignTokens {
     public enum Inspector {
         public static let minWidth: CGFloat = 268
         public static let idealWidth: CGFloat = 292
-        /// Raised from 392 when the scene property list (20–35 authored rows)
-        /// moved back into this column: the default stays 292, but a scene with
-        /// long property names can be given room without a layout of its own.
         public static let maxWidth: CGFloat = 480
         public static let defaultWidth: CGFloat = idealWidth
         public static let horizontalPadding: CGFloat = Spacing.md
-        /// Shared geometry for every inspector "label … [slider][value]" row so
-        /// sliders and their numeric readouts line up across all sections. The
-        /// readout font (`Typography.metric`) is already monospaced, so call
-        /// sites don't need a separate `.monospacedDigit()`.
+        /// Shared geometry for inspector "label … [slider][value]" rows. `Typography.metric`
+        /// is already monospaced, so call sites don't add `.monospacedDigit()`.
         public static let sliderWidth: CGFloat = 96
         public static let sliderValueWidth: CGFloat = 40
         public static let sliderValueSpacing: CGFloat = Spacing.xs
@@ -280,16 +224,11 @@ public enum DesignTokens {
     }
 
     public enum Sidebar {
-        /// Back to 180 after a spell at 160: the 20pt bought nothing on a ~1000pt
-        /// content column, and the app and Settings sidebars had to diverge into
-        /// two tokens to keep the longest labels ("Backup & Restore") intact.
-        /// Raising the rows' information density is the change worth making here.
         public static let width: CGFloat = 180
         public static let maxWidth: CGFloat = width * 1.2
         public static let sectionHeaderBottomPadding: CGFloat = 0
-        /// Negative inset pulled above each sidebar section header to tighten the
-        /// otherwise-airy default gap between sections (macOS has no public
-        /// `listSectionSpacing`, so we claw it back on the header itself).
+        /// Negative on purpose: macOS has no public `listSectionSpacing`, so the section
+        /// gap is clawed back on the header itself.
         public static let sectionHeaderTopPadding: CGFloat = -7
     }
 
@@ -303,32 +242,23 @@ public enum DesignTokens {
         public static let metadataSpacing: CGFloat = Spacing.sm
     }
 
-    /// Detail-page secondary control row (library filter bar). Anchored under
-    /// the DetailHeaderBar with the same horizontal alignment so the search
-    /// capsule lines up with the header brand icon. Vertical padding stays
-    /// tighter than the header so the two rows read as one composite hero.
+    /// Horizontal padding matches `DetailHeader` so the search capsule lines up with
+    /// the header brand icon; vertical padding stays tighter.
     public enum LibraryFilterBar {
         public static let horizontalPadding: CGFloat = Spacing.xl
         public static let verticalPadding: CGFloat = 10
         public static let contentSpacing: CGFloat = 10
-        // Search-field widths, trimmed twice from the original 220 / 280 / 360
-        // (−25% then a further −20%) so the bar — and the narrow detail
-        // inspector that reuses these tokens — stays legible at minimum width.
+        // Also reused by the narrow detail inspector, so they must stay legible at minimum width.
         public static let searchMinWidth: CGFloat = 132
         public static let searchIdealWidth: CGFloat = 168
         public static let searchMaxWidth: CGFloat = 216
     }
 
-    /// Floor dimensions every sidebar-routed library page uses — without
-    /// them, macOS 26 `NavigationSplitView` occasionally squeezes the detail
-    /// column, drives the sidebar list below its
-    /// `navigationSplitViewColumnWidth` minimum, and drops the upper
-    /// sections (Displays + Library) out of view. Workshop hit this first
-    /// and pinned its own floor; promoted here for Bookmarks / Apple Aerials.
+    /// Without these floors macOS 26 `NavigationSplitView` squeezes the detail column
+    /// and drops the sidebar's upper sections out of view.
     public enum LibraryPage {
-        /// Main-column floor (360) plus a fully expanded inspector (480).
-        /// Raised with `Inspector.maxWidth`; `SettingsWindowLayoutTests` pins the
-        /// relationship so the two cannot drift apart again.
+        /// Main-column floor (360) plus a fully expanded inspector (`Inspector.maxWidth`,
+        /// 480); `SettingsWindowLayoutTests` pins the relationship.
         public static let minWidth: CGFloat = 840
         public static let minHeight: CGFloat = 540
     }
@@ -344,10 +274,8 @@ public enum DesignTokens {
     public enum Settings {
         public static let formHorizontalMargin: CGFloat = 18
         public static let formVerticalMargin: CGFloat = Spacing.md
-        /// Settings-window sliders get a much longer throw than the inspector's
-        /// `Inspector.sliderWidth`: this window has no 268pt panel floor to fit
-        /// into, and these tracks (volume, RAM budget) are dragged for a value
-        /// rather than nudged.
+        /// Longer throw than `Inspector.sliderWidth` on purpose: this window has no 268pt
+        /// panel floor, and these tracks are dragged for a value rather than nudged.
         public static let sliderWidth: CGFloat = 240
     }
 
@@ -357,31 +285,23 @@ public enum DesignTokens {
         public static let shadowRadius: CGFloat = 12
         public static let shadowOpacity: Double = 0.18
         public static let shadowYOffset: CGFloat = 4
-        /// Accent-tinted glow behind the selected gallery tile.
         public static let selectedShadowOpacity: Double = 0.22
 
-        /// Resting elevation values for gallery tiles — keep a faint always-on
-        /// shadow so hover smoothly interpolates instead of popping from flat.
-        /// Matches the macOS News / Photos Memories resting profile.
+        /// A faint always-on shadow so hover interpolates smoothly instead of popping from flat.
         public static let restShadowRadius: CGFloat = 3
         public static let restShadowOpacity: Double = 0.05
         public static let restShadowYOffset: CGFloat = 1
     }
 
-    /// Shared appear/disappear timing for window-level fades, which run through
-    /// `NSAnimationContext` and so need a duration plus a `CAMediaTimingFunction`
-    /// rather than a SwiftUI `Animation`.
+    /// Window-level fades run through `NSAnimationContext`, so they need a duration +
+    /// `CAMediaTimingFunction`, not a SwiftUI `Animation`.
     public enum Motion {
-        /// Entering decelerates over twice the exit duration. The asymmetry is
-        /// the point: a symmetric fade reads as mechanical, and a slow exit
-        /// makes dismissal feel unresponsive. Matches Material 3's
-        /// emphasized-decelerate / emphasized-accelerate pair.
+        /// Enter is deliberately twice the exit duration; the asymmetry is the point.
         public static let enterDuration: TimeInterval = 0.4
         public static let exitDuration: TimeInterval = 0.2
 
-        /// Full-screen wallpaper handoff. Deliberately longer than `exitDuration`
-        /// — that value is tuned for widget-sized elements and reads as a jump
-        /// when the whole screen changes.
+        /// Deliberately longer than `exitDuration`, which is tuned for widget-sized
+        /// elements and reads as a jump at full screen.
         public static let wallpaperCrossfadeDuration: TimeInterval = 0.4
 
         public static var enterTiming: CAMediaTimingFunction {

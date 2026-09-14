@@ -5,10 +5,8 @@ import Metal
 import Testing
 @testable import LiveWallpaper
 
-/// W1: `prepare` must do its work once per set of INPUTS, not once per frame.
-/// The two counters are read-only seams on the pool; `prepareRebuildCount`
-/// covers the `declaredFBOs` rebuild, `aliasPlanDeviceQueryCount` counts the
-/// `heapTextureSizeAndAlign` driver calls the alias planner issues.
+/// `prepareRebuildCount` counts `declaredFBOs` rebuilds; `aliasPlanDeviceQueryCount`
+/// counts the `heapTextureSizeAndAlign` driver calls the alias planner issues.
 @Suite("WPEMetalRenderTargetPool — stable-frame prepare early-out")
 struct WPEMetalRenderTargetPoolStableFrameTests {
     private static let sceneSize = CGSize(width: 1920, height: 1080)
@@ -37,8 +35,6 @@ struct WPEMetalRenderTargetPoolStableFrameTests {
         WPEPreparedRenderPipeline(layers: [WPEPreparedRenderLayer(graphLayer: layer, passes: [])])
     }
 
-    /// Real key derivation (`diagnosticKey`), so scene size / pixel scale / HDR
-    /// reach the intervals exactly the way the executor makes them reach it.
     private static func intervals(
         pool: WPEMetalRenderTargetPool,
         layer: WPERenderLayer,
@@ -59,7 +55,6 @@ struct WPEMetalRenderTargetPoolStableFrameTests {
         }
     }
 
-    /// Runs `count` identical prepares and returns the pool, warm and stable.
     private static func warmPool(
         device: MTLDevice,
         layer: WPERenderLayer,
@@ -147,9 +142,8 @@ struct WPEMetalRenderTargetPoolStableFrameTests {
     @Test("HDR promotion change re-plans even when the interval keys are identical")
     func hdrChangeInvalidatesWithUnchangedKeys() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
-        // Already-float FBOs: `pixelFormat(forFBOFormat:promoteLDRToHDR:)` maps
-        // them to `.rgba16Float` either way, so the keys do NOT move and only
-        // the flag itself can catch the change.
+        // Already-float FBOs map to `.rgba16Float` either way, so the keys do NOT
+        // move and only the flag itself can catch the change.
         let layer = Self.layer(format: "rgba16f")
         let (pool, intervals) = Self.warmPool(device: device, layer: layer)
         let queriesWhenWarm = pool.aliasPlanDeviceQueryCount
@@ -176,7 +170,6 @@ struct WPEMetalRenderTargetPoolStableFrameTests {
 
         #expect(pool.prepareRebuildCount == 2)
         #expect(pool.aliasPlanDeviceQueryCount > queriesWhenWarm)
-        // The rebuild must have actually repopulated declaredFBOs, not just the heap.
         #expect(pool.zeroFilledPlaceholderTexture(forDeclaredFBO: Self.fboNames[0]) != nil)
     }
 
@@ -201,7 +194,6 @@ struct WPEMetalRenderTargetPoolStableFrameTests {
         let (pool, intervals) = Self.warmPool(device: device, layer: layer)
         let queriesWhenWarm = pool.aliasPlanDeviceQueryCount
 
-        // Same intervals, different declared FBOs: only the identity separates them.
         let rewired = Self.layer(fboNames: ["fx_other"])
         pool.prepare(pipeline: Self.pipeline(rewired), aliasIntervals: intervals, pipelineIdentity: 2)
 

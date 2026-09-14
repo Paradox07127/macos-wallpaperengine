@@ -2,15 +2,8 @@ import Foundation
 import Testing
 @testable import LiveWallpaper
 
-// C4 runtime lock: autoreleased objects created by render-thread ticks must be
-// released at tick cadence, never accumulate until thread exit (~0.5 MB/frame
-// of fabricated growth when this regressed). Scope, established by probes on
-// Darwin 27 (2026-08): CoreFoundation wraps every run-loop callout in its own
-// autorelease pool, so tick workloads drain even with the explicit
-// per-iteration `autoreleasepool` removed — this suite verifies the end-to-end
-// cadence property on the real loop but CANNOT distinguish our pool from the
-// OS's on current macOS; `runLoopUsesIterationAutoreleasePool` (source
-// characterization) remains the guard for the wrapper itself.
+// This suite proves tick-cadence draining on the real loop but cannot tell our pool
+// from CoreFoundation's own per-callout one; `runLoopUsesIterationAutoreleasePool` guards the wrapper.
 
 private final class TickCounter: @unchecked Sendable {
     private let lock = NSLock()
@@ -32,10 +25,8 @@ private final class DrainProbe: @unchecked Sendable {
     let deallocated = TickCounter()
 }
 
-/// One "frame": runs on the render thread per signaled source0 tick. Source
-/// handling is what makes `CFRunLoopRunInMode(..., true)` return, so a drained
-/// loop must release the canary right after this returns — a display-link
-/// frame stand-in without any Metal dependency.
+/// Source handling is what makes `CFRunLoopRunInMode(..., true)` return, so a
+/// drained loop must release the canary right after this returns.
 private func drainProbeTick(_ info: UnsafeMutableRawPointer?) {
     guard let info else { return }
     let probe = Unmanaged<DrainProbe>.fromOpaque(info).takeUnretainedValue()

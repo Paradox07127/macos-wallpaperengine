@@ -2,21 +2,10 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// The online inspector's masthead: title, author, rating, and the facts about
-/// the file.
-///
-/// The column is resizable from `Inspector.minWidth` and the sheet insets it by
-/// `Spacing.lg` on each side, so every row here has 236pt at its narrowest.
-/// That budget, not the Workshop page's, decides the layout: rating and author
-/// shared a row until they needed 380pt (409pt in Japanese) and truncated each
-/// other, and the popularity counts spelled out their nouns until Spanish and
-/// Japanese ran past the edge. Rows are one fact deep now, the counts are icons
-/// that wrap, and what got cut is on the tooltip rather than gone.
-/// `WorkshopInspectorHeaderFitTests` measures all five languages against 236pt.
+/// Layout budget: `Inspector.minWidth` less `Spacing.lg` on each side = 236pt per row.
+/// `WorkshopInspectorHeaderFitTests` checks all five languages against it.
 struct WorkshopDetailIdentityHeader: View {
     let item: WorkshopQueryItem
-    /// The keyless creator page ignores the browse filters and states no page
-    /// count, so without a key the author link is Steam's to show, not ours.
     let isKeyless: Bool
     /// nil disables the author link (plain author text).
     var onBrowseCreator: ((String, String?) -> Void)?
@@ -90,9 +79,6 @@ struct WorkshopDetailIdentityHeader: View {
 
     // MARK: - Rating
 
-    /// Stars when rated, always the vote count (the page's `numRatings`). The
-    /// up/down split is a tooltip: it costs 100pt of a 236pt row to say what
-    /// the stars and the count already say.
     private var ratingRow: some View {
         HStack(spacing: DesignTokens.Spacing.sm) {
             if let stars = item.rating?.starsOutOfFive, stars > 0 {
@@ -116,14 +102,12 @@ struct WorkshopDetailIdentityHeader: View {
         .modifier(OptionalHelp(text: voteSplitText))
     }
 
-    /// The up/down split, where the keyed path supplies it.
     private var voteSplitText: Text? {
         guard case let .score(_, up, down) = item.rating else { return nil }
         return Text("\(up.formatted()) up, \(down.formatted()) down")
     }
 
-    /// What the rating line says about votes. The key-free details endpoint
-    /// carries no vote data at all; that is not an item nobody has rated.
+    /// The key-free details endpoint carries no vote data at all; that is not an item nobody has rated.
     enum RatingCountLabel: Equatable {
         case unavailable
         case none
@@ -159,10 +143,6 @@ struct WorkshopDetailIdentityHeader: View {
 
     // MARK: - Facts
 
-    /// Size first: it is the one number that can stop a download, and it used
-    /// to trail a date line long enough to truncate it. Each fact is an atom
-    /// the flow can move to the next line whole, and the noun that a wider
-    /// column would spell out lives on the tooltip.
     @ViewBuilder
     private var factsRow: some View {
         let visible = facts
@@ -186,9 +166,8 @@ struct WorkshopDetailIdentityHeader: View {
     private struct Fact {
         let symbol: String
         let value: String
-        /// Spoken and hovered: the value with the noun the row drops. Not
-        /// `description` — `i18n_guard` reads that name as an interpolated
-        /// `CustomStringConvertible` leaking into accessibility copy.
+        /// The value with the noun the row drops. Don't rename to `description`:
+        /// `i18n_guard` reads that name as a `CustomStringConvertible` leak.
         let spelledOut: String
     }
 
@@ -226,8 +205,6 @@ struct WorkshopDetailIdentityHeader: View {
 
     // MARK: - Dates
 
-    /// One line, not two: when a wallpaper was last touched is what anyone
-    /// reads here, and the other date is on the tooltip.
     @ViewBuilder
     private var dateLine: some View {
         if let updated = item.timeUpdated {

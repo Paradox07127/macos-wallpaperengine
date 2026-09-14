@@ -80,9 +80,8 @@ struct AppLanguagePreferenceTests {
 
     @Test("Settings reset clears the saved language")
     func settingsResetClearsSavedLanguage() async throws {
-        // Asserts on the manager's own domain rather than `AppLanguagePreference
-        // .current`: that global reads `.standard`, and driving it from here meant
-        // running the wipe against the user's real defaults on every suite run.
+        // Assert on the manager's own domain, not `AppLanguagePreference.current`: that global
+        // reads `.standard`, so driving it from here would run the wipe on the user's defaults.
         let scratch = try TestScratch.defaultsSuite("AppLanguagePreferenceTests.reset")
         let defaults = scratch.defaults
         defer { scratch.discard() }

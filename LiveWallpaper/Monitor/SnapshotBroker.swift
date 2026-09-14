@@ -1,7 +1,6 @@
 import Foundation
 import os
 
-/// Hub (single writer) → per-display renderers (many readers, own cadence).
 final class SnapshotBroker: Sendable {
     private struct State {
         var latest: MonitorSnapshot?
@@ -27,7 +26,6 @@ final class SnapshotBroker: Sendable {
         }
     }
 
-    /// Generation only — seed a reader cursor without taking a snapshot.
     var currentGeneration: UInt64 {
         lock.withLock { $0.generation }
     }

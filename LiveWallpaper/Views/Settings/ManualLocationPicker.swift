@@ -117,7 +117,6 @@ struct ManualLocationPicker: View {
     }
 }
 
-/// Resolves address and place suggestions into a weather location.
 @MainActor
 final class LocationCompleterModel: NSObject, ObservableObject, MKLocalSearchCompleterDelegate {
     @Published var results: [MKLocalSearchCompletion] = []

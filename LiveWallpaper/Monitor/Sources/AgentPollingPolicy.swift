@@ -1,6 +1,5 @@
 import Foundation
 
-/// Back off when logs are quiet. Liveness sampling has a separate, slower clock.
 struct AgentPollingPolicy {
     private var quietTicks = 0
 

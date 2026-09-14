@@ -6,8 +6,6 @@ import LiveWallpaperCore
 import Testing
 @testable import LiveWallpaper
 
-/// Counts purges on the main actor, matching `LocalImageCacheReclaimer`'s own
-/// isolation so no synchronisation is needed to read it back.
 @MainActor
 private final class PurgeCounter {
     private(set) var count = 0
@@ -21,7 +19,6 @@ struct LocalImageCacheReclaimerTests {
     /// Short enough to keep the suite quick, long enough that a "did not purge"
     /// assertion is not just a race the scheduler happened to win.
     private static let testDelay = Duration.milliseconds(120)
-    /// 8× the delay. A purge that was going to fire has fired well before this.
     private static let settleWindow = Duration.milliseconds(960)
 
     private static let probeKey = "LocalImageCacheReclaimerTests.probe" as NSString
@@ -39,8 +36,6 @@ struct LocalImageCacheReclaimerTests {
         return window
     }
 
-    /// A stand-in for the app's wallpaper surfaces: a real window, really on
-    /// screen, at the level the wallpaper renderers use.
     private func makeWallpaperLevelWindow() -> NSWindow {
         let panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 40, height: 40),
@@ -72,9 +67,8 @@ struct LocalImageCacheReclaimerTests {
         ))
     }
 
-    /// Puts one probe entry into each of the three local-source caches, through
-    /// the very cache objects production inserts into. Touching them is also
-    /// what forces their lazy creation, and therefore their registration.
+    /// Puts a probe entry into each local-source cache through the very cache objects
+    /// production uses; touching them is what forces their lazy creation and registration.
     private func fillLocalImageCaches() throws {
         let bitmap = try makeBitmap()
 
@@ -95,8 +89,6 @@ struct LocalImageCacheReclaimerTests {
             cost: cgImage.bytesPerRow * cgImage.height
         )
 
-        // Workshop previews join the same reclaim now that their bytes survive on
-        // disk — dropping them costs a read plus a decode, never a re-download.
         WorkshopPreviewImageLoader.shared.assetCache.setObject(
             CachedWorkshopPreviewAsset(asset: .staticImage(cgImage)),
             forKey: Self.probeKey,
@@ -117,10 +109,6 @@ struct LocalImageCacheReclaimerTests {
 
     // MARK: - (a) No purge while a window is still open
 
-    /// Pins: the purge is armed by the *last* window closing, not by any close.
-    /// Mutating `windowWillClose` to schedule unconditionally turns the first
-    /// two expectations red; the control group at the end is what stops this
-    /// from passing on an implementation that simply never purges.
     @Test("Closing one of two windows leaves the caches alone")
     func closingOneOfTwoWindowsDoesNotPurge() async {
         let counter = PurgeCounter()
@@ -144,10 +132,6 @@ struct LocalImageCacheReclaimerTests {
 
     // MARK: - (b) The last close does fire, and empties all three caches
 
-    /// Pins: the last window closing empties every registered local-source
-    /// cache. Deleting the `LocalImageCacheRegistry.shared.register(...)` line
-    /// from any one of the three cache initializers turns this red, and names
-    /// which one by position.
     @Test("The last window closing empties all three local-source caches")
     func lastWindowCloseEmptiesEveryLocalImageCache() async throws {
         try fillLocalImageCaches()
@@ -167,10 +151,6 @@ struct LocalImageCacheReclaimerTests {
 
     // MARK: - (c) Re-opening inside the delay cancels
 
-    /// Pins: a window opening inside the delay cancels the pending purge
-    /// outright rather than letting it fire on a now-open UI. Removing the
-    /// cancellation from `windowDidOpen` turns the third and fourth
-    /// expectations red.
     @Test("Re-opening a window inside the delay cancels the pending purge")
     func reopeningInsideTheDelayCancelsThePurge() async {
         let counter = PurgeCounter()
@@ -196,11 +176,6 @@ struct LocalImageCacheReclaimerTests {
 
     // MARK: - (d) Wallpaper windows take no part
 
-    /// Pins both halves of "the wallpaper surfaces are not part of the
-    /// decision". The second half is the one with teeth against a future
-    /// rewrite: an implementation that asked `NSApp.windows` whether anything
-    /// is still visible would never fire here, because a desktop-level window
-    /// is on screen the whole time.
     @Test("A wallpaper-level window neither arms nor blocks the purge")
     func wallpaperLevelWindowsDoNotParticipate() async {
         let counter = PurgeCounter()
@@ -212,13 +187,11 @@ struct LocalImageCacheReclaimerTests {
         let ui = makeWindow()
         reclaimer.windowDidOpen(ui)
 
-        // Half 1: a wallpaper window going away is not a UI window going away.
         reclaimer.windowWillClose(wallpaper)
         #expect(reclaimer.hasPendingPurgeForTesting == false)
         try? await Task.sleep(for: Self.settleWindow)
         #expect(counter.count == 0)
 
-        // Half 2: one still on screen does not hold the purge back either.
         #expect(wallpaper.isVisible)
         reclaimer.windowWillClose(ui)
         await waitUntil { counter.count > 0 }
@@ -230,19 +203,8 @@ struct LocalImageCacheReclaimerTests {
 
     // MARK: - (f) A poster generated for a cancelled requester is never inserted
 
-    /// Pins: a video poster enters the cache on the requester's side of the
-    /// `await`, never from inside the generator task.
-    ///
-    /// That task is unstructured — it neither inherits the requester's
-    /// cancellation nor dies with it — so an insert made from inside it can land
-    /// after the reclaim has already emptied the cache, and the reclaim is a
-    /// one-shot armed by a window closing: with no window left to close, nothing
-    /// takes that entry out again. Moving `cache.setObject` back inside the task
-    /// turns the last two expectations red. The live arm is the control group
-    /// that stops this from passing on a build that produces no poster at all.
-    ///
-    /// Lives in this suite, not its own, because `.serialized` is what keeps the
-    /// purge tests above from emptying the control group out from under it.
+    /// Must stay in this `.serialized` suite: the purge tests above would otherwise
+    /// empty the control group out from under it.
     @Test("A poster generated for a cancelled requester is never inserted")
     func aCancelledRequesterLeavesNothingInTheThumbnailCache() async throws {
         let fixture = try await VideoPosterFixture.make()
@@ -255,7 +217,6 @@ struct LocalImageCacheReclaimerTests {
             service.invalidate(cacheKey: cancelledKey)
         }
 
-        // Control group.
         #expect(await service.videoPosterImage(for: fixture, cacheKey: liveKey) != nil)
         #expect(service.cachedThumbnail(forKey: liveKey) != nil)
 
@@ -276,9 +237,6 @@ struct LocalImageCacheReclaimerTests {
 
     // MARK: - (g) The caches survive being purged
 
-    /// Pins: `purgeAll` empties the caches without disabling them. An
-    /// implementation that reclaimed by clamping `totalCostLimit` instead of
-    /// calling `removeAllObjects()` would leave these reads nil.
     @Test("A purged cache still stores and returns objects")
     func purgedCachesRemainUsable() throws {
         try fillLocalImageCaches()
@@ -371,15 +329,10 @@ private enum VideoPosterFixture {
 }
 
 #if !LITE_BUILD
-    /// The reclaimer is only as good as its call sites, so this drives the real
-    /// `AppDelegate` window rather than the reclaimer's API.
     @Suite("Settings window drives the cache reclaimer", .serialized)
     @MainActor
     struct SettingsWindowReclaimerWiringTests {
 
-        /// Pins: presenting the settings window registers it, and closing it
-        /// arms the purge. Deleting either call site in `AppDelegate` turns
-        /// this red.
         @Test("Opening registers the settings window and closing arms the purge")
         func settingsWindowOpenAndCloseDriveTheReclaimer() throws {
             let reclaimer = LocalImageCacheReclaimer.shared

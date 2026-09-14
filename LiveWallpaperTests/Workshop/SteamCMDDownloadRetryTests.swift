@@ -2,13 +2,8 @@ import Foundation
 import Testing
 @testable import LiveWallpaper
 
-/// The managed install's four packages are ~25 MB over one `URLSession`
-/// download. Before this policy a single dropped connection failed the whole
-/// install, and re-running it was the user's only recourse.
 @Suite("SteamCMD package download retry")
 struct SteamCMDDownloadRetryTests {
-    /// Records attempts and waits so the interleaving is assertable, and so a
-    /// test never actually sleeps.
     private final class ScriptedDownload {
         private(set) var attempts = 0
         private(set) var waits: [TimeInterval] = []
@@ -50,21 +45,12 @@ struct SteamCMDDownloadRetryTests {
         let download = ScriptedDownload([false, false, true])
 
         #expect(!download.run())
-        // The third outcome — a success — must never be reached: an outage has
-        // to fail the install promptly rather than retry until the caller's
-        // 900-second queue budget expires.
-        //
-        // Literal counts, not `maxAttempts`: asserting the loop ran exactly
-        // `maxAttempts` times restates the implementation, and stayed green
-        // when the budget was mutated to 1.
+        // Literal counts, not `maxAttempts`: asserting against the constant
+        // restates the implementation.
         #expect(download.attempts == 2)
         #expect(download.waits == [SteamCMDDownloadRetryPolicy.retryDelay])
     }
 
-    /// Source-level, because the connector target is not linked into the test
-    /// bundle: the retry only means anything if the install's own download call
-    /// routes through it, and `downloadOnce` must stay the single un-retried
-    /// primitive so two retry mechanisms cannot compound.
     @Test("The install's download routes through the retry policy")
     func installDownloadUsesThePolicy() throws {
         let source = try RepositoryRoot.source("SteamConnector/SteamConnector.swift")

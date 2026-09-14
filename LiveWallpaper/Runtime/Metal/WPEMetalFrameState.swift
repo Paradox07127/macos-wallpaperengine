@@ -4,9 +4,7 @@ import Foundation
 import LiveWallpaperProWPE
 import Metal
 
-/// Logical identity for a render target during one `render(...)` call.
-/// `.scene` is the persistent output texture; `.named(_)` covers FBOs and
-/// layer composites resolved through the pool.
+/// Logical identity for a render target during one `render(...)` call. `.scene` is the persistent output texture; `.named(_)` covers FBOs and layer composites resolved through the pool.
 enum WPEMetalTargetID: Hashable {
     case scene
     case named(String)
@@ -21,21 +19,12 @@ enum WPEMetalTargetID: Hashable {
     }
 }
 
-/// Attachment alpha writes are surface semantics, not a side effect of the authored
-/// blend mode. The render graph's `.scene` target is a shader-readable premultiplied
-/// RGBA intermediate (feeds `.previous`, scene aliases, bloom, frame history), so it
-/// must retain alpha like named FBOs; the terminal present pass writes RGBA normally and makes its opaque-alpha contract explicit in the fragment result, never via color write masks.
+/// Attachment alpha writes are surface semantics, not a side effect of the authored blend mode. The render-graph `.scene` target must retain alpha like named FBOs; the terminal present pass makes opaque-alpha explicit in the fragment result, never via color write masks.
 enum WPEMetalAlphaWritePolicy: Hashable, Sendable {
     case all
 
-    /// `blendMode` is taken and deliberately ignored — not a leftover: the earlier rule
-    /// keyed the write mask off it ("a blended scene target is RGB-only"), producing
-    /// RGB>0/A=0 texels wherever a transparent clear met a blended draw. Keeping the
-    /// parameter keeps the corrected claim — blend mode doesn't influence the alpha write
-    /// mask — stated at the call boundary, pinned by `alphaWritePolicySeparatesTerminalSurfaceFromRenderGraph`.
+    /// `blendMode` is taken and deliberately ignored — not a leftover: keying the write mask off it produced RGB>0/A=0 texels wherever a transparent clear met a blended draw. (see `alphaWritePolicySeparatesTerminalSurfaceFromRenderGraph`)
     static func resolve(targetID: WPEMetalTargetID, blendMode _: String) -> Self {
-        // Both logical render-graph target classes are sampled again. Preserve
-        // their complete premultiplied RGBA contract regardless of blend mode.
         switch targetID {
         case .scene, .named:
             return .all
@@ -47,10 +36,6 @@ enum WPEMetalAlphaWritePolicy: Hashable, Sendable {
     }
 }
 
-/// Frame-local state carried through one render pass dispatch. Tracks the
-/// most recent texture written per logical target so `.previous` and
-/// `.fbo(name)` references resolve to live data, and so a new render pass
-/// can decide between `.clear` and `.load` for its color attachment.
 struct WPEMetalFrameState {
     let output: MTLTexture
     let sceneSize: CGSize
@@ -58,37 +43,24 @@ struct WPEMetalFrameState {
     var latestSceneTexture: MTLTexture?
     var latestNamedTextures: [String: MTLTexture] = [:]
     var writtenTargets: Set<WPEMetalTargetID> = []
-    /// Bumped on every scene-target write. Scene-alias snapshots (`_rt_FullFrameBuffer`
-    /// etc.) are stamped with this so a later referencing pass can tell a stale capture
-    /// from a current one — WPE re-captures the frame for every sampling layer, so a
-    /// snapshot for one layer must not be reused after other layers drew to the scene
-    /// (3521337568's filmgrain erased the beams/halo drawn after the shine chain's capture).
+    /// Bumped on every scene-target write. Scene-alias snapshots are stamped with this so a later pass can tell a stale capture from a current one — a snapshot for one layer must not be reused after other layers drew to the scene.
     var sceneWriteGeneration: Int = 0
-    /// `sceneWriteGeneration` at the time each scene-alias snapshot was taken.
-    /// An entry exists ONLY for snapshot-created textures; a real write to the
-    /// same name (a chain rendering into `_rt_HalfFrameBuffer` as an actual
-    /// target) removes it so the snapshot logic never clobbers real content.
+    /// `sceneWriteGeneration` at snapshot time. An entry exists ONLY for snapshot-created textures; a real write to the same name removes it so snapshot logic never clobbers real content.
     var sceneAliasSnapshotGenerations: [String: Int] = [:]
     /// `sceneWriteGeneration` when the current layer's pass loop began. A scene-alias
     /// read may bind the live scene only while no pass of its own layer has written it.
     var layerEntrySceneWriteGeneration: Int = 0
     var sceneAliasSnapshotBlits = 0
     var sceneAliasDirectBinds = 0
-    /// Per-physical-texture initialization tracking: ping-pong's secondary texture is
-    /// allocated lazily and may contain garbage on first use. Tracking by texture identity
-    /// (not target) lets us decide whether `.load` is safe or whether we need `.clear` (or a blit-copy from the previous primary) before a same-target pass that blends, culls, or rejects fragments via depth.
+    /// Ping-pong's secondary texture is allocated lazily and may contain garbage on first use. Tracking by texture identity (not target) decides whether `.load` is safe or whether we need `.clear` (or a blit-copy from the previous primary).
     var initializedTextures: Set<ObjectIdentifier> = []
     var depthTextures: [WPEMetalDepthTextureKey: MTLTexture] = [:]
-    /// Identity of the output texture whose REFRACT snapshot is still current.
-    /// Cleared the moment that same physical texture is written again, so a
-    /// recycled output never inherits a stale snapshot.
+    /// Identity of the output texture whose REFRACT snapshot is still current. Cleared the moment that same physical texture is written again, so a recycled output never inherits a stale snapshot.
     private var freshRefractionSnapshotOutputID: ObjectIdentifier?
     /// Scene-level camera parallax for this frame; object-quad (scene-targeted)
     /// draws translate each layer by `cameraParallax.pixelOffset(depth:…)`.
     var cameraParallax: WPECameraParallaxFrame = .neutral
-    /// The executor's target pool, threaded so `resolve()` can honor a first-frame
-    /// read of an unwritten but declared local FBO (see `resolve(.fbo)`). Optional
-    /// so hand-built frame states (tests) omit it and keep the strict miss→throw.
+    /// Threaded so `resolve()` can honor a first-frame read of an unwritten but declared local FBO. Optional so hand-built frame states (tests) omit it and keep the strict miss→throw.
     let renderTargetPool: WPEMetalRenderTargetPool?
 
     init(
@@ -169,11 +141,7 @@ struct WPEMetalPipelineKey: Hashable {
     let blendMode: String
     let alphaWritePolicy: WPEMetalAlphaWritePolicy
     let colorPixelFormat: MTLPixelFormat
-    /// Every pipeline state must declare the same depth attachment
-    /// format as the render pass that drives it. We default to `.invalid`
-    /// for non-depth passes so Metal's API validation does not fail when a
-    /// fullscreen copy without depth meets a pipeline that thought it had
-    /// `.depth32Float` attached.
+    /// Every pipeline state must declare the same depth attachment format as the render pass that drives it. Default `.invalid` for non-depth passes so Metal validation does not fail when a fullscreen copy without depth meets a pipeline that thought it had `.depth32Float`.
     let depthPixelFormat: MTLPixelFormat
 }
 

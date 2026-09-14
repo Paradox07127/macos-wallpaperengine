@@ -1,7 +1,6 @@
 import SwiftUI
 
-/// Flat uppercase type pill ("SCENE" / "VIDEO" / "WEB"). In-flow page content,
-/// so it stays flat — badges that float over a thumbnail use `ThumbnailBadge`.
+/// Badges that float over a thumbnail use `ThumbnailBadge` instead.
 public struct TypeBadge: View {
     private let title: String
     private let systemImage: String?

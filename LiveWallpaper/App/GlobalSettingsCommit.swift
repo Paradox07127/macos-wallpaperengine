@@ -1,10 +1,6 @@
 import Foundation
 import LiveWallpaperCore
 
-/// Single commit path for the General page's `GlobalSettings` writes: persistence plus
-/// every model-side effect that has to run with it. Settings pages keep owning their
-/// own `@State`; a non-SwiftUI writer that calls this reaches the same behavior a user
-/// gets from the UI, instead of a disk value nothing reacted to.
 @MainActor
 enum GlobalSettingsCommit {
     /// The fields the General page owns. Everything else in `GlobalSettings` belongs to

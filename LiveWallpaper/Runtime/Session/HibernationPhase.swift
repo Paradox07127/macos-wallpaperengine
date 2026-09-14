@@ -1,12 +1,6 @@
 import Foundation
 
-/// The cover-then-release lifecycle shared by wallpaper runtimes that tear themselves down
-/// after an absence and rebuild on the way back. Ordering is the whole point: the cover (a
-/// snapshot overlay for HTML, a captured still frame for video) must be on screen *before* the
-/// live thing releases, or the desktop flashes blank — the same failure that keeps
-/// `aggressiveSuspend` opt-in. Two rules make this a type, not a pair of booleans: a resume
-/// mid-restore must NOT uncover (the screen is blank or half-built); a suspend mid-restore must
-/// leave a phase the dwell can arm from, or that screen never hibernates again.
+/// Cover must be on screen before release (blank desktop otherwise). Resume mid-restore must not uncover; suspend mid-restore must leave a phase the dwell can arm from.
 struct HibernationPhase: Equatable {
     enum Phase: Equatable {
         case live
@@ -67,11 +61,7 @@ struct HibernationPhase: Equatable {
         }
     }
 
-    /// A suspend landing mid-restore: the rebuild is still in flight and will finish, so the
-    /// resources are about to be live again — `.live` is the honest phase and the only one both
-    /// runtimes' eligibility guards will arm from. Must NOT go to `.hibernated`: that claims the
-    /// resources are gone while they're coming back, and both guards reject `.hibernated`, so
-    /// the dwell would never re-arm and nothing would ever release them again.
+    /// Suspend mid-restore must go to `.live`, not `.hibernated`: the rebuild is still in flight and `.hibernated` would never re-arm the dwell.
     mutating func noteSuspendedDuringRestore() {
         guard phase == .restoring else { return }
         phase = .live

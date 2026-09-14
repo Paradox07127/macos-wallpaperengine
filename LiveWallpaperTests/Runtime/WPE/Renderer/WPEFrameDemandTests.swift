@@ -67,7 +67,6 @@ struct WPEParticlePermanentIdleTests {
         while t <= 1.5 {
             system.tick(now: t)
             if system.liveInstanceCount > 0 { sawLiveParticles = true }
-            // Inside the emission window the system must never classify idle.
             if t <= 0.2 { #expect(!system.isPermanentlyIdle) }
             t += 0.05
         }
@@ -141,14 +140,11 @@ struct WPEFrameDemandTests {
         renderer.onDemandVideoKeyByID = ["layer-1": ["video/clip.mp4"]]
         #expect(!renderer.needsContinuousFrames)
 
-        // Reveal path: `rebuildOnDemandVideo` re-inserts the source; the didSet
-        // must re-arm pacing without waiting for a profile event.
         renderer.dynamicTextureSources["video/clip.mp4"] = StubDynamicTextureSource()
         #expect(renderer.frameDemand.contains(.dynamicTextures))
         #expect(renderer.needsContinuousFrames)
         #expect(stack.surface.mtkView.isPaused == false)
 
-        // Hide path: releasing the last source settles the loop again.
         renderer.dynamicTextureSources.removeValue(forKey: "video/clip.mp4")
         #expect(!renderer.needsContinuousFrames)
         #expect(stack.surface.mtkView.isPaused)

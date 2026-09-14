@@ -64,7 +64,6 @@ struct DetailEditorTests {
             #expect(BoardSettingsView.refreshIntervalIndex(seconds) == index)
             #expect(BoardSettingsView.refreshInterval(atIndex: index) == seconds)
         }
-        // Out-of-range indices clamp instead of trapping.
         #expect(BoardSettingsView.refreshInterval(atIndex: -1) == steps.first)
         #expect(BoardSettingsView.refreshInterval(atIndex: 999) == steps.last)
     }

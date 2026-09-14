@@ -60,11 +60,7 @@ extension WPEMetalSceneRenderer {
             }
             WPESceneDebugArtifacts.shared.endSession()
             if ownedFailedLoad {
-                // Textures, video decoders, particle buffers and half-built targets are
-                // already on the renderer by the time most failures throw, and `didLoad =
-                // false` makes every one unreachable: no tick samples them, and `hibernate()`
-                // refuses to collect them (`guard didLoad`) — without this they'd live until
-                // the user retries or switches wallpaper. Bumping `loadGeneration` also fences the unstructured shader-prewarm task.
+                // `didLoad = false` makes these resources unreachable and `hibernate()` refuses to collect them (`guard didLoad`); without this they would live until the user retries or switches wallpaper.
                 await retireRuntimeState(on: actor)
             } else {
                 // A newer load owns the renderer now — tearing down would kill
@@ -205,8 +201,6 @@ extension WPEMetalSceneRenderer {
                 category: .wpeRender
             )
         }
-        // Diagnostic only. 2955378002 is ~941 runtime bindings / ~137 distinct
-        // sources; every binding still gets its own runtime.
         let reuse = WPESceneScriptInstanceInventory.sourceReuse(in: document)
         debugStage(
             "scripts.inventory",
@@ -335,7 +329,7 @@ extension WPEMetalSceneRenderer {
                 targetW = max(base.width, (targetW * CGFloat(shrink)).rounded())
                 targetH = max(base.height, (targetH * CGFloat(shrink)).rounded())
             }
-            // MetalFX experiment: shrink the native-res RT, never below the authored canvas.
+            // Shrink the native-res RT, never below the authored canvas.
             if targetW > base.width + 1 || targetH > base.height + 1 {
                 cameraUniforms = WPEMetalCameraUniforms(
                     orthogonalProjection: WPESceneOrthogonalProjection(
@@ -368,12 +362,6 @@ extension WPEMetalSceneRenderer {
         sceneSupportsAudioProcessing = document.general.supportsAudioProcessing
             || Self.pipelineRequiresAudioCapture(pipeline)
             || WPESceneScriptInstanceInventory.usesAudioAPI(in: document)
-        // Media integration has no authored opt-in — WPE just calls whatever the
-        // module exported — so the script scan IS the demand signal. A scene with
-        // no media handler must not cost a now-playing subscription.
-        // The enriched feed, not the bare monitor: the monitor's states carry no
-        // artwork and no Apple Music position — only its overlay-owned enrichment
-        // source added those, and it dies with the overlay.
         if WPESceneMediaEventDispatcher.isNeeded(by: document) {
             let dispatcher = await MainActor.run {
                 let dispatcher = WPESceneMediaEventDispatcher(source: WPEEnrichedNowPlayingFeed.shared)
@@ -383,11 +371,6 @@ extension WPEMetalSceneRenderer {
             mediaEventDispatcher = dispatcher
             mediaEventMailbox = dispatcher.mailbox
         }
-        // `$mediaThumbnail` is declared in the render graph rather than in a
-        // script, so its demand gate is the pipeline scan, not the script scan —
-        // 3632513108 binds it only in a material file and exports no handler.
-        // Scanned here, off the main actor, so a scene that declares none does not
-        // even hop to fetch the monitor.
         let mediaTextureSlots = WPEMediaTextureDemand.byPassID(in: pipeline)
         if !mediaTextureSlots.isEmpty {
             let store = WPEMediaTextureStore(device: executor.device, slotsByPassID: mediaTextureSlots)
@@ -412,10 +395,7 @@ extension WPEMetalSceneRenderer {
         cameraParallaxSmoother.reset()
         sceneRenderSize = cameraUniforms.renderSize
         debugStage("camera", "renderSize=\(Int(sceneRenderSize.width))x\(Int(sceneRenderSize.height))")
-        // Decided here, ahead of `loadTextures`: source-texture downsampling is
-        // permanent for the scene's life, so it may only happen once the scaler
-        // is known to be usable for THIS scene on THIS display. Later input
-        // changes (geometry, fit mode) refresh through the same entry point.
+        // Decided here, ahead of `loadTextures`: source-texture downsampling is permanent for the scene's life, so it may only happen once the scaler is known to be usable for this scene on this display.
         refreshUpscalePlan(reason: "load", isInitial: true)
         try checkCurrentSceneScriptLoad(scriptLoadToken)
         // Before any loader's `installSandbox`, so they see resolved `engine.userProperties` instead of the `?? WPESharedScriptState(...)` fallback.
@@ -446,10 +426,7 @@ extension WPEMetalSceneRenderer {
         onProgress?(String(localized: "Loading particle systems", bundle: .appLanguage, comment: "Scene load progress: building particle systems."))
         await loadParticleSystems(from: document, on: actor)
         try checkCurrentSceneScriptLoad(scriptLoadToken)
-        // Emitters with audioprocessingmode > 0 consume the spectrum in the CPU
-        // sim; a scene where they are the only audio consumer must still demand
-        // capture. Registered systems exist only from this point, hence the
-        // late OR onto the shader/script scan above.
+        // Emitters with audioprocessingmode > 0 consume the spectrum in the CPU sim; registered systems exist only from this point, hence the late OR onto the shader/script scan above.
         if !sceneSupportsAudioProcessing {
             sceneSupportsAudioProcessing = particleSystems.contains(where: \.isAudioResponsive)
         }
@@ -468,7 +445,6 @@ extension WPEMetalSceneRenderer {
 
         // After textures so video sources exist; init() seeds visibility/alpha and suppresses auto-play on script-owned video.
         loadLayerScripts(from: document, scriptLoadToken: scriptLoadToken)
-        // Hosts first (3509243656 MAIN n-body), then transform/text consumers. Seeding texts in loadTextPipeline ran consumers first and NaN-poisoned `time`.
         seedSceneScriptsAfterLoad(from: document, scriptLoadToken: scriptLoadToken)
         var scriptsAreBaked = resetSceneScriptsToBakedIfFailed(scriptLoadToken)
         do {
@@ -504,7 +480,6 @@ extension WPEMetalSceneRenderer {
             #if DEBUG
             dumpScenePassesIfRequested()
             #endif
-            // Debug-only first-frame PNG/stats. Production skips this sync read-back (inspector uses captureLivePoster).
             if WPESceneDebugArtifacts.shared.isEnabled {
                 cachedSnapshot = snapshotter.snapshot(from: outputTexture)
                 let stats = WPEMetalTextureVisualStats.analyze(texture: outputTexture)
@@ -523,9 +498,7 @@ extension WPEMetalSceneRenderer {
             dumpOutputTextureIfRequested(outputTexture)
         }
         didLoad = true
-        // A defaults/locale notification may arrive while load is suspended on
-        // shader/GPU work. Initial delivery used the then-current language;
-        // reconcile once loaded so that race becomes one changed-only event.
+        // A defaults/locale notification may arrive while load is suspended; reconcile once loaded so that race becomes one changed-only event.
         applySceneScriptGeneralSettingsIfChanged()
         // Steady-state: async unless a per-frame read-back is active or WPEMetalSerializeFrames is set.
         executor.synchronizeFrameCompletion = shouldSynchronizeFrames()
@@ -543,7 +516,7 @@ extension WPEMetalSceneRenderer {
 
     // MARK: - Deferred audio startup
 
-    /// After first present: `prepare(sounds:)` decodes off-actor (~300-900ms, silent). `play()` only after the generation is still current. Mute/volume re-applied just before `play()`.
+    /// After first present: `prepare(sounds:)` decodes off-actor (silent). `play()` only after the generation is still current. Mute/volume re-applied just before `play()`.
     func beginDeferredAudioStartup() {
         guard let document = pendingAudioStartupDocument else { return }
         pendingAudioStartupDocument = nil
@@ -561,7 +534,7 @@ extension WPEMetalSceneRenderer {
         guard let actor = displayActor else { return }
         deferredAudioStartupTask?.cancel()
         deferredAudioStartupTask = Task.detached(priority: .userInitiated) { [actor] in
-            _ = runtime.prepare(sounds: sounds)   // off-actor, decodes files; nothing audible yet
+            _ = runtime.prepare(sounds: sounds)
             // Publish on the actor. A reload bumps `generation` so stale audio is released, not leaked.
             await actor.publishDeferredAudio(runtime: runtime, generation: generation)
         }
@@ -628,11 +601,9 @@ extension WPEMetalSceneRenderer {
             "  heap-aliased RTs: \(census.aliasCount), \(mib(census.aliasBytes)) logical "
                 + "(upper bound on ONE shared heap — not an addend)"
         ]
-        // Contexts share one JSVirtualMachine per batch worker. Rising without bound is the signal; the dispatcher is per renderer, so this many VMs per screen.
         lines.append("  JSContexts live: \(contexts) (sharing "
             + "\(sceneScriptBatchDispatcher.width) worker VMs on this renderer)")
         lines.append("  device allocated: \(mib(Int(executor.textureSourceDevice.currentAllocatedSize)))")
-        // Largest offenders first so a truncated log still answers where the gigabytes went.
         for item in census.largest {
             lines.append(
                 "    largest: \(item.label) \(item.width)x\(item.height) \(item.format) = \(mib(item.bytes))"

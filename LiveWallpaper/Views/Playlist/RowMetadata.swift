@@ -1,8 +1,7 @@
 import Foundation
 import CoreGraphics
 
-/// Async-loaded media metadata for a playlist row. All fields are populated by
-/// the same async load, so the row's subtitle is empty until it completes.
+/// All fields are filled by one async load, so `subtitle` is empty until it completes.
 struct RowMetadata: Equatable, Sendable {
     var resolution: CGSize?
     var duration: TimeInterval?

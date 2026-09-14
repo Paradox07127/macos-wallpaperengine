@@ -3,9 +3,6 @@ import Foundation
 @testable import LiveWallpaper
 import Testing
 
-/// A blocked network used to surface as "unrecognized response" with a raw
-/// tail, and the user was sent to sign in again. These verdicts have to say
-/// what happened and what would help.
 @Suite("Steam cached-login verdicts")
 struct SteamCachedLoginVerdictTests {
     @Test("Recovery commands authenticate the private profile and retain the actual error")
@@ -45,18 +42,15 @@ struct SteamCachedLoginVerdictTests {
         try doctor.setUsername("alice")
         let aliceGeneration = doctor.accountGeneration
 
-        // A -> B: alice's probe comes back after the switch to bob.
         try doctor.setUsername("bob")
         doctor.applyCachedLoginOutcome(valid, username: "alice", binary: binary, generation: aliceGeneration)
         #expect(doctor.probes[.cachedLogin]?.status == .notRun)
 
-        // A -> B -> A: same name again, but two generations later.
         try doctor.setUsername("alice")
         #expect(doctor.accountGeneration == aliceGeneration + 2)
         doctor.applyCachedLoginOutcome(valid, username: "alice", binary: binary, generation: aliceGeneration)
         #expect(doctor.probes[.cachedLogin]?.status == .notRun)
 
-        // Control: the live generation colours green.
         doctor.applyCachedLoginOutcome(valid, username: "alice", binary: binary, generation: doctor.accountGeneration)
         #expect(doctor.isGreen(.cachedLogin))
         #expect(doctor.cachedLoginVerdict == .sessionValid)

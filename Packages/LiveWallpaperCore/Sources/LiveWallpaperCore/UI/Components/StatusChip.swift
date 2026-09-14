@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Flat status capsule for content. Use ThumbnailBadge for labels over artwork.
+/// Use ThumbnailBadge for labels over artwork.
 public struct StatusChip: View {
     private let title: Text
     private let tint: Color

@@ -4,9 +4,7 @@ import Foundation
 import Testing
 @testable import LiveWallpaper
 
-/// The oracle-derived layout spec (memory `wpe-text-windows-model`): glyph em
-/// = pointsize×300/72, FreeType metric selection, block-left/baseline₁ local
-/// frame, and alignment anchored at the OBJECT ORIGIN (never a box).
+/// Layout spec: memory `wpe-text-windows-model`.
 struct WPETextLayoutEngineTests {
 
     private let font = CTFontCreateWithName("HelveticaNeue" as CFString, 100, nil)
@@ -18,8 +16,7 @@ struct WPETextLayoutEngineTests {
 
     @Test("Metrics come from hhea unless OS/2 USE_TYPO_METRICS is set")
     func metricsFollowFreeTypeSelection() throws {
-        // HelveticaNeue has no USE_TYPO_METRICS flag → hhea metrics must match
-        // what CoreText reports (CTFontGetAscent reads hhea).
+        // CTFontGetAscent reads hhea, so it is a valid oracle only for a face without USE_TYPO_METRICS (HelveticaNeue has none).
         let metrics = WPETextFontMetricsReader.metrics(for: font)
         #expect(abs(metrics.ascender - Double(CTFontGetAscent(font))) < 0.5)
         #expect(abs(metrics.descender - Double(CTFontGetDescent(font))) < 0.5)
@@ -52,8 +49,7 @@ struct WPETextLayoutEngineTests {
                 == SIMD2<Double>(0, -a))
         #expect(layout.anchorOffset(horizontalAlignment: "right", verticalAlignment: "bottom")
                 == SIMD2<Double>(-w, d))
-        // valign=center, n=1: baseline₁ = origin − A/2 (oracle-exact on
-        // republica/Monofur; the (n−1)·adv/2 term is zero for one line).
+        // valign=center, n=1: baseline_1 = origin - A/2; the (n-1)*adv/2 term is zero for one line.
         let center = layout.anchorOffset(horizontalAlignment: "center", verticalAlignment: "center")
         #expect(center.x == -w / 2)
         #expect(abs(center.y + a / 2) < 1e-9)

@@ -2,10 +2,8 @@ import Foundation
 @testable import LiveWallpaper
 import Testing
 
-/// The sidebar renders localized titles but the index used to hold only the
-/// English keys, so a zh-Hans/zh-Hant/ja/es user could not find a row by the words
-/// on screen. Bundles are resolved explicitly here rather than by flipping the
-/// process-wide app language, which is global state shared with other suites.
+/// Bundles are resolved explicitly rather than by flipping the process-wide app
+/// language, which is global state shared with other suites.
 @Suite("Settings search indexes every supported language")
 struct SettingsSearchLocalizationTests {
     private static let languages = ["en", "zh-Hans", "zh-Hant", "ja", "es"]
@@ -36,8 +34,6 @@ struct SettingsSearchLocalizationTests {
         }
     }
 
-    /// English keys must keep working after the change — a user typing "Storage"
-    /// while running in Japanese should still land on the page.
     @Test("The English key stays searchable in every language", arguments: languages)
     func englishKeyStaysSearchable(language: String) throws {
         let bundle = try bundle(for: language)
@@ -47,9 +43,7 @@ struct SettingsSearchLocalizationTests {
         }
     }
 
-    /// Guards the actual regression: at least one title must differ from its
-    /// English key in each non-English language, otherwise this suite would pass
-    /// against an index that never localized anything.
+    /// Without this, the suite would pass against an index that never localized anything.
     @Test("Non-English catalogs really do translate the titles", arguments: ["zh-Hans", "zh-Hant", "ja", "es"])
     func nonEnglishTitlesDifferFromKeys(language: String) throws {
         let bundle = try bundle(for: language)

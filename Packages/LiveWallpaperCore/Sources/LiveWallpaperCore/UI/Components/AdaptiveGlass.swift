@@ -38,9 +38,8 @@ public struct AdaptiveGlassContainer<Content: View>: View {
 }
 
 public extension View {
-    /// `stroked: false` suppresses the fallback path's own outline — for callers
-    /// that already draw an edge on the same shape (e.g. `GalleryTileChrome`),
-    /// which would otherwise render two hairlines on macOS 14/15.
+    /// `stroked: false` suppresses the fallback path's own outline, for callers that
+    /// already draw an edge on the same shape (else two hairlines on macOS 14/15).
     func adaptiveGlassSurface(
         _ shape: AdaptiveGlassShape = .roundedRectangle(12),
         tint: Color? = nil,
@@ -65,11 +64,9 @@ public extension View {
         modifier(AdaptiveGlassButtonModifier(prominence: prominence, shape: shape, size: size))
     }
 
-    /// Liquid-glass chrome for a small badge floating over a thumbnail/preview. The
-    /// legibility-preserving tint keeps white/coloured glyphs readable over bright previews; Reduce
-    /// Transparency forces an opaque fill. Adds zero padding so it never changes a badge's footprint
-    /// — only its backing. `in:` takes a rounded rectangle for panels that carry more than one line —
-    /// a capsule's end caps waste the corners and read as an oversized pill.
+    /// Adds zero padding, so it changes a badge's backing and never its footprint.
+    /// `in:` takes a rounded rectangle for multi-line panels; a capsule's caps read as
+    /// an oversized pill there.
     func thumbnailBadgeGlass(
         tint: Color = .black,
         opacity: Double = 0.6,
@@ -78,8 +75,6 @@ public extension View {
         modifier(ThumbnailBadgeGlassModifier(tint: tint, opacity: opacity, shape: shape))
     }
 
-    /// Chrome over wallpaper, with a scrim between material and content for legibility.
-    /// Includes a pre-macOS 26 fallback so controls remain readable on bright media.
     func adaptiveGlassOverMedia(
         _ shape: AdaptiveGlassShape = .capsule,
         scrim: Double = 0.45
@@ -87,18 +82,14 @@ public extension View {
         modifier(AdaptiveGlassOverMediaModifier(shape: shape, scrim: scrim))
     }
 
-    /// A scrim between Liquid Glass and light-on-dark content preserves contrast.
-    /// Callers gate on `AdaptiveGlass.isAvailable` and supply their own pre-macOS 26 treatment.
+    /// Callers gate on `AdaptiveGlass.isAvailable` and supply their own pre-macOS 26
+    /// treatment - this modifier renders nothing below 26.
     func adaptiveGlassScrimmed(cornerRadius: CGFloat, scrim: Color) -> some View {
         modifier(AdaptiveGlassScrimmedModifier(cornerRadius: cornerRadius, scrim: scrim))
     }
 
-    /// Dark-tinted interactive glass circle for a single-glyph control over artwork
-    /// (e.g. the hero close button). The dark tint keeps a white glyph legible over
-    /// bright previews and firms up on hover. `opacity: nil` keeps the dark
-    /// constants tuned for that role; pass a `thumbnailBadgeGlass`-strength value
-    /// (with a `tint`) to move an identity-tinted glyph control onto this hover
-    /// API without changing its resting look.
+    /// `opacity: nil` keeps the dark constants tuned for a white glyph over artwork;
+    /// pass a `thumbnailBadgeGlass`-strength value together with a `tint` instead.
     func floatingGlyphGlass(
         hovered: Bool,
         tint: Color = .black,
@@ -108,9 +99,6 @@ public extension View {
     }
 }
 
-/// Whether this OS has real Liquid Glass, asked once instead of spelled as an
-/// `#available` at each call site — which is the same reason every other glass
-/// API in the app lives in this file.
 public enum AdaptiveGlass {
     public static var isAvailable: Bool {
         if #available(macOS 26.0, *) { return true }
@@ -126,9 +114,8 @@ private struct AdaptiveGlassScrimmedModifier: ViewModifier {
 
     @ViewBuilder
     func body(content: Content) -> some View {
-        // Checked here as well as at the one current call site: the whole
-        // material is transparency, and the next caller should not have to know
-        // to gate it.
+        // Checked here as well as at the call site: the next caller should not have to
+        // know to gate it.
         if #available(macOS 26.0, *), !reduceTransparency {
             content
                 .background(
@@ -141,9 +128,6 @@ private struct AdaptiveGlassScrimmedModifier: ViewModifier {
     }
 }
 
-/// Backing chosen for a floating glyph. Extracted so the accessibility decision
-/// is assertable without rendering a view, the same way
-/// `MonitorPanelAppearance.usesGlass` is.
 public enum FloatingGlyphBacking: Equatable, Sendable {
     /// Liquid Glass — only when transparency is allowed and the OS offers it.
     case glass
@@ -152,9 +136,6 @@ public enum FloatingGlyphBacking: Equatable, Sendable {
     /// Pre-glass translucent tint.
     case tinted
 
-    /// Reduce Transparency outranks availability: the glyph floats over
-    /// arbitrary wallpaper art, so a see-through disc is precisely what the
-    /// setting asks us to stop drawing.
     public static func resolve(
         glassAvailable: Bool,
         reduceTransparency: Bool,
@@ -170,9 +151,8 @@ public enum FloatingGlyphBacking: Equatable, Sendable {
 private struct FloatingGlyphGlassModifier: ViewModifier {
     let hovered: Bool
     var tint: Color = .black
-    /// nil = the dark backing this modifier has always drawn; a value follows
-    /// `thumbnailBadgeGlass` strength (glass = value × 0.6, fallback = value)
-    /// so migrated call sites keep their resting look on every path.
+    /// nil = the dark default backing; a value follows `thumbnailBadgeGlass` strength
+    /// (glass = value x 0.6, fallback = value).
     var opacity: Double?
 
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -198,9 +178,8 @@ private struct FloatingGlyphGlassModifier: ViewModifier {
             content.background(
                 Circle()
                     .fill(tint)
-                    // White at 0.22 over the default black composites to exactly
-                    // the `Color(white: 0.22)` this path hovered with before it
-                    // took a tint; over a tint it reads as the same brightening.
+                    // White at 0.22 over black composites to exactly `Color(white: 0.22)`; over a tint
+                    // it reads as the same brightening.
                     .overlay(Circle().fill(Color.white.opacity(hovered ? 0.22 : 0)))
                     .overlay {
                         if bordered {
@@ -221,12 +200,6 @@ private struct FloatingGlyphGlassModifier: ViewModifier {
     }
 }
 
-/// Whether badges floating over artwork use real Liquid Glass, or the cheap tinted fill. Glass
-/// samples the content *behind* it every frame. One badge on a detail hero is exactly what the
-/// material is for; forty cards' worth scrolling past is not — Apple's own guidance is to limit how
-/// many glass effects are on screen at once and to reserve the material for the most important
-/// controls rather than ordinary content metadata. `GalleryTileChrome` therefore switches every card
-/// that scrolls in a gallery to `.opaque`, and the detail and inspector surfaces keep the default.
 public enum ThumbnailBadgeSurface: Sendable {
     case glass
     case opaque
@@ -312,9 +285,8 @@ private struct AdaptiveGlassSurfaceModifier: ViewModifier {
 
     private var tintOpacity: Double { colorScheme == .dark ? 0.20 : 0.11 }
 
-    /// Boost the fallback tint opacity for interactive surfaces so that small
-    /// circular / capsule selection targets (40-44pt) read clearly even against
-    /// a busy wallpaper backdrop. Non-interactive surfaces keep the calmer value.
+    /// Interactive surfaces boost the fallback tint so small (40-44pt) circular and
+    /// capsule targets read against a busy wallpaper backdrop.
     private var fallbackTintOpacity: Double {
         if interactive {
             return colorScheme == .dark ? 0.30 : 0.20
@@ -366,9 +338,6 @@ private struct AdaptiveGlassSurfaceModifier: ViewModifier {
         }
     }
 
-    /// Native Liquid Glass's intrinsic edge highlight is subtle; interactive surfaces
-    /// get a faint 0.5pt outline so low-vision users can locate hit areas. Non-interactive
-    /// surfaces stay unmodified to preserve the native refraction feel.
     @available(macOS 26.0, *)
     @ViewBuilder
     private func interactiveOutline<S: InsettableShape>(_ shape: S) -> some View {

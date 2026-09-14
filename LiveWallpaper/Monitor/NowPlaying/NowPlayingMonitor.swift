@@ -1,8 +1,6 @@
 import AppKit
 import Foundation
 
-/// Per-player userInfo decoding — a data row, not a code branch, so a new
-/// player is a new row and the ingest path stays untouched.
 struct NowPlayingPlayerMapping: Sendable {
     let bundleID: String
     let notificationName: String
@@ -19,8 +17,7 @@ struct NowPlayingPlayerMapping: Sendable {
     let trackIDKey: String?
 
     static let all: [NowPlayingPlayerMapping] = [
-        // Spotify: `Duration` is integer milliseconds while `Playback Position`
-        // is float seconds (fixtures 2026-08-20) — hence separate scales.
+        // Spotify: `Duration` is integer milliseconds while `Playback Position` is float seconds — hence separate scales.
         NowPlayingPlayerMapping(
             bundleID: "com.spotify.client",
             notificationName: "com.spotify.client.PlaybackStateChanged",
@@ -53,10 +50,6 @@ struct NowPlayingPlayerMapping: Sendable {
     ]
 }
 
-/// App-lifetime distributed-notification listener that deliberately outlives every `NowPlayingSource`:
-/// overlay pause tears down the whole monitor pipeline, and DNC only pushes on change, so an observer
-/// tied to source lifetime would permanently miss track changes during occlusion/lock. With no
-/// subscribers this only updates memory, never pushes a sink.
 @MainActor
 final class NowPlayingMonitor: NSObject {
     static let shared = NowPlayingMonitor()
@@ -119,8 +112,6 @@ final class NowPlayingMonitor: NSObject {
     }
 
     deinit {
-        // The shared instance never deallocates; this keeps test instances from
-        // leaving a dangling DNC registration behind.
         DistributedNotificationCenter.default().removeObserver(self)
         NSWorkspace.shared.notificationCenter.removeObserver(self)
     }
@@ -136,23 +127,18 @@ final class NowPlayingMonitor: NSObject {
         playerDidTerminate(bundleID: bundleID)
     }
 
-    /// Terminated player == Stopped: drop its record so arbitration falls to
-    /// the other player or the no-track phases. Also the test seam.
     func playerDidTerminate(bundleID: String) {
         guard records.removeValue(forKey: bundleID) != nil else { return }
         ordinal &+= 1
         notifySubscribers()
     }
 
-    /// Exactly what the selector delivers — also the test seam.
     func ingest(name: String, userInfo: [AnyHashable: Any]) {
         guard let mapping = Self.mappings.first(where: { $0.notificationName == name }) else { return }
         ordinal &+= 1
 
         let stateString = userInfo[mapping.stateKey] as? String
         if stateString == "Stopped" {
-            // Stopped == the player no longer provides media: drop its record so
-            // arbitration falls to the other player or the no-track phases.
             records.removeValue(forKey: mapping.bundleID)
             notifySubscribers()
             return
@@ -224,21 +210,12 @@ final class NowPlayingMonitor: NSObject {
 
     // MARK: - Subscriptions
 
-    /// Replays the current state synchronously so a starting source has no
-    /// resume gap. The ordinal lets subscribers drop out-of-order hops.
     func subscribe(id: UUID, handler: @escaping @Sendable (UInt64, MonitorNowPlayingState) -> Void) {
         subscribers[id] = handler
         handler(ordinal, currentState)
         seedFromRunningPlayersIfNeeded()
     }
 
-    /// DNC only pushes on change, so a launch while a song is already playing
-    /// leaves the monitor blind until the next track — the "wallpaper shows the
-    /// song only after a reload" symptom. One AppleScript read per RUNNING
-    /// player closes that gap; the query layer already refuses to prompt for
-    /// consent, so a never-authorized player just stays on the old behavior.
-    /// Demand-driven (first subscriber), once per process: later launches of a
-    /// player are covered by its own notifications.
     private func seedFromRunningPlayersIfNeeded() {
         guard !didAttemptLaunchSeed else { return }
         didAttemptLaunchSeed = true

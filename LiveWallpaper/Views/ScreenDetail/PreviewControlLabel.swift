@@ -1,8 +1,6 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// Preview control with a visible caption, including controls that affect desktop clicks.
-/// Fixed width keeps adjacent controls aligned across languages.
 struct PreviewControlLabel: View {
     let systemImage: String
     let title: LocalizedStringKey
@@ -28,11 +26,6 @@ struct PreviewControlLabel: View {
         .contentShape(Rectangle())
     }
 
-    /// White, not `.secondary` and not the accent. Both of those are tuned against
-    /// the app's own background; on a wallpaper they are a mid grey and a blue on
-    /// whatever colour happens to be behind them — the selected segment came out
-    /// as accent text on a 35%-accent pill, which is the washed-out label in the
-    /// bar. The scrim under the capsule is the known floor these read against.
     private var resolvedTint: AnyShapeStyle {
         if let tint {
             return AnyShapeStyle(tint)

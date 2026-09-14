@@ -406,9 +406,6 @@ struct WallpaperEngineImportServiceTests {
             Issue.record("Expected .scene content, got \(content)")
             return
         }
-        // The parser logs an `.info` note for the particle object ("parsed;
-        // rendered by the Metal particle simulator"). That success note used to
-        // flag the whole scene as "Limited Compatibility".
         #expect(descriptor.capabilityTier == .imageOnly)
     }
 
@@ -659,7 +656,7 @@ struct WallpaperEngineImportServiceTests {
     }
 
     /// `FileManager.enumerator(at:)` yields nothing when its root is a symlink,
-    /// and the plugin probe roots at `bin`, so a symlinked `bin` read as "no plugin".
+    /// and the plugin probe roots at `bin`, so a symlinked `bin` would read as "no plugin".
     @Test("A symlinked bin/ still reports its .dll plugin")
     func symlinkedBinDirectoryStillDetectsPlugin() throws {
         let fixture = try makePluginFixture()
@@ -674,7 +671,6 @@ struct WallpaperEngineImportServiceTests {
         #expect(project.requiresWindowsPlugin)
     }
 
-    /// `<root>/workshop/project.json` plus a detached `<root>/realbin/plugin.dll`.
     private func makePluginFixture() throws -> (root: URL, folder: URL, realBin: URL, cleanup: () -> Void) {
         let fileManager = FileManager.default
         let root = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -907,9 +903,6 @@ struct WallpaperEngineImportServiceTests {
         try Data(manifest.utf8).write(to: folderURL.appendingPathComponent("project.json"))
         try Data([0x47, 0x49, 0x46]).write(to: folderURL.appendingPathComponent("preview.gif"))
 
-        // Dependencies now resolve only as sibling items in Steam's Workshop
-        // content directory — the extraction cache that used to satisfy them is
-        // gone, so the fixture has to place them where Steam would.
         for depID in prefilledSiblingWorkshopIDs {
             let depDir = folderURL.deletingLastPathComponent()
                 .appendingPathComponent(depID, isDirectory: true)

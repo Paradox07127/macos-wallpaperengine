@@ -3,7 +3,6 @@ import LiveWallpaperCore
 
 struct ColorAdjustmentsView: View {
     @Binding var effectConfig: VideoEffectConfig
-    /// Per-display colourspace override.
     @Binding var videoColorSpace: VideoColorSpace
     var screen: Screen
     var screenManager: ScreenManager
@@ -109,8 +108,7 @@ struct ColorAdjustmentsView: View {
     }
 
     /// Coalesced: `effectBinding`'s setter persists the config and rebuilds the
-    /// display's `CIFilter` chain, which is not something to do once per
-    /// gesture sample.
+    /// `CIFilter` chain — not something to do once per gesture sample.
     private func effectSlider(
         title: LocalizedStringKey,
         value: Binding<Double>,

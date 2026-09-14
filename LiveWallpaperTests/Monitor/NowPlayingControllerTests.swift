@@ -2,17 +2,13 @@ import os
 import XCTest
 @testable import LiveWallpaper
 
-/// No test here may let a real Apple Event out of the process: one would put up
-/// an Automation consent dialog and drive whatever the user is listening to.
-/// Every case injects a fake executor, so the only things under test are the
-/// text we would have sent and the rules around sending it.
+/// Never let a real Apple Event out of this file: it would raise an Automation
+/// consent dialog and drive the user's player. Every case injects a fake executor.
 @MainActor
 final class NowPlayingControllerTests: XCTestCase {
     private static let spotify = "com.spotify.client"
     private static let music = "com.apple.Music"
 
-    /// The executor runs on the controller's own queue, so the recorder has to
-    /// be safe to touch from there as well as from the test.
     private struct Locked<Value: Sendable>: Sendable {
         private let storage: OSAllocatedUnfairLock<Value>
         init(_ value: Value) { storage = OSAllocatedUnfairLock(initialState: value) }
@@ -51,7 +47,6 @@ final class NowPlayingControllerTests: XCTestCase {
         }
     }
 
-    /// Same shape as `Recorder`, for the read path.
     private struct QueryRecorder: Sendable {
         struct State: Sendable {
             var scripts: [String] = []
@@ -102,10 +97,8 @@ final class NowPlayingControllerTests: XCTestCase {
         XCTAssertNil(NowPlayingController.script(for: .playerPosition, bundleID: nil))
     }
 
-    /// The hard rule for the read path: a query is never the result of the user
-    /// clicking anything, so it must not be what first provokes the Automation
-    /// dialog. `-1744` is macOS saying "I would have to ask" — nothing may be
-    /// sent while that is the answer.
+    /// `-1744` is macOS saying "I would have to ask": nothing may be sent while
+    /// that is the answer.
     func testQueryStaysSilentWhileConsentWouldHaveToBeAsked() async {
         let queries = QueryRecorder()
         let controller = makeController(
@@ -120,10 +113,6 @@ final class NowPlayingControllerTests: XCTestCase {
         XCTAssertEqual(controller.authorization(for: Self.music), .notDetermined)
     }
 
-    /// Consent lives in System Settings and survives relaunches, while this
-    /// map starts empty every launch. Reading the existing answer (which never
-    /// prompts) is what lets a playhead appear for someone who granted
-    /// Automation months ago and has not touched a transport button today.
     func testQueryUsesConsentGrantedInAnEarlierLaunch() async {
         let queries = QueryRecorder()
         let controller = makeController(Recorder(), queries: queries, probe: { _ in noErr })
@@ -135,7 +124,6 @@ final class NowPlayingControllerTests: XCTestCase {
         XCTAssertEqual(controller.authorization(for: Self.music), .authorized)
     }
 
-    /// A target the user has refused stays refused without a round trip.
     func testQueryStaysSilentForARefusedTarget() async {
         let queries = QueryRecorder()
         let controller = makeController(
@@ -159,9 +147,6 @@ final class NowPlayingControllerTests: XCTestCase {
         XCTAssertEqual(controller.authorization(for: Self.music), .denied)
     }
 
-    /// A real is read out of the descriptor, never off `stringValue`:
-    /// AppleScript formats reals for the current locale, so `12,5` would parse
-    /// to nil wherever the decimal separator is a comma.
     func testNumericValuesDoNotGoThroughLocaleFormatting() {
         XCTAssertEqual(NowPlayingScriptValue.number(12.5).doubleValue, 12.5)
         XCTAssertNil(NowPlayingScriptValue.text("12,5").doubleValue)
@@ -235,7 +220,6 @@ final class NowPlayingControllerTests: XCTestCase {
         XCTAssertEqual(NowPlayingController.clampedSeek(seconds: 61.5, duration: 245), 61.5)
         XCTAssertEqual(NowPlayingController.clampedSeek(seconds: .nan, duration: 245), 0)
         XCTAssertEqual(NowPlayingController.clampedSeek(seconds: .infinity, duration: 245), 0)
-        // No usable duration: the floor still applies, the ceiling cannot.
         XCTAssertEqual(NowPlayingController.clampedSeek(seconds: -1, duration: nil), 0)
         XCTAssertEqual(NowPlayingController.clampedSeek(seconds: 900, duration: nil), 900)
         XCTAssertEqual(NowPlayingController.clampedSeek(seconds: 900, duration: 0), 900)
@@ -288,8 +272,6 @@ final class NowPlayingControllerTests: XCTestCase {
         XCTAssertEqual(recorder.scripts.count, 2)
     }
 
-    /// The window is per command, not global: a play/pause right after a skip
-    /// is a different intent and must still land.
     func testThrottleIsPerCommandAndPerPlayer() async {
         let recorder = Recorder()
         let controller = makeController(recorder)
@@ -324,9 +306,6 @@ final class NowPlayingControllerTests: XCTestCase {
         XCTAssertEqual(recorder.scripts.count, 1, "a denied target kept sending Apple Events")
     }
 
-    /// Automation consent is granted per target app, so a Spotify denial must
-    /// not mute Music: one shared flag made every player inert after the first
-    /// refusal, with no way back short of a relaunch.
     func testDenialForOnePlayerDoesNotMuteTheOther() async {
         let recorder = Recorder()
         recorder.fail(status: NowPlayingController.Status.notPermitted, message: "Not authorized")
@@ -344,7 +323,6 @@ final class NowPlayingControllerTests: XCTestCase {
         XCTAssertTrue(recorder.scripts[1].contains("Music"), "\(recorder.scripts)")
         XCTAssertEqual(controller.authorization(for: Self.music), .authorized)
 
-        // Spotify stays denied and stays silent.
         let toSpotify = await controller.send(
             .previous, to: Self.spotify, now: start.addingTimeInterval(120)
         )
@@ -352,8 +330,6 @@ final class NowPlayingControllerTests: XCTestCase {
         XCTAssertEqual(recorder.scripts.count, 2, "\(recorder.scripts)")
     }
 
-    /// A script that will not compile is our bug, not the user refusing
-    /// consent: latching it as a denial made the buttons dead until relaunch.
     func testScriptCompileFailureDoesNotLatchAsDenial() async {
         let recorder = Recorder()
         recorder.fail(status: NowPlayingController.Status.scriptCompileFailed, message: nil)
@@ -401,8 +377,6 @@ final class NowPlayingControllerTests: XCTestCase {
         }
     }
 
-    /// A player that is not running cannot be probed; reading that as a denial
-    /// would silently disable the buttons for the rest of the session.
     func testNotRunningPlayerDoesNotReadAsDenied() async {
         let controller = makeController(
             Recorder(), probe: { _ in NowPlayingController.Status.procNotFound }
@@ -411,8 +385,6 @@ final class NowPlayingControllerTests: XCTestCase {
         XCTAssertEqual(controller.authorization(for: Self.spotify), .notDetermined)
     }
 
-    /// Seek keys carry their seconds, so an unbounded map would grow for the
-    /// life of the process.
     func testThrottleMapStaysBounded() async {
         let recorder = Recorder()
         let controller = makeController(recorder)

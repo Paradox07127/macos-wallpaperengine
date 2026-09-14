@@ -4,9 +4,6 @@ import Testing
 enum RepositoryRoot {
     static let projectFileName = "LiveWallpaper.xcodeproj"
 
-    /// Symlink-resolved. `FileManager`'s enumerator resolves symlinks while
-    /// `#filePath` does not, so under a `/tmp` checkout an unresolved root strips
-    /// no prefix and every path-keyed allowlist misses at once.
     static let url: URL = {
         let sourceDirectory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
         let workingDirectory = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
@@ -46,9 +43,6 @@ enum RepositoryRoot {
         }
     }
 
-    /// Keys a swept file against `root`. Both sides are symlink-resolved because
-    /// `FileManager`'s enumerator resolves while a root written as `/tmp/...` does
-    /// not — mismatched spaces strip nothing and miss every allowlist entry at once.
     static func relativePath(of file: URL, under root: URL = RepositoryRoot.url) -> String {
         let prefix = root.resolvingSymlinksInPath().path + "/"
         return file.resolvingSymlinksInPath().path.replacingOccurrences(of: prefix, with: "")
@@ -59,11 +53,8 @@ enum RepositoryRoot {
     }
 
     static func swiftFiles(underURL root: URL) -> [URL] {
-        // `enumerator(at:)` does not follow a symlink used as the *root*: it yields
-        // zero entries and reports no error, so a sweep-based test would pass on an
-        // empty set instead of failing. (A symlink in a middle path component
-        // enumerates fine — only the root is affected.) Resolving first is what
-        // keeps a symlinked root scanning the same files as the directory it names.
+        // `enumerator(at:)` silently yields zero entries for a symlink used as the
+        // *root* (middle components are fine), so resolve before enumerating.
         let resolvedRoot = root.resolvingSymlinksInPath()
         guard let enumerator = FileManager.default.enumerator(
             at: resolvedRoot,
@@ -121,8 +112,6 @@ struct RepositoryRootTests {
         try "// probe\n".write(to: real.appendingPathComponent("Sub/Nested/Probe.swift"), atomically: true, encoding: .utf8)
         try manager.createSymbolicLink(at: base.appendingPathComponent("link"), withDestinationURL: real)
 
-        // The root itself is a real directory; only the path used to reach it runs
-        // through a symlink — the same shape as a checkout under `/tmp`.
         let root = base.appendingPathComponent("link/Sub")
         let swept = RepositoryRoot.swiftFiles(underURL: root)
         #expect(swept.count == 1)
@@ -133,10 +122,8 @@ struct RepositoryRootTests {
         )
     }
 
-    /// Distinct from `relativePathSurvivesSymlinkedRoot` above: there the symlink is a
-    /// *middle* path component and the root itself is a real directory, which enumerates
-    /// fine. Here the root *is* the symlink, which `enumerator(at:)` refuses to follow —
-    /// silently, yielding zero entries, so a sweep-based test passes on an empty set.
+    /// Not a duplicate of `relativePathSurvivesSymlinkedRoot`: there the symlink is a
+    /// middle path component, here it is the sweep root itself.
     @Test("A symlink used as the sweep root scans the directory it points at")
     func symlinkUsedAsSweepRootIsFollowed() throws {
         let manager = FileManager.default

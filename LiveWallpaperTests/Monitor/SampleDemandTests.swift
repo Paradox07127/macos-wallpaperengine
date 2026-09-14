@@ -4,9 +4,6 @@ import LiveWallpaperCore
 import os
 @testable import LiveWallpaper
 
-/// A board's widgets are the only subscribers of the system source. These prove
-/// that a metric group with no subscribed widget is not sampled at all — the
-/// probe is skipped, not just its result hidden.
 @Suite("Monitor sample demand")
 struct SampleDemandTests {
     private actor MockSink: MonitorSnapshotSink {
@@ -25,7 +22,6 @@ struct SampleDemandTests {
         func count() -> Int { systemUpdateCount }
     }
 
-    /// Runs the source until at least one snapshot lands, then stops it.
     private func firstSnapshot(
         options: SystemMetricsSource.Options,
         loadAverageSampler: @escaping @Sendable () -> [Double]? = { [1.0, 1.0, 1.0] }

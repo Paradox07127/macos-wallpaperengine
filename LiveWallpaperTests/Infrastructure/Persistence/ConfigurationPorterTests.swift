@@ -74,9 +74,6 @@ struct ConfigurationPorterTests {
         }
     }
 
-    /// Lite and Pro are one product family, and the UTI list has always said so.
-    /// A user upgrading Lite → Pro (or moving a backup the other way) must be
-    /// able to restore their setup; only foreign apps are provenance failures.
     @Test(
         "Accepts exports from every Loomscreen product-family bundle ID",
         arguments: ["com.loomscreen.pro", "com.loomscreen", "com.taijia.livewallpaper"]
@@ -176,9 +173,8 @@ struct ConfigurationPorterTests {
     // MARK: - Screen schemes
 
     private func sampleScheme(name: String) -> ScreenScheme {
-        // Whole-second timestamps: the porter encodes dates as ISO-8601, which
-        // has no sub-second field, so `Date()` would not survive a round-trip
-        // and the equality check below would fail on the timestamps alone.
+        // Whole-second timestamps: the porter encodes ISO-8601, which has no sub-second
+        // field, so `Date()` would not survive the round-trip.
         let stamp = Date(timeIntervalSince1970: 1_750_000_000)
         return ScreenScheme(
             name: name,
@@ -212,7 +208,6 @@ struct ConfigurationPorterTests {
         #expect(decoded.screenSchemes == [scheme])
         #expect(decoded.screenSchemes?.first?.name == "Desk setup")
         #expect(decoded.screenSchemes?.first?.overlay.level == MonitorOverlayLevel.front)
-        // Identity is stripped at capture, so a restored scheme is still unbound.
         #expect(decoded.screenSchemes?.first?.configuration.screenID == ScreenScheme.unboundScreenID)
     }
 
@@ -221,9 +216,8 @@ struct ConfigurationPorterTests {
         let directory = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
 
-        // Hand-built to match what shipped builds wrote: no `screenSchemes` key
-        // at all. Encoding a nil-schemes bundle would prove nothing, because the
-        // encoder omits it either way.
+        // Hand-built because encoding a nil-schemes bundle would prove nothing — the
+        // encoder omits the key either way.
         let legacy: [String: Any] = try [
             "schemaVersion": ConfigurationBundle.currentSchemaVersion,
             "appBundleID": #require(Bundle.main.bundleIdentifier),
@@ -362,8 +356,6 @@ struct SettingsManagerMigrationTests {
             ScreenConfiguration(screenID: 42, wallpaper: .video(bookmarkData: Data([0x10, 0x20])))
         ]
         let legacyData = try JSONEncoder().encode(original)
-        // The legacy blob goes in the suite this test already owns: seeding it into
-        // `.standard` only worked because SettingsManager read the real domain.
         defaults.set(legacyData, forKey: "screenConfigurations")
         defaults.removeObject(forKey: "Settings.MigrationVersion")
 
@@ -417,7 +409,6 @@ struct SettingsManagerMigrationTests {
         let defaults = scratch.defaults
         defer { scratch.discard() }
 
-        // Interrupted write left a zero-byte primary and no backup.
         let onDisk = directory.appendingPathComponent("screen-configurations.json")
         #expect(FileManager.default.createFile(atPath: onDisk.path(percentEncoded: false), contents: nil))
 

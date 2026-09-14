@@ -112,10 +112,7 @@ extension ScreenManager {
             }
             .store(in: &cleanupTasks)
 
-        // Global play/pause (`togglePlayback()` in ScreenManager+Wallpaper.swift)
-        // flips every session's intent without a policy refresh, leaving the
-        // assertion stale until some unrelated refresh; the session-state
-        // commit's isAnyPlaying edge is the signal that reaches this file.
+        // Global play/pause flips every session's intent without a policy refresh; the session-state commit's isAnyPlaying edge is the signal that reaches this file.
         playbackStateSubject
             .sink { [weak self] _ in
                 self?.refreshAppNapAssertion()
@@ -150,10 +147,6 @@ extension ScreenManager {
         reconcileAbsenceRevalidationTimer()
     }
 
-    /// `revalidateUserAbsence` only runs inside a policy refresh, and every refresh is event-driven
-    /// — so a lost wake/unlock notification with no later events pins every wallpaper suspended
-    /// forever (the exact hole revalidation was built to close). While absent, poll it on a slow
-    /// clock; the wallpapers are suspended then, so this is nearly free.
     private func reconcileAbsenceRevalidationTimer() {
         if isUserAbsent {
             guard absenceRevalidationTimer == nil else { return }
@@ -162,9 +155,7 @@ extension ScreenManager {
                 while !Task.isCancelled {
                     try? await Task.sleep(for: interval)
                     guard let self, !Task.isCancelled, !self.isTerminating else { return }
-                    // Revalidation can clear the absence from inside the
-                    // refresh (it bypasses `setUserAbsence`), so the timer must
-                    // clean up after itself or it can never restart.
+                    // Revalidation can clear the absence from inside the refresh (it bypasses setUserAbsence), so the timer must clean up after itself or it can never restart.
                     guard self.isUserAbsent else {
                         self.absenceRevalidationTimer = nil
                         return
@@ -182,9 +173,7 @@ extension ScreenManager {
         }
     }
 
-    /// Everything `setUserAbsence` does except the policy refresh, so the
-    /// revalidation below can clear a reason from *inside* a refresh without
-    /// recursing back into it. Returns whether the reason set actually changed.
+    /// Everything setUserAbsence does except the policy refresh, so revalidation can clear a reason from inside a refresh without recursing.
     @discardableResult
     private func applyUserAbsenceChange(_ reason: UserAbsenceReason, present: Bool) -> Bool {
         let wasAbsent = isUserAbsent
@@ -206,21 +195,12 @@ extension ScreenManager {
         return true
     }
 
-    /// Absence is driven only by OS notifications, with no redundancy: one dropped unlock or display
-    /// wake pins every wallpaper suspended forever, unreachable by settings or the play button. This
-    /// asks an independent truth source whether the user is in fact back, and only ever *clears*
-    /// reasons — it can never invent an absence. Deliberately unequal trust: `CGDisplayIsAsleep` is
-    /// an unambiguous boolean, while a missing `CGSSessionScreenIsLocked` key can't be told apart
-    /// from a failed read (probe 2026-08-18), so unlocking demands corroboration from an active
-    /// display. System sleep is not revalidated at all — the process is suspended through it and
-    /// always gets its wake.
+    /// Asks an independent truth source whether the user is in fact back, and only ever clears reasons — it can never invent an absence.
+    /// CGDisplayIsAsleep is an unambiguous boolean, while a missing CGSSessionScreenIsLocked key cannot be told apart from a failed read, so unlocking demands corroboration from an active display.
     func revalidateUserAbsence() {
         guard !userAbsenceReasons.isEmpty else { return }
 
-        // A reason recorded moments ago is trusted as-is: `setUserAbsence` refreshes policy
-        // synchronously, so without this the sleep/lock notification's own refresh would revalidate
-        // the absence it just recorded — and CoreGraphics often has not caught up yet, which would
-        // clear it instantly on every single sleep.
+        // A reason recorded moments ago is trusted as-is: without this the sleep/lock notification's own refresh would revalidate the absence it just recorded — and CoreGraphics often has not caught up yet.
         func isSettled(_ reason: UserAbsenceReason) -> Bool {
             guard let marked = absenceMarkedAt[reason] else { return true }
             return ContinuousClock.now - marked >= absenceRevalidationGrace
@@ -316,18 +296,15 @@ extension ScreenManager {
         }
     }
 
-    /// Full-screen / window-occlusion changes fold into the effective profile like every other condition; a single policy refresh applies the unified play/pause decision.
     private func handleFullScreenChange() {
         refreshMonitorOverlayVisibility()
         refreshPerformancePolicyForAllScreens()
     }
 
-    /// Routes power changes through the unified performance policy.
     private func handlePowerStateChange() {
         refreshPerformancePolicyForAllScreens()
     }
 
-    /// Single source of truth for resolving + applying the performance policy to one screen.
     @discardableResult
     func applyPerformancePolicy(to screen: Screen) -> WallpaperPerformanceProfile {
         let settings = SettingsManager.shared.loadGlobalSettings()
@@ -341,7 +318,6 @@ extension ScreenManager {
         return profile
     }
 
-    /// Applies the unified suspend, quality, and scene frame-rate policy.
     @discardableResult
     private func resolveAndApplyPerformanceState(
         to screen: Screen,
@@ -358,9 +334,7 @@ extension ScreenManager {
             settings: settings
         )
         let profile = decision.profile
-        // Feed the screen's machine — the same instance the installed session
-        // adopted as its intent source — and take the reasons from its outputs,
-        // so the UI's explanation can never drift from what sessions act on.
+        // Feed the screen's machine — the same instance the installed session adopted as its intent source — and take the reasons from its outputs, so the UI's explanation cannot drift from what sessions act on.
         suspendReasonsByScreen[screen.id] = playbackStateMachine(for: screen.id)
             .policyChanged(decision)
             .suspendReasons
@@ -369,12 +343,8 @@ extension ScreenManager {
             effectsCoordinator.setEnvironmentOverlaySuspended(profile == .suspended, for: screen)
         }
         applyAdaptiveFrameRate(to: screen, settings: settings, throttleReasons: decision.throttleReasons)
-        // Deep hibernate is reserved for absence-like suspensions (lock, sleep, full-screen
-        // cover/occlusion) — an app-rule or battery pause stays a warm suspend for fast resume, and the
-        // session owns the dwell countdown. Coverage inputs are only usable while the detector is
-        // actually rescanning: with fallback polling off, its space/app-activation rescans are demand-
-        // gated too, so hidden/occluded would be frozen at whatever the last scan saw. Absence stays
-        // authoritative either way — it is tracked independently of the detector.
+        // Deep hibernate is reserved for absence-like suspensions; an app-rule or battery pause stays a warm suspend for fast resume.
+        // Coverage inputs are only usable while the detector is actually rescanning.
         let coverageIsLive = fullScreenDetector.isFallbackPollingEnabled
         let isAbsenceLikeSuspension = profile == .suspended
             && (isUserAbsent
@@ -391,10 +361,7 @@ extension ScreenManager {
         (screen.runtimeSession as? SceneWallpaperSession)?
             .setHibernationEligible(isAbsenceLikeSuspension)
         #endif
-        // Read from the watcher's live level on every refresh, not only on a
-        // level change: a session installed (restore-at-launch, swap-in) while
-        // pressure is ALREADY critical would otherwise never hear about it and
-        // stay fully resident for the whole emergency.
+        // Read from the watcher's live level on every refresh, not only on a level change: a session installed while pressure is already critical would otherwise never hear about it.
         (screen.runtimeSession as? WallpaperCriticalMemoryPressureResponding)?
             .setCriticalMemoryPressureActive(
                 memoryPressureWatcher.currentLevel() == .critical
@@ -414,10 +381,7 @@ extension ScreenManager {
             adaptiveFrameRateOcclusionThrottled[screen.id] = nil
             return
         }
-        // Heat and memory pressure are safety signals, not preferences: they
-        // throttle even with adaptive FPS switched off. Otherwise turning that
-        // setting off would disable thermal protection along with it, which is
-        // exactly what suspending on `.serious` used to hide.
+        // Heat and memory pressure are safety signals, not preferences: they throttle even with adaptive FPS switched off. Otherwise turning that setting off would disable thermal protection along with it.
         let safetyThrottle = !throttleReasons.isEmpty
         // Setting off must release any live throttle, not only stop computing.
         guard settings.adaptiveFrameRateEnabled else {
@@ -483,8 +447,6 @@ extension ScreenManager {
         commitWallpaperSessionState()
     }
 
-    /// Hold an activity assertion while ≥1 wallpaper session may be doing real work — producing frames, playing audio, or loading — so macOS doesn't App-Nap our background render loop down to ~1fps when the user focuses another window.
-    /// The release states: no session, policy-suspended, user-paused, or a scene session whose renderer reported it is provably idle (static scene, no audio) through the session's runtime-activity mirror (`SceneWallpaperSession.mayPerformRuntimeWork`, pushed from the render actor on change). Non-scene sessions and scenes that have not reported yet err on holding.
     func refreshAppNapAssertion() {
         let isRendering = screens.contains { screen in
             guard screen.runtimeSession != nil,
@@ -533,10 +495,7 @@ extension ScreenManager {
 
     func handleGlobalSettingsChanged() {
         guard !isTerminating else { return }
-        // Both caches live in GlobalSettings, which a .lwconfig import replaces
-        // wholesale. Without re-reading them the imported names/overlays stay
-        // invisible until relaunch, and the next rename writes the pre-import
-        // dictionary back over them.
+        // Both caches live in GlobalSettings, which a .lwconfig import replaces wholesale. Without re-reading them the imported names/overlays stay invisible until relaunch.
         screenNames = SettingsManager.shared.loadScreenNames()
         monitorOverlays = SettingsManager.shared.loadMonitorOverlays()
         updateFullScreenFallbackPolling()
@@ -544,8 +503,7 @@ extension ScreenManager {
         applyWallpaperCapturePolicy()
     }
 
-    /// Loads the capture setting and pushes it onto every window that already
-    /// exists. Windows built later read the policy in their own initializer.
+    /// Windows built later read the policy in their own initializer.
     func applyWallpaperCapturePolicy() {
         WallpaperCapturePolicy.allowsScreenCapture =
             SettingsManager.shared.loadGlobalSettings().wallpaperVisibleInScreenCapture

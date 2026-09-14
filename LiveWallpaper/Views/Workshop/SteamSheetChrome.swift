@@ -1,19 +1,15 @@
 import LiveWallpaperCore
 import SwiftUI
 
-// Shared headers, sizing and status glyphs for Steam sheets.
 
 // MARK: - Header
 
-/// Shared by Settings in both SKUs; icon and subtitle are optional.
 struct SteamSheetHeader: View {
     var icon: String?
     let title: LocalizedStringKey
     /// Callers must match the tint to state; warning glyphs must not use the success tint.
     var iconTint: Color = DesignTokens.Colors.Status.active
-    /// Visible scope, permission, or file consequences of the current operation.
     var subtitle: LocalizedStringKey?
-    /// Optional details that are not required to make the current choice.
     var info: String.LocalizationValue?
 
     var body: some View {
@@ -52,9 +48,7 @@ struct SteamSheetHeader: View {
 // MARK: - Width
 
 enum SteamSheetWidth {
-    /// Forms, confirmations, short explanations.
     static let form: CGFloat = 480
-    /// Rows carrying paths, statuses and their own controls.
     static let dense: CGFloat = 560
 }
 

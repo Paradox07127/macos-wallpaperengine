@@ -3,7 +3,6 @@ import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
-/// Steam does not return remaining quota, so we can only truthfully show an "issued from this Mac today" count — never a "remaining" figure.
 enum WorkshopRequestCounter {
     private static let countKey = "loomscreen.workshop.requestsToday.count"
     private static let dateKey = "loomscreen.workshop.requestsToday.date"
@@ -31,7 +30,6 @@ enum WorkshopRequestCounter {
     }
 }
 
-/// Filter ribbon for the Workshop (online) tab.
 struct BrowseFilterRibbon: View {
     let viewModel: BrowseViewModel
     let hasWebAPIKey: Bool
@@ -92,9 +90,8 @@ struct BrowseFilterRibbon: View {
         .help(Text("Sort criteria"))
     }
 
-    /// Steam's own "Specify what text fields…" menu, next to the search box.
-    /// The gear fills while a narrower target is active — a `Menu` label
-    /// ignores `foregroundStyle`, so a tint could not say it.
+    /// The gear fills while a narrower target is active — a `Menu` label ignores
+    /// `foregroundStyle`, so a tint could not say it.
     private var searchTargetMenu: some View {
         Menu {
             Section {
@@ -240,8 +237,6 @@ struct BrowseFilterRibbon: View {
         .transition(.opacity.combined(with: .move(edge: .top)))
     }
 
-    /// Wrapping chip row (replaces a horizontal scroll that hid most options
-    /// off-screen) — every tag stays visible across as many lines as it takes.
     private func chipFlow<Content: View>(@ViewBuilder content: () -> Content) -> some View {
         WorkshopChipFlow(spacing: 6, lineSpacing: 6) {
             content()
@@ -252,8 +247,6 @@ struct BrowseFilterRibbon: View {
     // MARK: - Search / refresh / status
 
     private var searchField: some View {
-        // Typing auto-searches after the view-model's debounce; clicking the
-        // glass or pressing Return (`onSubmit`) skips the wait and runs it now.
         LibrarySearchField(
             text: Binding(
                 get: { viewModel.searchInput },
@@ -273,10 +266,9 @@ struct BrowseFilterRibbon: View {
         !hasWebAPIKey || viewModel.isRateLimited
     }
 
-    /// Count of categories the user moved away from their default — selecting
-    /// everything is no filter, Miscellaneous starts empty, and maturity starts
-    /// at Everyone, so a fresh browse reads as zero. Surfaced as the Filters
-    /// badge, which is also what offers "Clear filters".
+    /// Counts categories moved away from their default — selecting everything is no
+    /// filter, Miscellaneous starts empty, and maturity starts at Everyone, so a
+    /// fresh browse reads as zero.
     var activeFilterCount: Int {
         var count = 0
         if !viewModel.selectedMiscellaneous.isEmpty {
@@ -311,8 +303,7 @@ struct BrowseFilterRibbon: View {
         .mostPopular, .topRated, .newest, .lastUpdated, .mostSubscribed
     ]
 
-    /// Relevance only ranks against a search text, so it appears while one is
-    /// typed. Trimmed, because the request layer also trims: offering it for
+    /// Relevance only ranks against a search text. Trimmed like the request layer:
     /// whitespace-only input would show "Relevance" over a Top Rated query.
     private var sortOptions: [WorkshopSortMode] {
         viewModel.searchInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -320,8 +311,6 @@ struct BrowseFilterRibbon: View {
             : Self.browseSortOptions + [.search]
     }
 
-    /// The page's sort button reads "Most Popular (One Week)": the window is
-    /// part of that one sort, so it is named with it.
     private func sortLabel(_ sort: WorkshopSortMode) -> String {
         guard sort == .mostPopular else { return sort.title }
         return String(
@@ -332,8 +321,6 @@ struct BrowseFilterRibbon: View {
     }
 }
 
-/// Steam's own labels (Workshop_BrowseSort_* / SharedFiles_Browse_Trend_Option_*),
-/// so a Wallpaper Engine user recognises each option from the Workshop page.
 extension WorkshopSortMode {
     var title: String {
         switch self {
@@ -347,7 +334,6 @@ extension WorkshopSortMode {
     }
 }
 
-/// Steam's Workshop_SearchTarget_* copy.
 extension WorkshopSearchTextTarget {
     static var menuTitle: String {
         String(localized: "Specify what text fields of the item you want to search:", bundle: .appLanguage, comment: "Workshop search-target menu header (Steam's Workshop_SearchTarget_MenuTitle).")
@@ -404,9 +390,6 @@ struct WorkshopFilterChip: View {
                     .lineLimit(1)
                     .strikethrough(!isSelected && !isOptIn, color: .secondary)
                 if let count {
-                    // The library's composition, read straight off the chips that
-                    // filter by it — one place instead of a ratio in the search
-                    // bar that said how many were showing but not of what.
                     Text(verbatim: "\(count)")
                         .font(DesignTokens.Typography.metric)
                         .foregroundStyle(.secondary)
@@ -428,8 +411,6 @@ struct WorkshopFilterChip: View {
     }
 }
 
-/// Carries the chip rows' natural height up so the panel sizes its scroll to
-/// content (capped at `maxRowsHeight`).
 private struct FilterRowsHeightKey: PreferenceKey {
     static var defaultValue: CGFloat { 0 }
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {

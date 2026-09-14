@@ -1,6 +1,5 @@
 import Foundation
 
-/// Preflight verdict on `SceneDescriptor` (Core for Lite↔Pro lossless schema).
 public enum WPEScenePreflightTier: String, Codable, Equatable, Sendable {
     case nativePlayable
     /// Playable with approximated features (e.g. effect shader mismatch).
@@ -24,7 +23,6 @@ public enum WPEScenePreflightTier: String, Codable, Equatable, Sendable {
     }
 }
 
-/// Preflight feature flags on `SceneDescriptor` (analyzer lives in ProWPE).
 public enum WPESceneFeatureFlag: String, Codable, Hashable, Sendable {
     case customShaderSource
     case particleObject

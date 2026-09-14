@@ -3,13 +3,6 @@ import Foundation
 import LiveWallpaperCore
 import Observation
 
-/// Downloads the Workshop items the signed-in Steam account is subscribed to
-/// but this Mac does not have yet.
-///
-/// Additive only, deliberately: an item present locally but absent from the
-/// subscription list is left alone. Nothing here deletes, unsubscribes, or
-/// reconciles removals — a "sync" that could take wallpapers away would be a
-/// different feature with a different confirmation.
 @MainActor
 @Observable
 final class WorkshopSubscriptionSync {
@@ -100,13 +93,7 @@ final class WorkshopSubscriptionSync {
         }
     }
 
-    /// Queues every missing item through the ordinary download path, so their
-    /// progress, cancellation and import are the ones the rest of the app
-    /// already shows.
-    /// One at a time. The connector runs SteamCMD on a serial queue and drops a
-    /// request that waited too long for it, so enqueueing a whole subscription
-    /// list at once makes everything after the first item time out in the queue
-    /// rather than download.
+    /// One at a time: the connector runs SteamCMD on a serial queue and drops a request that waited too long, so enqueueing the whole list times out everything after the first item.
     func downloadMissing(using doctor: SteamCMDDoctorService) {
         guard case let .ready(missing) = phase else { return }
         task?.cancel()
@@ -135,10 +122,7 @@ final class WorkshopSubscriptionSync {
         phase = .failed(reason)
     }
 
-    /// What is already on disk, from the same content root the Doctor's
-    /// Workshop probe reads. nil means the library grant could not be
-    /// resolved — reporting every subscription as missing would be worse than
-    /// saying so.
+    /// nil means the library grant could not be resolved — do not report every subscription as missing.
     private func installedWorkshopIDs(using doctor: SteamCMDDoctorService) -> Set<UInt64>? {
         guard let workdir = try? doctor.resolveWorkdirURL() else { return nil }
         let scope = workdir.startAccessingSecurityScopedResource()
@@ -154,9 +138,7 @@ final class WorkshopSubscriptionSync {
         return Set(entries.compactMap(UInt64.init))
     }
 
-    /// Titles come from the keyless batch endpoint the paste queue already
-    /// uses, in the same ≤50 chunks. Failures are silent: an id is a usable
-    /// label, and a second network path for names is not worth one.
+    /// Titles from the keyless batch endpoint in ≤50 chunks. Failures are silent: an id is a usable label.
     private func loadTitles(for ids: [UInt64]) async {
         var start = 0
         while start < ids.count, !Task.isCancelled {

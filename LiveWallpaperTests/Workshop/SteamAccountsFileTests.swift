@@ -2,10 +2,6 @@ import Foundation
 import Testing
 @testable import LiveWallpaper
 
-/// Steam's `config.vdf` is the only account source available to this app: the
-/// GUI client's `loginusers.vdf` (the file with `MostRecent`) is never written
-/// on a steamcmd-only Mac. Parsing is pure so it can be exercised without a
-/// Steam install or an XPC round trip.
 @Suite("Steam accounts file")
 struct SteamAccountsFileTests {
 
@@ -82,9 +78,6 @@ struct SteamAccountsFileTests {
         #expect(SteamAccountsFile.parseAccounts(fromConfigVDF: text).map(\.accountName) == ["good"])
     }
 
-    /// The name is interpolated into a generated SteamCMD script, so a
-    /// hand-edited `config.vdf` must not be able to smuggle script syntax
-    /// through account discovery.
     @Test("Account names outside SteamCMD's grammar are rejected")
     func rejectsNamesOutsideSteamCMDGrammar() {
         let text = """
@@ -118,8 +111,8 @@ struct SteamAccountsFileTests {
         ])
     }
 
-    /// A brace inside a quoted value must not unbalance the block scan, or the
-    /// parser would run off the end of `Accounts` and read unrelated keys.
+    /// Unbalancing the block scan would run the parser off the end of
+    /// `Accounts` into unrelated keys.
     @Test("Braces inside quoted values do not unbalance the scan")
     func bracesInsideValuesAreInert() {
         let text = """

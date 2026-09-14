@@ -1,8 +1,7 @@
 import Foundation
 
-/// Central security-scoped bookmark resolve + stale refresh.
-/// `bookmarkDataIsStale` must be observed every resolve (Apple one-shot grace);
-/// historically dropped at most call sites → silent grant loss after restart/inode change.
+/// `bookmarkDataIsStale` must be observed on every resolve (Apple's one-shot grace);
+/// dropping it loses the grant silently after a restart or an inode change.
 public struct SecurityScopedBookmarkResolver: Sendable {
     /// Persist hook for a refreshed grant. Save both original + refreshed and CAS
     /// against current storage so a late refresh cannot resurrect a cleared re-grant.
@@ -114,8 +113,8 @@ public struct SecurityScopedBookmarkResolver: Sendable {
 }
 
 extension SecurityScopedBookmarkResolver {
-    /// Always re-resolve. URL memoization (2026-08-03) broke scoped access /
-    /// Steam adopt ("Operation not permitted") — cache work results, never the URL.
+    /// Always re-resolve: memoizing the URL breaks scoped access — cache work results,
+    /// never the URL.
     public static let live = SecurityScopedBookmarkResolver(
         resolveData: { data in
             var isStale = false

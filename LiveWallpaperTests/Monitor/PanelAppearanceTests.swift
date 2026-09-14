@@ -5,9 +5,6 @@ import Testing
 
 @Suite("Monitor widget card appearance")
 struct PanelAppearanceTests {
-    /// The slider advertises 0.25…1.0 and the stored value is the user's. The
-    /// card's alpha once spanned only 0.90…1.0, so every setting painted the
-    /// same near-solid card and someone asking for a faint panel got 0.925.
     @Test("the card's alpha is the value the user asked for")
     func materialAlphaTracksTheSetting() throws {
         func alpha(_ color: Color) throws -> Double {
@@ -20,7 +17,6 @@ struct PanelAppearanceTests {
             #expect(abs(top - value) < 0.001, "top alpha at \(value)")
             #expect(abs(bottom - value) < 0.001, "bottom alpha at \(value)")
         }
-        // Reduce Transparency is the one thing allowed to override the choice.
         let forced = MonitorPanelAppearance.fill(tintHex: "#3366FF", opacity: 0.25, reduceTransparency: true)
         #expect(try alpha(forced.top) == 1)
     }
@@ -40,7 +36,6 @@ struct PanelAppearanceTests {
             let opaque = MonitorPanelAppearance.fill(tintHex: hex, opacity: 0.25, reduceTransparency: true)
             #expect(try rgb(opaque.top).alphaComponent == 1)
             #expect(try rgb(opaque.bottom).alphaComponent == 1)
-            // An opaque card is its own ground, so it needs no halo behind the ink.
             #expect(MonitorPanelAppearance.inkBacking(tintHex: hex, opacity: 0.25, reduceTransparency: true) == nil)
 
             // The faintest card the slider offers, over the brightest wallpaper
@@ -56,9 +51,6 @@ struct PanelAppearanceTests {
         }
     }
 
-    /// Liquid Glass is the one card style that can be vetoed by something other
-    /// than the user: Reduce Transparency turns off the transparency the whole
-    /// material is made of, and below macOS 26 there is no Liquid Glass to draw.
     @Test("Reduce Transparency overrides the switch")
     func reduceTransparencyWins() {
         #expect(!MonitorPanelAppearance.usesGlass(true, reduceTransparency: true))
@@ -73,17 +65,11 @@ struct PanelAppearanceTests {
         #expect(MonitorPanelAppearance.usesGlass(true, reduceTransparency: false) == expected)
     }
 
-    /// Opt-in, and not only because of the OS floor: glass re-samples what is
-    /// behind it every frame, and behind these cards is a wallpaper that may be
-    /// a live scene.
     @Test("glass is off until asked for")
     func glassIsOptIn() {
         #expect(MonitorPanelAppearance.defaultGlass == false)
     }
 
-    /// The scrim has to stay lighter than the painted card's own fill — the
-    /// point is that the wallpaper still shows through the body — while the
-    /// opacity dial keeps meaning the same thing in both styles.
     @Test("the glass scrim is lighter than the painted fill but tracks opacity")
     func glassScrimIsLighterAndTracksOpacity() {
         func alpha(_ color: Color) -> Double {
@@ -99,8 +85,6 @@ struct PanelAppearanceTests {
         #expect(scrimHalf < scrimFull)
     }
 
-    /// A malformed stored hex must not paint the card black — same rule the
-    /// painted fill already follows.
     @Test("a malformed tint falls back instead of painting black")
     func malformedTintFallsBack() {
         let bad = MonitorPanelAppearance.glassScrim(tintHex: "not-a-colour", opacity: 1)

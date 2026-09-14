@@ -105,11 +105,6 @@ struct WPESceneScriptRuntimeTests {
         )
     }
 
-    // 2955378002's calendar is 186 sprites whose `visible` scripts are pure
-    // `update() { return <bool> }` — the official contract applies the RETURN
-    // value to the property. Dropping it froze every sprite at the authored
-    // seed, so the date stayed at the author's save day (11/3, a Saturday).
-    // 285 of the 392 visible scripts across the local corpus use this form.
     @Test("A visible script's returned boolean drives the layer's visibility")
     func visibleScriptReturnValueDrivesOwnVisibility() throws {
         let instance = try WPELayerScriptInstance(
@@ -121,7 +116,6 @@ struct WPESceneScriptRuntimeTests {
         #expect(output.own.visible == false, "returned false must hide the layer")
         #expect(output.own.visibleAssigned, "a returned value counts as an assignment")
 
-        // Assignment-style scripts return undefined — the seed must survive.
         let assigning = try WPELayerScriptInstance(
             script: "export function update(value) { }",
             outputMode: .layerState,
@@ -130,7 +124,6 @@ struct WPESceneScriptRuntimeTests {
         let untouched = try #require(assigning.tick(runtimeSeconds: 1))
         #expect(untouched.own.visible == true, "undefined return must not clobber the seed")
 
-        // The current value rides update(value), so toggling scripts can flip it.
         let toggling = try WPELayerScriptInstance(
             script: "export function update(value) { return !value; }",
             outputMode: .layerState,
@@ -142,14 +135,6 @@ struct WPESceneScriptRuntimeTests {
         #expect(flippedBack.own.visible == true)
     }
 
-    /// The value handed to `update(value)` must be the layer's LIVE visibility,
-    /// not the last value a script happened to RETURN. Assignment-style scripts
-    /// (`thisLayer.visible = …`, returning undefined) never produce a return
-    /// value, so feeding the previous return back in pinned them to the authored
-    /// seed forever: `thisLayer.visible = !value` re-inverted the same seed every
-    /// frame instead of alternating. Both styles land in the same place — the
-    /// return path writes through `setOwnLayerVisible`, which goes through the
-    /// very `defineProperty` setter an assignment uses.
     @Test("An assignment-style visible script is fed its own live value, not the seed")
     func assignmentStyleVisibleScriptSeesLiveValue() throws {
         let instance = try WPELayerScriptInstance(
@@ -165,11 +150,6 @@ struct WPESceneScriptRuntimeTests {
         #expect(third.own.visible == false, "alternating, not stuck: \(third.own.visible)")
     }
 
-    /// Alpha carries the exact same contract as visibility, and had the exact
-    /// same defect: `update(value)` was handed the last RETURNED alpha, so an
-    /// assignment-style script (`thisLayer.alpha = …`, returning undefined) read
-    /// the seed forever and `1 - value` settled on one value instead of
-    /// alternating.
     @Test("An assignment-style alpha script is fed its own live value, not the seed")
     func assignmentStyleAlphaScriptSeesLiveValue() throws {
         let instance = try WPELayerScriptInstance(
@@ -186,10 +166,6 @@ struct WPESceneScriptRuntimeTests {
 
     @Test("A hidden object's effect-constant scripts still register (3151551777 DAY-NIGHT)")
     func hiddenObjectConstantScriptsStillRegister() throws {
-        // The scene computes its whole day/night cycle on ONE deliberately
-        // invisible layer and has the visible layers read the result out of
-        // `shared`. Collecting bindings from the render pipeline alone dropped
-        // the producer, so every consumer read an unset key forever.
         let json = """
         {"camera": {"center": "0 0 0", "eye": "0 0 100", "up": "0 1 0"},
          "general": {}, "objects": [
@@ -223,10 +199,6 @@ struct WPESceneScriptRuntimeTests {
 
     @Test("engine.userProperties exposes the scene's resolved project properties")
     func engineUserPropertiesCarriesResolvedSceneValues() throws {
-        // 3151551777's day/night driver branches on
-        // `engine.userProperties.timeofday`. An empty object sent every frame
-        // down `else { value = 0 }` — permanent daytime — without throwing, so
-        // nothing upstream ever reported a failure.
         let shared = WPESharedScriptState(userProperties: [
             "timeofday": .string("99"),
             "birds": .bool(true),
@@ -254,12 +226,6 @@ struct WPESceneScriptRuntimeTests {
         #expect(value.z == 0.15, "number property did not reach the script: \(value)")
     }
 
-    /// 3146703458's song titles: the `scale` constant on their transform effect
-    /// assigns `speed` ONLY inside `applyUserProperties`. Effect-constant and
-    /// dynamic-transform instances never received that callback (only the four
-    /// layer/text families did), so `speed` stayed undefined, `WEMath.mix(1, 1,
-    /// undefined)` returned NaN, and every title rendered at scale 0 — the oracle
-    /// dump showed `g_Scale = [0, 0]` against an authored `1 1`.
     @Test("Transform script receives applyUserProperties")
     func transformScriptReceivesApplyUserProperties() throws {
         let instance = try WPEDynamicTransformScriptInstance(
@@ -278,7 +244,7 @@ struct WPESceneScriptRuntimeTests {
             canvasSize: SIMD2<Double>(1920, 1080)
         )
         // Control: before the callback the script cannot know `hoScale`, so the
-        // authored value collapses exactly the way the shipped scene did.
+        // authored value collapses.
         let before = try #require(instance.tick(pointerPosition: .zero, runtimeSeconds: 0))
         #expect(before == SIMD3<Double>(0, 0, 0))
 
@@ -287,8 +253,6 @@ struct WPESceneScriptRuntimeTests {
         #expect(after == SIMD3<Double>(1.5, 1.5, 1.5))
     }
 
-    /// Second half of the same 3146703458 fix (see above): the JS `Vec3` constructor
-    /// laundered NaN into 0, so the host applied a real zero instead of rejecting the frame.
     @Test("NaN from a transform script is rejected, not applied as zero")
     func nanFromTransformScriptIsRejectedNotAppliedAsZero() throws {
         let instance = try WPEDynamicTransformScriptInstance(
@@ -311,9 +275,8 @@ struct WPESceneScriptRuntimeTests {
         #expect(instance.tick(pointerPosition: .zero, runtimeSeconds: 0) == nil)
     }
 
-    /// Control for the same change: a MISSING argument still defaults to 0, so
-    /// `new Vec3(1, 2)` keeps z == 0 and ordinary two-component authored values
-    /// are unaffected.
+    /// Control for the NaN rejection above: a MISSING argument still defaults to 0,
+    /// so `new Vec3(1, 2)` keeps z == 0.
     @Test("Missing Vec component still defaults to zero")
     func missingVecComponentStillDefaultsToZero() throws {
         let instance = try WPEDynamicTransformScriptInstance(
@@ -338,8 +301,6 @@ struct WPESceneScriptRuntimeTests {
             seed: SIMD3<Double>(2, 3, 4),
             canvasSize: SIMD2<Double>(1920, 1080)
         )
-        // A script that does not export the handler must not be reported as
-        // invoked, and its value must survive the delivery attempt untouched.
         #expect(instance.applyUserProperties(["hoScale": .number(1.5)]) == false)
         let value = try #require(instance.tick(pointerPosition: .zero, runtimeSeconds: 0))
         #expect(value == SIMD3<Double>(2, 3, 4))
@@ -369,7 +330,6 @@ struct WPESceneScriptRuntimeTests {
         #expect(third.x == 1)
     }
 
-    /// Verbatim from 3151551777's `Night (Cycle)` effect, pass constant `multiply1`.
     private static let nightCycleProducerScript = """
     'use strict';
 
@@ -399,9 +359,8 @@ struct WPESceneScriptRuntimeTests {
 
     @Test("3151551777's day/night producer reaches its forced-night branch and writes shared")
     func nightCycleProducerWritesSharedState() throws {
-        // `timeofday == 2` is the author's "always night" option — the one branch
-        // that does not depend on the wall clock, so it isolates the
-        // engine.userProperties bridge from engine.timeOfDay.
+        // `timeofday == 2` is the "always night" branch — the one that does not depend
+        // on the wall clock, so it isolates engine.userProperties from engine.timeOfDay.
         let shared = WPESharedScriptState(userProperties: ["timeofday": .string("2")])
         let instance = try WPEDynamicTransformScriptInstance(
             script: Self.nightCycleProducerScript,
@@ -414,8 +373,6 @@ struct WPESceneScriptRuntimeTests {
             "producer returned no value — the script threw or never ran"
         )
         #expect(value.x == 1, "forced-night branch did not produce 1: \(value)")
-        // The consumers read these; a producer that runs but writes nothing is
-        // exactly the self-lock that kept every Night effect hidden.
         #expect(shared.get("night") as? Double == 1, "shared.night = \(String(describing: shared.get("night")))")
         #expect(shared.get("shownight") as? Bool == true,
                 "shared.shownight = \(String(describing: shared.get("shownight")))")
@@ -423,8 +380,8 @@ struct WPESceneScriptRuntimeTests {
 
     @Test("The day/night producer's else-branch is what an absent user property yields")
     func nightCycleProducerFallsToDayWithoutUserProperties() throws {
-        // Control: this is the pre-fix behaviour — no `timeofday` key, so both
-        // comparisons fail and the script writes day forever without throwing.
+        // Control: with no `timeofday` key both comparisons fail and the script writes
+        // day forever without throwing.
         let shared = WPESharedScriptState()
         let instance = try WPEDynamicTransformScriptInstance(
             script: Self.nightCycleProducerScript,
@@ -457,9 +414,6 @@ struct WPESceneScriptRuntimeTests {
 
     @Test("Effect-visibility gate script: boolean return survives the Vec3 engine as 1/0")
     func effectVisibilityGateScriptCoercesBooleanReturn() throws {
-        /// Scene 3151551777's authored form returns `shared.shownight`, a JS
-        /// BOOLEAN. Unwrapped, the Vec3 engine sees neither a Number nor an
-        /// {x,y,z} and reports "no value", so the gate could never open.
         func gate(returning literal: String) throws -> SIMD3<Double>? {
             let source = """
             'use strict';
@@ -494,9 +448,6 @@ struct WPESceneScriptRuntimeTests {
 
     @Test("Effect-visibility gate opens from the shared value its own constant script wrote")
     func effectVisibilityGateReadsSharedValueWrittenByConstantScript() throws {
-        // Scene 3151551777's self-lock in miniature: the producer is a constant
-        // script bound to a pass of the very effect the gate controls, so the gate
-        // can only ever open if that pass stayed in the pipeline.
         let shared = WPESharedScriptState()
         let producer = try WPEDynamicTransformScriptInstance(
             script: """
@@ -558,9 +509,6 @@ struct WPESceneScriptRuntimeTests {
 
     @Test("A text script reads the scene's canvas, not the sandbox's 1920x1080")
     func textScriptSeesTheSceneCanvas() throws {
-        // Text scripts position and wrap against these two, so a 4K scene laying
-        // out at 1080p is off by 2x. The layer and dynamic-transform engines
-        // already install the real size; this one only had the sandbox default.
         let script = """
         export function update(value) {
             return engine.screenResolution.x + 'x' + engine.canvasSize.y;
@@ -603,11 +551,6 @@ struct WPESceneScriptRuntimeTests {
 
     @Test("A text script's ESM import line does not abort the whole module")
     func textScriptImportLineIsStripped() throws {
-        // Scene 3713073223's typewriter scripts open with this exact line. A
-        // top-level `import` is a SyntaxError under JSContext's non-module eval,
-        // and one SyntaxError kills the entire body — no update(), text frozen at
-        // its authored value. The import strip lived at two of the four
-        // `preprocess` call sites and this one was not among them.
         let script = """
         import * as WEMath from 'WEMath';
         export function update(value) {
@@ -720,8 +663,7 @@ struct WPESceneScriptRuntimeTests {
 
     @Test("engine.registerAudioBuffers falls back to 16 bands for an unsupported resolution")
     func engineRegisterAudioBuffersRejectsUnsupportedResolution() throws {
-        // WPE: "It must be 16, 32 or 64." A zero-length array would index to NaN
-        // and take the whole scripted value with it.
+        // A zero-length array would index to NaN and take the whole scripted value with it.
         let script = """
         let audioBuffer = engine.registerAudioBuffers(4);
         export function update(value) { return String(audioBuffer.average.length); }
@@ -733,7 +675,7 @@ struct WPESceneScriptRuntimeTests {
     @Test("Registered audio buffers read live broker data, downsampled per channel")
     func engineAudioBuffersReadLiveSpectrum() throws {
         // 64 bins, all zero except the top pair, so the 16-band downsample puts a
-        // known value in exactly one band and proves it is not the stub's zero.
+        // known value in exactly one band.
         var left = [Float](repeating: 0, count: AudioSpectrumFrame.binCount)
         var right = left
         // Exact binary fractions: Float→Double widening plus two halvings stay
@@ -759,15 +701,13 @@ struct WPESceneScriptRuntimeTests {
         }
         """
         let instance = try WPESceneScriptInstance(script: script, initialValue: "")
-        // Max-pool keeps the louder neighbour: 64→32 keeps 0.5 (left) / 0.25
-        // (right) from bins 60,61; 32→16 keeps those over the zeroed 62,63
-        // pair. Average is (left+right)/2 of the pooled bands.
+        // Max-pool: 64→32 keeps 0.5 (left) / 0.25 (right) from bins 60,61; 32→16 keeps
+        // those over the zeroed 62,63 pair. Average is (left+right)/2 of the pooled bands.
         #expect(instance.tickString() == "0.5:0.25:0.375:0")
     }
 
-    /// WPE's permanent link is the array *identity*: a module-scope capture
-    /// must keep observing later ticks. Replacing `audioBuffer.average` each
-    /// tick would pass value tests and still break the corpus template.
+    /// Identity, not values: replacing `audioBuffer.average` each tick would pass
+    /// value tests and still break the corpus template.
     @Test("Registered audio buffer arrays keep identity while values update in place")
     func engineAudioBuffersKeepPermanentLinkIdentity() throws {
         var left = [Float](repeating: 0, count: AudioSpectrumFrame.binCount)
@@ -871,13 +811,8 @@ struct WPESceneScriptRuntimeTests {
 
     @Test("Script engines don't leak their JSContext")
     func scriptEnginesReleaseTheirContext() throws {
-        // A block installed on a JSContext that also RETAINS that context (directly,
-        // or via a captured JSValue — a JSValue owns its context) is a cycle JSC
-        // never breaks: measured at ~1.15 MB per instance, held for the process.
-        //
-        // Every script body below calls `createScriptProperties()` and mints the
-        // per-name layer/video/parent/animation handles: those blocks are installed
-        // LAZILY, so a trivial script cannot observe their cycles.
+        // Every script body below mints the lazily-installed layer/video/parent/animation
+        // handles: a trivial script cannot observe their cycles.
         let properties = """
         export var scriptProperties = createScriptProperties()
             .addSlider({ name: 'a', label: 'A', value: 0.5, min: 0, max: 1 })
@@ -885,12 +820,9 @@ struct WPESceneScriptRuntimeTests {
             .addCombo({ name: 'c', label: 'C', options: [{ value: 1 }, { value: 2 }] })
             .finish();
         """
-        // Delta, not absolute: a quarantined engine from an earlier test is
-        // deliberately retained for the process and would offset the count.
-        // Engines share one JSVirtualMachine per batch worker, so a dropped
-        // context's globals become unreachable JS-heap garbage instead of dying
-        // with the VM. Collect on both sides of the measurement: what survives a
-        // GC is a real ObjC retain cycle, which is what this guard is for.
+        /// Delta, not absolute: a quarantined engine retained for the process would
+        /// offset an absolute count. Collect on both sides — what survives a GC is a
+        /// real ObjC retain cycle.
         func collectLaneGarbage() {
             for _ in 0 ..< (WPESceneScriptContainmentDefaults.batchWorkerWidth * 2) {
                 let lane = WPESceneScriptBatchDispatcher.processShared.reserveLane()
@@ -952,8 +884,6 @@ struct WPESceneScriptRuntimeTests {
                 shared: WPESharedScriptState()
             )
         }
-        // The parse-time evaluator caches up to 64 contexts of its own and is the
-        // only other JSContext owner in the app.
         let evaluator = leakedContexts {
             let evaluator = LiveWallpaper.WPETransformScriptEvaluator(
                 canvasWidth: 1000,
@@ -975,10 +905,6 @@ struct WPESceneScriptRuntimeTests {
 
     // MARK: - Real corpus scripts
 
-    /// Wallpaper Engine's own audio-response template, verbatim from workshop
-    /// scene 2955378002 (249 of the 259 scale scripts in the local corpus are
-    /// this script). It multiplies by an `initialValue` that only `init(value)`
-    /// can supply.
     private static let audioScaleTemplate = """
 'use strict';
 
@@ -1070,8 +996,7 @@ export function init(value) {
             shared: nil
         )
         // Full-scale audio drives `smoothValue` toward 1, so the result walks from
-        // seed*minvalue up to seed*maxvalue. Anything NaN (the `initialValue`
-        // undefined case) is rejected by the tick and returns nil.
+        // seed*minvalue up to seed*maxvalue.
         var last: SIMD3<Double>?
         for _ in 0..<30 {
             last = instance.tick(pointerPosition: SIMD2<Double>(0.5, 0.5), runtimeSeconds: 1)
@@ -1120,8 +1045,7 @@ export function init(value) {
             usleep(4_000)
         }
         let value = try #require(last)
-        // Silence would pin this at seed x minvalue = 0.9 — exactly what the
-        // wallpaper shows on device.
+        // Silence would pin this at seed x minvalue = 0.9.
         #expect(value.x > 0.9001, "stuck at minvalue: the buffer never saw audio (got \(value.x))")
     }
 
@@ -1147,9 +1071,8 @@ export function init(value) {
             canvasSize: SIMD2<Double>(100, 100),
             shared: nil
         )
-        // The window spans the whole day, so whatever the wall clock reads the
-        // product is 1 — the point is that neither `WEMath` nor `engine.timeOfDay`
-        // is undefined (either one makes the whole expression NaN).
+        // The window spans the whole day, so the product is 1 whatever the clock reads;
+        // a missing `WEMath` or `engine.timeOfDay` makes the whole expression NaN.
         let value = try #require(
             instance.tick(pointerPosition: SIMD2<Double>(0.5, 0.5), runtimeSeconds: 0),
             "WEMath.smoothStep or engine.timeOfDay is missing"
@@ -1167,7 +1090,6 @@ export function init(value) {
         }
         """
         let instance = try WPESceneScriptInstance(script: script, initialValue: "")
-        // Descending (min > max) is how the corpus builds a falling ramp.
         #expect(instance.tickString() == "0.5,0,1,0.5,2.5,1")
     }
 
@@ -1601,8 +1523,6 @@ export function init(value) {
 
     @Test("ISoundLayer calls reach the renderer as drained commands, addressed by layer")
     func soundLayerCallsEnqueueCommands() throws {
-        // 3151551777's music picker does exactly this: resolve sound layers by
-        // name, then stop the ones it isn't switching to.
         let store = WPESharedScriptState()
         let instance = try WPELayerScriptInstance(
             script: """
@@ -1631,9 +1551,6 @@ export function init(value) {
 
     @Test("thisLayer resolves against the scene layer table by its own name, not the empty own-key")
     func thisLayerResolvesItsOwnSceneEntry() throws {
-        // `ownKey` is "", so a table lookup keyed on it silently returns nothing:
-        // `thisLayer.size` read 0 and `getLayerIndex(thisLayer)` returned -1, which
-        // is exactly what the three Simple Visualizer scenes call.
         let store = WPESharedScriptState(layers: [
             WPESceneScriptLayerInfo(
                 id: "bar", name: "Bar", size: SIMD2(120, 40), origin: SIMD2(300, 200), index: 0, parentName: nil
@@ -1713,9 +1630,6 @@ export function init(value) {
 
     @Test("A scene override is re-typed to what the script declared (addText stays a String)")
     func scriptPropertyOverrideKeepsDeclaredType() throws {
-        // 3460973721 declares `.addText({name:'delayTime', value:'1'})` and the
-        // scene overrides it with the JSON string "0.2". scene.json has no types,
-        // so the parser reads that as a number and `.trim()` used to throw.
         let instance = try WPESceneScriptInstance(
             script: """
             export var scriptProperties = createScriptProperties()
@@ -2461,10 +2375,6 @@ export function init(value) {
         #expect(second == SIMD3<Double>(1.25, 1.25, 100))
     }
 
-    /// `installSandbox` seeds `engine.screenResolution` with a hardcoded 1920x1080, and each
-    /// engine's `installCanvasSize` is what overwrites it with the real canvas. The parse-time
-    /// evaluator overwrote only `canvasSize`, so a statically-baked origin script reading
-    /// `screenResolution` silently got 1920 on every non-1080p scene.
     @Test("Parse-time transform evaluator reports the real canvas as screenResolution")
     func transformEvaluatorScreenResolutionMatchesCanvas() throws {
         let evaluator = WPETransformScriptEvaluator(canvasWidth: 3840, canvasHeight: 2160)
@@ -2604,9 +2514,6 @@ export function init(value) {
         #expect(instance.initialOutput.own.visible == true)
     }
 
-    /// 2955378002 does exactly this in `init`, and it was a silent no-op while
-    /// `getLayer` handles carried plain data properties for origin/scale/angles:
-    /// the assignment landed on a throwaway JS object nobody read back.
     @Test("getLayer transform assignment reaches the caller as a cross-layer mutation")
     func getLayerTransformAssignmentIsRecorded() throws {
         let script = """
@@ -3370,8 +3277,6 @@ export function init(value) {
             isDown: false,
             isRightDown: false
         )
-        // Sent as two separate single-event dispatches (the API this replaced),
-        // the async slot admitted `.up` and dropped `.click` — alpha stayed 1.
         instance.liveDispatchCursorEvents([.up, .click], pointerFrame: frame)
         var received: WPELayerScriptOutput?
         for _ in 0 ..< 100 {
@@ -3486,11 +3391,6 @@ export function init(value) {
 
     // MARK: - Batched per-tick host writes (J-a)
 
-    // The per-tick clock and cursor writes now go through one cached JS helper
-    // call per group instead of one JSC boundary crossing per field. These
-    // tests pin the contract that must not move: the values scripts observe,
-    // the identity of the objects scripts may have captured, and the per-field
-    // fallback when the helper factory cannot be built.
 
     @Test("Batched clock write delivers runtime, frametime and timeOfDay to layer scripts")
     func batchedClockWriteDeliversAllThreeFields() throws {
@@ -3513,9 +3413,8 @@ export function init(value) {
         #expect(timeOfDay >= 0 && timeOfDay <= 1)
     }
 
-    /// A script may capture `input.cursorScreenPosition` once and keep reading
-    /// it. The batched cursor write must assign onto those SAME objects — a
-    /// helper that replaced them would silently freeze every captured reference.
+    /// The batched cursor write must assign onto the SAME objects a script may have
+    /// captured — a helper that replaced them would silently freeze every reference.
     @Test("Cursor objects captured at init keep observing new values")
     func capturedCursorObjectsKeepTheirIdentityAcrossTicks() throws {
         let store = WPESharedScriptState()
@@ -3558,9 +3457,8 @@ export function init(value) {
         #expect(store.get("wy") as? Double == 75)
     }
 
-    /// Same identity pin for the transform engine, whose input carries only
-    /// `cursorWorldPosition`: the module-scope capture happens at script eval,
-    /// before any tick writes.
+    /// Same identity pin for the transform engine: its input carries only
+    /// `cursorWorldPosition`, captured at script eval before any tick write.
     @Test("Transform script's captured cursorWorldPosition keeps observing new values")
     func transformCapturedCursorObjectKeepsIdentity() throws {
         let instance = try WPEDynamicTransformScriptInstance(
@@ -3587,9 +3485,6 @@ export function init(value) {
         #expect(second == SIMD3<Double>(100, 75, 7))
     }
 
-    /// When the helper factory cannot be evaluated the writer must keep the
-    /// clock moving through per-field writes — a failed setup optimisation may
-    /// cost crossings, never correctness.
     @Test("Engine clock writer falls back to per-field writes when its factory fails")
     func engineClockWriterFallsBackWhenFactoryFails() throws {
         let context = try #require(JSContext())
@@ -3637,12 +3532,8 @@ export function init(value) {
         #expect(target.objectForKeyedSubscript("marked")?.toDouble() == 7)
     }
 
-    /// `updateInput` skips the JSC write when the UV has not changed. A setter
-    /// on the captured cursor object fires only on real writes, so a second
-    /// tick with the same pointer must not increment.
-    /// The clock helper must reach `engine` through the scope chain, not through
-    /// an object captured at setup: a script that replaces the global used to keep
-    /// receiving the clock (the host re-looked-up every tick) and must still.
+    /// The clock helper must reach `engine` through the scope chain, not an object
+    /// captured at setup: a script may replace the global and must still be fed.
     @Test("Replacing the engine global still receives the clock")
     func replacedEngineGlobalStillReceivesTheClock() throws {
         let store = WPESharedScriptState()
@@ -3662,11 +3553,9 @@ export function init(value) {
         #expect(store.get("rt") as? Double == 3.5)
     }
 
-    /// The batched cursor write must still land on EVERY tick, not only when the
-    /// pointer moved. A script may assign into `input.cursorScreenPosition` /
-    /// `cursorWorldPosition`; the host used to overwrite that assignment on the
-    /// next tick, and skipping the write while the pointer is still would let the
-    /// script's value survive instead. Counted through a JS setter.
+    /// The cursor write must land on EVERY tick, not only when the pointer moved:
+    /// skipping it while the pointer is still would let a script's own assignment
+    /// into `input` survive. Counted through a JS setter.
     @Test("The cursor write reaches the script on every tick, moved or not")
     func cursorIsRewrittenEveryTick() throws {
         let store = WPESharedScriptState()
@@ -3705,7 +3594,6 @@ export function init(value) {
         #expect(afterFirst >= 1)
         #expect(store.get("px") as? Double == 50)
 
-        // Same pointer: the write still happens, and the script's scribble on z is gone.
         _ = instance.tick(runtimeSeconds: 2, pointerFrame: pointer)
         #expect(store.get("writes") as? Double == afterFirst + 1)
         #expect(store.get("px") as? Double == 50)
@@ -3752,7 +3640,6 @@ export function init(value) {
             screenSize: SIMD2(200, 100)
         )
 
-        // Official contract: startup seeds screenResolution but does not emit resizeScreen.
         #expect(store.get("initScreen") as? String == "200:100")
         #expect(store.get("canvas") as? String == "100:50")
         #expect(store.get("resizeCount") as? Double == 0)

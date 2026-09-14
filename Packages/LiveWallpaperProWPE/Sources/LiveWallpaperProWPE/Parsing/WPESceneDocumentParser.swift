@@ -2,7 +2,6 @@ import CoreGraphics
 import Foundation
 import LiveWallpaperCore
 
-/// Dependency seam for resolving static transform scripts without coupling the parser to JavaScriptCore.
 public protocol WPESceneTransformScriptResolving {
     func resolveVec3(
         script: String,
@@ -41,33 +40,23 @@ public extension WPESceneTransformScriptResolving {
     }
 }
 
-/// Textual classification of WPE transform scripts, shared by the parser
-/// (bake static origins at parse time) and the runtime evaluator (execution guard).
 public enum WPETransformScriptStaticAnalysis {
     /// Markers for anything a parse-time evaluation cannot know. Matching is
     /// case-sensitive because `Date` would otherwise match `update`.
     public static let dynamicTokens = [
         "getTimeOfDay", "engine.runtime", "frametime", "frameTime", "getTime", "Date",
-        // `registerAudioBuffers` is listed separately from "audio": matching is
-        // case-sensitive, so the capital A in the method name never hits it, and
-        // a script whose only audio use is the buffer object would otherwise be
-        // baked once at parse time.
+        // `registerAudioBuffers` needs its own entry: matching is case-sensitive, so
+        // the capital A never hits "audio".
         "Math.random", "getFrequency", "getFrequencies", "audio", "registerAudioBuffers", "elapsed",
         "input.cursorWorldPosition", "shared.", "shared[",
-        // Layer/scene handles are runtime graph state, even when the script has no clock, pointer,
-        // audio, or shared-state dependency. In particular, `init(value) { parent =
-        // thisLayer.getParent(); }` captures a live parent whose origin/scale may be driven by
-        // another transform script. Baking that script before a layer graph exists both skips
-        // init() and turns a dynamic relationship into a stale authored value.
+        // Layer/scene handles are runtime graph state even with no clock, pointer, audio
+        // or shared-state use: baking one skips init() and freezes a live parent link.
         "thisLayer", "thisObject", "thisScene",
-        // `engine.timeOfDay` is the property form of the day fraction and is
-        // refreshed every frame. `getTimeOfDay` above does not match it (the
-        // comparison is a case-sensitive substring), so a layout script driving a
-        // day/night shift off it was baked once at load and frozen there.
+        // `getTimeOfDay` above does not cover `engine.timeOfDay`: the comparison is a
+        // case-sensitive substring, and the property form refreshes every frame.
         "timeOfDay"
     ]
 
-    /// Loop and evaluation forms are rejected to keep parse-time JavaScriptCore work bounded.
     public static let staticExecutionBlocklistPatterns = [
         #"\bwhile\s*\("#,
         #"\bfor\s*\("#,
@@ -84,10 +73,6 @@ public enum WPETransformScriptStaticAnalysis {
     }
 }
 
-/// Load-time classifier for `return shared.K` fans (F2). WPE still ticks
-/// every `update`; we skip the JS instance and copy the host `shared` value
-/// in Swift. Rejects anything with writes, timers, audio, or property
-/// callbacks so a producer is never mistaken for a fan.
 public enum WPESharedReadFanAnalysis: Sendable {
     public static func readKey(in script: String) -> String? {
         guard let body = updateFunctionBody(in: script),
@@ -229,8 +214,6 @@ public enum WPESharedReadFanAnalysis: Sendable {
     }
 }
 
-/// Parses Wallpaper Engine `scene.json`, accepting object, array, and space-separated vector encodings.
-/// Unsupported features are preserved as diagnostics for capability classification.
 public enum WPESceneDocumentParser {
 
     public static func parse(
@@ -278,37 +261,28 @@ public enum WPESceneDocumentParser {
         let authoredObjects: [[String: Any]] = WPEValueParser.objectArray((json as? [String: Any])?["objects"])
             ?? rawObjects
         let authoredCameraObjects = parseAuthoredCameraObjects(authoredObjects)
-        // WPE's runtime camera is a scene OBJECT carrying a `camera` key ("default");
-        // the top-level `camera` block is only the editor viewport bookmark. Ground
-        // truth (RenderDoc capture of 3509243656): g_EyePosition == the camera
-        // object's origin (0,0,6) with identity orientation, while the top-level
-        // eye (−2.06, 0.85, 10.07) sits outside the skybox shell and is never used.
+        // The runtime camera is a scene OBJECT carrying a `camera` key; the top-level
+        // `camera` block is only the editor viewport bookmark.
         let camera = runtimeCameraObjectOverride(
             rawObjects,
             base: authoredCamera,
             diagnostics: &diagnostics
         )
-        // Script-driven `origin` resolves to the CURRENT user-property values
-        // (the baked `value` is stale once the user tweaks the bound sliders).
-        // Computed before transform combination so each object's parent offset
-        // still applies to the fresh local origin.
+        // Must run before transform combination so each parent offset applies to the
+        // fresh local origin; the baked `value` is stale once bound sliders move.
         let scriptResolvedOrigins = resolveScriptOrigins(
             rawObjects,
             canvasWidth: general.orthogonalProjection.width,
             canvasHeight: general.orthogonalProjection.height,
             makeResolver: makeTransformScriptResolver
         )
-        // One canonical id→object index feeds every downstream pass (transforms,
-        // visibility, hierarchy, attachments). Later duplicates win — matching the
-        // paint-order map below — so a malformed duplicate-id document resolves
-        // every field from a single source object instead of mixing first/last.
+        // Later duplicate ids win, matching the paint-order map below, so a malformed
+        // document resolves every field from one source object.
         let objectsByID = indexObjectsByID(rawObjects)
         let objectTransforms = resolvedObjectTransforms(
             objectsByID,
             scriptOrigins: scriptResolvedOrigins
         )
-        // Effective visibility folds each object's own `visible` with its ancestor
-        // groups', so a child of a condition-hidden group is hidden too.
         let objectVisibility = resolvedObjectVisibility(objectsByID)
         let (objectParentByID, ownVisibilityByID) = objectHierarchy(from: objectsByID)
         let inheritedAttachments = inheritedGroupAttachments(from: objectsByID)
@@ -455,9 +429,7 @@ public enum WPESceneDocumentParser {
 
         for key in generalDict.keys {
             let lowered = key.lowercased()
-            // HDR bloom (`bloom` gate + `bloomhdr*` + `bloomtint`) IS rendered
-            // (see parseGeneral); only the SDR-only keys (bloomstrength/
-            // bloomthreshold/…) still lack a render path.
+            // Only the SDR-only bloom keys lack a render path; HDR bloom renders (parseGeneral).
             let isUnsupportedSDRBloomKey = lowered.hasPrefix("bloom")
                 && lowered != "bloom"
                 && lowered != "bloomtint"
@@ -620,9 +592,6 @@ public enum WPESceneDocumentParser {
         )
     }
 
-    /// Canonical id→object index. A later duplicate id wins so every downstream
-    /// pass resolves the same source object for a given id; well-formed WPE
-    /// exports carry unique ids, so this only matters for malformed documents.
     private static func indexObjectsByID(
         _ rawObjects: [[String: Any]]
     ) -> [String: [String: Any]] {
@@ -634,10 +603,7 @@ public enum WPESceneDocumentParser {
         return objectsByID
     }
 
-    /// Parent id and OWN baked `visible` for every object (groups included). The
-    /// renderer walks the parent chain live so a layer script can't show a layer
-    /// under a currently-hidden ancestor (group toggle, condition, or live image
-    /// toggle alike) — its `getParent()` is a neutral always-visible stub.
+    /// OWN baked `visible` per object, groups included - not the effective value.
     private static func objectHierarchy(
         from objectsByID: [String: [String: Any]]
     ) -> (parents: [String: String], ownVisibility: [String: Bool]) {
@@ -652,18 +618,11 @@ public enum WPESceneDocumentParser {
         return (parents, ownVisibility)
     }
 
-    /// WPE allows `attachment` on a pure GROUP object: the whole subtree rides the named MDAT anchor
-    /// of the group's parent puppet. Groups are baked away at parse time, so lower the group's
-    /// attachment onto each renderable descendant — the child inherits the anchor name and
-    /// re-parents to the group's parent (the puppet layer), the exact shape the static anchor-offset
-    /// and runtime attachment-follow paths already handle for directly-attached layers.
+    /// WPE allows `attachment` on a pure GROUP: the subtree rides the parent puppet's
+    /// anchor. Groups are baked away here, so lower it onto each descendant.
     private static func inheritedGroupAttachments(
         from objectsByID: [String: [String: Any]]
     ) -> [String: (name: String, parentID: String)] {
-        // Each group node's nearest inherited attachment is a property of its
-        // position in the group chain, not of the image that starts the walk, so
-        // memoize it once instead of re-walking the whole chain per unattached
-        // image (previously O(objects × chain-depth) on deep group hierarchies).
         var memo: [String: (name: String, parentID: String)?] = [:]
 
         func inherited(groupID: String, stack: Set<String>) -> (name: String, parentID: String)? {
@@ -699,10 +658,6 @@ public enum WPESceneDocumentParser {
         return result
     }
 
-    /// Records, per user-property key, the render targets it drives and whether
-    /// it can be applied incrementally. Image/text visibility plus sound
-    /// visibility/volume have live consumers; everything else is conservatively
-    /// `.reload`.
     private static func extractUserPropertyBindings(in json: Any) -> [String: [WPEScenePropertyBinding]] {
         guard let root = json as? [String: Any] else {
             return [:]
@@ -756,9 +711,6 @@ public enum WPESceneDocumentParser {
                         subresourceID: subresourceID
                     )),
                     kind: .scriptProperty,
-                    // The renderer is the final authority: it admits this live
-                    // only when the addressed object/role retained an instance;
-                    // static or unsupported consumers fail preflight and reload.
                     action: .incremental
                 )
             }
@@ -870,11 +822,8 @@ public enum WPESceneDocumentParser {
                     )
                 }
             default:
-                // Pure SceneScript hosts are object-kind `.unknown`: they draw
-                // nothing but their visible script still consumes settings.
-                // A direct user envelope belongs to the group itself, not to a
-                // child image. Reloading lets the existing ancestor fold remain
-                // the single effective-visibility authority.
+                // Pure SceneScript hosts land here as `.unknown`: they draw nothing but their
+                // visible script still consumes settings.
                 append(
                     raw: object["visible"],
                     target: .groupObject(id: objectID),
@@ -896,18 +845,14 @@ public enum WPESceneDocumentParser {
         return fallback
     }
 
-    /// Describes one user-property dependency discovered in a raw scene field:
-    /// the property key plus, for condition-form (style-selector) bindings, the
-    /// expected literal the property must match for the field's `value` to take
-    /// effect (nil for the simple form).
+    /// `condition`: the literal the property must match for `value` to take effect;
+    /// nil for the simple form.
     private struct UserPropertyBindingSpec: Hashable {
         let key: String
         let condition: String?
     }
 
-    /// Recursively collects every user-property envelope reachable from `raw` (a field value may be
-    /// a scalar, a `{user}` envelope, or an array of them — e.g. color components). Handles both the
-    /// simple form `{"user":K,"value":...}` and the condition form
+    /// Both envelope forms: simple `{"user":K,"value":...}` and condition
     /// `{"user":{"name":K,"condition":"2"},"value":...}` (style selectors).
     private static func userPropertyBindingSpecs(
         in raw: Any?,
@@ -954,10 +899,8 @@ public enum WPESceneDocumentParser {
         return specs
     }
 
-    /// Normalises a condition literal (`String`/number/`Bool`) to its string
-    /// form. Integral numbers render without a trailing `.0` so a combo option
-    /// value of `2` matches a condition `"2"`. JSON booleans (which bridge to
-    /// `NSNumber`) are kept distinct from numerics.
+    /// Integral numbers render without a trailing `.0` so a combo value of 2 matches
+    /// condition "2"; JSON booleans stay distinct from numerics.
     private static func conditionString(from raw: Any?) -> String? {
         if let value = raw as? String {
             let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -967,9 +910,8 @@ public enum WPESceneDocumentParser {
             if CFGetTypeID(number) == CFBooleanGetTypeID() {
                 return number.boolValue ? "true" : "false"
             }
-            // `NSNumber.stringValue` renders integers without a trailing `.0`
-            // and never traps — unlike `Int(double)`, which would crash on a
-            // finite but out-of-`Int`-range literal from external scene JSON.
+            // Not `Int(double)`: it would trap on a finite but out-of-Int-range literal
+            // from external scene JSON.
             return number.stringValue
         }
         return nil
@@ -1027,10 +969,8 @@ public enum WPESceneDocumentParser {
         return nil
     }
 
-    /// WPE binds a transform component to a user property as `{"user": "newpropertyN", "value": "0.5
-    /// 0.5 0.5"}`; the resolved value is in `value`. `WPEValueParser.vector3` unwraps that itself,
-    /// but the scalar path does not — `parseScale`'s uniform-scalar fallback goes through
-    /// `parseDouble`, so without this a property-bound uniform scale defaults to 1.
+    /// `WPEValueParser.vector3` unwraps a `{user,value}` envelope itself but the scalar
+    /// path does not, so a property-bound uniform scale would default to 1.
     private static func resolveBoundTransformValue(_ raw: Any?) -> Any? {
         if let dict = raw as? [String: Any], let value = dict["value"] {
             return value
@@ -1090,9 +1030,8 @@ public enum WPESceneDocumentParser {
         return memo
     }
 
-    /// Evaluates static `origin` scripts once per document, returning the resolved
-    /// LOCAL origin keyed by object id. Objects without an origin script — or whose
-    /// script is dynamic (audio/time/random) — are absent, keeping their baked value.
+    /// Keyed by object id, LOCAL origin only. Absent = no script or a dynamic one,
+    /// so the baked value stands.
     private static func resolveScriptOrigins(
         _ rawObjects: [[String: Any]],
         canvasWidth: Double,
@@ -1130,10 +1069,8 @@ public enum WPESceneDocumentParser {
         return resolved
     }
 
-    /// Reads a resolved `scriptproperties` dict into typed values. User-property envelopes were
-    /// already collapsed to literals before parsing; the `{ "value": X }` fallback covers any
-    /// un-overridden binding. Numbers, bools (checkboxes), and strings (combos/text) are all
-    /// preserved so a layout script can branch on any of them.
+    /// The `{ "value": X }` fallback covers an un-overridden binding; bools stay bools
+    /// so checkbox-driven branches still work.
     private static func scriptPropertyValues(_ raw: Any?) -> [String: WPESceneScriptPropertyValue] {
         guard let dict = raw as? [String: Any] else { return [:] }
         var properties: [String: WPESceneScriptPropertyValue] = [:]
@@ -1158,17 +1095,14 @@ public enum WPESceneDocumentParser {
             return .number(number.doubleValue)
         }
         if let string = raw as? String {
-            // Prefer a numeric reading of a "0.5"-style string; else keep the text.
             if let number = parseDouble(string) { return .number(number) }
             return .string(string)
         }
         return nil
     }
 
-    /// WPE may store scale as a vector ("0.5 0.5 0.5"), a {user,value} property binding, OR a single
-    /// uniform scalar (0.5 → applied to all axes — this is what a resolved "Scale Size" slider
-    /// writes). `parseVector3` returns nil for a lone scalar, which silently defaulted scale to 1.0
-    /// and doubled the layer (scene 3460973721's audio-bar composelayer). Coerce the scalar to uniform.
+    /// Scale may be a vector, a `{user,value}` binding, or a lone uniform scalar;
+    /// `parseVector3` returns nil for the scalar, so coerce it to all axes.
     private static func parseScale(_ raw: Any?) -> SIMD3<Double> {
         let resolved = resolveBoundTransformValue(raw)
         if let vector = parseVector3(resolved) { return vector }
@@ -1253,18 +1187,13 @@ public enum WPESceneDocumentParser {
             authoredText = (nested["value"] as? String) ?? (nested["text"] as? String)
             if let script = nested["script"] as? String, !script.isEmpty {
                 textScript = script
-                // The scene's per-object scriptProperty overrides (already
-                // envelope-resolved to literals) so the script renders with the
-                // scene's settings, not just its own declared defaults.
                 textScriptProperties = scriptPropertyValues(nested["scriptproperties"])
             }
         default:
             authoredText = nil
         }
-        // A script-driven text object may author an EMPTY placeholder — its update() computes the
-        // real string (3509243656's `time` display authors "" and is the scene's only
-        // `shared.xntime` producer; dropping it froze every consumer text). WPE runs the script
-        // regardless of the authored value, so only SCRIPTLESS objects with no resolvable text are dropped.
+        // WPE runs a text script regardless of the authored value, so only SCRIPTLESS
+        // objects with no resolvable text are dropped.
         guard authoredText?.isEmpty == false || textScript != nil else {
             let objectName = dict["name"] as? String ?? "?"
             diagnostics.append(.init(
@@ -1285,13 +1214,10 @@ public enum WPESceneDocumentParser {
         let font = unwrapString(dict["font"])
         let pointSize = unwrapDouble(dict["pointsize"]) ?? unwrapDouble(dict["fontsize"]) ?? 32
         let color = unwrapVector3(dict["color"]) ?? SIMD3<Double>(1, 1, 1)
-        // Generic object `brightness` — the same field image objects consume;
-        // WPE modulates text with it too (3460973721's Clock/Date/Day author
-        // 2.39/1.98/1.4), so dropping it discarded authored intensity.
+        // WPE modulates text with the generic object `brightness` too.
         let brightness = unwrapDouble(dict["brightness"]) ?? 1.0
         let alphaValue = parseAnimatedScalar(dict["alpha"], fallback: 1)
-        // Script-driven alpha/visible (3509243656's login-intro texts) — the
-        // renderer ticks these; the baked value above is only the seed.
+        // The renderer ticks these; the baked value above is only the seed.
         var alphaScript: String?
         var alphaScriptProperties: [String: WPESceneScriptPropertyValue] = [:]
         if let alphaDict = dict["alpha"] as? [String: Any],
@@ -1308,37 +1234,27 @@ public enum WPESceneDocumentParser {
         }
         let origin = transform.origin
         let scale = transform.scale
-        // Text objects carry static `angles` like image layers (2986828130's
-        // Clock/Date tilt 30° standalone) — dropping it froze them unrotated.
         let angles = transform.angles
         let visible = effectiveVisible ?? (parseBool(dict["visible"]) ?? true)
         let horiz = unwrapString(dict["horizontalalign"]) ?? "center"
         let vert = unwrapString(dict["verticalalign"]) ?? "middle"
-        // `maxwidth` only constrains the text when WPE's "Limit Width" toggle
-        // (`limitwidth`) is on. With it off (the default), the text is unbounded;
-        // applying `maxwidth` unconditionally made large clock/date text wrap at
-        // every glyph (each digit is wider than the authored 500pt maxwidth).
+        // `maxwidth` binds only while `limitwidth` is on; off (the default) is unbounded.
         let limitWidth = parseBool(dict["limitwidth"]) ?? false
         let maxWidth = limitWidth ? unwrapDouble(dict["maxwidth"]) : nil
-        // Same gating for rows: WPE writes `maxrows` on every text object (525 of
-        // 527 corpus objects say 1) but only honours it when `limitrows` is on —
-        // 34 objects, 26 of which also ask for the ellipsis.
+        // Same gating for rows: `maxrows` binds only while `limitrows` is on.
         let limitRows = parseBool(dict["limitrows"]) ?? false
         let maxRows = limitRows ? parseInt(dict["maxrows"]).map { Swift.max(1, $0) } : nil
         let limitUseEllipsis = parseBool(dict["limituseellipsis"]) ?? false
         let parallaxDepth = parseParallaxDepth(dict["parallaxDepth"] ?? dict["parallaxdepth"])
-        // The authored "size" box is an editor bounding-box snapshot — WPE's
-        // runtime never lays text out against it (glyphs render at
-        // pointsize×300/72 anchored to `origin`; oracle-verified). Parsed only
-        // because SceneScript's `layer.size` reports it.
+        // An editor bounding-box snapshot, never laid out against: glyphs render at
+        // pointsize x 300/72 anchored to `origin`. Parsed only for SceneScript's `layer.size`.
         let boxSize = parseVector3(dict["size"]).map { SIMD2<Double>($0.x, $0.y) }
         let padding = parseDouble(dict["padding"]) ?? 0
         let copyBackground = parseBool(dict["copybackground"]) ?? false
         let opaqueBackground = parseBool(dict["opaquebackground"]) ?? false
         let backgroundColor = unwrapVector3(dict["backgroundcolor"]) ?? SIMD3<Double>(0, 0, 0)
         let backgroundBrightness = unwrapDouble(dict["backgroundbrightness"]) ?? 1
-        // 202 of the corpus's 572 text objects carry an effect chain; WPE runs
-        // it over the rendered glyphs exactly as it does for an image layer.
+        // WPE runs a text object's effect chain over the rendered glyphs, as for an image.
         let effects = parseImageEffects(dict["effects"], imageName: name, diagnostics: &diagnostics)
         let letterSpacing = unwrapDouble(dict["letterspacing"]) ?? unwrapDouble(dict["spacing"]) ?? 0
 
@@ -1386,10 +1302,8 @@ public enum WPESceneDocumentParser {
         )
     }
 
-    /// Recursively replace every WPE user-property envelope
-    /// `{ "user": K, "value": V }` with `userValues[K] ?? V` BEFORE field
-    /// parsing, so scene custom settings (e.g. toggling an object's `visible`
-    /// via its bound property) actually drive the parsed document.
+    /// Replaces `{ "user": K, "value": V }` with `userValues[K] ?? V`, and must run
+    /// BEFORE field parsing.
     private static func resolveUserPropertyEnvelopes(
         in raw: Any,
         userValues: [String: WallpaperEngineProjectPropertyValue],
@@ -1408,24 +1322,16 @@ public enum WPESceneDocumentParser {
             return raw
         }
 
-        // A field carrying a `script` is script-driven (a SceneScript computes it per frame); its
-        // `user`/`value` is the script's own enable binding, not a plain user-property envelope.
-        // Collapsing it to `value` would discard the script (e.g. an intro video layer whose
-        // `visible` is `{script, user, value}`), so preserve the dict — recursing so nested
-        // `scriptproperties` envelopes still resolve to the user's values.
+        // In a `script` field the `user`/`value` pair is the script's own enable binding,
+        // not a plain envelope: collapsing it to `value` would discard the script.
         if let script = dict["script"] as? String, !script.isEmpty {
             var resolved: [String: Any] = [:]
             resolved.reserveCapacity(dict.count)
             for (key, value) in dict {
                 resolved[key] = try resolveUserPropertyEnvelopes(in: value, userValues: userValues, depth: depth + 1)
             }
-            // The enable binding still has to be evaluated. Downstream seeds the field from
-            // `value`, which is the *disabled* state — leaving it alone means a layer whose gate is
-            // satisfied starts switched off and only an authored script could ever turn it on. Scene
-            // 3470764447 is the case in point: its day/night parent is `{script, user:{name:"display",
-            // condition:"4"}, value:false}`, and seeding `false` while its script uses an unsupported
-            // `scene.on("update")` form left the whole background unrendered whenever the user picked
-            // period 4.
+            // `value` is the *disabled* state, so the gate must still be evaluated or a
+            // satisfied gate would start switched off with nothing able to turn it on.
             if let gate = conditionGate(in: dict, userValues: userValues) {
                 resolved["value"] = gate
             }
@@ -1445,10 +1351,8 @@ public enum WPESceneDocumentParser {
             return jsonValue(for: override)
         }
 
-        // Condition form (WPE style selector): `{"user":{"name":K,"condition":"2"},"value":false}`.
-        // The field is visible only while `userValues[K]` matches the condition literal. Shared with
-        // the script branch above, which needs the same verdict for its enable binding but must keep
-        // the rest of the envelope intact.
+        // Condition form (style selector) `{"user":{"name":K,"condition":"2"},"value":false}`:
+        // the field applies only while `userValues[K]` matches the condition literal.
         if let user = dict["user"] as? [String: Any],
            let name = user["name"] as? String, !name.isEmpty,
            dict.keys.contains("value") {
@@ -1465,10 +1369,8 @@ public enum WPESceneDocumentParser {
                 // the value directly, like the simple form.
                 return jsonValue(for: override)
             }
-            // Gate to a Bool only when the baked fallback is a genuine JSON boolean (a `visible`
-            // field). `strictBool` rejects numeric NSNumbers, so a condition-form envelope wrapping a
-            // scalar field (alpha/brightness/scale) — or a vector/color — is returned untouched
-            // instead of being coerced into a Bool.
+            // Gate to a Bool only for a genuine JSON boolean: `strictBool` rejects numeric
+            // NSNumbers so a condition-form scalar or vector is returned untouched.
             guard WPEValueParser.strictBool(fallback) != nil else {
                 return fallback
             }
@@ -1487,9 +1389,8 @@ public enum WPESceneDocumentParser {
         return resolved
     }
 
-    /// The verdict of a condition-form `user` binding, or nil when the envelope
-    /// carries no such gate (or the current values cannot decide it, in which
-    /// case the caller's own fallback stands).
+    /// nil = no condition gate, or the current values cannot decide it; the caller's
+    /// own fallback then stands.
     private static func conditionGate(
         in dict: [String: Any],
         userValues: [String: WallpaperEngineProjectPropertyValue]
@@ -1589,9 +1490,6 @@ public enum WPESceneDocumentParser {
         let visible = effectiveVisible ?? (parseBool(dict["visible"]) ?? true)
         let alphaValue = parseAnimatedScalar(dict["alpha"], fallback: 1)
         let color = parseVector3(dict["color"]) ?? SIMD3<Double>(1, 1, 1)
-        // Generic object `brightness` — the same field image objects consume;
-        // WPE applies it to particles too, so dropping it discarded authored
-        // intensity.
         let brightness = parseDouble(dict["brightness"]) ?? 1.0
         let parallaxDepth = parseParallaxDepth(dict["parallaxDepth"] ?? dict["parallaxdepth"])
         let instanceOverride = parseParticleInstanceOverride(
@@ -1617,19 +1515,15 @@ public enum WPESceneDocumentParser {
 
     private static func parseParticleInstanceOverride(_ raw: Any?) -> WPESceneParticleInstanceOverride? {
         guard let dict = raw as? [String: Any] else { return nil }
-        // WPE stores an override either as a bare value (`"lifetime": 0.66`) or, when bound to a
-        // user-editable property, as a wrapper `{ "user": "<prop>", "value": X }`. Unwrap `.value`
-        // first or the user-bound overrides get silently dropped — that dropped debris `rate` (→
-        // over-dense) and wildfire `alpha` (→ over-bright) in scene 3460973721.
+        /// An override is either a bare value or a `{ "user", "value" }` wrapper; without
+        /// the unwrap the user-bound ones are silently dropped.
         func unwrap(_ key: String) -> Any? {
             let v = dict[key]
             if let inner = (v as? [String: Any])?["value"] { return inner }
             return v
         }
-        // `{ "script": ..., "value": X }` is the third envelope shape — the same
-        // one image/text objects use for a scripted alpha. `unwrap` keeps
-        // returning the seed `value`, which is why a scripted override read as a
-        // plain constant until this was pulled out separately.
+        // Third envelope shape `{ "script", "value" }`: `unwrap` above returns only the
+        // seed, so a scripted override has to be pulled out here.
         var alphaScript: String?
         var alphaScriptProperties: [String: WPESceneScriptPropertyValue] = [:]
         if let alphaDict = dict["alpha"] as? [String: Any],
@@ -1666,9 +1560,7 @@ public enum WPESceneDocumentParser {
             : value
     }
 
-    /// `controlpoint1` … `controlpoint7` on a particle object's `instanceoverride`.
-    /// WPE also writes `controlpointangleN`; those are orientations, not offsets,
-    /// and nothing consumes an angle yet, so they stay unread on purpose.
+    /// `controlpointangleN` are orientations, not offsets, and are skipped on purpose.
     private static func parseInstanceControlPoints(_ dict: [String: Any]) -> [Int: SIMD3<Double>] {
         var offsets: [Int: SIMD3<Double>] = [:]
         for (key, raw) in dict {
@@ -1717,10 +1609,8 @@ public enum WPESceneDocumentParser {
         }
     }
 
-    /// A JSON `null` bridges to `NSNull`, which is non-nil — so a bare `entry[key] != nil`
-    /// classifies `{"image": null}` as image-kind. The object then parses to nothing AND skips the
-    /// transform-host branch (gated on `primary != .image`), silently dropping any origin/scale/
-    /// angles script or keyframe track it carried onto its descendants.
+    /// JSON `null` bridges to non-nil `NSNull`, so a bare `entry[key] != nil` would
+    /// classify `{"image": null}` as image-kind and drop its transform onto children.
     private static func hasValue(_ entry: [String: Any], _ key: String) -> Bool {
         guard let value = entry[key] else { return false }
         return !(value is NSNull)
@@ -1741,8 +1631,7 @@ public enum WPESceneDocumentParser {
         return kinds
     }
 
-    /// True for a `shape: "quad"` object with no image/model of its own. WPE
-    /// draws these as a 4-corner perspective quad fed by an effect's
+    /// WPE draws these as a 4-corner perspective quad fed by an effect's
     /// `EffectPerspectiveUV` points.
     private static func isShapeQuadLayer(_ entry: [String: Any]) -> Bool {
         guard !hasValue(entry, "image"), !hasValue(entry, "model") else { return false }
@@ -1839,9 +1728,8 @@ public enum WPESceneDocumentParser {
         base: WPESceneCamera,
         diagnostics: inout [WPESceneDiagnostic]
     ) -> WPESceneCamera {
-        // The official camera contract selects the bottom-most visible camera in
-        // the asset list. `rawObjects` retains authored list order, and visibility
-        // envelopes have already been resolved against the current user values.
+        // The camera contract selects the bottom-most visible camera in authored list
+        // order, which `rawObjects` preserves.
         guard let entry = rawObjects.last(where: {
             $0["camera"] is String && (parseBool($0["visible"]) ?? true)
         }) else { return base }
@@ -2064,9 +1952,6 @@ public enum WPESceneDocumentParser {
         )
         let supportsAudioProcessing = parseBool(dict["supportsaudioprocessing"]) ?? false
         let hdr = parseBool(dict["hdr"]) ?? false
-        // v1 scope: HDR bloom only (the RenderDoc-verified pipeline). The SDR
-        // bloom path (bloomstrength/bloomthreshold, quarter-res blur) differs
-        // and stays unimplemented rather than approximated.
         var bloom: WPESceneBloomSettings?
         if hdr, parseBool(dict["bloom"]) == true {
             bloom = WPESceneBloomSettings(
@@ -2123,9 +2008,6 @@ public enum WPESceneDocumentParser {
         inheritedAttachment: (name: String, parentID: String)? = nil,
         diagnostics: inout [WPESceneDiagnostic]
     ) -> WPESceneImageObject? {
-        // A `shape: "quad"` layer has no image; it renders a DIRECTDRAW effect on a
-        // synthesized transparent solid base (the same builtin used for other
-        // effect-only surfaces), so its effect chain still composites.
         let isShapeQuad = isShapeQuadLayer(dict)
         guard let imagePath = nonEmptyString(dict["image"]) ?? nonEmptyString(dict["model"])
             ?? (isShapeQuad ? "models/util/solidlayer.json" : nil) else {
@@ -2162,9 +2044,7 @@ public enum WPESceneDocumentParser {
         let alphaValue = parseAnimatedScalar(dict["alpha"], fallback: alphaFallback)
         let colorValue = parseAnimatedVector3(dict["color"], fallback: SIMD3<Double>(1, 1, 1))
         let brightness = parseDouble(dict["brightness"]) ?? 1.0
-        // The perspective-quad corners a DIRECTDRAW effect draws through (lightshafts
-        // `point0..3`). Also picks the additive scene composite WPE uses for these
-        // beams (RenderDoc pass 65/66: SRC_ALPHA/ONE).
+        // Also selects the additive composite (SRC_ALPHA/ONE) WPE uses for these beams.
         let shapePoints = isShapeQuad ? shapeQuadPoints(in: effects) : nil
         let isShapeQuadBeam = isShapeQuad && shapePoints != nil
         let blend = isShapeQuadBeam
@@ -2191,9 +2071,8 @@ public enum WPESceneDocumentParser {
         let originScript = dynamicTransformScript(in: dict["origin"], preserveStaticallyResolvable: false)
         let scaleScript = dynamicTransformScript(in: dict["scale"], preserveStaticallyResolvable: true)
         let anglesScript = dynamicTransformScript(in: dict["angles"], preserveStaticallyResolvable: true)
-        // Kept even when statically resolvable, for the same reason as scale and
-        // angles: there is no parse-time bake path for color, so dropping a
-        // "static" script would leave the layer on its authored value forever.
+        // Kept even when statically resolvable: there is no parse-time bake path for
+        // color, so dropping a "static" script would freeze the authored value.
         let colorScript = dynamicTransformScript(in: dict["color"], preserveStaticallyResolvable: true)
 
         if !effects.isEmpty {
@@ -2230,10 +2109,8 @@ public enum WPESceneDocumentParser {
 
         let parallaxDepth = parseParallaxDepth(dict["parallaxDepth"] ?? dict["parallaxdepth"])
 
-        // A `visible` field that is a script-dict carries a WPE SceneScript that
-        // drives the layer's visibility/alpha (and any video texture) per frame —
-        // e.g. an intro video that plays once then hides. Capture it; the layer
-        // stays renderable (visible defaults true above) until init()/update() run.
+        // The layer stays renderable (visible defaults true above) until the captured
+        // script's init()/update() run.
         var visibleScript: String?
         var visibleScriptProperties: [String: WPESceneScriptPropertyValue] = [:]
         if let visibleDict = dict["visible"] as? [String: Any],
@@ -2296,9 +2173,8 @@ public enum WPESceneDocumentParser {
         )
     }
 
-    /// Extracts the four `point0..3` perspective corners from the first effect
-    /// pass that declares a complete set (the `EffectPerspectiveUV` gizmo WPE uses
-    /// for lightshafts / directdraw quads). Returns `nil` when no effect supplies them.
+    /// `point0..3` are the `EffectPerspectiveUV` corners WPE uses for lightshafts /
+    /// directdraw quads.
     private static func shapeQuadPoints(in effects: [WPESceneImageEffect]) -> [SIMD2<Double>]? {
         for effect in effects where effect.visible {
             for override in effect.passOverrides {
@@ -2323,10 +2199,8 @@ public enum WPESceneDocumentParser {
         effects: [WPESceneImageEffect],
         syntheticShapeBase: Bool = false
     ) -> Double {
-        // A synthesized `shape:"quad"` base has no image of its own — it only
-        // exists to carry a DIRECTDRAW effect. Keep it transparent even when the
-        // effect is missing/invisible or its points didn't parse, so a bare or
-        // broken shape quad draws nothing instead of an opaque solid rectangle.
+        // Keep a synthesized shape-quad base transparent even when its effect is missing
+        // or unparsed, or a broken quad draws an opaque rectangle.
         if syntheticShapeBase, rawAlpha == nil {
             return 0
         }
@@ -2337,18 +2211,16 @@ public enum WPESceneDocumentParser {
 
         switch imagePath.lowercased() {
         case "models/util/solidlayer.json", "models/util/solidlayer_depthtest.json":
-            // Solid layers are commonly used as transparent effect surfaces. If
-            // the scene did not author an alpha, keep the base transparent so the
-            // effect draws its own alpha instead of filling the target rectangle.
+            // Unauthored alpha on a solid layer means transparent: the effect draws its own
+            // alpha instead of filling the rectangle.
             return 0
         default:
             return 1
         }
     }
 
-    /// Raw `common_blending.h` BLENDMODE index (0 = normal). A `blendmode`
-    /// string, when present, wins and is re-expressed as its numeric equivalent
-    /// so the render graph only ever reasons about one representation.
+    /// Raw `common_blending.h` BLENDMODE index (0 = normal); a `blendmode` string
+    /// wins and is re-expressed numerically.
     static func parseColorBlendMode(_ dict: [String: Any]) -> Int {
         if let rawBlend = dict["blendmode"] as? String {
             switch WPESceneBlendMode(rawWPEValue: rawBlend) {
@@ -2363,10 +2235,8 @@ public enum WPESceneDocumentParser {
         return parseInt(dict["colorBlendMode"] ?? dict["colorblendmode"]) ?? 0
     }
 
-    /// The fixed-function approximation used for the layer's own draw. Modes
-    /// that need the destination resolve to `.normal` here and are routed
-    /// through the programmable composite by the render-graph builder, which
-    /// reads `colorBlendMode` — never assume this alone reproduces the blend.
+    /// Fixed-function approximation only: modes needing the destination resolve to
+    /// `.normal` and are routed through the programmable composite via `colorBlendMode`.
     private static func parseImageBlendMode(_ dict: [String: Any]) -> WPESceneBlendMode {
         if let rawBlend = dict["blendmode"] as? String {
             return WPESceneBlendMode(rawWPEValue: rawBlend)
@@ -2452,10 +2322,8 @@ public enum WPESceneDocumentParser {
                 ?? parseInt(dict["id"]).map(String.init)
                 ?? "\(index)"
             let name = (dict["name"] as? String) ?? effectName(from: file)
-            // `visible` may be a bare Bool or a `{value, script}` envelope. Reading
-            // it with a plain `parseBool` returned nil for the envelope form and
-            // silently defaulted to shown — so an effect authored hidden with a
-            // script bound to it rendered anyway.
+            // `visible` may be a bare Bool or a `{value, script}` envelope; a plain
+            // `parseBool` returns nil for the envelope form.
             let visibleEnvelope = dict["visible"] as? [String: Any]
             let visibleSeed = parseBool(dict["visible"])
                 ?? visibleEnvelope.flatMap { parseBool($0["value"]) }
@@ -2496,10 +2364,8 @@ public enum WPESceneDocumentParser {
         }
     }
 
-    /// WPE applies `objects[].instance` after loading the base image material.
-    /// Null/blank texture slots are sparse no-ops, while combo values overwrite
-    /// the matching compiled-shader switch. Preserve dynamic user-texture
-    /// bindings even though their provider is a separate runtime concern.
+    /// `instance` applies after the base material: null texture slots are sparse
+    /// no-ops, combos overwrite the matching compiled-shader switch.
     private static func parseMaterialInstance(_ raw: Any?) -> WPESceneMaterialInstance? {
         guard let dict = raw as? [String: Any] else { return nil }
         let userTextures = parseUserTextureBindings(dict["usertextures"])
@@ -2528,9 +2394,6 @@ public enum WPESceneDocumentParser {
         }
     }
 
-    /// Preserve image config independently of render-graph behavior. In
-    /// particular, `passthrough` must not change pass topology until an L1
-    /// mutation capture establishes its exact composition semantics.
     private static func parseImageConfig(_ raw: Any?) -> WPESceneImageConfig {
         guard let dict = raw as? [String: Any] else { return WPESceneImageConfig() }
         return WPESceneImageConfig(
@@ -2538,10 +2401,8 @@ public enum WPESceneDocumentParser {
         )
     }
 
-    /// SceneScripts bound to individual shader constants. Kept even when the body looks statically
-    /// resolvable: there is no parse-time bake path for a shader uniform, so dropping one would
-    /// freeze the pass at its authored seed. The seed itself comes from the sibling `value`, widened
-    /// to a Vec3 so the runtime can drive scalars, Vec2s and Vec3s through one engine.
+    /// Kept even when statically resolvable: no parse-time bake path for a uniform.
+    /// The seed comes from the sibling `value`, widened to Vec3 for scalars and Vec2s.
     private static func parseConstantScripts(
         _ raw: Any?
     ) -> [String: WPESceneTransformScript] {
@@ -2599,9 +2460,8 @@ public enum WPESceneDocumentParser {
         return result
     }
 
-    /// Effect texture arrays mix plain path strings with structured entries
-    /// (`{"name": "masks/pulse__mask_…"}` — how per-instance opacity masks are
-    /// declared). Resolve both; `NSNull` / empty slots return nil.
+    /// Slots are plain path strings or `{"name": ...}` entries (per-instance opacity
+    /// masks); `NSNull` / empty slots return nil.
     private static func parseTextureSlotPath(_ raw: Any?) -> String? {
         if let string = raw as? String {
             let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2659,13 +2519,9 @@ public enum WPESceneDocumentParser {
         WPEValueParser.double(raw)
     }
 
-    /// WPE stores object `parallaxDepth` as a PER-AXIS vector string ("x y"), not a scalar — e.g.
-    /// "1.000 1.000". A plain `parseDouble` returns nil for that (Swift's `Double(_:)` rejects the
-    /// embedded space), so every object's depth silently fell back to 0 and the camera-parallax
-    /// pipeline received all-zero depths → no layer ever shifted with the cursor. WPE supports
-    /// per-axis depth ("1 0" = horizontal-only, "0 1" = vertical-only), so keep both axes rather than
-    /// collapsing to one. A bare scalar maps to both axes; a `{ "user", "value" }` wrapper is
-    /// unwrapped; absent → `.zero` (pinned).
+    /// Per-axis depth string ("1 0" = horizontal-only, "0 1" = vertical-only), not a
+    /// scalar. A bare scalar maps to both axes, a `{user,value}` wrapper is unwrapped,
+    /// absent -> `.zero` (pinned).
     static func parseParallaxDepth(_ raw: Any?) -> SIMD2<Double> {
         if let dict = raw as? [String: Any], let value = dict["value"] {
             return parseParallaxDepth(value)

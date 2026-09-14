@@ -14,8 +14,6 @@ struct ScenePropertyMutationAuthorityTests {
         var persistedDescriptor = "original"
 
         let queuedPatch = Task { @MainActor in
-            // Side-effect-free renderer preflight has returned; suspend before
-            // updateSceneDescriptor's final MainActor CAS/persistence turn.
             guard authority.isCurrent(editToken) else { return false }
             await gate.suspend()
             guard authority.isCurrent(editToken) else { return false }
@@ -25,8 +23,6 @@ struct ScenePropertyMutationAuthorityTests {
         }
 
         await gate.waitUntilSuspended()
-        // Models beginExplicitWallpaperSelection's synchronous advancement even
-        // when the chosen wallpaper takes its unchanged/no-op fast path.
         authority.advance()
         await gate.resume()
 
@@ -44,8 +40,6 @@ struct ScenePropertyMutationAuthorityTests {
         var persistedDescriptor = "original"
 
         let queuedPatch = Task { @MainActor in
-            // Side-effect-free renderer preflight has returned; suspend before
-            // updateSceneDescriptor's final MainActor CAS/persistence turn.
             guard authority.isCurrent(editToken) else { return false }
             await gate.suspend()
             guard authority.isCurrent(editToken) else { return false }
@@ -55,8 +49,6 @@ struct ScenePropertyMutationAuthorityTests {
         }
 
         await gate.waitUntilSuspended()
-        // Models both ScreenManager.saveConfiguration and
-        // PlaybackCoordinator.save advancing intent before store.save.
         authority.advance()
         await gate.resume()
 

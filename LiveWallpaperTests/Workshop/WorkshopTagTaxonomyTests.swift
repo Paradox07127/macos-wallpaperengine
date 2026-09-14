@@ -3,8 +3,7 @@ import Foundation
 @testable import LiveWallpaper
 import Testing
 
-/// Steam's own facet groups for Wallpaper Engine tags, as the detail page
-/// lists them (`workshopTagsTitle`, measured 2026-09-07 on 3737237256).
+/// Steam's own facet groups for Wallpaper Engine tags, as the detail page lists them.
 @Suite("Workshop tag taxonomy")
 struct WorkshopTagTaxonomyTests {
     @Test("Known tags land in Steam's facet group; unknown ones in Other")

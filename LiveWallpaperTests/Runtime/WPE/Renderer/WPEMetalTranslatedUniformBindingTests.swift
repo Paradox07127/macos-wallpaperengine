@@ -5,9 +5,6 @@ import Metal
 import Testing
 @testable import LiveWallpaper
 
-/// The `>4 KB` uniform path used to swallow an allocation failure: the branch was
-/// an `else if let` with no `else`, so the slot stayed unbound and nothing was
-/// logged, leaving the fragment stage to read undefined uniforms in silence.
 @Suite("WPE translated uniform binding")
 struct WPEMetalTranslatedUniformBindingTests {
 
@@ -97,9 +94,7 @@ struct WPEMetalTranslatedUniformBindingTests {
         harness.encoder.endEncoding()
 
         #expect(outcome == .allocationFailed(byteCount: 4112))
-        // The seam really was the >4 KB branch, three times over.
         #expect(attempts == [4112, 4112, 4112])
-        // Every failure reaches the sink the scene diagnostics read.
         let summary = harness.executor.gpuErrorSink.summary
         #expect(summary.count == 3)
         #expect(summary.last?.contains("uniform-buffer") == true)
@@ -108,7 +103,6 @@ struct WPEMetalTranslatedUniformBindingTests {
 
     // MARK: - Uniform arena
 
-    /// Every packing shape the slot walk has a branch for.
     private static func coverageLayout() -> [WPEUniformSlot] {
         [
             WPEUniformSlot(
@@ -194,10 +188,8 @@ struct WPEMetalTranslatedUniformBindingTests {
         defer { executor.currentUniformArenaSlot = nil }
         let arena = executor.uniformArena
 
-        // Dirty the exact bytes the packed region will land on: a leading reservation
-        // fixes the offset, and the rewind below reissues the same memory. Without
-        // this the region would be freshly zeroed by Metal and a dropped zero-fill
-        // would still pass.
+        // Dirty the exact bytes the packed region will land on: otherwise Metal
+        // hands back freshly zeroed memory and a dropped zero-fill still passes.
         arena.beginFrame(slot: 0)
         _ = try #require(arena.reserve(slotCount: 4, frameSlot: 0))
         let dirty = try #require(arena.reserve(slotCount: slotCount, frameSlot: 0))
@@ -253,7 +245,6 @@ struct WPEMetalTranslatedUniformBindingTests {
             == .buffer(byteCount: 4800))
         harness.encoder.endEncoding()
 
-        // The arena path allocates nothing per pass, so nothing is reported.
         #expect(executor.gpuErrorSink.summary.count == 0)
     }
 
@@ -266,7 +257,6 @@ struct WPEMetalTranslatedUniformBindingTests {
         let arena = executor.uniformArena
         arena.beginFrame(slot: 0)
 
-        // Burn the slot down so the next reservation cannot be served.
         var reservations = 0
         while arena.reserve(slotCount: 256, frameSlot: 0) != nil {
             reservations += 1
@@ -281,13 +271,10 @@ struct WPEMetalTranslatedUniformBindingTests {
             Issue.record("expected the fallback array path, got \(packed)")
             return
         }
-        // The fallback must produce the same bytes as the ordinary array packer …
         #expect(Self.rawBytes(slots) == Self.rawBytes(
             executor.packTranslatedUniforms(for: Self.makePass(id: "arena.overflow"),
                                             layout: Self.coverageLayout())
         ))
-        // … and, above all, it must still bind. A silent skip is the exact bug the
-        // `.allocationFailed` state was added for.
         let outcome = executor.bindTranslatedUniformSlots(packed, to: harness.encoder)
         harness.encoder.endEncoding()
         #expect(outcome == .inline(byteCount: 18 * 16))

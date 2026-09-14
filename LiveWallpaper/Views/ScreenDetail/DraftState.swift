@@ -24,10 +24,9 @@ struct DraftState: Sendable, Equatable {
     var selectedFrameRateLimit: FrameRateLimit
     /// Scene Follow Cursor (parallax / pointer).
     var sceneMouseInteractionEnabled: Bool
-    /// Scene Interaction (click capture).
     var sceneClickCaptureEnabled: Bool
     var hasPreviewSource: Bool
-    /// Live scene mirror for inspector property overrides (avoids persist round-trips per keystroke).
+    /// Live scene mirror for inspector property overrides, not the persisted copy.
     var sceneDescriptor: SceneDescriptor?
 
     static let `default` = DraftState(

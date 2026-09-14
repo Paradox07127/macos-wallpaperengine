@@ -1,13 +1,7 @@
 import Foundation
 
-/// Zero-copy view into a (typically memory-mapped) `Data` owner. Deliberately
-/// not a `Data.SubSequence`: bridging slices back to `Data`/`NSData` can copy,
-/// and a slice hides which allocation keeps the mapping alive. The span retains
-/// `owner` explicitly, so `.tex` payload views stay valid for as long as any
-/// mip span exists, and mapped clean pages remain reclaimable by the kernel.
-///
-/// `range` is buffer-relative (0-based into the owner's logical bytes),
-/// matching `Data.withUnsafeBytes` coordinates rather than `Data` indices.
+/// Deliberately not a `Data.SubSequence`: bridging slices back to `Data`/`NSData` can copy.
+/// `range` is buffer-relative (0-based into the owner's logical bytes), not `Data` indices.
 public struct WPEMappedByteSpan: Sendable {
     public let owner: Data
     public let range: Range<Int>
@@ -42,10 +36,8 @@ public struct WPEMappedByteSpan: Sendable {
 
     public func byte(at offset: Int) -> UInt8 {
         precondition(offset >= 0 && offset < count)
-        // Explicit parameter type: `Data.withUnsafeBytes` still carries the
-        // deprecated typed-pointer overload, and the shipping compiler (26.6)
-        // cannot pick between them from `$0` alone — 27's can, so an unannotated
-        // closure compiles locally and breaks the release toolchain.
+        // Explicit parameter type: `Data.withUnsafeBytes` still carries the deprecated
+        // typed-pointer overload, and a bare `$0` can be ambiguous.
         return owner.withUnsafeBytes { (buffer: UnsafeRawBufferPointer) in
             buffer[range.lowerBound + offset]
         }
@@ -60,7 +52,7 @@ public struct WPEMappedByteSpan: Sendable {
 }
 
 extension WPEMappedByteSpan: Equatable {
-    /// Content equality (matches the former `Data` payload semantics).
+    /// Content equality.
     public static func == (lhs: WPEMappedByteSpan, rhs: WPEMappedByteSpan) -> Bool {
         guard lhs.count == rhs.count else { return false }
         if lhs.isEmpty { return true }

@@ -85,8 +85,6 @@ struct WallpaperLoadAttempt: Identifiable {
     var isInspecting = true
 }
 
-/// Holds proposals separately from committed configuration. A result must own
-/// both the display object and attempt ID before it can change presentation.
 @MainActor
 @Observable
 final class WallpaperLoadState {

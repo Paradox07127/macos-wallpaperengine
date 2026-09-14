@@ -166,8 +166,6 @@
             return String(out)
         }
 
-        /// Visits every script slot the parser binds, stopping at the first match.
-        /// (`usesAudioAPI` above predates this and walks the same slots inline.)
         private static func anyBoundScript(
             in document: WPESceneDocument,
             where matches: (String) -> Bool
@@ -207,7 +205,6 @@
             return found
         }
 
-        /// Diagnostic: budget spent on duplicate sources (WPE does not share module state).
         static func sourceReuse(in document: WPESceneDocument) -> (bindings: Int, distinct: Int, maxRepeat: Int) {
             var counts: [String: Int] = [:]
             func note(_ script: String?) {

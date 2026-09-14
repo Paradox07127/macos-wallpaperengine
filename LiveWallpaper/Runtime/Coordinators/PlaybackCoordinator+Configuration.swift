@@ -37,7 +37,6 @@ extension PlaybackCoordinator {
         applySceneAudioState(configuration: configuration, screen: screen)
     }
 
-    /// Routes mute/volume into scene `WPESoundRuntime` (no-op for video/html/no-sound).
     private func applySceneAudioState(configuration: ScreenConfiguration, screen: Screen) {
         #if !LITE_BUILD
         guard let session = screen.runtimeSession as? SceneWallpaperSession,
@@ -47,7 +46,6 @@ extension PlaybackCoordinator {
         #endif
     }
 
-    /// Scene-only Follow Cursor: persist + live push.
     func updateSceneMouseInteraction(_ enabled: Bool, for screen: Screen) {
         guard var configuration = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint),
               enabled != configuration.sceneMouseInteractionEnabled else { return }
@@ -69,7 +67,6 @@ extension PlaybackCoordinator {
         #endif
     }
 
-    /// Scene fit mode: persist + live push via `SceneWallpaperSession`.
     func updateSceneFitMode(_ fitMode: VideoFitMode, for screen: Screen) {
         guard var configuration = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint),
               fitMode != configuration.fitMode else { return }
@@ -130,9 +127,7 @@ extension PlaybackCoordinator {
 
         configuration.frameRateLimit = frameRateLimit
         save(configuration)
-        // Effects are an `AVVideoComposition` pass, so they can only carry the
-        // limit for a screen that owns a player. A scene or HTML screen holding
-        // a stale effect config used to route its limit into that path and lose it.
+        // Effects are an AVVideoComposition pass, so they can only carry the limit for a screen that owns a player. A scene or HTML screen holding a stale effect config would route its limit into that path and lose it.
         if configuration.effectConfig.hasActiveEffect, screen.videoPlayer != nil {
             applyVideoEffects(screen, configuration)
         } else {
@@ -146,8 +141,6 @@ extension PlaybackCoordinator {
         // panel it divides, so every runtime below here receives whole frames.
         let ceiling = frameRateLimit.frameRate(forRefreshRate: Double(screenRefreshRate))
 
-        // Scene (and any future ambient renderer that owns its own
-        // display link) responds via WallpaperFrameRateConfigurable.
         #if !LITE_BUILD
         if let session = screen.runtimeSession as? SceneWallpaperSession,
            let frameRateController = session.frameRateController {
@@ -160,9 +153,7 @@ extension PlaybackCoordinator {
         }
         #endif
 
-        // HTML paces itself with a JS rAF gate rather than a display link, so it
-        // has no `videoPlayer` for the path below to reach. Without this branch
-        // the limit was silently dropped for every HTML wallpaper.
+        // HTML paces itself with a JS rAF gate rather than a display link, so it has no videoPlayer for the path below to reach. Without this branch the limit would be silently dropped for every HTML wallpaper.
         if let ambient = screen.runtimeSession as? AmbientWallpaperSession {
             Logger.info(
                 "Applying HTML frame rate ceiling \(ceiling) FPS to screen \(screen.id)",

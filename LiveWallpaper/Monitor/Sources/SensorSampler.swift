@@ -2,7 +2,6 @@ import Foundation
 import IOKit
 import os
 
-/// In-process Apple SMC reader for CPU / GPU / SoC temperature and fan speed.
 final class SensorSampler {
     private static let log = Logger(subsystem: "LiveWallpaper.Monitor", category: "sensors")
 
@@ -25,7 +24,7 @@ final class SensorSampler {
         if connection != 0 { IOServiceClose(connection) }
     }
 
-    /// Read the sensors, or `nil` if the SMC is unreachable / every key missed.
+    /// `nil` if the SMC is unreachable / every key missed.
     func sample() -> MonitorSensorReadings? {
         openIfNeeded()
         guard available else { return nil }

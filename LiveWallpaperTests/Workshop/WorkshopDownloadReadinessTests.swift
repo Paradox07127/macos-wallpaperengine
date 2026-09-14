@@ -3,8 +3,6 @@ import Foundation
 import Testing
 @testable import LiveWallpaper
 
-/// Download readiness must reflect facts that are current, not bytes that once
-/// meant access.
 @Suite("Workshop download readiness", .serialized)
 @MainActor
 struct WorkshopDownloadReadinessTests {
@@ -103,7 +101,6 @@ struct WorkshopDownloadReadinessTests {
 
         service.forgetSignedInSession()
 
-        // The account stays selected; only its session is gone.
         #expect(service.username == "someone")
         #expect(service.cachedLoginVerdict == nil)
         #expect(!service.isGreen(.cachedLogin))
@@ -111,7 +108,6 @@ struct WorkshopDownloadReadinessTests {
         service.noteSuccessfulSteamOperation(generation: inFlight)
         #expect(!service.isGreen(.cachedLogin))
 
-        // Control: a result from after the removal still lands.
         service.noteSuccessfulSteamOperation(generation: service.accountGeneration)
         #expect(service.isGreen(.cachedLogin))
     }
@@ -165,18 +161,14 @@ struct WorkshopDownloadReadinessTests {
         service.noteOperationReportedLoginRequired(generation: stale)
         #expect(service.downloadBlocker == nil)
 
-        // Control: the same calls with the live generation take effect.
         service.noteSuccessfulSteamOperation(generation: service.accountGeneration)
         #expect(service.isGreen(.cachedLogin))
         service.noteOperationReportedLoginRequired(generation: service.accountGeneration)
         #expect(service.downloadBlocker != nil)
     }
 
-    /// The Diagnostics section reports on things `downloadBlocker` deliberately
-    /// ignores. If one of them ever reached the blocker, a wallpaper-engine
-    /// folder the user never linked would start refusing Workshop downloads.
-    /// `redIdentityProbeBlocksDownloads` above is the control: it proves a red
-    /// probe *can* block, so a pass here is not just "nothing blocks anything".
+    /// `redIdentityProbeBlocksDownloads` is the control: it proves a red probe *can* block,
+    /// so a pass here is not just "nothing blocks anything".
     @Test("Red Workshop-wide diagnostics never block downloads")
     func advisoryProbesNeverBlockDownloads() throws {
         let service = try makeService()
@@ -192,10 +184,6 @@ struct WorkshopDownloadReadinessTests {
         }
     }
 
-    /// `SteamWorkshopDownloadResult.itemPath` is decoded from the connector's
-    /// JSON reply, so it is a claim about where the files went. Authorization
-    /// has to come from the id we asked for, resolved under the library the
-    /// user actually granted.
     @Test("A finished download is authorized by containment, not by the reported path")
     func downloadedItemDirectoryIsRevalidated() throws {
         let doctor = try makeService()
@@ -215,18 +203,15 @@ struct WorkshopDownloadReadinessTests {
         try fm.createDirectory(at: item, withIntermediateDirectories: true)
         try Data("{}".utf8).write(to: item.appendingPathComponent("project.json"))
 
-        // Control: a real item directory inside the authorized library is taken.
         #expect(
             doctor.authorizedDownloadedItemDirectory(workshopID: "100", steamRoot: steamRoot)?.path
                 == item.resolvingSymlinksInPath().path
         )
 
-        // The id's directory is a symlink to a project outside the library.
         try fm.removeItem(at: item)
         try fm.createSymbolicLink(at: item, withDestinationURL: outside)
         #expect(doctor.authorizedDownloadedItemDirectory(workshopID: "100", steamRoot: steamRoot) == nil)
 
-        // Nothing under the authorized library carries this id at all.
         #expect(doctor.authorizedDownloadedItemDirectory(workshopID: "200", steamRoot: steamRoot) == nil)
 
         // The download path cannot be driven without the connector, so pin that
@@ -240,7 +225,6 @@ struct WorkshopDownloadReadinessTests {
 
     @Test("Everything green with a resolvable grant is ready")
     func allGreenResolvableIsReady() throws {
-        // Control: the added conditions must not block a genuinely ready setup.
         let service = try makeService()
         configureAllGreen(service, bookmark: try resolvableBookmark())
 

@@ -5,7 +5,6 @@ import Testing
 struct LocalizationCoverageTests {
     private static let requiredLocales = ["zh-Hans", "zh-Hant", "ja", "es"]
 
-    /// Every non-test Swift file under the given repository-relative roots.
     static func projectSwiftFiles(_ roots: [String]) throws -> [String] {
         let base = RepositoryRoot.url("")
         var found: [String] = []
@@ -50,7 +49,6 @@ struct LocalizationCoverageTests {
         return calls
     }
 
-    /// `String(` followed by whitespace then `localized:` — the multi-line form.
     private static func matchLooseOpening(_ chars: [Character], at index: Int) -> Int? {
         let prefix = Array("String(")
         guard index + prefix.count <= chars.count,
@@ -100,14 +98,8 @@ struct LocalizationCoverageTests {
         }
     }
 
-    // The catalog tests above only look at entries the catalog already has, so
-    // they are blind to the opposite gap: a key deleted from the catalog while
-    // code still asks for it. 2026-08-17: removing a dead
-    // `WeatherReactiveService.LocationStatus.authorized` case took the
-    // "Authorized" key with it while BoardSettingsView still rendered
-    // `Text("Authorized")`, and ja/zh-Hans/zh-Hant VoiceOver read English with
-    // all 3020 tests green. Catalog keys are shared by text, not by feature —
-    // a "Weather location status" comment does not make the key weather-only.
+    /// Catalog keys are shared by text, not by feature — a "Weather location status"
+    /// comment does not make the key weather-only.
     @Test("Literal localization keys used in source still exist in the catalog")
     func literalLocalizationKeysExistInCatalog() throws {
         let catalog = try StringCatalog.load(named: "Localizable.xcstrings")
@@ -123,12 +115,9 @@ struct LocalizationCoverageTests {
         )
     }
 
-    // The scan above drops any literal containing a backslash, which silently
-    // exempts every interpolated `String(localized:)` — and those are exactly
-    // the ones whose catalog key differs from the source text (`%@`/`%lld` in
-    // place of each interpolation). 2026-08-20: a new
-    // "Some files could not be deleted: \(names)" shipped with no catalog entry
-    // at all and all 3153 tests stayed green.
+    /// The scan above drops any literal containing a backslash, which silently exempts every
+    /// interpolated site — exactly the ones whose catalog key differs from the source text
+    /// (`%@`/`%lld` in place of each interpolation).
     @Test("Interpolated localized literals resolve to a catalog key")
     func interpolatedLocalizationKeysExistInCatalog() throws {
         let catalog = try StringCatalog.load(named: "Localizable.xcstrings")
@@ -242,13 +231,9 @@ struct LocalizationCoverageTests {
         }
     }
 
-    // 2026-08-29: this used to assert an explicit `bundle: .main` on every Text.
-    // That argument is the parameter's own default, so it never changed
-    // behaviour — and the 84 sites carrying it were dropped when the app's
-    // localization writing was unified. What actually keeps a translation from
-    // being swallowed is the *parameter type*: a `String` parameter routes
-    // through Text's verbatim overload and never consults the catalog, while a
-    // `LocalizedStringKey` does. That is what this now guards.
+    /// What keeps a translation from being swallowed is the parameter type: a `String`
+    /// parameter routes through Text's verbatim overload and never consults the catalog,
+    /// while a `LocalizedStringKey` does.
     @Test("Shared package UI takes localizable keys, not resolved strings")
     func sharedPackageUITakesLocalizableKeys() throws {
         let source = try Self.projectFile("Packages/LiveWallpaperCore/Sources/LiveWallpaperCore/UI/Components/SettingRow.swift")
@@ -260,18 +245,14 @@ struct LocalizationCoverageTests {
         #expect(source.contains(".help(localizedText)"))
         #expect(source.contains("Text(verbatim: localizedText)"))
         #expect(!source.contains(".help(text)"))
-        // The failure this exists for: a title that arrives already resolved.
         #expect(!source.contains("title: String,"))
         #expect(!source.contains("Text(verbatim: title)"))
     }
 
-    // `String(localized:)` resolves against `Locale.current` — the *system*
-    // language — and ignores both SwiftUI's `\.locale` environment and its own
-    // `locale:` argument (measured; see AppLanguageRuntimeProbeTests). Naming
-    // the bundle is the only form that follows the in-app language picker, so a
-    // site that forgets it renders in the system language while everything
-    // around it renders in the chosen one. Brace-matched rather than grepped:
-    // most of these calls span several lines and carry nested calls.
+    // Naming the bundle is the only form that follows the in-app language picker: without it the
+    // lookup resolves against `Locale.current` — the *system* language — and ignores both
+    // SwiftUI's `\.locale` environment and its own `locale:` argument. Brace-matched rather than
+    // grepped: most of these calls span several lines and carry nested calls.
     @Test("Every String(localized:) names the in-app language bundle")
     func stringLocalizedSitesNameTheLanguageBundle() throws {
         // Compiled into the SystemWallpaperProvider appex too, which does not
@@ -427,26 +408,9 @@ struct LocalizationCoverageTests {
     }
 }
 
-/// Collects the localization keys that source code spells out as a plain string
-/// literal, so they can be checked back against the catalog.
-///
-/// Deliberately blind — under-reporting beats a false alarm, and every form
-/// below stays uncovered by this gate:
-/// - interpolated or escaped literals (`Text("\(count) items")`, `Text("a\nb")`),
-///   because the source text is not the catalog key verbatim;
-/// - keys that arrive as a variable, enum property, or `LocalizedStringKey`
-///   passed down from a caller, and keys spelled inside a conditional
-///   expression (`Text(busy ? "Importing…" : "Idle")`);
-/// - project-defined wrappers that take a `LocalizedStringKey` of their own
-///   (`WorkshopFilterRow("Maturity")`, `SettingsSearchSectionHeader(…)`). The
-///   allowlist stays SwiftUI-only on purpose: `appendingPathComponent("Workshop")`
-///   and `contains("error")` also spell a live catalog key, so widening it by
-///   name would invent failures rather than find them;
-/// - raw (`#"…"#`) and multi-line (`"""`) string literals;
-/// - preview bodies (that copy never ships) and comments.
-///
-/// `Text(verbatim:)` is excluded by construction: it does not localize, and the
-/// patterns only match a literal that directly follows the opening paren.
+/// Deliberately blind — under-reporting beats a false alarm. The allowlist stays
+/// SwiftUI-only on purpose: `appendingPathComponent("Workshop")` and `contains("error")`
+/// also spell a live catalog key, so widening it by name would invent failures.
 private enum LocalizedLiteralScan {
     struct Hit: Hashable {
         let key: String
@@ -485,10 +449,9 @@ private enum LocalizedLiteralScan {
         }
     }
 
-    /// Blanks comments and `#Preview` bodies while keeping one line per line, so
-    /// reported line numbers still point at the real call site. A preview is
-    /// skipped up to its closing column-zero `}` rather than to end of file —
-    /// truncating would silently drop every declaration written below it.
+    /// Blanks comments and `#Preview` bodies while keeping one line per line, so reported
+    /// line numbers still point at the real call site. A preview is skipped up to its
+    /// closing column-zero `}`; truncating would drop every declaration written below it.
     static func scannableText(in source: String) -> String {
         var lines: [String] = []
         var blockCommentDepth = 0
@@ -575,10 +538,8 @@ private struct StringCatalog: Decodable {
 
     func keysMissingLocalization(_ locale: String) -> [String] {
         strings.keys.sorted().filter { key in
-            // The empty key is an extraction artifact of `Picker("", …)`-style
-            // calls (65 sites) and has nothing to translate; Xcode re-adds it
-            // on every catalog re-save. The value check below already exempted
-            // it — an absent unit is the same case, not a missing translation.
+            // The empty key is an extraction artifact of `Picker("", …)`-style calls and has
+            // nothing to translate; Xcode re-adds it on every catalog re-save.
             guard !key.isEmpty else { return false }
             // `shouldTranslate: false` marks deliberately unlocalized entries
             // (brand names like CFBundleDisplayName: the per-SKU Info.plist value

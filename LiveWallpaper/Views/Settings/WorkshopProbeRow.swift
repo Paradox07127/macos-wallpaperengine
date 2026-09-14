@@ -2,7 +2,6 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// Collapses probe evidence by default and expands the first failure automatically.
 struct WorkshopProbeRow: View {
     let report: DoctorProbeReport
     let service: SteamCMDDoctorService
@@ -116,14 +115,12 @@ struct WorkshopProbeRow: View {
         }
     }
 
-    /// Offer a fix only when the probe has an applicable recovery action.
     @ViewBuilder private var fixButton: some View {
         if needsAccountConnection {
             Button("Connect account") { onConnectAccount?() }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
         } else if report.id == .binaryIdentity, case .red = report.status {
-            // Re-detection replaces an invalid binary with one from a trusted source.
             Button("Locate automatically") {
                 Task { await service.autoDetectBinary() }
             }
@@ -134,7 +131,6 @@ struct WorkshopProbeRow: View {
 
     // MARK: - Derived
 
-    /// Only credential failures offer sign-in as recovery.
     private var needsAccountConnection: Bool {
         guard report.id == .cachedLogin else { return false }
         switch service.cachedLoginVerdict {
@@ -159,7 +155,6 @@ struct WorkshopProbeRow: View {
         }
     }
 
-    /// Collapsed rows show successful findings or pending status.
     private var resultText: String? {
         switch report.status {
         case .green(let detail):

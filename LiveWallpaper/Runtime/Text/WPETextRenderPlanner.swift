@@ -4,9 +4,6 @@ import Foundation
 import LiveWallpaperProWPE
 import simd
 
-/// The exact layout state used by both the render graph and the glyph encoder.
-/// It is recomputed only when layout-affecting text state changes; no guessed
-/// headroom or authored target size participates in the allocation.
 struct WPETextLayoutSnapshot: Equatable {
     let blockSize: CGSize
     let anchorOffset: SIMD2<Double>
@@ -92,9 +89,7 @@ enum WPETextRenderPlanner {
         )
     }
 
-    /// A plain independent text
-    /// object can render directly; effects or framebuffer dependencies require
-    /// a layer-sized intermediate surface.
+    /// A plain independent text object can render directly; effects or framebuffer dependencies require a layer-sized intermediate surface.
     static func renderMode(
         for object: WPESceneTextObject,
         isLinkedSource: Bool
@@ -134,9 +129,7 @@ enum WPETextRenderPlanner {
             maxRows: object.maxRows,
             ellipsis: object.limitUseEllipsis
         ) else {
-            // A scripted empty string still needs a graph node so it can become
-            // visible later. The 1x1 surface is geometry only and allocates no
-            // dedicated text texture in Direct mode.
+            // A scripted empty string still needs a graph node so it can become visible later. The 1x1 surface is geometry only and allocates no dedicated text texture in Direct mode.
             return WPETextLayoutSnapshot(
                 blockSize: .zero,
                 anchorOffset: .zero,

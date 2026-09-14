@@ -25,10 +25,7 @@ struct CodexSessionModel: Sendable {
     private var lastApprovalClearAt: Date?
     private var lastStatusEventAt: Date?
 
-    /// Explicit because the synthesized memberwise initializer isn't portable: Swift 6.4 gives
-    /// optional/defaulted members implicit defaults so `CodexSessionModel(sessionId:)` resolves, while 6.3.3
-    /// (the pinned shipping toolchain) synthesizes only `init()` — relying on the synthesized form builds under
-    /// the beta and fails the release build.
+    /// Explicit `init(sessionId:)`: 6.3.3 synthesizes only `init()`, so relying on the memberwise form would fail the release build.
     init(sessionId: String? = nil) {
         self.sessionId = sessionId
     }
@@ -124,9 +121,7 @@ struct CodexSessionModel: Sendable {
         if lastTerminalEventIsTaskComplete, processAlive {
             return .idle
         }
-        // An unfinished task while the process is alive stays running regardless
-        // of how quiet the transcript has gone — a long tool writes nothing. The
-        // 5-minute `stale` warning is what surfaces a suspicious one.
+        // An unfinished task while the process is alive stays running regardless of transcript quiet; a long tool writes nothing.
         if !lastTerminalEventIsTaskComplete, processAlive {
             return .running
         }
@@ -231,8 +226,6 @@ struct CodexSessionModel: Sendable {
         activity.contextWindow = Self.intValue(payload["context_window"])
     }
 
-    /// cwd + branch, from either `session_meta` (once, at line 1) or `turn_context`
-    /// (every turn). Shared so a cold start that misses line 1 still resolves them.
     private mutating func ingestLocationMetadata(_ payload: [String: Any]) {
         if let cwd = Self.stringValue(payload["cwd"]), !cwd.isEmpty {
             self.cwd = cwd
@@ -275,7 +268,6 @@ struct CodexSessionModel: Sendable {
                 clearPendingApproval(at: timestamp)
                 markTerminal(true, at: timestamp)
             }
-            // The turn is over; the last tool is history, not current activity.
             lastToolName = nil
         case "agent_message", "user_message":
             if let timestamp {

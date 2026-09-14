@@ -2,18 +2,12 @@
 import Foundation
 
 extension Notification.Name {
-    /// Posted synchronously on the main actor before SteamCMD is allowed to
-    /// mutate one Workshop item. Runtime owners must close every in-place read
-    /// of that item before returning from the notification callback.
+    /// Posted on the main actor before SteamCMD mutates an item; close every in-place read of that item before returning from the callback.
     static let workshopItemWillMutate = Notification.Name("WorkshopItemWillMutate")
 
-    /// Posted after SteamCMD and the import/validation boundary have completed.
-    /// Runtime owners may rebuild sessions from the newly validated generation.
     static let workshopItemDidMutate = Notification.Name("WorkshopItemDidMutate")
 }
 
-/// App-local consistency boundary for the shared Steam Workshop repository. Steam does not participate in `NSFileCoordinator`, so Loomscreen coordinates its own readers around every mutation it starts.
-/// The existing SteamCMD operation/process gates still serialize writers across the repository; this coordinator adds the narrower per-item lifecycle required by renderers that read `scene.pkg` and loose assets in place.
 @MainActor
 final class WorkshopRepositoryCoordinator {
     enum MutationError: Error, Equatable {

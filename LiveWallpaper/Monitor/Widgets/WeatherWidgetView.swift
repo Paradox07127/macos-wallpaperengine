@@ -10,7 +10,6 @@ enum WeatherWidgetOptions {
     }
 }
 
-/// Weather scene with an optional condition and location caption.
 struct WeatherWidgetView: View {
     let context: MonitorWidgetContext
 
@@ -30,9 +29,8 @@ struct WeatherWidgetView: View {
     var body: some View {
         GeometryReader { geo in
             let rows = context.placement.kind.cellSize(for: context.placement.size).rows
-            // Half a grid row is the board-wide type-scale unit — every other
-            // widget divides by `2 * rows`, and a tile that does not sits at a
-            // visibly larger type size than the ones beside it.
+            // Half a grid row is the board-wide type-scale unit: dividing by anything
+            // else sets this tile's type visibly larger than its neighbours.
             let scale = Design.TypeScale(cellHeight: geo.size.height / (2 * CGFloat(max(rows, 1))))
             ZStack(alignment: .topLeading) {
                 if let scene {
@@ -122,10 +120,8 @@ struct WeatherWidgetView: View {
 
 // MARK: - Canvas
 
-/// Redraws only as often as the scene needs, and not at all while the board is
-/// suspended or the user asked for reduced motion (the picture stays; it just
-/// stops moving). Every particle is a pure function of its index and the clock,
-/// so there is no simulation state to keep or to fall behind.
+/// Every particle is a pure function of its index and the clock, so there is no
+/// simulation state to keep or to fall behind.
 private struct WeatherSceneCanvas: View {
     let scene: WeatherScene
     let paused: Bool
@@ -313,9 +309,8 @@ struct WeatherScenePainter {
         return path
     }
 
-    /// Each wisp is a circle with a radial falloff, drawn through a context
-    /// squashed to the wisp's aspect: a radial gradient clipped by a flat
-    /// ellipse ends in a hard edge where the ellipse cuts it off.
+    /// A circle with radial falloff drawn through a squashed context: a radial
+    /// gradient in a flat ellipse would end in a hard edge where the ellipse cuts it.
     private func drawFog(_ context: inout GraphicsContext) {
         let alpha = (scene.isDaylight ? 0.28 : 0.16) * scene.fog
         for index in 0 ..< 5 {
@@ -409,9 +404,8 @@ struct WeatherScenePainter {
 
     // MARK: Lightning
 
-    /// One strike every `period` seconds at a seeded moment inside it; each
-    /// flash is two pulses, the return stroke right after the first. Only some
-    /// strikes show a bolt — the rest is sheet lightning behind the cloud.
+    /// One strike every `lightningPeriod` seconds at a seeded moment inside it; each
+    /// flash is two pulses, and only some strikes show a bolt rather than sheet glow.
     static let lightningPeriod: TimeInterval = 8
 
     static func lightningFlash(at time: TimeInterval) -> (brightness: Double, strike: Int) {

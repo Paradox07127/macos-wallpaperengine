@@ -142,9 +142,6 @@ struct FolderURLSchemeHandlerLifecycleTests {
         #expect(response.value(forHTTPHeaderField: "Content-Security-Policy-Report-Only") == nil)
     }
 
-    /// Workshop HTML is third-party code that arrived over the network. It may
-    /// render, but it must not be able to phone home, and that must not depend
-    /// on the user having found the opt-in CSP toggle.
     @Test("Network isolation attaches an enforced CSP without the opt-in toggle")
     func networkIsolationAttachesHeaderWithoutOptIn() async throws {
         let folder = makeTemporaryFolder()
@@ -199,9 +196,8 @@ struct FolderURLSchemeHandlerLifecycleTests {
         )
     }
 
-    /// The plain policy deliberately keeps `https:` for authored-content
-    /// compatibility; the isolated one exists precisely to drop it, so assert
-    /// the difference rather than trusting the two strings to stay distinct.
+    /// The plain policy deliberately keeps `https:`, so assert the difference rather
+    /// than trusting the two strings to stay distinct.
     @Test("The isolated policy grants no remote origin in any fetch directive")
     func isolatedPolicyGrantsNoRemoteOrigin() {
         let policy = FolderURLSchemeHandler.networkIsolatedContentSecurityPolicy

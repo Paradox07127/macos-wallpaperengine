@@ -4,15 +4,7 @@ import SwiftUI
 
 // MARK: - Chrome scale
 
-/// Grows the board's edit chrome back to the size it was drawn for.
-///
-/// The board lays out at the display's own point size, and
-/// `MonitorBoardRootContainer` shrinks it into the inspector canvas with one
-/// `scaleEffect` — roughly 1:5 for a 5K display. Widget tiles are meant to
-/// shrink with it: the preview's job is to predict the desktop. Edit chrome has
-/// no desktop counterpart to predict, and a 36pt control bar drawn seven points
-/// tall cannot be hit. This cancels that one scale and reports the grown box to
-/// layout, so the panel-placement clamps still keep chrome inside the board.
+/// Cancels the inspector board shrink so edit chrome stays hittable, and reports the grown box to layout.
 struct MonitorChromeScale: ViewModifier {
     @Environment(\.monitorRenderScale) private var renderScale
     /// The chrome's own size, before the boost. Measured rather than assumed so
@@ -35,14 +27,7 @@ struct MonitorChromeScale: ViewModifier {
         }
     }
 
-    /// The exact inverse of the board's shrink, so chrome lands at its design
-    /// size in screen points. 1 on the desktop, and 1 for a degenerate or
-    /// magnifying scale — this only ever gives chrome its size back, never more.
-    /// Capped because a near-zero scale would otherwise ask for a box larger
-    /// than the board and every panel would clamp to the same corner.
-    /// `nonisolated`: pure arithmetic, and `MonitorBoardChromeMetrics` — a
-    /// plain struct — is its main caller. `ViewModifier` conformance would
-    /// otherwise put both of these on the main actor.
+    /// Inverse of the board shrink, capped so a near-zero scale cannot ask for a box larger than the board.
     nonisolated static func boost(forRenderScale renderScale: CGFloat) -> CGFloat {
         guard renderScale.isFinite, renderScale > 0, renderScale < 1 else { return 1 }
         return min(1 / renderScale, maxBoost)
@@ -52,7 +37,6 @@ struct MonitorChromeScale: ViewModifier {
 }
 
 extension View {
-    /// Marks a view as preview-only edit chrome rather than board content.
     func monitorChromeScaled() -> some View {
         modifier(MonitorChromeScale())
     }
@@ -60,11 +44,6 @@ extension View {
 
 // MARK: - Chrome metrics
 
-/// Every number the edit chrome is sized and placed with, because each one is a
-/// conversion between two units: the board lays out in the display's points,
-/// while chrome sizes itself in screen points and is grown back by
-/// `MonitorChromeScale`. At boost 1 each value is exactly the board-point value
-/// the desktop has always used.
 struct MonitorBoardChromeMetrics {
     let boardSize: CGSize
     let boost: CGFloat
@@ -115,11 +94,7 @@ struct MonitorBoardChromeMetrics {
         )
     }
 
-    /// The Add Widget button in board points. Its frame is measured inside the
-    /// scaled toolbar, so it arrives in the toolbar's own points; expanding it
-    /// about the toolbar's board origin is the one form that is right at every
-    /// boost, and needs no assumption about whether a `GeometryProxy` reports a
-    /// `scaleEffect`.
+    /// Expand the Add Widget frame from toolbar points about the toolbar's board origin; that form is right at every boost.
     func catalogAnchor(toolbarFrame: CGRect, addButtonFrame: CGRect) -> CGRect {
         guard toolbarFrame != .zero, addButtonFrame != .zero else {
             return CGRect(

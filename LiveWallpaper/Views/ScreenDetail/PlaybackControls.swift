@@ -2,13 +2,6 @@ import SwiftUI
 import AppKit
 import LiveWallpaperCore
 
-/// Playback controls as a row of glyphs on the preview's own overlay: every one
-/// of them acts on the wallpaper *this display is playing right now*, which is
-/// the thing the preview shows. Span-all-displays is not here — its effect is on
-/// a different screen — and scale lives in each type's viewport zone.
-///
-/// The audio dead zone, the coalesced volume write and the click-capture
-/// confirmation are the parts with teeth; keep them when the layout changes.
 struct PlaybackControls: View {
     var screen: Screen
     var wallpaperType: WallpaperType
@@ -25,12 +18,10 @@ struct PlaybackControls: View {
     /// Real pointer input; steals desktop clicks while on.
     @Binding var sceneClickCaptureEnabled: Bool
 
-    /// First enable confirms; later toggles are silent.
     @AppStorage("Scene.ClickCapture.Acknowledged") private var clickCaptureAcknowledged = false
     @State private var showClickCaptureConfirm = false
     /// HTML-only: mute path for WKWebView media (`AVPlayer.muted` is a no-op here).
     var htmlConfig: Binding<HTMLConfig>?
-    /// Video only. `nil` leaves the speed control out entirely.
     var playbackSpeed: Binding<Double>?
     /// `.forceSDR` owns `videoComposition`, so the frame-rate cap is dimmed/ignored.
     var videoColorSpace: VideoColorSpace = .auto
@@ -42,8 +33,6 @@ struct PlaybackControls: View {
     @State private var showingFrameRate = false
     @State private var draggingFrameRateIndex: Double?
 
-    /// Needle angle tracks the cap, so the glyph says "low / medium / uncapped"
-    /// without a word of text.
     private var frameRateSymbol: String {
         switch displayedFrameRate {
         case .fps15: "gauge.with.dots.needle.0percent"
@@ -53,10 +42,8 @@ struct PlaybackControls: View {
         }
     }
 
-    /// A target is not always deliverable, so every label has to be resolved
-    /// against this display: scene and web land on a divisor of the panel, and
-    /// video is additionally bounded by the file (capping a 30 fps file at 60 is
-    /// not a cap).
+    /// Labels resolve against this display: scene and web land on a divisor of the
+    /// panel, video is additionally bounded by the file's own frame rate.
     private func frameRateTitle(_ limit: FrameRateLimit) -> String {
         let refreshRate = Double(screenManager.getScreenRefreshRate(for: screen.id))
         guard wallpaperType == .video else {
@@ -109,14 +96,11 @@ struct PlaybackControls: View {
 
     // MARK: - Row layout
 
-    /// Which controls this wallpaper type shows, in order — 1 for web up to 5 for
-    /// scene.
     private enum PlaybackRow: Hashable {
         case speed, frameRate, mouseInteraction, clickInteraction, syncToLockScreen
         case webJavaScript, webInteraction
     }
 
-    /// Audio is rendered ahead of this list because every type has it.
     private var visibleRows: [PlaybackRow] {
         var rows: [PlaybackRow] = []
         if playbackSpeed != nil {
@@ -137,8 +121,6 @@ struct PlaybackControls: View {
         return rows
     }
 
-    /// Audio is always first and always present: every wallpaper type can make
-    /// sound, and the speaker is the one glyph in this row nobody has to learn.
     private var audioControl: some View {
         let isMuted = audioMutedBinding.wrappedValue
         return Button {
@@ -161,9 +143,6 @@ struct PlaybackControls: View {
         }
     }
 
-    /// The slider lives behind the speaker rather than beside it: a continuous
-    /// control in a glyph row is the one thing that cannot shrink to an icon, and
-    /// stretched across the overlay it would crowd out everything else.
     private var volumePopover: some View {
         CoalescedSlider(
             value: unifiedAudioBinding.wrappedValue,
@@ -245,9 +224,6 @@ struct PlaybackControls: View {
         }
     }
 
-    /// Behind a glyph, not inline: a tortoise, a 110pt Slider, a hare and a
-    /// readout are ~180pt of a bar that overflows; the glyph costs 24pt and
-    /// matches audio, the other continuous control here.
     private func speedControl(_ speed: Binding<Double>) -> some View {
         Button {
             showingSpeed = true
@@ -271,9 +247,8 @@ struct PlaybackControls: View {
         }
     }
 
-    /// Force SDR only owns the video composition slot; a scene's frame rate
-    /// control must stay usable even when the (video-only) color space is
-    /// still set to Force SDR from a previous wallpaper on this screen.
+    /// Gated on `.video`: a scene's frame-rate control must stay usable when a
+    /// previous video wallpaper left Force SDR set on this screen.
     static func frameRateDisabled(wallpaperType: WallpaperType, videoColorSpace: VideoColorSpace) -> Bool {
         wallpaperType == .video && videoColorSpace == .forceSDR
     }
@@ -282,12 +257,8 @@ struct PlaybackControls: View {
         abs(speed - speed.rounded()) < 0.001 ? "\(Int(speed))×" : String(format: "%.2g×", speed)
     }
 
-    /// Icon-only: a spelled-out "60 FPS" would be the bar's one free-width text
-    /// (1.5–2× wider in Japanese); the value lives in the tooltip and a11y value.
-    /// A slider, not a menu, to match the speed and audio popovers beside it. The
-    /// steps are discrete (`FrameRateLimit` is an enum), so it indexes into the
-    /// cases this display can actually tell apart — a 60 Hz panel has no step
-    /// above 60, so "match display" is not offered there.
+    /// Indexes into the cases this display can tell apart — a 60 Hz panel has no
+    /// step above 60, so "match display" is not offered there.
     private var frameRateControl: some View {
         let forceSDRActive = Self.frameRateDisabled(wallpaperType: wallpaperType, videoColorSpace: videoColorSpace)
         return Button {
@@ -333,10 +304,8 @@ struct PlaybackControls: View {
         .padding(DesignTokens.Spacing.md)
     }
 
-    /// The cap being dragged towards, before it is written. Dragging from
-    /// Unlimited to 15 crosses four other caps, and writing each one persists the
-    /// setting and reconfigures the running session — the same reason the sliders
-    /// elsewhere in this app go through `CoalescedSlider`.
+    /// The cap being dragged towards, before it is written: a drag crosses every
+    /// cap in between, and each write persists and reconfigures the session.
     private var displayedFrameRate: FrameRateLimit {
         guard let index = draggingFrameRateIndex else { return frameRateLimit }
         return frameRate(atIndex: index)
@@ -346,34 +315,27 @@ struct PlaybackControls: View {
         defer { draggingFrameRateIndex = nil }
         guard let index = draggingFrameRateIndex else { return }
         let chosen = frameRate(atIndex: index)
-        // On this display the top step can resolve to the same rate as a saved
-        // .matchDisplay (e.g. .fps60 at 60 Hz) — writing it would silently cap a
-        // later, faster display the user never touched this control on.
+        // The top step can resolve to the same rate as a saved `.matchDisplay`
+        // (`.fps60` at 60 Hz); writing it would silently cap a later, faster display.
         let refreshRate = Double(screenManager.getScreenRefreshRate(for: screen.id))
         guard !chosen.resolvesToSameRate(as: frameRateLimit, forRefreshRate: refreshRate) else { return }
         frameRateBinding.wrappedValue = chosen
     }
 
-    /// Slider position → case. An out-of-range position clamps rather than
-    /// trapping, which a raw subscript would.
     private func frameRate(atIndex position: Double) -> FrameRateLimit {
         let cases = frameRateCases
         let index = min(max(Int(position.rounded()), 0), cases.count - 1)
         return cases[index]
     }
 
-    /// The steps this display can distinguish, low to high.
     private var frameRateCases: [FrameRateLimit] {
         FrameRateLimit.availableCases(
             forRefreshRate: Double(screenManager.getScreenRefreshRate(for: screen.id))
         )
     }
 
-    /// A saved cap can be absent from this display's steps — "match display" is
-    /// dropped at 60 Hz, where it runs at the same rate as the 60 step. Falling
-    /// back to the step that resolves to the same rate keeps the slider on the
-    /// position the wallpaper is actually running at, instead of snapping to the
-    /// slowest step.
+    /// A saved cap can be absent from this display's steps; fall back to the step
+    /// that resolves to the same rate rather than snapping to the slowest.
     private var frameRateIndex: Int {
         let cases = frameRateCases
         if let exact = cases.firstIndex(of: frameRateLimit) {
@@ -405,8 +367,6 @@ struct PlaybackControls: View {
         )
     }
 
-    /// One shape for every on/off control here: tinted when on, secondary when
-    /// off, the explanatory sentence as its tooltip.
     private func glyphToggle(
         on symbol: String,
         title: LocalizedStringKey,
@@ -505,7 +465,6 @@ struct PlaybackControls: View {
 
     // MARK: - Bindings
 
-    /// Video → `AVPlayer.muted`; HTML → `HTMLConfig.muteAudio`.
     private var audioMutedBinding: Binding<Bool> {
         if let htmlConfig {
             return htmlConfigBinding(htmlConfig, keyPath: \.muteAudio)
@@ -520,9 +479,8 @@ struct PlaybackControls: View {
         )
     }
 
-    /// The track is not a plain 0…1 volume: the bottom `audioDeadZone` is the mute region, the
-    /// rest remapped onto volume. The readout follows the drag from the slider's own state, so
-    /// it must undo the same mapping `unifiedAudioBinding.set` applies — reading it as a raw percentage showed the wrong number and muted at the wrong point.
+    /// Not a plain 0…1 volume: the bottom `audioDeadZone` is the mute region and the
+    /// rest is remapped onto volume, so the readout must undo the same mapping.
     static func audioIsMuted(atSliderValue value: Double) -> Bool {
         value <= audioDeadZone
     }
@@ -613,15 +571,13 @@ struct PlaybackControls: View {
                 lockScreenFeedbackGeneration += 1
                 let generation = lockScreenFeedbackGeneration
                 Task { @MainActor in
-                    // Awaited: the confirmation used to appear the moment the
-                    // player had an item, before the frame was decoded, written
-                    // or installed, and a failure never took it back.
+                    // Awaited: otherwise the confirmation appears before the frame is decoded,
+                    // written or installed, and a failure never takes it back.
                     let captured = await screenManager.extractLockScreenFrame(for: screen) == .captured
                     guard generation == lockScreenFeedbackGeneration else { return }
                     guard captured else {
-                        // Bumping the generation above already invalidated the
-                        // previous run's clear-timer, so this attempt owns the
-                        // tick and has to put it away itself.
+                        // Bumping the generation already invalidated the previous run's clear-timer,
+                        // so this attempt has to put the tick away itself.
                         withAnimation(DesignTokens.motion(reduceMotion, .snappy(duration: 0.25))) {
                             lockScreenExtracted = false
                         }
@@ -640,7 +596,6 @@ struct PlaybackControls: View {
         )
     }
 
-    /// Parent binding + `ScreenManager.updateHTMLConfig` in one place.
     private func htmlConfigBinding<Value: Equatable>(
         _ htmlConfig: Binding<HTMLConfig>,
         keyPath: WritableKeyPath<HTMLConfig, Value>

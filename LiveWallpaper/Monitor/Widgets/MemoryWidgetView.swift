@@ -191,8 +191,6 @@ struct MemoryWidgetView: View {
                 )
                 .frame(height: scale.caption * 1.05)
                 if breakdownCompact {
-                    // Compact drops the legend, so the bar itself must carry the
-                    // per-segment detail for VoiceOver and as a hover tooltip.
                     let summary = MemoryWidgetView.breakdownSummary(segments)
                     bar
                         .accessibilityElement(children: .ignore)
@@ -286,7 +284,6 @@ struct MemoryWidgetView: View {
         }
     }
 
-    /// The last `trendWindowSeconds` of a history series for the M/L trend.
     /// All four series share `sampleTimes`, so windowing them independently
     /// still leaves them the same length and aligned.
     private func recentSeries(_ series: KeyPath<MonitorHistorySnapshot, [Double?]>) -> [Double] {
@@ -310,8 +307,6 @@ struct MemoryWidgetView: View {
             context.placement.options["breakdown"]?.stringValue)
     }
 
-    /// Top-5 processes by RSS (`topProcesses` re-ranked by `memBytes`) for the
-    /// L "Top by memory" list.
     private var topMemoryProcesses: [MonitorProcessSample] {
         MemoryWidgetView.topByMemory(system?.topProcesses, limit: 5)
     }
@@ -334,7 +329,6 @@ struct MemoryWidgetView: View {
         }
     }
 
-    /// Swap is emphasised only when it's non-zero or pressure has risen above normal.
     nonisolated static func showsSwap(swapBytes: UInt64?, pressure raw: String?) -> Bool {
         if let swapBytes, swapBytes > 0 { return true }
         return pressure(raw) != .normal
@@ -357,14 +351,13 @@ struct MemoryWidgetView: View {
         return Array(sorted.prefix(max(0, limit)))
     }
 
-    /// Bar length = this row's RSS ÷ the busiest shown row's RSS, 0…1. A zero
-    /// top yields an empty bar rather than a divide-by-zero.
+    /// Bar length = this row's RSS ÷ the busiest shown row's RSS, 0…1.
     nonisolated static func processBarFraction(_ bytes: UInt64, top: UInt64) -> Double {
         guard top > 0 else { return 0 }
         return min(1, max(0, Double(bytes) / Double(top)))
     }
 
-    /// cpu% column for the Top-by-memory rows: whole-number "N%" when the sample carries a reading, the no-data glyph when it doesn't — the column keeps its reserved width either way so the GiB column never shifts.
+    /// Whole-number "N%" when the sample carries a reading, the no-data glyph when it doesn't.
     nonisolated static func cpuColumnText(_ cpuPercent: Double) -> String {
         guard cpuPercent.isFinite, cpuPercent > 0 else { return Design.noData }
         return "\(Int(cpuPercent.rounded()))%"
@@ -423,7 +416,6 @@ struct MemoryWidgetView: View {
         ]
     }
 
-    /// "App 4.2G, Wired 1.1G, …" — the compact bar's spoken/tooltip detail.
     nonisolated static func breakdownSummary(_ segments: [Segment]) -> String {
         segments
             .map { "\($0.kind.displayName) \(String(format: "%.1fG", Format.gib($0.bytes)))" }
@@ -439,7 +431,7 @@ struct MemoryWidgetView: View {
 
 // MARK: - Pressure chip
 
-/// Discrete pressure state chip (never a %). Ported from `.pchip`.
+/// Discrete pressure state chip (never a %).
 private struct PressureChip: View {
     var pressure: MonitorPressure
     var scale: Design.TypeScale
@@ -628,8 +620,6 @@ private struct MemoryTopProcessRow: View {
             }
             .frame(width: scale.caption * 3.0, height: scale.caption * 0.42)
 
-            // The widest measured process values need a 0.84 text scale: 1600% in the CPU column
-            // and 128.0G in the memory column. Preserve a floor for both.
             Text(verbatim: MemoryWidgetView.cpuColumnText(proc.cpuPercent))
                 .font(Design.subFont(size: scale.caption * 0.94))
                 .monospacedDigit()
@@ -654,7 +644,7 @@ private struct MemoryTopProcessRow: View {
 
 // MARK: - Category-stacked used% history (M + L trend)
 
-/// Stacked App/Wired/Compressed bands (fractions of total RAM) in the SAME tones as the AM breakdown bar, so the breakdown legend explains this chart too — a local port of the CPU widget's `CPUStackChart` idiom.
+/// Bands reuse the AM breakdown bar's tones, so its legend explains this chart too.
 private struct MemoryStackChart: View {
     var app: [Double]
     var wired: [Double]

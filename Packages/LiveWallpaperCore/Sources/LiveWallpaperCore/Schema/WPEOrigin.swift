@@ -1,6 +1,5 @@
 import Foundation
 
-/// WPE Workshop provenance in Core so Lite↔Pro round-trips losslessly.
 public struct WPEOrigin: Codable, Equatable, Sendable {
     public let workshopID: String
     public let title: String

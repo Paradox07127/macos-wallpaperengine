@@ -2,23 +2,13 @@
 import Foundation
 import LiveWallpaperCore
 
-/// Bounded retry for the Workshop request paths (keyed `QueryFiles`, the
-/// keyless browse page and its `GetPublishedFileDetails` batch), plus the
-/// per-host cooldown a 429 imposes on every later request to that host.
-///
-/// `run` retries transport failures and 429/5xx responses; anything else
-/// (401/403 in particular — Valve's body says "Retrying will not help") comes
-/// back to the caller untouched. A 429 whose `Retry-After` exceeds
-/// `maxAcceptableWait` is surfaced at once as `.rateLimited(retryAfter:)` so
-/// the UI can show the remaining seconds instead of hanging on a sleep.
+/// `run` retries transport failures and 429/5xx; 401/403 come back untouched. A 429 whose `Retry-After` exceeds `maxAcceptableWait` is surfaced as `.rateLimited` rather than slept.
 actor WorkshopRetryPolicy {
     typealias Response = (data: Data, http: HTTPURLResponse)
 
     static let maxAttempts = 3
     static let maxAcceptableWait: TimeInterval = 15
-    /// Budget for the sleeps of one `run` (cooldown waits and backoff delays).
-    /// Request time does not count: a 20 s timeout would otherwise consume the
-    /// budget and cancel the one retry it earned.
+    /// Budget for sleeps of one `run` only. Request time does not count: a 20 s timeout would consume the budget and cancel the retry it earned.
     static let totalBudget: TimeInterval = 10
     /// Steam sends most 429s without a `Retry-After`; the host is cooled down
     /// for this long instead. A local, conservative guess, not a measured value.
@@ -40,11 +30,6 @@ actor WorkshopRetryPolicy {
         self.sleep = sleep
     }
 
-    /// `attempt` throws `URLError` for transport failures and returns whatever
-    /// HTTP response it got; any other error it throws ends the run as is.
-    /// Returns the last response (5xx included, so the caller's status switch
-    /// decides the error), throws the last `URLError`, or throws
-    /// `WorkshopQueryError.rateLimited` when a 429 cannot be waited out.
     func run(host: String, _ attempt: @Sendable () async throws -> Response) async throws -> Response {
         var slept: TimeInterval = 0
         for index in 0 ..< Self.maxAttempts {

@@ -2,7 +2,6 @@ import SwiftUI
 import AppKit
 import LiveWallpaperCore
 
-/// Schedule row mirroring `Row`'s 50pt cadence.
 struct SlotRow: View {
     @Binding var slot: ScheduleSlot
     let accent: Color
@@ -20,8 +19,7 @@ struct SlotRow: View {
     @State private var videoName: String?
     @State private var isHovering = false
     @State private var timePopoverShown = false
-    /// Unapplied time-editor edits, kept across popover dismissals: clicking
-    /// outside must not discard them — only Cancel (or Apply) clears them.
+    /// Unapplied time-editor edits; clicking outside the popover must not discard them.
     /// `nil` = no pending draft, the popover shows the committed hours.
     @State private var draftStart: Int?
     @State private var draftEnd: Int?

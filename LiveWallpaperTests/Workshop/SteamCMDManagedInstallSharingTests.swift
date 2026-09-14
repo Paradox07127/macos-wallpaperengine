@@ -2,14 +2,9 @@ import Foundation
 import Testing
 @testable import LiveWallpaper
 
-/// Install/remove status is instance state, so every surface that starts or
-/// renders a managed install has to observe the same coordinator — otherwise
-/// one view installs while another reads idle and offers Install again.
 @MainActor
 @Suite("Managed install coordinator sharing")
 struct SteamCMDManagedInstallSharingTests {
-    /// One file now, because the three views route their installs through it —
-    /// which is the strongest form of what this test was asserting.
     private static let consumerViews = [
         "LiveWallpaper/Views/Workshop/Setup/WorkshopSetupController.swift"
     ]
@@ -31,9 +26,8 @@ struct SteamCMDManagedInstallSharingTests {
     }
 }
 
-/// Native Browse only needs a Steam Web API key; SteamCMD is a download-time
-/// requirement. The Installed empty state must not hide Browse Online behind
-/// the SteamCMD doctor probes.
+/// Browse needs only the Web API key; SteamCMD is a download-time
+/// requirement.
 @Suite("Installed empty state browse entry")
 struct InstalledEmptyStateBrowseEntryTests {
     @Test("Browse Online is offered without consulting SteamCMD state")

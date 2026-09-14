@@ -45,14 +45,7 @@ struct WPECachedContentResolver {
         }
     }
 
-    /// Provenance the content's own location can raise but never lower.
-    ///
-    /// `originKind` gates network isolation, and it used to be copied out of
-    /// stored state — which a `.lwconfig` handed to the user gets to write. A
-    /// Workshop path therefore overrides a stored `.userLocal`. It only ever
-    /// goes one way: the cache root is app-managed and matches nothing in the
-    /// `steamapps/workshop/content/431960/<id>` layout, so re-deriving in both
-    /// directions would un-isolate every cached Workshop wallpaper.
+    /// Provenance the content's own location can raise but never lower. A Workshop path overrides stored .userLocal; re-deriving both ways would un-isolate cached Workshop wallpapers.
     static func effectiveOriginKind(
         stored: HTMLOriginKind,
         sourceFolder: URL
@@ -63,7 +56,6 @@ struct WPECachedContentResolver {
         return WallpaperEngineImportService.originKind(forSourceFolder: sourceFolder)
     }
 
-    /// Rebuild `.sourceFolder` video/web in place (needed for bookmarking unpackaged items).
     private func sourceFolderContent(for origin: WPEOrigin) -> WallpaperContent? {
         guard let entryFile = origin.entryFile, !entryFile.isEmpty else { return nil }
         guard let folderURL = try? SecurityScopedBookmarkResolver.shared
@@ -88,8 +80,6 @@ struct WPECachedContentResolver {
             }
             return nil
         case .web:
-            // Index may be loose or inside scene.pkg; the scheme handler serves
-            // loose files first, then package entries. Bookmark the folder.
             guard looseEntryExists || packagedEntryExists,
                   let bookmark = makeBookmark(folderURL) else { return nil }
             return .html(
@@ -219,7 +209,6 @@ struct WPECachedContentResolver {
         }
     }
 
-    /// Rebuild favorites/history scene content from source folder or scene.pkg.
     private func sourceBackedSceneContent(
         for origin: WPEOrigin,
         cacheRelativePath: String,
@@ -295,7 +284,6 @@ struct WPECachedContentResolver {
 
 }
 
-/// Scene-cache file list for preflight custom-shader probes.
 private func scenePackageEntryNames(
     in rootURL: URL,
     fileManager: FileManager,

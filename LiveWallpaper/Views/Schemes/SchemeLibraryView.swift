@@ -178,7 +178,6 @@ struct SchemeLibraryView: View {
 
     private var filteredSchemes: [ScreenScheme] {
         var result = store.schemes
-        // Honor the type filter only while chips are visible and that type still exists.
         if showsTypeChips, case let .type(type) = typeFilter, availableTypes.contains(type) {
             result = result.filter { $0.configuration.activeWallpaper.wallpaperType == type }
         }
@@ -210,9 +209,7 @@ struct SchemeLibraryView: View {
         }
     }
 
-    /// The reverse direction: the display overwrites the scheme. One display can
-    /// hold several schemes, so this replaces the one you picked rather than
-    /// updating "the" scheme for that display.
+    /// The display overwrites this scheme; one display can hold several, so this replaces the one you picked rather than "the" scheme for that display.
     private func requestReplace(_ scheme: ScreenScheme, from screen: Screen) {
         pendingDestructive = PendingDestructive(
             .replaceScheme(schemeName: scheme.name, displayName: screen.name)
@@ -263,10 +260,7 @@ private struct SchemeTile: View {
             }
             .help(applyHelp)
             .contextMenu { contextMenu }
-            // Keyed on the cover *and* the capture time: the cover is written
-            // asynchronously after the capture, and a replace-in-place keeps the
-            // id — so without `updatedAt` a scheme overwritten while it had no
-            // cover would keep the previous content's artwork and availability.
+            // Keyed on cover and capture time: the cover is written after capture, and replace-in-place keeps the id — without `updatedAt` an overwrite with no cover would keep the previous artwork.
             .task(id: TileContentKey(
                 id: scheme.id,
                 coverFileName: scheme.coverFileName,
@@ -321,10 +315,7 @@ private struct SchemeTile: View {
             .overlay { tileContent }
             .aspectRatio(16.0 / 9.0, contentMode: .fit)
             .clipped()
-            // Scoped to the artwork, not the whole card: the title band carries
-            // the overflow button and, while renaming, a text field — an
-            // ancestor tap gesture over those is at best ambiguous and at worst
-            // steals the click that was meant for them.
+            // Scoped to the artwork, not the whole card: the title band carries the overflow button and a rename field that an ancestor tap would steal.
             .contentShape(Rectangle())
             .onTapGesture { applyFromCard() }
             .overlay {
@@ -376,7 +367,6 @@ private struct SchemeTile: View {
         )
     }
 
-    /// The full-height rename field replaces the single-line title band.
     @ViewBuilder
     private var bottomBand: some View {
         if isRenaming {
@@ -439,9 +429,6 @@ private struct SchemeTile: View {
         }
     }
 
-    /// Overwrites this scheme with a display's current setup. Listed per display
-    /// rather than as one "update" action: a display can hold several schemes, so
-    /// which slot is being overwritten has to be the user's choice, not ours.
     @ViewBuilder
     private func replaceActions(dismiss: @escaping () -> Void) -> some View {
         if !screens.isEmpty {
@@ -490,13 +477,9 @@ private struct SchemeTile: View {
 
     // MARK: Thumbnail loader
 
-    /// Run via `.task(id:)` so SwiftUI cancels the decode + security-scoped
-    /// resolve when the tile leaves the viewport on fast-scroll.
     @MainActor
     private func loadTileContent() async {
         thumbnail = nil
-        // Resolved before the artwork: Show in Finder and the unavailable veil
-        // both read it, and neither should wait on a decode.
         location = LibraryContentLocator.locate(
             content: scheme.configuration.activeWallpaper,
             wpeOrigin: scheme.configuration.wpeOrigin
@@ -549,9 +532,7 @@ private struct SchemeTile: View {
         }
     }
 
-    /// Includes the content type *and* the capture time: the id survives a
-    /// replace-in-place, so keying on it alone served the overwritten video's
-    /// poster for the video that replaced it.
+    /// Includes the content type and the capture time: the id survives replace-in-place, so keying on it alone would serve the overwritten video's poster.
     private var cacheKey: String {
         let typeTag = switch scheme.configuration.activeWallpaper {
         case .video: "video"

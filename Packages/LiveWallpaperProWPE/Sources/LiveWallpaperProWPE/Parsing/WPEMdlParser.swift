@@ -9,10 +9,6 @@ public struct WPEPuppetModel: Equatable, Sendable {
     public let animations: [WPEPuppetAnimation]
     /// MDAT anchors mapping a named scene attachment to a bone and bind transform.
     public let attachments: [WPEPuppetAttachment]
-    /// Complete authored MDL bytes. Parser-created models retain this as a lossless compatibility
-    /// boundary for sections whose public semantics are known but whose binary layout/runtime
-    /// behavior is not yet oracle-proven (for example morph shapes and texture channels).
-    /// This is metadata only; retaining bytes does not imply that those sections are consumed.
     public let authoredData: Data?
 
     public init(
@@ -31,7 +27,6 @@ public struct WPEPuppetModel: Equatable, Sendable {
         self.authoredData = authoredData
     }
 
-    /// Clip-mask texture name if any mesh declares an MDLV clip section (genericimage4 clipping).
     public var clipMaskName: String? {
         meshes.lazy.compactMap(\.clipMaskName).first
     }
@@ -91,16 +86,9 @@ public struct WPEPuppetMesh: Equatable, Sendable {
     public let indices: [UInt32]
     public let indexElementWidth: WPEPuppetIndexElementWidth
     public let parts: [WPEPuppetMeshPart]
-    /// Authored MDLV17+ object-local AABB. Preserved for later culling/bounds parity; not consumed
-    /// by the renderer yet.
     public let bounds: WPEPuppetMeshBounds?
-    /// Clip-mask texture name from the MDLV clip section that follows the part table
-    /// (e.g. `masks/clipping_mask_39cb32c5`), used by the genericimage4 clip-composite path.
     public let clipMaskName: String?
-    /// Authored MDLV22+ clip groups. The stored integers are mesh part-table indices, not the
-    /// authored `WPEPuppetMeshPart.id` values (real files may repeat those IDs). WPE stores the
-    /// target list before the source list, and the two are independent sets: every target is clipped
-    /// by the union of every source (eye rigs author 1 target against 2 eye-whites).
+    /// Stored integers are mesh part-table indices, not `WPEPuppetMeshPart.id` (IDs may repeat). WPE stores the target list before the source list; every target is clipped by the union of every source.
     public let clipGroups: [WPEPuppetClipGroup]
 
     public init(
@@ -142,9 +130,7 @@ public struct WPEPuppetVertex: Hashable, Sendable {
     public let uv: SIMD2<Float>
     public let skinBlendIndices: SIMD4<Int32>
     public let skinBlendWeights: SIMD4<Float>
-    /// Model-local vertex normal, or `(0, 0, 1)` when the mesh authors none.
-    /// Only the 3D scene-model path consumes it (generic2/generic4 lighting and
-    /// screen-space reflection); the 2D puppet path leaves it untouched.
+    /// Model-local vertex normal, or `(0, 0, 1)` when unauthored. Only the 3D scene-model path consumes it; the 2D puppet path leaves it untouched.
     public let normal: SIMD3<Float>
 
     public init(
@@ -170,16 +156,10 @@ public struct WPEPuppetBone: Equatable, Sendable {
     /// MDLS0002 per-bone world-bind payload. Retained as file-authored evidence;
     /// palette evaluation must not consume it until the composition rule is oracle-proven.
     public let worldBindMatrix: [Float]?
-    /// Raw MDLS bone-name cstring.
     public let name: String
-    /// MDLS simulation selector. Retained even when the native renderer does
-    /// not yet execute the corresponding physics/IK simulation.
     public let simulationType: Int32
-    /// Separate MDLS simulation/rig JSON cstring following the bind matrix.
     public let simulationJSON: String
-    /// Generic typed projection of `simulationJSON`, retaining unknown nested fields and JSON
-    /// scalar kinds without assigning unverified physics/IK semantics. Invalid/empty JSON remains
-    /// available through `simulationJSON` and produces `nil` here.
+    /// Typed projection of `simulationJSON` without assigning unverified physics/IK semantics. Invalid/empty JSON stays on `simulationJSON` and produces nil here.
     public let simulationJSONValue: WPESceneJSONValue?
 
     public init(
@@ -251,10 +231,7 @@ public struct WPEPuppetAnimation: Equatable, Sendable {
     public let fps: Float
     public let frameCount: Int
     public let channels: [WPEPuppetAnimChannel]
-    /// Absolute byte range of this animation record in the source MDL.
     public let sourceRange: Range<Int>?
-    /// Versioned MDLA bytes after the dense TRS channels. Preserved for parity work but deliberately
-    /// not consumed by `WPEPuppetAnimationEvaluator` yet.
     public let tail: WPEPuppetAnimationTail?
 
     public init(
@@ -319,8 +296,6 @@ public struct WPEPuppetAnimationTail: Equatable, Sendable {
     public let blendCurves: WPEPuppetAnimationCurveBlock
     /// `nil` for MDLA0005; MDLA0006 preserves a block even when `hasCurves == false`.
     public let scalarCurves: WPEPuppetAnimationCurveBlock?
-    /// Versioned tail fields not yet modeled by the Swift runtime, retained losslessly with their
-    /// absolute source ranges instead of being collapsed into anonymous padding.
     public let unknownSegments: [WPEPuppetAnimationRawSegment]
 
     public init(
@@ -339,10 +314,7 @@ public struct WPEPuppetAnimationTail: Equatable, Sendable {
 }
 
 public struct WPEPuppetAnimChannel: Equatable, Sendable {
-    /// Skin-bone/channel index from MDLA (channels appear in bone order; no explicit id in
-    /// the file). Usually matches MDLS bone order, but `WPEPuppetModel.bones` may be empty or
-    /// malformed while channels stay usable — channels double as the skin skeleton (channel
-    /// index == skin-blend index), with keyframe 0 as the bind pose.
+    /// Channel index == skin-blend index; no explicit id in the file. Channels stay usable if `bones` is empty/malformed. Keyframe 0 is the bind pose.
     public let boneIndex: Int
     public let keyframes: [WPEPuppetAnimKey]
 
@@ -368,8 +340,6 @@ public struct WPEPuppetAnimKey: Equatable, Sendable {
     }
 }
 
-/// One resolved puppet animation layer: an animation plus its playback `rate`, `blend` weight,
-/// and whether it composes additively over the base layer (e.g. a blink/face layer over idle sway).
 public struct WPEPuppetAnimationLayer: Equatable, Sendable {
     public let animation: WPEPuppetAnimation
     public let rate: Double
@@ -396,8 +366,6 @@ public struct WPEPuppetInterpolationInfo: Equatable, Sendable {
     }
 }
 
-/// Skinning `palette` plus the diagnostics the render gate uses to decide whether skinning is
-/// safe to enable for this puppet.
 public struct WPEPuppetPaletteEvaluation: Equatable, Sendable {
     public enum TransformSpace: String, Equatable, Sendable {
         case parentLocal
@@ -416,12 +384,7 @@ public struct WPEPuppetPaletteEvaluation: Equatable, Sendable {
     )
 }
 
-/// Evaluates puppet animation layers into a per-bone skinning palette indexed by skin-blend (bone) index.
-/// MDLS raw matrices are the inverse-bind ground truth; MDLS raw + MDLA channels are always parent-local
-/// and composed down the hierarchy. `palette[boneIndex] = worldCurrent · worldBind⁻¹`. The first
-/// non-additive layer is the base pose; additive layers add their per-bone delta-from-bind on top in TRS
-/// space (translation/euler added, scale multiplied), weighted by `blend`. Frame 0 of every layer is the
-/// bind pose, so the palette is identity there (regression guard against the P0 static draw).
+/// `palette[boneIndex] = worldCurrent · worldBind⁻¹`. First non-additive layer is the base pose; additive layers add per-bone delta-from-bind in TRS (translation/euler added, scale multiplied), weighted by `blend`. Frame 0 of every layer is bind, so the palette is identity there.
 public enum WPEPuppetAnimationEvaluator {
     public static func palette(
         layers: [WPEPuppetAnimationLayer],
@@ -476,12 +439,7 @@ public enum WPEPuppetAnimationEvaluator {
                 )
             }
 
-        // Every layer at its bind frame → identity palette (exact, no FP drift through the inverse), but
-        // ONLY when the bind frame IS the MDLS raw bind (pre-assembled MDLV0021/0023). A character-sheet
-        // puppet (MDLV0019/0020) ships an exploded MDLS bind whose frame-0 pose is the *assembled*
-        // character, so its frame-0 palette (`assembled · exploded⁻¹`) is NOT identity — it is what
-        // unfolds the sheet. Short-circuiting to identity there leaves the sheet exploded, so fall
-        // through to the general hierarchy path for that case.
+        // Identity palette at bind only when frame-0 IS the MDLS raw bind (pre-assembled MDLV0021/0023). A character-sheet puppet (MDLV0019/0020) has an exploded MDLS bind whose frame-0 pose is the assembled character — short-circuiting to identity would leave the sheet exploded.
         if baseInterpolation.frameA == 0, baseInterpolation.t == 0,
            additiveLayers.allSatisfy({ $0.interpolation.frameA == 0 && $0.interpolation.t == 0 }),
            baseFrameMatchesRawBind(channels: baseChannels, bones: bones) {
@@ -540,11 +498,7 @@ public enum WPEPuppetAnimationEvaluator {
         }
 
         guard let parentChannel = parentChannelMap(channels: baseChannels, bones: bones) else {
-            // No usable skeleton hierarchy. A genuinely bone-less model (flat single-root rig or a unit
-            // test) is correctly skinned by the independent path — each channel is its own root. But a
-            // puppet that DOES ship bones whose hierarchy we could not reconstruct must fail closed
-            // rather than mis-compose a partial skeleton (the old "torso perturbed" scatter); the render
-            // gate additionally refuses to skin when `parentChannelMapSucceeded` is false.
+            // Bone-less / unit-test models take the independent path. A puppet that ships bones whose hierarchy could not be reconstructed must fail closed rather than mis-compose a partial skeleton.
             let palette = bones.isEmpty
                 ? independentPalette(channels: baseChannels, localMatrix: localMatrix)
                 : []
@@ -555,8 +509,6 @@ public enum WPEPuppetAnimationEvaluator {
                 parentChannelMapSucceeded: false
             )
         }
-        // MDLS raw + MDLA channels are always parent-local (oracle-confirmed); the previous
-        // translation-only world/local auto-detect was refuted and removed.
         let space: WPEPuppetPaletteEvaluation.TransformSpace = .parentLocal
         let palette = hierarchyPalette(
             channels: baseChannels,
@@ -580,11 +532,7 @@ public enum WPEPuppetAnimationEvaluator {
     ) -> SIMD3<Float> {
         func axis(_ current: Float, _ bind: Float, _ base: Float) -> Float {
             guard abs(bind) > 1e-6 else {
-                // Zero authored bind scale = a collapsed-at-rest bone (e.g. 3226487183's eyelids, which
-                // inflate 0→1 over the blink). A delta ratio is undefined there, so lerp the running
-                // scale toward the layer's ABSOLUTE authored scale: weight 1 reproduces `current`
-                // exactly; the old `return 1` froze the bone at the base scale and tore the mixed-weight
-                // eye vertices against their normally-squishing neighbours.
+                // Zero authored bind scale is a collapsed-at-rest bone. A delta ratio is undefined, so lerp the running scale toward the layer's absolute authored scale: weight 1 reproduces `current`. The old `return 1` froze the bone at the base scale.
                 guard abs(base) > 1e-6 else { return 1 }
                 return 1 + (current / base - 1) * weight
             }
@@ -601,12 +549,7 @@ public enum WPEPuppetAnimationEvaluator {
         Array(repeating: matrix_identity_float4x4, count: max(count, 1))
     }
 
-    /// True when every base channel's frame-0 keyframe reproduces its bone's MDLS raw bind matrix —
-    /// i.e. the file ships pre-assembled (MDLV0021/0023) so the frame-0 palette is exactly identity.
-    /// False for a character-sheet puppet (MDLV0019/0020) whose frame-0 pose is the assembled character
-    /// atop an exploded MDLS bind, where the frame-0 palette must instead unfold the sheet. A channel
-    /// lacking a raw bone matrix or a frame-0 key counts as NOT matching: the identity fast path must be
-    /// proven for every channel, never assumed on missing data.
+    /// True when every base channel's frame-0 keyframe reproduces its bone's MDLS raw bind (pre-assembled ⇒ identity palette). False for character-sheet puppets (exploded MDLS bind). A channel lacking a raw matrix or frame-0 key counts as not matching.
     public static func baseFrameMatchesRawBind(channels: [WPEPuppetAnimChannel], bones: [WPEPuppetBone]) -> Bool {
         let rawByBone = rawMatricesByBone(bones)
         guard !rawByBone.isEmpty else { return true }
@@ -618,16 +561,7 @@ public enum WPEPuppetAnimationEvaluator {
         return true
     }
 
-    /// Bone-index → assembled bind-WORLD matrix, for the attachment anchor pivot and the skinning bind
-    /// basis. Composes each bone's parent-local bind down the hierarchy. For a PRE-ASSEMBLED puppet
-    /// (MDLV0021/0023) the local bind is the raw MDLS matrix. For a CHARACTER-SHEET puppet (MDLV0019/0020)
-    /// the raw MDLS bind is the EXPLODED source-sheet layout, so the assembled anchor comes from the base
-    /// animation's frame-0 keyframe pose (the same frame-0 that unfolds the mesh). The two are identical
-    /// for pre-assembled puppets, so this is a no-op there. A bone whose parent is missing or is part of a
-    /// cycle composes to its own local (bounded best-effort on malformed data). Uses the FIRST animation's
-    /// frame-0: a character sheet's animations all start from the same authored reference pose
-    /// (corpus-verified equal to ~0.05 across a puppet's clips), so the scene-selected base animation
-    /// would give the same anchor within authoring noise.
+    /// Pre-assembled (MDLV0021/0023): local bind is the raw MDLS matrix. Character-sheet (MDLV0019/0020): assembled anchor comes from the base animation's frame-0 pose. A bone whose parent is missing or in a cycle composes to its own local. Uses the first animation's frame-0.
     public static func assembledBindWorldByBone(model: WPEPuppetModel) -> [Int: simd_float4x4] {
         let baseChannels = model.animations.first?.channels ?? []
         let useFrame0 = !baseChannels.isEmpty
@@ -652,9 +586,7 @@ public enum WPEPuppetAnimationEvaluator {
             model.bones.map { ($0.index, $0.parentIndex) },
             uniquingKeysWith: { first, _ in first }
         )
-        // A bone composes through its parent chain only when that chain is acyclic and fully present.
-        // Any bone whose ancestry revisits a node resolves to its own local — so a cycle can never be
-        // folded into a transform, and the recursion below is guaranteed to terminate.
+        /// A bone composes through its parent chain only when that chain is acyclic and fully present. Ancestry that revisits a node resolves to its own local, so a cycle can never be folded and the recursion terminates.
         func chainIsAcyclic(_ start: Int) -> Bool {
             var seen: Set<Int> = [start]
             var current = parentByIndex[start] ?? nil
@@ -700,8 +632,6 @@ public enum WPEPuppetAnimationEvaluator {
         return true
     }
 
-    /// Fallback when no usable skeleton hierarchy is supplied (unit tests / bone-less models):
-    /// treat each channel as an independent transform. Indexed by bone index, like the hierarchy path.
     private static func independentPalette(
         channels: [WPEPuppetAnimChannel],
         localMatrix: (Int, Bool) -> simd_float4x4
@@ -719,9 +649,7 @@ public enum WPEPuppetAnimationEvaluator {
         return palette
     }
 
-    /// Maps each channel to its parent channel index (or `nil` for a root). Returns `nil` when the
-    /// supplied skeleton doesn't cover every channel's bone, so the caller falls back to the
-    /// no-hierarchy path instead of mis-skinning against a partial skeleton.
+    /// Maps each channel to its parent channel index (`nil` for a root). Returns `nil` when the skeleton does not cover every channel's bone, so the caller falls back instead of mis-skinning a partial skeleton.
     private static func parentChannelMap(
         channels: [WPEPuppetAnimChannel],
         bones: [WPEPuppetBone]
@@ -775,17 +703,7 @@ public enum WPEPuppetAnimationEvaluator {
         let rawByBone = rawMatricesByBone(bones)
 
         func worldMatrices(bind: Bool) -> [simd_float4x4] {
-            // Both the MDLS raw matrices (bind pose) and the MDLA channel keyframes (current pose) are
-            // stored PARENT-LOCAL, so a bone's WORLD transform is recovered by composing it onto its
-            // parent's world transform. Bind and current are composed identically: the palette
-            // (`current · bind⁻¹`) is then exactly identity in the rest pose, and a parent bone's motion
-            // flows into every descendant. Without this, a high bone's breathing/sway/blink never reaches
-            // the bones it drives and the puppet skins nearly static. Oracle-validated against Wallpaper
-            // Engine `g_Bones` (RenderDoc, WPE 2.8.26): scenes 3461168300 (Plana, 53 bones) and 3554161528
-            // (32 bones) match WPE to <0.1 / <6 total Frobenius across all bones, vs ~70–190 with the
-            // previous code, which used the raw matrices as world bind directly (uncomposed) and a
-            // translation-only `worldAbsolute` auto-detect that always misfired here because each bone's
-            // frame-0 local equals its raw local.
+            // MDLS raw matrices and MDLA keyframes are parent-local, so WORLD is parentWorld * local. Bind and current compose identically so the rest-pose palette is identity and parent motion flows to descendants.
             var cache = [simd_float4x4?](repeating: nil, count: channels.count)
             for _ in 0..<channels.count {
                 var progress = false
@@ -1035,10 +953,7 @@ private final class WPEMdlParseAuditRecorder {
 }
 
 public enum WPEMdlParser {
-    /// Counts come straight from untrusted Workshop bytes: a crafted header claiming up to
-    /// 0xFFFFFFFF entries would drive `reserveCapacity` into a multi-GB allocation (OOM trap)
-    /// before the read loop could fail naturally on truncation. Caps sit far above the corpus
-    /// maxima (dozens of meshes, ≤89 bones observed) — same idea as the MDLA 1024-animation cap.
+    /// Counts come from untrusted Workshop bytes. Caps sit far above corpus maxima so a crafted 0xFFFFFFFF `reserveCapacity` cannot OOM before truncation fails the read. Same idea as the MDLA 1024-animation cap.
     private static let maxMeshCount: UInt32 = 4_096
     private static let maxBoneCount: UInt32 = 4_096
 
@@ -1060,12 +975,7 @@ public enum WPEMdlParser {
     ) throws -> WPEPuppetModel {
         var reader = WPEMdlBinaryReader(data: data)
         auditRecorder?.beginSection(kind: .mdlvHeader, label: "MDLV header", start: reader.currentOffset)
-        // The header is version-branch-free: 9-byte NUL-terminated tag + u32 model flags + u32 skin
-        // count + u32 mesh count. Byte-verified against the engine's own
-        // assets/models/editor/camera/camera.mdl (MDLV0017) and circle-xxl_puppet.mdl (MDLV0019); the
-        // previous version-branched reader parsed mdlv 4/13/14/15/17/18 one byte off and silently lost
-        // every such puppet. count == 8 enforces the NUL in byte 9 — "MDLV00170" must not sneak through
-        // as version 170 past the legacy-generation gate.
+        // Header is version-branch-free: 9-byte NUL-terminated tag + u32 flags + u32 skin count + u32 mesh count. `count == 8` enforces the NUL in byte 9 — `MDLV00170` must not parse as version 170.
         let versionTag = try reader.readFixedString(byteCount: 9)
         guard versionTag.count == 8, versionTag.hasPrefix("MDLV"),
               let version = Int(versionTag.dropFirst(4)) else {
@@ -1305,9 +1215,7 @@ public enum WPEMdlParser {
                 indices.append(try reader.readUInt32())
             }
         }
-        // The buffer goes to the GPU as written and the puppet vertex shader
-        // indexes `vertices[vertexID]` with it, so an index past the table is an
-        // out-of-bounds read there, not a parse error later.
+        // The buffer goes to the GPU as written and the puppet vertex shader indexes `vertices[vertexID]` with it, so an index past the table is an out-of-bounds GPU read, not a later parse error.
         guard indices.allSatisfy({ $0 < vertexCount }) else {
             throw WPEMdlParserError.invalidIndexBuffer(indexByteCount)
         }
@@ -1410,9 +1318,7 @@ public enum WPEMdlParser {
                 reader.readFloat(),
                 reader.readFloat()
             )
-            // An authored zero (degenerate triangle, exporter placeholder) is the
-            // same NaN as an unauthored one; a NaN compares false against the
-            // threshold, so finiteness is checked on its own.
+            // An authored zero is the same NaN as unauthored; a NaN compares false against the threshold, so finiteness is checked on its own.
             let lengthSquared = simd_length_squared(normal)
             if !lengthSquared.isFinite || lengthSquared < 1e-12 {
                 normal = SIMD3<Float>(0, 0, 1)
@@ -1657,9 +1563,6 @@ public enum WPEMdlParser {
         return bones
     }
 
-    /// MDLE stores one file-authored world-bind matrix per MDLS bone. Preserve
-    /// these values for trace/oracle work; palette consumption remains gated
-    /// until the composition rule is proven independently.
     private static func parseElementWorldBindsIfPresent(
         reader: inout WPEMdlBinaryReader,
         bones: [WPEPuppetBone],
@@ -1732,7 +1635,6 @@ public enum WPEMdlParser {
         )
     }
 
-    /// Parses MDAT0001 anchors: a section header followed by a UTF-8 name, bone index, and column-major bind matrix per anchor.
     private static func parseAttachmentsIfPresent(
         reader: inout WPEMdlBinaryReader,
         auditRecorder: WPEMdlParseAuditRecorder?
@@ -2232,9 +2134,7 @@ private struct WPEMdlBinaryReader {
         return string
     }
 
-    /// Section-bounded `readCString`. A malformed/truncated name whose terminator
-    /// lies past `sectionEnd` fails fast on the existing `unterminatedString`
-    /// path instead of scanning (and UTF-8 decoding) the rest of the file.
+    /// Section-bounded `readCString`. A terminator past `sectionEnd` fails on `unterminatedString` instead of scanning (and UTF-8 decoding) the rest of the file.
     mutating func readCString(sectionEnd: Int) throws -> String {
         let start = offset
         let limit = min(sectionEnd, data.count)

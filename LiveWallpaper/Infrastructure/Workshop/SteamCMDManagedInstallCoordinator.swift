@@ -2,41 +2,26 @@
 import Foundation
 import LiveWallpaperCore
 
-/// Drives a managed SteamCMD install and records where it landed; the connector
-/// does the work (fetch, download, verify, unpack, first run), this side only
-/// asks and stores the result. Additive: doesn't replace package-manager
-/// detection, and any failed step falls back to manual instructions unchanged.
 @MainActor
 @Observable
 final class SteamCMDManagedInstallCoordinator {
     enum Status: Equatable {
         case idle
         case installing
-        /// Waiting on the connector to delete the payload. A distinct state
-        /// because `forget()` suspends for as long as the deletion takes, and
-        /// reporting `.idle` across that window let a new `install()` start and
-        /// race the removal it knew nothing about.
+        /// Distinct from idle: forget() suspends for the deletion, and reporting .idle across that window would let a new install() race the removal.
         case removing
         case installed(path: String)
         case failed(String)
     }
 
-    /// App-lifetime instance. Install/remove status is process state: when each
-    /// view owned its own coordinator, an install started in one surface showed
-    /// as idle in the others, which offered a second Install mid-flight.
     static let shared = SteamCMDManagedInstallCoordinator()
 
     private(set) var status: Status = .idle
 
-    /// Identifies the top-level operation allowed to commit. Bumped when one op
-    /// supersedes another, so a call still mid-`await` declines to write its
-    /// result — `@MainActor` serialises access between suspension points but
-    /// doesn't make `install()`/`forget()` atomic across them.
+    /// Generation of the op allowed to commit. @MainActor serialises between suspension points but does not make install()/forget() atomic across them.
     private var generation: UInt64 = 0
 
     @ObservationIgnored private let defaults: UserDefaults
-    /// Injected because the real ones install to and delete from the machine
-    /// running them, which is not something a test may do to whoever runs it.
     @ObservationIgnored private let remove: () async -> SteamCMDManagedRemovalResult?
     @ObservationIgnored private let performInstall: () async -> SteamCMDManagedInstallResult?
 
@@ -61,20 +46,13 @@ final class SteamCMDManagedInstallCoordinator {
 
     struct ManagedInstallRecord: Codable, Equatable, Sendable {
         let canonicalPath: String
-        /// Digest of the installed Mach-O. The key name predates the manifest
-        /// flow (it once held the bootstrap tarball's digest); kept so records
-        /// written by earlier builds keep decoding.
+        /// Digest of the installed Mach-O (key name kept so earlier records keep decoding).
         let bootstrapSHA256: String
     }
 
-    /// Mirrors the defaults record so the UI can observe it. Kept in sync by
-    /// `record`/`forget`, which are the only two writers.
     private(set) var managedInstall: ManagedInstallRecord?
 
-    /// Readable without owning a coordinator, so a fresh coordinator restores
-    /// the same state. Deliberately doesn't stat `canonicalPath` — it lives
-    /// outside the container, so a filesystem check here would always say "no";
-    /// whether the binary works is the connector's question, from its own install root.
+    /// Deliberately doesn't stat canonicalPath — it lives outside the container, so a filesystem check here would always say no.
     static func recordedInstall(defaults: UserDefaults = .standard) -> ManagedInstallRecord? {
         guard let data = defaults.data(forKey: managedInstallDefaultsKey) else { return nil }
         return try? JSONDecoder().decode(ManagedInstallRecord.self, from: data)
@@ -82,17 +60,12 @@ final class SteamCMDManagedInstallCoordinator {
 
     @discardableResult
     func install() async -> Status {
-        // Two concurrent installs share one payload directory: the second
-        // one's extract wipes the directory the first is still running
-        // `+quit` inside.
+        // Two concurrent installs share one payload directory: the second extract would wipe the directory the first is still running +quit inside.
         switch status {
         case .installing:
             return status
         case .removing:
-            // Starting now would race a deletion already in flight: the two use
-            // separate short-lived XPC connections, so whichever replies last
-            // wins — either the new record is wiped, or the removal takes the
-            // install that just succeeded.
+            // Starting now would race a deletion already in flight: separate short-lived XPC connections, whichever replies last wins.
             return status
         case .idle, .installed, .failed:
             break
@@ -109,9 +82,6 @@ final class SteamCMDManagedInstallCoordinator {
             )))
         }
         guard result.outcome == .installed, let path = result.canonicalPath else {
-            // The connector distinguishes a timeout from a non-zero exit from a
-            // hash failure; all three used to render as one sentence, so a
-            // report of this dialog could not say which happened.
             let detail = result.localizedFailureReason.map { " (\($0))" } ?? ""
             return finish(.failed(Self.message(for: result.outcome) + detail))
         }
@@ -123,20 +93,13 @@ final class SteamCMDManagedInstallCoordinator {
         return finish(.installed(path: path))
     }
 
-    /// Removes through the connector (payload sits outside this container, so we can't see or delete it directly). Bumps generation first so an in-flight install can't commit over it; never touches the user's own "Choose SteamCMD" pick or a package-manager install.
-    /// Record drops only once the connector confirms deletion — dropping it first orphaned the copy on disk, since Remove disappears with `managedInstall`, leaving the user unable to retry or rediscover it.
-    /// How a removal ended. It used to be a `Bool`, which reported a
-    /// superseded attempt — not a failure, and not this attempt's business —
-    /// with the same value as a connector that never answered.
+    /// How a removal ended. A Bool would report a superseded attempt with the same value as a connector that never answered.
     enum ForgetOutcome: Equatable, Sendable {
         case removed
         /// A newer operation took over; it owns the state and the record now,
         /// and this attempt has nothing to report.
         case superseded
         case connectorUnavailable
-        /// The connector answered and declined. Its `failureReason` is an
-        /// English diagnostic and deliberately stays out of the UI; surfacing
-        /// it would need a `failureCode` on the wire, as the install path has.
         case refused
     }
 
@@ -157,9 +120,6 @@ final class SteamCMDManagedInstallCoordinator {
         return .removed
     }
 
-    /// `Status.failed` is rendered verbatim in Settings, so everything that
-    /// reaches it has to be localized. The underlying values are wire enums and
-    /// English diagnostic strings — fine in a log, not on screen.
     private static func message(for outcome: SteamCMDManagedInstallResult.Outcome) -> String {
         switch outcome {
         case .installed:

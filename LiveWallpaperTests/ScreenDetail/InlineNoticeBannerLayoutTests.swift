@@ -5,14 +5,10 @@ import LiveWallpaperCore
 import SwiftUI
 import Testing
 
-/// The banner replaced three hand-rolled copies that had each drifted in a
-/// different direction, so its two surfaces have to survive both appearances at
-/// the width they actually ship at.
 @Suite("Inline notice banner layout")
 @MainActor
 struct InlineNoticeBannerLayoutTests {
-    /// 420 is the regression: the side-by-side layout squeezed the message
-    /// column to one word per line there before the stacked fallback existed.
+    /// 420 is the width that needs the stacked fallback.
     @Test("Both surfaces lay out in native light and dark appearances", arguments: [CGFloat(420), CGFloat(620)])
     func bannerLaysOutInBothAppearances(width: CGFloat) throws {
         let cases: [(String, NoticeBannerSurface, FallbackReason)] = [
@@ -52,8 +48,6 @@ struct InlineNoticeBannerLayoutTests {
                 host.frame = CGRect(x: 0, y: 0, width: width + 32, height: max(fitting.height, 1))
                 host.layoutSubtreeIfNeeded()
 
-                // The whole point of the tokenised layout: nothing overflows the
-                // width it was given, in either appearance.
                 #expect(fitting.width <= width + 32)
                 #expect(fitting.height > 0)
 

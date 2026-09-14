@@ -133,9 +133,7 @@ struct SecurityScopedBookmarkResolverTests {
 
     @Test("live re-resolves every call instead of memoizing the URL")
     func liveNeverServesAMemoizedURL() throws {
-        // Guard against re-adding a resolution cache: a cached URL cannot grant
-        // security scope, which broke engine-assets adoption on 2026-08-03
-        // ("Operation not permitted" when bookmarking the Steam install).
+        // Guards against re-adding a resolution cache: a cached URL cannot grant security scope.
         let folder = FileManager.default.temporaryDirectory
             .appendingPathComponent("bookmark-cache-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -149,8 +147,6 @@ struct SecurityScopedBookmarkResolverTests {
         #expect(!firstStale)
         #expect(first.standardizedFileURL.path == folder.standardizedFileURL.path)
 
-        // Once the folder is gone a real resolve must fail; a cache would keep
-        // handing back the stale URL and this expectation would not hold.
         try FileManager.default.removeItem(at: folder)
         #expect(throws: (any Error).self) {
             _ = try SecurityScopedBookmarkResolver.live.resolveData(bookmark)

@@ -1,10 +1,7 @@
 #if !LITE_BUILD
 import Foundation
 
-/// Backoff for failed static-texture reloads. Without it a permanently missing
-/// file would retry every frame (`ensureActiveStaticTexturesResident`
-/// re-schedules while the placeholder is up): exponential 1→2→4→…→30s gaps,
-/// giving up after `maxAttempts`; any successful load clears the path's history.
+/// Exponential 1→2→4→…→30s gaps, give up after `maxAttempts`. Without it a permanently missing file would retry every frame.
 struct WPEStaticTextureReloadThrottle: Equatable, Sendable {
     static let maxAttempts = 5
     private(set) var failureCount = 0
@@ -22,11 +19,6 @@ struct WPEStaticTextureReloadThrottle: Equatable, Sendable {
     }
 }
 
-/// LRU bookkeeping for reloadable static source textures. The renderer owns the actual
-/// `MTLTexture` store; this only tracks resident byte estimates and recency so the frame path
-/// can evict inactive textures while protecting the paths the current frame samples. Eviction
-/// policy: frame-driven sweep that never touches a protected path (`evictOverBudget(protecting:)`).
-/// Bookkeeping lives in the shared `WPEMetalLRUByteBudget` core (see `WPEMetalStaticLayerCacheLRU` for the sibling cache's different — reject-if-oversized — admission policy).
 struct WPEMetalTextureCacheLRU: Equatable, Sendable {
     private var core: WPEMetalLRUByteBudget<String>
 
@@ -57,9 +49,7 @@ struct WPEMetalTextureCacheLRU: Equatable, Sendable {
         core.removeAll()
     }
 
-    /// Evict least-recently-used entries until within budget, never touching a
-    /// `protected` (active this frame) path — so an over-budget frame keeps every
-    /// active texture resident rather than evicting one it is about to sample.
+    /// Never touch a `protected` (active this frame) path — an over-budget frame keeps every active texture rather than evicting one it is about to sample.
     @discardableResult
     mutating func evictOverBudget(protecting protected: Set<String>) -> [String] {
         core.evictOverBudget(protecting: protected)

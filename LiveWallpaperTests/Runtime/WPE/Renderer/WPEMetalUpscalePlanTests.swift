@@ -2,9 +2,6 @@ import CoreGraphics
 import Testing
 @testable import LiveWallpaper
 
-/// The load-time MetalFX verdict. Every rejection the present-time scaler can
-/// make for a reason known up front must be made here instead — a scene that
-/// renders small and is then refused has paid resolution for nothing.
 @Suite("WPE MetalFX upscale plan")
 struct WPEMetalUpscalePlanTests {
 
@@ -44,8 +41,6 @@ struct WPEMetalUpscalePlanTests {
         ]
         for (label, plan) in inactive {
             #expect(plan.isActive == false, "\(label) must not be active")
-            // The bit-identity guarantee: an inactive plan has to leave every
-            // downstream size derivation exactly where it was pre-feature.
             #expect(plan.renderPixelScale == 1.0, "\(label) must not scale targets")
             #expect(plan.maxSourceTextureEdge == nil, "\(label) must not cap textures")
         }
@@ -75,9 +70,6 @@ struct WPEMetalUpscalePlanTests {
 
     @Test("A canvas larger than the screen is clamped to the screen BEFORE scaling")
     func canvasLargerThanDrawableClampsToDrawable() {
-        // 4K scene on a 1080p display: without the clamp this renders 2880x1620,
-        // which the scaler then refuses as a downscale — the saving stops at the
-        // authored canvas instead of following the screen.
         let plan = Self.plan(canvas: Self.uhd, drawable: Self.hd)
         #expect(plan.verdict == .active)
         #expect(plan.renderPixelScale == 0.375)
@@ -91,8 +83,6 @@ struct WPEMetalUpscalePlanTests {
 
     @Test("Never renders above the authored canvas")
     func neverSupersamples() {
-        // A tiny canvas on a 4K screen must not be promoted to drawable size —
-        // that is supersampling, the opposite of this feature.
         let plan = Self.plan(canvas: CGSize(width: 640, height: 360))
         #expect(plan.renderPixelScale <= 0.75)
     }
@@ -108,14 +98,10 @@ struct WPEMetalUpscalePlanTests {
 
     @Test("A sizeless drawable is its own verdict, and re-planning revives it")
     func drawableUnknownThenReplan() {
-        // Real-machine regression: the layer has no size until its view enters a
-        // window, and `load()` can win the race against that callback. Reported
-        // as `noHeadroom` before, which read like a legitimate rejection.
         let atLoad = Self.plan(canvas: Self.uhd, drawable: .zero)
         #expect(atLoad.verdict == .drawableUnknown)
         #expect(atLoad.renderPixelScale == 1.0)
 
-        // Geometry lands → the scene must start scaling.
         let revived = atLoad.adopting(Self.plan(canvas: Self.uhd, drawable: Self.uhd))
         #expect(revived.verdict == .active)
         #expect(revived.renderPixelScale == 0.75)
@@ -128,7 +114,6 @@ struct WPEMetalUpscalePlanTests {
     func declineIsSticky() {
         let declined = Self.plan(canvas: Self.uhd, drawable: Self.uhd).demotedToNative()
         #expect(declined.verdict == .declinedAtPresent)
-        // Re-activating after the scaler already refused would just oscillate.
         let readopted = declined.adopting(Self.plan(canvas: Self.uhd, drawable: Self.uhd))
         #expect(readopted.verdict == .declinedAtPresent)
         #expect(readopted.renderPixelScale == 1.0)
@@ -156,8 +141,6 @@ struct WPEMetalUpscalePlanTests {
             let pixels = WPEMetalFXSpatialUpscaler.scaledCanvasSize(
                 canvas, pixelScale: plan.renderPixelScale
             )
-            // If these ever diverge the frame renders small and is then refused
-            // at present — resolution paid for nothing.
             #expect(WPEMetalFXSpatialUpscaler.preScalerRejection(
                 fitMode: fitMode,
                 sourceWidth: Int(pixels.width),
@@ -171,8 +154,7 @@ struct WPEMetalUpscalePlanTests {
     @Test("contain and stretch both reach the active path")
     func nonCoverFitModesActivate() {
         // Without this the agreement test above silently skips them: its
-        // `guard plan.isActive else { continue }` turns a broken contain path
-        // into a green run.
+        // `guard plan.isActive else { continue }` turns a broken contain path green.
         let contain = Self.plan(
             canvas: CGSize(width: 2560, height: 1440), drawable: Self.uhd, fitMode: .contain
         )
@@ -181,9 +163,6 @@ struct WPEMetalUpscalePlanTests {
         #expect(Self.plan(fitMode: .stretch).verdict == .active)
     }
 
-    /// The two canvas shapes that dominate this machine's actual library:
-    /// 77% of scenes author 3840x2160, and the largest author 7680x4320. Both
-    /// are presented on a 3840x2160 drawable.
     @Test("The corpus's dominant 4K canvas really renders below native")
     func realWorldCorpusShapes() {
         let fourK = Self.plan(canvas: Self.uhd, drawable: Self.uhd)
@@ -205,10 +184,6 @@ struct WPEMetalUpscalePlanTests {
 
     // MARK: - The display clamp is independent of MetalFX
 
-    /// The bug this pins: an 8K canvas rendered 7680x4320 on a 4K display with MetalFX off
-    /// — 4x the pixels the screen can resolve, every frame, in every scene that authors a
-    /// canvas above the display. Measured on 3437487219, whose Mac viewport read
-    /// `[0,0,7680,4320]` against Windows' 3840x2160.
     @Test("An oversized canvas is clamped to the display even with MetalFX off")
     func oversizedCanvasClampsWithoutMetalFX() {
         let eightK = CGSize(width: 7680, height: 4320)
@@ -222,8 +197,6 @@ struct WPEMetalUpscalePlanTests {
         #expect(pixels == Self.uhd)
     }
 
-    /// Every MetalFX rejection is a rejection of UPSCALING, not a licence to render above
-    /// the display. A plain present blit resolves the smaller source just as well.
     @Test("Every MetalFX rejection still clamps an oversized canvas")
     func rejectionsStillClamp() {
         let eightK = CGSize(width: 7680, height: 4320)
@@ -262,8 +235,6 @@ struct WPEMetalUpscalePlanTests {
         #expect(contain.displayFitScale == 3840.0 / 7680.0)
     }
 
-    /// A present-time MetalFX decline gives up UPSCALING. It must not restore the
-    /// over-render: the display clamp had nothing to do with the scaler.
     @Test("A present-time decline falls back to the display clamp, not to native")
     func declineFallsBackToDisplayFit() {
         let eightK = CGSize(width: 7680, height: 4320)
@@ -272,7 +243,6 @@ struct WPEMetalUpscalePlanTests {
         #expect(declined.renderPixelScale == 0.5)
     }
 
-    /// A canvas at or below the drawable must come out bit-identical to the pre-clamp path.
     @Test("A canvas within the display is untouched")
     func canvasWithinDisplayIsUntouched() {
         for canvas in [Self.hd, Self.uhd, CGSize(width: 640, height: 360)] {
@@ -285,10 +255,8 @@ struct WPEMetalUpscalePlanTests {
 
     @Test("A coprime drawable cannot scale under cover, but still can under stretch")
     func coprimeDrawableAspect() {
-        // 1081 and 1920 are coprime, so no reduced integer size keeps the ratio
-        // and the zero-tolerance cover gate must refuse. Documented as a real
-        // constraint, not a gap — scaling anyway would hand the scaler a
-        // full-rect map that cover did not ask for.
+        // 1081 and 1920 are coprime: no reduced integer size keeps the ratio, so the
+        // zero-tolerance cover gate must refuse. A real constraint, not a gap.
         let odd = CGSize(width: 1920, height: 1081)
         #expect(Self.plan(canvas: odd, drawable: odd, fitMode: .cover).verdict == .aspectMismatch)
         #expect(Self.plan(canvas: odd, drawable: odd, fitMode: .stretch).verdict == .active)

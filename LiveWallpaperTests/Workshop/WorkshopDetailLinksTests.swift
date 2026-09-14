@@ -3,14 +3,6 @@ import Foundation
 @testable import LiveWallpaper
 import Testing
 
-/// URL shapes captured from the detail page's own anchors
-/// (`curl https://steamcommunity.com/sharedfiles/filedetails/?id=3737237256`, 2026-09-07):
-///
-///     href="https://steamcommunity.com/sharedfiles/filedetails/changelog/3737237256"
-///     href="https://steamcommunity.com/sharedfiles/filedetails/comments/3737237256"
-///     href="https://steamcommunity.com/sharedfiles/filedetails/discussions/3737237256"
-///     href="https://steamcommunity.com/workshop/browse/?browsesort=toprated&section=collections&appid=431960&childpublishedfileid=3737237256"
-///     href="https://steamcommunity.com/profiles/76561198314933366/myworkshopfiles/?appid=431960"
 @Suite("Workshop detail page links")
 struct WorkshopCommunityURLTests {
     @Test("Item links match the detail page's anchors verbatim")
@@ -30,8 +22,6 @@ struct WorkshopCommunityURLTests {
     }
 }
 
-/// New inspector copy has to exist in every shipped language: a missing entry
-/// silently falls back to English for that language.
 @Suite("Workshop detail inspector copy")
 struct WorkshopDetailCopyTests {
     private static let keys = [

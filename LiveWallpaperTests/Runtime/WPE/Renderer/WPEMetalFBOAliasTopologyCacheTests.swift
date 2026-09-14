@@ -6,7 +6,6 @@ import Metal
 import Testing
 @testable import LiveWallpaper
 
-/// Cached FBO alias topology plus per-frame sizes must match the pre-split scan.
 @Suite("WPE Metal FBO alias topology cache")
 struct WPEMetalFBOAliasTopologyCacheTests {
 
@@ -35,7 +34,6 @@ struct WPEMetalFBOAliasTopologyCacheTests {
         #expect(!hasKey("fxBlur", 200, 100))
         // …while dup's same-named, differently-sized key stays eligible.
         #expect(hasKey("fxBlur", 64, 32))
-        // Godrays-combine source: "_rt_A" is excluded outright.
         #expect(!entries.contains { $0.hasPrefix("_rt_A#") })
         // Undeclared FBO target falls back to a scene-sized key.
         #expect(hasKey("fxBlur2", 1024, 768))
@@ -54,8 +52,7 @@ struct WPEMetalFBOAliasTopologyCacheTests {
         )
         #expect(executor.fboAliasTopologyRebuildCount == 1)
 
-        // Same structure, different layer geometry + scene size. The compose
-        // utility layer flips subregion → fullscreen purely from these sizes.
+        // The compose utility layer flips subregion -> fullscreen purely from these sizes.
         let resized = makeAliasFormsPipeline(
             fxSize: CGSize(width: 300, height: 150),
             composeSize: CGSize(width: 1000, height: 760)
@@ -72,8 +69,6 @@ struct WPEMetalFBOAliasTopologyCacheTests {
             normalizedAliasIntervals(second) != normalizedAliasIntervals(first),
             "new sizes must flow through the cached topology"
         )
-        // The flip driven purely by per-frame sizes: compose composite is now
-        // scene-sized.
         #expect(normalizedAliasIntervals(second).contains {
             $0.hasPrefix("_rt_imageLayerComposite_compose_a#1000x800#")
         })
@@ -96,7 +91,6 @@ struct WPEMetalFBOAliasTopologyCacheTests {
             referenceFBOAliasIntervals(executor: executor, pipeline: grown, sceneSize: sceneSize)
         ))
 
-        // Removal (created layer destroyed) invalidates again.
         let shrunk = base
         let shrunkResult = executor.fboAliasIntervals(pipeline: shrunk, sceneSize: sceneSize)
         #expect(executor.fboAliasTopologyRebuildCount == 3)
@@ -118,11 +112,8 @@ struct WPEMetalFBOAliasTopologyCacheTests {
         #expect(!topology.matches(makeAliasFormsPipeline(includeExtraLayer: true)))
         #expect(!topology.matches(WPEPreparedRenderPipeline(layers: Array(base.layers.dropLast()))))
         #expect(!topology.matches(makeAliasFormsPipeline(fxImagePath: "materials/other.png")))
-        // Target rename with identical ids/counts — the per-pass (id, target)
-        // signature catches it directly.
         #expect(!topology.matches(makeAliasFormsPipeline(discreteTargetName: "fxBlur3")))
 
-        // Pass-count change within a layer.
         var layers = base.layers
         let extra = preparedAliasPass(aliasPass(id: "fx.extra", target: .scene))
         layers[1] = WPEPreparedRenderLayer(
@@ -141,12 +132,9 @@ struct WPEMetalFBOAliasTopologyCacheTests {
         let base = makeAliasFormsPipeline()
         let staleTopology = executor.computeFBOAliasTopology(pipeline: base)
 
-        // Change a pass's texture-reference SET while keeping every (id, target)
-        // — the one structural dimension the signature deliberately does not
-        // re-check (invariant within a load; a reload clears the cache). This
-        // proves the stale topology would corrupt the plan if that invariant
-        // were ever broken: the moved read extends "fxBlur"'s lifetime and
-        // shrinks the fx composite's, which a stale topology cannot see.
+        // The (id, target) signature deliberately does not re-check a pass's
+        // texture-reference SET: that is invariant within a load, and a reload clears
+        // the cache.
         let rewired = makeAliasFormsPipeline(fxFinalReadsBlur: true)
         #expect(staleTopology.matches(rewired))
 
@@ -160,9 +148,7 @@ struct WPEMetalFBOAliasTopologyCacheTests {
             normalizedAliasIntervals(stale) != normalizedAliasIntervals(correct),
             "stale topology must be observably wrong, or the cache guard has no teeth"
         )
-        // And the real (guarded) entry point stays correct on the same input:
-        // the executor never held `staleTopology` in its cache, so this is a
-        // fresh build.
+        // The executor never held `staleTopology`, so the guarded call is a fresh build.
         let guarded = executor.fboAliasIntervals(pipeline: rewired, sceneSize: sceneSize)
         #expect(normalizedAliasIntervals(guarded) == normalizedAliasIntervals(correct))
     }
@@ -207,7 +193,6 @@ struct WPEMetalFBOAliasTopologyCacheTests {
         )
     }
 
-    /// Same objectID so the memo key is stable; only path/geometry/scene vary.
     private func memoLayer(_ path: String) -> WPERenderLayer {
         WPERenderLayer(
             objectID: "obj",
@@ -223,10 +208,6 @@ struct WPEMetalFBOAliasTopologyCacheTests {
     }
 }
 
-/// E3a: the topology carries a structural generation, and the per-frame
-/// alias-interval / persistent-depth scans hang off it instead of re-running.
-/// Every test here also asserts the VALUE is right, because a cache that
-/// under-invalidates aliases two live FBOs onto the same memory.
 @Suite("WPE Metal FBO alias structural generation")
 struct WPEMetalFBOAliasStructuralGenerationTests {
     private static let sceneSize = CGSize(width: 1024, height: 768)
@@ -359,7 +340,6 @@ struct WPEMetalFBOAliasStructuralGenerationTests {
         _ = executor.fboAliasIntervals(pipeline: other, sceneSize: Self.sceneSize)
         #expect(executor.fboAliasTopologyRebuildCount == 2)
 
-        // And the reload path itself drops the retained layers + every memo.
         executor.releaseTransientResources()
         #expect(executor.cachedFBOAliasTopology == nil)
         _ = executor.fboAliasIntervals(pipeline: other, sceneSize: Self.sceneSize)
@@ -412,9 +392,7 @@ struct WPEMetalFBOAliasStructuralGenerationTests {
         #expect(executor.fboAliasTopologyRebuildCount == 1)
     }
 
-    /// The memo's teeth: a layer whose geometry drives its pooled-target size
-    /// must invalidate it even though the GRAPH is untouched. Serving the memo
-    /// here would hand the pool intervals keyed to the old pixel size.
+    /// Serving the memo here would hand the pool intervals keyed to the old pixel size.
     @Test("Layer geometry that feeds a pool key invalidates the interval memo")
     func sizingGeometryChangeInvalidatesTheMemo() throws {
         let executor = try executor()
@@ -433,9 +411,8 @@ struct WPEMetalFBOAliasStructuralGenerationTests {
             "control: the stale memo would have been observably wrong"
         )
 
-        // `scale` reaches the key only through the compose utility layer's
-        // fullscreen/subregion classification — 120x80 scaled 9x/10x covers the
-        // canvas, so its composite flips from local to scene-sized.
+        // `scale` reaches the key only through the compose layer's fullscreen/subregion
+        // classification: 120x80 scaled 9x/10x covers the canvas.
         let scaled = makeAliasFormsPipeline(
             fxSize: CGSize(width: 320, height: 160),
             composeScale: SIMD3<Double>(9, 10, 1)
@@ -558,7 +535,6 @@ private func aliasLayer(
     return WPEPreparedRenderLayer(graphLayer: graph, passes: passes.map(preparedAliasPass))
 }
 
-/// Fixture covering every alias-scan form the cache must reproduce.
 private func makeAliasFormsPipeline(
     fxSize: CGSize = CGSize(width: 200, height: 100),
     dupSize: CGSize = CGSize(width: 64, height: 32),
@@ -609,7 +585,6 @@ private func makeAliasFormsPipeline(
                 target: .fbo(name: "fxBlur"),
                 textures: [0: .fbo(fxComposite)]
             ),
-            // Ping-pong: reads its own already-written target.
             aliasPass(
                 id: "fx.2",
                 source: .fbo("fxBlur"),
@@ -660,9 +635,8 @@ private func makeAliasFormsPipeline(
     return WPEPreparedRenderPipeline(layers: layers)
 }
 
-/// Gives the first layer an animated constant so `addingMetalRuntimeUniforms`
-/// takes its rebuild path and hands back a FRESH layers array every frame —
-/// the case the structural generation must see through.
+/// The animated constant makes `addingMetalRuntimeUniforms` hand back a FRESH
+/// layers array every frame.
 private func animatedUniformPipeline(
     _ pipeline: WPEPreparedRenderPipeline
 ) -> WPEPreparedRenderPipeline {
@@ -706,7 +680,7 @@ private func normalizedAliasIntervals(
     }.sorted()
 }
 
-/// Pre-split full-scan replica. Production intervals must match this exactly.
+/// Full-scan replica: production intervals must match it exactly.
 private func referenceFBOAliasIntervals(
     executor: WPEMetalRenderExecutor,
     pipeline: WPEPreparedRenderPipeline,

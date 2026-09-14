@@ -1,7 +1,5 @@
 import Foundation
 
-/// `.file` style everywhere; the unit floor differs per surface, so each keeps its own
-/// cached formatter — the cache list refreshes often and rebuilding per row was ruled out.
 @MainActor
 enum WorkshopByteFormatter {
     static func string(_ bytes: UInt64) -> String {

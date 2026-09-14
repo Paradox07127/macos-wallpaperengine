@@ -4,9 +4,7 @@ import LiveWallpaperProWPE
 import Testing
 @testable import LiveWallpaper
 
-/// Opt-in, path-redacted inventory used by the official-document parity audit.
-/// It deliberately uses the shipping PKGV index and scene parser instead of a
-/// second reverse-engineered package reader.
+/// Uses the shipping PKGV index and scene parser on purpose, never a second reverse-engineered package reader.
 @Suite("WPE official-doc corpus audit")
 struct WPEOfficialDocsCorpusAuditTests {
     private struct Config: Codable {

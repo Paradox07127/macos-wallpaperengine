@@ -2,12 +2,8 @@
 import Foundation
 @testable import LiveWallpaper
 
-/// Test-only record of one corpus scene's pass-execution and custom-shader-compile tallies, as
-/// collected by the opt-in coverage runner. Counting units are "pass-equivalent"
-/// entries: prepared render passes (classified via their shader program, or
-/// `unclassifiedPassCount` when the pass intentionally carries no program — text
-/// and other separately dispatched paths) plus `unsupported-metadata-only`
-/// inventory entries, which never become prepared passes.
+/// Counting units are "pass-equivalent": prepared render passes (`unclassifiedPassCount`
+/// when a pass carries no program) plus `unsupported-metadata-only` inventory entries.
 struct WPESceneCoverageRecord: Equatable, Sendable {
     let sceneID: String
     let passCounts: [WPEShaderExecutionClassification: Int]
@@ -15,10 +11,7 @@ struct WPESceneCoverageRecord: Equatable, Sendable {
     /// Custom (`official-source`) passes whose GLSL→MSL translation + library
     /// build succeeded for this scene's rendered frame.
     let customShaderCompiledCount: Int
-    /// Custom passes that hit any `WPEShaderCompilerError` bucket (preprocess,
-    /// translation, transpiler crash, or MSL library failure).
     let customShaderFailedCount: Int
-    /// Custom passes never attempted (e.g. the pass was culled before compile).
     let customShaderUntriedCount: Int
 }
 
@@ -34,8 +27,6 @@ struct WPECorpusCoverageSummary: Equatable, Sendable {
         passCounts.values.reduce(0, +) + unclassifiedPassCount
     }
 
-    /// Fraction of all counting units carrying `classification`; 0 for an empty
-    /// corpus.
     func share(of classification: WPEShaderExecutionClassification) -> Double {
         let total = totalUnits
         guard total > 0 else { return 0 }
@@ -48,9 +39,6 @@ struct WPECorpusCoverageSummary: Equatable, Sendable {
         return Double(unclassifiedPassCount) / Double(total)
     }
 
-    /// compiled / (compiled + failed). Untried passes are excluded from the
-    /// denominator — they say nothing about the transpiler. `nil` when no custom
-    /// shader compile was ever attempted.
     var customShaderCompileSuccessRate: Double? {
         let attempts = customShaderCompiledCount + customShaderFailedCount
         guard attempts > 0 else { return nil }
@@ -88,7 +76,6 @@ enum WPETranspileCoverageAggregator {
         )
     }
 
-    /// Plain-text report: one row per scene, a totals row, and a shares line.
     static func table(records: [WPESceneCoverageRecord]) -> String {
         let summary = summarize(records)
         let headers = ["scene", "official", "native", "copy", "metadata", "unclassified",

@@ -32,7 +32,6 @@ struct ScenePresetLayeringTests {
             .layeredPropertyValues()
 
         #expect(layered["windspeed"] == .number(0.9))
-        // Untouched preset keys survive; this is the whole point of layering.
         #expect(layered["skycolor"] == .string("1 0.4 0.2"))
     }
 
@@ -88,16 +87,11 @@ struct ScenePresetPersistenceTests {
 
         #expect(workshop.source == .workshop(workshopID: "3509243656"))
         #expect(local.source == .local)
-        // Workshop presets key on their own workshop id so re-downloading
-        // updates in place rather than piling up duplicates.
         #expect(workshop.id == "3509243656")
     }
 
     @Test("A preset stored before the rename flag existed still decodes")
     func decodesRecordWithoutRenameFlag() throws {
-        // `hasUserAssignedName` arrived after presets were already on disk, and
-        // `GlobalSettings` decodes the library entry-by-entry — a throw here
-        // would not surface as an error, it would drop every stored preset.
         let json = """
         { "id": "3471679253", "name": "Sunset", "baseWorkshopID": "3448877775",
           "values": {"a": 1}, "source": {"kind": "workshop", "workshopID": "3471679253"},
@@ -179,8 +173,6 @@ struct ScenePresetPersistenceTests {
 
         #expect(decoded.presetID == nil)
         #expect(decoded.propertyOverrides == ["windspeed": .number(0.9)])
-        // No preset pointer → the stored increment is the entire layer, which is
-        // exactly the pre-migration behaviour.
         #expect(decoded.layeredPropertyValues() == ["windspeed": .number(0.9)])
     }
 }
@@ -380,8 +372,6 @@ struct ScenePresetSnapshotTests {
         let applied = descriptor.applyingPreset(calm)
         #expect(applied.presetID == "calm")
         #expect(applied.presetSnapshot == calm.values)
-        // The render path has no route to the preset library, so a pointer
-        // without values would render as bare scene defaults.
         #expect(applied.layeredPropertyValues() == calm.values)
     }
 
@@ -409,7 +399,6 @@ struct ScenePresetSnapshotTests {
 
         let refreshed = stale.refreshingPresetSnapshot(in: ["calm": updated])
         #expect(refreshed.presetSnapshot["rain"] == .bool(true))
-        // The user's own edit survives a preset update.
         #expect(refreshed.layeredPropertyValues()["windspeed"] == .number(0.9))
     }
 
@@ -420,10 +409,6 @@ struct ScenePresetSnapshotTests {
         #expect(orphan.presetSnapshot.isEmpty)
     }
 
-    /// Deleting a preset and choosing "No preset" are different acts, and the
-    /// delete confirmation promises the user's own edits survive. The library
-    /// delete converges on `refreshingPresetSnapshot` for every other display,
-    /// so the display doing the deleting has to land in the same place.
     @Test("Dropping only the preset layer keeps the increment; picking No preset does not")
     func layerDropKeepsIncrementUnlikeNoPreset() {
         let edited = descriptor.applyingPreset(calm)
@@ -432,17 +417,14 @@ struct ScenePresetSnapshotTests {
         let deleted = edited.withPresetLayer(id: nil, snapshot: [:])
         #expect(deleted.presetID == nil)
         #expect(deleted.propertyOverrides == ["windspeed": .number(0.9)])
-        // Same end state the other displays reach through the reconcile.
         #expect(deleted == edited.refreshingPresetSnapshot(in: [:]))
 
         // Control: the picker's "No preset" is a reset, and still is.
         #expect(edited.applyingPreset(nil).propertyOverrides.isEmpty)
     }
 
-    /// "Save current values as a preset" over an existing name reuses that id.
-    /// Routing that through `applyingPreset` would hit its same-id branch, which
-    /// keeps the increment on purpose — leaving this display pinned to today's
-    /// values the next time the preset changes elsewhere.
+    /// Not `applyingPreset`: its same-id branch keeps the increment on purpose, which
+    /// would pin this display to today's values.
     @Test("Re-saving over the applied preset spends the increment")
     func overwritingAppliedPresetClearsIncrement() {
         let edited = descriptor.applyingPreset(calm)
@@ -454,9 +436,7 @@ struct ScenePresetSnapshotTests {
             .withPresetLayer(id: resaved.id, snapshot: resaved.values)
             .withPropertyOverrides([:])
         #expect(adopted.propertyOverrides.isEmpty)
-        // Nothing visible changed: the preset now carries what the increment did.
         #expect(adopted.layeredPropertyValues() == edited.layeredPropertyValues())
-        // A later edit of the preset now reaches this display.
         var laterEdit = resaved
         laterEdit.values["windspeed"] = .number(0.2)
         #expect(
@@ -491,9 +471,6 @@ struct ScenePresetSnapshotTests {
     }
 }
 
-/// Weather's Apply-to-All copies the overlay, so every field the weather layer
-/// reads has to move — `weatherWind`/`weatherIntensity` shipped in 0.6.1 and
-/// were initially left out, leaving targets on their own defaults.
 @Suite("Weather overlay adoption")
 struct WeatherOverlayAdoptionTests {
     @Test("Adopting copies every weather field and nothing else")

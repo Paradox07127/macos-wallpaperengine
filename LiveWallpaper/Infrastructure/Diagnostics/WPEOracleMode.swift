@@ -2,8 +2,6 @@
 import Foundation
 import simd
 
-/// DEBUG-only WPE render-oracle switch: deterministic RNG/clock/hashes for traces.
-/// Release/Lite accessors are inert.
 enum WPEOracleMode {
     #if DEBUG
     /// Test override for `isEnabled` (avoids a developer's persisted `WPEOracleEnabled`).
@@ -13,7 +11,6 @@ enum WPEOracleMode {
     nonisolated(unsafe) static var frameAdvanceSeconds: Double = 0
     #endif
 
-    /// Master toggle, read from the `WPEOracleEnabled` user default.
     static var isEnabled: Bool {
         #if DEBUG
         if let testingOverride { return testingOverride }
@@ -58,10 +55,8 @@ enum WPEOracleMode {
         return Calendar.current.date(from: comps) ?? Date(timeIntervalSince1970: 1_767_694_148)
     }()
 
-    /// JavaScript epoch milliseconds corresponding to `frozenWallClock`.
     static var frozenWallClockMillis: Double { frozenWallClock.timeIntervalSince1970 * 1000 }
 
-    /// Frozen time/daytime/pointer for oracle captures; fidelity mode uses `WPEOracleReplay*`.
     static func loadFrameOverride() -> WPEOracleFrameOverride? {
         guard isEnabled else { return nil }
         let defaults = UserDefaults.standard
@@ -77,8 +72,6 @@ enum WPEOracleMode {
     }
 }
 
-/// Frozen frame globals for a render-oracle capture. Substituted into
-/// `WPEMetalRuntimeUniforms` at the top of each frame; see `WPEOracleMode`.
 struct WPEOracleFrameOverride: Equatable {
     /// The capture's frozen scene time, before any multi-frame advance.
     var baseTime: Double

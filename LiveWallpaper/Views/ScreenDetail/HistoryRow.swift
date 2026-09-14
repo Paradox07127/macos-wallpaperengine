@@ -4,10 +4,6 @@ import AppKit
 import LiveWallpaperCore
 import LiveWallpaperProWPE
 
-/// Probed once per workshop item and kept for the session: the resolution comes
-/// from opening the actual video file, which is far too expensive to redo every
-/// time a card scrolls back into view. Bounded by the size of the installed
-/// library, and every value is a short label.
 @MainActor
 private final class WPEResolutionProbeCache {
     static let shared = WPEResolutionProbeCache()
@@ -19,8 +15,6 @@ private final class WPEResolutionProbeCache {
     func store(_ label: String?, for id: String) { probed[id] = label }
 }
 
-/// Shared Wallpaper Engine gallery card used by both the Scene tab and the
-/// Installed library grid.
 struct HistoryRow: View {
     let entry: WPEHistoryEntry
     let isActive: Bool
@@ -41,8 +35,6 @@ struct HistoryRow: View {
     @State private var bookmarkHovering = false
     @State private var resolutionLabel: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// Read once per pane and handed down, not five `@AppStorage` per tile —
-    /// see `GalleryCardPreferences`.
     @Environment(\.galleryCardPreferences) private var cardPreferences
 
     var body: some View {
@@ -126,21 +118,14 @@ struct HistoryRow: View {
                 }
                 .padding(DesignTokens.Spacing.sm)
             }
-            // Title, in-use mark and bookmark ride the picture's bottom edge.
-            // The "In use" pill used to sit in this same corner as a separate
-            // overlay and would now be buried under the band.
             .overlay(alignment: .bottom) {
                 ThumbnailTitleBand(title: entry.origin.title, isHovering: isHovering) {
                     if isActive, cardPreferences.showsInUse {
                         ThumbnailPresenceCheck()
                             .accessibilityLabel(Text("In use"))
                     }
-                    // Primary-UI path to the context menu's file actions — the
-                    // right-click menu must not be the only way to reach them.
-                    // A Button, not a Menu: `.menuStyle(.borderlessButton)` is an
-                    // AppKit popup that ignores the label's `foregroundStyle` and
-                    // paints the glyph in the system control colour, which is
-                    // invisible on the band (reported on 26, 2026-08-31).
+                    // A Button, not a Menu: `.menuStyle(.borderlessButton)` is an AppKit popup
+                    // that ignores `foregroundStyle` and paints the glyph invisible on the band.
                     Button { showingFileActions = true } label: {
                         Image(systemName: "ellipsis.circle")
                             .font(.system(size: 11))
@@ -159,9 +144,6 @@ struct HistoryRow: View {
         }
     }
 
-    /// Bookmark toggle in the picture's top-right corner. Glass-backed like the
-    /// badges beside it: a bare glyph over arbitrary artwork has no guaranteed
-    /// contrast, and this is an interactive glyph over media (see W5 R1c).
     private func bookmarkControl(_ toggle: @escaping () -> Void) -> some View {
         Button(action: toggle) {
             Image(systemName: isBookmarked ? "bookmark.fill" : "bookmark")
@@ -173,9 +155,8 @@ struct HistoryRow: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        // Explicit strength rather than the 0.18/0.32 default: the badge sits on
-        // arbitrary wallpaper stills, and the default backing disappeared into
-        // bright ones. Reads as a dark chip on every card.
+        // Explicit 0.72 rather than the 0.18/0.32 default: the default backing
+        // disappears into bright wallpaper stills.
         .floatingGlyphGlass(hovered: bookmarkHovering, opacity: 0.72)
         .onHover { bookmarkHovering = $0 }
         .help(isBookmarked ? Text("Remove Bookmark") : Text("Add Bookmark"))
@@ -198,10 +179,8 @@ struct HistoryRow: View {
         .settingsPopoverChrome(width: 200)
     }
 
-    /// Only video projects have a resolution — a WPE scene renders at whatever the display is,
-    /// and web has none; packaged video keeps media outside the source folder, so those stay
-    /// unlabelled too. Keyed by import stamp + workshop ID: `recordWPEImport` restamps `importedAt`
-    /// on a genuine re-import (preserves it on a relink), so a 1080p item updated to 4K re-probes instead of keeping its old label until relaunch.
+    /// Keyed by import stamp + workshop ID: `recordWPEImport` restamps `importedAt`
+    /// on a genuine re-import, so an updated item re-probes instead of keeping its label.
     private var resolutionProbeKey: String {
         "\(entry.origin.workshopID)#\(entry.importedAt.timeIntervalSince1970)"
     }
@@ -212,9 +191,8 @@ struct HistoryRow: View {
             resolutionLabel = cached
             return
         }
-        // A new probe key means a different underlying item (re-import/relink
-        // restamped it) — clear the stale label from whatever the row showed
-        // before, so an early-return below can't leave the old value on screen.
+        // Clear first: an early return below would otherwise leave the previous
+        // item's label on screen.
         resolutionLabel = nil
         guard entry.origin.originalType == .video,
               let entryFile = entry.origin.entryFile else {
@@ -272,9 +250,8 @@ struct HistoryRow: View {
         if hasUpdate {
             label = label + Text(verbatim: " — ") + Text("Update available", comment: "A11y: the installed item has a newer version on Steam.")
         }
-        // Type and resolution are stated here unconditionally because their badges are
-        // `accessibilityHidden` glyphs on the thumbnail — the card label is their only textual
-        // path. Type used to ride in on the footer's `TypeBadge` (its own label, exposed as a child under `allowsInlineApply`); that badge is gone.
+        // Type and resolution are stated unconditionally: their badges are
+        // `accessibilityHidden` glyphs, so this label is their only textual path.
         label = label + Text(verbatim: " — ") + Text(verbatim: entry.origin.localizedDisplayTypeName)
         if let resolutionLabel {
             label = label + Text(verbatim: " — ") + Text(verbatim: resolutionLabel)
@@ -302,8 +279,6 @@ struct HistoryRow: View {
         NSWorkspace.shared.activateFileViewerSelecting([folder])
     }
 
-    /// Plain scenes carry no badge — only hard blockers ("Won't run") and
-    /// missing dependencies ("Needs deps").
     private var compatibilityBadge: (titleKey: LocalizedStringKey, tint: Color, accessibility: Text)? {
         switch entry.origin.originalType {
         case .video, .web, .unknown:
@@ -323,7 +298,6 @@ struct HistoryRow: View {
 }
 
 extension WPEType {
-    /// Shared by cards, inspectors, and drag previews.
     var symbolName: String {
         switch self {
         case .video: return "play.rectangle.fill"

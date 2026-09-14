@@ -124,10 +124,7 @@ extension WPEMetalSceneRenderer {
         return stableFrame
     }
 
-    /// Live ancestor-origin delta for a particle system — the authored seed is
-    /// already baked into the particle transform. UNFLIPPED: inputs and the channel
-    /// it rides (`projection.padding`, divided by `halfHeight` without negation in
-    /// `wpe_particle_vertex`) are all Y-up; negating Y inverted 3509243656/3448877775.
+    /// UNFLIPPED: inputs and the channel it rides (`projection.padding`, divided by `halfHeight` without negation in `wpe_particle_vertex`) are all Y-up; negating Y would invert the delta.
     static func particleHostOriginDelta(
         now: SIMD3<Double>,
         seed: SIMD3<Double>
@@ -159,8 +156,6 @@ extension WPEMetalSceneRenderer {
         sceneScriptIntroPhaseAlignPending = false
     }
 
-    /// Frame/property traversals commit against whichever exact token is
-    /// current at the load-state linearization point.
     @discardableResult
     func finishCurrentSceneScriptVideoCommands() -> Bool {
         finishSceneScriptVideoCommands { commit in
@@ -212,9 +207,7 @@ extension WPEMetalSceneRenderer {
         }
     }
 
-    /// The authorization owner invokes `commit` while holding load-state ->
-    /// token locks. Buffer finish(true), every AVPlayer mutation, and phase
-    /// alignment therefore share one indivisible completion permission.
+    /// Buffer finish(true), every AVPlayer mutation, and phase alignment share one indivisible completion permission.
     private func finishSceneScriptVideoCommands(
         authorizingWith authorize: (_ commit: () -> Void) -> Bool
     ) -> Bool {
@@ -265,10 +258,7 @@ extension WPEMetalSceneRenderer {
         loopPhaseSource = loop
         let token = introPhaseToken
         guard let actor = displayActor else { return }
-        // Measure off-actor from the (Sendable) URLs, then apply on the actor.
-        // `introPhaseToken` is bumped by every reload/invalidate, so a matching
-        // token already implies `introPhaseSource`/`loopPhaseSource` are still
-        // the pair we measured — the old `===` identity checks were redundant.
+        // `introPhaseToken` is bumped by every reload/invalidate, so a matching token already implies `introPhaseSource`/`loopPhaseSource` are still the pair we measured — identity checks would be redundant.
         Task { [actor] in
             let offset = await WPEVideoPhaseOffset.measure(introURL: introURL, loopURL: loopURL)
             await actor.applyIntroLoopOffset(offset, token: token, scriptLoadToken: scriptLoadToken)
@@ -338,9 +328,7 @@ extension WPEMetalSceneRenderer {
 }
 
 extension WPEMetalSceneRenderer.LiveScriptTransforms {
-    /// Authored animation remains live after SceneScript fails. Frozen script
-    /// values are overlaid last because scripts are the authority only for
-    /// objects they explicitly drive.
+    /// Authored animation remains live after SceneScript fails. Frozen script values are overlaid last because scripts are the authority only for objects they explicitly drive.
     static func resolving(
         authored: Self,
         script: Self

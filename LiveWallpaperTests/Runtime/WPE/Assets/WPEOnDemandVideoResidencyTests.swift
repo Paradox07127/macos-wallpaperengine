@@ -4,10 +4,6 @@ import LiveWallpaperProWPE
 import Testing
 @testable import LiveWallpaper
 
-/// The two halves of the on-demand video release decision, exercised without a
-/// Metal device: the load-time consumer graph and the per-frame visibility
-/// aggregate. Both are the exact functions `indexOnDemandVideoLayers` and
-/// `reconcileVideoResidency` call.
 @Suite("WPE on-demand video residency")
 struct WPEOnDemandVideoResidencyTests {
     private static let videoKey = "materials/video/clip.mp4"
@@ -63,7 +59,6 @@ struct WPEOnDemandVideoResidencyTests {
         )
     }
 
-    /// The two production entry points, run back to back the way a frame does.
     private static func neededKeys(_ layers: [WPEPreparedRenderLayer]) -> Set<String> {
         let graph = WPEMetalSceneRenderer.onDemandVideoKeysByConsumerLayer(
             layers: layers,
@@ -101,9 +96,8 @@ struct WPEOnDemandVideoResidencyTests {
             Self.pass("bg.0", source: .image("bg.png"), target: .scene),
         ])
 
-        // The retired predicate — "every pass targets .scene" — rejects this layer,
-        // which is why the predecessor never indexed the video and it decoded at
-        // full rate while hidden.
+        // 不是废话:这个 layer 不满足“每个 pass 都 target .scene”的形状,
+        // 以此为判据的实现根本不会索引到这个视频。
         #expect(!video.passes.allSatisfy { pass in
             if case .scene = pass.pass.target { return true }
             return false
@@ -111,9 +105,8 @@ struct WPEOnDemandVideoResidencyTests {
         #expect(Self.neededKeys([video, background]).isEmpty)
     }
 
-    /// Anti-false-release control. A judgement that only looks at the video
-    /// layer's own visibility releases the source here and the visible overlay
-    /// samples a 1×1 placeholder — a black block, worse than the wasted decode.
+    /// 反误释放对照组:只看视频层自身可见性的判断会在这里释放源,
+    /// 可见的 overlay 就采到占位纹理。
     @Test("A hidden video layer whose FBO a VISIBLE layer samples is NOT releasable")
     func hiddenVideoFeedingAVisibleConsumerIsNotReleasable() {
         let video = Self.layer("video", visible: false, passes: [
@@ -141,7 +134,6 @@ struct WPEOnDemandVideoResidencyTests {
         ])
 
         #expect(Self.neededKeys([video, middle, tail]) == [Self.videoKey])
-        // Hide the tail and the whole chain is unobservable again.
         let hiddenTail = Self.layer("tail", visible: false, passes: tail.passes)
         #expect(Self.neededKeys([video, middle, hiddenTail]).isEmpty)
     }
@@ -153,7 +145,7 @@ struct WPEOnDemandVideoResidencyTests {
             Self.pass("video.1", source: .image(Self.videoKey), target: .fbo(name: "_rt_Two")),
             Self.pass("video.2", source: .fbo("_rt_Two"), target: .scene),
         ])
-        // Samples only the second FBO; there is no "unique writer" to key off.
+        // 没有“唯一写者”可以作为键。
         let overlay = Self.layer("overlay", visible: true, passes: [
             Self.pass("overlay.0", source: .fbo("_rt_Two"), target: .scene),
         ])
@@ -177,9 +169,8 @@ struct WPEOnDemandVideoResidencyTests {
 
     @Test("A hidden group child's layer-group write does not propagate to the group parent")
     func layerGroupWritesDoNotPropagate() {
-        // WPEMetalRenderExecutor skips a hidden layer's `_rt_layerGroup_*` pass for
-        // the same reason it skips its `.scene` pass: that pass IS the child's
-        // visible output.
+        // 隐藏层的 `_rt_layerGroup_*` pass 就是它的可见输出,executor 会像
+        // 跳过 `.scene` 一样跳过它。
         let video = Self.layer("video", visible: false, passes: [
             Self.pass("video.0", source: .image(Self.videoKey), target: .fbo(name: "_rt_layerGroup_g")),
         ])
@@ -257,8 +248,7 @@ struct WPEOnDemandVideoResidencyTests {
 
     // MARK: - Edge losses that release a texture a visible layer still samples
 
-    /// A layer can bind one video as its source and another in a shader slot.
-    /// Indexing only the first left the second layer's consumer edge missing.
+    /// 一个 layer 可以把一个视频作为 source、另一个绑在 shader 槽上。
     @Test("A visible layer sampling two videos keeps both resident")
     func aLayerSamplingTwoVideosKeepsBoth() {
         let otherKey = "materials/video/other.mp4"
@@ -268,7 +258,7 @@ struct WPEOnDemandVideoResidencyTests {
         let hidden = Self.layer("hiddenOther", visible: false, passes: [
             Self.pass("hiddenOther.0", source: .image(otherKey), target: .scene),
         ])
-        // `both` samples videoKey as its source AND otherKey in a shader slot.
+        // otherKey 绑在 shader 槽上,不是该层的 source。
         let graph = WPEMetalSceneRenderer.onDemandVideoKeysByConsumerLayer(
             layers: [visible, hidden],
             videoKeyByLayerID: ["both": [Self.videoKey, otherKey], "hiddenOther": [otherKey]]
@@ -288,9 +278,8 @@ struct WPEOnDemandVideoResidencyTests {
         let hiddenVideo = Self.layer("video", visible: false, passes: [
             Self.pass("video.0", source: .image(Self.videoKey), target: .fbo(name: "_rt_Feed")),
         ])
-        // `.previous` is the ONLY link: naming `_rt_Feed` in a source too would
-        // make the edge exist without the `.previous` handling, and the test
-        // would pass against the old code (it did, until a mutation run caught it).
+        // `.previous` 必须是唯一的连边:在 source 里也写 `_rt_Feed` 会让这条边
+        // 绕过 `.previous` 处理而存在。
         let visible = Self.layer("consumer", visible: true, passes: [
             Self.pass("consumer.0", source: .previous, target: .fbo(name: "_rt_Feed")),
         ])
@@ -314,8 +303,6 @@ struct WPEOnDemandVideoResidencyTests {
             layers: [hiddenTemplate],
             keysByConsumerID: graph
         )
-        // The clone is appended to the frame pipeline after indexing, so it is
-        // absent from `graph` and only reachable through the image path.
         let clone = Self.layer("created:1", visible: true, imagePath: templatePath, passes: [
             Self.pass("created:1.0", source: .image(Self.videoKey), target: .scene),
         ])
@@ -334,8 +321,8 @@ struct WPEOnDemandVideoResidencyTests {
         ).isEmpty)
     }
 
-    /// The executor strips one `_rt_` and then matches, so `_rt__rt_Feed` resolves
-    /// a writer's `_rt_Feed`. Stripping only once keyed them apart.
+    /// executor 先剥掉一层 `_rt_` 再匹配,所以 `_rt__rt_Feed` 能解析到
+    /// 写者的 `_rt_Feed`。
     @Test("A doubled _rt_ prefix still matches its writer")
     func doubledRuntimePrefixMatches() {
         let hiddenVideo = Self.layer("video", visible: false, passes: [

@@ -23,7 +23,6 @@ extension WPEShaderTranspiler {
         }.joined(separator: "\n")
     }
 
-    /// Apply token-level substitutions for the GLSL→MSL gap.
     static func applySubstitutions(
         _ source: String,
         rewriteProgramScopeConsts: Bool = true,
@@ -90,11 +89,7 @@ extension WPEShaderTranspiler {
         return s
     }
 
-    /// GLSL leaves `smoothstep(edge0, edge1, x)` undefined when the two edges
-    /// are equal. Several WPE audio shaders intentionally collapse smoothing to
-    /// zero at rest; Metal can turn the resulting division by zero into NaNs
-    /// that then pollute premultiplied alpha. Route calls through a finite helper
-    /// that behaves like a hard threshold for degenerate edges.
+    /// GLSL `smoothstep` is undefined when the edges are equal; Metal can turn that 0/0 into NaNs. Route through a hard-threshold helper.
     private static func rewriteSmoothstepCalls(_ source: String) -> String {
         let pattern = #"(?<![:A-Za-z0-9_])smoothstep\s*\("#
         guard let regex = try? NSRegularExpression(pattern: pattern) else {
@@ -207,9 +202,7 @@ extension WPEShaderTranspiler {
         }
     }
 
-    /// GLSL permits writable globals as per-fragment scratch state; MSL rejects
-    /// non-`constant` program-scope variables. Move simple scratch declarations
-    /// into `wpe_translated_fragment` and thread them through helper references.
+    /// GLSL writable globals are per-fragment scratch; MSL rejects non-`constant` program-scope variables, so they move into the fragment and are threaded.
     static func extractProgramScopeMutableDeclarations(
         from source: String
     ) -> (source: String, declarations: [ProgramScopeMutableDecl]) {
@@ -285,10 +278,7 @@ extension WPEShaderTranspiler {
         )
     }
 
-    /// Some WPE workshop shaders use HLSL-style inference in local declarations,
-    /// e.g. `float pointer = g_PointerPosition.xy * speed;`. Infer the MSL type
-    /// for obvious vector expressions, but leave texture samples alone because
-    /// `texture(...).r` style scalar extraction is a separate compatibility rule.
+    /// Infer MSL type for obvious vector expressions; leave texture samples alone — `texture(...).r` is a separate rule.
     private static func rewriteFloatAssignmentsFromVectorExpressions(_ source: String) -> String {
         let pattern = #"\bfloat\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([^;\n]*(?:\.[xyzwrgba]{2,4}|float[234]\s*\()[^;\n]*);"#
         guard let regex = try? NSRegularExpression(pattern: pattern) else {
@@ -384,9 +374,7 @@ extension WPEShaderTranspiler {
     /// Metal texture2d sampling requires float2 UVs. WPE often carries extra
     /// UV data in zw and passes the full v_TexCoord vector to texture().
     private static func rewriteTexCoordTextureSampleUVFallback(_ source: String) -> String {
-        // Also narrow the 3-arg LOD form `.sample(linearSampler, v_TexCoord, level(lod))`,
-        // not just the 2-arg form, so vec3/vec4 v_TexCoord shaders that sample with an
-        // explicit LOD still resolve to a float2 coordinate.
+        // Also narrow the 3-arg LOD form, not just the 2-arg form, so vec3/vec4 v_TexCoord with explicit LOD still becomes float2.
         let pattern = #"(\.sample\s*\(\s*linearSampler\s*,\s*)v_TexCoord(\s*(?:,\s*level\s*\([^;\n]+\))?\))"#
         guard let regex = try? NSRegularExpression(pattern: pattern) else {
             return source
@@ -471,7 +459,6 @@ extension WPEShaderTranspiler {
         )
     }
 
-    /// Rename GLSL identifiers that are legal in WPE shaders but reserved by Metal.
     private static func rewriteReservedIdentifiers(_ source: String) -> String {
         var result = wordReplace(source, find: "kernel", replace: "kernelValues")
         result = wordReplace(result, find: "or", replace: "orValue")
@@ -669,10 +656,7 @@ extension WPEShaderTranspiler {
         return depth == 0
     }
 
-    /// GLSL allows initializing a local array by copying another array
-    /// (`float left[N] = g_AudioSpectrum32Left;`), but MSL requires an initializer list.
-    /// Bind a reference instead (`thread float (&left)[N] = g_AudioSpectrum32Left;`) — the local
-    /// is read-only here, so an alias is equivalent and avoids the (illegal) copy.
+    /// GLSL array copy-init is illegal in MSL; bind a `thread T (&name)[N]` alias instead — the local is read-only here.
     private static func rewriteArrayCopyInitialization(_ source: String) -> String {
         let typePattern = #"(?:float|int|uint|bool)(?:[234])?"#
         let pattern = #"(?m)^([ \t]*)("# + typePattern + #")\s+([A-Za-z_]\w*)\s*\[\s*([A-Za-z_0-9]+)\s*\]\s*=\s*([A-Za-z_]\w*)\s*;"#
@@ -685,10 +669,7 @@ extension WPEShaderTranspiler {
         )
     }
 
-    /// MSL array subscripts must be integers, but WPE shaders routinely index with a `float`
-    /// loop/bin variable (`float i = floor(...); left[i]`). Wrap subscripts that use a
-    /// float-declared scalar in `int(...)`. Only bare-identifier subscripts of known float locals
-    /// are touched, so integer indices and expression subscripts are left unchanged.
+    /// Wrap bare-identifier subscripts of known float locals in `int(...)`; leave integer and expression subscripts unchanged.
     private static func rewriteFloatArraySubscripts(_ source: String) -> String {
         let floatDeclPattern = #"\bfloat\s+([A-Za-z_]\w*)\s*="#
         let nonFloatDeclPattern = #"\b(?:int|uint|bool|float[234]|int[234]|uint[234]|bool[234])\s+([A-Za-z_]\w*)\b"#
@@ -703,9 +684,7 @@ extension WPEShaderTranspiler {
                 floatVars.insert(String(source[nameRange]))
             }
         }
-        // Scope guard: this pass is name-based, not scope-aware. If a name is ALSO declared as an
-        // int/vector/bool elsewhere in the shader (e.g. one function's `float i` vs another's
-        // `for (int i)`), leave its subscripts alone rather than rewriting an unrelated int index.
+        // Name-based, not scope-aware: if the name is also declared as int/vector/bool elsewhere, leave its subscripts alone.
         var nonFloatVars: Set<String> = []
         for match in nonFloatDeclRegex.matches(in: source, range: range) {
             if let nameRange = Range(match.range(at: 1), in: source) {
@@ -729,10 +708,7 @@ extension WPEShaderTranspiler {
         return result
     }
 
-    /// WPE compiles scene shaders as GLSL translated to HLSL and built with fxc (shader model
-    /// 3), which downgrades two things Metal rejects outright to warnings: a wider vector
-    /// passed where a narrower one is expected is truncated, and a scalar is indexable as
-    /// `float1` so a second subscript on a `float[N]` element is a no-op. Workshop authors ship shaders relying on both (scene 3776778760's audio ring hits all three sites below), so emulate fxc rather than fail the pass.
+    /// fxc truncates wide-to-narrow vectors and treats a second subscript on `float[N]` as a no-op; emulate that rather than fail the pass.
     private static func rewriteHLSLImplicitConversions(
         _ source: String,
         uniforms: [WPEUniformDecl],
@@ -768,9 +744,7 @@ extension WPEShaderTranspiler {
         return narrowWideReturns(result, widths: widths)
     }
 
-    /// `float r = step(1.0, albedo);` with a vec4 `albedo` — fxc truncates the component-wise
-    /// result to the declared width, Metal refuses. Only initializers whose width can be judged
-    /// (see `expressionWidth`) are touched, so a `dot`/`length` right-hand side stays as written.
+    /// Only initializers whose width can be judged are touched, so a `dot`/`length` right-hand side stays as written.
     private static func narrowWideInitializers(_ source: String, widths: [String: Int]) -> String {
         let pattern = #"(?<![A-Za-z0-9_.])(float|float2|float3)\s+([A-Za-z_]\w*)\s*=\s*([^;\n]+);"#
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return source }
@@ -789,10 +763,7 @@ extension WPEShaderTranspiler {
         return result
     }
 
-    /// fxc truncates a too-wide argument at a call boundary as well, not only inside a builtin:
-    /// scene 3226487183's wave effect hands `ApplyBlending`'s `in float opacity` a vec3. Only
-    /// functions DEFINED in this translation unit take part, so builtins keep Metal's own overload
-    /// resolution (`mix` has its own narrowing pass above).
+    /// Only functions defined in this translation unit take part, so builtins keep Metal's own overload resolution.
     private static func narrowUserFunctionArguments(
         _ source: String,
         widths: [String: Int],
@@ -831,9 +802,7 @@ extension WPEShaderTranspiler {
         return result
     }
 
-    /// Parameter widths per function DEFINED in `source`. A name defined more than once (GLSL
-    /// allows overloads) is dropped — positional matching would pick an arbitrary signature.
-    /// A parameter whose type is not a float vector maps to 0, meaning "leave this argument alone".
+    /// A name defined more than once is dropped. A non-float-vector parameter maps to 0: leave that argument alone.
     private static func functionParameterWidths(in source: String) -> [String: [Int]] {
         // `functionDeclarations` arrives before the vec→float type substitution, so accept both.
         let pattern = #"\b(?:float[234]?|vec[234]|int|bool|void)\s+([A-Za-z_]\w*)\s*\(([^)]*)\)\s*\{"#
@@ -864,18 +833,14 @@ extension WPEShaderTranspiler {
         return table
     }
 
-    /// Builtins whose result width is their arguments' width, so they can be seen through when
-    /// judging an expression. Anything absent — `dot`, `length`, `determinant`, and every unknown —
-    /// makes the judgement bail out instead of guessing.
+    /// Result width equals argument width. Anything absent (`dot`, `length`, unknown) bails out instead of guessing.
     private static let componentWiseBuiltins: Set<String> = [
         "abs", "ceil", "clamp", "cos", "exp", "exp2", "floor", "fract", "log", "log2", "max", "min",
         "mix", "mod", "fmod", "normalize", "pow", "reflect", "round", "saturate", "sign", "sin",
         "sqrt", "step", "tan", "trunc", "wpe_smoothstep"
     ]
 
-    /// Widest vector an expression can evaluate to, or nil when it cannot be judged from
-    /// identifiers alone — a call that changes the width (`dot`, `length`) bails out rather than
-    /// guess, while a component-wise builtin is transparent to its arguments.
+    /// `nil` when the width cannot be judged from identifiers; a width-changing call bails rather than guess.
     private static func expressionWidth(_ expression: Substring, widths: [String: Int]) -> Int? {
         let pattern = #"([A-Za-z_]\w*)\s*(\()?(?:\.([xyzwrgba]{1,4}))?"#
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
@@ -970,9 +935,7 @@ extension WPEShaderTranspiler {
         return nil
     }
 
-    /// HLSL's `distance` accepts scalars; MSL declares only the vector overloads, so a scalar call
-    /// is ambiguous. Rewrite it to the identity `abs(a - b)`. Both operands must be a literal or a
-    /// known-scalar identifier — anything else keeps the real `distance`.
+    /// HLSL `distance` accepts scalars; MSL does not. Rewrite to `abs(a-b)` only when both operands are a literal or known scalar.
     private static func lowerScalarDistanceCalls(_ source: String, widths: [String: Int]) -> String {
         let pattern = #"\bdistance\s*\(\s*([A-Za-z_]\w*|[0-9.]+)\s*,\s*([A-Za-z_]\w*|[0-9.]+)\s*\)"#
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return source }
@@ -1006,11 +969,7 @@ extension WPEShaderTranspiler {
         String(".xyzw".prefix(width + 1))
     }
 
-    /// `spectrum[i / 4][i % 4]` on a `float[N]` uniform means `spectrum[i / 4]` under fxc. WPE's
-    /// own shaders index these arrays with a single bracket
-    /// (`assets/zcompat/scene/shaders/2084198056/Simple_Audio_Bars.frag`), so the array really is
-    /// `float[N]`, not a packed `float4[N/4]`. Genuine `float4[N]` arrays (the `audioValue`
-    /// varying) are two-dimensional for real and are never in `names`.
+    /// `spectrum[i/4][i%4]` on `float[N]` means `spectrum[i/4]` under fxc. Genuine `float4[N]` arrays are never in `names`.
     private static func dropScalarArrayInnerSubscripts(_ source: String, names: Set<String>) -> String {
         guard !names.isEmpty else { return source }
         var result = source
@@ -1115,7 +1074,6 @@ extension WPEShaderTranspiler {
         return nil
     }
 
-    /// Rewrite GLSL `inout T name` / `out T name` parameter qualifiers to Metal's `thread T& name`.
     private static func rewriteReferenceParameters(_ source: String) -> String {
         let pattern = #"\b(inout|out)\s+([A-Za-z_][A-Za-z0-9_]*(?:\d+x\d+)?)\s+([A-Za-z_][A-Za-z0-9_]*)(?=\s*[,)])"#
         guard let regex = try? NSRegularExpression(pattern: pattern) else {
@@ -1143,7 +1101,6 @@ extension WPEShaderTranspiler {
         )
     }
 
-    /// Scrub WPE fragment `out` declarations (`out vec4 out_FragColor;` and `out vec4 wpe_fragColor;`, plus their already-substituted `float4` twins) from anywhere in the source.
     static func scrubFragmentOutDeclarations(_ source: String) -> String {
         let pattern = #"out\s+(vec4|float4)\s+(wpe_fragColor|out_FragColor)\s*;\s*"#
         guard let regex = try? NSRegularExpression(pattern: pattern) else {
@@ -1157,7 +1114,6 @@ extension WPEShaderTranspiler {
         )
     }
 
-    /// Substring replacement that respects identifier boundaries.
     private static func wordReplace(_ source: String, find: String, replace: String) -> String {
         guard !find.isEmpty else { return source }
         var result = ""
@@ -1228,11 +1184,7 @@ extension WPEShaderTranspiler {
         return result
     }
 
-    /// Rewrite `textureLod(<sampler>, <uv>, <lod>)` (from WPE's `texSample2DLod`)
-    /// into Metal `<sampler>.sample(linearSampler, <uv>, level(<lod>))`. `level()`
-    /// is the MSL explicit-LOD specifier; without this the literal `textureLod`
-    /// survives and `makeLibrary` fails. Runs before `rewriteTextureCalls` so the
-    /// `texture(` pass never sees `textureLod`.
+    /// `level()` is the MSL explicit-LOD specifier. Runs before `rewriteTextureCalls` so the `texture(` pass never sees `textureLod`.
     private static func rewriteTextureLodCalls(
         _ source: String,
         premultipliedInputSlots: Set<Int> = []
@@ -1270,9 +1222,7 @@ extension WPEShaderTranspiler {
                        firstComma != lodComma,
                        cursor < source.endIndex {
                         let argStart = source.index(index, offsetBy: needle.count)
-                        // Recurse on uv/lod so a textureLod nested inside another
-                        // textureLod's arguments is also rewritten (the sampler arg is
-                        // always a plain identifier and cannot nest a call).
+                        // Recurse on uv/lod so a nested textureLod is rewritten; the sampler arg is a plain identifier and cannot nest.
                         let sampler = source[argStart..<firstComma]
                             .trimmingCharacters(in: .whitespacesAndNewlines)
                         let uv = rewriteTextureLodCalls(
@@ -1299,7 +1249,6 @@ extension WPEShaderTranspiler {
         return result
     }
 
-    /// Rewrite `texture(<sampler>, <uv>)` calls (already canonicalised by the preprocessor) into Metal `<sampler>.sample(linearSampler, uv)` form.
     private static func rewriteTextureCalls(
         _ source: String,
         premultipliedInputSlots: Set<Int> = []
@@ -1335,9 +1284,7 @@ extension WPEShaderTranspiler {
                     if let comma = commaIndex, cursor < source.endIndex {
                         let argStart = source.index(index, offsetBy: needle.count)
                         let sampler = source[argStart..<comma].trimmingCharacters(in: .whitespacesAndNewlines)
-                        // Recurse on the uv arg so a `texture(…)` nested inside it is
-                        // also rewritten (Metal has no free-function `texture`). The
-                        // sampler arg is always a bare identifier and cannot nest.
+                        // Recurse on the uv arg so a nested `texture(…)` is rewritten; the sampler arg cannot nest.
                         let uv = rewriteTextureCalls(
                             String(source[source.index(after: comma)..<cursor]),
                             premultipliedInputSlots: premultipliedInputSlots

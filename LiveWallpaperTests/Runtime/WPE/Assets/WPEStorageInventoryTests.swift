@@ -18,10 +18,6 @@ struct WPEStorageInventoryTests {
         #expect(inventory.engineAssetsURL == directory)
     }
 
-    /// A user-sized Steam library is unbounded work, so the walk stops at a budget
-    /// and the totals become lower bounds. Nothing reads a flag for that — the
-    /// warning in the log is the only signal — so what is pinned here is that the
-    /// budget actually stops the walk rather than being ignored.
     @Test("A budget smaller than the tree stops the walk short")
     func budgetStopsTheWalkShort() async throws {
         let directory = try makeFixture(fileCount: 40, bytesPerFile: 16)
@@ -35,8 +31,6 @@ struct WPEStorageInventoryTests {
         #expect(capped.engineAssetsBytes > 0, "the budget stopped the walk before it read anything")
     }
 
-    /// Cancellation is observed before the first entry is read, so a superseded
-    /// pass cannot keep spending IO after a newer one has started.
     @Test("A cancelled task stops the walk before it reads an entry")
     func cancelledWalkStopsImmediately() async throws {
         let directory = try makeFixture(fileCount: 40, bytesPerFile: 16)
@@ -56,12 +50,6 @@ struct WPEStorageInventoryTests {
         #expect(await task.value == 0)
     }
 
-    /// One pass measures two independent trees. The engine-assets root is a
-    /// single app-managed directory; the Steam root grows with the user's
-    /// library. Spending one shared counter on the first left the second — the
-    /// number the dashboard headlines — reading zero wallpapers on a library
-    /// that has them, which is worse than a lower bound because it looks like
-    /// an empty library rather than an incomplete measurement.
     @Test("A large engine-assets tree does not starve the workshop walk")
     func engineAssetsDoNotStarveProjects() async throws {
         let assets = try makeFixture(fileCount: 40, bytesPerFile: 16)
@@ -80,8 +68,6 @@ struct WPEStorageInventoryTests {
         #expect(inventory.projectsTotalBytes > 0)
     }
 
-    /// `FileManager.enumerator(at:)` yields nothing when the root itself is a
-    /// symlink, and the engine-assets root comes from a user-picked folder.
     @Test("A symlink as the root still measures the tree behind it")
     func symlinkRootIsMeasured() throws {
         let directory = try makeFixture(fileCount: 4, bytesPerFile: 16)

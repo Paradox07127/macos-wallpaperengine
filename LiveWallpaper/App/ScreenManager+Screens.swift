@@ -108,7 +108,6 @@ extension ScreenManager {
         notifyWallpaperSessionChanged()
     }
 
-    /// Clear only one wallpaper type for this screen — drops that type's saved state (saved video bookmark, saved HTML source, etc.).
     func clearWallpaperOfType(_ type: WallpaperType, for screen: Screen) {
         guard var config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint) else { return }
 
@@ -164,12 +163,10 @@ extension ScreenManager {
         screen.resetRuntimeSession()
         resetPlaybackStateMachine(for: screen)
         playbackCoordinator.refreshVideoAudioLeadership()
-        // Refresh HTML audio leadership after tearing down a leader session.
         htmlCoordinator.refreshAudioLeadership()
         refreshAppNapAssertion()
     }
 
-    /// App-termination teardown: synchronously tears down every render session (each `cleanup()` pauses its AVPlayer, releases its WKWebView / Metal renderer, and closes its window) and stops lifecycle observers.
     func tearDownForTermination() {
         guard !isTerminating else { return }
 
@@ -216,7 +213,6 @@ extension ScreenManager {
     }
     
 
-    /// Light launch-time pass: prunes configurations whose local resource bookmark is no longer resolvable.
     func pruneInvalidConfigurationsIfNeeded() {
         guard !isTerminating else { return }
         persistence.pruneInvalidConfigurations()
@@ -282,8 +278,6 @@ extension ScreenManager {
         }
     }
 
-    /// Applies a configuration proposal transactionally: persistence is delayed
-    /// until the prepared candidate still matches the screen's expected session.
     func restoreProposedWallpaperSession(
         for screen: Screen,
         configuration: ScreenConfiguration,
@@ -474,7 +468,6 @@ extension ScreenManager {
         Logger.info("Reset display settings for screen \(screen.id)", category: .screenManager)
     }
 
-    /// Copies the active wallpaper + per-screen settings from `source` onto every other registered screen, restoring each runtime session so the new content shows immediately.
     func applyConfigurationToAllDisplays(from source: Screen) {
         guard !isTerminating,
               screens.count > 1,
@@ -513,10 +506,7 @@ extension ScreenManager {
         Logger.notice("All screens reloaded", category: .screenManager)
     }
 
-    /// Move per-display settings from a panel's pre-UUID key to its current one.
-    /// Only panels that report EDID serial 0 have a key change at all; this runs
-    /// on every refresh so a display that was unplugged during the upgrade still
-    /// gets migrated the first time it comes back.
+    /// Only panels that report EDID serial 0 have a key change at all; this runs on every refresh so a display that was unplugged during the upgrade still gets migrated the first time it comes back.
     private func migrateLegacyDisplayIdentities(of newScreens: [Screen]) {
         let mappings: [LegacyFingerprintMapping] = newScreens.compactMap { screen in
             guard let legacy = screen.legacyDisplayFingerprint else { return nil }
@@ -539,9 +529,7 @@ extension ScreenManager {
         for screen in newScreens {
             guard let legacy = screen.legacyDisplayFingerprint else { continue }
             configurationStore.migrateFingerprint(from: legacy, to: screen.displayFingerprint, preferring: screen.id)
-            // Without this the saved entry keeps the pre-UUID key, matches
-            // neither by (ID, fingerprint) nor by fingerprint, and the user's
-            // sidebar order silently resets to system order.
+            // Without this the saved entry keeps the pre-UUID key, matches neither by (ID, fingerprint) nor by fingerprint, and the user's sidebar order silently resets to system order.
             sidebarOrder = SidebarDisplayOrder.rekeyed(
                 sidebarOrder, displayID: screen.id, from: legacy, to: screen.displayFingerprint
             )
@@ -558,9 +546,7 @@ extension ScreenManager {
         }
     }
 
-    /// Migrates every value keyed by a legacy fingerprint to its current-key counterpart. Two-phase so a legacy key shared by multiple screens (two
-    /// same-model panels both reporting EDID serial 0) is cloned to every mapped current key instead of being consumed by whichever screen is processed first —
-    /// existing current-key values always win, and legacy keys are only dropped after all clones are assigned.
+    /// Two-phase so a legacy key shared by multiple screens is cloned to every mapped current key instead of being consumed by the first screen — existing current-key values always win.
     nonisolated static func migrateLegacyFingerprintKeys<Value>(
         _ dict: [String: Value],
         mappings: [LegacyFingerprintMapping]

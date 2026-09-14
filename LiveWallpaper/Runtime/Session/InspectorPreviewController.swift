@@ -58,7 +58,6 @@ final class InspectorPreviewController {
     }
 
     deinit {
-        // deinit backstop if cleanup() skipped — cancels the 500 ms position poll.
         positionTask?.cancel()
         posterTask?.cancel()
     }

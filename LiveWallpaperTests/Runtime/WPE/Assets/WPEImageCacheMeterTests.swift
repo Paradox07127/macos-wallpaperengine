@@ -2,9 +2,6 @@ import Foundation
 import Testing
 @testable import LiveWallpaper
 
-/// A plain, non-`NSObject` final class — the same shape as the real cached
-/// values (`WPEPreviewDecodedImage`, `CGImageBox`), so these tests also exercise
-/// identity surviving the round trip out through `NSCacheDelegate`'s `Any`.
 private final class Box {}
 
 @Suite("WPEImageCacheMeter")
@@ -16,7 +13,6 @@ struct WPEImageCacheMeterTests {
         return cache
     }
 
-    /// Pins: live bytes are the exact sum of the costs handed to `recordInsert`.
     @Test("Live bytes equal the sum of the inserted costs")
     func liveBytesEqualTheSumOfInsertedCosts() {
         let accountant = WPEImageCacheAccountant()
@@ -40,10 +36,7 @@ struct WPEImageCacheMeterTests {
         withExtendedLifetime(boxes) {}
     }
 
-    /// Pins: after `NSCache` evicts, live bytes equal the costs of exactly the
-    /// entries still in the cache. Policy-independent — it reads the real
-    /// survivors rather than assuming which ones `NSCache` kept — so it catches
-    /// both a missed subtraction and a subtraction of the wrong entry's cost.
+    /// 读真实幸存者,不假设 NSCache 留下了哪几条:它的淘汰策略不是契约。
     @Test("Eviction subtracts exactly the cost that was inserted")
     func evictionSubtractsExactlyWhatWasInserted() {
         let accountant = WPEImageCacheAccountant()
@@ -73,10 +66,6 @@ struct WPEImageCacheMeterTests {
         withExtendedLifetime(boxes) {}
     }
 
-    /// Pins the two removal paths the accounting depends on. Apple's wording is
-    /// only "about to be evicted or removed"; that both explicit paths report
-    /// was measured on macOS 27. If a future macOS stops reporting one of them,
-    /// live bytes silently become an upper bound — this test is that canary.
     @Test("Explicit removal reports through the eviction delegate")
     func explicitRemovalReportsThroughTheDelegate() {
         let accountant = WPEImageCacheAccountant()
@@ -107,8 +96,7 @@ struct WPEImageCacheMeterTests {
         withExtendedLifetime(boxes) {}
     }
 
-    /// Pins: with the defaults key unset — the shipping state — the static shell
-    /// accumulates nothing for any cache.
+    /// defaults 键未设 = 出货默认态(meter 关)。
     @Test("The default-off meter records nothing through the static shell")
     func defaultOffMeterRecordsNothing() throws {
         try #require(!WPEImageCacheMeter.isEnabled)
@@ -127,8 +115,6 @@ struct WPEImageCacheMeterTests {
         withExtendedLifetime(box) {}
     }
 
-    /// Pins: an untouched accountant produces no line at all, and a line names
-    /// only the caches that recorded something.
     @Test("The report names only caches that recorded something")
     func reportNamesOnlyCachesThatRecordedSomething() throws {
         #expect(WPEImageCacheAccountant().report() == nil)
@@ -145,8 +131,6 @@ struct WPEImageCacheMeterTests {
         withExtendedLifetime(box) {}
     }
 
-    /// Pins: the four caches keep separate ledgers and separate counters —
-    /// draining one leaves the other three untouched.
     @Test("Each cache is accounted separately")
     func eachCacheIsAccountedSeparately() {
         func cost(of kind: WPEImageCacheKind) -> Int {
@@ -173,7 +157,6 @@ struct WPEImageCacheMeterTests {
             }
         }
 
-        // Drain exactly one cache; nothing may bleed into the other three.
         caches[WPEImageCacheKind.wallpaperThumbnail.rawValue].removeAllObjects()
 
         for kind in WPEImageCacheKind.allCases {
@@ -188,9 +171,8 @@ struct WPEImageCacheMeterTests {
         withExtendedLifetime(caches) {}
     }
 
-    /// Pins the *flag*, not the byte figure: one instance cached under two keys
-    /// is reported by `NSCache` as a single eviction, so the meter marks that
-    /// cache's live bytes as an upper bound rather than pretending to be exact.
+    /// 断言标志位而不是字节数:一个实例挂两把键只算一次淘汰,
+    /// 所以该缓存的 live bytes 只是上界。
     @Test("One instance under two keys marks the cache as an upper bound")
     func oneInstanceUnderTwoKeysMarksAnUpperBound() throws {
         let accountant = WPEImageCacheAccountant()

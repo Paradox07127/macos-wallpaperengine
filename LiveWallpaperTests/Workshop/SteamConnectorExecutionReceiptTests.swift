@@ -3,9 +3,6 @@ import Foundation
 @testable import LiveWallpaper
 import Testing
 
-/// The connector resolves which SteamCMD it runs on every operation, so the
-/// app can only ever learn the executed binary from the operation result
-/// itself — the execution receipt (`executedBinaryPath`).
 @Suite("Steam connector execution receipts")
 struct SteamConnectorExecutionReceiptTests {
     @Test("payloads from an older connector (no receipt key) still decode")
@@ -72,7 +69,6 @@ struct SteamConnectorExecutionReceiptTests {
         )
         #expect(doctor.lastExecutedBinaryPath == "/managed/steamcmd")
 
-        // A result without a receipt must not erase the last known one.
         doctor.applyCachedLoginOutcome(
             SteamCachedLoginResult(outcome: .timedOut, steamID64: nil, diagnosticTail: ""),
             username: "user",

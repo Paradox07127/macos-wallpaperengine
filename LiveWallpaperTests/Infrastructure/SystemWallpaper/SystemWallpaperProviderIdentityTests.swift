@@ -2,9 +2,6 @@ import Foundation
 @testable import LiveWallpaper
 import Testing
 
-/// An appex process outlives the bundle it was launched from, so both halves of
-/// the fix are covered here: the beat has to say who wrote it, and the writer
-/// has to notice when it is no longer the installed build.
 @Suite("System wallpaper provider identity")
 struct SystemWallpaperProviderIdentityTests {
     private func identity(
@@ -32,24 +29,17 @@ struct SystemWallpaperProviderIdentityTests {
 
     @Test("A beat from a build the app no longer ships is not ours")
     func changedBuildRejected() {
-        // The in-place-update case: Sparkle swapped the bundle, the old process
-        // kept its 120 s keep-alive running and goes on writing fresh beats.
         #expect(!beat(provider: identity(build: "41")).isFromProvider(matching: identity(build: "42")))
     }
 
     @Test("A beat from a second copy installed elsewhere is not ours")
     func changedPathRejected() {
-        // The observed case: two builds registered for one extension point,
-        // one of them out of a throwaway build directory.
         let stale = identity(path: "/private/tmp/LW-dd/Build/Products/Debug/Loomscreen.app/Contents/Extensions/P.appex")
         #expect(!beat(provider: stale).isFromProvider(matching: identity()))
     }
 
     @Test("An unstamped beat is rejected — it is the pre-stamp process still running")
     func unstampedRejected() {
-        // The 0.6.2 appex keeps its 120 s keep-alive going after an in-place
-        // update and never stamps. Accepting its beats made the app report that
-        // process's wallpaper as the shipped extension's state.
         #expect(!beat(provider: nil).isFromProvider(matching: identity()))
     }
 
@@ -69,7 +59,6 @@ struct SystemWallpaperProviderIdentityTests {
         )
         #expect(decoded.provider == original.provider)
 
-        // A payload predating the field: decoding must succeed with nil, not throw.
         let legacy = Data("""
         {"timestamp":0,"runtimeHealthy":true,"activeChoiceID":"choice"}
         """.utf8)
@@ -88,8 +77,6 @@ struct SystemWallpaperProviderIdentityTests {
 
     @Test("A process whose bundle is gone retires")
     func staleVerdictBundleGone() {
-        // `build/w5d-dd` and `build/w5d-lite-dd` on 2026-09-01: still running,
-        // no longer registered, directories deleted.
         let verdict = SystemWallpaperProviderStaleness.verdict(loadedBuild: "9", onDiskBuild: nil)
         #expect(verdict == .bundleGone)
         #expect(verdict.shouldRetire)
@@ -117,9 +104,6 @@ struct SystemWallpaperProviderIdentityTests {
     @Test("The bridge builds its observers on first connection, not on discovery")
     func observersAreDeferred() throws {
         let bridge = try RepositoryRoot.source("SystemWallpaperProvider/WallpaperXPCBridge.swift")
-        // WallpaperAgent instantiates every registered provider on each
-        // LaunchServices change; a discovery pass with no connection must not
-        // leave Darwin/NotificationCenter/IOKit observers behind.
         #expect(bridge.contains("activateObserversIfNeeded()"))
         let initBody = try #require(
             bridge.range(of: "init(store: SharedLibraryStore) {")

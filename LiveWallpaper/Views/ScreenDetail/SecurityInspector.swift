@@ -2,7 +2,6 @@ import SwiftUI
 import AppKit
 import LiveWallpaperCore
 
-/// HTML privacy + origin-trust controls for the WKWebView.
 struct SecurityInspector: View {
     var screen: Screen
     var source: HTMLSource?

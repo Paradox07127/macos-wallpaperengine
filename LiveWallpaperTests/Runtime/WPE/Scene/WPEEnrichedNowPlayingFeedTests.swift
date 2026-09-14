@@ -3,21 +3,13 @@ import Foundation
 @testable import LiveWallpaper
 import Testing
 
-/// The feed is the only now-playing path a scene wallpaper has, and it was
-/// covered only indirectly (through `WPESceneMediaEventDispatchTests`, which
-/// exercises the dispatcher on the far side). Its own three contracts —
-/// fan-out, replay, and demand ref-counting — had nothing pinning them.
-///
 /// Every test builds its own feed rather than touching `.shared`, and runs with
-/// `startsRealSourceForTesting = false`: a real `NowPlayingSource` reads the
-/// user's library, which a headless shard must never do.
+/// `startsRealSourceForTesting = false`: a real `NowPlayingSource` reads the user's library, which a headless shard must never do.
 @MainActor
 @Suite("Scene now-playing feed: fan-out, replay, demand")
 struct WPEEnrichedNowPlayingFeedTests {
-    /// The feed's handler is `@Sendable`, so a test cannot append to a local
-    /// `var` from inside it. Deliveries are in fact synchronous on the main
-    /// actor, but the type system does not know that — the lock is what makes
-    /// the `@unchecked Sendable` sound rather than an assumption about timing.
+    /// The feed's handler is `@Sendable`, so a test cannot append to a local `var` from inside it;
+    /// the lock — not the main-actor timing — is what makes this `@unchecked Sendable` sound.
     private final class Recorder: @unchecked Sendable {
         private let lock = NSLock()
         private var entries: [(ordinal: UInt64, title: String)] = []

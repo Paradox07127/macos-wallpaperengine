@@ -17,8 +17,6 @@ struct ContentView: View {
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var isReloading = false
     @State private var historicalFailure: WallpaperFailureSnapshot?
-    /// Published into the environment here rather than read by each grid, so the
-    /// five library pages cannot disagree about tile size.
     @AppStorage(LibraryTileSize.preferencesKey, store: .appScoped())
     private var libraryTileSizeRaw = LibraryTileSize.medium.rawValue
     private let initialAddWallpaperPromptKind: String?
@@ -208,7 +206,6 @@ struct ContentView: View {
         lastAppNavigation = navigation
     }
 
-    /// Use system display order so the fallback selects the primary display.
     private func selectDefaultDisplayIfNeeded() {
         guard !isSettingsMode else { return }
         guard let fallback = screenManager.screens.first else { return }
@@ -217,7 +214,6 @@ struct ContentView: View {
         case nil:
             selectedNavigation = .screen(fallback.id)
         case let .screen(selectedID) where !screenManager.screens.contains(where: { $0.id == selectedID }):
-            // Unplugged, or a stale id carried over from a previous session.
             selectedNavigation = .screen(fallback.id)
         default:
             break
@@ -254,7 +250,6 @@ struct ContentView: View {
         }
     }
 
-    /// Share file classification with drop targets and onboarding.
     private func promptAnyWallpaperSource(for screen: Screen) {
         NSApp.activate(ignoringOtherApps: true)
         let panel = NSOpenPanel()
@@ -296,8 +291,7 @@ struct ContentView: View {
             #endif
         case .sceneLibrary(let folderURL):
             #if !LITE_BUILD
-            // A library root has no single wallpaper to apply — it populates the
-            // Workshop library, which is what the folder button there did.
+            // A library root has no single wallpaper to apply — it populates the Workshop library.
             WorkshopFolderImportCoordinator.shared.importProjects(from: folderURL)
             selectAppNavigation(.workshop)
             #endif
@@ -312,8 +306,6 @@ struct ContentView: View {
         }
     }
 
-    /// The picker is already dismissed by the time we know, so a beep would be
-    /// the user's only feedback that nothing happened.
     private func reportImportFailure(url: URL, message: String) {
         let alert = NSAlert()
         alert.alertStyle = .warning
@@ -328,7 +320,7 @@ struct ContentView: View {
 
     private var sceneCapable: Bool { featureCatalog.isEnabled(.scene) }
 
-    /// Symbol effect is click feedback only — `reloadAllScreens()` is fire-and-forget.
+    /// Symbol effect is click feedback only — the reload is fire-and-forget.
     private func invokeReload() {
         guard !isReloading, let target = toolbarTargetScreen() else { return }
         withAnimation(DesignTokens.motion(reduceMotion, .snappy(duration: 0.2))) {
@@ -343,7 +335,6 @@ struct ContentView: View {
         }
     }
 
-    /// The display the toolbar acts on: the selected one, else the first.
     private func toolbarTargetScreen() -> Screen? {
         if case .screen(let id) = selectedNavigation,
            let match = screenManager.screens.first(where: { $0.id == id }) {
@@ -494,7 +485,6 @@ struct Sidebar: View {
         )
     }
 
-    /// Via `wallpaperSummary` so Usage chip tracks the same observation channel as `ScreenRow`.
     private var activeWallpaperDisplayCount: Int {
         screenManager.screens.reduce(0) { acc, screen in
             acc + (screenManager.wallpaperSummary(for: screen).activity == .active ? 1 : 0)
@@ -544,8 +534,6 @@ struct SidebarSectionHeader: View {
 
 // MARK: - Display rename
 
-/// Right-click rename for a display. Shared by the sidebar row and the Settings
-/// arrangement map so both offer the same two actions.
 struct ScreenRenameMenu: ViewModifier {
     let screen: Screen
 
@@ -656,8 +644,6 @@ struct ScreenRow: View {
         }
     }
 
-    /// Error / paused / policy-suspended badge over the type icon. Active and
-    /// idle states stay clean — the badge only marks something needing attention.
     private func statusBadge(for summary: WallpaperSessionSummary) -> (symbol: String, color: Color)? {
         switch summary.activity {
         case .error:

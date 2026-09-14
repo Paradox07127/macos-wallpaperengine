@@ -1,8 +1,7 @@
 import CoreGraphics
 
-/// Computes the effective mute state for video sessions that are rendering
-/// the same media on multiple displays. User intent stays persisted per
-/// screen; this policy only prevents duplicate runtime audio output.
+/// Effective mute for the same media on multiple displays. User intent stays persisted
+/// per screen; this only prevents duplicate runtime audio output.
 public enum VideoAudioLeadershipPolicy {
     public struct Entry: Equatable, Sendable {
         public let screenID: CGDirectDisplayID

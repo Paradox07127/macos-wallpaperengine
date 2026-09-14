@@ -313,7 +313,7 @@ struct WPEMetalRuntimeUniformsTests {
         let values = prepared.layers[0].passes[0].uniformValues
 
         #expect(values["g_Color"]?.vectorValue == [1, 0, 0, 1])
-        // Frame-global uniforms live in the frame context now, not the pass dict.
+        /// Frame-global uniforms live in the frame context, not the pass dict.
         func frame(_ name: String) -> WPESceneShaderConstantValue? {
             frameUniforms.value(named: name, passID: "solid.0")
         }
@@ -536,9 +536,8 @@ struct WPEMetalRuntimeUniformsTests {
         ])
     }
 
-    /// Solid passes bind `g_Color` from `uniformValues`, never from geometry.
-    /// Script overrides clear the authored animation, so without a write-through
-    /// (or the alphaAnimation rebuild trigger) the layer freezes at load color.
+    /// Solid passes bind `g_Color` from `uniformValues`, never from geometry — a
+    /// script override without a write-through would freeze the layer at load color.
     private static func solidPipeline(
         seedColor: [Double] = [1, 1, 1, 1],
         geometry: WPERenderLayerGeometry = .identity
@@ -653,9 +652,8 @@ struct WPEMetalRuntimeUniformsTests {
 
     @Test("An alpha override leaves an animated g_Color rgb still animating")
     func alphaOverrideKeepsAnimatedColorAnimating() throws {
-        // g_Color is animated as a uniform (not via geometry.colorAnimation).
-        // Writing the override through must not collapse the whole value to a
-        // static vector: the override owns .w, the animation still owns .rgb.
+        // g_Color is animated as a uniform, not via geometry.colorAnimation: the
+        // override owns .w, the animation still owns .rgb.
         let animatedColor = WPESceneShaderConstantValue.animated(
             WPESceneAnimatedValue(
                 animation: WPESceneNumericAnimation(
@@ -742,10 +740,8 @@ struct WPEMetalRuntimeUniformsTests {
         #expect(values["g_Color"]?.vectorValue == [1, 0, 0, 1])
     }
 
-    /// C1-1: a static scene must stop rebuilding the prepared tree every frame.
-    /// The layer array's buffer address IS the observable — a rebuild allocates
-    /// a fresh one — so this needs no shared counter and stays correct under
-    /// Swift Testing's parallel execution.
+    /// The layer array's buffer address IS the observable — a rebuild allocates a
+    /// fresh one — so this needs no shared counter under parallel execution.
     private static func layerBuffer(_ pipeline: WPEPreparedRenderPipeline) -> UnsafeRawPointer? {
         pipeline.layers.withUnsafeBufferPointer { UnsafeRawPointer($0.baseAddress) }
     }
@@ -798,9 +794,7 @@ struct WPEMetalRuntimeUniformsTests {
             "a scripted constant must still rebuild"
         )
 
-        // Every pass here is static; only the LAYER is time-varying. Drop
-        // `graphLayer.isTimeVarying` from the decide pass and this is the test
-        // that catches it.
+        // Every pass here is static; only the LAYER is time-varying.
         let tintAnimation = WPESceneAnimatedValue(
             animation: WPESceneNumericAnimation(
                 tracks: [[.init(frame: 0, value: 1), .init(frame: 90, value: 0)]],
@@ -827,9 +821,6 @@ struct WPEMetalRuntimeUniformsTests {
         )
     }
 
-    /// Scripts address a constant by its AUTHORED name while the pass is keyed by
-    /// the SHADER name, so an untranslated merge writes to a slot no shader reads
-    /// and the seeded value silently keeps winning.
     @Test("Scripted constants merge under the shader uniform name, not the authored one")
     func scriptedConstantsTranslateAuthoredNameToShaderUniform() {
         let pipeline = Self.pipelineWithUniform(
@@ -872,10 +863,6 @@ struct WPEMetalRuntimeUniformsTests {
         #expect(prepared.layers[0].passes[0].uniformValues["alpha"]?.numberValue == 0.5)
     }
 
-    // Windows RenderDoc capture 3448877775: same-frame g_AudioSpectrum32Left and
-    // g_AudioSpectrum16Left. WPE derives 16 bands from 32 by MAX over adjacent
-    // pairs — max-pool reproduces the captured 16-band array exactly (error 0.0)
-    // across 9 captures / 18 array pairs, mean-pool is off by 0.10–0.43.
     private static let windows32Left: [Double] = [
         0.2914999723434448, 0.16796553134918213, 0.500199556350708, 0.49108681082725525,
         0.16706208884716034, 0.320111483335495, 0.9157431721687317, 0.4100834131240845,
@@ -895,9 +882,8 @@ struct WPEMetalRuntimeUniformsTests {
 
     @Test("Audio 32→16 max-pool reproduces the Windows capture bit-for-bit")
     func audioBandsMaxPoolMatchesWindowsCapture() throws {
-        // Duplicating each 32-band value into an adjacent pair makes the 64→32
-        // stage operator-neutral (mean and max agree on equal pairs), so the
-        // 32→16 stage alone discriminates against the L1 expectation.
+        // Duplicating each value into an adjacent pair makes the 64→32 stage
+        // operator-neutral, so only the 32→16 stage discriminates.
         var spectrum64 = [Double]()
         for value in Self.windows32Left {
             spectrum64.append(value)
@@ -940,9 +926,8 @@ struct WPEMetalRuntimeUniformsTests {
             Issue.record("audio spectrum uniforms missing")
             return
         }
-        // Hoisted out of `#expect`: inside the macro's generic
-        // `__checkBinaryOperation` expansion these two `.map` closures take the
-        // 6.3.3 type checker past its 300ms limit and fail the release build.
+        // Do not fold back into `#expect`: the generic closures blow the
+        // type-checker budget and fail the release build.
         let expected32: [Double] = (0..<32).map { Double(2 * $0 + 2) }
         let expected16: [Double] = (0..<16).map { Double(4 * $0 + 4) }
         #expect(s32 == expected32)

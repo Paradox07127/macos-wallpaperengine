@@ -278,8 +278,6 @@ struct WPEShaderTranspilerTests {
         _ = try device.makeLibrary(source: result.mslSource, options: opts)
     }
 
-    /// The loop bound came straight from the combo while the spectrum arrays only
-    /// exist at 16/32/64, so `RESOLUTION 128` read 96 floats past the 32-wide array.
     @Test("An audio RESOLUTION the spectrum arrays do not come in falls back to 32")
     func audioResolutionIsClampedToAnExistingSpectrum() throws {
         let source = """
@@ -1404,10 +1402,7 @@ struct WPEShaderTranspilerTests {
         _ = try device.makeLibrary(source: result.mslSource, options: opts)
     }
 
-    /// Slot 8 is stock WPE, not an overflow: `chroma4`, `fur4` and `genericimage4` all
-    /// declare `g_Texture8`. Rejecting it skipped those passes entirely (3437487219's cloud
-    /// layer drew nothing and reported "transpiler supports slots 0–7"). The signature is
-    /// sized to the slots the shader declares, so a sparse layout still binds the top one.
+    /// Slot 8 is stock WPE, not an overflow: `chroma4`, `fur4` and `genericimage4` all declare `g_Texture8`.
     @Test("A stock slot-8 sampler is emitted, and the signature is sized to it")
     func emitsStockSlotEightSampler() throws {
         let source = """
@@ -1433,9 +1428,6 @@ struct WPEShaderTranspilerTests {
         _ = try device.makeLibrary(source: result.mslSource, options: opts)
     }
 
-    /// 16 sampler arguments is a hard Metal limit (measured on Apple M5 Pro: a 17th fails to
-    /// compile with "'sampler' attribute parameter is out of bounds"), so the transpiler
-    /// still has a ceiling — it is just no longer 8.
     @Test("Sampler slots above the Metal limit are rejected, not mis-emitted")
     func rejectsTextureSlotsAboveMetalLimit() throws {
         let source = """
@@ -2400,11 +2392,6 @@ struct WPEShaderTranspilerTests {
             shaderName: "workshop/2822917890/effects/blur_gaussian",
             preprocessedSource: source
         )
-        // RenderDoc (3554161528 bloom chain): WPE feeds the SAME g_TexelSize
-        // = 1/(3840,2160) to all eight blur passes of a chain that descends to
-        // 240x135. The old reconstruction substituted 1/g_Texture0Resolution.xy
-        // — the pass's OWN buffer — making the kernel 2x/4x/8x/16x too wide
-        // down the chain. g_TexelSize is now packed from the scene resolution.
         #expect(result.mslSource.contains(
             "v_SizeMultiplier = float2(1.0, 1.0) * (u_radius + u_radius) * 1.5 * g_TexelSize;"
         ))
@@ -2427,10 +2414,6 @@ struct WPEShaderTranspilerTests {
         ))
         _ = try device.makeLibrary(source: anamorphic.mslSource, options: opts)
 
-        // The reconstruction must no longer REQUIRE g_Texture0Resolution: WPE's own
-        // blur_gaussian declares only g_TexelSize/u_alpha/u_radius/u_ratio/u_strength
-        // (measured), so gating on a uniform WPE does not have would skip the
-        // reconstruction and fall back to screen UV.
         let withoutResolution = try WPEShaderTranspiler.translateFragment(
             shaderName: "workshop/2822917890/effects/blur_gaussian",
             preprocessedSource: source.replacingOccurrences(
@@ -2570,10 +2553,6 @@ struct WPEShaderTranspilerTests {
         #expect(result.library.makeFunction(name: "wpe_translated_fragment") != nil)
     }
 
-    /// `shaders/workshop/3605510527/effects/video.frag` (shipped inside scene 3776778760).
-    /// WPE compiles scene shaders through HLSL/fxc, which implicitly truncates float4→float3
-    /// and lets a scalar be indexed as `float1`; Metal rejects both, so this one decorative
-    /// audio ring took the whole wallpaper down.
     @Test("HLSL-lenient workshop shader (scalar double-index, mix/return truncation) compiles")
     func translatesHLSLLenientAudioRingFragment() throws {
         let source = """
@@ -2605,10 +2584,7 @@ struct WPEShaderTranspilerTests {
             shaderName: "workshop/3605510527/effects/video",
             preprocessedSource: source
         )
-        // The array is `float[64]`, not a packed `float4[16]`: WPE's own shaders index it with a
-        // single bracket (assets/zcompat/scene/shaders/2084198056/Simple_Audio_Bars.frag:161), and
-        // across the local 78-scene corpus this is the only shader that writes two. So the second
-        // subscript is HLSL's scalar-as-float1 no-op and drops out.
+        // The array is `float[64]`, not a packed `float4[16]`, so the second subscript is HLSL's scalar-as-float1 no-op and drops out.
         #expect(result.mslSource.contains("g_AudioSpectrum64Left[int(barID / 4)]"))
         #expect(!result.mslSource.contains("barID % 4"))
         let device = try #require(MTLCreateSystemDefaultDevice())
@@ -2617,9 +2593,6 @@ struct WPEShaderTranspilerTests {
         _ = try device.makeLibrary(source: result.mslSource, options: opts)
     }
 
-    /// HLSL's `distance` takes scalars; MSL only declares the vector overloads, so a scalar call
-    /// is ambiguous rather than wrong. Scene 3662499296's text-gradient effect calls
-    /// `distance(0.0, l)` on two floats.
     @Test("Scalar distance() lowers to abs(a - b); vector distance() is left alone")
     func lowersScalarDistanceCalls() throws {
         let source = """
@@ -2645,10 +2618,7 @@ struct WPEShaderTranspilerTests {
         _ = try device.makeLibrary(source: result.mslSource, options: opts)
     }
 
-    /// `frame_builder.frag` (scene 3713073223) declares `varying vec4 v_Size.xy;` — a swizzle in
-    /// the declaration, which is illegal GLSL. Every use site reads `v_Size.xy`, so declaring the
-    /// base name at the written type is what the author meant; emitting `float4 v_Size.xy = …`
-    /// was a syntax error that failed the pass.
+    /// The fixture's `in vec4 v_Size.xy;` is deliberate: real scenes ship this illegal-GLSL swizzle declaration.
     @Test("A varying declared with a swizzle suffix declares its base name")
     func parsesVaryingDeclaredWithSwizzleSuffix() throws {
         let decl = try #require(WPEVaryingDecl.parse(line: "in vec4 v_Size.xy;"))
@@ -2675,11 +2645,7 @@ struct WPEShaderTranspilerTests {
         _ = try device.makeLibrary(source: result.mslSource, options: opts)
     }
 
-    /// fxc truncates a too-wide argument at a call boundary, not just inside a builtin: scene
-    /// 3226487183's wave effect hands `ApplyBlending`'s `in float opacity` a vec3
-    /// (`t + u_WaveColor * u_WaveOpacity * mask`). The `Weigh` call is the control group — its
-    /// first argument is already a scalar produced by `dot()`, and narrowing it would emit
-    /// `float.x`, which does not compile.
+    /// The `Weigh` call is the control group — its first argument is already a scalar produced by `dot()`, and narrowing it would emit `float.x`, which does not compile.
     @Test("Too-wide arguments to a locally defined function narrow; dot()-valued ones do not")
     func narrowsArgumentsToLocallyDefinedFunctions() throws {
         let source = """
@@ -2709,11 +2675,8 @@ struct WPEShaderTranspilerTests {
             shaderName: "workshop/2546268111/effects/sine_wave_circle",
             preprocessedSource: source
         )
-        // The vec3 4th argument is truncated…
         #expect(result.mslSource.contains("u_WaveOpacity).x)"))
-        // …while the two arguments that already match their parameter width are untouched.
         #expect(result.mslSource.contains("Blend(0, scene.rgb, finalColor.rgb,"))
-        // …and an argument whose width comes from a call is left alone.
         #expect(!result.mslSource.contains("u_WaveColor)).x"))
         let device = try #require(MTLCreateSystemDefaultDevice())
         let opts = MTLCompileOptions()
@@ -2721,9 +2684,7 @@ struct WPEShaderTranspilerTests {
         _ = try device.makeLibrary(source: result.mslSource, options: opts)
     }
 
-    /// Scene 3662499296's text-gradient effect writes `float r = step(1.0, albedo)` with a vec4
-    /// `albedo`: fxc truncates the component-wise result, Metal refuses. `length` is the control
-    /// group — it reduces to a scalar, so narrowing it would emit `float.xyz` and fail to compile.
+    /// `length` is the control group — it reduces to a scalar, so narrowing it would emit `float.xyz` and fail to compile.
     @Test("A component-wise builtin narrows on assignment; a reducing builtin is left alone")
     func narrowsComponentWiseBuiltinAssignments() throws {
         let source = """
@@ -2744,7 +2705,6 @@ struct WPEShaderTranspilerTests {
         )
         #expect(result.mslSource.contains("(step(1.0, albedo)).x"))
         #expect(result.mslSource.contains("(min(albedo, float4(0.5))).xy"))
-        // `length` reduces to a scalar — its vec3 argument must not drive a narrowing.
         #expect(!result.mslSource.contains("length(albedo.rgb))."))
         let device = try #require(MTLCreateSystemDefaultDevice())
         let opts = MTLCompileOptions()
@@ -2752,11 +2712,7 @@ struct WPEShaderTranspilerTests {
         _ = try device.makeLibrary(source: result.mslSource, options: opts)
     }
 
-    /// `blur_precise_gaussian.vert` packs the per-tap blur STEP into `.zw`
-    /// (`VERTICAL ? (0, g_Scale.y/res.w) : (g_Scale.x/res.z, 0)`), not a scaled UV. Falling
-    /// through to the `float4(uv, uv)` default fed screen UV in as the step — six orders of
-    /// magnitude too large, so blur13a's taps spanned the whole frame and flattened everything
-    /// they touched (scene 3413921910's water reflection was erased this way).
+    /// `blur_precise_gaussian.vert` packs the per-tap blur STEP into `.zw`, not a scaled UV.
     @Test("blur_precise_gaussian rebuilds v_TexCoord.zw as the blur step, not screen UV")
     func rebuildsBlurPreciseGaussianStep() throws {
         let source = """
@@ -2782,9 +2738,7 @@ struct WPEShaderTranspilerTests {
             preprocessedSource: source
         )
         #expect(horizontal.mslSource.contains("g_Scale.x / g_Texture0Resolution.z"))
-        // The step must survive as `.zw`; the historical downgrade rewrote it to `.xy`.
         #expect(horizontal.mslSource.contains("blur13a(v_TexCoord.xy, v_TexCoord.zw"))
-        // The mask UV has its own aspect scale in the .vert, not raw screen UV.
         #expect(horizontal.mslSource.contains("wpe_texcoord_mask(in.uv, g_Texture2Resolution)"))
 
         let vertical = try WPEShaderTranspiler.translateFragment(
@@ -2801,12 +2755,7 @@ struct WPEShaderTranspilerTests {
         _ = try device.makeLibrary(source: vertical.mslSource, options: opts)
     }
 
-    // fluidsimulation_{curl,divergence,pressure,gradientsubtract,vorticity}.vert
-    // all derive one-texel neighbour offsets from g_Texture0Resolution:
-    // LeftTop = (uv.x−t.x, uv.y, uv.x, uv.y+t.y), RightBottom mirrored. The
-    // fragments never declare the resolution uniform themselves, and the
-    // screen-UV fallback collapsed all four taps onto the same texel — the
-    // divergence/curl of a constant field is zero, so the fluid never moved.
+    /// The fluidsimulation fragments never declare g_Texture0Resolution themselves; without the rebuild all four taps would collapse onto the same texel.
     @Test("fluidsimulation neighbour varyings rebuild one-texel offsets")
     func fluidsimulationNeighbourVaryingsRebuildTexelOffsets() throws {
         let source = """

@@ -1,7 +1,5 @@
 import SwiftUI
 
-/// Hover reveals a second title line while text remains laid out in a two-line window.
-/// A gradient avoids filtering every video frame and darkens the title background.
 public struct ThumbnailTitleBand<Leading: View, Trailing: View>: View {
     private let title: String
     private let isHovering: Bool
@@ -52,9 +50,7 @@ public struct ThumbnailTitleBand<Leading: View, Trailing: View>: View {
         .animation(DesignTokens.motion(reduceMotion, .easeOut(duration: 0.15)), value: isHovering)
     }
 
-    /// Sized to the band it backs plus a fixed fade above it. A fixed overall
-    /// height darkened far more of the picture than one or two lines of type
-    /// ever needed.
+    /// Sized to the band it backs plus a fixed fade above it, not to a fixed overall height.
     @ViewBuilder
     private var scrim: some View {
         if reduceTransparency {

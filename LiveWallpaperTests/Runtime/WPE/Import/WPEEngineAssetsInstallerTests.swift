@@ -69,8 +69,6 @@ struct WPEEngineAssetsInstallerTests {
         }
     }
 
-    /// A Steam library that already holds a populated
-    /// `steamapps/common/wallpaper_engine/assets/` — the state every Update starts from.
     @MainActor
     private func makeDoctorWithInstallOnDisk(function: String = #function) throws -> SteamCMDDoctorService {
         let scratch = try TestScratch.defaultsSuite(

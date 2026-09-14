@@ -4,17 +4,11 @@ import Foundation
 import Testing
 @testable import LiveWallpaper
 
-/// Stress the `maxRows` clamp with the text shapes a live "now playing" layer
-/// actually feeds it. Scene 3151551777 has 16 text objects at
-/// `limitrows/maxrows 1/limituseellipsis`, and its song title changes at runtime —
-/// so every track change re-enters this path with arbitrary user content.
 struct WPETextRowClampStressTests {
 
     private let font = CTFontCreateWithName("HelveticaNeue" as CFString, 48, nil)
 
-    /// Song titles are user content: emoji (surrogate pairs), combining marks,
-    /// CJK, RTL, and strings far longer than the box. A clamp that slices by
-    /// UTF-16 offset can land inside a grapheme on any of these.
+    /// Each entry is a UTF-16 hazard (surrogate pairs, combining marks, RTL): a clamp slicing by UTF-16 offset lands inside a grapheme.
     private static let titles = [
         "Hello world",
         String(repeating: "A very long English song title ", count: 12),
@@ -30,7 +24,6 @@ struct WPETextRowClampStressTests {
 
     @Test("Row clamp survives arbitrary song titles at maxrows 1 + ellipsis")
     func clampSurvivesArbitraryTitles() {
-        // Exactly scene 3151551777's authored settings.
         for title in Self.titles {
             let layout = WPETextLayoutEngine.layout(
                 text: title, font: font, maxWidth: 1000, maxRows: 1, ellipsis: true

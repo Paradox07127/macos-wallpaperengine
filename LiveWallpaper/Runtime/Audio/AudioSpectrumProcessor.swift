@@ -1,22 +1,19 @@
 import Accelerate
 import Foundation
 
-/// Alloc-free stereo FFT → 64 log-spaced bins with treble EQ + attack/release (WPE-style).
-/// Input arrives via `ingest` into an `AudioSpectrumWindowExchange` (audio thread, no FFT);
-/// analysis is pull-driven via `analyzeIfDue`, so FFT rate follows demand, capped at 120 Hz.
 /// @unchecked Sendable: the cross-thread hand-off is owned by the exchange; every field here
 /// is consumer-only, reached under the broker's snapshot lock (or single-threaded), never
 /// from the audio thread.
 final class AudioSpectrumProcessor: AudioSpectrumAnalyzing, @unchecked Sendable {
     struct Configuration: Equatable, Sendable {
         var fftSize: Int = 2048
-        // dB→[0,1] window calibrated to WPE oracle 3470764447 (narrow 32 dB for bar contrast).
+        // dB→[0,1] window (narrow 32 dB for bar contrast).
         var minDB: Float = -56
         var maxDB: Float = -24
         var gain: Float = 0.8
         var noiseFloor: Float = 0.002
         var attackTime: Float = 0.045
-        // Release 0.090 (was 0.180): more per-frame motion without single-frame flicker.
+        // Release 0.090: more per-frame motion without single-frame flicker.
         var releaseTime: Float = 0.090
         var sampleRate: Float = 48_000
         /// Log-spaced band edges (linear packing left most bars flat).
@@ -26,7 +23,6 @@ final class AudioSpectrumProcessor: AudioSpectrumAnalyzing, @unchecked Sendable 
         var eqExponent: Float = 0.30
     }
 
-    /// Precomputed magnitude range + EQ boost for one output band.
     private struct Band {
         let range: Range<Int>
         let boost: Float
@@ -35,7 +31,6 @@ final class AudioSpectrumProcessor: AudioSpectrumAnalyzing, @unchecked Sendable 
     private let configuration: Configuration
     private let fftSetup: vDSP.FFT<DSPSplitComplex>?
 
-    /// Smoothing coeffs depend on hop size — recomputed when hop changes.
     private var attackCoefficient: Float = 1
     private var releaseCoefficient: Float = 1
     private var lastHopSize: Int = 0
@@ -60,7 +55,6 @@ final class AudioSpectrumProcessor: AudioSpectrumAnalyzing, @unchecked Sendable 
 
     private let exchange: AudioSpectrumWindowExchange
 
-    /// Consumer-side analysis state; mutual exclusion is the caller's (broker lock).
     private var lastAnalyzedTotal = 0
     private var lastAnalysisNanos: UInt64 = 0
 
@@ -68,8 +62,6 @@ final class AudioSpectrumProcessor: AudioSpectrumAnalyzing, @unchecked Sendable 
     static let minAnalysisIntervalNanos: UInt64 = 8_333_333
 
     #if DEBUG
-    /// Test seam: runs between taking the sealed window and the staleness recheck so a
-    /// test can interleave producer writes deterministically.
     var afterWindowCopyForTesting: (() -> Void)?
     #endif
 
@@ -108,7 +100,6 @@ final class AudioSpectrumProcessor: AudioSpectrumAnalyzing, @unchecked Sendable 
         self.exchange = AudioSpectrumWindowExchange(windowSize: resolved.fftSize)
     }
 
-    /// Build log-spaced bands with treble EQ; each spans ≥1 bin; edges clamped.
     private static func logBands(configuration: Configuration) -> [Band] {
         let halfBins = configuration.fftSize / 2
         let binWidth = configuration.sampleRate / Float(configuration.fftSize)
@@ -131,12 +122,9 @@ final class AudioSpectrumProcessor: AudioSpectrumAnalyzing, @unchecked Sendable 
         }
     }
 
-    /// Immediate ingest + analysis in one call (single-threaded test/oracle seam;
-    /// capture pulls via `analyzeIfDue`).
     func process(left: [Float], right: [Float], timestampNanos: UInt64) -> AudioSpectrumFrame {
         ingest(left: left, right: right, timestampNanos: timestampNanos)
-        // Discarding the returned frame: it carries the seal's timestamp, and this seam
-        // must stamp the caller's even when an ingest with no samples sealed nothing.
+        // Discarding the returned frame: it carries the seal's timestamp, and this seam must stamp the caller's even when an ingest with no samples sealed nothing.
         _ = analyze()
         return AudioSpectrumFrame(
             validatedLeft: leftOutput,
@@ -145,15 +133,11 @@ final class AudioSpectrumProcessor: AudioSpectrumAnalyzing, @unchecked Sendable 
         )
     }
 
-    /// Audio-thread entry: hand the callback's samples to the exchange. No allocation,
-    /// no FFT, no waiting on a lock — analysis happens on consumer pull.
     func ingest(left: [Float], right: [Float], timestampNanos: UInt64) {
         exchange.publish(left: left, right: right, timestampNanos: timestampNanos)
     }
 
-    /// Consumer pull: run one analysis if new samples arrived since the last one and
-    /// the cadence cap allows; nil means "cached frame is still current". Caller
-    /// provides mutual exclusion (broker snapshot lock).
+    /// nil means "cached frame is still current". Caller provides mutual exclusion (broker snapshot lock).
     func analyzeIfDue(nowNanos: UInt64) -> AudioSpectrumFrame? {
         let cursor = exchange.publishedCursor()
         guard cursor.totalSamples > lastAnalyzedTotal else { return nil }
@@ -164,19 +148,12 @@ final class AudioSpectrumProcessor: AudioSpectrumAnalyzing, @unchecked Sendable 
         return analyze()
     }
 
-    /// One analysis of the latest sealed window. The spectrum math (Hann window, FFT,
-    /// normalization, band reduction, smoothing) is unchanged from the push-driven
-    /// version — only which windows get analyzed changed. Returns nil when the window
-    /// taken is already stale beyond the retained history (see below).
     private func analyze() -> AudioSpectrumFrame? {
         let cursor = exchange.copySealedWindow(into: &leftInput, and: &rightInput)
         #if DEBUG
         afterWindowCopyForTesting?()
         #endif
-        // The copy runs under the exchange lock (window is always exactly one generation) but
-        // can still be old: a producer running more than a full history (~170 ms at 48 kHz)
-        // past this window's start means the consumer was descheduled that long — drop this
-        // frame, let the next pull take the fresh seal; smoothing state is untouched, nothing lost but one interval.
+        // Drop this frame if the producer ran more than a full history past this window's start; smoothing state is untouched.
         let published = exchange.publishedCursor().totalSamples
         guard published - (cursor.totalSamples - configuration.fftSize) <= exchange.historyCapacity else {
             return nil
@@ -195,11 +172,7 @@ final class AudioSpectrumProcessor: AudioSpectrumAnalyzing, @unchecked Sendable 
     }
 
     private func updateSmoothingIfNeeded(hopSize: Int) {
-        // A consumer that stopped pulling (suspended, hibernated, App-Napped) leaves
-        // `lastAnalyzedTotal` arbitrarily far behind the producer, and a hop of hundreds of
-        // thousands of samples drives both coefficients to ~0 — a spectrum pop on resume.
-        // Clamp the hop to the retained history (the window is one coherent generation);
-        // larger gaps carry no usable relation to the retained audio.
+        // Clamp the hop to the retained history: a hop of hundreds of thousands of samples drives both coefficients to ~0 — a spectrum pop on resume.
         let clamped = Swift.min(hopSize, exchange.historyCapacity)
         let hop = clamped > 0 ? clamped : configuration.fftSize
         guard hop != lastHopSize else { return }
@@ -244,7 +217,6 @@ final class AudioSpectrumProcessor: AudioSpectrumAnalyzing, @unchecked Sendable 
             }
         }
 
-        // Normalize raw FFT magnitudes before dB mapping (see inverseWindowSum).
         vDSP.multiply(inverseWindowSum, magnitudes, result: &magnitudes)
 
         compressMagnitudesIntoBins()

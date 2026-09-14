@@ -1,16 +1,13 @@
 import SwiftUI
 
-/// Shell behind the segments. `.flat` is the default because every current host
-/// is in-content — an inspector card or a settings panel on an opaque background,
-/// where glass has nothing to refract and only adds an edge. `.glass` is for a
+/// `.flat` for in-content hosts on an opaque background; `.glass` only for a
 /// picker that genuinely floats over a preview.
 public enum GlassSegmentedShell: Sendable {
     case glass
     case flat
 }
 
-/// Shared in-content segmented control (the app's toolbar tabs stay stock
-/// `.segmented` on purpose). Segments are always equal-width.
+/// The app's toolbar tabs stay stock `.segmented` on purpose.
 public struct GlassSegmentedPicker<Value: Hashable, SegmentLabel: View>: View {
     @Binding private var selection: Value
     private let values: [Value]
@@ -69,7 +66,6 @@ public struct GlassSegmentedPicker<Value: Hashable, SegmentLabel: View>: View {
 }
 
 public extension GlassSegmentedPicker where SegmentLabel == Text {
-    /// Text segments in the canonical body/bodyEmphasized weights.
     init(
         selection: Binding<Value>,
         values: [Value],

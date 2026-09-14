@@ -3,7 +3,6 @@ import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
-/// Presents install location, size and verification before installing SteamCMD.
 struct SteamCMDSetupSheet: View {
     let onConfirmManagedInstall: () -> Void
 
@@ -109,9 +108,8 @@ struct SteamCMDSetupSheet: View {
         }
     }
 
-    /// The connector derives the real install root from its own home directory;
-    /// this process's `NSHomeDirectory()` is the container, so asking for the
-    /// real one is what makes the displayed path match where it lands.
+    /// `NSHomeDirectory()` is the sandbox container here; the install lands under the
+    /// real home, so the displayed path must be built from `realHomeDirectory()`.
     private var installLocationDisplayPath: String {
         let root = SteamCMDManagedInstaller.canonicalInstallRoot(
             home: AppleAerialsLibrary.realHomeDirectory()
@@ -125,8 +123,6 @@ struct SteamCMDSetupSheet: View {
 
     // MARK: - Homebrew
 
-    /// We only show the command — running Homebrew from inside a sandboxed app
-    /// is not something to automate.
     private var homebrewDetail: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
             Text("Run in Terminal to install system-wide. Then choose Locate automatically.")

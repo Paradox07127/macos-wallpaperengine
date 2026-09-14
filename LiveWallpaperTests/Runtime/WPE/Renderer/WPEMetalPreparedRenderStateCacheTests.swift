@@ -6,7 +6,6 @@ import Metal
 import Testing
 @testable import LiveWallpaper
 
-/// Per-pass PSO cache, indexed texture slot table, and `utilityModelKind` on the layer.
 @Suite("WPE Metal prepared render-state caches")
 struct WPEMetalPreparedRenderStateCacheTests {
 
@@ -26,7 +25,6 @@ struct WPEMetalPreparedRenderStateCacheTests {
             colorPixelFormat: .bgra8Unorm,
             depthPixelFormat: .invalid
         )
-        // HDR promotion swaps the destination format under the same pass.
         let hdr = try executor.passPipelineState(
             passID: "pass.0",
             variant: .genericImage2,
@@ -39,9 +37,7 @@ struct WPEMetalPreparedRenderStateCacheTests {
 
         #expect(ldr !== hdr)
 
-        // Each must be exactly what the second-level cache builds for the same
-        // dimensions — the first-level cache may only skip the lookup, never
-        // change its answer.
+        // The first-level cache may only skip the lookup, never change its answer.
         let referenceLDR = try executor.renderPipeline(
             fragmentName: "wpe_genericimage2_fragment",
             blendMode: "normal",
@@ -115,17 +111,11 @@ struct WPEMetalPreparedRenderStateCacheTests {
 
         let baseline = try state()
 
-        // objectQuad: the vertex function flips with live camera parallax.
         #expect(try state(objectQuad: true) !== baseline)
-        // variant: one pass id drives several fragment functions.
         #expect(try state(variant: .copy, fragmentName: "wpe_copy_fragment") !== baseline)
-        // passID: distinct passes may share a variant and differ in fragment.
         #expect(try state(passID: "pass.1", fragmentName: "wpe_compose_fragment") !== baseline)
-        // blending: `replacingBlending` can re-blend a pass id.
         #expect(try state(blendMode: "additive") !== baseline)
-        // depth format: follows the pass's depth plan.
         #expect(try state(depthPixelFormat: .depth32Float) !== baseline)
-        // color format: HDR promotion / target choice.
         #expect(try state(colorPixelFormat: .rgba16Float) !== baseline)
     }
 
@@ -176,9 +166,8 @@ struct WPEMetalPreparedRenderStateCacheTests {
             )
         }
 
-        // Probe well past the transpiler's ceiling: `g_Texture<N>Resolution`
-        // parses N out of authored shader source, so out-of-range reads must
-        // answer nil rather than trap.
+        // Probe past the transpiler's ceiling: N in `g_Texture<N>Resolution` comes from
+        // authored shader source, so out-of-range reads must answer nil, not trap.
         for slot in -2..<32 {
             #expect(table[slot] === reference[slot])
         }
@@ -209,8 +198,7 @@ struct WPEMetalPreparedRenderStateCacheTests {
             layout: [
                 WPEUniformSlot(name: "g_Texture0Resolution", glslType: "vec4", slot: 0, slotCount: 1),
                 WPEUniformSlot(name: "g_Texture3Resolution", glslType: "vec4", slot: 1, slotCount: 1),
-                // Unbound slot falls through to the uniform default, exactly as
-                // the missing-dictionary-key path did.
+                // An unbound slot falls through to the uniform default.
                 WPEUniformSlot(name: "g_Texture5Resolution", glslType: "vec4", slot: 2, slotCount: 1)
             ],
             texturesBySlot: table
@@ -259,7 +247,6 @@ struct WPEMetalPreparedRenderStateCacheTests {
         }
     }
 
-    /// Suffix reject is a short-circuit; full classification must agree.
     @Test("The suffix fast path never changes classify's answer")
     func suffixRejectMatchesFullClassification() {
         let expected: [String: WPEUtilityModelKind?] = [
@@ -301,9 +288,8 @@ struct WPEMetalPreparedRenderStateCacheTests {
             #expect(
                 executor.sceneCaptureUtilityOutputGeometry(for: layer)
                     == WPEMetalSceneCaptureUtilityModels.outputGeometry(
-                        // A freshly-built executor has not seen a frame, so its
-                        // scene size is still zero — the point here is that the
-                        // two routes agree, not which branch they take.
+                        // A freshly-built executor's scene size is still zero; the point is that the two
+                        // routes agree, not which branch they take.
                         path: path, geometry: geometry, sceneSize: .zero
                     ),
                 "path: \(path)"

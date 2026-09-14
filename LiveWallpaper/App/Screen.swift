@@ -7,10 +7,8 @@ final class Screen: Identifiable, Hashable {
     let id: CGDirectDisplayID
     /// macOS's own name for the panel, or a geometry string when it reports none.
     let systemName: String
-    /// User override, re-applied by `ScreenManager` on every screen refresh
-    /// (`Screen` instances are rebuilt from scratch each time).
+    /// User override.
     var customName: String?
-    /// What every UI surface shows. Trimmed-empty overrides fall back to the system name.
     var name: String {
         guard let customName, !customName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return systemName
@@ -53,8 +51,6 @@ final class Screen: Identifiable, Hashable {
         runtimeSession as? any WallpaperPlaybackControllable
     }
 
-    /// Incremented whenever the video player's playback state changes,
-    /// triggering @Observable updates for any SwiftUI view reading it.
     var playbackStateVersion: Int = 0
 
     @objc private func notifyPlaybackStateChanged() {
@@ -137,13 +133,7 @@ final class Screen: Identifiable, Hashable {
         retire(old)
     }
 
-    /// `WallpaperPreparation.prepareAndCommit` shows the incoming window before
-    /// committing it, behind this one, so fading the outgoing window out reveals
-    /// it — one animation, no compositing of two live scenes.
-    ///
-    /// Video keeps `wallpaperWindow` nil for the HTML coordinator and playback
-    /// inspector contracts, so retirement reaches its window through the player.
-    /// Capture policy uses the session's separate capability.
+    /// Video keeps wallpaperWindow nil, so retirement reaches its window through the player.
     /// A session that never installed a window takes the immediate path below.
     private func retire(_ old: (any WallpaperRuntimeSession)?) {
         guard let old else { return }
@@ -153,9 +143,7 @@ final class Screen: Identifiable, Hashable {
             return
         }
         old.applyPerformanceProfile(.suspended)
-        // The outgoing window outlives this call, so it must stop taking input —
-        // otherwise an interactive scene/HTML wallpaper keeps swallowing desktop
-        // clicks for the whole fade.
+        // The outgoing window outlives this call, so it must stop taking input — otherwise an interactive scene/HTML wallpaper keeps swallowing desktop clicks for the whole fade.
         window.ignoresMouseEvents = true
         NSAnimationContext.runAnimationGroup { context in
             context.duration = DesignTokens.Motion.wallpaperCrossfadeDuration
@@ -166,9 +154,7 @@ final class Screen: Identifiable, Hashable {
         // `resetRuntimeSession` has to be able to flush what is still fading.
         let token = ObjectIdentifier(old)
         retiringSessions[token] = old
-        // Not `runAnimationGroup`'s completion handler: that runs nonisolated, and
-        // handing it this MainActor-bound session is a Swift 6 sending violation.
-        // Started from the MainActor instead, so the session never leaves it.
+        // Not runAnimationGroup's completion handler: that runs nonisolated, and handing it this MainActor-bound session is a Swift 6 sending violation.
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(DesignTokens.Motion.wallpaperCrossfadeDuration))
             guard let self, retiringSessions.removeValue(forKey: token) != nil else {
@@ -178,9 +164,7 @@ final class Screen: Identifiable, Hashable {
         }
     }
 
-    /// Drops every still-fading session immediately. Called when the screen goes
-    /// away, where finishing the fade would leave a window AppKit can reposition
-    /// onto a surviving display.
+    /// Drops every still-fading session immediately. Finishing the fade after the screen goes away would leave a window AppKit can reposition onto a surviving display.
     private func flushRetiringSessions() {
         let fading = retiringSessions.values
         retiringSessions.removeAll()
@@ -202,10 +186,7 @@ final class Screen: Identifiable, Hashable {
         return true
     }
 
-    /// Also closes whatever was still fading out on `existingScreen`: that screen
-    /// is about to be dropped, and its fade task holds it weakly, so the fade
-    /// would end without ever running `cleanup()` — a full-screen window left in
-    /// the AppKit window list over the new wallpaper.
+    /// Also closes whatever was still fading out on existingScreen: that screen is about to be dropped, and its fade task holds it weakly, so the fade would end without running cleanup().
     func adoptRuntimeSession(from existingScreen: Screen) {
         existingScreen.flushRetiringSessions()
         let new = existingScreen.runtimeSession

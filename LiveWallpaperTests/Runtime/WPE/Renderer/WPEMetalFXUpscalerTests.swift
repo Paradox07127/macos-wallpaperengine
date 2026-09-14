@@ -82,10 +82,6 @@ struct WPEMetalFXUpscalerTests {
 
     // MARK: - Production-path gates (assertions, not probes)
 
-    /// The SDR combination the renderer actually ships. Unlike the probes
-    /// below this one ASSERTS: a device that reports spatial-scaler support and
-    /// then refuses the shipping format pair is a real regression, and the
-    /// old probe-only coverage let exactly that pass green.
     @Test("The shipping SDR combo really creates a scaler on a supporting device")
     func shippingSDRComboCreatesScaler() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
@@ -107,9 +103,6 @@ struct WPEMetalFXUpscalerTests {
         )
     }
 
-    /// First coverage of the production entry point itself: the probes only
-    /// exercised `MTLFXSpatialScaler` directly, never our eligibility gate,
-    /// usage checks, alpha-fix pipeline or outcome counters.
     @Test("encodeIfEligible encodes an eligible frame and declines center")
     func encodeIfEligibleCoversProductionPath() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
@@ -135,10 +128,8 @@ struct WPEMetalFXUpscalerTests {
             descriptor.usage = usage
             return try #require(device.makeTexture(descriptor: descriptor))
         }
-        // The usage set production actually allocates for the scene output
-        // (`makeOutputTexture`). Asserting the contract here is what keeps a
-        // per-frame `usageMismatch` fallback from hiding behind test textures
-        // that were built from the scaler's own requirement.
+        // Pin production's own usage set (`makeOutputTexture`): textures built from the
+        // scaler's requirement would hide a per-frame `usageMismatch` fallback.
         #expect(
             MTLTextureUsage([.renderTarget, .shaderRead]).isSuperset(of: probe.colorTextureUsage),
             "scene-output usage no longer satisfies the scaler's input requirement"
@@ -154,9 +145,8 @@ struct WPEMetalFXUpscalerTests {
             source: source, drawableTexture: output, fitMode: .stretch, commandBuffer: commandBuffer
         ))
 
-        // center keeps source pixels 1:1, so a full-rect scale is never right.
-        // The return value IS the contract — the caller runs the classic present
-        // pass on false.
+        // `center` keeps source pixels 1:1; the return value IS the contract - on false
+        // the caller runs the classic present pass.
         #expect(upscaler.encodeIfEligible(
             source: source, drawableTexture: output, fitMode: .center, commandBuffer: commandBuffer
         ) == false)

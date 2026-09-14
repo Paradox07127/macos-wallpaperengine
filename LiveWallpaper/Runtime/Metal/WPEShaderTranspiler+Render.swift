@@ -5,7 +5,6 @@ import LiveWallpaperProWPE
 extension WPEShaderTranspiler {
     // MARK: - Render
 
-    /// Emit the final MSL source with the fixed parameter signature so the dispatcher knows what to bind without doing runtime reflection.
     static func renderMSL(
         shaderName: String,
         uniforms: [WPEUniformDecl],
@@ -90,8 +89,6 @@ extension WPEShaderTranspiler {
         out.append("inline float3 wpe_smoothstep(float edge0, float edge1, float3 x) { return wpe_smoothstep(float3(edge0), float3(edge1), x); }")
         out.append("inline float4 wpe_smoothstep(float edge0, float edge1, float4 x) { return wpe_smoothstep(float4(edge0), float4(edge1), x); }")
         if !premultipliedInputSlots.isEmpty {
-            // Recover straight-alpha color from a premultiplied render-target
-            // sample so the original WPE shader math operates in straight space.
             out.append("inline float4 wpe_unpremultiply_sample(float4 color) {")
             out.append("    float a = color.a;")
             out.append("    color.rgb = a > 0.00001 ? color.rgb / a : float3(0.0);")
@@ -103,8 +100,6 @@ extension WPEShaderTranspiler {
             out.append("}")
         }
         if premultipliedOutput {
-            // Premultiply the shader's straight-alpha output for the
-            // premultiplied render-target pipeline.
             out.append("inline float4 wpe_premultiply_output(float4 color) {")
             out.append("    float a = metal::clamp(color.a, 0.0, 1.0);")
             if encodedPulse {
@@ -127,9 +122,7 @@ extension WPEShaderTranspiler {
             out.append("")
         }
 
-        // Collected then joined with commas rather than appended with trailing ones: a
-        // shader that declares no samplers at all makes `textureSlotCount` zero, and the
-        // old form left a dangling comma on the last fixed parameter.
+        // Join parameters with commas: `textureSlotCount` 0 would leave a dangling comma on the last fixed parameter.
         var parameters = ["    WPEStageIn in [[stage_in]]"]
         if !uniforms.isEmpty {
             parameters.append("    constant WPEUniforms& u [[buffer(0)]]")
@@ -137,11 +130,7 @@ extension WPEShaderTranspiler {
         for slot in 0..<textureSlotCount {
             parameters.append("    texture2d<float> tex\(slot) [[texture(\(slot))]]")
         }
-        // Per-slot samplers. Address mode (clamp vs repeat) and filter (linear vs nearest) are
-        // bound at runtime from each texture's TEXI flags in
-        // WPEMetalRenderExecutor's custom-shader dispatch — replacing the old annotation
-        // heuristic that clamp-sampled every content texture and froze scrolled tiling maps
-        // (water-normal, noise, flow) once their sample UVs left [0,1]. Direct `g_TextureN` reads use `wpeSamplerN`; helper samples fall back to the file-scope clamp/repeat constants.
+        // Per-slot samplers: address/filter come from TEXI flags at dispatch, not the old clamp-every-content-texture heuristic.
         for slot in 0..<textureSlotCount {
             parameters.append("    sampler wpeSampler\(slot) [[sampler(\(slot))]]")
         }
@@ -152,10 +141,7 @@ extension WPEShaderTranspiler {
         ]
         out.append(signature.joined(separator: "\n"))
 
-        // Alias each sampler to its ACTUAL texture slot (`g_Texture2` → tex2), matching how the
-        // custom-shader dispatcher binds textures (`setFragmentTexture(index: slot)`).
-        // Enumeration order would mis-map any sparse/non-zero slot (`g_Texture2` → tex0) and
-        // sample the wrong texture. Non-`g_TextureN` samplers (no parsed slot) keep enumeration order as before.
+        // Alias `g_TextureN` to texN (the real slot); enumeration order would map `g_Texture2` to tex0.
         for (index, sampler) in samplers.enumerated() {
             let slot = Self.textureSlot(for: sampler.name) ?? index
             out.append("    [[maybe_unused]] auto \(sampler.name) = tex\(slot);")
@@ -240,16 +226,11 @@ extension WPEShaderTranspiler {
             availableUniforms: uniformNames,
             comboValues: comboValues
         )
-        // Screen-UV fallbacks produced when no reconstruction rule matched a varying.
-        // A non-v_TexCoord varying that the fragment actually uses but lands here renders
-        // incorrectly (a 0→1 UV ramp standing in for vertex-computed data) — emit a marker
-        // in the generated MSL so the gap is visible in scene-debug dumps instead of silent.
+        // A non-`v_TexCoord` varying that falls back to a 0→1 UV ramp renders wrong; emit a diagnostic marker instead of staying silent.
         let uvFallbackInitializers: Set<String> = [
             "in.uv", "in.uv.x", "float4(in.uv, in.uv)", "float3(in.uv, 0.0)",
         ]
-        // The audio varyings fall back to a flat 0.0 instead of a ramp when their vertex-only
-        // spectrum uniforms are missing, so the effect silently stops reacting rather than
-        // rendering wrong — 2370927443's `effects/shake` (issue #133). Mark that case too.
+        // Audio varyings fall back to constant 0, not a UV ramp, so a missing spectrum uniform stops the effect rather than rendering wrong.
         let flatFallbackVaryings: Set<String> = ["v_AudioPulse", "v_AudioShift"]
         for varying in varyings {
             if varying.name == "uv" { continue }
@@ -276,9 +257,7 @@ extension WPEShaderTranspiler {
                     ?? Array(repeating: initializer, count: arrayLength)
                 out.append("    [[maybe_unused]] \(varying.metalType) \(varying.name)[\(arrayLength)] = { \(initializers.joined(separator: ", ")) };")
             } else if let arrayDimension = varying.arrayDimension {
-                // Symbolic, #define-sized array: we can't expand a literal initializer list at
-                // transpile time, so zero-init, then let known vertex-varying reconstructions
-                // fill the slots they need.
+                // Symbolic `#define`-sized arrays cannot expand a literal initializer; zero-init and let reconstructions fill slots.
                 out.append("    [[maybe_unused]] \(varying.metalType) \(varying.name)[\(arrayDimension)] = {};")
                 out.append(
                     contentsOf: symbolicArrayReconstructionLines(
@@ -305,8 +284,7 @@ extension WPEShaderTranspiler {
         return out.joined(separator: "\n")
     }
 
-    /// Match preprocessing tokens after comment and line-continuation handling.
-    /// Self-referential mix is emitted by WPE and retains the Metal intrinsic.
+    /// Self-referential `mix` is emitted by WPE and retains the Metal intrinsic.
     private static func overridesWaterIntrinsics(_ source: String, names: Set<String>) -> Bool {
         let joined = source.replacingOccurrences(of: "\\\r\n", with: "")
             .replacingOccurrences(of: "\\\n", with: "")
@@ -351,9 +329,8 @@ extension WPEShaderTranspiler {
         return result
     }
 
-    /// Recognize the complete authored four-sample blend, not an effect name.
-    /// Single-mip FBOs admit explicit level zero in divergent endpoint branches;
-    /// mipmapped sources retain the original implicit-gradient path in uniform flow.
+    /// Match the authored four-sample blend, not an effect name.
+    /// Single-mip FBOs may use explicit lod 0 in divergent branches; mipmapped sources keep implicit gradients.
     private static func waterflowEndpointRewrite(
         _ body: String, helpers: String, premultiplied: Bool
     ) -> (main: String, helper: String) {
@@ -743,10 +720,7 @@ extension WPEShaderTranspiler {
         availableUniforms: Set<String>,
         comboValues: [String: Int] = [:]
     ) -> String {
-        // multistage_wave: v_DirectionN = normalize(g_SpinCenter(N+1) - g_SpinCenterN),
-        // declared vec4 (.zw = the direction rotated by g_DirectionOffset) under
-        // GLOBAL_ROTATION, else vec2. Gated on the per-node g_SpinCenter uniforms so it
-        // never intercepts the dualwaves `v_Direction2` case below (which has none).
+        // `v_DirectionN` = normalize(g_SpinCenter(N+1) − g_SpinCenterN); gated on those uniforms so it never intercepts dualwaves' `v_Direction2`.
         if ["float2", "float4"].contains(varying.metalType),
            varying.name.hasPrefix("v_Direction"),
            let nodeIndex = Int(varying.name.dropFirst("v_Direction".count)),
@@ -764,10 +738,7 @@ extension WPEShaderTranspiler {
         }
         switch varying.name {
         case "v_TexCoord":
-            // Simple_Audio_Bars.vert applies its own offset/rotate/scale to the BAR coordinate
-            // under TRANSFORM, so the raw UV puts the whole bar strip in the wrong place
-            // (3647999330 authors offset 0,-0.1). Its `applyFx` divides by the scale, where
-            // fade's multiplies — reproduce each verbatim rather than sharing one helper.
+            // TRANSFORM bar UV: `applyFx` divides by scale where fade multiplies — do not share one helper.
             if varying.metalType == "float2",
                texCoordZWFamilyName(shaderName: shaderName) == "simple_audio_bars",
                comboValues["TRANSFORM"] == 1,
@@ -777,10 +748,7 @@ extension WPEShaderTranspiler {
             if varying.metalType == "float2" {
                 return "in.uv"
             }
-            // swing/twirl pack aspect + sine phase into .zw; rebuild the exact .vert
-            // formula before the resolution-scaled-UV path (whose MASK ladder would
-            // otherwise mis-fill .zw with a scaled UV). Only the resolution components
-            // differ: swing reads .x/.y, twirl .z/.w.
+            // swing/twirl pack aspect + sine phase into .zw; rebuild before the resolution-scaled-UV path which would mis-fill .zw.
             if varying.metalType == "float4",
                let family = texCoordZWFamilyName(shaderName: shaderName),
                family == "swing" || family == "twirl",
@@ -788,10 +756,7 @@ extension WPEShaderTranspiler {
                 let components = family == "swing" ? "xy" : "zw"
                 return "wpe_swing_texcoord(in.uv, g_Texture0Resolution.\(components), g_Time, g_Speed, g_Phase, g_Amount)"
             }
-            // blur_precise_gaussian.vert:29-33 — `.zw` is the single-axis per-tap step
-            // (`VERTICAL ? (0, g_Scale.y/res.w) : (g_Scale.x/res.z, 0)`), NOT a scaled UV, so it
-            // must come before the resolution ladder below. The float4(uv,uv) default made the
-            // step a full screen UV and blur13a averaged the entire frame.
+            // `.zw` is the single-axis per-tap step, not a scaled UV; must precede the resolution ladder or blur13a averages the whole frame.
             if varying.metalType == "float4",
                texCoordZWFamilyName(shaderName: shaderName) == "blur_precise_gaussian",
                hasUniforms("g_Scale", "g_Texture0Resolution", in: availableUniforms) {
@@ -799,9 +764,7 @@ extension WPEShaderTranspiler {
                     ? "float4(in.uv, 0.0, g_Scale.y / g_Texture0Resolution.w)"
                     : "float4(in.uv, g_Scale.x / g_Texture0Resolution.z, 0.0)"
             }
-            // lens_distortion.vert:27-28 — `.xy` is the zoomed pixel coordinate and `.zw`
-            // the aspect·size DIVISOR, a per-frame constant. Both must come before the
-            // resolution ladder, whose float4(uv, uv·scale) turned the divisor into a UV.
+            // `.xy` is the zoomed pixel coordinate and `.zw` the aspect·size divisor; both must precede the resolution ladder.
             if varying.metalType == "float4",
                texCoordZWFamilyName(shaderName: shaderName) == "lens_distortion",
                hasLensDistortionUniforms(availableUniforms) {
@@ -818,20 +781,14 @@ extension WPEShaderTranspiler {
                 return "wpe_texcoord_with_resolution(in.uv, \(resolutionUniform))"
             }
         case "p_TexCoord":
-            // fade.vert (workshop 3124095265): the gradient's own coordinate, offset/rotated/
-            // scaled independently of `v_TexCoord`. Identity only while the author leaves the
-            // transform at its defaults, which 3647999330's second fade layer does and its
-            // first (scale 0.95) does not. Simple_Audio_Bars writes `p_TexCoord = a_TexCoord`,
-            // so its screen-UV default is already exact and it deliberately has no rule here.
+            // fade `p_TexCoord` is offset/rotated/scaled independently of `v_TexCoord`. Simple_Audio_Bars writes `p_TexCoord = a_TexCoord`, so it has no rule here.
             if varying.metalType == "float2",
                texCoordZWFamilyName(shaderName: shaderName) == "fade",
                hasUniforms("g_Offset", "g_Scale", "g_Direction", in: availableUniforms) {
                 return "wpe_rotate_vec2(in.uv - g_Offset - 0.5, -g_Direction) * g_Scale + 0.5"
             }
         case "i_DCorrectingFactor":
-            // Simple_Audio_Bars.vert (workshop 3082978660): the aspect ratio that keeps the
-            // rounded bar caps circular. Declared only under BAR_STYLE 1, so seeing it means
-            // that combo is on; DEFORMITY 3 ("Adaptive") is the default that reads it.
+            // Aspect that keeps rounded bar caps circular. Declared only under BAR_STYLE 1; DEFORMITY 3 (Adaptive) is the default that reads it.
             if varying.metalType == "float",
                texCoordZWFamilyName(shaderName: shaderName) == "simple_audio_bars",
                availableUniforms.contains("g_Texture0Resolution") {
@@ -843,10 +800,7 @@ extension WPEShaderTranspiler {
                     : "wpe_safe_ratio(g_Texture0Resolution.x, g_Texture0Resolution.y)"
             }
         case "v_Distorsion":
-            // lens_distortion.vert:29-34. `.xy` is the barrel/pincushion strength, `.zw` the
-            // chromatic-aberration split. The screen-UV fallback made the two EQUAL, so the
-            // shader's `amount - ca` blue tap cancelled to an identity sample while the `uv`
-            // and `uv + ca` taps ran off the edge and clamped (3647999330).
+            // `.xy` is barrel/pincushion strength, `.zw` the CA split; a screen-UV fallback makes them equal and cancels the blue tap.
             if varying.metalType == "float4",
                texCoordZWFamilyName(shaderName: shaderName) == "lens_distortion",
                hasLensDistortionUniforms(availableUniforms) {
@@ -858,9 +812,7 @@ extension WPEShaderTranspiler {
                 return "float4(\(amount), \(aberration))"
             }
         case "v_Transforms":
-            // lens_distortion.vert:35-39. `.xy` recentres the distorted sample; the fallback
-            // left it a UV ramp, which alone shifts every tap by up to a full frame. `.zw` is
-            // the ANAMORPHIC rotation and is only read under that combo.
+            // `.xy` recentres the distorted sample; `.zw` is ANAMORPHIC rotation and is only read under that combo.
             if varying.metalType == "float4",
                texCoordZWFamilyName(shaderName: shaderName) == "lens_distortion",
                hasLensDistortionUniforms(availableUniforms) {
@@ -874,23 +826,14 @@ extension WPEShaderTranspiler {
                availableUniforms.contains("g_Texture3Resolution") {
                 return "wpe_texcoord_mask(in.uv, g_Texture3Resolution)"
             }
-            // blur_precise_gaussian.vert:37 scales the mask UV by slot 2's image/padded ratio;
-            // the float2 default left it as raw screen UV. Deliberately family-gated: across the
-            // corpus a float2 `v_TexCoordMask` reads slot 1, 2 OR 3 depending on the effect
-            // (blur_radial_gaussian, border_preprocessing_gaussian, depthparallax, spin, swing,
-            // twirl all declare it too), and binding the wrong texture's resolution is worse than
-            // the raw-UV fallback those families have today.
+            // Family-gated: a float2 `v_TexCoordMask` reads slot 1, 2, or 3 depending on the effect; the wrong resolution is worse than the raw-UV fallback.
             if varying.metalType == "float2",
                texCoordZWFamilyName(shaderName: shaderName) == "blur_precise_gaussian",
                availableUniforms.contains("g_Texture2Resolution") {
                 return "wpe_texcoord_mask(in.uv, g_Texture2Resolution).xy"
             }
         case "v_TexCoordLeftTop":
-            // fluidsimulation_*.vert: LeftTop = uv.xyxy, then .x -= texel.x,
-            // .w += texel.y (texel = 1/g_Texture0Resolution.xy). All five
-            // family .verts compute the identical formula. The screen-UV
-            // fallback collapsed the neighbour taps onto one texel, zeroing
-            // divergence/curl — the simulation froze entirely.
+            // LeftTop = uv.xyxy then .x -= texel.x, .w += texel.y. A screen-UV fallback collapses neighbour taps onto one texel.
             if varying.metalType == "float4",
                availableUniforms.contains("g_Texture0Resolution") {
                 return "float4(in.uv.x - 1.0 / g_Texture0Resolution.x, in.uv.y, in.uv.x, in.uv.y + 1.0 / g_Texture0Resolution.y)"
@@ -902,23 +845,13 @@ extension WPEShaderTranspiler {
                 return "float4(in.uv.x + 1.0 / g_Texture0Resolution.x, in.uv.y, in.uv.x, in.uv.y - 1.0 / g_Texture0Resolution.y)"
             }
         case "v_StepSize":
-            // apply.vert:14 / up_sample.vert:13 (workshop 2822917890 bloom family):
-            // `1.0 / vec4(-g_Texture0Resolution.xy, g_Texture0Resolution.xy)`, the
-            // per-texel step for the box-blur's 4 diagonal taps. The float4(uv,uv)
-            // default fed screen position in as a sample offset (3554161528 sky).
+            // Per-texel box-blur step `1 / vec4(-res.xy, res.xy)`; the float4(uv,uv) default would feed screen position as a sample offset.
             if varying.metalType == "float4",
                availableUniforms.contains("g_Texture0Resolution") {
                 return "1.0 / float4(-g_Texture0Resolution.xy, g_Texture0Resolution.xy)"
             }
         case "v_SizeMultiplier":
-            // blur_gaussian.vert:30 (same bloom family): `vec2(aRatio, 1.0) * (u_radius +
-            // u_radius) * iterations * g_TexelSize`, aRatio = u_ratio under ANAMORPHIC else
-            // 1.0, iterations = 0.675 under HIGH_QUALITY else 1.5 (compile-time #if, folded
-            // here). `g_TexelSize` is now packed from the SCENE resolution
-            // (`WPEMetalRenderExecutor.texelSizeValue`); it used to be substituted with
-            // 1/g_Texture0Resolution.xy on the premise the blur input is a same-size
-            // framebuffer, but RenderDoc showed WPE holds g_TexelSize at 1/(3840,2160) for
-            // every pass of a chain descending to 240x135 — 2x/4x/8x/16x too wide.
+            // `vec2(aRatio, 1) * (u_radius+u_radius) * iterations * g_TexelSize`; aRatio is u_ratio under ANAMORPHIC else 1; iterations 0.675 under HIGH_QUALITY else 1.5.
             if varying.metalType == "float2",
                hasUniforms("g_TexelSize", "u_radius", in: availableUniforms) {
                 let aRatio = comboValues["ANAMORPHIC"] == 1 && availableUniforms.contains("u_ratio")
@@ -937,25 +870,18 @@ extension WPEShaderTranspiler {
                 return "wpe_rotate_vec2(float2(0.0, 1.0), g_Direction)"
             }
         case "v_Direction2":
-            // DUALWAVES second wave direction: rotateVec2((0,1), g_Direction2).
             if varying.metalType == "float2",
                availableUniforms.contains("g_Direction2") {
                 return "wpe_rotate_vec2(float2(0.0, 1.0), g_Direction2)"
             }
         case "v_ReflectedCoord":
-            // reflection.vert PERSPECTIVE=0: vertical mirror (+ offset) rotated by
-            // g_Direction. The PERSPECTIVE=1 branch uses v_TexCoordPerspective instead,
-            // already handled below. Falling through to raw in.uv makes the reflected
-            // sample identical to albedo (no reflection) — flat water.
+            // PERSPECTIVE=0: vertical mirror + offset, rotated by g_Direction. Falling through to raw in.uv makes the reflected sample identical to albedo.
             if varying.metalType == "float2",
                hasUniforms("g_Direction", "g_ReflectionOffset", in: availableUniforms) {
                 return "wpe_reflection_texcoord(in.uv, g_Direction, g_ReflectionOffset)"
             }
         case "v_TexCoordPerspective", "v_TexCoordFx":
-            // PERSPECTIVE / lightshafts: mul(vec3(uv,1), inverse(squareToQuad(g_Point0..3))),
-            // matching WPE common_perspective.h byte-for-byte. lightshafts.vert
-            // computes `v_TexCoordFx` identically and the fragment does its own
-            // `.xy/.z` perspective divide, so the raw homogeneous float3 is correct.
+            // Homogeneous `mul(vec3(uv,1), inverse(squareToQuad(g_Point0..3)))`. lightshafts' fragment does its own `.xy/.z` divide, so the raw float3 is correct.
             if varying.metalType == "float3",
                hasUniforms("g_Point0", "g_Point1", "g_Point2", "g_Point3", in: availableUniforms) {
                 return "wpe_perspective_texcoord(in.uv, g_Point0, g_Point1, g_Point2, g_Point3)"
@@ -964,10 +890,7 @@ extension WPEShaderTranspiler {
                 return "float3(in.uv, 1.0)"
             }
         case "v_PerspCoord":
-            // audio_responsive_oscilloscope.vert only applies squareToQuad under
-            // PERSPECTIVE=1; default PERSPECTIVE=0 is the raw texture coordinate
-            // with homogeneous z=1. Using the perspective path unconditionally can
-            // make the linear waveform clamp out and leave an opaque solid layer.
+            // squareToQuad only under PERSPECTIVE=1; default is raw UV with z=1. Unconditional perspective can clamp the waveform out.
             if varying.metalType == "float3" {
                 if comboValues["PERSPECTIVE"] == 1,
                    hasUniforms("g_Point0", "g_Point1", "g_Point2", "g_Point3", in: availableUniforms) {
@@ -976,10 +899,7 @@ extension WPEShaderTranspiler {
                 return "float3(in.uv, 1.0)"
             }
         case "v_ViewCoord":
-            // Effects that sample the current full-frame buffer often use
-            // `v_ViewCoord.xy / v_ViewCoord.z * 0.5 + 0.5`. Preserve a valid
-            // homogeneous z and map back to the current quad UV as a conservative
-            // fragment-side reconstruction.
+            // Conservative reconstruction of `v_ViewCoord.xy / v_ViewCoord.z * 0.5 + 0.5`: homogeneous z=1 mapped back to the current quad UV.
             if varying.metalType == "float3" {
                 return "float3(in.uv * 2.0 - 1.0, 1.0)"
             }
@@ -1026,9 +946,7 @@ extension WPEShaderTranspiler {
                ) {
                 return "wpe_foliage_texcoord_noise(in.uv, g_NoiseScale, g_Ratio, g_Direction, g_Texture0Resolution)"
             }
-            // filmgrain variant: two frac(time)-scrolled, g_NoiseScale-tiled lookups.
-            // No g_Ratio/g_Direction, so it can't reuse the foliage helper; without this
-            // it fell through to raw uv and stretched the noise once across the frame.
+            // filmgrain: two frac(time)-scrolled lookups. No g_Ratio/g_Direction, so it cannot reuse the foliage helper.
             if varying.metalType == "float4",
                hasUniforms("g_NoiseScale", "g_Time", "g_Texture0Resolution", in: availableUniforms) {
                 return "wpe_filmgrain_texcoord_noise(in.uv, g_Time, g_NoiseScale, g_Texture0Resolution)"
@@ -1046,9 +964,7 @@ extension WPEShaderTranspiler {
                 return "float2(max(1.0, wpe_safe_ratio(g_Texture0Resolution.x, g_Texture0Resolution.y)), max(1.0, wpe_safe_ratio(g_Texture0Resolution.y, g_Texture0Resolution.x)))"
             }
         case "v_Pulse":
-            // pulse.vert: AUDIOPROCESSING → CreateAudioResponse (0 when silent); else a
-            // time-driven sine pulse. The float varying used to default to in.uv.x — a
-            // left-to-right ramp instead of a uniform full-screen pulse.
+            // AUDIOPROCESSING → CreateAudioResponse (0 when silent); else a time-driven sine. Must not default to in.uv.x.
             if varying.metalType == "float" {
                 let mode = comboValues["AUDIOPROCESSING"] ?? 0
                 if mode != 0,
@@ -1066,11 +982,7 @@ extension WPEShaderTranspiler {
                 return "0.0"
             }
         case "v_ParallaxOffset":
-            // depthparallax.vert: pointer-projected offset, ·0.5+0.5. The full form needs
-            // g_EffectTextureProjectionMatrixInverse (a mat uniform excluded from fragment
-            // injection), so use the vert's own simplified equivalent (= g_ParallaxPosition):
-            // neutral (0.5) when the pointer is centered, instead of the in.uv ramp that
-            // warped the parallax sample across the screen.
+            // Use `g_ParallaxPosition` (neutral 0.5 when centered); the full matrix form is excluded from fragment injection.
             if varying.metalType == "float2" {
                 return availableUniforms.contains("g_ParallaxPosition") ? "g_ParallaxPosition" : "float2(0.5)"
             }
@@ -1080,9 +992,7 @@ extension WPEShaderTranspiler {
                 return "wpe_bounds_vector(g_Bounds)"
             }
         case "v_Cycles":
-            // waterflow.vert: four scroll-loop phases (frac(t·speed)+offsets) − 0.5,
-            // bounded to ±0.5 so the flow displacement oscillates instead of growing
-            // with screen position (the default float4(uv,uv) caused the smear band).
+            // Four scroll-loop phases bounded to ±0.5 so displacement oscillates instead of growing with screen position.
             if varying.metalType == "float4",
                hasUniforms("g_Time", "g_FlowSpeed", in: availableUniforms) {
                 return "wpe_waterflow_cycles(g_Time, g_FlowSpeed)"
@@ -1094,10 +1004,7 @@ extension WPEShaderTranspiler {
                 return "wpe_waterflow_blend(g_Time, g_FlowSpeed, g_PhaseFeather)"
             }
         case "v_AudioShift":
-            // Audio-reactive scalar computed in the vertex stage (CreateAudioResponse).
-            // Reconstruct it from the spectrum + audio uniforms so it rests at 0 when
-            // silent instead of falling through to the `in.uv.x` float default, which
-            // smeared chromatic_aberration / hue_shift across the whole frame.
+            // Reconstruct CreateAudioResponse so the varying rests at 0 when silent instead of defaulting to in.uv.x.
             if varying.metalType == "float",
                hasUniforms(
                 "g_AudioSpectrum16Left",
@@ -1114,9 +1021,7 @@ extension WPEShaderTranspiler {
             }
             return "0.0"
         case "v_AudioPulse":
-            // Audio-reactive pulse (CreateAudioResponse): 0 when silent, like v_AudioShift.
-            // Reconstruct the real response when the spectrum uniforms are present so the
-            // effect reacts to audio instead of staying flat; falls back to 0 otherwise.
+            // Reconstruct CreateAudioResponse when spectrum uniforms are present; otherwise 0 (silent), like v_AudioShift.
             if varying.metalType == "float" {
                 let mode = comboValues["AUDIOPROCESSING"] ?? 1
                 if hasUniforms(
@@ -1147,11 +1052,7 @@ extension WPEShaderTranspiler {
         }
     }
 
-    /// down_sample.vert:12-15 / light_map.vert:15-18 (workshop 2822917890 bloom family): both
-    /// compute the same 4-tap diagonal box filter around a_TexCoord, `offsets = 1.0 /
-    /// g_Texture0Resolution.xy`. The generic array path below calls `varyingInitializer` ONCE
-    /// and repeats that value across all N slots, collapsing the box filter to a single point
-    /// sample (3554161528 sky). Matched on varying name + array shape, not shader name, so other bloom/glow packages sharing this offsets convention reconstruct too.
+    /// The generic array path would call `varyingInitializer` once and repeat it, collapsing the 4-tap box filter to a point sample.
     private static func texCoordBoxFilterInitializers(
         varying: WPEVaryingDecl,
         availableUniforms: Set<String>
@@ -1225,22 +1126,13 @@ extension WPEShaderTranspiler {
         comboValues: [String: Int] = [:]
     ) -> String? {
         let lowercased = shaderName.lowercased()
-        // Families with a verified .vert use its exact resolution slot: the mask/aux
-        // texture is NOT always g_Texture1 (vhs/filmgrain/nitro/waterripple/clouds/
-        // pulse/motionblur bind it at slot 2, lightshafts at slot 3), and the generic
-        // MASK→T1 ladder below mis-scaled those.
+        // A verified family uses its exact resolution slot; the mask/aux texture is not always g_Texture1.
         if let slot = texCoordZWResolutionSlot(shaderName: shaderName, comboValues: comboValues) {
-            // No falling through to the generic ladder for a recognized family: with the
-            // exact slot's resolution missing (malformed input), the ladder would scale
-            // .zw by a DIFFERENT texture's aspect while the .zw sample stays preserved.
-            // nil leaves .zw = uv — identical to the historical .xy downgrade.
+            // Do not fall through to the generic ladder for a recognized family: a missing exact-slot resolution would scale .zw by a different texture.
             let uniform = "g_Texture\(slot)Resolution"
             return availableUniforms.contains(uniform) ? uniform : nil
         }
-        // WPE distortion shaders (waterwaves/waterripple/foliagesway…) scale `v_TexCoord.zw` by
-        // the *active auxiliary texture's* resolution, mirroring the `#if MASK / #elif
-        // TIMEOFFSET` ladder in the .vert: MASK uses the opacity-mask texture (g_Texture1),
-        // TIMEOFFSET uses the time-offset texture (g_Texture2). The previous combo-blind heuristic always picked g_Texture1Resolution, mis-scaling the TIMEOFFSET case.
+        // MASK uses g_Texture1, TIMEOFFSET uses g_Texture2. A combo-blind pick of g_Texture1Resolution mis-scales TIMEOFFSET.
         if comboValues["MASK"] == 1, availableUniforms.contains("g_Texture1Resolution") {
             return "g_Texture1Resolution"
         }
@@ -1259,7 +1151,6 @@ extension WPEShaderTranspiler {
         return nil
     }
 
-    /// Map `g_Texture0` / `g_Texture1` etc. to a slot index by parsing the trailing digit.
     static func textureSlot(for name: String) -> Int? {
         let prefix = "g_Texture"
         guard name.hasPrefix(prefix) else { return nil }

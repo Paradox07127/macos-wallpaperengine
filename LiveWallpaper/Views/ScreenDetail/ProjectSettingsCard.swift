@@ -2,7 +2,6 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// Pro-only inspector card that mirrors Wallpaper Engine's right-hand property panel for an imported web project.
 struct WPEProjectCustomSettingsCard: View {
     private typealias ValueLogic = PropertyValueLogic
 
@@ -150,12 +149,9 @@ struct WPEProjectCustomSettingsCard: View {
                     }
                     .labelsHidden()
                     .pickerStyle(.menu)
-                    // Option labels are author-supplied (song titles, preset names), unbounded in length.
-                    // `.fixedSize()` demanded the ideal width — the LONGEST label — pushing the settings
-                    // column past the panel; staying compressible keeps the panel intact, no max width needed.
-                    // But `SettingRow` gives its title `maxWidth: .infinity` + `layoutPriority(1)`, so a merely-
-                    // compressible control loses the row and collapses to a bare chevron — matching that priority
-                    // lets the two share the row, and `minWidth` keeps the menu clickable when the title is long.
+                    // Author labels are unbounded: `.fixedSize()` would demand the longest one and
+                    // push the column past the panel, but merely compressible loses the row to
+                    // `SettingRow`'s `layoutPriority(1)` title — match it, and `minWidth` keeps it clickable.
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .frame(minWidth: 96, alignment: .trailing)
@@ -179,8 +175,6 @@ struct WPEProjectCustomSettingsCard: View {
                     .accessibilityLabel(property.displayText)
             }
         case .file, .directory, .sceneTexture, .userShortcut:
-            // FolderURLSchemeHandler grants reads only inside the project folder;
-            // arbitrary local paths requested by WPE properties cannot be exposed.
             SettingRow(
                 icon: WPEPropertyRowIcon.symbol(for: property.type),
                 iconColor: .secondary,

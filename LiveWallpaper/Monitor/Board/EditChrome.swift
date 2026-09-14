@@ -42,16 +42,13 @@ struct WidgetDragModifier: ViewModifier {
     }
 }
 
-/// Board-relative coordinate space for drag gestures.
 enum MonitorBoardCoordinateSpace {
     static let name = "MonitorBoard"
-    /// Publish the Add Widget frame in toolbar coordinates, independent of the board preview scale.
     static let toolbar = "MonitorBoardEditToolbar"
 }
 
 // MARK: - Floating control bar (size toggle + settings + remove)
 
-/// S/M/L size toggle + settings + remove, floating on the selected tile.
 struct MonitorWidgetControlBar: View {
     @ObservedObject var model: InteractionModel
     let placement: MonitorWidgetPlacement
@@ -142,7 +139,6 @@ struct MonitorWidgetControlBar: View {
 
 // MARK: - Edit toolbar (add + done)
 
-/// Top-centre Add Widget + Done pill (Done is the exit path for menu-entered edit mode).
 struct MonitorBoardEditToolbar: View {
     @ObservedObject var model: InteractionModel
     /// Inspector previews stay in edit mode; only desktop boards need an exit button.
@@ -206,7 +202,6 @@ struct MonitorBoardEditToolbar: View {
 
 // MARK: - Add-widget catalog
 
-/// Available widget kinds.
 struct MonitorCatalogView: View {
     @ObservedObject var model: InteractionModel
     let maxScrollHeight: CGFloat
@@ -350,7 +345,6 @@ struct MonitorWidgetSettingsCard: View {
     }
 }
 
-/// Accessibility move/remove actions — edit mode only.
 struct MonitorPlacementAccessibilityActions: ViewModifier {
     @ObservedObject var model: InteractionModel
     let placementID: UUID
@@ -382,9 +376,6 @@ struct MonitorPlacementAccessibilityActions: ViewModifier {
 
 // MARK: - Board-chrome layout preference keys
 
-/// Add Widget button frame, in the toolbar's own coords, so the catalog can
-/// anchor beneath it. `MonitorBoardChromeMetrics.catalogAnchor` puts the two
-/// keys together into a board rect.
 struct MonitorAddButtonFrameKey: PreferenceKey {
     static let defaultValue: CGRect = .zero
     static func reduce(value: inout CGRect, nextValue: () -> CGRect) {

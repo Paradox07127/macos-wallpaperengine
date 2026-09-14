@@ -3,27 +3,11 @@ import Foundation
 import LiveWallpaperProWPE
 import simd
 
-/// Per-object (per-layer) transform uniforms for WPE 2.8 model shaders.
-///
-/// Model, inverse-model, layer-model, and normal matrices are *object*-scoped,
-/// so unlike the per-frame `WPEMetalRuntimeUniforms` they are merged per layer in
-/// `WPEPreparedRenderPipeline.addingMetalRuntimeUniforms`.
-///
-/// 2.8's `generic4`/`chroma4`/`foliage4`/`fur4` vertex shaders switched from
-/// `CAST3X3(g_ModelMatrix)` to an explicit inverse-transpose `g_NormalModelMatrix`.
-/// Our compiler is fragment-only (never executes those vertex shaders), so these
-/// uniforms just let any 2.8 shader that declares them pack a value instead of
-/// failing; the transpiler only packs declared uniforms, so identity defaults stay
-/// zero-cost for existing 2D/orthographic scenes.
 enum WPEMetalObjectUniforms {
 
     static let modelViewProjectionMatrixUniformName = "g_ModelViewProjectionMatrix"
     static let modelViewProjectionMatrixInverseUniformName = "g_ModelViewProjectionMatrixInverse"
 
-    /// Camera/object counterparts are resolved by `WPEFrameUniformContext`,
-    /// where both the pass-scoped model matrix and current camera VP are
-    /// available. Keeping these names here makes the producer the ABI source of
-    /// truth without baking a camera snapshot into the cross-frame object cache.
     static let cameraComposedUniformNames = [
         modelViewProjectionMatrixUniformName,
         modelViewProjectionMatrixInverseUniformName
@@ -49,10 +33,7 @@ enum WPEMetalObjectUniforms {
         ]
     }
 
-    /// Strict column-vector counterpart of the existing producers: `VP · M`.
-    /// This is the same multiplication order used by the scene-model Metal
-    /// vertex path. The inverse name gets the mathematical inverse of that
-    /// product, with the same finite identity fallback as other inverse ABIs.
+    /// Strict column-vector counterpart: `VP · M` — the same multiplication order as the scene-model Metal vertex path. The inverse name gets the mathematical inverse, with the same finite identity fallback as other inverse ABIs.
     static func cameraComposedValue(
         named name: String,
         modelValue: WPESceneShaderConstantValue,
@@ -82,9 +63,7 @@ enum WPEMetalObjectUniforms {
         return translation(origin) * rotation * scaling(scale)
     }
 
-    /// `transpose(inverse(mat3(model)))`. Falls back to identity when the
-    /// upper-left 3×3 is (near-)singular — a zero/degenerate scale would
-    /// otherwise produce NaN/Inf in the inverse.
+    /// `transpose(inverse(mat3(model)))`. Falls back to identity when the upper-left 3×3 is (near-)singular — a zero/degenerate scale would otherwise produce NaN/Inf.
     static func normalMatrix(from model: simd_double4x4) -> simd_double3x3 {
         let upper = simd_double3x3(
             SIMD3(model.columns.0.x, model.columns.0.y, model.columns.0.z),
@@ -97,9 +76,7 @@ enum WPEMetalObjectUniforms {
         return upper.inverse.transpose
     }
 
-    /// A singular matrix has no inverse. Identity is the finite fail-closed
-    /// value already used by the normal-matrix producer; malformed/non-finite
-    /// inverse results take the same path.
+    /// A singular matrix has no inverse. Identity is the finite fail-closed value already used by the normal-matrix producer; malformed/non-finite inverse results take the same path.
     static func safeInverse(_ matrix: simd_double4x4) -> simd_double4x4 {
         let determinant = simd_determinant(matrix)
         guard determinant.isFinite, determinant != 0 else {
@@ -182,21 +159,8 @@ enum WPEMetalObjectUniforms {
     }
 }
 
-/// Cross-frame memo for `WPEMetalObjectUniforms.uniformValues`, plus the pass-id map
-/// `WPEPreparedRenderPipeline.addingMetalRuntimeUniforms` hands to
-/// `WPEFrameUniformContext`. Both matrices are a pure function of
-/// `origin`/`scale`/`angles`, so an unmoved layer reuses last frame's dictionary and a
-/// fully static scene reuses the whole map — without this it paid two `[Double]`
-/// allocations, a matrix inverse per layer, and a dictionary insert per pass, every
-/// frame, before the `needsRebuild` early-out.
-///
-/// Deliberately NOT `Sendable`: one instance per `WPEMetalRenderExecutor`, each
-/// confined to its own display's off-main render thread. Non-`Sendable` makes that
-/// compiler-checked — the box can't cross isolation domains — so two displays sharing
-/// the same immutable pipeline value still get one cache each.
 final class WPEObjectUniformCache {
 
-    /// The complete input of `WPEMetalObjectUniforms.uniformValues`.
     private struct TransformKey: Equatable {
         let origin: SIMD3<Double>
         let scale: SIMD3<Double>
@@ -211,16 +175,11 @@ final class WPEObjectUniformCache {
     }
 
     private var entries: [LayerEntry] = []
-    /// Memo consulted when the map has to be rebuilt (a layer moved, or the
-    /// layer set changed). Keyed by layer id, but the transform is re-checked
-    /// on every hit — so a recycled id can only ever hit on a transform that
-    /// produces the identical matrices.
+    /// Memo consulted when the map has to be rebuilt. Keyed by layer id, but the transform is re-checked on every hit — so a recycled id can only ever hit on a transform that produces the identical matrices.
     private var memoByLayerID: [String: (transform: TransformKey, values: [String: WPESceneShaderConstantValue])] = [:]
     private var valuesByPassID: [String: [String: WPESceneShaderConstantValue]] = [:]
 
-    /// Test seam: how many times the matrices were actually built.
     private(set) var computeCount = 0
-    /// Test seam: how many times the pass-id map was rebuilt.
     private(set) var mapRebuildCount = 0
 
     func objectUniformValuesByPassID(

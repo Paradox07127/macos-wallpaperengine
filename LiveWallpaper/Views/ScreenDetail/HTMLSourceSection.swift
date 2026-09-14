@@ -2,17 +2,10 @@ import SwiftUI
 import AppKit
 import LiveWallpaperCore
 
-/// Opens the shared file/folder panel for a locally-backed HTML wallpaper and
-/// hands back a resolved source. Lives here rather than in either view because
-/// the picker bar and the empty state both offer this path.
 @MainActor
 enum HTMLLocalSourcePicker {
     /// A file pick bookmarks that file alone; a folder pick infers its index file.
-    ///
-    /// No `allowedContentTypes`: a folder is `public.folder`, which conforms to
-    /// nothing in an HTML-only list, so the filter disabled the Choose button for
-    /// every directory and `canChooseDirectories` had no effect. Every other
-    /// folder picker in the app omits it.
+    /// No `allowedContentTypes`: an HTML-only list disables Choose for every directory.
     static func pick(_ completion: (HTMLSource) -> Void) {
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
@@ -47,10 +40,6 @@ enum HTMLLocalSourcePicker {
     }
 }
 
-/// Picker and options for URL- or locally-backed HTML wallpapers, as the bar
-/// floating over the live web preview. Before anything is picked the page shows
-/// `HTMLEmptyState` instead, so this only ever renders over live content — which
-/// is what earns it glass.
 struct HTMLSourceSection: View {
     var screen: Screen
     @Binding var source: HTMLSource?
@@ -73,16 +62,13 @@ struct HTMLSourceSection: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 6)
-        // Capsule, matching the scene preview's info bar — same role, same shape.
         .adaptiveGlassSurface(.capsule)
         .onAppear { scheduleBindingSync() }
         .onChange(of: source) { _, _ in
             scheduleBindingSync()
         }
-        // The view is not rebuilt per screen, so an uncommitted draft typed on
-        // a previous screen would otherwise still be sitting in `urlInput`
-        // when this one appears — and a same-URL screen switch would not
-        // otherwise trigger the `source`-keyed sync above to overwrite it.
+        // The view is not rebuilt per screen: without this, an uncommitted draft
+        // from the previous screen survives a same-URL screen switch.
         .onChange(of: screen.id) {
             scheduleBindingSync()
         }
@@ -126,7 +112,6 @@ struct HTMLSourceSection: View {
         }
     }
 
-    /// Legacy `.inline` only — never expose raw markup in the URL field.
     private var inlinePane: some View {
         HStack(spacing: 8) {
             summaryLine(icon: "chevron.left.forwardslash.chevron.right", text: Text("Inline HTML content"))
@@ -160,8 +145,6 @@ struct HTMLSourceSection: View {
         }
     }
 
-    /// Commits immediately when the pasted value already parses as a valid
-    /// `HTMLSource.url`; otherwise just populates the field for the user to edit.
     private func pasteFromClipboard() {
         guard let raw = NSPasteboard.general.string(forType: .string) else { return }
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -350,14 +333,9 @@ struct HTMLSourceSection: View {
     }
 }
 
-/// HTML layout transforms, as the content of the web preview bar's viewport
-/// control: scale, translate and rotation are viewport geometry, the role the
-/// other two types fill with a fit-mode picker. A popover for the same reason
-/// speed and volume are: three sliders will not fit inline on a bar.
 struct HTMLTransformControls: View {
     var screen: Screen
     @Binding var config: HTMLConfig
-    /// Whether dragging on the preview itself moves the page.
     @Binding var isDragEnabled: Bool
 
     @Environment(ScreenManager.self) private var screenManager
@@ -380,7 +358,6 @@ struct HTMLTransformControls: View {
         .padding(DesignTokens.Spacing.md)
     }
 
-    /// Preview gestures are opt-in to prevent accidental transforms.
     private var dragRow: some View {
         SettingRow(
             icon: "hand.draw",
@@ -396,7 +373,6 @@ struct HTMLTransformControls: View {
         }
     }
 
-    /// A footer row: a popover has no section header to hang an accessory on.
     private var resetRow: some View {
         HStack {
             Spacer(minLength: 0)
@@ -440,7 +416,6 @@ struct HTMLTransformControls: View {
         }
     }
 
-    /// Slider uses an epsilon-guarded binding (drags emit many near-duplicate values); the text field bypasses the epsilon so typing `100` over a current `99.6` commits cleanly instead of snapping back.
     private var translateRow: some View {
         SettingRow(
             icon: "arrow.up.and.down.and.arrow.left.and.right",

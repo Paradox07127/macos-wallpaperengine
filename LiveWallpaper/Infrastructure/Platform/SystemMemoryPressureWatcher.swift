@@ -32,7 +32,6 @@ struct InactiveMemoryPressureWatcher: MemoryPressureWatching {
     func currentLevel() -> SystemMemoryPressureLevel { .normal }
 }
 
-/// DispatchSourceMemoryPressure lifecycle adapter (test-injectable).
 protocol MemoryPressureSourceLifecycle: AnyObject, Sendable {
     var data: DispatchSource.MemoryPressureEvent { get }
 

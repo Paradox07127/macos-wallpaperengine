@@ -3,7 +3,6 @@ import Testing
 import WebKit
 @testable import LiveWallpaper
 
-/// Runs one project-policy pair in an isolated web view and returns its audit observations.
 @MainActor
 final class CSPAuditHost {
     let project: CSPAuditProject
@@ -24,7 +23,6 @@ final class CSPAuditHost {
         pagePrefs.allowsContentJavaScript = true
         config.defaultWebpagePreferences = pagePrefs
         config.mediaTypesRequiringUserActionForPlayback = []
-        // A nonpersistent store prevents state from contaminating later audit cases.
         config.websiteDataStore = .nonPersistent()
 
         let userScript = WKUserScript(
@@ -48,7 +46,6 @@ final class CSPAuditHost {
         self.webView = webView
     }
 
-    /// Loads the project and collects observations for the requested dwell interval.
     func runOnce(dwellSeconds: TimeInterval) async throws -> [CSPViolationCollector.Observation] {
         folderHandler.folderURL = project.folderURL
         // Set package backing after folderURL because assigning the folder clears existing backing.
@@ -67,7 +64,6 @@ final class CSPAuditHost {
         return snapshot
     }
 
-    /// Returns package backing when the project contains a valid in-place `scene.pkg`.
     private static func packageBacking(forFolder folderURL: URL) -> FolderURLSchemeHandler.PackageBacking? {
         let pkgURL = folderURL.appendingPathComponent("scene.pkg")
         guard FileManager.default.fileExists(atPath: pkgURL.path) else { return nil }
@@ -83,7 +79,6 @@ final class CSPAuditHost {
     }
 }
 
-/// Describes a web wallpaper discovered in the user's Wallpaper Engine library.
 struct CSPAuditProject: Sendable, Equatable {
     let workshopID: String
     let title: String
@@ -91,8 +86,6 @@ struct CSPAuditProject: Sendable, Equatable {
     let entryFile: String
 }
 
-/// Verifies that package-backed web assets share the document origin and remain CSP-clean.
-/// Synthetic packages keep this regression coverage hermetic and independent of the opt-in corpus audit.
 @Suite("CSP audit — package-backed (wpe scene.pkg) source coverage")
 @MainActor
 struct CSPAuditPackageBackingTests {
@@ -140,7 +133,6 @@ struct CSPAuditPackageBackingTests {
         return url
     }
 
-    /// Writes the minimal `PKGV0022` layout accepted by the streaming parser.
     private static func writePackage(to pkgURL: URL, entries: [(name: String, bytes: Data)]) throws {
         var payload = Data()
         var resolved: [(name: String, offset: UInt32, size: UInt32)] = []

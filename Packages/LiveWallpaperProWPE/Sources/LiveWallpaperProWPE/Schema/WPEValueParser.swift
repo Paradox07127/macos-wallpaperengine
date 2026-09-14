@@ -12,9 +12,7 @@ public enum WPEValueParser {
         return result
     }
 
-    /// Accepts both forms WPE writes: the plain `{name: value}` dictionary and
-    /// the structured array `[{name:…, value:…}]` used by effect-instance
-    /// overrides (entries may carry `value` or `default`).
+    /// Accepts `{name: value}` and `[{name, value|default}]` used by effect-instance overrides.
     public static func shaderConstants(
         _ raw: Any?,
         boolAsNumber: Bool = false
@@ -127,12 +125,7 @@ public enum WPEValueParser {
             return (key, index)
         }.sorted { $0.index < $1.index }
 
-        // Tracks are positional (c0 = x, c1 = y, …), so a track that fails to
-        // parse — `"c0": null`, not an array, no valid keyframes — must hold its
-        // slot as an empty track (the sampler falls back per component) rather
-        // than be dropped: compacting shifted c1 into slot 0 and drove x with
-        // the y animation. Index gaps are filled for the same reason. 64 caps a
-        // hostile "c999999999" from allocating a giant array.
+        // Tracks are positional (c0 = x, c1 = y, …). A track that fails to parse must hold its slot as an empty track rather than be dropped: compacting shifted c1 into slot 0. Index gaps filled for the same reason. 64 caps a hostile `c999999999`.
         guard let maxIndex = trackKeys.last?.index else { return [] }
         var tracks = [[WPESceneAnimationKeyframe]](repeating: [], count: maxIndex + 1)
         for key in trackKeys {
@@ -214,11 +207,7 @@ public enum WPEValueParser {
     }
 
     public static func vector3(_ raw: Any?, boolAsNumber: Bool = false) -> SIMD3<Double>? {
-        // WPE binds a transform component (scale/origin/angles) to a user property
-        // as {"user": "newpropertyN", "value": "0.5 0.5 0.5"}; the resolved value
-        // lives in `value`. Unwrap it (matching `shaderConstant`) so a property-bound
-        // transform resolves instead of silently falling back to the default — e.g.
-        // an audio-bar composelayer scale of 0.5 was parsing as 1.0, doubling the box.
+        // Unwrap `{"user": …, "value": …}` (matching `shaderConstant`) so a property-bound transform resolves instead of silently falling back to the default.
         if let dict = raw as? [String: Any], let value = dict["value"] {
             return vector3(value, boolAsNumber: boolAsNumber)
         }
@@ -230,9 +219,7 @@ public enum WPEValueParser {
             let x = double(dict["x"], boolAsNumber: boolAsNumber)
             let y = double(dict["y"], boolAsNumber: boolAsNumber)
             let z = double(dict["z"], boolAsNumber: boolAsNumber)
-            // No axis key at all is "not a vector"; an authored {"x":0,"y":0,"z":0}
-            // is a real zero — the old all-zero test conflated the two and marked
-            // the zero vector unparsed while the string "0 0 0" parsed fine.
+            // No axis key at all is 'not a vector'; an authored `{"x":0,"y":0,"z":0}` is a real zero.
             if x == nil, y == nil, z == nil { return nil }
             return SIMD3<Double>(x ?? 0, y ?? 0, z ?? 0)
         }
@@ -240,9 +227,7 @@ public enum WPEValueParser {
     }
 
     public static func double(_ raw: Any?, boolAsNumber: Bool = false) -> Double? {
-        // A JSON boolean bridges to a CFBoolean-backed NSNumber, so it would otherwise
-        // slip through the `as? NSNumber` path as 0/1 even when the caller asked for a
-        // bool to parse as nil. Resolve it up front: 1/0 only when boolAsNumber, else nil.
+        // A JSON boolean bridges to a CFBoolean-backed NSNumber, so it would slip through `as? NSNumber` as 0/1. Resolve it first: 1/0 only when `boolAsNumber`, else nil.
         if let bool = strictBool(raw) {
             return boolAsNumber ? (bool ? 1 : 0) : nil
         }
@@ -261,10 +246,7 @@ public enum WPEValueParser {
         return nil
     }
 
-    /// An authored array with one malformed element: `as? [[String: Any]]` fails
-    /// the WHOLE cast, silently erasing every valid sibling while `sourceJSON`
-    /// keeps them all — two truths, and the rendered one empty. Per-element
-    /// compaction keeps what parses; nil only when the value is not an array.
+    /// `as? [[String: Any]]` fails the whole cast when one element is malformed. Per-element compaction keeps what parses; nil only when the value is not an array.
     public static func objectArray(_ raw: Any?) -> [[String: Any]]? {
         if let exact = raw as? [[String: Any]] { return exact }
         guard let array = raw as? [Any] else { return nil }
@@ -289,9 +271,7 @@ public enum WPEValueParser {
         return nil
     }
 
-    /// `Int(_:)` traps on NaN and on any magnitude past `Int`, and scene JSON
-    /// reaching these parsers is untrusted Workshop content. Saturating keeps a
-    /// malformed literal from killing the wallpaper agent.
+    /// `Int(_:)` traps on NaN and on any magnitude past `Int`. Saturating keeps a malformed Workshop literal from killing the wallpaper agent.
     public static func saturatingInt(_ value: Double) -> Int {
         guard !value.isNaN else { return 0 }
         guard value > Double(Int.min) else { return .min }

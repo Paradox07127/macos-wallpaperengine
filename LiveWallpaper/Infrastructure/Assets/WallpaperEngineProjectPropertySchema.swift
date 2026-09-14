@@ -1,7 +1,6 @@
 import Foundation
 import LiveWallpaperCore
 
-/// project.json properties schema for web/scene inspectors and applyUserProperties.
 struct WallpaperEngineProjectPropertySchema: Equatable, Sendable {
     var properties: [Property]
 
@@ -64,8 +63,7 @@ struct WallpaperEngineProjectPropertySchema: Equatable, Sendable {
         defaultValues.merging(overrides) { _, override in override }
     }
 
-    /// Keeps only values this wallpaper actually declares as editable. A Workshop preset's `preset` map carries an entry for **every** property row, including the decorative `text` / `group` ones whose value is an empty string; `effectiveValues` merges unconditionally, so those empty strings won over real schema defaults the moment the preset layer started reaching the renderer — every image layer in a preset-carrying scene rendered with no output while text layers were unaffected.
-    /// Also drops keys this wallpaper no longer declares, which is what a preset authored against an older revision leaves behind.
+    /// Keep only editable declared keys: a preset map has an entry for every row (including decorative `text`/`group` empty strings) and `effectiveValues` would let those win over schema defaults.
     func declaredEditableValues(
         _ values: [String: WallpaperEngineProjectPropertyValue]
     ) -> [String: WallpaperEngineProjectPropertyValue] {
@@ -74,9 +72,7 @@ struct WallpaperEngineProjectPropertySchema: Equatable, Sendable {
         return values.filter { editable.contains($0.key) }
     }
 
-    /// Schema defaults + the descriptor's preset layer + the user's increment
-    /// (the last two alone if no project.json). Reads `layeredPropertyValues()`,
-    /// never `propertyOverrides`: the increment on its own is half the look, so a descriptor carrying a preset would render as bare scene defaults.
+    /// Reads `layeredPropertyValues()`, never `propertyOverrides`: the increment alone is half the look, so a descriptor carrying a preset would render as bare scene defaults.
     static func effectiveSceneValues(
         descriptor: SceneDescriptor,
         cacheRootURL: URL
@@ -249,7 +245,6 @@ extension WallpaperEngineProjectPropertySchema {
             )
         }
 
-        /// Tokens used to identify promotional links in generated keys and visible labels.
         private static let promoKeyTokens = [
             "href", "http", "www", "imgsrc", "kofi", "ko-fi", "patreon", "paypal",
             "donate", "sponsor", "discord", "afdian", "aifadian", "爱发电", "赞助", "赞赏", "打赏"
@@ -260,7 +255,6 @@ extension WallpaperEngineProjectPropertySchema {
             "爱发电", "赞助", "赞赏", "打赏"
         ]
 
-        /// Detects embedded promotional markup while preserving ordinary styled labels.
         fileprivate static func detectPromotionalLink(
             key: String,
             rawText: String,
@@ -287,9 +281,7 @@ extension WallpaperEngineProjectPropertySchema {
             return promoTextMarkers.contains(where: haystack.contains)
         }
 
-        /// `JSONSerialization` returns every JSON number as `NSNumber`, and `NSNumber as? Bool` succeeds for 0 and 1 — so a `{"type":"slider","value":0}` used to collapse to `.bool(false)`.
-        /// The envelope `{"user":K,"value":V}` then resolved to `false`, the bound uniform silently fell back to its shader default, and scene 3413921910's water blur ran at full strength (author default 0) and smeared the finished reflection into a flat band.
-        /// The DECLARED type is the disambiguator; only CoreFoundation booleans are booleans.
+        /// `NSNumber as? Bool` succeeds for 0 and 1; only CoreFoundation booleans are booleans. The declared type is the disambiguator.
         fileprivate static func value(
             from raw: Any?,
             type: PropertyType
@@ -343,12 +335,7 @@ extension WallpaperEngineProjectPropertySchema {
         case text
         case file
         case directory
-        /// Scene texture replacement. Preserved distinctly from unknown types,
-        /// but not editable until a security-scoped image/video provider reaches
-        /// every bound texture consumer.
         case sceneTexture = "scenetexture"
-        /// Device-local file/directory/URL/command shortcut. Kept as typed
-        /// metadata while execution remains intentionally security-rejected.
         case userShortcut = "usershortcut"
         case group
         case unsupported
@@ -403,7 +390,6 @@ private struct Localization: Equatable {
 
     func displayText(for raw: String) -> String {
         let cleaned = Self.clean(raw)
-        // Localized author string wins; else prettify known WPE keys.
         if let localized = selected[cleaned] ?? fallback[cleaned] {
             return Self.clean(localized)
         }
@@ -450,7 +436,6 @@ private struct Localization: Equatable {
         return Array(NSOrderedSet(array: candidates)) as? [String] ?? candidates
     }
 
-    /// Fallback label: known-key map, then identifier prettify; free text untouched.
     private static func resolveDisplayText(_ cleaned: String) -> String {
         if let known = KnownWallpaperEngineKeys.displayText(for: cleaned) {
             return known
@@ -513,7 +498,6 @@ private struct Localization: Equatable {
 }
 
 extension WallpaperEngineProjectPropertySchema {
-    /// Evaluate visible.user.condition against a live property (loose number/string).
     static func sceneConditionMatches(
         value: WallpaperEngineProjectPropertyValue?,
         condition: String
@@ -534,7 +518,6 @@ private enum ConditionEvaluator {
             .contains(true)
     }
 
-    /// Loose property-vs-condition-literal equality.
     static func matchesLiteral(
         value: WallpaperEngineProjectPropertyValue?,
         condition: String

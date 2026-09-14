@@ -1,7 +1,6 @@
 #if !LITE_BUILD
 import Foundation
 
-/// Username validation gate for every SteamCMD/XPC entry point.
 enum SteamCMDScriptWriter {
     /// `^[A-Za-z0-9_]{1,32}$` — Steam's documented login-name charset.
     static func validateUsername(_ username: String) -> Bool {

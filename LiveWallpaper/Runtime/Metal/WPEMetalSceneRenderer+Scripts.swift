@@ -4,10 +4,7 @@ import LiveWallpaperCore
 import LiveWallpaperProWPE
 import MetalKit
 
-/// Mutation journal for `thisLayer` transform assignments, owned by the renderer
-/// (so display-actor isolated, not `@MainActor`). The load generation is part of
-/// the key so an outcome from a retired scene can never move an object in the
-/// replacement scene that reused its objectID.
+/// Load generation is part of the key so an outcome from a retired scene cannot move an object in the replacement scene that reused its objectID.
 struct WPESceneScriptTransformMutationJournal: Equatable {
     struct Key: Hashable {
         let objectID: String
@@ -51,10 +48,6 @@ struct WPESceneScriptTransformMutationJournal: Equatable {
 extension WPEMetalSceneRenderer {
     // MARK: - Script loading & seeding
 
-    /// Builds a `WPELayerScriptInstance` per image object whose `visible` field
-    /// is a SceneScript, maps each to its video source, and applies the script's
-    /// `init()` state (visibility/alpha + video stop/seek). Runs after textures so
-    /// the video sources exist. No-op for scenes without layer scripts.
     func loadLayerScripts(
         from document: WPESceneDocument,
         scriptLoadToken: WPESceneScriptInstanceLimitToken
@@ -104,9 +97,7 @@ extension WPEMetalSceneRenderer {
             }
         }
 
-        // WPE delivers the user-property bag to each script after init(); time-of-day
-        // scripts gate their day/night switch on it (e.g. `timevarying`), so without
-        // this the switch never runs.
+        // WPE delivers the user-property bag to each script after init(); without this, time-of-day scripts that gate on it (e.g. `timevarying`) never switch.
         let userProperties = currentSceneScriptUserProperties()
         debugStage("layerScripts.userProperties", "count=\(userProperties.count)")
         // One `shared` store for the whole scene so WPE's cross-script `shared`
@@ -275,9 +266,6 @@ extension WPEMetalSceneRenderer {
         )
     }
 
-    /// A text object's own `visible` script output → live text visibility (and
-    /// alpha when the script assigned it). `others` still routes to image
-    /// layers via the shared name map, matching image layer-script semantics.
     func applyTextScriptOutput(_ output: WPELayerScriptOutput, ownObjectID: String) {
         if output.own.visibleAssigned {
             liveTextVisibility[ownObjectID] = output.own.visible
@@ -304,41 +292,23 @@ extension WPEMetalSceneRenderer {
         }
     }
 
-    /// One deterministic "frame 0" pass over the scene's scripts, run once at the end of
-    /// load — PRODUCERS FIRST. WPE ticks scripts serially in scene-object order each
-    /// frame, so a `shared`-consumer must never evaluate before its producers; our old
-    /// per-load seeding ran inside each loader (texts before layer scripts existed), so a
-    /// consumer's first read hit empty `shared` — permanently corrupting state
-    /// (3509243656's `time` script accumulates `undefined` into NaN, and its self-reset
-    /// keys off `shared.xntime === undefined`, already NaN — "frozen at NaN Years"
-    /// forever). Order here: script hosts (pure producers, e.g. MAIN's n-body sim writing
-    /// shared.xx*/ktime) run one update() each, then transform+text-content consumers seed.
+    /// One deterministic frame-0 pass — producers first. A `shared`-consumer must never evaluate before its producers; seeding inside each loader would let a consumer's first read hit empty `shared` and permanently corrupt state.
     func seedSceneScriptsAfterLoad(
         from document: WPESceneDocument,
         scriptLoadToken: WPESceneScriptInstanceLimitToken
     ) {
         guard isCurrentSceneScriptLoad(scriptLoadToken),
               scriptLoadToken.allows(.tick) else { return }
-        // WPE sends the full general-settings bag once during load, before the
-        // first update pass. `language` is the only currently documented key.
         applyInitialSceneScriptGeneralSettings()
-        // Same contract for user properties: the layer/text families already get
-        // their initial FULL bag inside their own construction loops, and the
-        // transform families must get it here — before the seeding ticks below,
-        // because a script that initialises state in the handler (3146703458's
-        // `speed`) otherwise computes its very first value from `undefined`.
+        // Transform families must get the initial full user-property bag here — before the seeding ticks below — because a script that initialises state in the handler otherwise computes its first value from `undefined`.
         dispatchTransformScriptUserProperties(currentSceneScriptUserProperties())
-        // 1. Script hosts: one bounded synchronous update() each, in scene
-        //    order, applied exactly like a frame tick.
         for host in document.scriptHostObjects {
             guard let instance = layerScriptInstances[host.id] else { continue }
             if let output = instance.tick(runtimeSeconds: 0, pointerFrame: .neutral) {
                 applyLayerScriptOutput(output, ownObjectID: host.id)
             }
         }
-        // 2. Transform scripts, neutral pointer (the frame path's
-        //    follow-cursor-off default) — first frame shows the scripted
-        //    transform instead of popping from the baked value.
+        // Transform scripts, neutral pointer (the frame path's follow-cursor-off default) — first frame shows the scripted transform instead of popping from the baked value.
         let neutralPointer = SIMD2<Double>(0.5, 0.5)
         for instances in [
             dynamicOriginScriptInstances,
@@ -354,10 +324,7 @@ extension WPEMetalSceneRenderer {
         for object in textObjects {
             textScriptInstances[object.id]?.seedAsyncTick()
         }
-        // 4./5. Effect constants BEFORE visibility gates: a gate reads what a
-        //    constant script writes into `shared` (day/night `shared.shownight`),
-        //    so seeding them out of order leaves the gate reading `undefined` and
-        //    the first frame renders with every arm of the cycle closed.
+        // Effect constants BEFORE visibility gates: a gate reads what a constant script writes into `shared`, so seeding them out of order would leave the gate reading `undefined` and the first frame would render with every arm of the cycle closed.
         for (_, instance) in effectConstantScriptInstances
             .sorted(by: { ($0.key.passID, $0.key.uniform) < ($1.key.passID, $1.key.uniform) }) {
             instance.seedAsyncTick(pointerPosition: neutralPointer)
@@ -369,18 +336,12 @@ extension WPEMetalSceneRenderer {
 
     // MARK: - On-demand video layers
 
-    /// Index every video layer, plus the static graph of who can put each video's
-    /// pixels on screen. The predecessor filter admitted only scene-only layers,
-    /// so a hidden video that writes an FBO decoded at full rate forever; the
-    /// consumer graph replaces that proxy with the real question, answered per
-    /// frame by `reconcileVideoResidency`.
+    /// The predecessor filter admitted only scene-only layers, so a hidden video that writes an FBO decoded at full rate forever; the consumer graph replaces that proxy, answered per frame by `reconcileVideoResidency`.
     func indexOnDemandVideoLayers(pipeline: WPEPreparedRenderPipeline) {
         onDemandVideoKeyByID = [:]
         onDemandVideoLoading = []
         for layer in pipeline.layers {
-            // Every video the layer samples, not just the first: a layer can bind
-            // one video as its source and another in a shader slot, and indexing
-            // only one of them drops the other layer's consumer edge.
+            // Every video the layer samples, not just the first: a layer can bind one video as its source and another in a shader slot, and indexing only one of them would drop the other layer's consumer edge.
             let keys = Set(videoTexturePaths(for: layer)
                 .filter { dynamicTextureSources[$0] is WPEVideoTextureSource })
             guard !keys.isEmpty else { continue }
@@ -396,22 +357,13 @@ extension WPEMetalSceneRenderer {
         )
     }
 
-    /// Static half of the release decision: layer objectID → video keys whose pixels that
-    /// layer can put on screen. Seeded with layers that sample the video, then closed
-    /// transitively over the FBO/composite graph (A writes FBO1, B samples FBO1/writes
-    /// FBO2, C samples FBO2 ⇒ all three consume A's video). `.scene`/`_rt_layerGroup_*`
-    /// writes deliberately do NOT propagate — those are the two targets
-    /// `WPEMetalRenderExecutor` skips for a hidden layer, so its pixels never reach them,
-    /// and a visible layer writing them already counts as a consumer. Visibility is absent
-    /// on purpose (it changes every frame, this graph does not). Pure + static for testing.
+    /// Seeded with layers that sample the video, then closed transitively over the FBO/composite graph. `.scene`/`_rt_layerGroup_*` writes deliberately do not propagate — those are the two targets a hidden layer never reaches.
     nonisolated static func onDemandVideoKeysByConsumerLayer(
         layers: [WPEPreparedRenderLayer],
         videoKeyByLayerID: [String: Set<String>]
     ) -> [String: Set<String>] {
         guard !videoKeyByLayerID.isEmpty else { return [:] }
-        // Per-layer unions, not per-pass: a layer's passes chain through
-        // `.previous` and its own composites, so any input reaching the layer can
-        // reach every target it writes.
+        // Per-layer unions, not per-pass: a layer's passes chain through `.previous` and its own composites, so any input reaching the layer can reach every target it writes.
         let sampled = layers.map { Set($0.passes.flatMap(Self.passSampledTargetNames)) }
         let written = layers.map { Set($0.passes.compactMap(Self.passPropagatedTargetName)) }
         var result: [String: Set<String>] = [:]
@@ -442,14 +394,7 @@ extension WPEMetalSceneRenderer {
         return result
     }
 
-    /// Both sides of the graph key on this. `WPEMetalShaderInputs.resolveAliasedNamedTexture`
-    /// matches an `.fbo(name)` against the frame's named textures after stripping `_rt_`/
-    /// leading `_` and ignoring case, so comparing raw strings here loses edges the executor
-    /// actually draws (author writes `_rt_Blur`, a visible layer samples `blur`). Merging
-    /// more names than the executor only over-retains; missing an edge releases a texture a
-    /// visible layer still samples. Stripping repeats because the executor strips one
-    /// `_rt_` and matches: a reader asking for `_rt__rt_Foo` resolves a writer's `_rt_Foo`,
-    /// so keying those to `rt_foo` and `foo` would lose that edge.
+    /// `resolveAliasedNamedTexture` strips `_rt_` / leading `_` and ignores case, so comparing raw strings here would lose edges the executor actually draws. Stripping repeats because a reader asking for `_rt__rt_Foo` resolves a writer's `_rt_Foo`.
     private nonisolated static func normalizedTargetKey(_ name: String) -> String {
         var key = name.lowercased()
         while true {
@@ -461,11 +406,7 @@ extension WPEMetalSceneRenderer {
         return key
     }
 
-    /// Render-target names a pass samples. Scene alias names are NOT excluded:
-    /// a name only enters the tainted set when some layer writes it as a real
-    /// target, and writing e.g. `_rt_HalfFrameBuffer` as an actual target is
-    /// supported. A `.scene` write contributes no name at all, so reading the
-    /// scene-so-far still taints nothing.
+    /// Scene alias names are not excluded: a name only enters the tainted set when some layer writes it as a real target. A `.scene` write contributes no name, so reading the scene-so-far still taints nothing.
     private nonisolated static func passSampledTargetNames(
         _ pass: WPEPreparedRenderPass
     ) -> [String] {
@@ -478,10 +419,7 @@ extension WPEMetalSceneRenderer {
             case .fbo(let name):
                 return normalizedTargetKey(name)
             case .previous:
-                // The executor resolves `.previous` from the pass's own target, so
-                // the pass samples whatever that target already holds. Reusing the
-                // propagation helper also drops `.scene`/layer-group correctly: a
-                // hidden layer never contributes to those.
+                // The executor resolves `.previous` from the pass's own target, so the pass samples whatever that target already holds. Reusing the propagation helper also drops `.scene`/layer-group correctly: a hidden layer never contributes to those.
                 return passPropagatedTargetName(pass)
             case .image, .asset:
                 return nil
@@ -502,8 +440,6 @@ extension WPEMetalSceneRenderer {
         }
     }
 
-    /// Per-frame half: the video keys some visible layer can show this frame.
-    /// Pure + static for unit testing.
     nonisolated static func neededOnDemandVideoKeys(
         in layers: [WPEPreparedRenderLayer],
         keysByConsumerID: [String: Set<String>],
@@ -516,11 +452,7 @@ extension WPEMetalSceneRenderer {
                 needed.formUnion(keys)
                 continue
             }
-            // `thisScene.createLayer` clones get a fresh objectID the load-time
-            // graph never saw, so they inherit their template's entry through the
-            // shared image path. Without this a hidden template releases the very
-            // video its visible clone samples, and the clone shows the placeholder
-            // for the rest of the scene.
+            // `thisScene.createLayer` clones get a fresh objectID the load-time graph never saw, so they inherit their template's entry through the shared image path. Without this a hidden template would release the video its visible clone samples.
             let path = layer.graphLayer.imagePath
             guard !path.isEmpty, let inherited = keysByImagePath[path] else { continue }
             needed.formUnion(inherited)
@@ -528,8 +460,6 @@ extension WPEMetalSceneRenderer {
         return needed
     }
 
-    /// Load-time companion to the consumer graph: image path → the video keys any
-    /// layer drawing that image consumes. Only script-created clones need it.
     nonisolated static func onDemandVideoKeysByImagePath(
         layers: [WPEPreparedRenderLayer],
         keysByConsumerID: [String: Set<String>]
@@ -562,10 +492,6 @@ extension WPEMetalSceneRenderer {
         return templates
     }
 
-    /// Per-frame: an on-demand video source is resident iff some CONSUMER of it is visible
-    /// this frame — the layer sampling it, or any downstream layer via the FBOs it feeds
-    /// (`onDemandVideoKeysByConsumerID`, built at load). Otherwise released (freeing its
-    /// resident MP4 + buffers) and rebuilt on the next reveal; aggregated by texture key, so two layers sharing one video keep it while either is visible.
     func reconcileVideoResidency(_ framePipeline: WPEPreparedRenderPipeline) {
         guard !onDemandVideoKeyByID.isEmpty else { return }
         let neededKeys = Self.neededOnDemandVideoKeys(
@@ -583,10 +509,7 @@ extension WPEMetalSceneRenderer {
             guard source !== introPhaseSource, source !== loopPhaseSource else { continue }
             source.invalidate()
             dynamicTextureSources.removeValue(forKey: key)
-            // 1×1 placeholder, not a removal: a stray sampler reference resolves
-            // instead of erroring. A hidden layer's FBO passes DO still encode
-            // and will sample this placeholder — harmless only because we got
-            // here by proving nothing visible consumes those FBOs.
+            // 1×1 placeholder, not a removal: a stray sampler reference resolves instead of erroring. A hidden layer's FBO passes do still encode and will sample this placeholder — harmless only because nothing visible consumes those FBOs.
             loadedTextures[key] = (try? makeDynamicPlaceholderTexture(label: "\(key) released")) ?? loadedTextures[key]
         }
         for key in neededKeys {
@@ -614,9 +537,6 @@ extension WPEMetalSceneRenderer {
         ) else { return }
         onDemandVideoLoading.insert(key)
         let generation = loadGeneration
-        // Re-enter the render actor to rebuild + force-play the revealed source
-        // (a layer script re-issues its own play() next tick). Capture only the
-        // actor (Sendable); the renderer is reached through it.
         Task { [actor] in
             await actor.rebuildOnDemandVideo(key: key, generation: generation)
         }
@@ -624,10 +544,6 @@ extension WPEMetalSceneRenderer {
 
     // MARK: - User properties
 
-    /// Effective scene user-property values (project.json defaults ⊕ the
-    /// descriptor's persisted overrides) bridged to the script value type, so a
-    /// layer script's `applyUserProperties` sees the SAME bag WPE delivers. Keyed
-    /// by the project.json property name the script reads (`timevarying`, etc.).
     func currentSceneScriptUserProperties() -> [String: WPESceneScriptPropertyValue] {
         let manifestRoot = projectManifestRootURL ?? cacheRootURL
         let values = WallpaperEngineProjectPropertySchema.effectiveSceneValues(
@@ -651,11 +567,7 @@ extension WPEMetalSceneRenderer {
 
     // MARK: - Pointer events
 
-    /// Per-layer hover transitions (`cursorEnter`/`cursorLeave`): hit-tests the pointer
-    /// against each scripted layer's screen rect (axis-aligned; ortho = origin-centered
-    /// size×scale, perspective = projected center + depth-scaled size) and dispatches only
-    /// on state change. `pointer` nil (follow-cursor off / outside the view) counts as
-    /// leaving everything; WPE fires these without click capture — hover only needs the cursor position.
+    /// `pointer` nil (follow-cursor off / outside the view) counts as leaving everything; WPE fires these without click capture — hover only needs the cursor position.
     func dispatchLayerHoverEvents(
         pointer: SIMD2<Double>?,
         pipeline: WPEPreparedRenderPipeline,
@@ -678,9 +590,7 @@ extension WPEMetalSceneRenderer {
         let height = Double(max(sceneRenderSize.height, 1))
         let pointerPixels = pointer.map { SIMD2<Double>($0.x * width, $0.y * height) }
 
-        // `cursorMove` only on a real change, and only while the pointer is over the
-        // layer: a per-frame broadcast would run every move handler in the scene
-        // sixty times a second whether or not the cursor went anywhere.
+        // `cursorMove` only on a real change, and only while the pointer is over the layer: a per-frame broadcast would run every move handler in the scene sixty times a second whether or not the cursor went anywhere.
         let moved = pointerPixels != lastHoverPointerPixels
         lastHoverPointerPixels = pointerPixels
         forEachCursorScriptInstance { objectID, instance in
@@ -720,24 +630,16 @@ extension WPEMetalSceneRenderer {
             }
         }
     }
-    /// Read once (static because extensions can't add stored instance
-    /// properties): log-only toggle per WPERenderFlagRegistryTests, and no test
-    /// flips it at runtime, so skipping per-frame defaults reads is safe.
     private static let hoverCursorDebugDefault = UserDefaults.standard.bool(forKey: "WPEHoverCursorDebug")
     private var hoverCursorDebugEnabled: Bool { Self.hoverCursorDebugDefault }
 
-    /// Pointer (top-left scene pixels) vs a layer's axis-aligned screen rect.
     private func pointerHits(_ pointerPixels: SIMD2<Double>, geometry: WPERenderLayerGeometry) -> Bool {
         guard let rect = hoverHitRect(geometry: geometry) else { return false }
         return abs(pointerPixels.x - rect.center.x) <= rect.half.x
             && abs(pointerPixels.y - rect.center.y) <= rect.half.y
     }
 
-    /// A scripted layer's hover rect in scene pixels. A MINIMUM half-extent
-    /// (scaled to render size) keeps a distant/perspective-shrunk hover pad
-    /// reachable — the n-body sim pushes some bodies far enough that their pad
-    /// would otherwise project to a few pixels the cursor can't land on
-    /// (3509243656's outer stars had no tooltip until this floor).
+    /// A minimum half-extent (scaled to render size) keeps a distant/perspective-shrunk hover pad reachable — otherwise the pad would project to a few pixels the cursor cannot land on.
     private func hoverHitRect(
         geometry: WPERenderLayerGeometry
     ) -> (center: SIMD2<Double>, half: SIMD2<Double>)? {
@@ -761,9 +663,7 @@ extension WPEMetalSceneRenderer {
         )
     }
 
-    /// Pure geometry so both projection branches are testable without a live
-    /// renderer. `projection` non-nil selects the perspective branch and carries
-    /// the already-projected, scene-CENTRED (Y-up) centre plus its depth scale.
+    /// `projection` non-nil selects the perspective branch and carries the already-projected, scene-centred (Y-up) centre plus its depth scale.
     static func hoverHitRect(
         geometry: WPERenderLayerGeometry,
         sceneSize: CGSize,
@@ -785,11 +685,7 @@ extension WPEMetalSceneRenderer {
                 Double(size.height) * abs(geometry.scale.y) * projection.depthScale * 0.5
             )
         } else {
-            // Authored origins are Y-UP (the object quad maps them with
-            // `origin.y - sceneHeight/2`, no negation); the pointer arrives Y-DOWN
-            // (`WPEPointerMailbox.pointerSample` returns `1 - y`). Comparing the two
-            // raw inverted every hover — the top of 3146703458's song list hit the
-            // bottom entry.
+            // Authored origins are Y-up (`origin.y - sceneHeight/2`, no negation); the pointer arrives Y-down (`pointerSample` returns `1 - y`). Comparing the two raw would invert every hover.
             center = SIMD2<Double>(geometry.origin.x, height - geometry.origin.y)
             half = SIMD2<Double>(
                 Double(size.width) * abs(geometry.scale.x) * 0.5,
@@ -801,15 +697,7 @@ extension WPEMetalSceneRenderer {
         return (center, half)
     }
 
-    /// Detects button edges between two pointer frames and fans each one out to
-    /// every layer/alpha/text script instance.
-    ///
-    /// `cursorClick` is synthesised from a press and release that both land on the
-    /// SAME layer — the ordinary meaning of a click, and the only reading that fits
-    /// how scenes use it (3146703458 plays one song per title; a broadcast click
-    /// would start all six at once). Official solid/z-order/capture ordering is
-    /// still `L1_REQUIRED`, so this stays a plain per-layer AABB test and does not
-    /// claim to resolve overlapping hit boxes.
+    /// `cursorClick` is synthesised from a press and release that both land on the same layer. This stays a plain per-layer AABB test and does not claim to resolve overlapping hit boxes.
     func dispatchPointerButtonEdges(
         from previous: WPEPointerFrame,
         to current: WPEPointerFrame,
@@ -847,10 +735,7 @@ extension WPEMetalSceneRenderer {
         if released { layerPressStates.removeAll(keepingCapacity: true) }
     }
 
-    /// Every family whose instances can carry cursor handlers. `textVisible` and
-    /// `textAlpha` are the same `WPELayerScriptInstance` type as the layer families
-    /// and 11 installed scenes bind cursor handlers on text layers, so leaving them
-    /// out silently dropped those handlers.
+    /// `textVisible` and `textAlpha` are the same `WPELayerScriptInstance` type as the layer families; leaving them out would silently drop those handlers.
     private func forEachCursorScriptInstance(
         _ body: (String, WPELayerScriptInstance) -> Void
     ) {
@@ -871,8 +756,6 @@ extension WPEMetalSceneRenderer {
 
     // MARK: - Script output application
 
-    /// Applies a layer script's full output: its own layer plus any layers it
-    /// drove via `thisScene.getLayer(name)` (resolved name→objectID).
     func applyLayerScriptOutput(_ output: WPELayerScriptOutput, ownObjectID: String) {
         applyLayerScriptState(output.own, objectID: ownObjectID)
         layerTransformMutationJournal.record(
@@ -906,15 +789,7 @@ extension WPEMetalSceneRenderer {
 
     // MARK: - Static-cache exclusion & ancestor visibility
 
-    /// Layer IDs the static-layer cache must never admit. Origin/scale/angles scripts
-    /// and live-created layers move geometry the classifier can't see. Layer/alpha
-    /// scripts are excluded because `applyingLayerAlpha` bakes the script value into
-    /// `geometry.alpha` and clears `alphaAnimation` BEFORE classification — a
-    /// script-alpha layer would otherwise classify as static and freeze at its
-    /// first-cached alpha. `scriptAlphaOverriddenIDs` additionally catches cross-layer
-    /// writes: a layer script may set any other named layer's alpha via `others`,
-    /// unknowable statically; passed per frame, so the target layer stops classifying
-    /// as static the moment it is first written. Pure + static for unit testing.
+    /// Layer/alpha scripts are excluded because `applyingLayerAlpha` bakes the script value into `geometry.alpha` and clears `alphaAnimation` before classification — a script-alpha layer would otherwise classify as static and freeze at its first-cached alpha.
     nonisolated static func staticCacheExcludedLayerIDs(
         originScriptIDs: some Sequence<String>,
         originAnimationIDs: some Sequence<String>,
@@ -932,9 +807,7 @@ extension WPEMetalSceneRenderer {
         ids.formUnion(originAnimationIDs)
         ids.formUnion(scaleScriptIDs)
         ids.formUnion(anglesScriptIDs)
-        // Same reason as alpha: `applyingLayerColor` bakes the script value into
-        // `geometry.color` before classification, so a color-scripted layer would
-        // otherwise classify as static and freeze at its first cached tint.
+        // Same reason as alpha: `applyingLayerColor` bakes the script value into `geometry.color` before classification, so a color-scripted layer would otherwise classify as static and freeze at its first cached tint.
         ids.formUnion(colorScriptIDs)
         ids.formUnion(liveCreatedLayerIDs)
         ids.formUnion(layerScriptIDs)
@@ -953,16 +826,12 @@ extension WPEMetalSceneRenderer {
         return ids
     }
 
-    /// The exclusion set's load-scoped part, memoized. `liveCreatedLayers` and
-    /// `liveLayerAlpha` deliberately stay OUT of the cache — scripts grow them
-    /// mid-frame, so their keys are unioned live above every frame.
+    /// `liveCreatedLayers` and `liveLayerAlpha` deliberately stay out of the cache — scripts grow them mid-frame, so their keys are unioned live above every frame.
     private var installedScriptLayerIDs: Set<String> {
         if let cached = cachedInstalledScriptLayerIDs { return cached }
         let ids = Self.staticCacheExcludedLayerIDs(
             originScriptIDs: Array(dynamicOriginScriptInstances.keys) + Array(sharedOriginReadFans.keys),
-            // Memo-safe despite `dynamicOriginAnimations` having no invalidating
-            // didSet: loadDynamicOriginScripts writes it only AFTER resetting the
-            // script-instance dicts (which do invalidate) in the same sync pass.
+            // Memo-safe despite `dynamicOriginAnimations` having no invalidating didSet: loadDynamicOriginScripts writes it only after resetting the script-instance dicts (which do invalidate) in the same sync pass.
             originAnimationIDs: dynamicOriginAnimations.keys,
             scaleScriptIDs: Array(dynamicScaleScriptInstances.keys) + Array(sharedScaleReadFans.keys),
             anglesScriptIDs: Array(dynamicAnglesScriptInstances.keys) + Array(sharedAnglesReadFans.keys),
@@ -976,10 +845,7 @@ extension WPEMetalSceneRenderer {
         return ids
     }
 
-    /// True unless some ancestor is currently hidden. Each ancestor's CURRENT
-    /// visibility is its live override (image/script/text) if tracked, else its
-    /// baked `visible` (groups) — so both static group toggles and live image
-    /// toggles are honored. Pure + static for unit testing.
+    /// True unless some ancestor is currently hidden. Each ancestor's current visibility is its live override if tracked, else its baked `visible`.
     nonisolated static func ancestorChainVisible(
         _ objectID: String,
         parentByID: [String: String],
@@ -1010,13 +876,8 @@ extension WPEMetalSceneRenderer {
         )
     }
 
-    /// Applies one layer's resolved state and stages one-shot player mutations
-    /// until every script family in the traversal succeeds.
     private func applyLayerScriptState(_ state: WPELayerScriptState, objectID: String) {
-        // A hidden ancestor always wins — the script runtime's `getParent()` is an
-        // always-visible stub, so a dock script gating on `parent.visible` can't
-        // otherwise hide itself (green App Launcher Dock on 3660962877). Walk the
-        // chain live so a runtime ancestor toggle is respected, not snapshotted.
+        // A hidden ancestor always wins — the script runtime's `getParent()` is an always-visible stub, so a dock script gating on `parent.visible` cannot otherwise hide itself. Walk the chain live so a runtime ancestor toggle is respected, not snapshotted.
         if state.visibleAssigned {
             liveLayerVisibility[objectID] = state.visible && ancestorChainVisible(objectID)
         }
@@ -1026,8 +887,6 @@ extension WPEMetalSceneRenderer {
         sceneScriptVideoCommandBuffer.enqueue(state.videoCommands, objectID: objectID)
     }
 
-    /// External texture paths a layer references, in pass order — mirrors the
-    /// `loadTextures` walk so a layer script can find its video source key.
     private func videoTexturePaths(for layer: WPEPreparedRenderLayer) -> [String] {
         var paths: [String] = []
         if layer.passes.isEmpty {

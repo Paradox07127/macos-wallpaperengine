@@ -9,22 +9,12 @@ enum WPESceneAssetProviderError: Error, Equatable, Sendable {
     case stagingUnavailable(String)
 }
 
-/// Single boundary through which the scene runtime reads project assets. Two backends implement it: a directory of extracted files, and a packed `scene.pkg` read in place.
-/// Reads are data-first so packed scenes never need extraction; only consumers that genuinely require a file URL (video, audio, some ImageIO paths) go through `stagedURL`.
 protocol WPESceneAssetProvider: Sendable {
-    /// Directory backends map large files via `.mappedIfSafe` so the RSS profile
-    /// matches the historical extracted-cache path; package backends read the slice.
     func data(atRelativePath relativePath: String) throws -> Data
-    /// A directory backend returns the project file itself; a package backend stages
-    /// the entry into the provider's session-lifetime temp dir (cleaned on deinit).
     func stagedURL(atRelativePath relativePath: String) throws -> URL
     func exists(atRelativePath relativePath: String) -> Bool
-    /// Zero-copy byte window for `.tex` payload parsing. A package backend maps
-    /// the whole `scene.pkg` once and windows the entry; a directory backend's
-    /// `data` is already `.mappedIfSafe`, so the default (full-range wrap of
-    /// `data`) is correct for it.
+    /// Package maps `scene.pkg` once and windows the entry; directory `data` is already `.mappedIfSafe`, so the default full-range wrap is correct.
     func mappedWindow(atRelativePath relativePath: String) throws -> WPEMappedByteSpan
-    /// Diagnostic / enumeration use only — not on the hot path.
     var entryNames: [String] { get }
 }
 
@@ -34,10 +24,6 @@ extension WPESceneAssetProvider {
     }
 }
 
-/// Wraps a provider whose bytes live under a security-scoped source URL (a
-/// Workshop folder or a `scene.pkg` the user granted access to). Holds the
-/// scope open for the provider's lifetime and drops it on deinit, so the
-/// scene session owning the provider also owns the access window.
 final class WPESecurityScopedSceneAssetProvider: WPESceneAssetProvider, @unchecked Sendable {
     private let wrapped: any WPESceneAssetProvider
     private let scopedURL: URL

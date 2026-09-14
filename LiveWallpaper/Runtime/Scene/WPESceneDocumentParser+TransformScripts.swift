@@ -5,8 +5,6 @@ import LiveWallpaperProWPE
 
 extension WPETransformScriptEvaluator: WPESceneTransformScriptResolving {}
 
-// App-level parse entries: wire the JSContext-backed static-origin evaluator
-// into the package parser, which cannot depend on the script runtime.
 extension WPESceneDocumentParser {
     static func parse(data: Data) throws -> WPESceneDocument {
         try parse(data: data, userValues: [:])

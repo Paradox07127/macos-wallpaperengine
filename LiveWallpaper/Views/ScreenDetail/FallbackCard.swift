@@ -3,7 +3,6 @@ import SwiftUI
 import AppKit
 import LiveWallpaperCore
 
-/// Why a Wallpaper Engine workshop project couldn't be activated.
 enum FallbackReason: Equatable, Sendable {
     case unsupportedType
     case sceneParseFailed(String)
@@ -18,11 +17,9 @@ enum FallbackReason: Equatable, Sendable {
     case texDecodeFailed(detail: String)
 }
 
-/// Card when a WPE import cannot become a live wallpaper.
 struct FallbackCard: View {
     let origin: WPEOrigin
     let reason: FallbackReason
-    /// Observed for the published flag only, the same way `EngineAssetsBanner` does.
     @State private var engineAssets = WPEEngineAssetsLibrary.shared
 
     init(origin: WPEOrigin, reason: FallbackReason = .unsupportedType) {
@@ -77,9 +74,8 @@ struct FallbackCard: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            // Same list the detail view renders, minus Retry: this card has no
-            // session to reload, so `onRetry: nil` drops that one action rather
-            // than the card growing a second, divergent set of buttons.
+            // `onRetry: nil` — this card has no session to reload, so Retry drops out
+            // of the shared action list.
             HStack(spacing: DesignTokens.Spacing.sm) {
                 WallpaperFailureRecoveryActions(
                     recovery: presentation.recovery,

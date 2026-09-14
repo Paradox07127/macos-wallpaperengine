@@ -18,19 +18,15 @@ struct WorkshopInspectorContent: View {
     @Environment(WorkshopServices.self) private var services
     @State private var installedEntry: WPEHistoryEntry?
 
-    /// Named constants, not literals: the grid card reads the same two keys
-    /// through `MatureContentSettings`, and a typo here would silently give the
-    /// detail view its own private spoiler setting.
+    /// Named constants, not literals: the grid card reads the same two keys through
+    /// `MatureContentSettings`, and a typo would give this view its own setting.
     @AppStorage(MatureContentSettings.blursThumbnails, store: .appScoped()) private var blurMatureThumbnails = true
-    /// One-time 18+ confirmation, shared with the grid card.
     @AppStorage(MatureContentSettings.confirmed, store: .appScoped()) private var matureConfirmed = false
     @State private var matureRevealed = false
     @State private var showingAgeConfirm = false
     @State private var showingApplyPopover = false
     @State private var descriptionExpanded = false
 
-    /// Blur the hero until clicked, mirroring the grid card's spoiler gate so
-    /// opening details never auto-plays adult content unprompted.
     private var shouldBlurHero: Bool {
         blurMatureThumbnails && item.isMatureRated && !matureRevealed
     }
@@ -77,7 +73,6 @@ struct WorkshopInspectorContent: View {
         .groupBoxStyle(ContainerGroupBoxStyle())
     }
 
-    /// The page's "Required items" (what a Preset restyles).
     @ViewBuilder
     private var requiredItemsGroup: some View {
         if !item.requiredItemIDs.isEmpty, let onOpenItem {
@@ -139,11 +134,9 @@ struct WorkshopInspectorContent: View {
     // MARK: - Hero
 
     private var hero: some View {
-        // A Button keeps one stable view identity across the reveal (branching
-        // on `shouldBlurHero` would rebuild the thumbnail and lose its unblur
-        // animation); hit-testing gates instead of `.disabled` so `.plain`
-        // never dims the artwork. Keyboard activation bypasses hit-testing,
-        // hence the guard in the action.
+        // A Button keeps one stable view identity across the reveal (branching on
+        // `shouldBlurHero` would rebuild the thumbnail and lose its unblur animation);
+        // hit-testing gates instead of `.disabled`, and keyboard activation bypasses it.
         Button {
             if shouldBlurHero {
                 requestReveal()
@@ -287,7 +280,6 @@ struct WorkshopInspectorContent: View {
         Label("Apply", systemImage: "play.fill").frame(maxWidth: .infinity)
     }
 
-    /// Displays currently running this item — drives the active checkmark in the Apply popover.
     private var activeScreenIDs: Set<CGDirectDisplayID> {
         Set(screenManager.screens
             .filter { screenManager.getConfiguration(for: $0)?.wpeOrigin?.workshopID == String(item.id) }
@@ -408,13 +400,11 @@ struct WorkshopInspectorContent: View {
         }
         return nil
     }
-    /// One row per facet group, in the page's order (Type, Age Rating, …).
     private var tagsSection: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
             ForEach(WorkshopTagTaxonomy.grouped(tags: item.tags), id: \.group) { grouped in
-                // Wrapping, not a horizontal scroll: at the inspector's width
-                // a scroll leaves most of a group's tags off-screen with
-                // nothing to say they are there.
+                // Wrapping, not a horizontal scroll: at the inspector's width a scroll leaves
+                // most of a group's tags off-screen with nothing to say they are there.
                 HStack(alignment: .top, spacing: DesignTokens.Spacing.xs) {
                     Text(verbatim: grouped.group.displayName)
                         .font(DesignTokens.Typography.caption)
@@ -430,8 +420,6 @@ struct WorkshopInspectorContent: View {
         }
     }
 
-    /// What the page has and the query payload does not: change notes, the
-    /// comment thread and the collections listing stay on Steam.
     private var communityLinksRow: some View {
         // Wrapping, not an HStack: three labelled links do not fit the narrow
         // inspector, and squeezed they hyphenate mid-word ("Com-ments").
@@ -497,7 +485,6 @@ struct WorkshopInspectorContent: View {
     }
 }
 
-/// Shared display-target chooser for the Apply popover (online + installed inspectors).
 /// The caller dismisses the popover after a row fires its callback.
 struct WorkshopApplyTargetPicker: View {
     let screens: [Screen]
@@ -539,7 +526,6 @@ struct WorkshopApplyTargetPicker: View {
     }
 }
 
-/// Description block shared by the online + Installed inspectors.
 struct CollapsibleDescription: View {
     let text: String
     @Binding var isExpanded: Bool

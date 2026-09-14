@@ -27,9 +27,6 @@ struct WPETexDecoderTests {
         }
     }
 
-    /// Every `.tex` shipped under `assets/materials/lut`. A raw scan of the
-    /// installed 311-file corpus found the flag-0x40 population lives entirely
-    /// in this directory (28 files, all `flags == 0x42`).
     private static var officialLUTTexURLs: [URL] {
         let contents = (try? FileManager.default.contentsOfDirectory(
             at: officialFlag0x40FixtureRoot,
@@ -304,9 +301,8 @@ struct WPETexDecoderTests {
         var flag0x40Count = 0
         let pinnedRawBits = Dictionary(uniqueKeysWithValues: Self.officialFlag0x40Fixtures.map { ($0.name, $0.rawBits) })
 
-        // Whole directory, not a hand-picked pair: the gate is "every shipped
-        // 0x40 asset realigns", so a future WPE build adding one must fail here
-        // rather than pass because it was not in the list.
+        // 走整个目录而不是写死的那一对:将来 WPE 新增一个 0x40 资产必须在这里
+        // 红,而不是因为不在列表里而通过。
         for url in Self.officialLUTTexURLs {
             let data = try Data(contentsOf: url)
             let info = try WPETexDecoder().probe(span: WPEMappedByteSpan(data: data)).get()
@@ -321,8 +317,7 @@ struct WPETexDecoderTests {
             #expect(info.imageHeight == 32, "\(url.lastPathComponent)")
             #expect(info.unknownInt0 == 32, "\(url.lastPathComponent)")
             #expect(rawExtension.sourceRange == 46..<50, "\(url.lastPathComponent)")
-            // Reading TEXB's magic at the post-extension offset is the actual
-            // realignment proof; before A-01 the reader landed 4 bytes early.
+            // 在扩展字段之后的偏移读 TEXB magic,才是对齐的真正证据。
             #expect(data.subdata(in: 50..<58) == Data("TEXB0004".utf8), "\(url.lastPathComponent)")
             #expect(data[58] == 0, "\(url.lastPathComponent)")
             if let pinned = pinnedRawBits[url.lastPathComponent] {

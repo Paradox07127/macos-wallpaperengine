@@ -1,7 +1,5 @@
 import Foundation
 
-/// Canonical constructors and parsers for renderer-internal `_rt_*` names.
-/// These names are exact contracts between graph construction, execution, and pooling.
 public enum WPERenderTargetNames {
 
     /// `_rt_imageLayerComposite_<objectID>_{a,b}` / `_rt_createdLayerComposite_<key>_{a,b}` pair.
@@ -29,18 +27,12 @@ public enum WPERenderTargetNames {
             slot >= maskBindingBaseSlot
         }
 
-        /// index == 0 is the base name; index > 0 is the `<base>_s<index>` derived
-        /// source (multi-light clipping, e.g. both eyes). Takes the caller's
-        /// existing `base` verbatim — the executor's real data flow is
-        /// `plan.clipTargetName` (from the bound texture reference), not a fresh
-        /// objectID-derived name.
+        /// index == 0 is the base name; index > 0 is `<base>_s<index>`. Takes the caller's existing `base` verbatim.
         public static func makeSource(base: String, index: Int) -> String {
             index == 0 ? base : "\(base)_s\(index)"
         }
 
-        /// Scene-space clip silhouettes used after a puppet's effect chain. These must not inherit
-        /// the layer-local FBO footprint: the final mesh vertex emits scene NDC, so the matching
-        /// half-resolution target is based on the scene (1920×1080 for a 4K frame).
+        /// Must not inherit the layer-local FBO footprint: the final mesh vertex emits scene NDC, so the half-resolution target is scene-based (1920×1080 for a 4K frame).
         public static func makeDeferredSource(objectID: String, index: Int) -> String {
             let base = "\(deferredPrefix)\(objectID)"
             return index == 0 ? base : "\(base)_s\(index)"
@@ -50,9 +42,7 @@ public enum WPERenderTargetNames {
             name.hasPrefix(deferredPrefix)
         }
 
-        /// Reverse of `makeSource` for the pool's scale/format inheritance: only a
-        /// genuine `<base>_s<N>` derived name returns its base; the base name (or
-        /// anything else) returns nil so callers keep their `?? name` fallback.
+        /// Only a genuine `<base>_s<N>` derived name returns its base; the base name returns nil so callers keep `?? name`.
         public static func baseName(of name: String) -> String? {
             guard name.hasPrefix(prefix),
                   let suffixStart = name.range(of: "_s", options: .backwards)?.lowerBound else {
@@ -65,11 +55,7 @@ public enum WPERenderTargetNames {
         }
     }
 
-    /// `_rt_imageLayerComposite_<objectID>_{a,b}` — a layer's ping-pong composite
-    /// pair. The bare `_rt_imageLayerComposite` (no suffix) is a SCENE ALIAS
-    /// (`WPETextureReference.isSceneAliasName`), not a member of this family:
-    /// `layerID` requires the `_a`/`_b` suffix so the two vocabularies stay
-    /// disjoint by construction.
+    /// Bare `_rt_imageLayerComposite` (no suffix) is a scene alias, not this family; `layerID` requires `_a`/`_b` so the vocabularies stay disjoint.
     public enum ImageLayerComposite {
         private static let prefix = "_rt_imageLayerComposite_"
 
@@ -77,7 +63,6 @@ public enum WPERenderTargetNames {
             CompositePair(a: "\(prefix)\(objectID)_a", b: "\(prefix)\(objectID)_b")
         }
 
-        /// Reverse-parse for the graph builder's cross-layer topological sort.
         public static func layerID(from name: String) -> String? {
             guard name.hasPrefix(prefix), name.hasSuffix("_a") || name.hasSuffix("_b") else {
                 return nil
@@ -89,18 +74,13 @@ public enum WPERenderTargetNames {
         }
     }
 
-    /// `_rt_layerGroup_<objectID>` — composelayer group buffer. Prefix-matched by
-    /// the executor (hidden-child skip + `.load` group accumulation).
     public enum LayerGroup {
         private static let prefix = "_rt_layerGroup_"
         public static func make(objectID: String) -> String { "\(prefix)\(objectID)" }
         public static func matches(_ name: String) -> Bool { name.hasPrefix(prefix) }
     }
 
-    /// `_rt_createdLayerComposite_<key>_{a,b}` — script-created layers' runtime
-    /// ping-pong pair. Deliberately NO `layerID(from:)`: created layers never
-    /// enter the graph builder's static topological sort, so this family's
-    /// vocabulary must stay disjoint from `ImageLayerComposite`'s reverse-parse.
+    /// Deliberately no `layerID(from:)`: created layers never enter the static topological sort, so this vocabulary must stay disjoint from `ImageLayerComposite`.
     public enum CreatedLayerComposite {
         private static let prefix = "_rt_createdLayerComposite_"
         public static func make(key: String) -> CompositePair {

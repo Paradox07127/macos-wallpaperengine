@@ -4,7 +4,6 @@ import LiveWallpaperCore
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Installed Workshop tab (import history + Steam Workshop repository).
 struct InstalledView: View {
     @Environment(\.libraryTileSize) private var tileSize
     /// Tag tap → Browse Online scoped to that tag.
@@ -21,7 +20,6 @@ struct InstalledView: View {
     @State private var model = InstalledLibraryModel()
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// Same width tokens as the screen-detail inspector.
     @AppStorage("Workshop.Installed.InspectorWidth", store: .appScoped()) private var inspectorWidth = Double(DesignTokens.Inspector.defaultWidth)
     @State private var liveInspectorWidth: Double?
 
@@ -146,8 +144,7 @@ struct InstalledView: View {
             emptyState
         } else {
             // Read once: `visibleEntries` filters and ICU-sorts the whole library on every
-            // access, and this body used to reach for it three times — count, emptiness test,
-            // grid — so a single keystroke in the search field paid for it three times over.
+            // access, and this body needs it three times (count, emptiness test, grid).
             let visibleEntries = model.visibleEntries
             VStack(spacing: 0) {
                 VStack(spacing: DesignTokens.Spacing.sm) {
@@ -290,8 +287,6 @@ struct InstalledView: View {
     }
 
     private var emptyStatePrimaryAction: EmptyStateButtonAction? {
-        // Browsing needs only the Web API key (the Browse tab walks the user
-        // through that itself); SteamCMD gates downloads, not the entry point.
         if let onBrowseOnline {
             return EmptyStateButtonAction("Browse Online", action: onBrowseOnline)
         }
@@ -376,8 +371,6 @@ struct InstalledView: View {
         }
     }
 
-    /// Displays currently running this entry — drives the active checkmark in
-    /// the Apply popover.
     private func activeScreenIDs(for entry: WPEHistoryEntry) -> Set<CGDirectDisplayID> {
         Set(screenManager.screens
             .filter { screenManager.getConfiguration(for: $0)?.wpeOrigin?.workshopID == entry.origin.workshopID }
@@ -422,13 +415,11 @@ struct InstalledView: View {
                 },
                 isMutating: { UInt64($0).map { WorkshopDownloadCoordinator.shared.isBusy($0) } ?? false },
                 deleteSharedRepositoryItem: { [doctor] workshopID in
-                    // The connector deletes inside this library and cannot see
-                    // the bookmark that authorized it; unresolvable means we
-                    // have nothing safe to name, so nothing is deleted.
+                    // The connector deletes inside this library and cannot see the bookmark that
+                    // authorized it; unresolvable means nothing safe to name, so nothing is deleted.
                     guard let steamRoot = try? doctor.resolveWorkdirURL() else { return nil }
-                    // Same gate as a download: `workshopItemWillMutate` makes a
-                    // runtime still reading this id let go before the tree is cut.
-                    // A refusal propagates so the caller keeps the library record.
+                    // Same gate as a download: a runtime still reading this id must let go before
+                    // the tree is cut. A refusal propagates so the caller keeps the library record.
                     return try await WorkshopRepositoryCoordinator.shared.withExclusiveMutation(
                         workshopID: workshopID
                     ) {
@@ -444,16 +435,13 @@ struct InstalledView: View {
 
     // MARK: - Drag-to-apply screen bar
 
-    /// Floats in only while a card is being dragged, listing the open displays
-    /// as drop targets. (Click-to-apply lives in the inspector's Apply popover.)
     private var screenDropBar: some View {
         LibraryDragApplyBar(
             screens: screenManager.screens,
             onCancel: { model.endEntryDrag() },
             makeDropHandler: { screen in
-                // The ticket is taken here, synchronously with the drop, so a page
-                // that disappears and comes back during the provider read cannot
-                // have the stale payload applied to it.
+                // The ticket is taken here, synchronously with the drop, so a page that
+                // disappears and comes back during the read cannot have a stale payload applied.
                 let ticket = model.makeDropTicket()
                 return { workshopID, loadFailed in
                     guard let entry = model.consumeDrop(

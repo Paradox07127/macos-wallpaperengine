@@ -1,7 +1,6 @@
 import Foundation
 import LiveWallpaperCore
 
-/// Pro: clear `wpeOrigin` when active content no longer matches (bookmark/path).
 /// Lite uses `PreservingOriginReconciler` (no path-safety dependency).
 public struct WPEOriginReconciler: OriginReconciler {
     public init() {}

@@ -2,10 +2,6 @@ import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
-/// AppKit host for the Now Playing layer — one per display, holding exactly one
-/// layer. It deliberately does not reuse the Monitor board's host: the board
-/// exists to lay out, select, drag and add tiles on a grid, and none of that
-/// applies to a single layer whose position comes from the Music settings page.
 @MainActor
 final class MusicHostView: NSView {
     private let dataModel = DataModel()
@@ -61,7 +57,6 @@ final class MusicHostView: NSView {
         }
     }
 
-    /// Stops the 1 Hz clock and the reactive animations while suspended.
     func setSuspended(_ suspended: Bool) {
         guard layoutModel.suspended != suspended else { return }
         layoutModel.suspended = suspended
@@ -74,10 +69,7 @@ final class MusicHostView: NSView {
 
     // MARK: - Pointer
 
-    /// The whole layer rect takes the pointer while a track is drawn and the
-    /// controls or seek are enabled — the transport only appears on hover, so
-    /// the window has to receive events before a button exists
-    /// (`BoardPointerScopeTests` pins the tile centre as a hit).
+    /// Transport appears only on hover, so the window must receive events before a button exists (`BoardPointerScopeTests`).
     var wantsPointer: Bool {
         let options = NowPlayingOptions(configuration.options)
         guard options.showControls || options.seekOnProgressDrag else { return false }
@@ -90,8 +82,6 @@ final class MusicHostView: NSView {
         return super.hitTest(point)
     }
 
-    /// Gate for one event, in this view's own coordinates. Split out of
-    /// `hitTest` so it can be exercised without an NSHostingView underneath.
     func acceptsPointer(atLocalPoint local: NSPoint) -> Bool {
         guard wantsPointer else { return false }
         guard let rect = MusicOverlayLayout.renderRect(
@@ -105,8 +95,6 @@ final class MusicHostView: NSView {
     }
 }
 
-/// Observable half of the host, so a configuration change re-renders without
-/// rebuilding the hosting view.
 @MainActor
 final class MusicOverlayLayoutModel: ObservableObject {
     @Published var configuration: MusicOverlayConfiguration
@@ -129,14 +117,10 @@ struct MusicOverlayRootContainer: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        // Same reason as `MonitorBoardRootContainer`: no window above this host
-        // carries the app language.
         clocked.appLanguageScoped(defaults: .appScoped())
     }
 
     private var clocked: some View {
-        // One clock for the layer, stopped while suspended — the same contract
-        // the board's tiles run on.
         TimelineView(MonitorBoardClock(suspended: layout.suspended)) { timeline in
             GeometryReader { proxy in
                 if let rect = MusicOverlayLayout.renderRect(

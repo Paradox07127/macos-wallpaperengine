@@ -3,7 +3,6 @@ import Foundation
 import LiveWallpaperCore
 import LiveWallpaperProWPE
 
-/// Workshop import: project.json → in-place WallpaperContent (no wpe-cache extract).
 @MainActor
 final class WallpaperEngineImportService {
     enum ImportResult: Equatable, Sendable {
@@ -37,9 +36,7 @@ final class WallpaperEngineImportService {
     func importProject(folder folderURL: URL) async throws -> ImportResult {
         let project = try WallpaperEngineProject.read(from: folderURL)
 
-        // A preset item restyles someone else's wallpaper and has no entry of
-        // its own. Routed here it would fall through to the missing-entry
-        // branch and be reported to the user as an unsupported wallpaper.
+        // A preset has no entry of its own; routing it here would fall through to missing-entry and report an unsupported wallpaper.
         if let preset = project.scenePreset() {
             return .workshopPreset(preset)
         }
@@ -76,7 +73,6 @@ final class WallpaperEngineImportService {
         return await importUnpackagedVideo(project: project, folderURL: folderURL, sourceBookmark: sourceBookmark)
     }
 
-    /// In-place packaged video via ranged resource loader (+ one-shot playability probe).
     private func importPackagedVideo(
         project: WallpaperEngineProject,
         pkgURL: URL,
@@ -187,7 +183,6 @@ final class WallpaperEngineImportService {
         return .ready(content, origin: origin)
     }
 
-    /// In-place packaged web via scheme handler (loose files first, then pkg entries).
     private func importPackagedWeb(
         project: WallpaperEngineProject,
         folderURL: URL,
@@ -235,7 +230,6 @@ final class WallpaperEngineImportService {
         }
         let tail = components.suffix(5)
         let tailArray = Array(tail)
-        // Layout: steamapps / workshop / content / 431960 / <pubfileid>
         guard tailArray[0] == "steamapps",
               tailArray[1] == "workshop",
               tailArray[2] == "content",
@@ -408,24 +402,18 @@ final class WallpaperEngineImportService {
         )
     }
 
-    /// Dependency IDs the item at `folderURL` declares that Steam has not put
-    /// next to it — the same rule `importScene` uses to mark a scene
-    /// unsupported, exposed so the downloader can go fetch them.
     func missingDependencyIDs(inFolder folderURL: URL) async -> [String] {
         guard let project = try? WallpaperEngineProject.read(from: folderURL) else { return [] }
         return await missingDependencies(declared: project.dependencyWorkshopIDs, sourceFolderURL: folderURL)
     }
 
-    /// Returns the subset of `declared` workshop IDs whose extracted payload is NOT currently available either in our cache OR as a sibling `~/Documents/Live Wallpapers/<appid>/<wid>/` folder.
+    /// Returns the subset of `declared` workshop IDs whose payload is not currently available as a sibling folder.
     private func missingDependencies(declared: [String], sourceFolderURL: URL) async -> [String] {
         guard !declared.isEmpty else { return [] }
-        // The extraction cache is gone; a dependency is available only if Steam
-        // has the sibling item in the same Workshop content directory.
         let available = subscribedWorkshopIDs(declared: declared, sourceFolderURL: sourceFolderURL)
         return declared.filter { !available.contains($0) }
     }
 
-    /// Inspects the parent of `sourceFolderURL` (the Steam Workshop content directory) for sibling folders matching declared dependency IDs.
     private func subscribedWorkshopIDs(declared: [String], sourceFolderURL: URL) -> Set<String> {
         let workshopRoot = sourceFolderURL.deletingLastPathComponent()
         var hits: Set<String> = []
@@ -458,7 +446,6 @@ final class WallpaperEngineImportService {
     }
 }
 
-/// `WPEScenePreflight` emits an unordered `Set` so descriptor persistence matches the historical ordering convention (alphabetical by raw value).
 func sortedPreflightFeatureFlags(_ flags: Set<WPESceneFeatureFlag>) -> [WPESceneFeatureFlag] {
     flags.sorted { $0.rawValue < $1.rawValue }
 }

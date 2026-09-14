@@ -2,7 +2,6 @@ import Foundation
 
 // MARK: - Monitor wallpaper data contract (schema v2)
 
-// Single snapshot contract for the widget board. Key names are load-bearing; rename only with `schemaVersion` bump.
 
 enum MonitorAgentProvider: String, Codable, Sendable, CaseIterable {
     case claude
@@ -44,9 +43,7 @@ struct MonitorTokenTotals: Codable, Sendable, Equatable {
 
     static let zero = MonitorTokenTotals()
 
-    /// `input + output` via the same saturating add as `+` above — a bare `+`
-    /// traps when a crafted/corrupted usage field has driven both fields to
-    /// `Int.max`.
+    /// Saturating `input + output`; a bare `+` would trap at `Int.max`.
     var total: Int {
         Self.saturatingAdd(input, output)
     }
@@ -69,7 +66,6 @@ struct MonitorTokenTotals: Codable, Sendable, Equatable {
     }
 }
 
-/// Live/recent agent session, normalized + privacy-redacted.
 struct MonitorAgentSessionState: Codable, Sendable, Equatable, Identifiable {
     var id: String // "<provider>:<sessionID>"
     var provider: MonitorAgentProvider
@@ -189,7 +185,6 @@ struct MonitorSensorReadings: Codable, Sendable, Equatable {
     var fanRPM: [Double]?
 }
 
-/// Sampling provenance stays with the measurement, independent of broker/agent updates.
 struct MonitorMetricSample: Codable, Sendable, Equatable {
     var available: Bool
     var sampledAt: Double
@@ -226,7 +221,7 @@ struct MonitorSystemSnapshot: Codable, Sendable, Equatable {
     var memBreakdown: MonitorMemoryBreakdown?
     var gpuDeviceName: String?
     var gpuCoreCount: Int?
-    var gpuSampledAt: Double? // GPU sampled ~6s; renderers dim stale
+    var gpuSampledAt: Double? // renderers dim stale
     var gpuRendererUtil: Double? // 0…1
     var gpuTilerUtil: Double? // 0…1
     var netInterfaces: [MonitorNetworkInterface]?
@@ -261,9 +256,7 @@ enum MonitorNowPlayingPhase: String, Codable, Sendable {
     /// No event received and no known player is running.
     case noPlayer
 
-    /// Whether there is a track to draw. Outside edit mode the layer renders
-    /// nothing in the other two phases, so this also decides whether it may
-    /// hold on to the pointer.
+    /// Whether there is a track to draw. Outside edit mode this also decides whether the layer may hold the pointer.
     var hasTrack: Bool {
         switch self {
         case .playing, .paused: true
@@ -272,10 +265,7 @@ enum MonitorNowPlayingPhase: String, Codable, Sendable {
     }
 }
 
-/// Everything except `title`/`phase` is Optional on purpose: the rendering
-/// contract is "show a field only if the player reported it" (e.g. Apple Music
-/// has no playback position), so absence must reach the view layer instead of
-/// being papered over with defaults.
+/// Optional fields reach the view as absence; do not paper over with defaults.
 struct MonitorNowPlayingState: Codable, Sendable, Equatable {
     var phase: MonitorNowPlayingPhase
     /// Empty only in the two no-track phases; track frames without a title are never published.
@@ -293,7 +283,6 @@ struct MonitorNowPlayingState: Codable, Sendable, Equatable {
     var artwork: Data?
 }
 
-/// Per-source health for settings + AI empty states (unauthorized / stale / ok).
 struct MonitorSourceHealth: Codable, Sendable, Equatable {
     var sourceID: String
     var state: String // ok | stale | unauthorized | error | off
@@ -313,7 +302,6 @@ struct MonitorSnapshot: Codable, Sendable, Equatable {
 
 // MARK: - Source plumbing
 
-/// Sources push partial updates; hub recomposes at its own pace.
 protocol MonitorSnapshotSink: Actor {
     func updateSystem(_ snapshot: MonitorSystemSnapshot) async
     func updateAgents(sourceID: String, sessions: [MonitorAgentSessionState]) async

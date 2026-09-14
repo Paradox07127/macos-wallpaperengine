@@ -3,7 +3,6 @@ import LiveWallpaperCore
 import Testing
 @testable import LiveWallpaper
 
-/// Locks the current general-settings ownership surface before page-specific owners are extracted.
 @Suite("UI-08: General Settings ownership characterization", .serialized)
 @MainActor
 struct GeneralSettingsOwnershipCharacterizationTests {
@@ -15,12 +14,6 @@ struct GeneralSettingsOwnershipCharacterizationTests {
 
         #expect(fixtureValues.count == Set(fixtureValues).count, "A state field must have exactly one candidate owner")
         #expect(actual == Set(fixtureValues))
-        // 43 = 42 + libraryTileSizeRaw (global library tile size, behavior domain,
-        // approved 2026-09-01 when the five library grids stopped hard-coding it).
-        // 44 = 43 + pendingDestructive (diagnostics domain, approved 2026-09-03 when
-        // Advanced gained the Reset All Settings confirmation).
-        // 45 = 44 + displayHDROutputEnabled (performance domain, approved 2026-09-09 when
-        // Performance gained the HDR output switch for scene wallpapers).
         #expect(actual.count == 45, "Changing the root state surface requires explicitly re-approving the UI-08 lock")
     }
 
@@ -221,8 +214,6 @@ struct GeneralSettingsOwnershipCharacterizationTests {
             until: "/// Deferred so the post"
         )
 
-        // The page hands every field it owns to the commit; the persistence mapping and
-        // the apply chain live in the commit, which non-UI writers also go through.
         let expectedArguments = [
             "globalPauseOnBattery: globalPauseOnBattery",
             "preservePlaybackOnLock: preservePlaybackOnLock",
@@ -274,9 +265,6 @@ struct GeneralSettingsOwnershipCharacterizationTests {
         #expect(commit.contains("if outcome.weatherLocationChanged"))
         #expect(commit.contains("if outcome.audioResponseChanged"))
 
-        // The other two pages that write GlobalSettings go through the same commit, so a
-        // non-UI writer reaches their apply chains too. Without this, dropping either call
-        // would silently go back to a disk write nothing reacted to.
         let shortcuts = try RepositoryRoot.source("LiveWallpaper/Views/Settings/ShortcutsView.swift")
         #expect(shortcuts.contains("GlobalSettingsCommit.ShortcutsPageFields("))
         #expect(commitSource.contains("postAsync(.globalShortcutsDidChange)"))
@@ -304,9 +292,8 @@ struct GeneralSettingsOwnershipCharacterizationTests {
         #expect(root.contains("#if !LITE_BUILD\n    @State var audioCaptureState"))
         #expect(audio.contains("#if !LITE_BUILD\n        Section"))
         #expect(performance.contains("#if !LITE_BUILD\n            SettingRow("))
-        // The update readout is deliberately NOT SKU-gated: both SKUs ship from
-        // the same GitHub release, so pinning the unwrapped call site keeps a
-        // `#if` from creeping back in. It lives inline under the version line.
+        // The update readout is deliberately NOT SKU-gated: both SKUs ship from the same
+        // GitHub release, so the unwrapped call site is pinned to keep a `#if` from creeping back.
         #expect(about.contains("UpdateStatusLine()\n                    .padding(.top, 2)"))
         #expect(!about.contains("LITE_BUILD"))
         #expect(detail.contains("if featureCatalog.isEnabled(.wpeImport)"))

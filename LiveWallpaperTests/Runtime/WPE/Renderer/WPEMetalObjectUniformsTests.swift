@@ -163,14 +163,9 @@ struct WPEMetalObjectUniformsTests {
     }
 }
 
-/// E1a: `addingMetalRuntimeUniforms` used to rebuild every layer's model and
-/// normal matrix on every frame, *before* its `needsRebuild` early-out, so a
-/// fully static scene paid for all of it. These pin the memo that replaced it.
-///
-/// Counter sanity: `movingOneLayerRecomputesOnlyThatLayer` is the control group
-/// for `staticSceneRecomputesNothingOnASecondFrame` — it proves `computeCount`
-/// still moves when the input really changes, so a zero delta is a cache hit
-/// and not a dead counter.
+/// `movingOneLayerRecomputesOnlyThatLayer` is the control group for
+/// `staticSceneRecomputesNothingOnASecondFrame`: it proves `computeCount` still
+/// moves, so a zero delta is a cache hit and not a dead counter.
 @Suite("WPE object uniform cache")
 struct WPEObjectUniformCacheTests {
 
@@ -289,7 +284,6 @@ struct WPEObjectUniformCacheTests {
         #expect(cache.mapRebuildCount == 1, "a static second frame must not rebuild the map")
         #expect(second.objectUniformValuesByPassID == first.objectUniformValuesByPassID)
 
-        // Every pass of a layer still resolves to that layer's matrices.
         for passID in ["b.0", "b.1", "b.2"] {
             #expect(
                 second.objectUniformValuesByPassID[passID]

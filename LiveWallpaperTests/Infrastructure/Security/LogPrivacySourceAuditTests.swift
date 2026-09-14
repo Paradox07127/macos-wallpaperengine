@@ -2,29 +2,22 @@ import Foundation
 import Testing
 import os
 
-/// Audits every public OSLog interpolation against a reviewed, occurrence-counted allowlist.
 @Suite("Log privacy source audit")
 struct LogPrivacySourceAuditTests {
     private typealias ReviewedPrivacyAlias = OSLogPrivacy
 
     private static let allowedPublicExpressions: [String: [String: Int]] = [
-        // `frameRendered` is the signpost's own success flag: a Bool that tells an
-        // Instruments trace an aborted frame apart from a complete one.
         "LiveWallpaper/Runtime/Metal/WPEMetalSceneRenderer+Frame.swift": [
             "self.descriptor.workshopID": 1,
             "self.rendererSignpostID": 1,
             "frameRendered": 1,
         ],
-        // Module flags, grant-resolved booleans and source IDs — no paths, no
-        // user data. Built once into `pipelineShape` so the line can be deduped.
         "LiveWallpaper/Monitor/Runtime.swift": [
             "pipelineShape": 1,
         ],
         "LiveWallpaper/Monitor/SourceAuthorization.swift": [
             "provider.defaultDirectoryName": 6,
         ],
-        // Appex: identities and counters only. Paths, filenames and raw errors
-        // are `.private` or reduced to `domain#code` by `WPXLogPrivacy`.
         "SystemWallpaperProvider/SystemWallpaperProvider.swift": [
             "Bundle.main.bundleIdentifier??\"?\"": 1,
             "hostID": 1,
@@ -49,13 +42,10 @@ struct LogPrivacySourceAuditTests {
             "what": 1,
             "WPXLogPrivacy.summary(error)": 4,
         ],
-        // CFBundleVersion values, not user data — the bundle *path* on the same
-        // lines is `.private`.
         "SystemWallpaperProvider/ProviderStaleness.swift": [
             "loadedBuild": 1,
             "onDisk": 1,
         ],
-        // Private-API symbol names, not user data.
         "SystemWallpaperProvider/WallpaperXPCBridge.swift": [
             "missing.joined(separator:\",\")": 1,
             "check.className": 1,

@@ -7,9 +7,8 @@ struct FullScreenDetectorUnionAreaTests {
 
     // MARK: - Reference implementation
 
-    /// Verbatim port of the pre-sweep coordinate-compression algorithm the
-    /// sweep-line replaced (cell midpoint containment), including its
-    /// filter/sort/cap preamble.
+    /// Verbatim port of the pre-sweep cell-midpoint algorithm, filter/sort/cap
+    /// preamble included - it is the reference, so do not tidy it.
     private func cellReferenceUnionArea(of rects: [CGRect], cap: Int = 80) -> CGFloat {
         let rects = rects
             .filter { $0.width > 0 && $0.height > 0 }
@@ -58,9 +57,8 @@ struct FullScreenDetectorUnionAreaTests {
         }
     }
 
-    /// Integer-coordinate rects like real CGWindowList bounds: negative
-    /// origins (multi-display global space), overlaps, containments, and a
-    /// sprinkle of degenerate zero-size rects.
+    /// Integer-coordinate rects like real CGWindowList bounds: negative origins,
+    /// overlaps, containments, and a sprinkle of degenerate zero-size rects.
     private func randomIntegerRects(count: Int, using rng: inout SplitMix64) -> [CGRect] {
         (0 ..< count).map { _ in
             let degenerate = Int.random(in: 0 ..< 10, using: &rng) == 0

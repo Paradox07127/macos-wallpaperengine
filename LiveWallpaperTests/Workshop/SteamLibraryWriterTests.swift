@@ -3,9 +3,6 @@ import Foundation
 import LiveWallpaperProWPE
 import Testing
 
-/// The connector is the only component that can write to the user's Steam
-/// library, so its containment rules are the last line of defence. These cover
-/// the pure parts — no SteamCMD, no filesystem mutation.
 @Suite("Steam library write containment")
 struct SteamLibraryPathsTests {
 
@@ -20,26 +17,18 @@ struct SteamLibraryPathsTests {
         #expect(SteamLibraryPaths.isWritable(engineRoot, steamRoot: steam))
         #expect(SteamLibraryPaths.isWritable(engineRoot.appendingPathComponent("assets"), steamRoot: steam))
 
-        // Everything else in the Steam profile is Steam's, including the files
-        // that hold the user's session.
         #expect(!SteamLibraryPaths.isWritable(steam, steamRoot: steam))
         #expect(!SteamLibraryPaths.isWritable(steam.appendingPathComponent("config"), steamRoot: steam))
         #expect(!SteamLibraryPaths.isWritable(steam.appendingPathComponent("config/config.vdf"), steamRoot: steam))
         #expect(!SteamLibraryPaths.isWritable(steam.appendingPathComponent("userdata"), steamRoot: steam))
         #expect(!SteamLibraryPaths.isWritable(steam.appendingPathComponent("steamapps"), steamRoot: steam))
-        // Notably the acf ledger, which we deliberately never rewrite.
         #expect(!SteamLibraryPaths.isWritable(
             steam.appendingPathComponent("steamapps/workshop/appworkshop_431960.acf"),
             steamRoot: steam
         ))
     }
 
-    /// The id becomes a path component under the user's real Steam library, so
-    /// the rule is exactly ASCII `0-9`, 1...20 digits — not `Character.isNumber`,
-    /// which also passes Nd/Nl/No ("\u{FF11}", "①", "٤") and would let a fabricated
-    /// id create or delete `content/431960/①/`. The lenient `WPEPathSafety`
-    /// check is a different contract (local cache components; folder imports use
-    /// the folder name) and must NOT be tightened to match this one.
+    /// The lenient `WPEPathSafety` check is a different contract and must NOT be tightened to match this one.
     @Test("Workshop ids are exactly 1-20 ASCII digits on the connector boundary")
     func workshopIDBoundaryIsASCIIDigitsOnly() {
         #expect(SteamLibraryPaths.isSafeWorkshopID("1"))
@@ -58,19 +47,10 @@ struct SteamLibraryPathsTests {
         #expect(!SteamLibraryPaths.isSafeWorkshopID("12.3"))
     }
 
-    /// The two predicates are deliberately different contracts, but they are not
-    /// independent: the connector's id becomes a directory name that the main
-    /// target then has to accept as a project component. So the containment
-    /// direction — strict ⊆ lenient — is the invariant, and only that direction.
-    /// Nothing pinned it before; widening the connector side (a `-`, a `.`) would
-    /// have silently produced ids the main target refuses to address.
     @Test("Every id the connector accepts is also a legal project component")
     func connectorIDsAreAlwaysLegalProjectComponents() {
-        // Swept, not fixtured: a fixture list can only contain ids the connector
-        // already accepts, so it can never notice the connector being widened —
-        // which is the only way this invariant breaks. The sweep asks the
-        // question of every candidate instead, so a newly accepted character
-        // shows up the moment it is accepted.
+        // Swept, not fixtured: a fixture list can only contain ids the connector already accepts,
+        // so it could never notice the connector being widened.
         var candidates: [String] = (0x20 ... 0x7E).map { String(UnicodeScalar($0)!) }
         candidates += ["..", "../", "/", "\\", ".", "", "a/b", "12/34", "..12", "12..34"]
         candidates += ["1", "3725117707", String(repeating: "9", count: 20)]
@@ -88,9 +68,7 @@ struct SteamLibraryPathsTests {
         // everything, every #expect above would vacuously pass.
         #expect(acceptedByConnector >= 20, "the sweep stopped exercising the connector's accept path")
 
-        // The control: containment is one-way on purpose. A folder import's id is
-        // the folder name, which the connector must keep refusing — if this ever
-        // passes, the connector has stopped being the stricter of the two.
+        // The control: containment is one-way on purpose — the connector must keep refusing a folder-import id.
         for name in ["My Scene", "scene-01", "3725117707.bak"] {
             #expect(WPEPathSafety.isSafeProjectID(name))
             #expect(!SteamLibraryPaths.isSafeWorkshopID(name))
@@ -115,9 +93,6 @@ struct SteamLibraryPathsTests {
 
 }
 
-/// SteamCMD's progress lines drive the only feedback a multi-minute install
-/// gives, and both the connector and the app read them — one parser, one
-/// reading.
 @Suite("SteamCMD progress line")
 struct SteamCMDProgressLineTests {
 
@@ -132,8 +107,6 @@ struct SteamCMDProgressLineTests {
         #expect(progress.totalBytes == 67890)
     }
 
-    /// SteamCMD frequently omits the byte detail; dropping those updates would
-    /// stall the bar at whatever the last detailed line said.
     @Test("The percent-only form still reports a fraction")
     func parsesPercentOnlyForm() throws {
         let progress = try #require(
@@ -167,8 +140,6 @@ struct SteamCMDProgressLineTests {
     }
 }
 
-/// buildid drives the update check; reading the wrong branch would offer
-/// updates for a build the user cannot install.
 @Suite("Wallpaper Engine buildid parsing")
 struct WallpaperEngineBuildIDTests {
 
@@ -204,14 +175,9 @@ struct WallpaperEngineBuildIDTests {
     }
 }
 
-/// The containment guard's real adversary is not `../` — numeric ids already
-/// exclude that — but a symlink swapped in *above* the target, which made the
-/// target and its own anchor resolve consistently and look contained.
 @Suite("Steam write containment against symlinks")
 struct SteamLibrarySymlinkContainmentTests {
 
-    /// Builds a scratch Steam tree so the walk runs against real inodes without
-    /// touching the user's library.
     private func makeSteamTree() throws -> (root: URL, cleanup: () -> Void) {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("steam-containment-\(UUID().uuidString)", isDirectory: true)
@@ -231,8 +197,6 @@ struct SteamLibrarySymlinkContainmentTests {
         #expect(SteamLibraryPaths.isWritable(item, steamRoot: tree.root))
     }
 
-    /// The attack the old guard missed: replace an ancestor with a link, and
-    /// target plus anchor resolve consistently so the target looks contained.
     @Test("A symlinked ancestor makes everything under it unwritable")
     func symlinkedAncestorIsRefused() throws {
         let tree = try makeSteamTree()
@@ -276,8 +240,6 @@ struct SteamLibrarySymlinkContainmentTests {
         ))
     }
 }
-/// A `public` block with no readable buildid must not fall through to the next
-/// branch — reporting a beta build as public drives a wrong update verdict.
 @Suite("Public build branch isolation")
 struct PublicBranchIsolationTests {
 
@@ -315,8 +277,6 @@ struct PublicBranchIsolationTests {
         #expect(SteamConnectorBuildInfo.parsePublicBuildID(from: dump) == "23967692")
     }
 
-    /// Real `app_info_print` output: the first `"public"` block is a depot
-    /// manifest (gid/size/download, no buildid); the branch block comes later.
     @Test("The depot manifest's public block is skipped in favour of the branches block")
     func depotManifestPublicBlockIsNotMistakenForTheBranch() {
         let dump = """
@@ -362,9 +322,6 @@ struct PublicBranchIsolationTests {
     }
 }
 
-/// Serializing every SteamCMD run means a request can wait behind a long
-/// install. Executing it anyway — after the caller's own deadline passed —
-/// would delete or download with nobody listening.
 @Suite("Connector queue-wait expiry")
 struct ConnectorQueueExpiryTests {
 
@@ -381,8 +338,6 @@ struct ConnectorQueueExpiryTests {
         #expect(guards == enqueues + 1, "a queued body is missing its abandonment check")
     }
 
-    /// The client must outlast the service's expiry, or it walks away while the
-    /// work is still running.
     @Test("The client backstop is longer than the connector's queue expiry")
     func clientBackstopOutlastsServiceExpiry() throws {
         let client = try String(
@@ -403,9 +358,6 @@ struct ConnectorQueueExpiryTests {
     }
 }
 
-/// The connector is unsandboxed, so what it hands its child matters more here
-/// than it would in the app. An earlier version passed a bare `Process()` and
-/// silently inherited the service's whole environment.
 @Suite("SteamCMD child environment")
 struct SteamCMDChildEnvironmentTests {
 
@@ -417,8 +369,6 @@ struct SteamCMDChildEnvironmentTests {
         #expect(env["TMPDIR"] == "/tmp/x/")
     }
 
-    /// Injection vectors the app's runner already drops; the connector inherits
-    /// nothing, so they can only be absent.
     @Test("Nothing that could redirect loading or leak credentials survives")
     func dangerousVariablesAreAbsent() {
         let env = SteamCMDChildEnvironment.make()
@@ -430,11 +380,6 @@ struct SteamCMDChildEnvironmentTests {
         }
     }
 
-    /// Matches the app runner's pin. The parser reads decimals positionally and
-    /// stops at the first character that is not a digit, `.` or space, so a
-    /// comma-decimal rendering degrades silently rather than failing loudly —
-    /// which is the harder failure to notice, and the reason to pin rather than
-    /// to teach the parser more formats.
     @Test("The locale is pinned, and the parser's comma behaviour is degradation not refusal")
     func localeIsPinned() throws {
         #expect(SteamCMDChildEnvironment.make()["LANG"] == "en_US.UTF-8")
@@ -447,7 +392,6 @@ struct SteamCMDChildEnvironmentTests {
         #expect(comma.fraction.map { abs($0 - 0.42) < 0.0001 } == true)
     }
 
-    /// The real home, not the container — the whole reason the connector exists.
     @Test("HOME defaults to the POSIX home, never the sandbox container")
     func homeDefaultsToRealHome() {
         let env = SteamCMDChildEnvironment.make()
@@ -455,21 +399,16 @@ struct SteamCMDChildEnvironmentTests {
         #expect(env["HOME"]?.contains("/Library/Containers/") != true)
     }
 
-    /// A presence ratchet, not a behaviour test, and deliberately so: the tests
-    /// above pin what the whitelist contains but cannot reach `runSteamCMD` —
-    /// `SteamConnector.swift` belongs only to the connector target. Dropping the
-    /// assignment would restore the inherit-everything bug with every test above
-    /// still green, so the assignment itself is what gets pinned here.
+    /// A source-text ratchet on purpose: `SteamConnector.swift` is not reachable from this target,
+    /// so dropping the assignment would leave every test above green.
     @Test("The spawn actually applies the whitelist")
     func spawnUsesTheWhitelist() throws {
         let source = try String(
             contentsOf: RepositoryRoot.url("SteamConnector/SteamConnector.swift"),
             encoding: .utf8
         )
-        // Count invariant, not `contains`: every Process the connector creates
-        // must apply the whitelist, and a second spawn point sharing the first
-        // one's assignment is exactly what `contains` cannot see. Two today:
-        // the shared pipe runner and the interactive login's PTY session.
+        // Count invariant, not `contains`: a second spawn point sharing the first one's assignment
+        // is exactly what `contains` cannot see.
         let spawns = source.components(separatedBy: "Process()").count - 1
         let whitelisted = source.components(
             separatedBy: "process.environment = SteamCMDChildEnvironment.make(home:"
@@ -482,12 +421,6 @@ struct SteamCMDChildEnvironmentTests {
     }
 }
 
-/// The descriptor-based delete permanently removes the user's files, and two
-/// rounds of reading it missed a use-after-close that silently skipped every
-/// nested entry. Source-text assertions cannot see that; these run it.
-///
-/// Every case builds its own scratch Steam tree — `steamRoot` is injectable for
-/// exactly this reason — so the user's real library is never touched.
 @Suite("Steam library writer, behaviour")
 struct SteamLibraryWriterBehaviourTests {
 
@@ -510,9 +443,6 @@ struct SteamLibraryWriterBehaviourTests {
         #expect(try String(contentsOf: config, encoding: .utf8) == "client session sentinel")
     }
 
-    /// Files the user (or another program) put next to a downloaded item are
-    /// theirs: a re-download must carry them into the new tree, at every depth,
-    /// while the download's own files win and links are never carried.
     @Test("Publishing merges target-only entries into the new tree without following links")
     func publishMergesTargetOnlyEntries() throws {
         let source = try Self.makeTree()
@@ -571,8 +501,6 @@ struct SteamLibraryWriterBehaviourTests {
 
     private static let itemID = "3725117707"
 
-    /// A scratch tree shaped like a Steam root, with the item folder populated
-    /// deeply enough that a walk which stops at the first level is visible.
     private static func makeTree() throws -> (root: URL, item: URL, cleanup: () -> Void) {
         let fm = FileManager.default
         let root = fm.temporaryDirectory
@@ -591,9 +519,6 @@ struct SteamLibraryWriterBehaviourTests {
         return lstat(url.path(percentEncoded: false), &info) == 0
     }
 
-    /// The regression this suite exists for: with the recursion running on a
-    /// closed descriptor, `fstatat` failed, every nested entry was treated as
-    /// absent, and the final `AT_REMOVEDIR` failed on a still-populated folder.
     @Test("Deleting an item removes the whole nested tree")
     func deleteRemovesNestedTree() throws {
         let tree = try Self.makeTree()
@@ -607,12 +532,9 @@ struct SteamLibraryWriterBehaviourTests {
         #expect(result.outcome == .deleted)
         #expect(result.freedBytes > 0)
         #expect(!Self.exists(tree.item))
-        // The content root itself is the parent we opened, not something we own.
         #expect(Self.exists(SteamLibraryPaths.workshopContentRoot(steamRoot: tree.root)))
     }
 
-    /// A link inside the item must be unlinked, never descended into, or a
-    /// wallpaper could take its author's chosen target down with it.
     @Test("A symlink inside the item is unlinked, its target untouched")
     func symlinkInsideItemIsNotFollowed() throws {
         let tree = try Self.makeTree()
@@ -639,8 +561,6 @@ struct SteamLibraryWriterBehaviourTests {
         #expect(Self.exists(outside))
     }
 
-    /// The item folder itself being a link is the ancestor-swap attack; the
-    /// containment guard must refuse before anything is opened.
     @Test("A symlinked item folder is refused, its target untouched")
     func symlinkedItemFolderIsRefused() throws {
         let tree = try Self.makeTree()
@@ -682,8 +602,6 @@ struct SteamLibraryWriterBehaviourTests {
         #expect(result.outcome == .notFound)
     }
 
-    /// A tree deep enough to exhaust the stack is hostile input; refusing beats
-    /// crashing the connector mid-delete.
     @Test("A pathologically deep tree is refused, not descended")
     func deepTreeIsRefused() throws {
         let tree = try Self.makeTree()
@@ -703,8 +621,6 @@ struct SteamLibraryWriterBehaviourTests {
     }
 }
 
-/// Prune trims a finished Wallpaper Engine install to `assets/`. It refuses
-/// rather than guesses: everything it removes is unrecoverable.
 @Suite("Wallpaper Engine prune, behaviour")
 struct WallpaperEnginePruneBehaviourTests {
 
@@ -749,8 +665,6 @@ struct WallpaperEnginePruneBehaviourTests {
         #expect(!Self.exists(tree.install.appendingPathComponent("bin")))
     }
 
-    /// No `assets/` means this is not the install we think it is — and by then
-    /// removing the rest would have destroyed something unidentified.
     @Test("A missing assets/ aborts before anything is removed")
     func missingAssetsRemovesNothing() throws {
         let tree = try Self.makeInstall(withAssets: false)
@@ -775,8 +689,6 @@ struct WallpaperEnginePruneBehaviourTests {
         #expect(Self.exists(tree.install.appendingPathComponent("wallpaper64.exe")))
     }
 
-    /// The install root being a link is the ancestor swap again, aimed at the
-    /// larger of the two writable subtrees.
     @Test("A symlinked install root is refused, its target untouched")
     func symlinkedInstallRootIsRefused() throws {
         let tree = try Self.makeInstall(withAssets: true)
@@ -845,9 +757,7 @@ struct SteamCMDProfileTests {
         let account = try SteamCMDProfile.home(accountName: "alice", realHome: home)
         #expect(tree.path.hasPrefix(account.path + "/"))
         #expect(tree.lastPathComponent == "workshop")
-        // Never the shared library: that tree is the one the app actually reads.
         #expect(!tree.path.hasPrefix(home + "/Library/Application Support/Steam/"))
-        // Maintenance and invalid names are refused the same way a session is.
         for name in ["anonymous", "ANONYMOUS", "../alice"] {
             #expect(throws: SteamCMDProfile.ProfileError.self) {
                 try SteamCMDProfile.stagedWorkshopTree(accountName: name, realHome: home)
@@ -872,7 +782,6 @@ struct SteamCMDProfileTests {
     @Test("Session removal resolves the account's own directory and nothing else")
     func sessionDirectoryIsTheAccountHome() throws {
         let home = "/Users/example"
-        // Control: a valid account resolves to exactly the profile it logs into.
         #expect(try SteamCMDProfile.sessionDirectory(accountName: "Alice", realHome: home)
             == SteamCMDProfile.home(accountName: "Alice", realHome: home))
     }
@@ -883,10 +792,7 @@ struct SteamCMDProfileTests {
         let probe = try SteamCMDProfile.subscriptionProbeDirectory(accountName: "Alice", realHome: home)
         let account = try SteamCMDProfile.home(accountName: "alice", realHome: home)
         #expect(probe.path.hasPrefix(account.path + "/"))
-        // Never the shared library: the probe writes a ledger of its own and
-        // must not touch the one the app reads.
         #expect(!probe.path.hasPrefix(home + "/Library/Application Support/Steam/"))
-        // A fresh leaf per call, so two probes cannot read each other's ledger.
         #expect(try probe != SteamCMDProfile.subscriptionProbeDirectory(accountName: "Alice", realHome: home))
         for name in ["anonymous", "ANONYMOUS", "../alice"] {
             #expect(throws: SteamCMDProfile.ProfileError.self) {
@@ -895,9 +801,6 @@ struct SteamCMDProfileTests {
         }
     }
 
-    /// The ledger carries the same ids twice — `WorkshopItemsInstalled` and
-    /// `WorkshopItemDetails` — so a parser that scans the whole file returns
-    /// every subscription doubled.
     @Test("Only the ids under WorkshopItemsInstalled are read, once each")
     func subscribedIDsComeFromTheInstalledSectionOnly() {
         let acf = """
@@ -967,9 +870,6 @@ struct SteamCMDProfileTests {
         }
     }
 
-    /// The connector runs unsandboxed, so the app's security-scoped grant means
-    /// nothing on this side: the library path arrives as a plain string and is
-    /// only as trustworthy as this check makes it.
     @Test("A library path is accepted only when it is an absolute, literal directory that is a Steam library")
     func libraryRootValidation() throws {
         let scratch = FileManager.default.temporaryDirectory
@@ -978,9 +878,6 @@ struct SteamCMDProfileTests {
         try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: scratch) }
 
-        // A library is identified by the Steam client's own config, exactly as
-        // the app identifies one when the user picks a folder. Without that the
-        // connector would build `steamapps/...` wherever it was pointed.
         let library = scratch.appendingPathComponent("Steam", isDirectory: true)
         try FileManager.default.createDirectory(
             at: library.appendingPathComponent("config", isDirectory: true), withIntermediateDirectories: true
@@ -992,14 +889,11 @@ struct SteamCMDProfileTests {
         let file = scratch.appendingPathComponent("regular.txt")
         try Data("x".utf8).write(to: file)
 
-        // The guard the connector needs most: an ordinary directory the caller
-        // merely names is not a library, however real the path is.
         let notALibrary = scratch.appendingPathComponent("Documents", isDirectory: true)
         try FileManager.default.createDirectory(at: notALibrary, withIntermediateDirectories: true)
 
-        // A symlinked root is ACCEPTED on purpose: `isWritable` supports a
-        // library pointed at another volume, and refusing one here would break
-        // that setup. Containment below the root is enforced separately.
+        // A symlinked root is ACCEPTED on purpose: a library may point at another volume.
+        // Containment below the root is enforced separately.
         let linked = scratch.appendingPathComponent("LinkedSteam", isDirectory: true)
         try FileManager.default.createSymbolicLink(at: linked, withDestinationURL: library)
         #expect(SteamLibraryPaths.validatedLibraryRoot(linked.path(percentEncoded: false)) != nil)
@@ -1020,9 +914,6 @@ struct SteamCMDProfileTests {
     }
 }
 
-/// The connector's profile cleanups (account session, staged Workshop tree,
-/// subscription probe, managed install) checked the path for links and then
-/// handed the same string to `removeItem(atPath:)`, which resolves it again.
 @Suite("Profile directory removal never follows a link")
 struct SteamProfileDirectoryRemovalTests {
     @Test("A link is unlinked and its target kept; a linked parent is refused; a real tree goes")
@@ -1063,7 +954,6 @@ struct SteamProfileDirectoryRemovalTests {
         #expect(fm.fileExists(atPath: accounts.path), "the parent went with it")
     }
 
-    /// Control: a target that never existed is genuinely a no-op (the ENOENT path).
     @Test("A target that is already gone is a no-op")
     func alreadyGoneIsANoOp() throws {
         let fm = FileManager.default
@@ -1076,9 +966,8 @@ struct SteamProfileDirectoryRemovalTests {
         #expect(fm.fileExists(atPath: dir.path))
     }
 
-    /// A component name over NAME_MAX (255 bytes) makes `fstatat` fail with
-    /// ENAMETOOLONG, not ENOENT — a deterministic non-ENOENT failure reachable
-    /// without root. The caller must see this as a real error, not "already gone".
+    /// A name over NAME_MAX (255 bytes) makes `fstatat` fail with ENAMETOOLONG, not ENOENT —
+    /// a deterministic non-ENOENT failure reachable without root.
     @Test("An fstatat failure other than ENOENT must not be reported as removed")
     func nonENOENTStatFailureThrows() throws {
         let fm = FileManager.default

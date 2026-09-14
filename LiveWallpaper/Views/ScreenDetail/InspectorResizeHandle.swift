@@ -2,9 +2,8 @@ import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
-/// Discrete width stepping for the keyboard and VoiceOver. Clamps at `minWidth`
-/// instead of reusing the drag's close threshold: a drag arms the close visibly
-/// before release, a keypress would commit it unseen.
+/// Clamps at `minWidth` instead of the drag's close threshold: a drag arms the
+/// close visibly, a keypress would commit it unseen.
 enum InspectorResizeStep {
     static let defaultStep: CGFloat = 24
 
@@ -25,7 +24,6 @@ enum InspectorResizeStep {
     }
 }
 
-/// Vertical handle on the inspector's leading edge for click-drag width resizing.
 struct InspectorResizeHandle: View {
     static let hitAreaWidth: CGFloat = 28
 
@@ -72,9 +70,6 @@ struct InspectorResizeHandle: View {
             }
             .focusable()
             .focused($isFocused)
-            // The focusable view is the full-height hit strip, not the little
-            // pill, so the system ring draws a tall blue frame down the window
-            // edge. The handle shows focus itself instead (see `isActive`).
             .focusEffectDisabled()
             .onKeyPress(.leftArrow) { adjust(.wider); return .handled }
             .onKeyPress(.rightArrow) { adjust(.narrower); return .handled }
@@ -101,9 +96,6 @@ struct InspectorResizeHandle: View {
                 .frame(width: 1, height: handleHeight * hairlineHeightRatio)
                 .opacity(isActive ? 0 : 1)
 
-            // Armed keeps an opaque accent fill over the glass so the "release
-            // to close" state stays unmistakable; `stroked: false` because the
-            // two-state stroke below already draws the edge on the same shape.
             Capsule()
                 .fill(isClosingArmed ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(Color.clear))
                 .overlay(
@@ -153,8 +145,6 @@ struct InspectorResizeHandle: View {
             }
     }
 
-    /// No drag session to preview against, so a step previews and commits in one
-    /// go. Silently does nothing at the bounds rather than committing a no-op.
     private func adjust(_ direction: InspectorResizeStep.Direction) {
         let next = InspectorResizeStep.stepped(
             from: width,
@@ -167,13 +157,10 @@ struct InspectorResizeHandle: View {
         onCommitWidth(next)
     }
 
-    /// Focus counts: with the system ring suppressed, the handle appearing is
-    /// the only thing that tells a keyboard user the arrow keys will resize.
     private var isActive: Bool {
         isHovering || isDragging || isFocused
     }
 
-    /// Only ever true when the parent wired up drag-to-close.
     private func armed(for candidate: CGFloat) -> Bool {
         guard let closeThreshold, onRequestClose != nil else { return false }
         return candidate < closeThreshold

@@ -41,8 +41,6 @@ struct SteamCMDCancelRegistryTests {
         #expect(signalled == 777)
     }
 
-    /// The retry race: the cancel for a superseded attempt reaches the connector
-    /// only after the next attempt's child has registered.
     @Test("a cancel for a superseded operation never kills the run that replaced it")
     func supersededOperationCancelIsANoOp() {
         let registry = SteamCMDActiveProcessRegistry()

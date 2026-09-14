@@ -1,10 +1,8 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// Raised by the Scene tab while it is showing the recent-projects grid: that
-/// grid's actions live in this header, so the grid does not carry a title row of
-/// its own. Declared here rather than beside the Scene view so the Lite build,
-/// which has no Scene tab, still compiles the header.
+/// Declared here rather than beside the Scene view so the Lite build, which has
+/// no Scene tab, still compiles the header.
 struct SceneQuickActionsVisibleKey: PreferenceKey {
     static let defaultValue = false
     static func reduce(value: inout Bool, nextValue: () -> Bool) {
@@ -19,8 +17,6 @@ struct Header: View {
     let wallpaperSessionSummary: WallpaperSessionSummary
     let reduceMotion: Bool
     let showsHeaderWallpaperActions: Bool
-    /// The Scene tab is showing its recent-projects grid, whose Workshop and
-    /// Apply actions belong up here next to the display's own.
     var showsSceneQuickActions: Bool = false
     /// The overlay tab is showing, so "Apply to All" means this overlay only.
     var appliesOverlayOnly: Bool = false
@@ -33,7 +29,6 @@ struct Header: View {
     @State private var bookmarkNameDraft = ""
     @State private var bookmarkDraftBaseline: String?
 
-    /// Scheme-popover name draft, held here for the same reason as the bookmark one.
     @State private var schemeNameDraft = ""
     @State private var showSchemeCapture = false
 
@@ -41,13 +36,11 @@ struct Header: View {
         DetailHeaderBar(
             systemImage: "display",
             title: {
-                // Reload lives in the window toolbar, with the other whole-display actions.
                 Text(verbatim: screen.name)
                     .help(Text(verbatim: screen.name))
             },
             metadata: {
                 HStack(spacing: DesignTokens.DetailHeader.metadataSpacing) {
-                    // A renamed display still has to say which panel it is.
                     if screen.customName != nil {
                         InfoBadge(icon: "display", text: screen.systemName)
                     }
@@ -83,8 +76,6 @@ struct Header: View {
 
                     applyToAllButton
 
-                    // Offer the bookmark action only when this type has
-                    // bookmarkable content — no empty icon on an unconfigured display.
                     if inspectorContent != nil {
                         GlassIconButton(
                             isCurrentBookmarked ? "bookmark.fill" : "bookmark",
@@ -111,8 +102,6 @@ struct Header: View {
 
                     saveAsSchemeButton
 
-                    // No per-type import button here: the toolbar's + picker
-                    // routes any file or folder by what it is, for this display.
                     if showsHeaderWallpaperActions {
                         GlassIconButton(
                             "trash",
@@ -168,7 +157,6 @@ struct Header: View {
         if screenManager.screens.count > 1,
            appliesOverlayOnly || screenManager.getConfiguration(for: screen) != nil {
             GlassIconButton("square.on.square", action: onApplyToAll)
-                // Applying from the overlay tab preserves the destination wallpapers.
                 .help(appliesOverlayOnly
                     ? Text("Copies this overlay to every other connected display; their wallpapers are not changed")
                     : Text("Copies the current wallpaper and settings to every other connected display"))
@@ -184,9 +172,8 @@ struct Header: View {
         case .active:   return Text("Playing")
         case .paused:   return Text("Paused")
         case .policySuspended:
-            // Gate on the wording, not the reason set: a pure-absence set is
-            // non-empty but has no user-visible text (nobody is watching), so
-            // it must fall back rather than render an empty string.
+            // Gate on the wording, not the reason set: a pure-absence set is non-empty
+            // but has no user-visible text, so it must fall back.
             if let text = SuspendReasonText.localized(
                 for: screenManager.suspendReasonsByScreen[screen.id] ?? []
             ) {
@@ -198,10 +185,6 @@ struct Header: View {
         case .restoring: return Text("Restoring")
         case .off:      return Text("Off")
         case .error:
-            // Same shape as `.policySuspended` above. The failing session already
-            // put `WallpaperRuntimeError.userMessage` in the subtitle, so "Error"
-            // on its own threw away the one sentence that says which failure it
-            // was and whether the reader can do anything about it.
             if let text = wallpaperSessionSummary.subtitle, !text.isEmpty {
                 return Text(verbatim: text)
             }

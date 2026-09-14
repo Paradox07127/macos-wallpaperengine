@@ -43,7 +43,6 @@ struct DisplayDefaultsView: View {
         )
     }
 
-    /// Mirrors the macOS arrangement; context menus rename displays.
     @ViewBuilder
     private var arrangementSection: some View {
         if !screenManager.screens.isEmpty {

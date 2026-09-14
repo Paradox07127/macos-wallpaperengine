@@ -6,17 +6,13 @@ import Foundation
 struct ThumbnailPlaybackGate: Equatable {
     enum Trigger: Equatable { case hover, auto }
 
-    /// No decoder debounce of its own any more. Every `.hoverToPlay` caller
-    /// (Workshop-Installed's `HistoryRow`, Workshop-Online's `BrowseCard`) already
-    /// gates its hover through `settledHover`, so this 250 ms stacked on top of
-    /// that 150 ms and made a sweep take 400 ms to start playing — the same delay
-    /// on both grids, but twice as long as either intended.
+    /// Zero: every `.hoverToPlay` caller already gates hover through `settledHover`,
+    /// so a debounce here would stack on top of that one.
     static let hoverPreviewDelayNanoseconds: UInt64 = 0
 
     var isVisible: Bool
-    /// False while the host panel is mounted but not shown — a collapsed inspector clips its
-    /// subtree to zero width instead of unmounting it, so `onDisappear` never fires and `isVisible`
-    /// stays true. Separate from `isVisible`: different sources (view lifecycle vs. container state), both must hold.
+    /// False while the host panel is mounted but not shown — a collapsed inspector
+    /// clips its subtree to zero width instead of unmounting, so `isVisible` stays true.
     var hostIsPresented: Bool = true
     var isHovered: Bool
     var reduceMotion: Bool
@@ -35,7 +31,6 @@ struct ThumbnailPlaybackGate: Equatable {
     }
 }
 
-/// Bounds the number of GIF/APNG previews animating at once via an LRU cap, freezing evicted clients to their poster frame.
 @MainActor
 final class GIFPlaybackCoordinator {
     static let shared = GIFPlaybackCoordinator()
@@ -73,7 +68,6 @@ final class GIFPlaybackCoordinator {
         freezers.removeValue(forKey: id)
     }
 
-    /// Marks `id` as most-recently-used so steady playback isn't evicted.
     func touch(id: UUID) {
         lruOrder.removeAll { $0 == id }
         lruOrder.append(id)

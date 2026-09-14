@@ -1,10 +1,8 @@
 import Foundation
 
-/// Why `wpeOrigin` may need clear/preserve (injected Lite vs Pro policy).
 public enum OriginReconciliationEvent: Sendable {
     /// Disk load — persisted origin is authoritative.
     case loaded
-    /// User picker replaced active wallpaper.
     case userReplacedActiveWallpaper(previous: WallpaperContent?)
 }
 

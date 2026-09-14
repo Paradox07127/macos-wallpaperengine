@@ -2,15 +2,13 @@ import Testing
 import Foundation
 @testable import LiveWallpaper
 
-/// Runs the opt-in CSP compatibility audit against a local web-wallpaper corpus.
-/// Enable it with `LW_RUN_CSP_AUDIT=1`; the shipping policy must remain violation-free for at least 95% of projects.
+/// Opt-in: enable with `LW_RUN_CSP_AUDIT=1`.
 @Suite("CSP compatibility audit (long-running)", .disabled(if: !CSPAuditEnvironment.isEnabled))
 @MainActor
 struct CSPCompatibilityAuditTests {
 
     static let dwellSeconds: TimeInterval = 30
 
-    /// Caps corpus cost without affecting CSP violation collection.
     static let maxProjectBytes: Int64 = 200 * 1024 * 1024
 
     @Test("v2 (ship config) passes the ≥95 % zero-violation threshold")
@@ -70,7 +68,6 @@ struct CSPCompatibilityAuditTests {
 }
 
 enum CSPAuditCorpus {
-    /// Finds web projects in the user's Wallpaper Engine library, excluding bundles above `maxBytes`.
     static func discoverFromUserLibrary(maxBytes: Int64) throws -> [CSPAuditProject] {
         let docs = try FileManager.default.url(
             for: .documentDirectory,

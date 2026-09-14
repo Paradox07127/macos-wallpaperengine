@@ -55,9 +55,8 @@ struct SystemMetricsSourceTests {
         #expect(health?.state == "ok")
     }
 
-    /// The wire still carries a placeholder `0` for a group nobody asked for;
-    /// only `metricSamples` distinguishes it from an idle disk. The history has
-    /// to read that provenance, or the chart draws a confident zero line.
+    /// An undemanded group still carries a placeholder `0`; only `metricSamples`
+    /// tells it from an idle disk.
     @Test("An undemanded group is published unavailable and lands in the history as absent",
           .timeLimit(.minutes(1)))
     @MainActor
@@ -186,7 +185,6 @@ struct SystemMetricsSourceTests {
         // Default 5s wall-clock cadence vs a 0.1s base tick: only the first
         // tick may walk within this test's 3s window.
         #expect(walkCalls == 1)
-        // Skipped ticks republish the cached list instead of dropping it.
         #expect(await sink.system()?.topProcesses == Self.walkSamples)
     }
 
@@ -217,7 +215,6 @@ struct SystemMetricsSourceTests {
         // CPU%/IO deltas divide by the span between walks, not the base tick —
         // a per-tick elapsed here would inflate CPU% by the skip factor.
         #expect(snapshot.intervals[1] >= 0.14)
-        // Counter bookkeeping survives the skipped ticks.
         #expect(snapshot.previousCounters[1][7]?.totalTimeNanos == 123)
     }
 
@@ -241,12 +238,8 @@ struct SystemMetricsSourceTests {
         #expect(countLater == countAfterStop)
     }
 
-    /// A rebuilt pipeline hands the board a brand-new source, and CPU, network
-    /// and disk each report `available: false` on a tick with no previous
-    /// counters to subtract. Every time an occluded board came back, that made
-    /// the first published tick read "readings unavailable" for a whole
-    /// interval before the real numbers arrived. `primeDeltaBaselines` is what
-    /// keeps that first tick real; drop it and this goes red.
+    /// `primeDeltaBaselines` is what keeps the first published tick real; drop it
+    /// and this goes red.
     @Test("The first published tick already carries a real CPU reading", .timeLimit(.minutes(1)))
     func firstTickCarriesDeltaBaselines() async {
         let sink = MockSink()

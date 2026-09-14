@@ -13,11 +13,7 @@ enum VideoCompositionOwner: Equatable, Sendable {
     case forceSDR
 }
 
-/// Video-output pixel-format negotiation, mirroring the scene side
-/// (`WPEVideoTextureSource.negotiatedPixelFormats`): NV12 first, 32BGRA tail,
-/// PQ/HLG pinned to 32BGRA (8-bit biplanar can't carry those transfer functions).
-/// Duplicated, not shared: `WPEVideoTextureSource.swift` is `#if !LITE_BUILD`,
-/// this player ships in both SKUs.
+/// NV12 first, 32BGRA tail; PQ/HLG pinned to 32BGRA (8-bit biplanar can't carry those transfer functions).
 enum WallpaperVideoOutputNegotiation {
     static let negotiatedPixelFormats: [OSType] = [
         kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
@@ -91,7 +87,6 @@ final class WallpaperVideoPlayer {
     private(set) var shouldAutoplayWhenReady = true
     private(set) var requestedFrameRateLimit: Float = 0
     private(set) var runtimeError: WallpaperRuntimeError?
-    /// Lazy HDR/codec probe; drives EDR on layer + window.
     private(set) var formatInfo: VideoFormatInfo?
     /// Replays any pre-existing error when assigned (late observers).
     var onError: (@MainActor (WallpaperRuntimeError) -> Void)? {
@@ -145,19 +140,11 @@ final class WallpaperVideoPlayer {
     private var fitMode: VideoFitMode = .aspectFill
     private var playbackSpeed: Double = 1
     private var hasRequestedPlaybackStart = false
-    /// Outputs attached to a player item; owned so suspension/hibernation can release the
-    /// conversion pool an output pins. The readiness probe is the only producer today and
-    /// never overlaps a suspend (a probed candidate isn't session-installed yet), so the
-    /// drain is usually a no-op — the invariant matters, not the count.
+    /// Outputs attached to a player item, owned so suspension/hibernation can release the conversion pool an output pins.
     private var boundVideoOutputs: [(item: AVPlayerItem, output: AVPlayerItemVideoOutput)] = []
     /// Warm suspend: paused with the decoded last frame still on the layer.
     private(set) var isSuspended = false
-    /// Deep hibernation: player/looper/decode pool/`lwmem://` mapping released behind
-    /// a captured still frame — same cover-then-release lifecycle the HTML view uses
-    /// (still frame = cover, `retirePlaybackState()` = release, `setupPlayer` =
-    /// rebuild). A phase rather than a bool because that's what makes "rebuilding" an
-    /// expressible state: a re-absence during a wake used to be indistinguishable
-    /// from "not hibernated".
+    /// Deep hibernation: player/looper/decode pool/`lwmem://` mapping released behind a captured still frame. A phase rather than a bool so a re-absence during a wake is not indistinguishable from "not hibernated".
     private var hibernation = HibernationPhase()
     var isHibernated: Bool { hibernation.phase == .hibernated }
     /// Rebuilding behind the still frame after a wake. Callers report this
@@ -194,13 +181,10 @@ final class WallpaperVideoPlayer {
         window = fixture
     }
 
-    // Test-only introspection; no production reader.
     var hasInstalledPlaybackWindow: Bool { window != nil }
     var boundVideoOutputCountForTesting: Int { boundVideoOutputs.count }
     var hasInMemoryAssetLoaderForTesting: Bool { inMemoryAssetLoader != nil }
     var isShowingHibernationStillFrameForTesting: Bool { videoView?.isShowingStillFrame == true }
-    /// Binds a probe-shaped output so the drain invariant is observable without
-    /// racing the readiness gate.
     @discardableResult
     func attachVideoOutputForTesting() -> Bool {
         guard let item = player?.currentItem else { return false }
@@ -317,7 +301,6 @@ final class WallpaperVideoPlayer {
                     return
                 }
 
-                // Packaged: custom-scheme asset windowed into scene.pkg (probe + play).
                 let asset: AVURLAsset
                 let packagedLoader: InMemoryVideoAssetLoader?
                 if let entryName = self.packageEntryName {
@@ -369,7 +352,6 @@ final class WallpaperVideoPlayer {
 
                     if memoryCached {
                         do {
-                            // mmap + attrs off MainActor (large clips are expensive).
                             let result = try await Task.detached(priority: .utility) {
                                 try InMemoryVideoAssetLoader.load(from: url)
                             }.value
@@ -437,7 +419,6 @@ final class WallpaperVideoPlayer {
         }
     }
 
-    /// After base readiness; wait for late Force SDR Rec.709 before snapshotting composition.
     func prepareForCurrentComposition(
         after base: WallpaperPreparationResult,
         timeout: Duration
@@ -468,9 +449,7 @@ final class WallpaperVideoPlayer {
             )
             var boundItem: AVPlayerItem?
             var output: AVPlayerItemVideoOutput?
-            // A closure, not a nested func: nested funcs do not inherit the
-            // enclosing closure's MainActor isolation, and the unbind is
-            // MainActor-isolated.
+            // A closure, not a nested func: nested funcs do not inherit the enclosing closure's MainActor isolation, and the unbind is MainActor-isolated.
             let unbindOutput = {
                 if let boundItem, let output {
                     self.unbindVideoOutput(output, from: boundItem)
@@ -517,10 +496,7 @@ final class WallpaperVideoPlayer {
                 if let item, let output, boundItem === item {
                     if item.status == .failed {
                         if runtimeError == nil, let url = videoURL {
-                            // AVFoundation fills `item.error` when the status
-                            // turns failed. Reading only the status left the
-                            // reader with whatever generic preparation failure
-                            // arrived later instead of the codec or file fault.
+                            // AVFoundation fills `item.error` when the status turns failed. Reading only the status would leave the reader with a later generic preparation failure instead of the codec or file fault.
                             let failure = item.error
                                 .map { Self.makeRuntimeError(from: $0, url: url) }
                                 ?? .mediaNotPlayable(url, code: nil)
@@ -595,13 +571,11 @@ final class WallpaperVideoPlayer {
         currentLoadingAsset = nil
     }
     
-    /// Resource-loader callbacks off main (byte-range / Data copies).
     private static let resourceLoaderQueue = DispatchQueue(
         label: "app.livewallpaper.video.in-memory-loader",
         qos: .userInitiated
     )
 
-    /// lwmem:// assets: forbid external refs / network.
     private static let inMemoryAssetOptions: [String: Any] = [
         AVURLAssetReferenceRestrictionsKey: AVAssetReferenceRestrictions.forbidAll.rawValue,
         AVURLAssetAllowsCellularAccessKey: false,
@@ -609,7 +583,7 @@ final class WallpaperVideoPlayer {
         AVURLAssetAllowsConstrainedNetworkAccessKey: false
     ]
 
-    /// Probe packaged playability; holds loader (weak AVFoundation delegate) across await.
+    /// Holds the loader (weak AVFoundation delegate) across the await.
     static func validatePackagedVideo(packageURL: URL, entryName: String) async throws {
         // Bookmark-apply has no accessToken — start scope here for the mmap.
         let didStart = packageURL.startAccessingSecurityScopedResource()
@@ -643,10 +617,6 @@ final class WallpaperVideoPlayer {
         guard isLifecycleActive(generation) else { return }
         let playerItem = AVPlayerItem(asset: asset)
 
-        // No `preferredForwardBufferDuration`: unset/5s/32s measured identical (footprint, swing,
-        // bytes, request count) on both file-URL and lwmem paths once the resource declares on-
-        // demand availability — the duration probe that sized it went with it. Local sources also
-        // skip composition seek waits and remote stall heuristics.
         playerItem.seekingWaitsForVideoCompositionRendering = false
         playerItem.audioTimePitchAlgorithm = .timeDomain
         playerItem.canUseNetworkResourcesForLiveStreamingWhilePaused = false
@@ -657,11 +627,7 @@ final class WallpaperVideoPlayer {
         queuePlayer.actionAtItemEnd = .none
         queuePlayer.automaticallyWaitsToMinimizeStalling = false
         queuePlayer.preventsDisplaySleepDuringVideoPlayback = false
-        // A wallpaper is never something to send to a TV, and an AirPlay route
-        // is picked from the player, not from what it is currently outputting —
-        // `applyAudioPolicy` disabling the audio tracks does not cover it. Same
-        // reason `CustomVideoPlayer` sets it: the desktop layer path builds its
-        // own player and never went through that view.
+        // A wallpaper is never something to send to a TV, and an AirPlay route is picked from the player, not from what it is currently outputting — `applyAudioPolicy` disabling the audio tracks does not cover it.
         queuePlayer.allowsExternalPlayback = false
         queuePlayer.volume = isMuted ? 0 : Float(audioVolume)
         queuePlayer.isMuted = isMuted
@@ -716,11 +682,7 @@ final class WallpaperVideoPlayer {
         installQueueItemMaintenanceObserver()
         applyRequestedFrameRateLimitIfReady()
         setupPlayerReadyObserver()
-        // No-op unless a hibernation still frame is up; it's held until the rebuilt
-        // layer has a picture, else wake flashes black. Having a picture (or about to)
-        // closes out the restore so a later absence starts from `.live`. The one-shot
-        // return is the HTML view's "drop the cover now" signal; here the container owns
-        // that via `clearStillFrameWhenPlayerIsReady`, so the flag is what matters.
+        // Held until the rebuilt layer has a picture, else wake flashes black. Having a picture closes out the restore so a later absence starts from `.live`.
         _ = hibernation.didRestore()
         containerView.clearStillFrameWhenPlayerIsReady()
     }
@@ -777,9 +739,7 @@ final class WallpaperVideoPlayer {
         if let player = player {
             let status = player.publisher(for: \.timeControlStatus)
                 .receive(on: DispatchQueue.main)
-            // Kept mapped-then-deduplicated: `.waitingToPlayAtSpecifiedRate` must
-            // not read as "not playing", or the session summary flips to
-            // policy-suspended for the length of a buffering blip.
+            // Kept mapped-then-deduplicated: `.waitingToPlayAtSpecifiedRate` must not read as "not playing", or the session summary flips to policy-suspended for a buffering blip.
             status
                 .map { $0 != .paused }
                 .removeDuplicates()
@@ -818,16 +778,7 @@ final class WallpaperVideoPlayer {
             .store(in: &cleanupTasks)
     }
 
-    /// AVPlayer clears the desired rate to 0 when the playback buffer empties while
-    /// `automaticallyWaitsToMinimizeStalling` is false (AVPlayer.h); nobody re-issued
-    /// a rate after that, so one underrun froze the wallpaper for good (issue #131).
-    /// Only reacts to a pause we did not ask for: `pause()` clears
-    /// `shouldAutoplayWhenReady` first, and the pre-start `.paused` is filtered out
-    /// by the start latch. Talks to AVFoundation directly rather than `play()`:
-    /// clearing `hasRequestedPlaybackStart` to pass that latch would leave it cleared
-    /// whenever this arrives while already playing, disarming the next real recovery.
-    /// Nothing throttles because the source is a status *transition* — one resume per
-    /// stall is exactly the intended rate.
+    /// AVPlayer clears the desired rate to 0 when the buffer empties while `automaticallyWaitsToMinimizeStalling` is false; call AVFoundation directly rather than `play()`, which would clear `hasRequestedPlaybackStart` and disarm the next real recovery.
     private func recoverFromStall(on player: AVQueuePlayer) {
         guard !isCleanedUp, shouldAutoplayWhenReady, hasRequestedPlaybackStart else { return }
         Logger.warning("Playback stalled and the rate was cleared — resuming", category: .videoPlayer)
@@ -916,8 +867,7 @@ final class WallpaperVideoPlayer {
         return min(max(value, 0), 1)
     }
 
-    /// Same [0.25, 4.0] range as DisplayPlaybackDefaults.clampedPlaybackSpeed
-    /// (Packages/LiveWallpaperCore/.../DisplayDefaults.swift:85-88).
+    /// Same [0.25, 4.0] range as DisplayPlaybackDefaults.clampedPlaybackSpeed (Packages/LiveWallpaperCore/.../DisplayDefaults.swift).
     private static func clampedPlaybackSpeed(_ value: Double) -> Double {
         guard value.isFinite else { return 1.0 }
         return min(max(value, 0.25), 4.0)
@@ -958,7 +908,6 @@ final class WallpaperVideoPlayer {
             invalidateFrameRateCompositionBuild()
             installSDRComposition()
         } else if previousPreference == .forceSDR {
-            // Leaving Force SDR: re-apply FPS limit if any (composition slot freed).
             setVideoComposition(nil, owner: .none)
             if requestedFrameRateLimit > 0 {
                 setFrameRateLimit(requestedFrameRateLimit)
@@ -1219,7 +1168,6 @@ final class WallpaperVideoPlayer {
         }
     }
 
-    /// Wait until this player owns the FPS composition (then pixel-gate as needed).
     func prepareFrameRateLimit(
         _ framesPerSecond: Float,
         timeout: Duration
@@ -1266,12 +1214,7 @@ final class WallpaperVideoPlayer {
 
     // MARK: - Cover capture
 
-    /// The frame on screen right now, as an image.
-    ///
-    /// Read through a temporary `AVPlayerItemVideoOutput` rather than
-    /// `AVAssetImageGenerator`: the output delivers the *composited* frame, so a
-    /// wallpaper with colour effects or Force SDR applied is captured the way the
-    /// display is actually showing it, not the way the file is stored.
+    /// Read through a temporary `AVPlayerItemVideoOutput` rather than `AVAssetImageGenerator`: the output delivers the composited frame (colour effects / Force SDR), not the file as stored.
     func currentFrameImage(timeout: Duration = .milliseconds(600)) async -> NSImage? {
         guard !isCleanedUp, let item = player?.currentItem else { return nil }
         let output = AVPlayerItemVideoOutput(
@@ -1336,18 +1279,13 @@ final class WallpaperVideoPlayer {
 
     // MARK: - Suspension and Deep Hibernation
 
-    /// Warm suspend: releases attached video outputs but keeps the player, so the layer still
-    /// shows the last decoded frame — an occluded wallpaper asked to redraw must not go
-    /// black. Play/pause stays with the caller; this only sets resource depth. Deep
-    /// hibernation is the dwell-gated depth below it (`setHibernationEligible`).
+    /// Warm suspend: releases attached video outputs but keeps the player, so the layer still shows the last decoded frame — an occluded wallpaper asked to redraw must not go black.
     func setSuspended(_ suspended: Bool) {
         guard !isCleanedUp, isSuspended != suspended else { return }
         isSuspended = suspended
         if suspended {
             drainVideoOutputs()
-            // A suspend landing mid-rebuild: the still frame is still up, so go
-            // back to a phase the dwell can arm from instead of stranding the
-            // player at `.restoring`, which never hibernates again.
+            // A suspend landing mid-rebuild: the still frame is still up, so go back to a phase the dwell can arm from instead of stranding the player at `.restoring`, which never hibernates again.
             hibernation.noteSuspendedDuringRestore()
             // Eligibility can be pushed before the suspend lands; re-evaluate so
             // the arming order between the two calls does not matter.
@@ -1361,20 +1299,10 @@ final class WallpaperVideoPlayer {
         }
     }
 
-    /// `ScreenManager` marks the player eligible while suspended for an absence-like
-    /// reason (lock, display sleep, full-screen cover/occlusion); after
-    /// `hibernationDelay` uninterrupted, player/looper/decode-pool/`lwmem://` release
-    /// behind a captured still frame, and any flip back cancels the countdown.
-    /// `immediately` skips the countdown: `VideoWallpaperSession`'s manual-pause
-    /// dwell already waited its full term, and stacking this one on top made a paused
-    /// video outlive a paused scene by that length — it re-checks every guard
-    /// regardless, so it skips only the debounce, never a correctness check.
+    /// `immediately` skips only the debounce, never a correctness check: `VideoWallpaperSession`'s manual-pause dwell already waited, and stacking this countdown would make a paused video outlive a paused scene.
     func setHibernationEligible(_ eligible: Bool, immediately: Bool = false) {
         isHibernationEligible = eligible
-        // Deliberately not gated on `player != nil`: a wake rebuilds the player asynchronously, so
-        // an absence returning during that window would cancel the dwell and — eligibility being
-        // event-driven — never see another push, leaving the rebuilt player resident for the whole
-        // absence; `hibernateNow` treats a missing player as transient instead.
+        // Deliberately not gated on `player != nil`: a wake rebuilds the player asynchronously, so an absence returning during that window would cancel the dwell and never see another push; `hibernateNow` treats a missing player as transient instead.
         guard eligible, !isCleanedUp, !isHibernated, isSuspended else {
             cancelHibernationDwell()
             return
@@ -1390,9 +1318,7 @@ final class WallpaperVideoPlayer {
         hibernationDwell.cancel()
     }
 
-    /// Returns false only on a transient blocker (an in-flight load or
-    /// frame-rate build) so the countdown re-arms; true when hibernated or no
-    /// longer applicable.
+    /// Returns false only on a transient blocker (an in-flight load or frame-rate build) so the countdown re-arms; true when hibernated or no longer applicable.
     private func hibernateNow() async -> Bool {
         guard !isCleanedUp, !isHibernated, isSuspended, isHibernationEligible else {
             return true
@@ -1400,7 +1326,6 @@ final class WallpaperVideoPlayer {
         // Transient while a load can still produce a player (the wake window);
         // terminal once nothing is in flight to build one.
         guard player != nil else { return loadingTask == nil }
-        // Never tear down under an in-flight load or composition build.
         guard loadingTask == nil, frameRateLimitTask == nil else { return false }
 
         let generation = lifecycleGeneration
@@ -1414,10 +1339,7 @@ final class WallpaperVideoPlayer {
               player != nil else {
             return true
         }
-        // No cover, no teardown. Retiring anyway leaves the container with
-        // neither a player nor a still, so the desktop goes black for the whole
-        // absence — and the wake deadline cannot rescue it, since that bails out
-        // when no still is on screen. Staying warm costs memory, not pixels.
+        // No cover, no teardown. Retiring anyway leaves the container with neither a player nor a still, so the desktop goes black for the whole absence — and the wake deadline cannot rescue it, since that bails out when no still is on screen.
         guard let stillFrame else {
             Logger.warning(
                 "Video wallpaper stayed warm: still-frame capture failed, so hibernating would black the desktop",
@@ -1442,24 +1364,16 @@ final class WallpaperVideoPlayer {
         // `.rebuild` only from `.hibernated`; `.keepCover` means a rebuild is
         // already running under the still frame and must not be restarted.
         guard hibernation.requestRestore() == .rebuild else { return }
-        // Armed here, not at the end of the rebuild: a load that fails before
-        // `configurePlaybackComponents` never reaches the readiness handoff, and
-        // this player cannot re-hibernate or re-wake afterwards, so the still
-        // frame would stay on screen for the rest of the session.
+        // Armed here, not at the end of the rebuild: a load that fails before `configurePlaybackComponents` never reaches the readiness handoff, so the still frame would stay on screen for the rest of the session.
         videoView?.clearStillFrameNoLaterThan(Self.stillFrameWakeDeadlineSeconds)
         Logger.info(
             "Waking hibernated video wallpaper: \(url.lastPathComponent)",
             category: .videoPlayer
         )
-        // Rebuilt from live state through the same path a fresh load takes:
-        // `configurePlaybackComponents` re-applies the colour-space preference
-        // and re-runs the deferred frame-rate build, so nothing is restored from
-        // a descriptor snapshotted at hibernate time.
         setupPlayer(with: url)
     }
 
-    /// Width-capped like the HTML suspend snapshot: an uncapped 4K still is
-    /// ~33 MB and would eat most of what releasing the decode pool returned.
+    /// Width-capped like the HTML suspend snapshot: an uncapped 4K still would eat most of what releasing the decode pool returned.
     private static let maxStillFrameWidth: CGFloat = 1920
     /// Generous enough to cover a cold 4K rebuild off a slow volume; past it a
     /// frozen fake frame is worse than whatever the player is actually showing.
@@ -1493,10 +1407,6 @@ final class WallpaperVideoPlayer {
         }
     }
 
-    /// Teardown half of `cleanup()`: releases the queue player, the looper's
-    /// items, the decode pool and the `lwmem://` mapping while keeping the
-    /// window, view and user-facing configuration, so hibernation wakes through
-    /// `setupPlayer` instead of a second recovery path.
     private func retirePlaybackState() {
         lifecycleGeneration &+= 1
         frameRateGeneration &+= 1

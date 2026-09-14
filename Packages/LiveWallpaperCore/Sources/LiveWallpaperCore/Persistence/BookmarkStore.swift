@@ -1,14 +1,12 @@
 import Foundation
 import Observation
 
-/// Persistence seam (SettingsManager in app; in-memory in tests).
 @MainActor
 public protocol BookmarkPersisting {
     func load() -> [WallpaperBookmark]
     func save(_ bookmarks: [WallpaperBookmark])
 }
 
-/// Saved wallpaper shortcuts. App-wired `.shared` lives in SettingsManagerStoreBindings.swift.
 @MainActor
 @Observable
 public final class BookmarkStore {
@@ -57,9 +55,6 @@ public final class BookmarkStore {
         return bookmark
     }
 
-    /// Records the cover captured for an entry. Separate from `add` because the
-    /// capture is asynchronous — the bookmark has to exist (and be on screen)
-    /// before the frame comes back.
     public func setCover(_ fileName: String?, for id: UUID) {
         guard let index = bookmarks.firstIndex(where: { $0.id == id }),
               bookmarks[index].coverFileName != fileName else { return }
@@ -113,7 +108,6 @@ public final class BookmarkStore {
         Logger.info("WPE bookmarks removed: workshop \(workshopID), count \(removedCount), total \(bookmarks.count)", category: .ui)
     }
 
-    /// CAS local-HTML grant by shortcut id + original Data.
     @discardableResult
     public func replaceHTMLBookmark(
         id bookmarkID: UUID,
@@ -161,7 +155,6 @@ public final class BookmarkStore {
         return true
     }
 
-    /// CAS WPE grants on shortcuts; updates memory + disk together.
     @discardableResult
     public func replaceWPEOriginBookmark(
         workshopID: String,

@@ -7,10 +7,6 @@ import Metal
 import Testing
 @testable import LiveWallpaper
 
-/// End-to-end mesh + atlas checks with real ink: every glyph quad must map to
-/// a non-empty atlas cell. (Regression: the atlas once rasterized with the
-/// PLACED rect's origin as the pen offset, so every glyph after the first
-/// landed outside its cell — text rendered as a bare first letter.)
 struct WPETextMeshRendererTests {
 
     private func makeRenderer() throws -> WPETextMeshRenderer {
@@ -61,7 +57,6 @@ struct WPETextMeshRendererTests {
         return out
     }
 
-    /// Coverage sum of the atlas texels inside one quad's uv rect.
     private func ink(in quad: Quad, texture: MTLTexture) -> Int {
         let x0 = Int(quad.uvXs.lowerBound * Float(texture.width))
         let x1 = Int(quad.uvXs.upperBound * Float(texture.width))
@@ -120,7 +115,6 @@ struct WPETextMeshRendererTests {
         let firstWidth = (allQuads.first?.xs.upperBound ?? 0) - (allQuads.first?.xs.lowerBound ?? 0)
         #expect(maxX - minX > firstWidth * 8,
                 "10 identical glyphs must span ~10 advances, not collapse onto the first")
-        // Centered on origin.x = 960.
         #expect(abs((minX + maxX) / 2 - 960) < 3)
     }
 
@@ -145,8 +139,6 @@ struct WPETextMeshRendererTests {
 #endif
 
 #if DEBUG
-/// Draws a real multi-line text mesh through the executor and writes a PNG
-/// artifact for visual inspection (scratch evidence, also asserts ink bbox).
 struct WPETextMeshVisualDumpTests {
     @Test("GPU draw produces ink spanning the block")
     func gpuDrawInkBBox() throws {
@@ -210,7 +202,6 @@ struct WPETextMeshVisualDumpTests {
         #expect(ink > 500, "expected substantial ink, got \(ink)")
         #expect(maxX - minX > 200, "ink bbox width \(maxX - minX) — text collapsed?")
         #expect(maxY - minY > 60, "ink bbox height \(maxY - minY) — second line missing?")
-        // PNG artifact for eyeballing: black ink on white.
         for i in stride(from: 0, to: bytes.count, by: 4) {
             let a = bytes[i + 3]
             bytes[i] = 255 - a; bytes[i + 1] = 255 - a; bytes[i + 2] = 255 - a; bytes[i + 3] = 255

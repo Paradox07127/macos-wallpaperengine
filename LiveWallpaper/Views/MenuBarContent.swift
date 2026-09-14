@@ -19,8 +19,6 @@ struct MenuBarContent: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var ownsSystemMonitorLease = false
-    /// The same shared updater the About panel drives, so both surfaces agree
-    /// on whether an update is pending.
     @State private var updater = SparkleUpdaterController.shared
 
     private var monitor: SystemMonitor { .shared }
@@ -70,7 +68,6 @@ struct MenuBarContent: View {
         monitor.stopMonitoring()
     }
 
-    /// Subtle horizontal rule used between sections inside the single glass shell.
     private var sectionDivider: some View {
         Rectangle()
             .fill(Color.primary.opacity(0.08))
@@ -112,7 +109,6 @@ struct MenuBarContent: View {
         .frame(maxWidth: .infinity)
     }
 
-    /// Opens Sparkle's update UI when a discovered update is pending.
     @ViewBuilder
     private var updateButton: some View {
         if updater.availableVersion != nil {
@@ -232,7 +228,6 @@ struct MenuBarContent: View {
         return DesignTokens.Colors.Status.active
     }
 
-    /// Color only on the dot; value stays `.primary` for contrast on pale glass.
     private func performanceItem(tint: Color, label: String, value: String) -> some View {
         HStack(spacing: 5) {
             Circle()
@@ -413,9 +408,6 @@ struct MenuBarContent: View {
         return 1 + (config.playlistBookmarks ?? []).count > 1
     }
 
-    /// Effective-audio binding: stays in sync with the inspector's audio row, which keeps
-    /// mute and level as separate states and splits by type the same way (video/scene share
-    /// `muted`+`videoVolume`; HTML owns `muteAudio`+`audioVolume` inside its own config).
     private func audioVolumeBinding(for screen: Screen) -> Binding<Double>? {
         guard let config = screenManager.getConfiguration(for: screen) else { return nil }
 
@@ -507,7 +499,6 @@ struct MenuBarContent: View {
 
 }
 
-/// Fixed spacing / padding metrics for the menu-bar popover.
 private enum MenuBarMetrics {
     static let popoverWidth: CGFloat = 300
     static let outerPadding: CGFloat = 10
@@ -559,7 +550,6 @@ private enum DisplayVisualState: Equatable {
     }
 }
 
-/// Outer Liquid Glass shell wrapping the popover.
 private struct MenuBarOuterShell: ViewModifier {
     @ViewBuilder
     func body(content: Content) -> some View {
@@ -619,9 +609,7 @@ private struct MenuBarDisplayRow: View {
                 .accessibilityLabel(Text("\(title), \(subtitleAccessibilityText), \(visualState.accessibilityLabel)"))
                 .accessibilityElement(children: .combine)
 
-                // All four at the component's default `.large`, all on plain
-                // glass: mixing sizes or tinting the two main ones `.prominent`
-                // made a transport cluster read as three unrelated controls.
+                // All four at the component's default `.large`, all on plain glass: mixing sizes or tinting the two main ones `.prominent` would make a transport cluster read as three unrelated controls.
                 if let addAction {
                     GlassIconButton("plus", action: addAction)
                         .accessibilityLabel(Text("Add wallpaper to this display"))
@@ -727,7 +715,7 @@ private struct VolumeControlRow: View {
     }
 }
 
-/// Adds a subtle press cue (scale + dim) to every menu-bar button that doesn't already go through `.adaptiveGlassButton` (which delivers its own native press feedback).
+/// For buttons that don't already go through `.adaptiveGlassButton` (which delivers its own native press feedback).
 private struct MenuBarPressFeedbackStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -737,7 +725,6 @@ private struct MenuBarPressFeedbackStyle: ButtonStyle {
     }
 }
 
-/// Removes the macOS 26 menu-bar popover chrome so wallpaper remains visible through Liquid Glass.
 private struct MenuBarWindowChromeClearer: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView {
         let view = NSView(frame: .zero)
@@ -754,10 +741,7 @@ private struct MenuBarWindowChromeClearer: NSViewRepresentable {
         window.isOpaque = false
         window.backgroundColor = .clear
 
-        // The chrome is a sibling of our content inside the window's frame view; the previous
-        // recursive walk started at `contentView` and only searched our own SwiftUI subtree —
-        // what it missed drew a second rounded backdrop under the glass shell (a non-concentric
-        // arc at the four corners). Matched by position, not class: everything outside `contentView` is chrome, however AppKit backs the popover.
+        // Chrome is a sibling of content inside the frame view; match by position, not class — everything outside `contentView` is chrome.
         guard let content = window.contentView, let frameView = content.superview else { return }
         frameView.wantsLayer = true
         frameView.layer?.backgroundColor = NSColor.clear.cgColor

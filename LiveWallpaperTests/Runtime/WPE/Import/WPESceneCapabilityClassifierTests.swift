@@ -46,9 +46,6 @@ struct WPESceneCapabilityClassifierTests {
 
         let tier = WPESceneCapabilityClassifier().capabilityTier(for: document, cacheURL: fixture.cacheRoot)
 
-        // The sound object only produces an `.info` note ("parsed; AVAudioEngine
-        // playback runs at scene start"). That success note used to be counted
-        // as blocking and flagged the scene "Limited Compatibility".
         #expect(tier == .imageOnly)
     }
 

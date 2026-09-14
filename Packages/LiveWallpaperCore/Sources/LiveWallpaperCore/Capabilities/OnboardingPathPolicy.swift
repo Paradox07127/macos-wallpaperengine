@@ -1,16 +1,13 @@
 import Foundation
 
-/// First-run entry points. `importFile` opens a single file/folder picker and
-/// routes by type (video / web / — on Pro — Wallpaper Engine scene). Direct Pro
-/// builds put Workshop first because it is a primary acquisition path, while
-/// Apple Aerials remains a low-friction gallery choice in every capable SKU.
+/// `importFile` opens one file/folder picker and routes by type
+/// (video / web / — on Pro — Wallpaper Engine scene).
 public enum OnboardingSourceAction: Sendable, Equatable {
     case steamWorkshop
     case importFile
     case appleAerials
 }
 
-/// Capability-derived plan for the onboarding source-picker step.
 public struct OnboardingPathPolicy: Sendable, Equatable {
     public let sku: ProductSKU
     public let showsWorkshopSetup: Bool

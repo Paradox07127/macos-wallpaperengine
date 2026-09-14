@@ -48,11 +48,7 @@ struct WPETextLayerSynthesisTests {
         let long = short.withLiveText("WEDNESDAY", alpha: 1, color: nil)
         let shortLayout = WPETextRenderPlanner.snapshot(for: short, fonts: resolver)
         let longLayout = WPETextRenderPlanner.snapshot(for: long, fonts: resolver)
-        // Both sides bound as CGFloat on purpose. `blockSize.width + padding * 2`
-        // mixes CGFloat with Double, and inside `#expect`'s generic binary-operation
-        // check the SE-0307 implicit conversion does not apply the way it does for a
-        // plain `==` — under Swift 6.3.3 that comparison reports false for
-        // bit-identical operands (measured: both 0x4071_4000_0000_0000).
+        // Bind both sides as CGFloat on purpose: a CGFloat/Double mix inside `#expect` compares false for bit-identical operands.
         let expectedShortWidth: CGFloat = ceil(shortLayout.blockSize.width + short.padding * 2)
         let expectedLongWidth: CGFloat = ceil(longLayout.blockSize.width + long.padding * 2)
         #expect(longLayout.surfaceSize.width > shortLayout.surfaceSize.width)

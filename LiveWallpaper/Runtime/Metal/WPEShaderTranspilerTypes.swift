@@ -11,10 +11,7 @@ struct WPEShaderTranslationResult {
     /// Total float4 slots needed for this shader's uniforms — capped by
     /// `WPEShaderTranspiler.uniformSlotMaximum`.
     let totalSlots: Int
-    /// Fragment texture/sampler arguments THIS shader's signature declares — capped by
-    /// `WPEShaderTranspiler.customTextureSlotLimit`. The binding side must iterate exactly
-    /// this many slots: binding fewer than the signature declares leaves the shader
-    /// sampling an unbound texture.
+    /// Binding side must iterate exactly this many slots (capped by `WPEShaderTranspiler.customTextureSlotLimit`); fewer leaves an unbound texture.
     let textureSlotCount: Int
 }
 
@@ -22,13 +19,11 @@ struct WPEUniformSlot: Equatable {
     let name: String
     let glslType: String
     let slot: Int           // first float4 index occupied
-    let slotCount: Int      // total number of slots used
+    let slotCount: Int
     let arrayLength: Int?   // present when the source declared an array
     let materialName: String?
     let defaultValue: WPESceneShaderConstantValue?
-    /// See `WPEUniformDecl.requiredCombos`. Preserved as authored metadata; empty means
-    /// unconditional. Deliberately NOT consulted when resolving a value — see the citation
-    /// in `WPEMetalRenderExecutor+UniformPlan.compileUniformPlan`.
+    /// Empty means unconditional. Deliberately NOT consulted when resolving a value (see `WPEMetalRenderExecutor+UniformPlan.compileUniformPlan`).
     let requiredCombos: [String: Int]
 
     init(
@@ -76,25 +71,17 @@ struct WPEUniformDecl: Equatable {
     let arrayLength: Int?
     /// Keeps malformed or unrepresentable bracket dimensions from becoming scalars.
     let arrayDimension: String?
-    /// WPE shaders commonly expose editor values as JSON comments after
-    /// uniforms, e.g. `uniform float u_alpha; // {"material":"Opacity"}`.
-    /// Scene effect overrides use that material name, not the GLSL variable.
+    /// JSON comment after the uniform, e.g. `// {"material":"Opacity"}`; scene overrides use this name, not the GLSL variable.
     let materialName: String?
     let defaultValue: WPESceneShaderConstantValue?
-    /// The annotation's `"require"` map, e.g. `{"DIRECTDRAW":0}`. It controls only whether
-    /// the WPE EDITOR exposes the field: the Windows capture of 3437487219 shows
-    /// `g_Point0..3` bound with real values under DIRECTDRAW=1 despite requiring 0. Parsed
-    /// and preserved; no runtime behaviour is derived from it.
+    /// Editor-only `"require"` map; parsed and preserved, no runtime behaviour is derived from it.
     let requiredCombos: [String: Int]
 
     static func parse(line: String) -> Self? {
         parseAll(line: line).first
     }
 
-    /// A single line may declare several comma-separated uniforms
-    /// (`uniform float u_a, u_b;`). Each declarator becomes its own `Self`, sharing
-    /// the base type and the trailing metadata comment; array suffixes are per
-    /// declarator. Returns `[]` when the line is not a uniform declaration.
+    /// A line may declare several comma-separated uniforms sharing type and trailing metadata; array suffixes are per declarator.
     static func parseAll(line: String) -> [Self] {
         guard line.hasPrefix("uniform ") else { return [] }
         let body = String(line.dropFirst("uniform ".count))
@@ -106,9 +93,7 @@ struct WPEUniformDecl: Equatable {
         let tokens = decl.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
         guard tokens.count >= 2 else { return [] }
         let type = tokens[0]
-        // The base type is the first token; everything after it is one or more
-        // declarators. Split those on commas, not the whole line, so the type isn't
-        // duplicated onto each name.
+        // Split declarators on commas, not the whole line, so the type isn't duplicated onto each name.
         let declaratorSource = tokens[1...].joined(separator: " ")
         let metadata = Self.parseMetadataComment(comment)
         let metal = mapType(type)
@@ -202,9 +187,7 @@ struct WPEVaryingDecl: Equatable {
     let name: String
     let metalType: String
     let arrayLength: Int?
-    /// Raw bracket dimension when the source declared an array (`[64]` or a `#define`d symbol like
-    /// `[RESOLUTION]`). `arrayLength` is the numeric value when it parses; for a symbolic dim it's nil
-    /// but `arrayDimension` keeps the token, which resolves to a constant in the emitted MSL.
+    /// Raw bracket token (`[64]` or `[RESOLUTION]`); `arrayLength` is the numeric parse, nil for a symbolic dim that still emits as a constant.
     let arrayDimension: String?
 
     static func parse(line: String) -> Self? {
@@ -222,11 +205,7 @@ struct WPEVaryingDecl: Equatable {
         let tokens = decl.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
         guard tokens.count >= 2 else { return nil }
         let rawName = tokens[1...].joined(separator: " ")
-        // The dimension may be a numeric literal (`[64]`) or a `#define`d symbol
-        // (`[RESOLUTION]`), so match any non-`]` token, not just digits — a symbolic dim
-        // leaking into `name` was the `audioValue[RESOLUTION]` → invalid-MSL bug (oscilloscope
-        // shaders). A trailing swizzle in the DECLARATION (`varying vec4 v_Size.xy;`) is illegal
-        // GLSL that fxc lets through (frame_builder.frag ships it); every use site still reads `v_Size.xy`, so drop the suffix and declare the base name at the written type.
+        // Match any non-`]` token (symbolic dims like `[RESOLUTION]`), and drop a trailing swizzle in the declaration so the base name is declared at the written type.
         let pattern = #"^([A-Za-z_][A-Za-z0-9_]*)(?:\.[xyzwrgba]{1,4})?\s*(?:\[([^\]]*)\])?$"#
         guard let regex = try? NSRegularExpression(pattern: pattern),
               let match = regex.firstMatch(in: rawName, range: NSRange(rawName.startIndex..., in: rawName)),

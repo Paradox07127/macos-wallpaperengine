@@ -2,9 +2,7 @@ import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
-/// The still frame of whatever wallpaper is playing behind the overlay. Only a
-/// still: a live second copy of the wallpaper here would double its cost for a
-/// preview the user looks at for a few seconds.
+/// A still frame of the wallpaper playing behind the overlay — never a live second copy.
 enum MonitorPreviewBackdrop: Equatable {
     case none
     case still(NSImage)
@@ -21,21 +19,17 @@ struct BoardPreviewArea: View {
     var backdrop: MonitorPreviewBackdrop = .none
 
     @State private var board: MonitorBoardConfiguration = .default
-    /// Chosen in the inspector's settings, beside the other preview settings.
     @AppStorage(MonitorBoardPreviewMode.defaultsKey) private var mode: MonitorBoardPreviewMode = .snapshot
     /// Captured once per mode change, never on a sample arriving: a board the
     /// user is dragging tiles around in must not relayout under their hand.
     @State private var preview = MonitorBoardPreview(mode: .snapshot)
 
-    /// The real display's menu-bar and Dock zones, from the one calculation the
-    /// desktop board uses.
     private var safeArea: MonitorSafeAreaInsets {
         MonitorSafeAreaInsets.of(screen.nsScreen)
     }
 
-    /// The board lays out at the display's own point size and the host shrinks
-    /// itself to fit. Handing a tile the shrunken width instead re-wraps its
-    /// text, and the preview stops predicting the desktop.
+    /// Must be the display's own point size, not the shrunken canvas: a tile handed
+    /// the smaller width re-wraps its text and stops predicting the desktop.
     private var logicalSize: CGSize {
         CGSize(width: max(screen.frame.width, 1), height: max(screen.frame.height, 1))
     }
@@ -84,8 +78,6 @@ struct BoardPreviewArea: View {
         }
     }
 
-    /// Says what the board is showing, so a frozen reading is never mistaken for
-    /// a live one and the fixture is never mistaken for this Mac.
     private var captionText: String {
         switch mode {
         case .names:
@@ -111,9 +103,8 @@ struct BoardPreviewArea: View {
         if board != persisted { board = persisted }
     }
 
-    /// One read of what the desktop already has. No lease, no sampler, no
-    /// subscription — opening this page must not start a source the user has
-    /// not authorized.
+    /// One read of what the desktop already has — no lease, sampler or subscription:
+    /// opening this page must not start a source the user has not authorized.
     private func capture() {
         preview = MonitorBoardPreview.resolve(
             mode: mode, latest: OverlayController.shared.lastDeliveredData
@@ -123,12 +114,8 @@ struct BoardPreviewArea: View {
 
 struct BoardPreview: NSViewRepresentable {
     let configuration: MonitorBoardConfiguration
-    /// Frozen contents; the preview host is never pushed a live snapshot.
     let preview: MonitorBoardPreview
-    /// The display's own point size; the host draws itself down to whatever
-    /// room the canvas has.
     let logicalSize: CGSize
-    /// Menu-bar / Dock zones, WYSIWYG with the real display.
     let safeArea: MonitorSafeAreaInsets
     let onConfigurationEdited: (MonitorBoardConfiguration) -> Void
 

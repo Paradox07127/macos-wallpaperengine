@@ -1,7 +1,6 @@
 import Foundation
 import Observation
 
-/// Sync display-name cache for security-scoped bookmarks (`@Observable` for SwiftUI).
 @MainActor
 @Observable
 public final class BookmarkDisplayNameCache {

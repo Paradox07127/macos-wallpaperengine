@@ -2,7 +2,6 @@ import SwiftUI
 import AppKit
 import LiveWallpaperCore
 
-/// Playlist list with drag-reorder (`DragGesture` + row-frame `PreferenceKey`).
 struct PlaylistSection: View {
     @Binding var playlistBookmarks: [Data]
     @Binding var shufflePlaylist: Bool
@@ -24,7 +23,6 @@ struct PlaylistSection: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    /// Default minutes when enabling auto-rotate from Off.
     private static let defaultRotationMinutes = 30
     private static let rotationMinutesRange = 1...1440
 
@@ -349,7 +347,6 @@ struct PlaylistSection: View {
         .zIndex(draggingID == entry.id ? 1 : 0)
     }
 
-    /// Insertion slot by midY; uses `dragSnapshotFrames` when present.
     private func computeInsertionIndex(pointerY: CGFloat) -> Int {
         let frames = dragSnapshotFrames ?? rowFrames
         guard !frames.isEmpty else { return 0 }
@@ -362,8 +359,6 @@ struct PlaylistSection: View {
         return sorted.count
     }
 
-    /// Menu-driven single-step reorder; persists through the same
-    /// `commitEntries` path the drag reorder uses.
     private func move(_ entry: PlaylistEntry, by offset: Int) {
         guard let sourceIndex = entries.firstIndex(where: { $0.id == entry.id }) else { return }
         let target = sourceIndex + offset
@@ -404,7 +399,6 @@ struct PlaylistSection: View {
         let combined = config.combinedPlaylist
         let storedCursor = config.playlistCursorIndex ?? 0
         let cursor = combined.indices.contains(storedCursor) ? storedCursor : 0
-        // Identity by index so duplicate bookmark Data within the same playlist still produce distinct rows (ForEach IDs, primary / playing flags).
         let primaryIndex = combined.firstIndex(of: primary)
         let nextEntries = combined.enumerated().map { index, bookmark in
             PlaylistEntry(
@@ -519,7 +513,6 @@ struct PlaylistSection: View {
         commitEntries(working)
     }
 
-    /// Persist primary + ordered playlist from entries (shared by remove/reorder).
     private func commitEntries(_ newEntries: [PlaylistEntry]) {
         guard let primaryIndex = newEntries.firstIndex(where: { $0.isPrimary }) else { return }
         let primary = newEntries[primaryIndex].bookmark

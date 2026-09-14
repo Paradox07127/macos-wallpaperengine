@@ -5,31 +5,23 @@ import LiveWallpaperProWPE
 import MetalKit
 import os
 
-/// Path + layer name so the H1 diagnostic mapper blames the failing layer, not the scene entry.
 struct WPEMetalTextureLoadContextError: Error {
     let layerName: String
     let path: String
     let underlying: any Error
 }
 
-// Not `@MainActor`: lives in one `WPEDisplayRenderActor`. Sync tails (audio,
-// on-demand video, static reload) re-enter via the weakly-held `displayActor`.
 final class WPEMetalSceneRenderer: NSObject {
-    /// Weak back-pointer so Sendable tails re-enter actor isolation instead of capturing `self`.
     weak var displayActor: WPEDisplayRenderActor?
 
     #if DEBUG
-    /// Test-only convenience-init surface. Production init takes Sendable seams so this stays nil.
     var debugSurface: WPERenderSurface?
     #endif
 
-    /// Updated on every committed property patch (actor-side) so an in-place
-    /// reload — hibernate wake, detail-view retry — rebuilds the PATCHED scene;
-    /// reloading the original would silently revert incremental edits.
+    /// Updated on every committed property patch so an in-place reload rebuilds the patched scene; reloading the original would silently revert incremental edits.
     var descriptor: SceneDescriptor
     let cacheRootURL: URL
     let dependencyMounts: [WPEAssetMount]
-    /// Install root that contains `assets/`. This object owns the security scope for its lifetime.
     private let engineAssetsRootURL: URL?
     /// Usable engine-assets root: nil if an external scope failed to open. Builders must use this, not the raw root.
     let effectiveEngineAssetsRootURL: URL?
@@ -41,52 +33,32 @@ final class WPEMetalSceneRenderer: NSObject {
     let sceneAssetProvider: (any WPESceneAssetProvider)?
     let projectManifestRootURL: URL?
     let resolutionTracer: WPEResolutionTracer
-    /// Sendable surface handle: keeps the renderer region separate so it stays `sending`-adoptable.
     let surfaceControl: any WPESurfaceControl
     let mailbox: WPEPointerMailbox
-    /// Last click-capture value this renderer pushed. The mailbox copy is
-    /// written on the main thread, so a profile change racing that delivery
-    /// would recompute the pointer-monitor gate from a stale read; this keeps
-    /// the gate's input in renderer order.
+    /// Last click-capture value this renderer pushed. The mailbox copy is written on the main thread, so a profile change racing that delivery would recompute the pointer-monitor gate from a stale read.
     var lastPushedClickCaptureEnabled: Bool?
-    /// Sendable `CAMetalLayer` wrapper so the renderer region does not reach the main-thread surface.
     let metalLayer: WPEPresentLayer
     var surfaceDrawableSize: CGSize
     let executor: WPEMetalRenderExecutor
     let textureLoader: WPEMetalTextureLoader
     var outputTexture: MTLTexture?
-    /// Transient producer-chain completion; published with the texture so static-frame re-presents keep the proof.
     var outputFrameProduction: WPEMetalFrameProductionCompletion?
     var latestFrameProduction: WPEMetalFrameProductionCompletion?
-    /// Set at construction from the screen's configuration. A default here would
-    /// be indistinguishable from a real user choice, and the MetalFX plan reads
-    /// it during `load()` — which races the async config submit that used to be
-    /// the only way it arrived.
+    /// Set at construction from the screen's configuration. A default here would be indistinguishable from a real user choice, and the MetalFX plan reads it during `load()`.
     var presentFitMode: WPEPresentFitMode
-    /// MetalFX render-scale verdict for the loaded scene. Decided once in `performLoad`
-    /// from the world canvas, drawable, fit mode and HDR flag, then read by the executor
-    /// (target sizes) and the texture loader (upload caps); `.inactive` before a scene loads.
-    /// The verdict lives on the executor — the per-frame consumer and where a present-time
-    /// decline is discovered — because a second copy here left a demote written by
-    /// `encodePresent` unreachable from the re-planning path, reading a stale `.active`.
+    /// The verdict lives on the executor — the per-frame consumer and where a present-time decline is discovered — because a second copy here would leave a demote written by `encodePresent` unreachable from the re-planning path, reading a stale `.active`.
     var upscalePlan: WPEMetalUpscalePlan { executor.upscalePlan }
     /// Set once a plan has been decided. Distinguishes "never planned" from a
     /// real `.settingOff` verdict, which the plan value alone cannot.
     var hasPlannedUpscale = false
-    /// Adopt the drawable size a presented frame actually used. This is the only
-    /// moment the true size is guaranteed knowable — `nextDrawable()` is what
-    /// finally sizes the layer — so it backstops a seed that was wrong or a
-    /// display that was reconfigured. Cheap: a CGSize compare per frame.
+    /// This is the only moment the true size is guaranteed knowable — `nextDrawable()` is what finally sizes the layer — so it backstops a seed that was wrong or a display that was reconfigured.
     func adoptPresentedDrawableSize() {
         let presented = executor.lastPresentedDrawableSize
         guard presented.width > 0, presented != surfaceDrawableSize else { return }
         updateSurfaceGeometry(drawableSize: presented)
     }
 
-    /// Drains a present-side demote. `refreshUpscalePlan` cannot cover this
-    /// transition: `demotedToNative()` already wrote scale 1.0 and `adopting`
-    /// keeps `.declinedAtPresent` sticky, so the next refresh sees no change and
-    /// returns early. Called at the end of the frame, after present committed.
+    /// `refreshUpscalePlan` cannot cover this transition: `demotedToNative()` already wrote scale 1.0 and `adopting` keeps `.declinedAtPresent` sticky, so the next refresh sees no change and returns early.
     func adoptPresentSideDemotion() {
         guard executor.takePresentSideDemotion() else { return }
         executor.releaseRenderScaleDependentResources()
@@ -94,15 +66,9 @@ final class WPEMetalSceneRenderer: NSObject {
         surfaceControl.setNeedsRedraw()
     }
 
-    /// Forces exactly one full re-render even for a scene with no frame demand.
-    /// A static scene re-presents its cached `outputTexture`, which is at the
-    /// OLD render scale after the plan changes — `.center` would then show a
-    /// downsampled frame at 1:1 forever.
+    /// A static scene re-presents its cached `outputTexture`, which is at the old render scale after the plan changes — `.center` would then show a downsampled frame at 1:1 forever.
     var pendingForcedRerender = false
-    /// The source-texture cap actually used for this scene's uploads, latched at
-    /// `loadTextures`. Uploads are the one irreversible step, so the cap is
-    /// decided there rather than when the plan is first computed — by then the
-    /// fit mode or drawable may still be in flight.
+    /// Uploads are the one irreversible step, so the cap is decided at `loadTextures` rather than when the plan is first computed — by then the fit mode or drawable may still be in flight.
     var latchedTextureCap: Int?
     var didLatchTextureCap = false
     var particleSystems: [WPEParticleSystem] = []
@@ -120,11 +86,9 @@ final class WPEMetalSceneRenderer: NSObject {
     var textObjects: [WPESceneTextObject] = []
     /// Plain text is Direct; effect/background text uses Offscreen surfaces from the normal target pool.
     var textRenderPlans: [WPETextRenderPlan] = []
-    /// Shared with `textMeshRenderer` so sizing and glyph rasterization resolve the same typeface.
     var textFontResolver: WPETextFontResolver?
     var textLayoutCache: [String: WPETextLayoutCacheEntry] = [:]
     var soundRuntime: WPESoundRuntime?
-    /// `WPEAudioDebugLog -bool YES`: throttled log of what this renderer sees on the audio broker.
     let audioDebugLogEnabled = UserDefaults.standard.bool(forKey: "WPEAudioDebugLog")
     var audioDiagCounter = 0
     var textScriptInstances: [String: WPESceneScriptInstance] = [:]
@@ -133,36 +97,27 @@ final class WPEMetalSceneRenderer: NSObject {
     }
     /// Kept outside `lastStableScriptTransforms` so unassigned authored animation keeps advancing.
     var layerTransformMutationJournal = WPESceneScriptTransformMutationJournal()
-    /// TEXT visible/alpha scripts (3509243656 login-intro fades). Outputs land in `liveTextVisibility`/`liveTextAlpha`.
     var textVisibleScriptInstances: [String: WPELayerScriptInstance] = [:]
     var textAlphaScriptInstances: [String: WPELayerScriptInstance] = [:]
     var liveTextAlpha: [String: Double] = [:]
-    /// Media (now-playing) event plumbing, present only for scenes whose scripts
-    /// export a media handler. The dispatcher is `@MainActor` (the source is);
-    /// the mailbox is the hand-off onto this display actor's frame path.
     var mediaEventDispatcher: WPESceneMediaEventDispatcher?
     var mediaEventMailbox: WPESceneMediaEventMailbox?
     /// Separate from `mediaEventDispatcher`: `$mediaThumbnail` is declared in the
     /// render graph, not in a script, so a scene can want one without the other.
     var mediaTextureSubscription: WPEMediaTextureSubscription?
     var layerHoverStates: [String: Bool] = [:]
-    /// Which layers the pointer was over when the button went DOWN. A click needs
-    /// the press and the release on the same layer, so the press set has to outlive
-    /// the down edge; cleared on the up edge.
+    /// Which layers the pointer was over when the button went down. A click needs the press and the release on the same layer, so the press set has to outlive the down edge; cleared on the up edge.
     var layerPressStates: [String: Bool] = [:]
     /// Last hover-test pointer position, so `cursorMove` fires on movement rather
     /// than once per frame.
     var lastHoverPointerPixels: SIMD2<Double>?
     var sceneScriptSharedState: WPESharedScriptState?
-    /// Per-renderer workers so a script-heavy display cannot delay a light one's ticks.
     let sceneScriptBatchDispatcher = WPESceneScriptBatchDispatcher(
         width: WPESceneScriptContainmentDefaults.batchWorkerWidth
     )
     var pendingSceneScriptBatchJobs: [WPESceneScriptBatchDispatcher.Job] = []
     let sceneScriptLoadState = WPESceneScriptLoadState()
-    /// Authoritative Loomscreen UI language, expressed in WPE's documented
-    /// SceneScript code space. `applied` is generation-local and makes live
-    /// notifications changed-only while initial load remains a full delivery.
+    /// `applied` is generation-local and makes live notifications changed-only while initial load remains a full delivery.
     var sceneScriptGeneralSettings = WPESceneScriptGeneralSettingsDeliveryState(
         language: AppLanguagePreference.current(in: .appScoped()).wallpaperEngineLanguageCode()
     )
@@ -175,7 +130,6 @@ final class WPEMetalSceneRenderer: NSObject {
     var sceneScriptVideoCommandBuffer = WPESceneScriptVideoCommandBuffer()
     /// Staged with the SceneScript video transaction. AVPlayer seek waits until every script family and frame encode succeed.
     var sceneScriptIntroPhaseAlignPending = false
-    /// Signpost identity derived without touching actor state, so two displays' frames stay distinct in a trace.
     nonisolated var rendererSignpostID: UInt64 {
         UInt64(UInt(bitPattern: ObjectIdentifier(self)))
     }
@@ -183,10 +137,7 @@ final class WPEMetalSceneRenderer: NSObject {
     var layerAlphaScriptInstances: [String: WPELayerScriptInstance] = [:] {
         didSet { cachedInstalledScriptLayerIDs = nil }
     }
-    /// Particle objects whose `instanceoverride.alpha` is a script. Keyed by scene
-    /// object ID; the result multiplies every particle that object spawned. Kept
-    /// out of `cachedInstalledScriptLayerIDs` on purpose — particle objects are
-    /// not static-cacheable layers, so they were never in that exclusion set.
+    /// Kept out of `cachedInstalledScriptLayerIDs` on purpose — particle objects are not static-cacheable layers, so they were never in that exclusion set.
     var particleAlphaScriptInstances: [String: WPELayerScriptInstance] = [:]
     /// Last value each of the above returned, applied in `tickParticleSystems`.
     var liveParticleInstanceAlpha: [String: Double] = [:]
@@ -225,21 +176,13 @@ final class WPEMetalSceneRenderer: NSObject {
     var cachedInstalledScriptLayerIDs: Set<String>?
     /// WPE `solid` groups: no pixels, but they compose into child layers.
     var transformHostLocalTransformsByID: [String: WPERenderObjectTransform] = [:]
-    /// Every node the per-frame parent walk may traverse, including scene objects the
-    /// render graph never turned into layers. Kept separate from the map above so
-    /// particle host offsets keep reading transform hosts only.
+    /// Kept separate from the transform-host map so particle host offsets keep reading transform hosts only.
     var layerAncestorLocalTransformsByID: [String: WPERenderObjectTransform] = [:]
     /// Video source key for `getVideoTexture()`. Populated for ALL video layers, not just scripted ones.
     var layerVideoSourceKey: [String: String] = [:]
     var layerObjectIDByName: [String: String] = [:]
-    /// Every video layer's texture key. Decode size is capped to the display
-    /// (B3); process-wide live decoder count is capped by memory tier (B4).
-    /// Residency is decided by `onDemandVideoKeysByConsumerID`, which
-    /// `reconcileVideoResidency` flips per frame.
     var onDemandVideoKeyByID: [String: Set<String>] = [:]
-    /// Load-time consumer graph: layer objectID → the video keys that layer's
-    /// visibility keeps resident (it samples the video, or samples an FBO the
-    /// video's pixels reach). Static — only visibility is per frame.
+    /// Static — only visibility is per frame.
     var onDemandVideoKeysByConsumerID: [String: Set<String>] = [:]
     /// Image path → consumed video keys, so a script-created clone (fresh
     /// objectID, absent from the graph above) inherits its template's entry.
@@ -250,16 +193,13 @@ final class WPEMetalSceneRenderer: NSObject {
     var liveCreatedLayers: [String: WPECreatedLayerScriptState] = [:]
     /// Hidden template layers are retained only when a script references them.
     var createdLayerTemplatesByImagePath: [String: WPEPreparedRenderLayer] = [:]
-    /// Intro and loop are often the same clip out of phase. Measure `intro@t ≈ loop@(t+offset)` once and slave the loop playhead.
     var introPhaseSource: WPEVideoTextureSource?
     var loopPhaseSource: WPEVideoTextureSource?
     var introLoopOffset: TimeInterval?
     /// Bumped per reload so a slow async measurement from a prior scene is ignored.
     var introPhaseToken = 0
     var loadedTextures: [String: MTLTexture] = [:]
-    /// Frame-scoped TEXS transform keyed exactly like `loadedTextures`.
-    /// Rebuilt while ticking dynamic sources so an atlas reused by multiple
-    /// frames never acquires incorrect texture-global metadata.
+    /// Frame-scoped TEXS transform keyed exactly like `loadedTextures`. Rebuilt while ticking dynamic sources so an atlas reused by multiple frames never acquires incorrect texture-global metadata.
     var loadedTextureSamplingDescriptors: [String: WPETexSpriteSamplingDescriptor] = [:]
     /// VRAM-budget bookkeeping. Dynamic/video sources are never tracked here.
     struct StaticTextureCacheRecord: Sendable {
@@ -282,8 +222,6 @@ final class WPEMetalSceneRenderer: NSObject {
     var dynamicTextureSources: [String: WPEDynamicTextureSource] = [:] {
         didSet {
             cachedDynamicTextureNames = nil
-            // On-demand video release/rebuild flips frame demand at runtime (the
-            // released-videos-only scene may pause; a rebuilt one must resume).
             // Load-time churn is skipped: the load tail re-applies the profile.
             if didLoad { synchronizeFrameDemand() }
         }
@@ -316,10 +254,8 @@ final class WPEMetalSceneRenderer: NSObject {
     var debugAudioStartupPending: Bool { pendingAudioStartupDocument != nil }
     var debugSoundRuntimeActive: Bool { soundRuntime != nil }
     #endif
-    /// Scene-level camera parallax plus the per-frame ramp that drives each layer's depth shift.
     var cameraParallaxSettings: WPESceneCameraParallaxSettings = .disabled
     var cameraParallaxSmoother = WPECameraParallaxSmoother()
-    /// Per-machine parallax multiplier. `defaults write com.loomscreen.pro WPEParallaxGain <number>` then reload.
     let cameraParallaxGain = WPEMetalSceneRenderer.resolvedParallaxGain()
     var currentProfile: WallpaperPerformanceProfile = .quality
     /// False pins the pointer to screen center. Default on preserves historical Follow-Cursor behavior.
@@ -334,14 +270,9 @@ final class WPEMetalSceneRenderer: NSObject {
     /// Cached so callers arriving before deferred audio startup still record mute/volume; re-applied just before `play()`.
     var pendingAudioMuted: Bool = false
     var pendingAudioVolume: Double = 1.0
-    /// Last pacing decision derived from `needsContinuousFrames`, so the per-frame
-    /// demand re-check touches pacing only on a transition. Nil while suspended
-    /// (the next `.quality` application must re-apply unconditionally).
+    /// Nil while suspended (the next `.quality` application must re-apply unconditionally).
     var lastAppliedContinuousFrames: Bool?
-    /// Session-facing push fired when frame/audio demand changes (App Nap mirror).
-    /// Set once by the builder before the actor adopts the renderer.
     var onRuntimeActivityChange: (@Sendable (WPESceneRuntimeActivity) -> Void)?
-    /// Dedupe for `onRuntimeActivityChange`.
     var lastPublishedRuntimeActivity: WPESceneRuntimeActivity?
     /// Preset level multiplies the master volume; it does not replace it.
     var presetAudioSettings: WPEEngineAudioSettings?
@@ -353,16 +284,10 @@ final class WPEMetalSceneRenderer: NSObject {
     var completedPresentGeneration: Int?
     /// Terminal present failure for a not-yet-ready load, so session prep fails promptly instead of waiting out its timeout.
     var failedPresentGeneration: Int?
-    /// Consecutive static/on-demand `nextDrawable` misses for the current output.
-    /// Non-zero keeps the paused display link ticking until present succeeds or
-    /// `WPEStaticPresentRetry` fails the generation. Not a `WPEFrameDemand` bit:
-    /// the scene itself is idle; only the first present is outstanding.
+    /// Non-zero keeps the paused display link ticking until present succeeds or `WPEStaticPresentRetry` fails the generation. Not a `WPEFrameDemand` bit: the scene itself is idle; only the first present is outstanding.
     var pendingPresentRetryCount = 0
-    /// Scene content demand, or a bounded present retry for a cached static frame.
     var needsPacingLoop: Bool { needsContinuousFrames || pendingPresentRetryCount > 0 }
     #if DEBUG
-    /// `renderAndPresentFrame` took the re-encode branch. Tests pin that a present
-    /// retry does not increment this.
     var frameEncodeCountForTesting = 0
     #endif
     var loadDiagnostics: SceneLoadDiagnostic?
@@ -371,8 +296,6 @@ final class WPEMetalSceneRenderer: NSObject {
     var lastCanonicalRotation = WPECanonicalCompositeRotationReport(enabled: false, decisions: [:])
     var lastFullFramePassthroughElision = WPEFullFramePassthroughElisionReport(enabled: false, decisions: [:])
     #if DEBUG
-    /// Authored shader/effect contract items with no runtime consumer, retained
-    /// across trace restarts used by multi-frame oracle capture.
     var shaderImplementationInventory: [WPEShaderImplementationInventoryEntry] = []
     #endif
     /// Effect / custom-shader passes animate via `g_Time` / `g_AudioSpectrum*`. Without this the view draws one frame and freezes.
@@ -393,7 +316,6 @@ final class WPEMetalSceneRenderer: NSObject {
     var parallaxAuthoredDepthByObjectID: [String: SIMD2<Double>] = [:]
     var parallaxAuthoredOriginByObjectID: [String: SIMD2<Double>] = [:]
 
-    /// Test hook: assert a HIDDEN text object's compute script still ran (`shared` populated).
     func sharedScriptValueForTesting(_ key: String) -> Any? {
         sceneScriptSharedState?.get(key)
     }
@@ -445,7 +367,6 @@ final class WPEMetalSceneRenderer: NSObject {
         let effectiveEngineAssetsRootURL: URL? = engineAssetsRootURL.flatMap {
             (!needsScope || didStartEngineAssetsAccess) ? $0 : nil
         }
-        // Only the scoped case has access to stop on teardown.
         self.activeEngineAssetsRootURL = didStartEngineAssetsAccess ? engineAssetsRootURL : nil
         self.effectiveEngineAssetsRootURL = effectiveEngineAssetsRootURL
         self.sceneAssetProvider = assetProvider
@@ -488,7 +409,6 @@ final class WPEMetalSceneRenderer: NSObject {
 
     }
 
-    /// Legacy/test convenience: builds the main-thread surface here (hence `@MainActor`) and forwards Sendable seams.
     @MainActor
     convenience init(
         descriptor: SceneDescriptor,
@@ -515,9 +435,7 @@ final class WPEMetalSceneRenderer: NSObject {
             surfaceControl: surface,
             mailbox: surface.mailbox,
             presentLayer: WPEPresentLayer(layer: surface.metalLayer),
-            // `backingDrawableSize`, never the layer: a CAMetalLayer reads 0x0
-            // until the first `nextDrawable()`, which would leave every scene
-            // built through this initializer permanently unable to plan.
+            // `backingDrawableSize`, never the layer: a CAMetalLayer reads 0x0 until the first `nextDrawable()`, which would leave every scene built through this initializer permanently unable to plan.
             drawableSize: surface.backingDrawableSize,
             presentFitMode: presentFitMode,
             device: device,
@@ -531,11 +449,7 @@ final class WPEMetalSceneRenderer: NSObject {
     }
 
     func updateSurfaceGeometry(drawableSize: CGSize) {
-        // A sizeless report means "not laid out yet", never "the surface is now
-        // zero". `WPERenderSurface.attach` pushes exactly that immediately after
-        // construction — before the view is in a window — and letting it through
-        // would clobber the size the builder seeded from the screen, leaving the
-        // MetalFX plan with no drawable for the scene's whole life.
+        // A sizeless report means "not laid out yet", never "the surface is now zero". Letting it through would clobber the size the builder seeded from the screen, leaving the MetalFX plan with no drawable for the scene's whole life.
         guard drawableSize.width > 0, drawableSize.height > 0 else { return }
         guard drawableSize != surfaceDrawableSize else { return }
         surfaceDrawableSize = drawableSize
@@ -546,14 +460,7 @@ final class WPEMetalSceneRenderer: NSObject {
         refreshUpscalePlan(reason: "geometry")
     }
 
-    /// The ONE place the MetalFX verdict is decided. Its three inputs arrive at different
-    /// times — world canvas from scene parsing, drawable size from window layout (async),
-    /// fit mode from a runtime config submit — so the plan is a derived value refreshed on
-    /// every input change rather than computed once and patched afterwards.
-    ///
-    /// `isInitial` marks the load-time call, the only one allowed to establish the
-    /// source-texture cap: those uploads happen during load and can't be redone, so every
-    /// later refresh carries the original cap forward.
+    /// `isInitial` marks the load-time call, the only one allowed to establish the source-texture cap: those uploads happen during load and can't be redone, so every later refresh carries the original cap forward.
     func refreshUpscalePlan(reason: String, isInitial: Bool = false) {
         guard isInitial || hasPlannedUpscale else { return }
         let drawableSize = surfaceDrawableSize
@@ -562,11 +469,7 @@ final class WPEMetalSceneRenderer: NSObject {
             drawableSize: drawableSize,
             fitMode: presentFitMode,
             isHDR: cameraUniforms.sceneHDR,
-            // The drawable itself, not the defaults key: the surface refuses HDR output when
-            // no attached screen can show EDR, and the plan has to agree with the drawable it
-            // will present to. `pixelFormat` is written once at surface construction and never
-            // mutated afterwards, which is the same contract that lets this actor call
-            // `nextDrawable()` off the main thread.
+            // The drawable itself, not the defaults key: the surface refuses HDR output when no attached screen can show EDR, and the plan has to agree with the drawable it will present to.
             hdrOutputEnabled: WPEDisplayHDROutput.isHDROutput(
                 drawablePixelFormat: metalLayer.layer.pixelFormat
             ),
@@ -579,17 +482,13 @@ final class WPEMetalSceneRenderer: NSObject {
         executor.upscalePlan = updated
         guard isInitial || updated.renderPixelScale != previous.renderPixelScale else { return }
         if !isInitial {
-            // Every pixel-keyed resource is stale now — not just the composite
-            // cache. Leaving them stranded the old allocations for the scene's
-            // life and kept serving old-resolution textures to `.previous`.
+            // Every pixel-keyed resource is stale now — not just the composite cache. Leaving them would strand the old allocations for the scene's life and keep serving old-resolution textures to `.previous`.
             executor.releaseRenderScaleDependentResources()
             // The presented frame is at the old scale too. A continuous scene
             // redraws next tick; a static one would re-present it forever.
             pendingForcedRerender = true
             surfaceControl.setNeedsRedraw()
         }
-        // `.settingOff` still gets a line once the display clamp bites — that case is now
-        // a real resolution change, not "feature disabled, nothing happened".
         guard updated.verdict != .settingOff || updated.renderPixelScale < 1 else { return }
         Logger.notice(
             "[metalfx] plan \(updated.verdict.rawValue) scale=\(updated.renderPixelScale) "
@@ -606,7 +505,6 @@ final class WPEMetalSceneRenderer: NSObject {
     var didDumpScenePassesOverTime = false
     #endif
 
-    /// `WPEParallaxGain` from `com.loomscreen.pro` then `.standard`. Present values go through `clampedGain`.
     private static func resolvedParallaxGain() -> Double {
         for defaults in [UserDefaults.appSuite, .standard] {
             guard defaults.object(forKey: "WPEParallaxGain") != nil else { continue }

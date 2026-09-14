@@ -2,7 +2,6 @@ import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
-/// Edits global shortcut bindings and their master switch.
 struct ShortcutsView: View {
     @State private var bindings: [GlobalShortcutAction.RawAction: GlobalShortcutBinding?] = [:]
     @State private var rejectionMessage: String?
@@ -51,7 +50,6 @@ struct ShortcutsView: View {
             ]
         )
         .onReceive(NotificationCenter.default.publisher(for: .globalShortcutsDidChange)) { _ in
-            // Refresh after external reset or import to avoid saving stale bindings.
             let latest = SettingsManager.shared.loadGlobalSettings()
             var didResync = false
             if globalShortcutsEnabled != latest.globalShortcutsEnabled {
@@ -139,7 +137,6 @@ struct ShortcutsView: View {
         persistSettings()
     }
 
-    /// Save bindings and the master switch together.
     private func persistSettings() {
         GlobalSettingsCommit.apply(
             GlobalSettingsCommit.ShortcutsPageFields(
@@ -287,7 +284,6 @@ private struct ShortcutCaptureField: View {
     }
 }
 
-/// Hidden NSView that runs a local key-down monitor for the duration of `isActive == true`.
 private struct KeyCaptureMonitor: NSViewRepresentable {
     @Binding var isActive: Bool
     let onCapture: (GlobalShortcutBinding) -> Void

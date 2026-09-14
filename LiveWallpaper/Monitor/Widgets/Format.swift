@@ -1,6 +1,5 @@
 import Foundation
 
-/// User-facing temperature unit for the monitor widgets' sensor readouts.
 enum MonitorTemperature {
     static let fahrenheitDefaultsKey = "MonitorTemperatureFahrenheit"
 
@@ -47,10 +46,7 @@ enum Format {
         (bytes.isFinite ? bytes : 0) / 1_073_741_824
     }
 
-    /// Durations here are derived from timestamps in files written outside this
-    /// app (agent transcripts, the statusline sidecar), so they are untrusted.
-    /// `isFinite` is not a sufficient guard: 1e300 is finite and `Int(_:)`
-    /// traps on it. The ceiling is ~100 years, far past any real duration.
+    /// `isFinite` is not a sufficient guard: 1e300 is finite and `Int(_:)` traps on it. The ceiling is ~100 years, far past any real duration.
     private static func boundedSeconds(_ seconds: Double) -> Int {
         guard seconds.isFinite, seconds > 0 else { return 0 }
         return Int(min(seconds, 3.15e9))
@@ -95,9 +91,7 @@ enum Format {
         "\(wholeNumber(fraction))%"
     }
 
-    /// 0…1 → whole-number string with no "%" ("37"), for callers that draw
-    /// their own separately-styled unit. Same clamp and rounding as `percent`,
-    /// so the two can never disagree about what a reading says.
+    /// Same clamp and rounding as `percent`, so the two can never disagree about what a reading says.
     static func wholeNumber(_ fraction: Double) -> String {
         let f = fraction.isFinite ? min(max(fraction, 0), 1) : 0
         return "\(Int((f * 100).rounded()))"

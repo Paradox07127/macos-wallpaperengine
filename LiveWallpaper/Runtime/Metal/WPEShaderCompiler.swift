@@ -4,33 +4,19 @@ import Foundation
 import LiveWallpaperProWPE
 import Metal
 
-/// One compile job. The `processed*Source` strings are already through
-/// `WPEShaderPreprocessor` (combos baked in, includes resolved, WPE macros
-/// rewritten). The compiler only needs to translate canonical GLSL to MSL.
 struct WPEShaderCompileRequest: Sendable, Hashable {
     let shaderName: String
     let processedVertexSource: String
     let processedFragmentSource: String
-    /// Stable hash of the (raw vertex source, raw fragment source, combo
-    /// values) tuple. Combined with PMA flags (`translationCacheKey`) and
-    /// `WPEShaderTranslationCache.schemaVersion` as the disk-cache key.
+    /// Hash of (raw vertex source, raw fragment source, combo values).
     let sourceHash: String
-    /// Raw `// [COMBO]` declarations the preprocessor saw, after combo
-    /// values were merged in. Surfaced to the executor so reflection lookups
-    /// know which `#define`s shipped to the GPU.
+    /// `[COMBO]` names → values after merge.
     let comboValues: [String: Int]
-    /// Texture binding declarations from `// [BIND]` lines plus material
-    /// `textures` array. Index → logical name. The executor maps these to
-    /// MTL texture slots.
+    /// Texture slot index → logical name.
     let textureBindings: [Int: String]
-    /// Texture slots whose bound source is a WPE render target (`previous` or
-    /// an FBO/layer composite). Those textures already store premultiplied
-    /// RGB, so the transpiler un-premultiplies them before running the
-    /// shader's straight-alpha math.
+    /// Slots bound to PMA render targets; the transpiler un-premultiplies before straight-alpha math.
     let premultipliedInputSlots: Set<Int>
-    /// Whether the translated fragment should premultiply its straight-alpha
-    /// final color before returning, to match a premultiplied render-target
-    /// pipeline.
+    /// Premultiply straight-alpha final color for a PMA render-target pipeline.
     let premultipliedOutput: Bool
 
     init(
@@ -53,8 +39,6 @@ struct WPEShaderCompileRequest: Sendable, Hashable {
         self.premultipliedOutput = premultipliedOutput
     }
 
-    /// Cache key that distinguishes premultiplied-alpha translation variants of
-    /// an otherwise identical shader source (same `sourceHash`).
     var translationCacheKey: String {
         var key = sourceHash
         if !WPEShaderTranspiler.waterOptimizationsEnabled {
@@ -91,16 +75,11 @@ struct WPEShaderCompileResult: @unchecked Sendable {
     let library: MTLLibrary
     let vertexFunctionName: String
     let fragmentFunctionName: String
-    /// Generated MSL source, kept for disk caching and snapshot tests.
     let mslSource: String
-    /// Per-uniform float4 slot assignment matching the layout the transpiler
-    /// emitted. The dispatcher walks this to pack the runtime uniform buffer.
+    /// Per-uniform float4 slot assignment matching the transpiler layout.
     let uniformLayout: [WPEUniformSlot]
-    /// Names of the texture samplers the shader expects, ordered by slot.
     let samplerNames: [String]
-    /// Fragment texture/sampler arguments the generated signature declares. The dispatcher
-    /// binds exactly this many — it is carried through the cache because a cache hit
-    /// restores the MSL without re-running the transpiler that computed it.
+    /// Fragment texture/sampler arity; cached because a hit restores MSL without re-running the transpiler.
     let textureSlotCount: Int
 }
 
@@ -110,12 +89,11 @@ enum WPEShaderCompilerError: Error, Sendable, Equatable {
     case mslLibraryFailed(String)
 }
 
-/// Process-wide MSL+reflection cache. Payload is text, never `MTLLibrary`.
-/// Memory hits serve a second display / new executor; disk hits serve cold start.
+/// Process-wide MSL+reflection cache; the payload is text, never `MTLLibrary`.
 /// All mutable state sits behind `lock`.
 final class WPEShaderTranslationCache: @unchecked Sendable {
     /// 11: rebuild Pulse colour arithmetic at the managed linear/encoded boundary.
-    static let schemaVersion = 11
+    static let schemaVersion = 12
     static let shared = WPEShaderTranslationCache()
 
     struct Payload: Codable, Equatable, Sendable {
@@ -161,10 +139,7 @@ final class WPEShaderTranslationCache: @unchecked Sendable {
             }
         }
 
-        /// `nil` when the result cannot round-trip: `Slot.Constant` has no `.animated` case,
-        /// so an animated uniform default would come back as no default at all, and the
-        /// fallback in `resolvedUniformValue` would silently change between the compile that
-        /// produced it and every later hit (including the second display in the same process). Refusing to cache keeps the fresh translation authoritative.
+        /// `nil` when an animated uniform default cannot round-trip; caching would silently drop it.
         static func from(_ result: WPEShaderCompileResult) -> Payload? {
             var slots: [Slot] = []
             slots.reserveCapacity(result.uniformLayout.count)
@@ -193,10 +168,6 @@ final class WPEShaderTranslationCache: @unchecked Sendable {
         }
     }
 
-    /// Disk budget. An MSL payload is a few KB to a few tens of KB, so this
-    /// holds several scenes' worth while bounding a user who browses a lot of
-    /// Workshop content. Caches/ is purgeable, but that is the OS's backstop,
-    /// not a reason to grow without limit.
     static let maximumDiskBytes = 64 * 1024 * 1024
     /// Stores between sweeps. The sweep enumerates the directory, so it must not
     /// run on every store during a scene load's compile burst.
@@ -221,10 +192,7 @@ final class WPEShaderTranslationCache: @unchecked Sendable {
         Self.removeStaleSchemaDirectories(in: base, fileManager: fileManager)
     }
 
-    /// `maximumDiskBytes` only bounds the current version's directory: after a
-    /// `schemaVersion` bump the previous `v{N}` would otherwise sit at up to a
-    /// full budget of unreadable payloads with nothing but the OS Caches purge
-    /// to reclaim it.
+    /// Previous `v{N}` directories would otherwise keep a full budget of unreadable payloads.
     private static func removeStaleSchemaDirectories(in base: URL, fileManager: FileManager) {
         let current = "v\(schemaVersion)"
         guard let items = try? fileManager.contentsOfDirectory(
@@ -319,10 +287,7 @@ final class WPEShaderTranslationCache: @unchecked Sendable {
         return payload
     }
 
-    /// Drops oldest-written entries until the directory fits the budget. By
-    /// write time, not access time: a hit only reads, so this is insertion order
-    /// rather than true LRU — enough to bound the directory, and a dropped entry
-    /// costs one re-translation.
+    /// Evicts oldest-written, not LRU: a hit only reads, so this is insertion order.
     private func pruneDisk() {
         let keys: Set<URLResourceKey> = [.contentModificationDateKey, .fileSizeKey]
         guard let items = try? fileManager.contentsOfDirectory(

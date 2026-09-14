@@ -2,22 +2,17 @@ import Foundation
 import CoreLocation
 import LiveWallpaperCore
 
-/// Weather coordinate from Core Location or manual city (no IP geolocation).
 @MainActor
 protocol WeatherLocationProviding: AnyObject {
     func resolveCoordinate() async -> WeatherLocationResolution
 
-    /// Prompts for CoreLocation authorisation only if `.coreLocation` is chosen and not yet asked.
     func requestCoreLocationAuthorizationIfNeeded()
 }
 
-/// Testable Core Location seam for coalesced one-shot requests.
 @MainActor
 protocol WeatherCoreLocationRequesting: AnyObject {
     var authorizationStatus: CLAuthorizationStatus { get }
-    /// The last error Core Location reported, cleared by the next fix. Lets the
-    /// caller tell "not authorized" from "authorized but no fix", which the
-    /// authorization status alone cannot.
+    /// Last Core Location error, cleared by the next fix — authorization status alone cannot tell "not authorized" from "authorized but no fix".
     var lastLocationFailure: Error? { get }
     var resultHandler: ((CLLocation?) -> Void)? { get set }
     var authorizationHandler: ((CLAuthorizationStatus) -> Void)? { get set }
@@ -60,16 +55,13 @@ private final class WeatherCoreLocationClient: NSObject, WeatherCoreLocationRequ
     }
 
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        // Kept rather than discarded: without it the only thing left to go on
-        // was the authorization status, so a manager that simply could not get
-        // a fix was reported as a permissions problem.
+        // Keep the error: discarding it would report a failed fix as a permissions problem.
         Task { @MainActor [weak self] in
             self?.lastLocationFailure = error
             self?.resultHandler?(nil)
         }
     }
 
-    /// The last error Core Location reported, cleared by the next fix.
     private(set) var lastLocationFailure: Error?
 
     nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
@@ -80,7 +72,6 @@ private final class WeatherCoreLocationClient: NSObject, WeatherCoreLocationRequ
     }
 }
 
-/// Resolve result; status vocabulary matches `WeatherReactiveService.LocationStatus`.
 struct WeatherLocationResolution: Equatable {
     enum FailureKind: Equatable {
         case permissionDenied
@@ -166,7 +157,6 @@ final class WeatherLocationProvider: NSObject, WeatherLocationProviding {
     }
 
     #if DEBUG
-    /// Waiters on the shared system request (tests must park before completing).
     var pendingCoreLocationWaiterCountForTesting: Int {
         pendingCoreLocationContinuations.count
     }
@@ -207,11 +197,7 @@ final class WeatherLocationProvider: NSObject, WeatherLocationProviding {
             } else {
                 failureKind = .unavailable
             }
-            // Core Location answering "I could not get a fix" is not a
-            // permissions problem, and telling the reader to allow Location
-            // Services sent them to a switch that was already on.
-            // `denied` here is the system-wide switch rather than this app's
-            // permission, which `authorizationStatus` cannot see.
+            // `denied` here is the system-wide switch rather than this app's permission, which `authorizationStatus` cannot see.
             let deniedBySystem = (coreLocationClient.lastLocationFailure as? CLError)?.code == .denied
             let message = failureKind == .unavailable
                 && coreLocationClient.lastLocationFailure != nil

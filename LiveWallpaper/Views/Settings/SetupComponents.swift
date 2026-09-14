@@ -3,7 +3,6 @@ import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
-/// Shared chrome for Workshop setup (Steam connection sheet, settings, onboarding).
 
 // MARK: - Step state
 
@@ -22,7 +21,6 @@ enum WorkshopStepState: Equatable {
         }
     }
 
-    /// Localized readiness status.
     var statusText: LocalizedStringKey {
         switch self {
         case .notStarted: "Not set"
@@ -34,7 +32,6 @@ enum WorkshopStepState: Equatable {
 }
 
 extension WorkshopStepState {
-    /// Shared asset readiness for settings, onboarding, and scene warnings.
     @MainActor
     static func engineAssets(
         library: WPEEngineAssetsLibrary,
@@ -57,7 +54,6 @@ extension WorkshopStepState {
     }
 }
 
-/// Combines status color with a localized name.
 struct WorkshopStateBadge: View {
     let state: WorkshopStepState
 
@@ -74,7 +70,6 @@ struct WorkshopStateBadge: View {
     }
 }
 
-/// Presents shared privacy content with enough space for all supported languages.
 struct WorkshopPrivacySheet: View {
     @Environment(\.dismiss) private var dismiss
 

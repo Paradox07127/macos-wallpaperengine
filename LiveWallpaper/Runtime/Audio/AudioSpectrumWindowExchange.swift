@@ -1,12 +1,8 @@
 import os
 
-/// SPSC hand-off of the newest analysis window. The producer (audio IO thread) owns the
-/// history ring and staging window; the sealed window lives inside the lock, and the consumer
-/// copies it out while holding that lock, so no sample slot is ever reachable from both sides
-/// — a stalled consumer misses whole generations rather than reading a window assembled from
-/// two of them. @unchecked Sendable: `ringLeft`/`ringRight`/`stageLeft`/`stageRight`/
-/// `producedSamples` are touched only by the producer inside `publish`; everything both sides
-/// reach lives inside `sealed`'s unfair lock.
+/// @unchecked Sendable: `ringLeft`/`ringRight`/`stageLeft`/`stageRight`/`producedSamples` are
+/// touched only by the producer inside `publish`; everything both sides reach lives inside
+/// `sealed`'s unfair lock.
 final class AudioSpectrumWindowExchange: @unchecked Sendable {
     /// Where a sealed window sits in the stream: it covers
     /// `(totalSamples - windowSize)..<totalSamples`.
@@ -15,8 +11,6 @@ final class AudioSpectrumWindowExchange: @unchecked Sendable {
         var timestampNanos: UInt64
     }
 
-    /// The sealed buffers live inside the lock's state so "sealed samples are only
-    /// touched under the lock" is structural rather than a convention.
     private struct Sealed {
         var left: UnsafeMutableBufferPointer<Float>
         var right: UnsafeMutableBufferPointer<Float>
@@ -24,9 +18,7 @@ final class AudioSpectrumWindowExchange: @unchecked Sendable {
     }
 
     let windowSize: Int
-    /// Retained history, and the staleness bound the consumer applies to a window it has
-    /// already taken. Four windows: the hand-off itself needs one, the other three keep
-    /// the hop clamp and drop thresholds the spectrum was tuned against unchanged.
+    /// Four windows: the hand-off itself needs one; the other three keep the hop clamp and drop thresholds the spectrum was tuned against unchanged.
     let historyCapacity: Int
 
     private let historyMask: Int
@@ -38,8 +30,6 @@ final class AudioSpectrumWindowExchange: @unchecked Sendable {
     private let sealed: OSAllocatedUnfairLock<Sealed>
 
     #if DEBUG
-    /// Test seam: runs while the consumer holds the lock, between the two channel
-    /// copies, so a test can let the producer run for real during a copy.
     var midCopyHookForTesting: (() -> Void)?
     #endif
 
@@ -66,8 +56,7 @@ final class AudioSpectrumWindowExchange: @unchecked Sendable {
     deinit {
         ringLeft.deallocate()
         ringRight.deallocate()
-        // Staging and sealed swap places on every hand-off, so releasing both sides
-        // releases the same four buffers whichever way the last swap landed.
+        // Staging and sealed swap places on every hand-off, so releasing both sides releases the same four buffers whichever way the last swap landed.
         stageLeft.deallocate()
         stageRight.deallocate()
         sealed.withLockUnchecked { state in
@@ -84,10 +73,6 @@ final class AudioSpectrumWindowExchange: @unchecked Sendable {
 
     // MARK: - Producer (audio IO thread)
 
-    /// Append the callback's samples to the ring, re-seal the newest window, and hand it over.
-    /// Bounded and allocation-free: `frameCount` ring writes plus one `windowSize` block copy
-    /// per channel. Non-blocking: the hand-off takes the lock only if free; a miss just defers
-    /// publication by one callback — samples stay in the ring, so the next seal still carries them.
     func publish(left: [Float], right: [Float], timestampNanos: UInt64) {
         let frameCount = max(left.count, right.count)
         guard frameCount > 0 else { return }
@@ -120,9 +105,7 @@ final class AudioSpectrumWindowExchange: @unchecked Sendable {
         }
     }
 
-    /// Shorter channel zero-pads (the HAL always delivers matched counts). Non-finite
-    /// samples are zeroed here so staging stays a plain block move; the consumer used to
-    /// sanitize once per analyzed window instead.
+    /// Shorter channel zero-pads. Non-finite samples are zeroed here so staging stays a plain block move.
     private func appendToRing(
         _ ring: UnsafeMutableBufferPointer<Float>,
         samples: [Float],
@@ -137,10 +120,7 @@ final class AudioSpectrumWindowExchange: @unchecked Sendable {
         }
     }
 
-    /// Ring → contiguous staging window (the last `windowSize` samples), as at most two
-    /// block copies. Before the first full window the wrapped start lands on slots the
-    /// producer has not reached yet, which still hold their initial zeros — the same
-    /// left-padding the consumer used to synthesize.
+    /// Before the first full window the wrapped start lands on slots still holding their initial zeros — the same left-padding the consumer used to synthesize.
     private func stageNewestWindow(
         from ring: UnsafeMutableBufferPointer<Float>,
         into stage: UnsafeMutableBufferPointer<Float>
@@ -160,9 +140,6 @@ final class AudioSpectrumWindowExchange: @unchecked Sendable {
         sealed.withLockUnchecked { $0.cursor }
     }
 
-    /// Copy the sealed window into `left`/`right` and return the cursor it was sealed at.
-    /// The copy runs under the lock, so the producer can only miss a hand-off while it
-    /// runs — it can never write into the window being copied.
     func copySealedWindow(into left: inout [Float], and right: inout [Float]) -> Cursor {
         sealed.withLockUnchecked { state in
             Self.copyOut(state.left, into: &left)

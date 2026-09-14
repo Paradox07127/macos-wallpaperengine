@@ -4,10 +4,7 @@ import CoreText
 import Foundation
 import simd
 
-/// Vertical line metrics in pixels at a concrete em size, resolved with FreeType's
-/// table-selection rule so line spacing matches Wallpaper Engine: OS/2 `USE_TYPO_METRICS`
-/// (fsSelection bit 7) selects the typo metrics, otherwise hhea metrics apply. (Oracle-verified
-/// across 9 corpus fonts — p5hatty is the discriminating case; see memory `wpe-text-windows-model`.)
+/// OS/2 `USE_TYPO_METRICS` (fsSelection bit 7) selects the typo metrics, otherwise hhea metrics apply.
 struct WPETextLineMetrics {
     /// Ascender above the baseline, pixels (positive).
     let ascender: Double
@@ -20,8 +17,7 @@ struct WPETextLineMetrics {
 }
 
 enum WPETextFontMetricsReader {
-    /// Reads head/hhea/OS2 directly: CTFontGetAscent always reports hhea
-    /// metrics, which mis-sizes USE_TYPO_METRICS fonts by up to 25%.
+    /// Reads head/hhea/OS2 directly: CTFontGetAscent always reports hhea metrics, which mis-sizes USE_TYPO_METRICS fonts.
     static func metrics(for font: CTFont) -> WPETextLineMetrics {
         let em = Double(CTFontGetSize(font))
         guard
@@ -75,18 +71,14 @@ struct WPETextGlyphQuad {
     let glyph: CGGlyph
     /// The run's resolved font (CoreText fallback may substitute per run).
     let runFont: CTFont
-    /// The glyph's OWN integral raster box relative to its pen at the baseline
-    /// (pure bearings, no placement) — what the atlas rasterizes. Same size as
-    /// `rect` by construction.
+    /// The glyph's own integral raster box relative to its pen (pure bearings, no placement) — what the atlas rasterizes.
     let cell: CGRect
     /// `cell` translated to the glyph's block-local position (pen + line +
     /// alignment offsets), integer-aligned.
     let rect: CGRect
 }
 
-/// A laid-out text block. The placement anchor is the OBJECT ORIGIN — WPE
-/// aligns the block relative to that point; the authored `size` box does not
-/// exist at runtime (oracle-verified, see memory `wpe-text-windows-model`).
+/// The placement anchor is the object origin; the authored `size` box does not exist at runtime.
 struct WPETextBlockLayout {
     let quads: [WPETextGlyphQuad]
     /// Widest line's typographic width — the block's horizontal extent.
@@ -98,22 +90,12 @@ struct WPETextBlockLayout {
     /// Baseline-to-baseline step, whole pixels (WPE's FreeType path rounds it).
     var lineAdvance: Double { metrics.lineHeight.rounded() }
 
-    /// The block box WPE sizes its text FBO from: widest line by `n × advance`
-    /// (2955378002's `padding: 31` measures as exactly this + 62 in the
-    /// capture). Its top edge sits `metrics.ascender` above the first baseline.
+    /// Widest line by `n × advance`. Its top edge sits `metrics.ascender` above the first baseline.
     var blockSize: CGSize {
         CGSize(width: blockWidth, height: Double(lineCount) * lineAdvance)
     }
 
-    /// Offset from the object origin to block-local (0,0) (block left edge at
-    /// the first baseline), in author-space pixels (+y up), so that
-    /// `world = origin + R·S·(offset + local)`.
-    ///
-    ///   left/center/right → block starts at / centers on / ends at origin.x
-    ///   top    → first-line ascent top sits at origin.y
-    ///   center → baseline₁ = origin.y − A/2 + (n−1)·adv/2
-    ///   bottom → last-line descent bottom sits at origin.y (mirror of top —
-    ///            no corpus sample; the other two are RenderDoc-exact)
+    /// Offset from the object origin to block-local (0,0), author-space pixels (+y up): `world = origin + R·S·(offset + local)`.
     func anchorOffset(horizontalAlignment: String, verticalAlignment: String) -> SIMD2<Double> {
         let x: Double
         switch horizontalAlignment {
@@ -134,12 +116,9 @@ struct WPETextBlockLayout {
 
 enum WPETextLayoutEngine {
     /// WPE rasterizes `pointsize` at 300 DPI: author-space pixels per point.
-    /// (Oracle-verified em sizes across five fonts and four point sizes.)
     static let pixelsPerPoint = 300.0 / 72.0
 
-    /// Lays out `text` with `font` already sized at em pixels. `maxWidth` (author
-    /// px) wraps via CoreText line breaking when present; `maxRows` clamps the
-    /// row count (appending `…` when `ellipsis`). Returns nil for empty text.
+    /// `maxWidth` (author px) wraps via CoreText when present; `maxRows` clamps the row count (appending `…` when `ellipsis`). Returns nil for empty text.
     static func layout(
         text: String,
         font: CTFont,
@@ -172,9 +151,7 @@ enum WPETextLayoutEngine {
         var quads: [WPETextGlyphQuad] = []
         for (index, line) in lineLayouts.enumerated() {
             let baselineY = -Double(index) * lineAdvance
-            // Lines align mutually inside the block with the SAME mode the
-            // block anchors with (oracle meshes: center-aligned scenes carry
-            // mutually centered lines; left/right follow the flush edge).
+            // Lines align mutually inside the block with the SAME mode the block anchors with.
             let indent: Double
             switch horizontalAlignment {
             case "left": indent = 0
@@ -200,7 +177,6 @@ enum WPETextLayoutEngine {
         )
     }
 
-    /// Splits on authored newlines, then wraps each paragraph to `maxWidth`.
     private static func brokenLines(
         text: String,
         font: CTFont,
@@ -238,9 +214,7 @@ enum WPETextLayoutEngine {
         let penX: Double
     }
 
-    /// One line → glyphs in pen space (pen starts at x=0, baseline y=0, +y up)
-    /// plus the line's typographic width. Cells are integer-aligned the way
-    /// WPE's FreeType path lands on whole pixels.
+    /// Pen starts at x=0, baseline y=0, +y up. Cells are integer-aligned the way WPE's FreeType path lands on whole pixels.
     private static func layoutLine(
         _ line: String,
         font: CTFont,
@@ -265,9 +239,7 @@ enum WPETextLayoutEngine {
             for index in 0..<glyphCount {
                 let bb = bounds[index]
                 guard bb.width > 0, bb.height > 0 else { continue }
-                // Integral raster box in GLYPH space (floor/ceil around the
-                // bearings) — the atlas rasterizes this exact box, so quad and
-                // texels stay 1:1 wherever the quad lands.
+                // Integral raster box in glyph space (floor/ceil around the bearings) — the atlas rasterizes this exact box, so quad and texels stay 1:1.
                 let x0 = Double(bb.minX).rounded(.down)
                 let y0 = Double(bb.minY).rounded(.down)
                 let x1 = Double(bb.maxX).rounded(.up)
@@ -290,8 +262,7 @@ enum WPETextLayoutEngine {
     ) -> CFAttributedString {
         var attributes: [CFString: Any] = [kCTFontAttributeName: font]
         if letterSpacing != 0 {
-            // Authored in points like `pointsize` (no corpus sample authors a
-            // non-zero value; unit unverified against the oracle).
+            // Authored in points like `pointsize`.
             attributes[kCTKernAttributeName] = letterSpacing * pixelsPerPoint
         }
         return CFAttributedStringCreate(nil, line as CFString, attributes as CFDictionary)!

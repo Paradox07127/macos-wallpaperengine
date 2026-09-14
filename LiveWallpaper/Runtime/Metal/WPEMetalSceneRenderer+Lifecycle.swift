@@ -29,10 +29,6 @@ extension WPEMetalSceneRenderer {
         try await load(on: actor)
     }
 
-    /// The teardown half of `reload`: drops every loaded runtime resource —
-    /// static/dynamic textures, particles, text, scripts (JSContexts), sound,
-    /// executor transients — while keeping the descriptor, resolvers, and asset
-    /// provider so a later `load` can rebuild the scene from disk.
     func retireRuntimeState(on actor: isolated WPEDisplayRenderActor) async {
         didLoad = false
         let staticTextureReloadDrain = await staticTextureReloadTaskOwner.quiesce()
@@ -65,9 +61,7 @@ extension WPEMetalSceneRenderer {
         ownVisibilityByID = [:]
         liveTextVisibility = [:]
         clearSceneScriptRuntimeState()
-        // `destroy()` is an event on the current generation. Retire only after
-        // the instances have synchronously received it and released their JSC
-        // callbacks; late queued completions are rejected from this point on.
+        // Retire only after destroy() has synchronously released JSC callbacks; late queued completions would still run.
         sceneScriptLoadState.retireCurrent()
         loadDiagnostics = nil
         resolutionTracer.reset()
@@ -77,8 +71,7 @@ extension WPEMetalSceneRenderer {
         particleNormalTextures.removeAll(keepingCapacity: false)
         particleTextureLoadCache.removeAll(keepingCapacity: false)
         textObjects.removeAll(keepingCapacity: false)
-        // `releaseTextTargets` owns the renderer; nil-ing it first here made its
-        // atlas release a no-op.
+        // `releaseTextTargets` owns the renderer; nil-ing it first would make its atlas release a no-op.
         releaseTextTargets()
         transformHostLocalTransformsByID.removeAll(keepingCapacity: false)
         layerAncestorLocalTransformsByID.removeAll(keepingCapacity: false)
@@ -97,25 +90,15 @@ extension WPEMetalSceneRenderer {
         lastRuntimeUniforms = nil
         lastFramePipeline = nil
         cachedSnapshot = nil
-        // Load rebuilds both (Load.swift). Left stale, a hibernated renderer's
-        // frameDemand stays non-empty and the wake's `.quality` command unpauses
-        // the display link for the whole reload — seconds of no-op vsync ticks
-        // on a heavy scene.
+        // Left stale, frameDemand stays non-empty and the wake's `.quality` command would unpause the display link for the whole reload.
         hasAnimatedShaderPasses = false
         sceneSupportsAudioProcessing = false
-        // Scene-scoped, so it is retired HERE rather than inside
-        // `releaseTransientResources()`: that is also the `.suspended` profile's
-        // release path, and a fullscreen-app occlusion would otherwise blank the
-        // inspector's failure list for a scene that is still loaded.
+        // Scene-scoped: do not reset inside `releaseTransientResources()` — that is also the `.suspended` path and would blank the inspector's failure list for a still-loaded scene.
         executor.shaderErrorSink.reset()
         executor.releaseTransientResources()
     }
 
-    /// Deep hibernate: the suspend path's resource-release depth, not a third performance
-    /// profile. Runs the reload teardown without the reload — the session wakes a
-    /// hibernated renderer by calling `reload()`, which rebuilds everything from the
-    /// retained descriptor/provider. Returns false when nothing is loaded (mid-load or
-    /// already hibernated), so the caller doesn't mark the session hibernated on a no-op.
+    /// Suspend-path resource-release depth, not a third performance profile.
     func hibernate(on actor: isolated WPEDisplayRenderActor) async -> Bool {
         guard didLoad else { return false }
         await retireRuntimeState(on: actor)
@@ -192,9 +175,7 @@ extension WPEMetalSceneRenderer {
                 return nil
             }
         }
-        // Audio is prepared only after first present. A property mutation during
-        // that window must reload from the newly persisted descriptor; otherwise
-        // the detached preparation would later publish values from the old document.
+        // Audio is prepared only after first present; a property mutation while `soundRuntime` is nil must reload or the detached preparation would later publish the old document.
         if (!plan.soundVisibility.isEmpty || !plan.soundVolume.isEmpty), soundRuntime == nil {
             return nil
         }
@@ -217,7 +198,6 @@ extension WPEMetalSceneRenderer {
             return false
         }
 
-        // Feed changed values through every script family's `applyUserProperties`.
         if !layerScriptInstances.isEmpty || !layerAlphaScriptInstances.isEmpty
             || !textVisibleScriptInstances.isEmpty || !textAlphaScriptInstances.isEmpty
             || !particleAlphaScriptInstances.isEmpty
@@ -345,9 +325,7 @@ extension WPEMetalSceneRenderer {
         case .textAlpha:
             return textAlphaScriptInstances[target.objectID] != nil
         case .effectVisible, .effectConstant:
-            // These dictionaries use compiled gate/pass identities. Keep the
-            // typed parser address, but reload until the compiled ID is carried
-            // back into the property target without guessing.
+            // These dictionaries use compiled gate/pass identities; return false (reload) until the compiled ID is on the property target, instead of guessing.
             return false
         }
     }
@@ -454,10 +432,7 @@ extension WPEMetalSceneRenderer {
             previousPointerWasLive = false
             previousPointer = SIMD2<Double>(0.5, 0.5)
             previousLayerScriptPointerFrame = .neutral
-            // Follow Cursor off: the pointer-spawned particle emitters stop (their
-            // spawn is gated on a live pointer), so also clear whatever they already
-            // emitted — otherwise those particles linger at the cursor's last spot
-            // (and reappear on reload) instead of being prohibited outright.
+            // Follow Cursor off also clears pointer-spawned particles; otherwise they linger at the last cursor spot and would reappear on reload.
             for system in particleSystems where system.tracksPointer {
                 system.clearLiveParticles()
             }
@@ -468,9 +443,7 @@ extension WPEMetalSceneRenderer {
         pushPointerEventMonitoring()
     }
 
-    /// Updates how the scene is fitted to the screen. For a static (non-continuous)
-    /// scene, re-present once so the new fit shows immediately rather than waiting
-    /// for the next content change.
+    /// For a static scene, re-present once so the new fit shows immediately rather than waiting for the next content change.
     func setPresentFitMode(_ mode: WPEPresentFitMode) {
         guard mode != presentFitMode else { return }
         presentFitMode = mode
@@ -491,10 +464,6 @@ extension WPEMetalSceneRenderer {
         pushPointerEventMonitoring(clickCaptureEnabled: enabled)
     }
 
-    /// Re-evaluates frame demand after anything that can flip it at runtime — a
-    /// mouse-interaction toggle, an on-demand video release/rebuild, or a particle
-    /// emitter finishing — and pushes the paused/continuous state to the surface
-    /// (dedup'd on transitions) plus the activity mirror to the session.
     func synchronizeFrameDemand() {
         let continuous = needsPacingLoop
         if currentProfile == .quality, lastAppliedContinuousFrames != continuous {
@@ -507,15 +476,10 @@ extension WPEMetalSceneRenderer {
         publishRuntimeActivity()
     }
 
-    /// Pushes the "would this renderer do real work under `.quality`" mirror to
-    /// the session (App Nap gate). Renderer-side dedupe; the callback hops to
-    /// MainActor on the session side.
     func publishRuntimeActivity() {
         guard let onRuntimeActivityChange else { return }
         let activity = WPESceneRuntimeActivity(
-            // retireRuntimeState clears the demand inputs, but `didLoad &&`
-            // stays as the belt: activity must never read "working" between a
-            // retire and the load that rebuilds those flags.
+            // `didLoad &&` is required: activity must never read "working" between a retire and the load that rebuilds demand flags.
             producesFrames: didLoad && needsPacingLoop,
             audible: soundRuntime != nil
         )
@@ -524,10 +488,7 @@ extension WPEMetalSceneRenderer {
         onRuntimeActivityChange(activity)
     }
 
-    /// Applies the user-selected frame rate ceiling, already resolved against this
-    /// display's refresh rate by the caller (a `FrameRateLimit` is a divisor, and the
-    /// renderer does not know which panel it is on). Suspended state is not overridden
-    /// here — the ceiling takes effect on the next non-suspended transition.
+    /// Suspended state is not overridden here — the ceiling takes effect on the next non-suspended transition.
     func setFrameRateCeiling(_ framesPerSecond: Int) {
         let resolved = max(1, framesPerSecond)
         guard resolved != userPreferredFPS else { return }
@@ -535,15 +496,11 @@ extension WPEMetalSceneRenderer {
         applyEffectiveFrameRate()
     }
 
-    /// The user ceiling, optionally halved (floored at `adaptiveThrottleFloorFPS`,
-    /// never above the ceiling) while the adaptive background throttle is active.
     var effectiveFPS: Int {
         guard adaptiveThrottleActive else { return userPreferredFPS }
         return min(userPreferredFPS, max(Self.adaptiveThrottleFloorFPS, userPreferredFPS / 2))
     }
 
-    /// Suspended scenes don't drive frames, so the ceiling re-applies on the
-    /// next `.quality` transition (mirrors `setFrameRateLimit`'s old guard).
     private func applyEffectiveFrameRate() {
         guard currentProfile != .suspended else { return }
         surfaceControl.applyPacing(WPERenderPacingUpdate(preferredFramesPerSecond: effectiveFPS))
@@ -555,48 +512,28 @@ extension WPEMetalSceneRenderer {
         applyEffectiveFrameRate()
     }
 
-    /// Forwards the inspector's mute toggle into the scene's audio
-    /// runtime. Cached so calls that arrive before the deferred audio
-    /// startup (which fires after the first present) still take effect once
-    /// the runtime exists.
+    /// Cached so calls that arrive before deferred audio startup still take effect once the runtime exists.
     func setAudioMuted(_ muted: Bool) {
         pendingAudioMuted = muted
         soundRuntime?.setMuted(muted)
     }
 
-    /// Forwards the inspector's audio slider into the scene's audio
-    /// runtime as a master gain multiplied into each scene-declared
-    /// `sound.volume`. Cached so pre-load calls survive across the
-    /// deferred audio-startup boundary.
+    /// Cached so pre-load calls survive across the deferred audio-startup boundary.
     func setAudioVolume(_ volume: Double) {
         pendingAudioVolume = volume
         soundRuntime?.setMasterVolume(effectiveAudioVolume)
     }
 
-    /// The user's master level scaled by the applied preset's own.
     var effectiveAudioVolume: Double {
         WPEEngineAudioSettings.effectiveVolume(
             master: pendingAudioVolume, preset: presetAudioSettings
         )
     }
 
-    /// True when something on stage actually changes between frames — a dynamic
-    /// texture (animated `.tex` / video), a live particle system, or a
-    /// SceneScript-driven transform. Static-scene + dynamic-content combos must
-    /// NOT short-circuit MTKView into the paused/on-demand path or they freeze
-    /// after the first frame.
+    /// Static-scene + dynamic-content combos must not short-circuit MTKView into the paused/on-demand path or they freeze after the first frame.
     var needsContinuousFrames: Bool { !frameDemand.isEmpty }
 
-    /// Per-category frame demand. Each bit answers "does this subsystem need the loop
-    /// running RIGHT NOW", not "does the scene contain this subsystem": `.particles`
-    /// excludes permanently finished emitters (one-shot/duration-bounded, last particle
-    /// died) and pointer-locked emitters empty while the cursor is off this display
-    /// (pointer enter wakes one frame via `WPEPointerPublisher.onPointerEnteredView`).
-    /// Fully released on-demand videos carry no demand — a reveal is script-driven
-    /// (`.scripts` demand) or property-patch-driven (the static patch renders a frame,
-    /// whose `reconcileVideoResidency` rebuild re-raises `.dynamicTextures` via the
-    /// `dynamicTextureSources` didSet). Every other category stays whole-scene
-    /// conservative: missing a shrink costs CPU, a wrong shrink freezes a live animation.
+    /// Each bit is "needs the loop RIGHT NOW", not "scene contains this subsystem". A wrong shrink freezes a live animation.
     var frameDemand: WPEFrameDemand {
         var demand: WPEFrameDemand = []
         if hasAnimatedShaderPasses { demand.insert(.animatedShaders) }
@@ -616,9 +553,7 @@ extension WPEMetalSceneRenderer {
             || !layerScriptInstances.isEmpty
             || !layerAlphaScriptInstances.isEmpty
             || !particleAlphaScriptInstances.isEmpty
-            // Text scripts tick per frame too (content writes `shared` state;
-            // visibility/alpha drive fades) — a scene whose only live driver is a
-            // text script must keep the loop running or it freezes at frame 0.
+            // A scene whose only live driver is a text script must keep the loop running or it freezes at frame 0.
             || !textScriptInstances.isEmpty
             || !textVisibleScriptInstances.isEmpty
             || !textAlphaScriptInstances.isEmpty {
@@ -628,17 +563,9 @@ extension WPEMetalSceneRenderer {
         return demand
     }
 
-    /// The cursor moves between frames, so anything that consumes it needs a live frame to
-    /// re-sample — otherwise a static scene renders once at load and never reacts to the
-    /// mouse again (the "no interaction" bug). Camera parallax (Follow Cursor toggle) and
-    /// click capture both qualify; pointer-only shaders are already "animated"
-    /// (effects/workshop) and covered by `hasAnimatedShaderPasses`.
+    /// The cursor moves between frames, so anything that consumes it needs a live frame or a static scene never reacts to the mouse again.
     private var pointerDrivenContent: Bool {
-        // `!= 0`, not `> 0`: a negative amount/influence is an INVERTED parallax (WPE
-        // multiplies the sign straight in), so it still needs the pointer. The last-pushed
-        // click-capture value takes priority over the mailbox for the same reason as in
-        // `pushPointerEventMonitoring`: the mailbox copy is written on the main thread and
-        // may not have landed when the toggle's demand re-evaluation runs on the render actor.
+        // `!= 0`, not `> 0`: a negative amount/influence is inverted parallax and still needs the pointer. Last-pushed click-capture takes priority over the mailbox, which is written on the main thread and may not have landed.
         (mouseInteractionEnabled
             && cameraParallaxSettings.enabled
             && cameraParallaxSettings.amount != 0
@@ -647,11 +574,7 @@ extension WPEMetalSceneRenderer {
             ?? mailbox.read().clickCaptureEnabled
     }
 
-    /// Whether anything in the loaded scene could consume the mailbox pointer.
-    /// Deliberately conservative: effects/workshop shaders can sample `g_PointerPosition*`,
-    /// any script instance can read the pointer or register cursor handlers at runtime, and
-    /// particle systems can follow it through pointer-locked control points/attractors even
-    /// when `tracksPointer` is false — all keep the monitors on. Only a provably pointer-free scene gates them off.
+    /// Conservative: shaders, scripts, and particle attractors can consume the pointer even when `tracksPointer` is false — only a provably pointer-free scene gates monitors off.
     private var scenePointerConsumersPossible: Bool {
         (cameraParallaxSettings.enabled
             && cameraParallaxSettings.amount != 0
@@ -672,11 +595,7 @@ extension WPEMetalSceneRenderer {
             || !effectVisibilityScriptInstances.isEmpty
     }
 
-    /// Pushes the NSEvent-monitor gate to the surface: every mouse move wakes the main
-    /// thread while monitors are installed, so they run only when the renderer is
-    /// unsuspended AND the pointer can be consumed. Mirrors `sampleFrameContext`'s discard
-    /// rule (Follow Cursor + click capture both off forces `.inactive`, so the mailbox feed
-    /// is provably unread); `clickCaptureEnabled` is passed explicitly since the mailbox copy may lag onto the main thread.
+    /// `clickCaptureEnabled` is passed explicitly since the mailbox copy may lag onto the main thread.
     private func pushPointerEventMonitoring(clickCaptureEnabled: Bool? = nil) {
         if let clickCaptureEnabled { lastPushedClickCaptureEnabled = clickCaptureEnabled }
         let clickCapture = clickCaptureEnabled
@@ -689,11 +608,7 @@ extension WPEMetalSceneRenderer {
         ))
     }
 
-    /// A pass animates per-frame when its shader samples `g_Time` /
-    /// `g_AudioSpectrum*` — i.e. WPE local effects (`effects/…`) and workshop
-    /// custom shaders (`workshop/…`). The static base shaders (`solidcolor`,
-    /// `genericimage2/4`, `compose`, `copy`) do not, so a scene built only on
-    /// those is genuinely static and may stay on the paused/on-demand path.
+    /// Local `effects/…` and workshop `workshop/…` shaders sample `g_Time` / `g_AudioSpectrum*`; `solidcolor`, `genericimage2/4`, `compose`, `copy` do not.
     static func pipelineHasAnimatedPasses(_ pipeline: WPEPreparedRenderPipeline) -> Bool {
         pipeline.layers.contains { layer in
             layer.passes.contains { prepared in
@@ -703,11 +618,7 @@ extension WPEMetalSceneRenderer {
         }
     }
 
-    /// A pass consumes the system-audio spectrum when its shader text reads
-    /// `g_AudioSpectrum*` — matched case-insensitively, because the runtime resolves frame
-    /// globals through `canonicalNameByLowercased`. With every AUDIOPROCESSING combo at 0 the
-    /// guarded branches are compiled out (the preprocessor keeps disabled `#if` branches in
-    /// the retained source), but a read outside those guards is still live.
+    /// `g_AudioSpectrum*` is matched case-insensitively. Combo 0 compiles guarded branches out, but disabled `#if` branches stay in the retained source, so a read outside those guards is still live.
     static func pipelineRequiresAudioCapture(_ pipeline: WPEPreparedRenderPipeline) -> Bool {
         pipeline.layers.contains { layer in
             layer.passes.contains { prepared in
@@ -723,11 +634,7 @@ extension WPEMetalSceneRenderer {
         }
     }
 
-    /// Lowercased source in. Walks `#if` nesting: a `g_audiospectrum` mention
-    /// counts only when an enclosing conditional is provably compiled out at
-    /// combo 0. Biased toward `true` — the `#else` arm of an audio guard,
-    /// `#ifdef` (the prelude always #defines the combo), and every condition
-    /// that is not exactly `AUDIOPROCESSING` are all treated as live.
+    /// Walks `#if` nesting, live-biased: `#else`, `#ifdef`, and any condition that is not exactly `AUDIOPROCESSING` are treated as live.
     private static func mentionsAudioOutsideAudioGuards(_ loweredSource: String) -> Bool {
         var guardStack: [Bool] = []
         for rawLine in loweredSource.split(separator: "\n", omittingEmptySubsequences: false) {
@@ -762,9 +669,7 @@ extension WPEMetalSceneRenderer {
         return false
     }
 
-    /// Only the exact condition `AUDIOPROCESSING` (a trailing `//` comment
-    /// aside) is provably compiled out at combo 0; `#if FOO /* audio… */`,
-    /// `!AUDIOPROCESSING`, `== 0`, and compound conditions stay live-biased.
+    /// Only the exact condition `AUDIOPROCESSING` (a trailing `//` aside) is compiled out at combo 0; `!AUDIOPROCESSING`, `== 0`, and compound conditions stay live-biased.
     private static func isPlainAudioProcessingCondition(_ condition: Substring) -> Bool {
         var text = condition
         if let comment = text.range(of: "//") { text = text[..<comment.lowerBound] }
@@ -783,8 +688,6 @@ extension WPEMetalSceneRenderer {
                 enableSetNeedsDisplay: !continuous,
                 preferredFramesPerSecond: effectiveFPS
             ))
-            // Restart scene audio that a prior `.suspended` paused. No-op when
-            // audio never started (deferred startup) or is already running.
             soundRuntime?.resume()
         case .suspended:
             // Nil, not false: the next `.quality` transition must re-apply the
@@ -798,10 +701,7 @@ extension WPEMetalSceneRenderer {
             // Eager .tex animations released their atlases in the profile
             // fan-out above; drop our own binding or nothing is actually freed.
             purgeReleasedAnimatedTextureBindings()
-            // The atlas is append-only while live strings change. Suspension is
-            // a GPU-idle boundary, and memory pressure already resolves to this
-            // profile, so discard mesh UVs before releasing their atlas pages.
-            // Resume rebuilds only glyphs used by the current strings.
+            // Discard mesh UVs before releasing their atlas pages. Resume rebuilds only glyphs used by the current strings.
             textMeshRenderer?.releaseCachedResources()
             executor.releaseTransientResources()
         }
@@ -815,8 +715,6 @@ extension WPEMetalSceneRenderer {
 
     func cleanup() {
         didLoad = false
-        // Owner is an actor now; quiesce fire-and-forget from this sync teardown.
-        // It cancels in-flight reload tasks; the discarded Drain isn't awaited.
         Task { [owner = staticTextureReloadTaskOwner] in _ = await owner.quiesce() }
         loadGeneration &+= 1
         finishAllPendingLivePosterCaptures(image: nil)
@@ -849,8 +747,7 @@ extension WPEMetalSceneRenderer {
         particleNormalTextures.removeAll(keepingCapacity: false)
         particleTextureLoadCache.removeAll(keepingCapacity: false)
         textObjects.removeAll(keepingCapacity: false)
-        // `releaseTextTargets` owns the renderer; nil-ing it first here made its
-        // atlas release a no-op.
+        // `releaseTextTargets` owns the renderer; nil-ing it first would make its atlas release a no-op.
         releaseTextTargets()
         transformHostLocalTransformsByID.removeAll(keepingCapacity: false)
         layerAncestorLocalTransformsByID.removeAll(keepingCapacity: false)
@@ -886,17 +783,9 @@ extension WPEMetalSceneRenderer {
         guard didLoad else { return }
         do {
             let textureToPresent: MTLTexture?
-            // nil → present still needs its own command buffer.
-            // Adopt what the LAST present actually drew to. Retrying before the
-            // present would re-read the same unset layer — `nextDrawable()` is
-            // what sizes it — and a static scene pauses after frame one, so a
-            // pre-present retry never gets a second chance.
+            // Adopt what the last present actually drew to. Retrying before present would re-read the same unset layer — `nextDrawable()` is what sizes it — and a static scene would never get a second chance.
             adoptPresentedDrawableSize()
-            // `defer`, not a trailing call: the demote is decided inside
-            // `encodePresent`, and a later throw (a present-pass PSO or encoder
-            // failure) would otherwise skip the drain. On a static scene nothing
-            // requests another tick, so the purge and the forced redraw would
-            // never happen at all.
+            // `defer`, not a trailing call: a later throw would skip the drain, and a static scene would never request another tick.
             defer { adoptPresentSideDemotion() }
             var mergedPresentResult: Bool?
             // `pendingForcedRerender` promotes one static tick into a real
@@ -994,16 +883,10 @@ extension WPEMetalSceneRenderer {
                 }
             }
             didLogFrameFailure = false
-            // A frame can retire the last demand source (a one-shot emitter's final particle
-            // dying, a patch-hidden video releasing): settle the loop as soon as that happens
-            // instead of ticking a finished scene. Dedup'd inside, so steady continuous scenes
-            // pay two bool sweeps. Present retry keeps the link unpaused for the next vsync;
-            // do not `setNeedsRedraw()` here — the render-thread pacer would re-enter `renderFrame()` on this stack.
+            // Do not `setNeedsRedraw()` here — the render-thread pacer would re-enter `renderFrame()` on this stack.
             synchronizeFrameDemand()
         } catch is WPEMetalFrameInFlightBudgetExhausted {
-            // GPU still busy on a prior frame — skip this vsync rather than
-            // block this display's render actor (keeps other displays at full
-            // rate). The previously presented frame stays on screen; not a failure.
+            // GPU still busy on a prior frame — skip this vsync rather than block this display's render actor. Not a failure.
             return
         } catch {
             // Per-frame path: log only the first failure of a streak (resets on
@@ -1016,9 +899,7 @@ extension WPEMetalSceneRenderer {
     }
 }
 
-/// One bit per subsystem that needs the render loop running this instant.
-/// Empty ⇒ the scene is static right now and may sit on the paused/on-demand
-/// path. See `WPEMetalSceneRenderer.frameDemand` for the per-bit semantics.
+/// Empty ⇒ the scene is static right now and may sit on the paused/on-demand path.
 struct WPEFrameDemand: OptionSet, Sendable {
     let rawValue: UInt8
     static let animatedShaders = Self(rawValue: 1 << 0)
@@ -1029,9 +910,6 @@ struct WPEFrameDemand: OptionSet, Sendable {
     static let pointer = Self(rawValue: 1 << 5)
 }
 
-/// Renderer→session mirror of what would do real work under `.quality`, pushed
-/// on change so the App Nap assertion can be released for a playing-but-static
-/// scene without reaching across the render actor synchronously.
 struct WPESceneRuntimeActivity: Equatable, Sendable {
     /// Mirrors `needsContinuousFrames` (false while hibernated/unloaded).
     let producesFrames: Bool

@@ -8,7 +8,6 @@ public enum HTMLOriginKind: String, Codable, Sendable, CaseIterable {
     case workshopImport
 }
 
-/// Per-screen behavior toggles for an HTML wallpaper.
 public struct HTMLConfig: Codable, Equatable, Sendable {
     public var allowJavaScript: Bool = true
     public var allowMouseInteraction: Bool = false
@@ -24,10 +23,8 @@ public struct HTMLConfig: Codable, Equatable, Sendable {
     public var transformTranslateY: Double = 0
     public var transformRotationDegrees: Double = 0
 
-    /// Whether the page is moved from its identity transform. The thresholds live
-    /// here rather than in a view because two surfaces ask the same question —
-    /// the preview bar's control tints itself by it, and the popover shows its
-    /// Reset by it — and a copy in each is a copy that drifts.
+    /// Whether the page is moved from its identity transform; the thresholds live here so
+    /// the surfaces asking cannot drift.
     public var hasActiveTransform: Bool {
         abs(transformScale - 1.0) > 0.001
             || abs(transformTranslateX) > 0.5
@@ -41,7 +38,6 @@ public struct HTMLConfig: Codable, Equatable, Sendable {
     public var useEphemeralStorage: Bool = true
     public var originKind: HTMLOriginKind = .userLocal
 
-    /// Workshop always forces `WKWebsiteDataStore.nonPersistent()`; local follows the toggle.
     public var requiresEphemeralStorage: Bool {
         switch originKind {
         case .workshopImport: return true
@@ -49,9 +45,8 @@ public struct HTMLConfig: Codable, Equatable, Sendable {
         }
     }
 
-    /// Imported Workshop pages are third-party code that arrived over the
-    /// network, so they render with every remote origin denied regardless of the
-    /// opt-in CSP toggle. Content the user authored locally follows the toggle.
+    /// Imported Workshop pages are third-party network code, so every remote origin is
+    /// denied regardless of the CSP toggle; local content follows the toggle.
     public var requiresNetworkIsolation: Bool {
         switch originKind {
         case .workshopImport: true
@@ -170,17 +165,14 @@ public struct HTMLConfig: Codable, Equatable, Sendable {
         maxRetries = min(max(0, decodedRetries), 10)
         cspEnforcementEnabled = try c.decodeIfPresent(Bool.self, forKey: .cspEnforcementEnabled) ?? false
         aggressiveSuspend = try c.decodeIfPresent(Bool.self, forKey: .aggressiveSuspend) ?? false
-        // Lossy: a malformed override must not fail the rest of the wallpaper decode.
         wallpaperEngineProjectProperties = c.decodeLossyStringDictionary(
             forKey: .wallpaperEngineProjectProperties
         ) ?? [:]
-        // Lossy: one malformed project's overrides must not drop every other project's.
         wallpaperEngineProjectPropertiesByProject = c.decodeLossyStringDictionary(
             forKey: .wallpaperEngineProjectPropertiesByProject
         ) ?? [:]
     }
 
-    /// Project-keyed overrides, falling back to the legacy flat map for unmigrated configs.
     public func projectWallpaperEngineProperties(
         forProjectKey projectKey: String?
     ) -> [String: WallpaperEngineProjectPropertyValue] {

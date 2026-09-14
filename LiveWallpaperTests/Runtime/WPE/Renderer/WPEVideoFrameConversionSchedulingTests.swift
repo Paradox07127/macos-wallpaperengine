@@ -5,11 +5,6 @@ import simd
 import Testing
 @testable import LiveWallpaper
 
-/// E2: the NV12→BGRA pass rides the renderer's scene command buffer instead of
-/// committing one of its own, so a decoded frame is published only once that
-/// buffer is committed. These pin the transaction — staging, in-buffer
-/// ordering, retirement timing, multi-source isolation and teardown — not the
-/// colour math (`WPEVideoNV12ConversionTests` owns that).
 @MainActor
 @Suite("WPE video frame conversion scheduling", .serialized)
 struct WPEVideoFrameConversionSchedulingTests {
@@ -33,17 +28,7 @@ struct WPEVideoFrameConversionSchedulingTests {
                 "staging must not touch the working texture — no command buffer ran")
     }
 
-    /// `texture(at:)` hands a staged frame's target to the renderer before the
-    /// conversion filling it has been encoded, so a brand-new `.private` backing
-    /// would be sampled as undefined memory in the one case where the conversion
-    /// encoder fails to be created. Both mm-review models raised this for the
-    /// first frame and for a decoder resolution change — the "NV12 first frame
-    /// only" reading missed the resize.
-    ///
-    /// This pins that every new backing is cleared. It deliberately does NOT
-    /// assert on the bytes: an unwritten `.private` texture may read back as
-    /// zeros anyway, and a byte assertion stayed green when the clear was
-    /// removed — it pinned nothing.
+    /// Do not add a byte assertion here: an unwritten `.private` texture can read back as zeros, so it pins nothing.
     @Test("Every newly allocated working texture is cleared before it can be sampled")
     func newWorkingTextureIsCleared() throws {
         let harness = try Harness.make()
@@ -57,7 +42,6 @@ struct WPEVideoFrameConversionSchedulingTests {
         harness.source.ingestForTesting(pixelBuffer: try Harness.nv12(luma: 120, cb: 115, cr: 145))
         #expect(harness.source.workingTextureClearsForTesting == 1)
 
-        // A decoder resolution change allocates a fresh backing — and clears it.
         harness.source.ingestForTesting(
             pixelBuffer: try Harness.nv12(luma: 200, cb: 90, cr: 160, size: 128),
             drivesFrame: false
@@ -68,8 +52,6 @@ struct WPEVideoFrameConversionSchedulingTests {
         #expect(exposed !== first)
     }
 
-    /// Criterion 1: a scene command buffer can be built and then dropped
-    /// (drawable miss, encode throw, `WPEMetalFrameInFlightBudgetExhausted`).
     @Test("A scene command buffer that never commits leaves the published frame in place")
     func droppedSceneBufferKeepsThePublishedFrame() throws {
         let harness = try Harness.make()
@@ -109,8 +91,6 @@ struct WPEVideoFrameConversionSchedulingTests {
         #expect(!harness.source.hasStagedFrameWork)
     }
 
-    /// Criterion 2: the conversion must be ordered ahead of anything in the
-    /// same buffer that samples the working texture.
     @Test("The conversion is encoded ahead of a same-buffer reader of the working texture")
     func conversionPrecedesSameBufferReaders() throws {
         let harness = try Harness.make()
@@ -125,7 +105,6 @@ struct WPEVideoFrameConversionSchedulingTests {
             pixelBuffer: try Harness.nv12(luma: luma, cb: cb, cr: cr), drivesFrame: false
         )
 
-        // One buffer, in the executor's order: conversion, then a reader.
         let commandBuffer = try #require(harness.queue.makeCommandBuffer())
         harness.source.encodeStagedFrameWork(into: commandBuffer)
         let readbackBuffer = try #require(
@@ -152,9 +131,6 @@ struct WPEVideoFrameConversionSchedulingTests {
                 "same-buffer reader must see the converted frame, got \(sampled)")
     }
 
-    /// Criterion 3: the replaced frame's CV wrappers are handed to a fence only
-    /// once that fence is a committed buffer — `drainRetiredFrames` waits on
-    /// every entry, and waiting on an uncommitted buffer never returns.
     @Test("A replaced frame is fenced at commit, not at staging or at encode")
     func retirementJoinsThePendingListOnlyAtCommit() throws {
         let harness = try Harness.make()
@@ -184,8 +160,6 @@ struct WPEVideoFrameConversionSchedulingTests {
         commandBuffer.waitUntilCompleted()
     }
 
-    /// Criterion 4: each source owns its working texture, so one command buffer
-    /// carrying both conversions cannot cross their frames.
     @Test("Two sources converting in one command buffer keep their own frames")
     func twoSourcesDoNotCrossFrames() throws {
         let first = try Harness.make()
@@ -224,8 +198,6 @@ struct WPEVideoFrameConversionSchedulingTests {
         #expect(aPixel != bPixel, "the two frames must be distinguishable for this test to bite")
     }
 
-    /// Criterion 5: a scene reload lands while a conversion is staged and even
-    /// while one is armed on a buffer that will never be committed.
     @Test("Invalidate with a staged and an armed conversion tears down completely")
     func invalidateWithStagedConversion() throws {
         let harness = try Harness.make()
@@ -238,7 +210,6 @@ struct WPEVideoFrameConversionSchedulingTests {
         let abandoned = try #require(harness.queue.makeCommandBuffer())
         harness.source.encodeStagedFrameWork(into: abandoned)
 
-        // A drain that waited on `abandoned` would never return.
         harness.source.invalidate()
 
         #expect(harness.source.pendingRetirementCountForTesting == 0)
@@ -268,8 +239,6 @@ struct WPEVideoFrameConversionSchedulingTests {
 
     // MARK: - Source-order pins
 
-    /// The runtime tests above drive the three contract calls by hand. This is
-    /// what keeps the executor doing the same thing in the same order.
     @Test("The executor encodes staged conversions into the scene buffer before any pass")
     func executorEncodesConversionsBeforeScenePasses() throws {
         let source = try RepositoryRoot.source(
@@ -288,15 +257,12 @@ struct WPEVideoFrameConversionSchedulingTests {
         #expect(encode.upperBound < firstScenePass.lowerBound,
                 "a scene pass is encoded before the video conversion it may sample")
 
-        // Both scene-buffer commits (async and synchronous) must publish, and
-        // only after committing — a `publishStagedTextureWork()` that ran first
+        // paired == 2 = the async and the synchronous scene-buffer commit; a publish that ran before the commit
         // would hand `drainRetiredFrames` an uncommitted fence.
         let paired = source.components(
             separatedBy: "commandBuffer.commit()\n            publishStagedTextureWork()"
         ).count - 1
         #expect(paired == 2, "expected both scene-buffer commits to be followed by the publish")
-        // The drop path is a `defer`, so it fires on every throw between the
-        // encode and the commit (drawable miss, in-flight budget, encode error).
         #expect(source.contains("source.rollbackStagedFrameWork()"))
         #expect(source.contains("source.commitStagedFrameWork()"))
     }
@@ -314,8 +280,7 @@ struct WPEVideoFrameConversionSchedulingTests {
         }
     }
 
-    /// Brace-matched body of a declaration, so the pins above cannot pass by
-    /// reading a neighbouring function.
+    /// Brace-matched so a pin cannot pass by reading a neighbouring function.
     private static func functionBody(of declaration: String, in source: String) throws -> String {
         let start = try #require(source.range(of: declaration))
         var depth = 0
@@ -339,9 +304,7 @@ struct WPEVideoFrameConversionSchedulingTests {
 
     // MARK: - Harness
 
-    /// A player-free source: a zero-ticket admission keeps `init` on the
-    /// still-frame branch, and a zero-byte file makes the still extract fail, so
-    /// nothing publishes until a test ingests. No AVPlayer, no timing.
+    /// Zero-ticket admission plus a zero-byte file keep `init` on the still-frame branch, so nothing publishes until a test ingests.
     private struct Harness {
         let device: MTLDevice
         let queue: MTLCommandQueue

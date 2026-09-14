@@ -2,9 +2,7 @@ import Foundation
 import Testing
 @testable import LiveWallpaperProWPE
 
-/// A malformed MDAT attachment name whose NUL terminator is missing must fail
-/// fast on the section boundary and degrade to the no-attachment recovery path,
-/// keeping the already-parsed mesh — never scan the rest of the file for a NUL.
+/// Never scan past the declared section end looking for a NUL.
 @Suite("WPEMdlParser MDAT bounds")
 struct WPEMdlParserAttachmentBoundsTests {
 
@@ -48,10 +46,8 @@ struct WPEMdlParserAttachmentBoundsTests {
         #expect(model.bones[0].simulationJSONValue?["rules"]?[2] == .bool(false))
     }
 
-    /// Minimal MDLV0023 single-triangle puppet (no skeleton). Byte-for-byte the
-    /// known-good mesh fixture; the parser reaches attachment parsing after it.
-    /// An index past the vertex table went to the GPU as written: `vertices[vertexID]`
-    /// in the puppet vertex shader read whatever lay beyond the buffer.
+    /// An index past the vertex table would go to the GPU as written: `vertices[vertexID]`
+    /// in the puppet vertex shader reads beyond the buffer.
     @Test("An index outside the vertex table is rejected at parse time")
     func indexBeyondVertexTableIsRejected() {
         #expect(throws: WPEMdlParserError.self) {

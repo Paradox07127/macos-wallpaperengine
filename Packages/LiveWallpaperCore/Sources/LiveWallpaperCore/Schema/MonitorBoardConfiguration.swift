@@ -2,11 +2,8 @@ import Foundation
 
 // MARK: - Monitor widget board configuration
 
-/// The one place the widget grid's dimensions live. A small tile is Apple's 170×170; every
-/// neighbour sits exactly one `gutter` away on BOTH axes, so a large tile is 2×2 cells minus the
-/// gutter it crosses and comes out square. The board used to carry a 16 pt horizontal and a 24 pt
-/// vertical gap (large 356×364), which is what made the grid read as squashed sideways against real
-/// macOS desktop widgets.
+/// A small tile is Apple's 170×170 and every neighbour sits exactly one `gutter` away on BOTH
+/// axes, so a large tile is 2×2 cells minus the gutter it crosses and comes out square.
 public enum MonitorBoardMetrics {
     public static let tileSide: Double = 170
     /// Gap between neighbouring tiles; each tile is inset by half of it.
@@ -28,7 +25,6 @@ public enum MonitorWidgetKind: String, Codable, Sendable, CaseIterable, Identifi
     case processes
     case fleet
     case aiEngine
-    /// Ambient scene of the local sky — an atmosphere, not a readout.
     case weather
 
     public var id: String { rawValue }
@@ -38,7 +34,7 @@ public enum MonitorWidgetKind: String, Codable, Sendable, CaseIterable, Identifi
         .power, .processes, .fleet, .aiEngine, .weather,
     ]
 
-    /// Grid cells matching Apple widget frames (S 1×1 / M 2×1 / L 2×2).
+    /// Matches Apple widget frames.
     public func cellSize(for size: MonitorWidgetSize) -> (columns: Int, rows: Int) {
         switch size {
         case .small: return (1, 1)
@@ -174,18 +170,15 @@ public struct MonitorBoardConfiguration: Codable, Equatable, Sendable {
     public static let currentSchemaVersion = 4
     public static let `default` = MonitorBoardConfiguration()
 
-    /// Renderer-facing clamp for the data-push cadence (0.2…2 Hz), independent
-    /// of what is persisted.
+    /// Renderer-facing clamp (0.2…2 Hz), independent of what is persisted.
     public static func clampedRefreshHz(_ value: Double) -> Double {
         guard value.isFinite else { return 1.0 }
         return min(max(value, 0.2), 2.0)
     }
 
-    /// Selectable refresh intervals in seconds. Deliberately non-uniform: 0.1 s resolution is only
-    /// useful in the sub-2 s range people actually tune, so past 2 s the grid coarsens to whole
-    /// seconds instead of adding 30 stops nobody drags to. The bounds mirror `clampedRefreshHz`
-    /// exactly (0.5 s == 2 Hz, 5 s == 0.2 Hz); 0.5 s is also `DataHub`'s publish throttle, so
-    /// sampling faster than that would be discarded work.
+    /// Selectable refresh intervals in seconds, deliberately non-uniform: 0.1 s steps below 2 s,
+    /// whole seconds above. The bounds mirror `clampedRefreshHz` (0.5 s == 2 Hz, 5 s == 0.2 Hz),
+    /// and 0.5 s is also `DataHub`'s publish throttle, so sampling faster would be discarded work.
     public static let refreshIntervalSteps: [Double] =
         (5...19).map { Double($0) / 10.0 } + [2, 3, 4, 5]
 
@@ -196,9 +189,8 @@ public struct MonitorBoardConfiguration: Codable, Equatable, Sendable {
         return refreshIntervalSteps.min { abs($0 - seconds) < abs($1 - seconds) } ?? 1.0
     }
 
-    /// Seconds-per-sample view over the persisted `refreshHz`. The UI and the
-    /// sampler both speak seconds; Hz stays the stored form so existing boards
-    /// decode unchanged (no schema bump).
+    /// Seconds-per-sample view over the persisted `refreshHz`; Hz stays the stored form so
+    /// existing boards decode unchanged.
     public var refreshIntervalSeconds: Double {
         get { Self.snappedRefreshInterval(1.0 / refreshHz) }
         set { refreshHz = Self.clampedRefreshHz(1.0 / Self.snappedRefreshInterval(newValue)) }
@@ -222,15 +214,9 @@ public struct MonitorBoardConfiguration: Codable, Equatable, Sendable {
         case schemaVersion, widgets, refreshHz, mouseInteractionEnabled, reduceMotionOverride
     }
 
-    /// Always consumes exactly one unkeyed element so a failed placement decode
-    /// (e.g. unknown kind from a newer build) skips that element instead of
-    /// corrupting the rest of the array.
-    ///
-    /// The skip is deliberately silent to the *format* — the bundle schema is
-    /// additive on purpose, so refusing the whole board because one widget is
-    /// from a newer build would lose far more than it saves. It is not silent to
-    /// the log: the widget really is gone from the restored board, which is the
-    /// kind of thing that has to be visible in a bug report.
+    /// Always consumes exactly one unkeyed element so a failed placement decode (e.g. an unknown
+    /// kind from a newer build) skips that element instead of corrupting the rest of the array.
+    /// Silent to the format but not to the log — the widget really is gone from the board.
     private struct LossyPlacement: Decodable {
         let value: MonitorWidgetPlacement?
         init(from decoder: Decoder) {
@@ -258,10 +244,8 @@ public struct MonitorBoardConfiguration: Codable, Equatable, Sendable {
         mouseInteractionEnabled = try c.decodeIfPresent(Bool.self, forKey: .mouseInteractionEnabled) ?? false
         reduceMotionOverride = try c.decodeIfPresent(Bool.self, forKey: .reduceMotionOverride)
 
-        // v4 only ever normalized `gridColumns`, which is gone — the board has
-        // laid out free-form against `MonitorBoardGeometry` (board size ÷ Apple
-        // cell pitch) for a while now. The bump is kept so a re-encoded board
-        // still records the newest schema it has been through.
+        // The bump only records the newest schema a re-encoded board has been through:
+        // v4's `gridColumns` normalization is gone.
         if schemaVersion < 4 {
             schemaVersion = 4
         }
@@ -288,9 +272,8 @@ extension MonitorBoardConfiguration {
         packedPlacements(for: defaultSystemKinds)
     }
 
-    /// Apple-frame cell pitch (schema packs without importing the renderer).
-    /// Square on purpose — see `MonitorBoardMetrics`; a test pins it against
-    /// the renderer's `MonitorBoardGeometry.appleCellPitch`.
+    /// Square on purpose (see `MonitorBoardMetrics`); a test pins it against the renderer's
+    /// `MonitorBoardGeometry.appleCellPitch`.
     static let referenceCellPitch = (
         width: MonitorBoardMetrics.cellPitch, height: MonitorBoardMetrics.cellPitch
     )

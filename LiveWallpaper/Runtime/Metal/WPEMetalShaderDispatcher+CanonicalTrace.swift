@@ -8,9 +8,6 @@ extension WPEMetalShaderDispatcher {
         let textureSlots: [Int]
     }
 
-    /// Static portion of the builtin trace contract. Tests pin total enum
-    /// coverage so a newly added builtin cannot silently disappear from Mac
-    /// oracle traces again.
     static func builtinTraceMetadata(
         for kind: WPEBuiltinShaderKind,
         passShader: String

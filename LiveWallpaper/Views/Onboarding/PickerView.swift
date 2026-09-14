@@ -12,7 +12,6 @@ enum OnboardingImportCopy {
         sceneCapable ? .videoWebAndScene : .videoAndWeb
     }
 
-    /// Same capability gate for recovery copy and import routing (testable without rendering).
     static func sceneCapable(in catalog: FeatureCatalog) -> Bool {
         catalog.isEnabled(.scene)
     }
@@ -27,7 +26,6 @@ enum OnboardingImportCopy {
     }
 }
 
-/// Onboarding source step.
 struct PickerView: View {
     @Environment(ScreenManager.self) private var screenManager
     @Environment(\.featureCatalog) private var featureCatalog
@@ -43,8 +41,7 @@ struct PickerView: View {
     @State private var inlineError: LocalizedStringResource?
     @State private var isDropTargeted = false
     @State private var isImportingScene = false
-    /// Which display an imported file lands on. Only this page needs it — the
-    /// other two cards open a library rather than applying anything.
+    /// Which display an imported file lands on.
     @State private var selectedScreenID: CGDirectDisplayID?
 
     private var sceneCapable: Bool {
@@ -94,7 +91,6 @@ struct PickerView: View {
 
     // MARK: - Subviews
 
-    /// Only import applies a wallpaper; library actions navigate after setup.
     private var header: some View {
         VStack(spacing: DesignTokens.Spacing.md) {
             Text("Setup Complete")
@@ -136,7 +132,6 @@ struct PickerView: View {
         }
     }
 
-    /// Single-display imports use the only available display.
     @ViewBuilder
     private var displayPicker: some View {
         if screenManager.screens.count > 1 {
@@ -198,7 +193,6 @@ struct PickerView: View {
         _ = handleImportedURL(url)
     }
 
-    /// Imports a dropped or selected URL onto the selected display; returns whether accepted.
     @discardableResult
     private func handleImportedURL(_ url: URL) -> Bool {
         clearError()
@@ -242,8 +236,6 @@ struct PickerView: View {
             #endif
 
         case .sceneLibrary:
-            // First run applies one wallpaper; a whole library belongs in the
-            // Workshop pane, reachable after onboarding.
             return fail(OnboardingImportCopy.unsupportedFileTypeMessage(sceneCapable: sceneCapable))
 
         case .unsupported:
@@ -266,7 +258,6 @@ struct PickerView: View {
             defer { if didStartScope { folderURL.stopAccessingSecurityScopedResource() } }
             var didConfigureAny = false
             var presetName: String?
-            // Preserve the service’s localized failure reason.
             var rejection: String?
             for screen in targets {
                 switch await screenManager.importWallpaperEngineProject(at: folderURL, for: screen) {
@@ -310,7 +301,6 @@ struct PickerView: View {
         if inlineError != nil { inlineError = nil }
     }
 
-    /// Uses the selected display, falling back to the first available display.
     private var targetScreens: [Screen] {
         if let selectedScreenID,
            let chosen = screenManager.screens.first(where: { $0.id == selectedScreenID }) {
@@ -320,7 +310,6 @@ struct PickerView: View {
     }
 }
 
-/// Full-width row card (bigger tap target than a grid).
 private struct ActionRowCard: View {
     let icon: String
     let tint: Color

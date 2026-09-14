@@ -129,9 +129,7 @@ struct SceneFailureFlowTests {
         #expect(cause.reason == WPESceneDocumentError.invalidUTF8.localizedDescription)
     }
 
-    /// The page carries three zones now — diagnosis, recovery, and the display's
-    /// own destructive escape — so it has to survive both appearances at the
-    /// narrow width where the zones stop fitting side by side.
+    /// 420 is the narrow width where the page's zones stop fitting side by side.
     @MainActor
     @Test("Failure page lays out in native light and dark appearances", arguments: [CGFloat(420), CGFloat(660)])
     func previewLayout(width: CGFloat) throws {
@@ -169,15 +167,11 @@ struct SceneFailureFlowTests {
                 try png.write(to: destination)
                 print("Scene failure UI snapshot: \(destination.path)")
 
-                // Nothing overflows the width it was given, in either appearance.
                 #expect(host.fittingSize.width <= width)
             }
         }
     }
 
-    /// `ContentView` shows the same view in a sheet for a *historic* failure with
-    /// every callback nil. That path has no recovery row and no display actions,
-    /// so the zones have to collapse instead of leaving empty scaffolding.
     @MainActor
     @Test("A historic failure still reads as a page with no actions to offer")
     func historicFailureLayout() throws {

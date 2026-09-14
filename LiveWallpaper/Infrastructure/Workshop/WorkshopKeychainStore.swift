@@ -3,33 +3,25 @@ import Darwin
 import Foundation
 import Security
 
-/// The login-keychain slot the Steam Web API key lives in, reduced to the four
-/// operations the store needs. Injectable so tests never touch the real
-/// login keychain.
 struct WorkshopKeychainSlot: Sendable {
     enum ReadOutcome: Sendable {
         case found(String)
         case absent
         /// The ACL dialog was refused, or the keychain is locked.
         case denied
-        /// The item is there and macOS agreed to it, but the read failed —
-        /// `errSecDecode`, `errSecParam`. Reported as `absent` until now, which
-        /// sent the reader to Steam for a key they already had.
+        /// The item is there and macOS agreed to it, but the read failed (errSecDecode, errSecParam). Reporting absent would send the reader to Steam for a key they already had.
         case failed(OSStatus)
     }
 
     /// Attribute-only existence probe — never shows the ACL dialog.
     var exists: @Sendable () -> Bool
     var read: @Sendable () -> ReadOutcome
-    /// Adds, or updates an item that is already there.
     var write: @Sendable (String) -> OSStatus
     /// `errSecItemNotFound` is normalised to success: nothing to remove is the
     /// outcome the caller asked for.
     var delete: @Sendable () -> OSStatus
 
-    /// Unchanged since before the 2026-08-12 move to a container file: reusing
-    /// the pair is what keeps an older install's key readable instead of
-    /// orphaning it in the user's keychain.
+    /// Reusing this service/account pair keeps an older install's key readable instead of orphaning it in the user's keychain.
     private static let service = "com.loomscreen.livewallpaper.workshop.webapikey"
     private static let account = "default"
 
@@ -84,17 +76,13 @@ struct WorkshopKeychainSlot: Sendable {
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
             kSecAttrSynchronizable as String: kCFBooleanFalse as Any,
-            // Explicit rather than implied: the data-protection keychain refuses
-            // this build outright (`SecItemAdd` → errSecMissingEntitlement, and
-            // `keychain-access-groups` needs a provisioning profile this project
-            // has no certificate for).
+            // Explicit rather than implied: the data-protection keychain refuses this build (SecItemAdd → errSecMissingEntitlement).
             kSecUseDataProtectionKeychain as String: false
         ]
     }
 }
 
-/// Stores the Steam Web API key in the login keychain. Moved back out of the sandbox container file it lived in from 2026-08-12: the file was plaintext, and the legacy keychain does accept this build's add/read.
-/// The cost is that a legacy-keychain ACL is bound to the calling binary's code-directory hash, so the first read after a Sparkle update prompts once. `hasWebAPIKey` deliberately answers from an attribute-only probe that never triggers that prompt, and reads are left to the moment the key is actually needed.
+/// hasWebAPIKey answers from an attribute-only probe that never triggers the ACL prompt; reads wait until the key is actually needed.
 actor WorkshopKeychainStore {
 
     private static let keyPattern = #"^[A-Fa-f0-9]{32}$"#
@@ -104,27 +92,20 @@ actor WorkshopKeychainStore {
         case osStatus(OSStatus)
         case malformedData
         case ioFailure
-        /// The item is there but macOS would not hand it over. Distinct from
-        /// "no key stored" so the UI does not send the user back to Steam for
-        /// a key they already have.
+        /// The item is there but macOS would not hand it over — distinct from no key stored so the UI does not send the user back to Steam.
         case accessDenied
     }
 
-    /// The 2026-08-12 container file, kept only as a migration source.
+    /// The container file, kept only as a migration source.
     private let fileURL: URL
     private let slot: WorkshopKeychainSlot
 
     /// Sticky record of the last read having been refused, so the settings UI
     /// can say so without performing a read of its own.
     private(set) var readWasDenied = false
-    /// Fingerprint of the key this store last wrote or read back, nil once it
-    /// is gone. Lets `WorkshopServices` tie a Valve verdict to the key that
-    /// earned it without a keychain read of its own (`read` can show the ACL
-    /// dialog; `exists` deliberately cannot).
+    /// Fingerprint of the key this store last wrote or read back; nil once it is gone.
     private(set) var storedKeyFingerprint: String?
 
-    /// The parameters are test seams; production uses the sandbox container's
-    /// Application Support and the real keychain slot.
     init(directory: URL? = nil, slot: WorkshopKeychainSlot = .live) {
         let base = directory ?? FileManager.default.urls(
             for: .applicationSupportDirectory, in: .userDomainMask
@@ -189,30 +170,22 @@ actor WorkshopKeychainStore {
         Self.legacyFileMetadataIsSafe(at: fileURL) || slot.exists()
     }
 
-    /// Copies the container file into the keychain and drops it — but only once
-    /// the keychain verifiably holds the key, so a refused write leaves the key
-    /// where it still works rather than losing it.
+    /// Copy the container file into the keychain and drop it only once the keychain verifiably holds the key — a refused write must leave the key where it still works.
     private func migrateContainerFileIfPresent() throws -> String? {
         guard Self.legacyEntryExists(at: fileURL) else { return nil }
-        // The keychain outranks the file: a save writes the keychain first and
-        // only then drops the file, so whenever both exist the file is the
-        // stale side (a failed removal, a backup restore, a half-written legacy
-        // copy). Migrating it over the keychain resurrected forgotten keys.
+        // The keychain outranks the file: whenever both exist the file is the stale side. Migrating it over the keychain would resurrect forgotten keys.
         if case .found(let stored) = slot.read(), Self.isValidAPIKeyShape(stored) {
             try? FileManager.default.removeItem(at: fileURL)
             return nil
         }
         guard let data = Self.readBoundedLegacyFile(at: fileURL) else {
-            // Never follow a symlink or allocate based on an unbounded legacy
-            // file. Removing a rejected symlink only unlinks this directory
-            // entry; its target is left untouched.
+            // Never follow a symlink or allocate based on an unbounded legacy file. Removing a rejected symlink only unlinks this directory entry.
             try? FileManager.default.removeItem(at: fileURL)
             return nil
         }
         guard let key = String(data: data, encoding: .utf8),
               Self.isValidAPIKeyShape(key) else {
-            // A corrupt leftover used to throw here — before the keychain was
-            // even consulted — shadowing a perfectly valid stored key.
+            // A corrupt leftover must not throw here before the keychain is consulted — that would shadow a valid stored key.
             try? FileManager.default.removeItem(at: fileURL)
             return nil
         }
@@ -222,9 +195,7 @@ actor WorkshopKeychainStore {
         return key
     }
 
-    /// Metadata-only probe used by `hasWebAPIKey` and directly testable without
-    /// opening the user's Keychain. Legacy migration accepts only a small,
-    /// current-user-owned regular file.
+    /// Metadata-only probe: legacy migration accepts only a small, current-user-owned regular file.
     static func legacyFileMetadataIsSafe(
         at url: URL,
         expectedOwner: uid_t = geteuid()
@@ -242,9 +213,7 @@ actor WorkshopKeychainStore {
         return Darwin.lstat(url.path, &metadata) == 0
     }
 
-    /// Opens the already-resolved path without following its final symlink,
-    /// validates the opened descriptor (closing the lstat/open race), and reads
-    /// at most one byte beyond the limit so concurrent growth is rejected too.
+    /// Open without following the final symlink, fstat the descriptor (closes the lstat/open race), and read at most one byte beyond the limit so concurrent growth is rejected too.
     private static func readBoundedLegacyFile(at url: URL) -> Data? {
         let descriptor = Darwin.open(url.path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW)
         guard descriptor >= 0 else { return nil }

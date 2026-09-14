@@ -2,18 +2,10 @@ import AppKit
 import Foundation
 import LiveWallpaperCore
 
-/// On-disk covers for saved bookmarks and schemes: one PNG per entry, named by
-/// the entry's UUID, beside the JSON archives that reference them.
-///
-/// A cover is a still of what the display was actually showing when the entry
-/// was saved, so unlike the computed thumbnails it cannot be regenerated — it
-/// has to outlive the process.
 @MainActor
 final class WallpaperCoverStore {
     static let shared = WallpaperCoverStore()
 
-    /// Decoded covers, so a grid scrolling through 50 tiles does not re-read and
-    /// re-decode PNGs off disk on every appearance.
     private let cache: NSCache<NSString, NSImage> = {
         let c = NSCache<NSString, NSImage>()
         c.countLimit = 128
@@ -48,9 +40,7 @@ final class WallpaperCoverStore {
 
     // MARK: - Write
 
-    /// Returns the stored file name, or nil when the image could not be encoded
-    /// or written — callers keep their existing cover in that case rather than
-    /// recording a name that resolves to nothing.
+    /// Returns the stored file name, or nil when encode/write failed — callers keep their existing cover rather than recording a name that resolves to nothing.
     @discardableResult
     func store(_ image: NSImage, for id: UUID) -> String? {
         guard let data = Self.pngData(from: image) else { return nil }
@@ -72,10 +62,6 @@ final class WallpaperCoverStore {
         try? fileManager.removeItem(at: root.appendingPathComponent(fileName, isDirectory: false))
     }
 
-    /// Deletes covers no surviving entry names. Entries and their covers are
-    /// written by different code paths (a rename never touches the PNG, a failed
-    /// write leaves the name unset), so the archive is the authority and this
-    /// sweeps whatever the archive no longer points at.
     func removeOrphans(keeping liveFileNames: Set<String>) {
         guard let names = try? fileManager.contentsOfDirectory(atPath: root.path) else { return }
         for name in names where !liveFileNames.contains(name) {

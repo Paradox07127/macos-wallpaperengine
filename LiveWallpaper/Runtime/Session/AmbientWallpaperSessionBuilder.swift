@@ -138,7 +138,6 @@ final class AmbientWallpaperSessionBuilder {
     typealias BookmarkRefreshHandler = @MainActor (_ original: Data, _ refreshed: Data) -> Void
     typealias WPEOriginRefreshHandler = @MainActor (_ origin: WPEOrigin, _ refreshed: Data) -> Void
 
-    /// Relocate a dead workshop bookmark via Steam library id lookup.
     typealias WorkshopSourceRelocator = @MainActor (_ workshopID: String) -> Data?
 
     private let bookmarkResolver: SecurityScopedBookmarkResolver
@@ -152,7 +151,6 @@ final class AmbientWallpaperSessionBuilder {
         self.relocateWorkshopSource = relocateWorkshopSource
     }
 
-    /// Lite has no Steam library binding to relocate against.
     static func defaultWorkshopSourceRelocator(_ workshopID: String) -> Data? {
         #if LITE_BUILD
         return nil
@@ -213,7 +211,6 @@ final class AmbientWallpaperSessionBuilder {
         return session
     }
 
-    /// Local HTML preflight (internal for tests without WebKit).
     func refreshingHTMLSource(
         _ source: HTMLSource,
         onBookmarkRefresh: BookmarkRefreshHandler = { _, _ in }
@@ -306,16 +303,13 @@ final class AmbientWallpaperSessionBuilder {
         }
 
         let rendererFrame = CGRect(origin: .zero, size: frame.size)
-        // Metal is the only scene renderer; failure surfaces as loadError.
         guard let device = MTLCreateSystemDefaultDevice() else {
             Logger.warning("Metal scene renderer unavailable on this Mac", category: .screenManager)
             return nil
         }
-        // Main-thread surface first, then render actor; no frames until load.
         let backing = WPEOffMainRenderFlag.backing
         let surface = WPERenderSurface(frame: rendererFrame, device: device)
         let renderActor = WPEDisplayRenderActor(backing: backing)
-        // Pacing: `.renderThread` uses CADisplayLink pacer; `.main` paces MTKView as before.
         let surfaceControl: any WPESurfaceControl
         switch backing {
         case .main:
@@ -352,24 +346,17 @@ final class AmbientWallpaperSessionBuilder {
             return nil
         }
 
-        // Surface owns delivery shim → render actor (keeps renderer `sending`-adoptable).
         let shim = WPERenderSurfaceClientShim(renderActor: renderActor, backing: backing)
         surface.attach(client: shim)
 
         window.orderBack(nil)
 
-        // Start CADisplayLink driver when windowed; `.main` mode keeps MTKView pacing.
         if case .renderThread = backing {
             surface.startDisplayLinkDriver(renderActor: renderActor)
         }
 
-        // Adopt renderer into actor then load; session keeps surface (+ shim) alive.
         let session = SceneWallpaperSession(window: window, renderActor: renderActor, surface: surface)
-        // Frame/audio activity mirror for the App Nap gate. Installed before the handoff (the
-        // renderer must not be touched after adoption); the renderer pushes from its actor, the
-        // session consumes on MainActor. Unstructured MainActor hops aren't FIFO, so deliver
-        // latest-wins through a mailbox — a stale idle can't land after (and overwrite) a newer
-        // active, since the renderer dedups on its side and a lost transition would never be corrected.
+        // Unstructured MainActor hops aren't FIFO, so deliver latest-wins through a mailbox.
         let activityMailbox = OSAllocatedUnfairLock<WPESceneRuntimeActivity?>(initialState: nil)
         renderer.onRuntimeActivityChange = { [weak session] activity in
             activityMailbox.withLock { $0 = activity }
@@ -378,13 +365,10 @@ final class AmbientWallpaperSessionBuilder {
                 session?.noteRendererRuntimeActivity(latest)
             }
         }
-        // One-shot `WPERendererHandoff` (main-built, never touched again); session owns adopt+load task.
         session.startAdoptingRenderer(WPERendererHandoff(renderer: renderer))
         return session
     }
 
-    /// Resolve in-place asset provider + `project.json` root (legacy `.cache` → nil provider).
-    /// Returned provider owns the source security scope for its lifetime.
     func sceneAssets(
         descriptor: SceneDescriptor,
         origin: WPEOrigin?,
@@ -394,7 +378,6 @@ final class AmbientWallpaperSessionBuilder {
     ) -> (provider: (any WPESceneAssetProvider)?, projectRoot: URL)? {
         switch descriptor.assetStorage {
         case .cache:
-            // Prefer fingerprint-validated extracted cache; fall back to in-place import source.
             if fileManager.fileExists(atPath: cacheURL.path) {
                 return (nil, cacheURL)
             }
@@ -439,7 +422,6 @@ final class AmbientWallpaperSessionBuilder {
         }
     }
 
-    /// Resolve source folder from origin bookmark; caller owns security scope.
     private func resolveSourceFolder(
         origin: WPEOrigin?,
         onOriginBookmarkRefresh: @escaping WPEOriginRefreshHandler
@@ -452,7 +434,6 @@ final class AmbientWallpaperSessionBuilder {
         return (resolved.url, resolved.url.startAccessingSecurityScopedResource())
     }
 
-    /// Resolve WPE source owner and carry refreshed bookmark Data back for persistence.
     func refreshingWPEOrigin(
         _ origin: WPEOrigin,
         onOriginBookmarkRefresh: WPEOriginRefreshHandler = { _, _ in }
@@ -491,7 +472,6 @@ final class AmbientWallpaperSessionBuilder {
         return (relocatedOrigin, resolved.url)
     }
 
-    /// In-place provider when a `.cache` extract is gone but the import source still resolves.
     private func cacheFallbackSourceProvider(
         origin: WPEOrigin?,
         fileManager: FileManager,

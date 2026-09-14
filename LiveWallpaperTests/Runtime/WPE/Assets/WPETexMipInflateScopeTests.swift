@@ -4,9 +4,6 @@ import Metal
 import Testing
 @testable import LiveWallpaper
 
-/// W5: the decoder must LZ4-inflate only the mip levels the Metal upload will
-/// actually read, and the uploaded texels must stay byte-identical to what the
-/// inflate-everything decode produced.
 @Suite("WPE .tex mip inflate scope")
 struct WPETexMipInflateScopeTests {
 
@@ -110,8 +107,7 @@ struct WPETexMipInflateScopeTests {
 
     @Test("Streaming payload extraction inflates nothing under any scope")
     func streamingPayloadInflatesNothing() throws {
-        // extractStreamingPayload never reads the mip-inflate scope at all, so
-        // there is nothing to pass here — the test title is about that fact.
+        // extractStreamingPayload 根本不读 mip-inflate scope,所以这里没有可传的。
         let meter = WPETexInflateMeter()
         let tex = Self.animatedTex()
         let payload = try WPETexDecoder.$inflateMeter.withValue(meter) {
@@ -217,8 +213,6 @@ struct WPETexMipInflateScopeTests {
         }
     }
 
-    /// `mipChainOverride` is read from `UserDefaults.standard`; pin it and hand
-    /// back the restore closure for whatever the machine had.
     private static func pinMipChainDefault(_ value: Bool?) -> () -> Void {
         let defaults = UserDefaults.standard
         let key = WPEMetalTextureLoader.mipChainDefaultsKey
@@ -256,9 +250,6 @@ struct WPETexMipInflateScopeTests {
         tex(levels: levelSizes.map { ($0, $0) }, flags: flags)
     }
 
-    /// Single-image TEXV0005/TEXI0001/TEXB0003 with an uncompressed RGBA8888
-    /// chain; each level is filled with a distinct byte so a wrong-level upload
-    /// shows up in the read-back comparison.
     private static func tex(levels: [(Int, Int)], flags: UInt32) -> Data {
         var buffer = Data()
         appendHeader(&buffer, width: levels[0].0, height: levels[0].1, flags: flags)
@@ -280,8 +271,7 @@ struct WPETexMipInflateScopeTests {
         return buffer
     }
 
-    /// TEXB0003 + an MP4 magic payload: `makeVideoPayload`'s `looksLikeMP4Payload`
-    /// route, same shape the existing `WPETexTexturePayloadTests` fixture uses.
+    /// 与 WPETexTexturePayloadTests 的夹具同形,走 `looksLikeMP4Payload` 那条路。
     private static func videoTex() -> Data {
         var buffer = Data()
         appendHeader(&buffer, width: 4, height: 4, flags: 0)

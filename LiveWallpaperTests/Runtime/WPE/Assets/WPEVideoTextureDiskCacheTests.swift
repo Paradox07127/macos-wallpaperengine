@@ -120,8 +120,6 @@ struct WPEVideoTextureDiskCacheTests {
         await cache.release(stored)
         let bucket = stored.deletingLastPathComponent()
 
-        // Force-quitting mid-export leaves one of these behind; the export that
-        // is running right now is writing the other.
         let stale = bucket.appendingPathComponent("\(WPEVideoTextureDiskCache.stripPrefix)stale.mp4")
         let live = bucket.appendingPathComponent("\(WPEVideoTextureDiskCache.stripPrefix)live.mp4")
         try Data(repeating: 1, count: 2048).write(to: stale)

@@ -13,40 +13,25 @@ struct WPEMetalTextureLoader: @unchecked Sendable {
     private let capabilities: WPEMetalTextureCapabilities
     private let uploadQueue: WPEMetalTextureUploadQueue
 
-    /// Corpus profile: ~47% of `.tex` assets ship a pre-baked mip chain, while the upload
-    /// path historically wrote level 0 only (the decoder now inflates only what this decision
-    /// selects). Builtin shaders' samplers are `constexpr` and can't be flag-gated, so enabling
-    /// the chain only benefits transpiled/custom-shader sampling. Read fresh rather than cached: uploads happen once per texture at scene load, never per frame, so this takes effect without restarting.
     static let mipChainDefaultsKey = "WPEMetalMipChainEnabled"
 
-    /// Explicit `WPEMetalMipChainEnabled`, or nil when the user never set it.
     static var mipChainOverride: Bool? {
         UserDefaults.standard.object(forKey: mipChainDefaultsKey) != nil
             ? UserDefaults.standard.bool(forKey: mipChainDefaultsKey)
             : nil
     }
 
-    /// Upload side. Unset defaults ON only while THIS scene actually renders
-    /// scaled: scaled targets sample sources at stronger minification, and
-    /// level-0-only sampling of a mip-shipping texture aliases. A scene whose
-    /// plan declined gains nothing from the extra levels, so it keeps its
-    /// historical level-0 upload.
+    /// Unset defaults ON only while this scene renders scaled: level-0-only sampling of a mip-shipping texture aliases under minification.
     static func uploadsMipChain(scalingActive: Bool) -> Bool {
         mipChainOverride ?? scalingActive
     }
 
-    /// Sampler side, deliberately more permissive than the upload side: a texture with a
-    /// single level samples level 0 whatever the mip filter says, so allowing trilinear costs
-    /// nothing on a scene that uploaded no chain. Must NOT depend on the per-scene plan —
-    /// `customSamplerStateCache` survives reloads, so a plan-dependent descriptor would leak one scene's filtering into the next.
+    /// Must not depend on the per-scene plan: `customSamplerStateCache` survives reloads, so a plan-dependent descriptor would leak one scene's filtering into the next.
     static var allowsMipFiltering: Bool {
         mipChainOverride ?? WPEMetalFXSpatialUpscaler.isExperimentEnabled
     }
 
-    /// First mip level worth uploading under a render-scale cap: the SMALLEST
-    /// decoded level that still covers `maxEdge` on its longest side (levels are
-    /// ordered largest-first). Never scales UP — if even level 0 is below the
-    /// cap, level 0 stays. nil/degenerate caps keep level 0 (bit-identical path).
+    /// Smallest decoded level that still covers `maxEdge` on its longest side (levels are largest-first). Never scales up; nil/degenerate caps keep level 0.
     static func uploadMipStartIndex(mipmaps: [WPETexTextureMipmap], maxEdge: Int?) -> Int {
         WPETexMipInflateScope.startLevel(
             levelSizes: mipmaps.map { (width: $0.width, height: $0.height) },
@@ -54,8 +39,6 @@ struct WPEMetalTextureLoader: @unchecked Sendable {
         )
     }
 
-    /// Decode-side twin of the upload decision below: hand this to the decoder
-    /// so it only inflates the levels this upload will read.
     static func mipInflateScope(maxSourceEdge: Int?) -> WPETexMipInflateScope {
         WPETexMipInflateScope(
             maxSourceEdge: maxSourceEdge,
@@ -73,11 +56,7 @@ struct WPEMetalTextureLoader: @unchecked Sendable {
         self.uploadQueue = uploadQueue
     }
 
-    /// `maxSourceEdge`: when set (static scene-layer textures under MetalFX
-    /// render scaling), the upload starts at the smallest decoded mip level that
-    /// still covers it, instead of always paying level-0 VRAM. Callers whose
-    /// consumers do math on PHYSICAL texture dimensions (particle sprite grids,
-    /// animation atlases) must leave it nil.
+    /// `maxSourceEdge`: when set, upload starts at the smallest decoded mip that still covers it. Callers that do math on physical texture dimensions (particle sprite grids, animation atlases) must leave it nil.
     func makeTexture(
         from payload: WPETexTexturePayload,
         label: String,
@@ -111,11 +90,6 @@ struct WPEMetalTextureLoader: @unchecked Sendable {
         }
     }
 
-    /// Lazy LZ4 streaming source for multi-frame `.tex` animations that
-    /// would otherwise saturate VRAM if every frame were pre-uploaded.
-    /// See `WPETexLazyAnimatedTextureSource` for the on-demand decode +
-    /// sub-rect crop + rotating-texture rationale.
-    // Not `@MainActor`: called on the renderer's actor.
     func makeLazyAnimatedTextureSource(
         from payload: WPETexStreamingPayload,
         label: String,
@@ -124,11 +98,7 @@ struct WPEMetalTextureLoader: @unchecked Sendable {
         try WPETexLazyAnimatedTextureSource(payload: payload, device: device, label: label, colorSpace: colorSpace)
     }
 
-    /// **Invariant**: one MTLTexture per unique `imageID` (the whole atlas), not per-frame
-    /// sub-rect. The particle renderer's sprite-grid math (`parseParticleSpriteSheet`) divides
-    /// atlas pixel dims by `.tex-json` sprite frame dims to recover `cols/rows`, so frames must
-    /// reference the full atlas. Sub-rect metadata is retained on `WPETexAnimatedFrame.sourceSubRect` for shader-aware consumers (sprite-sheet background passes).
-    // Not `@MainActor`: called on the renderer's actor.
+    /// One MTLTexture per unique `imageID` (the whole atlas), not per-frame sub-rect: sprite-grid math divides atlas pixel dims by `.tex-json` frame dims to recover cols/rows.
     func makeAnimatedTextureSource(
         from payload: WPETexTexturePayload,
         label: String,
@@ -138,9 +108,6 @@ struct WPEMetalTextureLoader: @unchecked Sendable {
             throw WPEMetalTextureLoaderError.malformedPayload("missing animation track")
         }
 
-        // Dedup atlas uploads by imageID — mirrors makeAnimationTrack's
-        // mipmapsByImageID cache. Frames sharing a source image reuse
-        // the same MTLTexture instead of paying for redundant uploads.
         var atlasTextures: [Int: MTLTexture] = [:]
         var frames: [WPETexAnimatedFrame] = []
         frames.reserveCapacity(animation.frames.count)
@@ -183,15 +150,8 @@ struct WPEMetalTextureLoader: @unchecked Sendable {
         )
     }
 
-    /// Same `maxSourceEdge` contract as the payload overload: raster decode already
-    /// thumbnails to the cap when given one; this downsample is the fallback if that
-    /// path still handed us a larger image. A failed resample (exotic color space)
-    /// keeps the original — never fatal.
-    ///
-    /// `sourcePixelSize` is the asset's FULL-resolution size, which the caller must
-    /// supply whenever `cgImage` may already be a capped decode: world layout reads it
-    /// back from the registry, so recording the reduced size lays the layer out at a
-    /// fraction of its authored footprint.
+    /// `sourcePixelSize` is the asset's full-resolution size; supply it whenever `cgImage` may already be a capped decode (world layout reads it from the registry).
+    /// Failed resample (exotic color space) keeps the original — never fatal.
     func makeTexture(
         from cgImage: CGImage,
         label: String,
@@ -250,10 +210,7 @@ struct WPEMetalTextureLoader: @unchecked Sendable {
         return context.makeImage()
     }
 
-    /// RG88 is sampled as LUMINANCE_ALPHA (R,R,R,G) for particle glow sprites — but the shake
-    /// effect stores its flow masks as RG88 too, with R = x-displacement and G = y-displacement.
-    /// Swizzling collapses `.g` onto `.r`, destroying the y-flow so the whole composited frame
-    /// is displaced (full-screen tearing, not masked-region motion). Flow/data masks live under `masks/` (`shake_mask_*`); glow sprites never do, so the path name is the reliable discriminator.
+    /// RG88 luminance-alpha swizzle is for particle glow (R,R,R,G). Shake flow masks are also RG88 (R=x, G=y) — swizzling would collapse y-flow. Discriminator: `masks/` in the path.
     static func rg88NeedsLuminanceAlphaSwizzle(isLuminanceAlpha: Bool, label: String) -> Bool {
         guard isLuminanceAlpha else { return false }
         return !label.lowercased().contains("mask")
@@ -274,10 +231,7 @@ struct WPEMetalTextureLoader: @unchecked Sendable {
         guard let level0 = payload.largestMipmap else {
             throw WPEMetalTextureLoaderError.malformedPayload("missing mipmap")
         }
-        // Render-scale cap: start the upload at the smallest decoded level that still covers
-        // the scaled scene output — levels above it are simply not uploaded (that skipped
-        // level 0 is ~75% of the chain's bytes). Data textures are exempt: nearest-sampled
-        // (noInterpolation) content and strip-shaped textures (a 4096×1 LUT) index by texel, and minifying them collapses distinct entries.
+        // Data textures (noInterpolation / strip-shaped, min edge ≤64) are exempt: they index by texel, and minifying collapses distinct entries.
         let isDataTexture = payload.info.noInterpolation
             || min(level0.width, level0.height) <= 64
         let startLevel = isDataTexture
@@ -290,10 +244,7 @@ struct WPEMetalTextureLoader: @unchecked Sendable {
 
         let mapping = try WPEMetalTextureFormatMapper.mapping(
             for: format, capabilities: capabilities, colorSpace: colorSpace)
-        // Only the level-0 payload is guaranteed present; a real chain needs more than one
-        // decoded level before the flag has anything to do. `allSatisfy` covers the one way the
-        // decoder's scope can disagree: `mipChainOverride` is read fresh on both sides, so a
-        // user flipping it mid-load leaves levels without bytes — upload the one level we do have instead of failing the texture.
+        // `allSatisfy` covers decoder/upload disagreeing: `mipChainOverride` is read fresh on both sides, so a mid-load flip can leave levels without bytes — upload the one level we have rather than failing.
         let mipChainEligible = (preserveMipmaps || Self.uploadsMipChain(scalingActive: maxSourceEdge != nil))
             && selectedMipmaps.count > 1
             && selectedMipmaps.allSatisfy { !$0.bytes.isEmpty }
@@ -304,16 +255,12 @@ struct WPEMetalTextureLoader: @unchecked Sendable {
             mipmapped: mipChainEligible
         )
         if mipChainEligible {
-            // The container's chain may be shorter than the full log2 chain
-            // `mipmapped: true` would otherwise imply — bound it to exactly
-            // the levels we have decoded bytes for.
+            // The container's chain may be shorter than the full log2 chain `mipmapped: true` would imply — bound `mipmapLevelCount` to the levels we have decoded bytes for.
             descriptor.mipmapLevelCount = selectedMipmaps.count
         }
         descriptor.usage = [.shaderRead]
         descriptor.storageMode = .shared
-        // RG88 particle glow sprites sample as LUMINANCE_ALPHA → (R, R, R, G): R
-        // luminance broadcast, G alpha falloff (raw `.rg8Unorm` samples (R, G, 0, 1),
-        // rendering opaque — the "red square light" / red-line fog artifacts).
+        // RG88 glow sprites: luminance-alpha swizzle (R,R,R,G). Raw `.rg8Unorm` samples (R,G,0,1) and renders opaque.
         if Self.rg88NeedsLuminanceAlphaSwizzle(isLuminanceAlpha: payload.info.isRG88LuminanceAlpha, label: label) {
             descriptor.swizzle = MTLTextureSwizzleChannels(red: .red, green: .red, blue: .red, alpha: .green)
         }
@@ -322,9 +269,7 @@ struct WPEMetalTextureLoader: @unchecked Sendable {
             throw WPEMetalTextureLoaderError.textureAllocationFailed
         }
         texture.label = label
-        // Logical (image) dims describe the UPLOADED level so the shader UV
-        // crop ratio image/texture stays level-consistent; the authored size
-        // goes into worldWidth/Height for world-layout consumers.
+        // Logical (image) dims describe the uploaded level so the shader UV crop ratio image/texture stays level-consistent; authored size goes to worldWidth/Height.
         let authoredImageWidth = payload.info.imageWidth > 0 ? payload.info.imageWidth : level0.width
         let authoredImageHeight = payload.info.imageHeight > 0 ? payload.info.imageHeight : level0.height
         let levelImageWidth = startLevel == 0
@@ -339,10 +284,7 @@ struct WPEMetalTextureLoader: @unchecked Sendable {
             imageHeight: levelImageHeight,
             clampUVs: payload.info.clampUVs,
             noInterpolation: payload.info.noInterpolation,
-            // Level-0 PHYSICAL dims, not the authored image dims: the world
-            // fallback replaces a direct `texture.width` read in the quad path,
-            // which historically saw the padded physical size — keeping that
-            // exact value is what makes scale=1 bit-identical.
+            // worldWidth/Height are level-0 physical dims (not authored image dims): the quad path's world fallback historically saw the padded physical size; that exact value keeps scale=1 bit-identical.
             worldWidth: level0.width,
             worldHeight: level0.height
         )

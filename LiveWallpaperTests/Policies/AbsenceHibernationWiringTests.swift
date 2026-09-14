@@ -1,11 +1,6 @@
 import Foundation
 import Testing
 
-/// Source contracts for the absence-dwell wiring. The player and view APIs have
-/// behavioural tests of their own, but nothing production-side drove them: every
-/// hibernation test pushes eligibility onto the object directly. Deleting the
-/// `ScreenManager` calls — or moving them back inside `#if !LITE_BUILD` — used to
-/// disable the twenty-second teardown for both SKUs with every test still green.
 @Suite("Absence hibernation wiring contract")
 struct AbsenceHibernationWiringTests {
     private static let observers = "LiveWallpaper/App/ScreenManager+Observers.swift"
@@ -32,9 +27,8 @@ struct AbsenceHibernationWiringTests {
         #expect(body.contains("setHibernationEligible(isAbsenceLikeSuspension)"))
     }
 
-    /// Video and HTML wallpapers ship in both SKUs; only the scene runtime is
-    /// Pro-only. A `#if !LITE_BUILD` around these two calls compiles clean and
-    /// silently drops the feature from Loomscreen.
+    /// Video and HTML ship in both SKUs: a `#if !LITE_BUILD` around these two calls
+    /// compiles clean and silently drops the feature from Loomscreen.
     @Test("The video and HTML calls sit outside the Pro-only block")
     func wiringIsNotGatedOnProOnlyBuilds() throws {
         let body = try Self.resolveAndApplyPerformanceStateBody()
@@ -51,15 +45,11 @@ struct AbsenceHibernationWiringTests {
             beforeGate.contains("as? AmbientWallpaperSession"),
             "HTML hibernation must be wired for Lite too"
         )
-        // Control: the scene session genuinely is Pro-only, so it must NOT appear
-        // before the gate. Without this the assertions above would also pass on a
-        // file that simply dropped the gate altogether.
+        // Control: without this the assertions above would also pass on a file that
+        // simply dropped the gate altogether.
         #expect(!beforeGate.contains("as? SceneWallpaperSession"))
     }
 
-    /// The predicate feeding all three session kinds. Coverage inputs are only
-    /// meaningful while the detector is rescanning, which is why the fallback
-    /// polling flag is part of it rather than a bare hidden/occluded read.
     @Test("The absence predicate keeps its coverage-validity gate")
     func absencePredicateKeepsCoverageGate() throws {
         let body = try Self.resolveAndApplyPerformanceStateBody()

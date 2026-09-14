@@ -1,9 +1,5 @@
 import Foundation
 
-/// Origin policy and bounded transport for the Now Playing layer's two fetchers. Both talk to a fixed
-/// set of third-party endpoints, so every URL that comes *back* from one — an oEmbed `thumbnail_url`,
-/// an iTunes `artworkUrl100`, a redirect — is untrusted input, checked before the request goes out and
-/// again against the response URL (which is what catches a redirect).
 enum NowPlayingNetwork {
     typealias Transport = @Sendable (URLRequest) async throws -> (Data, URLResponse)
 
@@ -63,7 +59,6 @@ enum NowPlayingNetwork {
 }
 
 private final class AllowListRedirectPolicy: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
-    // Stateless: every callback only reads the immutable allow-list.
     func urlSession(
         _ session: URLSession,
         task: URLSessionTask,

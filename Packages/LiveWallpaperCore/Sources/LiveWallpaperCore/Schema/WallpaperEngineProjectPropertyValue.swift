@@ -1,7 +1,6 @@
 import Foundation
 
-/// JSON-compatible value carried by Wallpaper Engine `project.json` user properties.
-/// Web wallpapers receive values as `{ key: { value: ... } }` through
+/// Web wallpapers receive these values as `{ key: { value: ... } }` through
 /// `window.wallpaperPropertyListener.applyUserProperties`.
 public enum WallpaperEngineProjectPropertyValue: Codable, Equatable, Hashable, Sendable {
     case bool(Bool)

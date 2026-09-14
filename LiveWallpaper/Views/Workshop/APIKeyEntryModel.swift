@@ -3,10 +3,6 @@ import LiveWallpaperCore
 import Observation
 import SwiftUI
 
-/// The state machine behind entering a Steam Web API key.
-/// Two surfaces enter the same key — the onboarding/browse sheet and the inline Workshop
-/// settings section — differing only in field layout. Keeping the debounce, shape check, Valve
-/// round-trip and error vocabulary here stops the two from disagreeing about when a key is valid.
 @MainActor
 @Observable
 final class SteamWebAPIKeyEntryModel {
@@ -24,9 +20,8 @@ final class SteamWebAPIKeyEntryModel {
         var saveAPIKey: @Sendable (String) async throws -> Void
         var deleteAPIKey: @Sendable () async throws -> Void
         var refreshAPIKeyStatus: @MainActor @Sendable () async -> Void
-        /// Told the key that was just saved: it passed Valve's validation, so
-        /// a rejection recorded for the same key is lifted (the refresh alone
-        /// cannot see that — the stored fingerprint has not changed).
+        /// Told the key just saved. Lifts a rejection recorded for the same key —
+        /// the refresh cannot: the stored fingerprint has not changed.
         var noteKeyAccepted: @MainActor @Sendable (_ key: String) async -> Void = { _ in }
 
         static func live(services: WorkshopServices) -> Dependencies {
@@ -132,7 +127,6 @@ final class SteamWebAPIKeyEntryModel {
         }
     }
 
-    /// Returns `true` once the key is stored and `hasWebAPIKey` reflects it.
     @discardableResult
     func save() async -> Bool {
         guard !isSaving else { return false }
@@ -164,7 +158,7 @@ final class SteamWebAPIKeyEntryModel {
         do {
             try await dependencies.deleteAPIKey()
         } catch {
-            // Swallowing this left `hasWebAPIKey` true with the UI claiming the
+            // Swallowing this would leave `hasWebAPIKey` true with the UI claiming the
             // key was forgotten — the one state where the user stops looking.
             savingError = String(
                 localized: "Couldn't remove the key: \(error.localizedDescription)",
@@ -206,15 +200,13 @@ final class SteamWebAPIKeyEntryModel {
             )
         case .missingAPIKey, .keychainAccessDenied, .keychainUnreadable, .secureConnectionFailed,
              .networkFailure, .timeout, .http, .responseParseFailure, .schemaMismatch, .cancelled:
-            // Was `default: "Validation failed."`, which covered six causes
-            // including "macOS would not unlock the keychain" and every HTTP
-            // status Steam can answer with.
+            // Not `default:` — it would hide "macOS would not unlock the keychain" and
+            // every HTTP status Steam can answer with behind one message.
             error.causeDescription
         }
     }
 }
 
-/// The links every key-entry surface points at.
 enum SteamWebAPIKeyLinks {
     static let apiKey = URL(string: "https://steamcommunity.com/dev/apikey")!
     static let terms = URL(string: "https://steamcommunity.com/dev/apiterms")!

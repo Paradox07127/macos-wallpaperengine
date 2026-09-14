@@ -3,7 +3,6 @@ import Foundation
 import LiveWallpaperCore
 import Observation
 
-/// Video CIFilter effects + renderer-independent particle/weather overlay.
 @MainActor
 final class WallpaperEffectsCoordinator {
     let weatherService: WeatherReactiveService
@@ -66,10 +65,6 @@ final class WallpaperEffectsCoordinator {
               config.particleEffect != effect else { return }
         config.particleEffect = effect
         saveConfiguration(config)
-        // This switch is half of what `shouldMonitor` weighs, so switching the
-        // overlay off has to be able to stop the fetch — only the weather
-        // toggle used to refresh it, and turning the overlay off left the
-        // hourly poll running for a display drawing nothing.
         refreshWeatherMonitoringState()
         let effect = resolvedParticleEffect(for: config)
         applyParticleEffect(
@@ -90,9 +85,6 @@ final class WallpaperEffectsCoordinator {
         let effect = resolvedParticleEffect(for: config)
         applyParticleEffect(
             effect,
-            // Through the shared helper, not a second copy of the rule: the
-            // last inline duplicate of this drifted and quietly ignored a
-            // switch the user had just flipped.
             density: resolvedParticleDensity(for: config),
             tiltRadians: windTilt(for: effect, config: config),
             to: screen
@@ -117,7 +109,6 @@ final class WallpaperEffectsCoordinator {
         }
     }
 
-    /// Whether live wind leans the particles on this display.
     func setWeatherWind(_ enabled: Bool, for screen: Screen) {
         updateWeatherOption(for: screen) { config in
             guard config.effectConfig.weatherWind != enabled else { return false }
@@ -135,9 +126,7 @@ final class WallpaperEffectsCoordinator {
         }
     }
 
-    /// Both sub-options only ever matter while "match local weather" is on, and
-    /// `applyWeatherEffects` already declines otherwise, so neither needs its
-    /// own guard for that.
+    /// Both sub-options only matter while "match local weather" is on; `applyWeatherEffects` already declines otherwise, so neither needs its own guard for that.
     private func updateWeatherOption(
         for screen: Screen, mutate: (inout ScreenConfiguration) -> Bool
     ) {
@@ -178,18 +167,8 @@ final class WallpaperEffectsCoordinator {
         }
     }
 
-    /// Displays came or went. The weather poll used to be re-evaluated from exactly two
-    /// places — the per-display switch and launch — so unplugging the last weather-reactive
-    /// display left the hourly fetch running unrendered, and plugging one in mid-session left
-    /// it inert (still holding its launch-time `.none`) until the user toggled the switch by
-    /// hand. Only newly-arrived displays get the current weather pushed: this also runs on
-    /// resolution/arrangement changes, where rebuilding a live emitter would be churn for no
-    /// visible difference.
     func screensDidChange(arrivedScreenIDs: Set<CGDirectDisplayID>) {
         guard !isShutdown else { return }
-        // A display that left was released while `screens` still listed it, so the
-        // reconcile in that release kept its panel; this is the first call after
-        // the list shrank.
         environmentOverlay.retainOnly(Set(screensProvider().map(\.id)))
         refreshWeatherMonitoringState()
         for screen in screensProvider() where arrivedScreenIDs.contains(screen.id) {
@@ -206,7 +185,6 @@ final class WallpaperEffectsCoordinator {
         reconcileEnvironmentOverlays()
     }
 
-    /// A Monitor board gained or lost a Weather tile (or its switch flipped).
     func monitorBoardsDidChange() {
         guard !isShutdown else { return }
         refreshWeatherMonitoringState()
@@ -275,7 +253,6 @@ final class WallpaperEffectsCoordinator {
     }
 
     #if DEBUG
-    /// Test-only introspection; no production reader.
     func trackedWorkKeyCount(for screenID: CGDirectDisplayID) -> Int {
         videoEffectsApplier.trackedWorkKeyCount(for: screenID)
     }
@@ -359,8 +336,6 @@ final class WallpaperEffectsCoordinator {
         )
     }
 
-    /// Weather-reactive displays lean on the live intensity; everyone else runs
-    /// the slider as set.
     private func resolvedParticleDensity(for config: ScreenConfiguration) -> Double {
         WeatherReactivePolicy.resolvedParticleDensity(
             userDensity: config.effectConfig.particleDensity,
@@ -370,10 +345,7 @@ final class WallpaperEffectsCoordinator {
         )
     }
 
-    /// How far the wind leans this effect on this display. Zero unless the
-    /// display is weather-reactive, the user asked for wind, and the API
-    /// actually sent a reading — a hand-picked snow effect should not start
-    /// blowing sideways because it happens to be gusty outside.
+    /// Zero unless the display is weather-reactive, the user asked for wind, and the API sent a reading — a hand-picked snow effect should not blow sideways because it is gusty outside.
     private func windTilt(for effect: ParticleEffect, config: ScreenConfiguration) -> Double {
         guard config.effectConfig.weatherReactive, config.effectConfig.weatherWind,
               effect.leansIntoWind,
@@ -393,8 +365,6 @@ final class WallpaperEffectsCoordinator {
     private func applyParticleEffect(
         _ effect: ParticleEffect, density: Double, tiltRadians: Double = 0, to screen: Screen
     ) {
-        // Keep the legacy player state neutral: particles now live in the common
-        // per-display overlay so Video, HTML, Shader, and Scene share one path.
         screen.videoPlayer?.setParticleEffect(.none, density: density)
         guard WeatherReactivePolicy.shouldDrawParticles(
             effect: effect, wallpapersEnabled: isGloballyEnabled()

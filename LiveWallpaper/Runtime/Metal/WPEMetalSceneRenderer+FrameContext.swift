@@ -5,8 +5,6 @@ import MetalKit
 import os
 
 extension WPEMetalSceneRenderer {
-    /// Per-frame inputs shared by the script/particle/encode stages, computed
-    /// once at the top of `renderCurrentFrame`.
     struct FrameContext {
         let uniforms: WPEMetalRuntimeUniforms
         let pointer: SIMD2<Double>
@@ -15,24 +13,14 @@ extension WPEMetalSceneRenderer {
         let parallaxFrame: WPECameraParallaxFrame
     }
 
-    /// Advances the frame clock/parallax smoothing, folds in live audio spectra,
-    /// and derives the pointer frame layer scripts see from the main-thread
-    /// `inputs` snapshot. Touches no AppKit/UI state directly — that is the seam
-    /// that lets frame rendering run off `@MainActor`.
     func sampleFrameContext(inputs: WPEFrameInputs) -> FrameContext {
-        // Pin follow-cursor effects to center when disabled, or when the
-        // global cursor belongs to another display. Click capture stays
-        // independent because Interaction can be enabled without Follow Cursor.
-        // The gate on `mouseInteractionEnabled` (renderer state) stays here; the
-        // snapshot always sampled the pointer, so an inactive gate discards it.
+        // Click capture stays independent because Interaction can be enabled without Follow Cursor. The snapshot always sampled the pointer, so an inactive gate discards it.
         let pointerSample = (mouseInteractionEnabled || inputs.clickCaptureEnabled)
             ? inputs.pointerSample
             : .inactive
         let pointerIsInsideView = pointerSample.isInsideView
         let followPointerIsLive = mouseInteractionEnabled && pointerIsInsideView
         let clickPointerIsLive = inputs.clickCaptureEnabled && pointerIsInsideView
-        // The oracle pins the pointer (self = center, fidelity = the replayed
-        // Windows cursor) so it never enters the trace as ambient state.
         let pointer = oracleFrameOverride?.pointer ?? (followPointerIsLive
             ? pointerSample.position
             : SIMD2<Double>(0.5, 0.5))
@@ -46,10 +34,6 @@ extension WPEMetalSceneRenderer {
             profile: currentProfile,
             pointerPosition: pointer
         )
-        // Freeze wall-clock time and time-of-day to fixed values so two oracle runs
-        // of unchanged code produce byte-identical traces. Applied before parallax
-        // and the audio rebuild below, both of which read `uniforms.time`, so they
-        // inherit the frozen clock.
         if let override = oracleFrameOverride {
             uniforms = WPEMetalRuntimeUniforms(
                 time: override.time,
@@ -66,17 +50,11 @@ extension WPEMetalSceneRenderer {
             time: uniforms.time,
             gain: cameraParallaxGain
         )
-        // Audio-reactive uniforms follow the shared system-audio capture (the
-        // loopback of whatever is playing), not the scene's own sounds — those
-        // are already in the system mix the tap captures. `soundRuntime` stays
-        // a pure player. When capture is off the broker is silent (flat bars).
+        // Audio-reactive uniforms follow the shared system-audio capture, not the scene's own sounds. When capture is off the broker is silent (flat bars).
         if SystemAudioCaptureManager.isCapturing, oracleFrameOverride == nil {
             let audio = SystemAudioCaptureManager.broker.snapshot()
             if audioDebugLogEnabled {
                 audioDiagCounter += 1
-                // Periodic (~every 60 frames) snapshot of what the renderer sees
-                // on the shared audio broker — diagnoses audio-reactive scenes
-                // whose bars don't move.
                 if audioDiagCounter % 60 == 1 {
                     let peakL = audio.left.max() ?? 0
                     let peakR = audio.right.max() ?? 0
@@ -96,10 +74,7 @@ extension WPEMetalSceneRenderer {
             )
         }
         uniforms.cameraParallax = parallaxFrame
-        // Re-apply pointer fields here: the audio path above may have rebuilt
-        // `uniforms` via the stereo initializer, which would otherwise reset
-        // them. `g_PointerPositionLast` tracks motion regardless of click
-        // capture; click state is neutral unless the Interaction toggle is on.
+        // Re-apply pointer fields here: the audio path above may have rebuilt `uniforms` via the stereo initializer, which would otherwise reset them.
         let layerScriptPointerFrame = clickPointerIsLive
             ? inputs.pointerFrame
             : WPEPointerFrame(

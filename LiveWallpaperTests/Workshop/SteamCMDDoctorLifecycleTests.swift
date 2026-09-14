@@ -134,8 +134,6 @@ struct SteamCMDDoctorLifecycleTests {
         }
     }
 
-    /// The inspection now happens in the connector, so there is no checker to
-    /// inject; the rule it fed is tested directly instead.
     private static func inspection(
         sha: String?,
         team: String? = "MXGJJ98X76",
@@ -163,8 +161,7 @@ struct SteamCMDDoctorLifecycleTests {
         #expect(decision.verifiedSHA256 == "identity-1")
     }
 
-    /// A changed SHA is normal (SteamCMD self-updates) — but it must re-earn
-    /// trust, and an attacker-signed replacement must not.
+    /// A changed SHA is normal — SteamCMD self-updates.
     @Test("A changed SHA is re-verified, and a foreign team identifier is refused")
     func changedBinaryIsReverifiedAgainstValve() {
         let valve = SteamCMDDoctorService.evaluateTrust(
@@ -199,9 +196,6 @@ struct SteamCMDDoctorLifecycleTests {
         #expect(decision.verifiedSHA256 == nil, "a binary that is gone must not stay cached as verified")
     }
 
-    /// "I was too busy to look" is not "the binary is bad". The two shared one
-    /// reply shape until 2026-08-02, which made a queued-out inspection read
-    /// as a deleted binary and threw away the cached trust with it.
     @Test("A connector that gave up waiting is not a verdict about the binary")
     func unavailableInspectionKeepsCachedTrust() {
         let busy = SteamCMDBinaryInspection.unavailable("expired while queued")
@@ -218,13 +212,9 @@ struct SteamCMDDoctorLifecycleTests {
         )
         #expect(!decision.didReverify)
 
-        // The other direction: a real absence still clears it.
         #expect(SteamCMDBinaryInspection.missing.unavailableReason == nil)
     }
 
-    /// The argv now lives in the connector and cannot be observed from here,
-    /// but the reading of what codesign prints is shared — and that is the
-    /// part that decides trust.
     @Test("codesign output parses, and a timed-out verify never reads as signed")
     func codesignVerdictParsing() {
         let display = "TeamIdentifier=MXGJJ98X76\nflags=0x10000(runtime)"
@@ -238,13 +228,6 @@ struct SteamCMDDoctorLifecycleTests {
         #expect(!SteamCMDCodeSignatureParser.signatureValid(verifyExitCode: 1, timedOut: false))
     }
 
-    /// The replace-while-queued window, run against a file that really
-    /// changes. The gate moved into the connector with the spawn; this drives
-    /// the same function the connector calls immediately before `Process.run`.
-    /// The digest gate this used to gate execution with is gone: the app
-    /// supplied both the path and the expected digest, so it proved only
-    /// that the app agreed with itself. Hashing survives as the Doctor's
-    /// self-update detector, and that is what is pinned here.
     @Test("A replaced binary reads as a different digest")
     func replacedBinaryHashesDifferently() throws {
         let fm = FileManager.default
@@ -275,14 +258,10 @@ struct SteamCMDDoctorLifecycleTests {
     @Test("Injection-shaped probe argv is refused")
     func probeArgumentAllowlistRefusesInjection() {
         #expect(!SteamCMDProbeArgumentPolicy.isAllowed([]))
-        // Redirecting the install target is a write, not a diagnostic.
         #expect(!SteamCMDProbeArgumentPolicy.isAllowed(["+force_install_dir", "/tmp/x", "+quit"]))
-        // Scripts execute arbitrary directive sequences from a file.
         #expect(!SteamCMDProbeArgumentPolicy.isAllowed(["+runscript", "/tmp/evil.txt"]))
-        // The probe channel must never log into a real account.
         #expect(!SteamCMDProbeArgumentPolicy.isAllowed(["+login", "realuser", "+quit"]))
         #expect(!SteamCMDProbeArgumentPolicy.isAllowed(["+login"]))
-        // Bare words and shell-looking tokens are not SteamCMD directives.
         #expect(!SteamCMDProbeArgumentPolicy.isAllowed(["rm", "-rf", "/"]))
         #expect(!SteamCMDProbeArgumentPolicy.isAllowed(["+quit", ";", "echo", "pwned"]))
         #expect(!SteamCMDProbeArgumentPolicy.isAllowed(["+quit", "+app_update", "431960"]))
@@ -310,9 +289,6 @@ struct SteamCMDDoctorLifecycleTests {
         ))
     }
 
-    /// Everything the three binary probes actually decide on. Any of these
-    /// moving while the app was closed has to cost a real probe run —
-    /// restoring green here is the one way this optimization can lie.
     @Test("Every input the binary probes judge invalidates the stored green")
     func changedInputsRefuseRestore() {
         let stored = Self.fingerprint()
@@ -383,7 +359,6 @@ struct SteamCMDDoctorLifecycleTests {
         let earned = Date(timeIntervalSince1970: 1_700_000_000)
         service.greenFingerprint = Self.fingerprint(recordedAt: earned)
 
-        // A restore: three greens, no fresh inspection behind them.
         for kind in SteamCMDDoctorService.binaryProbeKinds {
             service.setProbe(kind, status: .green(detail: nil), lastRun: earned)
         }
@@ -412,8 +387,7 @@ struct SteamCMDDoctorLifecycleTests {
         service.runScopedInspections[path] = answer
         #expect(await service.inspect(path: path) == answer)
 
-        // SteamCMD rewrites its own executable, so nothing inspected before
-        // a launch may be reused after one.
+        // SteamCMD rewrites its own executable.
         service.runScopedInspections[path] = answer
         _ = await service.launchSteamCMD(
             SteamCMDDoctorService.SteamCMDBinaryExecutionAuthorization(
@@ -423,7 +397,6 @@ struct SteamCMDDoctorLifecycleTests {
         )
         #expect(service.runScopedInspections.isEmpty)
 
-        // And a new run never inherits the previous run's evidence.
         service.runScopedInspections[path] = answer
         await service.runProbe(.workingDirectory)
         #expect(service.runScopedInspections.isEmpty)

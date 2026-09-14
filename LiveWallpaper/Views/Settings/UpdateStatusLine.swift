@@ -2,7 +2,6 @@ import SwiftUI
 import AppKit
 import LiveWallpaperCore
 
-/// Shows update status beneath the app version; actions open Sparkle’s update UI.
 struct UpdateStatusLine: View {
     @State private var updater = SparkleUpdaterController.shared
 
@@ -59,7 +58,6 @@ struct UpdateStatusLine: View {
         )
     }
 
-    /// Available updates show their version instead of the previous check date.
     private var statusDetail: String? {
         guard updater.availableVersion == nil else { return nil }
         guard let date = updater.lastUpdateCheckDate else { return nil }

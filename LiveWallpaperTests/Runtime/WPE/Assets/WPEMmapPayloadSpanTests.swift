@@ -60,8 +60,7 @@ struct WPEMmapPayloadSpanTests {
         for image in payload.compressedImages {
             let mip = try #require(image.payloads.first)
             mip.compressedBytes.withUnsafeBytes { buffer in
-                // Aliasing the container proves the parser did not copy the
-                // compressed payload onto the heap (the P1.2 contract).
+                // 别名到 container 证明 parser 没有把压缩载荷拷到堆上。
                 #expect(buffer.baseAddress! >= containerBase)
                 #expect(buffer.baseAddress! + buffer.count <= containerBase + container.count)
             }
@@ -116,12 +115,10 @@ struct WPEMmapPayloadSpanTests {
         let jsonWindow = try provider.mappedWindow(atRelativePath: "scene.json")
         #expect(jsonWindow.materializedData() == sceneJSON)
 
-        // Both windows share one package mapping (single owner allocation).
         let texBase = texWindow.owner.withUnsafeBytes { $0.baseAddress! }
         let jsonBase = jsonWindow.owner.withUnsafeBytes { $0.baseAddress! }
         #expect(texBase == jsonBase)
 
-        // The window decodes end-to-end.
         let payload = try WPETexDecoder().extractStreamingPayload(span: texWindow).get()
         #expect(payload.compressedImages.count == 1)
 
@@ -170,8 +167,6 @@ struct WPEMmapPayloadSpanTests {
         return header + blob
     }
 
-    /// Minimal TEXV0005 container: TEXB0004 with N uncompressed RGBA8888
-    /// images + a TEXS0002 schedule (multi-frame ⇒ streaming-extractable).
     private func makeStreamingTexContainer(width: Int, height: Int, payloads: [Data]) -> Data {
         var buffer = Data()
         func magic(_ value: String) {

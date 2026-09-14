@@ -3,7 +3,6 @@ import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
-/// Advisory diagnostics. Download eligibility is owned by `SteamCMDDoctorService.downloadBlocker`.
 struct WorkshopDiagnosticsSection: View {
     @Binding var showingExportToast: Bool
 

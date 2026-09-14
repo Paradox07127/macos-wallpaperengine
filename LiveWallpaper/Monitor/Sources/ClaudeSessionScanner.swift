@@ -19,8 +19,6 @@ struct ClaudePIDDescriptor: Equatable {
     var startedAt: Date?
 }
 
-/// Filesystem discovery + process-liveness for Claude Code sessions. All methods
-/// are read-only against the user-granted `~/.claude` root.
 struct ClaudeSessionScanner {
     let rootURL: URL
 
@@ -28,10 +26,7 @@ struct ClaudeSessionScanner {
     /// `startedAt` by more than this — cheap defense against PID reuse.
     private static let pidReuseSlack: TimeInterval = 5
 
-    /// A directory's mtime moves when an entry is added, removed, or renamed, but not when a file inside it
-    /// is appended to — so it may gate re-*listing* the directory and nothing else. Every listed transcript
-    /// is still stat'd on every pass, or a resumed session older than `lookback` would never come back into
-    /// view.
+    /// Directory mtime may gate re-listing only, not appends; every listed transcript is still stat'd each pass.
     private struct DirectoryListing {
         var modifiedAt: Date
         var transcriptPaths: [String]
@@ -41,7 +36,6 @@ struct ClaudeSessionScanner {
     private var cachedProjectDirs: [URL] = []
     private var cachedListings: [URL: DirectoryListing] = [:]
 
-    /// Test seam: `contentsOfDirectory` calls issued since init.
     private(set) var directoryListingCount = 0
 
     init(rootURL: URL) {
@@ -136,10 +130,7 @@ struct ClaudeSessionScanner {
         return candidates
     }
 
-    /// `stat(2)`, not `URLResourceValues`: an `NSURL` memoizes every resource value it's asked for, so
-    /// re-reading a URL held across passes hands back the mtime from when the listing was built — exactly what
-    /// must not be missed when a transcript is being appended to. `stat` also follows symlinks, so a linked
-    /// project directory reports its target's mtime, not the link's (which never moves).
+    /// `stat(2)`, not `URLResourceValues`: NSURL memoizes resource values, so a URL held across passes would miss appends.
     private static func status(ofPath path: String) -> (modifiedAt: Date, sizeBytes: UInt64)? {
         var info = Darwin.stat()
         guard stat(path, &info) == 0 else { return nil }
@@ -150,8 +141,6 @@ struct ClaudeSessionScanner {
 
     // MARK: - PID descriptors
 
-    /// Parse every `sessions/<PID>.json`. Missing dir ⇒ empty (not an error);
-    /// malformed individual files are skipped.
     func loadPIDDescriptors() -> [ClaudePIDDescriptor] {
         let sessionsRoot = rootURL.appendingPathComponent("sessions", isDirectory: true)
         let fm = FileManager.default
@@ -198,8 +187,6 @@ struct ClaudeSessionScanner {
         return map
     }
 
-    /// Liveness for one descriptor: `kill(pid, 0) == 0`, plus a best-effort start
-    /// time cross-check when the OS can supply it.
     func isAlive(_ descriptor: ClaudePIDDescriptor) -> Bool {
         guard descriptor.pid > 0 else { return false }
         if kill(descriptor.pid, 0) != 0 {
@@ -214,8 +201,6 @@ struct ClaudeSessionScanner {
         return abs(actual.timeIntervalSince(recorded)) <= Self.pidReuseSlack
     }
 
-    /// Process start time via `sysctl(KERN_PROC_PID)`. Best-effort — returns nil
-    /// on any failure so callers fall back to the kill(0) result.
     static func processStartTime(pid: Int32) -> Date? {
         var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
         var info = kinfo_proc()

@@ -109,8 +109,6 @@ struct SubscriptionSyncSheet: View {
                     .foregroundStyle(.secondary)
             }
             Spacer(minLength: DesignTokens.Spacing.sm)
-            // Progress is the download queue's, not a second one: this only
-            // reads back the phase that queue already publishes.
             downloadStatus(for: itemID)
         }
         .padding(.horizontal, DesignTokens.Settings.formHorizontalMargin)

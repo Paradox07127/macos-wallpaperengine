@@ -4,8 +4,6 @@ import Foundation
 import LiveWallpaperCore
 import Observation
 
-/// Per-screen WPE import error + generation (fresh import wins over in-flight).
-/// `@Observable` for error UI; generation is `@ObservationIgnored` concurrency bookkeeping.
 @MainActor
 @Observable
 final class WPEImportTracker {
@@ -39,7 +37,6 @@ final class WPEImportTracker {
         !isTerminated && generations[screenID] == generation
     }
 
-    /// Invalidates admitted imports and rejects later applies (lifecycle bit is authority).
     func invalidateForTermination() {
         guard !isTerminated else { return }
         isTerminated = true

@@ -13,8 +13,6 @@ struct AIEngineWidgetView: View {
 }
 
 private struct AIEngineContent: View {
-    /// The tested pure logic lives on the public widget type (see the extension
-    /// at the bottom); the view body only ever calls through this alias.
     private typealias Widget = AIEngineWidgetView
 
     let context: MonitorWidgetContext
@@ -23,14 +21,12 @@ private struct AIEngineContent: View {
     private var system: MonitorSystemSnapshot? { context.snapshot.system }
     private var scale: Design.TypeScale { .init(cellHeight: cellHeight) }
 
-    /// The honest tri-state.
     private var state: Widget.DisplayState {
         Widget.displayState(footprintPresent: system?.aneFootprintPresent)
     }
     /// Whether any process has ANE-attributed memory. This does not imply current execution.
     private var hasANEFootprint: Bool { state == .present }
     private var totalFootprintBytes: UInt64? { system?.aneFootprintBytes }
-    /// The top-k processes by attributed footprint (non-nil iff a footprint exists).
     private var processes: [MonitorANEProcess]? { system?.aneProcesses }
     var body: some View {
         WidgetContainer(
@@ -155,8 +151,6 @@ private struct AIEngineContent: View {
         }
     }
 
-    /// The ranked-list slot both tiers share: the per-process footprint list
-    /// when present, and a quiet empty caption otherwise.
     @ViewBuilder
     private var listOrIdle: some View {
         if let list = processes {
@@ -203,7 +197,6 @@ private struct AIEngineContent: View {
         }
     }
 
-    /// Shows an explicit empty state when sampling succeeds without a footprint.
     private var idlePlaceholder: some View {
         VStack(spacing: 0) {
             Spacer(minLength: 0)
@@ -358,7 +351,6 @@ extension AIEngineWidgetView {
         list.max { $0.footprintBytes < $1.footprintBytes }
     }
 
-    /// Top-k processes ranked by footprint (desc), capped at 5 — the honest per-process layer.
     nonisolated static func rankedProcesses(_ list: [MonitorANEProcess]) -> [MonitorANEProcess] {
         Array(list.sorted { $0.footprintBytes > $1.footprintBytes }.prefix(5))
     }

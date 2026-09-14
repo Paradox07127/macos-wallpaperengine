@@ -549,9 +549,6 @@ struct WPEDisplayRenderActorTests {
         let actor = WPEDisplayRenderActor(label: "test.link.off-actor", backing: .renderThread)
         let pacer = WPERenderThreadFramePacer(surface: StubSurfaceControl(), renderActor: actor)
 
-        // Regression: live-poster continuation work can reach this protocol seam
-        // from a cooperative executor. Direct assumeIsolated used to SIGTRAP
-        // before any of these calls could be delivered.
         pacer.applyPacing(WPERenderPacingUpdate(
             isPaused: false,
             enableSetNeedsDisplay: nil,
@@ -614,10 +611,8 @@ private func synchronousCurrentThreadIdentifier() -> ObjectIdentifier {
     ObjectIdentifier(Thread.current)
 }
 
-/// The tested render thread intentionally sits at utility QoS after cheap frames.
-/// Joining it from the test runner's user-initiated thread creates a checker-only
-/// priority inversion, so teardown is dispatched at the same QoS and awaited
-/// cooperatively by the test task.
+/// Joining the render thread (utility QoS after cheap frames) from the runner's
+/// user-initiated thread trips the priority-inversion checker, so teardown runs at utility.
 private func shutdownAtUtility(_ shutdown: @escaping @Sendable () -> Void) async {
     let done = Counter()
     DispatchQueue.global(qos: .utility).async {

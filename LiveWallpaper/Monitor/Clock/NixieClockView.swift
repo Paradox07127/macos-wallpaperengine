@@ -38,9 +38,8 @@ struct NixieClockView: View {
         .accessibilityValue(Text(now, style: .time))
     }
 
-    // `nonisolated` throughout: `fittedSize` is a pure layout calculation its
-    // callers reach from outside the main actor, and `View` conformance would
-    // otherwise isolate these constants to it.
+    // `nonisolated` throughout: callers reach `fittedSize` from outside the main
+    // actor, and `View` conformance would otherwise isolate these constants.
     private nonisolated static let tubeWidth: CGFloat = 200
     private nonisolated static let tubeHeight: CGFloat = 420
     // The assembly render shares the digit camera and adds 40 points below it for the plinth.

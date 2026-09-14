@@ -1,6 +1,5 @@
 import SwiftUI
 
-/// Search chrome only; callers own submission, debounce, and optional clear behavior.
 public struct LibrarySearchField: View {
     @Binding private var text: String
     private let prompt: LocalizedStringKey
@@ -79,9 +78,6 @@ public struct LibrarySearchField: View {
         .opacity(isDisabled ? 0.5 : 1)
     }
 
-    /// Decorative glyph by default; a borderless submit button when the
-    /// caller provides `onSubmit` (Workshop Browse: clicking the glass skips
-    /// the debounce and searches now).
     @ViewBuilder
     private var magnifier: some View {
         let glyph = Image(systemName: "magnifyingglass")

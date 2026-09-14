@@ -16,10 +16,6 @@ struct WPEMetalSceneRendererTests {
 
     @Test("Only the primary texture slot is mandatory at load")
     func onlyPrimarySlotIsMandatoryAtLoad() throws {
-        // The loader now walks all 8 custom slots, so a pass that declares junk
-        // in a trailing slot (2955378002's "wegwegwegh") would abort the whole
-        // scene load before the encode-time fallback could ever run. Slot 0 IS
-        // the layer, so it stays fatal.
         let device = try #require(MTLCreateSystemDefaultDevice())
         let fixture = try MetalSceneFixture.solidColorScene()
         defer { fixture.cleanup() }
@@ -125,10 +121,6 @@ struct WPEMetalSceneRendererTests {
             device: device
         )
         defer { renderer.cleanup() }
-        // Effect passes routinely read the previous target in slot 0. That
-        // reference is not an external file, so it is dropped by the
-        // external-only filter — and whichever auxiliary slot survived first
-        // inherited "index 0 means primary" and became load-fatal.
         let pass = WPERenderPass(
             id: "1.0",
             phase: .effect(file: "effects/x/effect.json"),
@@ -661,9 +653,6 @@ struct WPEMetalSceneRendererTests {
         )
         defer { session.cleanup() }
 
-        // A visible, playing, quality-profile scene must not acquire the global
-        // Core Audio process-tap lease unless its document explicitly opts into
-        // audio processing. This false branch is the privacy/resource boundary.
         session.updateSystemAudioCaptureRequirement(false)
         #expect(demand.consumerCount == 0)
         #expect(demand.retainCount == 0)
@@ -676,8 +665,6 @@ struct WPEMetalSceneRendererTests {
         #expect(demand.consumerCount == 0)
         #expect(!session.isPlaying)
 
-        // Clearing the preview override must not defeat a suspended system
-        // policy or a manual pause.
         session.applyPerformanceProfile(.suspended)
         session.clearPreviewPerformanceOverride()
         #expect(demand.consumerCount == 0)
@@ -1305,12 +1292,6 @@ struct WPEMetalSceneRendererTests {
         #expect(!diagnostic.errorDescription.lowercased().contains("shader"))
     }
 
-    /// `performLoad` builds the render graph and pipeline BEFORE it uploads
-    /// textures, so a texture failure lands on a renderer that already owns
-    /// them — plus, further in, video decoders, particle buffers and text
-    /// atlases. `didLoad = false` then makes all of it unreachable: no tick
-    /// samples it, and `hibernate()` refuses to collect it (`guard didLoad`), so
-    /// it lived until the user retried or switched wallpaper.
     @Test("A failed load tears its partial scene down instead of stranding it")
     func failedLoadRetiresPartialScene() async throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
@@ -1329,16 +1310,12 @@ struct WPEMetalSceneRendererTests {
             try await renderer.load()
         }
 
-        // These two specifically: `performLoad` assigns them before it uploads
-        // textures, so they are the only state this fixture proves was published
-        // and then collected. Asserting `particleSystems.isEmpty` or
-        // `outputTexture == nil` here would pass with or without the teardown —
-        // this scene throws before either is ever set.
+        // Only these two: this scene throws before `particleSystems` or
+        // `outputTexture` are ever set, so asserting those would pass either way.
         #expect(renderer.renderGraph == nil)
         #expect(renderer.renderPipeline == nil)
-        // The teardown resets the tracer and drops the snapshot the failure
-        // report reads, so the diagnostics have to be produced BEFORE it runs.
-        // Reordering them silently blanks every scene-failure message.
+        // Diagnostics must be produced before the teardown, which resets the
+        // tracer and drops the snapshot: reordering would blank every failure message.
         #expect(renderer.loadDiagnostics != nil)
     }
 
@@ -1432,7 +1409,6 @@ struct WPEMetalSceneRendererTests {
         renderer.setFrameRateCeiling(15)
         #expect(mtkView.preferredFramesPerSecond == 15)
 
-        // A nonsense ceiling still has to leave a drivable link.
         renderer.setFrameRateCeiling(0)
         #expect(mtkView.preferredFramesPerSecond == 1)
     }
@@ -1455,7 +1431,6 @@ struct WPEMetalSceneRendererTests {
         #expect(renderer.pendingAudioMuted == true)
         #expect(renderer.pendingAudioVolume == 0.4)
 
-        // Idempotent: repeating the same calls leaves the seeded state unchanged.
         renderer.setAudioMuted(true)
         renderer.setAudioVolume(0.4)
         #expect(renderer.pendingAudioMuted == true)
@@ -1490,8 +1465,6 @@ struct WPEMetalSceneRendererTests {
 
     @Test("A shader-only g_AudioSpectrum scene demands system audio capture")
     func shaderOnlyAudioSpectrumSceneDemandsCapture() async throws {
-        // GitHub #133: most workshop scenes never set `supportsaudioprocessing`
-        // and have no scripts — the audio response lives in shader uniforms.
         let device = try #require(MTLCreateSystemDefaultDevice())
         let fixture = try MetalSceneFixture.audioSpectrumEffectScene()
         defer { fixture.cleanup() }
@@ -1530,8 +1503,6 @@ struct WPEMetalSceneRendererTests {
 
     @Test("A scene whose only audio consumer is a particle emitter demands capture")
     func audioResponsiveParticleSceneDemandsCapture() async throws {
-        // No audio shader, no script, no authored flag — the emitter's
-        // audioprocessingmode is the sole reason capture must run.
         let device = try #require(MTLCreateSystemDefaultDevice())
         let fixture = try MetalSceneFixture.audioResponsiveParticleScene()
         defer { fixture.cleanup() }
@@ -1607,8 +1578,6 @@ struct WPEMetalSceneRendererTests {
 
     @Test("AUDIOPROCESSING == 0 does not veto a read outside the guard")
     func audioCapturePredicateComboZeroUnguardedReadStillCaptures() {
-        // The [COMBO] annotation alone injects AUDIOPROCESSING=0 into comboValues;
-        // the unguarded read below stays compiled in regardless.
         let pipeline = Self.audioPredicatePipeline(
             fragmentSource: """
             // [COMBO] {"combo":"AUDIOPROCESSING","default":0}
@@ -1638,8 +1607,6 @@ struct WPEMetalSceneRendererTests {
 
     @Test("A lowercase g_audiospectrum spelling still requires capture")
     func audioCapturePredicateLowercaseSpectrumSpelling() {
-        // The runtime resolves frame globals case-insensitively
-        // (canonicalNameByLowercased), so this spelling receives live data.
         let pipeline = Self.audioPredicatePipeline(
             fragmentSource: "uniform float g_audiospectrum32left[32];\nvoid main() {}"
         )
@@ -1676,8 +1643,6 @@ struct WPEMetalSceneRendererTests {
 
     @Test("Whitespace after # does not unbalance the guard walk")
     func audioCapturePredicateWhitespaceEndifKeepsLaterReadLive() {
-        // `# endif` must pop the guard, or the unguarded read below is
-        // wrongly judged compiled-out.
         let pipeline = Self.audioPredicatePipeline(
             fragmentSource: """
             #if AUDIOPROCESSING
@@ -2270,8 +2235,6 @@ private struct MetalSceneFixture {
         )
     }
 
-    /// One drawable emitter whose only audio hookup is the emitter's own
-    /// `audioprocessing*` fields — no audio shader, script, or authored flag.
     static func audioResponsiveParticleScene(audioFields: Bool = true) throws -> MetalSceneFixture {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("WPEMetalSceneRenderer-\(UUID().uuidString)", isDirectory: true)
@@ -2525,9 +2488,6 @@ struct WPEHoverHitRectTests {
         )
     }
 
-    /// 3146703458's song list: authored origins are Y-UP (bottom-left), the pointer
-    /// arrives Y-DOWN, so an unconverted ortho centre inverted every hover — the top
-    /// entry highlighted the bottom one.
     @Test("Orthographic hover centre converts the authored Y-up origin to pointer space")
     func orthographicHoverCentreConvertsAuthoredYUpOrigin() throws {
         let scene = CGSize(width: 3840, height: 2160)
@@ -2541,7 +2501,6 @@ struct WPEHoverHitRectTests {
         #expect(rect.center == SIMD2<Double>(2061, 260))
         #expect(rect.half.x == 213.5)
 
-        // A layer authored near the BOTTOM must land near the bottom, not the top.
         let low = try #require(WPEMetalSceneRenderer.hoverHitRect(
             geometry: geometry(origin: SIMD3<Double>(100, 200, 0), size: CGSize(width: 427, height: 113)),
             sceneSize: scene,
@@ -2550,7 +2509,6 @@ struct WPEHoverHitRectTests {
         #expect(low.center.y == 1960)
     }
 
-    // Control: the perspective branch already converted, and must not change.
     @Test("Perspective hover centre keeps its existing conversion")
     func perspectiveHoverCentreKeepsExistingConversion() throws {
         let scene = CGSize(width: 3840, height: 2160)
@@ -2577,10 +2535,8 @@ struct WPEHoverHitRectTests {
 
 @Suite("WPE particle host origin delta")
 struct WPEParticleHostOriginDeltaTests {
-    /// 3509243656's `MAIN 0-1` and 3448877775 drive a particle host's origin from a
-    /// script. The delta rides `projection.padding`, the same Y-up channel as the
-    /// parallax offset, and both inputs are authored Y-up — so a host moving UP must
-    /// move its particles UP. Negating Y sent them the opposite way.
+    /// The delta rides `projection.padding`, the same Y-up channel as the parallax
+    /// offset; both inputs are Y-up, so Y is not negated.
     @Test("Host moving up moves its particles up")
     func hostMovingUpMovesParticlesUp() {
         let delta = WPEMetalSceneRenderer.particleHostOriginDelta(
@@ -2599,7 +2555,6 @@ struct WPEParticleHostOriginDeltaTests {
         #expect(delta == SIMD2<Float>(0, -200))
     }
 
-    // Control: X was always correct and must stay untouched.
     @Test("Horizontal delta passes through unchanged")
     func horizontalDeltaPassesThroughUnchanged() {
         let delta = WPEMetalSceneRenderer.particleHostOriginDelta(

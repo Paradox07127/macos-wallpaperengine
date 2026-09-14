@@ -3,7 +3,6 @@ import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
-/// Shares key validation and editing with Settings; the login keychain entry does not sync to iCloud.
 struct SteamWebAPIKeyEntrySheet: View {
     let services: WorkshopServices
     let onSaved: () -> Void
@@ -52,7 +51,6 @@ struct SteamWebAPIKeyEntrySheet: View {
 
 // MARK: - Shared editor
 
-/// Shared key field, source guidance and validation status.
 struct SteamWebAPIKeyEditor: View {
     @Bindable var model: SteamWebAPIKeyEntryModel
     /// Off inside a sheet, whose footer bar carries the primary action instead.
@@ -99,10 +97,8 @@ struct SteamWebAPIKeyEditor: View {
     }
 }
 
-/// The masked field plus its reveal button.
-/// An ordinary bordered field, not a `.plain` one dressed in a hand-drawn background: inside a
-/// `Form` the plain style inherits the row's trailing alignment, pushing the text to the right
-/// edge and leaving the placeholder sitting under it instead of clearing on the first keystroke.
+/// Bordered, not `.plain`: inside a `Form` the plain style inherits the row's
+/// trailing alignment, pushing text right and leaving the placeholder under it.
 struct SteamWebAPIKeyField: View {
     @Bindable var model: SteamWebAPIKeyEntryModel
     let onSubmit: () -> Void

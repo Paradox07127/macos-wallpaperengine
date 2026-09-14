@@ -54,9 +54,8 @@ struct MarqueeMetricsTests {
             "Packages/LiveWallpaperCore/Sources/LiveWallpaperCore/UI/Components/MarqueeOnHover.swift"
         )
 
-        // Without `fixedSize` the visible copy stays clamped to the row, so the
-        // crawl slides the *truncated* string and the tail never appears. That
-        // was the first version's bug, and no amount of metric testing sees it.
+        // Without `fixedSize` the visible copy would stay clamped to the row, so the crawl
+        // would slide the truncated string and the tail would never appear.
         guard let visible = source.range(of: "if shouldScroll {"),
               let rest = source.range(of: "} else {", range: visible.upperBound..<source.endIndex) else {
             Issue.record("Could not find the scrolling branch")
@@ -66,15 +65,12 @@ struct MarqueeMetricsTests {
         #expect(scrollingBranch.contains(".fixedSize(horizontal: true, vertical: false)"))
         #expect(scrollingBranch.contains(".offset(x: offset)"))
 
-        // The base keeps truncating, which is what pins the row width an overlay
-        // is then free to overflow, and it goes invisible exactly while the
-        // overlay exists — the overlay and the measuring copies are mounted only
-        // on hover, so at rest the base *is* the visible label.
+        // The base keeps truncating, which pins the row width the overlay overflows, and it
+        // goes invisible exactly while the overlay exists; at rest the base is the visible label.
         #expect(source.contains(".truncationMode(truncationMode)\n            .opacity(isHovering ? 0 : 1)"))
         #expect(source.contains("if isHovering { visible(content) }"))
-        // Measurement is `onGeometryChange`, not a GeometryReader publishing into
-        // a PreferenceKey that has to be reduced on every layout pass. Matched on
-        // the declaration forms so the prose explaining the change doesn't trip it.
+        // Matched on the declaration forms so the prose explaining the change doesn't trip
+        // the negative assertions.
         #expect(!source.contains("GeometryReader {"))
         #expect(!source.contains(": PreferenceKey"))
         #expect(source.contains(".onGeometryChange(for: CGFloat.self"))

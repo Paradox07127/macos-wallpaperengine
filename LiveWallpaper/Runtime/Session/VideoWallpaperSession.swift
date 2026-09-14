@@ -27,17 +27,10 @@ final class VideoWallpaperSession: WallpaperRuntimeSession,
         WallpaperVideoPlayer
     ) -> Bool
     private let retireEffectsWork: @MainActor (WallpaperVideoPlayer) -> Void
-    /// Single source of truth for session-durable user play intent (policy
-    /// suspend never clears it). Self-built so an independently constructed
-    /// session stands alone; `ScreenManager` swaps in the screen's shared
-    /// machine via `adoptPlaybackStateMachine` on install.
     var playbackMachine = WallpaperPlaybackStateMachine()
     var userIntendsToPlay: Bool { playbackMachine.userIntendsToPlay }
-    /// Last policy profile; manual play re-derives effective state from this + intent.
     private var currentProfile: WallpaperPerformanceProfile = .quality
-    /// Manual pause is not an absence: the user may unpause any moment, so it
-    /// keeps the player warm for its own much longer dwell instead of reusing the
-    /// absence constant. Mirrors `SceneWallpaperSession.userPauseHibernationDelay`.
+    /// Manual pause is not an absence; uses its own longer dwell, not the absence constant.
     private let userPauseHibernationDelay: Duration
     /// Own slot. The player has a single eligibility flag driven by the absence
     /// signal, and an absence-false push must not cancel this countdown.
@@ -45,13 +38,9 @@ final class VideoWallpaperSession: WallpaperRuntimeSession,
     /// Last absence eligibility pushed by `ScreenManager`, kept so lifting the
     /// manual-pause override restores the real value instead of inventing one.
     private var absenceHibernationEligible = false
-    /// True once the manual-pause dwell has handed the player to deep
-    /// hibernation. Folded into suspend depth and eligibility so a policy
-    /// refresh or an absence push cannot wake a wallpaper the user still paused.
+    /// True once the manual-pause dwell has handed the player to deep hibernation. Folded into suspend depth so a policy refresh cannot wake it.
     private var isManualPauseHibernating = false
-    /// Latest critical-pressure state pushed by `ScreenManager`. Held as state,
-    /// not consumed as a one-shot: every eligibility push re-derives from it, so
-    /// a routine policy refresh cannot cancel a teardown the emergency started.
+    /// Held as state, not a one-shot: every eligibility push re-derives from it, so a routine refresh cannot cancel an emergency teardown.
     private var criticalMemoryPressureActive = false
     private(set) var runtimeError: WallpaperRuntimeError? {
         didSet {
@@ -60,7 +49,6 @@ final class VideoWallpaperSession: WallpaperRuntimeSession,
         }
     }
     var onRuntimeErrorChange: (@MainActor () -> Void)?
-    /// In-session retry rebinds playback-state observation to the replacement player.
     var onVideoPlayerReplacement: (@MainActor (
         WallpaperVideoPlayer,
         WallpaperVideoPlayer
@@ -196,16 +184,12 @@ final class VideoWallpaperSession: WallpaperRuntimeSession,
         if userIntendsToPlay {
             isManualPauseHibernating = false
         } else if player?.isHibernated == true {
-            // An absence hibernate that completed while the user had this
-            // paused stays down on wake: rebuilding a paused pipeline only for
-            // the manual-pause dwell to tear it down again is wasted decode.
+            // An absence hibernate that completed while paused stays down on wake: rebuilding only for the pause dwell to tear it down is wasted decode.
             isManualPauseHibernating = true
         }
         // Particles ride the policy profile only; a manual pause leaves them running.
         player?.setParticleEffectsSuspended(profile == .suspended)
         // Resource depth only — play/pause below stays the sole owner of intent.
-        // A manual pause stays warm for `userPauseHibernationDelay`, after which
-        // `pauseDwell` sets `isManualPauseHibernating` and folds in here.
         player?.setSuspended(profile == .suspended || isManualPauseHibernating)
         // After the suspend: the player only arms its own dwell while suspended.
         player?.setHibernationEligible(hibernationTriggersArmed)
@@ -217,53 +201,36 @@ final class VideoWallpaperSession: WallpaperRuntimeSession,
         reconcileManualPauseHibernation()
     }
 
-    /// Absence-dwell teardown; the player owns the countdown and the still frame.
-    /// A manual-pause hibernation holds eligibility true through an absence-false
-    /// push — the two triggers share the player's single dwell slot.
+    /// Manual-pause hibernation holds eligibility through an absence-false push; both share one dwell slot.
     func setHibernationEligible(_ eligible: Bool) {
         absenceHibernationEligible = eligible
         player?.setHibernationEligible(hibernationTriggersArmed)
     }
 
-    /// The player owns a single eligibility flag, so every push site has to
-    /// OR-fold all of the independent triggers into it. Pushing a bare absence
-    /// value is how a manual-pause teardown used to get cancelled mid-flight;
-    /// the pressure trigger has exactly the same shape.
+    /// OR-fold every trigger into the player's single eligibility flag; a bare absence push would cancel a manual-pause teardown.
     private var hibernationTriggersArmed: Bool {
         absenceHibernationEligible || isManualPauseHibernating || criticalMemoryPressureActive
     }
 
-    /// Releases the player, looper items, decode pool and `lwmem://` mapping now rather than
-    /// behind a dwell, by reusing the manual-pause handover instead of a second teardown path.
-    /// That path also carries the fall-back guard: `hibernateNow` re-validates eligibility,
-    /// suspension and `lifecycleGeneration` *after* its still-frame await, so a clear landing
-    /// mid-teardown wins.
+    /// Immediate teardown reuses the manual-pause handover so hibernateNow can still lose to a mid-teardown clear.
     func setCriticalMemoryPressureActive(_ active: Bool) {
         criticalMemoryPressureActive = active
         guard active else {
-            // Falling back must not invent an eligibility value: re-fold from
-            // live state so absence / manual pause decide again, and so a
-            // countdown this signal armed is cancelled in the same turn.
+            // Falling back must re-fold live state, not invent eligibility, so a countdown this signal armed is cancelled in the same turn.
             player?.setHibernationEligible(hibernationTriggersArmed)
             return
         }
         applyImmediateCriticalHibernation()
     }
 
-    /// Shared by `setCriticalMemoryPressureActive(true)` and `retry()`: pushes the immediate
-    /// teardown rather than `applyPerformanceProfile`'s normal dwelled push. `retry()` calls
-    /// this after installing its replacement player, so a player swapped in mid-critical-pressure
-    /// goes down right away instead of riding out a full `hibernationDelay` in an emergency.
+    /// Immediate teardown, not the dwelled push, so a player swapped in mid-critical-pressure does not ride out hibernationDelay.
     private func applyImmediateCriticalHibernation() {
         guard criticalMemoryPressureActive, currentProfile == .suspended, let player else { return }
         player.setSuspended(true)
         player.setHibernationEligible(true, immediately: true)
     }
 
-    /// Second hibernatable class, mirroring `SceneWallpaperSession`: a paused
-    /// wallpaper is not an absence, so it counts down in its own slot and never
-    /// touches the absence one. Called from every profile fold; the dwell's slot
-    /// guard makes repeats idempotent instead of restarting the countdown.
+    /// User-paused is not an absence; own dwell, never the absence slot. Repeats are idempotent.
     private func reconcileManualPauseHibernation() {
         guard !userIntendsToPlay, player != nil, !isManualPauseHibernating else {
             pauseDwell.cancel()
@@ -278,10 +245,7 @@ final class VideoWallpaperSession: WallpaperRuntimeSession,
         }
     }
 
-    /// Hands the paused player into the deep-hibernation path it already owns.
-    /// Immediate, not dwelled: `userPauseHibernationDelay` is the whole wait,
-    /// and letting the player's absence dwell run again on top of it released a
-    /// paused video that much later than a paused scene.
+    /// Immediate, not dwelled: userPauseHibernationDelay is the whole wait; the player's absence dwell on top would release later than a paused scene.
     private func hibernateForManualPause() -> Bool {
         guard !userIntendsToPlay, let player else { return true }
         isManualPauseHibernating = true
@@ -352,10 +316,7 @@ final class VideoWallpaperSession: WallpaperRuntimeSession,
         // The replacement is built `startsHidden`, so it must be ordered back here.
         replacement.orderWindowBack()
         runtimeError = replacement.runtimeError
-        // Before the routine push below: `AbsenceDwell.arm` is a no-op once a
-        // dwell already occupies the slot, so a dwelled push landing first
-        // would claim it at the full delay and make the immediate arm here
-        // silently do nothing.
+        // Apply immediate hibernation before the routine push: AbsenceDwell.arm is a no-op once a dwell occupies the slot.
         applyImmediateCriticalHibernation()
         applyPerformanceProfile(currentProfile)
         retireEffectsWork(oldPlayer)
@@ -382,7 +343,6 @@ final class VideoWallpaperSession: WallpaperRuntimeSession,
         }
     }
 
-    /// Install prepared retry player and rebind Screen observer in the same MainActor turn.
     @discardableResult
     func installPreparedRetryPlayer(
         _ replacement: WallpaperVideoPlayer,
@@ -404,9 +364,7 @@ final class VideoWallpaperSession: WallpaperRuntimeSession,
     func cleanup() {
         pauseDwell.cancel()
         guard let currentPlayer = player else { return }
-        // Clear ownership before retirement callback so a
-        // re-entrant cleanup remains idempotent. Effects work must be retired
-        // before the player tears down its composition/item state.
+        // Clear ownership before the retirement callback so re-entrant cleanup stays idempotent.
         player = nil
         currentPlayer.onError = nil
         retireEffectsWork(currentPlayer)

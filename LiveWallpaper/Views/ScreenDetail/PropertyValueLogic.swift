@@ -3,7 +3,6 @@ import CoreGraphics
 import Foundation
 import LiveWallpaperCore
 
-/// Shared value logic for the web (`WPEProjectCustomSettingsCard`) and scene (`WPESceneCustomSettingsCard`) settings inspectors: slider normalization, number formatting, color codecs, and default comparison.
 enum PropertyValueLogic {
     typealias Property = WallpaperEngineProjectPropertySchema.Property
 
@@ -42,23 +41,18 @@ enum PropertyValueLogic {
         return property.fraction ? 0.1 : 1
     }
 
-    /// SwiftUI's slider costs ~4× more per layout pass beyond ~1000 detents (measured
-    /// 2026-08-22: 4.1ms → 16.8ms per scroll step on a 64-row inspector), and the cost
-    /// saturates there rather than growing. Set AT the cliff, not below it: everything under
-    /// 1000 is equally cheap, so a smaller cap buys no speed and only costs reachable values. Counts stops, not intervals.
+    /// Set AT the cliff: SwiftUI's slider gets ~4× slower per layout pass beyond
+    /// ~1000 detents and saturates there. Counts stops, not intervals.
     static let maximumSliderDetents = 1000.0
 
-    /// Step handed to the `Slider` *view*; writes still snap to the authored step through `normalizedSliderValue`.
-    /// WPE scenes routinely author `step: 0.001` over a `0...300` range — 300,000 detents, the
-    /// whole of the inspector's scroll jank. Widening to a whole multiple of the authored step
-    /// keeps every detent on the authored grid, so the thumb can only stop where a write would.
+    /// Step for the `Slider` *view* only; writes still snap to the authored step.
+    /// A whole multiple of it keeps every detent on the authored grid.
     static func displaySliderStep(for property: Property) -> Double {
         let authored = sliderStep(for: property)
         let range = sliderRange(for: property)
         let width = range.upperBound - range.lowerBound
-        // A non-finite width makes every comparison below false, which would
-        // return the authored step and drop the cap entirely — the one case
-        // that needs it most.
+        // A non-finite width makes every comparison below false, dropping the cap
+        // entirely in the one case that needs it most.
         guard authored > 0, width.isFinite, width > 0 else { return authored }
         // A stepped slider has one more stop than it has intervals, so budget
         // the intervals at one below the stop count.
@@ -89,7 +83,6 @@ enum PropertyValueLogic {
 
     // MARK: - Default comparison
 
-    /// Type-aware comparison that decides whether a freshly-edited value should be persisted as an override or treated as "back to default".
     static func matchesDefault(
         value: WallpaperEngineProjectPropertyValue,
         for property: Property
@@ -134,7 +127,6 @@ enum PropertyValueLogic {
         return parsed.prefix(4).map { min(max($0, 0), 1) }
     }
 
-    /// Recognises WPE's other common color encoding (`"#rrggbb"`, `"#rrggbbaa"`, or bare `"rrggbb"`) so authors who used either notation interoperate with the SwiftUI ColorPicker round-trip.
     static func decodeHexColor(_ raw: String) -> [Double]? {
         var hex = raw.lowercased()
         if hex.hasPrefix("#") { hex.removeFirst() }

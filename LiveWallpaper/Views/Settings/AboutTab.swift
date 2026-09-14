@@ -3,7 +3,6 @@ import LiveWallpaperCore
 import SwiftUI
 
 extension GeneralSettingsView {
-    /// Measures real content to choose a layout that fits the minimum window size and current language.
     @ViewBuilder
     var aboutTab: some View {
         ViewThatFits(in: .vertical) {
@@ -75,7 +74,6 @@ extension GeneralSettingsView {
         }
     }
 
-    /// Folds tiles into one row when vertical space is limited.
     private func aboutActionGrid(_ layout: AboutLayout) -> some View {
         LazyVGrid(
             columns: Array(
@@ -201,7 +199,6 @@ private struct AboutActionTile: View {
     }
 }
 
-/// Layout variants preserve the same actions at different window heights.
 struct AboutLayout {
     let contentWidth: CGFloat
     let verticalPadding: CGFloat
@@ -261,7 +258,6 @@ struct AboutLayout {
         tilePadding: 10
     )
 
-    /// Compact layout uses one tile row.
     static let minimal = AboutLayout(
         contentWidth: 560,
         verticalPadding: 12,

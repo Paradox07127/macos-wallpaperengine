@@ -3,9 +3,7 @@
     import JavaScriptCore
     import os
 
-    /// Conservative containment defaults for community SceneScript (see ResourceBudget for host limits).
     enum WPESceneScriptContainmentDefaults {
-        /// Cap on concurrent in-process evaluations (permit held on engine queue).
         static let maximumConcurrentEvaluations = 4
 
         /// Four serial VM lanes bound dispatch fan-out while preserving each VM's ordering.
@@ -20,8 +18,6 @@
 
     }
 
-    /// One GCD job per worker per frame (not per script). Concurrency = worker count;
-    /// each engine's context stays on its assigned serial queue for the scene lifetime.
     final class WPESceneScriptBatchDispatcher: Sendable {
         static let processShared = WPESceneScriptBatchDispatcher(
             width: WPESceneScriptContainmentDefaults.batchWorkerWidth
@@ -97,7 +93,6 @@
             ))
         }
 
-        /// Lifetime execution lane for one engine (round-robin at construction).
         func reserveLane() -> Lane {
             let reservation = state.withLock { state -> (Int, LaneRecord) in
                 let slot = state.nextEngineSlot
@@ -144,7 +139,6 @@
             )
         }
 
-        /// Render thread: hand off frame ticks (≤1 dispatch per worker).
         func submit(_ jobs: [Job]) {
             guard !jobs.isEmpty else { return }
             var buckets: [ObjectIdentifier: (queue: DispatchQueue, work: [@Sendable () -> Void])] = [:]
@@ -205,7 +199,6 @@
             self.maximumWaitingParticipants = maximumWaitingParticipants
         }
 
-        /// Stable identity retained by one evaluator/engine.
         func makeParticipant() -> Participant {
             condition.lock()
             state.nextParticipantID &+= 1
@@ -317,7 +310,6 @@
             condition.unlock()
         }
 
-        /// Stable identity for one evaluator.
         final class Participant: @unchecked Sendable {
             fileprivate let governor: WPESceneScriptExecutionGovernor
             fileprivate let id: UInt64
@@ -353,7 +345,6 @@
         }
 
         #if DEBUG
-            /// Debug/test-only diagnostic surface.
             struct DebugSnapshot: Sendable, Equatable {
                 let active: Int
                 let peak: Int
@@ -382,7 +373,6 @@
         case staticTransform
     }
 
-    /// First failure that disables a scene's entire script subsystem.
     enum WPESceneScriptFailClosedReason: Sendable, Equatable {
         case executionTimedOut(operation: WPESceneScriptOperation)
         case capacityUnavailable(operation: WPESceneScriptOperation)
@@ -438,7 +428,6 @@
             self.executionQuarantine = executionQuarantine
         }
 
-        /// Once before any renderer runtime is constructed; later calls are inert.
         @discardableResult
         func prepare(_ inventory: WPESceneScriptInstanceInventory) -> Bool {
             lock.lock()
@@ -485,7 +474,6 @@
             return acceptsCompletion() ? instance : nil
         }
 
-        /// Queue-side publish gate (separate from `allows` for late-completion tests).
         func acceptsCompletion() -> Bool {
             lock.lock()
             defer { lock.unlock() }
@@ -569,7 +557,6 @@
                 && !token.isRetired
         }
 
-        /// Authorize completion against the exact current token (no re-entry under locks).
         @discardableResult
         func withCurrentCompletionPermission(
             _ commit: () throws -> Void

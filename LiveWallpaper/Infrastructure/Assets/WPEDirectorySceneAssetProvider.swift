@@ -2,7 +2,6 @@
 import Foundation
 import LiveWallpaperProWPE
 
-/// Reads directory-backed scene assets with strict path containment and memory-mapped large files.
 struct WPEDirectorySceneAssetProvider: WPESceneAssetProvider {
     let rootURL: URL
 
@@ -10,8 +9,7 @@ struct WPEDirectorySceneAssetProvider: WPESceneAssetProvider {
         self.rootURL = rootURL.standardizedFileURL.resolvingSymlinksInPath()
     }
 
-    /// Computed rather than stored so the struct stays `Sendable` (`FileManager`
-    /// is not `Sendable`), mirroring `SceneResourceResolver`.
+    /// Computed rather than stored so the struct stays `Sendable` (`FileManager` is not `Sendable`).
     private var fileManager: FileManager { .default }
 
     func data(atRelativePath relativePath: String) throws -> Data {

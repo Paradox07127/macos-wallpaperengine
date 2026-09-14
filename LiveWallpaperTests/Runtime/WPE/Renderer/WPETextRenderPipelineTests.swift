@@ -112,9 +112,7 @@ struct WPETextRenderPipelineTests {
         let wide = seed.withLiveText("23:59:59", alpha: 1, color: nil)
         let seedSnapshot = WPETextRenderPlanner.snapshot(for: seed, fonts: resolver)
         let wideSnapshot = WPETextRenderPlanner.snapshot(for: wide, fonts: resolver)
-        // Bound as CGFloat so the comparison is same-type: mixing CGFloat with
-        // Double inside `#expect` reports false for bit-identical operands under
-        // Swift 6.3.3 (see the note in WPETextLayerSynthesisTests).
+        // Bind as CGFloat: a CGFloat/Double mix inside `#expect` compares false for bit-identical operands (see WPETextLayerSynthesisTests).
         let expectedSeedWidth: CGFloat = ceil(seedSnapshot.blockSize.width + seed.padding * 2)
         let expectedWideWidth: CGFloat = ceil(wideSnapshot.blockSize.width + wide.padding * 2)
         #expect(seedSnapshot.surfaceSize.width == expectedSeedWidth)

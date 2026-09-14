@@ -2,21 +2,14 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// Presets published for one wallpaper, listed inside its Workshop detail page.
-/// Steam offers `child_publishedfileid` ("find all items referencing the given
-/// item"); a preset references the wallpaper it restyles and carries the
-/// `Preset` tag, which is what `DetailPresetsQuery` keeps. The import path
-/// still decides what a download really is (`succeededAsPreset` vs `succeeded`).
 struct DetailPresetsSection: View {
-    /// Published file id of the wallpaper whose presets these are. Taken as a
-    /// plain id rather than a `WorkshopQueryItem` so the installed-library
-    /// inspector, which only has a history entry, can show the same section.
+    /// Published file id of the wallpaper whose presets these are. A plain id, not a
+    /// `WorkshopQueryItem`, so the installed-library inspector can use it too.
     let wallpaperID: UInt64
     let communityURL: URL
     let doctor: SteamCMDDoctorService
 
     @Environment(WorkshopServices.self) private var services
-    /// The grid card's spoiler setting, by its named key (`MatureContentSettings`).
     @AppStorage(MatureContentSettings.blursThumbnails, store: .appScoped()) private var blurMatureThumbnails = true
     @State private var model = DetailPresetsModel()
     @State private var searchText = ""
@@ -67,9 +60,8 @@ struct DetailPresetsSection: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .task(id: loadKey) { await model.load(loadKey, services: services) }
-        // A filter typed for the previous wallpaper would silently hide the new
-        // list, and a collapsed/expanded state from a 30-preset item makes no
-        // sense on a 2-preset one.
+        // A filter typed for the previous wallpaper would silently hide the new list,
+        // and a collapsed state from a 30-preset item makes no sense on a 2-preset one.
         .onChange(of: state) { _, state in
             guard state == .loading else { return }
             searchText = ""
@@ -90,7 +82,6 @@ struct DetailPresetsSection: View {
         }
     }
 
-    /// The grid card's spoiler rule, shared with the Required items rows.
     nonisolated static func blursThumbnail(for item: WorkshopQueryItem, blursMature: Bool) -> Bool {
         DetailRequiredItemsSection.blursThumbnail(tags: item.tags, blursMature: blursMature)
     }
@@ -99,7 +90,6 @@ struct DetailPresetsSection: View {
         Self.blursThumbnail(for: item, blursMature: blurMatureThumbnails) && !revealedIDs.contains(item.id)
     }
 
-    /// Gated by the same one-time 18+ confirmation as the grid card.
     private func requestReveal(_ id: UInt64) {
         if MatureContentSettings.isConfirmed {
             revealedIDs.insert(id)
@@ -150,8 +140,6 @@ struct DetailPresetsSection: View {
         communityFallbackLink
     }
 
-    /// Header/truncation count: Steam's total when known, never below what we
-    /// actually loaded.
     private func totalCount(loaded: Int) -> Int {
         max(totalAvailable ?? loaded, loaded)
     }
@@ -217,9 +205,7 @@ struct DetailPresetsSection: View {
         }
     }
 
-    /// The keyless page cannot list presets (`childpublishedfileid` returns
-    /// nothing in its items section, measured 2026-09-07), so the section is
-    /// one link to where Steam shows them.
+    /// The keyless page cannot list presets, so this is one link to Steam's page.
     private var keylessRow: some View {
         Button {
             NSWorkspace.shared.open(communityURL)
@@ -240,9 +226,6 @@ struct DetailPresetsSection: View {
             }
             .font(DesignTokens.Typography.caption)
 
-            // The row named the operation but never the failure, so a
-            // rate limit and an unreachable Steam offered the same Retry
-            // with no way to tell which one would help.
             Text(verbatim: error.causeDescription)
                 .font(DesignTokens.Typography.caption)
                 .foregroundStyle(.secondary)
@@ -259,9 +242,8 @@ struct DetailPresetsSection: View {
             Image(systemName: "magnifyingglass")
                 .font(DesignTokens.Typography.caption)
                 .foregroundStyle(.secondary)
-            // Local filtering only: the whole candidate set arrived in one
-            // request, and re-querying per keystroke would burn the shared
-            // Steam rate limit that the rest of Workshop browsing depends on.
+            // Local filtering only: the whole candidate set arrived in one request, and
+            // re-querying per keystroke would burn the shared Steam rate limit.
             TextField("Filter presets", text: $searchText)
                 .textFieldStyle(.plain)
                 .font(DesignTokens.Typography.caption)
@@ -274,9 +256,8 @@ struct DetailPresetsSection: View {
         )
     }
 
-    /// Always offered, because `child_publishedfileid` only finds presets whose
-    /// dependency Steam actually indexed — an empty list is not proof that none
-    /// exist.
+    /// Always offered: `child_publishedfileid` only finds presets whose dependency
+    /// Steam actually indexed, so an empty list is not proof that none exist.
     private var communityFallbackLink: some View {
         Button {
             NSWorkspace.shared.open(communityURL)
@@ -297,7 +278,6 @@ struct DetailPresetsSection: View {
     }
 }
 
-/// The section's load state, kept off the view so the reuse rule is testable:
 /// `.task(id:)` re-runs when the key changes, but `@State` survives it.
 @MainActor
 @Observable
@@ -320,13 +300,11 @@ final class DetailPresetsModel {
     /// Steam's `total` for the reference query. We fetch a single 50-item page,
     /// so this can exceed the loaded count — that's the truncation signal.
     private(set) var totalAvailable: Int?
-    /// Which key `state` describes: without this the early return in `load`
-    /// kept showing the previous wallpaper's presets after switching items, and
-    /// (keyed by id alone) kept the list after the key was lost or rejected.
+    /// Which key `state` describes. Without it `load`'s early return keeps the
+    /// previous wallpaper's presets — and keyed by id alone, a lost key's list.
     private var loadedFor: LoadKey?
-    /// Retry spawns an unstructured Task, which does not die with the view
-    /// identity the way `.task(id:)` does. Without this, retrying on item A
-    /// and then switching to B publishes A's presets under B.
+    /// Retry spawns an unstructured Task, which does not die with the view identity
+    /// the way `.task(id:)` does — without this, A's presets publish under B.
     private var requested: LoadKey?
 
     func load(_ key: LoadKey, services: WorkshopServices, force: Bool = false) async {
@@ -361,13 +339,9 @@ final class DetailPresetsModel {
     }
 }
 
-/// The query behind `DetailPresetsSection`, kept off the view so the Preset
-/// filter and the keyless gate are testable without rendering it.
 enum DetailPresetsQuery {
     struct Result: Equatable {
         let presets: [WorkshopQueryItem]
-        /// Steam's total for the Preset-tagged reference query; can exceed
-        /// `presets.count` (truncation signal).
         let totalAvailable: Int?
     }
 
@@ -376,9 +350,8 @@ enum DetailPresetsQuery {
         case loaded(Result)
     }
 
-    /// `child_publishedfileid` answers "everything referencing this item" —
-    /// collections and other wallpapers included, and the wallpaper itself can
-    /// come back in its own list. Only the `Preset` tag says "restyles it".
+    /// `child_publishedfileid` answers "everything referencing this item" — collections,
+    /// other wallpapers, even the item itself. Only the `Preset` tag says "restyles it".
     static func presets(in items: [WorkshopQueryItem], of wallpaperID: UInt64) -> [WorkshopQueryItem] {
         items.filter { item in
             item.id != wallpaperID
@@ -386,16 +359,12 @@ enum DetailPresetsQuery {
         }
     }
 
-    /// The keyless page returns nothing for `childpublishedfileid` in its items
-    /// section (measured 2026-09-07), so without a usable key there is no list
-    /// to fetch — only Steam's own page to link to.
+    /// Without a usable key there is no list to fetch — only Steam's own page.
     @MainActor
     static func load(wallpaperID: UInt64, services: WorkshopServices) async throws -> Outcome {
         guard !services.isKeyless else { return .keyless }
-        // `requiredtags` combines with `child_publishedfileid` server-side
-        // (measured 2026-09-07: total 16701 → 16697, all 50 tagged Preset), so
-        // a preset past the 50th reference is not lost and `total` counts
-        // presets. `presets(in:of:)` stays as the safety net.
+        // `requiredtags` combines with `child_publishedfileid` server-side, so a preset
+        // past the 50th reference is not lost. `presets(in:of:)` stays as the safety net.
         let page = try await services.queryService.fetch(
             WorkshopQueryRequest(
                 sort: .mostPopular, numPerPage: 50, requiredTags: ["Preset"], childPublishedFileID: wallpaperID
@@ -405,8 +374,6 @@ enum DetailPresetsQuery {
     }
 }
 
-/// One preset row: preview, title, author, and a download control that says what
-/// downloading will actually do.
 private struct WorkshopPresetRow: View {
     let preset: WorkshopQueryItem
     let doctor: SteamCMDDoctorService
@@ -461,9 +428,8 @@ private struct WorkshopPresetRow: View {
                 .help(Text("Added to this wallpaper's presets"))
                 .accessibilityLabel(Text("Added to this wallpaper's presets"))
         case .succeeded:
-            // Not a preset after all — it imported as its own wallpaper. Saying
-            // "added to presets" here would send the user looking in the wrong
-            // place.
+            // Not a preset after all — it imported as its own wallpaper; "added to presets"
+            // here would send the user looking in the wrong place.
             Image(systemName: "photo.fill")
                 .foregroundStyle(.secondary)
                 .help(Text("Wallpaper added to library"))

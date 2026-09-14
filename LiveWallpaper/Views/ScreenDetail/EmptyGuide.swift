@@ -1,7 +1,6 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// Card grid for a display with no saved configuration.
 struct EmptyStateGuideView: View {
     let onChooseVideo: () -> Void
     let onChooseHTML: () -> Void
@@ -10,7 +9,6 @@ struct EmptyStateGuideView: View {
     @Environment(\.featureCatalog) private var featureCatalog
 
     var body: some View {
-        // Avoid scroll bounce when the guide fits; scroll only in short windows.
         ViewThatFits(in: .vertical) {
             guideColumn
 
@@ -47,9 +45,8 @@ struct EmptyStateGuideView: View {
             }
             .padding(.horizontal, 4)
 
-            // Balances the header so the *cards* land on the pane's midline,
-            // not the header-plus-cards block. Centring the column put the row
-            // half a header below centre.
+            // Hidden duplicate: balances the header so the cards land on the pane's
+            // midline, not the header-plus-cards block.
             header
                 .hidden()
                 .accessibilityHidden(true)
@@ -118,8 +115,6 @@ struct EmptyStateGuideView: View {
 
 }
 
-/// Card contents, so the grid's column count can follow how many types this SKU
-/// actually offers.
 private struct GuideCardModel: Identifiable {
     let id: String
     let icon: String

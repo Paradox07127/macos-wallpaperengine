@@ -4,12 +4,9 @@ import SwiftUI
 
 // MARK: - Inspector preview content
 
-/// What the inspector's copy of the board draws in place of the desktop's live
-/// data. The desktop itself never has one of these.
 enum MonitorBoardPreviewMode: String, CaseIterable, Sendable {
     /// The last reading the desktop actually took, frozen.
     case snapshot
-    /// A fixed fixture, so long text and full content can be checked.
     case sample
     /// Icon and name only — legible on a canvas too small for a real tile.
     case names
@@ -25,11 +22,7 @@ enum MonitorBoardPreviewMode: String, CaseIterable, Sendable {
     }
 }
 
-/// Frozen snapshot, history and capture time for an inspector preview. Holding them stable
-/// prevents relayout during dragging; the preview owns no runtime lease.
 struct MonitorBoardPreview: Equatable {
-    /// Which tile a preview draws. Split out of the view so the choice is
-    /// assertable without a rendering host.
     enum Tile: Equatable {
         case widget
         case names
@@ -69,9 +62,6 @@ struct MonitorBoardPreview: Equatable {
         capturedAt ?? fallback
     }
 
-    /// The desktop's last delivered reading, or the fixture, depending on mode.
-    /// `latest` is passed in rather than read here so this stays a pure value
-    /// and the caller owns the (read-only) trip to the overlay controller.
     @MainActor
     static func resolve(
         mode: MonitorBoardPreviewMode,

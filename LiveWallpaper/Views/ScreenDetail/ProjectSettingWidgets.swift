@@ -2,9 +2,6 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// Per-control-type glyph for WPE custom-setting rows, so author properties
-/// share the app-wide `SettingRow` geometry (icon block + title + control)
-/// instead of a bespoke icon-less row.
 enum WPEPropertyRowIcon {
     static func symbol(for type: WallpaperEngineProjectPropertySchema.PropertyType) -> String {
         switch type {
@@ -41,7 +38,6 @@ struct WPEProjectTextBlock: View {
 
 struct WPEProjectNotice: View {
     let icon: String
-    /// App-supplied gate notice, localized in the five bundled languages.
     let text: LocalizedStringKey
 
     var body: some View {

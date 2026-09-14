@@ -1,24 +1,15 @@
 import AppKit
 import SwiftUI
 
-/// Where the banner sits, which decides its container. DESIGN.md rule 11 tiers
-/// glass by position, not by role: chrome floating over/under a preview takes
-/// glass, a banner in the content column takes a native content surface.
-/// Below this the message column stops being readable and the banner stacks
-/// instead. Measured: at 420pt with three recovery buttons the side-by-side
-/// layout wrapped the title to one word per line.
+/// Below this the message column stops being readable and the banner stacks instead.
 private let minimumNoticeMessageWidth: CGFloat = 200
 
 public enum NoticeBannerSurface: Sendable {
     /// Inside a preview stage / HUD.
     case chrome
-    /// In the content column, above or beside page content.
     case content
 }
 
-/// Icon + title + message + optional copyable code, with up to two trailing
-/// actions. The one shape for inline notices — three near-identical hand-rolled
-/// copies of it had drifted apart in typography, container and severity colour.
 public struct InlineNoticeBanner<Actions: View>: View {
     private let tint: Color
     private let symbol: String
@@ -32,9 +23,7 @@ public struct InlineNoticeBanner<Actions: View>: View {
 
     /// - Parameters:
     ///   - detail: A secondary technical line (path, URL) shown middle-truncated.
-    ///   - code: Stable error code. Rendered as a copyable chip — the code is
-    ///     what a bug report needs, so it must be reachable by pointer and by
-    ///     VoiceOver, not painted into decoration.
+    ///   - code: Stable error code, rendered as a copyable chip.
     public init(
         tint: Color,
         symbol: String,
@@ -62,10 +51,8 @@ public struct InlineNoticeBanner<Actions: View>: View {
             HStack(alignment: .top, spacing: DesignTokens.Spacing.sm) {
                 glyph
                 messageColumn
-                    // `idealWidth` is what ViewThatFits measures. Without it a
-                    // wrapping Text reports its single-line width, so a merely
-                    // long message made the side-by-side layout look impossible
-                    // and every banner stacked.
+                    // `idealWidth` is what ViewThatFits measures; without it a wrapping Text
+                    // reports its single-line width and every banner would stack.
                     .frame(
                         minWidth: minimumNoticeMessageWidth,
                         idealWidth: minimumNoticeMessageWidth,
@@ -123,9 +110,8 @@ public struct InlineNoticeBanner<Actions: View>: View {
             .accessibilityElement(children: .combine)
             .accessibilityValue(Text(verbatim: accessibilityDetail ?? detail ?? ""))
 
-            // Under the diagnosis, not in the action row: competing with the
-            // buttons for the trailing edge truncated it to "WPE_RESOU…", and
-            // a code you cannot read is not a code you can report.
+            // Under the diagnosis, not in the action row: competing with the buttons for
+            // the trailing edge would truncate it to "WPE_RESOU…".
             if let code, !code.isEmpty {
                 ErrorCodeChip(code: code, tint: tint)
             }
@@ -133,8 +119,6 @@ public struct InlineNoticeBanner<Actions: View>: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// The recovery buttons keep their intrinsic width; the message column is
-    /// what wraps, and when even that stops fitting the whole banner stacks.
     private var actionRow: some View {
         HStack(spacing: DesignTokens.Spacing.xs) {
             actions
@@ -143,9 +127,6 @@ public struct InlineNoticeBanner<Actions: View>: View {
     }
 }
 
-/// The stable error code, as something a reader can actually take away: it is
-/// what a bug report needs, so it must be reachable by pointer and by VoiceOver
-/// rather than painted into decoration.
 public struct ErrorCodeChip: View {
     private let code: String
     private let tint: Color
@@ -214,8 +195,6 @@ public extension InlineNoticeBanner where Actions == EmptyView {
     }
 }
 
-/// Split out so the `.chrome` branch's glass and the `.content` branch's opaque
-/// surface stay one decision in one place.
 private struct NoticeBannerBackground: ViewModifier {
     let surface: NoticeBannerSurface
     let tint: Color

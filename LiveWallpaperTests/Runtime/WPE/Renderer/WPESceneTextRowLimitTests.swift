@@ -4,9 +4,6 @@ import LiveWallpaperProWPE
 import Testing
 @testable import LiveWallpaper
 
-/// WPE "Limit rows" / "Max rows" / "Use ellipsis". All 527 corpus text objects
-/// author the three keys; 34 turn the limit on, 32 of those at `maxrows: 1`.
-/// Until these were read, the CoreText path wrapped until the whole string fit.
 struct WPESceneTextRowLimitTests {
 
     private func textObject(_ extra: String) throws -> WPESceneTextObject {
@@ -24,9 +21,6 @@ struct WPESceneTextRowLimitTests {
 
     @Test("maxrows is gated by limitrows, exactly like maxwidth is by limitwidth")
     func rowLimitIsGatedByItsToggle() throws {
-        // Toggle off is the corpus default (493 of 527) and every one of those
-        // objects still writes `maxrows: 1` — honouring it unconditionally would
-        // clamp almost the entire corpus to a single row.
         let off = try textObject(#""limitrows": false, "maxrows": 1, "limituseellipsis": true"#)
         #expect(off.maxRows == nil, "an off toggle must not clamp")
         #expect(off.limitUseEllipsis)
@@ -34,22 +28,16 @@ struct WPESceneTextRowLimitTests {
         let on = try textObject(#""limitrows": true, "maxrows": 3, "limituseellipsis": true"#)
         #expect(on.maxRows == 3)
 
-        // Absent keys keep the previous unbounded behaviour.
         let bare = try textObject(#""visible": true"#)
         #expect(bare.maxRows == nil)
         #expect(!bare.limitUseEllipsis)
 
-        // A nonsense row count still leaves at least one row to draw.
         let zero = try textObject(#""limitrows": true, "maxrows": 0"#)
         #expect(zero.maxRows == 1)
     }
 
     @Test("Row-limit fields survive the per-frame withLiveText copy")
     func rowLimitSurvivesLiveTextCopy() throws {
-        // `withLiveText` is a hand-written 39-field copy run once per frame. A
-        // field missing from it parses correctly and then vanishes from every
-        // live frame — the exact shape of this repo's geometry-copy bug, which
-        // has already been hit twice.
         let object = try textObject(
             #""limitrows": true, "maxrows": 2, "limituseellipsis": true, "limitwidth": true, "maxwidth": 500"#
         )
@@ -61,9 +49,6 @@ struct WPESceneTextRowLimitTests {
     }
 }
 
-/// `instanceoverride.controlpointN` — one particle file reused across objects,
-/// each positioning its control points from the scene. Dropping these left
-/// `controlpointattract` pulling toward the emitter itself.
 struct WPEParticleInstanceControlPointTests {
 
     private func particleObject(_ override: String) throws -> WPESceneParticleObject {
@@ -105,8 +90,7 @@ struct WPEParticleInstanceControlPointTests {
             colorMin: SIMD3<Double>(255, 255, 255), colorMax: SIMD3<Double>(255, 255, 255),
             fadeInSeconds: 0,
             controlPoints: [
-                // The shape 31.json ships: an authored point with no offset, which
-                // parses to (0,0,0) — i.e. the emitter itself.
+                // offset (0,0,0) = the emitter itself: what an authored point with no offset parses to.
                 WPEParticleControlPoint(id: 1, offset: SIMD3<Double>(0, 0, 0), pointerLocked: false),
                 WPEParticleControlPoint(id: 2, offset: SIMD3<Double>(9, 9, 9), pointerLocked: true),
             ]
@@ -121,7 +105,6 @@ struct WPEParticleInstanceControlPointTests {
         #expect(byID[2]?.offset == SIMD3<Double>(9, 9, 9), "an omitted point keeps its authored offset")
         #expect(byID[2]?.pointerLocked == true, "control: other fields survive the rebuild")
 
-        // No override at all must leave the authored points untouched.
         let untouched = definition.applying(instanceOverride: WPESceneParticleInstanceOverride(size: 2))
         #expect(untouched.controlPoints == definition.controlPoints)
     }

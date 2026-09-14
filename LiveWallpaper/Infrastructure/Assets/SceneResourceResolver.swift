@@ -5,13 +5,12 @@ import ImageIO
 import LiveWallpaperCore
 import LiveWallpaperProWPE
 
-/// Scene asset resolver via `WPESceneAssetProvider` (directory or in-place scene.pkg).
 struct SceneResourceResolver: Sendable {
     enum ResolveError: Error, Equatable, Sendable {
         case pathEscape
         case fileMissing
         case decodeFailed
-        case unsupportedTexture                          // legacy alias
+        case unsupportedTexture
         case texture(WPETexDecodeError)
         /// image → model/material JSON with no resolvable texture (engine-built layer).
         case materialUnresolved(reason: String)
@@ -43,7 +42,6 @@ struct SceneResourceResolver: Sendable {
         self.decoder = decoder
     }
 
-    /// Opt-in TEXI/TEXB header dump for scene-debug sessions.
     private func dumpRawTexMetadataIfActive(payload: WPEMappedByteSpan, targetName: String) {
         guard WPESceneDebugArtifacts.shared.activeSessionFolder != nil else { return }
         guard case .success(let metadata) = decoder.extractRawMetadata(span: payload) else { return }
@@ -54,10 +52,8 @@ struct SceneResourceResolver: Sendable {
         )
     }
 
-    /// A decoded image plus the asset's FULL-resolution pixel size. They differ
-    /// only when `maxSourceEdge` made the decode produce a thumbnail, and the
-    /// texture metadata registry needs the full size either way: world layout
-    /// falls back to it when a layer authors no explicit size.
+    /// Full-resolution pixel size; differs from `image` only when `maxSourceEdge` produced a thumbnail.
+    /// World layout falls back to this when a layer authors no explicit size.
     struct ResolvedImage {
         let image: CGImage
         let sourcePixelWidth: Int
@@ -70,10 +66,6 @@ struct SceneResourceResolver: Sendable {
         }
     }
 
-    /// Reference-only result for shader format selection. Keeping the terminal
-    /// lookup inside this resolver preserves the same scene / dependency /
-    /// engine-assets origin that resolved the JSON chain, without decoding the
-    /// image or copying a package-backed TEX payload.
     struct ResolvedTextureFormatProbe: Sendable {
         let relativePath: String
         let texPayload: WPEMappedByteSpan?
@@ -209,9 +201,7 @@ struct SceneResourceResolver: Sendable {
                 kCGImageSourceThumbnailMaxPixelSize: maxSourceEdge
             ]
             if let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbOptions as CFDictionary) {
-                // Carry the pre-thumbnail dimensions: the registry's world size
-                // must stay the asset's, or a layer with no authored size lays
-                // out at the capped resolution.
+                // Carry pre-thumbnail dimensions: world size must stay the asset's, not the capped resolution.
                 return ResolvedImage(
                     image: thumbnail,
                     sourcePixelWidth: width,
@@ -225,9 +215,7 @@ struct SceneResourceResolver: Sendable {
         return ResolvedImage(image: image)
     }
 
-    /// Raw texture payload for Metal-backed renderers. `scope` narrows which
-    /// mip levels the decoder LZ4-inflates to the ones the caller's upload
-    /// will actually read; defaults to the whole chain.
+    /// `scope` narrows which mip levels the decoder LZ4-inflates to the ones the upload will read; default is the whole chain.
     func resolveTexturePayload(
         relativePath: String,
         scope: WPETexMipInflateScope = .fullChain
@@ -248,7 +236,6 @@ struct SceneResourceResolver: Sendable {
         }
     }
 
-    /// Streaming TEXS payload for lazy animated textures (mappedIfSafe when directory-backed).
     func resolveStreamingTexturePayload(relativePath: String) throws -> WPETexStreamingPayload {
         guard !relativePath.isEmpty else { throw ResolveError.fileMissing }
         let resolvedPath = try resolveImageReference(relativePath: relativePath, depth: 0)
@@ -266,8 +253,6 @@ struct SceneResourceResolver: Sendable {
         }
     }
 
-    /// Walks WPE's image-reference chain (material/model JSON) until it reaches a
-    /// real asset path (`.tex` / `.png` / `.jpg` / `.gif`).
     private func resolveImageReference(relativePath: String, depth: Int) throws -> String {
         let lowered = (relativePath as NSString).pathExtension.lowercased()
         if lowered != "json" {
@@ -326,8 +311,6 @@ struct SceneResourceResolver: Sendable {
         return nil
     }
 
-    /// Decode-backed probe. Reached only from `probeRenderableImage` (DEBUG); the import
-    /// service classified tiers through it until that path was dropped.
     func probeImage(relativePath: String) -> Result<WPETexInfo, ResolveError> {
         guard !relativePath.isEmpty else { return .failure(.fileMissing) }
         guard provider.exists(atRelativePath: relativePath) else {
@@ -360,7 +343,6 @@ struct SceneResourceResolver: Sendable {
     }
 
     #if DEBUG
-    /// Test-only capability probe; no production reader.
     func probeRenderableImage(relativePath: String) -> Result<Void, ResolveError> {
         guard !relativePath.isEmpty else { return .failure(.fileMissing) }
         let resolvedPath: String
@@ -386,8 +368,6 @@ struct SceneResourceResolver: Sendable {
     }
     #endif
 
-    /// Used by tests + the import service to decide whether a scene's declared
-    /// image layers are actually shipped.
     func exists(relativePath: String) -> Bool {
         imageStorageCandidates(for: relativePath).contains { candidate in
             provider.exists(atRelativePath: candidate)
@@ -399,7 +379,6 @@ struct SceneResourceResolver: Sendable {
         try providerData(relativePath)
     }
 
-    /// File URL for fonts/audio/video (package-backed stages a temp file).
     func resolveExistingFileURL(relativePath: String) throws -> URL {
         do {
             return try provider.stagedURL(atRelativePath: relativePath)

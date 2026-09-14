@@ -3,7 +3,6 @@ import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
-/// Everything the UI needs to render one failure. Single source of truth.
 struct SceneFailurePresentation {
     let failureClass: WallpaperFailureClass
     let tint: Color
@@ -33,8 +32,6 @@ extension FallbackReason {
         failureClass.tint
     }
 
-    /// Paired with a title on every surface (DESIGN.md rule 6 — colour alone
-    /// never carries the meaning).
     var symbol: String {
         switch self {
         case .requiresWindowsPlugin: "nosign"
@@ -122,8 +119,7 @@ extension FallbackReason {
         case .texContainerUnsupported:
             return String(localized: "Unsupported texture container", defaultValue: "Unsupported texture container", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning title.")
         case .texUnsupportedFormat:
-            // Not "failed": the renderer skipped one layer and kept going, and a
-            // title claiming failure sent readers hunting for a dead wallpaper.
+            // Not "failed": the renderer skipped one layer and kept going.
             return String(localized: "Some layers were skipped", defaultValue: "Some layers were skipped", bundle: .appLanguage, comment: "Title for a partial-degradation notice: one texture layer was skipped and the wallpaper is still playing.")
         case .texDecodeFailed:
             return String(localized: "Couldn't read texture file", defaultValue: "Couldn't read texture file", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning title.")
@@ -146,8 +142,6 @@ extension FallbackReason {
         case .sceneShaderUnsupported:
             return String(localized: "This scene uses a custom shader the renderer couldn't translate to Metal. Try re-downloading the project in Steam.", defaultValue: "This scene uses a custom shader the renderer couldn't translate to Metal. Try re-downloading the project in Steam.", bundle: .appLanguage, comment: "Wallpaper Engine fallback warning body.")
         case .sceneResourceMissing:
-            // Names where the files were looked for; the recovery action beside
-            // it owns what to do about it.
             if engineAssetsAuthorized {
                 return String(localized: "Image layers couldn't be found in this project or in your Wallpaper Engine assets.", defaultValue: "Image layers couldn't be found in this project or in your Wallpaper Engine assets.", bundle: .appLanguage, comment: "Scene resource failure body when shared assets are already linked.")
             }

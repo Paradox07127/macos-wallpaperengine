@@ -3,7 +3,6 @@ import LiveWallpaperCore
 import Observation
 import SwiftUI
 
-/// Edits project properties stored directly on a WPE scene descriptor.
 struct WPESceneCustomSettingsCard: View {
     private typealias ValueLogic = PropertyValueLogic
 
@@ -14,9 +13,6 @@ struct WPESceneCustomSettingsCard: View {
 
     @Environment(ScreenManager.self) private var screenManager
     @AppStorage("Inspector.WPESceneCustomSettingsExpanded") private var isExpanded = true
-    /// Card-local edit state. Keeping high-frequency slider/text/color changes
-    /// out of `DraftState` prevents the whole inspector (and its
-    /// hosted preview) from being invalidated on every gesture sample.
     @State private var editor = Editor()
     @State private var commitTask: Task<Void, Never>?
     @State private var presetLibrary: [String: ScenePreset] = [:]
@@ -52,10 +48,7 @@ struct WPESceneCustomSettingsCard: View {
             reloadPresetLibrary()
         }
         .onChange(of: sceneIdentity) { oldIdentity, newIdentity in
-            // A coalesced commit scheduled for the previous display would fire
-            // after the binding has moved, writing that display's increment onto
-            // this one. Dropping the last ≤180ms of edits is the safe direction;
-            // letting them land on the wrong display is not.
+            // A commit coalesced for the previous display would write that display's increment onto this one.
             if oldIdentity.screenID != newIdentity.screenID {
                 commitTask?.cancel()
                 commitTask = nil
@@ -89,10 +82,6 @@ struct WPESceneCustomSettingsCard: View {
         }
     }
 
-    /// A sunken well inside the card's raised surface. The preset block governs
-    /// every setting listed under it rather than sitting among them, and with no
-    /// boundary it read as one more row — the settings list even had a negative
-    /// top inset pulling the two together.
     private var presetWell: some View {
         ScenePresetBar(
             presets: availablePresets,
@@ -124,17 +113,12 @@ struct WPESceneCustomSettingsCard: View {
         descriptor.resolvedPreset(in: presetLibrary)
     }
 
-    /// Cached: sorting with `localizedStandardCompare` per body pass would run
-    /// ICU collation on every slider sample.
     @State private var availablePresets: [ScenePreset] = []
-    /// Keys the user moved away from the applied preset. Cached for the same
-    /// reason — `badge(for:)` runs once per row per body pass.
+    /// Keys the user moved away from the applied preset.
     @State private var divergingKeys: Set<String> = []
 
     /// Diverging keys when a preset is applied; otherwise the increment over the
-    /// scene's own defaults. Both are "what you changed", counted the same way
-    /// the pencil badges mark rows, and restricted to settings actually on screen
-    /// so a hidden conditional row can't inflate it.
+    /// scene's own defaults — only visible settings, so a hidden row can't inflate it.
     private var changedSettingCount: Int {
         guard let presentation = editor.presentation else { return 0 }
         let keys = activePreset == nil ? Set(editor.overrides.keys) : divergingKeys
@@ -161,9 +145,8 @@ struct WPESceneCustomSettingsCard: View {
         Task { @MainActor in await commitDescriptor(descriptor.applyingPreset(preset)) }
     }
 
-    /// Pushes a descriptor the preset controls produced. Drops any coalesced slider commit
-    /// first (it was computed against the layer being replaced). Awaited rather than fired:
-    /// callers needing this on disk before something else observes the change (saving over the applied preset) had no way to know when the write landed.
+    /// Drops any coalesced slider commit first (computed against the layer being replaced),
+    /// and is awaited so callers can know when the write has landed.
     private func commitDescriptor(_ next: SceneDescriptor) async {
         commitTask?.cancel()
         commitTask = nil
@@ -177,9 +160,6 @@ struct WPESceneCustomSettingsCard: View {
         }
     }
 
-    /// Snapshots the preset layer *and* the increment, so the new preset alone
-    /// reproduces what is on screen and the increment can be dropped.
-    /// Reusing the id of a same-named preset for this wallpaper replaces it rather than adding a second entry the picker cannot tell apart.
     private func saveAsPreset(name: String) async {
         await commitPendingEditorState()
         let existing = SettingsManager.shared.existingLocalScenePreset(
@@ -191,15 +171,11 @@ struct WPESceneCustomSettingsCard: View {
             values: descriptor.presetSnapshotForCurrentState(),
             id: existing?.id ?? UUID().uuidString
         )
-        // Inside `thenPersist` so the cleared descriptor is on disk before the
-        // library change is announced; otherwise the observer's reconcile writes
-        // the new snapshot back on top of the increment this is discarding, in a
-        // Task that races us.
+        // Inside `thenPersist`: announced first, the observer's reconcile would write the
+        // snapshot back over the increment this is discarding.
         await SettingsManager.shared.registerScenePreset(preset) {
-            // The saved preset already reproduces what's on screen, so the increment is spent.
-            // Not `applyingPreset`: overwriting the currently-applied preset lands in its
-            // same-id branch, which keeps the increment on purpose (re-picking isn't a reset)
-            // — here that would pin this display to today's values next time the preset is edited elsewhere.
+            // Not `applyingPreset`: its same-id branch keeps the increment, which here would pin
+            // this display to today's values.
             await commitDescriptor(
                 descriptor
                     .withPresetLayer(id: preset.id, snapshot: preset.values)
@@ -214,10 +190,8 @@ struct WPESceneCustomSettingsCard: View {
         reloadPresetLibrary()
     }
 
-    /// Drops the preset layer from this descriptor first, so the card is not
-    /// left pointing at an id the library no longer has.
-    /// Layer only — the increment stays, matching the confirmation's promise and what every
-    /// other display gets from `refreshingPresetSnapshot`. `applyingPreset(nil)` is the picker's "No preset", and that one does clear the increment.
+    /// Layer only — the increment stays; `applyingPreset(nil)` is the picker's "No preset",
+    /// and that one does clear the increment.
     private func deletePreset(_ preset: ScenePreset) {
         if descriptor.presetID == preset.id {
             Task { @MainActor in await commitDescriptor(descriptor.withPresetLayer(id: nil, snapshot: [:])) }
@@ -373,9 +347,8 @@ struct WPESceneCustomSettingsCard: View {
         )
     }
 
-    /// `screenID` is part of the identity because two displays can play the very same scene.
-    /// Without it, switching between them left `editor.overrides` holding the first display's
-    /// increment while the binding pointed at the second — the next commit wrote one display's edits onto the other.
+    /// `screenID` is part of the identity because two displays can play the same scene:
+    /// without it a commit would write one display's edits onto the other.
     struct SceneIdentity: Equatable {
         let screenID: CGDirectDisplayID
         let workshopID: String
@@ -471,8 +444,6 @@ struct WPESceneCustomSettingsCard: View {
                     }
                     .labelsHidden()
                     .pickerStyle(.menu)
-                    // Same compressible-menu-width rationale as the project settings
-                    // card's identical combo row (`WPEProjectCustomSettingsCard`).
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .frame(minWidth: 96, alignment: .trailing)
@@ -588,10 +559,8 @@ struct WPESceneCustomSettingsCard: View {
         for property: WallpaperEngineProjectPropertySchema.Property,
         commit: CommitPolicy
     ) {
-        // An override is dropped only when it matches the layer underneath it.
-        // Where a preset supplies the key that layer is the preset, not the
-        // schema default — dropping on "matches default" there would silently
-        // restore the preset value and leave the control looking stuck.
+        // The layer underneath is the preset where it supplies the key, not the schema default —
+        // dropping on "matches default" would restore the preset value and leave the control stuck.
         let matchesUnderlyingLayer: Bool
         if let presetValue = editor.presetValue(forKey: property.key) {
             matchesUnderlyingLayer = presetValue == value
@@ -635,9 +604,8 @@ struct WPESceneCustomSettingsCard: View {
         Task { @MainActor in await commitPendingEditorState() }
     }
 
-    /// Awaited like `commitDescriptor`, for the same reason: `updateSceneDescriptor` arbitrates
-    /// by the generation taken when it *starts*, so a later-starting call always wins. An
-    /// un-awaited flush here started after the preset commit that follows it and overwrote it — the card showed the preset while the stored configuration kept the increment and no `presetID`.
+    /// Awaited: `updateSceneDescriptor` arbitrates by the generation taken when it *starts*,
+    /// so an un-awaited flush would overwrite a later preset commit.
     private func commitEditorState() async {
         let next = descriptor.withPropertyOverrides(editor.overrides)
         guard descriptor != next else { return }
@@ -661,8 +629,7 @@ struct WPESceneCustomSettingsCard: View {
         /// and is merged back in by `layeredValues`.
         var overrides: [String: WallpaperEngineProjectPropertyValue] = [:]
         /// Preset layer + increment, produced by the same
-        /// `SceneDescriptor.layeredPropertyValues()` the renderer reads, so a
-        /// row can never show a value the wallpaper is not using.
+        /// `SceneDescriptor.layeredPropertyValues()` the renderer reads.
         private(set) var layeredValues: [String: WallpaperEngineProjectPropertyValue] = [:]
         var expandedSections: Set<String> = []
         var presentation: WPEProjectSettingsPresentation?
@@ -692,8 +659,6 @@ struct WPESceneCustomSettingsCard: View {
             descriptor?.presetSnapshot[key]
         }
 
-        /// Reset affordance tracks the increment, not the layered values: a
-        /// freshly applied preset is not something to reset.
         var hasVisibleIncrement: Bool {
             guard let presentation else { return false }
             return overrides.keys.contains { presentation.visibleKeys.contains($0) }
@@ -727,9 +692,6 @@ struct WPESceneCustomSettingsCard: View {
 
         private func refreshPresentation() {
             guard let schema else { return }
-            // Same filter the renderer applies: a preset carries an entry for
-            // every manifest row, including decorative ones, and showing values
-            // the wallpaper will not use would make this card lie.
             layeredValues = schema.declaredEditableValues(
                 descriptor?.withPropertyOverrides(overrides).layeredPropertyValues() ?? overrides
             )

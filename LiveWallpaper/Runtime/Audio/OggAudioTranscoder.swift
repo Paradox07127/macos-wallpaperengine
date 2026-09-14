@@ -3,9 +3,7 @@ import CryptoKit
 import Foundation
 import LiveWallpaperCore
 
-/// Cached Ogg→AAC for WebKit (raw `.ogg` often silent/stalls). Coalesces concurrent
-/// range requests; bounded wait then poison→raw ogg so a hung decode cannot stall
-/// the wallpaper. Caller must hold security scope on `oggURL`.
+/// Bounded wait then poison→raw ogg so a hung decode cannot stall the wallpaper. Caller must hold security scope on `oggURL`.
 final class OggAudioTranscoder: @unchecked Sendable {
     static let shared = OggAudioTranscoder()
 
@@ -20,7 +18,6 @@ final class OggAudioTranscoder: @unchecked Sendable {
     /// Bound wait (~real cost ≪1s); hang mid-read cannot be cancelled.
     private let deadline: TimeInterval = 6
 
-    /// Flat mtime-LRU cap (no per-workshop orphan GC for these sources).
     private static let maxCacheBytes: UInt64 = 256 * 1024 * 1024  // 256 MiB
 
     private init() {
@@ -55,8 +52,6 @@ final class OggAudioTranscoder: @unchecked Sendable {
             return destination
         }
         if let group = pending[key] {
-            // Coalesce: wait (bounded) for the in-flight transcode so concurrent
-            // range requests for the same URL all serve the same representation.
             lock.unlock()
             if group.wait(timeout: .now() + deadline) == .success {
                 return readyURL(forKey: key)
@@ -69,9 +64,7 @@ final class OggAudioTranscoder: @unchecked Sendable {
         lock.unlock()
 
         queue.async { [self] in
-            // Timeout arbitration poisons the key; the decode loop polls that as
-            // a cancel signal so it cannot outlive the caller's security scope
-            // on the source URL.
+            // Timeout arbitration poisons the key; the decode loop polls that as a cancel signal so it cannot outlive the caller's security scope.
             let produced = transcode(oggURL, to: destination, isCancelled: {
                 lock.lock()
                 defer { lock.unlock() }
@@ -118,8 +111,6 @@ final class OggAudioTranscoder: @unchecked Sendable {
         return nil
     }
 
-    /// Internal (not private) so tests can drive the cancellation path directly.
-    /// A cancelled run deletes the half-written `.partial` and returns nil.
     func transcode(_ source: URL, to destination: URL, isCancelled: () -> Bool) -> URL? {
         let partial = destination.appendingPathExtension("partial")
         try? FileManager.default.removeItem(at: partial)
@@ -143,10 +134,7 @@ final class OggAudioTranscoder: @unchecked Sendable {
                 )
                 let started = ProcessInfo.processInfo.systemUptime
                 var reachedEnd = false
-                // `AVAudioFile.read` THROWS at end-of-stream (Ogg `length` is only an estimate, so an exact
-                // frame count can't be read) — treat that as completion once audio has been decoded; a throw
-                // before any frames is a genuine decode failure (caught below, no cache). A `write` failure
-                // still propagates as a real error.
+                // `AVAudioFile.read` THROWS at end-of-stream (Ogg `length` is only an estimate) — treat that as completion once audio has been decoded; a throw before any frames is a genuine decode failure.
                 while !reachedEnd {
                     if ProcessInfo.processInfo.systemUptime - started > deadline { throw TranscodeError.timedOut }
                     if isCancelled() { throw TranscodeError.cancelled }
@@ -165,9 +153,7 @@ final class OggAudioTranscoder: @unchecked Sendable {
                         written += AVAudioFramePosition(buffer.frameLength)
                     }
                 }
-                // A clean decode reads ~100% of the (slightly over-estimated)
-                // length; far fewer frames means `read` threw mid-stream rather
-                // than at EOF, so reject it instead of caching a truncated file.
+                // Far fewer frames than ~90% of `length` means `read` threw mid-stream rather than at EOF, so reject it instead of caching a truncated file.
                 guard Double(written) >= Double(total) * 0.9 else { throw TranscodeError.truncated }
             }
             try FileManager.default.moveItem(at: partial, to: destination)
@@ -195,7 +181,6 @@ final class OggAudioTranscoder: @unchecked Sendable {
         return digest.map { String(format: "%02x", $0) }.joined()
     }
 
-    /// mtime-LRU eviction under maxCacheBytes (off playback path).
     private func enforceSizeLimit() {
         let fm = FileManager.default
         guard let children = try? fm.contentsOfDirectory(
@@ -212,9 +197,7 @@ final class OggAudioTranscoder: @unchecked Sendable {
             let size = UInt64(max(0, values.fileSize ?? 0))
             let modified = values.contentModificationDate ?? .distantPast
             if url.pathExtension == "partial" {
-                // Fresh `.partial` belongs to a possibly-running transcode; a
-                // stale one is an orphan from a killed process. Either way it
-                // never counts against the budget.
+                // Fresh `.partial` belongs to a possibly-running transcode; a stale one is an orphan. Either way it never counts against the budget.
                 if modified < Date(timeIntervalSinceNow: -3600) {
                     try? fm.removeItem(at: url)
                 }
@@ -229,10 +212,7 @@ final class OggAudioTranscoder: @unchecked Sendable {
         for file in files.sorted(by: { $0.modified < $1.modified }) {
             if total <= Self.maxCacheBytes { break }
             let key = file.url.deletingPathExtension().lastPathComponent
-            // Check-and-delete atomically with the caller's disk-hit promotion (also under `lock`):
-            // clear the memo and unlink while holding it so a concurrent request can't re-promote the
-            // path between check and delete. Evicting a `.ready` entry is fine — the next request
-            // simply re-transcodes.
+            // Check-and-delete under `lock` so a concurrent request can't re-promote the path between check and delete.
             lock.lock()
             if pending[key] != nil {
                 lock.unlock()

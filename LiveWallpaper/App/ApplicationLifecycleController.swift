@@ -1,6 +1,5 @@
 import Foundation
 
-/// One-way application lifecycle gate plus ownership of work intentionally deferred past launch.
 @MainActor
 final class ApplicationLifecycleController {
     enum State: Equatable {

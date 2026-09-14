@@ -11,15 +11,11 @@ public struct DisplayArrangementItem<ID: Hashable>: Identifiable {
     }
 }
 
-/// Pure geometry behind `DisplayArrangementMap`, split out so the y-flip and the
-/// fit maths are testable without a view host.
 public enum DisplayArrangementLayout {
-    /// Union of every display frame in global display space.
     public static func bounds(of frames: [CGRect]) -> CGRect {
         frames.reduce(CGRect.null) { $0.union($1) }
     }
 
-    /// Largest factor that fits `bounds` inside `size`.
     public static func scale(bounds: CGRect, in size: CGSize) -> CGFloat {
         guard bounds.width > 0, bounds.height > 0 else { return 0 }
         return min(size.width / bounds.width, size.height / bounds.height)
@@ -42,9 +38,6 @@ public enum DisplayArrangementLayout {
     }
 }
 
-/// Mirrors the system's display arrangement: every tile keeps its real relative
-/// position and aspect ratio, scaled to fit a fixed-height band. Read-only —
-/// macOS owns the layout; this only shows which panel sits where.
 public struct DisplayArrangementMap<ID: Hashable, TileContent: View>: View {
     private let items: [DisplayArrangementItem<ID>]
     private let height: CGFloat
@@ -52,7 +45,6 @@ public struct DisplayArrangementMap<ID: Hashable, TileContent: View>: View {
     private let content: (DisplayArrangementItem<ID>, CGSize) -> TileContent
 
     /// - Parameters:
-    ///   - height: the band the map is scaled into; the arrangement is centred in it.
     ///   - gap: inset applied to every tile, so touching displays read as separate.
     ///   - content: receives the tile's on-screen size — small tiles can drop their label.
     public init(

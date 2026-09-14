@@ -57,7 +57,6 @@ struct InstalledFilterSnapBackTests {
         #expect(model.selectedTypes == [.scene])
         model.toggleType(.scene)
         #expect(model.selectedTypes == Set(WPELibraryTypeKind.allCases))
-        // A non-final deselect still narrows normally.
         model.toggleType(.video)
         #expect(model.selectedTypes == Set(WPELibraryTypeKind.allCases).subtracting([.video]))
     }

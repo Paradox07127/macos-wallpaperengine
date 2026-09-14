@@ -3,14 +3,11 @@ import LiveWallpaperCore
 import Observation
 import SwiftUI
 
-/// Whether an `AnimatedGIFThumbnail` plays on hover (grid / list idiom) or
-/// auto-plays (single-item detail surfaces).
 enum GIFPlaybackMode {
     case hoverToPlay
     case autoPlay
 }
 
-/// Workshop preview tile: static poster by default, plays the GIF/APNG only while hovered (`.hoverToPlay`) or immediately for detail surfaces (`.autoPlay`).
 struct AnimatedGIFThumbnail: View {
     let url: URL?
     var playbackMode: GIFPlaybackMode = .hoverToPlay
@@ -20,8 +17,7 @@ struct AnimatedGIFThumbnail: View {
     /// Decode budget. Grid tiles never need the 1920×1080 poster Steam stores;
     /// the detail hero does.
     var previewSize: WorkshopPreviewSize = .tile
-    /// Adult-content spoiler gate: blurs the poster behind a "click to reveal"
-    /// cover and suppresses playback. The parent flipping it false resumes play.
+    /// The parent flipping it false resumes play.
     var isBlurred: Bool = false
     @Binding var isHovered: Bool
 
@@ -30,8 +26,7 @@ struct AnimatedGIFThumbnail: View {
     @State private var isVisible = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// A collapsed inspector keeps its subtree mounted, so `onDisappear` never
-    /// fires and `isVisible` stays true — an `.autoPlay` hero would keep
-    /// decoding inside a zero-width panel.
+    /// fires and `isVisible` stays true — an `.autoPlay` hero would keep decoding.
     @Environment(\.inspectorContentIsVisible) private var inspectorContentIsVisible
 
     private enum LoadPhase { case loading, ready, failed, empty }
@@ -93,8 +88,7 @@ struct AnimatedGIFThumbnail: View {
         }
     }
 
-    /// Spoiler scrim over a blurred adult thumbnail; the parent handles the
-    /// reveal tap.
+    /// The parent handles the reveal tap.
     private var matureCover: some View {
         ZStack {
             Color.black.opacity(0.45)
@@ -155,8 +149,6 @@ struct AnimatedGIFThumbnail: View {
         applyPlaybackGate()
     }
 
-    /// Single source of truth: the gate decides, the controller obeys. Grid
-    /// tiles debounce; detail heroes run while the gate holds.
     private func applyPlaybackGate() {
         guard playbackGate.allowsPlayback else {
             controller.stop()
@@ -166,7 +158,6 @@ struct AnimatedGIFThumbnail: View {
     }
 }
 
-/// Frame-stepping state for one thumbnail.
 @MainActor
 @Observable
 final class GIFAnimationController {
@@ -184,9 +175,8 @@ final class GIFAnimationController {
         displayedFrame = asset?.posterFrame
     }
 
-    /// `debounced` waits `ThumbnailPlaybackGate.hoverPreviewDelayNanoseconds`
-    /// (now zero — the caller's `settledHover` owns the delay) so a mouse sweep
-    /// doesn't thrash the decoder; hover-exit in the window cancels before decode.
+    /// `debounced` waits `ThumbnailPlaybackGate.hoverPreviewDelayNanoseconds` (now
+    /// zero — the caller's `settledHover` owns the delay); hover-exit cancels first.
     func play(debounced: Bool) {
         guard case .animatedGIF = asset, playbackTask == nil else { return }
         debounceTask?.cancel()
@@ -199,8 +189,6 @@ final class GIFAnimationController {
         }
     }
 
-    /// Restores the poster frame unless suppressed (e.g. on disappear, where
-    /// there is nothing left to show).
     func stop(resetToPoster: Bool = true) {
         debounceTask?.cancel()
         debounceTask = nil
@@ -229,13 +217,11 @@ final class GIFAnimationController {
                 let delay = index < gif.frameDelays.count ? gif.frameDelays[index] : 0.1
                 try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
                 // The task strongly holds `gif` and its `CGImageSource`, so `[weak self]` only
-                // frees the controller — the decode loop keeps running for a tile already gone.
-                // `onDisappear` usually calls `stop()`, but `LazyVGrid` can drop a tile without it.
-                // `deinit` can't: the class is `@MainActor`, so a nonisolated `deinit` may not touch the task handles.
+                // frees the controller — and `LazyVGrid` can drop a tile without `onDisappear`.
+                // `deinit` can't: the class is `@MainActor`, so it may not touch the task handles.
                 guard !Task.isCancelled, let self else {
-                    // Nobody is left to call `stop()`, so release the LRU slot
-                    // here or a dead client holds one of the eight until it is
-                    // evicted.
+                    // Nobody is left to call `stop()`, so release the LRU slot here or a dead
+                    // client holds one of the eight until it is evicted.
                     GIFPlaybackCoordinator.shared.endPlayback(id: id)
                     break
                 }

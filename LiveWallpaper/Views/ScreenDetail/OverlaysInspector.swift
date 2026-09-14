@@ -2,14 +2,12 @@ import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
-/// Controls for the selected weather, monitor or music overlay page.
 struct OverlaysInspectorPanel: View {
     let screen: Screen
     @Binding var draft: DraftState
     let screenManager: ScreenManager
     let kind: OverlayKind
     let inspectorPanelWidth: CGFloat
-    /// Whether a still frame of the current wallpaper exists to sit behind the board.
     let backdropAvailable: Bool
     let onParticleEffectChange: (ParticleEffect) -> Void
     let onParticleDensityChange: (Double) -> Void
@@ -93,10 +91,8 @@ struct OverlaysInspectorPanel: View {
 
     private var isWeatherOn: Bool { draft.selectedParticleEffect != .none }
 
-    /// The model stores the effect as an 8-case enum, so a blunt on/off switch
-    /// would otherwise forget the choice. Remembered per display, because the
-    /// effect itself is per display — one global slot let one screen's last
-    /// effect come back on another. App-scoped store so tests do not write here.
+    /// The model stores the effect as an enum, so a blunt on/off switch would
+    /// forget the choice; remembered per display because the effect is per display.
     private var weatherEnabledBinding: Binding<Bool> {
         Binding(
             get: { isWeatherOn },
@@ -148,7 +144,6 @@ struct OverlaysInspectorPanel: View {
 
     private var particleDensityRow: some View {
         SettingRow(icon: "circle.hexagongrid", iconColor: .purple, title: "Density") {
-            // Coalesced: each sample rebuilt the display's particle overlay.
             CoalescedSlider(
                 value: draft.particleDensity,
                 in: 0.2...3.0,
@@ -181,9 +176,6 @@ struct OverlaysInspectorPanel: View {
         }
     }
 
-    /// Nested under "Match local weather" because neither means anything on
-    /// its own — with the parent off the display runs the chosen preset and
-    /// nothing about the sky reaches it.
     private var weatherIntensityRow: some View {
         SettingRow(
             icon: "cloud.heavyrain",
@@ -214,9 +206,8 @@ struct OverlaysInspectorPanel: View {
 
     // MARK: - Bindings
 
-    /// `.none` is what "off" is — closing it must go through
-    /// `weatherEnabledBinding` so the last effect gets remembered, not through
-    /// this picker directly.
+    /// `.none` is what "off" is: closing it must go through `weatherEnabledBinding`
+    /// so the last effect is remembered.
     static var pickerEffects: [ParticleEffect] {
         ParticleEffect.allCases.filter { $0 != .none }
     }

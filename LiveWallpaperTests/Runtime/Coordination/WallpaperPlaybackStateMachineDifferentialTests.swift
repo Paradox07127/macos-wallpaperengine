@@ -6,13 +6,8 @@ import Testing
 @MainActor
 @Suite("WallpaperPlaybackStateMachine differential vs WallpaperPolicyEngine")
 struct WallpaperPlaybackStateMachineDifferentialTests {
-    /// Oracle differential over the dimensions the engine actually owns:
-    /// intent stays fixed at true (the engine has no intent axis; intent
-    /// folding is covered by the machine's own table tests). Every pause
-    /// setting is enabled so each discretionary reason can really fire.
-    ///
-    /// A red here means the machine is wrong — the engine is the oracle and
-    /// must not be changed to make this pass.
+    /// The engine is the oracle: a red here means the machine is wrong, and the
+    /// engine must not be changed to make it pass.
     @Test("Machine mirrors the engine across the full input lattice")
     func machineMirrorsEngineAcrossInputLattice() {
         let settings = GlobalSettings(

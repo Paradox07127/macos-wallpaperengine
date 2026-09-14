@@ -3,7 +3,6 @@ import CoreGraphics
 import Foundation
 import LiveWallpaperCore
 
-/// Wallpaper Engine import flow on top of tracker + import service / cache resolver.
 @MainActor
 final class WPEImportCoordinator {
     typealias ImportOperation = @MainActor (URL) async throws -> WallpaperEngineImportService.ImportResult
@@ -21,9 +20,7 @@ final class WPEImportCoordinator {
     enum ApplyOutcome: Sendable, Equatable {
         case applied(origin: WPEOrigin)
         case unsupported(origin: WPEOrigin)
-        /// The folder was a preset, not a wallpaper: it joined the library's
-        /// preset menu and no screen changed. Callers that gate on "a wallpaper
-        /// is now set" must not treat this as `applied`.
+        /// Preset folder joined the library; no screen changed. Callers that gate on "a wallpaper is now set" must not treat this as `applied`.
         case registeredPreset(name: String)
         case rejected(reason: String)
     }
@@ -115,9 +112,6 @@ final class WPEImportCoordinator {
             case .unsupported(let origin):
                 return .unsupported(origin: origin)
             case .workshopPreset(let preset):
-                // Not applicable to a screen: a preset has no wallpaper of its
-                // own. Registering it is the whole action, and the user aimed a
-                // picker or a drop at it, so it lifts any delete tombstone.
                 await SettingsManager.shared.registerScenePreset(preset, clearsDeleteTombstone: true)
                 return .registeredPreset(name: preset.name)
             case .rejected(let reason):

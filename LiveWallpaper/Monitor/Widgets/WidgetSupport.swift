@@ -46,7 +46,6 @@ struct MonitorWidgetContext {
 
 #if DEBUG
 extension MonitorWidgetContext {
-    /// Preview helper: replace `now` while keeping the production context channel.
     func at(_ date: Date) -> MonitorWidgetContext {
         var copy = self
         copy.now = date
@@ -55,17 +54,15 @@ extension MonitorWidgetContext {
 }
 #endif
 
-/// One position on the board's shared time axis. `value == nil` means that
-/// instant produced no reading at all; a measured zero is `0`, and the two must
-/// never draw the same.
+/// One position on the shared time axis. `value == nil` is "no reading at that
+/// instant"; a measured zero is `0`, and the two must never draw the same.
 struct MonitorHistoryPoint: Sendable, Equatable {
     var time: Double
     var value: Double?
 }
 
-/// The stretch of wall clock a chart draws: `reference - length` … `reference`.
-/// The desktop passes the current time as the reference, a frozen preview its
-/// frozen time, so X always means "when", never "which array index".
+/// The stretch of wall clock a chart draws: `reference - length` … `reference`,
+/// so X always means "when", never "which array index".
 struct MonitorChartWindow: Sendable, Equatable {
     var reference: Double
     var length: Double
@@ -73,14 +70,9 @@ struct MonitorChartWindow: Sendable, Equatable {
     /// breaks there instead of interpolating across it.
     var tolerance: Double
 
-    /// How far a curve may reach across missing samples, as a multiple of the
-    /// series' own cadence. One dropped delivery leaves a 2× step — the board
-    /// pulls the newest snapshot out of a one-slot broker at the same nominal
-    /// rate the sampler fills it, so a push that runs long loses the sample it
-    /// stepped over — and two dropped in a row leave 3×. Measured jitter on the
-    /// real sampler is ±11% of the cadence, which puts those two cases at 2.2
-    /// and 2.7 at worst; 2.5 separates them with margin on both sides. So a
-    /// curve bridges one missing reading and breaks on two.
+    /// How far a curve may reach across missing samples, as a multiple of the series'
+    /// own cadence: one dropped delivery leaves a 2× step and two leave 3×, so 2.5
+    /// bridges one missing reading and breaks on two.
     static let bridgeFactor = 2.5
 
     /// `interval` is the series' own cadence; with none to go on, a twentieth
@@ -107,7 +99,6 @@ struct MonitorChartWindow: Sendable, Equatable {
     }
 }
 
-/// Shared time-axis geometry for the board's charts.
 enum ChartTimeAxis {
     static func x(_ time: Double, in window: MonitorChartWindow, width: CGFloat) -> CGFloat {
         CGFloat(window.fraction(of: time)) * width
@@ -117,10 +108,8 @@ enum ChartTimeAxis {
         runs(points, present: points.map { $0.value != nil }, tolerance: tolerance)
     }
 
-    /// Index runs of consecutive drawable samples. A run ends where a series has
-    /// no reading and where the step to the next sample exceeds `tolerance` —
-    /// the two ways a chart may not carry a line across. `present` is passed
-    /// separately so a paired band breaks wherever either of its sides does.
+    /// Index runs of consecutive drawable samples: a run ends at a missing reading or
+    /// a step over `tolerance`. `present` is separate so a paired band breaks either way.
     static func runs(
         _ points: [MonitorHistoryPoint],
         present: [Bool],
@@ -146,11 +135,9 @@ enum ChartTimeAxis {
     }
 }
 
-/// Every series is `[Double?]` over the shared `sampleTimes` axis: `nil` at a
-/// position is "no reading at that instant", which used to arrive as a literal
-/// `0` and drew a confident zero line through an outage. Keeping the axis shared
-/// means a missing CPU sample neither shifts nor drops the GPU sample taken at
-/// the same instant.
+/// Every series is `[Double?]` over the shared `sampleTimes` axis: `nil` is "no
+/// reading at that instant", never a zero. The shared axis means a missing CPU
+/// sample neither shifts nor drops the GPU sample taken at the same instant.
 struct MonitorHistorySnapshot: Sendable, Equatable {
     var sampleTimes: [Double] = []
     var cpuTotal: [Double?] = []
@@ -196,15 +183,9 @@ extension MonitorHistorySnapshot {
         Self.window(reference: reference, seconds: seconds, times: gpuSampleTimes)
     }
 
-    /// Cadence measured over the samples this window actually draws, not over
-    /// the whole 240-sample buffer. The refresh slider moves the board between
-    /// 0.5 s and 5 s per sample without clearing history, so the buffer keeps
-    /// the old cadence long after the chart stopped having it: measured, right
-    /// after 0.5 s → 2 s the buffer median was still 0.500 s while every step in
-    /// a 60 s window was 2.000 s, and all 30 adjacent pairs read as gaps — 31
-    /// isolated dots, for the 240 s the fast samples take to age out. The
-    /// whole-buffer median stays the fallback only when the window holds fewer
-    /// than two samples, where there is no pair to break anyway.
+    /// Cadence measured over the samples this window draws, not the whole buffer: the
+    /// refresh slider changes cadence without clearing history, so an old buffer median
+    /// reads every step in the window as a gap. Fallback only below two samples.
     private static func window(
         reference: Date, seconds: Double, times: [Double]
     ) -> MonitorChartWindow {
@@ -245,11 +226,9 @@ extension MonitorHistorySnapshot {
             .map { MonitorHistoryPoint(time: $0.0, value: $0.1) }
     }
 
-    /// The last `seconds` of a series aligned with `sampleTimes`, absent samples dropped. Not `suffix(seconds)`: that only
-    /// equals N seconds while the board samples at exactly 1 Hz, and the refresh slider spans 0.2…2 Hz — at the slow end a
-    /// "60s" chart was drawing five minutes of history, at the fast end thirty seconds. Falls back to a sample count when the
-    /// times are missing or out of step with the series — the only case where nothing better is known. Compatibility path for
-    /// the stacked CPU/Memory charts, which are still index-spaced; every time-axis chart takes `points(_:in:)` instead.
+    /// The last `seconds` of a series aligned with `sampleTimes`, absent samples
+    /// dropped. Not `suffix(seconds)`: that equals N seconds only at exactly 1 Hz and
+    /// the refresh slider spans 0.2…2 Hz. Falls back to a count when times are missing.
     func windowed(_ series: [Double?], seconds: Int, minimumPoints: Int = 2) -> [Double] {
         guard sampleTimes.count == series.count, let last = sampleTimes.last else {
             return series.suffix(max(seconds, minimumPoints)).compactMap(\.self)
@@ -285,9 +264,8 @@ final class MonitorHistoryStore: ObservableObject {
     /// Only consulted for snapshots that carry no measurement time — see `ingest`.
     private var lastSystem: MonitorSystemSnapshot?
 
-    /// 240, not 120: the longest offered window is 120 s and the refresh
-    /// slider goes down to 0.5 s per sample, so a 120-sample buffer could only
-    /// ever hand back 60 s of history for a chart labelled 120 s.
+    /// 240, not 120: the longest window is 120 s and the slider goes to 0.5 s per
+    /// sample, so 120 samples would only ever cover 60 s of a 120 s chart.
     init(capacity: Int = 240) {
         self.capacity = max(capacity, 2)
     }
@@ -301,13 +279,9 @@ final class MonitorHistoryStore: ObservableObject {
 
     func ingest(_ snapshot: MonitorSnapshot) {
         guard let sys = snapshot.system else { return }
-        // A sample needs a time the reading was actually taken at. Failing that
-        // the publish clock is all there is, and the hub republishes the same
-        // unchanged reading whenever any other source updates — taken at face
-        // value that lands as a fresh point milliseconds after the last one and
-        // manufactures a cadence nothing ever sampled at. So an unchanged
-        // reading with no measurement time is not a sample, and neither is one
-        // with no time at all: `Date()` used to invent one.
+        // The hub republishes the same unchanged reading whenever any other source
+        // updates, so an unchanged reading with no measurement time is not a sample:
+        // taking the publish clock at face value manufactures a cadence nothing sampled at.
         if sys.sampledAt == nil, sys == lastSystem {
             return
         }
@@ -328,9 +302,8 @@ final class MonitorHistoryStore: ObservableObject {
         next.cpuUser.append(cpu ? sys.cpuUser : nil)
         next.cpuSystem.append(cpu ? sys.cpuSystem : nil)
 
-        // One gate for all four memory series, so the stacked chart's bands stay
-        // index-aligned: a position where the breakdown is missing cannot be
-        // stacked at all. It is also how the source defines memory availability.
+        // One gate for all four memory series so the stacked bands stay index-aligned:
+        // a position with no breakdown cannot be stacked at all.
         let total = Double(sys.memTotalBytes)
         let breakdown = Self.sampled(sys, "memory") && total > 0 ? sys.memBreakdown : nil
         next.memUsedFraction.append(breakdown.map { _ in Double(sys.memUsedBytes) / total })
@@ -346,9 +319,8 @@ final class MonitorHistoryStore: ObservableObject {
         next.diskRead.append(disk ? sys.diskReadBytesPerSec : nil)
         next.diskWrite.append(disk ? sys.diskWriteBytesPerSec : nil)
 
-        // Gated on the sub-readings themselves, not on the GPU group's
-        // provenance: they are independently optional, and a poll that returned
-        // only the renderer must keep it rather than discard the whole row.
+        // Gated on the sub-readings, not the GPU group's provenance: a poll that
+        // returned only the renderer must keep it rather than discard the row.
         if sys.gpuUsage != nil || sys.gpuRendererUtil != nil || sys.gpuTilerUtil != nil {
             let gpuAt = sys.gpuSampledAt ?? t
             if lastGPUSampleAt != gpuAt {
@@ -393,10 +365,8 @@ final class MonitorHistoryStore: ObservableObject {
         current = next
     }
 
-    /// The snapshot's own statement about whether that group produced a reading.
-    /// Frames without provenance (older snapshots, previews, fixtures) are taken
-    /// at face value: there is nothing better to go on, and a second
-    /// availability rule here would drift from `readingsNotice`.
+    /// The snapshot's own statement about whether that group produced a reading; frames
+    /// without provenance are taken at face value, so this cannot drift from `readingsNotice`.
     private static func sampled(_ sys: MonitorSystemSnapshot, _ key: String) -> Bool {
         guard let samples = sys.metricSamples else { return true }
         return samples[key]?.available ?? false

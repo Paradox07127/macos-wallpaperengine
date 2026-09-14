@@ -340,13 +340,11 @@ struct CodexAgentSourceTests {
             eventTime: Date(timeIntervalSince1970: 10_000),
             eventType: "task_started"
         )
-        // Discovery: a running codex in this checkout beats a stale mtime.
         #expect(CodexAgentSource.isAlive(
             model: model,
             scannerSaysAlive: false,
             liveProcessDirectories: (directories: ["/tmp/alive"], complete: true)
         ))
-        // Disappearance: no matching cwd means gone, even inside the mtime window.
         #expect(!CodexAgentSource.isAlive(
             model: model,
             scannerSaysAlive: true,

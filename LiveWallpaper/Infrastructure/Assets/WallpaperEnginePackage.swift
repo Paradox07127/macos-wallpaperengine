@@ -1,6 +1,5 @@
 import Foundation
 
-/// Read-only scene.pkg: LE UInt32 header + named entry table + payload.
 struct WallpaperEnginePackage: Sendable, Equatable {
     struct Entry: Sendable, Equatable {
         let name: String
@@ -8,16 +7,12 @@ struct WallpaperEnginePackage: Sendable, Equatable {
         let dataSize: UInt64
     }
 
-    /// Two distinct canonical entry names that collapse onto the same
-    /// case-insensitive lookup key. Lookup compatibility remains first-match-wins,
-    /// but the shadowed entry is retained as evidence instead of disappearing
-    /// silently from the index.
+    /// Two canonical names that collapse onto one case-insensitive lookup key. First match wins; the shadowed entry is retained as evidence.
     struct CaseFoldCollision: Sendable, Equatable {
         let winningName: String
         let shadowedName: String
     }
 
-    /// Untrusted PKGV index limits (injectable for tests).
     struct IndexLimits: Sendable, Equatable {
         var maxEntryCount: UInt32 = 262_144
         var maxEntryNameBytes: UInt32 = 1_024
@@ -32,9 +27,6 @@ struct WallpaperEnginePackage: Sendable, Equatable {
     let magic: String
     let entries: [Entry]
     let dataStart: UInt64
-    /// Lowercased entry-name → entry, built once at parse so case-insensitive
-    /// lookups are O(1) instead of an O(n) lowercased scan per read (matters for
-    /// large packages + multi-root fallback cascades). First match wins.
     let nameIndex: [String: Entry]
     let caseFoldCollisions: [CaseFoldCollision]
 
@@ -52,9 +44,7 @@ struct WallpaperEnginePackage: Sendable, Equatable {
         self.caseFoldCollisions = caseFoldCollisions
     }
 
-    /// Per-component cap when writing to disk. APFS rejects a single path
-    /// component over 255 UTF-8 bytes, so over-long components are shortened on
-    /// extraction (see `filesystemSafeEntryName`).
+    /// Per-component cap when writing to disk. APFS rejects a component over 255 UTF-8 bytes, so over-long components are shortened on extraction.
     static let maxComponentBytes = 250
     static func parseIndex(
         streamingFrom handle: FileHandle,
@@ -171,8 +161,6 @@ struct WallpaperEnginePackage: Sendable, Equatable {
     }
 
     #if DEBUG
-    /// Atomic extraction: writes into `<root>.inflight`, then swaps via `<root>.replaced`, so a partially extracted directory is never observed at `rootURL`.
-    /// No production path extracts any more (imports read in place); the only caller is `OracleCorpusCaptureTests`, which stages a package to a scratch dir.
     func extractAll(streamingFrom handle: FileHandle, to rootURL: URL) throws {
         let fileManager = FileManager.default
         let parentURL = rootURL.deletingLastPathComponent()
@@ -341,15 +329,11 @@ struct WallpaperEnginePackage: Sendable, Equatable {
         return data
     }
 
-    /// Case-insensitive lookup, O(1) via the prebuilt `nameIndex`.
     func entry(named name: String) -> Entry? {
         nameIndex[name.lowercased()]
     }
 
-    /// Normalizes a requested path into the same canonical form `parseIndex`
-    /// stored (drops `.`/empty components; rejects leading `/` or any `..`
-    /// traversal component) so a lookup matches. Mirrors `canonicalEntryName`
-    /// but returns `nil` instead of throwing — lookups treat invalid as a miss.
+    /// Same canonical form as `parseIndex` (drops `.`/empty; rejects leading `/` or `..`). Returns nil instead of throwing — lookups treat invalid as a miss.
     static func canonicalLookupName(_ name: String) -> String? {
         guard !name.hasPrefix("/") else { return nil }
         var canonical: [String] = []
@@ -361,8 +345,7 @@ struct WallpaperEnginePackage: Sendable, Equatable {
         return canonical.isEmpty ? nil : canonical.joined(separator: "/")
     }
 
-    /// Shortens any path component that exceeds the APFS 255-byte limit so the file extracts instead of failing the whole package. Truncation is deterministic (char-boundary base + a stable FNV-1a suffix + original extension), so re-extraction is idempotent.
-    /// A renamed asset won't match the scene's reference (e.g. an over-long sound path goes silent), but the wallpaper still extracts and renders. Components within the limit pass through untouched.
+    /// Truncation is deterministic (char-boundary base + stable FNV-1a suffix + original extension), so re-extraction is idempotent.
     static func filesystemSafeEntryName(_ name: String) -> String {
         name.split(separator: "/", omittingEmptySubsequences: false).map { raw -> String in
             let component = String(raw)
@@ -413,7 +396,6 @@ struct WallpaperEnginePackage: Sendable, Equatable {
                 continue
             }
             // Only a component equal to ".." traverses; filenames containing it remain valid.
-            // Extraction independently verifies that the resolved path stays inside the root.
             guard component != ".." else {
                 throw WPEPackageError.pathTraversal(name: name)
             }

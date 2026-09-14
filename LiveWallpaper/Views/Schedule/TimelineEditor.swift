@@ -2,7 +2,6 @@ import SwiftUI
 import AppKit
 import LiveWallpaperCore
 
-/// Interactive 24h timeline.
 struct TimelineEditor: View {
     let slots: [ScheduleSlot]
     let currentHour: Int
@@ -160,7 +159,6 @@ struct TimelineEditor: View {
         }
     }
 
-    /// Live drag preview when this slot is the active drag, else persisted hours.
     private func displayHours(for slot: ScheduleSlot) -> (start: Int, end: Int) {
         if let drag, drag.slotID == slot.id {
             return drag.proposedHours

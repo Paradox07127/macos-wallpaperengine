@@ -2,38 +2,15 @@ import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
-/// Direct manipulation of a web wallpaper's layout transform, on the preview
-/// itself: drag to move, pinch to scale, twist to rotate.
-///
-/// Three facts shaped this, all checked rather than assumed:
-///
-/// * The preview is a static `NSImage` snapshot, so a gesture layer over it
-///   cannot fight the page's own interactivity — and a snapshot costs a full
-///   offscreen web render, so it must never be taken mid-gesture. The live
-///   feedback is this view transforming the image it already has.
-/// * There are TWO snapshot paths and they differ. The offscreen one
-///   (`PendingHTMLSnapshot`) never injects the transform script, so its image is
-///   the untransformed page. But while the wallpaper is *playing*,
-///   `HTMLPreviewSection` prefers a capture of the running WebView, which the
-///   runtime has already transformed. Drawing the committed transform on that
-///   image squares it — a 2× wallpaper previewed at 4×. So this view draws the
-///   full transform only over an untransformed base, and over a live capture it
-///   draws the in-flight gesture delta alone.
-/// * The wallpaper's own transform is a CSS string —
-///   `translate(TXpx,TYpx) rotate(Rdeg) scale(S)` with `transform-origin:50% 50%`
-///   (`HTMLWallpaperRuntimeScript`). CSS composes right-to-left, so scale happens
-///   first. SwiftUI modifiers wrap outward, so `.scaleEffect` → `.rotationEffect`
-///   → `.offset` is the same composition. Reordering these makes the preview lie.
-///
-/// Writes land once, on release. The sliders in the transform popover stay: they
-/// are the keyboard and VoiceOver path, and the place to type an exact number.
+/// Drag to move, pinch to scale, twist to rotate; writes land once, on release.
+/// Draws the full transform only over an untransformed base — over a live capture,
+/// already transformed by the runtime, it draws the gesture delta alone.
+/// `.scaleEffect` → `.rotationEffect` → `.offset` mirrors the CSS string's right-to-left
+/// composition; reordering makes the preview lie.
 struct WebTransformCanvas<Content: View>: View {
     let screen: Screen
     @Binding var config: HTMLConfig
-    /// Gestures are attached only while this is on. The preview occupies most of
-    /// the page, so an always-live drag layer means the first stray swipe throws
-    /// the wallpaper off-centre; arming it is a deliberate act, from the transform
-    /// popover.
+    /// Gestures are attached only while this is on; arming happens in the transform popover.
     let isArmed: Bool
     /// The base image already has the committed transform baked in (a capture of
     /// the running wallpaper), so only the gesture's own delta may be drawn.
@@ -47,22 +24,14 @@ struct WebTransformCanvas<Content: View>: View {
     @State private var rotationDelta: Angle = .zero
     @State private var isManipulating = false
     @State private var previewSize = CGSize(width: 1, height: 1)
-    /// Which recognisers are mid-flight. Committing on the first `onEnded` while
-    /// a second is still running clears the accumulators under it, and its next
-    /// update — which reports a total, not a delta — then compounds onto the
-    /// value just written. A set, not a count: `onChanged` fires per sample.
+    /// Which recognisers are mid-flight. A set, not a count: `onChanged` fires per sample,
+    /// and committing while one still runs compounds its next total onto the value just written.
     private enum GestureKind: Hashable { case drag, magnify, rotate }
     @State private var activeGestures: Set<GestureKind> = []
 
     /// One preview point is this many CSS pixels on the display.
-    ///
-    /// `min`, not the width ratio: the preview fills a 16:9 box with
-    /// `scaledToFill`, so on a display of any other aspect the picture is cropped
-    /// on one axis and the *other* axis sets the scale. Taking width alone made a
-    /// 21:9 display's drags travel about a third further than the preview showed.
-    ///
-    /// `NSScreen.frame` is in points, which is what CSS pixels are, so there is no
-    /// backing-scale term.
+    /// `min`, not the width ratio: `scaledToFill` crops one axis, so the *other* sets the scale.
+    /// `NSScreen.frame` is in points, which is what CSS pixels are — no backing-scale term.
     private var pointsToCSS: Double {
         guard previewSize.width > 1, previewSize.height > 1 else { return 1 }
         return min(
@@ -96,7 +65,6 @@ struct WebTransformCanvas<Content: View>: View {
             }
             .overlay {
                 if isArmed {
-                    // Says the canvas is live without adding a control to it.
                     RoundedRectangle(cornerRadius: DesignTokens.Corner.preview, style: .continuous)
                         .strokeBorder(Color.accentColor.opacity(0.85), lineWidth: 1.5)
                         .allowsHitTesting(false)
@@ -138,9 +106,8 @@ struct WebTransformCanvas<Content: View>: View {
         snappedScale(HTMLConfig.clampedTransformScale(config.transformScale * magnification))
     }
 
-    /// `HTMLConfig` normalises rotation into (-360, 360), so 270° is a legal
-    /// persisted value. Clamping to ±180 here showed it as 180 and then wrote
-    /// that back permanently on the next gesture.
+    /// `HTMLConfig` normalises rotation into (-360, 360), so 270° is legal; clamping to ±180
+    /// here would write that clamp back on the next gesture.
     private var liveRotation: Double {
         snappedRotation(
             HTMLConfig.clampedTransformRotation(config.transformRotationDegrees + rotationDelta.degrees)
@@ -174,15 +141,13 @@ struct WebTransformCanvas<Content: View>: View {
         DragGesture(minimumDistance: 1)
             .onChanged { value in
                 beginGesture(.drag)
-                // Option turns the drag into a scale and Command into a rotation,
-                // because a mouse has neither pinch nor twist.
+                // A mouse has neither pinch nor twist.
                 let flags = NSEvent.modifierFlags
                 if flags.contains(.option) {
                     magnification = max(0.05, 1 - value.translation.height / 200)
                 } else if flags.contains(.command) {
                     rotationDelta = .degrees(Double(value.translation.width) / 2)
                 } else if flags.contains(.shift) {
-                    // Axis lock: whichever axis has travelled further wins.
                     dragTranslation = abs(value.translation.width) >= abs(value.translation.height)
                         ? CGSize(width: value.translation.width, height: 0)
                         : CGSize(width: 0, height: value.translation.height)
@@ -213,8 +178,6 @@ struct WebTransformCanvas<Content: View>: View {
 
     // MARK: - Commit
 
-    /// Each recogniser reports a total measured from its own start, so the shared
-    /// accumulators may only be cleared once every one of them has finished.
     private func beginGesture(_ kind: GestureKind) {
         isManipulating = true
         activeGestures.insert(kind)
@@ -226,9 +189,6 @@ struct WebTransformCanvas<Content: View>: View {
         commit()
     }
 
-    /// The one write. Everything above this line is local state driving a
-    /// `scaleEffect`/`offset`, which is why a drag does not reach the running
-    /// wallpaper on every sample.
     private func commit() {
         var next = config
         next.transformScale = liveScale
@@ -263,8 +223,6 @@ struct WebTransformCanvas<Content: View>: View {
 
     // MARK: - Snapping
 
-    /// Command suppresses every snap, for the case where the value the user wants
-    /// is just off one of them.
     private var snapsEnabled: Bool {
         !NSEvent.modifierFlags.contains(.command)
     }
@@ -292,8 +250,6 @@ struct WebTransformCanvas<Content: View>: View {
 
     // MARK: - Readout
 
-    /// Only while a gesture is running: 100% and 103% look the same, and a
-    /// permanent readout would be one more thing floating over the wallpaper.
     private var readout: some View {
         Text(verbatim: String(
             format: "%.0f%%  %.0f°  %.0f, %.0f",

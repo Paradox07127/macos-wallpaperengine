@@ -2,7 +2,6 @@ import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
-/// A bookmarked or Workshop video available for export to System Wallpaper.
 @available(macOS 26.0, *)
 struct SystemWallpaperCandidate: Identifiable {
     enum Source {
@@ -48,7 +47,6 @@ struct SystemWallpaperCandidate: Identifiable {
     }
     #endif
 
-    /// Propagate each failure so later successes cannot erase batch error reporting.
     @MainActor
     func publish(using service: WallpaperExportService) async throws {
         switch source {
@@ -64,9 +62,8 @@ struct SystemWallpaperCandidate: Identifiable {
         }
     }
 
-    /// Poster frame, when the source can produce one: bookmarks decode a frame the
-    /// same way the Bookmarks grid does, through the shared cache. Workshop
-    /// entries have none yet and fall back to the tile's placeholder.
+    /// Poster frame when the source can produce one; Workshop entries have none yet and
+    /// fall back to the tile's placeholder.
     @MainActor
     func thumbnail() async -> NSImage? {
         switch source {

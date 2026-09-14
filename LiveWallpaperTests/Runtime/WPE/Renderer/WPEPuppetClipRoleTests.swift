@@ -263,9 +263,6 @@ struct WPEPuppetClipRoleTests {
 
     @Test("A clip group with two sources clips its target against both of them")
     func authoredClipGroupUnionsEverySource() {
-        // Every eye rig in the corpus (3558034522, 3578699777) authors one target and two sources
-        // per group: the iris is clipped by BOTH eye-whites. Pairing the two lists positionally
-        // dropped the whole group and left the irises unclipped through a blink.
         let vertices = quad(bone: 0, minX: 20, maxX: 60, minY: -5, maxY: 5)
             + quad(bone: 1, minX: -60, maxX: -20, minY: -5, maxY: 5)
             + quad(bone: 2, minX: -45, maxX: -35, minY: -3, maxY: 3)
@@ -374,9 +371,6 @@ struct WPEPuppetClipRoleTests {
                     for (groupIndex, group) in mesh.clipGroups.enumerated() {
                         groupCount += 1
                         let label = "\(folder.lastPathComponent)/\(entry.name) group \(groupIndex)"
-                        // Every authored target must reach a silhouette built from the whole source
-                        // list. A dropped group renders as an unclipped part — 3558034522's irises
-                        // stayed visible through a blink because both its groups were discarded.
                         for target in group.targetPartIndices where mesh.parts[target].count > 0 {
                             let route = try #require(routing.routeForTarget[target], "\(label) target \(target)")
                             #expect(
@@ -426,9 +420,8 @@ struct WPEPuppetClipRoleTests {
 
     @Test("Character-sheet clip roles use the assembled frame-zero pose")
     func characterSheetUsesFrameZeroReference() {
-        // The raw atlas keeps the source far from its target. Frame 0 assembles the source around
-        // the target; frame 1 then squishes it shut. Raw-MDL containment therefore proves no route,
-        // while the authored frame-zero reference proves exactly one.
+        // Frame 0 assembles the source around the target, frame 1 squishes it shut: raw-MDL
+        // containment proves no route, the authored frame-zero reference proves exactly one.
         let vertices = quad(bone: 0, minX: -100, maxX: -80, minY: -5, maxY: 5)
             + quad(bone: 1, minX: -3, maxX: 3, minY: -3, maxY: 3)
         let mesh = WPEPuppetMesh(

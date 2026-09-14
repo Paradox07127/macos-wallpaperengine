@@ -6,21 +6,12 @@ import LiveWallpaperProWPE
 import Testing
 import UniformTypeIdentifiers
 
-/// GitHub issue #133, second half: `MediaPlaybackEvent` exists now, but nothing
-/// ever calls the handlers, so media scenes still render blank text and static
-/// UI. WPE has no `register*Listener` and no opt-in flag — the engine calls
-/// conventionally-named exported functions on each property script module.
-///
-/// Every test here drives an injected `FakeNowPlayingSource`. Nothing in this
-/// file may reach `NowPlayingMonitor.shared`, which observes the user's real
-/// Spotify/Music via DistributedNotificationCenter.
+/// Nothing in this file may reach `NowPlayingMonitor.shared`, which observes the user's real Spotify/Music via DistributedNotificationCenter.
 @MainActor
 final class FakeNowPlayingSource: WPENowPlayingEventSource {
     private var handlers: [UUID: @Sendable (UInt64, MonitorNowPlayingState) -> Void] = [:]
     private var ordinal: UInt64 = 0
 
-    /// The demand-gate assertion: a scene with no media handler must never
-    /// reach `subscribe`.
     var subscriberCount: Int { handlers.count }
     private(set) var replayedState = MonitorNowPlayingState(phase: .noPlayer, title: "")
 
@@ -95,7 +86,6 @@ struct WPESceneMediaEventDispatchTests {
 
     // MARK: - 1. mediaPlaybackChanged reaches a layer-visibility script
 
-    /// The canonical corpus body, e.g. scene 3713073223's visibility script.
     @Test("A layer script's mediaPlaybackChanged receives state 1 while playing")
     func playbackChangedReachesLayerScript() throws {
         let instance = try layerInstance(script: """
@@ -107,18 +97,13 @@ struct WPESceneMediaEventDispatchTests {
         """)
         #expect(instance.mediaHandlers.playback, "the module exports the handler")
         instance.dispatchMediaEvent(.playbackChanged(.playing))
-        // update() must be able to read what the handler stored.
         #expect(instance.tick()?.own.visible == true)
 
         instance.dispatchMediaEvent(.playbackChanged(.paused))
         #expect(instance.tick()?.own.visible == false)
     }
 
-    /// The production drain path: a cold start posts `[playback, properties,
-    /// thumbnail]` in one drain, and the frame path is the fire-and-forget async
-    /// lane, not the bounded-sync one the other tests use. Dispatched per event,
-    /// the single in-flight slot admitted playback and silently dropped the rest
-    /// — title/artist never reached the script until the next real change.
+    /// This is the fire-and-forget async lane, not the bounded-sync one the other tests use; a cold start posts all three events in one drain.
     @Test("A cold-start burst delivers every event to the async lane, not just the first")
     func liveBurstDeliversEveryEvent() async throws {
         let instance = try layerInstance(script: """
@@ -179,9 +164,7 @@ struct WPESceneMediaEventDispatchTests {
         #expect(instance.tickString() == "Redbone - Childish Gambino")
     }
 
-    /// The docs are explicit that most players fill in only title and artist.
-    /// Scripts concatenate these fields, so `undefined` would render the literal
-    /// text "undefined" on the wallpaper.
+    /// Scripts concatenate these fields, so `undefined` would render the literal text "undefined" on the wallpaper.
     @Test("Fields we cannot source arrive as empty strings, never undefined")
     func unavailableFieldsAreEmptyStrings() throws {
         let instance = try textInstance(script: """
@@ -212,15 +195,12 @@ struct WPESceneMediaEventDispatchTests {
         )
         // First delivery after load forces all three events.
         #expect(gate.events(for: playing).count == 3)
-        // Same snapshot again: nothing moved, so nothing is dispatched.
         #expect(gate.events(for: playing).isEmpty)
 
-        // Only the state moved.
         var paused = playing
         paused.state = .paused
         #expect(gate.events(for: paused) == [.playbackChanged(.paused)])
 
-        // Only the properties moved.
         var nextTrack = paused
         nextTrack.properties.title = "Sober"
         #expect(
@@ -248,19 +228,13 @@ struct WPESceneMediaEventDispatchTests {
     func awaitingFirstEventWithholdsEverything() {
         var gate = WPESceneMediaDiffGate()
 
-        // Cold launch: nothing has been reported yet — that is the ABSENCE of an
-        // observation, not one. Delivering PLAYBACK_STOPPED latched author
-        // scripts that gate on stop, and delivering the EMPTY properties made
-        // scenes run their track-change animation into a blank title and park
-        // there (3326873240's flip froze at scale 0). WPE simply does not call
-        // handlers until it has data.
+        // Cold launch: nothing has been reported yet — that is the ABSENCE of an observation, not a "stopped" one.
         let awaiting = WPESceneMediaSnapshot(
             MonitorNowPlayingState(phase: .awaitingFirstEvent, title: "")
         )
         #expect(gate.events(for: awaiting).isEmpty)
         #expect(gate.events(for: awaiting).isEmpty, "replays of the unknown state stay silent")
 
-        // The first real snapshot is the first delivery: every field force-fires.
         let playing = WPESceneMediaSnapshot(
             MonitorNowPlayingState(phase: .playing, title: "Into the Sky")
         )
@@ -280,9 +254,6 @@ struct WPESceneMediaEventDispatchTests {
 
     // MARK: - 4. A throwing handler backs off alone
 
-    /// Keyed by handler name, like the cursor handlers: a broken
-    /// `mediaPropertiesChanged` must not take down `update()` — that is exactly
-    /// the failure mode issue #133 reported, one level down.
     @Test("A throwing media handler is backed off without disabling update()")
     func throwingHandlerDoesNotGateUpdate() throws {
         let instance = try textInstance(script: """
@@ -294,10 +265,8 @@ struct WPESceneMediaEventDispatchTests {
         for _ in 0 ..< 8 {
             instance.dispatchMediaEvent(.propertiesChanged(WPESceneMediaProperties(title: "t")))
         }
-        // The other media handler still runs...
         instance.dispatchMediaEvent(.playbackChanged(.playing))
         #expect(instance.tickString() == "state1")
-        // ...and so does update().
         instance.dispatchMediaEvent(.playbackChanged(.paused))
         #expect(instance.tickString() == "state2")
     }
@@ -314,10 +283,6 @@ struct WPESceneMediaEventDispatchTests {
         #expect(source.subscriberCount == 0)
     }
 
-    /// The demand scan is a text probe over the script source. Matching the raw
-    /// text made a comment or a string containing an event name subscribe the
-    /// scene to now-playing — the written requirement is that a scene with no
-    /// handler costs nothing.
     @Test("An event name in a comment or string does not create demand")
     func commentedNameCreatesNoDemand() throws {
         let commented = try document(scripts: [
@@ -356,7 +321,6 @@ struct WPESceneMediaEventDispatchTests {
         let dispatcher = WPESceneMediaEventDispatcher(source: source)
         dispatcher.start()
         #expect(source.subscriberCount == 1)
-        // The synchronous replay on subscribe is the first, forced delivery.
         #expect(dispatcher.mailbox.drain().count == 3)
 
         source.push(MonitorNowPlayingState(phase: .playing, title: "Redbone", artist: "Gambino"))
@@ -366,13 +330,10 @@ struct WPESceneMediaEventDispatchTests {
             title: "Redbone", artist: "Gambino"
         ))))
 
-        // An unchanged repush posts nothing — the mailbox stays empty.
         source.repush()
         #expect(dispatcher.mailbox.drain().isEmpty)
     }
 
-    /// `mediaPlaybackChanged` is authored on visibility scripts, not text ones,
-    /// so the demand scan has to cover every script slot a corpus scene uses.
     @Test("The demand scan sees a handler on a visibility script too")
     func demandScanCoversVisibilityScripts() throws {
         let scene = try document(scripts: [
@@ -396,7 +357,6 @@ struct WPESceneMediaEventDispatchTests {
         dispatcher.stop()
         #expect(source.subscriberCount == 0)
 
-        // A push after teardown must not reach the retired scene's mailbox.
         _ = dispatcher.mailbox.drain()
         source.push(MonitorNowPlayingState(phase: .playing, title: "Later"))
         #expect(dispatcher.mailbox.drain().isEmpty)
@@ -415,9 +375,6 @@ struct WPESceneMediaEventDispatchTests {
         )
     }
 
-    /// Corpus scenes 3326873240 / 3369989878 / 3510729512 all bind
-    /// `mediaPlaybackChanged` to `scale/script` and `origin/script`, which the
-    /// dynamic-transform runtime hosts. It received nothing before this.
     @Test("A dynamic-transform script's mediaPlaybackChanged receives state")
     func playbackChangedReachesTransformScript() throws {
         let instance = try transformInstance(script: """
@@ -433,8 +390,6 @@ struct WPESceneMediaEventDispatchTests {
         #expect(instance.tick(pointerPosition: SIMD2<Double>(0.5, 0.5))?.x == 2)
     }
 
-    /// A transform script that exports nothing media-shaped must stay untouched:
-    /// `handles` is what keeps every non-media scale script off the event lane.
     @Test("A dynamic-transform script without a media handler reports no demand")
     func transformWithoutHandlerReportsNoDemand() throws {
         let instance = try transformInstance(script: """
@@ -447,9 +402,7 @@ struct WPESceneMediaEventDispatchTests {
 
     // MARK: - 8. mediaThumbnailChanged payload
 
-    /// Reports `hasThumbnail` plus each colour as `x,y,z` — or `not-vec3` if the
-    /// field is not a real `Vec3`, which corpus colour scripts require (they call
-    /// `.mix()` on it and return the result as the transform value).
+    /// `not-vec3` matters because corpus colour scripts call `.mix()` on these fields, so a plain object would break them.
     private static let thumbnailProbeScript = """
     var report = 'none';
     export function mediaThumbnailChanged(event) {
@@ -482,13 +435,10 @@ struct WPESceneMediaEventDispatchTests {
         let colors = try #require(report.last).components(separatedBy: ";")
         #expect(colors.count == 5)
         #expect(!colors.contains("not-vec3"), "corpus colour scripts call Vec3 methods on these")
-        // Red-dominant art: the primary's red channel leads by a wide margin.
         #expect(thumbnail.primaryColor.x > 0.6)
         #expect(thumbnail.primaryColor.x > thumbnail.primaryColor.y + 0.4)
     }
 
-    /// The documented no-artwork fallback: black accents, white text. A scene
-    /// tinting with `primaryColor` and labelling with `textColor` stays legible.
     @Test("A script sees hasThumbnail false and the neutral fallback when art is nil")
     func thumbnailChangedWithoutArtworkIsNeutral() throws {
         var cache = WPEMediaArtworkPaletteCache()
@@ -571,13 +521,10 @@ struct WPESceneMediaEventDispatchTests {
         #expect(first.tertiaryColor != first.secondaryColor)
     }
 
-    /// The failure mode a naive most-frequent-bucket vote has: 90% of the pixels
-    /// are near-white, so it would report near-white and the scene's accent UI
-    /// would go blank.
+    /// A naive most-frequent-bucket vote would report the near-white 90% and the scene's accent UI would go blank.
     @Test("A mostly near-white image reports its accent, not the near-white")
     func nearWhiteBackgroundDoesNotWinTheVote() throws {
         let artwork = try Self.image(width: 100, height: 100) { x, y in
-            // Bottom 10 rows are a saturated blue accent; the rest is near-white.
             y >= 90 ? SIMD3<Double>(0.05, 0.15, 0.95) : SIMD3<Double>(0.96, 0.96, 0.94)
         }
         let palette = try #require(WPEMediaArtworkPalette.palette(from: artwork))
@@ -585,9 +532,7 @@ struct WPESceneMediaEventDispatchTests {
         #expect(palette.primaryColor.x < 0.4, "and it must not be the near-white field")
     }
 
-    /// A black-and-white cover has no chromatic pixels at all. The neutral bucket
-    /// is the only thing standing between it and a divide-by-zero mean, and that
-    /// branch only exists because near-neutral pixels are held out of the vote.
+    /// A greyscale cover has no chromatic pixels: the neutral bucket is the only thing between it and a divide-by-zero mean.
     @Test("A greyscale image falls back to the neutral vote instead of NaN")
     func greyscaleArtworkUsesTheNeutralFallback() throws {
         let artwork = try Self.image(width: 64, height: 64) { _, y in
@@ -608,7 +553,6 @@ struct WPESceneMediaEventDispatchTests {
         #expect(WPEMediaArtworkPalette.highContrastColor(against: dark) == SIMD3<Double>(1, 1, 1))
         #expect(WPEMediaArtworkPalette.highContrastColor(against: light) == SIMD3<Double>(0, 0, 0))
 
-        // End to end, through the extractor: textColor tracks it.
         let darkPalette = try #require(WPEMediaArtworkPalette.palette(from: Self.solidImage(dark)))
         #expect(darkPalette.highContrastColor == SIMD3<Double>(1, 1, 1))
         #expect(darkPalette.textColor == darkPalette.highContrastColor)
@@ -617,7 +561,6 @@ struct WPESceneMediaEventDispatchTests {
         #expect(lightPalette.textColor == lightPalette.highContrastColor)
     }
 
-    /// The cache must not be the reason two different covers look the same.
     @Test("The palette cache returns the same art unchanged and re-extracts new art")
     func paletteCacheKeysOnTheArtworkBytes() throws {
         var cache = WPEMediaArtworkPaletteCache()
@@ -646,16 +589,13 @@ struct WPESceneMediaEventDispatchTests {
             properties: WPESceneMediaProperties(title: "Redbone"),
             thumbnail: red
         )
-        // Forced first delivery covers all three events.
         #expect(gate.events(for: snapshot).count == 3)
-        // Same art again: nothing moved.
         #expect(gate.events(for: snapshot).isEmpty)
 
         snapshot.thumbnail = blue
         #expect(gate.events(for: snapshot) == [.thumbnailChanged(blue)])
         #expect(gate.events(for: snapshot).isEmpty)
 
-        // Losing the art is a change too — the scene must drop back to neutral.
         snapshot.thumbnail = .absent
         #expect(gate.events(for: snapshot) == [.thumbnailChanged(.absent)])
     }
@@ -684,10 +624,6 @@ struct WPESceneMediaEventDispatchTests {
         WPESceneMediaEventDispatcher(source: source, now: { clock.now })
     }
 
-    /// Corpus scenes 2955378002 / 3326873240 / 3369989878 / 3510729512 bind
-    /// `mediaTimelineChanged` on `origin` and `scale` — the dynamic-transform
-    /// runtime. The other two runtimes are asserted here as well because a scene
-    /// may bind the same handler to a text or visibility script.
     @Test("A script's mediaTimelineChanged receives position and duration in seconds")
     func timelineChangedReachesEveryRuntime() throws {
         let transform = try transformInstance(script: """
@@ -724,9 +660,7 @@ struct WPESceneMediaEventDispatchTests {
         #expect(layer.tick()?.own.visible == true)
     }
 
-    /// A raw `position` can be up to ~5s stale (Apple Music has no position in its
-    /// notification, so a 5s AppleScript poll fills it in). Delivering it raw
-    /// would make every progress bar lag by up to a poll interval.
+    /// A raw `position` can be up to ~5s stale (Apple Music reports none, a 5s poll fills it in), so delivering it raw would lag every progress bar.
     @Test("While playing, the delivered position is advanced to the delivery clock")
     func positionIsInterpolatedWhilePlaying() throws {
         let source = FakeNowPlayingSource()
@@ -795,8 +729,7 @@ struct WPESceneMediaEventDispatchTests {
         )
     }
 
-    /// The docs tell authors the callback may never fire, so silence is
-    /// contract-compliant. Sending zeros would paint a fake `0:00 / 0:00` bar.
+    /// Silence is contract-compliant here; sending zeros would paint a fake `0:00 / 0:00` bar.
     @Test("Without a position or without a duration the handler is never called")
     func missingTimelineDataDeliversNothing() throws {
         let source = FakeNowPlayingSource()
@@ -805,7 +738,7 @@ struct WPESceneMediaEventDispatchTests {
         dispatcher.start()
         _ = dispatcher.mailbox.drain()
 
-        // Apple Music before the poll lands: duration known, position not.
+        // Apple Music before the poll lands.
         source.push(MonitorNowPlayingState(
             phase: .playing,
             title: "Redbone",
@@ -815,7 +748,7 @@ struct WPESceneMediaEventDispatchTests {
         ))
         #expect(timelineEvents(in: dispatcher.mailbox.drain()).isEmpty)
 
-        // A player that reports a position but no duration (live stream).
+        // A live stream: a position but no duration.
         source.push(MonitorNowPlayingState(
             phase: .playing,
             title: "Stream",
@@ -861,7 +794,6 @@ struct WPESceneMediaEventDispatchTests {
         dispatcher.start()
         #expect(source.subscriberCount == 1)
 
-        // ...while a scene with no media handler at all still costs nothing.
         let silent = try document(scripts: [
             "scale": "export function update(value) { return value; }"
         ])

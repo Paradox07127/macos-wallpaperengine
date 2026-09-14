@@ -1,7 +1,5 @@
 import SwiftUI
 
-/// Fixed size presets so capsule buttons stay uniform across pages — callers
-/// previously passed ad-hoc font/padding combos and no two pages matched.
 public enum CapsuleButtonPreset: Sendable {
     case small
     case regular

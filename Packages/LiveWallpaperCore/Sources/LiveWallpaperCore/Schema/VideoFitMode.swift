@@ -12,8 +12,8 @@ public enum VideoFitMode: String, Codable, CaseIterable, Identifiable, Sendable 
 
     public var id: String { rawValue }
 
-    /// Tolerant decoder: an unknown fit mode (future build's addition, rolled back)
-    /// decodes to `.aspectFill` instead of failing the whole `ScreenConfiguration` parse.
+    /// Tolerant decoder: an unknown fit mode decodes to `.aspectFill` instead of failing
+    /// the whole `ScreenConfiguration` parse.
     public init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         let rawValue = try container.decode(String.self)

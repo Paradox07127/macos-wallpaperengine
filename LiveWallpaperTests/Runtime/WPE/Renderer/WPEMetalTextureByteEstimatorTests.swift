@@ -8,8 +8,7 @@ import Testing
 struct WPEMetalTextureByteEstimatorTests {
     @Test("BC3 counts compressed blocks, not pixels")
     func bc3BlockMath() {
-        // 4096x4096 bc3 = 1024x1024 blocks x 16 bytes = 16 MiB (not the 64 MiB
-        // the old per-pixel census math reported).
+        // 4096x4096 bc3 = 1024x1024 blocks x 16 bytes = 16 MiB.
         #expect(WPEMetalTextureByteEstimator.estimatedBytes(
             pixelFormat: .bc3_rgba,
             width: 4096,
@@ -87,15 +86,9 @@ struct WPEMetalTextureByteEstimatorTests {
         ) == 16_777_216 * 3)
     }
 
-    /// The static-layer cache is the one byte-accounting path that must NOT use
-    /// this estimator. It reserves budget from a descriptor before allocating and
-    /// `recordSnapshot` then rejects anything over that reservation
-    /// (`texture.allocatedSize <= reserved`), so both sides have to be Metal's own
-    /// number. Measured on this device, the estimator under-counts every render
-    /// target by 2-8% against `allocatedSize` (rgba16Float 1920x1080: 16_588_800 vs
-    /// 16_842_752), which would make that guard reject every snapshot and silently
-    /// disable the cache. `heapTextureSizeAndAlign(descriptor:).size` equals the
-    /// resulting `allocatedSize` exactly, so reserve and record agree by construction.
+    /// The static-layer cache must NOT use this estimator: it reserves from a
+    /// descriptor and then rejects any snapshot over that reservation, so both
+    /// sides have to be Metal's own number.
     @Test("Static-layer cache bills through Metal's own allocation size, not the estimator")
     func staticLayerCacheBillsRealAllocationSize() throws {
         let targets = try RepositoryRoot.source(
@@ -107,9 +100,6 @@ struct WPEMetalTextureByteEstimatorTests {
         #expect(!targets.contains("WPEMetalTextureByteEstimator"))
     }
 
-    /// The estimator keeps the paths that hold a texture but no reservation to
-    /// honour: the LRU's resident-bytes total, the memory-audit census, and the
-    /// animated-.tex frame total.
     @Test("Estimator still owns the LRU, census and animated-texture totals")
     func estimatorRetainsItsCallers() throws {
         for path in [

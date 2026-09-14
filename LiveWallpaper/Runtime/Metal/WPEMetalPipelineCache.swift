@@ -2,15 +2,10 @@
 import Foundation
 import Metal
 
-/// Caches `MTLRenderPipelineState` keyed by (fragment, blend, alpha-write
-/// policy, color format, depth format) so identical pipelines can be reused
-/// across passes and frames without sharing intermediate/terminal attachment
-/// semantics.
 final class WPEMetalPipelineCache {
     private let device: MTLDevice
     private let library: MTLLibrary
     private var pipelineStates: [WPEMetalPipelineKey: MTLRenderPipelineState] = [:]
-    /// Raw blend spelling → lowercased.
     private var lowercasedBlendModes: [String: String] = [:]
 
     init(device: MTLDevice, library: MTLLibrary) {
@@ -101,19 +96,7 @@ final class WPEMetalPipelineCache {
         }
     }
 
-    /// Scene-model mesh draws only. `normal` there means ordinary back-face culling, not
-    /// "no override": RenderDoc on 3437487219 shows the two `cullmode: "normal"` model
-    /// passes (ordinals 5/8) rasterizing with `cullMode: back` while every
-    /// `cullmode: "nocull"` image layer in the same frame reads `cullMode: none`. Without
-    /// it a solid sphere drew its far hemisphere over its near one through translucent
-    /// blending.
-    ///
-    /// Kept off the shared mapping on purpose: that capture covers the mesh path and
-    /// nothing else. This machine's 58-scene library has 37 material passes declaring
-    /// `normal`, of which 16 are 2D image shaders and 2 are particle shaders — paths whose
-    /// vertex stages build NDC themselves and can carry a mirrored transform, so culling
-    /// them on inference rather than evidence risks erasing a layer outright. Widen this
-    /// only with a capture of a non-mesh `normal` pass.
+    /// Scene-model mesh draws only. `normal` there means ordinary back-face culling, not "no override". Kept off the shared mapping on purpose; widen this only with a capture of a non-mesh `normal` pass.
     static func sceneModelCullMode(for raw: String) -> MTLCullMode {
         switch raw.lowercased() {
         case "normal": .back

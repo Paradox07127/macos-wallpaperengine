@@ -3,7 +3,6 @@ import Foundation
 import LiveWallpaperCore
 import LiveWallpaperProWPE
 
-/// Render graph IR: passes preserved; shader passes carry expanded GLSL.
 struct WPEPreparedRenderPipeline: Equatable, Sendable {
     let layers: [WPEPreparedRenderLayer]
 }
@@ -35,7 +34,6 @@ struct WPEEffectConstantScriptKey: Hashable, Sendable {
 struct WPEPreparedRenderPass: Equatable, Sendable, Identifiable {
     var id: String { pass.id }
 
-    /// Every texture slot the pass samples: source, named textures, binds, and resolved bindings.
     var textureReferences: [WPETextureReference] {
         var references: [WPETextureReference] = [pass.source]
         references.append(contentsOf: pass.textures.values)
@@ -49,19 +47,11 @@ struct WPEPreparedRenderPass: Equatable, Sendable, Identifiable {
     let textureBindings: [Int: WPETextureReference]
     let comboValues: [String: Int]
     let uniformValues: [String: WPESceneShaderConstantValue]
-    /// Authored (`material`) name → shader uniform name, from the shader's own
-    /// `// {"material":"…"}` annotations. `uniformValues` is keyed by the SHADER
-    /// name, while scene JSON and SceneScript both speak the authored name.
+    /// Authored (material) name → shader uniform name. uniformValues is keyed by the SHADER name; scene JSON/SceneScript speak the authored name.
     let materialUniformNames: [String: String]
-    /// Whether any value is `.animated` — the only case where
-    /// `resolved(at:)` is not the identity. Computed once at construction so
-    /// the per-frame prepare can reuse a fully static pass without cloning
-    /// its dictionaries.
+    /// True when any value is .animated — the only case where resolved(at:) is not the identity.
     let hasAnimatedUniformValues: Bool
-    /// Set when a script overrode the layer tint of a pass whose `g_Color` is
-    /// itself animated. Writing the override straight into the value would
-    /// sample the animation at frame 0 and store it back as a static vector,
-    /// freezing the components the script never claimed.
+    /// Set when a script overrode tint of a pass whose g_Color is animated; writing the override into the value would freeze unclaimed components at frame 0.
     let layerTintOverride: WPELayerTintOverride?
 
     init(
@@ -130,20 +120,13 @@ struct WPERenderObjectTransform: Equatable, Sendable {
     }
 }
 
-/// Observable provenance for the implementation that will execute a prepared
-/// WPE shader pass. The labels are part of the canonical-trace contract: they
-/// describe the selected path, not a claim of pixel equivalence with WPE.
+/// Labels describe the selected path, not pixel equivalence with WPE.
 enum WPEShaderExecutionClassification: String, Equatable, Sendable {
-    /// WPE-format GLSL resolved from the scene/dependency/engine asset roots and
-    /// translated at runtime.
     case officialSource = "official-source"
-    /// A hand-authored Metal implementation selected for a known WPE shader.
     case nativeApproximation = "native-approximation"
     /// A copy program selected specifically because an effect source was absent.
     case copyFallback = "copy-fallback"
-    /// Authored shader/effect metadata retained without an executable pass.
-    /// No current prepared-pass producer may infer this from `shader == nil`:
-    /// text and other separately dispatched paths also intentionally omit it.
+    /// Must not infer this from shader == nil: text and other paths also omit it on purpose.
     case unsupportedMetadataOnly = "unsupported-metadata-only"
 }
 
@@ -153,16 +136,7 @@ struct WPEShaderProgram: Equatable, Sendable {
     let fragmentSource: String
     let isBuiltin: Bool
     let executionClassification: WPEShaderExecutionClassification
-    /// SHA-256 of the (vertex, fragment) source pair, so the stage-4 preprocess
-    /// memo can key on source identity without re-hashing both sources on every
-    /// pass that runs this program. Derived here and nowhere else: a
-    /// caller-supplied fingerprint could silently disagree with the sources and
-    /// hand one shader another's processed GLSL.
-    ///
-    /// `nil` for builtins. They never reach the preprocess memo —
-    /// `makeCompileRequest` guards on `!program.isBuiltin` first — so hashing their
-    /// sources would be pure load-time cost for nothing (the builder's own
-    /// `builtinProgram` memo is keyed on name + combos and needs no fingerprint).
+    /// SHA-256 of (vertex, fragment); nil for builtins. Derived here only — a caller-supplied fingerprint could key the wrong GLSL.
     let sourceFingerprint: String?
 
     init(
@@ -185,8 +159,6 @@ struct WPEShaderProgram: Equatable, Sendable {
 }
 
 extension WPEPreparedRenderPipeline {
-    /// Applies a live scene-visibility toggle without rebuilding the pipeline;
-    /// the executor reads `graphLayer.visible` to gate the scene draw.
     func applyingLayerVisibility(_ visibility: [String: Bool]) -> WPEPreparedRenderPipeline {
         guard !visibility.isEmpty else { return self }
         var didChange = false
@@ -250,11 +222,7 @@ extension WPEPreparedRenderPipeline {
         return WPEPreparedRenderPipeline(layers: newLayers)
     }
 
-    /// Solid passes bind `g_Color` from `uniformValues`, never from geometry — and a script override clears
-    /// the authored animation, which also removes the layer from `addingMetalRuntimeUniforms`' rebuild
-    /// condition. Without writing the tint through here, an overridden solid layer stays frozen at its
-    /// load-time color. Component-wise on purpose: an alpha override must not clobber an authored rgb that
-    /// differs from the layer tint (and vice versa).
+    /// Solid g_Color is bound from uniformValues, never geometry. Write tint through here or an override freezes at load-time color. Component-wise so alpha cannot clobber authored rgb.
     private static func passesApplyingLayerTint(
         _ passes: [WPEPreparedRenderPass],
         geometry: WPERenderLayerGeometry,
@@ -307,8 +275,6 @@ extension WPEPreparedRenderPipeline {
         }
     }
 
-    /// Applies per-frame transform-script overrides before object-scoped uniforms
-    /// are derived. The maps are keyed by WPE object id and can be sparse.
     func applyingLayerTransforms(
         origins: [String: SIMD3<Double>],
         scales: [String: SIMD3<Double>],
@@ -448,24 +414,17 @@ extension WPEPreparedRenderPipeline {
         }
     }
 
-    /// - Parameter objectUniformCache: caller-owned memo for the per-layer
-    ///   object matrices. Nil recomputes them all, which is what every call
-    ///   site did before the cache existed; the render loop passes its
-    ///   executor-owned instance so a static scene pays nothing per frame.
+    /// objectUniformCache: nil recomputes every layer's object matrices.
     func addingMetalRuntimeUniforms(
         _ runtimeUniforms: WPEMetalRuntimeUniforms,
         camera: WPEMetalCameraUniforms,
         scriptedConstants: [String: [String: WPESceneShaderConstantValue]] = [:],
         objectUniformCache: WPEObjectUniformCache? = nil
     ) -> (pipeline: WPEPreparedRenderPipeline, frameUniforms: WPEFrameUniformContext) {
-        // Computed properties: resolve once per frame. Frame/object uniforms stay
-        // in `WPEFrameUniformContext` (old merge inserted them last, so they win).
+        // Resolve computed properties once per frame. Frame/object uniforms stay in WPEFrameUniformContext so they win.
         let runtimeUniformValues = runtimeUniforms.uniformValues
         let cameraUniformValues = camera.uniformValues
-        // g_ModelMatrix is object-scoped (one per layer, shared by its passes) and depends only on
-        // origin/scale/angles — `resolved(at:)` moves alpha and color, so the pre-resolve geometry read here
-        // is the same one the resolve would produce. The cache turns that into per-layer work only when a
-        // layer actually moved.
+        // g_ModelMatrix is object-scoped and depends only on origin/scale/angles; pre-resolve geometry is the same one resolved(at:) would produce for those.
         let objectUniformValuesByPassID = (objectUniformCache ?? WPEObjectUniformCache())
             .objectUniformValuesByPassID(for: layers)
         let needsRebuild = layers.contains { layer in
@@ -477,9 +436,7 @@ extension WPEPreparedRenderPipeline {
             cameraUniformValues: cameraUniformValues,
             objectUniformValuesByPassID: objectUniformValuesByPassID
         )
-        // Nothing below can change a value: the rebuild would copy the tree field
-        // for field. Hand back the load-time one instead of allocating an array
-        // per layer and a struct per pass on every frame.
+        // Nothing below can change a value. Hand back the load-time pipeline instead of copying the tree every frame.
         guard needsRebuild else { return (self, frameUniforms) }
         let preparedLayers = layers.map { layer -> WPEPreparedRenderLayer in
             guard layer.graphLayer.isTimeVarying
@@ -493,29 +450,22 @@ extension WPEPreparedRenderPipeline {
                 puppetModel: layer.puppetModel,
                 passes: layer.passes.map { pass in
                     let scripted = scriptedConstants[pass.pass.id]
-                    // Resolve animated tints each frame; otherwise the graph-build seed
-                    // freezes the layer while Wallpaper Engine advances its color animation.
-                    // Alpha-only animation counts too: solid alpha rides in g_Color.w.
+                    // Resolve animated tints each frame or the graph-build seed freezes the layer. Alpha-only counts: solid alpha rides in g_Color.w.
                     let overridesLayerColor = (geometry.colorAnimation != nil || geometry.alphaAnimation != nil)
                         && pass.pass.constants["g_Color"] != nil
                         && Self.consumesLayerColor(pass.pass.shader)
-                    // Static pass: reuse the load-time struct (CoW dictionaries).
                     if !pass.hasAnimatedUniformValues, scripted == nil, !overridesLayerColor {
                         return pass
                     }
                     var values = pass.uniformValues.mapValues {
                         $0.resolved(at: runtimeUniforms.time)
                     }
-                    // The animated tint is a recomputed SEED, so it goes in
-                    // before the script merge — scripted constants override
-                    // seed values, including a g_Color a script sets directly.
+                    // The animated tint is a recomputed seed: it goes in before the script merge so scripted constants still override.
                     if overridesLayerColor {
                         let tint = geometry.color * geometry.brightness
                         values["g_Color"] = .vector([tint.x, tint.y, tint.z, geometry.alpha])
                     }
-                    // A script claim on an animated g_Color lands after the
-                    // resolve, component-wise: the animation still owns
-                    // whatever the script did not take.
+                    // A script claim on animated g_Color lands after resolve, component-wise: the animation still owns what the script did not take.
                     if let claim = pass.layerTintOverride, var rgba = values["g_Color"]?.vectorValue {
                         while rgba.count < 4 { rgba.append(1) }
                         if let color = claim.color {
@@ -532,9 +482,7 @@ extension WPEPreparedRenderPipeline {
                     // (the frame context wins for frame-global names at read time).
                     if let scripted {
                         for (key, value) in scripted {
-                            // Scripts address a constant by its AUTHORED name (`multiply1`); the pass is keyed by the SHADER name
-                            // (`g_Multiply`), same translation the static `pass.constants` seed already does. Without it the value
-                            // lands in a slot no shader reads.
+                            // Scripts address a constant by its AUTHORED name; the pass is keyed by the SHADER name. Without translation the value lands in a slot no shader reads.
                             let uniformName = pass.materialUniformNames[key] ?? key
                             values[uniformName] = value
                         }
@@ -554,9 +502,7 @@ extension WPEPreparedRenderPipeline {
         return (WPEPreparedRenderPipeline(layers: preparedLayers), frameUniforms)
     }
 
-    /// A pass rebuild is driven by animated authored values or a script write.
-    /// The layer-tint case is NOT here: it needs `graphLayer.isTimeVarying`,
-    /// which every caller already tests alongside this.
+    /// Layer-tint is NOT here: it needs graphLayer.isTimeVarying, which every caller already tests alongside this.
     private static func needsPassRebuild(
         _ layer: WPEPreparedRenderLayer,
         scriptedConstants: [String: [String: WPESceneShaderConstantValue]]
@@ -771,7 +717,6 @@ private extension WPERenderLayer {
         )
     }
 
-    /// Script tint override; mirrors applyingAlpha including group-buffer copy.
     func applyingColor(_ color: SIMD3<Double>) -> WPERenderLayer {
         let g = geometry
         let overridden = WPERenderLayerGeometry(
@@ -829,7 +774,6 @@ private extension WPERenderLayer {
         )
     }
 
-    /// Whether `resolved(at:)` can change anything on this layer.
     var isTimeVarying: Bool {
         geometry.isTimeVarying
             || localGeometry?.isTimeVarying == true
@@ -880,7 +824,7 @@ private extension WPERenderLayerGeometry {
             alpha: alpha,
             alphaAnimation: alphaAnimation,
             color: color,
-            // Must carry colorAnimation (was dropped → freeze on first transform).
+            // Must carry colorAnimation; dropping it would freeze color on the first transform.
             colorAnimation: colorAnimation,
             brightness: brightness,
             shapePoints: shapePoints

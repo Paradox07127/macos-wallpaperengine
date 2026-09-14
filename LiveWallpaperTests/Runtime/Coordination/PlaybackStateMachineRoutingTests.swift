@@ -5,10 +5,6 @@ import Testing
 
 @testable import LiveWallpaper
 
-/// P2.0 routing invariants: every intent-changing entry point feeds the
-/// per-screen `WallpaperPlaybackStateMachine`, policy refreshes feed it the
-/// decision, and session install/replace/release resets it — while sessions
-/// still run their own intent folding (the machine changes no behavior yet).
 @MainActor
 @Suite("Playback state machine routing")
 struct PlaybackStateMachineRoutingTests {
@@ -91,8 +87,6 @@ struct PlaybackStateMachineRoutingTests {
         )
     }
 
-    /// The global toggle's play direction on a policy-suspended screen is a
-    /// no-op that preserves intent — the machine must land on the same value.
     @Test("Global play on a policy-suspended screen keeps both intents true")
     func globalPlayOnPolicySuspendedScreenStaysAligned() {
         let playback = RoutingFakePlaybackController(isPlaying: false, userIntendsToPlay: true)
@@ -192,9 +186,7 @@ private final class RoutingPresenceProbe: UserPresenceProbing, @unchecked Sendab
 }
 
 /// Mirrors the real three-layer fold (see `WallpaperArchitectureTests`):
-/// visible playback is `userIntendsToPlay && policy == .quality`. Like the
-/// real sessions it self-holds an intent machine and adopts the screen's
-/// shared one on install.
+/// visible playback is `userIntendsToPlay && policy == .quality`.
 private final class RoutingFakePlaybackController: WallpaperPlaybackControllable, WallpaperIntentMachineAdopting {
     var isPlaying: Bool
     var playbackMachine: WallpaperPlaybackStateMachine

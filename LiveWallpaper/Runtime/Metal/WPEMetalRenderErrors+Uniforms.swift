@@ -6,11 +6,7 @@ import LiveWallpaperProWPE
 import Metal
 import simd
 
-/// Async-path frame skip: every in-flight permit is taken (the GPU hasn't
-/// finished a prior frame), so the caller drops this frame. NOT a failure and
-/// deliberately kept out of `WPEMetalRenderExecutorError` (which is a
-/// user-facing `LocalizedError`) — it's pure flow control that lets the
-/// executor poll the in-flight semaphore instead of blocking the @MainActor.
+/// Async-path frame skip: every in-flight permit is taken, so the caller drops this frame. NOT a failure — deliberately kept out of `WPEMetalRenderExecutorError` (a user-facing `LocalizedError`).
 struct WPEMetalFrameInFlightBudgetExhausted: Error {}
 
 enum WPEMetalRenderExecutorError: Error, Equatable, LocalizedError, Sendable {
@@ -18,25 +14,16 @@ enum WPEMetalRenderExecutorError: Error, Equatable, LocalizedError, Sendable {
     case libraryUnavailable
     case pipelineUnavailable(String)
     case unsupportedShader(String)
-    /// Custom shader could not be translated or compiled by the Metal
-    /// path. Carries the underlying compiler reason so the diagnostic
-    /// surfaced to the UI is precise instead of just "unsupported".
+    /// Custom shader could not be translated or compiled. Carries the underlying compiler reason so the diagnostic surfaced to the UI is precise instead of just "unsupported".
     case shaderTranslatorUnavailable(name: String, reason: String)
-    /// Metal refused to build a render pipeline state, most commonly because
-    /// the vertex stage's struct doesn't line up with the fragment's
-    /// `[[stage_in]]` (the "stage_in mismatch" cluster). Carries the raw
-    /// underlying error description so logs name the actual missing field
-    /// instead of just the shader name.
+    /// Metal refused to build a render pipeline state, most commonly a vertex/`[[stage_in]]` mismatch. Carries the raw underlying error so logs name the actual missing field instead of just the shader name.
     case pipelineStateBuildFailed(name: String, detail: String)
     case missingTexture(WPETextureReference)
     case renderTargetDimensionsExceedDeviceLimit(targetName: String, width: Int, height: Int, limit: Int)
     case noRenderablePasses
     case commandBufferFailed
 
-    /// A pass this executor can never draw because its shader will not translate or compile.
-    /// Wallpaper Engine builds scene shaders through HLSL/fxc, which accepts constructs Metal
-    /// rejects, so these are ordinary workshop content rather than renderer faults — the pass
-    /// skips its own draw instead of taking the whole scene down.
+    /// A pass this executor can never draw because its shader will not translate or compile. These are ordinary workshop content rather than renderer faults — the pass skips its own draw instead of taking the whole scene down.
     var untranslatableShaderReason: String? {
         switch self {
         case .shaderTranslatorUnavailable(_, let reason): return reason
@@ -118,9 +105,7 @@ enum WPEMetalRenderExecutorError: Error, Equatable, LocalizedError, Sendable {
 }
 
 enum WPEMetalTextureLimits {
-    /// Mirrors Apple's Metal feature-set table for maximum 2D texture
-    /// width/height, so invalid descriptors are rejected before Metal's
-    /// Objective-C validation aborts the current test/app process.
+    /// Mirrors Apple's Metal feature-set table for maximum 2D texture width/height, so invalid descriptors are rejected before Metal's Objective-C validation aborts the current test/app process.
     static func maximum2DTextureDimension(for device: MTLDevice) -> Int {
         // arm64-only distribution: every Mac GPU is Apple family with an
         // .apple7 (M1) floor at 16384; .apple10 raises the cap.
@@ -144,11 +129,7 @@ struct WPEComposeLayerUniforms {
     var flags: SIMD4<Float>
 }
 
-/// How the final scene texture maps onto the screen drawable. Renderer-local
-/// (no dependency on `VideoFitMode`'s AVFoundation semantics); the session maps
-/// `VideoFitMode` onto this. `stretch` = legacy full-bleed (may distort);
-/// `contain` = letterbox preserving aspect; `cover` = crop-to-fill preserving
-/// aspect; `center` = original source size centered on the drawable.
+/// Renderer-local (no `VideoFitMode` AVFoundation semantics). `stretch` = full-bleed (may distort); `contain` = letterbox; `cover` = crop-to-fill; `center` = original source size centered.
 enum WPEPresentFitMode: Equatable {
     case stretch
     case contain
@@ -157,9 +138,6 @@ enum WPEPresentFitMode: Equatable {
 }
 
 extension WPEPresentFitMode {
-    /// The renderer-local present transform for the shared `VideoFitMode`. Lives
-    /// here so the session (runtime changes) and the builder (construction) map
-    /// it the same way; the renderer itself has no AVFoundation dependency.
     init(_ mode: VideoFitMode) {
         switch mode {
         case .stretch: self = .stretch
@@ -170,11 +148,7 @@ extension WPEPresentFitMode {
     }
 }
 
-/// Layout MUST match `WPEPresentUniforms` in `WPEMetalBuiltins.metal`. Drives
-/// the final on-screen blit's aspect handling: `ndcScale` shrinks the quad for
-/// letterboxed `contain` or preserves source pixels for `center`;
-/// `uvScale`/`uvOffset` crop the source for `cover`.
-/// All-identity reproduces the legacy `stretch` full-bleed.
+/// Layout MUST match `WPEPresentUniforms` in `WPEMetalBuiltins.metal`. `ndcScale` shrinks the quad for letterboxed `contain` or preserves source pixels for `center`; `uvScale`/`uvOffset` crop the source for `cover`. All-identity reproduces `stretch`.
 struct WPEPresentUniforms {
     var ndcScale: SIMD2<Float>
     var uvScale: SIMD2<Float>
@@ -290,10 +264,7 @@ struct WPEShakeUniforms {
 
 struct WPEGenericImageUniforms {
     var color: SIMD4<Float>
-    /// x = alpha (g_Alpha), y = brightness (g_Brightness), z = hasMask (0/1),
-    /// w = padding. Packed as a vec4 because Metal struct alignment on
-    /// `constant` buffers rounds up to vec4 boundaries anyway, and a single
-    /// vec4 slot is cheaper than three scalars + per-field padding.
+    /// x = alpha (g_Alpha), y = brightness (g_Brightness), z = hasMask (0/1), w = padding. Packed as a vec4 because Metal `constant` buffers round up to vec4 boundaries anyway.
     var alphaMaskUV: SIMD4<Float>
     /// xy = texture0 logical/physical UV scale, zw = texture1 logical/physical UV scale.
     var textureUVScale: SIMD4<Float>
@@ -346,9 +317,7 @@ struct WPESceneModelGenericUniforms {
     var chromaNoise: SIMD4<Float>
 }
 
-/// Layout MUST match `WPEShapeQuadUniforms` in `WPEMetalBuiltins.metal`. Four
-/// pre-transformed perspective-quad corners (scene-centered pixels + point UVs)
-/// in triangle-strip order (p0, p1, p3, p2).
+/// Layout MUST match `WPEShapeQuadUniforms` in `WPEMetalBuiltins.metal`. Four pre-transformed perspective-quad corners in triangle-strip order (p0, p1, p3, p2).
 struct WPEShapeQuadUniforms {
     var corner0: SIMD4<Float>
     var corner1: SIMD4<Float>
@@ -378,9 +347,7 @@ struct WPEPuppetMeshUniforms {
 /// Layout MUST match `WPESceneModelMeshUniforms` in `WPEMetalBuiltins.metal`.
 struct WPESceneModelMeshUniforms {
     var modelViewProjectionMatrix: simd_float4x4
-    /// Kept separate from the composed MVP: generic2/generic4 need the WORLD
-    /// position and world normal (view vector, hemispheric ambient) and the
-    /// view-projection alone (screen-space reflection offset).
+    /// Kept separate from the composed MVP: generic2/generic4 need the WORLD position and world normal, and the view-projection alone (screen-space reflection offset).
     var modelMatrix: simd_float4x4
     var viewProjectionMatrix: simd_float4x4
     /// x = bone palette count, y = skinning enabled (1/0), z/w reserved.
@@ -389,11 +356,7 @@ struct WPESceneModelMeshUniforms {
     var eyeAndPadding: SIMD4<Float>
 }
 
-/// Layout MUST match `WPEPuppetSceneCompositeUniforms` in `WPEMetalBuiltins.metal`. Placement
-/// fields copy 1:1 from `WPEObjectQuadUniforms` so the deferred-warp composite reproduces the
-/// current placement exactly: `objectCenterAndSize`←`.centerAndSize`,
-/// `sceneSizeAndRotation`←`.sceneSizeAndRotation`, `meshCenterAndScaleSign.zw`←`.uvSignAndPadding.xy`.
-/// The vertex applies that sign to mesh-local positions (mirroring geometry) instead of UVs — equivalent to the old path mirroring an already-rasterized puppet FBO.
+/// Layout MUST match `WPEPuppetSceneCompositeUniforms` in `WPEMetalBuiltins.metal`. Placement fields copy 1:1 from `WPEObjectQuadUniforms`. The vertex applies that sign to mesh-local positions (mirroring geometry) instead of UVs.
 struct WPEPuppetSceneCompositeUniforms {
     /// x/y = atlas/local layer size, z = bone palette count, w = skinning enabled (1/0).
     var localSizeAndMode: SIMD4<Float>
@@ -512,9 +475,7 @@ struct WPEParticleProjection {
     var eyeAndSizeScale = SIMD4<Float>(0, 0, 0, 1)
 }
 
-/// Layout MUST match `WPESkewParams` in WPEMetalBuiltins.metal. Normalized
-/// `effects/skew` MODE=1 vertex-displacement params (fractions of the quad
-/// extent): x=g_Top, y=g_Bottom, z=g_Left, w=g_Right.
+/// Layout MUST match `WPESkewParams` in WPEMetalBuiltins.metal. Normalized `effects/skew` MODE=1 vertex-displacement params (fractions of the quad extent): x=g_Top, y=g_Bottom, z=g_Left, w=g_Right.
 struct WPESkewParams {
     var topBottomLeftRight: SIMD4<Float>
 }

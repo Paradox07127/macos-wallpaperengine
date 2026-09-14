@@ -1,7 +1,7 @@
 import Foundation
 
-/// Stateless codec for `.lwconfig` bundles, independent of app-level settings stores.
-/// Security-scoped bookmarks are device-bound, so imported bundles may require users to reselect files.
+/// Security-scoped bookmarks are device-bound, so imported bundles may require users
+/// to reselect files.
 @MainActor
 public enum ConfigurationPorter {
     public enum ImportError: Error, LocalizedError {
@@ -36,10 +36,8 @@ public enum ConfigurationPorter {
         }
     }
 
-    /// Rejects oversized input before decoding to bound work on untrusted files.
     public static let maxImportFileSize: Int = 16 * 1024 * 1024
 
-    /// Pretty-printed so the file is readable if a user opens it in a text editor.
     public static func encode(_ bundle: ConfigurationBundle) throws -> Data {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -86,8 +84,6 @@ public enum ConfigurationPorter {
         guard let expectedBundleID = Bundle.main.bundleIdentifier else {
             throw ImportError.invalidFile(reason: "host bundle has no identifier")
         }
-        // Sibling SKUs and the historical id restore into each other; a Lite host
-        // that reads Pro-only data still fails closed at the capability gate.
         let isProductFamily = bundle.appBundleID == expectedBundleID
             || ConfigurationBundle.productFamilyBundleIDs.contains(bundle.appBundleID)
         guard isProductFamily else {
@@ -100,7 +96,6 @@ public enum ConfigurationPorter {
         return bundle
     }
 
-    /// Structured import summary rendered through localized section-specific strings.
     public struct ApplySummary: Sendable {
         public var displayCount: Int?
         public var bookmarkCount: Int?

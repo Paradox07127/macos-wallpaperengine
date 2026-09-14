@@ -1,7 +1,6 @@
 import Foundation
 import CoreGraphics
 
-/// Persistence seam (SettingsManager in app; in-memory in tests).
 @MainActor
 public protocol ScreenConfigurationPersisting {
     func getConfiguration(for screenID: CGDirectDisplayID) -> ScreenConfiguration?
@@ -11,7 +10,6 @@ public protocol ScreenConfigurationPersisting {
     func replaceAllConfigurations(_ configurations: [ScreenConfiguration])
 }
 
-/// In-memory per-screen config cache; persistence via injected protocol.
 @MainActor
 public final class WallpaperConfigurationStore {
     private var cache: [CGDirectDisplayID: ScreenConfiguration] = [:]
@@ -51,7 +49,6 @@ public final class WallpaperConfigurationStore {
                 cache.removeValue(forKey: screenID)
                 return migrateByFingerprint(to: screenID, fingerprint: fingerprint)
             }
-            // Missing/unknown fingerprint: reuse ID slot and back-fill.
             if let fingerprint, !fingerprint.isUnknownDisplayFingerprint,
                direct.displayFingerprint != fingerprint {
                 var stamped = direct
@@ -69,13 +66,9 @@ public final class WallpaperConfigurationStore {
         return migrateByFingerprint(to: screenID, fingerprint: fingerprint)
     }
 
-    /// Re-key one display's stored configuration when its fingerprint format changes (EDID →
-    /// per-display UUID). Runs once per display; refuses to act when the new key already has a
-    /// config, so two panels that used to share an ambiguous EDID key cannot both claim it.
-    /// `screenID` is the display doing the migrating. Two identical serial-0 panels stored one row
-    /// each under the same legacy key, so row order alone would hand one panel the other's
-    /// wallpaper; the row whose `screenID` matches wins, and a tie with no match is refused rather
-    /// than guessed.
+    /// Re-keys one display's stored configuration when the fingerprint format changes
+    /// (EDID → per-display UUID). Refuses when the new key already has a config; with two
+    /// rows under one legacy key the row whose `screenID` matches wins, and a tie is refused.
     @discardableResult
     public func migrateFingerprint(
         from legacy: String,

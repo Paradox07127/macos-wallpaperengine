@@ -2,9 +2,8 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// A required or optional Workshop setup step.
 struct WorkshopSetupFacet: Identifiable {
-    /// Unique ForEach identity; multiple facets can share a scroll anchor.
+    /// Multiple facets can share a scroll anchor.
     let key: String
     let anchor: SettingsSearchAnchor
     let title: LocalizedStringKey
@@ -15,7 +14,6 @@ struct WorkshopSetupFacet: Identifiable {
     var id: String { key }
 }
 
-/// Summarizes setup readiness; each legend entry scrolls to its section.
 struct WorkshopSetupOverview: View {
     let facets: [WorkshopSetupFacet]
     let onSelect: (SettingsSearchAnchor) -> Void
@@ -84,7 +82,6 @@ struct WorkshopSetupOverview: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                // Expose readiness without relying on color.
                 .help(Text(facet.state.statusText))
                 .accessibilityLabel(Text(facet.title))
                 .accessibilityValue(Text(facet.state.statusText))
@@ -113,7 +110,6 @@ struct WorkshopSetupOverview: View {
                 bundle: .appLanguage, comment: "Workshop setup status bar summary; first number is how many steps are done, second is the total."
             )
         }
-        // Identify the missing optional step without changing the readiness total.
         guard facets.contains(where: { $0.isOptional && $0.state != .ready }) else { return base }
         return String(
             localized: "\(base) · API key optional",

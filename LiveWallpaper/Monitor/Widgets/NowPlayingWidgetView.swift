@@ -4,9 +4,8 @@ import LiveWallpaperCore
 
 // MARK: - Pure layout decision (invariant 9: field-driven, tested)
 
-/// What a Now Playing tile renders, decided only by which fields the state
-/// carries, the tile size, the chosen style, and edit/motion context —
-/// never by which player produced the state.
+/// Decided only by the state's fields, tile size, style and edit/motion context
+/// — never by which player produced the state.
 struct NowPlayingWidgetLayout: Equatable {
     enum Component: Hashable, Sendable {
         case placeholder      // edit-mode stand-in while no track is available
@@ -36,19 +35,15 @@ struct NowPlayingWidgetLayout: Equatable {
     var dimmed: Bool
     /// Long titles may loop horizontally: asked for *and* otherwise in motion.
     var marquee: Bool
-    /// Whether the transport row occupies space at all — everything the
-    /// `.controls` component needs except the pointer. The row is laid out
-    /// whenever this is true and merely fades with hover, so arriving with the
-    /// pointer never reflows the tile out from under a click.
+    /// Whether the transport row occupies space at all. It is laid out whenever this
+    /// is true and merely fades with hover, so the pointer arriving never reflows the tile.
     var controlsAllowed: Bool
     /// The progress line accepts a scrub: it is on screen, the user allowed it,
     /// the player can be driven, and a duration exists to scrub against.
     var seekable: Bool
 
-    /// Visibility is the AND of two independent questions: does the player
-    /// carry the field at all, and does the user want to see it. Either one
-    /// saying no leaves the component out entirely — a field the player never
-    /// sent still never becomes a placeholder just because its switch is on.
+    /// Visibility is the AND of two questions: does the player carry the field, and
+    /// does the user want it. Either no leaves the component out entirely.
     nonisolated static func resolve(
         state: MonitorNowPlayingState?,
         size: MusicOverlaySize,
@@ -102,15 +97,12 @@ struct NowPlayingWidgetLayout: Equatable {
             if hasPosition { visible.insert(.progress) }
         }
 
-        // Same AND rule again: the track must have lyrics and the user must want
-        // them. A small tile has no room for a line of text under the title, so
-        // it never carries the component at any setting.
+        // A small tile has no room for text under the title, so it never carries
+        // lyrics at any setting.
         if hasLyrics, options.showLyrics, !compact { visible.insert(.lyrics) }
 
-        // Same AND rule as every component, plus the pointer as a third term: drivable, switch on, and pointer
-        // over the tile. Edit mode is out — there a click means "grab this layer", and the board's drag
-        // gesture runs alongside subview gestures, so a button under the pointer would fire while the user was
-        // only trying to move the tile.
+        // Edit mode is out: the board's drag gesture runs alongside subview gestures, so
+        // a button under the pointer would fire while the user was only moving the tile.
         if canControl, options.showControls, hovering, !isEditing { visible.insert(.controls) }
 
         let motion = state.phase == .playing && !reduceMotion
@@ -130,7 +122,6 @@ struct NowPlayingWidgetLayout: Equatable {
         )
     }
 
-    /// A small tile has room for one button; anything larger gets all three.
     nonisolated static func controlButtons(for size: MusicOverlaySize) -> [ControlButton] {
         size == .small ? [.playPause] : [.previous, .playPause, .next]
     }
@@ -147,9 +138,8 @@ struct NowPlayingWidgetLayout: Equatable {
         }
     }
 
-    /// Wall-clock interpolation (invariant 5): the source only stores
-    /// `position` + `positionSampledAt`; only a playing track advances,
-    /// clamped to the reported duration.
+    /// Wall-clock interpolation: the source only stores `position` +
+    /// `positionSampledAt`; only a playing track advances, clamped to the duration.
     nonisolated static func interpolatedPosition(state: MonitorNowPlayingState, now: Date) -> Double? {
         guard let position = state.position else { return nil }
         var value = position
@@ -160,10 +150,8 @@ struct NowPlayingWidgetLayout: Equatable {
         return max(0, value)
     }
 
-    /// Where a landed seek believes the playhead is, until the player says otherwise. Spotify doesn't always
-    /// announce a scrub, so the draft keeps running on the same wall clock as the real position — and yields the
-    /// moment a report sampled *after* the drag arrives, or a track change would keep drawing the old track's
-    /// offset.
+    /// Where a landed seek believes the playhead is, until a report sampled *after*
+    /// the drag arrives. Some players never announce a scrub of their own.
     struct SeekDraft: Equatable {
         var seconds: Double
         var landedAt: Date
@@ -192,9 +180,8 @@ struct NowPlayingWidgetLayout: Equatable {
         case ignore
     }
 
-    /// `throttled` means the identical seek was sent moments ago and this one
-    /// was suppressed, so the position the user asked for *is* in flight;
-    /// treating it as a failure snapped the playhead back to the old spot.
+    /// `throttled` means the identical seek is already in flight, so treating it as
+    /// a failure would snap the playhead back to the old spot.
     nonisolated static func seekOutcome(
         failure: NowPlayingControlFailure?,
         committedKey: String,
@@ -267,10 +254,8 @@ struct NowPlayingVisibility: Equatable, Sendable {
         )
     }
 
-    /// The plate fades in as the opacity dial takes contrast away, and the two
-    /// accessibility settings outrank the dial: Reduce Transparency means the
-    /// backing stops being see-through at all, Increase Contrast raises it above
-    /// anything the dial produces on its own.
+    /// The plate fades in as the opacity dial takes contrast away; Reduce Transparency
+    /// and Increase Contrast both outrank the dial.
     nonisolated static func backing(
         layerOpacity: Double,
         reduceTransparency: Bool,
@@ -319,10 +304,8 @@ struct NowPlayingWidgetView: View {
     enum Style: String, CaseIterable, Sendable {
         case poster, vinyl, aurora
 
-        /// Poster and aurora draw progress as a horizontal bar, which a pointer
-        /// can scrub along. Vinyl draws it as a ring around a spinning platter:
-        /// dragging that would mean an angular grab on moving art, so the ring
-        /// stays a readout.
+        /// Vinyl's ring rides a spinning platter — dragging it would mean an angular
+        /// grab on moving art, so it stays a readout.
         var drawsLinearProgress: Bool { self != .vinyl }
     }
 
@@ -362,10 +345,8 @@ struct NowPlayingWidgetView: View {
         NowPlayingControlMapping.mapping(for: state?.playerBundleID) != nil
     }
 
-    /// Track identity for entrance emphasis + artwork/accent caches.
-    /// trackID when the player reports one, else the textual identity —
-    /// album included so same-title/same-artist tracks on different albums
-    /// (a real Apple Music case) refresh their artwork and accent.
+    /// trackID when the player reports one, else `title|artist|album` — album is in
+    /// it so same-title tracks on different albums refresh artwork and accent.
     private var trackKey: String {
         guard let state else { return "" }
         return state.trackID ?? "\(state.title)|\(state.artist ?? "")|\(state.album ?? "")"
@@ -398,9 +379,8 @@ struct NowPlayingWidgetView: View {
         )
     }
 
-    /// Text alphas are authored per role (0.97 title, 0.74 eyebrow …); the
-    /// brightness dial scales all of them by one factor rather than restating
-    /// each role's ramp.
+    /// Text alphas are authored per role (0.97 title, 0.74 eyebrow …); this dial
+    /// scales all of them by one factor.
     private func textAlpha(_ base: Double) -> Double {
         base * visibility.text
     }
@@ -523,7 +503,6 @@ struct NowPlayingWidgetView: View {
         }
     }
 
-    /// Change-of-track emphasis: rise 8pt + fade in over 0.4s, then rest.
     private var entranceTransition: AnyTransition {
         guard layout.motion else { return .identity }
         return .asymmetric(
@@ -604,7 +583,6 @@ struct NowPlayingWidgetView: View {
         withAnimation(.linear(duration: 1)) { discAngle += 45 }
     }
 
-    /// Aurora: instant brighten on track change, 0.6s fall back.
     private func pulseGlow() {
         guard style == .aurora, layout.motion else { return }
         glowBoost = true
@@ -632,7 +610,6 @@ struct NowPlayingWidgetView: View {
             }
             .padding(.horizontal, side * 0.3)
             .padding(.vertical, side * 0.16)
-            // Use one shared scrim for the playback controls.
             .background {
                 Capsule()
                     .fill(.black.opacity(0.28))
@@ -656,9 +633,8 @@ struct NowPlayingWidgetView: View {
             Image(systemName: Self.symbol(for: button, phase: state.phase))
                 .font(.system(size: side * 0.4, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.95 * visibility.controls))
-                // No per-button fill: the pill behind the row is the only
-                // scrim. The frame stays full-size so the target does not
-                // shrink with the glyph.
+                // No per-button fill: the pill behind the row is the only scrim. The frame
+                // stays full-size so the target does not shrink with the glyph.
                 .frame(width: side, height: side)
                 // side bottoms out at 22pt on small overlays; pad the target
                 // (not the glyph) up to the 28pt minimum hit region.
@@ -717,9 +693,8 @@ struct NowPlayingWidgetView: View {
 
     // MARK: Scrub
 
-    /// Poster's hairline and aurora's microline are one control at two weights.
-    /// The knob and the taller hit area exist only where a scrub is possible;
-    /// the padding is undone straight afterwards so layout never moves.
+    /// Poster's hairline and aurora's microline are one control at two weights; the
+    /// hit-area padding is undone straight afterwards so layout never moves.
     @ViewBuilder
     private func linearProgress(
         state: MonitorNowPlayingState, height: CGFloat, trackOpacity: Double
@@ -876,7 +851,6 @@ struct NowPlayingWidgetView: View {
         return parts.joined(separator: " — ").uppercased()
     }
 
-    /// Align spectrum and progress tracks; place the time readout beside their shared column.
     @ViewBuilder
     private func posterMeter(
         state: MonitorNowPlayingState, eyebrowSize: CGFloat, titleSize: CGFloat
@@ -966,7 +940,6 @@ struct NowPlayingWidgetView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
     }
 
-    /// Album + total length share one quiet line; either half stands alone.
     private func vinylFooter(state: MonitorNowPlayingState) -> String? {
         var parts: [String] = []
         if layout.visible.contains(.albumLine), let album = state.album { parts.append(album) }
@@ -1010,7 +983,6 @@ struct NowPlayingWidgetView: View {
                     )
                     .frame(width: label, height: label)
                 } else {
-                    // Plain platter label when the player sends no cover.
                     Circle()
                         .fill(accentColor.opacity(0.75))
                         .frame(width: side * 0.34, height: side * 0.34)
@@ -1036,9 +1008,8 @@ struct NowPlayingWidgetView: View {
         return min(scaled, options.artworkShape == .circle ? 0.9 : 0.7)
     }
 
-    /// The slider is calibrated on the poster thumb, which rests at 0.45 while
-    /// the platter rests at 0.5; the ratio keeps both at their shipped strength
-    /// when the slider is untouched, instead of paying for a second key.
+    /// The slider is calibrated on the poster thumb (0.45) while the platter rests at
+    /// 0.5; the ratio keeps both at their shipped strength when the slider is untouched.
     private var discShadowOpacity: Double {
         min(1, options.artworkShadow * (0.5 / NowPlayingOptions.Defaults.artworkShadow))
     }
@@ -1149,10 +1120,6 @@ struct NowPlayingWidgetView: View {
 
 // MARK: - Marquee (opt-in horizontal loop for long titles)
 
-/// A title too wide for its tile loops sideways instead of truncating, driven by a single repeating SwiftUI
-/// animation started on appear — no timer, nothing to tear down. The caller only mounts this while motion is
-/// allowed, so reduce-motion, paused, and suspended all fall back to the plain truncating label; a title that
-/// already fits never scrolls either.
 private struct NowPlayingMarqueeText: View {
     let text: String
     let font: Font
@@ -1229,11 +1196,8 @@ private extension View {
             .shadow(color: .black.opacity(0.3), radius: 2, x: 0, y: 1)
     }
 
-    /// Local ground under the type block. The shadow above carries it at full
-    /// strength; this fades a plate in as the opacity dial takes that contrast
-    /// away, and answers Reduce Transparency / Increase Contrast. The inset is
-    /// added and immediately subtracted so the plate is wider than the glyphs
-    /// without the tile's layout moving.
+    /// The inset is added and immediately subtracted so the plate is wider than the
+    /// glyphs without the tile's layout moving.
     @ViewBuilder
     func nowPlayingTextBacking(
         _ backing: NowPlayingVisibility.TextBacking, inset: CGFloat
@@ -1260,8 +1224,6 @@ private extension View {
 
 // MARK: - Artwork (off-main decode, cached by track identity)
 
-/// Decodes artwork off the main thread and caches the result so the 1 Hz board
-/// clock does not re-decode the same bytes every tick.
 @MainActor
 final class NowPlayingArtworkStore {
     static let shared = NowPlayingArtworkStore()

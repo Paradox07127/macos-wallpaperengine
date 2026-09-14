@@ -2,16 +2,6 @@ import Foundation
 import Testing
 @testable import LiveWallpaper
 
-/// The app container carries its own `Steam/config/config.vdf`, written by the
-/// SteamCMD this app used to spawn from inside the sandbox. That made the
-/// "is this a Steam profile?" check pass on the container, so a picker that
-/// opened there produced a binding the UI reported as the shared official
-/// profile while every read stayed private — silently defeating the whole
-/// point of sharing Steam's library.
-///
-/// Both entry points must refuse it: `bindSteamLibrary` for new grants, and the
-/// launch-time revalidation for grants already stored before the picker was
-/// corrected.
 @Suite("Steam library binding containment")
 struct SteamLibraryBindingContainmentTests {
 
@@ -61,9 +51,6 @@ struct SteamLibraryBindingContainmentTests {
         #expect(revalidate.contains("forgetWorkdirBinding"))
     }
 
-    /// Forgetting a grant must never be a data-deleting operation: the folder it
-    /// pointed at is the user's, and in the container case it still holds the
-    /// only copy of anything downloaded before the fix.
     @Test("Forgetting a binding deletes no files")
     func forgettingNeverDeletes() throws {
         let source = try Self.doctorSource()

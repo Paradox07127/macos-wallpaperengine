@@ -3,9 +3,7 @@ import Testing
 @testable import LiveWallpaper
 
 
-/// Drives the batch tick path the way `renderCurrentFrame` does: take the newest
-/// completed value, then hand this frame's work to the workers. Tests must not run
-/// a job inline — it has to execute on the engine's own worker queue.
+/// Tests must not run a job inline — it has to execute on the engine's own worker queue.
 enum WPEBatchTickDriver {
     static func tick(_ instance: WPESceneScriptInstance) -> String {
         let (value, job) = instance.batchTickString()
@@ -368,9 +366,6 @@ struct WPEScriptAsyncTickSemanticsTests {
         #expect(micros > 0)
     }
 
-    /// Real per-tick cost of scene 3660962877's own scripts, weighted by how many
-    /// objects use each one. Skips unless the corpus has been staged into the
-    /// container (see the fleet-contention notes); nothing in CI depends on it.
     @Test("Real scene script cost: weighted per-frame total for 3660962877")
     func realSceneScriptCostDistribution() async throws {
         struct Entry: Decodable {

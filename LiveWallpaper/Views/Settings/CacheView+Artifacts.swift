@@ -3,8 +3,6 @@ import LiveWallpaperCore
 import SwiftUI
 
 extension WPECacheManagementView {
-    /// DEBUG-only: temp directories left in the container by test runs. Compiled
-    /// out of Release entirely — a shipping build has no producer for them.
     @ViewBuilder
     var testArtifactsSection: some View {
         #if DEBUG

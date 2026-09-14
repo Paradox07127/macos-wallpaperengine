@@ -55,9 +55,8 @@ struct WPEResolutionDiagnosticsTests {
             environmentLines: ["Environment", "Fixture GPU"]
         )
 
-        // Compared through the same accessor the report uses: these labels are
-        // localized, so hard-coding the English broke as soon as the app's
-        // language routing started working.
+        // These labels are localized, so hard-coding the English would break under
+        // in-app language routing.
         #expect(report.contains("Capability: \(SceneCapabilityTier.degraded.localizedLabel)"))
         #expect(report.contains("Preflight: \(WPEScenePreflightTier.degradedPlayable.localizedLabel)"))
         #expect(report.contains("Features: imageEffect"))

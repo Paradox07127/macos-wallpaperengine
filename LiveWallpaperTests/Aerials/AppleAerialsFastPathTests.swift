@@ -2,8 +2,8 @@ import Foundation
 import Testing
 @testable import LiveWallpaper
 
-/// Exercises the direct Apple Aerials path inside the signed sandboxed test host.
-/// Running without host entitlements can make these checks false-green; machines without the store skip dependent cases.
+/// Without host entitlements these checks can go false-green; machines without the
+/// store skip the dependent cases.
 struct AppleAerialsFastPathTests {
 
     /// The user-picked Aerials folder is the enumeration root, and
@@ -32,7 +32,6 @@ struct AppleAerialsFastPathTests {
         #expect(assets.map(\.id) == ["clip"])
     }
 
-    /// `<directory>/nested/clip.mov` plus `<link>` -> `<directory>`.
     private func makeMovFixture() throws -> (directory: URL, link: URL, cleanup: () -> Void) {
         let fileManager = FileManager.default
         let directory = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)

@@ -1,9 +1,6 @@
 #if !LITE_BUILD
 import Foundation
 
-/// Bounded breadth-first traversal of "this Workshop item needs those Workshop
-/// items". Pure policy: the caller supplies the fetch, this decides what to
-/// visit, when to stop, and what to tell the user was left undone.
 enum WorkshopDependencyResolver {
     @MainActor
     static func resolve(
@@ -52,16 +49,12 @@ enum WorkshopDependencyResolver {
 }
 
 struct WorkshopDependencyLimits: Equatable, Sendable {
-    /// Authored chains in the Workshop are one level deep in practice (scene →
-    /// asset pack); 3 leaves room for a pack that pulls a pack without walking
-    /// an unbounded graph.
+    /// Authored chains are one level deep (scene → asset pack); 3 leaves room for a pack that pulls a pack without walking an unbounded graph.
     var maxDepth: Int = 3
     /// Every item is a separate SteamCMD invocation on the connector's serial
     /// queue, so wall-clock grows linearly with this number.
     var maxItems: Int = 12
-    // Deliberately no byte budget: SteamCMD's progress lines usually omit byte
-    // counts, so a size check read 0 and never fired. Depth and count are the
-    // real bounds; a budget that cannot see sizes only looks like one.
+    // Deliberately no byte budget: SteamCMD's progress lines usually omit byte counts, so a size check would read 0 and never fire.
 }
 
 enum WorkshopDependencyTruncation: Hashable, Sendable {

@@ -1,8 +1,5 @@
 import SwiftUI
 
-/// The high-water-mark annotation that sits over a chart or gauge: the peak
-/// swatch, a label, then the value.
-///
 /// The swatch is `Design.peakMarker`, the same colour `ArcGauge` draws its peak
 /// tick in — the tag is that tick's legend, so the two must not drift apart.
 struct PeakTag: View {

@@ -67,7 +67,7 @@ struct WPESceneTimelineTypedIRTests {
             magic: .bool(false)
         )))
 
-        // Tangents are metadata-only in this patch: current linear sampling is unchanged.
+        // Tangents are metadata-only: sampling is still linear.
         #expect(animated.scalar(at: 0.5) == 0.5)
     }
 

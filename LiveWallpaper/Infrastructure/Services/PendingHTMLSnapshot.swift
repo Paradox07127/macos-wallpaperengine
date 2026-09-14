@@ -2,10 +2,7 @@ import AppKit
 import LiveWallpaperCore
 import WebKit
 
-/// Complete rendering contract for an offscreen HTML capture.
-///
-/// The service deliberately has no URL-only overload: every WebKit load must
-/// carry the same already-normalized effective config as the live wallpaper.
+/// The service has no URL-only overload: every WebKit load must carry the same already-normalized effective config as the live wallpaper.
 struct HTMLSnapshotRequest: Sendable {
     let source: HTMLSource
     let loadURL: URL
@@ -19,7 +16,6 @@ struct HTMLSnapshotRequest: Sendable {
     }
 }
 
-/// Bridges WebKit load/snapshot callbacks to cancellation-safe async waiters.
 @MainActor
 final class PendingHTMLSnapshot: NSObject, WKNavigationDelegate {
     let webView: WKWebView

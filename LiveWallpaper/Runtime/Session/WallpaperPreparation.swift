@@ -1,7 +1,6 @@
 import Foundation
 import LiveWallpaperCore
 
-/// Composited-video readiness seam. Looper item rebind is not stale prep; generations cancel.
 struct VideoCompositedFrameReadinessCoordinator {
     enum Action: Equatable {
         case cancelled
@@ -86,7 +85,6 @@ enum WallpaperPreparationWaiter {
                         try await Task.sleep(for: timeout)
                         race.resolve(.timedOut)
                     } catch {
-                        // The winner cancels this task.
                     }
                 }
                 race.installTasks(operation: operationTask, deadline: deadlineTask)

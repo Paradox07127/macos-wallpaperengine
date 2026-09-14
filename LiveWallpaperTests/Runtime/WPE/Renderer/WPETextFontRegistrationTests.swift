@@ -6,16 +6,9 @@ import LiveWallpaperProWPE
 import Testing
 @testable import LiveWallpaper
 
-/// Scene faces reach CoreText through descriptors, never through the process
-/// font catalogue. Registration used to be permanent — nothing in the app ever
-/// called `CTFontManagerUnregister*` — so every face any scene touched stayed
-/// pinned for the life of the process across wallpaper swaps and reloads.
 struct WPETextFontRegistrationTests {
     private static let fontRelativePath = "fonts/scene-face.ttf"
 
-    /// A staging root holding one scene face, the way a session hands the
-    /// renderer its assets. Each root is a distinct URL with identical bytes —
-    /// that is what a package-backed provider produces per session.
     private struct StagedFace {
         let root: URL
         let fontURL: URL
@@ -53,8 +46,7 @@ struct WPETextFontRegistrationTests {
         return StagedFace(root: root, fontURL: fontURL)
     }
 
-    /// Glyph ids + advance of a real CoreText line. Dropped glyphs show up as
-    /// `.notdef` (0) or as a substituted run, both of which this catches.
+    /// Glyph id 0 = `.notdef`; a dropped glyph shows up as that or as a substituted run.
     private static func typeset(_ font: CTFont, _ text: String = "Loomscreen 0123") -> (glyphs: [CGGlyph], width: Double) {
         let attributed = NSAttributedString(
             string: text,
@@ -108,13 +100,10 @@ struct WPETextFontRegistrationTests {
         #expect(renderedA.glyphs == baselineB.glyphs)
         #expect(!baselineB.glyphs.isEmpty)
 
-        // Screen A tears down: resolver released and its staged bytes deleted.
         fontsA = nil
         screenA.remove()
         #expect(!FileManager.default.fileExists(atPath: screenA.fontURL.path))
 
-        // Screen B keeps rendering, from its cached descriptor and from a
-        // freshly built one.
         let afterTeardown = Self.typeset(fontsB.font(path: Self.fontRelativePath, size: 48))
         let freshResolver = WPETextFontResolver(resolver: screenB.resolver())
         let freshFont = freshResolver.font(path: Self.fontRelativePath, size: 48)

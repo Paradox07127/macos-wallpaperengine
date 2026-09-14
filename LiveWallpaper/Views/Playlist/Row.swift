@@ -2,7 +2,6 @@ import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
-/// Apple Music-style playlist row.
 struct Row: View {
     let entry: PlaylistEntry
     let index: Int
@@ -11,15 +10,12 @@ struct Row: View {
     let onPlayNow: () -> Void
     let onRemove: () -> Void
 
-    /// Keyboard/menu alternative to the drag handle; parent persists through
-    /// the same reorder path the drag uses.
+    /// Keyboard/menu alternative to the drag handle.
     let canMoveUp: Bool
     let canMoveDown: Bool
     let onMoveUp: () -> Void
     let onMoveDown: () -> Void
 
-    /// Parent owns the reorder state machine; the row only forwards the
-    /// translation + pointer coordinates upward.
     let onDragChanged: (_ translationY: CGFloat, _ locationY: CGFloat) -> Void
     let onDragEnded: () -> Void
 
@@ -69,9 +65,8 @@ struct Row: View {
             }
     }
 
-    /// Split out of `body`: as a single expression the row cost the type
-    /// checker ~1.1s, over its 300ms warning limit. Modifier order is
-    /// unchanged — only the sub-expressions are named.
+    /// Don't inline back into `body`: as one expression this exceeds the type
+    /// checker's 300ms budget.
     private var rowContent: some View {
         HStack(spacing: 10) {
             dragHandleSlot
@@ -143,8 +138,6 @@ struct Row: View {
         return -1.5
     }
 
-    /// Shared by the right-click context menu and the trailing ellipsis menu
-    /// so the two can't drift.
     @ViewBuilder
     private var rowMenuItems: some View {
         Button("Set as Primary", systemImage: "star.fill", action: onSetPrimary)
@@ -260,8 +253,6 @@ struct Row: View {
     }
 }
 
-/// Leading-column row number that cross-fades into a drag handle on hover/grab.
-/// Not shown while playing — `EQPulseBar` takes over the leading slot then.
 struct RowNumberHandle: View {
     let index: Int
     let showHandle: Bool

@@ -96,12 +96,10 @@ struct ConfigurationFingerprintMigrationTests {
         #expect(resolved?.screenID == 42)
         #expect(resolved?.displayFingerprint == "NEW")
 
-        // The displaced panel's config survives, parked off any live screen ID…
         let parked = fakePersistence.loadConfigurations().first { $0.displayFingerprint == "OLD" }
         #expect(parked != nil, "Displaced config must not be dropped by the screenID collision")
         #expect(parked?.screenID == WallpaperConfigurationStore.parkedScreenID)
 
-        // …and its panel reclaims it by fingerprint when it comes back.
         let reclaimed = store.get(for: 99, fingerprint: "OLD")
         #expect(reclaimed?.screenID == 99)
         #expect(reclaimed?.displayFingerprint == "OLD")
@@ -156,8 +154,6 @@ struct ConfigurationFingerprintMigrationTests {
         #expect(all.first { $0.screenID == 2 }?.displayFingerprint == "2513:32829:21573")
     }
 
-    /// The whole point of the UUID switch: two identical serial-0 panels shared
-    /// one EDID key, so only the first may inherit that single stored config.
     @Test("A second identical panel cannot claim an already-migrated config")
     func refusesToMigrateOntoAnOccupiedKey() {
         let store = WallpaperConfigurationStore(persistence: InMemoryConfigPersistence())
@@ -168,12 +164,8 @@ struct ConfigurationFingerprintMigrationTests {
         #expect(store.loadAll().first { $0.screenID == 5 }?.displayFingerprint == "13929:15830:0")
     }
 
-    /// Two identical serial-0 panels each had their own config under the SAME
-    /// legacy EDID key. Picking the first matching row would hand panel A the
-    /// config panel B saved — a permanent, silent wallpaper swap.
-    /// The array-backed fake keeps insertion order, and the second-listed panel
-    /// migrates first, so row-order selection reaches for the wrong row here
-    /// regardless of how the dictionary fake would have enumerated.
+    /// The array-backed fake keeps insertion order and the second-listed panel migrates
+    /// first, so row-order selection would reach for the wrong row here.
     @Test("Duplicate legacy keys migrate by screen ID, not by row order")
     func migratesTheRowBelongingToTheMigratingScreen() {
         let store = WallpaperConfigurationStore(
@@ -291,10 +283,6 @@ private final class DuplicateTolerantConfigPersistence: ScreenConfigurationPersi
     }
 }
 
-/// `VideoFitMode` / `VideoDisplayMode` used to have synthesized `init(from:)`,
-/// so an unknown raw value (a build downgrade, or a hand-edited backup) threw
-/// and failed the whole `[ScreenConfiguration]` array decode — losing every
-/// display's config, not just the one with the bad field.
 @Suite("ScreenConfiguration tolerant enum decode")
 struct ScreenConfigurationTolerantEnumDecodeTests {
     @Test("An unknown fitMode falls back to aspectFill without invalidating the rest of the array")
@@ -312,7 +300,7 @@ struct ScreenConfigurationTolerantEnumDecodeTests {
 
         #expect(decoded.count == 2)
         #expect(decoded[0].fitMode == .center) // control: legitimate value survives untouched
-        #expect(decoded[1].fitMode == .aspectFill) // fallback default, rest of the array survives
+        #expect(decoded[1].fitMode == .aspectFill)
         #expect(decoded[1].screenID == 2)
     }
 
@@ -333,7 +321,7 @@ struct ScreenConfigurationTolerantEnumDecodeTests {
 
         #expect(decoded.count == 2)
         #expect(decoded[0].videoDisplayMode == .spanAllDisplays) // control
-        #expect(decoded[1].videoDisplayMode == .perDisplay) // fallback default
+        #expect(decoded[1].videoDisplayMode == .perDisplay)
         #expect(decoded[1].screenID == 2)
     }
 }

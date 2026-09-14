@@ -2,22 +2,8 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// Preset selection and management for the scene settings card.
-///
-/// A preset is not one more setting — it is a saved state of every setting below
-/// it, so it is a block set apart from the rows rather than a peer of them: a
-/// heading line carrying the label, a `+` that always saves the current values
-/// as a NEW preset, and the menu holding the rare and destructive ones; then a
-/// full-width picker; then a status line saying how far the current values have
-/// drifted. The `+` is visible even with no presets — which is every scene until
-/// the user makes one — because a menu-only affordance there was never found.
-///
-/// Naming happens in a popover anchored to whichever control started it. Inline,
-/// it grew the block and pushed all 20-35 property rows down the column.
-///
-/// Still vertical rather than one row: this sits in an inspector whose minimum
-/// width is `DesignTokens.Inspector.minWidth` (268pt, ~235pt usable), and CJK
-/// copy runs 1.5–2× English.
+/// Vertical rather than one row: the inspector's minimum width is
+/// `DesignTokens.Inspector.minWidth` (268pt, ~235pt usable) and CJK runs 1.5–2×.
 struct ScenePresetBar: View {
     /// Already filtered to the descriptor's base wallpaper by the caller.
     let presets: [ScenePreset]
@@ -35,8 +21,6 @@ struct ScenePresetBar: View {
     @State private var pendingDeletion: ScenePreset?
     @FocusState private var nameFieldIsFocused: Bool
 
-    /// Which naming operation the inline field is serving. Renaming and saving
-    /// share one field; only the commit differs.
     private enum Editing: Equatable {
         case saveAsNew
         case rename(ScenePreset)
@@ -71,8 +55,6 @@ struct ScenePresetBar: View {
             ),
             titleVisibility: .visible
         ) {
-            // Deliberate delete via the menu item above — the confirmation button
-            // doesn't take the destructive style (HIG, Alerts).
             Button("Delete") {
                 if let pendingDeletion { onDelete(pendingDeletion) }
                 pendingDeletion = nil
@@ -85,13 +67,9 @@ struct ScenePresetBar: View {
         }
     }
 
-    /// Grouped so a Workshop preset someone downloaded is never mistaken for
-    /// one of their own — deleting the two means different things.
     private var presetPicker: some View {
         Picker("", selection: selection) {
             Text("No preset").tag(String?.none)
-            // With nothing saved this is the only entry, and the picker reads as
-            // "no presets exist" rather than as a dead control.
 
             if !localPresets.isEmpty {
                 Section {
@@ -119,21 +97,14 @@ struct ScenePresetBar: View {
         }
         .labelsHidden()
         .pickerStyle(.menu)
-        // Preset names are user-supplied and unbounded; same layout contract as
-        // the combo property rows in the settings list.
         .lineLimit(1)
         .truncationMode(.tail)
-        // Full width, not squeezed to the right of a label: this is the control
-        // the whole block is about.
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityLabel(Text("Preset"))
     }
 
-    /// Always visible, and always additive: `+` saves the current values as a
-    /// NEW preset, it never overwrites. Overwriting the applied one is a separate
-    /// intent and lives in the menu, where it can be gated and named after its
-    /// target. Icon-only because the header row also carries a label and a menu,
-    /// and a worded button here would be the first thing to truncate in Japanese.
+    /// Always additive: `+` saves the current values as a NEW preset and never
+    /// overwrites; overwriting the applied one lives in the menu.
     private var saveButton: some View {
         GlassIconButton("plus", size: .small) { beginEditing(.saveAsNew) }
             .help(Text("Save the scene's current values as a new preset"))
@@ -143,10 +114,6 @@ struct ScenePresetBar: View {
             }
     }
 
-    /// One popover view, two anchors. Rename is started from the ellipsis menu,
-    /// so its sheet has to grow from there — anchored to `+` instead, an action
-    /// chosen in one control sprouted out of another, and VoiceOver announced it
-    /// against "Save as new preset".
     private enum NamingAnchor {
         case isSaveAsNew
         case isRename
@@ -171,9 +138,6 @@ struct ScenePresetBar: View {
         )
     }
 
-    /// The card's own reset accessory already offers the action; this says what
-    /// there is to reset, which nothing did before — the per-row pencil badges
-    /// only showed up next to settings the user had scrolled to.
     private var changedNote: some View {
         Label {
             if activePreset == nil {
@@ -194,11 +158,8 @@ struct ScenePresetBar: View {
 
     private var actionsMenu: some View {
         Menu {
-            // The other save intent, and the reason `+` can stay purely additive.
-            // Only for a preset the user made — a Workshop one is someone else's
-            // snapshot, and saving over its name would silently fork it — and
-            // only when there is something to fold in. `onSave` reuses the id of
-            // a same-named local preset, so this overwrites rather than adds.
+            // Only for a local preset with changes: `onSave` reuses the id of a same-named
+            // local preset, so this call overwrites rather than adds.
             if let activePreset, activePreset.source == .local, changedCount > 0 {
                 Button("Update “\(activePreset.name)”") { onSave(activePreset.name) }
                 Divider()
@@ -206,9 +167,6 @@ struct ScenePresetBar: View {
 
             Button("Save as New Preset…") { beginEditing(.saveAsNew) }
 
-            // Renaming a Workshop preset is allowed — it is a local label on a
-            // local copy — but deleting one is worth separating from deleting
-            // something the user authored, so both stay behind the divider.
             if let activePreset {
                 Divider()
                 Button("Rename") { beginEditing(.rename(activePreset)) }
@@ -226,9 +184,6 @@ struct ScenePresetBar: View {
         }
     }
 
-    /// The popover has room the inspector column does not: the field gets a
-    /// sensible width and the two buttons sit beside each other without the
-    /// ~235pt squeeze that forced them onto their own line inline.
     private var namingPopover: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
             TextField("Preset name", text: $draftName)
@@ -261,10 +216,8 @@ struct ScenePresetBar: View {
         }
     }
 
-    /// `onSave` reuses the id of a same-named local preset, which is exactly what
-    /// "Update" wants and exactly what `+` must not do: typing an existing name
-    /// here would silently replace that preset. Blocking the collision is what
-    /// makes "always additive" true rather than merely claimed.
+    /// `onSave` reuses the id of a same-named local preset, so without this guard
+    /// typing an existing name silently replaces it.
     private var nameCollides: Bool {
         let name = trimmedName
         guard !name.isEmpty else { return false }
@@ -329,9 +282,8 @@ struct ScenePresetBar: View {
 
     private func commit() {
         let name = trimmedName
-        // `nameCollides` also gates here, not just the Save button: Return in the
-        // field reached this straight past the disabled button, and `onSave`
-        // reuses a same-named preset's id — so it silently replaced it.
+        // `nameCollides` gates here too, not just the Save button: Return reaches this
+        // past the disabled button and would silently replace the preset.
         guard !name.isEmpty, !nameCollides, let editing else { return }
         self.editing = nil
         draftName = ""

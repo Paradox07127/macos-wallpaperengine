@@ -4,10 +4,6 @@ import LiveWallpaperCore
 import SwiftUI
 import Testing
 
-/// The arithmetic in `BoardChromeScaleTests` only says what the numbers should
-/// be. This lays the real chrome out through `NSHostingView` and measures the
-/// box it claims, because the boost is worth nothing if the modifier reports its
-/// pre-scale size — the placement clamps would then push panels off the board.
 @Suite("Monitor board edit-chrome layout")
 @MainActor
 struct BoardChromeScaleLayoutTests {
@@ -32,8 +28,7 @@ struct BoardChromeScaleLayoutTests {
         #expect(abs(boosted.height - unscaled.height * boost) < 1)
         #expect(abs(boosted.width - unscaled.width * boost) < 1)
 
-        // What the user ends up looking at: the board is drawn down by the same
-        // 0.2, so the pill lands back at the size it was designed at.
+        // The board is drawn down by the same 0.2, so the pill lands back at its design size.
         #expect(abs(boosted.height * 0.2 - unscaled.height) < 1)
     }
 }

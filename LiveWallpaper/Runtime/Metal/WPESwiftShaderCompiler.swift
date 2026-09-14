@@ -2,17 +2,11 @@
 import Foundation
 import Metal
 
-/// Uses `WPEShaderTranspiler` to emit MSL and `MTLDevice.makeLibrary(source:)` to compile it.
-/// Shaders it can't handle throw `.translationFailed`, which `WPEMetalSceneRenderer` surfaces
-/// as `SceneRenderingError.metalRendererUnsupported`. `recordFailure` gates the scene-debug
-/// shader-failure artifact; the off-thread transpile pre-warm passes `false` so a failing shader is recorded once — by the real first-frame render — not twice.
+/// `recordFailure` false (off-thread pre-warm) so a failing shader is recorded once by the real first-frame render, not twice.
 struct WPESwiftShaderCompiler: Sendable {
     let device: MTLDevice
     let translationCache: WPEShaderTranslationCache
-    /// Fragment-only compiler contract: vertex execution always stays on the
-    /// built-in fullscreen quad. Model/vertex-domain shaders are never compiled
-    /// here — they surface a `.translationFailed`/`.mslLibraryFailed` diagnostic
-    /// rather than crashing Metal.
+    /// Fragment-only: vertex execution stays on the built-in fullscreen quad; model/vertex-domain shaders are never compiled here.
     static let fixedVertexFunctionName = "wpe_fullscreen_vertex"
 
     init(device: MTLDevice, translationCache: WPEShaderTranslationCache = .shared) {
@@ -133,10 +127,7 @@ struct WPESwiftShaderCompiler: Sendable {
                     errorText: "Metal rejected MSL: \(error.localizedDescription)"
                 )
             }
-            // Don't inline the generated MSL into the thrown reason: it
-            // can flow into user-facing diagnostics, and the full source
-            // has already been written to `WPESceneDebugArtifacts` above
-            // for offline inspection.
+            // Don't inline the generated MSL into the thrown reason: it can flow into user-facing diagnostics.
             throw WPEShaderCompilerError.mslLibraryFailed(
                 "Metal rejected translated MSL for '\(shaderName)': \(error.localizedDescription)"
             )
@@ -156,17 +147,12 @@ struct WPESwiftShaderCompiler: Sendable {
         fragmentSource: String,
         vertexSource: String
     ) -> String {
-        // Scan the fragment AFTER branch stripping: a uniform declared only in an
-        // inactive `#if` (auto_sway's g_Speed/g_Inertia/g_SigmentCount under
-        // AA_VERSION == 1) would otherwise count as existing, get skipped here,
-        // and then vanish with its branch — leaving the active code without it.
+        // Scan the fragment AFTER branch stripping: a uniform only in an inactive `#if` would count as existing, then vanish with its branch.
         let activeFragment = WPEShaderTranspiler.stripInactivePreprocessorBranches(in: fragmentSource)
         let existing = Set(uniformDeclarations(in: activeFragment).map(\.name))
         let activeVertex = WPEShaderTranspiler.stripInactivePreprocessorBranches(in: vertexSource)
         var seen = Set<String>()
-        // Inject the ORIGINAL declaration lines: the trailing `// {"material":…}`
-        // annotation is what binds the scene's constantshadervalues (and carries
-        // the shader default) — a bare re-declaration would silently unbind them.
+        // Inject the ORIGINAL declaration lines: the trailing `// {"material":…}` annotation binds constantshadervalues; a bare re-declaration would unbind them.
         let missingLines = activeVertex.components(separatedBy: .newlines).compactMap { raw -> String? in
             let trimmed = raw.trimmingCharacters(in: .whitespaces)
             guard let uniform = WPEUniformDecl.parse(line: trimmed),

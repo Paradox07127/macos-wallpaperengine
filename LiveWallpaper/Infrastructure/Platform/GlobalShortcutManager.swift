@@ -3,18 +3,10 @@ import AppKit
 import Carbon.HIToolbox
 import LiveWallpaperCore
 
-/// Global hot keys via Carbon `RegisterEventHotKey` (no Accessibility permission,
-/// unlike `NSEvent.addGlobalMonitorForEvents`).
-///
-/// Delivery goes through `GetEventDispatcherTarget()` plus a file-level C
-/// trampoline. An inline `@MainActor` closure on `GetApplicationEventTarget()`
-/// can return `noErr` from `RegisterEventHotKey` and still never fire in an
-/// accessory / `LSUIElement` app, especially in Release.
+/// Delivery goes through `GetEventDispatcherTarget()` plus a file-level C trampoline. An inline `@MainActor` closure on `GetApplicationEventTarget()` can return `noErr` and still never fire in an accessory / `LSUIElement` app, especially in Release.
 @MainActor
 final class GlobalShortcutManager {
     private weak var screenManager: ScreenManager?
-    /// Injected by `AppDelegate` (which owns the settings window) so this stays
-    /// off the app layer, matching how the onboarding flow gets its callbacks.
     private let onOpenSettings: () -> Void
     /// MainActor-only; `nonisolated(unsafe)` so deinit can tear down Carbon refs.
     nonisolated(unsafe) private var registrations: [GlobalShortcutAction: HotKeyRegistration] = [:]
@@ -247,7 +239,6 @@ final class GlobalShortcutManager {
         return manager.screens.first { $0.id == screenIDFromNSScreen(nsScreen) }
     }
 
-    /// Display ID from `NSScreen.deviceDescription["NSScreenNumber"]`.
     private func screenIDFromNSScreen(_ screen: NSScreen) -> CGDirectDisplayID {
         let key = NSDeviceDescriptionKey("NSScreenNumber")
         return (screen.deviceDescription[key] as? NSNumber)?.uint32Value ?? 0

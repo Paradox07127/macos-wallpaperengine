@@ -6,11 +6,6 @@ import XCTest
 
 /// The environment particle layer answers to two independent gates: the wallpaper
 /// runtime's own suspend, and the system "Reduce motion" switch.
-///
-/// They used to share one `Bool`, so whichever wrote last won — a runtime resume after a
-/// wake would restart snow that Reduce Motion had stopped. They are separate reasons on
-/// one set now, and the tests below drive them in both orders because that is the whole
-/// point: nothing in the type system says a `Bool` cannot be written by two owners.
 final class ParticleReduceMotionTests: XCTestCase {
     private static let frame = CGRect(x: 0, y: 0, width: 200, height: 200)
 
@@ -23,7 +18,6 @@ final class ParticleReduceMotionTests: XCTestCase {
         try XCTUnwrap(controller.debugSuspensionReasons(screenID: screenID))
     }
 
-    /// The real notification AppKit sends when an Accessibility display switch moves.
     /// Posted rather than simulated so the observer registration itself is under test.
     @MainActor
     private func postAccessibilityDisplayOptionsChange() {
@@ -40,30 +34,25 @@ final class ParticleReduceMotionTests: XCTestCase {
         let view = ParticleOverlayView(frame: Self.frame)
         view.setEffect(.snow, density: 1)
 
-        // off / off
         XCTAssertFalse(view.isSuspended)
         XCTAssertEqual(try XCTUnwrap(view.debugEmitterState).speed, 1)
         XCTAssertFalse(try XCTUnwrap(view.debugEmitterState).isHidden)
 
-        // runtime on / reduce motion off
         view.setSuspended(true, for: .runtime)
         XCTAssertTrue(view.isSuspended)
         XCTAssertEqual(try XCTUnwrap(view.debugEmitterState).speed, 0)
         XCTAssertTrue(try XCTUnwrap(view.debugEmitterState).isHidden)
 
-        // runtime on / reduce motion on
         view.setSuspended(true, for: .reduceMotion)
         XCTAssertTrue(view.isSuspended)
         XCTAssertEqual(view.suspensionReasons, [.runtime, .reduceMotion])
         XCTAssertEqual(try XCTUnwrap(view.debugEmitterState).speed, 0)
 
-        // runtime off / reduce motion on
         view.setSuspended(false, for: .runtime)
         XCTAssertTrue(view.isSuspended, "a runtime resume lifted the Reduce Motion pause")
         XCTAssertEqual(view.suspensionReasons, .reduceMotion)
         XCTAssertEqual(try XCTUnwrap(view.debugEmitterState).speed, 0)
 
-        // off / off again
         view.setSuspended(false, for: .reduceMotion)
         XCTAssertFalse(view.isSuspended)
         XCTAssertEqual(view.suspensionReasons, [])
@@ -99,15 +88,12 @@ final class ParticleReduceMotionTests: XCTestCase {
 
     /// `beginTime` is pushed forward by the length of the pause, so the emitter picks up
     /// where it stopped instead of spraying everything it would have emitted meanwhile.
-    /// The compensation has to cover the whole stacked pause, not just the last reason.
     @MainActor
     func testResumeCompensatesForTheWholeStackedPause() throws {
         let view = ParticleOverlayView(frame: Self.frame)
         view.setEffect(.rain, density: 1)
-        // A fresh emitter already reports beginTime ≈ CACurrentMediaTime() (measured:
-        // 21569.54 on a machine 6 hours up), so it is a time base, not a duration. The
-        // invariant is the delta: b1 = now_resume - (now_pause - b0), so b1 - b0 is the
-        // pause length exactly, on the first cycle and every one after it.
+        // `beginTime` is a time base, not a duration: b1 = now_resume - (now_pause - b0),
+        // so b1 - b0 is the pause length exactly, on every cycle.
         let baseline = try XCTUnwrap(view.debugEmitterState).beginTime
 
         let pauseStart = CACurrentMediaTime()
@@ -150,8 +136,7 @@ final class ParticleReduceMotionTests: XCTestCase {
         XCTAssertEqual(try reasons(controller, screenID), [])
 
         // Writing the override alone changes nothing: the notification is what applies it,
-        // so this also proves the observer — not some read on the next unrelated call — did
-        // the work below.
+        // so this also proves the observer did the work below.
         controller.reduceMotionOverride = true
         XCTAssertEqual(try reasons(controller, screenID), [])
 
@@ -183,8 +168,7 @@ final class ParticleReduceMotionTests: XCTestCase {
         )
     }
 
-    /// An overlay built while the switch is already on must start paused — nothing will
-    /// post a notification just because a new display arrived.
+    /// Nothing will post a notification just because a new display arrived.
     @MainActor
     func testOverlayCreatedWhileReduceMotionIsOnStartsPaused() throws {
         let controller = EnvironmentOverlayController()

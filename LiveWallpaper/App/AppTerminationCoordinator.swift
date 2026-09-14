@@ -1,6 +1,5 @@
 import Foundation
 
-/// Ordered application-termination barrier.
 enum AppTerminationCoordinator {
     typealias AsyncStep = @Sendable () async -> Void
     typealias BlockingStep = @Sendable () -> Void
@@ -27,7 +26,6 @@ enum AppTerminationCoordinator {
         }
     }
 
-    /// Injectable ordering seam used by lifecycle tests.
     static func run(
         stopMonitorProducers: AsyncStep,
         flushMonitorCursors: AsyncStep,

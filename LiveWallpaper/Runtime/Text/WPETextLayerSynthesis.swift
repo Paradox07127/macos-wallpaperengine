@@ -9,15 +9,7 @@ enum WPETextRenderMode: Equatable, Sendable {
     case offscreen
 }
 
-/// Turns a scene's text objects into graph layers so paint order, effects and parent
-/// transforms stay in the same executor pass stream as image objects. WPE routes text through
-/// the scene graph: plain text draws its glyph mesh directly in paint order, text with
-/// effects/background or a linked consumer uses a local intermediate — RenderDoc on 2780710296
-/// shows text draws before character compositing at pass #23, so a post-render overlay (what we
-/// did until 2026-08-07) can't preserve occlusion or effects. The first material pass is a
-/// renderer-owned glyph-mesh pass: Direct fuses it into the scene target, Offscreen writes the
-/// glyph mesh into the layer composite before its effect chain — deliberately no separate
-/// per-object rgba16Float glyph texture.
+/// Direct fuses the glyph mesh into the scene target; Offscreen writes it into the layer composite before its effect chain — deliberately no separate per-object rgba16Float glyph texture.
 enum WPETextLayerSynthesis {
     static let glyphPassShader = "wpe_text_glyph"
 
@@ -40,11 +32,7 @@ enum WPETextLayerSynthesis {
         shader == glyphPassShader
     }
 
-    /// The offscreen text surface's size in scene pixels: the current live block plus WPE's
-    /// padding gutter on every side (`padding` is documented as "increases the geometry around
-    /// the font characters", and 2955378002's `padding: 31` measures as exactly block+62 in the
-    /// capture). Windows L1 captures measure this exact extent, and WPE recomputes it after
-    /// SetText — no authored box, headroom multiplier or guessed future string participates.
+    /// Live block plus WPE's padding gutter on every side (`padding` × 2). No authored box, headroom multiplier or guessed future string participates.
     static func targetSize(blockSize: CGSize, padding: Double) -> CGSize {
         let gutter = max(padding, 0) * 2
         return CGSize(
@@ -53,13 +41,7 @@ enum WPETextLayerSynthesis {
         )
     }
 
-    /// The layer's quad centre in author space (+y up): the object's origin shifted by the
-    /// anchored block's centre, so alignment rules stay exactly where
-    /// `WPETextBlockLayout.anchorOffset` puts them. Block-local (0,0) is the FIRST BASELINE at
-    /// the block's left edge, so the box runs `+ascender` down to `+ascender − height` — hence
-    /// the `+ ascender` term. `angles.z` rotates the offset since WPE rotates the block about
-    /// the object origin while the quad shader rotates about the quad centre; pre-rotating
-    /// makes the two agree.
+    /// Block-local (0,0) is the first baseline at the left edge, so the box runs `+ascender` down to `+ascender − height`. Pre-rotate by `angles.z` because WPE rotates about the object origin while the quad shader rotates about the quad centre.
     static func layerOrigin(
         textOrigin: SIMD3<Double>,
         anchorOffset: SIMD2<Double>,
@@ -79,9 +61,7 @@ enum WPETextLayerSynthesis {
         )
     }
 
-    /// Where the glyph mesh puts the object origin inside the CURRENT exact-size
-    /// offscreen surface, in top-left y-down pixels. Direct mode does not create
-    /// this surface, but uses the same layout values for scene placement.
+    /// Object origin inside the current exact-size offscreen surface, in top-left y-down pixels.
     static func meshOriginInTarget(
         blockSize: CGSize,
         anchorOffset: SIMD2<Double>,
@@ -94,9 +74,6 @@ enum WPETextLayerSynthesis {
         )
     }
 
-    /// Builds the synthetic image object for one text object. `blockSize`,
-    /// `anchorOffset` and `ascender` come from the load-time layout;
-    /// `targetSize` from `targetSize(blockSize:padding:)`.
     static func imageObject(
         for object: WPESceneTextObject,
         mode: WPETextRenderMode = .offscreen,
@@ -119,9 +96,7 @@ enum WPETextLayerSynthesis {
                 anchorOffset: anchorOffset,
                 blockSize: blockSize,
                 ascender: ascender,
-                // Text objects carry no LOCAL angles (the schema never parsed
-                // one), so `WPESceneImageObject` falls back to `angles` for the
-                // local geometry — rotate the local centre offset with it.
+                // Text objects carry no local angles (the schema never parsed one), so rotate the local centre offset with `angles`.
                 angles: object.angles,
                 scale: object.localScale ?? object.scale
             )
@@ -152,10 +127,7 @@ enum WPETextLayerSynthesis {
             effects: object.effects,
             animationLayers: [],
             parallaxDepth: object.parallaxDepth
-            // No scripts: the TEXT object still owns them, and each already publishes into a
-            // map the layer path reads by object id (origin/scale/angles →
-            // `applyingLayerTransforms`, visible/alpha → `liveLayerVisibilityIncludingText`) —
-            // copying them here would build a second runtime per script.
+            // No scripts: the TEXT object still owns them; copying them here would build a second runtime per script.
         )
     }
 }

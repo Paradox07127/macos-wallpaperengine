@@ -6,7 +6,6 @@ enum MonitorAgentPhase: String, Codable, Sendable {
     case completed, interrupted, failed, unknown
 }
 
-/// Only whitelisted metadata enters this reducer or its persisted checkpoint.
 struct AgentActivityState: Codable, Sendable, Equatable {
     var phase: MonitorAgentPhase = .unknown
     var phaseStartedAt: Double?

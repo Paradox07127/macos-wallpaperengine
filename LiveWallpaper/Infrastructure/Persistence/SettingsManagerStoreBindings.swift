@@ -2,9 +2,7 @@ import CoreGraphics
 import Foundation
 import LiveWallpaperCore
 
-// Every binding that hands a LiveWallpaperCore store its app-side persistence.
 
-/// Wires the shared bookmark store to the app's settings persistence.
 @MainActor
 struct SettingsManagerBookmarkPersistence: BookmarkPersisting {
     func load() -> [WallpaperBookmark] { SettingsManager.shared.loadWallpaperBookmarks() }
@@ -12,11 +10,9 @@ struct SettingsManagerBookmarkPersistence: BookmarkPersisting {
 }
 
 extension BookmarkStore {
-    /// App-wide singleton backed by `SettingsManager.shared`.
     static let shared = BookmarkStore(persistence: SettingsManagerBookmarkPersistence())
 }
 
-/// Wires the shared scheme store to the app's settings persistence.
 @MainActor
 struct SettingsManagerSchemePersistence: SchemePersisting {
     func load() -> [ScreenScheme] {
@@ -29,11 +25,9 @@ struct SettingsManagerSchemePersistence: SchemePersisting {
 }
 
 extension SchemeStore {
-    /// App-wide singleton backed by `SettingsManager.shared`.
     static let shared = SchemeStore(persistence: SettingsManagerSchemePersistence())
 }
 
-/// Wires the shared trusted-host store to app settings persistence.
 @MainActor
 struct SettingsManagerTrustedHostPersistence: TrustedHostPersisting {
     func load() -> [String] { SettingsManager.shared.loadTrustedHosts() }
@@ -41,11 +35,9 @@ struct SettingsManagerTrustedHostPersistence: TrustedHostPersisting {
 }
 
 extension TrustedHostStore {
-    /// Shared app-wide trusted-host store.
     static let shared = TrustedHostStore(persistence: SettingsManagerTrustedHostPersistence())
 }
 
-/// Connects the core wallpaper configuration store to app settings persistence.
 @MainActor
 struct SettingsManagerScreenConfigurationPersistence: ScreenConfigurationPersisting {
     func getConfiguration(for screenID: CGDirectDisplayID) -> ScreenConfiguration? {

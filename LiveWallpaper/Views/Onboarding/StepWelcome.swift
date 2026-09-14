@@ -20,7 +20,6 @@ struct StepWelcome: View {
             Spacer().frame(height: DesignTokens.Spacing.xl)
 
             VStack(spacing: DesignTokens.Spacing.md) {
-                // Resolve the Pro/Lite name from the running bundle.
                 Text("Welcome to \(BundleIdentity.productDisplayName)")
                     .font(DesignTokens.Typography.hero)
                     .accessibilityAddTraits(.isHeader)

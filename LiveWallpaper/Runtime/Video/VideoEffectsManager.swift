@@ -107,9 +107,7 @@ final class VideoEffectsManager {
 
     // MARK: - Blur Radius Clamp
 
-    /// Matches the Color Adjustments blur slider's own cap (ColorAdjustmentsView.swift:19,
-    /// `0...30`) so an out-of-range or non-finite blurRadius can't demand unbounded
-    /// CIGaussianBlur work.
+    /// Matches the Color Adjustments blur slider's own cap (`0...30`) so an out-of-range or non-finite blurRadius can't demand unbounded CIGaussianBlur work.
     nonisolated static let maxBlurRadius: Double = 30
 
     nonisolated static func clampedBlurRadius(_ value: Double) -> Double {
@@ -122,20 +120,13 @@ final class VideoEffectsManager {
     /// Test-only clock seam; production always resolves the real time.
     nonisolated(unsafe) static var currentDateProvider: () -> Date = Date.init
 
-    /// Guards the three `nonisolated(unsafe)` statics below: `warmthForCurrentHour`
-    /// runs on AVFoundation's per-frame filtering callback, whose delivery thread
-    /// isn't documented as serial, and the cache is shared static state across
-    /// every player.
+    /// Guards the three `nonisolated(unsafe)` statics below: `warmthForCurrentHour` runs on AVFoundation's per-frame filtering callback, whose delivery thread isn't documented as serial.
     private nonisolated static let warmthCacheLock = NSLock()
     private nonisolated(unsafe) static var cachedWarmth: Double = 6500
     private nonisolated(unsafe) static var cacheValidFrom: Date = .distantFuture
     private nonisolated(unsafe) static var cacheExpiresAt: Date = .distantPast
-    /// Test-only: counts cache misses, so a test can prove the cache itself
-    /// (not just the returned value) is doing its job.
     nonisolated(unsafe) static var warmthRecomputeCount = 0
 
-    /// Test-only: forces the next call to recompute, so tests with an injected
-    /// clock don't inherit cache state left over from a previous test.
     nonisolated static func resetWarmthCacheForTesting() {
         warmthCacheLock.lock()
         defer { warmthCacheLock.unlock() }
@@ -148,10 +139,7 @@ final class VideoEffectsManager {
         cacheExpiresAt = .distantPast
     }
 
-    /// A time zone change moves the local hour without moving `Date`, so neither
-    /// bound in `warmthForCurrentHour` can see it. Observing the change costs
-    /// nothing per frame, unlike re-reading `Calendar.current` to compare.
-    /// Registered on first use; `static let` initialisation is one-shot.
+    /// A time zone change moves the local hour without moving `Date`, so neither bound in `warmthForCurrentHour` can see it.
     private nonisolated static let timeZoneObserver: NSObjectProtocol = NotificationCenter.default
         .addObserver(forName: .NSSystemTimeZoneDidChange, object: nil, queue: nil) { _ in
             warmthCacheLock.lock()
@@ -159,9 +147,6 @@ final class VideoEffectsManager {
             invalidateWarmthCacheLocked()
         }
 
-    /// `Calendar.current` was being read on every composited video frame (up to
-    /// 216,000 times/hour/player at 60fps) even though the result only changes
-    /// on the hour. Cached until the next hour boundary instead.
     nonisolated static func warmthForCurrentHour() -> Double {
         let now = currentDateProvider()
         _ = timeZoneObserver
@@ -169,10 +154,7 @@ final class VideoEffectsManager {
         warmthCacheLock.lock()
         defer { warmthCacheLock.unlock() }
 
-        // Lower bound as well as upper: an NTP correction moves `now` backwards,
-        // and an upper-bound-only check would serve the stale hour until real
-        // time caught up. A time zone change moves neither bound — that one
-        // arrives through `timeZoneObserver`.
+        // Lower bound as well as upper: an NTP correction moves `now` backwards, and an upper-bound-only check would serve the stale hour until real time caught up.
         if now >= cacheValidFrom, now < cacheExpiresAt {
             return cachedWarmth
         }
@@ -201,11 +183,7 @@ final class VideoEffectsManager {
     }
 }
 
-/// Per-composition CIFilter chain, reused across frames rather than rebuilt via
-/// `CIFilter(name:)` each frame. AVFoundation doesn't guarantee serial delivery of the
-/// per-frame filtering callback and `CIFilter` isn't thread-safe, so a lock guards input
-/// mutation; `outputImage` snapshots inputs into the returned `CIImage`, so the lock never
-/// spans rendering.
+/// AVFoundation doesn't guarantee serial delivery of the per-frame filtering callback and `CIFilter` isn't thread-safe, so a lock guards input mutation; `outputImage` snapshots inputs, so the lock never spans rendering.
 private final class VideoFilterChain: @unchecked Sendable {
     private let params: FilterParameters
     private let lock = NSLock()

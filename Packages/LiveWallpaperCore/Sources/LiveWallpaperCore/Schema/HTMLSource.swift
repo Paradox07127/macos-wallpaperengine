@@ -58,7 +58,6 @@ public enum HTMLSource: Codable, Equatable, Sendable {
         self = .inline(trimmed)
     }
 
-    /// YouTube → `youtube-nocookie.com/embed`; other hosts pass through.
     public static func normalizingForWallpaper(_ url: URL) -> URL {
         if let videoID = youTubeVideoID(from: url) {
             return youTubeEmbedURL(forID: videoID) ?? url
@@ -106,7 +105,7 @@ public enum HTMLSource: Codable, Equatable, Sendable {
 
     private static func youTubeEmbedURL(forID id: String) -> URL? {
         // nocookie avoids SSO/cookie paths that break sandboxed WKWebView passive play;
-        // `playlist=<id>` makes `loop=1` restart; extra iframe flags caused Error 153.
+        // `playlist=<id>` is what makes `loop=1` restart; extra iframe flags trigger Error 153.
         var components = URLComponents()
         components.scheme = "https"
         components.host = "www.youtube-nocookie.com"

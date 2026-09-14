@@ -7,9 +7,6 @@ import Metal
 import Testing
 @testable import LiveWallpaper
 
-/// Warm-suspend release of the eager (below-threshold) `.tex` animation path.
-/// Before this behaviour existed `applyPerformanceProfile` / `invalidate` were
-/// empty, so every atlas stayed resident for the whole session.
 @Suite("WPETexAnimatedTextureSource suspend")
 @MainActor
 struct WPETexAnimatedTextureSourceSuspendTests {
@@ -19,7 +16,6 @@ struct WPETexAnimatedTextureSourceSuspendTests {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let fixture = try makeEagerSource(device: device)
 
-        // Two 4x4 RGBA8 atlases.
         #expect(fixture.source.residentAtlasGPUBytes == 2 * 4 * 4 * 4)
 
         fixture.source.applyPerformanceProfile(.suspended)
@@ -28,10 +24,6 @@ struct WPETexAnimatedTextureSourceSuspendTests {
         #expect(fixture.source.hasReleasedAtlases)
     }
 
-    /// The particle path stores frame 0's atlas in `particleTextures` for the
-    /// whole scene, so nilling our reference frees nothing — and the next restore
-    /// then allocates a *second* copy beside the pinned one, leaving GPU use
-    /// higher than before the feature existed.
     @Test("A pinned slot survives suspend and is not reallocated on resume")
     func pinnedSlotIsNeitherFreedNorDuplicated() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
@@ -42,12 +34,10 @@ struct WPETexAnimatedTextureSourceSuspendTests {
         fixture.source.pinSlotHoldingExternally(textureFor: 0)
         fixture.source.applyPerformanceProfile(.suspended)
 
-        // Slot 0 stays; the other atlas is still released.
         let afterSuspend = fixture.source.residentAtlasGPUBytes
         #expect(afterSuspend > 0, "the externally held atlas must not be dropped")
         #expect(afterSuspend < bothAtlases, "unpinned atlases must still be released")
 
-        // Resume must reuse the pinned object rather than upload a duplicate.
         let afterResume = try #require(fixture.source.texture(at: 0))
         #expect(afterResume === pinnedTexture)
         #expect(fixture.source.residentAtlasGPUBytes == bothAtlases)
@@ -147,7 +137,7 @@ struct WPETexAnimatedTextureSourceSuspendTests {
     func mismatchedProviderIsRejected() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let fixture = try makeEagerSource(device: device)
-        // Same images, one fewer frame than the eager source was built with.
+        // 同样的 images,帧数少于 eager source 构建时用的那份。
         let shortPayload = makeStreamingPayload(frames: [
             WPETexStreamingFrame(imageID: 0, subRect: CGRect(x: 0, y: 0, width: 2, height: 2), duration: 0.1)
         ])
@@ -174,9 +164,6 @@ struct WPETexAnimatedTextureSourceSuspendTests {
         let eagerFrames: [WPETexAnimatedFrame]
     }
 
-    /// Mirrors the production wiring: the loader uploads one atlas per unique
-    /// image, then the renderer attaches the compressed payload as the rebuild
-    /// source (`WPEMetalSceneRenderer.attachAtlasProvider`).
     private func makeEagerSource(
         device: MTLDevice,
         compressed: Bool = false
@@ -232,9 +219,6 @@ struct WPETexAnimatedTextureSourceSuspendTests {
     }
 }
 
-/// The lazy/eager split metric. It used to be `totalUncompressedImageBytes`
-/// (every container image at its stored payload size), which over-counts images
-/// no frame references and trusts a padded `decompressedByteCount`.
 @Suite("WPETexAnimatedTextureSource eager byte gate")
 struct WPETexAnimatedTextureSourceGateTests {
 
@@ -297,8 +281,7 @@ struct WPETexAnimatedTextureSourceGateTests {
 
 // MARK: - Shared fixture builders
 
-/// 4x4 RGBA8888 images; pixel value encodes (x, y, tag) so a restored atlas is
-/// distinguishable from its sibling.
+/// `blue` 标记让还原后的 atlas 与它的兄弟可区分。
 private func makeFixtureImage(width: Int, height: Int, blue: UInt8) -> Data {
     var bytes = Data(count: width * height * 4)
     bytes.withUnsafeMutableBytes { raw in

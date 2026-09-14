@@ -3,8 +3,6 @@ import AppKit
 import LiveWallpaperCore
 import LiveWallpaperProWPE
 
-/// A side-effect-free renderer preflight promoted to a committed delivery only
-/// after MainActor has persisted the matching descriptor.
 struct PreparedScenePropertyPatch: Sendable {
     let patch: WPEScenePropertyPatch
     let rendererGeneration: UInt64
@@ -18,8 +16,7 @@ protocol SystemAudioCaptureDemandControlling: AnyObject {
 
 extension SystemAudioCaptureManager: SystemAudioCaptureDemandControlling {}
 
-/// @MainActor adapter forwarding runtime-config to `WPEDisplayRenderActor` via ordered `submitConfig`.
-/// One-frame apply latency is fine; last write wins on the actor channel.
+/// Last write wins on the actor channel; apply has one-frame latency.
 @MainActor
 final class WPERendererConfigAdapter: WallpaperPerformanceConfigurable, WallpaperFrameRateConfigurable, WallpaperAudioConfigurable {
     private let renderActor: WPEDisplayRenderActor
@@ -49,91 +46,46 @@ final class WPERendererConfigAdapter: WallpaperPerformanceConfigurable, Wallpape
     }
 }
 
-/// `WallpaperRuntimeSession` adapter over a per-display render actor (not the bare renderer).
-/// Frame-config is fire-and-forget; present/diagnostics are polled for the inspector.
 @MainActor
 final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackControllable, WallpaperIntentMachineAdopting {
     let wallpaperType: WallpaperType = .scene
 
     private var window: NSWindow?
-    /// Per-display render isolation domain. Owns the renderer; the
-    /// session drives it entirely through this actor.
     private let renderActor: WPEDisplayRenderActor
-    /// Synchronous admission authority shared with the render actor. It is
-    /// independent from renderer lifetime so cleanup can invalidate work that
-    /// is already queued on the actor.
     private let scenePropertyMutationAuthority = ScenePropertyMutationAuthority()
     private let scenePropertyPosterCommitGate = ScenePropertyPosterCommitGate()
-    /// The main-thread surface, held strongly so it (and the delivery shim it
-    /// owns) outlive the wallpaper. The renderer only references it through the
-    /// `Sendable` `surfaceControl` seam, so the session is its sole strong owner.
     private let surface: WPERenderSurface
-    /// @MainActor forwarding surface for the renderer's runtime-config protocols.
     private let rendererConfigAdapter: WPERendererConfigAdapter
-    /// True while a renderer is adopted (construction → cleanup). Drives the
-    /// nil-when-no-renderer semantics for the frame-rate/audio controllers.
+    /// True while a renderer is adopted (construction → cleanup).
     private var hasRenderer = true
-    /// System policy remains the durable source of truth. The inspector may
-    /// temporarily force suspension, but clearing that override must restore
-    /// the folded policy/visibility/user-intent result rather than force play.
     private var currentProfile: WallpaperPerformanceProfile = .quality
     private var previewProfileOverride: WallpaperPerformanceProfile?
     private var lastAppliedPerformanceProfile: WallpaperPerformanceProfile?
     private var requiresSystemAudioCapture = false
-    /// Last-logged snapshot of the five capture-demand inputs, so the diagnostic
-    /// prints on any change instead of only when the outcome flips.
     private var lastLoggedAudioDemandInputs = ""
 
     private var audioCaptureDemandRetained = false
     private let audioCaptureDemandController: any SystemAudioCaptureDemandControlling
-    /// Deep hibernate (P1.5): while suspended for an absence-like reason the
-    /// renderer's loaded resources are dropped after `hibernationDelay`; waking
-    /// runs a full `reload()`. Session-level flag — the renderer's own state is
-    /// simply "not loaded" while hibernated.
     private(set) var isHibernated = false
     private let hibernationDelay: Duration
-    /// Manual pause is not an absence: the user may look at the frozen frame and
-    /// unpause any moment, so it gets its own much longer dwell (M4a) instead of
-    /// reusing the absence constant. Wake is a normal reload; seconds of latency
-    /// on unpause are accepted.
+    /// Manual pause is not an absence; uses its own longer dwell, not the absence constant.
     private let userPauseHibernationDelay: Duration
-    /// Wake is the one load the user never triggered, so a failure there has no
-    /// one to press retry: it looks like the wallpaper just died on unlock.
-    /// Video (`stillFrameWakeDeadlineSeconds`) and HTML (`restoreCoverDeadline`)
-    /// both force themselves back to live on a deadline; this is Scene's.
     private let wakeRetryDelay: Duration
     private let absenceDwell = AbsenceDwell()
     private let pauseDwell = AbsenceDwell()
     private let pressureDwell = AbsenceDwell()
-    /// Retains the wake reload spawned on the suspended→quality transition so
-    /// `cleanup()` can cancel it.
     private var wakeTask: Task<Void, Never>?
-    /// Latest renderer activity mirror (frame/audio work under `.quality`).
-    /// Nil until the renderer's first publish; consumers treat nil as "may be
-    /// working" so the App Nap gate errs on holding.
+    /// Nil until the first publish; treat nil as "may be working".
     private(set) var rendererRuntimeActivity: WPESceneRuntimeActivity?
     var onRuntimeActivityChange: (@MainActor () -> Void)?
-    /// Single source of truth for durable user play intent; effective =
-    /// `userIntendsToPlay && profile == .quality`. Self-built so an
-    /// independently constructed session stands alone; `ScreenManager` swaps in
-    /// the screen's shared machine via `adoptPlaybackStateMachine` on install.
     var playbackMachine = WallpaperPlaybackStateMachine()
     var userIntendsToPlay: Bool { playbackMachine.userIntendsToPlay }
     private var didStartLoad = false
     private var loadTask: Task<Void, Never>?
-    /// The controlled startup task (renderer adopt → initial load). Session-owned
-    /// so `cleanup()` can cancel and drain it before teardown — a detached startup
-    /// could otherwise adopt a renderer into an already-shut-down actor.
     private var startupTask: Task<Void, Never>?
-    /// Retains the ordered teardown task spawned by `cleanup()` (which must keep a
-    /// synchronous signature) so it runs to completion.
     private var cleanupTask: Task<Void, Never>?
-    /// Bumped by `cleanup()`. The startup task checks it after `adopt` so a cleanup
-    /// that raced the adopt skips `beginLoad` on a torn-down session.
     private var lifecycleGeneration = 0
-    /// Monotonic id of the most recent load/reload. Guards the "clear
-    /// `loadTask` when done" writes so a finished older task can't drop the
-    /// handle of a newer one that replaced it while the older was draining.
+    /// Guards clearing loadTask so a finished older task cannot drop a newer one.
     private var loadGeneration = 0
     private(set) var loadFailureCause: WallpaperFailureCause?
     private(set) var loadError: SceneRenderingError? {
@@ -154,8 +106,6 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
 
     /// Cached present flag from `pollRendererState()`: nil/false/true → idle/loading/presented.
     private(set) var hasPresentedFrame: Bool? = false
-    /// Cached diagnostic snapshot for the inspector's log sheet, refreshed by
-    /// `pollRendererState()` so the SwiftUI read stays synchronous.
     private(set) var rendererDiagnostics: SceneRendererDiagnostics?
 
     init(
@@ -221,8 +171,6 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
     var videoPlayer: WallpaperVideoPlayer? { nil }
     var wallpaperWindow: NSWindow? { window }
 
-    /// Refreshes the present + diagnostics caches from the live renderer. The
-    /// inspector's 0.4s poll awaits this before reading the sync accessors.
     func pollRendererState() async {
         guard let snapshot = await renderActor.rendererStateSnapshot() else {
             hasPresentedFrame = nil
@@ -245,27 +193,21 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         )
     }
 
-    /// Async forwarder for the inspector's on-demand poster read-back.
     func captureLivePosterFromNextFrame() async -> NSImage? {
         await renderActor.captureLivePoster()
     }
 
-    /// Inspector-only override used to force a static preview under Reduce
-    /// Motion. `.quality` clears the override and restores the current folded
-    /// policy instead of overriding a battery/offscreen/manual suspension.
+    /// .quality clears the override; it does not force play over a folded suspension.
     func applyPreviewPerformanceProfile(_ profile: WallpaperPerformanceProfile) {
         previewProfileOverride = profile == .quality ? nil : profile
         applyEffectivePerformanceProfile()
     }
 
-    /// Ends the inspector's temporary performance override without changing
-    /// system policy or durable user play/pause intent.
     func clearPreviewPerformanceOverride() {
         previewProfileOverride = nil
         applyEffectivePerformanceProfile()
     }
 
-    /// The loaded scene's property→binding map, read from the live renderer.
     func scenePropertyBindings() async -> [String: [WPEScenePropertyBinding]] {
         await renderActor.scenePropertyBindings()
     }
@@ -285,9 +227,7 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         scenePropertyMutationAuthority.isCurrent(token)
     }
 
-    /// Side-effect-free preflight. A successful result is not allowed to touch
-    /// renderer state until MainActor persists the descriptor and promotes it
-    /// through `commitScenePropertyPatch`.
+    /// Side-effect-free; do not apply until MainActor persists and commitScenePropertyPatch.
     func prepareScenePropertyPatch(
         _ patch: WPEScenePropertyPatch,
         expectedIntent token: ScenePropertyMutationToken
@@ -299,9 +239,7 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         )
     }
 
-    /// Delivers a patch whose descriptor has already been persisted. This does
-    /// not re-check proposal intent: a later no-op selection must not cancel a
-    /// renderer delivery that is now the persisted source of truth.
+    /// Does not re-check proposal intent: a later no-op must not cancel a persisted delivery.
     func stageScenePropertyPosterCommit(
         overrides: [String: WallpaperEngineProjectPropertyValue]
     ) -> ScenePropertyPosterCommit {
@@ -350,9 +288,7 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
 
     func show() {
         window?.orderBack(nil)
-        // Route through the session so the effective profile honours
-        // `userIntendsToPlay` — a manually paused scene must not resume just
-        // because it became visible again (space switch / display wake).
+        // Honour userIntendsToPlay — a manual pause must not resume on visibility alone.
         applyEffectivePerformanceProfile()
     }
 
@@ -364,7 +300,6 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
     private func applyEffectivePerformanceProfile() {
         let effective = effectivePerformanceProfile
         if effective == .quality {
-            // Any transition to playing cancels the pending hibernate countdowns.
             absenceDwell.cancel()
             pressureDwell.cancel()
         }
@@ -374,13 +309,8 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         }
         if effective == .quality, isHibernated {
             isHibernated = false
-            // This wake supersedes any earlier one still waiting out its retry: left alive,
-            // that one would reload on top of this wake and — when its reload failed — restore
-            // `isHibernated` behind this wake's back. The replacement below inherits the
-            // give-up restore, so cancelling here doesn't drop it.
+            // Cancel the earlier wake: left alive it would reload on top of this one and restore isHibernated behind it.
             wakeTask?.cancel()
-            // Rebuild everything hibernate dropped; the profile command above
-            // (or the load tail's re-apply) restores pacing once loaded.
             wakeTask = Task { [weak self] in
                 await self?.reloadForWake()
             }
@@ -389,9 +319,6 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         reconcileSystemAudioCaptureDemand()
     }
 
-    /// Wake reload plus one delayed retry. Bounded at two attempts: a scene that
-    /// fails twice is failing for a reason waiting cannot fix, and the inspector's
-    /// manual retry stays the escape hatch.
     private func reloadForWake() async {
         await reload()
         guard loadError != nil else { return }
@@ -400,11 +327,7 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         } catch {
             return
         }
-        // Give up if the wallpaper stopped being wanted while we waited (paused again, policy
-        // re-suspended, session torn down) — or if a manual retry already healed it. Giving up
-        // while still broken has to restore the hibernated flag: the wake path is gated on it,
-        // so leaving it false would make every later play a no-op and strand the scene in
-        // `loadError` with no automatic way back.
+        // Giving up while still broken must restore isHibernated, or later play is a no-op.
         guard hasRenderer, effectivePerformanceProfile == .quality, loadError != nil else {
             if hasRenderer, loadError != nil { isHibernated = true }
             return
@@ -415,10 +338,6 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
 
     // MARK: - Deep hibernate (resource depth of the suspend path, not a profile)
 
-    /// `ScreenManager` marks the session eligible while it is suspended for an
-    /// absence-like reason (lock, display sleep, full-screen cover/occlusion).
-    /// After `hibernationDelay` of uninterrupted eligibility the renderer's
-    /// loaded resources are released; any flip back cancels the countdown.
     func setHibernationEligible(_ eligible: Bool) {
         guard eligible,
               hasRenderer,
@@ -434,13 +353,7 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         }
     }
 
-    /// Critical system memory pressure: skip the dwell and release renderer resources now
-    /// (policy has already suspended the session). Own slot so a routine
-    /// `setHibernationEligible(false)` push cannot cancel it. Takes the level as state, not a
-    /// one-shot trigger: the retry cadence must not outlive the emergency — armed-and-blocked
-    /// (in-flight load) plus a return to normal used to leave the 1s retry running, which then
-    /// hibernated a session suspended for an unrelated reason, bypassing the manual-pause and
-    /// absence dwells entirely.
+    /// Skip the dwell and release now. Own slot so setHibernationEligible(false) cannot cancel it.
     func setCriticalMemoryPressureActive(_ active: Bool) {
         guard active else {
             pressureDwell.cancel()
@@ -457,10 +370,7 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         }
     }
 
-    /// Second hibernatable class (M4a): a user-paused wallpaper is not an
-    /// absence, so it keeps its own dwell and never touches the absence slot.
-    /// Called from every effective-profile fold; the slot guard makes repeats
-    /// idempotent instead of restarting the countdown.
+    /// User-paused is not an absence; own dwell, never the absence slot. Repeats are idempotent.
     private func reconcileManualPauseHibernation() {
         guard !userIntendsToPlay,
               hasRenderer,
@@ -483,7 +393,6 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         guard hasRenderer,
               !isHibernated,
               effectivePerformanceProfile == .suspended else { return true }
-        // Never tear down under an in-flight load/reload.
         guard loadTask == nil else { return false }
         let hibernated = await renderActor.hibernate()
         guard hibernated, hasRenderer else { return true }
@@ -498,17 +407,13 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
 
     // MARK: - Runtime-activity mirror (App Nap gate)
 
-    /// Renderer push (dedup'd on its side); forwarded so `ScreenManager` can
-    /// re-evaluate the App Nap assertion on real transitions only.
     func noteRendererRuntimeActivity(_ activity: WPESceneRuntimeActivity) {
         guard activity != rendererRuntimeActivity else { return }
         rendererRuntimeActivity = activity
         onRuntimeActivityChange?()
     }
 
-    /// Whether this session may be doing real work under `.quality` — the App
-    /// Nap assertion should stay held. Conservative: true until the renderer's
-    /// first activity push, and while a load/reload is in flight (preparing).
+    /// Conservative: true until the first activity push (nil means may be working).
     var mayPerformRuntimeWork: Bool {
         guard let rendererRuntimeActivity else { return true }
         return rendererRuntimeActivity.producesFrames
@@ -516,13 +421,10 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
             || loadTask != nil
     }
 
-    /// Per-screen cursor-reactivity toggle (camera parallax + pointer shaders).
     func setMouseInteractionEnabled(_ enabled: Bool) {
         renderActor.submitConfig(.mouseInteractionEnabled(enabled))
     }
 
-    /// Per-screen "Interaction" toggle: makes the wallpaper window capture real
-    /// clicks (steals desktop clicks while on) and routes them to the renderer.
     func setClickCaptureEnabled(_ enabled: Bool) {
         (window as? VideoWallpaperWindow)?.setWallpaperMouseInteractionEnabled(enabled)
         renderActor.submitConfig(.clickCaptureEnabled(enabled))
@@ -532,16 +434,11 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         renderActor.submitConfig(.presentFitMode(WPEPresentFitMode(mode)))
     }
 
-    /// Adopt the freshly-built renderer into the actor and drive the initial load,
-    /// inside a session-owned `startupTask`. Called by the builder in place of a
-    /// detached task so `cleanup()` controls the adopt/load lifetime.
     func startAdoptingRenderer(_ handoff: WPERendererHandoff) {
         let generation = lifecycleGeneration
         startupTask = Task { [weak self, renderActor] in
             await renderActor.adopt(handoff.renderer)
-            // If cleanup ran during the adopt hop, skip the load: the actor is being
-            // (or has been) torn down. The renderer is still adopted, so cleanup's
-            // teardown releases it.
+            // If cleanup raced the adopt hop, skip the load; cleanup still releases the adopted renderer.
             guard let self, self.isCurrentLifecycle(generation) else { return }
             await self.beginLoad()
         }
@@ -552,7 +449,6 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
     }
 
     func cleanup() {
-        // Invalidate any pending startup guard so a racing adopt won't drive a load.
         lifecycleGeneration += 1
         scenePropertyMutationAuthority.advance()
         hasRenderer = false
@@ -563,9 +459,6 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         requiresSystemAudioCapture = false
         reconcileSystemAudioCaptureDemand()
         hasPresentedFrame = nil
-        // Remove the display-link reconfiguration observer and invalidate the
-        // link on main now, before the async teardown — so no rebuild can install a
-        // link into an actor that is being shut down. No-op in `.main` mode.
         let displayLinkStopTask = surface.stopDisplayLinkDriver()
         window?.close()
         window = nil
@@ -575,9 +468,7 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         startupTask = nil
         loadTask?.cancel()
         loadTask = nil
-        // Ordered teardown: cancel then DRAIN the startup/load tasks before tearing
-        // the renderer down, so teardown never runs ahead of an in-flight adopt or
-        // load. cleanup() keeps its sync signature; the task is retained above.
+        // cleanup() is sync; drain happens in the retained task so teardown cannot overtake adopt/load.
         cleanupTask = Task {
             startup?.cancel()
             await displayLinkStopTask?.value
@@ -594,8 +485,6 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         }
     }
 
-    /// Install progress handler and run initial load on the actor (after adopt).
-    /// Session-retained `loadTask` so reload/cleanup can cancel and drain it.
     func beginLoad() async {
         guard !didStartLoad else { return }
         didStartLoad = true
@@ -650,7 +539,6 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
             loadError = .cacheRootMissing
             return
         }
-        // A reload rebuilds everything hibernate dropped, whatever triggered it.
         isHibernated = false
         // Cancel+drain in-flight load before reload — cooperative cancel can append half-loaded state.
         loadTask?.cancel()
@@ -663,8 +551,6 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         await installProgressHandler()
         loadGeneration += 1
         let generation = loadGeneration
-        // Run the reload inside a tracked task so `cleanup()` can cancel a
-        // reload that is still streaming assets when the session goes away.
         let task = Task { [weak self] in
             guard let self else { return }
             do {
@@ -733,10 +619,6 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
 
     private func refreshSystemAudioCaptureRequirement() async {
         let requiresCapture = await renderActor.requiresSystemAudioCapture()
-        // Console-only, but kept: it is the only record that separates "the
-        // renderer answered, and the answer was no" from "the answer was
-        // discarded because the renderer went away", which the guard below
-        // makes indistinguishable downstream.
         Logger.info(
             "[AudioCapture] session refresh: rendererSaysNeedsAudio=\(requiresCapture)"
                 + " hasRenderer=\(hasRenderer) cancelled=\(Task.isCancelled)",
@@ -757,14 +639,10 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
             && requiresSystemAudioCapture
             && userIntendsToPlay
             && effectivePerformanceProfile == .quality
-        // Log which audio-tap gate is false (demand never transitioning is the interesting case).
         let inputs = "\(hasRenderer)/\(requiresSystemAudioCapture)"
             + "/\(userIntendsToPlay)/\(effectivePerformanceProfile)"
         if inputs != lastLoggedAudioDemandInputs {
             lastLoggedAudioDemandInputs = inputs
-            // Console-only: the dedupe key includes `effectivePerformanceProfile`,
-            // which flips on every app switch, so this can never be quiet enough
-            // for the file. `SystemAudioCaptureService` records the real outcome.
             Logger.info(
                 "[AudioCapture] session demand=\(shouldRetain)"
                     + " renderer=\(hasRenderer) sceneNeedsAudio=\(requiresSystemAudioCapture)"
@@ -782,8 +660,6 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
         }
     }
 
-    /// Folds a non-typed load error into a `SceneRenderingError`, pulling the
-    /// renderer's `loadDiagnostics` (via the actor) when available.
     private func mapLoadFailure(_ error: Error) async -> SceneRenderingError {
         let cause = SceneFailureCause.make(error)
         loadFailureCause = cause
@@ -798,8 +674,7 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
     }
 }
 
-/// Sendable diagnostic snapshot for the log sheet. Named structs (not labeled tuples)
-/// — stored labeled-tuple properties crashed Swift 6.x Sendable synthesis.
+/// Named structs, not labeled tuples: stored labeled-tuple properties would crash Swift 6.x Sendable synthesis.
 struct SceneRendererDiagnostics: Sendable {
     struct ShaderErrors: Sendable {
         struct Entry: Sendable {

@@ -3,8 +3,6 @@ import Testing
 
 @Suite("Floating glyph backing honours accessibility display settings")
 struct FloatingGlyphBackingTests {
-    /// The glyph floats over arbitrary wallpaper art, so Reduce Transparency has
-    /// to win even where the OS offers Liquid Glass.
     @Test("Reduce Transparency outranks glass availability", arguments: [true, false])
     func reduceTransparencyOutranksAvailability(glassAvailable: Bool) {
         let backing = FloatingGlyphBacking.resolve(
@@ -26,8 +24,6 @@ struct FloatingGlyphBackingTests {
         )
     }
 
-    /// Increase Contrast on its own must not cost the glass treatment — only
-    /// Reduce Transparency does that.
     @Test("Increase Contrast alone keeps glass")
     func increaseContrastAloneKeepsGlass() {
         #expect(

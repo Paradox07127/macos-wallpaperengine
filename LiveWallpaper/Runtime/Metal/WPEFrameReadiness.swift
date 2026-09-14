@@ -7,10 +7,6 @@ struct WPEFrameReadinessResult: Equatable, Sendable {
     let presentCompleted: Bool
 }
 
-/// Load-scoped plan shared by frame production and present observation. Once a
-/// generation is ready, steady-state frames no longer allocate producer
-/// aggregates or schedule actor callbacks; an on-demand poster can still ask
-/// for a present completion to own/release its source texture.
 struct WPEFrameReadinessTrackingPlan: Equatable, Sendable {
     let tracksReadiness: Bool
 
@@ -29,9 +25,7 @@ struct WPEFrameReadinessTrackingPlan: Equatable, Sendable {
     }
 }
 
-/// Injectable combination seam between the final texture's producer aggregate
-/// and the subsequent present. Production may resolve before or after present;
-/// a missing producer fails closed.
+/// Production may resolve before or after present; a missing producer fails closed.
 enum WPEFrameReadinessCoordinator {
     static func observe(
         generation: Int,
@@ -97,7 +91,7 @@ enum WPEStaticPresentRetry {
 
 /// Calls the executor's source-release closure exactly once, even if a delayed
 /// poster consumer invokes its callback more than once or abandons it.
-final class WPEPresentSourceRelease: @unchecked Sendable { // `lock` protects the one-shot closure.
+final class WPEPresentSourceRelease: @unchecked Sendable {
     private let lock = NSLock()
     private var action: (@Sendable () -> Void)?
 

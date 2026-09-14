@@ -5,24 +5,13 @@ import LiveWallpaperCore
 import Metal
 import MetalFX
 
-/// Present-time MetalFX spatial upscale. Scene renders at `WPEMetalFXRenderScale` < 1
-/// and `MTLFXSpatialScaler` writes the drawable, replacing the fullscreen blit.
-/// Any rejection falls back to the existing present pass.
-///
-/// Not thread-safe: the owning executor's present path is a single render thread.
 final class WPEMetalFXSpatialUpscaler {
 
     static let renderScaleDefaultsKey = "WPEMetalFXRenderScale"
 
-    /// Missing/unset = 1.0 (off). Clamped to [0.25, 1.0]. Read live (not
-    /// process-frozen) so the settings picker takes effect on the next session
-    /// rebuild; consumers capture it at load/executor init, never per frame, so
-    /// one live instance keeps one consistent value for its whole life.
+    /// Missing/unset = 1.0 (off). Clamped to [0.25, 1.0]. Read live so the settings picker takes effect on the next session rebuild; consumers capture it at load/executor init, never per frame.
     static var renderScale: Double {
-        // Test/preview processes read ONLY the isolated store: this machine's
-        // real `com.loomscreen.pro` domain must not leak a render scale into
-        // headless render tests or oracle captures (every RT would silently
-        // shrink and per-pass hashes stop matching Windows).
+        // Test/preview processes read ONLY the isolated store: this machine's real `com.loomscreen.pro` domain must not leak a render scale into headless render tests or oracle captures.
         let scoped = UserDefaults.appScoped()
         if scoped !== UserDefaults.standard {
             return scoped.object(forKey: renderScaleDefaultsKey) != nil
@@ -53,10 +42,7 @@ final class WPEMetalFXSpatialUpscaler {
         return min(max(raw, 0.25), 1.0)
     }
 
-    /// Lower bound for a SCALER INPUT edge. Not a limit for ordinary render
-    /// targets: applying it to an authored thin FBO (a 128x16 gradient strip)
-    /// would inflate the short edge and change its aspect, which the effect
-    /// sampling it reads as distortion.
+    /// Lower bound for a SCALER INPUT edge, not ordinary render targets: applying it to an authored thin FBO (a 128x16 gradient strip) would inflate the short edge and change its aspect.
     static let minimumScalerInputEdge: CGFloat = 64
 
     /// `floor(value × scale)`, aligned down to even, floored at `minimumEdge`.
@@ -70,9 +56,7 @@ final class WPEMetalFXSpatialUpscaler {
         return max(even, minimumEdge)
     }
 
-    /// Scale 1 returns `size` unchanged. Below 1, each edge goes through
-    /// `scaledDimension`. `minimumEdge` defaults to the scaler-input floor;
-    /// pooled targets pass 1 so a thin authored FBO keeps its proportions.
+    /// `minimumEdge` defaults to the scaler-input floor; pooled targets pass 1 so a thin authored FBO keeps its proportions.
     static func scaledCanvasSize(
         _ size: CGSize,
         pixelScale: Double,
@@ -133,22 +117,7 @@ final class WPEMetalFXSpatialUpscaler {
         return nil
     }
 
-    /// The format half of eligibility, split out from `encodeIfEligible` so it is testable
-    /// without a GPU — that method needs real textures and the fast shard bars Metal tests.
-    ///
-    /// Both ends are checked, not just the source. The four pairings the present path can
-    /// actually produce:
-    ///
-    /// | source | drawable | verdict |
-    /// |---|---|---|
-    /// | 8-bit | 8-bit | `.perceptual` — the long-standing path |
-    /// | float | float | `.hdr` — HDR scene with display-HDR output on |
-    /// | 8-bit | float | `.perceptual` — SDR scene while display-HDR output is on |
-    /// | float | 8-bit | **rejected** |
-    ///
-    /// The last one is rejected because a float source carries values past 1 that an 8-bit
-    /// drawable cannot hold, and `MTLFXSpatialScaler` does not tone map — that pairing has
-    /// to fall back to the present pass, which clamps as it always did.
+    /// Both ends are checked. Float source + 8-bit drawable is rejected: a float source carries values past 1 that an 8-bit drawable cannot hold, and `MTLFXSpatialScaler` does not tone map.
     static func formatRejection(
         sourceFormat: MTLPixelFormat,
         drawableFormat: MTLPixelFormat
@@ -214,10 +183,7 @@ final class WPEMetalFXSpatialUpscaler {
         self.library = library
     }
 
-    /// Drops the cached scaler and its internal working textures (4K-class once the
-    /// drawable is). The cache is keyed by input/output pixel size, so a render-scale
-    /// change or a demote to native never overwrites it — nothing asks for the old key
-    /// again, and `encodeIfEligible` returns at `preScalerRejection` first. `failedAttempts`/`alphaFixPipelines` stay: both are tiny and expensive to relearn.
+    /// `failedAttempts`/`alphaFixPipelines` stay: both are tiny and expensive to relearn.
     func releaseCachedScaler() { cachedScaler = nil }
 
     /// Returns false (encoded nothing) on any rejection so the caller runs the present pass.
@@ -312,7 +278,6 @@ final class WPEMetalFXSpatialUpscaler {
         return true
     }
 
-    /// Alpha-only write of A=1 after the scaler, matching the present fragment's terminal opacity.
     private func alphaFixPipeline(for format: MTLPixelFormat) -> MTLRenderPipelineState? {
         if let cached = alphaFixPipelines[format.rawValue] { return cached }
         guard let vertex = library.makeFunction(name: "wpe_fullscreen_vertex"),

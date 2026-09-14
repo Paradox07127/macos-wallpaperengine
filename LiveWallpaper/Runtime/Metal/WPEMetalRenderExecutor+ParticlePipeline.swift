@@ -15,10 +15,7 @@ extension WPEMetalRenderExecutor {
         let isRefract: Bool
     }
 
-    /// Blit the scene-so-far into a private cached texture so a REFRACT particle
-    /// pass can sample it as the refracted background (can't read+write the live
-    /// attachment). Returns nil if the output can't be a blit source. Reuses the
-    /// last snapshot when no write touched the same output texture since.
+    /// Blit the scene-so-far into a private cached texture so a REFRACT pass can sample it (can't read+write the live attachment). Reuses the last snapshot when no write has touched the same output; nil if the output can't be a blit source.
     func snapshotForRefraction(
         of output: MTLTexture,
         into commandBuffer: MTLCommandBuffer,
@@ -63,10 +60,7 @@ extension WPEMetalRenderExecutor {
         if let cached = particlePipelineCache[key] {
             return cached
         }
-        // Rope shares the instanced fragment (frameBlend 0 ⇒ one texture sample)
-        // but uses a ribbon-strip vertex stage instead of the per-instance quad.
-        // Refract reuses the instanced quad vertex but a fragment that multiplies
-        // by the scene framebuffer at a normal-offset screen UV.
+        // Rope shares the instanced fragment (frameBlend 0 ⇒ one texture sample) but uses a ribbon-strip vertex stage. Refract reuses the instanced quad vertex but a fragment that multiplies by the scene framebuffer at a normal-offset screen UV.
         let vertexName = isRope ? "wpe_particle_rope_vertex" : "wpe_particle_vertex"
         let fragmentName = isRefract ? "wpe_particle_refract_fragment" : "wpe_particle_instanced_fragment"
         guard let vertex = defaultLibrary.makeFunction(name: vertexName),
@@ -86,8 +80,6 @@ extension WPEMetalRenderExecutor {
         return state
     }
 
-    /// Shared with the canonical trace recorder so the recorded factors are the ones the
-    /// pipeline is built from.
     nonisolated static func applyParticleBlend(
         _ blendMode: WPEParticleBlendMode,
         to attachment: MTLRenderPipelineColorAttachmentDescriptor
@@ -95,9 +87,7 @@ extension WPEMetalRenderExecutor {
         attachment.isBlendingEnabled = true
         attachment.rgbBlendOperation = .add
         attachment.alphaBlendOperation = .add
-        // Fragment shader outputs straight (non-premultiplied) alpha. WPE
-        // material `blending` strings map to the three classic factor
-        // combos — anything else falls back to translucent at parse time.
+        // Fragment shader outputs straight (non-premultiplied) alpha. WPE material `blending` strings map to the three classic factor combos — anything else falls back to translucent at parse time.
         switch blendMode {
         case .normal:
             attachment.sourceRGBBlendFactor = .one
@@ -107,9 +97,7 @@ extension WPEMetalRenderExecutor {
         case .translucent:
             attachment.sourceRGBBlendFactor = .sourceAlpha
             attachment.destinationRGBBlendFactor = .oneMinusSourceAlpha
-            // Scene intermediates carry premultiplied RGBA, just like image passes.
-            // Squaring source alpha punches a quad-shaped hole in an opaque scene;
-            // downstream unpremultiplication then brightens even zero refraction.
+            // Scene intermediates carry premultiplied RGBA. Squaring source alpha punches a quad-shaped hole in an opaque scene; downstream unpremultiplication then brightens even zero refraction.
             attachment.sourceAlphaBlendFactor = .one
             attachment.destinationAlphaBlendFactor = .oneMinusSourceAlpha
         case .additive:

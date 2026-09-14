@@ -3,10 +3,8 @@ import ImageIO
 import LiveWallpaperCore
 import SwiftUI
 
-/// Library › System Wallpaper. Lists the videos handed to macOS, which keep
-/// playing with Loomscreen closed.
-/// The status vocabulary is deliberately narrow: only what our own files prove (the manifest
-/// we write, the heartbeat the appex writes back) — never a system-side state it can't observe.
+/// The status vocabulary is deliberately narrow: only what our own files prove — never a
+/// system-side state it can't observe.
 @available(macOS 26.0, *)
 struct SystemWallpaperLibraryView: View {
     @Environment(\.libraryTileSize) private var tileSize
@@ -21,7 +19,6 @@ struct SystemWallpaperLibraryView: View {
                     systemImage: "macwindow.on.rectangle",
                     title: Text("System Wallpaper")
                 )
-                // Separate items let macOS own toolbar grouping and spacing.
                 if isFunctional {
                     ToolbarItem(placement: .primaryAction) {
                         SystemWallpaperAddMenu()
@@ -259,7 +256,6 @@ struct SystemWallpaperLibraryView: View {
 
 // MARK: - Add menu
 
-/// Opens the video selection sheet for System Wallpaper.
 @available(macOS 26.0, *)
 struct SystemWallpaperAddMenu: View {
     @State private var showingAddSheet = false
@@ -279,8 +275,6 @@ struct SystemWallpaperAddMenu: View {
     }
 }
 
-/// Shared by the header menu and the empty state's button, which offer the same
-/// picker from two places.
 @available(macOS 26.0, *)
 enum SystemWallpaperVideoImport {
     @MainActor
@@ -327,9 +321,6 @@ private struct SystemWallpaperTile: View {
             .accessibilityLabel(accessibilityLabel)
     }
 
-    /// The same single affordance every other library card carries. There is no
-    /// tap-to-apply here: macOS owns which System Wallpaper is on screen, and
-    /// this page only publishes and withdraws them.
     private var overflowButton: some View {
         LibraryTileOverflowButton { dismiss in
             if let videoURL {
@@ -377,9 +368,8 @@ private struct SystemWallpaperTile: View {
                 overflowButton
             }
         }
-        // Keyed on the entry's own timestamp, not on the URL: a republish
-        // rewrites the same `<id>.jpg` path, so the URL never changes and the
-        // tile went on drawing the poster it had already loaded.
+        // Keyed on the entry's own timestamp, not on the URL: a republish rewrites the same
+        // `<id>.jpg` path, so the URL never changes and the tile would keep its stale poster.
         .task(id: item.addedAt) {
             guard let thumbnailURL else { return }
             thumbnail = await SystemWallpaperThumbnails.image(for: thumbnailURL)
@@ -387,7 +377,7 @@ private struct SystemWallpaperTile: View {
     }
 }
 
-/// Tile-sized, decoded posters. Internal visibility lets cache-reclaimer tests observe purges.
+/// Internal visibility lets cache-reclaimer tests observe purges.
 enum SystemWallpaperThumbnails {
     /// 220 pt (`LibraryGrid.maximumColumnWidth`) at 2×, with headroom. The tile
     /// is 16:9 and so is the poster, so `scaledToFill` never crops here.
@@ -407,9 +397,8 @@ enum SystemWallpaperThumbnails {
         init(_ image: CGImage) { self.image = image }
     }
 
-    /// Everything — `stat`, read, decode, cache probe — runs off the main actor. `NSCache` is
-    /// internally thread-safe, and doing the lookup here lets the key carry the modification
-    /// date: keyed by URL alone, a regenerated thumbnail would serve old pixels for the rest of the session.
+    /// The cache key carries the modification date: keyed by URL alone, a regenerated
+    /// thumbnail would serve old pixels for the rest of the session.
     static func image(for url: URL) async -> CGImage? {
         await Task.detached(priority: .userInitiated) { () -> CGImage? in
             let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?

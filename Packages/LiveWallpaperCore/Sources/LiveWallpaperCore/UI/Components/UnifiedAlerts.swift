@@ -1,6 +1,5 @@
 import SwiftUI
 
-/// Error presentation paired with confirmDestructive for destructive actions.
 extension View {
     public func errorAlert(
         _ title: LocalizedStringKey,

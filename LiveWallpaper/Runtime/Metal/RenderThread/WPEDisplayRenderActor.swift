@@ -24,15 +24,10 @@ struct WPEDisplayLinkLifecycleState: Sendable {
 }
 #endif
 
-/// Per-display render isolation domain backed by either a dedicated serial render
-/// thread or the main run loop.
 actor WPEDisplayRenderActor {
 
-    /// Selects the executor backing while preserving one isolated render path.
     enum Backing {
-        /// Uses `MainActor`'s executor and run loop.
         case main
-        /// A dedicated `WPERenderThread`, moving frame work off the main actor.
         case renderThread
     }
 
@@ -44,33 +39,17 @@ actor WPEDisplayRenderActor {
     nonisolated let unownedExecutor: UnownedSerialExecutor
 
     #if !LITE_BUILD
-    /// Non-`Sendable` renderer owned entirely by this actor's isolation domain.
     private var renderer: WPEMetalSceneRenderer?
-    /// Bumped whenever the actor adopts, reloads, or tears down a renderer.
-    /// Prepared property patches may commit only against the exact renderer
-    /// generation they preflighted.
+    /// Prepared property patches may commit only against the exact renderer generation they preflighted.
     private var scenePropertyRendererGeneration: UInt64 = 0
     private var displayLinkLifecycle = WPEDisplayLinkLifecycleState()
 
-    /// FIFO delivery channel for fire-and-forget config/geometry setters. Replaces the old
-    /// per-setter `Task { await … }` deliveries whose scheduling order was undefined (two
-    /// rapid `setAudioVolume` posts could apply out of order, leaving the renderer on a stale
-    /// value); a single continuation + single consumer applies every command in submission
-    /// order, so the last write always wins. `nonisolated let` lets setters on any thread yield without a hop.
+    /// FIFO: last write always wins. `nonisolated let` lets setters on any thread yield without a hop.
     private nonisolated let configContinuation: AsyncStream<WPERendererConfigCommand>.Continuation
-    /// The consumer side, drained by `configConsumerTask` (started in `adopt`, since
-    /// config is meaningless before a renderer is present; commands submitted before
-    /// then buffer and apply once draining begins).
     private let configStream: AsyncStream<WPERendererConfigCommand>
-    /// Drains `configStream` in order. Ended by finishing the continuation in
-    /// `shutdown()` / `deinit`. Holds `self` only weakly, so a dropped actor still
-    /// deinits (its safety-net `thread?.shutdown()` still runs).
     private var configConsumerTask: Task<Void, Never>?
     #endif
 
-    /// Defaults to `.renderThread` so existing render-thread call sites and tests
-    /// keep their dedicated-thread semantics; the flag-driven display construction
-    /// passes `WPEOffMainRenderFlag.backing` explicitly.
     init(label: String = "com.livewallpaper.render", backing: Backing = .renderThread) {
         switch backing {
         case .renderThread:
@@ -82,24 +61,17 @@ actor WPEDisplayRenderActor {
         case .main:
             self.thread = nil
             self.executor = nil
-            // Making the actor main-isolated at runtime: hops into isolation run
-            // on the main thread, so the flag-off path is byte-for-byte the old
-            // main-thread render with no separate thread to schedule or join.
             self.unownedExecutor = MainActor.sharedUnownedExecutor
         }
         #if !LITE_BUILD
         (self.configStream, self.configContinuation) = AsyncStream.makeStream(
             of: WPERendererConfigCommand.self
         )
-        // The consumer is started in `adopt` — an actor init is nonisolated and
-        // cannot spawn a task that captures `self` and also assigns an isolated
-        // stored property.
         #endif
     }
 
     deinit {
         #if !LITE_BUILD
-        // End the config consumer so it doesn't outlive the actor.
         configContinuation.finish()
         #endif
         // Safety net so a dropped actor never leaks its dedicated thread.
@@ -108,15 +80,10 @@ actor WPEDisplayRenderActor {
 
     // MARK: - Isolated entry points
 
-    /// Run `body` inside the actor's isolation (on the render thread). Awaiting this
-    /// from outside hops onto the render thread; `body` receives `isolated self` so
-    /// it can touch isolated state synchronously.
     func run<T: Sendable>(_ body: @Sendable (isolated WPEDisplayRenderActor) throws -> T) rethrows -> T {
         try body(self)
     }
 
-    /// Grants synchronous actor access to callbacks already executing on this actor's thread.
-    /// Executor isolation checks trap a misrouted callback before it can race state.
     nonisolated func assumeIsolatedOnRenderThread<T: Sendable>(
         _ body: (isolated WPEDisplayRenderActor) throws -> T
     ) rethrows -> T {
@@ -127,10 +94,6 @@ actor WPEDisplayRenderActor {
 
     // MARK: - Introspection (non-crashing; usable from any thread)
 
-    /// True when the caller runs on this actor's isolation thread. For a
-    /// `.renderThread` backing that is the dedicated thread; for `.main` it is
-    /// the main thread. Lets callers and tests probe isolation without the trap
-    /// that `checkIsolated()` would raise.
     nonisolated var isOnRenderThread: Bool { thread?.isCurrent ?? Thread.isMainThread }
 
     // MARK: - Render-loop Wiring
@@ -153,28 +116,19 @@ actor WPEDisplayRenderActor {
 
     // MARK: - Lifecycle
 
-    /// Drain queued work, stop the render thread, and join. Idempotent. A no-op
-    /// for a `.main` backing, which owns no thread to stop.
+    /// No-op for a `.main` backing, which owns no thread to stop.
     nonisolated func shutdown() {
         #if !LITE_BUILD
-        // Finishing the stream ends the consumer loop; further `submitConfig`
-        // yields after this are ignored. Idempotent.
         configContinuation.finish()
         #endif
         thread?.shutdown()
     }
 
     #if !LITE_BUILD
-    /// Enqueue a fire-and-forget config/geometry change. Ordered FIFO against every
-    /// other `submitConfig` on this actor, so the renderer applies them in exactly
-    /// the order callers issued them and the last write wins. Callable from any
-    /// thread (the `@MainActor` adapter/session/shim).
     nonisolated func submitConfig(_ command: WPERendererConfigCommand) {
         configContinuation.yield(command)
     }
 
-    /// Applies one channel command by delegating to the isolated setter bodies, so
-    /// there is a single implementation of each config effect.
     private func applyConfigCommand(_ command: WPERendererConfigCommand) {
         switch command {
         case .performanceProfile(let profile): applyPerformanceProfile(profile)
@@ -194,19 +148,11 @@ actor WPEDisplayRenderActor {
     #if !LITE_BUILD
     // MARK: - Renderer Ownership
 
-    /// Adopt the main-thread-constructed renderer into this actor's isolation.
-    /// `sending` because the renderer leaves the caller's region for good; after
-    /// this the renderer is reachable only through the actor. Also back-links the
-    /// actor onto the renderer (weakly) so the renderer's sync task-spawning tails
-    /// (deferred audio / on-demand video / static-texture reload) can re-enter.
     func adopt(_ renderer: sending WPEMetalSceneRenderer) {
         scenePropertyRendererGeneration &+= 1
         self.renderer = renderer
         renderer.displayActor = self
         renderer.installSceneScriptLanguageObservers(on: self)
-        // Start draining the config channel now that there is a renderer to apply
-        // commands to. Idempotent guard: adopt runs once per actor. Weak `self` so
-        // the consumer never keeps a torn-down actor alive.
         guard configConsumerTask == nil else { return }
         configConsumerTask = Task { [weak self, configStream] in
             for await command in configStream {
@@ -216,12 +162,8 @@ actor WPEDisplayRenderActor {
         }
     }
 
-    /// Frame delivery from the surface shim (hot path). Named method so the
-    /// surface→actor hop sends nothing.
     func renderFrame() {
-        // Time the frame body ON the render thread so the QoS controller can throttle
-        // the thread onto the E-cores when there's headroom. `.main` backing owns no
-        // thread and must never touch the main thread's QoS, so it skips timing.
+        // `.main` backing owns no thread and must never touch the main thread's QoS, so it skips timing.
         guard let thread else {
             renderer?.renderAndPresentFrame()
             return
@@ -232,27 +174,15 @@ actor WPEDisplayRenderActor {
     }
 
     // MARK: - CADisplayLink Frame Driver
-    //
-    // The link is created on the main thread (`NSScreen.displayLink` is main-only) and
-    // handed here through a one-shot carrier; from then on ALL access — runloop
-    // registration, `isPaused`, `preferredFrameRateRange`, `invalidate` — happens on the
-    // render thread (this actor's isolation), the same thread its selector fires on.
-    // `isPaused` is the only knob Apple documents as thread-safe; `preferredFrameRateRange`
-    // is not, so neither is ever touched off the render thread. In `.main` mode the
-    // renderer still paces the MTKView and none of this runs.
+    // `isPaused` is the only knob Apple documents as thread-safe; `preferredFrameRateRange` is not, so neither is touched off the render thread.
 
     /// The live per-display link. Isolated state: only the render thread reads or
     /// writes it. Nil until installed / after invalidation.
     private var displayLink: CADisplayLink?
-    /// Buffered pacing so an install that races the first `applyPacing` still ends
-    /// on the right state — both writes are serialized on this actor, and the
-    /// buffer is re-applied every time a link is (re)installed.
+    /// Buffered pacing so an install that races the first `applyPacing` still ends on the right state.
     private var linkPaused = true
     private var linkPreferredFPS = WPEMetalSceneRenderer.defaultPreferredFPS
 
-    /// Install a freshly-created link, replacing (and invalidating) any prior one —
-    /// used for both the initial attach and a display-reconfiguration rebuild. Runs
-    /// on the render thread, so it registers the link on this thread's own run loop.
     func replaceDisplayLink(
         _ handoff: WPEDisplayLinkHandoff,
         generation: UInt64
@@ -268,22 +198,17 @@ actor WPEDisplayRenderActor {
         add(link)
     }
 
-    /// Terminal teardown of the link. Once stopped, every later handoff is
-    /// invalidated without being installed.
     func stopDisplayLinkDriver(generation: UInt64) {
         displayLinkLifecycle.stop(generation: generation)
         displayLink?.invalidate()
         displayLink = nil
     }
 
-    /// Pause knob, driven by the renderer's `applyPacing(isPaused:)`.
     func setLinkPaused(_ paused: Bool) {
         linkPaused = paused
         applyLinkPacing()
     }
 
-    /// Rate knob, driven by the renderer's `applyPacing(preferredFramesPerSecond:)`
-    /// / `effectiveFPS`. Maps the integer ceiling onto the link's frame-rate range.
     func setLinkPreferredFPS(_ fps: Int) {
         linkPreferredFPS = fps
         // Keep the QoS budget on the live cadence so a 30fps wallpaper isn't judged
@@ -298,9 +223,7 @@ actor WPEDisplayRenderActor {
         displayLink.preferredFrameRateRange = Self.frameRateRange(forPreferredFPS: linkPreferredFPS)
     }
 
-    /// A fixed-cadence frame-rate range (min == max == preferred): the same
-    /// "target this many FPS, let the system align to vsync divisors" contract
-    /// `MTKView.preferredFramesPerSecond` used, so the presented rate is unchanged.
+    /// Fixed-cadence range (min == max == preferred), the same contract `MTKView.preferredFramesPerSecond` used.
     static func frameRateRange(forPreferredFPS fps: Int) -> CAFrameRateRange {
         let clamped = Float(max(1, fps))
         return CAFrameRateRange(minimum: clamped, maximum: clamped, preferred: clamped)
@@ -316,8 +239,6 @@ actor WPEDisplayRenderActor {
         renderer?.updateSurfaceGeometry(drawableSize: drawableSize)
     }
 
-    /// Runs one static-texture reload on this actor (the reload owner's task hops
-    /// here to reach the renderer). Sendable-only parameters cross in.
     func performStaticReload(
         path: String,
         record: WPEMetalSceneRenderer.StaticTextureCacheRecord,
@@ -337,8 +258,6 @@ actor WPEDisplayRenderActor {
         )
     }
 
-    /// Land completed off-thread lazy-`.tex` prefetch decodes now (called by each
-    /// source's completion pump), instead of waiting for the next frame tick.
     func harvestLazyPrefetches() {
         guard let renderer else { return }
         for source in renderer.dynamicTextureSources.values {
@@ -346,18 +265,13 @@ actor WPEDisplayRenderActor {
         }
     }
 
-    /// Rebuild an on-demand video source that a script just revealed. Runs on this
-    /// actor; reaches the renderer + its sources through `self`.
     func rebuildOnDemandVideo(key: String, generation: Int) async {
         guard let renderer else { return }
         defer { renderer.onDemandVideoLoading.remove(key) }
         guard renderer.loadGeneration == generation else { return }
         let previous = renderer.dynamicTextureSources[key] as? WPEVideoTextureSource
         do {
-            // The generation must hold at PUBLICATION time, not just entry: the
-            // asset load suspends, and a hibernate/reload in that window bumps
-            // the generation — a stale rebuild must not overwrite the sources a
-            // wake reload just installed (or revive a hibernated renderer).
+            // The generation must hold at PUBLICATION time, not just entry: a stale rebuild must not overwrite sources a wake reload just installed.
             try await renderer.loadDynamicTextureOnActor(
                 path: key,
                 layerName: key,
@@ -366,10 +280,7 @@ actor WPEDisplayRenderActor {
             )
         } catch {
             Logger.warning("Scene \(renderer.descriptor.workshopID) [OnDemandVideo] rebuild failed for \(key): \(error)", category: .wpeRender)
-            // With released on-demand videos carrying no frame demand, a silent
-            // failure here would leave the loop paused forever: nothing else
-            // retries. Kick one frame so reconcileVideoResidency runs again
-            // (the defer above already cleared the loading marker).
+            // A silent failure here would leave the loop paused forever (released on-demand videos carry no frame demand); kick one frame so reconcileVideoResidency runs again.
             renderer.surfaceControl.setNeedsRedraw()
             return
         }
@@ -382,16 +293,10 @@ actor WPEDisplayRenderActor {
         renderer.surfaceControl.setNeedsRedraw()
     }
 
-    /// Off-critical-path shader/pipeline pre-warm, run as a child task on this
-    /// actor so it overlaps the texture/particle load's suspension points. Reaches
-    /// the renderer through `self`; the caller captures only Sendable inputs.
     func prewarmShaders(pipeline: WPEPreparedRenderPipeline) async {
         await renderer?.prewarmCustomShaders(for: pipeline, on: self)
     }
 
-    /// Publish a prepared deferred-audio runtime once its off-actor `prepare` has
-    /// finished, on this actor. `WPESoundRuntime` is Sendable, so the detached
-    /// audio task hands it back here.
     func publishDeferredAudio(runtime: WPESoundRuntime, generation: Int) {
         guard let renderer, !Task.isCancelled, renderer.loadGeneration == generation else {
             runtime.stop()
@@ -400,25 +305,16 @@ actor WPEDisplayRenderActor {
         runtime.setMuted(renderer.pendingAudioMuted)
         runtime.setMasterVolume(renderer.effectiveAudioVolume)
         renderer.soundRuntime = runtime
-        // Seed the suspend flag from the live profile so the run-state gate is
-        // correct BEFORE any later mute toggle: `pause()` records isSuspended so a
-        // subsequent un-mute can't start audio on a suspended wallpaper. Under
-        // `.quality`, `play()` starts iff also un-muted (a muted start stays paused
-        // — expected, not a failure, so nothing to log here).
+        // Seed the suspend flag from the live profile BEFORE any later mute toggle: `pause()` records isSuspended so a subsequent un-mute can't start audio on a suspended wallpaper.
         if renderer.currentProfile == .quality {
             runtime.play()
         } else {
             runtime.pause()
         }
-        // Audio arriving flips the session's audible mirror (App Nap gate).
         renderer.publishRuntimeActivity()
     }
 
-    /// Promote a submitted present to "ready" only after Metal reports successful
-    /// completion for both the final texture's complete producer chain and the
-    /// subsequent present. The generation check rejects callbacks from a reloaded
-    /// or cleaned-up renderer; once one present succeeds, later frame errors remain
-    /// diagnostics and cannot revoke the already-visible readiness contract.
+    /// Once one present succeeds, later frame errors remain diagnostics and cannot revoke the already-visible readiness contract.
     func recordPresentCompletion(_ result: WPEFrameReadinessResult) {
         guard let renderer,
               WPEFrameReadinessCoordinator.isCurrent(
@@ -440,8 +336,6 @@ actor WPEDisplayRenderActor {
         }
     }
 
-    /// Load / reload run the renderer's async pipeline on this actor (the
-    /// `isolated` parameter pins them here).
     func load() async throws {
         try await renderer?.load(on: self)
         // Prewarm already compiled custom shaders; first frames can still miss
@@ -455,17 +349,12 @@ actor WPEDisplayRenderActor {
         thread?.boostRenderQoSWarmup()
     }
 
-    /// Deep hibernate: releases the loaded scene's runtime resources while the
-    /// session stays alive. Waking is a plain `reload()`. Bumps the property
-    /// generation because prepared patches preflighted against the loaded state.
     func hibernate() async -> Bool {
         guard let renderer else { return false }
         scenePropertyRendererGeneration &+= 1
         return await renderer.hibernate(on: self)
     }
 
-    /// Tear down the renderer on this actor, then drop it. Sync: `cleanup()`
-    /// touches only isolated state.
     func teardownRenderer() {
         scenePropertyRendererGeneration &+= 1
         renderer?.cleanup()
@@ -473,10 +362,6 @@ actor WPEDisplayRenderActor {
     }
 
     // MARK: - Configuration Forwarders
-    //
-    // Named methods (not closures): the session/adapter are `@MainActor`, so a
-    // closure they build is main-isolated and cannot be sent to this actor.
-    // Passing a Sendable argument to a method crosses cleanly.
 
     func applyPerformanceProfile(_ profile: WallpaperPerformanceProfile) {
         renderer?.applyPerformanceProfile(profile)
@@ -499,8 +384,6 @@ actor WPEDisplayRenderActor {
     }
 
     #if DEBUG
-    /// The renderer's pending master audio volume (test read of the last applied
-    /// `setAudioVolume`); no production caller.
     func currentPendingAudioVolume() -> Double? {
         renderer?.pendingAudioVolume
     }
@@ -526,9 +409,6 @@ actor WPEDisplayRenderActor {
         renderer?.scenePropertyBindings ?? [:]
     }
 
-    /// Side-effect-free preflight. `ScreenManager` performs its final CAS and
-    /// persists the descriptor after this returns, before asking this actor to
-    /// deliver the prepared patch.
     func prepareScenePropertyPatch(
         _ patch: WPEScenePropertyPatch,
         authority: ScenePropertyMutationAuthority,
@@ -544,9 +424,6 @@ actor WPEDisplayRenderActor {
         )
     }
 
-    /// The caller has already persisted this patch's descriptor. Actor FIFO and
-    /// renderer-generation identity make this a committed delivery, not another
-    /// fallible latest-intent proposal.
     func commitScenePropertyPatch(
         _ prepared: PreparedScenePropertyPatch,
         updatedDescriptor: SceneDescriptor
@@ -557,7 +434,6 @@ actor WPEDisplayRenderActor {
         guard let renderer, renderer.applyScenePropertyPatch(prepared.patch) else {
             return false
         }
-        // Keep the reload source of truth in step with the live structures.
         renderer.descriptor = updatedDescriptor
         return true
     }
@@ -571,19 +447,15 @@ actor WPEDisplayRenderActor {
         renderer?.loadDiagnostics
     }
 
-    /// True when the renderer's current load matches `generation` — used by the
-    /// live-poster present callback to drop a stale capture.
     func isCurrentLoadGeneration(_ generation: Int) -> Bool {
         renderer?.loadGeneration == generation
     }
 
-    /// Resume a pending live-poster capture (cancellation tail).
     func finishLivePosterCapture(id: UUID, image: NSImage?) {
         renderer?.finishLivePosterCapture(id: id, image: image)
     }
 
-    /// Apply a measured intro→loop phase offset on this actor. `token` guards
-    /// staleness (bumped by every reload/invalidate).
+    /// Apply an intro→loop phase offset on this actor. `token` guards staleness (bumped by every reload/invalidate).
     func applyIntroLoopOffset(_ offset: TimeInterval?, token: Int, scriptLoadToken: WPESceneScriptInstanceLimitToken) {
         guard let renderer,
               renderer.introPhaseToken == token,
@@ -595,7 +467,6 @@ actor WPEDisplayRenderActor {
         renderer?.onProgress = handler
     }
 
-    /// Present flag + a full diagnostic snapshot in one hop for the inspector poll.
     func rendererStateSnapshot() -> WPERendererStateSnapshot? {
         guard let renderer else { return nil }
         let shader = renderer.shaderErrorSummary
@@ -618,10 +489,6 @@ actor WPEDisplayRenderActor {
 }
 
 #if !LITE_BUILD
-/// A fire-and-forget config/geometry change delivered through the render actor's
-/// ordered channel. All payloads are `Sendable`, so a command crosses onto the
-/// actor cleanly. Only the *latest* value of any field matters, and the channel's
-/// FIFO delivery guarantees the renderer ends on it.
 enum WPERendererConfigCommand: Sendable {
     case performanceProfile(WallpaperPerformanceProfile)
     case frameRateCeiling(Int)
@@ -635,17 +502,13 @@ enum WPERendererConfigCommand: Sendable {
     case sceneScriptLanguage(String)
 }
 
-/// One-shot Sendable carrier for handing the main-thread-constructed renderer to its
-/// actor. `@unchecked Sendable`: the renderer is built on main, transferred into the actor
-/// exactly once before any frame runs, and never touched on the constructing thread again —
-/// region isolation can't prove the hand-off race-free, so it's asserted here. Falsifiable:
-/// unsound if the builder uses the renderer after wrapping, or hands the same renderer to two actors.
+/// `@unchecked Sendable`: the renderer is built on main, transferred into the actor exactly
+/// once before any frame runs, and never touched on the constructing thread again. Unsound if
+/// the builder uses the renderer after wrapping, or hands the same renderer to two actors.
 struct WPERendererHandoff: @unchecked Sendable {
     let renderer: WPEMetalSceneRenderer
 }
 
-/// One-hop snapshot of the renderer's inspector-facing state, assembled on the
-/// render actor so the `@MainActor` session caches it without reaching across.
 struct WPERendererStateSnapshot: Sendable {
     struct ShaderError: Sendable {
         let shader: String

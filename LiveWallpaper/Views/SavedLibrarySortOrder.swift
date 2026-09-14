@@ -1,9 +1,6 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// Ordering for the two saved-library grids. One enum and one stored preference
-/// for both tabs: bookmarks and schemes sit behind the same segmented control,
-/// and a per-tab order would silently change under the user when they switch.
 enum SavedLibrarySortOrder: String, CaseIterable, Identifiable {
     case recent
     case name
@@ -24,7 +21,6 @@ enum SavedLibrarySortOrder: String, CaseIterable, Identifiable {
     }
 }
 
-/// The sort control the two saved-library pages share.
 struct SavedLibrarySortPicker: View {
     @Binding var selection: SavedLibrarySortOrder
 
@@ -43,9 +39,7 @@ struct SavedLibrarySortPicker: View {
 }
 
 extension SavedLibrarySortOrder {
-    /// Shared comparator body. `date` is whatever "recent" means for the entry
-    /// kind — creation for a bookmark, last capture for a scheme — so the two
-    /// pages cannot disagree about tie-breaking or collation.
+    /// `date` is whatever "recent" means for the entry kind — creation for a bookmark, last capture for a scheme.
     func sorted<Element>(
         _ elements: [Element],
         name: (Element) -> String,

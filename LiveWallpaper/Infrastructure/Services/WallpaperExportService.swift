@@ -4,9 +4,6 @@ import Foundation
 import LiveWallpaperCore
 import Observation
 
-/// Publishes library videos into the shared directory the wallpaper appex
-/// reads, and mirrors the appex's heartbeat back into UI state.
-/// Both SKUs ship this — the system-wallpaper outlet is not Pro-gated.
 @MainActor
 @Observable
 final class WallpaperExportService {
@@ -16,11 +13,7 @@ final class WallpaperExportService {
         let now: @Sendable () -> Date
         /// JPEG data (480×270 target) for the already-copied video, nil on failure.
         let makeThumbnailJPEG: @Sendable (URL) async -> Data?
-        /// The appex this app ships. A heartbeat stamped with anything else came
-        /// from a process an update or a second install left behind, and is not
-        /// evidence about our extension. `nil` disables the check.
-        /// A `var` optional so the memberwise init defaults it, keeping call
-        /// sites that do not care about provider identity source-compatible.
+        /// The appex this app ships. A heartbeat stamped with anything else is not evidence about our extension. `nil` disables the check.
         var expectedProvider: SystemWallpaperProviderIdentity?
 
         static func live(hostBundleID: String? = Bundle.main.bundleIdentifier) -> Dependencies {
@@ -35,8 +28,7 @@ final class WallpaperExportService {
     }
 
     enum ServiceError: LocalizedError, Equatable {
-        /// Only loose video files are publishable in v1 — pkg-embedded videos
-        /// and other content kinds have no file the appex could read.
+        /// Only video files are publishable in v1 — other content kinds have no file the appex could read.
         case unsupportedContent
         case packageEntryMissing(String)
         /// The wallpaper panel refuses to show a choice without a thumbnail,
@@ -77,9 +69,7 @@ final class WallpaperExportService {
         }
     }
 
-    /// No `unsupported` case: the sidebar row and the detail route carry the
-    /// same `#available(macOS 26.0, *)`, so below 26 the feature is absent, not
-    /// disabled, and nothing can read that status.
+    /// No `unsupported` case: the sidebar row and the detail route carry the same `#available(macOS 26.0, *)`, so below 26 the feature is absent, not disabled.
     enum Status: Equatable {
         case systemIncompatible
         case failed(String)
@@ -89,8 +79,6 @@ final class WallpaperExportService {
     }
 
     /// Heartbeat younger than this counts as "the system is driving us now".
-    /// 300 s is provisional — recalibrate once the real acquire/update cadence
-    /// is measured.
     static let heartbeatFreshnessInterval: TimeInterval = 300
 
     private(set) var items: [SystemWallpaperManifest.Item] = []
@@ -100,16 +88,11 @@ final class WallpaperExportService {
     private(set) var playbackMode: SystemWallpaperPlaybackMode = .always
 
     @ObservationIgnored private let dependencies: Dependencies
-    /// Publishes that have started copying but not yet committed, keyed by a
-    /// per-publish token so two publishes of the same item stay distinct. The
-    /// copy and the thumbnail run off the main actor, so a remove can land in
-    /// between — and the commit used to write the entry straight back.
+    /// Publishes that have started copying but not yet committed, keyed by a per-publish token so two publishes of the same item stay distinct.
     @ObservationIgnored private var activePublishes: [UUID: String] = [:]
 
     init(dependencies: Dependencies = .live()) {
         self.dependencies = dependencies
-        // Load once so the library context menu sees published state before
-        // the settings panel ever opens. Two tiny JSON reads.
         refresh()
     }
 
@@ -123,9 +106,7 @@ final class WallpaperExportService {
         item.thumbnailFileName.map { videosDirectory.appendingPathComponent($0) }
     }
 
-    /// The copy macOS plays, for Show in Finder. Nil once the file is gone —
-    /// the manifest entry can outlive it if the shared folder was cleared out
-    /// from underneath us.
+    /// The copy macOS plays, for Show in Finder. Nil once the file is gone — the manifest entry can outlive it.
     func videoURL(for item: SystemWallpaperManifest.Item) -> URL? {
         let url = videosDirectory.appendingPathComponent(item.fileName)
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
@@ -165,11 +146,7 @@ final class WallpaperExportService {
         return heartbeat.showsChoice(itemID)
     }
 
-    /// Recent *and* ours. The second half matters because a stale appex keeps
-    /// its 120 s keep-alive running: after an in-place update the old process
-    /// goes on writing fresh-looking beats about the wallpaper it is still
-    /// serving, and without the stamp check the app reports that as the shipped
-    /// extension's state.
+    /// Recent and ours. A stale appex keeps its keep-alive running, so without the stamp check a leftover process's fresh-looking beats would look like the shipped extension's state.
     private func isFresh(_ heartbeat: SystemWallpaperHeartbeat) -> Bool {
         guard heartbeat.isFromProvider(matching: dependencies.expectedProvider) else { return false }
         return dependencies.now().timeIntervalSince(heartbeat.timestamp) < Self.heartbeatFreshnessInterval
@@ -177,10 +154,6 @@ final class WallpaperExportService {
 
     // MARK: - Publish / remove
 
-    /// Where the video bytes come from. Bookmarked library entries need a fresh
-    /// security-scoped resolve; a file the user just picked in an open panel is
-    /// already readable and would only lose access by round-tripping through a
-    /// bookmark.
     private enum PublishSource {
         case bookmark(data: Data, packageEntryName: String?)
         case pickedFile(URL)
@@ -199,8 +172,6 @@ final class WallpaperExportService {
         )
     }
 
-    /// A video the user picked in an open panel: it never has to become a
-    /// bookmark, because publishing copies it into the shared directory anyway.
     func publish(fileURL: URL) async throws {
         try await publish(
             id: UUID().uuidString,
@@ -209,10 +180,7 @@ final class WallpaperExportService {
         )
     }
 
-    /// Publishes several picked files in turn. The summary is assembled here
-    /// rather than at the call site because a successful publish clears
-    /// `lastError`: a plain per-file loop reported only the last file's outcome,
-    /// so a file that failed mid-selection disappeared with no message at all.
+    /// The summary is assembled here because a successful publish clears `lastError`: a plain per-file loop reported only the last file's outcome.
     func publish(fileURLs: [URL]) async {
         var failures: [String] = []
         for url in fileURLs {
@@ -235,12 +203,7 @@ final class WallpaperExportService {
         )
     }
 
-    /// Content resolved from an installed Workshop entry that the user has not
-    /// bookmarked (the Workshop library keeps its own list).
-    ///
-    /// `id` must be stable for a given source. It used to be a fresh `UUID` each
-    /// time, which made `isPublished` blind to Workshop entries: adding the same
-    /// wallpaper twice produced two copies with no way to tell they were the same.
+    /// `id` must be stable for a given source. A fresh UUID each time would make `isPublished` blind to Workshop entries.
     func publish(content: WallpaperContent, title: String, id: String) async throws {
         guard case .video(let data, let entryName) = content else {
             let error = ServiceError.unsupportedContent
@@ -275,8 +238,7 @@ final class WallpaperExportService {
         activePublishes[token] = itemID
         defer { activePublishes[token] = nil }
 
-        // Copy off the main actor — a 4K source can be hundreds of MB. Bookmarks are resolved fresh every time and the URL is never cached (resolver contract).
-        // Everything lands in a uniquely-named staging file first: the live copy (a republish target) is only touched by the atomic swap below, after the thumbnail has succeeded, so no failure mode can leave a manifest entry pointing at a missing or half-written file.
+        // Copy off the main actor. Everything lands in a uniquely-named staging file first: the live copy is only touched by the atomic swap after the thumbnail succeeds.
         struct Staged { let url: URL; let ext: String }
         let staged: Staged = try await Task.detached(priority: .userInitiated) {
             let sourceURL: URL
@@ -294,10 +256,7 @@ final class WallpaperExportService {
             let ext = (sourceName as NSString).pathExtension.isEmpty
                 ? "mov"
                 : (sourceName as NSString).pathExtension
-            // Unique name: two concurrent publishes of the same bookmark must
-            // not fight over one staging path. The name also carries the
-            // creation time, which is what keeps a concurrent sweep off it —
-            // see `SystemWallpaperLibrary.stagingFileName`.
+            // Unique name: two concurrent publishes of the same bookmark must not fight over one staging path. The name carries the creation time so a concurrent sweep stays off it (see `SystemWallpaperLibrary.stagingFileName`).
             let staging = videosDirectory.appendingPathComponent(
                 SystemWallpaperLibrary.stagingFileName(itemID: itemID, ext: ext, now: Date())
             )
@@ -313,10 +272,7 @@ final class WallpaperExportService {
                         )
                     } else {
                         try manager.copyItem(at: sourceURL, to: staging)
-                        // `copyItem` carries the source's mtime over. Stamp the
-                        // copy with now so the published file's age reflects
-                        // when it entered the library, which is what the orphan
-                        // sweep judges a de-referenced file by.
+                        // `copyItem` carries the source's mtime over. Stamp the copy with now so the orphan sweep judges age by when it entered the library.
                         try? manager.setAttributes(
                             [.modificationDate: Date()], ofItemAtPath: staging.path
                         )
@@ -329,10 +285,7 @@ final class WallpaperExportService {
             return Staged(url: staging, ext: ext)
         }.value
 
-        // Thumbnail from the staging copy, so a failure aborts before the live
-        // copy or the manifest is touched. No thumbnail means no tile in the
-        // wallpaper panel (the provider skips it), so this is a failed publish,
-        // not a cosmetic downgrade.
+        // Thumbnail from the staging copy so a failure aborts before the live copy or manifest is touched. No thumbnail means no tile in the wallpaper panel.
         guard let jpeg = await dependencies.makeThumbnailJPEG(staged.url) else {
             try? FileManager.default.removeItem(at: staged.url)
             throw ServiceError.thumbnailFailed
@@ -365,19 +318,13 @@ final class WallpaperExportService {
 
         let manifest: SystemWallpaperManifest
         do {
-            // Locked from the swap onwards, not just for the manifest write: the
-            // appex removes an entry *and unlinks its files* under this lock, so
-            // swapping outside it could commit a manifest entry naming a file
-            // that the removal had already deleted.
+            // Locked from the swap onwards, not just the manifest write: the appex removes an entry and unlinks its files under this lock.
             manifest = try SystemWallpaperLock.withExclusiveLock(root: dependencies.sharedRoot) {
                 // Each path is judged on its own: a republish that changes the video's extension writes a *new* destination while reusing the one thumbnail name, so "is this a republish" cannot answer both.
-                // Treating the whole publish as a first one because of the new extension let the rollback delete the thumbnail the still-live manifest entry pointed at, which erased that wallpaper from the system panel.
                 let destinationExists = manager.fileExists(atPath: destination.path)
                 let thumbnailExists = manager.fileExists(atPath: thumbnailURL.path)
 
-                /// Puts the library back exactly as it was. Without this a failed
-                /// thumbnail write or an unreadable manifest reported failure
-                /// while the old video was already gone.
+                /// Puts the library back exactly as it was. Without this a failed thumbnail write or unreadable manifest reported failure while the old video was already gone.
                 func rollbackPublish() {
                     if destinationExists {
                         if manager.fileExists(atPath: videoBackupURL.path) {
@@ -393,9 +340,7 @@ final class WallpaperExportService {
                 }
 
                 if destinationExists {
-                    // Atomic swap — no window where the old copy is gone and the
-                    // new one is not yet in place. The displaced original stays
-                    // behind under `backupItemName` until this publish commits.
+                    // Atomic swap — no window where the old copy is gone and the new one is not yet in place.
                     _ = try manager.replaceItemAt(
                         destination,
                         withItemAt: staged.url,
@@ -424,9 +369,7 @@ final class WallpaperExportService {
                     try writeManifest(manifest)
                     try? manager.removeItem(at: videoBackupURL)
                     try? manager.removeItem(at: thumbnailBackupURL)
-                    // A republish under a new extension leaves the copy the old
-                    // entry named behind: nothing references it now, and waiting
-                    // for the sweep means carrying two copies of a 4K video.
+                    // A republish under a new extension leaves the copy the old entry named behind: waiting for the sweep means carrying two copies.
                     if let previousFileName, previousFileName != destination.lastPathComponent {
                         try? manager.removeItem(
                             at: videosDirectory.appendingPathComponent(previousFileName)
@@ -439,9 +382,7 @@ final class WallpaperExportService {
                 }
             }
         } catch {
-            // A no-op once the swap has consumed it; what this catches is the
-            // lock itself being untakeable, which would otherwise strand the
-            // staged copy until the sweep.
+            // A no-op once the swap has consumed it; this catches the lock being untakeable, which would otherwise strand the staged copy until the sweep.
             try? manager.removeItem(at: staged.url)
             throw error
         }
@@ -450,10 +391,6 @@ final class WallpaperExportService {
         postLibraryChanged()
     }
 
-    /// Removing the item macOS is showing is allowed: the wallpaper panel's own
-    /// Remove crashes on third-party choices (macOS 27.0), so refusing here
-    /// would leave the user with no way to delete the files at all. The
-    /// confirmation states what macOS does afterwards.
     func remove(itemID: String) throws {
         // A publish of this item that is still copying must not commit after
         // the user has asked for it to go away.
@@ -493,9 +430,6 @@ final class WallpaperExportService {
         postLibraryChanged()
     }
 
-    /// Deletes every published video and empties the manifest. Trashing the
-    /// app does not remove its container, so without this the system's copies
-    /// survive an uninstall with no way to reach them.
     func clearLibrary() throws {
         activePublishes.removeAll()
         nonisolated(unsafe) var survivors: [String] = []
@@ -505,9 +439,7 @@ final class WallpaperExportService {
                 var emptied = manifest
                 emptied.items = []
                 try writeManifest(emptied)
-                // Every file is unreferenced now, so the sweep is the delete —
-                // with no age guard, because nothing here can be mid-publish
-                // once the manifest is empty and the lock is held.
+                // Every file is unreferenced now, so the sweep is the delete — no age guard, because nothing can be mid-publish once the manifest is empty and the lock is held.
                 SystemWallpaperLibrary.sweepOrphans(
                     manifest: emptied,
                     videosDirectory: videosDirectory,
@@ -533,8 +465,6 @@ final class WallpaperExportService {
         lastError = nil
     }
 
-    /// Regular files left in the videos directory — after a full sweep these
-    /// are files the delete could not remove.
     private static func remainingFileNames(in directory: URL) -> [String] {
         let contents = (try? FileManager.default.contentsOfDirectory(
             at: directory, includingPropertiesForKeys: [.isDirectoryKey]
@@ -554,8 +484,6 @@ final class WallpaperExportService {
 
     // MARK: - Refresh
 
-    /// Called when the panel appears — no resident polling; the panel is the
-    /// only reader and it is open a few times a year.
     func setPlaybackMode(_ mode: SystemWallpaperPlaybackMode) {
         guard mode != playbackMode else { return }
         do {
@@ -566,9 +494,7 @@ final class WallpaperExportService {
             }
             playbackMode = mode
             lastError = nil
-            // The extension observes this over the Darwin notify center
-            // (WallpaperXPCBridge.LibraryChangeObserver), so a running
-            // wallpaper follows the switch now, not at the next system event.
+            // The extension observes this over the Darwin notify center (`WallpaperXPCBridge.LibraryChangeObserver`).
             postLibraryChanged()
         } catch {
             lastError = error.localizedDescription
@@ -577,17 +503,13 @@ final class WallpaperExportService {
 
     func refresh() {
         let manifest = loadManifest()
-        // Present on disk but undecodable: showing an empty library here would
-        // invite the user to re-add everything, and every mutation is refused
-        // anyway.
+        // Present on disk but undecodable: showing an empty library here would invite the user to re-add everything, and every mutation is refused anyway.
         if manifest == nil, FileManager.default.fileExists(atPath: manifestURL.path) {
             lastError = ServiceError.manifestUnreadable.localizedDescription
         }
         playbackMode = manifest?.playbackMode ?? .always
         items = manifest?.items ?? []
         heartbeat = loadHeartbeat()
-        // Reclaim files a crash or a lost manifest update left unreferenced;
-        // the age guard inside protects any publish that is mid-copy.
         if let manifest {
             SystemWallpaperLibrary.sweepOrphans(
                 manifest: manifest,
@@ -602,8 +524,7 @@ final class WallpaperExportService {
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Wallpaper-Settings.extension")!)
     }
 
-    /// Workshop videos live inside `scene.pkg` as one contiguous, uncompressed byte range (the player windows into it the same way rather than extracting).
-    /// Streamed in chunks through the already-open handle: `.mappedIfSafe` degrades to a whole-file heap read on removable and network volumes, and Steam libraries live on exactly those.
+    /// Streamed in chunks through the already-open handle: `.mappedIfSafe` degrades to a whole-file heap read on removable and network volumes, and Steam libraries live on those.
     nonisolated private static func extractPackagedVideo(
         packageURL: URL,
         entryName: String,
@@ -653,14 +574,8 @@ final class WallpaperExportService {
         return try? SystemWallpaperCoding.decoder.decode(SystemWallpaperManifest.self, from: data)
     }
 
-    /// Absent manifest = empty library, which is a normal first-run state.
-    /// Unreadable manifest = refuse. Treating corruption as "empty" used to
-    /// rewrite the file with only the newest item, which turned every already
-    /// published video into an unreferenced file the orphan sweep then deleted.
+    /// Absent manifest = empty library. Unreadable = refuse. Treating corruption as empty would rewrite the file with only the newest item and the orphan sweep would delete the rest.
     private func loadManifestForMutation() throws -> SystemWallpaperManifest {
-        // Absent is the only read outcome that means "empty library"; an
-        // unreadable-but-present file (permissions, IO) has to refuse for the
-        // same reason a corrupt one does.
         guard FileManager.default.fileExists(atPath: manifestURL.path) else { return .empty }
         guard let data = try? Data(contentsOf: manifestURL) else { throw ServiceError.manifestUnreadable }
         guard let manifest = try? SystemWallpaperCoding.decoder

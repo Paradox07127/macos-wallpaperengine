@@ -1,9 +1,8 @@
 import SwiftUI
 
 public extension View {
-    /// Chrome for inspector-side preview cards (video + HTML). Placeholder
-    /// states (`stroke: true`) typically pair with `shadow: false` to preserve
-    /// the flat-card visual rhythm.
+    /// Placeholder states (`stroke: true`) pair with `shadow: false` to keep the
+    /// flat-card rhythm.
     func screenPreviewChrome(stroke: Bool = false, shadow: Bool = true) -> some View {
         modifier(_ScreenPreviewChrome(stroke: stroke, shadow: shadow))
     }

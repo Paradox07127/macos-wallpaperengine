@@ -1,7 +1,6 @@
 #if !LITE_BUILD
 import SwiftUI
 
-/// Minimal flow layout: lays chips left-to-right and wraps to a new line when the next one would overflow the proposed width, so a long tag list stays fully visible (vs a horizontal scroll that hides most of it).
 struct WorkshopChipFlow: Layout {
     var spacing: CGFloat = 6
     var lineSpacing: CGFloat = 6

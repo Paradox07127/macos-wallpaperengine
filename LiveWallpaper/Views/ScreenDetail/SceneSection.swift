@@ -5,7 +5,6 @@ import SwiftUI
 @MainActor
 struct SceneSection: View {
     let screen: Screen
-    /// Scale lives in the preview bar's viewport zone.
     @Binding var fitMode: VideoFitMode
     /// The shared playback glyph row, built by `PreviewArea` which owns the draft.
     let playbackControls: AnyView
@@ -13,7 +12,6 @@ struct SceneSection: View {
     @Environment(\.featureCatalog) private var featureCatalog
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    /// Quick-apply grid cap; full library lives in the Workshop tab.
     private let recentGridCap = 18
 
     @State private var recentImports: [WPEHistoryEntry] = []
@@ -21,9 +19,6 @@ struct SceneSection: View {
     @State private var pendingDestructive: PendingDestructive?
 
     var body: some View {
-        // Above every state, not inside the applied-scene card: the assets are a
-        // setup step, and the reader most likely to need them has no scene
-        // applied yet.
         VStack(spacing: 0) {
             EngineAssetsBanner()
 
@@ -91,8 +86,6 @@ struct SceneSection: View {
         .padding(40)
     }
 
-    /// No title row: the grid fills the tab, so naming it restates the tab, and
-    /// its two actions moved up to the display header (`SceneHistoryHeaderActions`).
     private var historyList: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
@@ -151,7 +144,7 @@ struct SceneSection: View {
            case .scene(let descriptor) = configuration.activeWallpaper,
            let origin = configuration.wpeOrigin {
             let session = screen.runtimeSession as? SceneWallpaperSession
-            // Chrome-free, and NOT scrolled: like the video preview area the 16:9 hero must stay height-bounded by the viewport, otherwise a wide window grows it unboundedly tall and introduces vertical scroll.
+            // NOT scrolled: the 16:9 hero must stay height-bounded by the viewport, or a wide window grows it unboundedly tall and introduces vertical scroll.
             SceneDetailView(
                 origin: origin,
                 descriptor: descriptor,
@@ -188,17 +181,14 @@ struct SceneSection: View {
         screenManager.getConfiguration(for: screen)?.wpeOrigin?.workshopID
     }
 
-    /// Scene imports only. This grid is the Scene tab's "pick something to run
-    /// here"; a video or web import listed among them applies a wallpaper of a
-    /// different type than the tab the user is standing on. The full library,
-    /// across every type, is the Workshop tab's job.
+    /// Scene imports only: a video or web import listed here would apply a wallpaper
+    /// of a different type than the tab the user is standing on.
     private func reloadHistory() {
         recentImports = SettingsManager.shared.loadGlobalSettings().recentWPEImports.filter {
             $0.origin.originalType == .scene
         }
     }
 
-    /// Auto-promote unsupported import for THIS screen into the placeholder card.
     private func selectUnsupportedImportIfNeeded(from notification: Notification) {
         guard let screenID = notification.userInfo?["screenID"] as? CGDirectDisplayID,
               screenID == screen.id,
@@ -262,9 +252,6 @@ struct SceneSection: View {
     }
 }
 
-/// The recent-projects grid's two actions, hosted by the display header.
-/// `SceneSection` reloads off `.wpeHistoryDidChange`, so the import posted here
-/// reaches the grid without a callback back down.
 @MainActor
 struct SceneHistoryHeaderActions: View {
     let screen: Screen
@@ -273,8 +260,6 @@ struct SceneHistoryHeaderActions: View {
 
     var body: some View {
         if featureCatalog.isEnabled(.wpeImport) {
-            // The Workshop pane's own glyph (sidebar + its online tab), so the
-            // icon names the destination.
             GlassIconButton("cube.transparent.fill", size: .regular) {
                 NotificationCenter.default.post(name: .openWorkshopPane, object: nil)
             }

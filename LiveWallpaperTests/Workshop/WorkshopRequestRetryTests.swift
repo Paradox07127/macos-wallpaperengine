@@ -3,9 +3,8 @@ import Foundation
 @testable import LiveWallpaper
 import Testing
 
-/// Virtual clock for `WorkshopRetryPolicy`: `now` moves only when a test (or,
-/// when `advancesOnSleep`, a recorded sleep) moves it, so a backoff or a
-/// `Retry-After` wait costs the suite nothing.
+/// `now` moves only when a test (or, when `advancesOnSleep`, a recorded sleep) moves it,
+/// so a backoff or `Retry-After` wait costs the suite nothing.
 final class RetryVirtualClock: @unchecked Sendable {
     private let lock = NSLock()
     private var current: Date
@@ -47,12 +46,10 @@ final class RetryVirtualClock: @unchecked Sendable {
     }
 }
 
-/// Counts closure invocations across the policy's attempts.
 private final class AttemptCounter: @unchecked Sendable {
     private let lock = NSLock()
     private var value = 0
 
-    /// Returns the 1-based ordinal of this attempt.
     func next() -> Int {
         lock.withLock {
             value += 1
@@ -65,8 +62,6 @@ private final class AttemptCounter: @unchecked Sendable {
     }
 }
 
-/// A sleep that parks until the test releases it, so another run can reach the
-/// policy while this one is inside its cooldown wait.
 private final class GatedSleeper: @unchecked Sendable {
     private let lock = NSLock()
     private var recorded: [TimeInterval] = []
@@ -99,7 +94,6 @@ private final class GatedSleeper: @unchecked Sendable {
     }
 }
 
-/// Polls until `condition` holds or ~2 s pass; the caller asserts afterwards.
 private func waitUntil(_ condition: @escaping @Sendable () -> Bool) async throws {
     for _ in 0 ..< 2000 where !condition() {
         try await Task.sleep(nanoseconds: 1_000_000)
@@ -200,7 +194,6 @@ struct WorkshopRetryPolicyTests {
         #expect(policy.retryAfter(from: response(status: 429, headers: ["Retry-After": "nan"]).http) == nil)
         #expect(policy.retryAfter(from: response(status: 429, headers: ["Retry-After": "-3"]).http) == nil)
         #expect(policy.retryAfter(from: response(status: 429, headers: ["Retry-After": "86401"]).http) == nil)
-        // Controls: the bounds are inclusive, and the header may be absent.
         #expect(policy.retryAfter(from: response(status: 429, headers: ["Retry-After": "8"]).http) == 8)
         #expect(policy.retryAfter(from: response(status: 429, headers: ["Retry-After": "0"]).http) == 0)
         #expect(policy.retryAfter(from: response(status: 429, headers: ["Retry-After": "86400"]).http) == 86400)
@@ -241,10 +234,6 @@ struct WorkshopRetryPolicyTests {
         #expect(attempts.count == 1)
     }
 
-    /// A run starts inside a cooldown, sleeps for it, and while it sleeps a
-    /// request that was already in flight gets its own 429 with a longer
-    /// `Retry-After`. Waking on the old deadline and sending would hit the
-    /// extended one.
     @Test("A cooldown extended while a run sleeps on it is waited out too")
     func cooldownExtendedDuringSleepIsRechecked() async throws {
         let clock = RetryVirtualClock(advancesOnSleep: false)
@@ -298,8 +287,6 @@ struct WorkshopRetryPolicyTests {
         #expect(bAttempts.count == 2)
     }
 
-    /// The budget exists to bound the sleeps of one run. A 20 s timeout is
-    /// request time, and the one retry a timeout earns must still happen.
     @Test("Request time does not consume the retry budget")
     func requestTimeDoesNotConsumeTheBudget() async throws {
         let clock = RetryVirtualClock()
@@ -364,8 +351,6 @@ struct WorkshopRetryPolicyTests {
     }
 }
 
-/// The two request paths through the stubbed session: what each retries,
-/// what each refuses to retry, and what the UI is handed when the policy gives up.
 @Suite("Workshop request retry", .serialized)
 struct WorkshopRequestRetryTests {
     private static let validKey = String(repeating: "a1b2c3d4", count: 4)
@@ -608,8 +593,7 @@ struct WorkshopRequestRetryTests {
     }
 }
 
-/// Answers requests in planned order, whatever their URL; a request past the
-/// plan fails with `.unknown` so an unexpected extra attempt cannot pass.
+/// A request past the plan fails with `.unknown`, so an unexpected extra attempt cannot pass.
 private final class RetrySequenceStub: URLProtocol, @unchecked Sendable {
     enum Step: @unchecked Sendable {
         case http(status: Int, headers: [String: String], body: Data)

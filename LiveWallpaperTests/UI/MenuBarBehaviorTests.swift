@@ -83,8 +83,6 @@ struct MenuBarBehaviorTests {
         #expect(source.contains("updateVideoVolume"))
     }
 
-    /// Scene and web wallpapers carry audio too — the inspector's Audio row has always
-    /// driven all three, so the menu-bar slider narrowing to video is a regression.
     @Test("The menu-bar volume row reaches every wallpaper type that carries audio")
     func menuBarVolumeCoversEveryAudioCarryingType() throws {
         let source = try RepositoryRoot.source("LiveWallpaper/Views/MenuBarContent.swift")
@@ -105,7 +103,6 @@ struct MenuBarBehaviorTests {
             return
         }
 
-        // Each branch must hand back a binding — a `return nil` here is the regression.
         #expect(videoBranch.contains("return sessionAudioBinding("))
         #expect(sceneBranch.contains("return sessionAudioBinding("))
         #expect(!sceneBranch.contains("return nil"), "Scene wallpapers carry audio; the slider must not be withheld")
@@ -125,8 +122,6 @@ struct MenuBarBehaviorTests {
         return String(source[start.upperBound..<end.lowerBound])
     }
 
-    /// The header's Add button carries no display, so an unconfigured display used to be
-    /// reachable only by picking it again inside the settings window.
     @Test("An unconfigured display offers an Add button aimed at that display")
     func unconfiguredDisplayRowOffersTargetedAdd() throws {
         let source = try RepositoryRoot.source("LiveWallpaper/Views/MenuBarContent.swift")

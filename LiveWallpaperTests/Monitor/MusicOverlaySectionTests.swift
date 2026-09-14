@@ -2,10 +2,6 @@ import XCTest
 @testable import LiveWallpaper
 import LiveWallpaperCore
 
-/// The Now Playing layer's own placement math. Everything here used to be board
-/// surgery — first-fit around Monitor tiles, "leaves other widgets untouched",
-/// no-ops when the board carried no layer. The layer has its own configuration
-/// now, so those cases stopped existing rather than being deleted.
 final class MusicOverlaySectionTests: XCTestCase {
     private typealias Layout = MusicOverlayLayout
 
@@ -20,8 +16,6 @@ final class MusicOverlaySectionTests: XCTestCase {
 
     // MARK: Independence from the Monitor board
 
-    /// The split's whole point: a Music edit and a board edit cannot reach each
-    /// other, because they no longer share a container.
     func testMusicAndBoardAreSeparatelyStored() {
         var overlay = MonitorOverlayConfiguration()
         let board = overlay.board
@@ -33,9 +27,6 @@ final class MusicOverlaySectionTests: XCTestCase {
         XCTAssertEqual(withWidgets.music, overlay.music, "a board edit must not be able to touch Music")
     }
 
-    /// A config written while the layer was a widget still decodes; the stray
-    /// placement is dropped with every other unknown kind, and Music comes back
-    /// on its own defaults rather than inheriting a board position.
     func testLegacyBoardWidgetDoesNotDecodeIntoTheBoard() throws {
         let json = """
         {"enabled":true,"level":"desktop","board":{"schemaVersion":4,"widgets":[
@@ -50,8 +41,6 @@ final class MusicOverlaySectionTests: XCTestCase {
         XCTAssertEqual(overlay.music, .default)
     }
 
-    /// The layer shares the board's usable area, so a Dock on any edge moves it
-    /// exactly as it moves a widget.
     func testMusicLayerStaysClearOfADockOnAnyEdge() throws {
         let board = CGSize(width: 1600, height: 1000)
         let cases: [(String, MonitorSafeAreaInsets)] = [
@@ -128,8 +117,6 @@ final class MusicOverlaySectionTests: XCTestCase {
         XCTAssertFalse(options.showAlbum)
     }
 
-    /// Switching style must not pin the previous style's implicit alignment —
-    /// aurora is centered, and it stays centered after a poster → aurora hop.
     func testStyleChangeDoesNotPinTheOldStylesAlignment() {
         let aurora = Layout.settingOptions(on: layer()) { $0.style = .aurora }
 
@@ -173,9 +160,8 @@ final class MusicOverlaySectionTests: XCTestCase {
 
     // MARK: Preview wiring (source contracts)
 
-    /// The layer drag is attached to the very view `.position` moves. Reading
-    /// the translation in that view's own space re-bases it every frame, which
-    /// made the layer strobe under the cursor; it must use the named canvas.
+    /// The drag is attached to the very view `.position` moves, so reading the translation
+    /// in that view's own space re-bases it every frame — it must use the named canvas.
     func testPreviewDragUsesAStableCoordinateSpace() throws {
         let source = try RepositoryRoot.source(
             "LiveWallpaper/Views/ScreenDetail/OverlayPreviewArea.swift"
@@ -188,8 +174,6 @@ final class MusicOverlaySectionTests: XCTestCase {
         )
     }
 
-    /// The live readout moved onto the preview; leaving a copy in the option
-    /// list would show the same thing twice.
     func testStatusReadoutLivesOnThePreviewOnly() throws {
         let preview = try RepositoryRoot.source(
             "LiveWallpaper/Views/ScreenDetail/OverlayPreviewArea.swift"
@@ -201,20 +185,16 @@ final class MusicOverlaySectionTests: XCTestCase {
         XCTAssertFalse(section.contains("statusCard"), "the inspector copy must be gone")
     }
 
-    /// Poster draws the cover as a photo while vinyl draws its platter from
-    /// scratch - a stand-in without artwork therefore looked like poster had
-    /// lost its cover. The preview's sample must carry one.
+    /// Poster draws the cover as a photo, so a stand-in without artwork looks like poster
+    /// lost its cover — the preview's sample must carry one.
     func testPreviewSampleTrackCarriesArtwork() throws {
         let source = try RepositoryRoot.source(
             "LiveWallpaper/Views/ScreenDetail/OverlayPreviewArea.swift"
         )
         XCTAssertTrue(source.contains("state.artwork = sampleArtwork"))
     }
-    /// The transport row must stay an overlay. In a style's stack it was the
-    /// last child of a bottom-aligned VStack, so a one-cell-tall tile pushed it
-    /// past the widget rect — the exact region the overlay window hit-tests.
-    /// The buttons then sat outside their own hover area: walking towards them
-    /// left the tile and folded them away before they could be clicked.
+    /// The transport row must stay an overlay: mounted inside a style's stack it can be
+    /// pushed past the widget rect, which is the exact region the overlay window hit-tests.
     func testTransportControlsStayOutOfTheLayoutFlow() throws {
         let source = try RepositoryRoot.source(
             "LiveWallpaper/Monitor/Widgets/NowPlayingWidgetView.swift"
@@ -229,23 +209,17 @@ final class MusicOverlaySectionTests: XCTestCase {
                 "a stack-mounted control row re-introduces the overflow bug"
             )
         }
-        // The row was centred until it turned out to land on the progress
-        // line: vinyl and aurora centre their content block vertically, so the
-        // pill covered the one control worth dragging. Top-trailing is the
-        // only corner no style draws a scrubbable line in.
+        // Top-trailing is the only corner no style draws a scrubbable line in; centred, the
+        // pill covers the progress line vinyl and aurora put there.
         XCTAssertTrue(source.contains("maxHeight: .infinity, alignment: .topTrailing)"))
-        // What the centring was really protecting is the tile rect, and that
-        // is the frame plus this inset — not the anchor. Both halves have to
-        // be here or the row can reach the edge the hit test stops at.
+        // Both halves are needed: the tile rect is the frame plus this inset, and without the
+        // inset the row can reach the edge the hit test stops at.
         XCTAssertTrue(source.contains("maxWidth: .infinity, maxHeight: .infinity, alignment:"))
         XCTAssertTrue(source.contains(".padding(max(6, side * 0.26))"))
     }
 
-    /// The paused dim used to multiply the whole tile, so a user who had also
-    /// dialled the layer down read the title at `opacity × 0.55 × brightness`
-    /// and could not make out song or artist. It reaches the cover only now.
-    /// The opacity dial keeps reaching everything — that is what it is for, and
-    /// an earlier attempt to exempt the type from it was rejected.
+    /// The paused dim reaches the cover only; the opacity dial still reaches the whole
+    /// layer, type included.
     func testPausedDimNoLongerMultipliesTheWholeTile() throws {
         let source = try RepositoryRoot.source(
             "LiveWallpaper/Monitor/Widgets/NowPlayingWidgetView.swift"

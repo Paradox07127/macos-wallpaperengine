@@ -3,10 +3,6 @@ import Foundation
 import LiveWallpaperCore
 import LiveWallpaperProWPE
 
-/// Resolves declared Wallpaper Engine workshop dependency IDs into concrete
-/// roots the runtime is allowed to mount. The lookup order mirrors the import
-/// dependency gate: prefer our extracted cache, then fall back to sibling
-/// Steam Workshop folders next to the imported source project.
 struct WPEDependencyMountResolver {
     func mounts(
         dependencyWorkshopIDs: [String],
@@ -21,7 +17,6 @@ struct WPEDependencyMountResolver {
             .standardizedFileURL
             .resolvingSymlinksInPath()
 
-        // Resolve and start accessing the source folder bookmark if available
         var sourceFolderURL: URL?
         var didStartSourceAccess = false
         if let origin {
@@ -103,7 +98,6 @@ struct WPEDependencyMountResolver {
             return WPEAssetMount(workshopID: workshopID, packageURL: pkgURL)
         }
 
-        // Unpacked dependency: mount the folder if it carries a project.json.
         let manifest = siblingRoot.appendingPathComponent("project.json")
         guard fileManager.fileExists(atPath: manifest.path) else { return nil }
         return WPEAssetMount(workshopID: workshopID, rootURL: siblingRoot)

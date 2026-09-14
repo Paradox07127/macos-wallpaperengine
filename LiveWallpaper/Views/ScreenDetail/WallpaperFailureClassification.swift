@@ -2,12 +2,8 @@ import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
-/// What the user can still do about a failure, which is what decides the colour
-/// and the action set — not how alarming the error sounds.
-///
-/// Lives outside the WPE table because video and web failures classify through
-/// the same four tiers and this file has to compile into Lite, where
-/// `SceneFailurePresentation` does not.
+/// What the user can still do about a failure decides the tier — not how alarming
+/// the error sounds.
 enum WallpaperFailureClass: Equatable {
     /// Nothing on this Mac can render it, ever. No recovery action exists.
     case fatal
@@ -18,8 +14,7 @@ enum WallpaperFailureClass: Equatable {
     /// One layer was skipped — the wallpaper is still playing.
     case degraded
 
-    /// Matches the DESIGN.md gloss: danger = errors, warning = "won't run"
-    /// blockers, caution = "needs parts" / pending.
+    /// Follows the DESIGN.md tint gloss.
     var tint: Color {
         switch self {
         case .fatal: DesignTokens.Colors.Status.danger
@@ -39,8 +34,7 @@ enum WallpaperFailureClass: Equatable {
         }
     }
 
-    /// One line naming the outcome, above the wallpaper's own name. Carries the
-    /// meaning the tint alone must never carry (DESIGN.md rule 6).
+    /// Carries the meaning the tint alone must never carry (DESIGN.md rule 6).
     var kicker: LocalizedStringKey {
         switch self {
         case .fatal: "Can't run on this Mac"
@@ -51,8 +45,6 @@ enum WallpaperFailureClass: Equatable {
     }
 }
 
-/// The recovery affordances a failure earns. Every surface renders this list, so
-/// a failure cannot offer "subscribe in Steam" on one screen and nothing on another.
 enum WallpaperFailureRecovery: Equatable, Hashable {
     case retry
     /// Re-point at content we can no longer open. Distinct from `.retry`:
@@ -64,10 +56,8 @@ enum WallpaperFailureRecovery: Equatable, Hashable {
 }
 
 extension WallpaperFailureCause {
-    /// Permanently impossible here. Deliberately short: `code` is an open
-    /// namespace — an unmapped `NSError` arrives as "<domain>.<code>" — so
-    /// anything not listed stays `.blocked` rather than being promoted to
-    /// "this Mac can never run it".
+    /// Deliberately short: `code` is an open namespace (an unmapped `NSError` arrives as
+    /// "<domain>.<code>"), so anything unlisted stays `.blocked`.
     private static let fatalCodes: Set<String> = [
         "scene.metal_unsupported",
         "scene.unsafe_path",
@@ -108,15 +98,10 @@ extension WallpaperFailureCause {
         Self.sourceRelinkCodes.contains(code)
     }
 
-    /// Reproduces what the view used to decide inline from a literal array of
-    /// codes, so the two surfaces stop disagreeing about what a failure offers.
     func recovery(workshopID: String?, canChooseSource: Bool) -> [WallpaperFailureRecovery] {
         var actions: [WallpaperFailureRecovery] = []
-        // `canRetry` is otherwise the producers' call, but it cannot outvote a
-        // fatal code: `WPEImportCoordinator` emits `scene.windows_plugin` with
-        // `canRetry: true` whenever that project also has missing dependencies,
-        // which put a prominent Retry under a headline saying this Mac can
-        // never run it. Re-importing the same origin reaches the same result.
+        // `canRetry` is the producers' call but cannot outvote a fatal code:
+        // `WPEImportCoordinator` emits `scene.windows_plugin` with `canRetry: true`.
         if failureClass != .fatal {
             if needsSourceRelink, canChooseSource {
                 actions.append(.chooseSource)
@@ -131,8 +116,6 @@ extension WallpaperFailureCause {
     }
 }
 
-/// Renders a recovery list. Kept in one place so every surface emits the same
-/// buttons in the same order for the same failure.
 struct WallpaperFailureRecoveryActions: View {
     let recovery: [WallpaperFailureRecovery]
     let onRetry: (() -> Void)?
@@ -194,8 +177,6 @@ struct WallpaperFailureRecoveryActions: View {
                 .accessibilityHint(Text("Copies every missing workshop ID to your clipboard so you can subscribe in Steam"))
             }
         case let .openWorkshop(id):
-            // Never prominent: leaving the app is not the recovery, it is a
-            // detour on the way to one.
             Button {
                 openWorkshop(workshopID: id)
             } label: {

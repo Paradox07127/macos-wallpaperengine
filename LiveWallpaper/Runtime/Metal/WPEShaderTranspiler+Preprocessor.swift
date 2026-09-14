@@ -17,11 +17,7 @@ extension WPEShaderTranspiler {
         var frames: [ConditionalFrame] = []
         var output: [String] = []
 
-        // Detect directives on a comment-masked copy so a `#if`/`#endif` sitting on
-        // its own line inside a `/* … */` block (or after `//`) isn't read as a live
-        // directive — that would push/pop conditional frames and silently drop real
-        // code. The mask is length-preserving, so masked and raw lines align 1:1;
-        // directives are parsed from the masked line but the raw line is emitted.
+        // Parse directives from a comment-masked copy so a `#if`/`#endif` inside comments cannot push/pop frames; the mask is length-preserving.
         let rawLines = source.components(separatedBy: "\n")
         let maskedLines = maskComments(source).components(separatedBy: "\n")
 
@@ -170,11 +166,7 @@ extension WPEShaderTranspiler {
         return parsePreprocessorExpression(sanitized, values: values, definedMacros: definedMacros) ?? 0
     }
 
-    /// WPE's preprocessor tolerates trailing junk in `#if` / `#elif` conditions — workshop shaders
-    /// ship lines like `#elif AUDIOSAMPLES == 32;` (stray `;`) or `#if COND // note`. A `;`, `//`,
-    /// or `/*` can never appear inside a valid conditional expression, so truncate at the first one;
-    /// otherwise the strict tokenizer rejects the whole condition and the (often default) branch is
-    /// silently dropped, leaving its declarations undefined in the emitted MSL.
+    /// Truncate `#if`/`#elif` at the first `;`, `//`, or `/*` — otherwise the tokenizer rejects the condition and the branch is dropped.
     private static func sanitizeConditionalExpression(_ expression: String) -> String {
         var cutoff = expression.endIndex
         for marker in ["//", "/*", ";"] {
@@ -360,9 +352,7 @@ extension WPEShaderTranspiler {
             }
         }
 
-        // Overflow/divide-by-zero fall back to nil so the whole `#if` is treated as
-        // unparseable (→ false), the same safe default as any other malformed
-        // condition — never a runtime trap on pathological shader input.
+        // Overflow/divide-by-zero returns nil so the `#if` is unparseable (→ false), never a runtime trap.
         private mutating func parseMultiplicative() -> Int? {
             guard var lhs = parseUnary() else { return nil }
             while true {

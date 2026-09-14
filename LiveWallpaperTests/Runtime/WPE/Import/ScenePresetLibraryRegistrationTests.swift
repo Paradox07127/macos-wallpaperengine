@@ -3,8 +3,6 @@ import LiveWallpaperCore
 import Testing
 @testable import LiveWallpaper
 
-/// Registration is the single write path into the preset library, and it runs
-/// on both a first download and every re-download of the same Workshop item.
 @MainActor
 @Suite("Scene preset registration")
 struct ScenePresetLibraryRegistrationTests {
@@ -70,9 +68,6 @@ struct ScenePresetLibraryRegistrationTests {
         defer { NotificationCenter.default.removeObserver(observer) }
 
         await sut.registerScenePreset(workshopPreset(name: "T", values: ["a": .number(1)])) {
-            // Ordering is the whole point: a caller that persists a descriptor
-            // pointing at this preset needs it already in the library, and needs
-            // to be done before anything reconciles.
             libraryVisibleInsideHook = sut.loadGlobalSettings().scenePresets["3471679253"]
         }
 

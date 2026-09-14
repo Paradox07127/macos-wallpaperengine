@@ -3,7 +3,6 @@ import AVFoundation
 import CoreGraphics
 import Foundation
 
-/// Cross-correlate intro vs free-running loop frames to estimate phase-aligned offset.
 enum WPEVideoPhaseOffset {
     private static let sampleWidth = 64
     private static let sampleHeight = 36

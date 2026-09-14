@@ -3,31 +3,8 @@ import Foundation
 import LiveWallpaperCore
 import LiveWallpaperProWPE
 import Metal
-/// Dispatches a prepared pass onto a Metal pipeline state (shares the executor's
-/// pipeline cache; shader-input math/texture resolution live in `WPEMetalShaderInputs`).
-/// Puppet/model and text passes never reach here — the executor encodes those directly.
-///
-/// Texture slots are per-case (local `*Slot` constants, not a shared vocabulary):
-/// - Compose: `solidcolor`/`solidlayer` no texture; `copy` slot 0 = source; `compose`
-///   slot 0 = first source, slot 1 = second (absent → falls back to first); capture
-///   variants bind slot 0 only.
-/// - Image: `genericimage2` slot 0 = image; `genericimage4` slot 0 = image, slot 1 =
-///   mask (absent mask rebinds slot 0, clears has-mask uniform).
-/// - Particle: `genericparticle` stays a kind (snapshot + CanonicalTrace) but encodes
-///   via the custom/transpiled fallback.
-/// - Effect: slot 0 = input (`textureBindings[0] ?? textures[0] ?? source`); masked
-///   effects (`effect_opacity`, `effect_waterwaves`) add slot 1 = mask, falling back
-///   to source with has-mask cleared. Per-effect names/bindings/uniforms live in the
-///   data table (`WPEMetalEffectDispatchTable.swift`).
-/// - Custom/transpiled fallback: slots 0..<`result.textureSlotCount` — sized per shader by
-///   the transpiler, not a fixed span; `customTextureSlotLimit` is only the ceiling —
-///   each `textureBindings[slot] ?? binds[slot] ?? textures[slot]`; slot 0 falls back
-///   to the pass source, empty higher slots rebind slot 0. `godrays_combine` is fixed:
-///   slot 0 = rays, slot 1 = albedo, slot 2 = base (absent base rebinds albedo, clears
-///   copy-background uniform).
-///
-/// Buffers are positional: fragment uniforms = 0, object/shape-quad vertex uniforms = 1,
-/// skew params = 2.
+/// Puppet/model/text never reach here (executor encodes them). Absent compose slot 1 / image-4 mask / effect mask rebinds slot 0 (clears has-mask); godrays_combine slot 2 absent rebinds albedo and clears copy-background.
+/// Buffers: fragment uniforms=0, object/shape-quad vertex uniforms=1, skew params=2.
 struct WPEMetalShaderDispatcher {
     let executor: WPEMetalRenderExecutor
     func dispatch(
@@ -66,10 +43,7 @@ struct WPEMetalShaderDispatcher {
             return
         }
         switch kind {
-        // Builtin effects share the data-driven dispatch table.
-        // (`WPEMetalEffectDispatchTable.swift`). The snapshot test on
-        // `WPEEffectDispatchDescriptor.table` pins that every kind listed here
-        // has an entry, so the force-unwrap cannot trip at runtime.
+        // Force-unwrap is pinned by the snapshot test on `WPEEffectDispatchDescriptor.table` (see `WPEMetalEffectDispatchTable.swift`).
         case .effectColorBalance, .effectBlur, .effectVignette, .effectWater,
              .effectOpacity, .effectScroll, .effectPulse, .effectIris,
              .effectWaterWaves, .effectSpin, .effectTint, .effectFoliageSway,
@@ -133,8 +107,6 @@ struct WPEMetalShaderDispatcher {
         #endif
     }
 
-    /// Object-quad vertex uniforms at buffer 1 — the shared tail of every
-    /// dispatch that selects `wpe_object_quad_vertex`.
     func bindObjectQuadVertexUniforms(
         pass: WPEPreparedRenderPass,
         layer: WPERenderLayer,
@@ -197,9 +169,7 @@ struct WPEMetalShaderDispatcher {
         }
     }
 
-    /// Composites a destination-reading blend (Overlay et al) — see
-    /// `wpe_blend_composite_fragment`. Slot 4 carries the scene snapshot to
-    /// mirror WPE's `g_Texture4` binding.
+    /// Destination-reading blend (Overlay et al); slot 4 carries the scene snapshot (WPE `g_Texture4`). See `wpe_blend_composite_fragment`.
     private func dispatchBlendComposite(
         pass: WPEPreparedRenderPass,
         layer: WPERenderLayer,
@@ -352,9 +322,7 @@ struct WPEMetalShaderDispatcher {
                 index: 0
             )
         } else if isSingleTextureComposeLayer {
-            // WPE passthrough utility parity: draw a fullscreen quad and copy
-            // the captured full-frame buffer 1:1 at screen UV (+ CLEARALPHA),
-            // ignoring the layer transform (which positions downstream effects).
+            // WPE passthrough: fullscreen 1:1 screen-UV copy (+ CLEARALPHA), ignoring the layer transform (it positions downstream effects).
             encoder.setRenderPipelineState(try executor.passPipelineState(
                 passID: pass.pass.id,
                 variant: .composeLayer,
@@ -422,10 +390,7 @@ struct WPEMetalShaderDispatcher {
 
     // MARK: - Image family
 
-    /// `$media*` album art for a BUILTIN image pass, which binds its slots directly
-    /// rather than through the custom path's per-slot `substituting` loop. Routing
-    /// builtins to `dispatchCustomShader` instead threw `unsupportedShader`, skipped
-    /// the composite write, and took the whole scene down (3660962877).
+    /// Builtin image `$media*` substitution; do not route through `dispatchCustomShader` (would throw `unsupportedShader` and skip the composite write).
     private func mediaSubstituted(_ texture: MTLTexture, slot: Int, passID: String) -> MTLTexture {
         guard let store = executor.mediaTextureStore,
               let declarations = store.declarations(forPassID: passID) else { return texture }
@@ -600,8 +565,6 @@ struct WPEMetalShaderDispatcher {
         }
 
         let result = try executor.compileCustomShader(for: pass)
-        // Dump transpiled MSL + uniform/sampler interface for cross-check against the
-        // Windows RenderDoc oracle (tools/wpe-oracle shader-interface.md). Scene-debug only.
         if WPESceneDebugArtifacts.shared.isEnabled {
             WPESceneDebugArtifacts.shared.recordNoteOnce(
                 name: "msl-\(pass.pass.id)-\(pass.pass.shader).metal",
@@ -624,9 +587,6 @@ struct WPEMetalShaderDispatcher {
         let usesShapeQuad = executor.usesShapeQuadGeometry(for: pass, layer: layer, frameState: frameState)
         let usesObjectQuad = !usesShapeQuad
             && executor.usesObjectQuadGeometry(for: pass, layer: layer, cameraParallax: frameState.cameraParallax)
-        // The transpiler is fragment-only: it always uses wpe_fullscreen_vertex and
-        // synthesizes v_TexCoord / v_Direction in the fragment (it does NOT run the scene .vert).
-        // Gate on isEnabled first: `isWaveLikePass` lowercases the path and only feeds this log.
         if WPESceneDebugArtifacts.shared.isEnabled, Self.isWaveLikePass(pass) {
             let maskLive = Self.hasExplicitTextureSlot(1, in: pass)
             WPESceneDebugArtifacts.shared.appendLog(
@@ -640,29 +600,15 @@ struct WPEMetalShaderDispatcher {
         var primary: MTLTexture? = nil
         let resolvedTexturesBySlot = executor.customTextureSlotScratch
         resolvedTexturesBySlot.reset()
-        // `$mediaThumbnail` / `$mediaPreviousThumbnail` album art. Resolved once
-        // per pass, not per slot: the store is nil for every scene that declares
-        // no `$media*` user texture, and its slot map is nil for every pass of a
-        // scene that does. Both are plain lookups into tables built at load, so
-        // the per-draw path stays allocation-free.
+        // `$media*` resolved once per pass, not per slot: the store is nil for scenes with no `$media*` user texture, and its slot map is nil for every other pass.
         let mediaTextureStore = executor.mediaTextureStore
         let mediaSlots = mediaTextureStore?.declarations(forPassID: pass.pass.id)
         #if !LITE_BUILD && DEBUG
         var canonicalTextureBindings: [WPECanonicalTraceRecorder.TextureBindingInput] = []
         #endif
-        // Exactly the slots this shader's signature declares — same value the generator
-        // sized it with, carried through the translation cache. Binding fewer than the
-        // signature declares would leave the shader sampling an unbound texture; binding
-        // more would just be wasted `setFragmentTexture` calls per pass.
+        // Bind exactly `result.textureSlotCount` (shader signature): fewer would sample an unbound texture.
         for slot in 0..<result.textureSlotCount {
-            // `textureBindings` is the pipeline-builder's *normalized* binding table: it
-            // already rewrites an effect-bind `previous` to the pass's source (the layer
-            // composite feeding this effect). The raw `pass.pass.binds` still carries the
-            // literal `.previous`, which resolves to the black "bootstrap previous" texture
-            // on a target with no prior-frame history (e.g. shine_combine's slot-1 albedo
-            // bound `{name:"previous"}` → whole layer renders black). Prefer the normalized
-            // table first, matching every other dispatch path (`textureBindings[slot] ??
-            // textures[slot] ?? source`).
+            // Prefer `textureBindings` (normalized; rewrites effect-bind `previous` to the pass source). Raw `binds` still has literal `.previous`, which would resolve to the black bootstrap previous on a target with no history.
             let reference = pass.textureBindings[slot]
                 ?? pass.pass.binds[slot]
                 ?? pass.pass.textures[slot]
@@ -671,11 +617,7 @@ struct WPEMetalShaderDispatcher {
             let resolvedReference: WPETextureReference?
             let fallbackToPrimary: Bool
             if let reference {
-                // An AUXILIARY slot that doesn't resolve behaves like an unbound
-                // one rather than killing the scene: authors leave junk in trailing
-                // slots (2955378002 declares a 5th texture named "wegwegwegh"), the
-                // shader never samples it, and Wallpaper Engine renders the scene
-                // fine. Slot 0 stays fatal — that one IS the layer.
+                // Auxiliary slot (slot > 0) miss rebinds primary rather than killing the scene; slot 0 stays fatal.
                 do {
                     texture = try WPEMetalShaderInputs.resolve(
                         reference: reference,
@@ -698,9 +640,7 @@ struct WPEMetalShaderDispatcher {
                     }
                     texture = primary
                     resolvedReference = nil
-                    // Wallpaper Engine's missing auxiliary-slot transform
-                    // fallback is undocumented. Do not infer it from the
-                    // primary texture merely because the Metal slot rebinds it.
+                    // Do not infer the missing auxiliary-slot transform from the primary texture just because the Metal slot rebinds it (WE fallback is undocumented).
                     samplingDescriptor = nil
                     fallbackToPrimary = true
                 }
@@ -720,10 +660,7 @@ struct WPEMetalShaderDispatcher {
                 samplingDescriptor = nil
                 fallbackToPrimary = true
             }
-            // Substituted after the authored resolution, never instead of it: with
-            // no track playing the store returns nil and the slot keeps the
-            // author's baked-in placeholder cover, which is the intended "nothing
-            // is playing" artwork rather than a hole.
+            // Substitute after authored resolution: a nil store keeps the author's placeholder cover ("nothing is playing"), not a hole.
             if let mediaSlots, let mediaTextureStore {
                 texture = mediaTextureStore.substituting(texture, slot: slot, declarations: mediaSlots)
             }
@@ -736,10 +673,7 @@ struct WPEMetalShaderDispatcher {
                 texture: texture,
                 fallbackToPrimary: fallbackToPrimary
             )
-            // Bind the matching per-slot sampler (`wpeSampler<slot>`): address mode
-            // (clamp/repeat) + filter (linear/nearest) come from the texture's TEXI
-            // flags. Tiling maps sampled at time-scrolled UVs (water-normal, noise,
-            // flow) now repeat instead of clamping to a frozen edge.
+            // Per-slot sampler from TEXI flags (clamp/repeat, linear/nearest); time-scrolled tiling maps would freeze at the edge if clamped.
             let resolution = texture.map { WPEMetalTextureMetadataRegistry.shared.resolution(for: $0) }
             let sampler = executor.customShaderSamplerState(resolution: resolution)
             resolvedTexturesBySlot.set(
@@ -787,11 +721,7 @@ struct WPEMetalShaderDispatcher {
         )
         #endif
 
-        // WPE `effects/skew` MODE=1 displaces the quad GEOMETRY in the vertex
-        // stage; the transpiled fragment leaves the UV untouched, so a plain
-        // object quad would drop the effect. Route it through the skew vertex
-        // (object-quad transform + WPE corner displacement) when it uses the
-        // object quad (group/scene target with a layer transform).
+        // `effects/skew` MODE=1 displaces quad geometry in the vertex stage; a plain object quad would drop the effect (transpiled fragment leaves UV untouched).
         let usesSkewVertex = usesObjectQuad && executor.isVertexSkewPass(pass)
         let vertexName: String?
         if usesShapeQuad {
@@ -927,9 +857,7 @@ struct WPEMetalShaderDispatcher {
         encoder.setFragmentTexture(albedoTexture, index: albedoSlot)
         encoder.setFragmentTexture(baseTexture, index: baseSlot)
 
-        // Official godrays_combine.frag: slot 2 is the COPYBG background mixed
-        // UNDER the albedo — it never switches the output to rays-only. The
-        // authored BLENDMODE combo (default 9 = Add) drives the rays blend.
+        // Slot 2 is COPYBG mixed under albedo (never rays-only). BLENDMODE default 9 = Add.
         var uniforms = WPEGodraysCombineUniforms(
             copyBackground: baseReference == nil ? 0 : 1,
             blendMode: Self.sanitizedGodraysBlendMode(pass.comboValues["BLENDMODE"])
@@ -974,10 +902,7 @@ struct WPEMetalShaderDispatcher {
         }
     }
 
-    /// Community packages are untrusted input. Converting a negative or very
-    /// large authored combo directly to `UInt32` traps in Swift before Metal can
-    /// apply its fallback. Official blending modes occupy 0...32; malformed
-    /// values fall back to godrays' authored default (Add = 9).
+    /// Authored combo is untrusted: a negative/huge value converted to `UInt32` would trap. Domain 0...32; else Add = 9.
     static func sanitizedGodraysBlendMode(_ authored: Int?) -> UInt32 {
         let value = authored ?? 9
         guard (0...32).contains(value) else { return 9 }

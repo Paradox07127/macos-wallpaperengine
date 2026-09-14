@@ -1,12 +1,8 @@
 import Foundation
 import Testing
 
-/// `MetalCaptureEnabled` in an Info.plist makes Metal load GPUToolsCapture
-/// into every launch of the shipped app — no Xcode attachment required. Its
-/// per-draw encoder interposition grew the AGX `DataBufferAllocator` arena
-/// without bound (~40-60MB/min resident on a scene wallpaper; caught by
-/// breakpointing `AGX::DataBufferAllocator<45ul>::grow`, ledger §14). Debug
-/// captures use Xcode attach or an `MTL_CAPTURE_ENABLED=1` launch instead.
+/// `MetalCaptureEnabled` in an Info.plist loads GPUToolsCapture into every launch
+/// of the shipped app and grows the AGX `DataBufferAllocator` arena without bound.
 @Suite("Metal capture layer stays out of shipped Info.plists")
 struct MetalCaptureLayerGuardTests {
     @Test("No SKU Info.plist re-enables MetalCaptureEnabled",

@@ -4,9 +4,6 @@ import Foundation
 import LiveWallpaperCore
 import Observation
 
-/// One channel for every terminal Workshop outcome — SteamCMD downloads and
-/// local folder imports both post here, so a single `DownloadToastHost`
-/// renders them with consistent ordering.
 struct WorkshopToastEvent: Equatable, Sendable {
     let token: Int
     let headline: String

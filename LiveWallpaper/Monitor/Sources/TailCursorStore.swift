@@ -9,7 +9,6 @@ struct TailCursorState: Codable, Sendable, Equatable {
 }
 
 struct SessionAggregateState: Codable, Sendable, Equatable {
-    /// The persistence format is count-bounded rather than byte-bounded.
     static let maximumPersistedMetadataUTF8Bytes = 128
 
     var provider: MonitorAgentProvider
@@ -635,7 +634,6 @@ final class TailCursorStore: Sendable {
         )
     }
 
-    /// Applies both age and count budgets to the union of cursor/aggregate keys.
     private static func enforceRetention(
         in payload: inout FilePayload,
         recentAccessedAt: inout [String: Double],

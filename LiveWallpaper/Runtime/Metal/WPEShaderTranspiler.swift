@@ -2,8 +2,6 @@
 import Foundation
 import LiveWallpaperProWPE
 
-/// WPE-flavor GLSL → MSL for the canonical single-pass effect shader.
-/// Unsupported shaders surface as `metalRendererUnsupported`.
 struct WPEShaderTranspiler {
 
     /// ≤256 slots (4 KB) ride `setFragmentBytes`; above that `setFragmentBuffer`.
@@ -11,31 +9,14 @@ struct WPEShaderTranspiler {
     static let uniformSlotMaximum = 1024
     /// Bounds literal varying initializer expansion in the Swift code generator.
     static let varyingElementMaximum = 1024
-    /// Candidate fast paths did not improve the six-run device comparison.
-    /// Keep production on the original math; explicit 0 opts into the experiment.
-    /// Cache identity includes this immutable process setting (1 selects reference).
+    /// Keep production on the original math; explicit 0 opts into the experiment, 1 selects reference.
     static let waterOptimizationsEnabled = ProcessInfo.processInfo.environment["WPE_DIAGNOSTIC_DISABLE_WATER_OPTIMIZATIONS"] == "0"
 
-    /// Ceiling, not an allocation: each shader declares only the slots it needs
-    /// (`textureSlotCount(for:)`), the same way uniforms are sized per shader and merely
-    /// capped by `uniformSlotMaximum`.
-    ///
-    /// 16 is a hard Metal limit, measured on Apple M5 Pro 2026-09-09: a fragment signature
-    /// with 17 sampler arguments fails to compile with "'sampler' attribute parameter is
-    /// out of bounds: must be between 0 and 15". Textures are not the constraint (16 bind
-    /// fine); samplers are, and the generator emits one sampler per slot.
-    ///
-    /// Used only where the count cannot yet be known: validation, `g_TextureN` name
-    /// parsing, and the two passes computed BEFORE translation (premultiplied-input
-    /// detection and `TEX<N>FORMAT` macro emission).
+    /// Ceiling, not an allocation: 16 is Metal's sampler-index maximum (0–15).
+    /// Used only where the count cannot yet be known: validation, `g_TextureN` parsing, and the pre-translation passes.
     static let customTextureSlotLimit = 16
 
-    /// Slots a shader actually occupies: highest declared `g_TextureN` index + 1, and never
-    /// fewer than the sampler count — a sampler whose name is not `g_TextureN` has no
-    /// parsed slot and falls back to its enumeration index, so it occupies one too.
-    ///
-    /// Sparse layouts make count and max-index differ: WPE's stock `chroma4` declares 8
-    /// samplers (0-4, 6, 7, 8) but needs 9 bindings.
+    /// Highest declared `g_TextureN` index + 1, and never fewer than the sampler count (a non-`g_TextureN` sampler occupies its enumeration index).
     static func textureSlotCount(for samplers: [WPESamplerDecl]) -> Int {
         var needed = samplers.count
         if let maxSlot = samplers.compactMap({ textureSlot(for: $0.name) }).max() {
@@ -52,11 +33,7 @@ struct WPEShaderTranspiler {
         premultipliedOutput: Bool = false,
         waterOptimizationsEnabled: Bool = Self.waterOptimizationsEnabled
     ) throws -> WPEShaderTranslationResult {
-        // fluidsimulation fragments read v_TexCoordLeftTop/RightBottom (one-texel
-        // neighbour offsets their .vert derives from g_Texture0Resolution) without
-        // declaring the resolution uniform themselves. Declare it here so the
-        // varying reconstruction has a slot to read — the executor already packs
-        // g_TextureNResolution by name for every declared uniform.
+        // fluidsimulation fragments read neighbour-offset varyings without declaring `g_Texture0Resolution`; inject it so reconstruction has a slot to read.
         var parseSource = preprocessedSource
         if preprocessedSource.contains("v_TexCoordLeftTop"),
            !preprocessedSource.contains("g_Texture0Resolution") {
@@ -123,10 +100,7 @@ struct WPEShaderTranspiler {
             )
         }
         let textureSlotCount = Self.textureSlotCount(for: sortedSamplers)
-        // Sampler wrap (clamp vs repeat) and filter are NOT decided here anymore: every
-        // `g_TextureN.sample` is rewritten to the per-slot runtime sampler `wpeSamplerN`
-        // (`rewriteSamplersToPerSlot`), whose address/filter the executor binds from the
-        // texture's TEXI flags. The old "annotate a sampler as noise → repeatSampler" heuristic is retired — it couldn't see per-texture ClampUVs and missed water-normal/flow maps (waterripple froze).
+        // Sampler wrap/filter are not decided here: every `g_TextureN.sample` is rewritten to per-slot `wpeSamplerN` bound from TEXI flags.
         let body = bodyLines.joined(separator: "\n")
         guard let mainRange = Self.locateMain(in: body) else {
             throw WPEShaderCompilerError.translationFailed(
@@ -158,10 +132,7 @@ struct WPEShaderTranspiler {
             uniforms: uniforms,
             functionDeclarations: preMain + "\n" + postMain
         )
-        // Convert `g_TextureN.sample(linear|repeatSampler, …)` → the per-slot runtime sampler
-        // `wpeSamplerN` in BOTH helper and main bodies BEFORE resource threading, so
-        // `rewriteHelperResourceAccess` sees `wpeSamplerN` in a helper body and wires it into
-        // that helper's signature/call (`samplerStateResources`). Runs after the `linearSampler`-keyed narrowing/LOD rewrites, so those still matched the literal name.
+        // Rewrite to `wpeSamplerN` in helper and main BEFORE resource threading, and after `linearSampler`-keyed narrowing/LOD so those still match the literal name.
         let perSlotHelpers = Self.rewriteSamplersToPerSlot(translatedHelpers)
         let perSlotMain = Self.rewriteSamplersToPerSlot(translatedMain)
         let helperMutableGlobals = extractProgramScopeMutableDeclarations(from: perSlotHelpers)

@@ -3,7 +3,6 @@ import LiveWallpaperCore
 import Testing
 @testable import LiveWallpaper
 
-/// Which GitHub issue form the in-app **Report a Bug** row's Open button uses.
 @Suite("Bug report template selection")
 struct BugReporterTemplateTests {
     @Test("Simplified Chinese is the only language with its own form")
@@ -30,8 +29,6 @@ struct BugReporterTemplateTests {
         }
     }
 
-    /// An explicit language override has to win over the system's: the reporter
-    /// is describing the UI they are looking at, not the one macOS would pick.
     @Test("An explicit override outranks the system localization")
     func explicitPreferenceBeatsSystemLocalization() {
         #expect(
@@ -54,15 +51,12 @@ struct BugReporterTemplateTests {
             BugReporter.issueForm(preference: .system, systemLocalizations: ["zh-Hant", "en"]).templateName
                 == BugReporter.englishTemplateName
         )
-        // No resolved localization at all must not crash into the Chinese form.
         #expect(
             BugReporter.issueForm(preference: .system, systemLocalizations: []).templateName
                 == BugReporter.englishTemplateName
         )
     }
 
-    /// The names are strings in Swift and file names on disk; nothing but this
-    /// keeps them equal. A rename shows up as a GitHub 404 for users only.
     @Test("Both templates exist under .github/ISSUE_TEMPLATE")
     func referencedTemplatesExistOnDisk() {
         for name in [BugReporter.englishTemplateName, BugReporter.simplifiedChineseTemplateName] {
@@ -72,9 +66,6 @@ struct BugReporterTemplateTests {
     }
 }
 
-/// The pre-filled issue body has to be written in the same language as the form
-/// it is pasted into — a Chinese form holding an English outline is the bug this
-/// suite exists to catch.
 @Suite("Bug report body language")
 struct BugReporterBodyLanguageTests {
     private static func snapshot(
@@ -99,10 +90,6 @@ struct BugReporterBodyLanguageTests {
         )
     }
 
-    /// The snapshot leaves the process as a GitHub issue body. A local HTML
-    /// wallpaper's display name can be a full `file:///Users/<name>/...` URL and
-    /// a Workshop title is author-controlled, so the active-wallpapers line has
-    /// to pass the same redaction boundary as the log excerpt above it.
     @Test("Active wallpaper names are scrubbed before they enter the issue body")
     func activeWallpaperNamesAreScrubbed() {
         for form in [BugReporter.IssueForm.english, .simplifiedChinese] {
@@ -150,8 +137,6 @@ struct BugReporterBodyLanguageTests {
         #expect(!body.contains("发生了什么"))
     }
 
-    /// The empty-state and display fragments are interpolated separately from
-    /// the outline, so they can go stale on their own.
     @Test("Empty states follow the form's language too")
     func emptyStatesAreLocalized() {
         let empty = Self.snapshot(displays: [], activeWallpapers: [])
@@ -176,7 +161,6 @@ struct BugReporterBodyLanguageTests {
         }
     }
 
-    /// One decision drives both halves; this is what stops them drifting apart.
     @Test("Form choice drives the template name and the body together")
     func formDrivesTemplateAndBody() {
         let chineseForm = BugReporter.issueForm(preference: .simplifiedChinese, systemLocalizations: ["en"])

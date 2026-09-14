@@ -3,12 +3,9 @@ import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
-/// Grid card for the online browse view.
-/// `Equatable` so a parent state change unrelated to this card — the pager's rate-limit
-/// countdown, another card's selection — cannot re-run its body; without it SwiftUI had no
-/// choice, since the parent hands every card a fresh `onSelect` closure each pass and a closure
-/// never compares equal. Ignoring closures in `==` is safe: they read `@State` through its
-/// storage box, not a snapshot of the parent struct, so a stale one still sees current values.
+/// `Equatable` so unrelated parent state cannot re-run this body — the parent
+/// hands every card a fresh `onSelect` each pass and a closure never compares
+/// equal. Ignoring them in `==` is safe: they read `@State` through its box.
 struct BrowseCard: View, Equatable {
     nonisolated static func == (lhs: BrowseCard, rhs: BrowseCard) -> Bool {
         lhs.item == rhs.item
@@ -23,16 +20,13 @@ struct BrowseCard: View, Equatable {
     var isInLibrary: Bool = false
     var isSelected: Bool = false
     /// Read once per pane and handed down, not six `@AppStorage` per tile — see `GalleryCardPreferences`.
-    /// Passed in, not read from the environment: `EquatableView` short-circuits `body`, so an
-    /// environment value read inside it would go stale — turning on Reduce Motion with the grid
-    /// open would leave every tile animating until something else changed it.
+    /// Passed in, not read from the environment: `EquatableView` short-circuits `body`,
+    /// so an environment value read inside it would go stale.
     let cardPreferences: GalleryCardPreferences
     let reduceMotion: Bool
-    /// SteamCMD readiness, resolved once per pane pass. Deliberately a plain
-    /// `Bool` and not a read of `WorkshopDownloadCoordinator`: observing the
-    /// coordinator here would tie every visible card to the progress ticks of
-    /// whichever download is running, re-rendering the whole grid several times
-    /// a second while the user scrolls.
+    /// SteamCMD readiness, resolved once per pane pass. Deliberately a plain `Bool`,
+    /// not a read of `WorkshopDownloadCoordinator`: observing it here would tie every
+    /// visible card to the progress ticks of whichever download is running.
     var canDownload: Bool = false
     var onSelect: () -> Void = {}
     var onDownload: () -> Void = {}
@@ -47,8 +41,6 @@ struct BrowseCard: View, Equatable {
         cardPreferences.blursMatureThumbnails && item.isMatureRated && !matureRevealed
     }
 
-    /// Hoisted out of the badge overlay so it can decide whether to build the
-    /// container at all — see the comment on that overlay.
     private var showsTypePill: Bool {
         contentType != nil && cardPreferences.showsType
     }
@@ -96,7 +88,6 @@ struct BrowseCard: View, Equatable {
         }
     }
 
-    /// Gated by a one-time 18+ confirmation (remembered across the app once accepted).
     private func requestReveal() {
         if MatureContentSettings.isConfirmed {
             matureRevealed = true
@@ -108,9 +99,8 @@ struct BrowseCard: View, Equatable {
     // MARK: - Thumbnail
 
     /// Every badge is an `overlay`, never a ZStack sibling: `ThumbnailTypeBadge`
-    /// ends in `fixedSize()`, so as a sibling the "Icon and name" style plus a
-    /// rating pill would set an intrinsic width that `aspectRatio(1, .fit)`
-    /// cannot shrink, and the tile would stretch out of square.
+    /// ends in `fixedSize()`, so as a sibling it would set an intrinsic width that
+    /// `aspectRatio(1, .fit)` cannot shrink, and the tile would stretch out of square.
     private var thumbnailArea: some View {
         AnimatedGIFThumbnail(
             url: item.previewImageURL,
@@ -119,12 +109,8 @@ struct BrowseCard: View, Equatable {
             isBlurred: shouldBlur,
             isHovered: $isHovered
         )
-        // Gated on the pills, not just the blur: with both badge preferences off
-        // the `if`s used to sit *inside*, so every card still built the glass
-        // container, its `HStack` and the padding around an empty stack. That
-        // invisible shell metered at 10.4% of a card's construct+layout cost
-        // (`BrowseCardLayoutCostTests`, 2026-09-04) — paid on every scroll-in,
-        // for nothing on screen.
+        // Gated on the pills, not just the blur: inside the `if`s every card would still
+        // build the glass container, its `HStack` and the padding around an empty stack.
         .overlay(alignment: .topLeading) {
             if !shouldBlur, showsTypePill || showsRatingPill {
                 AdaptiveGlassContainer(spacing: DesignTokens.Spacing.xs) {
@@ -173,10 +159,6 @@ struct BrowseCard: View, Equatable {
 
     // MARK: - Footer
 
-    /// Title, plus the status badge on the rare restricted item. Type moved onto
-    /// the thumbnail and the subscriber count is a detail-sheet fact, so the row
-    /// that held them bought a line of card height for something nobody scans a
-    /// grid for.
     private var titleBand: some View {
         ThumbnailTitleBand(title: item.title, isHovering: isHovered) {
             if let status = statusInfo {
@@ -192,7 +174,6 @@ struct BrowseCard: View, Equatable {
         }
     }
 
-    /// Leading type glyph so Scene/Video/Web read the same in the grid.
     private static func typeSymbol(for type: WorkshopContentTypeFilter) -> String {
         switch type {
         case .scene: return "cube.transparent.fill"
@@ -203,18 +184,9 @@ struct BrowseCard: View, Equatable {
 
     // MARK: - Context menu
 
-    /// Only what the browse flow itself needs. Copy link / Copy ID moved to the
-    /// detail sheet: they are "leave the app" actions, and two of the three
-    /// items this menu used to carry already sat in that sheet, so right-clicking
-    /// a card offered nothing a user browsing the grid actually wanted. Download
-    /// is the opposite case — the highest-frequency action on this page, and
-    /// until now it was reachable only by opening the sheet first.
     @ViewBuilder
     private var contextMenuItems: some View {
         Button(action: onDownload) {
-            // Same wording as the detail sheet's button, which does not
-            // distinguish a re-download either — the card already carries an
-            // "In Library" badge for that.
             Label("Download", systemImage: "arrow.down.circle")
         }
         .disabled(!canDownload || item.isBanned)
@@ -258,9 +230,8 @@ struct BrowseCard: View, Equatable {
         return nil
     }
 
-    /// Keyed by Steam's real Resolution tags. The layout buckets name their
-    /// badge; the single-screen buckets read it off the numbers, and the
-    /// Other/Dynamic bucket has nothing to show.
+    /// Keyed by Steam's real Resolution tags. Layout buckets name their badge;
+    /// single-screen buckets derive it from the numbers; Other/Dynamic has none.
     static let knownResolutionLabels: [String: String] = {
         var labels: [String: String] = [:]
         for filter in WorkshopResolutionFilter.allCases {
@@ -279,7 +250,7 @@ struct BrowseCard: View, Equatable {
         return labels
     }()
 
-    /// Derive a label from any embedded "W x H" tag (covers prefixes like "Dual 3840 x 1080").
+    /// Covers prefixes like "Dual 3840 x 1080".
     private static func deriveResolutionLabel(from tag: String) -> String? {
         guard tag.range(of: #"\d+\s*[xX×]\s*\d+"#, options: .regularExpression) != nil else { return nil }
         let nums = tag.split(whereSeparator: { !$0.isNumber }).compactMap { Int($0) }
@@ -297,7 +268,6 @@ struct BrowseCard: View, Equatable {
         return WorkshopByteFormatter.megabytesAndUp.string(fromByteCount: Int64(min(bytes, UInt64(Int64.max))))
     }
 
-    /// Single source for the restricted/banned badge, reused by VoiceOver.
     private var statusInfo: (text: String, tint: Color, symbol: String)? {
         if item.isBanned {
             return (String(localized: "Unavailable", bundle: .appLanguage, comment: "Workshop item removed or hidden on Steam."), DesignTokens.Colors.Status.danger, "xmark.octagon.fill")

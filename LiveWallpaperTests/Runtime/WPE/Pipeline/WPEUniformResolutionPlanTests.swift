@@ -271,7 +271,6 @@ struct WPEUniformResolutionPlanTests {
         return try #require(device.makeTexture(descriptor: descriptor))
     }
 
-    /// Every source the plan can compile to, in one layout.
     private static func coverageLayout() -> [WPEUniformSlot] {
         [
             // frame-global vs a colliding authored key of the same name
@@ -280,7 +279,6 @@ struct WPEUniformResolutionPlanTests {
             WPEUniformSlot(name: "g_ModelMatrix", glslType: "mat4", slot: 1, slotCount: 4),
             // frame-global, camera-scoped
             WPEUniformSlot(name: "g_ViewProjectionMatrix", glslType: "mat4", slot: 5, slotCount: 4),
-            // static authored value
             WPEUniformSlot(name: "u_Static", glslType: "float", slot: 9, slotCount: 1),
             // animated value, re-resolved per frame
             WPEUniformSlot(name: "u_Anim", glslType: "float", slot: 10, slotCount: 1),
@@ -306,7 +304,6 @@ struct WPEUniformResolutionPlanTests {
             WPEUniformSlot(name: "g_Texture5Resolution", glslType: "vec4", slot: 19, slotCount: 1),
             // derived: scene texel size — falls through while sceneSize is degenerate
             WPEUniformSlot(name: "g_TexelSize", glslType: "vec2", slot: 20, slotCount: 1),
-            // nothing matches → slot default
             WPEUniformSlot(
                 name: "u_Missing", glslType: "vec2", slot: 21, slotCount: 1,
                 defaultValue: .vector([0.125, 0.375])
@@ -487,11 +484,8 @@ struct WPEUniformResolutionPlanTests {
         if case .passConstant("u_FromConstants") = firstStep(10) {} else {
             Issue.record("u_FromConstants should compile to a pass-constant step")
         }
-        // A name that is not a frame global emits no frame probe at all, and the
-        // constants entry behind the uniform value stays as a fallback step (a
-        // scripted key can vanish while the key count stays put).
+        // The constants entry behind the uniform value stays as a fallback step: a scripted key can vanish while the key count stays put.
         #expect(plans[3].steps == [.passValue("u_Static"), .passConstant("u_Static")])
-        // Nothing matches → no steps, only the default.
         #expect(plans[15].steps.isEmpty)
         #expect(plans[15].defaultValue == WPESceneShaderConstantValue.vector([0.125, 0.375]))
         #expect(plans[16].steps.isEmpty)
@@ -559,13 +553,11 @@ struct WPEUniformResolutionPlanTests {
         ])
         let layout = [WPEUniformSlot(name: "g_Late", glslType: "float", slot: 0, slotCount: 1)]
 
-        // Frame 1: the script has not written yet → no source, slot default.
         let (before, frame1) = pipeline.addingMetalRuntimeUniforms(Self.runtime, camera: Self.camera)
         executor.frameUniformContext = frame1
         let firstSlots = executor.packTranslatedUniforms(for: before.layers[0].passes[0], layout: layout)
         #expect(firstSlots[0].x == 0)
 
-        // Frame 2: the scripted constant appears, adding a key to the dict.
         let (after, frame2) = pipeline.addingMetalRuntimeUniforms(
             Self.runtime,
             camera: Self.camera,
@@ -578,8 +570,7 @@ struct WPEUniformResolutionPlanTests {
         #expect(executor.uniformPlanCompileCount == 2)
     }
 
-    /// One scripted key vanishing as another appears keeps the dictionary the
-    /// same SIZE, which the old count-only cache identity read as "unchanged".
+    /// One scripted key vanishing as another appears keeps the dictionary the same SIZE.
     private struct SwapFixture {
         let executor: WPEMetalRenderExecutor
         let pipeline: WPEPreparedRenderPipeline
@@ -624,28 +615,25 @@ struct WPEUniformResolutionPlanTests {
         let executor = fixture.executor
         defer { executor.frameUniformContext = .empty }
 
-        // Frame 1: the script writes g_Early → {u_Known, g_Early}.
         let first = Self.swapFrame(fixture, scripted: ["early1": .number(4)])
         executor.frameUniformContext = first.frame
         let firstSlots = executor.packTranslatedUniforms(for: first.pass, layout: fixture.layout)
         #expect(firstSlots[0].x == 4)
         #expect(firstSlots[1].x == 0)
 
-        // Frame 2: g_Early vanishes as g_Late appears. Same key COUNT.
         let second = Self.swapFrame(fixture, scripted: ["late1": .number(6.5)])
         executor.frameUniformContext = second.frame
         #expect(second.pass.uniformValues.count == first.pass.uniformValues.count)
         #expect(second.pass.pass.constants.count == first.pass.pass.constants.count)
 
         let plans = executor.uniformPlans(for: second.pass, layout: fixture.layout)
-        // The vanished key is no longer probed, and the new one now is.
         #expect(plans[0].steps == [.passConstant("g_Early")])
         #expect(plans[1].steps == [.passValue("g_Late")])
         #expect(executor.uniformPlanCompileCount == 2)
 
         let secondSlots = executor.packTranslatedUniforms(for: second.pass, layout: fixture.layout)
-        #expect(secondSlots[0].x == -1)  // g_Early falls back to its raw constant
-        #expect(secondSlots[1].x == 6.5) // the newly scripted key actually lands
+        #expect(secondSlots[0].x == -1)
+        #expect(secondSlots[1].x == 6.5)
     }
 
     @Test("A same-count scripted key substitution rebuilds the lowercase key index")

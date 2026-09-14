@@ -42,9 +42,8 @@ struct WorkshopQueryServiceShellEntryTests {
     }
 }
 
-/// Steam answers a failed query with HTTP 200, a response-level `result`
-/// other than 1 (k_EResultOK) and no page body. Read as an empty page that
-/// would show "no results", be cached, and count the key as accepted.
+/// Steam answers a failed query with HTTP 200, a response-level `result` other than 1 (k_EResultOK)
+/// and no page body.
 @Suite("WorkshopQueryService response-level result")
 struct WorkshopQueryServiceResultFieldTests {
     @Test("A 200 with result 2 is an error, not an empty page; it is neither cached nor an auth success")
@@ -70,9 +69,8 @@ struct WorkshopQueryServiceResultFieldTests {
         #expect(page.totalAvailable == 0)
     }
 
-    /// A missing `publishedfiledetails` is only an empty page when the total
-    /// says there is nothing on this page; a total of 100 on page 1 with no
-    /// list is a broken response, and reading it as empty would cache it.
+    /// A missing `publishedfiledetails` is only an empty page when the total says there is nothing on this
+    /// page; a total of 100 on page 1 with no list is a broken response.
     @Test("A 200 with total 100 and no list is an error, not an empty page; neither cached nor an auth success")
     func missingListWithItemsToShowThrows() async throws {
         let service = WorkshopQueryServiceShellEntryTests.makeService()

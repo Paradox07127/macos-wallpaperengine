@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Badge over artwork, hidden from accessibility by default. Hosting cards must
-/// include its meaning in their label; pass accessibility for a standalone badge.
+/// Hidden from accessibility by default: hosting cards must carry its meaning in
+/// their own label; pass `accessibility` for a standalone badge.
 public struct ThumbnailBadge: View {
     private let systemImage: String?
     private let label: Text?
@@ -12,8 +12,6 @@ public struct ThumbnailBadge: View {
     /// because tracking a mixed-case label just loosens it.
     private var tracking: CGFloat = 0
 
-    /// Localized label. Resolved against the app bundle, like every other shared
-    /// component that renders app copy.
     public init(
         _ title: LocalizedStringKey,
         systemImage: String? = nil,
@@ -46,7 +44,6 @@ public struct ThumbnailBadge: View {
         self.tracking = tracking
     }
 
-    /// Glyph only.
     public init(
         systemImage: String,
         tint: Color = .black,

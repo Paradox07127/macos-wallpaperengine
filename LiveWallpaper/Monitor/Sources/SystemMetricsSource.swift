@@ -1,7 +1,6 @@
 import Darwin
 import Foundation
 
-/// Publishes host CPU, memory, GPU, thermal, network, disk, and power metrics.
 final class SystemMetricsSource: MonitorDataSource, Sendable {
     let sourceID = "system"
 
@@ -12,12 +11,10 @@ final class SystemMetricsSource: MonitorDataSource, Sendable {
         var accessories: Bool = true
         /// SMC temperature/fan reads (CPU/GPU widgets' optional sensor row).
         var sensors: Bool = false
-        /// Per-app disk I/O attribution (rusage deltas inside the top-processes walk; needs the `process-info-rusage` sbpl exception).
+        /// Per-app disk I/O attribution (rusage deltas inside the top-processes walk).
         var processIO: Bool = false
 
-        // Base metric groups, keyed by whether any placed widget reads them.
-        // Default true: the legacy no-widget-info init must keep sampling
-        // everything (fail open — a missing demand must never starve a widget).
+        /// Default true: a missing demand must never starve a widget.
         /// Host CPU ticks, per-core loads, CPU identity, and load averages (CPU widget).
         var cpu: Bool = true
         /// VM stats, breakdown, swap, and pressure (Memory widget).
@@ -103,8 +100,6 @@ final class SystemMetricsSource: MonitorDataSource, Sendable {
     }
 
     #if DEBUG
-    // Test-only introspection: proves the path monitor is demand-gated, not
-    // merely its snapshot dropped.
     var debugNetPathStarted: Bool { netPath.debugIsStarted }
     #endif
 
@@ -130,7 +125,6 @@ final class SystemMetricsSource: MonitorDataSource, Sendable {
 
     // MARK: - Delta bookkeeping + poll loop
 
-    /// Cross-poll state: counters, GPU cadence, HW identity, running Task.
     private actor MetricsState {
         private var task: Task<Void, Never>?
         private var updateCount = 0
@@ -147,7 +141,6 @@ final class SystemMetricsSource: MonitorDataSource, Sendable {
         private var lastTopProcessesSampledAt: Date?
         private var lastANE: SystemMetricsSamplers.ANESample?
         private var lastANESampledAt: Date?
-        /// Lazily opened on the first sensors-enabled tick; caches its SMC connection.
         private var sensorSampler: SensorSampler?
         private var cpuInfo: MonitorCPUInfo?
         private var gpuDeviceName: String?
@@ -193,23 +186,11 @@ final class SystemMetricsSource: MonitorDataSource, Sendable {
             }
         }
 
-        /// Gap between the priming read and the first published tick. Short
-        /// enough that the board fills in about as fast as it used to, long
-        /// enough that the rate metrics divide by a span wide enough to mean
-        /// something.
+        /// Gap between the priming read and the first published tick: long enough that the rate metrics divide by a span wide enough to mean something.
         private static let primeInterval: TimeInterval = 0.5
 
-        /// Reads the counters the rate metrics subtract from, and publishes nothing.
-        ///
-        /// CPU, network and disk each report `available: false` on a tick with
-        /// no previous counters to subtract (`sampleCPU`'s `guard let previous`,
-        /// and the two `prev*` checks in `tick`). A rebuilt pipeline gets a
-        /// fresh source with all three cleared — which is every time an occluded
-        /// board comes back — so the first published tick said "readings
-        /// unavailable" and the real numbers only arrived a full interval later.
-        /// One cheap counter read up front buys a first tick that is already
-        /// real. Absolute metrics (memory, GPU, power) need no baseline and are
-        /// deliberately left out: priming must not pay for the expensive probes.
+        /// Reads the counters the rate metrics subtract from and publishes nothing; without a previous sample the first tick would report unavailable.
+        /// Absolute metrics are left out so priming does not pay for expensive probes.
         private func primeDeltaBaselines(options: Options) {
             if options.cpu {
                 prevCPU = SystemMetricsSamplers.sampleCPU(previous: nil).counters
@@ -256,8 +237,6 @@ final class SystemMetricsSource: MonitorDataSource, Sendable {
             let elapsed = lastSampleTime.map { now.timeIntervalSince($0) } ?? interval
             lastSampleTime = now
 
-            // Base metric groups only run when a placed widget still reads
-            // them: the probe is skipped, not just its result hidden.
             var cpuSample: SystemMetricsSamplers.CPUSample?
             if options.cpu {
                 if cpuInfo == nil {
@@ -327,10 +306,7 @@ final class SystemMetricsSource: MonitorDataSource, Sendable {
                 accessories = read.isEmpty ? nil : read
             }
 
-            // The full process-table walk rivals ANE as the priciest probe, so it
-            // shares ANE's wall-clock cadence pattern instead of running every base
-            // tick. CPU%/IO deltas must divide by the span since the *last walk*,
-            // not the base tick, or skipping would inflate them by the skip factor.
+            // CPU%/IO deltas must divide by the span since the last walk, not the base tick, or skipping would inflate them by the skip factor.
             var topProcesses: [MonitorProcessSample]?
             var topIOProcesses: [MonitorProcessSample]?
             if options.topProcesses || options.processIO {
@@ -350,14 +326,11 @@ final class SystemMetricsSource: MonitorDataSource, Sendable {
                 topIOProcesses = lastTopIOProcesses
             }
 
-            // ANE's per-PID rusage walk is the priciest probe → ≥5s cadence, gated.
             if options.ane, shouldSampleANE(now: now) {
                 lastANE = SystemMetricsSamplers.sampleANE()
                 lastANESampledAt = now
             }
 
-            // SMC temperature/fan speed. The reader caches its connection; a first-tick
-            // sandbox denial makes every sample nil, so the sensor rows stay hidden.
             var sensors: MonitorSensorReadings?
             if options.sensors {
                 if sensorSampler == nil {
@@ -453,7 +426,6 @@ final class SystemMetricsSource: MonitorDataSource, Sendable {
     }
 }
 
-/// GPU sampling is 3× more expensive than the rest, so it runs every Nth poll — matching `SystemMonitor`'s cadence policy but kept local to avoid depending on the Pro package.
 enum MonitoringCadence {
     static func shouldSampleGPU(updateCount: Int, cadence: Int) -> Bool {
         guard cadence > 1, updateCount > 1 else { return true }

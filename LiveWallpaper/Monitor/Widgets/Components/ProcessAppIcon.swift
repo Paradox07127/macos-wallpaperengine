@@ -1,7 +1,6 @@
 import AppKit
 import SwiftUI
 
-/// Small local application identities, shared across process rows and redraws.
 @MainActor
 final class ProcessAppIconCache {
     static let shared = ProcessAppIconCache()

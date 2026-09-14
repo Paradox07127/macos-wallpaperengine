@@ -1,8 +1,8 @@
 import Foundation
 
-/// `SerialExecutor` that runs actor jobs on a `WPERenderThread`. Pairing an actor's
-/// `unownedExecutor` with this makes the actor's isolation domain *be* the render thread
-/// (see SE-0392, custom actor executors). `@unchecked Sendable`: holds only an immutable reference to the (Sendable) render thread; no mutable state of its own.
+/// `SerialExecutor` that runs actor jobs on a `WPERenderThread`; pairing an actor's
+/// `unownedExecutor` with this makes its isolation domain *be* the render thread (SE-0392).
+/// `@unchecked Sendable`: holds only an immutable reference to the (Sendable) render thread.
 final class WPERenderThreadExecutor: SerialExecutor, @unchecked Sendable {
 
     private let thread: WPERenderThread
@@ -12,9 +12,7 @@ final class WPERenderThreadExecutor: SerialExecutor, @unchecked Sendable {
     }
 
     func enqueue(_ job: consuming ExecutorJob) {
-        // A job that never runs traps the runtime, so consumption must be
-        // unconditional. `perform` runs the block on the render thread while it is
-        // live, and inline on the caller after shutdown — either way the job runs.
+        // A job that never runs traps the runtime, so consumption must be unconditional.
         let unowned = UnownedJob(job)
         let executor = asUnownedSerialExecutor()
         thread.perform {
@@ -26,10 +24,6 @@ final class WPERenderThreadExecutor: SerialExecutor, @unchecked Sendable {
         UnownedSerialExecutor(ordinary: self)
     }
 
-    /// Gives `assumeIsolated`/`assertIsolated` teeth: when the runtime can't prove
-    /// isolation via the fast path (e.g. inside a bare CADisplayLink/RunLoop
-    /// callback, where no Swift task executor is active), it falls back here. We
-    /// answer authoritatively by checking real thread identity.
     func checkIsolated() {
         precondition(
             thread.isCurrent,

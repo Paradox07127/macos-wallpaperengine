@@ -6,7 +6,6 @@ import Testing
 
 @testable import LiveWallpaper
 
-/// Frame-global uniforms via `WPEFrameUniformContext` must match the old merge.
 @Suite("WPE frame uniform context")
 struct WPEFrameUniformContextTests {
 
@@ -88,9 +87,8 @@ struct WPEFrameUniformContextTests {
         sceneCamera: .defaultCamera
     )
 
-    /// The OLD `addingMetalRuntimeUniforms` per-pass merge, replicated verbatim
-    /// as the semantic reference: resolve authored → scripted (translated) →
-    /// runtime → camera → object, later inserts winning.
+    /// The OLD `addingMetalRuntimeUniforms` per-pass merge, kept verbatim as the
+    /// semantic reference.
     private static func legacyMergedValues(
         pass: WPEPreparedRenderPass,
         layer: WPERenderLayer,
@@ -118,7 +116,6 @@ struct WPEFrameUniformContextTests {
         WPEUniformSlot(name: name, glslType: type, slot: index, slotCount: slotCount)
     }
 
-    /// A 0→1 scalar keyframe animation (60 frames @ 30 fps, single-shot).
     private static func makeAnimatedConstant() -> WPESceneShaderConstantValue? {
         let raw: [String: Any] = [
             "value": 0.0,
@@ -142,8 +139,6 @@ struct WPEFrameUniformContextTests {
 
         let animatedValue = try #require(Self.makeAnimatedConstant())
 
-        // 1. Pure static; 2. animated value; 3. scripted override;
-        // 4. authored key colliding with a runtime key (g_Time).
         let (staticRaw, staticPass) = Self.makePass(
             id: "static.0",
             uniformValues: ["u_Static": .number(3.25), "g_Color": .vector([0.5, 0.25, 1, 1])]
@@ -202,9 +197,8 @@ struct WPEFrameUniformContextTests {
             }
         }
 
-        // Reference: a pass whose dict IS the legacy merge, packed by the SAME
-        // per-pass packer with no frame context — identical packing logic, old
-        // merge precedence.
+        // Reference: the legacy merged dict through the SAME per-pass packer with no
+        // frame context.
         executor.frameUniformContext = .empty
         let originals: [(WPEPreparedRenderPass, Int)] = [
             (staticPass, 0), (animatedPass, 0), (scriptedPass, 1), (collidingPass, 1)
@@ -272,7 +266,6 @@ struct WPEFrameUniformContextTests {
             for: prepared.layers[0].passes[0],
             layout: [Self.slot("g_Time", 0)]
         )
-        // Old merge inserted runtime last → runtime time (1.5) always won.
         #expect(slots[0].x == 1.5)
     }
 
@@ -405,10 +398,9 @@ struct WPEFrameUniformContextTests {
         ])
         let (prepared, _) = pipeline.addingMetalRuntimeUniforms(Self.runtime, camera: Self.camera)
 
-        // Static pass: identical structure, no frame-global keys leaked in.
         #expect(prepared.layers[0].passes[0] == staticPass)
         #expect(prepared.layers[0].passes[0].uniformValues["g_Time"] == nil)
-        // Animated pass: value re-resolved at the frame time (not the seed).
+        // The `!= 0` rules out resolving at the seed time instead of the frame time.
         #expect(
             prepared.layers[0].passes[1].uniformValues["u_Anim"]
                 == animatedValue.resolved(at: Self.runtime.time)
@@ -436,7 +428,6 @@ struct WPEFrameUniformContextTests {
             frame: frame,
             default: 1
         )
-        // Old merge: runtime g_Brightness (0.8) was always present and won.
         #expect(value == 0.8)
         // Control: without the frame context the authored value wins — proving
         // the frame parameter is what carries the precedence.

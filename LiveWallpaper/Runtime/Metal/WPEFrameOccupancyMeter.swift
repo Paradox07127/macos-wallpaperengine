@@ -3,11 +3,6 @@ import Foundation
 import LiveWallpaperCore
 import os
 
-/// Opt-in via `WPEFrameOccupancyLog`. Disabled cost is one cached bool check.
-/// Counts GPU-object creations (command buffers, encoders, transient
-/// allocations) and JSC boundary crossings across all displays; logs 10-second
-/// window totals plus per-second rates. No per-frame attribution: two displays
-/// share one meter, so per-frame semantics do not hold.
 enum WPEFrameOccupancyMeter {
     static let isEnabled: Bool = {
         // XCTest hosts `appSuite` as the real `com.loomscreen.pro` domain, so a
@@ -110,7 +105,6 @@ enum WPEFrameOccupancyMeter {
         }
     }
 
-    /// Test-only read of the current window's counts, indexed by `Kind.rawValue`.
     static func countsForTesting() -> [Int] {
         state.withLock { $0.counts }
     }

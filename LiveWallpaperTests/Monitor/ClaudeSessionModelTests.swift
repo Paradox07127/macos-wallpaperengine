@@ -104,11 +104,6 @@ struct ClaudeSessionModelTests {
         #expect(model.status(now: farLater, processAlive: false) == .ended)
     }
 
-    /// Superseded 2026-08-09: an outstanding tool used to decay to `.idle` once
-    /// the transcript went quiet for 180 s. Real tools run far longer than that
-    /// without writing a line, so an unfinished call now stays `.running` while
-    /// the process lives, and the 5-minute `stale` warning flags the suspicious
-    /// ones. A session with nothing outstanding still goes idle.
     @Test("A tool result still awaits the model while its process is alive")
     func silentModelResponseRemainsRunning() {
         var model = ClaudeSessionModel(sessionId: "s1")
@@ -175,7 +170,6 @@ struct ClaudeSessionModelTests {
     func tokenAggregationSaturatesOnOverflow() {
         var model = ClaudeSessionModel(sessionId: "s1")
         let now = Self.base
-        // Untrusted transcript JSON; a crafted or corrupted usage field must not crash ingest.
         let huge: [String: Any] = [
             "type": "assistant", "isSidechain": false, "timestamp": iso(now),
             "sessionId": "s1", "cwd": "/Users/me/proj",

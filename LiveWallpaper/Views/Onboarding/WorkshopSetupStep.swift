@@ -2,8 +2,6 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// Optional Workshop setup grouped by capability. Continue remains available
-/// regardless of setup state; missing shared assets can leave scene layers invisible.
 struct OnboardingWorkshopSetupView: View {
     @Environment(WorkshopServices.self) private var services
     @Environment(SteamCMDDoctorService.self) private var doctor
@@ -39,9 +37,8 @@ struct OnboardingWorkshopSetupView: View {
                     .fill(DesignTokens.Colors.surfaceRaised)
             )
 
-            // Both slots: the scene-resources preflight writes its own, and
-            // rendering only the connection one left a failed download looking
-            // like a click that never happened.
+            // Both slots: the scene-resources preflight writes its own, and rendering only the
+            // connection one would leave a failed download looking like a click that did nothing.
             if let message = controller.setupError ?? controller.engineAssetsError {
                 Label(message, systemImage: "exclamationmark.triangle.fill")
                     .font(DesignTokens.Typography.caption)
@@ -49,8 +46,6 @@ struct OnboardingWorkshopSetupView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            // The settings page lists these statements as a section; onboarding
-            // cannot reach Settings, so the same words get a presenter here.
             Button { showingPrivacy = true } label: {
                 Label {
                     Text("Privacy & terms")
@@ -120,10 +115,8 @@ struct OnboardingWorkshopSetupView: View {
             info: "Required to download Workshop wallpapers. Install SteamCMD or use an existing installation."
         ) {
             WorkshopSetupRoutes(
-                // "Change" points at a different SteamCMD; it must NOT open the
-                // install sheet, whose primary action downloads a second managed
-                // copy and displaces the Homebrew or hand-picked one already in
-                // use. Same split as the settings page.
+                // "Change" must NOT open the install sheet: its primary action downloads a second managed
+                // copy, displacing the one already in use. Same split as the settings page.
                 primary: doctor.isBinaryPresumedReady
                     ? WorkshopSetupRoute(id: "steamcmd.change", title: "Change") {
                         Task { await controller.pickBinaryManually() }
@@ -199,8 +192,6 @@ struct OnboardingWorkshopSetupView: View {
         ]
     }
 
-    /// A chooser is a menu, so switching accounts stays one even here; signing
-    /// in to a new one is the button beside it.
     @ViewBuilder
     private var accountControl: some View {
         HStack(spacing: DesignTokens.Spacing.xs) {
@@ -288,8 +279,6 @@ struct OnboardingWorkshopSetupView: View {
             return controller.engineAssets.engineRootDisplayName
                 ?? String(localized: "Ready", bundle: .appLanguage, comment: "Onboarding engine-assets step detail when the assets are available.")
         }
-        // The blocked reason belongs on the line, not only in the disabled
-        // button's tooltip: a dimmed control is exactly what a pointer skips.
         if let reason = controller.engineAssetsDownloadBlockReason {
             return reason
         }
@@ -298,8 +287,6 @@ struct OnboardingWorkshopSetupView: View {
 
     // MARK: - Steam Web API key
 
-    /// Last, and without a group badge: this one is genuinely optional, and a
-    /// "Not set" seal beside it read as a third thing left undone.
     @ViewBuilder
     private var apiKeyGroup: some View {
         TreeGroupHeader(title: "Steam Web API key", state: apiKeyState, isOptional: true)
@@ -329,7 +316,6 @@ struct OnboardingWorkshopSetupView: View {
 
     private var apiKeyDetail: String? {
         guard services.hasWebAPIKey else { return nil }
-        // Match the detail to the rejection badge.
         if services.apiKeyRejected {
             return String(localized: "Steam rejected this key — paste a new one", bundle: .appLanguage, comment: "Workshop setup status when Valve rejected the stored Steam Web API key.")
         }
@@ -339,13 +325,9 @@ struct OnboardingWorkshopSetupView: View {
 
 // MARK: - Tree furniture
 
-/// Capability name + one status badge. The badge lives here rather than on the
-/// rows: a group is done when its capability works, however many paths lead in.
 private struct TreeGroupHeader: View {
     let title: LocalizedStringKey
     let state: WorkshopStepState
-    /// Optional groups say so instead of showing "Not set", which reads as a
-    /// chore left undone.
     var isOptional = false
 
     var body: some View {
@@ -366,7 +348,6 @@ private struct TreeGroupHeader: View {
     }
 }
 
-/// One setup step inside a group: connector, icon, title/detail, control.
 /// Compact on purpose — five of these plus three headers share a 540pt window.
 private struct TreeRow<Control: View>: View {
     let isLast: Bool
@@ -375,9 +356,7 @@ private struct TreeRow<Control: View>: View {
     let detail: String?
     /// The probe's reason for an attention state.
     var attention: String?
-    /// Set on rows that carry their own signal. The group header answers "does
-    /// this capability work"; a row badge answers "is this step done", which
-    /// only differs where a group has several ordered steps.
+    /// Set only on rows that carry their own signal; otherwise the group header answers.
     var state: WorkshopStepState?
     var info: String.LocalizationValue?
     @ViewBuilder let control: () -> Control
@@ -429,8 +408,7 @@ private struct TreeRow<Control: View>: View {
     }
 }
 
-/// File-tree guide: a vertical rail with a stub into the row. `isLast` ends the
-/// rail at the stub (└) instead of running through (├).
+/// `isLast` ends the rail at the stub (└) instead of running through (├).
 private struct TreeConnector: View {
     let isLast: Bool
 

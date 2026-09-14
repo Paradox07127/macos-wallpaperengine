@@ -117,7 +117,6 @@ private struct StorageSegmentedBar: View {
     }
 }
 
-/// Storage dashboard metric tile.
 struct StorageDashboardTile<Value: View, Actions: View>: View {
     let title: LocalizedStringKey
     let systemImage: String
@@ -194,7 +193,6 @@ struct StorageDashboardTile<Value: View, Actions: View>: View {
     }
 }
 
-/// Trailing ⓘ popover for section detail.
 struct StorageInfoButton<Content: View>: View {
     @ViewBuilder var content: () -> Content
     @State private var isPresented = false

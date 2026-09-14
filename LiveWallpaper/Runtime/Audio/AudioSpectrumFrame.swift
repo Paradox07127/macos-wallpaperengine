@@ -1,6 +1,5 @@
 import Foundation
 
-/// Stereo 64-bin spectrum frame; public init guarantees finite 0...1 and fixed lengths.
 struct AudioSpectrumFrame: Equatable, Sendable {
     static let binCount = 64
 
@@ -50,7 +49,6 @@ struct AudioSpectrumFrame: Equatable, Sendable {
         return normalized
     }
 
-    /// Non-finite → 0; finite clamped to 0...1.
     static func clamp(_ value: Float) -> Float {
         guard value.isFinite else { return 0 }
         return min(max(value, 0), 1)

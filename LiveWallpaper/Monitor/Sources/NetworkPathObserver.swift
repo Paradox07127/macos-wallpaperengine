@@ -2,7 +2,6 @@ import Foundation
 import Network
 import os
 
-/// A single long-lived `NWPathMonitor` on its own queue.
 final class NetworkPathObserver: Sendable {
     struct Snapshot: Sendable, Equatable {
         var path: MonitorNetworkPath
@@ -44,7 +43,6 @@ final class NetworkPathObserver: Sendable {
     }
 
     #if DEBUG
-    // Test-only introspection; no production reader.
     var debugIsStarted: Bool {
         started.withLock { $0 }
     }

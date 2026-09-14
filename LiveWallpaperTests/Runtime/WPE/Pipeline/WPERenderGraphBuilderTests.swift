@@ -1269,11 +1269,6 @@ struct WPERenderGraphBuilderTests {
         #expect(visibleLayer.passes.last?.target == .scene)
     }
 
-    // 2955378002 seeds 143 calendar sprites `visible:false` and reveals
-    // today's cell from each sprite's own script. Pruning them left the
-    // runtime fix for return-value visibility with nothing to show. Measured
-    // cost of keeping them: 94 MB of layer composites (they all author a
-    // `size`), not the scene-sized fallback.
     @Test("A hidden object with its own visible script stays in the graph")
     func hiddenObjectWithOwnVisibleScriptStaysInGraph() throws {
         let root = FileManager.default.temporaryDirectory
@@ -1310,12 +1305,6 @@ struct WPERenderGraphBuilderTests {
                 "a script-revealable layer must build (drawn hidden until the script shows it)")
     }
 
-    // 3151551777's triangle-date (obj 118, array index 74) authors
-    // `dependencies: [114]` for a blend effect that is `visible: false` and
-    // never builds into the graph. The unconditional dependency edge still
-    // reordered producer 114 (the weekday text, array index 76) BEFORE the
-    // triangle, so the triangle drew after and covered it. A dependency edge
-    // is only real when some graph-built effect can actually sample it.
     @Test("A dependency with only invisible effects keeps authored paint order")
     func ghostDependencyWithInvisibleEffectKeepsPaintOrder() throws {
         let root = FileManager.default.temporaryDirectory
@@ -1381,7 +1370,7 @@ struct WPERenderGraphBuilderTests {
         let document = try WPESceneDocumentParser.parse(data: sceneData)
         let graph = try WPERenderGraphBuilder(cacheRootURL: root).build(document: document)
 
-        // Authored order: triangle first, weekday second — weekday paints on top.
+        // Later in the layer order paints on top.
         #expect(graph.layers.map(\.objectID) == ["118", "114"])
     }
 
@@ -2621,9 +2610,7 @@ struct WPERenderGraphBuilderTests {
 
     // MARK: - Script-gated hidden effects (scene 3151551777 day/night self-lock)
 
-    /// Writes the shared asset tree the gated-effect tests build against: one image
-    /// layer material plus a non-workshop effect, so the scene-composite assertions
-    /// exercise the GATE rule rather than the pre-existing `workshop/` rule.
+    /// The effect must stay non-workshop, or the assertions pass via the `workshop/` rule instead of the GATE rule.
     private func writeGatedEffectAssets(root: URL) throws {
         try writeJSON(["material": "materials/layer.json"], to: root.appendingPathComponent("models/layer.json"))
         try writeJSON([
@@ -2705,8 +2692,6 @@ struct WPERenderGraphBuilderTests {
         let graph = try WPERenderGraphBuilder(cacheRootURL: root).build(document: document)
         let layer = try #require(graph.layers.first)
 
-        // The effect pass is present, gated, and still carries the constant script
-        // that PRODUCES the value the gate reads — the whole point of keeping it.
         #expect(layer.passes.map(\.shader) == ["genericimage2", "effects/lut", "materials/util/copy.json"])
         try #require(layer.passes.count == 3)
         let effectPass = layer.passes[1]
@@ -3250,7 +3235,6 @@ struct WPECanonicalCompositeRotationTests {
         #expect(optimized.passes[1].materialUniformNames == original.passes[1].materialUniformNames)
         #expect(optimized.graphLayer.passes == optimized.passes.map(\.pass))
         #expect(result.pipeline.layers[1] == consumer)
-        // A second pass over the transformed graph must not infer another copy.
         #expect(WPERenderGraphBuilder.rotatingCanonicalCompositeOutputs(in: result.pipeline, sceneHDR: true).decisions.isEmpty)
     }
 
@@ -3390,8 +3374,7 @@ struct WPEFullFramePassthroughElisionTests {
         )
     }
 
-    /// passthrough → A; effect A → B (raw `bind: previous`); effect B → A (first rewrite of A);
-    /// effect A → B (must keep reading the rewritten A); copy B → scene.
+    /// The last effect pass must keep reading the A that the pass before it rewrote.
     private func chain(id: String = "post", passthroughTarget: String? = nil) -> [WPEPreparedRenderPass] {
         let names = WPERenderTargetNames.ImageLayerComposite.make(objectID: id)
         let first = passthroughTarget ?? names.a
@@ -3434,7 +3417,6 @@ struct WPEFullFramePassthroughElisionTests {
         #expect(rewritten.comboValues == original.passes[1].comboValues)
         #expect(rewritten.uniformValues == original.passes[1].uniformValues)
         #expect(rewritten.materialUniformNames == original.passes[1].materialUniformNames)
-        // The first rewrite of the passthrough composite and everything after it are untouched.
         #expect(Array(optimized.passes.dropFirst()) == Array(original.passes.dropFirst(2)))
         #expect(optimized.passes[2].pass.source == .fbo(first))
         #expect(result.pipeline.layers[1] == consumer)
@@ -3493,7 +3475,6 @@ struct WPEFullFramePassthroughElisionTests {
             )
             try write(["passes": [["material": "materials/opacity.json"]]], "effects/opacity.json")
             try write(["passes": [["shader": "effects/opacity"]]], "materials/opacity.json")
-            // A dependent consumer keeps the canonical A copy (the rotation candidate).
             let names = WPERenderTargetNames.ImageLayerComposite.make(objectID: "41")
             try write(["material": "materials/consumer.json"], "models/consumer.json")
             try write(["passes": [["shader": "genericimage2", "textures": [names.a]]]], "materials/consumer.json")
@@ -3517,13 +3498,11 @@ struct WPEFullFramePassthroughElisionTests {
             )
             #expect(off.pipeline == baseline)
             #expect(off.fullFramePassthroughElision == WPEFullFramePassthroughElisionReport(enabled: false, decisions: [:]))
-            // Without rotation the passthrough composite is the public A the consumer samples.
             let unrotated = try builder.buildReportingCanonicalRotation(
                 graph: graph, canonicalCompositeRotationEnabled: false, sceneHDR: true, fullFramePassthroughElisionEnabled: true
             )
             #expect(unrotated.pipeline == baseline)
             #expect(unrotated.fullFramePassthroughElision.decisions == ["41": "external-private-composite-access"])
-            // After rotation the passthrough composite is the private `_b`; its single reader is rewritten.
             let rotated = try builder.buildReportingCanonicalRotation(
                 graph: graph, canonicalCompositeRotationEnabled: true, sceneHDR: true, fullFramePassthroughElisionEnabled: true
             )

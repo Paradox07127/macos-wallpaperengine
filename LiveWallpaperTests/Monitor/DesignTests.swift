@@ -20,9 +20,6 @@ struct DesignTests {
         #expect(colorEq(Design.loadBandColor(0.95), Design.signalCoral))
     }
 
-    /// The ring and the header dot are the two elements a user compares at a
-    /// glance; before `Design.Load` they banded at 0.8/0.4 and 0.85/0.60, so a
-    /// reading of 0.81 drew a red ring beside an amber dot.
     @Test("Ring and state dot change band at exactly the same readings")
     func loadBandsAgreeAcrossElements() {
         for fraction in stride(from: 0.0, through: 1.0, by: 0.01) {

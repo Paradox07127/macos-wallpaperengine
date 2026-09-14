@@ -57,7 +57,6 @@ final class PlayerHostView: NSView {
         case .forceSDR:    space = nil
         }
         // AVPlayerLayer has no typed colorspace; KVC hits CALayer.colorspace.
-        // EDR is reconciled separately by WallpaperVideoPlayer (not here).
         if let space {
             playerLayer.setValue(space, forKey: "colorspace")
         } else {
@@ -80,8 +79,6 @@ final class PlayerHostView: NSView {
 
 // MARK: - VideoContainerView
 
-/// Hosts the video layer. Particle weather effects now use the common
-/// per-display environment overlay so every renderer shares the same layer.
 final class VideoContainerView: NSView {
 
     // MARK: - Subviews
@@ -90,10 +87,7 @@ final class VideoContainerView: NSView {
     private let particleOverlayView: ParticleOverlayView
     private var currentPlayer: AVPlayer?
     private var spanRenderConfiguration: VideoSpanRenderConfiguration?
-    /// Deep hibernation releases the AVPlayer, which blanks the player layer;
-    /// this holds the last decoded frame so an occluded desktop that is asked to
-    /// redraw does not go black. A subview rather than a bare sublayer so its
-    /// z-order above the player host is owned by AppKit.
+    /// Holds the last decoded frame after hibernation blanks the player layer so an occluded desktop redraw does not go black. A subview, not a sublayer, so AppKit owns z-order above the player host.
     private let stillFrameView: StillFrameHostView
     private var stillFrameReadinessCancellable: AnyCancellable?
     private var stillFrameDeadline: DispatchWorkItem?
@@ -185,10 +179,7 @@ final class VideoContainerView: NSView {
         needsLayout = true
     }
 
-    /// Hard bound on how long the still frame may outlive the start of a wake. Two rebuild failures
-    /// strand it otherwise: a load that bails before `clearStillFrameWhenPlayerIsReady` is ever
-    /// called (unplayable asset, vanished volume), and a rebuilt item whose layer never reports
-    /// `isReadyForDisplay` — both leave the desktop frozen on a fake frame.
+    /// Hard bound on how long the still frame may outlive wake start. A load that never reaches `clearStillFrameWhenPlayerIsReady`, or a layer that never reports `isReadyForDisplay`, would otherwise freeze the desktop on a fake frame.
     func clearStillFrameNoLaterThan(_ seconds: TimeInterval) {
         guard isShowingStillFrame else { return }
         cancelStillFrameDeadline()
@@ -240,9 +231,7 @@ final class VideoContainerView: NSView {
     }
 
     func setParticleEffectsSuspended(_ suspended: Bool) {
-        // Runtime gate only, and it draws nothing either way: this overlay is never added as
-        // a subview (see `init`), it just mirrors player state across a handoff. Reduce Motion
-        // is handled where the particles are actually rendered, in `EnvironmentOverlayController`.
+        // Runtime gate only — this overlay is never a subview (see `init`); it just mirrors player state across a handoff. Reduce Motion is handled in `EnvironmentOverlayController`.
         particleOverlayView.setSuspended(suspended, for: .runtime)
     }
 
@@ -283,7 +272,6 @@ final class VideoContainerView: NSView {
 
 // MARK: - StillFrameHostView
 
-/// Layer-hosted CGImage holder for the hibernation still frame.
 private final class StillFrameHostView: NSView {
 
     override init(frame frameRect: NSRect) {

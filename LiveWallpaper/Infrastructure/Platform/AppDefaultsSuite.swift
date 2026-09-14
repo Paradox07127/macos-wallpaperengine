@@ -1,10 +1,6 @@
 import Foundation
 
 extension UserDefaults {
-    /// The app's writable preference store. Shipping processes keep the native
-    /// `.standard` domain; XCTest hosts and SwiftUI previews get isolated suites
-    /// so view-level `@AppStorage` and service defaults cannot touch the user's
-    /// preferences.
     static func appScoped() -> UserDefaults {
         if ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1" {
             return UserDefaults(suiteName: "com.loomscreen.pro.Previews") ?? .standard

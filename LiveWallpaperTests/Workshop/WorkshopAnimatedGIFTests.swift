@@ -118,7 +118,6 @@ struct WorkshopAnimatedGIFDecodeTests {
     @Test("The installed preview path decodes off the main thread, not in updateNSView")
     func installedPreviewDecodesOffMain() throws {
         let source = try RepositoryRoot.source("LiveWallpaper/Views/ScreenDetail/ScenePreview.swift")
-        // The whole point of the decoded cache: a hit must not re-decode.
         #expect(source.contains("NSCache<NSString, WPEPreviewDecodedImage>"))
         #expect(!source.contains("func setImage(data:"))
         #expect(source.contains("kCGImageSourceShouldCacheImmediately: true"))
@@ -126,10 +125,8 @@ struct WorkshopAnimatedGIFDecodeTests {
 
     @Test("A preview regenerated at the same path is not served from the cache")
     func previewCacheKeyCarriesModificationDate() throws {
-        // A Workshop update rewrites `preview.jpg` in place. Keyed by URL alone,
-        // the 256-entry decoded cache hands back the pre-update pixels for the
-        // rest of the session — nothing else on this path invalidates it, and
-        // `loadAttempt` only advances when the reader taps the retry badge.
+        // A Workshop update rewrites `preview.jpg` in place, so a URL-only key would serve
+        // the pre-update pixels for the rest of the session.
         let source = try RepositoryRoot.source("LiveWallpaper/Views/ScreenDetail/ScenePreview.swift")
         #expect(source.contains("contentModificationDateKey"))
         #expect(!source.contains(#""\(previewSize.maxPixelSize)|\(url.absoluteString)""#))
@@ -141,8 +138,6 @@ struct WorkshopAnimatedGIFDecodeTests {
 
     @Test("The pane tier decodes larger than the tile tier")
     func paneDecodesLargerThanTile() throws {
-        // The detail pane takes `aspectRatio: nil` and fills the window; capping
-        // it at the tile size would upscale a poster that used to be sharp.
         let data = GIFTestFixtures.gif(width: 2400, height: 1200, frameCount: 2, delay: 0.1)
         let tile = try #require(WPEPreviewDecodedImage.decode(data, maxPixelSize: WPEPreviewSize.tile.maxPixelSize))
         let pane = try #require(WPEPreviewDecodedImage.decode(data, maxPixelSize: WPEPreviewSize.pane.maxPixelSize))
@@ -152,9 +147,8 @@ struct WorkshopAnimatedGIFDecodeTests {
 
     @Test("The animation budget is priced against decoded frames, not the source")
     func animationBudgetFollowsDecodedSize() throws {
-        // 1920×1080 × 20 frames is ~166 MB of source-sized RGBA, over the 96 MB
-        // budget — so this used to fall back to a still even though the frames
-        // playback decodes are capped at 800 px (~23 MB for all twenty).
+        // 1920x1080 x 20 frames is ~166 MB of source-sized RGBA, over the 96 MB budget,
+        // while the capped 800 px playback frames are ~23 MB for all twenty.
         let data = GIFTestFixtures.gif(width: 1920, height: 1080, frameCount: 20, delay: 0.1)
         #expect(!WPEPreviewImageDecodeBudget.isWithinPixelBudget(width: 1920, height: 1080, frameCount: 20))
 
@@ -168,9 +162,8 @@ struct WorkshopAnimatedGIFDecodeTests {
         let source = try RepositoryRoot.source(
             "LiveWallpaper/Infrastructure/Workshop/WorkshopPreviewImageLoader.swift"
         )
-        // A cancelled load finishes after its replacement has been registered.
-        // Removing by key alone unregistered the live one, which then could not
-        // be cancelled and made the next tile re-download the same bytes.
+        // A cancelled load finishes after its replacement has been registered,
+        // so removing by key alone would unregister the live one.
         #expect(source.contains("guard assetInflight[cacheKey] === load else { return }"))
         #expect(!source.contains("defer { self?.assetInflight.removeValue(forKey: cacheKey) }"))
         #expect(source.contains("private func dropWaiter(_ load: InflightLoad, forKey cacheKey: String)"))
@@ -186,7 +179,6 @@ struct WorkshopAnimatedGIFDecodeTests {
         // The key carries the decode size, or the grid's small poster would be
         // served to the detail hero (and vice versa).
         #expect(source.contains(#"let cacheKey = "\(size.rawValue)|\(url.absoluteString)""#))
-        // Abandoned tiles must stop their download, not run it to completion.
         #expect(source.contains("load.task.cancel()"))
         #expect(source.contains("PreviewWorkGate.shared.run"))
         #expect(source.contains("assetCache.countLimit = Self.cacheCountLimit"))
@@ -299,11 +291,8 @@ struct ThumbnailPlaybackGateTests {
         #expect(!gate.allowsPlayback)
     }
 
-    /// The Browse detail hero is `.autoPlay` inside an inspector that stays
-    /// MOUNTED when collapsed (`isMounted: true`, so the heavy subtree is not
-    /// rebuilt on every toggle). `onDisappear` therefore never fires and
-    /// `isVisible` stays true — hiding the panel left the decoder running in a
-    /// zero-width container.
+    /// The inspector stays mounted when collapsed, so `onDisappear` never fires
+    /// and `isVisible` stays true.
     @Test("A mounted-but-hidden host stops playback even though the view never disappeared")
     func hiddenHostStopsAutoPlay() {
         var gate = ThumbnailPlaybackGate(

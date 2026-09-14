@@ -1,8 +1,6 @@
 import CoreGraphics
 import Foundation
 
-/// Stores a user-selected display order for the settings sidebar without
-/// changing the system display order used by wallpaper rendering.
 enum SidebarDisplayOrder {
     static let preferencesKey = "loomscreen.sidebar.displayOrder.v1"
 
@@ -20,10 +18,7 @@ enum SidebarDisplayOrder {
         }
     }
 
-    /// Re-key one display's saved entry when its fingerprint format changes. Matching needs the display ID
-    /// too: two identical serial-0 panels shared one legacy fingerprint, so the fingerprint alone cannot
-    /// say whose entry this is. Entries whose ID also changed keep their stale key and fall back to system
-    /// order, exactly as they did before this ran.
+    /// Match on display ID plus fingerprint: identical serial-0 panels shared one legacy fingerprint.
     static func rekeyed(
         _ entries: [Entry],
         displayID: CGDirectDisplayID,
@@ -45,8 +40,6 @@ enum SidebarDisplayOrder {
         (try? JSONEncoder().encode(entries)) ?? Data()
     }
 
-    /// Applies the saved sidebar order, using a unique fingerprint when macOS changes a display ID.
-    /// Unsaved displays retain system order at the end.
     static func orderedDisplayIDs(from available: [Entry], storedOrder: [Entry]) -> [CGDirectDisplayID] {
         var remaining = available
         var ordered = [Entry]()
@@ -58,10 +51,7 @@ enum SidebarDisplayOrder {
                 candidate.displayID == storedEntry.displayID
                     && candidate.fingerprint == storedEntry.fingerprint
             }
-            // A fingerprint fallback is truthful only when it identifies one
-            // row on both sides. Counts come from the original collections so
-            // removing an exact match cannot make an ambiguous group appear
-            // unique later in the loop.
+            // Fingerprint fallback is truthful only when it identifies one row on both sides; count from the original collections.
             let canUseFingerprintFallback = !isUnknownFingerprint(storedEntry.fingerprint)
                 && availableFingerprintCounts[storedEntry.fingerprint] == 1
                 && storedFingerprintCounts[storedEntry.fingerprint] == 1

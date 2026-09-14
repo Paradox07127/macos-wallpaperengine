@@ -227,10 +227,8 @@ struct MonitorBoardConfigurationTests {
     func emptyObjectDecodesToDefaults() throws {
         let decoded = try JSONDecoder().decode(MonitorBoardConfiguration.self, from: Data("{}".utf8))
 
-        // Compare field-by-field rather than via `==`: `MonitorWidgetPlacement.id`
-        // is a fresh random UUID per construction, so two independently built
-        // default boards are never Equatable-equal even though every other
-        // field matches.
+        // Not `==`: `MonitorWidgetPlacement.id` is a fresh UUID per construction, so two
+        // independently built default boards are never Equatable-equal.
         #expect(decoded.schemaVersion == MonitorBoardConfiguration.default.schemaVersion)
         #expect(decoded.refreshHz == MonitorBoardConfiguration.default.refreshHz)
         #expect(decoded.mouseInteractionEnabled == MonitorBoardConfiguration.default.mouseInteractionEnabled)
@@ -321,10 +319,6 @@ struct MonitorBoardConfigurationTests {
 
     // MARK: - packedPlacements geometry invariants
 
-    /// Mirrors `MonitorBoardConfiguration.packedPlacements`' own math so tests
-    /// assert against a reference derived from the shipped cell pitch rather
-    /// than hardcoded floats that would silently drift from the production
-    /// formula.
     private struct ReferenceAABB {
         let x: Double
         let y: Double
@@ -384,14 +378,12 @@ struct MonitorBoardConfigurationTests {
 
     @Test("A full row wraps: within a row y is shared and x runs left→right")
     func packedPlacementsWrapRows() {
-        // 7 mediums (14 cols) exceed the reference board's column count on any
-        // plausible pitch, so at least one wrap is guaranteed without hardcoding
-        // the column count (now derived from the Apple cell pitch, not a fixed 10).
+        // 7 mediums (14 cols) exceed the reference board's column count on any plausible
+        // pitch, so a wrap is guaranteed without hardcoding the column count.
         let kinds = Array(repeating: (MonitorWidgetKind.cpu, MonitorWidgetSize.medium), count: 7)
         let placements = MonitorBoardConfiguration.packedPlacements(for: kinds)
         let distinctRows = Set(placements.map { ($0.y * 1000).rounded() })
         #expect(distinctRows.count >= 2, "expected the row to wrap")
-        // Row one (widgets sharing the first placement's y) runs left→right from x=0.
         let rowOne = placements.filter { $0.y == placements[0].y }
         let xs = rowOne.map(\.x)
         #expect(xs == xs.sorted())
@@ -419,9 +411,8 @@ struct MonitorBoardConfigurationTests {
 
     // MARK: - decodeIfPresent: board decode boundary
 
-    /// Decodes a board from a nested `config` object the way
-    /// `MonitorOverlayConfiguration` does. `decoded` is nil when the slot is
-    /// absent; a present-but-corrupt slot throws out of the whole probe.
+    /// `decoded` is nil when the slot is absent; a present-but-corrupt slot throws out
+    /// of the whole probe.
     private struct DecodeProbe: Decodable {
         let decoded: MonitorBoardConfiguration?
         enum Key: String, CodingKey { case config }
@@ -438,9 +429,6 @@ struct MonitorBoardConfigurationTests {
 
     @Test("A corrupt board payload throws — never a fabricated default board")
     func corruptBoardThrows() throws {
-        // `widgets` is present but is a string, not an array, so the decode throws
-        // and the error reaches the caller, which drops the record rather than
-        // substituting a bogus default board for the user's real layout.
         #expect(throws: (any Error).self) {
             try decodeConfig(#"{ "widgets": "not-an-array", "schemaVersion": 2 }"#)
         }
@@ -505,10 +493,8 @@ struct MonitorBoardConfigurationTests {
 
     // MARK: - intValue(clampedTo:)
 
-    /// An imported layout carries its option bag verbatim, so every widget that
-    /// turns an option into an `Int` is a crash site until the value is clamped.
-    /// `1e300` is the probe because it is finite: an `isFinite` guard passes it
-    /// and `Int(_:)` still traps.
+    // `1e300` is the probe because it is finite: an `isFinite` guard passes it and
+    // `Int(_:)` still traps.
     @Test("An out-of-range option clamps to the bound instead of trapping")
     func outOfRangeOptionClamps() throws {
         let decoded = try JSONDecoder().decode(

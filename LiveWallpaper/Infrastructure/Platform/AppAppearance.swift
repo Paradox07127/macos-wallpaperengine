@@ -1,8 +1,7 @@
 import AppKit
 import Foundation
 
-/// App-wide window appearance override. The palette is built on dynamic `NSColor`s, so `.system` is the state the app was designed in and needs no override at all — `NSApp.appearance = nil` hands the decision back to macOS; the other two pin every window regardless of the system setting.
-/// This does NOT reach the wallpaper-level surfaces: the monitor board chrome, the widget settings card and the media-preview scrims are deliberately fixed dark (see `DesignTokens.Colors.BoardChrome`) because they float over the user's own wallpaper, where "follow the system" would turn them white over a light picture — an appearance override is about app windows, not that layer.
+/// `.system` is `NSApp.appearance = nil`. This does not reach wallpaper-level surfaces (see `DesignTokens.Colors.BoardChrome`).
 enum AppAppearance: String, CaseIterable, Sendable {
     case system
     case light

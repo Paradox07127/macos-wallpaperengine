@@ -4,8 +4,6 @@ import Foundation
 import LiveWallpaperCore
 import Testing
 
-/// The pane keeps an id, not a value copy: the inspector has to follow the
-/// grid when a page turn or the persona pass replaces `items`.
 @Suite("Workshop browse selection")
 struct BrowseSelectionTests {
     @Test("An id resolves against whatever the grid currently holds")
@@ -16,7 +14,6 @@ struct BrowseSelectionTests {
 
         #expect(BrowseSelection.resolve(id: 1, in: page1, detached: nil)?.creatorPersonaName == nil)
         #expect(BrowseSelection.resolve(id: 1, in: page1Named, detached: nil)?.creatorPersonaName == "abi toads")
-        // Turned the page: the id is gone, so the inspector closes.
         #expect(BrowseSelection.resolve(id: 1, in: page2, detached: nil) == nil)
         #expect(BrowseSelection.resolve(id: nil, in: page1, detached: nil) == nil)
     }
@@ -27,19 +24,14 @@ struct BrowseSelectionTests {
         let detached = Self.item(id: 42, author: "someone")
         #expect(BrowseSelection.resolve(id: 42, in: page, detached: detached)?.id == 42)
         #expect(BrowseSelection.resolve(id: 7, in: page, detached: detached) == nil)
-        // The grid wins over a detached copy of the same id.
         let onPage = [Self.item(id: 42, author: "grid")]
         #expect(BrowseSelection.resolve(id: 42, in: onPage, detached: detached)?.creatorPersonaName == "grid")
     }
 
-    /// `openItem` clears `detachedItem` before the fetch; a page turn or the
-    /// persona pass replacing `items` in that window must not drop the id, or
-    /// the fetch result is discarded on arrival.
     @Test("A grid change during an off-page open keeps the pending id selected")
     func pendingOpenSurvivesGridChange() {
         let page2 = [Self.item(id: 3, author: nil)]
         #expect(BrowseSelection.keepsSelection(id: 42, in: page2, detached: nil, pending: 42))
-        // Controls: nothing pending (or another id pending) — the id left with the page.
         #expect(!BrowseSelection.keepsSelection(id: 42, in: page2, detached: nil, pending: nil))
         #expect(!BrowseSelection.keepsSelection(id: 42, in: page2, detached: nil, pending: 7))
         #expect(BrowseSelection.keepsSelection(id: 3, in: page2, detached: nil, pending: nil))
@@ -54,13 +46,11 @@ struct BrowseSelectionTests {
         #expect(restored.selectedID == 3)
         #expect(restored.detached == nil)
 
-        // The previous selection was itself detached: it comes back with its copy.
         let detached = Self.item(id: 9, author: nil)
         let fromDetached = BrowseSelection.PendingOpen(id: 42, generation: 2, previousSelectedID: 9, previousDetached: detached)
         #expect(fromDetached.settle(with: nil, in: page).selectedID == 9)
         #expect(fromDetached.settle(with: nil, in: page).detached == detached)
 
-        // Success lands on the opened item.
         let fetched = Self.item(id: 42, author: nil)
         let landed = open.settle(with: fetched, in: page)
         #expect(landed.selectedID == 42)
@@ -70,8 +60,6 @@ struct BrowseSelectionTests {
         #expect(open.settle(with: nil, in: []).selectedID == nil)
     }
 
-    /// Opening the same id twice from the same state builds two equal
-    /// records; the first fetch landing would then settle the second open.
     @Test("Two opens of the same id are told apart by generation")
     func repeatedOpenIsDistinct() {
         let first = BrowseSelection.PendingOpen(id: 42, generation: 1, previousSelectedID: 3, previousDetached: nil)
@@ -90,8 +78,6 @@ struct BrowseSelectionTests {
     }
 }
 
-/// A failed page turn keeps the old grid on screen; the failure has to be
-/// visible somewhere other than the empty-grid error state.
 @Suite("Workshop browse paging failure", .serialized)
 struct BrowsePagingErrorTests {
     @Test("A failed page turn keeps the grid, records the target page and shows the error bar")
@@ -115,15 +101,13 @@ struct BrowsePagingErrorTests {
         #expect(model.showsPagingError)
         #expect(model.failedPageTarget == 2)
 
-        // Control: a fresh reload clears the paging failure.
         await model.reload()
         #expect(!model.showsPagingError)
         #expect(model.failedPageTarget == nil)
     }
 
-    /// The current page's only entry was dropped client-side (`Application`),
-    /// so `items` is empty although the pager is live; a failed Next still has
-    /// to say so.
+    /// The page's only entry is dropped client-side (`Application`), so
+    /// `items` is empty although the pager is live.
     @Test("A failed page turn off a fully filtered page still shows the error bar")
     @MainActor
     func failedPageTurnOffFilteredPageIsSurfaced() async throws {
@@ -144,9 +128,8 @@ struct BrowsePagingErrorTests {
         #expect(model.showsPagingError)
     }
 
-    /// Page 2 came back empty with no total (a keyed query Steam sent no
-    /// `total` for): nothing to show, but the reader got here by paging and
-    /// has to be able to page back.
+    /// Page 2 came back empty with no `total` — a keyed query Steam sent no
+    /// `total` for.
     @Test("An empty later page keeps the pager reachable")
     @MainActor
     func emptyLaterPageKeepsPager() throws {

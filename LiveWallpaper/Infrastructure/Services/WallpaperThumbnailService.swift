@@ -2,7 +2,6 @@ import AppKit
 @preconcurrency import AVFoundation
 import WebKit
 
-/// In-memory thumbnails for video (first frame) and HTML (`WKWebView.takeSnapshot`).
 @MainActor
 final class WallpaperThumbnailService {
     static let shared = WallpaperThumbnailService()
@@ -19,7 +18,6 @@ final class WallpaperThumbnailService {
         return c
     }()
 
-    /// Dedup: re-entering for the same key returns the same task, not a parallel snapshot.
     /// The task hands the poster back instead of inserting it — see `cacheGeneratedPoster`.
     private var inFlightVideoTasks: [String: Task<(image: NSImage, cost: Int)?, Never>] = [:]
 
@@ -74,8 +72,7 @@ final class WallpaperThumbnailService {
         return cacheGeneratedPoster(generated, forKey: cacheKey)
     }
 
-    /// The only place a video poster enters the cache, and deliberately on the requester's side of the `await`. The generator task is unstructured, so it neither inherits the requester's cancellation nor ends with it; inserting from inside it let a poster land in the cache *after* `LocalImageCacheReclaimer` had emptied it, and the reclaim is a one-shot armed by a window closing — with no window left to close, nothing would ever take that entry out again.
-    /// Here the insert can only happen while a caller is still waiting for the image, which is the rule the HTML-snapshot, scene-preview and Workshop paths already follow.
+    /// Insert on the requester's side of the await: the generator task is unstructured, so inserting inside it would land a poster after a one-shot reclaim.
     private func cacheGeneratedPoster(
         _ generated: (image: NSImage, cost: Int)?,
         forKey cacheKey: String
@@ -137,8 +134,6 @@ final class WallpaperThumbnailService {
         let preferences = WKWebpagePreferences()
         preferences.allowsContentJavaScript = request.effectiveConfig.allowJavaScript
         configuration.defaultWebpagePreferences = preferences
-        // Thumbnail capture never needs cookies, service workers, local
-        // storage, or other state to outlive this one offscreen web view.
         configuration.websiteDataStore = .nonPersistent()
         configuration.suppressesIncrementalRendering = false
         return configuration

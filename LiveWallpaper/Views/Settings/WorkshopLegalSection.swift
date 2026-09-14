@@ -3,7 +3,6 @@ import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
-/// Privacy facts shared by settings and onboarding.
 /// Main-actor isolated because `LocalizedStringKey` is not `Sendable`.
 @MainActor
 enum WorkshopLegalContent {
@@ -53,7 +52,6 @@ enum WorkshopLegalContent {
     ]
 }
 
-/// The settings section. One row per statement, links at the bottom.
 struct WorkshopLegalSection: View {
     var body: some View {
         Section {

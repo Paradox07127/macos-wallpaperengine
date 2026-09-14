@@ -2,13 +2,8 @@ import Foundation
 import Testing
 @testable import LiveWallpaperProWPE
 
-/// `WPEMappedByteSpan.range` is buffer-relative, not `Data` index space.
-/// Every current provider hands the span a whole-file mapping whose
-/// `startIndex == 0`, where the two spaces coincide — so a regression to
-/// `Data`-index arithmetic (e.g. `owner[range.lowerBound + offset]` or
-/// `owner.subdata(in: range)`) would pass every whole-mapping test and only
-/// misread once an owner with `startIndex != 0` appears. These tests pin the
-/// contract on a sliced owner so that regression goes red immediately.
+/// The sliced owner is the point: with a whole-file mapping (`startIndex == 0`) buffer-relative
+/// and `Data`-index arithmetic coincide, so a regression would pass every other test.
 @Suite("WPEMappedByteSpan over a sliced owner")
 struct WPEMappedByteSpanSlicedOwnerTests {
 

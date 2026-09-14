@@ -22,15 +22,13 @@ struct WorkshopAPIKeyRejectionTests {
         }
         #expect(log.values == [false])
 
-        // A later successful keyed request reports acceptance (different
-        // request so the cache/in-flight map can't swallow the fetch).
+        // A different request, so the cache/in-flight map can't swallow the fetch.
         APIKeyRejectionURLProtocolStub.plan = { _ in
             .http(status: 200, headers: [:], body: Data(#"{"response":{"total":0}}"#.utf8))
         }
         _ = try await service.fetch(WorkshopQueryRequest(sort: .mostPopular, page: 2))
         #expect(log.values == [false, true])
 
-        // The stored fact drives the Settings facet.
         let services = WorkshopServices()
         services.hasWebAPIKey = true
         await services.noteAuthVerdict(accepted: false, keyFingerprint: "deadbeef")

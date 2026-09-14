@@ -3,9 +3,6 @@ import Darwin
 import Foundation
 import os
 
-/// The disk half shared by `WorkshopPreviewDiskCache` and `WorkshopQueryCache`: opaque bytes under a file name the shell derives from its key, on one serial queue, written as `<name>.<uuid>.tmp` + `rename(2)`, evicted least-recently-used down to `capBytes`, and expired on `timeToLive`.
-/// The shells differ in which stamp expiry reads (`ExpiryClock`) and in the numbers; the file layout, the atomic write, the LRU stamp and the housekeeping are the same code.
-/// `Sendable`: every stored property is a `let` of a `Sendable` type, and all file work is funnelled onto the serial `queue`.
 final class WorkshopDiskCacheStore: Sendable {
     /// `modificationDate` is also the LRU stamp and is bumped on every read, so an entry expiring on it lives as long as it keeps being read — the query cache wants exactly that from its 5-minute TTL.
     /// `creationDate` expires an entry on its age however often it was viewed — Steam serves a replaced preview under the same `preview_url`, so a preview the cap never reaches would otherwise show the old picture forever.
@@ -14,10 +11,7 @@ final class WorkshopDiskCacheStore: Sendable {
         case modificationDate
     }
 
-    /// Orphan `.tmp` files (a write interrupted by a crash) are invisible to the
-    /// cap, so they are swept — but only once they are older than any write
-    /// that could still be in flight, since a second process or instance may be
-    /// mid-write on the same directory.
+    /// Orphan .tmp files are invisible to the cap; sweep only once older than any write that could still be in flight.
     private static let orphanTempGrace: TimeInterval = 60
 
     private let directoryURL: URL
@@ -32,7 +26,6 @@ final class WorkshopDiskCacheStore: Sendable {
     /// Serial: cap enforcement lists the whole directory and deletes from it,
     /// and two of those interleaving would each evict against a stale total.
     private let queue: DispatchQueue
-    /// Whether this instance has already run its one housekeeping pass.
     private let hasSwept = OSAllocatedUnfairLock(initialState: false)
 
     init(
@@ -76,10 +69,7 @@ final class WorkshopDiskCacheStore: Sendable {
         await perform { self.clearSync() }
     }
 
-    /// One housekeeping pass per instance, the first time the cache is used for real work.
-    /// `enforceCap` otherwise only ever runs as the tail of a write, which leaves three ways for the directory to stay wrong indefinitely: a browsing session followed by never opening the Workshop again strands expired entries; a process that exits between the `rename(2)` and the cap check leaves the directory over `capBytes` with nothing due to notice; and a crash mid-write leaves a `.tmp` that no total counts.
-    /// Sweeping at first use clears all three on the next run, without putting any I/O on the launch path — this is a menu-bar app, and nothing touches this cache until a Workshop view asks for it.
-    /// Queued *behind* the request that triggered it, on the same serial queue, so the entry the user is waiting for is not made to wait for a full directory listing.
+    /// One housekeeping pass per instance, queued behind the request that triggered it on the same serial queue, so the waiting entry is not blocked by a full directory listing.
     func sweepOnce() {
         let claimed = hasSwept.withLock { swept -> Bool in
             guard !swept else { return false }
@@ -129,19 +119,14 @@ final class WorkshopDiskCacheStore: Sendable {
         do {
             try ensureDirectory(fileManager: fileManager)
             let destination = directoryURL.appendingPathComponent(name, isDirectory: false)
-            // A scratch name unique per write, not a fixed `<key>.tmp`: two
-            // writers racing on the same key must not share a scratch file, or
-            // one would rename the other's half-written bytes into place.
+            // Scratch name unique per write, not a fixed <key>.tmp: two writers racing the same key must not share a scratch file.
             let tempURL = directoryURL.appendingPathComponent(
                 "\(name).\(UUID().uuidString).tmp",
                 isDirectory: false
             )
             let tempPath = tempURL.path(percentEncoded: false)
             try data.write(to: tempURL)
-            // Stamp before the rename so the entry is never briefly
-            // world-readable and never briefly carries the wrong clocks. Two
-            // calls, not one: `setAttributes` is all-or-nothing, and a rejected
-            // date must not take the permissions down with it.
+            // Stamp before rename so the entry is never briefly world-readable. Two setAttributes calls: a rejected date must not take permissions down with it.
             try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: tempPath)
             let stamp = now()
             try? fileManager.setAttributes(
@@ -172,8 +157,6 @@ final class WorkshopDiskCacheStore: Sendable {
         try? fileManager.removeItem(at: tombstone)
     }
 
-    /// Drops expired entries and orphaned scratch files, then evicts
-    /// least-recently-used entries until the directory fits `capBytes`.
     private func enforceCap(fileManager: FileManager) throws {
         removeOrphanedTempFiles(fileManager: fileManager)
 

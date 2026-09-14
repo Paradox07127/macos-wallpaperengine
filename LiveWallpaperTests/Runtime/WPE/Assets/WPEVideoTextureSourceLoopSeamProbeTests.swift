@@ -7,21 +7,13 @@ import QuartzCore
 import Testing
 @testable import LiveWallpaper
 
-/// Loop-seam regression gate: frame publication must not stall while
-/// AVPlayerLooper rotates items. Guards two measured regressions (2026-08-20):
-/// the item-level output being re-attached only AFTER the rotation froze the
-/// last frame ~150 ms per wrap on the macOS 14 path, and a muted-but-present
-/// audio track holding publication ~100 ms per wrap (fixed by the disk cache's
-/// audio strip; fixtures here are audio-free, so this suite pins the output
-/// plumbing, not the strip).
+/// 这里的夹具不含音轨:本 suite 钉的是输出接线,不是音频剥离。
 @MainActor
 @Suite("WPEVideoTextureSource loop seam", .serialized)
 struct WPEVideoTextureSourceLoopSeamProbeTests {
 
-    /// Floor of the tolerated seam gap. Frame cadence is ~33 ms and the healthy
-    /// measured seam is 31-44 ms; the pre-fix legacy failure was ~150 ms. The
-    /// effective threshold is `max(0.09, 3 x median gap)`, so a loaded host
-    /// that stretches every gap stretches the tolerance with it.
+    /// 容忍的接缝间隔下限;实际阈值是 `max(0.09, 3 × 中位间隔)`,
+    /// 所以负载高的主机会连同容忍度一起被拉长。
     private static let maxSeamGapFloor: TimeInterval = 0.09
 
     private struct Sample {
@@ -71,7 +63,7 @@ struct WPEVideoTextureSourceLoopSeamProbeTests {
             try await Task.sleep(for: .milliseconds(2))
         }
 
-        // Wrap instants: playhead jumped backwards by more than half the clip.
+        // 绕回时刻:playhead 向后跳了。
         var wraps: [TimeInterval] = []
         for i in 1..<samples.count where samples[i].playhead + 0.5 < samples[i - 1].playhead {
             wraps.append(samples[i].host)
@@ -123,7 +115,6 @@ struct WPEVideoTextureSourceLoopSeamProbeTests {
 
     @Test("Item-level output keeps frame cadence across loop wraps (macOS 14 path)")
     func legacyItemLevelSeams() async throws {
-        // Red before the per-item pre-attached outputs: ~150 ms per wrap.
         assertSeamsAtFrameCadence(try await measureSeams(legacy: true))
     }
 }

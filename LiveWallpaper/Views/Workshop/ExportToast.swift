@@ -30,8 +30,6 @@ struct ExportToast: View {
                 }
                 .padding(.horizontal, DesignTokens.Spacing.cardInset)
                 .padding(.vertical, 10)
-                // Same glass chrome as `DownloadToastHost` — the two toasts share
-                // every other metric and had drifted on background material only.
                 .adaptiveGlassSurface(.roundedRectangle(DesignTokens.Corner.xl))
                 .shadow(color: .black.opacity(DesignTokens.Card.shadowOpacity), radius: 14, x: 0, y: 6)
                 .transition(.move(edge: .bottom).combined(with: .opacity))

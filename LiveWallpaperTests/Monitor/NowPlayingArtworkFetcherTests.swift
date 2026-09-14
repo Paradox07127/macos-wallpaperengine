@@ -11,7 +11,6 @@ private final class RequestCounter: Sendable {
     func count(_ key: String) -> Int { lock.withLock { $0[key] ?? 0 } }
 }
 
-/// Holds gated transport responses until opened, to pin down overlap ordering.
 private actor Gate {
     private var opened = false
     private var waiters: [CheckedContinuation<Void, Never>] = []
@@ -53,8 +52,8 @@ private actor RecordingNowPlayingSink: MonitorSnapshotSink {
     func updateNowPlaying(_ state: MonitorNowPlayingState?) async { box.append(state) }
 }
 
-/// Real endpoints answer with a content type, and the fetcher now requires one:
-/// a 200 carrying HTML is not an oEmbed document and not a cover.
+/// The fetcher requires a content type: a 200 carrying HTML is not an oEmbed document
+/// and not a cover.
 private func ok(
     _ request: URLRequest, _ data: Data, contentType: String = "application/json"
 ) -> (Data, URLResponse) {
@@ -108,10 +107,9 @@ private func musicState() -> MonitorNowPlayingState {
     return state
 }
 
-/// Pins "no Automation consent". The fetcher's default provider asks the real
-/// `NowPlayingController`, so on a machine where Spotify is running and consent
-/// was granted it answers a live cover URL — which is allow-listed, downloads
-/// fine, and short-circuits the oEmbed path these tests exist to exercise.
+/// Pins "no Automation consent": the default provider asks the real `NowPlayingController`,
+/// which on a consenting machine answers a live cover URL and short-circuits the oEmbed
+/// path these tests exercise.
 private let noPlayerArtworkURL: NowPlayingArtworkFetcher.ArtworkURLProvider = { _ in nil }
 
 @MainActor
@@ -130,10 +128,6 @@ private func waitUntil(timeout: TimeInterval = 5, _ condition: () -> Bool) async
 struct NowPlayingArtworkFetcherTests {
     // MARK: URL construction and scoring (pure)
 
-    /// Spotify's own dictionary carries the cover URL, so the oEmbed lookup is
-    /// a round trip spent re-deriving what the player already knows. It only
-    /// knows it once Automation consent exists, so oEmbed has to stay for
-    /// everyone who has not granted it.
     @Test("a player-supplied cover URL is used instead of the oEmbed lookup")
     func playerURLBeatsOEmbed() async {
         let art = Data([0x89, 0x50, 0x4E, 0x47, 0x11])
@@ -169,8 +163,6 @@ struct NowPlayingArtworkFetcherTests {
         #expect(seen.values.contains { $0.contains("oembed") })
     }
 
-    /// "Spotify said so" is not a reason to fetch from an arbitrary host: the
-    /// URL crosses a process boundary like any other input.
     @Test("a player-supplied URL off the allow-list is refused, not followed")
     func playerURLIsStillAllowListed() async {
         let seen = NowPlayingURLBox()
@@ -205,8 +197,8 @@ struct NowPlayingArtworkFetcherTests {
     @Test("iTunes scoring picks the right album among same-name tracks")
     func itunesScoringPicksAlbum() {
         typealias Candidate = NowPlayingArtworkFetcher.ITunesCandidate
-        // Shapes from the 2026-08-20 live probe: the right row lists every
-        // collaborator in artistName; a same-name track sits on another album.
+        // The right row lists every collaborator in artistName; a same-name track sits on
+        // another album.
         let single = Candidate(
             artistName: "Yoohei Kawakami, SennaRin & Hiroyuki Sawano",
             trackName: "ENDROLL", collectionName: "ENDROLL", artworkUrl100: "single-100"
@@ -240,8 +232,7 @@ struct NowPlayingArtworkFetcherTests {
     @Test("a title-only hit by another artist is rejected, not shown wrong")
     func itunesScoringRequiresArtistAgreement() {
         typealias Candidate = NowPlayingArtworkFetcher.ITunesCandidate
-        // Common title, wrong artist: title equality alone scores > 0, but
-        // when the notification names an artist that artist must also match.
+        // Title equality alone scores > 0, so a named artist must match too.
         let wrongArtist = Candidate(
             artistName: "Someone Else", trackName: "Intro",
             collectionName: "Their Album", artworkUrl100: "wrong-100"
@@ -251,7 +242,6 @@ struct NowPlayingArtworkFetcherTests {
                 in: [wrongArtist], artist: "Yoohei Kawakami", title: "Intro", album: nil
             ) == nil
         )
-        // Without an artist in the notification the title match may stand.
         #expect(
             NowPlayingArtworkFetcher.bestMatch(
                 in: [wrongArtist], artist: nil, title: "Intro", album: nil
@@ -316,10 +306,6 @@ struct NowPlayingArtworkFetcherTests {
         #expect(counter.count("any") == 4)
     }
 
-    /// The counterpart of `negativeCacheTTL`: a fetch that ended because
-    /// `cancelInFlight` cancelled it is not a failed lookup, so the key must not
-    /// enter the negative cache — nor may the dying task evict the replacement
-    /// fetch registered under the same key after it.
     @Test("a cancelled fetch neither negative-caches nor evicts its replacement")
     func cancelledFetchLeavesNoTrace() async {
         let counter = RequestCounter()
@@ -348,7 +334,6 @@ struct NowPlayingArtworkFetcherTests {
         #expect(await waitUntil { counter.count("oembed") >= 1 })
         await fetcher.cancelInFlight(except: nil)
 
-        // The replacement is registered while the cancelled task is still parked.
         async let second = fetcher.artwork(for: spotifyState())
         #expect(await waitUntil { counter.count("oembed") >= 2 })
 

@@ -2,7 +2,6 @@ import SwiftUI
 import AppKit
 import LiveWallpaperCore
 
-/// Web compatibility and reload settings; canvas controls live on the preview bar.
 struct HTMLOptionsInspector: View {
     var screen: Screen
     @Binding var config: HTMLConfig
@@ -48,8 +47,6 @@ struct HTMLOptionsInspector: View {
         }
     }
 
-    /// `0` (Off) is the default — most wallpaper content is animation/canvas-driven
-    /// and doesn't benefit from a reload.
     private var autoRefreshRow: some View {
         SettingRow(
             icon: "arrow.clockwise",
@@ -73,7 +70,6 @@ struct HTMLOptionsInspector: View {
         }
     }
 
-    /// Editor opens in a popover to keep the inspector list compact.
     private var customCSSRow: some View {
         let isActive = !(config.customCSS ?? "").isEmpty
         return SettingRow(
@@ -98,11 +94,8 @@ struct HTMLOptionsInspector: View {
         .onChange(of: config.customCSS) { _, newValue in
             scheduleCustomCSSDraftSync(newValue)
         }
-        // The view is not rebuilt per screen, so an uncommitted draft typed on
-        // a previous screen would otherwise still be sitting in
-        // `draftCustomCSS` when this one appears for a screen whose committed
-        // CSS is unchanged (the `config.customCSS`-keyed sync above would not
-        // fire in that case).
+        // The view is not rebuilt per screen: without this, an uncommitted draft
+        // from the previous screen survives when the committed CSS is unchanged.
         .onChange(of: screen.id) {
             scheduleCustomCSSDraftSync(config.customCSS)
         }

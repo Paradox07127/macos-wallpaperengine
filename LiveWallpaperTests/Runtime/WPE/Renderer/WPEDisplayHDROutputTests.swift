@@ -4,9 +4,6 @@ import Metal
 import QuartzCore
 import Testing
 
-/// True display-HDR output (WPE's "Ultra (Display HDR)" counterpart). The switch is a
-/// kill switch defaulting to OFF, so the guard that matters most is that OFF reproduces
-/// the previous 8-bit sRGB present path exactly.
 @Suite("WPE display HDR output")
 struct WPEDisplayHDROutputTests {
     @Test("off keeps the 8-bit sRGB drawable the pre-feature path used")
@@ -25,17 +22,13 @@ struct WPEDisplayHDROutputTests {
         #expect(WPEDisplayHDROutput.drawablePixelFormat(hdrOutputEnabled: true) == .rgba16Float)
     }
 
-    /// The upscale plan must ask the DRAWABLE whether output is HDR, not the defaults key.
-    /// The two can disagree: the surface refuses HDR output when no attached screen can show
-    /// EDR, and a plan that still believed the key would call an HDR scene float-to-float,
-    /// render it small for MetalFX, then have the scaler refuse the 8-bit drawable at present
-    /// and demote the scene to native for the rest of its life.
+    /// HDR-ness must be read from the DRAWABLE, not the defaults key: the surface
+    /// refuses HDR output when no attached screen can show EDR.
     @Test("HDR output is read back from the drawable format, not from the defaults key")
     func hdrOutputIsReadFromTheDrawable() {
         #expect(WPEDisplayHDROutput.isHDROutput(drawablePixelFormat: .rgba16Float))
         #expect(WPEDisplayHDROutput.isHDROutput(drawablePixelFormat: .rgba8Unorm_srgb) == false)
         #expect(WPEDisplayHDROutput.isHDROutput(drawablePixelFormat: .bgra8Unorm) == false)
-        // Round-trips with the formatter the surface actually builds the drawable from.
         for enabled in [true, false] {
             #expect(WPEDisplayHDROutput.isHDROutput(
                 drawablePixelFormat: WPEDisplayHDROutput.drawablePixelFormat(hdrOutputEnabled: enabled)
@@ -43,9 +36,6 @@ struct WPEDisplayHDROutputTests {
         }
     }
 
-    /// The defaults key alone is not enough to widen the drawable: an all-SDR setup pays the
-    /// wider drawable for output it cannot show. WPE gates its own "Ultra (Display HDR)"
-    /// option the same way.
     @Test("The drawable request needs both the setting and a capable screen")
     func requestNeedsSettingAndCapableScreen() {
         #expect(WPEDisplayHDROutput.shouldRequestHDROutput(settingEnabled: true, hasCapableScreen: true))
@@ -66,9 +56,8 @@ struct WPEDisplayHDROutputTests {
         #expect(layer.wantsExtendedDynamicRangeContent == false)
     }
 
-    /// EDR needs all three together: a float format, an extended-range colorspace, and the
-    /// request itself. The probe's negative-control row (EDR request off, same float layer)
-    /// showed 4.0 and 1.0 rendering identically, so the request is not optional decoration.
+    /// EDR needs all three: a float format, an extended-range colorspace, and the
+    /// request itself - the request is not optional decoration.
     @Test("on sets the extended-linear colorspace and requests EDR")
     func onRequestsEDR() {
         let layer = CAMetalLayer()
@@ -88,23 +77,19 @@ struct WPEDisplayHDROutputTests {
         #expect(WPEMetalFXSpatialUpscaler.formatRejection(
             sourceFormat: .rgba8Unorm_srgb, drawableFormat: .rgba8Unorm_srgb
         ) == nil)
-        // HDR scene + display-HDR output: the pairing this feature adds.
         #expect(WPEMetalFXSpatialUpscaler.formatRejection(
             sourceFormat: .rgba16Float, drawableFormat: .rgba16Float
         ) == nil)
-        // SDR scene while display-HDR output is on — the scene RT stays 8-bit.
         #expect(WPEMetalFXSpatialUpscaler.formatRejection(
             sourceFormat: .rgba8Unorm_srgb, drawableFormat: .rgba16Float
         ) == nil)
-        // HDR scene with display-HDR output off: >1 cannot survive an 8-bit drawable.
         #expect(WPEMetalFXSpatialUpscaler.formatRejection(
             sourceFormat: .rgba16Float, drawableFormat: .rgba8Unorm_srgb
         ) == .hdrInput)
     }
 
-    /// The mode must follow the SOURCE encoding: `.perceptual` reads 8-bit sRGB-ish input,
-    /// `.hdr` reads linear float past 1. Feeding float through `.perceptual` was what made
-    /// HDR scenes ineligible for upscaling before.
+    /// The mode follows the SOURCE encoding: `.perceptual` for 8-bit sRGB-ish
+    /// input, `.hdr` for linear float past 1.
     @Test("MetalFX picks the colour-processing mode from the source format")
     func metalFXColorProcessingMode() {
         #expect(WPEMetalFXSpatialUpscaler.colorProcessingMode(sourceFormat: .rgba8Unorm_srgb) == .perceptual)
@@ -113,8 +98,6 @@ struct WPEDisplayHDROutputTests {
         #expect(WPEMetalFXSpatialUpscaler.colorProcessingMode(sourceFormat: .r8Unorm) == nil)
     }
 
-    /// Load-time gate. An HDR scene is only upscalable when the drawable is float too, so
-    /// the verdict has to consult the HDR-output switch rather than the scene flag alone.
     @Test("An HDR scene is upscalable only while display-HDR output is on")
     func upscalePlanFollowsHDROutput() {
         func plan(isHDR: Bool, hdrOutputEnabled: Bool) -> WPEMetalUpscalePlan {
@@ -130,7 +113,6 @@ struct WPEDisplayHDROutputTests {
         }
         #expect(plan(isHDR: true, hdrOutputEnabled: false).verdict == .hdrScene)
         #expect(plan(isHDR: true, hdrOutputEnabled: true).verdict == .active)
-        // The switch must not disturb SDR scenes either way.
         #expect(plan(isHDR: false, hdrOutputEnabled: false).verdict == .active)
         #expect(plan(isHDR: false, hdrOutputEnabled: true).verdict == .active)
     }

@@ -152,15 +152,10 @@ struct WallpaperVideoPlayerHibernationTests {
         #expect(!harness.player.hasInMemoryAssetLoaderForTesting)
         #expect(harness.player.boundVideoOutputCountForTesting == 0)
         #expect(!harness.player.isPlaying)
-        // Torn down to a still frame, not to nothing — and the window survives.
         #expect(harness.player.isShowingHibernationStillFrameForTesting)
         #expect(harness.player.hasInstalledPlaybackWindow)
     }
 
-    /// The wake rebuild is async, so eligibility can arrive while `player` is
-    /// still nil. Gating the dwell on a live player cancelled it, and because
-    /// eligibility is event-driven nothing pushed again — the rebuilt player then
-    /// stayed fully resident for the rest of the absence.
     @Test("Going absent again during the wake rebuild still hibernates")
     func reAbsenceDuringWakeRearmsTheDwell() async throws {
         let harness = try await Harness.make()
@@ -170,7 +165,6 @@ struct WallpaperVideoPlayerHibernationTests {
         harness.player.setHibernationEligible(true)
         try await Harness.waitUntil("player hibernates") { harness.player.isHibernated }
 
-        // Wake, then go absent again inside the rebuild window.
         harness.player.setSuspended(false)
         #expect(harness.player.player == nil, "the rebuild is asynchronous, so this is the window under test")
         harness.player.setSuspended(true)
@@ -218,10 +212,8 @@ struct WallpaperVideoPlayerHibernationTests {
         harness.player.setHibernationEligible(true)
         try await Harness.waitUntil("player hibernates") { harness.player.isHibernated }
 
-        // Hibernation drops the composition built against the retired asset.
         #expect(harness.player.currentVideoComposition == nil)
         #expect(harness.player.videoCompositionOwner == .none)
-        // The user-facing requests are state, not a snapshot, and survive.
         #expect(harness.player.requestedFrameRateLimit == 24)
         #expect(harness.player.currentColorSpacePreference == .displayP3)
 
@@ -302,7 +294,6 @@ struct WallpaperVideoPlayerHibernationTests {
         let cleanup = try Self.slice(source, from: "\n    func cleanup() {", to: "\n    deinit {")
 
         #expect(cleanup.contains("retirePlaybackState()"))
-        // The teardown body must live in exactly one place.
         #expect(!cleanup.contains("playerLooper?.disableLooping()"))
         #expect(!cleanup.contains("inMemoryAssetLoader = nil"))
         #expect(source.contains("private func retirePlaybackState() {"))

@@ -116,7 +116,6 @@ struct WPEMetalTextureCacheBudgetTests {
         let flat = try makeTexture(mipmapped: false)
         let mipped = try makeTexture(mipmapped: true)
         let base = 64 * 64 * 4
-        // Exact per-level sum for the 7-level chain, not the old x4/3 shortcut.
         let mipChain = (64 * 64 + 32 * 32 + 16 * 16 + 8 * 8 + 4 * 4 + 2 * 2 + 1) * 4
         #expect(WPEMetalSceneRenderer.textureResidentBytes(for: flat) == base)
         #expect(WPEMetalSceneRenderer.textureResidentBytes(for: mipped) == mipChain)
@@ -238,7 +237,6 @@ struct WPEMetalTextureCacheBudgetTests {
         let cache = WPEMetalStaticLayerCompositeCache(budgetBytes: 100)
         #expect(cache.reserve(layerID: "partial", targetBytes: ["a": 30, "b": 30], commandBuffer: producer))
         cache.abandon(layerID: "partial", commandBuffer: producer)
-        // No allocation was made: unused reservation is released immediately.
         #expect(cache.accountedBytes == 0)
         cache.updateBudget(10)
         cache.discardUnsubmittedWork(for: producer)

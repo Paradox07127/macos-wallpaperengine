@@ -450,9 +450,8 @@ struct HTMLWallpaperNavigationPolicyTests {
         #expect(decision == .cancel)
     }
 
-    /// Cancelling this left every inline wallpaper a permanently empty document:
-    /// `loadHTMLString` is reported as an `about:blank` `.other` navigation, and
-    /// the resulting cancellation is swallowed as `NSURLErrorCancelled`.
+    /// `loadHTMLString` is reported as an `about:blank` `.other` navigation, so
+    /// cancelling it would leave every inline wallpaper a permanently empty document.
     @Test("about:blank is allowed so inline sources and hibernation teardown can load")
     func aboutBlankIsAllowed() {
         for type in [WKNavigationType.other, .reload] {

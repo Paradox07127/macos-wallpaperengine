@@ -2,14 +2,8 @@ import Foundation
 @testable import LiveWallpaperCore
 import Testing
 
-/// The cap is stored as a target frame rate and resolved per display. These pin
-/// the resolution rules; the app-target suite covers how the video path consumes
-/// them.
 @Suite("FrameRateLimit target resolution")
 struct FrameRateLimitTargetResolutionTests {
-    /// Why the divisor form had to go: a 240 Hz panel's four divisors were
-    /// 240/120/80/60, so 30 was unreachable there and the cheapest option still
-    /// cost 60 — on the panel that needs the cap most.
     @Test("A 240 Hz panel reaches every target exactly")
     func targetsAreExactOnAMultipleOf60() {
         #expect(FrameRateLimit.fps60.frameRate(forRefreshRate: 240) == 60)
@@ -26,9 +20,8 @@ struct FrameRateLimitTargetResolutionTests {
         #expect(FrameRateLimit.matchDisplay.frameRate(forRefreshRate: 60) == 60)
     }
 
-    /// 144 is not a multiple of 60. `CADisplayLink` only wakes on a divisor, so the
-    /// target has to round *down* — asking for 60 and being handed 72 would be the
-    /// opposite of a cap.
+    /// `CADisplayLink` only wakes on a divisor, so a target rounds *down*: asking for
+    /// 60 and being handed 72 would be the opposite of a cap.
     @Test("A target never resolves above itself on an awkward panel")
     func targetsRoundDownNotUp() {
         #expect(FrameRateLimit.fps60.frameRate(forRefreshRate: 144) == 48)
@@ -61,10 +54,8 @@ struct FrameRateLimitTargetResolutionTests {
         )
     }
 
-    /// The slider's top step on a 60 Hz panel is `.fps60` (`.matchDisplay` is
-    /// dropped as a duplicate). Landing a drag there must not overwrite a saved
-    /// `.matchDisplay`, or a later move to a 120 Hz display would find itself
-    /// capped at 60 for a value the user never touched.
+    /// Landing a drag on the top step must not overwrite a saved `.matchDisplay`, or a
+    /// later 120 Hz display would sit capped at 60 for a value the user never touched.
     @Test("Same-rate steps at 60 Hz are recognized; distinct rates and higher panels are not")
     func resolvesToSameRate() {
         #expect(FrameRateLimit.matchDisplay.resolvesToSameRate(as: .fps60, forRefreshRate: 60))
@@ -74,8 +65,7 @@ struct FrameRateLimitTargetResolutionTests {
     }
 
     /// Video re-times through `AVVideoComposition` rather than vsync, so it holds an
-    /// exact 60 where a scene has to fall to 48 — but it is still bounded by the
-    /// file, and a target above the file is not a cap at all.
+    /// exact 60 where a scene falls to 48 - but is still bounded by the file's own rate.
     @Test("Video is bounded by the file and by the panel, not quantised by either")
     func videoClampsToTheSourceAndPanel() {
         #expect(FrameRateLimit.fps60.videoFrameRate(forRefreshRate: 144, sourceFrameRate: 120) == 60)
@@ -84,9 +74,8 @@ struct FrameRateLimitTargetResolutionTests {
         #expect(FrameRateLimit.matchDisplay.videoFrameRate(forRefreshRate: 60, sourceFrameRate: 120) == 60)
     }
 
-    /// The divisor form divided the *source* once the source was slower, so a 30 fps
-    /// file at the lowest step was re-timed to 8. A target is a floor as well as a
-    /// ceiling: it never lands below what the user asked for.
+    /// A target is a floor as well as a ceiling: it never lands below what the user
+    /// asked for, even when the source is slower.
     @Test("A slow source is never driven below the chosen target")
     func slowSourceIsNotDividedBelowTheTarget() {
         let steps = FrameRateLimit.allCases.map {
@@ -110,8 +99,6 @@ struct FrameRateLimitDecodingTests {
         }
     }
 
-    /// The absolute era wrote the fps itself. 24 is the only one without a case: it
-    /// measurably snapped to 30 on a 60 Hz panel, so it never bought anything.
     @Test("Absolute-era raw values keep their rate")
     func absoluteEraValues() throws {
         #expect(try decode(0) == .matchDisplay)
@@ -121,9 +108,8 @@ struct FrameRateLimitDecodingTests {
         #expect(try decode(15) == .fps15)
     }
 
-    /// The divisor era wrote 1…4. `full` has to land on `matchDisplay`, not `fps60`:
-    /// mapping it to 60 would drop every 120/240 Hz display to 60 on the first launch
-    /// after this change, which is a setting the user never touched.
+    /// Legacy `full` must decode to `matchDisplay`, not `fps60`: mapping it to 60 would
+    /// drop every 120/240 Hz display to 60 on the first launch after the change.
     @Test("Divisor-era raw values do not lower a high-refresh display on their own")
     func divisorEraValues() throws {
         #expect(try decode(1) == .matchDisplay)

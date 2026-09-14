@@ -7,8 +7,6 @@ import Testing
 @Suite("Workshop dependency fetch traversal")
 struct WorkshopDependencyResolverTests {
 
-    /// Fake "ID → its dependency IDs" graph; records the fetch order so a cycle
-    /// shows up as a repeat visit instead of a hang.
     private final class FakeGraph {
         let edges: [String: [String]]
         let failing: Set<String>

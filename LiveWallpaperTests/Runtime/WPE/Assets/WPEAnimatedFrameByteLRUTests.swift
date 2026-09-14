@@ -34,10 +34,8 @@ struct WPEAnimatedFrameByteLRUTests {
         let cache = makeCache(budget: 100)
         let source = cache.registerSource()
 
-        // Entry 0: consumed, UNPINNED, and least-recently used. Entry 1:
-        // speculative but more recent. A plain LRU sweep would take 0;
-        // speculative-first must take 1 instead — this ordering is what
-        // discriminates the policy from generic LRU.
+        // Entry 1 是 speculative 但更新:纯 LRU 会淘汰 0,这个顺序才是
+        // 区分本策略与通用 LRU 的地方。
         cache.store(bytes(40), source: source, imageID: 0, speculative: false)
         cache.store(bytes(40), source: source, imageID: 1, speculative: true)
         cache.store(bytes(40), source: source, imageID: 2, speculative: false)
@@ -107,8 +105,6 @@ struct WPEAnimatedFrameByteLRUTests {
         #expect(cache.contains(source: b, imageID: 0))
         #expect(cache.totalBytes == 30)
 
-        // The dropped pin must not shield anything from a later trim: b was
-        // never looked up, so nothing is pinned and the trim must empty the cache.
         cache.removeAllUnpinned()
         #expect(cache.totalBytes == 0)
         #expect(!cache.contains(source: b, imageID: 0))
@@ -138,7 +134,6 @@ struct WPEAnimatedFrameByteLRUTests {
         cache.store(bytes(10), source: source, imageID: 1, speculative: false)
 
         cache.removeSpeculative()
-        // Once consumed, the former speculative entry must survive the trim.
         #expect(cache.contains(source: source, imageID: 0))
         #expect(cache.contains(source: source, imageID: 1))
     }

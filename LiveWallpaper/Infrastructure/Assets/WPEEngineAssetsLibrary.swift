@@ -4,7 +4,6 @@ import Foundation
 import LiveWallpaperCore
 import Observation
 
-/// Security-scoped Wallpaper Engine install root for shared framework asset fallback.
 @MainActor
 @Observable
 final class WPEEngineAssetsLibrary {
@@ -80,8 +79,6 @@ final class WPEEngineAssetsLibrary {
         return resolveAuthorizedRoot(using: DirectoryBookmarks.resolveDirectoryBookmark)
     }
 
-    /// Re-derive the published `isAuthorized` / display-name state. Call after a
-    /// download or removal mutates the managed install out-of-band.
     func refresh() {
         _ = resolveAuthorizedRoot()
         if !Self.hasManagedInstall && SettingsManager.shared.loadWPEEngineAssetsBookmark() == nil {
@@ -102,8 +99,7 @@ final class WPEEngineAssetsLibrary {
 // MARK: - Managed (downloaded) install
 
 extension WPEEngineAssetsLibrary {
-    /// Durable marker used when disk publication completed but Steam's build ID
-    /// was unavailable (or a launch recovered the post-rename/pre-marker cut).
+    /// Durable marker used when disk publication completed but Steam's build ID was unavailable.
     nonisolated static let unknownManagedBuildMarker = "0"
 
     static var managedDisplayName: String { String(
@@ -112,13 +108,10 @@ extension WPEEngineAssetsLibrary {
         bundle: .appLanguage, comment: "Engine-assets status when the assets were downloaded in-app via SteamCMD."
     ) }
 
-    /// Managed install path under the shared Steam library (`app_update 431960`).
-    /// Bookmarked (not a hard-coded path) after the sandbox-container STEAMROOT retired.
     nonisolated static func sharedLibraryInstallRoot(steamRoot: URL) -> URL {
         steamRoot.appendingPathComponent("steamapps/common/wallpaper_engine", isDirectory: true)
     }
 
-    /// Managed install present on disk; clears stale buildid markers when missing.
     static var hasManagedInstall: Bool { managedInstallRoot() != nil }
 
     static func managedInstallRoot(fileManager: FileManager = .default) -> URL? {
@@ -150,7 +143,6 @@ extension WPEEngineAssetsLibrary {
         return nil
     }
 
-    /// Bind managed install; caller must hold Steam-library scope for bookmark create.
     @discardableResult
     static func adoptManagedInstall(at root: URL, buildID: String?) -> Bool {
         do {
@@ -269,7 +261,6 @@ extension WPEEngineAssetsLibrary {
         return steamRoot.deletingLastPathComponent()
     }
 
-    /// Find canonical WPE root (with `assets/`) from a user pick or app-bundle path.
     nonisolated static func validatedEngineRoot(from selectedURL: URL, fileManager: FileManager = .default) -> URL? {
         let root = selectedURL.standardizedFileURL.resolvingSymlinksInPath()
         if hasAssetsSubdirectory(root, fileManager: fileManager) {

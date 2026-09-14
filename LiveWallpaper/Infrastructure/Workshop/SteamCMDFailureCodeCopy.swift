@@ -2,10 +2,6 @@
 import Foundation
 import LiveWallpaperCore
 
-// The XPC helper cannot localize its own failures — `SteamConnector.xpc` ships
-// no `.lproj`, so `String(localized:, bundle: .appLanguage)` inside it returns the English default.
-// It sends a code instead; the copy lives here, on the app side, where the
-// catalog is.
 extension SteamCMDFailureCode {
     func localizedMessage(_ arguments: [String]) -> String {
         switch self {
@@ -177,8 +173,6 @@ extension SteamCMDFailureCode {
 }
 
 extension SteamCMDManualBindResult {
-    /// Localized when the helper sent a code; the English `failureReason` is the
-    /// fallback for a payload written before codes existed.
     var localizedFailureReason: String? {
         if let failureCode {
             return failureCode.localizedMessage(failureArguments ?? [])
@@ -188,8 +182,6 @@ extension SteamCMDManualBindResult {
 }
 
 extension SteamCMDManagedInstallResult {
-    /// Localized when the helper sent a code; the English `failureReason` is the
-    /// fallback for a payload written before codes existed.
     var localizedFailureReason: String? {
         guard let failureCode else { return failureReason }
         let message = failureCode.localizedMessage(failureArguments ?? [])

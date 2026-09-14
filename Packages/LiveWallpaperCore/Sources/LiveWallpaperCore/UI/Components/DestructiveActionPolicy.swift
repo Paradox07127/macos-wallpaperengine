@@ -1,42 +1,26 @@
 import SwiftUI
 
-/// Unified destructive-action confirmation following macOS 26 Tahoe HIG:
-/// destructive button on top, Cancel on bottom keeping default focus; subtitle
-/// carries action target + side-effect + recovery path. Attach with
-/// `.confirmDestructive($action)`.
+/// Attach with `.confirmDestructive($action)`.
 public enum DestructiveAction: Identifiable, Equatable {
     case removePlaylistItem(isLast: Bool, displayName: String)
     case removeSceneHistory(sceneName: String)
     case deleteBookmark(bookmarkName: String)
     case deleteScheme(schemeName: String)
-    /// Whole-display overwrite: wallpaper, both overlay layers, and every
-    /// per-display setting land at once, so the target's current setup is gone
-    /// unless it was saved as a scheme first.
     case applyScheme(schemeName: String, displayName: String)
-    /// Re-capturing a display over a scheme that already exists: the saved
-    /// wallpaper, overlay and settings in that slot are overwritten in place.
     case replaceScheme(schemeName: String, displayName: String)
     case removeScheduleSlot(slotLabel: String)
     case disableSchedule(slotCount: Int)
     case clearAllStorageCaches(byteSize: String)
     case clearSceneVideoCache(byteSize: String)
     case applyConfigurationToAllDisplays(otherCount: Int)
-    /// The overlay tab's own copy: the layer you are looking at, and nothing
-    /// else. The wallpaper underneath every target display stays as it is.
     case applyOverlayToAllDisplays(overlayName: String, otherCount: Int)
     case clearCurrentWallpaper(displayName: String)
     case resetDisplaySettings(displayName: String)
-    /// Settings › Advanced. The whole preference store goes back to first-launch
-    /// state, so unlike `resetDisplaySettings` there is no narrower target to name.
     case resetAllSettings
     case removeSystemWallpaper(title: String, isInUse: Bool)
-    /// Trashing the app leaves its container behind, so the published copies
-    /// outlive an uninstall unless the user clears them first.
     case clearSystemWallpaperLibrary(itemCount: Int, formattedSize: String)
     case disconnectAerialsLibrary
     #if DEBUG
-    /// Storage tab's debug-only cleanup of test-run scratch dirs. Gated so a
-    /// shipping build carries neither the case nor its strings.
     case clearTestTempArtifacts(itemCount: Int, formattedSize: String)
     #endif
 
@@ -264,10 +248,8 @@ private struct DestructiveConfirmationModifier: ViewModifier {
             ),
             presenting: pending
         ) { current in
-            // HIG (Alerts): "when people deliberately choose a destructive action —
-            // such as Empty Trash — the resulting alert doesn't apply the destructive
-            // style." Every confirmDestructive call site is that shape: the user just
-            // clicked an explicitly labelled Reset/Clear/Remove control.
+            // No `role: .destructive`: HIG says an alert confirming a deliberately-chosen
+            // destructive action does not apply the destructive style.
             Button(current.action.destructiveButtonTitle) {
                 let captured = current.perform
                 pending = nil

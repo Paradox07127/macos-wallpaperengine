@@ -1,6 +1,5 @@
 import LiveWallpaperCore
 
-/// WallpaperType → SF Symbol used by MenuBarDisplayRow.
 extension WallpaperType {
     var displaySymbolName: String {
         switch self {

@@ -1,9 +1,6 @@
 #if !LITE_BUILD
 import Foundation
 
-/// Steam's facet groups for Wallpaper Engine tags, as the Workshop detail page
-/// lists them (`workshopTagsTitle`, measured 2026-09-07). Steam sends items a
-/// flat tag list; the grouping is ours, from the browse page's facet table.
 enum WorkshopTagTaxonomy {
     /// Declaration order is the page's display order.
     enum Group: CaseIterable, Equatable {
@@ -65,7 +62,6 @@ enum WorkshopTagTaxonomy {
         table[tag.lowercased()] ?? .other
     }
 
-    /// Groups in `Group` order, tags in the item's own order, empty groups omitted.
     static func grouped(tags: [String]) -> [GroupedTags] {
         Group.allCases.compactMap { group in
             let matching = tags.filter { self.group(for: $0) == group }

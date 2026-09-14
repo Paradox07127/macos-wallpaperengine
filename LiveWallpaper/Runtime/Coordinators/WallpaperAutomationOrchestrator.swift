@@ -2,7 +2,6 @@ import CoreGraphics
 import Foundation
 import LiveWallpaperCore
 
-/// Playlist + schedule automation on top of `WallpaperAutomationCoordinator`.
 @MainActor
 final class WallpaperAutomationOrchestrator {
     private let configurationStore: WallpaperConfigurationStore
@@ -409,7 +408,6 @@ final class WallpaperAutomationOrchestrator {
         startCoordinator(runInitialScheduleCheck: runInitialScheduleCheck)
     }
 
-    /// Absence is an energy boundary: stop the timer so sleep/lock cannot decode candidates.
     func suspendForUserAbsence() {
         guard !isSuspendedForUserAbsence else { return }
         isSuspendedForUserAbsence = true

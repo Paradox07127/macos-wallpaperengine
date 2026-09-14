@@ -4,7 +4,6 @@ import SwiftUI
 
 // MARK: - Section
 
-/// Edits this display's Music configuration independently of the Monitor board.
 struct MusicOverlaySection: View {
     let screen: Screen
     let screenManager: ScreenManager
@@ -20,7 +19,6 @@ struct MusicOverlaySection: View {
         screenManager.monitorOverlay(for: screen)
     }
 
-    /// Whether this display's wallpaper has a still frame to preview against.
     var backdropAvailable: Bool = false
 
     private var music: MusicOverlayConfiguration { overlay.music }
@@ -80,9 +78,8 @@ struct MusicOverlaySection: View {
                 Divider()
                 OverlayBackdropRow(available: backdropAvailable)
                 #if !LITE_BUILD
-                // Keyed to the switch, not the live tap: demand-driven capture is
-                // legitimately idle while music is paused, and that's not a
-                // condition the user needs to fix in Settings.
+                // Keyed to the switch, not the live tap: demand-driven capture is legitimately
+                // idle while music is paused.
                 if !SettingsManager.shared.loadGlobalSettings().audioResponseEnabled {
                     Text("Audio-reactive visuals need Audio Response turned on in Settings.")
                         .font(.caption)
@@ -109,9 +106,8 @@ struct MusicOverlaySection: View {
         }
     }
 
-    /// The Music module's own switch — it never touches `enabled`, which is the
-    /// Monitor board's. Turning off keeps the configuration, so style, size and
-    /// position all survive a round trip through off.
+    /// The Music module's own switch; it never touches `enabled`, which is the Monitor
+    /// board's. Turning it off keeps the configuration.
     private var showBinding: Binding<Bool> {
         Binding(
             get: { isOn },
@@ -330,7 +326,6 @@ struct MusicOverlaySection: View {
         .groupBoxStyle(ContainerGroupBoxStyle())
     }
 
-    /// A separate picker line keeps all four choices readable at the minimum inspector width.
     private var titleFontRow: some View {
         VStack(alignment: .leading, spacing: 6) {
             SettingRow(icon: "character.book.closed", iconColor: .indigo, title: "Title font") {
@@ -451,8 +446,6 @@ struct MusicOverlaySection: View {
         }
     }
 
-    /// Full-width line for the same reason as the font picker: "Rounded
-    /// corners" spelled out does not fit beside a title.
     private var artworkShapeRow: some View {
         VStack(alignment: .leading, spacing: 6) {
             SettingRow(icon: "square.on.circle", iconColor: .purple, title: "Artwork shape") {
@@ -642,9 +635,7 @@ struct MusicOverlaySection: View {
 
 // MARK: - Option slider
 
-/// Inspector slider that commits on release rather than on every tick: each
-/// commit rewrites the whole settings blob, which is why the preview's drag
-/// also only persists in `onEnded`.
+/// Commits on release, not on every tick: each commit rewrites the whole settings blob.
 private struct MusicOptionSlider: View {
     let icon: String
     let iconColor: Color

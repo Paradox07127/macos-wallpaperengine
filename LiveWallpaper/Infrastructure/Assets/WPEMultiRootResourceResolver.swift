@@ -6,7 +6,6 @@ import LiveWallpaperProWPE
 struct WPEMultiRootResourceResolver: Sendable {
     private let primary: SceneResourceResolver
     private let dependencyMounts: [String: SceneResourceResolver]
-    /// Optional engineRoot/assets fallback after the primary misses.
     private let engineAssetsResolver: SceneResourceResolver?
     private let tracer: WPEResolutionTracer?
 
@@ -26,8 +25,6 @@ struct WPEMultiRootResourceResolver: Sendable {
         self.tracer = tracer
     }
 
-    /// Package-backed primary root. Built-ins, engine assets, and dependency
-    /// mounts stay directory-backed (they are real on-disk roots).
     init(
         primaryProvider: any WPESceneAssetProvider,
         dependencyMounts: [WPEAssetMount],
@@ -61,8 +58,6 @@ struct WPEMultiRootResourceResolver: Sendable {
         return mounts
     }
 
-    /// Existence probe across the cascade, without staging or reading bytes —
-    /// used by shader-include resolution to pick the right candidate.
     func exists(relativePath: String) -> Bool {
         if let dependency = Self.dependencyReference(relativePath) {
             return dependencyMounts[dependency.workshopID]?.exists(relativePath: dependency.childPath) ?? false
@@ -98,9 +93,7 @@ struct WPEMultiRootResourceResolver: Sendable {
         }
     }
 
-    /// Resolves model/material JSON and probes the terminal asset in the same
-    /// mounted root. This prevents a fallback JSON from accidentally pairing
-    /// with a same-named TEX in the primary scene.
+    /// Resolves JSON and probes the terminal asset in the same mounted root so a fallback JSON cannot pair with a same-named TEX in the primary scene.
     func resolveTextureFormatProbe(
         relativePath: String,
         optional: Bool = false
@@ -157,8 +150,6 @@ struct WPEMultiRootResourceResolver: Sendable {
         }
     }
 
-    /// Tries primary first; on `.fileMissing` falls through to the optional
-    /// engine-assets resolver.
     private func resolveWithFallbacks<T>(
         relativePath: String,
         optional: Bool = false,
@@ -258,7 +249,6 @@ struct WPEMultiRootResourceResolver: Sendable {
     ) {
         guard let tracer else { return }
         let event = WPEResolutionEvent(ref: relativePath, attempts: attempts, finalOutcome: finalOutcome)
-        // Optional probe miss = expected, not a missing asset — don't trace it.
         if optional, finalOutcome != .resolved {
             return
         }

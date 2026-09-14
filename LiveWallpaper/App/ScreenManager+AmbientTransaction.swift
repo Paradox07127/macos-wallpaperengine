@@ -4,7 +4,6 @@ import LiveWallpaperCore
 
 @MainActor
 extension ScreenManager {
-    /// Persist bookmark-normalized config inside the install CAS (final write wins).
     func commitPreparedAmbientConfiguration(
         proposed: ScreenConfiguration,
         effective: ScreenConfiguration,
@@ -19,7 +18,6 @@ extension ScreenManager {
         return true
     }
 
-    /// Retire outgoing video work: asset readiness is screen-scoped; effects are player-scoped.
     func retireOutgoingVideoWork(
         for screenID: CGDirectDisplayID,
         player: WallpaperVideoPlayer?
@@ -47,8 +45,7 @@ extension ScreenManager {
                 candidate.cleanup()
                 return
             }
-            // Evaluated conjunct-by-conjunct only so a dropped candidate names the
-            // reason: success and every failure mode used to look identical here.
+            // Evaluated conjunct-by-conjunct only so a dropped candidate names the reason: success and every failure mode would look identical here.
             let isCandidateStillCurrent: @MainActor () -> Bool = {
                 [weak self, weak screen] in
                 guard let self, let screen else {

@@ -16,9 +16,7 @@ extension WPEShaderTranspiler {
         let bodyRange: Range<String.Index>
     }
 
-    /// Metal helper functions live outside `wpe_translated_fragment`, so they cannot see
-    /// the sampler/uniform aliases emitted inside the fragment body. Thread those aliases
-    /// through helper parameters and through helper call sites.
+    /// Helpers sit outside `wpe_translated_fragment`, so sampler/uniform aliases are threaded as parameters and call-site arguments.
     static func rewriteHelperResourceAccess(
         helpers: String,
         mainBody: String,
@@ -47,10 +45,7 @@ extension WPEShaderTranspiler {
 
         for function in functions {
             let body = String(helpers[function.bodyRange])
-            // A function parameter shadows a like-named global uniform/sampler, so
-            // a body reference resolves to the local — don't thread the global in
-            // (it would duplicate the parameter and the MSL would be rejected, e.g.
-            // tech_circle_barcode's `sectors(... float sectorCount, float seed)`).
+            // A like-named parameter shadows the global; threading it would duplicate the parameter and fail MSL.
             let shadowedNames = parameterNames(in: String(helpers[function.parameterRange]))
             var dependencies = Set(
                 resources
@@ -125,10 +120,7 @@ extension WPEShaderTranspiler {
         let samplerResources = samplers.map {
             HelperResource(name: $0.name, parameterType: "texture2d<float>")
         }
-        // Texture-call rewriting turns a helper-body `texture(g_TextureN, uv)`
-        // into `g_TextureN.sample(wpeSamplerN, uv)` — the per-slot sampler
-        // STATE must be threaded alongside the texture or the helper references
-        // an undeclared identifier (godrays_gaussian's blur helpers).
+        // Texture-call rewriting emits `g_TextureN.sample(wpeSamplerN, uv)`; the per-slot sampler state must be threaded too.
         let samplerStateResources = samplers.compactMap { decl -> HelperResource? in
             guard let slot = textureSlot(for: decl.name) else { return nil }
             return HelperResource(name: "wpeSampler\(slot)", parameterType: "sampler")
@@ -146,11 +138,7 @@ extension WPEShaderTranspiler {
         in source: String,
         resources: [HelperResource]
     ) -> [String: Set<String>] {
-        // Fold `\`-continued macro bodies onto one line first: the body pattern is
-        // single-line (`[^\n]*`), so without folding a resource referenced on a
-        // continuation line (`#define S(uv) \` <nl> `texture(g_Texture0, uv)`) is
-        // missed and never threaded into the helper. Only used for dependency
-        // scanning, so collapsing continuations here doesn't affect emitted source.
+        // Fold `\`-continued macro bodies first: the body pattern is single-line, so a resource on a continuation would never be threaded.
         let folded = source.replacingOccurrences(
             of: #"\\[ \t]*\r?\n"#,
             with: " ",
@@ -306,8 +294,6 @@ extension WPEShaderTranspiler {
         return result
     }
 
-    /// Extracts declared parameter names from a function parameter list
-    /// (e.g. `"float pos, vec2 puv, float sectorCount"` -> `["pos","puv","sectorCount"]`).
     /// The name is the trailing identifier of each comma-separated declaration.
     private static func parameterNames(in parameters: String) -> Set<String> {
         let trimmed = parameters.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -413,9 +399,7 @@ extension WPEShaderTranspiler {
         var index = open
         while index < source.endIndex {
             let ch = source[index]
-            // Skip `//` and `/* */` regions so a `}`/`)` inside a comment (e.g. a
-            // `// }` in a helper body) can't close the delimiter early and truncate
-            // the body — returned index still maps onto `source`.
+            // Skip `//` and `/* */` so a `}`/`)` inside a comment cannot close the delimiter early.
             let next = source.index(after: index)
             if ch == "/", next < source.endIndex, source[next] == "/" {
                 index = next

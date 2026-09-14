@@ -1,8 +1,7 @@
 import AppKit
 import WebKit
 
-/// Wallpaper web view that accepts first-mouse events and removes irrelevant browser menu actions.
-/// It remains in this package to isolate AppKit importer overhead from the app target's expression diagnostics.
+/// Stays in this package to keep the AppKit import out of the app target's expression diagnostics.
 public final class HTMLWebView: WKWebView {
     override public func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 

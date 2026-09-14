@@ -2,9 +2,6 @@ import Foundation
 @testable import LiveWallpaper
 import Testing
 
-/// Behavior guard for the granted-bookmark resolution path. The security-scope
-/// open/close around the stale refresh is not observable headless; these pin
-/// the resolution and refresh semantics around it.
 @Suite("Apple Aerials bookmark resolution") @MainActor
 struct AppleAerialsBookmarkResolutionTests {
     private func withSavedBookmarkState(_ body: () -> Void) {

@@ -3,11 +3,6 @@ import LiveWallpaperCore
 @testable import LiveWallpaperProWPE
 import Testing
 
-/// 2955378002 "Blinking Stars 23" (object 1607) and "Blinking Stars 00" (1610)
-/// author `instanceoverride.alpha` as `{ script, value }`, gating the whole
-/// system on `engine.timeOfDay`. `unwrap("alpha")` returned the seed `1.0` and
-/// the script itself was dropped, so Mac drew both systems at full alpha at noon
-/// (measured means 0.57 / 0.59) while the Windows capture has COLOR.a = 0.
 @Suite("Particle instanceoverride alpha script")
 struct WPEParticleInstanceAlphaScriptTests {
     private struct NoScriptResolver: WPESceneTransformScriptResolving {

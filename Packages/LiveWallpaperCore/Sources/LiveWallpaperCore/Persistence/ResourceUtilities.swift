@@ -4,9 +4,8 @@ import UniformTypeIdentifiers
 
 @MainActor
 public final class ResourceUtilities {
-    /// Resolve the actual regular file before opening a resource within an
-    /// authorized folder. Scope acquisition/lifetime stays with the caller.
     /// Root-contained symlinks are allowed; an escaping target is never returned.
+    /// Scope acquisition and lifetime stay with the caller.
     public nonisolated static func containedRegularFileURL(_ url: URL, inside root: URL) -> URL? {
         guard url.isFileURL, root.isFileURL else { return nil }
         let rootURL = root.standardizedFileURL.resolvingSymlinksInPath()
@@ -93,19 +92,13 @@ public final class ResourceUtilities {
         return ["html", "htm"].contains(url.pathExtension.lowercased())
     }
 
-    /// Why a video could not be made durably readable. Both endings used to
-    /// be `nil`, and the one screen that reports this could only say the file
-    /// could not be read — true of neither case.
     public enum VideoBookmarkFailure: Error, Equatable, Sendable {
         /// No scoped bookmark, and copying it into the app's own storage failed
         /// too — out of space, or the source became unreadable.
         case couldNotCopy
-        /// The copy landed but could not be bookmarked.
         case couldNotBookmarkCopy
     }
 
-    /// Most callers only need the bookmark; this is for the ones that show the
-    /// reader why it failed.
     public static func videoBookmark(
         for url: URL,
         applicationSupportRootURL: URL? = nil,
@@ -147,7 +140,6 @@ public final class ResourceUtilities {
         return .success(localBookmark)
     }
 
-    /// The bookmark alone, for the callers with nowhere to show a reason.
     public static func createVideoBookmark(
         for url: URL,
         applicationSupportRootURL: URL? = nil,
@@ -297,7 +289,6 @@ public final class ResourceUtilities {
 
     // MARK: - HTML Source Bookmarking
 
-    /// Preserves a user's explicit File-mode choice as a file source.
     public static func htmlSourceFromPickedFile(_ fileURL: URL) -> HTMLSource? {
         if let fileBookmark = createBookmark(for: fileURL) {
             return .file(bookmarkData: fileBookmark)

@@ -12,8 +12,7 @@ struct WorkshopMetadataBatchTests {
     func batchBodyEncoding() {
         #expect(SteamWorkshopMetadataService.formBody(publishedFileIDs: [111, 222, 333])
             == "itemcount=3&publishedfileids%5B0%5D=111&publishedfileids%5B1%5D=222&publishedfileids%5B2%5D=333")
-        // The single-id shape is pinned by InstalledOwnershipTests against the
-        // live request; pin the builder to the same string here.
+        // The single-id shape is pinned against the live request in InstalledOwnershipTests.
         #expect(SteamWorkshopMetadataService.formBody(publishedFileIDs: [100])
             == "itemcount=1&publishedfileids%5B0%5D=100")
     }
@@ -135,7 +134,6 @@ struct WorkshopMetadataBatchTests {
         model.ingestFromRawInput()
 
         await recorder.waitUntilStarted(count: 1)
-        // Second chunk must not start while the first is still in flight.
         try? await Task.sleep(nanoseconds: 50_000_000)
         #expect(recorder.bodies.count == 1)
         let firstBody = try #require(recorder.bodies.first)
@@ -169,14 +167,12 @@ struct WorkshopMetadataBatchTests {
         #expect(model.rows.isEmpty)
         recorder.releaseAll()
 
-        // A fresh single-row ingestion still works after the cancellation…
         model.updateRawInput("999")
         model.ingestFromRawInput()
         await Self.waitUntilSettled(model)
         #expect(model.rows.count == 1)
         #expect(model.rows.first?.state == .ready)
 
-        // …and the cancelled ingestion's second chunk (id 51 alone) never ran.
         try? await Task.sleep(nanoseconds: 50_000_000)
         #expect(!recorder.bodies.contains("itemcount=1&publishedfileids%5B0%5D=51"))
         #expect(recorder.bodies.last == "itemcount=1&publishedfileids%5B0%5D=999")
@@ -256,7 +252,6 @@ struct WorkshopMetadataBatchTests {
         return Data("{\"response\":{\"result\":1,\"resultcount\":\(items.count),\"publishedfiledetails\":[\(details)]}}".utf8)
     }
 
-    /// Builds a success envelope answering exactly the ids the request asked for.
     private static func successPayload(forRequestBody body: String) -> Data {
         let ids = body.components(separatedBy: "&").compactMap { part -> String? in
             guard part.hasPrefix("publishedfileids%5B") else { return nil }
@@ -315,8 +310,6 @@ private final class BatchMetadataStubProtocol: URLProtocol, @unchecked Sendable 
     override func stopLoading() {}
 }
 
-/// Records request bodies in arrival order and optionally gates responses so a
-/// test can prove chunks run sequentially (or never run at all after cancel).
 private final class BatchRequestRecorder: @unchecked Sendable {
     enum Plan: @unchecked Sendable {
         case http(status: Int, headers: [String: String], body: Data)

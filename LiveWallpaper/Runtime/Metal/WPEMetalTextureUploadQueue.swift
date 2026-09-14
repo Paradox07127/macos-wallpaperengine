@@ -17,19 +17,15 @@ private final class WPEMetalTextureDispatchExecutor: WPEMetalTextureUploadExecut
     }
 }
 
-/// Bounded off-main upload lane for Metal texture work. WPE scenes routinely ship 4K BC mip
-/// chains; running `MTLTexture.replace(...)` on the calling actor blocks the main thread for
-/// tens of milliseconds per mip. Admission is gated BEFORE dispatching (suspending the caller,
-/// not a GCD worker) so excess uploads wait as continuations instead of parked threads —
-/// blocking a semaphore inside a concurrent queue is the classic thread-explosion antipattern; overcommitting the GPU's IO surface produces no real speedup anyway and just contends for system RAM.
+/// Bounded off-main upload lane for Metal texture work. Admission is gated BEFORE dispatching
+/// — the caller suspends, not a GCD worker — so excess uploads wait as continuations instead of
+/// parked threads; blocking a semaphore inside a concurrent queue is the thread-explosion antipattern.
 final class WPEMetalTextureUploadQueue: @unchecked Sendable {
     struct AdmissionSnapshot: Equatable, Sendable {
         let grantedCount: Int
         let waitingCount: Int
     }
 
-    /// Capped at half the active core count (min 1, max 2) so a 6-display setup
-    /// never stalls the GPU on a single mip; the bound is purely heuristic.
     static let shared = WPEMetalTextureUploadQueue(
         label: "com.livewallpaper.wpe-metal.texture-upload",
         maxConcurrentUploads: max(1, min(2, ProcessInfo.processInfo.activeProcessorCount / 2))
@@ -221,10 +217,7 @@ final class WPEMetalTextureUploadQueue: @unchecked Sendable {
         }
     }
 
-    /// Cancellation can race the handoff from Swift concurrency to GCD. The
-    /// locked `tryBegin` transition defines which side won: if cancellation
-    /// wins, synchronous Metal work is skipped; if upload wins, it may finish
-    /// but its value is discarded.
+    /// Cancellation can race the GCD handoff. `tryBegin` defines the winner: cancel skips Metal work; upload may finish but its value is discarded.
     private final class OperationCancellationState: @unchecked Sendable {
         private enum Phase {
             case pending
@@ -252,7 +245,6 @@ final class WPEMetalTextureUploadQueue: @unchecked Sendable {
             return true
         }
 
-        /// Returns true only when completion wins the race with cancellation.
         func finish() -> Bool {
             lock.lock()
             defer { lock.unlock() }
@@ -282,7 +274,6 @@ final class WPEMetalTextureUploadQueue: @unchecked Sendable {
     }
 
     #if DEBUG
-    /// Test-only read of admission state; no production caller.
     var admissionSnapshot: AdmissionSnapshot {
         admission.snapshot
     }

@@ -2,9 +2,9 @@ import os
 import Testing
 @testable import LiveWallpaper
 
-/// One-shot injection seam standing in for the capture-attached processor:
-/// hands out its frame on the first pull, nil afterwards, so later snapshots
-/// exercise the broker's cached copy. Shared by the script-runtime tests.
+/// Shared by the script-runtime tests.
+/// One-shot: hands out its frame on the first pull, nil afterwards, so later snapshots
+/// exercise the broker's cached copy.
 final class SpectrumAnalyzerStub: AudioSpectrumAnalyzing, @unchecked Sendable {
     private let pending: OSAllocatedUnfairLock<AudioSpectrumFrame?>
 

@@ -1,13 +1,11 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// Shared widget card appearance, consumed by `PanelChrome`.
 enum MonitorPanelAppearance {
     static let tintKey = "Monitor.WidgetTintHex"
     static let opacityKey = "Monitor.WidgetOpacity"
     static let glassKey = "Monitor.WidgetLiquidGlass"
 
-    /// Glass is opt-in because compositing over animated wallpaper can increase energy use.
     static let defaultGlass = false
 
     /// An empty tint selects the default graphite gradient.
@@ -54,16 +52,13 @@ enum MonitorPanelAppearance {
         return String(format: "#%02X%02X%02X", r, g, b)
     }
 
-    /// Requires native Liquid Glass support and Reduce Transparency off.
     static func usesGlass(_ enabled: Bool, reduceTransparency: Bool) -> Bool {
         guard enabled, !reduceTransparency else { return false }
         return AdaptiveGlass.isAvailable
     }
 
-    /// Brightest channel a card's own colour is allowed to reach, and the ground
-    /// the ink halo restores when the card is too faint to reach it on its own.
-    /// Every widget draws light-on-dark, and a ground this dark clears 4.5:1 for
-    /// `Design.inkFaint`, the palest ink on the board.
+    /// Brightest channel a card's colour may reach, and the ground the ink halo
+    /// restores: this dark clears 4.5:1 for `Design.inkFaint`, the palest ink used.
     private static let groundCeiling: Double = 0.14
 
     /// Keep light readouts legible even when the wallpaper or selected tint is white.
@@ -95,7 +90,6 @@ enum MonitorPanelAppearance {
     /// Soft enough to read as a halo rather than an outline at every tile size.
     static let inkBackingRadius: CGFloat = 3
 
-    /// Scale the glass tint with the same opacity setting as the painted fill.
     static func glassScrim(tintHex: String, opacity: Double) -> Color {
         readableTint(tintHex).opacity(0.58 * resolvedOpacity(opacity))
     }

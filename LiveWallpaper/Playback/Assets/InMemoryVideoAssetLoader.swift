@@ -1,10 +1,7 @@
 import AVFoundation
 import Foundation
 
-/// Serves mmap'd video bytes over `lwmem://` so looped playback cannot re-hit disk
-/// (AVFoundation ignores preferredForwardBufferDuration on 4K HEVC; verified via
-/// fs_usage). Also windows a scene.pkg entry without extraction. Owner must retain
-/// the loader — resourceLoader's delegate is weak.
+/// Owner must retain the loader — resourceLoader's delegate is weak.
 final class InMemoryVideoAssetLoader: NSObject, AVAssetResourceLoaderDelegate, @unchecked Sendable {
     static let scheme = "lwmem"
 
@@ -14,10 +11,7 @@ final class InMemoryVideoAssetLoader: NSObject, AVAssetResourceLoaderDelegate, @
     private let windowStart: Int
     private let windowLength: Int
 
-    /// `.mappedIfSafe` is advisory: Foundation refuses to map files on network and removable volumes and
-    /// silently reads them onto the heap instead, turning "serve it from a mapping" into "hold the whole
-    /// file as dirty memory" — the case the cache budget exists to avoid. Also gates whole-package
-    /// mapping in `WPEPackageSceneAssetProvider`.
+    /// `.mappedIfSafe` is advisory: on network/removable volumes Foundation heap-reads the whole file instead of mapping.
     static func isVolumeMappable(_ url: URL) -> Bool {
         guard let values = try? url.resourceValues(
             forKeys: [.volumeIsLocalKey, .volumeIsRemovableKey]
@@ -30,8 +24,6 @@ final class InMemoryVideoAssetLoader: NSObject, AVAssetResourceLoaderDelegate, @
     }
 
     static func load(from url: URL) throws -> (loader: InMemoryVideoAssetLoader, customURL: URL) {
-        // Both callers treat a throw here as "use the plain file URL instead",
-        // which is the right answer when the bytes would land on the heap anyway.
         guard isVolumeMappable(url) else {
             throw NSError(domain: "InMemoryVideoAssetLoader", code: 415, userInfo: [
                 NSLocalizedDescriptionKey:
@@ -49,7 +41,6 @@ final class InMemoryVideoAssetLoader: NSObject, AVAssetResourceLoaderDelegate, @
         return (loader, customURL(forLastComponent: url.lastPathComponent))
     }
 
-    /// Map package lazily; expose one entry's byte range (no extraction).
     static func loadPackageEntry(
         packageURL: URL,
         entryName: String
@@ -66,10 +57,7 @@ final class InMemoryVideoAssetLoader: NSObject, AVAssetResourceLoaderDelegate, @
                 NSLocalizedDescriptionKey: "Video entry \(entryName) not found in package"
             ])
         }
-        // Same trap as `load`: on a removable or network volume `.mappedIfSafe` degrades to a whole-
-        // file heap read of the entire multi-GB package, not just this entry. There is no file-URL
-        // fallback for an embedded entry, so read only the entry's byte range instead, bounding the
-        // heap cost at the video's own size.
+        // 可移动/网络卷上 .mappedIfSafe 会整包堆读,故按 entry 字节范围读
         let data: Data
         let start: Int
         let windowLength: Int
@@ -147,12 +135,7 @@ final class InMemoryVideoAssetLoader: NSObject, AVAssetResourceLoaderDelegate, @
         self.windowLength = windowLength
     }
 
-    /// Logical (0..<windowLength) byte range one data request must be served.
-    /// AVAssetResourceLoader.h: with `requestsAllDataToEndOfResource` set, requestedLength must
-    /// be disregarded and data fed through EOF — responding short and calling `finishLoading()`
-    /// makes the media system assume the resource ends there. requestedLength is NSIntegerMax
-    /// only while contentLength is unreported, and this delegate reports it on the first request,
-    /// so testing `== Int.max` alone truncated the asset mid-playback (issue #131).
+    /// With requestsAllDataToEndOfResource (or requestedLength == Int.max while contentLength is unreported), feed through EOF — a short respond + finishLoading() would make the media system assume the resource ends there.
     static func logicalRange(
         currentOffset: Int64,
         requestedLength: Int,
@@ -177,12 +160,7 @@ final class InMemoryVideoAssetLoader: NSObject, AVAssetResourceLoaderDelegate, @
             info.contentType = mimeType
             info.contentLength = Int64(windowLength)
             info.isByteRangeAccessSupported = true
-            // Without this, AVFoundation treats us as a streaming source it may not be able to re-reach,
-            // so it hoards what we hand over and re-pulls the whole resource every loop: measured 673 MB
-            // delivered across three loops of a 56 MB clip, footprint swinging 26 MB. Declaring on-demand
-            // availability (true here — the bytes are an mmap) drops that to 134 MB and a 5 MB swing, at
-            // the cost of many more, much smaller requests. AVAssetResourceLoader.h names this exact case:
-            // "the custom URL scheme ultimately refers to files on local storage".
+            // Without isEntireLengthAvailableOnDemand AVFoundation treats us as a streaming source it may not re-reach and hoards/re-pulls every loop. True here — the bytes are an mmap.
             info.isEntireLengthAvailableOnDemand = true
         }
 
@@ -195,10 +173,7 @@ final class InMemoryVideoAssetLoader: NSObject, AVAssetResourceLoaderDelegate, @
                 requestsAllDataToEndOfResource: dataRequest.requestsAllDataToEndOfResource,
                 windowLength: windowLength
             )
-            // Respond in bounded chunks so a large requested range can't
-            // trigger a single multi-hundred-MB `Data` copy. AVFoundation
-            // accepts repeated `respond(with:)` calls before
-            // `finishLoading()` and stitches them into one fulfilled range.
+            // Respond in bounded chunks so a large range cannot trigger one multi-hundred-MB Data copy; AVFoundation accepts repeated respond(with:) before finishLoading().
             var offset = range.lowerBound
             while offset < range.upperBound {
                 let next = min(offset &+ Self.chunkSize, range.upperBound)

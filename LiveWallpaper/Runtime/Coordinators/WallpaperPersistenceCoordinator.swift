@@ -2,7 +2,6 @@ import CoreGraphics
 import Foundation
 import LiveWallpaperCore
 
-/// Write side of `ScreenConfiguration` persistence (save/remove/prune + change notification).
 @MainActor
 final class WallpaperPersistenceCoordinator {
     private let store: WallpaperConfigurationStore
@@ -37,7 +36,6 @@ final class WallpaperPersistenceCoordinator {
         bookmarkDisplayNameCache.prime(bookmarks: Self.videoBookmarks(in: configuration))
     }
 
-    /// Drops configurations whose local resource bookmark no longer resolves.
     @discardableResult
     func pruneInvalidConfigurations() -> [CGDirectDisplayID] {
         let removed = store.pruneInvalidResourceConfigurations(

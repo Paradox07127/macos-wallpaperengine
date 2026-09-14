@@ -2,11 +2,6 @@ import Foundation
 import Testing
 @testable import LiveWallpaperProWPE
 
-/// Regression coverage for the CFBoolean pitfall in `WPEValueParser.double`/`.int`:
-/// a JSON boolean bridges to a CFBoolean-backed `NSNumber`, so without the explicit
-/// `strictBool` short-circuit it would parse as 0/1 even when the caller passed the
-/// default `boolAsNumber: false` (which expects a bool to parse as nil). The same
-/// pitfall was guarded locally in `WPEMetalSceneRenderer.overbright(fromConstants:)`.
 @Suite("WPEValueParser boolean handling")
 struct WPEValueParserBoolTests {
 

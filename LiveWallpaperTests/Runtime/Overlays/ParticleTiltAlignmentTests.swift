@@ -4,33 +4,21 @@ import QuartzCore
 import XCTest
 @testable import LiveWallpaper
 
-/// A leaning raindrop must point where it is going.
-///
-/// `CAEmitterCell` has no per-particle stretch, so the lean lives in two
-/// unrelated places — the angle baked into the streak bitmap, and the cell's
-/// `emissionLongitude`. Nothing links them, and the two coordinate systems
-/// (Core Graphics y-up, Core Animation emission angles) are easy to get
-/// crossed. Both are measured off the screen rather than reasoned about.
+/// `CAEmitterCell` has no per-particle stretch, so the lean lives in two unlinked
+/// places: the angle baked into the streak bitmap, and the cell's
+/// `emissionLongitude`. Nothing links them.
 final class ParticleTiltAlignmentTests: XCTestCase {
 
     // MARK: - Capture harness
 
-    /// A grayscale screen capture of `view`, rows normalised so row 0 is the
-    /// top of what the user sees.
-    ///
-    /// The normalisation is calibrated in-frame rather than assumed: the host
-    /// paints a marker at its own top-left, and whichever end of the buffer it
-    /// lands in defines "top". Getting that backwards would invert every
-    /// conclusion below.
+    /// A grayscale screen capture of `view`, rows normalised so row 0 is the top of
+    /// what the user sees — calibrated in-frame by a marker, not assumed.
     private struct Frame {
         let pixels: [UInt8]
         let width: Int
         let height: Int
-        /// First column past the calibration marker. Derived from the capture,
-        /// not hardcoded: the marker is sized in points and the capture is in
-        /// backing pixels, so a fixed column left the marker in frame on a
-        /// Retina display and every "measurement" below was really measuring
-        /// the marker.
+        /// First column past the calibration marker. Derived from the capture, not
+        /// hardcoded: the marker is sized in points, the capture in backing pixels.
         let firstDataColumn: Int
 
         func lit(_ x: Int, _ y: Int) -> Bool { pixels[y * width + x] > 24 }
@@ -52,9 +40,8 @@ final class ParticleTiltAlignmentTests: XCTestCase {
 
         let window = NSWindow(contentRect: frame, styleMask: [.borderless],
                               backing: .buffered, defer: false)
-        // Above ordinary windows, not at the wallpaper's level: a window the
-        // compositor considers occluded stops updating its backing store, and the
-        // capture then comes back black.
+        // Above ordinary windows, not at the wallpaper's level: an occluded window
+        // stops updating its backing store and the capture comes back black.
         window.level = .floating
         window.isOpaque = true
         window.backgroundColor = .black
@@ -78,13 +65,8 @@ final class ParticleTiltAlignmentTests: XCTestCase {
         return try snapshot(of: window, size: size)
     }
 
-    /// One calibrated frame of a host window built by `capture`.
-    ///
-    /// The compositor hands back an all-black backing store often enough just
-    /// after the window is ordered in that a single attempt failed about two
-    /// runs in three, first as "no marker" and then as "no streaks". A capture
-    /// that never shows the marker still fails, so the calibration keeps its
-    /// teeth.
+    /// Retried: the compositor hands back an all-black backing store just after the
+    /// window is ordered in. A capture that never shows the marker still fails.
     @MainActor
     private func snapshot(of window: NSWindow, size: CGSize) throws -> Frame {
         for _ in 0 ..< 9 {
@@ -102,10 +84,8 @@ final class ParticleTiltAlignmentTests: XCTestCase {
     /// `nil` when the calibration marker is not in the capture.
     @MainActor
     private func calibratedFrame(of window: NSWindow, size: CGSize) throws -> Frame? {
-        // This window's own backing store, not the screen region it occupies.
-        // `.optionOnScreenOnly` over a rect captures whatever is in front —
-        // during a full run other suites put their own windows up and these
-        // measurements failed at random while passing in isolation.
+        // This window's own backing store, not the screen region it occupies:
+        // `.optionOnScreenOnly` over a rect captures whatever is in front.
         let shot = try XCTUnwrap(
             CGWindowListCreateImage(
                 .null, [.optionIncludingWindow], CGWindowID(window.windowNumber),
@@ -148,7 +128,6 @@ final class ParticleTiltAlignmentTests: XCTestCase {
         )
     }
 
-    /// Two calibrated frames `gap` seconds apart of the same host window.
     @MainActor
     private func captureTwice(
         _ build: (NSView) -> Void, size: CGSize, settle: TimeInterval, gap: TimeInterval
@@ -157,10 +136,8 @@ final class ParticleTiltAlignmentTests: XCTestCase {
         return (frames[0], frames[1])
     }
 
-    /// Up to `count` calibrated frames `gap` seconds apart of one host window,
-    /// stopping at the first frame `isEnough` accepts. Sparse effects need a
-    /// window long enough to catch one, and a fixed count either wastes seconds
-    /// on every run or reports "nothing was measured" on an unlucky one.
+    /// Up to `count` calibrated frames `gap` seconds apart, stopping at the first
+    /// frame `isEnough` accepts.
     @MainActor
     private func captureSeries(
         _ build: (NSView) -> Void, size: CGSize, settle: TimeInterval, gap: TimeInterval, count: Int,
@@ -175,9 +152,8 @@ final class ParticleTiltAlignmentTests: XCTestCase {
         )
         let window = NSWindow(contentRect: frame, styleMask: [.borderless],
                               backing: .buffered, defer: false)
-        // Above ordinary windows, not at the wallpaper's level: a window the
-        // compositor considers occluded stops updating its backing store, and the
-        // capture then comes back black.
+        // Above ordinary windows, not at the wallpaper's level: an occluded window
+        // stops updating its backing store and the capture comes back black.
         window.level = .floating
         window.isOpaque = true
         window.backgroundColor = .black
@@ -215,7 +191,7 @@ final class ParticleTiltAlignmentTests: XCTestCase {
         let axis: Double
     }
 
-    /// Every lit region of at least `minPixels` in the frame, right of the marker.
+    /// Lit regions right of the calibration marker only.
     private func streaks(in frame: Frame, minPixels: Int = 40) -> [Streak] {
         var seen = [Bool](repeating: false, count: frame.width * frame.height)
         var found: [Streak] = []
@@ -302,7 +278,6 @@ final class ParticleTiltAlignmentTests: XCTestCase {
         return bottom - top
     }
 
-    /// Releases `cells` from a point and reports which way the plume leans.
     /// Positive means the particles travel down and to the right.
     @MainActor
     private func travelLean(of cells: [CAEmitterCell]) throws -> Double? {
@@ -325,19 +300,12 @@ final class ParticleTiltAlignmentTests: XCTestCase {
 
     // MARK: - Tests
 
-    /// The bitmap's lean and the cells' heading must agree in sign.
-    ///
-    /// Both come off the cells the app actually flies — the sprite is read
-    /// back out of `contents` rather than rebuilt — so this covers every
-    /// effect that bakes a direction into its texture.
     @MainActor
     func testStretchedSpritesPointTheWayTheParticleTravels() throws {
         let probe = ParticleOverlayView(frame: NSRect(x: 0, y: 0, width: 520, height: 520))
-        // The farthest rain band is included on purpose (-1 = last): it is the
-        // one a per-band slip between texture and heading breaks first.
-        // Meteors are deliberately absent: they are drawn as a round nucleus that
-        // lays its own train, so there is no angle baked into a sprite to keep in
-        // step with anything. Rain is the only effect left that bakes one.
+        // The farthest rain band is included on purpose (-1 = last): a per-band slip
+        // between texture and heading breaks it first. Meteors are absent on purpose:
+        // their sprite bakes no angle to keep in step with.
         let subjects: [(ParticleEffect, CGFloat, Int)] = [
             (.rain, 0.5, 0), (.rain, -0.5, 0), (.rain, 0.5, -1),
         ]
@@ -365,9 +333,8 @@ final class ParticleTiltAlignmentTests: XCTestCase {
                 downwardLean(spriteFrame), "\(effect) sprite did not render on screen"
             )
 
-            // Measured outside the unwrap on purpose: `XCTUnwrap` records
-            // anything its expression throws as a failure, which would turn
-            // the locked-screen skip into a red test.
+            // Measured outside the unwrap on purpose: `XCTUnwrap` records a throw as a
+            // failure, which would turn the locked-screen skip red.
             let measuredTravel = try travelLean(of: cells)
             let travel = try XCTUnwrap(measuredTravel, "\(effect) put no particles on screen")
 
@@ -383,17 +350,9 @@ final class ParticleTiltAlignmentTests: XCTestCase {
         }
     }
 
-    /// A streak must move along its own axis on the emitter the app really
-    /// runs — its shape, mode, position and size — not on a `.point` stand-in.
-    ///
-    /// Every heading measurement above flies the cells from a `.point`, and on
-    /// macOS 27 (26A5425a) that is exactly the case that hides the bug: a
-    /// `.line` emitter launched every drop 90° off its `emissionLongitude`, so
-    /// vertical streaks slid sideways along the top edge and leaning ones
-    /// crossed their own path (measured 2026-09-05: shape 28.7°, motion −61°).
-    /// Sparse rain, two frames 40 ms apart, each streak matched to its nearest
-    /// self in the second frame: the long axis and the displacement must agree,
-    /// and both must agree with the wind.
+    /// Must run on the emitter the app really uses, not a `.point` stand-in: the
+    /// `.point` case is exactly the one that hides a `.line` emitter launching every
+    /// drop 90° off its `emissionLongitude`.
     @MainActor
     func testRainStreaksTravelAlongTheirOwnAxis() throws {
         for tilt in [0.5, 0, -0.5] as [CGFloat] {
@@ -434,9 +393,8 @@ final class ParticleTiltAlignmentTests: XCTestCase {
         }
     }
 
-    /// Snow's sideways flutter has to blow the way the wind does: over a 15 s
-    /// fall a constant push to the right overpowers any leftward heading the
-    /// wind gave at birth, so an easterly still ended with the snow going east.
+    /// Over a 15 s fall a constant sideways push overpowers any heading the wind
+    /// gave at birth.
     @MainActor
     func testSnowFlutterFollowsTheWind() {
         let probe = ParticleOverlayView(frame: NSRect(x: 0, y: 0, width: 100, height: 100))
@@ -450,9 +408,6 @@ final class ParticleTiltAlignmentTests: XCTestCase {
         }
     }
 
-    /// The meteor sprite exists and leans the way meteors fly. Nothing else checks it
-    /// now that meteors are out of the emitter path, and a nil texture would leave the
-    /// menu entry working and the sky empty.
     @MainActor
     func testMeteorSpriteIsDrawableAndLeansWithTheFlight() throws {
         let frame = try capture({ view in
@@ -476,13 +431,8 @@ final class ParticleTiltAlignmentTests: XCTestCase {
         XCTAssertGreaterThan(lean, 0, "the meteor sprite leans \(lean), against its own flight")
     }
 
-    /// A meteor brightens before it fades.
-    ///
-    /// This is the whole point of flying meteors on their own layers: `CAEmitterCell`
-    /// offers `alphaSpeed`, one straight line, so an emitted particle can only ever get
-    /// dimmer and every meteor snapped into being at full brightness. Particle libraries
-    /// model this as an alpha envelope over the particle's lifetime, and that is what
-    /// the keyframed opacity here is.
+    /// `CAEmitterCell.alphaSpeed` is one straight line, so an emitted particle can
+    /// only get dimmer — hence the keyframed envelope.
     @MainActor
     func testMeteorLightCurveRisesThenFalls() throws {
         let values = MeteorShower.opacityValues
@@ -508,8 +458,6 @@ final class ParticleTiltAlignmentTests: XCTestCase {
         XCTAssertLessThan(times[peak], 0.35, "the flare takes \(times[peak]) of the flight")
     }
 
-    /// Every meteor is born clear of the top edge and flies the shared slant, so none
-    /// appears mid-air and the shower reads as one radiant rather than as noise.
     @MainActor
     func testMeteorsEnterFromOffScreenOnTheSharedSlant() {
         let bounds = CGRect(x: 0, y: 0, width: 1600, height: 1000)
@@ -536,7 +484,6 @@ final class ParticleTiltAlignmentTests: XCTestCase {
         }
     }
 
-    /// Gaps between meteors are random and bounded, and a denser sky is a busier one.
     /// A fixed interval is the tell that a shower is on a metronome.
     @MainActor
     func testMeteorGapsAreRandomAndScaleWithDensity() {
@@ -555,15 +502,9 @@ final class ParticleTiltAlignmentTests: XCTestCase {
         )
     }
 
-    /// A meteor must not drag a filled rectangle behind it.
-    ///
-    /// On macOS 27 (26A5425a) a `CAEmitterCell` that carries sub-cells has the whole
-    /// bounding box of its own sprite filled in by the compositor. With a diagonal
-    /// comet sprite as the nucleus that box was about 5,000 px of flat grey some 50
-    /// levels above the night sky, tracking every meteor (measured 2026-09-05, and
-    /// absent from the same scene with the train removed). A round nucleus leaves
-    /// almost no box to fill. Nothing in the type system notices this, and the box
-    /// only shows against a dark sky — so it is measured, on screen.
+    /// On macOS 27 a `CAEmitterCell` carrying sub-cells has the whole bounding box of
+    /// its own sprite filled in by the compositor; a round nucleus leaves almost no
+    /// box to fill. It only shows against a dark sky, so it is measured on screen.
     @MainActor
     func testMeteorsDoNotFillTheirSpriteBox() throws {
         let lit: (Frame) -> Bool = { Self.histogram(of: $0).lit > 400 }
@@ -579,9 +520,8 @@ final class ParticleTiltAlignmentTests: XCTestCase {
             if lit > 400 {
                 sawAMeteor = true
             }
-            // A flat plateau: thousands of pixels sharing one exact value. Real
-            // particles are gradients, so a clean frame's largest plateau is a
-            // couple of hundred pixels; the defect measured five thousand.
+            // A flat plateau: pixels sharing one exact value. Real particles are gradients,
+            // so a clean frame's largest plateau is a couple of hundred pixels.
             let plateau = histogram.indices
                 .filter { $0 > background + 3 }
                 .map { histogram[$0] }
@@ -594,9 +534,6 @@ final class ParticleTiltAlignmentTests: XCTestCase {
         XCTAssertTrue(sawAMeteor, "no meteor was drawn in any frame, so nothing was measured")
     }
 
-    /// The flutter and rising fields are volumes too, not three sheets: every
-    /// band behind the nearest is smaller, slower and no brighter, and there
-    /// are more of them — the same perspective law the rain follows.
     @MainActor
     func testFieldEffectsHaveDepthBands() throws {
         let probe = ParticleOverlayView(frame: NSRect(x: 0, y: 0, width: 100, height: 100))
@@ -626,10 +563,6 @@ final class ParticleTiltAlignmentTests: XCTestCase {
         }
     }
 
-    /// Petals, leaves and flakes lean with the wind like the rain does, and the
-    /// petals and leaves tumble harder in it — and the other way round in an
-    /// easterly than in a westerly. Before this they ignored the wind entirely
-    /// while `leansIntoWind` promised otherwise.
     @MainActor
     func testFlutterEffectsLeanAndTumbleWithTheWind() {
         let probe = ParticleOverlayView(frame: NSRect(x: 0, y: 0, width: 100, height: 100))
@@ -660,15 +593,9 @@ final class ParticleTiltAlignmentTests: XCTestCase {
         }
     }
 
-    /// Every depth band shares one lean.
-    ///
-    /// Drops of every size in one patch of sky fall in the same direction
-    /// (Garg & Nayar, CVPR 2004 §3.1: "within a local region, drops fall more
-    /// or less in the same direction"), and perspective keeps a straight
-    /// path's on-screen angle the same at every distance. Deriving each band's
-    /// lean from its own on-screen speed slanted the small far drops ~17°
-    /// steeper than the big near ones, so the field visibly drifted one way
-    /// while the streaks the eye picks out pointed another.
+    /// Drops of every size in one patch of sky fall in the same direction (Garg &
+    /// Nayar, CVPR 2004 §3.1), and perspective keeps a straight path's on-screen
+    /// angle the same at every distance.
     @MainActor
     func testEveryRainDepthBandSharesOneLean() {
         let tilt: CGFloat = 0.4
@@ -686,11 +613,8 @@ final class ParticleTiltAlignmentTests: XCTestCase {
         }
     }
 
-    /// Depth is perspective, applied to every visible quantity at once: the
-    /// near band is faster, longer, brighter and sparser, and each band behind
-    /// it is slower, shorter, fainter and denser. Streak length is speed × one
-    /// exposure, so the same exposure must fall out of every band — a band
-    /// with its own arbitrary length is what reads as a sprite sheet.
+    /// Streak length is speed × one exposure, so the same exposure must fall out of
+    /// every band.
     @MainActor
     func testRainDepthBandsScaleWithDistance() throws {
         let probe = ParticleOverlayView(frame: NSRect(x: 0, y: 0, width: 100, height: 100))
@@ -732,7 +656,6 @@ final class ParticleTiltAlignmentTests: XCTestCase {
         }
     }
 
-    /// With no wind there is no lean anywhere — the preset alone.
     @MainActor
     func testRainFallsStraightDownWithoutWind() {
         let probe = ParticleOverlayView(frame: NSRect(x: 0, y: 0, width: 100, height: 100))
@@ -744,15 +667,9 @@ final class ParticleTiltAlignmentTests: XCTestCase {
         }
     }
 
-    /// A westerly must push the rain to the right of the screen, and an
-    /// easterly to the left.
-    ///
-    /// This is the one link the sprite/heading test above cannot see: it
-    /// checks that the bitmap and the cells agree with *each other*, so a
-    /// compass-to-screen mapping that is mirrored would keep them agreeing
-    /// while blowing the rain the wrong way. Two bearings, opposite answers,
-    /// measured off the screen — so a y-axis or handedness slip anywhere from
-    /// `wind_direction_10m` to `emissionLongitude` shows up here.
+    /// Not covered by the sprite/heading test above: that one only checks the bitmap
+    /// and the cells agree with *each other*, so a mirrored compass-to-screen mapping
+    /// would keep them agreeing while blowing the rain the wrong way.
     @MainActor
     func testWindBearingsPushRainTheWayTheCompassSays() throws {
         let probe = ParticleOverlayView(frame: NSRect(x: 0, y: 0, width: 520, height: 520))
@@ -781,18 +698,13 @@ final class ParticleTiltAlignmentTests: XCTestCase {
         }
     }
 
-    /// Every effect has to be able to draw something.
-    ///
-    /// A preset that builds no cells, or a texture factory that returns nil,
-    /// fails completely silently — the menu entry is there and picking it just
-    /// turns the overlay off. Checked on the cells rather than on a capture:
-    /// an on-screen version of this was flaky, because a sparse effect like
-    /// bokeh may genuinely have emitted nothing yet when the shutter opens.
+    /// Checked on the cells rather than on a capture: a sparse effect like bokeh may
+    /// genuinely have emitted nothing yet when the shutter opens.
     @MainActor
     func testEveryEffectBuildsDrawableCells() throws {
         let probe = ParticleOverlayView(frame: NSRect(x: 0, y: 0, width: 400, height: 400))
         // Meteors are excluded because they are not emitted: `MeteorShower` flies one
-        // sprite per meteor on its own layer, and its sprite is checked below.
+        // sprite per meteor on its own layer, and its sprite is checked separately.
         for effect in ParticleEffect.allCases where effect != .none && effect != .meteors {
             let cells = probe.debugCells(for: effect, tilt: 0.3)
             XCTAssertFalse(cells.isEmpty, "\(effect) builds no cells")
@@ -807,9 +719,8 @@ final class ParticleTiltAlignmentTests: XCTestCase {
         }
     }
 
-    /// A stretched sprite's angle is baked in at birth and cannot follow, so
-    /// the particle's heading must not swing during its life. Rain does not
-    /// accelerate in the first place — a drop is already at terminal velocity.
+    /// A stretched sprite's angle is baked in at birth and cannot follow, so the
+    /// heading must not swing during its life; rain is already at terminal velocity.
     @MainActor
     func testStretchedSpriteHeadingHoldsForTheWholeLife() {
         let tilt: CGFloat = 0.5

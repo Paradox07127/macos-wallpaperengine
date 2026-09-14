@@ -5,14 +5,9 @@ import LiveWallpaperCore
 import LiveWallpaperProWPE
 import os
 
-// Split out of WPESceneScriptRuntime.swift: these types are the visible-script
-// video-intro engine, independent of the scene-script engine that file holds.
 
 // MARK: - Layer SceneScript (visible-script video intros)
 
-/// One `ISoundLayer` call a script made on a sound layer, addressed by layer name.
-/// Sound is scene-scoped rather than per-render-layer, so these travel through
-/// `WPESharedScriptState` instead of `WPELayerScriptState` like video does.
 enum WPELayerSoundCommand: Sendable, Equatable {
     case play
     case stop
@@ -20,7 +15,6 @@ enum WPELayerSoundCommand: Sendable, Equatable {
     case setVolume(Double)
 }
 
-/// One playback command a layer script issued via `thisLayer.getVideoTexture()`.
 enum WPELayerVideoCommand: Sendable, Equatable {
     case play
     case pause
@@ -38,10 +32,7 @@ enum WPEScriptValueShape: Sendable {
     case boolean
 }
 
-/// Explicit transform assignments made through a layer SceneScript's `thisLayer`. Nil means
-/// the script never assigned that field, so the renderer keeps using the authored/keyframed
-/// value; angles stay in the JavaScript API's degree domain until the renderer merges them
-/// into its radian geometry.
+/// Nil means the script never assigned that field, so the renderer keeps the authored/keyframed value. Angles stay in the JS API's degree domain until the renderer merges them into radian geometry.
 struct WPELayerScriptTransformMutation: Sendable, Equatable {
     var origin: SIMD3<Double>? = nil
     var scale: SIMD3<Double>? = nil
@@ -58,21 +49,15 @@ struct WPELayerScriptTransformMutation: Sendable, Equatable {
     }
 }
 
-/// Layer script tick result (visible/alpha + video commands). Value type for queue→MainActor.
 struct WPELayerScriptState: Sendable, Equatable {
     var visible: Bool
     var alpha: Double
     var videoCommands: [WPELayerVideoCommand]
-    /// Whether the script EXPLICITLY assigned this field. A layer it merely READ
-    /// (`if (getLayer(x).visible)`) must not be driven, else the handle's default
-    /// `visible=true` clobbers the layer's real state. Own/created states apply both.
+    /// Whether the script explicitly assigned this field. A layer it merely read must not be driven, else the handle's default visible=true clobbers the layer's real state.
     var visibleAssigned: Bool = true
     var alphaAssigned: Bool = true
 }
 
-/// Runtime state for a layer created by `thisScene.createLayer(...)`.
-/// These handles are authored dynamically by SceneScript, so they are surfaced
-/// separately from graph-backed `thisLayer` / `getLayer(name)` state.
 struct WPECreatedLayerScriptState: Sendable, Equatable {
     var key: String
     var imagePath: String
@@ -83,16 +68,11 @@ struct WPECreatedLayerScriptState: Sendable, Equatable {
     var visible: Bool
 }
 
-/// A layer script's full output for one run: state for its own layer (`thisLayer`)
-/// plus state for any other layers it reached via `thisScene.getLayer(name)`
-/// (keyed by layer name). The renderer resolves the names to objectIDs.
 struct WPELayerScriptOutput: Sendable, Equatable {
     var own: WPELayerScriptState
     var others: [String: WPELayerScriptState]
     var created: [WPECreatedLayerScriptState] = []
     var ownTransform: WPELayerScriptTransformMutation = .init()
-    /// Transforms a script assigned to *other* layers through
-    /// `thisScene.getLayer(name)`, keyed by scene layer name like `others`.
     var otherTransforms: [String: WPELayerScriptTransformMutation] = [:]
 }
 
@@ -108,9 +88,7 @@ enum WPELayerScriptCursorEvent: Sendable, Equatable {
     case click
     case rightDown
     case rightUp
-    /// Hover transitions, dispatched per-layer from renderer hit-testing (the
-    /// pointer entered/left THIS layer's screen rect) — unlike down/up which
-    /// broadcast. 3509243656's star tooltips fade in on `cursorEnter`.
+    /// Hover transitions, dispatched per-layer from renderer hit-testing — unlike down/up which broadcast.
     case enter
     case leave
 
@@ -128,9 +106,6 @@ enum WPELayerScriptCursorEvent: Sendable, Equatable {
     }
 }
 
-/// Typed cursor-hit payload for the SceneScript event bridge. The renderer
-/// does not populate it until hit ordering is captured on Windows; preserving
-/// the IR first avoids baking a guessed overlap policy into dispatch.
 struct WPELayerScriptCursorHit: Sendable, Equatable {
     var worldPosition: SIMD3<Double>?
     var localPosition: SIMD3<Double>?
@@ -147,24 +122,16 @@ struct WPELayerScriptCursorHit: Sendable, Equatable {
     }
 }
 
-/// Layer SceneScript: reads thisLayer mutations + video commands (not a returned string).
-/// Same queue+budget quarantine model as text instances. Not `@MainActor`.
+/// Not @MainActor.
 final class WPELayerScriptInstance {
     private let engineRelease: WPESceneScriptLaneRelease<LayerEngine>
     private var engine: LayerEngine { engineRelease.value }
     private let hasUpdateFunction: Bool
-    /// Whether the authored module exports `applyUserProperties`. Scene settings
-    /// are broadcast only to handlers that can consume them; avoiding a bounded
-    /// synchronous queue round-trip for every other layer is important in scenes
-    /// with many property-driven scripts.
     let handlesUserProperties: Bool
-    /// Same demand contract as `handlesUserProperties`, for the media handlers.
     let mediaHandlers: WPESceneMediaHandlerSet
     private let tickBudget: TimeInterval
     private var isPoisoned = false
-    /// Lifecycle is one-way. The renderer may reach teardown through reload,
-    /// hibernate, cleanup, and deinit backstops; only the first path may invoke
-    /// the authored `destroy()` handler.
+    /// Lifecycle is one-way; only the first teardown path may invoke the authored destroy() handler.
     private var isDestroyed = false
     let initialOutput: WPELayerScriptOutput
     private let asyncOutcomeSlot = WPESceneScriptOutcomeSlot<WPELayerScriptOutput>(
@@ -235,8 +202,6 @@ final class WPELayerScriptInstance {
         }
     }
 
-    /// Bounded-synchronous media delivery, used by the load path and by tests
-    /// that need the handler's effect visible to the next `tick()`.
     @discardableResult
     func dispatchMediaEvent(
         _ event: WPESceneMediaEvent,
@@ -262,9 +227,6 @@ final class WPELayerScriptInstance {
         }
     }
 
-    /// Frame-path media delivery: fire-and-forget onto the engine queue, so the
-    /// render thread never waits on a script engine. The handler's output drains
-    /// through the next frame's `batchTick`, exactly like a cursor event.
     func liveDispatchMediaEvent(
         _ event: WPESceneMediaEvent,
         runtimeSeconds: Double? = nil
@@ -277,11 +239,7 @@ final class WPELayerScriptInstance {
         )
     }
 
-    /// One drain's worth of events in ONE async hop. Dispatched one at a time,
-    /// the single in-flight slot admitted only the first event — a cold start's
-    /// `[playback, properties, thumbnail]` burst delivered playback and silently
-    /// dropped the rest, so title/artist never reached the script until the
-    /// next real change (possibly never for the current song).
+    /// One drain's events in one async hop. Dispatched one at a time, the single in-flight slot admitted only the first event and silently dropped the rest.
     func liveDispatchMediaEvents(
         _ events: [WPESceneMediaEvent],
         runtimeSeconds: Double? = nil
@@ -300,9 +258,7 @@ final class WPELayerScriptInstance {
         mediaHandlers.handles(event)
     }
 
-    /// Tick `update()`; returns the script's new per-layer output, or nil when
-    /// there's no `update()`, the instance is poisoned/timed out, or global
-    /// capacity is momentarily unavailable.
+    /// Returns nil when there's no update(), the instance is poisoned/timed out, or global capacity is momentarily unavailable.
     func tick(
         runtimeSeconds: Double? = nil,
         pointerFrame: WPEPointerFrame? = nil
@@ -326,7 +282,6 @@ final class WPELayerScriptInstance {
     }
 
     // MARK: Synchronous Oracle (DEBUG only)
-    // Test-only bounded-blocking wrappers (production uses batchTick*/seedAsyncTick).
     #if DEBUG
     @discardableResult
     func dispatchCursorEvent(
@@ -356,7 +311,6 @@ final class WPELayerScriptInstance {
     #endif
 
     #if DEBUG
-    /// Invoke applyUserProperties (time-of-day scripts gate day/night only here).
     @discardableResult
     func applyUserProperties(
         _ properties: [String: WPESceneScriptPropertyValue],
@@ -383,8 +337,7 @@ final class WPELayerScriptInstance {
 
     // MARK: Async Tick
 
-    /// Frame-path tick, batch mode. Drains the newest completed output and returns
-    /// the work to submit; see `WPESceneScriptInstance.batchTickString`.
+    /// See `WPESceneScriptInstance.batchTickString`.
     func batchTick(
         runtimeSeconds: Double? = nil,
         pointerFrame: WPEPointerFrame? = nil
@@ -413,10 +366,7 @@ final class WPELayerScriptInstance {
         return (fresh, WPESceneScriptBatchDispatcher.Job(queue: engine.queue, work: work))
     }
 
-    /// One frame's cursor events for this instance in ONE async hop, fire-and-forget
-    /// onto the engine queue when capacity allows. Dispatched one at a time, the
-    /// single in-flight slot admitted only the first: `cursorUp` swallowed the
-    /// `cursorClick` synthesised from the same release, so `cursorClick` never ran.
+    /// One frame's cursor events in one async hop. Dispatched one at a time, the single in-flight slot admitted only the first: cursorUp swallowed the cursorClick synthesised from the same release.
     func liveDispatchCursorEvents(
         _ events: [WPELayerScriptCursorEvent],
         pointerFrame: WPEPointerFrame,
@@ -459,9 +409,6 @@ final class WPELayerScriptInstance {
         }
     }
 
-    /// Patches the authored global `scriptProperties` bag, then evaluates the
-    /// layer script once on its owning lane. Separate from WPE's optional
-    /// `applyUserProperties` export: most corpus scripts use only the bag.
     func applyScriptPropertiesSuperseding(
         _ properties: [String: WPESceneScriptPropertyValue],
         runtimeSeconds: Double? = nil
@@ -490,9 +437,6 @@ final class WPELayerScriptInstance {
         }
     }
 
-    /// Delivers the real screen-resolution change on the instance's serial JSC
-    /// lane. Equal sizes are suppressed by the engine, so repeated AppKit
-    /// geometry notifications cannot duplicate the event.
     @discardableResult
     func resizeScreen(_ size: SIMD2<Double>) -> WPELayerScriptOutput? {
         guard !isPoisoned, !isDestroyed, engine.allows(.event) else { return nil }
@@ -530,8 +474,6 @@ final class WPELayerScriptInstance {
     }
 
     /// Calls the authored handler at most once and fences all later ticks/events.
-    /// The returned output is useful to the JSC contract tests; scene teardown
-    /// normally discards it because the owning object is about to disappear.
     @discardableResult
     func destroy() -> WPELayerScriptOutput? {
         guard !isDestroyed else { return nil }
@@ -592,16 +534,11 @@ final class WPELayerScriptInstance {
         /// Key for `thisLayer` in the per-layer command/handle maps (other layers
         /// use their `getLayer(name)` name).
         private static let ownKey = ""
-        /// `thisScene.createLayer` handles share the `getLayer` handle shape but
-        /// are not scene layers: they report their transform through
-        /// `created`, so they must stay out of the cross-layer journal.
+        /// thisScene.createLayer handles share the getLayer handle shape but must stay out of the cross-layer journal.
         private static let createdKeyPrefix = "__created_"
 
-        /// The engine's serial queue IS its batch worker, so "one context, one
-        /// queue" holds while a frame's ticks cost one dispatch per worker.
         fileprivate var queue: DispatchQueue { executionLane.queue }
         fileprivate let executionLane: WPESceneScriptBatchDispatcher.Lane
-        /// The lane's shared VM — every context this engine builds lives in it.
         private let virtualMachine: JSVirtualMachine
         private var context: JSContext?
         /// Rewrites every `registerAudioBuffers` array from the shared audio
@@ -617,36 +554,26 @@ final class WPELayerScriptInstance {
         private var faultPolicy = WPEScriptFaultPolicy()
         /// One-shot latch for `logFirstThrow` (per instance, not per tick).
         private var hasLoggedThrow = false
-        /// Handles minted by `thisScene.getLayer(name)`, keyed by layer name.
         private var namedLayers: [String: JSValue] = [:]
-        /// Video handles stored here (not captured by getVideoTexture) to avoid ~1.1MB JSC retain cycle.
+        /// Video handles stored here (not captured by getVideoTexture) to avoid a JSC retain cycle.
         private var videoHandles: [String: JSValue] = [:]
-        /// Layers whose `visible`/`alpha` the script EXPLICITLY assigned (keyed by
-        /// handle key = layer name, or `ownKey` for `thisLayer`). A `getLayer(x)`
-        /// the script only *read* never lands here, so `readOutput` won't drive it.
+        /// Layers whose visible/alpha the script explicitly assigned. A getLayer(x) the script only read never lands here, so readOutput won't drive it.
         private var assignedVisible: [String: Bool] = [:]
         private var assignedAlpha: [String: Double] = [:]
-        /// Cumulative own-layer assignments. These are deliberately separate
-        /// from the JS vector objects so a read or nested-object edit does not
-        /// masquerade as `thisLayer.<field> = value`.
+        /// Deliberately separate from the JS vector objects so a read or nested-object edit does not masquerade as thisLayer.<field> = value.
         private var assignedOwnTransform = WPELayerScriptTransformMutation()
         private var ownOriginValue: JSValue?
         private var ownScaleValue: JSValue?
         private var ownAnglesValue: JSValue?
-        /// Same contract as `assignedOwnTransform`, one entry per layer name a
-        /// script addressed through `thisScene.getLayer(name)`.
         private var assignedOtherTransforms: [String: WPELayerScriptTransformMutation] = [:]
         private var otherTransformValues: [String: [OwnTransformField: JSValue]] = [:]
         private var createdLayers: [(key: String, handle: JSValue)] = []
         private var createdLayerCounter = 0
-        /// Video commands per layer key ("" = thisLayer, else the getLayer name).
-        /// Drained on the engine queue (where the JS blocks also append) so there
-        /// is no cross-thread race.
+        /// Key "" = thisLayer, else the getLayer name. Drained on the engine queue (where the JS blocks also append) so there is no cross-thread race.
         private var pendingVideo: [String: [WPELayerVideoCommand]] = [:]
         /// Last play/stop intent per sound layer, so `isPlaying()` answers without
         /// a read-back channel into the audio graph.
         private var soundIntent: [String: Bool] = [:]
-        /// Last `volume` a script assigned per sound layer (same rationale).
         private var assignedSoundVolume: [String: Double] = [:]
         private let nowProviderMillis: (@Sendable () -> Double)?
         private let shared: WPESharedScriptState?
@@ -670,18 +597,12 @@ final class WPELayerScriptInstance {
         /// Batched cursor write (one crossing for all 5 fields, assigning onto
         /// the two cached cursor objects above); nil → per-field fallback.
         private var cursorHelper: JSValue?
-        /// `update(value)` boolean argument reused across ticks — JS booleans
-        /// are immutable, so identity reuse is unobservable and saves one
-        /// JSValue creation per tick.
+        /// JS booleans are immutable, so identity reuse of the update(value) argument is unobservable.
         private var cachedTrueArgument: JSValue?
         private var cachedFalseArgument: JSValue?
-        /// Reused per-context stubs for `getParent()` / `getAnimationLayer()` so a
-        /// chain (`getParent().getParent()`) doesn't mint a fresh object each call.
         private var neutralLayerStubCache: JSValue?
         private var neutralAnimationStubCache: JSValue?
-        /// Scene name of the layer this script is attached to. `ownKey` is the
-        /// empty string, so without this `thisLayer.name` / `.size` / `.origin`
-        /// and `thisScene.getLayerIndex(thisLayer)` all miss the layer table.
+        /// ownKey is the empty string, so without this thisLayer.name / .size / .origin and thisScene.getLayerIndex(thisLayer) all miss the layer table.
         private let ownLayerName: String?
 
         init(
@@ -767,8 +688,6 @@ final class WPELayerScriptInstance {
             }
         }
 
-        /// Async media event: same handler as the synchronous path, but the
-        /// output is published to the slot instead of returned to a waiting caller.
         func dispatchMediaEventAsync(
             _ event: WPESceneMediaEvent,
             runtimeSeconds: Double?,
@@ -798,9 +717,6 @@ final class WPELayerScriptInstance {
             return true
         }
 
-        /// Batch variant: one safety claim, one permit, one queue hop for a whole
-        /// drain. Each event still runs its own handler; each outcome publishes,
-        /// so the slot's merge sees exactly what per-event dispatch produced.
         func dispatchMediaEventsAsync(
             _ events: [WPESceneMediaEvent],
             runtimeSeconds: Double?,
@@ -925,10 +841,6 @@ final class WPELayerScriptInstance {
             }
         }
 
-        /// Async-mode cursor events: same handler as the synchronous path, but the
-        /// outputs are published to the slot instead of returned to a waiting caller.
-        /// One safety claim, one permit, one queue hop for the whole batch (see
-        /// `dispatchMediaEventsAsync`); each event still runs its own handler.
         func dispatchCursorEventsAsync(
             _ events: [WPELayerScriptCursorEvent],
             pointerFrame: WPEPointerFrame,
@@ -976,7 +888,6 @@ final class WPELayerScriptInstance {
             return nil
         }
 
-        /// The `alpha` counterpart of `coercedVisible`.
         static func coercedAlpha(_ result: JSValue?) -> Double? {
             guard let result, !result.isUndefined, !result.isNull, result.isNumber else { return nil }
             let value = result.toDouble()
@@ -1043,14 +954,7 @@ final class WPELayerScriptInstance {
             didThrow = false
             if let initFn = context.objectForKeyedSubscript("init"),
                !initFn.isUndefined, initFn.hasProperty("call") {
-                // `init` returns "the modified value to be applied to the property"
-                // just as `update` does (lib.sceneScript.d.ts). Routed through the
-                // same setters, so `readOutput()` below reports it exactly like a
-                // ticked value; a script that assigns `thisLayer.*` instead and
-                // returns nothing is unaffected.
-                // Text and transform pass the authored value as the argument;
-                // calling with none here fed `init(value)` an `undefined`, so
-                // `return !value` showed an authored-visible layer it meant to hide.
+                // init returns the modified value to be applied, just as update does. Calling with no argument fed init(value) undefined, so return !value showed an authored-visible layer it meant to hide.
                 switch outputMode {
                 case .layerState:
                     let returned = initFn.call(withArguments: [initialOwnVisible])
@@ -1060,9 +964,7 @@ final class WPELayerScriptInstance {
                     if let value = Self.coercedAlpha(returned) { setOwnLayerAlpha(value) }
                 }
             }
-            // A script that throws in init() (e.g. an API we don't yet support)
-            // must NOT half-apply — degrade to "shown as authored" so a broken
-            // script can't hide its layer, and don't tick its update().
+            // A script that throws in init() must not half-apply — degrade to shown-as-authored so a broken script can't hide its layer.
             let media = WPESceneMediaHandlerSet(in: context)
             if didThrow {
                 return .ready(
@@ -1125,15 +1027,7 @@ final class WPELayerScriptInstance {
             didThrow = false
             switch outputMode {
             case .layerState:
-                // Official contract for property-attached scripts: update(value) receives the
-                // current value; its RETURN becomes the new one. 285/392 visible corpus scripts
-                // are pure `return <expr>` (2955378002's 186-sprite calendar), silently frozen
-                // at the authored seed; undefined/null returns keep the assignment style
-                // (`thisLayer.visible = x`) intact. The LIVE property is the argument, not the
-                // last return — an assignment-style script never returns one, so replaying it
-                // pinned the seed forever, and `thisLayer.visible = !value` re-inverted that seed
-                // every frame. Both styles write `assignedVisible` via the same `defineProperty`
-                // setter (`setOwnLayerVisible` for the return path).
+                // update(value) receives the live current value; its return becomes the new one. The live property is the argument, not the last return — replaying a return pinned the seed, and thisLayer.visible = !value re-inverted every frame.
                 let current = assignedVisible[Self.ownKey] ?? initialOwnVisible
                 let arg = (current ? cachedTrueArgument : cachedFalseArgument)
                     ?? JSValue(bool: current, in: context)
@@ -1143,9 +1037,7 @@ final class WPELayerScriptInstance {
                     setOwnLayerVisible(value)
                 }
             case .returnedAlpha:
-                // Same contract, and the same defect, as `.layerState` above:
-                // the LIVE property is the argument, not the last returned
-                // value, or `thisLayer.alpha = 1 - value` reads the seed forever.
+                // Same contract as .layerState: the live property is the argument, not the last returned value, or thisLayer.alpha = 1 - value reads the seed forever.
                 let current = assignedAlpha[Self.ownKey] ?? initialOwnAlpha
                 let arg = JSValue(object: current, in: context) ?? JSValue(nullIn: context)!
                 WPEFrameOccupancyMeter.count(.jscCall)
@@ -1161,10 +1053,7 @@ final class WPELayerScriptInstance {
             return readOutput()
         }
 
-        /// A SceneScript that throws on EVERY tick used to be completely silent, and
-        /// it is not cheap: a missing `thisLayer` method costs ~1000us per tick
-        /// against ~10us once the call resolves. One line per instance, so a
-        /// permanently-broken script is findable without a per-frame log flood.
+        /// One line per instance, so a permanently-broken script is findable without a per-frame log flood.
         private func logFirstThrow(_ exception: JSValue?) {
             guard !hasLoggedThrow else { return }
             hasLoggedThrow = true
@@ -1324,10 +1213,7 @@ final class WPELayerScriptInstance {
             guard let pointerFrame else { return }
             let x = clampFinite(pointerFrame.position.x, lower: 0, upper: 1)
             let y = clampFinite(pointerFrame.position.y, lower: 0, upper: 1)
-            // Rewritten every tick even when the pointer has not moved: a script
-            // that assigns into `input.cursorScreenPosition` / `cursorWorldPosition`
-            // must see the host value restored, the way it did before the write was
-            // batched into one crossing.
+            // Rewritten every tick even when the pointer has not moved: a script that assigns into input.cursorScreenPosition must see the host value restored.
             if let cursorHelper {
                 WPEFrameOccupancyMeter.count(.jscCall)
                 cursorHelper.call(withArguments: [
@@ -1400,14 +1286,10 @@ final class WPELayerScriptInstance {
             thisLayer?.setObject(value.isFinite ? value : 1, forKeyedSubscript: "alpha" as NSString)
         }
 
-        /// Real thisLayer + thisScene.getLayer handles + WEMath (replace read-only stubs).
         private func installLayerBridge(in context: JSContext) {
             let layer = makeLayerHandle(key: Self.ownKey, in: context)
             context.setObject(layer, forKeyedSubscript: "thisLayer" as NSString)
-            // Same handle under WPE's other name for it. 8 bindings across 6 scenes
-            // by different authors use `thisObject`, so it is a real global rather
-            // than one author's invention — and it was undefined, so every one of
-            // them threw.
+            // Same handle under WPE's other name for it. thisObject is a real global rather than one author's invention — and it was undefined, so those scripts threw.
             context.setObject(layer, forKeyedSubscript: "thisObject" as NSString)
             self.thisLayer = layer
 
@@ -1464,9 +1346,7 @@ final class WPELayerScriptInstance {
 
         }
 
-        /// One handle per layer name for the scene's lifetime, so `enumerateLayers`
-        /// and repeated `getLayer` calls hand back the same object (scripts compare
-        /// handles and stash them).
+        /// One handle per layer name for the scene's lifetime, so enumerateLayers and repeated getLayer calls hand back the same object.
         private func layerHandle(named name: String, in context: JSContext) -> JSValue {
             if let existing = namedLayers[name] { return existing }
             let handle = makeLayerHandle(key: name, in: context)
@@ -1474,7 +1354,6 @@ final class WPELayerScriptInstance {
             return handle
         }
 
-        /// Writable layer handle tagged by key; hierarchy/animation accessors are stubs.
         private func makeLayerHandle(key: String, in context: JSContext) -> JSValue {
             let handle = JSValue(newObjectIn: context) ?? JSValue(nullIn: context)!
             // `key` is "" for the script's own layer, so anything addressed by
@@ -1483,10 +1362,7 @@ final class WPELayerScriptInstance {
             // visible/alpha are accessors so explicit assign is distinguishable from a mere read.
             installAssignmentAccessors(on: handle, key: key, layerName: layerName, in: context)
             handle.setObject(layerName, forKeyedSubscript: "name" as NSString)
-            // Authored layer size. Five scenes size a background off their icons
-            // (`icon.size.x * icon.scale.x`); the property being absent threw and
-            // killed the rest of update(). Zero when the name isn't a scene layer —
-            // `getLayer` mints handles for arbitrary strings.
+            // Authored layer size. Zero when the name isn't a scene layer — getLayer mints handles for arbitrary strings.
             let size = JSValue(newObjectIn: context)!
             let info = shared?.layers.first { $0.name == layerName }
             size.setObject(info?.size.x ?? 0, forKeyedSubscript: "x" as NSString)
@@ -1504,9 +1380,7 @@ final class WPELayerScriptInstance {
                 self?.videoHandles[key]
             }
             handle.setObject(getVideoTexture, forKeyedSubscript: "getVideoTexture" as NSString)
-            // Real parent when the document names one: 3660962877's dock reads
-            // `parent.origin` to decide which screen edge to align to, and a
-            // stub without an origin threw on `currentPos.x` every tick.
+            // Real parent when the document names one; a stub without an origin would throw on currentPos.x every tick.
             let parentName = info?.parentName
             let getParent: @convention(block) () -> JSValue? = { [weak self, weak context] in
                 guard let self else { return nil }
@@ -1518,24 +1392,15 @@ final class WPELayerScriptInstance {
                 self?.neutralAnimationStubCache
             }
             handle.setObject(getAnimationLayer, forKeyedSubscript: "getAnimationLayer" as NSString)
-            // The stub already answers setFrame/play/pause/stop; it was simply not reachable
-            // under this name, so `thisLayer.getTextureAnimation()` threw a TypeError on EVERY
-            // tick. Measured: 1039us/tick vs 11us for a script that doesn't throw — 30 bindings
-            // of one 415-byte script were 31ms of scene 3299228616's 31.8ms per-frame script cost.
+            // The stub already answers setFrame/play/pause/stop; it was not reachable under this name, so thisLayer.getTextureAnimation() threw a TypeError on every tick.
             let getTextureAnimation: @convention(block) () -> JSValue? = { [weak self] in
                 self?.neutralAnimationStubCache
             }
             handle.setObject(getTextureAnimation, forKeyedSubscript: "getTextureAnimation" as NSString)
-            // Timeline animation, called both bare (`thisLayer.getAnimation()`) and
-            // by name (`thisScene.getLayer(a).getAnimation(b)`), across 5 scenes.
             let getAnimation: @convention(block) (JSValue) -> JSValue? = { [weak self] _ in
                 self?.neutralAnimationStubCache
             }
             handle.setObject(getAnimation, forKeyedSubscript: "getAnimation" as NSString)
-            // `ISoundLayer`: play/stop/pause/isPlaying/volume. Real WPE API — every
-            // handle carries it because a script reaches a sound layer through the
-            // same `thisScene.getLayer(name)` as any other. Commands go through
-            // `shared` (sound is scene-scoped) and the renderer drains them.
             let store = shared
             for (method, command) in [
                 ("play", WPELayerSoundCommand.play),
@@ -1548,9 +1413,7 @@ final class WPELayerScriptInstance {
                 }
                 handle.setObject(block, forKeyedSubscript: method as NSString)
             }
-            // Last intent this engine expressed, not a read-back from the audio
-            // graph: giving scripts a live channel into AVAudioEngine would need a
-            // per-tick snapshot, and nothing in the corpus reads it.
+            // Last intent this engine expressed, not a read-back from the audio graph.
             let isPlaying: @convention(block) () -> Bool = { [weak self] in
                 self?.soundIntent[layerName] ?? false
             }
@@ -1558,7 +1421,6 @@ final class WPELayerScriptInstance {
             return handle
         }
 
-        /// Accessor visible/alpha whose setters record explicit assignment for readOutput.
         private func installAssignmentAccessors(
             on handle: JSValue,
             key: String,
@@ -1597,10 +1459,7 @@ final class WPELayerScriptInstance {
             defineAccessor(on: handle, property: "volume", get: getVolume, set: setVolume, in: context)
         }
 
-        /// Whole-property setters mirror the native layer API. Reading a vector
-        /// or mutating only the returned object's `x/y/z` does not publish a
-        /// geometry assignment; the script must assign the vector back to
-        /// `thisLayer.origin/scale/angles`.
+        /// Reading a vector or mutating only the returned object's x/y/z does not publish a geometry assignment; the script must assign the vector back to thisLayer.origin/scale/angles.
         private func installOwnTransformAccessors(
             on handle: JSValue,
             info: WPESceneScriptLayerInfo?,
@@ -1640,10 +1499,7 @@ final class WPELayerScriptInstance {
             case angles
         }
 
-        /// The `getLayer(name)` counterpart of `installOwnTransformAccessors`.
-        /// 2955378002 copies one layer's origin onto another in `init`
-        /// (`thisScene.getLayer("playerprogexception").origin = thisLayer.origin`),
-        /// which silently did nothing while these were plain data properties.
+        /// The getLayer(name) counterpart of installOwnTransformAccessors. Assigning one layer's origin onto another silently did nothing while these were plain data properties.
         private func installOtherTransformAccessors(
             on handle: JSValue,
             key: String,
@@ -1788,18 +1644,13 @@ final class WPELayerScriptInstance {
             let stub = JSValue(newObjectIn: context) ?? JSValue(nullIn: context)!
             let noop: @convention(block) () -> Void = {}
             let noop1: @convention(block) (JSValue) -> Void = { _ in }
-            // Writable playback rate. We don't drive layer timeline animations at
-            // all, so this stores and does nothing — but 3448877775 assigns it in
-            // the FIRST statement of update(), and an assignment to a property of
-            // `undefined` threw away the rest of the body along with it.
+            // Writable playback rate. We don't drive layer timeline animations, so this stores and does nothing — but an assignment to a property of undefined would throw away the rest of update().
             stub.setObject(1.0, forKeyedSubscript: "rate" as NSString)
             for method in ["play", "pause", "stop"] {
                 stub.setObject(noop, forKeyedSubscript: method as NSString)
             }
             stub.setObject(noop1, forKeyedSubscript: "setFrame" as NSString)
-            // Paired with setFrame — 4 instances in the corpus scan threw on
-            // `ani.getFrame()`. We drive no timeline, so frame 0 is the only
-            // answer we can give, and it beats killing the rest of update().
+            // Paired with setFrame. We drive no timeline, so frame 0 is the only answer we can give, and it beats killing the rest of update().
             let getFrame: @convention(block) () -> Double = { 0 }
             stub.setObject(getFrame, forKeyedSubscript: "getFrame" as NSString)
             neutralAnimationStubCache = stub

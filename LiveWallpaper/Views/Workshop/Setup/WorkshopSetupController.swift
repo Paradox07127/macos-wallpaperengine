@@ -3,47 +3,31 @@ import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
-/// The Workshop setup actions and their derived text, in one place — replaces three
-/// separate copies (settings page, onboarding step, Workshop pane) of `runManagedInstall`,
-/// the install-verification window, the SteamCMD detail line and the busy test, which let
-/// them disagree about whether SteamCMD was ready. Machine state (install status, bindings,
-/// probes) stays in the shared singletons; only transient per-surface state — the error
-/// line, the two "mid-flight" flags — lives here.
 @MainActor
 @Observable
 final class WorkshopSetupController {
-    // `@ObservationIgnored` on the references, matching `WorkshopServices`:
-    // what a view observes is each singleton's own properties, reached through
-    // these, not the (immutable) reference itself.
+    // `@ObservationIgnored`: views observe each singleton's own properties, not these immutable references.
     @ObservationIgnored let doctor: SteamCMDDoctorService
     @ObservationIgnored let installer = SteamCMDManagedInstallCoordinator.shared
     @ObservationIgnored let engineAssets = WPEEngineAssetsLibrary.shared
     @ObservationIgnored let engineInstaller = WPEEngineAssetsInstaller.shared
 
-    /// Failures from the three Steam connection steps. Scoped, not one string
-    /// for the whole controller: the assets section renders its own errors in
-    /// its own status line, and a shared slot put a SteamCMD failure there (and
-    /// an assets failure under the connection rows).
+    /// Failures from the three Steam connection steps; scene-resources failures
+    /// belong in `engineAssetsError`, not here.
     var setupError: String?
     var engineAssetsError: String?
 
-    /// Every user-initiated setup action starts here. Clears *both* error slots on purpose:
-    /// a scene-resources preflight that failed for a missing account is answered by signing
-    /// in, and leaving its warning on the resources row afterwards would misrepresent the
-    /// state that action just produced.
+    /// Clears *both* error slots on purpose: the action that fixes one step often
+    /// invalidates the other's warning.
     private func beginSetupAction() {
         setupError = nil
         engineAssetsError = nil
     }
-    /// The window between "the connector reported installed" and "we confirmed
-    /// it launches". Without it the row falls back to `binaryDisplayPath`,
-    /// which is still nil, and reads "Not selected" moments after a successful
-    /// install.
+    /// True between "the connector reported installed" and "we confirmed it launches";
+    /// without it the row would read "Not selected" right after a successful install.
     private(set) var isVerifyingInstall = false
-    /// Counter, not a Bool: Settings, onboarding and the pane share this one
-    /// controller, so two `prepare()`s (or a prepare and a manual detect) can
-    /// overlap — the first finisher used to clear the flag while the second was
-    /// still running, re-enabling the row mid-detection.
+    /// Counter, not a Bool: three surfaces share this controller, so detections overlap
+    /// and a Bool would be cleared by whichever finishes first.
     private var detectionsInFlight = 0
     var isDetectingBinary: Bool { detectionsInFlight > 0 }
     private func beginBinaryDetection() { detectionsInFlight += 1 }
@@ -53,10 +37,8 @@ final class WorkshopSetupController {
     /// still needs a user-confirmed panel before it may read anything there.
     private(set) var scannedLibraryPath: String?
 
-    /// Mirrors the connector's manual binding only to decide whether to offer "Forget" — the
-    /// record itself lives in the connector's own root, unreadable by this sandboxed process,
-    /// so this is a display hint, not the source of truth for what runs. On the controller, not
-    /// a view's `@AppStorage`, so a binding made from onboarding stays forgettable from Settings.
+    /// Display hint only: the binding record lives in the connector's root, unreadable
+    /// here, so this never decides what actually runs.
     var hasManualBinding: Bool {
         get {
             _ = manualBindingRevision
@@ -68,9 +50,8 @@ final class WorkshopSetupController {
         }
     }
 
-    /// `@Observable` tracks stored properties only, and the flag above lives in
-    /// `UserDefaults`; without this a view reading `hasManualBinding` registers
-    /// no dependency and keeps its old answer.
+    /// `@Observable` tracks stored properties only; bumping this is what makes the
+    /// `UserDefaults`-backed `hasManualBinding` invalidate views.
     private var manualBindingRevision: UInt64 = 0
     private static let manualBindingKey = "loomscreen.workshop.doctor.hasManualBinding.v1"
     @ObservationIgnored private let defaults: UserDefaults
@@ -87,10 +68,8 @@ final class WorkshopSetupController {
     // MARK: - Lifecycle
 
     func prepare() async {
-        // Same flag the manual "Locate automatically" raises: this also runs
-        // `autoDetectBinary`, and without it a click landing mid-`prepare`
-        // starts a second diagnose whose late "no SteamCMD found" overwrites
-        // the binding the first one just made.
+        // Raise the same flag "Locate automatically" does: a click landing mid-`prepare`
+        // would start a second diagnose whose late "not found" overwrites this binding.
         beginBinaryDetection()
         await doctor.autoConfigureIfNeeded()
         endBinaryDetection()
@@ -104,10 +83,7 @@ final class WorkshopSetupController {
     var isSteamCMDBusy: Bool {
         if isDetectingBinary || isVerifyingInstall { return true }
         switch installer.status {
-        // Removing counts as busy: the command that starts an install is
-        // disabled off this, and the coordinator refuses one mid-removal
-        // anyway — offering a command that will be declined is worse than
-        // greying it out.
+        // Removing counts as busy: the coordinator refuses an install mid-removal anyway.
         case .installing, .removing: return true
         case .idle, .installed, .failed: return false
         }
@@ -138,9 +114,8 @@ final class WorkshopSetupController {
         }
     }
 
-    /// The defaults record is not the only way a managed install can be the one
-    /// in use: auto-detect deliberately rebinds a copy the connector rediscovers
-    /// even when the record is gone (cleared defaults, a restored container).
+    /// The defaults record alone is not the test: auto-detect rebinds a rediscovered
+    /// managed copy even when the record is gone.
     var hasManagedInstall: Bool {
         if installer.managedInstall != nil { return true }
         guard let bound = doctor.binaryPath else { return false }
@@ -153,10 +128,8 @@ final class WorkshopSetupController {
         ).path(percentEncoded: false)
     }
 
-    /// Installs, then binds through the normal auto-detect path rather than the
-    /// returned path: binding is what makes the rest of the Doctor consider
-    /// SteamCMD set up, and auto-detect asks the connector to launch the binary
-    /// instead of inferring from the install having reported success.
+    /// Binds through `autoDetectBinary`, not the returned path: that is what launches
+    /// the binary instead of trusting the install's success report.
     func runManagedInstall() {
         beginSetupAction()
         installTask = Task {
@@ -188,13 +161,10 @@ final class WorkshopSetupController {
         Task {
             let found = await doctor.autoDetectBinary()
             endBinaryDetection()
-            // `!doctor.hasBoundBinary` and not just `!found`: with three entry
-            // points sharing this controller, a parallel prepare/manual pick can
-            // bind a binary while this detect is still out — its late "not
-            // found" would then overwrite a state that is in fact bound.
+            // `!doctor.hasBoundBinary`, not just `!found`: a parallel detect can bind while
+            // this one is out, and its late "not found" would overwrite that.
             if !found, !doctor.hasBoundBinary {
-                // The connector's own reason when it reached one — it names the
-                // copy it tried and what went wrong. The generic sentence is
+                // The connector's own reason names the copy it tried; the generic sentence is
                 // only right when nothing was found at all.
                 setupError = doctor.lastAutoDetectDiagnosis?.remedy ?? String(
                     localized: "No SteamCMD found in the usual places. Use Install SteamCMD for Loomscreen's own copy, or Choose SteamCMD to point at one yourself.",
@@ -204,10 +174,8 @@ final class WorkshopSetupController {
         }
     }
 
-    /// The recourse when SteamCMD is installed somewhere auto-detection has never heard of.
-    /// The path only travels as far as the connector, which resolves, gates and records it on
-    /// its own side (see `SteamCMDManualBinding`) — the app never says what runs on a download.
-    /// Returns true when a binding was recorded, so the caller can update its `@AppStorage` hint.
+    /// Returns true when a binding was recorded, so the caller can update its hint.
+    /// The chosen path only reaches the connector (see `SteamCMDManualBinding`).
     func pickBinaryManually() async -> Bool {
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
@@ -265,8 +233,8 @@ final class WorkshopSetupController {
             case .removed:
                 break
             case .superseded:
-                // Another operation owns the outcome. Reporting a failure here
-                // put an error on screen for a removal that was still running.
+                // Another operation owns the outcome; reporting a failure here would put an error
+                // on screen for a removal that is still running.
                 return
             case .connectorUnavailable:
                 setupError = String(
@@ -275,9 +243,8 @@ final class WorkshopSetupController {
                 )
                 return
             case .refused:
-                // The files are still there and still work — unbinding would take a working
-                // SteamCMD away as the visible result of a delete that didn't happen. `forget()`
-                // keeps the install record on failure, so Remove stays in the menu and is retryable.
+                // Don't unbind here: the files still work, and `forget()` keeps the install record
+                // on failure so Remove stays retryable.
                 setupError = String(
                     localized: "Couldn't remove the SteamCMD copy Loomscreen installed.",
                     bundle: .appLanguage, comment: "Workshop setup error when removing a managed SteamCMD install fails."
@@ -301,10 +268,8 @@ final class WorkshopSetupController {
             ?? String(localized: "Not authorized", bundle: .appLanguage, comment: "Steam library step detail when no folder has been picked.")
     }
 
-    /// Where Steam keeps its profile, if it is in the standard place.
-    /// This is the whole of what "scan" can do: the sandbox needs a security-scoped bookmark
-    /// to read anything under it, and only a user-confirmed panel can produce one. Knowing the
-    /// path in advance still helps — it turns the panel into a single click on a named folder.
+    /// Where Steam keeps its profile if it is in the standard place. Reading anything
+    /// under it still needs a user-confirmed panel for the bookmark.
     private func scanForSteamLibrary() {
         let candidate = AppleAerialsLibrary.realHomeDirectory()
             .appendingPathComponent("Library/Application Support/Steam", isDirectory: true)
@@ -315,9 +280,8 @@ final class WorkshopSetupController {
 
     var hasScannedLibrary: Bool { scannedLibraryPath != nil }
 
-    /// Opens the authorization panel already standing on `directory`.
-    /// The sandbox cannot grant itself this folder — only a user-initiated pick gets the bookmark
-    /// — but opening the panel already standing on it turns the common case into one click.
+    /// The sandbox cannot grant itself this folder: only a user-initiated pick produces
+    /// the bookmark.
     func authorizeSteamLibrary(startingAtScannedPath useScanned: Bool) async {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
@@ -357,7 +321,6 @@ final class WorkshopSetupController {
     /// Accounts from Steam `config.vdf` via the connector (sandbox cannot read that file).
     func loadAccounts() async {
         discoveredAccounts = await SteamConnectorClient.discoverAccounts()
-        // Auto-select the only discovered account so setup finishes without a menu click.
         if doctor.username == nil, discoveredAccounts.count == 1 {
             selectAccount(discoveredAccounts[0])
         }
@@ -372,9 +335,6 @@ final class WorkshopSetupController {
         }
     }
 
-    /// Through `setUsername` so the previous account's green is dropped, then
-    /// green directly: the connector already re-checked the cached login before
-    /// reporting the sign-in as a success, so a second Steam login proves nothing.
     func adoptSignedInAccount(_ accountName: String) {
         beginSetupAction()
         do {
@@ -397,9 +357,8 @@ final class WorkshopSetupController {
         WorkshopStepState.hasEngineAssets(library: engineAssets, installer: engineInstaller)
     }
 
-    /// Clears the failure slot only once a folder was actually granted:
-    /// clearing up front meant cancelling the panel erased the reason the user
-    /// opened it for.
+    /// Clear the failure slot only after a folder is granted: clearing up front would
+    /// erase the reason the user opened the panel.
     func linkEngineAssetsFolder() async {
         guard await engineAssets.requestAccess() else { return }
         engineAssetsError = nil
@@ -407,12 +366,9 @@ final class WorkshopSetupController {
         engineInstaller.clearTransientStatus()
     }
 
-    /// Why the automatic download route is unavailable, or nil when it can be attempted.
-    /// Deliberately reads the *bindings*, not `isDownloadReady`: probe results aren't persisted,
-    /// so on a fresh launch `cachedLogin` is `.notRun` and `isDownloadReady` is false even on a
-    /// perfectly set-up Mac. Disabling the button on that would deadlock the click that runs the
-    /// probes that clear it, so it stays live whenever the pieces exist, and `downloadEngineAssets()` re-probes first.
-    /// `downloadBlockerMessage` is one generic sentence; a disabled-button tooltip must name the missing piece.
+    /// nil when the download can be attempted. Reads the *bindings*, not `isDownloadReady`:
+    /// `cachedLogin` is `.notRun` on a fresh launch, so gating on it would deadlock the
+    /// click that runs the probes.
     var engineAssetsDownloadBlockReason: String? {
         if !doctor.hasBoundBinary {
             return String(
@@ -435,10 +391,8 @@ final class WorkshopSetupController {
         return nil
     }
 
-    /// Confirms readiness, then downloads.
-    ///
-    /// The probe run is what makes a freshly launched, fully configured Mac
-    /// work on the first click: `cachedLogin` starts every launch at `.notRun`.
+    /// True while the pre-download readiness probes run; `cachedLogin` starts every
+    /// launch at `.notRun`, so the first click always has to probe.
     private(set) var isPreflightingDownload = false
 
     func downloadEngineAssets() {
@@ -459,8 +413,6 @@ final class WorkshopSetupController {
         engineInstaller.checkForUpdate(using: doctor)
     }
 
-    /// Refuse with a reason when a prerequisite is missing, run immediately when
-    /// readiness is already proven, otherwise prove it first.
     private func runWithPreflight(_ action: @escaping () -> Void) {
         engineAssetsError = nil
         if let reason = engineAssetsDownloadBlockReason {
@@ -471,10 +423,8 @@ final class WorkshopSetupController {
             action()
             return
         }
-        // Set before the `Task`, not inside it: two clicks land two bodies on
-        // the main actor before either suspends, so a flag raised inside the
-        // task leaves the button live for the second one — and the first to
-        // finish then clears it while the other probe run is still going.
+        // Set before the `Task`, not inside it: two clicks land on the main actor before
+        // either suspends, so a flag raised inside would leave the button live.
         guard !isPreflightingDownload else { return }
         isPreflightingDownload = true
         Task {

@@ -1,7 +1,5 @@
 import SwiftUI
 
-/// Page identity in the toolbar's center. The main window hides its native title,
-/// so the identity needs an explicit toolbar view.
 struct LibraryIdentityLabel: View {
     private let systemImage: String
     private let title: Text
@@ -27,7 +25,6 @@ struct LibraryIdentityLabel: View {
     }
 }
 
-/// The title stays outside the shared toolbar capsule on macOS 26 and later.
 public struct LibraryIdentityToolbarItem: ToolbarContent {
     private let systemImage: String
     private let title: Text

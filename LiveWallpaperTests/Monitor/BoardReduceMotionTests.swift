@@ -3,9 +3,6 @@ import AppKit
 import LiveWallpaperCore
 import Testing
 
-/// The particle layer follows the system Reduce Motion switch live; the board
-/// read it once at init and on `apply`, so the two disagreed until the next
-/// reconcile rebuilt the board.
 @Suite("Monitor board follows Reduce Motion")
 struct BoardReduceMotionTests {
     @MainActor

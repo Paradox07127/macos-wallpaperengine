@@ -1,11 +1,6 @@
 @testable import LiveWallpaper
 import Testing
 
-/// The Now Playing layer used to multiply its three visibility factors together
-/// onto every pixel: the opacity dial, the text-brightness dial, and the paused
-/// dim. A user who had dialled the layer down and then paused read the title at
-/// `opacity × brightness × 0.55`. `NowPlayingVisibility` keeps them apart — this
-/// suite is the statement of which factor is allowed to reach which part.
 @Suite("Now Playing visibility keeps one dial per part of the tile")
 struct NowPlayingVisibilityTests {
     private typealias Visibility = NowPlayingVisibility
@@ -43,8 +38,6 @@ struct NowPlayingVisibilityTests {
 
     // MARK: The reported bug — paused type went unreadable
 
-    /// The core of R10: pausing changes nothing about how bright the type is
-    /// drawn, at any position of the opacity dial.
     @Test(
         "Pausing leaves every text factor exactly where playing had it",
         arguments: [0.2, 0.5, 0.9, 1.0]
@@ -59,8 +52,6 @@ struct NowPlayingVisibilityTests {
         #expect(paused.textBacking == playing.textBacking)
     }
 
-    /// The other half of the same statement: the dim did not get deleted, it got
-    /// narrowed. Cover art and the platter still recede while paused.
     @Test("The paused dim reaches the cover and nothing else")
     func pauseDimReachesOnlyArt() {
         let playing = resolve(dimmed: false)
@@ -75,9 +66,6 @@ struct NowPlayingVisibilityTests {
 
     // MARK: The opacity dial stays a whole-layer dial
 
-    /// The dial is deliberately still allowed to fade the type — that is what
-    /// the user asked it for — but the floor of the published range must leave
-    /// something on screen, and by then the type is on a plate.
     @Test("At the lowest opacity the type is still drawn, and on a plate")
     func lowestOpacityKeepsTypeAndGainsAPlate() {
         let floor = Self.opacityRange.lowerBound
@@ -91,15 +79,11 @@ struct NowPlayingVisibilityTests {
         #expect((plate ?? 0) > 0)
     }
 
-    /// The counterpart guard: an untouched layer keeps the borderless look, so
-    /// the plate cannot creep into the default presentation.
     @Test("An untouched layer draws no plate")
     func defaultsStayPlateless() {
         #expect(resolve().textBacking == .shadow)
     }
 
-    /// The plate is a response to the dial, so it may never get weaker as the
-    /// dial gets lower.
     @Test("The plate only ever strengthens as the dial drops")
     func plateGrowsMonotonically() {
         let steps = stride(
@@ -145,8 +129,6 @@ struct NowPlayingVisibilityTests {
         )
     }
 
-    /// Increase Contrast on its own keeps the translucent plate but must always
-    /// land above whatever the dial alone would have drawn.
     @Test("Increase Contrast raises the plate above anything the dial produces", arguments: [0.2, 0.6, 1.0])
     func increaseContrastRaisesThePlate(opacity: Double) {
         let plain = plateOpacity(resolve(opacity: opacity).textBacking) ?? 0
@@ -156,8 +138,6 @@ struct NowPlayingVisibilityTests {
         #expect(contrasted < 1, "only Reduce Transparency goes fully opaque")
     }
 
-    /// Neither setting is allowed to touch the factors themselves — they decide
-    /// the ground under the type, not how bright anything is drawn.
     @Test("The accessibility settings move the backing, not the factors")
     func accessibilitySettingsOnlyMoveTheBacking() {
         let plain = resolve(opacity: 0.6, brightness: 0.8, dimmed: true)

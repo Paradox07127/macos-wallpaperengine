@@ -102,19 +102,16 @@ struct InstalledOwnershipCharacterizationTests {
             }
             #expect(await service.fetch(publishedFileID: 100) == .failure(.schemaMismatch))
 
-            // Overflows UInt32.max — must not reach the trapping initializer either.
             service = metadataService { _ in
                 .http(status: 200, headers: [:], body: Self.metadataPayload(id: "100", updated: 1, consumerAppIDLiteral: "5000000000"))
             }
             #expect(await service.fetch(publishedFileID: 100) == .failure(.schemaMismatch))
 
-            // A different, validly-encoded Steam app's item.
             service = metadataService { _ in
                 .http(status: 200, headers: [:], body: Self.metadataPayload(id: "100", updated: 1, consumerAppIDLiteral: "440"))
             }
             #expect(await service.fetch(publishedFileID: 100) == .failure(.schemaMismatch))
 
-            // Field omitted entirely.
             service = metadataService { _ in
                 .http(status: 200, headers: [:], body: Self.metadataPayload(id: "100", updated: 1, consumerAppIDLiteral: nil))
             }
@@ -312,9 +309,8 @@ struct InstalledOwnershipCharacterizationTests {
         )
         #expect(importBoundary.contains("guard !Task.isCancelled, self.attempts[itemID] == attemptID"))
 
-        // Scoped to the region after the download await: asserting on the whole
-        // file would pass with the guard sitting anywhere, which is the one thing
-        // this is meant to pin down.
+        // Scoped to the region after the download await: a whole-file assertion
+        // would pass with the guard sitting anywhere.
         let doctorBoundary = try sourceSlice(
             download,
             from: "return await doctor.downloadWorkshopItem(",
@@ -532,8 +528,6 @@ struct InstalledOwnershipCharacterizationTests {
 
 
 
-    /// The repository is the only place a Workshop item's files live, so the
-    /// library record must not outlive them — nor be dropped while they stay.
     @Test("a refused mutation gate leaves the library record and bookmark intact")
     @MainActor
     func deleteRefusedByMutationGateKeepsLocalRecords() async {
@@ -635,16 +629,10 @@ struct InstalledOwnershipCharacterizationTests {
 
     @Test("The auto-ingest scan never deletes library records")
     func autoIngestNeverDeletesRecords() throws {
-        // Enumerating the bound Steam library proves an id is absent from *that*
-        // library — not that its content is gone. A folder-imported project on an
-        // unplugged drive looks identical, and pruning on that signal deleted it
-        // for good. WPEOrigin carries no "came from Steam" discriminator, so this
-        // scan has no sound basis for deleting anything.
         let source = try projectSource(
             "LiveWallpaper/Infrastructure/Workshop/WorkshopFolderImportCoordinator.swift"
         )
         let body = try sourceSlice(source, from: "func ingestExistingDownloads", to: "\n    nonisolated static func")
-        // Name-independent: the bulk API that shipped is gone, so pin the shape.
         #expect(!body.contains("removeWPEImports"))
         #expect(!body.contains("SettingsManager.shared.remove"))
     }
@@ -652,9 +640,6 @@ struct InstalledOwnershipCharacterizationTests {
     @Test("Re-recording an existing item keeps its library history")
     @MainActor
     func rerecordPreservesImportHistory() async {
-        // The relink path rebuilds the entry with `importedAt: Date()`. The
-        // update badge fires on `remoteEpoch > importedAt`, so stamping "now"
-        // silently clears a real pending update for every relinked item.
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("WorkshopRerecord-\(UUID().uuidString)", isDirectory: true)
         let manager = SettingsManager(directory: ConfigurationDirectory(root: root))
@@ -945,7 +930,7 @@ private final class WorkshopInstalledDeleteProbe {
     var isMutating = false
     var repositoryThrows = false
     var gate: (gate: WorkshopInstalledUpdateGate, key: String)?
-    /// Call order across the two halves of a delete — the whole point here.
+    /// Call order across the two halves of a delete.
     private(set) var log: [String] = []
 
     init(store: WorkshopInstalledLibraryStoreProbe, bookmarks: Set<String> = []) {

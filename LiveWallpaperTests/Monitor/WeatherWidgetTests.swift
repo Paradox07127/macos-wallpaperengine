@@ -59,8 +59,6 @@ struct WeatherWidgetTests {
         }
     }
 
-    /// The tile and the full-screen particles read the same wind through the
-    /// same policy, so a westerly leans both to the right by the same angle.
     @Test("Rain leans with the wind exactly as the desktop particles do")
     func leanMatchesTheParticlePolicy() {
         let westerly = WeatherReactiveService.WeatherWind(speedKPH: 40, gustKPH: nil, fromDegrees: 270)
@@ -69,7 +67,6 @@ struct WeatherWidgetTests {
         #expect(abs(scene(.rain, wind: westerly).lean - expected) < 1e-9)
         #expect(abs(scene(.rain, wind: easterly).lean + expected) < 1e-9)
         #expect(scene(.rain).lean == 0, "no wind reading, no lean")
-        // Snow leans further than rain in the same wind, as it does outside.
         #expect(scene(.snow, wind: westerly).lean > scene(.rain, wind: westerly).lean)
     }
 

@@ -2,7 +2,6 @@ import LiveWallpaperCore
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// SwiftUI file-document wrapper around a configuration payload encoded on the main actor.
 struct ConfigurationDocument: FileDocument {
     /// File panels prefer the app's configuration type while accepting raw JSON imports.
     static let readableContentTypes: [UTType] = [ConfigurationBundle.contentType, .json]
@@ -21,7 +20,6 @@ struct ConfigurationDocument: FileDocument {
         return ConfigurationDocument(encodedPayload: data)
     }
 
-    /// Required by `FileDocument`; interactive imports use `ConfigurationPorter` for confirmation.
     init(configuration: ReadConfiguration) throws {
         guard let data = configuration.file.regularFileContents else {
             throw CocoaError(.fileReadCorruptFile)

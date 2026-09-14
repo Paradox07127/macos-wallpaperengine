@@ -22,7 +22,6 @@ struct MonitorBoardClock: TimelineSchedule {
 
 struct RootView: View {
     @ObservedObject var model: InteractionModel
-    // Samples belong to tile content, not the board geometry/editing tree.
     let data: DataModel
     @Environment(\.monitorReduceMotion) private var reduceMotion
     @Environment(\.monitorSuspended) private var suspended
@@ -113,14 +112,7 @@ struct RootView: View {
 
     // MARK: Empty-board hint
 
-    /// Passive (no hit testing); only while the board is empty, and only in the
-    /// inspector: an empty board leaves the desktop untouched, and the hint's
-    /// own text is about a gesture that exists only in the preview.
-    ///
-    /// Sized like edit chrome rather than board content — the inspector shrinks
-    /// the board by ~1:5, which left the hint a few points tall. `scaleEffect`
-    /// about the default centre anchor pairs with `position`, so it stays
-    /// centred without the chrome modifier's first-frame size measurement.
+    /// Inspector-only, no hit testing. Scaled like edit chrome about the centre so it stays centred without a first-frame size measurement.
     private func emptyBoardHint(boardSize: CGSize) -> some View {
         let boost = MonitorChromeScale.boost(forRenderScale: renderScale)
         return VStack(spacing: 6) {
@@ -162,8 +154,6 @@ struct RootView: View {
             ))
             .offset(x: liveRenderRect.minX, y: liveRenderRect.minY)
             .zIndex(isDragging ? 40 : 3)
-            // Board tiles are display-only outside edit mode; the window above
-            // is click-through anyway unless Mouse Interaction is on.
             .allowsHitTesting(model.isEditing)
             .modifier(WidgetDragModifier(
                 model: model,
@@ -392,7 +382,6 @@ private struct EmptyTapModifier: ViewModifier {
 
 // MARK: - Selection / hover chrome
 
-/// Edit-mode hairline + drag shadow; no-op outside edit mode.
 private struct SelectionChrome: ViewModifier {
     let isEditing: Bool
     let isSelected: Bool
@@ -424,20 +413,17 @@ private struct SelectionChrome: ViewModifier {
 
 // MARK: - Floating-panel placement
 
-/// Keep panel left edge inside the board; centre if wider than available span.
 private func clampPanelLeft(_ left: CGFloat, width: CGFloat, span: CGFloat, margin: CGFloat) -> CGFloat {
     let maxLeft = span - width - margin
     guard margin <= maxLeft else { return max((span - width) / 2, 0) }
     return min(max(left, margin), maxLeft)
 }
 
-/// Top-anchored clamp; taller-than-board panels pin to the top margin.
 private func clampPanelTop(_ top: CGFloat, height: CGFloat, span: CGFloat, margin: CGFloat) -> CGFloat {
     let maxTop = max(span - height - margin, margin)
     return min(max(top, margin), maxTop)
 }
 
-/// Above widget → below → tuck inside top edge as last resort.
 private struct ControlBarPlacement: ViewModifier {
     let anchorRect: CGRect
     let boardSize: CGSize
@@ -463,7 +449,6 @@ private struct ControlBarPlacement: ViewModifier {
     }
 }
 
-/// Prefer right of widget; flip left on overflow.
 private struct SettingsCardPlacement: ViewModifier {
     let anchorRect: CGRect
     let boardSize: CGSize
@@ -509,7 +494,6 @@ private struct CatalogBelowPlacement: ViewModifier {
     }
 }
 
-/// Keeps sample/history publications and the chart clock below board layout.
 private struct MonitorLiveTile: View {
     @ObservedObject var data: DataModel
     @ObservedObject var history: MonitorHistoryStore

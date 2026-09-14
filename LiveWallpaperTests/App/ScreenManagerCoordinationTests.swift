@@ -18,11 +18,8 @@ struct ScreenManagerCoordinationTests {
 
     // MARK: - UserDefaults.standard isolation
 
-    /// `ScreenManager`'s master gate used to read/write `UserDefaults.standard` directly:
-    /// constructing a manager here read the developer's real "wallpapers globally enabled"
-    /// pref, and `setWallpapersEnabled` (exercised by MasterRenderGateTests) wrote into that
-    /// same real domain. The sentinel value is a non-Bool string so a leak (the setter's
-    /// `Bool` write landing in the real domain) is unambiguous, not just "value looks unchanged".
+    /// The sentinel is a non-Bool string on purpose: the setter's `Bool` write landing in
+    /// the real domain is then unambiguous, not just "value looks unchanged".
     @Test("The master render gate never touches the real defaults domain under tests")
     func masterGateSwitchesAreIsolatedFromStandardDefaults() {
         guard let screen = NSScreen.screens.first.map(Screen.init(nsScreen:)) else {
@@ -30,8 +27,7 @@ struct ScreenManagerCoordinationTests {
             return
         }
         let standard = UserDefaults.standard
-        // The switches now write to the app-scoped store, so this test has to put
-        // BOTH stores back: leaving `false` behind in the scoped one made every
+        // Both stores have to be put back: leaving `false` in the scoped one would make every
         // later ScreenManager in this process start with wallpapers disabled.
         let scoped = UserDefaults.appScoped()
         let gateKey = ScreenManager.globallyEnabledDefaultsKey
@@ -1089,10 +1085,8 @@ struct ScreenManagerCoordinationTests {
         }
     }
 
-    /// The candidate must be one that cannot become ready. An inline source no
-    /// longer models that — `about:blank` is allowed, so inline loads and the
-    /// candidate commits — so point it at a port nothing listens on, which
-    /// fails the provisional navigation immediately and locally.
+    // The candidate must be one that can never become ready: an inline source would commit
+    // (`about:blank` is allowed), so this points at a port nothing listens on.
     static let unreachableSource = HTMLSource.url(URL(string: "http://127.0.0.1:1/")!)
 
     @Test("A rebuild-required JavaScript change stays uncommitted until the candidate is ready")

@@ -53,12 +53,8 @@
                 weakContentView = window.contentView
                 #expect(weakContentView != nil)
 
-                // Contract half 1: the close button must be allowed to close
-                // (the previous behavior returned false and only orderOut'd).
                 #expect(delegate.windowShouldClose(window))
 
-                // Contract half 2: an actual close must drop every strong
-                // reference the delegate holds.
                 window.close()
             }
 

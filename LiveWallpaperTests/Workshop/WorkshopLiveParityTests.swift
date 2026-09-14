@@ -3,14 +3,8 @@ import Foundation
 @testable import LiveWallpaper
 import Testing
 
-/// Live parity between the app's own Workshop request chain (URLSession,
-/// decoder, client-side filtering) and what steamcommunity.com shows in the
-/// same minute. Every earlier comparison replayed the app's parameters with
-/// curl; this one exercises the real `WorkshopQueryService` and
-/// `WorkshopPublicSearchSource`.
-///
-/// The network cases are opt-in (`TEST_RUNNER_WORKSHOP_LIVE_PARITY=1`); the
-/// two offline cases keep the suite green without a network or a key.
+/// The network cases are opt-in (`TEST_RUNNER_WORKSHOP_LIVE_PARITY=1`); the two offline cases
+/// keep the suite green without a network or a key.
 @Suite("Workshop live parity", .serialized)
 struct WorkshopLiveParityTests {
     private static let searchText = "cat"
@@ -146,10 +140,7 @@ struct WorkshopLiveParityTests {
         try Self.compare(sort: sort, path: "keyed", appIDs: appIDs, webIDs: webIDs)
     }
 
-    /// The `input_json` + `taggroups` shape exists only for "genre any-of AND
-    /// Miscellaneous"; the page cannot express that query, so the live check is
-    /// the predicate itself: every returned item carries Approved and one of
-    /// the two genres (probe 7, 2026-09-07: total 6,330 = 5,764 + 566).
+    /// The page cannot express "genre any-of AND Miscellaneous", so the live check is the predicate itself.
     @Test("Keyed tag groups (genre any-of + Miscellaneous) go through input_json and filter server-side",
           .enabled(if: WorkshopLiveParityTests.isLive, "Set TEST_RUNNER_WORKSHOP_LIVE_PARITY=1 to compare against steamcommunity.com"),
           .enabled(if: WorkshopLiveParityTests.apiKey != nil, "Set TEST_RUNNER_STEAM_WEB_API_KEY to a 32-hex Steam Web API key"))
@@ -187,9 +178,8 @@ struct WorkshopLiveParityTests {
         #expect((page.totalAvailable ?? 0) > 1000)
     }
 
-    /// Miscellaneous rides on `requiredtags[]` on the page, which the SSR
-    /// query key echoes back; the identity check has to accept it or every
-    /// keyless Misc search fails (review finding W4-C-1, 2026-09-07).
+    /// Miscellaneous rides on `requiredtags[]` on the page and comes back in the key's `required_tags`,
+    /// so the identity check has to accept it there.
     @Test("Keyless Miscellaneous narrowing is adopted from the SSR payload and matches the page",
           .enabled(if: WorkshopLiveParityTests.isLive, "Set TEST_RUNNER_WORKSHOP_LIVE_PARITY=1 to compare against steamcommunity.com"))
     @MainActor
@@ -215,12 +205,8 @@ struct WorkshopLiveParityTests {
 
     // MARK: - App request shape
 
-    /// Mirrors `BrowseViewModel.makeRequest(page: 1)` in its default state
-    /// (every facet fully selected, no pinned tag, no creator) with only the
-    /// Questionable and Mature age ratings deselected: the anonymous page hides
-    /// those two, so the app must exclude them too before the lists can agree.
-    /// Trend is pinned to one week because the page counts 7 days when `days`
-    /// is absent.
+    /// Mirrors `BrowseViewModel.makeRequest(page: 1)` with Questionable and Mature deselected, because the
+    /// anonymous page hides those two. Trend is pinned to one week: the page counts 7 days when `days` is absent.
     private static func appRequest(sort: WorkshopSortMode, numPerPage: Int) -> WorkshopQueryRequest {
         WorkshopQueryRequest(
             sort: sort,
@@ -234,8 +220,6 @@ struct WorkshopLiveParityTests {
         )
     }
 
-    /// The maturity tags the app leaves out by default — the signed-out page
-    /// hides exactly these, so they are what makes the two lists comparable.
     private static var deselectedAgeTags: [String] {
         WorkshopAgeRatingFilter.allCases
             .filter { !WorkshopAgeRatingFilter.defaultSelection.contains($0) }
@@ -249,11 +233,8 @@ struct WorkshopLiveParityTests {
 
     // MARK: - Comparison
 
-    /// Longest run of identical ids from the top, after allowing one side to
-    /// lead by up to two entries: an item published or updated between the two
-    /// fetches shifts every later position by one (seen live 2026-09-07 on
-    /// Most Recent: 29/30 in common, leading 0), which says nothing about the
-    /// sort itself.
+    /// Longest run of identical ids from the top, after allowing one side to lead by up to two entries:
+    /// an item published between the two fetches shifts every later position by one.
     static func leadingMatch(_ app: [UInt64], _ web: [UInt64], maxShift: Int = 2) -> Int {
         var best = 0
         for shift in 0 ... maxShift {
@@ -273,10 +254,8 @@ struct WorkshopLiveParityTests {
         print(row)
         try WorkshopLiveParityReport.append(row)
 
-        // Last Updated ranks by `time_updated` seconds; items updated in the
-        // same second tie, and Steam orders ties differently from one request
-        // to the next (seen live 2026-09-07: same 30 ids, leading 0). The set
-        // still has to agree; the order only when the sort is deterministic.
+        // Last Updated ties on `time_updated` seconds and Steam orders ties differently per request,
+        // so only the set has to agree there.
         if sort != .lastUpdated {
             #expect(leading >= minimumLeadingMatch, "\(row)\napp: \(app)\nweb: \(web)")
         }
@@ -313,7 +292,6 @@ enum WorkshopLiveParityControl {
         return components.url!
     }
 
-    /// Verified live 2026-09-07 against the page's own sort menu.
     private static func browseSort(for sort: WorkshopSortMode) -> String {
         switch sort {
         case .mostPopular: "trend"
@@ -372,9 +350,8 @@ enum WorkshopLiveParityControl {
     }
 }
 
-/// The test host is the sandboxed app, so the report path has to sit inside
-/// its container (`~/Library/Containers/<bundle id>/Data/...`); `/tmp` is
-/// refused with EPERM and the case fails rather than dropping the row.
+/// The test host is sandboxed, so the report path must sit inside its container;
+/// `/tmp` is refused with EPERM.
 enum WorkshopLiveParityReport {
     private static let header = "| sort | path | counts | intersection | leading |\n|---|---|---|---|---|\n"
 

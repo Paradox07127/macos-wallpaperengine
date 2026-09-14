@@ -51,10 +51,6 @@ struct ProtocolizedDependenciesTests {
         #expect(!capabilities.contains("static let defaultValue = FeatureCatalog(capabilities: .pro)"))
     }
 
-    /// A .lwconfig import replaces GlobalSettings wholesale, so the copies
-    /// ScreenManager loaded at init are stale: the imported names stay
-    /// invisible until relaunch, and the next rename saves the pre-import
-    /// dictionary back over them.
     @Test("Global-settings changes re-read the display name and overlay caches")
     func globalSettingsChangeReloadsDisplayIdentityCaches() {
         let manager = ScreenManager(startupOptions: ScreenManagerStartupOptions(
@@ -69,7 +65,6 @@ struct ProtocolizedDependenciesTests {
         let originalNames = SettingsManager.shared.loadScreenNames()
         defer { SettingsManager.shared.saveScreenNames(originalNames) }
 
-        // Stands in for the import writing straight to GlobalSettings.
         SettingsManager.shared.saveScreenNames(["uuid:IMPORTED": "Imported Studio Display"])
 
         manager.handleGlobalSettingsChanged()

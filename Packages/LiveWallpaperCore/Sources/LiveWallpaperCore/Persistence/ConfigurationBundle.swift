@@ -7,14 +7,9 @@ public struct ConfigurationBundle: Codable, Sendable {
     public static let currentSchemaVersion = 1
     public static let fileExtension = "lwconfig"
 
-    /// Host-registered UTType. Probe order: this bundle's own `*.config` (each app exports its own
-    /// id, so the self probe wins deterministically), then the historical ids, then `.json`. The old
-    /// "does the bundle id contain loomscreen" SKU discriminator broke when Pro became
-    /// `com.loomscreen.pro` and started matching Lite's UTI, whose extension is not `lwconfig`.
-    /// Pro, Lite, and the historical id are one product family, so a `.lwconfig`
-    /// moves between them and only a foreign app is a provenance failure. The UTI
-    /// probe and the import guard read this same list so they cannot disagree
-    /// about what counts as our own export. Order is the probe order.
+    /// Probe order, and it is load-bearing: this bundle's own `*.config` first (each app
+    /// exports its own id, so the self probe wins), then the historical ids. The UTI probe
+    /// and the import guard read this same list.
     public static let productFamilyBundleIDs = [
         "com.loomscreen.pro",
         "com.taijia.livewallpaper",

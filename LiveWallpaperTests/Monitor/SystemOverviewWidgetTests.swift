@@ -105,8 +105,7 @@ final class SystemOverviewWidgetTests: XCTestCase {
         XCTAssertTrue(SystemOverviewOptions.showsSensors(placement))
     }
 
-    /// Capture the production SwiftUI view in an AppKit host at actual board
-    /// dimensions. These images are visual QA artifacts, not pixel baselines.
+    /// These images are visual QA artifacts, not pixel baselines.
     func testNativeLayoutsAndCapture() throws {
         for size in [MonitorWidgetSize.medium, .large] {
             for language in ["en", "zh-Hans", "zh-Hant", "ja", "es", "stress"] {

@@ -3,7 +3,6 @@ import Foundation
 import Testing
 @testable import LiveWallpaper
 
-/// What the Workshop page's status bar says about the Steam connection.
 @Suite("Workshop connection step state", .serialized)
 @MainActor
 struct ConnectionStepStateTests {
@@ -15,9 +14,8 @@ struct ConnectionStepStateTests {
         return (service, scratch.defaults)
     }
 
-    /// A bookmark the shared resolver can actually resolve (plain bookmark to a
-    /// real folder; the live resolver falls back to plain resolution). The old
-    /// `Data([0x01])` stand-in now reads as a broken grant on purpose.
+    /// A bookmark the shared resolver can actually resolve; `Data([0x01])`
+    /// elsewhere in this file is a deliberately broken grant.
     private func resolvableBookmark() throws -> Data {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("ConnectionStepState-\(UUID().uuidString)", isDirectory: true)
@@ -25,10 +23,6 @@ struct ConnectionStepStateTests {
         return try dir.bookmarkData()
     }
 
-    /// The reported bug: after Locate found and bound SteamCMD, the bar stayed
-    /// amber until the user ran the probes by hand. Nothing had failed — the
-    /// cached-login probe simply had not run yet, and "unchecked" was being
-    /// read as "failing".
     @Test("A step that has not been checked yet is not a failure")
     func uncheckedStepDoesNotReadAsFailure() throws {
         let (service, _) = try makeService()
@@ -42,11 +36,6 @@ struct ConnectionStepStateTests {
         #expect(service.connectionStepState != .attention)
     }
 
-    /// Reading a step state from a completely unconfigured service returns
-    /// before it ever touches `probes`, so the only thing that could register an
-    /// Observation dependency is the defaults-backed property in the `guard`.
-    /// Those are computed, and `@Observable` does not track computed properties
-    /// — the status bar stayed on "not started" for the rest of the session.
     @Test("Configuring the library notifies observers of the step state")
     func libraryStepStateNotifiesWhenConfiguredFromEmpty() async throws {
         let (service, _) = try makeService()
@@ -92,17 +81,12 @@ struct ConnectionStepStateTests {
         }
     }
 
-    /// The relaunch bug: probe results are not persisted, so a binding carried
-    /// across launches arrives at `.notRun`. The prominent button was gated on
-    /// the strict flag, so an already-installed SteamCMD was greeted with
-    /// "Install SteamCMD" — clicking it reinstalls what is already there.
     @Test("A binding carried across launches does not offer to install again")
     func boundBinarySurvivesRelaunchWithoutOfferingInstall() throws {
         let (service, _) = try makeService()
         service.binaryPath = "/tmp/steamcmd"
-        // Fresh launch: bound, nothing probed yet.
 
-        #expect(!service.isBinaryReady)          // strict gate still says unverified
+        #expect(!service.isBinaryReady)
         #expect(service.isBinaryPresumedReady)   // the UI still offers "Change"
     }
 
@@ -115,7 +99,6 @@ struct ConnectionStepStateTests {
             status: .red(message: "signature mismatch", command: nil)
         )
 
-        // Control: only an actual failure may demote it back to Install.
         #expect(!service.isBinaryPresumedReady)
     }
 
@@ -151,10 +134,6 @@ struct ConnectionStepStateTests {
         #expect(service.connectionStepState == .ready)
     }
 
-    /// Deliberate rewrite of what this test used to pin: a one-byte fake
-    /// bookmark used to read as Ready because only the bytes were checked.
-    /// Bytes that no longer resolve are the "Not authorized + Ready badge"
-    /// contradiction — the badge must say attention.
     @Test("Green probes cannot outrank a library grant that no longer resolves")
     func unresolvableLibraryGrantIsNotReady() throws {
         let (service, _) = try makeService()

@@ -1,10 +1,6 @@
 import Foundation
 import Testing
 
-/// Guards the appex configuration the system-wallpaper feature silently dies
-/// without (plan §4.7): pkd refuses unsandboxed plugins with only a log line,
-/// and the cross-container exception is the app↔appex data path. Read from
-/// disk so a bad edit fails here instead of in manual system testing.
 @Suite("System wallpaper extension guard")
 struct SystemWallpaperGuardTests {
     private struct SKU {
@@ -55,9 +51,6 @@ struct SystemWallpaperGuardTests {
             )
             #expect(exceptions.count == 1, "\(sku.name): exactly one exception path is allowed")
             #expect(
-                // The SystemWallpaper subtree, not all of Loomscreen/: the appex
-                // only ever touches sharedRoot(), and a decoder compromised by a
-                // malformed video should not reach the host's other state.
                 exceptions.first == "/Library/Containers/\(sku.hostBundleID)/Data/Library/Application Support/Loomscreen/SystemWallpaper/",
                 "\(sku.name): exception must point at its own host's SystemWallpaper directory"
             )
@@ -83,10 +76,7 @@ struct SystemWallpaperGuardTests {
 
     // MARK: - Project wiring
 
-    /// Build settings of one target's Debug+Release configurations, keyed by
-    /// configuration name. Parsed from the pbxproj because these four settings
-    /// are hand-edited in Xcode and pasting the wrong SKU's value produces a
-    /// plausible-looking build that registers under the wrong identity.
+    /// One target's Debug+Release build settings, keyed by configuration name.
     private static func buildConfigurations(
         ofTarget target: String,
         in project: String
@@ -154,14 +144,6 @@ struct SystemWallpaperGuardTests {
         }
     }
 
-    /// `connection.remoteObjectProxy` hands back an autoreleased proxy that
-    /// nothing else owns, so storing it in a `weak` property observes nil the
-    /// moment the pool drains — measured 2026-08-20, which made
-    /// `invalidateAgentSnapshots()` a permanent no-op and left removed tiles
-    /// on the wallpaper panel. Making the property strong is not the fix
-    /// either: the connection already owns the handler via `exportedObject`,
-    /// so a strong proxy closes a retain cycle. The proxy has to be derived
-    /// per call from a weakly captured connection.
     @Test("The agent proxy is derived per call, never stored")
     func agentProxyIsNotStored() throws {
         let handler = try RepositoryRoot.source("SystemWallpaperProvider/WallpaperXPCHandler.swift")
@@ -185,8 +167,6 @@ struct SystemWallpaperGuardTests {
         )
     }
 
-    /// Two displays on two videos: a heartbeat carrying one ID marks the other
-    /// item idle, and the app deletes idle items.
     @Test("Every choice-change heartbeat publishes the whole active set")
     func choiceChangeHeartbeatCarriesEveryActiveChoice() throws {
         let handler = try RepositoryRoot.source("SystemWallpaperProvider/WallpaperXPCHandler.swift")

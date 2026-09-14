@@ -48,9 +48,6 @@ struct SuspendReasonReportingTests {
 
     @Test("Restoring is its own state, never reported as a suspension")
     func restoringIsDistinctFromSuspension() {
-        // Rebuilding after a deep hibernate is the opposite of being held down;
-        // collapsing it into `.policySuspended` told the user the wallpaper was
-        // stopped while it was in fact coming back.
         let all = Set([
             WallpaperSessionActivity.active,
             .paused,

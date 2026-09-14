@@ -31,17 +31,10 @@ struct DetailInspectorPanel: View {
                     wallpaperModeCard
                 }
 
-                // Span-all-displays left the playback glyph row: its effect is on
-                // a display other than the one the preview shows, so the preview
-                // can never confirm it. A labelled row in this column can.
                 if draft.selectedWallpaperType == .video {
                     displayGroup
                 }
 
-                // Nothing is loaded yet, so there is nothing for security, options
-                // or transforms to be *about*: the picker in the preview is the
-                // only step, and a column of settings beside it reads as a page
-                // the user has already finished.
                 if draft.selectedWallpaperType == .html, draft.htmlSource != nil {
                     SecurityInspector(
                         screen: screen,
@@ -90,7 +83,6 @@ struct DetailInspectorPanel: View {
                         }
                         .font(DesignTokens.Typography.body)
                     } else if wpeSceneCustomSettingsResolved {
-                        // Show the empty state only after schema loading has resolved.
                         sceneWithoutOptionsNotice
                     } else {
                         ProgressView().accessibilityLabel(Text("Loading settings…"))
@@ -228,9 +220,8 @@ struct DetailInspectorPanel: View {
                 title: "Span All Displays",
                 info: "Uses one continuous image instead of a copy on each display."
             ) {
-                // Disabled, never hidden: unplugging the second display must not
-                // hide a persisted `.spanAllDisplays` — it would keep spanning
-                // when that display came back, with no way to see or clear it.
+                // Disabled, never hidden: hiding this would strand a persisted `.spanAllDisplays`
+                // with no way to see or clear it.
                 Toggle("", isOn: spanDisplaysBinding)
                     .labelsHidden()
                     .toggleStyle(.switch)

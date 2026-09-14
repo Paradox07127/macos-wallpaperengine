@@ -2,7 +2,6 @@ import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
-/// Selects videos to add to System Wallpaper in a batch.
 @available(macOS 26.0, *)
 struct SystemWallpaperAddSheet: View {
     @Environment(\.dismiss) private var dismiss

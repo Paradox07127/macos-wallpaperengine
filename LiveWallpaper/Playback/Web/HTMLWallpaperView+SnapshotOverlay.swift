@@ -4,7 +4,7 @@ import WebKit
 extension HTMLWallpaperView {
     // MARK: - Snapshot Overlay
 
-    /// Cap suspend-snapshot width (~50 MB full 5K capture would defeat suspend memory relief).
+    /// Cap suspend-snapshot width so a full 5K capture cannot defeat suspend memory relief.
     private static let maxSuspendSnapshotWidth: CGFloat = 1920
 
     /// True while the overlay is actually covering the web view — the

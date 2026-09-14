@@ -235,9 +235,8 @@ struct WPESceneDocumentParserTests {
 
     @Test("Corpus-frequency general zoom is preserved without changing camera semantics")
     func generalZoomIsPreservedAsUnconsumedMetadata() throws {
-        // `general.zoom` is authored in 60/60 local scene packages. Use a
-        // discriminating mutation instead of the corpus-wide 1.0 default so
-        // this test proves the parser retained the field rather than defaulted.
+        // The seed here is deliberately not the 1.0 default: only a discriminating
+        // value separates "parser retained the field" from "parser defaulted".
         let payload: [String: Any] = [
             "camera": ["center": "0 0 0"],
             "general": [
@@ -319,8 +318,6 @@ struct WPESceneDocumentParserTests {
             $0.target == .generalField(name: "perspectiveoverridefov")
         } == true)
         #expect(document.camera == WPESceneCamera.defaultCamera)
-        // No longer "awaits L1": the override FOV is what builds the perspective camera an
-        // object with `perspective: true` is projected through (WPEObjectPerspectiveProjectionTests).
         #expect(document.diagnostics.contains {
             $0.message.contains("perspectiveoverridefov")
                 && $0.message.contains("objects that author perspective: true")
@@ -648,7 +645,6 @@ struct WPESceneDocumentParserTests {
         #expect(bloom.feather == 0.88)
         #expect(bloom.scatter == 2.0)
         #expect(bloom.iterations == 6)
-        // The HDR bloom keys are rendered — none of them may be flagged unsupported.
         #expect(!document.diagnostics.contains {
             $0.message.contains("general.bloom") && $0.message.contains("unsupported")
         })
@@ -1009,11 +1005,6 @@ struct WPESceneDocumentParserTests {
     }
 
 
-    // JSON `null` bridges to NSNull, and `entry["image"] != nil` is TRUE for
-    // NSNull — so `{"image": null}` was classified image-kind, parseImageObject
-    // returned nil, and the transform-host branch was skipped because the
-    // resolution already said `.image`. The node's transform vanished and its
-    // children lost the parent offset.
     @Test("An explicit null image does not classify the object as image-kind")
     func explicitNullImageDoesNotClassifyAsImage() throws {
         let payload: [String: Any] = [
@@ -1038,11 +1029,6 @@ struct WPESceneDocumentParserTests {
         let data = try JSONSerialization.data(withJSONObject: payload, options: [])
         let document = try WPESceneDocumentParser.parse(data: data)
 
-        // The null-image node must be classified as a transform host, not an
-        // image: only hosts carry origin/scale/angles scripts and keyframe
-        // tracks onto their descendants. Misclassifying it as image-kind drops
-        // that whole channel silently (parseImageObject returns nil and the
-        // host branch is skipped because the resolution already said .image).
         #expect(document.imageObjects.contains { $0.id == "host" } == false,
                 "a null image must not produce an image layer")
         #expect(document.transformHostObjects.contains { $0.id == "host" },
@@ -1051,10 +1037,6 @@ struct WPESceneDocumentParserTests {
 
     @Test("Text objects carry scale/angles SceneScripts (corpus scene 2955378002)")
     func textScaleAndAnglesScriptsAreParsed() throws {
-        // The real binding from workshop scene 2955378002's `playervolumepercentage`
-        // label: a scale script with its scriptProperties, seeded from the
-        // authored value. Text is excluded from the transform-host path, so this
-        // is the object's only route to a scripted scale.
         let script = """
         const audioBuffer = engine.registerAudioBuffers(engine.AUDIO_RESOLUTION_16);
         export function init(value) { }
@@ -1082,14 +1064,6 @@ struct WPESceneDocumentParserTests {
         #expect(text.anglesScript != nil, "text angles script must survive parsing")
     }
 
-    /// A script envelope's nested `scriptproperties` must still resolve against
-    /// the user's values. Workshop 3510729512 wires its clock this way — the
-    /// wallpaper's "Display to seconds" checkbox reaches the clock SceneScript
-    /// only as `scriptproperties.showSeconds = {user: "newproperty8", …}` inside
-    /// the `text` script envelope. `resolveUserPropertyEnvelopes` preserves a
-    /// dict carrying `script` (collapsing it would drop the script itself) and
-    /// recurses instead; if that recursion is ever dropped, every settings
-    /// toggle wired through a script property silently stops working.
     @Test("A user property reaches scriptProperties nested inside a script envelope")
     func userPropertyResolvesInsideScriptEnvelope() throws {
         let script = """
@@ -1148,9 +1122,6 @@ struct WPESceneDocumentParserTests {
 
     @Test("Effect shader constants carry their SceneScript (corpus scene 2955378002)")
     func effectConstantScriptsAreParsed() throws {
-        // The real binding from workshop scene 2955378002: a day/night window
-        // driving a `multiply` uniform. The authored value stays as the seed so a
-        // failed script leaves the pass exactly as authored.
         let script = """
         import * as WEMath from 'WEMath';
         export function update(value) {
@@ -1186,9 +1157,6 @@ struct WPESceneDocumentParserTests {
 
     @Test("Effect-constant scripts count toward the per-scene runtime cap")
     func effectConstantScriptsCountTowardTheCap() throws {
-        // They get a JavaScriptCore runtime each, exactly like the transform
-        // families — but they were created from the PIPELINE, after the cap had
-        // already been checked against the document, so they bypassed it.
         let script = "export function update(v) { return shared.x; }"
         let payload: [String: Any] = [
             "camera": ["center": "0 0 0"],
@@ -1214,15 +1182,12 @@ struct WPESceneDocumentParserTests {
         #expect(WPEMetalSceneRenderer.valueShape(of: .number(1)) == .scalar)
         #expect(WPEMetalSceneRenderer.valueShape(of: .vector([0.25, 0.5])) == .vector2)
         #expect(WPEMetalSceneRenderer.valueShape(of: .vector([1, 0, 0])) == .vector3)
-        // Unknown/absent authored value: WPE's own default for a bound uniform is
-        // a single float, and the corpus is 401/451 scalars.
+        // Unknown/absent authored value: WPE's own default for a bound uniform is a single float.
         #expect(WPEMetalSceneRenderer.valueShape(of: nil) == .scalar)
     }
 
     @Test("An effect authored hidden behind a visibility script stays hidden")
     func effectVisibilityEnvelopeSeedIsHonoured() throws {
-        // `{value, script}` fell through `parseBool` to nil and defaulted to
-        // SHOWN, so an effect authored hidden with a script bound to it rendered.
         let script = "export function update(value) { return thisLayer.visible; }"
         func payload(_ visible: Any) -> [String: Any] {
             [
@@ -1252,8 +1217,6 @@ struct WPESceneDocumentParserTests {
 
     @Test("Script source-reuse diagnostics count bindings, distinct sources and the top repeat")
     func scriptSourceReuseDiagnostics() throws {
-        // Mirrors 2955378002's shape: one colour script pasted onto every object,
-        // plus one unique script, so the numbers are hand-checkable.
         let shared = "export function update(value) { return shared.accentColor; }"
         let unique = "export function update(value) { return engine.runtime; }"
         var objects: [[String: Any]] = (0..<5).map { index in
@@ -1351,10 +1314,6 @@ struct WPESceneDocumentParserTests {
 
     @Test("A scene binding an audio script requires capture even without the authored flag")
     func scriptBoundAudioRequiresCapture() throws {
-        // Every audio-reactive scene in the local corpus omits
-        // `general.supportsaudioprocessing` while binding the audio-response
-        // template. Gating capture on the flag alone leaves the broker silent,
-        // so those scripts sit at `minvalue` forever instead of pulsing.
         func document(script: String?) throws -> WPESceneDocument {
             var object: [String: Any] = [
                 "id": "1", "name": "label", "type": "text", "text": "0%"
@@ -1419,8 +1378,6 @@ struct WPESceneDocumentParserTests {
 
     @Test("A script whose only dynamic marker is registerAudioBuffers is not statically resolved")
     func audioBufferScriptIsDynamic() {
-        // "audio" matching is case-sensitive, so `registerAudioBuffers` slips past
-        // it; without its own token an audio-only origin script would be baked once.
         let script = """
         const b = engine.registerAudioBuffers(engine.AUDIO_RESOLUTION_16);
         export function update(v) { v.x = b.average[0]; return v; }
@@ -2596,8 +2553,7 @@ struct WPESceneDocumentParserTests {
     }
 }
 
-/// Lit-scene fixture kept out of the test body: inline, the literal pushed
-/// that function past the type checker's 300ms warning budget.
+/// Do not inline back into the test body: the literal pushes that function past the type checker's budget.
 private func lightMetadataPayload() -> [String: Any] {
     let pointLight: [String: Any] = [
         "id": 433,

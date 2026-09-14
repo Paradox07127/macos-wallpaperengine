@@ -1,10 +1,7 @@
 #if !LITE_BUILD
 import Foundation
 
-/// Physical-memory tiers driving renderer resource defaults, so base-RAM Macs
-/// (8 GB M1/M2) get tight texture residency out of the box while high-RAM
-/// machines get a roomier — but still bounded — budget. Manual defaults always
-/// win (`WPEMetalTextureCacheBudgetMiB`; explicit 0 ⇒ unbounded).
+/// Manual defaults always win (WPEMetalTextureCacheBudgetMiB; explicit 0 ⇒ unbounded).
 enum WPEMemoryTier: CaseIterable, Equatable, Sendable {
     case constrained
     case standard
@@ -21,10 +18,7 @@ enum WPEMemoryTier: CaseIterable, Equatable, Sendable {
         return .expansive
     }
 
-    /// Every tier is bounded: nil here would skip LRU eviction entirely, so
-    /// hidden-layer / time-of-day texture variants stayed resident forever on
-    /// ≥24 GB machines. Unbounded remains available only via the manual
-    /// defaults override (explicit ≤0).
+    /// Every tier is bounded: nil here would skip LRU eviction entirely. Unbounded remains available only via the manual defaults override (explicit ≤0).
     var defaultTextureCacheBudgetBytes: Int? {
         switch self {
         case .constrained: return 256 * 1_048_576
@@ -43,11 +37,9 @@ enum WPEMemoryTier: CaseIterable, Equatable, Sendable {
         case .standard: multiplier = 2.25      // 16/18 GB: up to ~1620p
         case .expansive: multiplier = 4.0      // ≥24 GB: up to 4K
         }
-        // rgba16Float doubles bytes/pixel, so halve the pixel budget for HDR.
         return base * (hdr ? multiplier * 0.5 : multiplier)
     }
 
-    /// Routes large animated textures to lazy streaming instead of eager upload.
     var lazyAnimationRawByteThreshold: Int {
         switch self {
         case .constrained: return 100_000_000
@@ -55,9 +47,7 @@ enum WPEMemoryTier: CaseIterable, Equatable, Sendable {
         }
     }
 
-    /// Process-wide budget for decoded animation frame bytes shared by every
-    /// lazy `.tex` source across all scenes/displays (replaces the former
-    /// per-source 4-frame cap, whose worst case scaled with animation count).
+    /// Process-wide budget for decoded animation frame bytes shared by every lazy .tex source across all scenes/displays.
     var animatedFrameCacheBudgetBytes: Int {
         switch self {
         case .constrained: return 96 * 1_048_576

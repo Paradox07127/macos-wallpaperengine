@@ -1,7 +1,6 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// The parent owns the name draft so it survives popover dismissal.
 struct SchemeCapturePopover: View {
     let screen: Screen
     @Binding var nameDraft: String

@@ -1,14 +1,5 @@
 import Foundation
 
-/// Sliding-window QoS decision logic for the render thread. The render thread runs
-/// its frame body with huge headroom (Release p95 ≈ 4.2ms vs a 16.7ms/60fps budget),
-/// so pinning it at `.userInteractive` burns power for nothing — this state machine
-/// rides the E-cores (`.utility`) by default and only climbs to `.userInteractive`
-/// when a measured p95 shows it actually needs the P-cores to hold cadence.
-///
-/// Pure logic, no `pthread` calls (the owner `WPERenderThread` applies the returned
-/// level). NOT thread-safe by design — every method runs on the one render thread
-/// that owns the instance; calling off that thread races the ring buffer.
 struct WPEAdaptiveRenderQoS {
 
     /// The two QoS tiers the thread moves between. `.economy` maps to
@@ -18,18 +9,12 @@ struct WPEAdaptiveRenderQoS {
         case high
     }
 
-    // Hysteresis band, as fractions of the frame budget. Raise > lower keeps a
-    // dead zone (35%–60% of budget) between the two triggers so the level can't
-    // flap frame-to-frame: a P-core reading (~25% of budget) drops us to economy,
-    // an E-core reading (~50%) sits inside the band and holds economy. Only a
-    // genuine overrun (>60%) climbs back to high.
+    // Hysteresis: raise > lower keeps a dead zone (35%–60% of budget) so the level can't flap frame-to-frame.
     private let raiseFraction: Double
     private let lowerFraction: Double
     private let windowSize: Int
 
-    /// Frame budget in seconds (1 / target-fps). Updated when the display's
-    /// preferred cadence changes so a 30fps wallpaper isn't judged against a
-    /// 60fps budget.
+    /// Frame budget in seconds (1 / target-fps); a 30fps wallpaper must not be judged against a 60fps budget.
     private var budgetSeconds: Double
 
     private var samples: [Double]
@@ -40,9 +25,7 @@ struct WPEAdaptiveRenderQoS {
     /// prewarmed, but first-frame PSO misses still must not be judged on E-cores.
     private var boostFramesRemaining = 0
 
-    /// When false the thread is pinned at `.high` forever (the escape hatch):
-    /// `record` never returns a downgrade, so behaviour is byte-for-byte the old
-    /// fixed `.userInteractive` thread.
+    /// When false the thread is pinned at `.high` forever: `record` never returns a downgrade.
     let isEnabled: Bool
 
     private(set) var level: Level
@@ -65,7 +48,6 @@ struct WPEAdaptiveRenderQoS {
         self.level = isEnabled ? .economy : .high
     }
 
-    /// Point the budget at the live cadence (called when preferred fps changes).
     mutating func setBudget(seconds: Double) {
         guard seconds > 0 else { return }
         budgetSeconds = seconds
@@ -77,8 +59,6 @@ struct WPEAdaptiveRenderQoS {
         boostFramesRemaining = max(boostFramesRemaining, max(0, frames))
     }
 
-    /// Record one frame-body duration and return the new level iff it changed
-    /// (so the owner applies `pthread_set_qos_class_self_np` only on a transition).
     mutating func record(frameDuration seconds: Double) -> Level? {
         guard isEnabled else { return nil } // pinned high; nothing to decide
         samples[writeIndex] = max(0, seconds)
@@ -106,8 +86,6 @@ struct WPEAdaptiveRenderQoS {
         return newLevel
     }
 
-    /// p95 over the current window. Small window (≤90) ⇒ a per-frame copy+sort is
-    /// well under a microsecond, negligible against the frame it guards.
     private func percentile95() -> Double {
         guard sampleCount > 0 else { return 0 }
         let window = sampleCount < windowSize

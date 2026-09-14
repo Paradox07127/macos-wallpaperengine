@@ -5,14 +5,11 @@ public enum WallpaperSessionActivity: Equatable, Sendable {
     case active
     /// User pause — last frame still visible.
     case paused
-    /// Held down by system policy (heat, memory, absence, a rule) rather than by
-    /// the user. Distinct from `.paused` because the play button is drawn from
-    /// this: collapsing the two made a suspended wallpaper show a Play button
-    /// whose tap then cleared the user's intent.
+    /// Held down by system policy (heat, memory, absence, a rule), not by the user.
+    /// Must stay distinct from `.paused`: the play button is drawn from this.
     case policySuspended
-    /// Rebuilding what a deep hibernate released. Nothing is holding it down —
-    /// it is on its way back — so reporting it as suspended told the user the
-    /// opposite of what was happening.
+    /// Rebuilding what a deep hibernate released: nothing is holding it down, so it must
+    /// not be reported as suspended.
     case restoring
     /// Master switch off — desktop shows through (not last frame).
     case off
@@ -65,9 +62,8 @@ public enum WallpaperStatusAggregator {
             return .notConfigured
         }
 
-        // `.restoring` counts as active: the wallpaper is rebuilding itself back
-        // into view, and falling through to `.paused` drew the pause glyph and
-        // had VoiceOver announce a paused wallpaper mid-restore.
+        // `.restoring` counts as active: falling through to `.paused` would draw the pause
+        // glyph and announce a paused wallpaper mid-restore.
         if configured.contains(where: { $0.activity == .active || $0.activity == .restoring }) {
             return .active
         }

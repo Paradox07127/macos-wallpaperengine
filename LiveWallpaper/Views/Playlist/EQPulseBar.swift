@@ -1,6 +1,5 @@
 import SwiftUI
 
-/// 3-bar audio-style equalizer indicator for the currently-playing row.
 struct EQPulseBar: View {
     let isPlaying: Bool
     var tint: Color = .accentColor

@@ -28,7 +28,7 @@ struct PasteSheet: View {
             queueHeader
             queueArea
 
-            // Queue actions commit immediately; Done closes without discarding them (W3-S3).
+            // Queue actions commit immediately; Done closes without discarding them.
             SheetFooterBar(
                 primaryTitle: "Done",
                 primaryAction: { dismiss() }
@@ -176,7 +176,6 @@ struct PasteSheet: View {
 
     // MARK: - Download readiness
 
-    /// Explains why row download actions are hidden until setup is ready.
     @ViewBuilder
     private var downloadReadinessBanner: some View {
         if let reason = doctor.downloadBlockerMessage {
@@ -199,7 +198,6 @@ struct PasteSheet: View {
         }
     }
 
-    /// Rows that have an id and are not already downloading or installed.
     private var downloadableRows: [WorkshopPasteQueueModel.QueueRow] {
         guard doctor.isDownloadReady else { return [] }
         return model.rows.filter { row in
@@ -210,8 +208,7 @@ struct PasteSheet: View {
 
     // MARK: - Helpers
 
-    /// `nil` hides the button: no id to download, or SteamCMD hasn't been set up
-    /// and signed in, in which case the Workshop setup sheet is the way through.
+    /// `nil` hides the button: no id to download, or SteamCMD is not set up and signed in.
     private func downloadAction(for row: WorkshopPasteQueueModel.QueueRow) -> (() -> Void)? {
         guard let itemID = row.publishedFileID, doctor.isDownloadReady else { return nil }
         let title = row.metadata?.title ?? String(itemID)

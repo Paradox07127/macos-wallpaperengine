@@ -6,12 +6,8 @@ import Metal
 import simd
 
 /// DEBUG-only accumulator mirroring the Windows RenderDoc oracle into the shared `wpe.trace.v1`
-/// schema from the Mac Metal path. Fed from the scene-debug hooks (not `.gputrace`): the Swift
-/// render path carries semantic names for passes, materials, samplers, uniforms, texture
-/// fallbacks, and render targets, to align against Windows ground truth. One `mac/trace.json`
-/// per `beginScene` — passes accumulate during the next frame, `finishFrame` serialises once and
-/// latches (multi-frame capture re-opens with a second `beginScene` first). `@unchecked
-/// Sendable`: mutable state is guarded by `lock`, safe from the render thread and end-of-frame flush.
+/// schema. `@unchecked Sendable`: mutable state is guarded by `lock`, safe from the render
+/// thread and the end-of-frame flush.
 final class WPECanonicalTraceRecorder: @unchecked Sendable {
     static let shared = WPECanonicalTraceRecorder()
 
@@ -21,9 +17,7 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         let reference: WPETextureReference?
         let texture: MTLTexture?
         let fallbackToPrimary: Bool
-        /// Address/filter/mip of the sampler actually bound to this slot, read
-        /// off the bound descriptor. Windows carries a full D3D11_SAMPLER_DESC;
-        /// leaving this nil makes the diff blind to wrap-mode divergence.
+        /// Address/filter/mip of the sampler actually bound to this slot. Leaving this nil makes the diff blind to wrap-mode divergence.
         let sampler: [String: String]?
 
         init(slot: Int, name: String?, reference: WPETextureReference?, texture: MTLTexture?,
@@ -68,9 +62,6 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
 
     private init() {}
 
-    /// True only while a scene is mid-capture and the frame has not latched — the
-    /// render path checks this before building any trace payload, so a production
-    /// (non-oracle, non-scene-debug) frame pays one `isEnabled` read and nothing else.
     var isAccumulating: Bool {
         guard WPESceneDebugArtifacts.shared.isEnabled else { return false }
         lock.lock()
@@ -78,11 +69,6 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         return scene != nil && !frameComplete
     }
 
-    /// Pipeline/encoder state as Metal actually receives it, built from the same helpers the
-    /// executor feeds its pipelines and encoders (`WPEMetalPipelineCache.applyBlendMode` /
-    /// `applyAlphaWritePolicy` / `cullMode`, `WPEMetalDepthStateCache.compareFunction`), so the
-    /// trace carries real blend factors and depth/raster state instead of only the logical
-    /// `blending` string — which the Windows comparator cannot check against D3D state.
     struct NativeRenderState {
         let attachment: MTLRenderPipelineColorAttachmentDescriptor
         let cullMode: MTLCullMode
@@ -214,8 +200,7 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
             )
             textures.append([
                 "stage": "fragment",
-                // Authored register slot, matching the reflection above and the
-                // Windows side. `binding.slot` is our dense Metal binding index.
+                // Authored register slot, matching the reflection and the Windows side. `binding.slot` is our dense Metal binding index.
                 "slot": Self.authoredTextureSlot(binding.name) ?? binding.slot,
                 "name": jsonOrNull(binding.name),
                 "resource": texID,
@@ -291,10 +276,7 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         passes.append(passRecord)
     }
 
-    /// Record one draw handled by the hand-authored Metal builtin dispatcher: these passes
-    /// have no transpiler reflection layout, so the canonical trace intentionally leaves
-    /// `constantBuffers` empty instead of inventing GLSL uniforms. Target, texture, shader,
-    /// topology, and blend data are still real, making the pass alignable with the Windows oracle.
+    /// These passes have no transpiler reflection layout, so the trace intentionally leaves `constantBuffers` empty instead of inventing GLSL uniforms.
     func recordBuiltinPass(
         pass: WPEPreparedRenderPass,
         layer: WPERenderLayer,
@@ -409,9 +391,6 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         passes.append(passRecord)
     }
 
-    /// Record one built-in puppet mesh draw so Mac traces can be aligned against
-    /// Windows captures bone-by-bone. These draws bypass the custom-shader recorder
-    /// and are otherwise invisible to the canonical pass stream.
     func recordPuppetPass(
         pass: WPEPreparedRenderPass,
         nativeState: NativeRenderState,
@@ -593,16 +572,11 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
             "state": state,
             "output": output,
             "puppet": puppet,
-            // Puppet meshes bypass WPEShaderProgram and execute the app's
-            // hand-authored Metal vertex/fragment pair directly.
             "implementation": nativeImplementationRecord()
         ]
         passes.append(passRecord)
     }
 
-    /// Best-effort: fill per-pass output hashes from the scene-target snapshots
-    /// the executor collected. Only populated when `WPEDumpScenePasses` is on and
-    /// this runs before `finishFrame` latches the trace.
     func recordPassOutputs(_ entries: [(label: String, texture: MTLTexture)]) {
         guard WPESceneDebugArtifacts.shared.isEnabled else { return }
         lock.lock()
@@ -622,8 +596,7 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         defer { lock.unlock() }
         guard !frameComplete else { return }
         for item in hashed {
-            // Match the first still-unhashed pass with this id, so repeated pass
-            // ids (e.g. ping-pong blur) fill in draw order instead of colliding.
+            // Match the first still-unhashed pass with this id, so repeated pass ids (e.g. ping-pong blur) fill in draw order instead of colliding.
             guard let index = passes.firstIndex(where: {
                 ($0["passId"] as? String) == item.label
                     && (($0["output"] as? [String: Any])?["sha256"] is NSNull)
@@ -637,10 +610,6 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         }
     }
 
-    /// Record one particle-system draw as a pass so the divergence engine can align it against
-    /// WPE's POINTLIST particle passes. Particles are encoded inline in the scene pass
-    /// (`encodeParticleSystem`, interleaved by paint index), so without this hook they'd show
-    /// up only as "missing" WPE passes even though we render them.
     func recordParticlePass(
         index: Int,
         particleCount: Int,
@@ -663,11 +632,7 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
 
         let ordinal = passes.count
         let targetResource = "rt-scene"
-        // Create rt-scene only if no pass registered it yet — same reason as the text pass.
-        // Particles are interleaved by paint index, so in a scene whose last .scene-targeting
-        // pass precedes them (3460973721 pass-0001, 3462491575 pass-0031) a blind assign wiped
-        // the `lineage` the structural golden reads as the FBO graph; 3554161528 only kept its
-        // lineage because a custom pass happened to draw after its particles.
+        // Create rt-scene only if no pass registered it yet: a blind assign would wipe the `lineage` the structural golden reads as the FBO graph.
         if resources.renderTargets[targetResource] == nil {
             resources.renderTargets[targetResource] = [
                 "label": "scene", "width": target.width, "height": target.height,
@@ -676,16 +641,10 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         }
         let spriteID = textureResourceID(texture: sprite, fallbackKey: "particle-\(index)")
         var spriteResource = textureResource(id: spriteID, name: "g_Texture0", reference: nil, texture: sprite)
-        // The sprite's material path is known by the SYSTEM, not by any
-        // WPETextureReference — thread it in so the asset bucket can say which
-        // file this pass sampled (30/57 textures had a null sourcePath before).
         if let spritePath { spriteResource["sourcePath"] = spritePath }
         resources.textures[spriteID] = spriteResource
 
-        // Slot 0 plus whatever else the draw actually bound. Hardcoding slot 0 made every
-        // REFRACT particle look like it was missing its normal map: 3713073223's rain authors
-        // `combos:{REFRACT:1}` with `textures:[sharp_halo, sharp_halo_normal]`, WPE binds both,
-        // and the trace showed slot 1 empty on our side purely because nothing recorded it.
+        // Slot 0 plus whatever else the draw actually bound. Hardcoding slot 0 made every REFRACT particle look like it was missing its normal map.
         var textures: [[String: Any]] = [[
             "stage": "fragment", "slot": 0, "name": "g_Texture0", "resource": spriteID,
             "reference": jsonOrNull(spritePath), "fallback": false,
@@ -723,10 +682,6 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
                 "value": [Double(sheet.cols), Double(sheet.rows), Double(sheet.frames), sheet.alphaMask ? 1.0 : 0.0]
             ])
         }
-        // WPE's particle RDEF exposes g_Overbright/g_CutoutStart/g_CutoutEnd/g_Opacity; emitting
-        // the material's overbright multiplier by name closes most of the interface-name-set gap
-        // the fidelity diff's particle-pass Jaccard flagged (see self-oracle-runbook.md's
-        // seed-capture `firstDivergence`). Trace-only — no pixel is touched by this.
         variables.append([
             "name": "g_Overbright", "type": "float",
             "value": Double(overbright)
@@ -750,8 +705,6 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
             "constantBuffers": [constantBuffer],
             "state": state,
             "output": output,
-            // Particle systems likewise use the dedicated Metal instance path,
-            // not translated WPE source or a missing-source copy fallback.
             "implementation": nativeImplementationRecord()
         ]
         // Same shape and 256-cap as the Windows side's decoded POINTLIST vertex
@@ -940,11 +893,7 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         path: String?, layout: [WPEUniformSlot], samplers: [String]
     ) -> [String: Any] {
         let sourceHash = sha256Hex(Data(source.utf8))
-        // Report the AUTHORED register slot (`g_Texture7` -> 7), not the dense index: MSL packs
-        // samplers into tex0..texN, so g_Texture0/1/7 used to reflect as 0/1/2 while Windows
-        // reflects 0/1/7 — comparing our g_Texture7 against whatever D3D left in register 2 caused
-        // 329 of 333 spurious `asset/texture/fallback` findings. Rendering is unaffected: the
-        // dense index is a self-consistent Metal binding detail.
+        // Report the AUTHORED register slot (`g_Texture7` -> 7), not the dense index: MSL packs samplers into tex0..texN.
         let reflectionSamplers: [[String: Any]] = samplers.enumerated().map { index, name in
             ["name": name, "slot": Self.authoredTextureSlot(name) ?? index, "type": "SAMPLER"]
         }
@@ -1108,11 +1057,7 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
     }
 
     private func readbackTextureBytes(_ texture: MTLTexture) -> Data? {
-        // Deterministic readback for hashing: rgba8/bgra8 unorm are hashed raw (exact, no
-        // NaN/denormal); HDR rgba16Float is decoded to canonical clamped 8-bit FIRST, since raw
-        // Float16 bytes are non-deterministic across runs (NaN payloads, ±0, denormals,
-        // stale/aliased bytes in HDR targets' unwritten texels) even when the rendered image is
-        // identical — SDR scenes hash byte-stably, HDR ones did not; clamp+quantize removes that noise.
+        // rgba8/bgra8 unorm are hashed raw; HDR rgba16Float is decoded to canonical clamped 8-bit FIRST — raw Float16 bytes are non-deterministic across runs.
         let isFloat16: Bool
         let bytesPerPixel: Int
         switch texture.pixelFormat {
@@ -1148,9 +1093,7 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
             )
         }
         guard isFloat16 else { return Data(raw) }
-        // Float16 RGBA → canonical clamped 8-bit (the visual output). Non-finite
-        // (NaN/±Inf) and negatives collapse to 0; values ≥1 (incl. stale garbage in
-        // unwritten HDR texels) clamp to 255 — both deterministic across runs.
+        // Float16 RGBA → canonical clamped 8-bit. Non-finite and negatives collapse to 0; values ≥1 clamp to 255.
         let componentCount = width * height * 4
         var canonical = [UInt8](repeating: 0, count: componentCount)
         raw.withUnsafeBytes { rawPtr in
@@ -1212,8 +1155,6 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         ]
     }
 
-    /// Token vocabulary shared with `oracle_state.token()` on the Windows side
-    /// (D3D11_BLEND_INV_SRC_ALPHA → inv-src-alpha) and the RenderDoc replay exporter.
     private static func blendToken(_ factor: MTLBlendFactor) -> String {
         switch factor {
         case .zero: "zero"
@@ -1233,9 +1174,7 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         case .oneMinusSource1Color: "inv-src1-color"
         case .source1Alpha: "src1-alpha"
         case .oneMinusSource1Alpha: "inv-src1-alpha"
-        // Metal 4 pipeline specialization placeholder, not a real factor: no
-        // D3D11 counterpart exists, so it gets its own token rather than
-        // colliding with one the Windows side can emit.
+        // Metal 4 pipeline specialization placeholder, not a real factor: no D3D11 counterpart, so it gets its own token rather than colliding with one Windows can emit.
         case .unspecialized: "unspecialized"
         @unknown default: "mtl-\(factor.rawValue)"
         }

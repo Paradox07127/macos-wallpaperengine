@@ -1,9 +1,8 @@
 import Testing
 @testable import LiveWallpaper
 
-/// The slot index must reproduce the old linear pool scans exactly: lowest-free
-/// selection and ascending live iteration preserve RNG consumption order, draw
-/// order, and spawn-event order.
+/// Lowest-free selection and ascending live iteration are load-bearing: they
+/// preserve RNG consumption order, draw order, and spawn-event order.
 struct WPEParticleSlotIndexTests {
 
     @Test("Lowest free slot matches a linear scan, across word boundaries")

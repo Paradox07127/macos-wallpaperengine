@@ -21,8 +21,7 @@ struct Sparkline: View {
         Canvas(opaque: false, rendersAsynchronously: false) { context, size in
             let (lo, hi) = resolvedDomain()
             let span = max(hi - lo, .ulpOfOne)
-            // Nothing at all for an empty series — not even the baseline, which
-            // is what the previous `if let pts = points(...)` gate produced.
+            // Nothing at all for an empty series — not even the baseline.
             let runs = drawableRuns(in: size, lo: lo, span: span)
             guard !runs.isEmpty else { return }
 

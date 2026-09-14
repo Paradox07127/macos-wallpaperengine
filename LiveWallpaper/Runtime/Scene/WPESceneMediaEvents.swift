@@ -3,12 +3,6 @@ import Foundation
 import JavaScriptCore
 import LiveWallpaperProWPE
 
-// SceneScript media integration (GitHub issue #133). WPE has no `register*Listener` call and
-// no `supports*` opt-in for Scene wallpapers: the engine looks up conventionally-named exported
-// functions on each property script module and calls them (contract from the official
-// `lib.sceneScript.d.ts`). `mediaPlaybackChanged`, `mediaPropertiesChanged`,
-// `mediaThumbnailChanged` and `mediaTimelineChanged` are wired here (`mediaStatusChanged` is
-// not: no installed scene binds it).
 
 /// The frozen `MediaPlaybackEvent` constants installed by
 /// `WPESceneScriptBaseclasses`. Raw values are the contract, not an enum order.
@@ -18,9 +12,7 @@ enum WPESceneMediaPlaybackState: Int, Sendable, Equatable {
     case paused = 2
 }
 
-/// `mediaPropertiesChanged`'s event payload. Every field is a String on the JS
-/// side; the docs state most players fill in only title and artist, so the
-/// fields we cannot source stay empty strings rather than becoming `undefined`.
+/// Every field is a String on the JS side; fields we cannot source stay empty strings rather than becoming undefined.
 struct WPESceneMediaProperties: Sendable, Equatable {
     var title: String = ""
     var artist: String = ""
@@ -37,20 +29,14 @@ struct WPESceneMediaTimeline: Sendable, Equatable {
     var position: Double
     var duration: Double
 
-    /// nil when the player reported no position or no duration — the handler isn't called at
-    /// all then. Docs are explicit that authors must cope ("Not all media players support this
-    /// feature, make sure your wallpaper also works fine when this function is never called"),
-    /// so silence is contract-compliant; sending zeros would paint a live-looking `0:00 / 0:00`
-    /// progress bar out of data we don't have.
+    /// nil when the player reported no position or no duration — the handler isn't called then; zeros would paint a live-looking 0:00 / 0:00.
     static func interpolated(
         from state: MonitorNowPlayingState,
         now: Double
     ) -> WPESceneMediaTimeline? {
         guard let duration = state.duration, let position = state.position else { return nil }
         var delivered = position
-        // Spotify reports position in its notification, Apple Music does not (a
-        // 5s AppleScript poll fills it in), so a raw sample can be that stale.
-        // Only advance it while playing — a paused track's position is exact.
+        // Only advance interpolated position while playing — a paused track's position is exact.
         if state.phase == .playing, let sampledAt = state.positionSampledAt {
             delivered += max(0, now - sampledAt)
         }
@@ -77,9 +63,6 @@ enum WPESceneMediaEvent: Sendable, Equatable {
     }
 }
 
-/// Which media handlers one evaluated module actually exported. All three script
-/// runtimes carry one of these so a script that exported nothing never costs a
-/// queue crossing.
 struct WPESceneMediaHandlerSet: Sendable, Equatable {
     var playback = false
     var properties = false
@@ -105,9 +88,6 @@ struct WPESceneMediaHandlerSet: Sendable, Equatable {
     }
 }
 
-/// What the source currently reports, in the shape the handlers receive. The
-/// diff gate compares these, so anything not represented here cannot trigger a
-/// redundant dispatch.
 struct WPESceneMediaSnapshot: Sendable, Equatable {
     var state: WPESceneMediaPlaybackState
     var properties: WPESceneMediaProperties
@@ -131,11 +111,7 @@ struct WPESceneMediaSnapshot: Sendable, Equatable {
         self.isAwaitingFirstEvent = isAwaitingFirstEvent
     }
 
-    /// `awaitingFirstEvent` has no PLAYBACK_* counterpart — WPE only calls
-    /// `mediaPlaybackChanged` for real transitions — so it borrows `.stopped`
-    /// and carries `isAwaitingFirstEvent` for the diff gate to suppress on.
-    /// The thumbnail is passed in rather than derived here so the caller owns
-    /// the decode cache.
+    /// awaitingFirstEvent has no PLAYBACK_* counterpart, so it borrows .stopped and carries isAwaitingFirstEvent for the diff gate to suppress on.
     init(
         _ state: MonitorNowPlayingState,
         thumbnail: WPESceneMediaThumbnail = .absent,
@@ -157,7 +133,6 @@ struct WPESceneMediaSnapshot: Sendable, Equatable {
     }
 }
 
-/// Builds the handler's argument inside the script's own JSContext.
 func wpeMediaEventObject(_ event: WPESceneMediaEvent, in context: JSContext) -> JSValue {
     guard let object = JSValue(newObjectIn: context) else {
         return JSValue(undefinedIn: context) ?? JSValue(nullIn: context)!
@@ -190,10 +165,7 @@ func wpeMediaEventObject(_ event: WPESceneMediaEvent, in context: JSContext) -> 
     return object
 }
 
-/// Colours must arrive as real `Vec3` instances, not plain `{x,y,z}` bags:
-/// corpus scenes assign `event.primaryColor` straight into a transform value and
-/// call vector methods on it (3326873240's colour script does
-/// `oldColor.mix(newColor, t)` and returns the result).
+/// Colours must arrive as real Vec3 instances, not plain {x,y,z} bags: corpus scenes call vector methods on them.
 private func wpeVec3(_ value: SIMD3<Double>, in context: JSContext) -> JSValue {
     if let constructor = context.objectForKeyedSubscript("Vec3"),
        !constructor.isUndefined,
@@ -210,32 +182,18 @@ private func wpeVec3(_ value: SIMD3<Double>, in context: JSContext) -> JSValue {
     return object
 }
 
-/// Per-instance demand: WPE dispatches to whatever the module exported, so
-/// presence in the evaluated context is the truth (the document-level text scan
-/// only decides whether the scene subscribes at all).
 func wpeExportsFunction(named name: String, in context: JSContext) -> Bool {
     guard let value = context.objectForKeyedSubscript(name) else { return false }
     return !value.isUndefined && value.hasProperty("call")
 }
 
-/// Field diff, mirroring the reference implementation: force both events on the
-/// first delivery after load, then send each one only when its own fields moved.
-/// Without this a handler would run on every source push (and, if the renderer
-/// polled, every frame).
+/// Force events on the first delivery after load, then send each only when its own fields moved.
 struct WPESceneMediaDiffGate {
     private var delivered: WPESceneMediaSnapshot?
 
     mutating func events(for snapshot: WPESceneMediaSnapshot) -> [WPESceneMediaEvent] {
         guard let previous = delivered else {
-            // A cold launch replays `awaitingFirstEvent` — a state nobody has
-            // observed, not an observation. Delivering it as PLAYBACK_STOPPED
-            // latched author scripts that gate on stop (3510729512 hides its
-            // media panel), and delivering its EMPTY properties made scenes run
-            // their track-change animation into a blank title and park there
-            // (3326873240's flip froze at scale 0). WPE's contract is that a
-            // handler is simply not called until there is data, so send nothing
-            // and stay armed: the first real snapshot takes this branch again
-            // and force-delivers every field.
+            // awaitingFirstEvent is not an observation: send nothing and stay armed so the first real snapshot force-delivers.
             guard !snapshot.isAwaitingFirstEvent else { return [] }
             delivered = snapshot
             var events: [WPESceneMediaEvent] = [
@@ -257,16 +215,11 @@ struct WPESceneMediaDiffGate {
         if delivered.properties != snapshot.properties {
             events.append(.propertiesChanged(snapshot.properties))
         }
-        // The extracted palette IS the payload, so comparing it is exactly
-        // "did anything the handler can observe move". Two different covers that
-        // extract to the same five colours deliberately do not re-fire.
+        // The extracted palette is the payload; two covers that extract to the same five colours do not re-fire.
         if delivered.thumbnail != snapshot.thumbnail {
             events.append(.thumbnailChanged(snapshot.thumbnail))
         }
-        // The delivered position is interpolated to now, so this moves on every source push
-        // while playing — bounded, since pushes are source-driven (no timer, no per-frame tick;
-        // scripts interpolate on their own clock between events). Losing data mid-track sends
-        // nothing rather than a zeroed timeline.
+        // Interpolated position moves on every source push while playing; losing data mid-track sends nothing rather than a zeroed timeline.
         if let timeline = snapshot.timeline, delivered.timeline != timeline {
             events.append(.timelineChanged(timeline))
         }
@@ -274,9 +227,6 @@ struct WPESceneMediaDiffGate {
     }
 }
 
-/// Hand-off from the `@MainActor` source to the renderer's display actor. The
-/// renderer drains it on its own frame path, so no scene-script state is ever
-/// touched from two isolation domains.
 /// `@unchecked Sendable`: every access to `pending` is inside `lock`.
 final class WPESceneMediaEventMailbox: @unchecked Sendable {
     private let lock = NSLock()
@@ -289,8 +239,6 @@ final class WPESceneMediaEventMailbox: @unchecked Sendable {
         pending.append(contentsOf: events)
     }
 
-    /// Empty on the overwhelming majority of frames — the diff gate only posts
-    /// on an actual change.
     func drain() -> [WPESceneMediaEvent] {
         lock.lock()
         defer { lock.unlock() }
@@ -301,8 +249,6 @@ final class WPESceneMediaEventMailbox: @unchecked Sendable {
     }
 }
 
-/// The subscribe/unsubscribe surface the dispatcher needs, so tests never reach
-/// `NowPlayingMonitor.shared` (and through it the user's running Spotify).
 @MainActor
 protocol WPENowPlayingEventSource: AnyObject {
     func subscribe(id: UUID, handler: @escaping @Sendable (UInt64, MonitorNowPlayingState) -> Void)
@@ -311,9 +257,6 @@ protocol WPENowPlayingEventSource: AnyObject {
 
 extension NowPlayingMonitor: WPENowPlayingEventSource {}
 
-/// Owns one scene's media subscription: demand gate at load, field diff per
-/// push, and an explicit `stop()` at teardown so the subscription cannot
-/// outlive the wallpaper.
 @MainActor
 final class WPESceneMediaEventDispatcher {
     let mailbox = WPESceneMediaEventMailbox()
@@ -326,10 +269,6 @@ final class WPESceneMediaEventDispatcher {
     private var lastOrdinal: UInt64?
     private var isSubscribed = false
 
-    /// True when any bound script in the document exports a media handler. A scene without
-    /// one must cost nothing — no subscription, no per-frame work (Issue #133 was the mirror
-    /// image: capture gated on a flag scenes never set). `nonisolated`: a pure document scan,
-    /// called from the renderer's display actor before anything touches the main actor.
     nonisolated static func isNeeded(by document: WPESceneDocument) -> Bool {
         WPESceneScriptInstanceInventory.usesMediaAPI(in: document)
     }
@@ -348,8 +287,6 @@ final class WPESceneMediaEventDispatcher {
         // `subscribe` replays the current state synchronously, which is what
         // forces the first delivery — a scene loaded mid-song starts correct.
         source.subscribe(id: id) { [weak self] ordinal, state in
-            // NowPlayingMonitor is @MainActor and notifies from it; this closure
-            // is only ever entered on the main actor.
             MainActor.assumeIsolated {
                 self?.ingest(ordinal: ordinal, state: state)
             }

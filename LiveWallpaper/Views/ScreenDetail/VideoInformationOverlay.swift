@@ -2,7 +2,6 @@ import LiveWallpaperCore
 import SwiftUI
 import AVKit
 
-/// Metadata is loaded from `AVURLAsset(url:)` rather than the live player so the overlay can render across the active / poster / unloaded states — playing the preview isn't a prerequisite for showing the badges.
 struct VideoInformationOverlay: View {
     let videoURL: URL?
 
@@ -25,9 +24,6 @@ struct VideoInformationOverlay: View {
         HStack(spacing: 12) {
             if !formatBadges.isEmpty {
                 HStack(spacing: 4) {
-                    // Secondary pill inside the glass info panel; same metrics as
-                    // the `tag()` pills in `SceneInformationOverlay` /
-                    // `HTMLInformationOverlay` (shared flat-pill standard).
                     ForEach(formatBadges, id: \.self) { badge in
                         Text(verbatim: badge.displayLabel)
                             .font(DesignTokens.Typography.badge)
@@ -98,7 +94,6 @@ struct VideoInformationOverlay: View {
                                height: abs(Int(transformedSize.height)))
             videoFrameRate = Double(nominalFrameRate)
         } catch {
-            // Best-effort metadata: the inspector rows stay blank on failure.
             Logger.debug("Video metadata load failed: \(error)", category: .videoPlayer)
         }
     }

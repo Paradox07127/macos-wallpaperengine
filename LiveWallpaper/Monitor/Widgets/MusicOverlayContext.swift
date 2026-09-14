@@ -1,10 +1,6 @@
 import Foundation
 import LiveWallpaperCore
 
-/// Everything the Now Playing layer draws from. The Monitor board's
-/// `MonitorWidgetContext` carries a widget placement and a metric history the
-/// music layer has no use for; keeping them apart is what lets the layer stop
-/// being a board widget.
 struct MusicOverlayContext {
     /// The pump's latest frame; the layer reads only `nowPlaying` from it.
     var snapshot: MonitorSnapshot

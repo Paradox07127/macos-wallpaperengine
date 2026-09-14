@@ -26,9 +26,8 @@ struct WPESceneHibernateTests {
 
         let hashBefore = try Self.textureSHA256(try #require(renderer.outputTexture))
 
-        // Sentinels prove the release paths run even though the fixture scene is
-        // texture-free: hibernate must sweep static textures, dynamic sources,
-        // particles, and on-demand bookkeeping alike.
+        // The fixture scene is texture-free, so these injected sentinels are what proves
+        // the release paths run.
         renderer.loadedTextures["sentinel"] = try Self.makeTexture(device: device)
         renderer.dynamicTextureSources["sentinel"] = HibernateStubSource()
         renderer.onDemandVideoKeyByID = ["obj": ["sentinel"]]
@@ -54,13 +53,10 @@ struct WPESceneHibernateTests {
         #expect(renderer.renderPipeline == nil)
         #expect(renderer.outputTexture == nil)
         #expect(renderer.soundRuntime == nil)
-        // Production side stays stopped while hibernated: the surface is paused
-        // and a stray draw callback renders nothing.
         #expect(stack.surface.mtkView.isPaused)
         renderer.renderAndPresentFrame()
         #expect(renderer.outputTexture == nil)
 
-        // Wake = plain reload; the rebuilt first frame must match the original.
         try await stack.actor.reload()
         renderer.applyPerformanceProfile(.quality)
         #expect(renderer.didLoad)
@@ -250,7 +246,6 @@ struct WPESceneHibernateTests {
         let hibernatedSnapshot = await harness.actor.rendererStateSnapshot()
         #expect(hibernatedSnapshot?.isLoaded == false)
 
-        // Pressure cleared: the policy refresh restores quality and wakes.
         session.applyPerformanceProfile(.quality)
         try await Self.poll("wake reload after pressure clears") {
             guard session.isHibernated == false else { return false }
@@ -324,10 +319,8 @@ struct WPESceneHibernateTests {
         // Pressure is critical BEFORE the wallpaper exists — the restore-at-launch
         // and swap-in cases. A level-change-only push never reaches this session.
         watcher.emit(.critical)
-        // The watcher hop is a MainActor Task — drain it so the level change is
-        // fully applied BEFORE the session exists. Without this barrier the
-        // install races ahead and the test degenerates into the already-covered
-        // "pressure arrives after install" ordering.
+        // The watcher hop is a MainActor Task: without this barrier the install races ahead
+        // and the test degenerates into the already-covered "pressure after install" ordering.
         try await Self.poll("pressure applied before install") {
             manager.isUnderMemoryPressure
         }
@@ -376,8 +369,6 @@ struct WPESceneHibernateTests {
             await harness.actor.rendererStateSnapshot()?.isLoaded == true
         }
 
-        // User pauses (its own 3600s dwell), then a pressure spike comes and goes
-        // while the session stays suspended for that unrelated reason.
         harness.session.pause()
         watcher.emit(.critical)
         watcher.emit(.normal)
@@ -493,7 +484,6 @@ struct WPESceneHibernateTests {
         let entry = fixture.root.appendingPathComponent("scene.json")
         let stash = fixture.root.appendingPathComponent("scene.json.stashed")
 
-        // Wake #1 fails and starts counting down to its retry.
         session.applyPerformanceProfile(.suspended)
         session.setHibernationEligible(true)
         try await Self.poll("first hibernate") { session.isHibernated }
@@ -502,9 +492,8 @@ struct WPESceneHibernateTests {
         try await Self.poll("first wake fails") { session.loadError != nil }
         let firstRetryDeadline = ContinuousClock.now + retryDelay
 
-        // Heal and hibernate again *inside* that countdown, so wake #2 starts
-        // from a loaded renderer while wake #1 is still asleep. The extra hold
-        // keeps the two retry deadlines far enough apart to tell them apart.
+        // Wake #2 must start inside wake #1's countdown; the extra hold keeps the two
+        // retry deadlines far enough apart to tell them apart.
         try FileManager.default.moveItem(at: stash, to: entry)
         await session.retry()
         #expect(session.loadError == nil)
@@ -517,11 +506,8 @@ struct WPESceneHibernateTests {
         try await Self.poll("second wake fails") { session.loadError != nil }
         let secondRetryDeadline = ContinuousClock.now + retryDelay
 
-        // Between the two deadlines only wake #2 may still be alive. A stale
-        // wake #1 reloads here on top of the live one and, when that fails,
-        // flips `isHibernated` behind its back — the live wake then heals the
-        // scene and leaves the flag set on a loaded session, which can never
-        // hibernate again.
+        // Between the two deadlines only wake #2 may still be alive: a stale wake #1 would
+        // flip `isHibernated` behind the live wake's back and leave it set on a loaded session.
         try await Task.sleep(until: firstRetryDeadline + .milliseconds(400), clock: .continuous)
         #expect(
             ContinuousClock.now < secondRetryDeadline,
@@ -529,7 +515,7 @@ struct WPESceneHibernateTests {
         )
         #expect(!session.isHibernated, "a superseded wake acted after a newer wake replaced it")
 
-        // M4 unchanged: the live wake's own give-up still restores the gate.
+        // The live wake's own give-up still restores the gate.
         try await Self.poll("live wake restores the hibernated gate") { session.isHibernated }
     }
 
@@ -574,8 +560,6 @@ struct WPESceneHibernateTests {
     }
 }
 
-/// Loaded-session fixture for dwell-policy tests: real renderer + actor +
-/// window, with both hibernation dwells injectable.
 @MainActor
 private struct HibernateSessionHarness {
     let fixture: FrameDemandFixture

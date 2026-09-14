@@ -2,7 +2,6 @@ import Foundation
 import Testing
 @testable import LiveWallpaper
 
-/// Isolated defaults so a test never reads or writes the real install record.
 private func scratchDefaults(function: String = #function) -> UserDefaults {
     guard let scratch = try? TestScratch.defaultsSuite(prefix: "steamcmd-managed", function: function) else {
         fatalError("Could not create a scratch defaults suite")
@@ -29,7 +28,6 @@ struct SteamCMDManagedInstallRecordTests {
         bootstrapSHA256: String(repeating: "ab", count: 32)
     )
 
-    /// Never reached: the tests below must not perform a real removal.
     private func refusingRemoval() -> SteamCMDManagedRemovalResult? {
         Issue.record("A test tried to remove a real managed install")
         return nil
@@ -68,8 +66,7 @@ struct SteamCMDManagedInstallRecordTests {
         #expect(await coordinator.forget() == .removed)
 
         // Both, not just the defaults: the menu offers "Remove" off the
-        // in-memory value, so a stale mirror keeps offering to delete something
-        // that is already gone.
+        // in-memory value.
         #expect(coordinator.managedInstall == nil)
         #expect(defaults.data(
             forKey: SteamCMDManagedInstallCoordinator.managedInstallDefaultsKey
@@ -96,9 +93,8 @@ struct SteamCMDManagedInstallRecordTests {
         )
 
         #expect(await coordinator.forget() == .refused)
-        // The files are still there. Dropping the record here would take the
-        // Remove command out of the menu — it is shown off `managedInstall` —
-        // so a delete that did not happen would also become un-retryable.
+        // Dropping the record here would take Remove out of the menu, so a
+        // delete that did not happen would become un-retryable.
         #expect(coordinator.managedInstall == record)
         #expect(SteamCMDManagedInstallCoordinator.recordedInstall(defaults: defaults) == record)
     }
@@ -110,8 +106,6 @@ struct SteamCMDManagedInstallRecordTests {
         let coordinator = SteamCMDManagedInstallCoordinator(
             defaults: defaults, remove: { nil }
         )
-        // Named apart from a refusal: nothing was deleted and nothing was
-        // even asked, so the two need different sentences on screen.
         #expect(await coordinator.forget() == .connectorUnavailable)
         #expect(coordinator.managedInstall == record)
     }
@@ -136,16 +130,11 @@ struct SteamCMDManagedInstallContainmentTests {
 
     @Test("Control: the connector's own canonical path is accepted")
     func acceptsCanonicalPath() {
-        // Without this the whole suite would pass on an implementation that
-        // refuses everything.
         #expect(contained(canonical))
     }
 
     @Test("The install root is outside every app container")
     func installRootIsOutsideContainers() {
-        // The container is writable by the sandboxed app, which makes every
-        // check here check-then-use: the leaf can become a symlink between the
-        // lstat walk and `tar -C`.
         #expect(!canonical.contains("/Library/Containers/"))
         #expect(canonical == "/Users/probe/Library/Application Support/Loomscreen/SteamCMD")
         #expect(!contained("/Users/probe/Library/Containers/com.loomscreen.pro/Data/Library/Application Support/SteamCMD"))
@@ -153,8 +142,6 @@ struct SteamCMDManagedInstallContainmentTests {
 
     @Test("Another app's container is refused")
     func refusesForeignContainer() {
-        // The connector is unsandboxed; accepting any path under Containers
-        // would let it write through other apps' isolation.
         #expect(!contained("/Users/probe/Library/Containers/com.apple.Safari/Data/SteamCMD"))
     }
 
@@ -174,11 +161,8 @@ struct SteamCMDManagedInstallContainmentTests {
 
     @Test("A symlink anywhere along the install path is refused")
     func refusesSymlinkedPathComponent() throws {
-        // Real filesystem, because the bug this guards is precisely that
-        // standardizedFileURL resolves ".." but never follows links.
-        // Resolved first: `/var` is itself a symlink to `/private/var`, so an
-        // unresolved temp root makes the walk trip on that instead of on the
-        // link this test plants.
+        // Resolved first: `/var` is itself a symlink, so an unresolved temp root
+        // makes the walk trip on that instead of on the link this test plants.
         let sandbox = URL(fileURLWithPath: NSTemporaryDirectory())
             .resolvingSymlinksInPath()
             .appendingPathComponent("symprobe-\(UUID().uuidString)", isDirectory: true)
@@ -230,7 +214,6 @@ struct SteamCMDManagedInstallSymlinkTests {
         try FileManager.default.createDirectory(at: payload, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
-        // Control: a clean payload reports nothing.
         try Data("x".utf8).write(to: payload.appendingPathComponent("steamcmd"))
         #expect(SteamCMDManagedInstaller.firstEscapingSymlink(under: payload) == nil)
 
@@ -254,8 +237,6 @@ struct SteamCMDManagedInstallSymlinkTests {
         try FileManager.default.createSymbolicLink(
             at: payload.appendingPathComponent("alias"), withDestinationURL: target
         )
-        // SteamCMD's own layout uses internal links; rejecting those would
-        // break every install.
         #expect(SteamCMDManagedInstaller.firstEscapingSymlink(under: payload) == nil)
     }
 
@@ -267,9 +248,6 @@ struct SteamCMDManagedInstallSymlinkTests {
         try FileManager.default.createDirectory(at: payload, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
-        // A wrapper whose STEAMEXE names an absolute path elsewhere is exactly
-        // how a swapped archive would aim the signature check at some other
-        // Valve-signed binary.
         let outside = root.appendingPathComponent("elsewhere", isDirectory: false)
         FileManager.default.createFile(
             atPath: outside.path,
@@ -354,8 +332,7 @@ struct SteamCMDManagedInstallSignatureTests {
     @Test("An ad-hoc signature carries no team and is refused")
     func refusesAdHocSignature() {
         // `codesign --verify` passes on ad-hoc signed binaries; only the absent
-        // TeamIdentifier separates one from Valve's. This is exactly the case a
-        // spctl-based gate would get wrong in the other direction.
+        // TeamIdentifier separates one from Valve's.
         let outcome = SteamCMDManagedInstaller.verifySignature(
             binaryPath: "/x/steamcmd",
             spawn: spawnStub(verifyExit: 0, describeOutput: "Signature=adhoc\nIdentifier=steamcmd")
@@ -417,14 +394,11 @@ struct SteamCMDManagedInstallUnpackTests {
         #expect(FileManager.default.fileExists(
             atPath: installed.payload.appendingPathComponent("steamcmd.sh").path
         ))
-        // Nothing was displaced, so there is nothing to roll back to.
         #expect(installed.retired == nil)
     }
 
-    /// Valve's manifest zips carry no unix permissions — everything extracts
-    /// 0644 (measured 2026-08-13), and steamcmd.sh checks `-x` without ever
-    /// chmodding. A zip fixture, not tar: tar archives preserve mode bits, so
-    /// they cannot reproduce the failure.
+    /// A zip fixture, not tar: tar preserves mode bits, so it cannot reproduce
+    /// a permissionless extraction.
     @Test("Executables extracted from a permissionless zip become spawnable")
     func zipWithoutExecBitsYieldsRunnableBinaries() throws {
         let root = URL(fileURLWithPath: NSTemporaryDirectory())
@@ -478,8 +452,6 @@ struct SteamCMDManagedInstallUnpackTests {
             Issue.record("A clean archive must unpack over a previous install")
             return
         }
-        // The post-extraction checks (`+quit`, re-verify) all run in the caller,
-        // so the old tree has to still exist when extract returns.
         guard let retired = installed.retired else {
             Issue.record("A displaced install must be handed back for rollback")
             return
@@ -509,8 +481,6 @@ struct SteamCMDManagedInstallUnpackTests {
         }
         SteamCMDManagedInstaller.rollBack(installed)
 
-        // The working install the user already had is what must survive a
-        // reinstall that fails its post-extraction checks.
         #expect(FileManager.default.fileExists(
             atPath: payload.appendingPathComponent("marker.txt").path
         ))
@@ -533,8 +503,6 @@ struct SteamCMDManagedInstallUnpackTests {
         }
         SteamCMDManagedInstaller.rollBack(installed)
 
-        // Nothing to restore, so the failed payload must not be left as the
-        // thing `locateBinary` would find next time.
         #expect(!FileManager.default.fileExists(atPath: installed.payload.path))
         #expect(
             !FileManager.default.fileExists(atPath: installRoot.path),
@@ -551,8 +519,7 @@ struct SteamCMDManagedInstallUnpackTests {
         try FileManager.default.createDirectory(at: installRoot, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: victim, withIntermediateDirectories: true)
         // Unpacking straight into the payload path would follow this link and
-        // write into `victim`. Unpacking into a freshly created random name and
-        // renaming into place cannot.
+        // write into `victim`.
         try FileManager.default.createSymbolicLink(
             at: installRoot.appendingPathComponent("MacOS"), withDestinationURL: victim
         )
@@ -577,8 +544,6 @@ struct SteamCMDManagedInstallUnpackTests {
         _ = SteamCMDManagedInstaller.extract(
             archives: [tarball], installRoot: installRoot, spawn: spawn
         )
-        // A file the archive never mentions surviving would mean we unpacked
-        // over the old tree instead of replacing it.
         #expect(!FileManager.default.fileExists(
             atPath: payload.appendingPathComponent("leftover.txt").path
         ))
@@ -588,10 +553,6 @@ struct SteamCMDManagedInstallUnpackTests {
     }
 }
 
-/// P1.4 — a managed install is **additive**. Every way it can fail must leave the
-/// app exactly as capable as it was before the attempt: no record claiming an
-/// install that isn't there, nothing bound to a path that cannot run, and the
-/// user able to try again or fall back to a package-manager copy.
 @MainActor
 @Suite("Managed install fallback")
 struct SteamCMDManagedInstallFallbackTests {
@@ -614,8 +575,6 @@ struct SteamCMDManagedInstallFallbackTests {
 
     @Test("Control: a clean run does record the install")
     func successRecords() async throws {
-        // Without this the suite would pass against a coordinator that always
-        // fails, which is the opposite of what the other cases are asserting.
         let defaults = scratchDefaults()
         let coordinator = coordinator(defaults: defaults) {
             SteamCMDManagedInstallResult(
@@ -662,9 +621,8 @@ struct SteamCMDManagedInstallFallbackTests {
 
         let status = await coordinator.install()
         #expect(failed(status) != nil, "\(outcome) must not be reported as installed")
-        // Note the canonicalPath above: a refused install still carries one, so
-        // recording on "we got a path back" instead of on the outcome would
-        // bind the app to a copy the connector just refused to run.
+        // A refused install still carries a canonicalPath: recording on that
+        // instead of on the outcome would bind the app to a refused copy.
         #expect(coordinator.managedInstall == nil)
         #expect(SteamCMDManagedInstallCoordinator.recordedInstall(defaults: defaults) == nil)
     }
@@ -684,19 +642,12 @@ struct SteamCMDManagedInstallFallbackTests {
         }
 
         #expect(failed(await coordinator.install()) != nil)
-        // The re-entrancy guard rejects a *concurrent* install; it must not latch
-        // a failed one into a state the user cannot leave.
         _ = await coordinator.install()
         #expect(attempts == 2)
         #expect(coordinator.managedInstall?.canonicalPath == "/probe/steamcmd")
     }
 }
 
-/// Removal and installation both suspend on separate short-lived XPC
-/// connections, so their replies can come back in either order. Whichever the
-/// user started **last** has to win — the alternative is a record pointing at
-/// files that were deleted, or a deletion that takes an install the user
-/// requested afterwards.
 @MainActor
 @Suite("Managed install and removal interleaving")
 struct SteamCMDManagedInstallInterleavingTests {
@@ -733,8 +684,6 @@ struct SteamCMDManagedInstallInterleavingTests {
         #expect(await gateReached(gate), "the removal never reached the gate")
         #expect(coordinator.status == .removing)
 
-        // The whole point: this must not start. Before `.removing` existed the
-        // coordinator reported `.idle` here and let it through.
         let refused = await coordinator.install()
         #expect(refused == .removing)
         #expect(installAttempts == 0)
@@ -750,9 +699,8 @@ struct SteamCMDManagedInstallInterleavingTests {
         let defaults = scratchDefaults()
         try storeRecord(record, in: defaults)
 
-        // `forget()` has no status guard — clicking Remove twice really does
-        // start two, and they finish in whatever order the connector replies.
-        // (An install cannot get in here at all: `.removing` refuses it.)
+        // `forget()` has no status guard, so clicking Remove twice really does
+        // start two.
         let first = AsyncGate()
         let second = AsyncGate()
         var call = 0
@@ -777,15 +725,10 @@ struct SteamCMDManagedInstallInterleavingTests {
         async let newer = coordinator.forget()
         #expect(await gateReached(second), "the second removal never reached its gate")
 
-        // The older one replies first and claims success. It has been
-        // superseded, so its verdict must be discarded rather than clearing a
-        // record the newer operation is still deciding about.
         await first.open()
         #expect(await older == .superseded)
         #expect(coordinator.managedInstall == record)
 
-        // The newer one is refused by the connector: the files are still there,
-        // so the record has to stay and keep the Remove command reachable.
         await second.open()
         #expect(await newer == .refused)
         #expect(coordinator.managedInstall == record)
@@ -793,7 +736,6 @@ struct SteamCMDManagedInstallInterleavingTests {
     }
 }
 
-/// One-shot gate so a test can hold an injected async call open.
 private actor AsyncGate {
     private var continuations: [CheckedContinuation<Void, Never>] = []
     private var isOpen = false
@@ -815,10 +757,8 @@ private actor AsyncGate {
     }
 }
 
-/// `Task.yield()` only reschedules the caller — it does not promise a child
-/// task has been scheduled, let alone run far enough to reach the gate. Waiting
-/// on the arrival itself is what makes the interleaving deterministic; the
-/// deadline keeps a regression a failure rather than a hang.
+/// `Task.yield()` only reschedules the caller; it does not promise the
+/// child task reached the gate.
 private func gateReached(
     _ gate: AsyncGate, arrivals count: Int = 1, within seconds: Double = 5
 ) async -> Bool {
@@ -830,9 +770,7 @@ private func gateReached(
     return true
 }
 
-/// The manifest is Valve's own steamcmd update channel; installing from it is
-/// what removed the Rosetta requirement. The fixture is the real manifest shape
-/// captured 2026-08-13, values shortened but structure verbatim.
+/// The real manifest shape: values shortened, structure verbatim.
 @Suite("SteamCMD manifest parsing")
 struct SteamCMDManifestTests {
     private static func fixture(
@@ -914,9 +852,6 @@ struct SteamCMDManifestTests {
     }
 }
 
-/// The in-app sign-in's two safety properties: the password can never enter
-/// argv (the type system has no parameter for it), and the transcript
-/// classifier steers the PTY exchange from real steamcmd output shapes.
 @Suite("SteamCMD interactive login")
 struct SteamCMDLoginTests {
     @Test("The login argv carries the account and +quit, and nothing secret")
@@ -972,9 +907,6 @@ struct SteamCMDLoginTests {
         #expect(Classifier.event(inTranscript: "Redirecting stderr to logs...") == nil)
     }
 
-    /// Verbatim 2026-09-03 capture under `sandbox-exec (deny network*)`. The
-    /// password prompt stays in the transcript, so without a verdict of its
-    /// own this read as "still waiting for the password" until the deadline.
     @Test("A blocked network is a verdict, not a prompt to keep answering")
     func noConnectionIsTerminal() {
         let transcript = "password: \nProceeding with login using username/password.\n"
@@ -982,9 +914,6 @@ struct SteamCMDLoginTests {
         #expect(Classifier.event(inTranscript: transcript) == .noConnection)
     }
 
-    /// Source-level, connector target is not linked here: the login session may
-    /// only build its argv through the parameterless-secret builder, and every
-    /// secret write goes to the PTY.
     @Test("The connector's login body has no other argv source")
     func loginBodyUsesTheBuilder() throws {
         let source = try RepositoryRoot.source("SteamConnector/SteamConnector.swift")

@@ -1,7 +1,7 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// Full-page library setup or empty state. Use `IllustratedEmptyState` for no matches.
+/// Use `IllustratedEmptyState` for no matches.
 struct LibraryGuideCard: View {
     let icon: String
     let tint: Color

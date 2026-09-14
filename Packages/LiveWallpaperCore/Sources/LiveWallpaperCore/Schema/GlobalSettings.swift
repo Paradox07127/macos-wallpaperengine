@@ -13,7 +13,6 @@ public struct GlobalSettings: Codable, Sendable {
     public var pauseOnFullScreen: Bool
     /// Pause when non-system windows cover ≥85% of a display.
     public var pauseOnWindowOcclusion: Bool
-    /// Yield the GPU while macOS is in Low Power Mode, unless the user opts out.
     public var pauseInLowPowerMode: Bool
     /// Dock + Cmd+Tab (`.regular`) vs menu-bar-only (`.accessory`); live, no relaunch.
     public var showInDock: Bool
@@ -27,7 +26,6 @@ public struct GlobalSettings: Codable, Sendable {
     public var recentWPEImports: [WPEHistoryEntry] = []
     /// Workshop IDs excluded from auto re-import after explicit deletion.
     public var deletedWorkshopIDs: [String] = []
-    /// Per-app pause-while-active rules (NSWorkspace events; no idle polling).
     public var applicationPerformanceRules: [ApplicationPerformanceRule] = []
     /// Per-screen resident video budget; zero disables caching.
     public var videoCacheMaxBytesPerScreen: Int = GlobalSettings.defaultVideoCacheBytes
@@ -35,15 +33,12 @@ public struct GlobalSettings: Codable, Sendable {
     /// Defaults for new/reset displays only — does not mutate live configs.
     public var displayDefaults: DisplayDefaults = DisplayDefaults()
 
-    /// Monitor widget overlay per display, keyed by `NSScreen.displayFingerprint`.
-    /// Not on `ScreenConfiguration`: clearing a wallpaper removes that whole entry,
-    /// and the overlay has to outlive it (and exist on a display with no wallpaper).
+    /// Keyed by `NSScreen.displayFingerprint`. Not on `ScreenConfiguration`: clearing a
+    /// wallpaper deletes that entry, and the overlay has to outlive it.
     public var monitorOverlays: [String: MonitorOverlayConfiguration] = [:]
 
-    /// User-assigned display names, keyed by `NSScreen.displayFingerprint`.
-    /// Lives here for the same reason as `monitorOverlays`: clearing a wallpaper
-    /// deletes that display's whole `ScreenConfiguration`, and the name has to
-    /// survive it.
+    /// User-assigned display names, keyed by `NSScreen.displayFingerprint`. Here for the
+    /// same reason as `monitorOverlays`: it must outlive a cleared wallpaper.
     public var screenNames: [String: String] = [:]
 
     /// Opt-in TCC system-audio capture for audio-reactive Pro wallpapers.
@@ -52,23 +47,20 @@ public struct GlobalSettings: Codable, Sendable {
     /// Lower frame rate when covered or on battery.
     public var adaptiveFrameRateEnabled: Bool = false
 
-    /// Whether screenshots, screen recording, and meeting screen-share can read
-    /// the wallpaper. Off substitutes the static macOS desktop picture in every
-    /// capture, which also keeps a full-screen animation out of a shared stream.
+    /// Whether screenshots, screen recording and screen-share can read the wallpaper; off
+    /// substitutes the static macOS desktop picture.
     public var wallpaperVisibleInScreenCapture: Bool = true
 
     /// Preset library, keyed by `ScenePreset.id`. Global rather than per-screen
     /// so one saved look can be applied to any display showing that scene.
     public var scenePresets: [String: ScenePreset] = [:]
 
-    /// Steam Workshop's `Preset` tag marks items that restyle another wallpaper
-    /// rather than being one themselves — off by default so Browse only shows
-    /// real wallpapers.
+    /// Workshop's `Preset` tag marks items that restyle another wallpaper rather than being
+    /// one; off by default so Browse shows only real wallpapers.
     public var showsWorkshopPresetsInBrowse: Bool = false
 
-    /// Browse's starting sort and (for Most Popular) window, as the app's
-    /// `WorkshopSortMode` / `WorkshopTimeFrame` raw values. Stored as strings
-    /// because those enums live in the app; the app decodes and falls back.
+    /// Browse's starting sort and time window, as the app's `WorkshopSortMode` /
+    /// `WorkshopTimeFrame` raw values — strings because those enums live in the app target.
     public var workshopDefaultSort: String = "mostPopular"
     public var workshopDefaultTimeFrame: String = "oneWeek"
 
@@ -140,10 +132,8 @@ public struct GlobalSettings: Codable, Sendable {
         pauseOnFullScreen = try c.decodeIfPresent(Bool.self, forKey: .pauseOnFullScreen) ?? true
         // Predates-key installs → true; explicit false still wins once encoded.
         pauseOnWindowOcclusion = (try? c.decodeIfPresent(Bool.self, forKey: .pauseOnWindowOcclusion)) ?? true
-        // Predates-key installs → true, matching the shipping default of the retired game/Low-Power-
-        // Mode toggle this replaces. When that retired key is present, inherit it: its own subtitle
-        // read "…or macOS enters Low Power Mode", so a user who switched it off was opting out of
-        // this too. The key is read but never re-encoded, so it disappears on first save.
+        // Absent → true. When the retired `pauseInGameMode` key is present, inherit it: switching
+        // that off was opting out of this too. Read but never re-encoded.
         if let stored = (try? c.decodeIfPresent(Bool.self, forKey: .pauseInLowPowerMode)) ?? nil {
             pauseInLowPowerMode = stored
         } else if let legacy = try? decoder.container(keyedBy: RetiredKeys.self),
@@ -156,24 +146,18 @@ public struct GlobalSettings: Codable, Sendable {
         weatherLocation = (try? c.decodeIfPresent(WeatherLocationPreference.self, forKey: .weatherLocation)) ?? .default
         globalShortcutsEnabled = (try? c.decodeIfPresent(Bool.self, forKey: .globalShortcutsEnabled)) ?? true
         globalShortcuts = (try? c.decodeIfPresent([GlobalShortcutAction.RawAction: GlobalShortcutBinding?].self, forKey: .globalShortcuts)) ?? [:]
-        // Lossy: one bad history row must not drop the whole list.
         recentWPEImports = Self.decodeLossyArray(WPEHistoryEntry.self, from: c, forKey: .recentWPEImports)
         deletedWorkshopIDs = (try? c.decodeIfPresent([String].self, forKey: .deletedWorkshopIDs)) ?? []
-        // Lossy: one bad rule (e.g. an unknown trigger) must not drop the whole rule list.
         applicationPerformanceRules = Self.decodeLossyArray(ApplicationPerformanceRule.self, from: c, forKey: .applicationPerformanceRules)
         let storedCache = (try? c.decodeIfPresent(Int.self, forKey: .videoCacheMaxBytesPerScreen)) ?? GlobalSettings.defaultVideoCacheBytes
         videoCacheMaxBytesPerScreen = GlobalSettings.clampedVideoCacheBytes(storedCache)
         displayDefaults = (try? c.decodeIfPresent(DisplayDefaults.self, forKey: .displayDefaults)) ?? DisplayDefaults()
-        // Lossy: one unreadable display's overlay must not drop every other display's.
         monitorOverlays = c.decodeLossyStringDictionary(forKey: .monitorOverlays) ?? [:]
         screenNames = (try? c.decodeIfPresent([String: String].self, forKey: .screenNames)) ?? [:]
         audioResponseEnabled = (try? c.decodeIfPresent(Bool.self, forKey: .audioResponseEnabled)) ?? false
         adaptiveFrameRateEnabled = (try? c.decodeIfPresent(Bool.self, forKey: .adaptiveFrameRateEnabled)) ?? false
-        // Installs that predate the key get the new default (visible), which is
-        // the opposite of the hard-coded behaviour they shipped with — that was
-        // the point of making it a setting.
+        // Installs that predate the key get the new default (visible), not the old hard-coded behaviour.
         wallpaperVisibleInScreenCapture = (try? c.decodeIfPresent(Bool.self, forKey: .wallpaperVisibleInScreenCapture)) ?? true
-        // Lossy: one unreadable preset must not drop the rest of the library.
         scenePresets = c.decodeLossyStringDictionary(forKey: .scenePresets) ?? [:]
         showsWorkshopPresetsInBrowse = (try? c.decodeIfPresent(Bool.self, forKey: .showsWorkshopPresetsInBrowse)) ?? false
         workshopDefaultSort = (try? c.decodeIfPresent(String.self, forKey: .workshopDefaultSort)) ?? "mostPopular"
@@ -220,10 +204,8 @@ public struct StringDictionaryKey: CodingKey, Sendable {
 }
 
 extension KeyedDecodingContainer {
-    /// Lossy string-keyed dictionary decode: one unreadable value drops that
-    /// entry, not the whole map. nil when the key is absent or not an object —
-    /// callers that treat "present but empty" differently from "absent" (the
-    /// preset map does) branch on that.
+    /// One unreadable value drops that entry, not the whole map. `nil` when the key is absent
+    /// or not an object — distinct from "present but empty".
     public func decodeLossyStringDictionary<Value: Decodable>(
         forKey key: Key
     ) -> [String: Value]? {

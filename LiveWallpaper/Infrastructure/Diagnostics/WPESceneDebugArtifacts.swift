@@ -32,8 +32,7 @@ final class WPESceneDebugArtifacts: @unchecked Sendable {
     private let testingEnabledOverrideLock = NSLock()
     private var testingEnabledOverride: Bool?
 
-    /// Forces `isEnabled` independent of UserDefaults so trace tests don't depend on
-    /// the developer's `WPESceneDebugArtifactsEnabled` setting. Pass nil to clear.
+    /// Pass nil to clear.
     func setEnabledForTesting(_ enabled: Bool?) {
         testingEnabledOverrideLock.lock()
         testingEnabledOverride = enabled
@@ -41,7 +40,6 @@ final class WPESceneDebugArtifacts: @unchecked Sendable {
     }
     #endif
 
-    /// Caps so dump-enabled builds don't accumulate unbounded PNG/MSL artifacts.
     /// Oldest folders pruned first when either bound is exceeded; newest always kept.
     private let maxSessionFolders = 40
     private let maxTotalBytes: UInt64 = 512 * 1024 * 1024  // 512 MiB
@@ -89,7 +87,7 @@ final class WPESceneDebugArtifacts: @unchecked Sendable {
         }
     }
 
-    /// Closes any prior session implicitly. No-op when `isEnabled == false`.
+    /// Closes any prior session implicitly.
     @discardableResult
     func beginSession(workshopID: String, descriptor: String) -> URL? {
         guard isEnabled else { return nil }
@@ -136,8 +134,6 @@ final class WPESceneDebugArtifacts: @unchecked Sendable {
         return folder
     }
 
-    /// Async on the write queue so it never blocks scene load. Best-effort —
-    /// failures ignored, and the single newest session is always retained.
     private func pruneOldSessions(under root: URL) {
         let maxFolders = maxSessionFolders
         let maxBytes = maxTotalBytes
@@ -150,7 +146,6 @@ final class WPESceneDebugArtifacts: @unchecked Sendable {
                 options: [.skipsHiddenFiles]
             ) else { return }
 
-            // Newest first, so we keep the most recent sessions and trim the tail.
             let folders = children
                 .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
                 .map { url -> (url: URL, date: Date, size: UInt64) in
@@ -205,8 +200,6 @@ final class WPESceneDebugArtifacts: @unchecked Sendable {
     /// documented thread-safety guarantee.
     private nonisolated(unsafe) static let logTimestampFormatter = ISO8601DateFormatter()
 
-    /// Append a single line to the per-scene log (in addition to the global
-    /// runtime.log mirror Logger already handles).
     func appendLog(_ message: String, level: Logger.Level = .info) {
         guard isEnabled else { return }
         sessionLock.lock()
@@ -226,7 +219,6 @@ final class WPESceneDebugArtifacts: @unchecked Sendable {
         }
     }
 
-    /// Kept lightweight and bounded because DEBUG builds may record it every frame.
     func recordTextureBinding(
         passID: String,
         shader: String,
@@ -304,8 +296,6 @@ final class WPESceneDebugArtifacts: @unchecked Sendable {
         if needsRewrite, hasPlacements { writeLayerPlacementsNote() }
     }
 
-    /// Dumps layer placements + puppet MDAT anchors so a body-split rig's
-    /// parent/child mis-placement can be diagnosed numerically.
     func recordLayerPlacements(_ pipeline: WPEPreparedRenderPipeline) {
         guard isEnabled else { return }
         func fmt(_ v: SIMD3<Double>) -> String { String(format: "(%.1f,%.1f,%.1f)", v.x, v.y, v.z) }
@@ -341,7 +331,7 @@ final class WPESceneDebugArtifacts: @unchecked Sendable {
         }
         layerPlacementsLock.lock()
         layerPlacementLines = lines
-        // New pipeline generation: re-prove every gate; drop missing objectIDs.
+        // New pipeline generation: re-prove every gate.
         layerPlacementsGeneration += 1
         puppetSkinningByObjectID = puppetSkinningByObjectID.filter { puppetObjectIDs.contains($0.key) }
         layerPlacementsLock.unlock()
@@ -353,7 +343,6 @@ final class WPESceneDebugArtifacts: @unchecked Sendable {
         recordNote(name: "layer-placements.txt", contents: renderedLayerPlacementsContents())
     }
 
-    /// Exposed for tests via `layerPlacementsContentsForTesting`.
     private func renderedLayerPlacementsContents() -> String {
         layerPlacementsLock.lock()
         let lines = layerPlacementLines
@@ -507,8 +496,6 @@ final class WPESceneDebugArtifacts: @unchecked Sendable {
         appendLog("[pipeline fail] '\(fragmentName)' blend=\(blendMode) → pipelines/\(filename)", level: .error)
     }
 
-    /// Persists the first frame so orientation / tile-split / blank-screen bugs
-    /// that don't trigger a shader error are visible without re-running the scene.
     func recordFirstFrame(image: NSImage) {
         guard isEnabled else { return }
         sessionLock.lock()
@@ -570,7 +557,6 @@ final class WPESceneDebugArtifacts: @unchecked Sendable {
         write(contents, to: folderURL.appendingPathComponent(safeName))
     }
 
-    /// Dump raw TEXI/TEXB v4 metadata the runtime otherwise drops.
     func dumpRawTexMetadata(name: String, info: WPETexInfo, bitmap: WPETexBitmapBlock) {
         guard isEnabled else { return }
         var lines: [String] = []

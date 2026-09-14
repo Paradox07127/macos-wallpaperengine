@@ -82,12 +82,10 @@
             self.videoCommandLimit = videoCommandLimit
         }
 
-        /// Called only from one engine's serial queue.
         func beginEvaluation() {
             videoCommandCount = 0
         }
 
-        /// Called only from one engine's serial queue.
         func admitVideoCommand() -> Bool {
             guard sceneToken?.acceptsCompletion() ?? true else { return false }
             guard videoCommandCount < videoCommandLimit else {
@@ -99,7 +97,6 @@
         }
 
         #if DEBUG
-        // Test-only introspection; no production reader.
         var admittedVideoCommandCount: Int {
             videoCommandCount
         }
@@ -217,7 +214,6 @@
         }
     }
 
-    /// Shared quarantine reservation + scene-latch policy for all evaluator families.
     final class WPESceneScriptExecutionSafetyReservation: @unchecked Sendable {
         private let reservation: WPESceneScriptQuarantine.Reservation
         private let sceneToken: WPESceneScriptInstanceLimitToken?

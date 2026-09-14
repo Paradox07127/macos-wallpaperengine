@@ -178,7 +178,6 @@ struct LibraryView: View {
 
     private var filteredBookmarks: [WallpaperBookmark] {
         var result = store.bookmarks
-        // Honor type filter only while chips are visible and that type still exists.
         if showsTypeChips, case .type(let type) = typeFilter, availableTypes.contains(type) {
             result = result.filter { $0.wallpaperType == type }
         }
@@ -294,10 +293,8 @@ private struct BookmarkTile: View {
             .overlay { tileContent }
             .aspectRatio(16.0 / 9.0, contentMode: .fit)
             .clipped()
-            // Scoped to the artwork, not the whole card: the title band carries
-            // the overflow button and, while renaming, a text field — an
-            // ancestor tap gesture over those is at best ambiguous and at worst
-            // steals the click that was meant for them.
+            // Scoped to the artwork, not the whole card: an ancestor tap gesture would steal the
+            // title band's overflow button and rename-field clicks.
             .contentShape(Rectangle())
             .onTapGesture { applyFromCard() }
             .overlay {
@@ -312,7 +309,6 @@ private struct BookmarkTile: View {
             .overlay(alignment: .bottom) { bottomBand }
     }
 
-    /// The full-height rename field replaces the single-line title band.
     @ViewBuilder
     private var bottomBand: some View {
         if isRenaming {
@@ -385,10 +381,8 @@ private struct BookmarkTile: View {
     private func systemWallpaperActions(dismiss: @escaping () -> Void) -> some View {
         if #available(macOS 26.0, *), case .video = bookmark.content {
             if exportService.isPublished(bookmarkID: bookmark.id) {
-                // Not disabled while in use: the System Wallpaper page
-                // deliberately allows removing the playing video (macOS
-                // 27.0's own Remove crashes, so ours must work), and the
-                // two entry points must agree.
+                // Not disabled while in use: the System Wallpaper page deliberately allows removing the
+                // playing video, and the two entry points must agree.
                 Button("Remove from System Wallpaper") {
                     dismiss()
                     try? exportService.remove(itemID: bookmark.id.uuidString)
@@ -431,8 +425,6 @@ private struct BookmarkTile: View {
 
     // MARK: Thumbnail loader
 
-    /// Run via `.task(id: bookmark.id)` so SwiftUI cancels the decode +
-    /// security-scoped resolve when the tile leaves the viewport on fast-scroll.
     @MainActor
     private func loadTileContent() async {
         thumbnail = nil

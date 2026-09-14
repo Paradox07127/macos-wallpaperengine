@@ -3,7 +3,6 @@ import Foundation
 import LiveWallpaperCore
 import Observation
 
-/// Download/update WPE assets via SteamCMD into the shared Steam library and bind the library.
 @MainActor
 @Observable
 final class WPEEngineAssetsInstaller {
@@ -28,9 +27,6 @@ final class WPEEngineAssetsInstaller {
         case unableToCompare
         case checkFailed(CheckFailure)
 
-        /// Why the check could not answer. These shared one sentence — "SteamCMD
-        /// did not return the latest build" — which describes only the last of
-        /// them and leaves the other three looking like the same dead end.
         enum CheckFailure: Equatable, Sendable {
             /// The connector never answered, so nothing ran.
             case notRun
@@ -104,12 +100,9 @@ final class WPEEngineAssetsInstaller {
     private(set) var updateCheckOutcome: UpdateCheckOutcome = .notChecked
 
     @ObservationIgnored private var task: Task<Void, Never>?
-    /// Per-run token. Guards a cancel-then-retry race where a superseded run's
-    /// late return or progress callback would otherwise mutate the newer run.
     @ObservationIgnored private var currentAttempt: UUID?
     @ObservationIgnored private let operationCoordinator: SteamCMDDoctorOperationCoordinator
 
-    /// Unknown-buildid marker; stored so SwiftUI observes download completion.
     private(set) var hasManagedInstall: Bool
 
     init(
@@ -129,7 +122,6 @@ final class WPEEngineAssetsInstaller {
         }
     }
 
-    /// Refresh linked state from disk (settings appearance / self-heal).
     func refreshManagedInstallState() {
         let state = Self.managedStateFromDefaults()
         hasManagedInstall = state.hasManagedInstall
@@ -143,7 +135,6 @@ final class WPEEngineAssetsInstaller {
 
     // MARK: - Download / update
 
-    /// Seam for tests: the connector install call is injectable.
     func download(
         using doctor: SteamCMDDoctorService,
         install: @escaping @Sendable (String, String, String, @escaping @Sendable (SteamOperationProgress) -> Void) async -> SteamEngineAssetsResult? = {
@@ -165,8 +156,7 @@ final class WPEEngineAssetsInstaller {
     func cancel() {
         task?.cancel()
         task = nil
-        // The Task cancel above only stops the app-side wait; the SteamCMD child in the connector keeps running (timeout up to 5400s) and holds its serial queue, so a retry would look wedged behind it.
-        // Scoped to this attempt's id: a cancel that lands after the retry has started must not kill the retry. Fire-and-forget — the interrupted run reports failure through its own reply, which the cleared attempt token already ignores.
+        // Task.cancel only stops the app-side wait; the SteamCMD child keeps running and holds its serial queue. Scoped to this attempt's id so a late cancel cannot kill the retry.
         if let cancelled = currentAttempt {
             Task { await SteamConnectorClient.cancelActiveSteamCMD(operationID: cancelled.uuidString) }
         }
@@ -194,7 +184,6 @@ final class WPEEngineAssetsInstaller {
         }
     }
 
-    /// Install via connector (real $HOME / shared Steam library; app has no write duty).
     private func run(
         using doctor: SteamCMDDoctorService,
         attempt: UUID,
@@ -211,8 +200,6 @@ final class WPEEngineAssetsInstaller {
             ))
             return
         }
-        // The connector writes into this library, so it has to be told which
-        // one: it runs unsandboxed and cannot see the bookmark that authorized it.
         guard let steamRoot = try? doctor.resolveWorkdirURL() else {
             fail(String(localized: "No Steam Library is authorized.", bundle: .appLanguage, comment: "Workshop diagnostics error."))
             return
@@ -258,8 +245,6 @@ final class WPEEngineAssetsInstaller {
             doctor.noteSuccessfulSteamOperation(generation: generation)
             await adoptInstall(result, doctor: doctor, attempt: attempt)
         case .loginRequired:
-            // Steam itself said the session is gone — demote the green probe so
-            // download readiness stops disagreeing with reality.
             doctor.noteOperationReportedLoginRequired(generation: generation)
             fail(String(localized: "Loomscreen's Steam download session isn't connected. Connect your account in Settings → Workshop, then try again.", bundle: .appLanguage, comment: "Steam download blocked because Loomscreen's own Steam session is not signed in; shared by engine-assets and Workshop item downloads."))
         case .notEntitled:
@@ -271,7 +256,6 @@ final class WPEEngineAssetsInstaller {
         case .steamCMDUnavailable:
             fail(String(localized: "SteamCMD could not be launched. Re-select it in the setup list.", bundle: .appLanguage, comment: "Steam sign-in diagnostic when the bound SteamCMD binary could not run."))
         case .steamUnreachable:
-            // Was folded into the line below, which asserts Steam answered.
             fail(String(localized: "Couldn't reach Steam while installing Wallpaper Engine.", bundle: .appLanguage, comment: "Engine-assets install failed because Steam could not be reached."))
         case .unrecognized:
             fail(String(localized: "Steam returned an unrecognized response while installing Wallpaper Engine.", bundle: .appLanguage, comment: "Engine-assets install failed with unparsed SteamCMD output."))
@@ -316,7 +300,6 @@ final class WPEEngineAssetsInstaller {
         return true
     }
 
-    /// Bind install as assets root while Steam-library scope is held.
     private func adoptInstall(
         _ result: SteamEngineAssetsResult,
         doctor: SteamCMDDoctorService,
@@ -370,7 +353,6 @@ final class WPEEngineAssetsInstaller {
         checkForUpdate(binaryResolvable: (try? doctor.resolveBinaryURL()) != nil)
     }
 
-    /// Seam for tests: the doctor field and the connector lookup are injectable.
     func checkForUpdate(
         binaryResolvable: Bool,
         fetchLatestBuildID: @escaping @Sendable (String) async -> SteamEngineBuildLookup? = {
@@ -430,9 +412,7 @@ final class WPEEngineAssetsInstaller {
                 phase = .idle
                 return
             }
-            // Every other exit from this actor calls `fail`; this one used to
-            // return the phase to idle and say nothing, so a refused removal
-            // looked exactly like a removal that had never been asked for.
+            // Every other exit from this actor calls fail; returning the phase to idle here would make a refused removal look like it had never been asked for.
             let message = if case SteamCMDDoctorOperationError.nestedConflict = error {
                 String(
                     localized: "Another Steam operation is running. Try again when it finishes.",
@@ -451,8 +431,6 @@ final class WPEEngineAssetsInstaller {
         }
     }
 
-    // The coordinator's closure is @Sendable and runs off the main actor; hop back in one
-    // call instead of touching main-actor state piecemeal, same as performRun.
     private func commitRemove(
         attempt: UUID,
         operationLease lease: SteamCMDDoctorOperationLease

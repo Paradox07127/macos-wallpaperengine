@@ -3,8 +3,6 @@ import Foundation
 import LiveWallpaperCore
 import Observation
 
-/// Links project folders into the managed library (discover, bookmark, history entry).
-/// Source assets remain in place; this coordinator does not copy the chosen folders.
 @MainActor
 @Observable
 final class WorkshopFolderImportCoordinator {
@@ -24,9 +22,6 @@ final class WorkshopFolderImportCoordinator {
         self.fileManager = fileManager
     }
 
-    /// The toolbar's single "add wallpaper" picker classifies what the user
-    /// chose and routes library folders here, so this owns no panel of its own.
-    /// No-op while a previous import is still running.
     func importProjects(from folder: URL) {
         guard !isImporting else { return }
         isImporting = true
@@ -78,8 +73,6 @@ final class WorkshopFolderImportCoordinator {
         emitSummary(folder: folder, imported: imported, rejected: rejected, unreadable: unreadable)
     }
 
-    /// Imports every not-yet-recorded project from the authorized official Steam
-    /// profile. Silent unless it adds something; re-runs are cheap.
     func ingestExistingDownloads(using doctor: SteamCMDDoctorService) async {
         guard !isIngesting, !isImporting else { return }
         isIngesting = true
@@ -95,10 +88,7 @@ final class WorkshopFolderImportCoordinator {
         // Skip items the user explicitly deleted so a still-present Steam item
         // does not silently reappear after removal from the Loomscreen library.
         known.formUnion(settings.deletedWorkshopIDs)
-        // A registered preset leaves no history entry, so without this the scan
-        // re-registers every downloaded preset on each pass — overwriting a
-        // local rename and restamping `createdAt`, which reads downstream as a
-        // brand-new preset every time.
+        // A registered preset leaves no history entry; without this the scan would re-register every downloaded preset, overwriting a local rename and restamping createdAt.
         known.formUnion(settings.scenePresets.values.compactMap {
             if case .workshop(let workshopID) = $0.source { return workshopID }
             return nil
@@ -155,9 +145,7 @@ final class WorkshopFolderImportCoordinator {
         }
     }
 
-    /// Why one project in the folder did not come in. A `Bool` made the
-    /// summary call every failure "unsupported", which is wrong for a project
-    /// whose `project.json` could not be read at all.
+    /// Why one project did not come in. A Bool would make the summary call every failure unsupported, including an unreadable project.json.
     enum ProjectImportOutcome: Equatable, Sendable {
         case imported
         /// Read fine, but not something this app can show.
@@ -202,8 +190,7 @@ final class WorkshopFolderImportCoordinator {
 
     private func emitSummary(folder: URL, imported: Int, rejected: Int, unreadable: Int) {
         guard imported > 0 else {
-            // "Unsupported" was the only word offered here, so a folder of
-            // damaged projects read as a folder of the wrong kind of file.
+            // One word here would make a folder of damaged projects read as a folder of the wrong kind of file.
             let message = unreadable > 0 && rejected == 0
                 ? String(localized: "None of the projects in that folder could be read.", bundle: .appLanguage, comment: "Folder import failure: every discovered project failed to read.")
                 : String(localized: "None of the projects in that folder could be imported.", bundle: .appLanguage, comment: "Folder import failure: every discovered project was rejected.")
@@ -233,10 +220,7 @@ final class WorkshopFolderImportCoordinator {
         )
     }
 
-    /// A folder with `project.json` imports as itself; otherwise it is treated as
-    /// a library root and its immediate `project.json`-bearing subfolders import.
-    /// `nil` when the folder could not be read at all, which is a different
-    /// message from a folder that holds no projects.
+    /// nil when the folder could not be read at all — different from a folder that holds no projects.
     private func discoverProjectFolders(in root: URL) -> [URL]? {
         if fileManager.fileExists(atPath: root.appendingPathComponent("project.json").path) {
             return [root]

@@ -1,7 +1,6 @@
 import Foundation
 
 /// Persisted WPE `.scene` identity for restore across launches.
-/// `cacheRelativePath` is under Application Support; joiners re-validate via path safety.
 public struct SceneDescriptor: Codable, Equatable, Sendable {
     public let workshopID: String
     /// Relative to Application Support; must pass `WPEPathSafety.isSafeCacheRelativePath`.
@@ -13,24 +12,17 @@ public struct SceneDescriptor: Codable, Equatable, Sendable {
     public let dependencyWorkshopIDs: [String]
     /// Optional: pre-preflight descriptors decode as nil.
     public let preflightTier: WPEScenePreflightTier?
-    /// Disk as `[String]` so unknown future flags round-trip without failing decode.
+    /// Stored as `[String]` so an unknown future flag doesn't fail decode.
     public let preflightFeatureFlags: [WPESceneFeatureFlag]
     /// The user's own increment, applied *on top of* `presetID`'s values —
     /// not the full property set. Empty until the inspector is used.
     public private(set) var propertyOverrides: [String: WallpaperEngineProjectPropertyValue]
-    /// `ScenePreset.id` of the applied preset, if any. Stored as a pointer
-    /// rather than baked into `propertyOverrides` so that dropping the
-    /// increment resets to the preset instead of to the scene defaults.
+    /// `ScenePreset.id` of the applied preset. A pointer rather than baked into
+    /// `propertyOverrides`, so dropping the increment resets to the preset, not scene defaults.
     public private(set) var presetID: String?
-    /// The applied preset's values, carried alongside the pointer.
-    /// Denormalised on purpose: the renderer receives a descriptor and
-    /// nothing else — no route to `GlobalSettings.scenePresets` — so a
-    /// pointer alone would mean the preset silently did nothing at render
-    /// time. A separate layer from `propertyOverrides` is what preserves
-    /// "drop the increment, keep the preset". `presetID` stays the
-    /// authority for library operations (rename, delete, re-apply);
-    /// `refreshingPresetSnapshot(in:)` re-syncs this copy when the library
-    /// is at hand.
+    /// The applied preset's values, carried alongside the pointer. Denormalised on purpose: the
+    /// renderer gets a descriptor and no route to `GlobalSettings.scenePresets`. `presetID` stays
+    /// the authority for library operations; `refreshingPresetSnapshot(in:)` re-syncs this copy.
     public private(set) var presetSnapshot: [String: WallpaperEngineProjectPropertyValue]
 
     public init(
@@ -67,9 +59,8 @@ public struct SceneDescriptor: Codable, Equatable, Sendable {
         return copy
     }
 
-    /// Carries an existing preset layer (pointer + values) onto this descriptor
-    /// without touching the increment. Used by restore paths that move both
-    /// layers as a unit; use `applyingPreset(_:)` when the user picks a preset.
+    /// Carries a preset layer onto this descriptor without touching the increment; use
+    /// `applyingPreset(_:)` when the user picks a preset.
     public func withPresetLayer(
         id: String?,
         snapshot: [String: WallpaperEngineProjectPropertyValue]
@@ -80,18 +71,14 @@ public struct SceneDescriptor: Codable, Equatable, Sendable {
         return copy
     }
 
-    /// Switching preset clears the increment: the old increment was
-    /// authored against the previous preset's values, so carrying it over
-    /// would silently re-apply edits made to a different look. Re-applying
-    /// the preset already in place is a no-op, not a reset — clicking the
-    /// selected preset again hasn't asked to lose edits. A preset belonging
-    /// to another wallpaper is refused outright.
+    /// Switching preset clears the increment: it was authored against the previous preset's
+    /// values. Re-applying the preset already in place is a no-op, not a reset. A preset
+    /// belonging to another wallpaper is refused outright.
     public func applyingPreset(_ preset: ScenePreset?) -> SceneDescriptor {
         if let preset {
             guard preset.baseWorkshopID == workshopID else { return self }
-            // Same preset re-applied: keep the user's edits, but still take the
-            // values — the preset itself may have been edited since, and this is
-            // the one path that would otherwise leave a stale snapshot forever.
+            // Same preset re-applied: keep the user's edits but still take the values — the preset
+            // may have been edited since.
             if preset.id == presetID {
                 return preset.values == presetSnapshot
                     ? self
@@ -102,21 +89,17 @@ public struct SceneDescriptor: Codable, Equatable, Sendable {
             .withPropertyOverrides([:])
     }
 
-    /// The preset this descriptor points at, if the library still holds
-    /// one that belongs to this scene. Two ways it can come back nil with
-    /// a non-nil `presetID`: the preset was deleted, or its
-    /// `baseWorkshopID` names a different wallpaper — both must resolve to
-    /// "no preset" rather than someone else's values, or a stale id reused
-    /// by a later preset would silently repaint the scene.
+    /// The preset this descriptor points at, if the library still holds one belonging to this
+    /// scene. Two ways it comes back nil with a non-nil `presetID`: the preset was deleted, or
+    /// its `baseWorkshopID` names a different wallpaper — a reused stale id must not repaint it.
     public func resolvedPreset(in library: [String: ScenePreset]) -> ScenePreset? {
         guard let presetID, let preset = library[presetID] else { return nil }
         guard preset.id == presetID, preset.baseWorkshopID == workshopID else { return nil }
         return preset
     }
 
-    /// Re-syncs the carried values against the library, and drops the whole
-    /// layer when the preset no longer resolves. Call wherever the library is
-    /// reachable — the snapshot is a cache, not a second source of truth.
+    /// Re-syncs the carried values and drops the layer when the preset no longer resolves;
+    /// the snapshot is a cache, not a second source of truth.
     public func refreshingPresetSnapshot(in library: [String: ScenePreset]) -> SceneDescriptor {
         guard presetID != nil else { return self }
         guard let preset = resolvedPreset(in: library) else {
@@ -126,31 +109,23 @@ public struct SceneDescriptor: Codable, Equatable, Sendable {
         return withPresetLayer(id: preset.id, snapshot: preset.values)
     }
 
-    /// Values to hand the renderer, before the property schema folds in
-    /// the scene's own defaults for keys nobody touched. Every render-path
-    /// caller must use this instead of reading `propertyOverrides`
-    /// directly: the increment alone is only half the look.
+    /// Values to hand the renderer, before the property schema folds in the scene's defaults.
+    /// Every render path must use this instead of `propertyOverrides`: the increment is half the look.
     public func layeredPropertyValues() -> [String: WallpaperEngineProjectPropertyValue] {
         guard presetID != nil, !presetSnapshot.isEmpty else { return propertyOverrides }
         return presetSnapshot.merging(propertyOverrides) { _, userEdit in userEdit }
     }
 
-    /// Keys the engine reads out of a preset snapshot, which therefore may
-    /// only ever be written by the engine settings UI. `volume` is the
-    /// collision that matters: a perfectly ordinary name for a scene
-    /// author's own `project.json` property, whose edits land in
-    /// `propertyOverrides`.
+    /// Keys the engine reads out of a preset snapshot. `volume` is the collision that matters:
+    /// it is also an ordinary `project.json` property name.
     public static func isEngineReservedKey(_ key: String) -> Bool {
         key == WPEEngineAudioSettings.volumeKey
             || key.hasPrefix(WPEEngineColorCorrection.keyPrefix)
     }
 
-    /// Values for a *new* preset snapshot capturing what is on screen.
-    /// Layered like `layeredPropertyValues()`, except the increment may not
-    /// supply engine-reserved keys: folding it in verbatim would promote an
-    /// author's `volume` slider into the engine's master-gain slot, so
-    /// saving a preset after touching that slider would rescale every sound
-    /// in the scene.
+    /// Values for a *new* preset snapshot. Layered like `layeredPropertyValues()`, except the
+    /// increment may not supply engine-reserved keys: folding an author's `volume` slider into
+    /// the engine's master-gain slot would rescale every sound in the scene.
     public func presetSnapshotForCurrentState() -> [String: WallpaperEngineProjectPropertyValue] {
         let authoredEdits = propertyOverrides.filter { !Self.isEngineReservedKey($0.key) }
         guard presetID != nil, !presetSnapshot.isEmpty else { return authoredEdits }
@@ -189,10 +164,8 @@ public struct SceneDescriptor: Codable, Equatable, Sendable {
         preflightTier = try? c.decodeIfPresent(WPEScenePreflightTier.self, forKey: .preflightTier)
         let rawFlags = (try? c.decodeIfPresent([String].self, forKey: .preflightFeatureFlags)) ?? []
         preflightFeatureFlags = rawFlags.compactMap(WPESceneFeatureFlag.init(rawValue:))
-        // Lossy: one malformed override must not drop the whole increment.
         propertyOverrides = c.decodeLossyStringDictionary(forKey: .propertyOverrides) ?? [:]
         presetID = try? c.decodeIfPresent(String.self, forKey: .presetID)
-        // Lossy: one malformed preset value must not drop the whole snapshot.
         presetSnapshot = c.decodeLossyStringDictionary(forKey: .presetSnapshot) ?? [:]
     }
 
@@ -221,12 +194,9 @@ public struct SceneDescriptor: Codable, Equatable, Sendable {
 /// Import-time capability tier (avoids reparse before runtime fallback).
 public enum SceneCapabilityTier: String, Codable, Equatable, Sendable {
     case imageOnly
-    /// Decode-only. Nothing produces this any more: the middle tier flagged
-    /// scenes for carrying particles/text/sound rather than for being broken.
-    /// Kept because `SceneDescriptor` is persisted and older configs hold it —
-    /// an unknown case would silently decode to `.unsupported`.
+    /// Decode-only; nothing produces it any more. Kept because older persisted configs hold it
+    /// and an unknown case would decode to `.unsupported`.
     case degraded
-    /// Nothing renderable — UI placeholder.
     case unsupported
 
     public var localizedLabel: String {

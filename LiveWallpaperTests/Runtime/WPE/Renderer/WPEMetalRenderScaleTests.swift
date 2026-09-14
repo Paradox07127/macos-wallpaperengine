@@ -4,9 +4,6 @@ import Testing
 @testable import LiveWallpaper
 import LiveWallpaperProWPE
 
-/// Ortho render-scale decoupling (MetalFX): the ONE world→pixel conversion,
-/// pool key consistency under `pixelScale`, world-canvas derivation, and the
-/// loader's reduced-mip upload selection.
 @Suite("WPE Metal render scale decoupling", .serialized)
 struct WPEMetalRenderScaleTests {
     @Test("FBO divisors retain truncation and reject unrepresentable dimensions")
@@ -125,9 +122,8 @@ struct WPEMetalRenderScaleTests {
         let output = WPEMetalFXSpatialUpscaler.scaledCanvasSize(Self.sceneSize, pixelScale: 0.75)
         #expect(key.width == Int(output.width))
         #expect(key.height == Int(output.height))
-        // Odd canvas: the even-alignment of the conversion must flow into the key
-        // (an Int-truncated 1674.75→1674 vs even-aligned path differing by 1px
-        // would make the alias-snapshot blit read out of bounds).
+        // Odd canvas: a key that Int-truncates instead of even-aligning differs by
+        // 1px and would make the alias-snapshot blit read out of bounds.
         let oddScene = CGSize(width: 2233, height: 1081)
         let oddKey = pool.diagnosticKey(
             for: .fbo(name: "_rt_FullFrameBuffer"),
@@ -225,8 +221,6 @@ struct WPEMetalRenderScaleTests {
         #expect(pool.worldCanvasSize(
             for: .scene, layer: layer, sceneSize: Self.sceneSize
         ) == Self.sceneSize)
-        // At scale 1 the world canvas IS the allocated texture size — the
-        // refactored objectQuadSceneSize/text-canvas paths stay bit-identical.
         pool.pixelScale = 1
         let texture = try pool.texture(
             for: .fbo(name: "group"),
@@ -244,9 +238,6 @@ struct WPEMetalRenderScaleTests {
     func renderScaleIsTestIsolated() {
         let scoped = UserDefaults.appScoped()
         defer { scoped.removeObject(forKey: WPEMetalFXSpatialUpscaler.renderScaleDefaultsKey) }
-        // The machine's com.loomscreen.pro domain may carry a real value (the
-        // user runs the feature); a leak here would silently shrink every RT
-        // in headless render tests and oracle captures.
         #expect(WPEMetalFXSpatialUpscaler.renderScale == 1.0)
         scoped.set(0.5, forKey: WPEMetalFXSpatialUpscaler.renderScaleDefaultsKey)
         #expect(WPEMetalFXSpatialUpscaler.renderScale == 0.5)
@@ -256,8 +247,6 @@ struct WPEMetalRenderScaleTests {
     func executorDefaultsToScaleOne() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let executor = try WPEMetalRenderExecutor(device: device)
-        // An executor that never received a plan must behave exactly like the
-        // pre-feature path — the renderer is the only thing allowed to decide.
         #expect(executor.upscalePlan.renderPixelScale == 1.0)
         #expect(executor.upscalePlan.isActive == false)
         #expect(executor.upscalePlan.maxSourceTextureEdge == nil)
@@ -280,7 +269,6 @@ struct WPEMetalRenderScaleTests {
         #expect(WPEMetalTextureLoader.uploadMipStartIndex(mipmaps: chain, maxEdge: 512) == 2)
         // Never scales up: even a tiny cap keeps the smallest available level.
         #expect(WPEMetalTextureLoader.uploadMipStartIndex(mipmaps: chain, maxEdge: 100) == 3)
-        // A single-level payload always stays put.
         #expect(WPEMetalTextureLoader.uploadMipStartIndex(
             mipmaps: [Self.mip(0, 2048, 1024)], maxEdge: 100
         ) == 0)
@@ -310,14 +298,11 @@ struct WPEMetalRenderScaleTests {
 
     @Test("Mip-chain upload follows the scene's plan, not the global setting")
     func mipChainDefaultFollowsPlan() {
-        // Pinned, not guarded on: this used to skip itself on any machine where
-        // the knob had ever been written, which is every machine that exercised
-        // the feature — and it is the only coverage of the unset default.
+        // Pinned, not guarded on: guarding would skip this test on any machine where the knob
+        // had ever been written, and it is the only coverage of the unset default.
         let restore = Self.pinMipChainDefault(nil)
         defer { restore() }
 
-        // Unset override: a scene that is NOT scaling must keep its historical
-        // level-0-only upload even while another scene on the same machine is.
         #expect(WPEMetalTextureLoader.uploadsMipChain(scalingActive: true))
         #expect(WPEMetalTextureLoader.uploadsMipChain(scalingActive: false) == false)
 
@@ -343,8 +328,6 @@ struct WPEMetalRenderScaleTests {
         descriptor.storageMode = .private
         let texture = try #require(device.makeTexture(descriptor: descriptor))
 
-        // Everything below is keyed by a PIXEL dimension, so a scale change makes
-        // every entry unreachable — stranded, not reused.
         executor.outputTexturePool = [texture]
         executor.bootstrapPreviousTextureCache[
             .init(targetID: .scene, width: 64, height: 64, pixelFormat: .rgba8Unorm)
@@ -352,9 +335,8 @@ struct WPEMetalRenderScaleTests {
         executor.sceneReadHazardSnapshotCache[
             .init(targetID: .scene, width: 64, height: 64, pixelFormat: .rgba8Unorm)
         ] = texture
-        // Validated against the WORLD size, which a scale change leaves alone —
-        // so without an explicit drop it keeps serving old-resolution textures
-        // to `.previous` reads.
+        // previousFrameHistory is validated against the WORLD size, which a scale
+        // change leaves alone, so without an explicit drop it serves stale resolutions.
         executor.previousFrameHistory = .init(
             sceneSize: CGSize(width: 1920, height: 1080),
             sceneTexture: texture,

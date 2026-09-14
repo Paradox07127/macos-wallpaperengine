@@ -1,7 +1,6 @@
 import Foundation
 import LiveWallpaperCore
 
-/// Connects the core configuration porter to app settings and bookmarks.
 @MainActor
 extension ConfigurationPorter {
     static func currentBundle() -> ConfigurationBundle {
@@ -62,9 +61,7 @@ extension ConfigurationPorter {
         return summary
     }
 
-    /// Import merges into the existing library, matching the Settings copy:
-    /// an existing entry with the same identity or the same content source is
-    /// kept as-is; only backup entries pointing at new sources are appended.
+    /// Import merges: an existing entry with the same identity or content source is kept; only backup entries pointing at new sources are appended.
     static func mergingWallpaperBookmarks(
         existing: [WallpaperBookmark],
         imported: [WallpaperBookmark]

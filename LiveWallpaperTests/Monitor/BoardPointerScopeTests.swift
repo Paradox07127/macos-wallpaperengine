@@ -13,7 +13,6 @@ private enum PointerBoard {
     /// CPU, small (1×1) at normalized (0.5, 0.5).
     /// raw (400, 300, 194, 206) → render (412, 318, 170, 170).
     static let cpuRenderCenter = CGPoint(x: 497, y: 403)
-    /// Inside the board, outside every widget.
     static let emptySpot = CGPoint(x: 700, y: 550)
 
     static func configuration(mouseInteractionEnabled: Bool = false) -> MonitorBoardConfiguration {
@@ -45,8 +44,6 @@ private enum PointerBoard {
 @Suite("Monitor board pointer scope")
 struct BoardPointerScopeTests {
 
-    /// Board tiles are display-only. The Now Playing layer was the only thing
-    /// that ever claimed the pointer on its own, and it has its own host now.
     @MainActor
     @Test("a passive board takes no pointer anywhere")
     func passiveBoardTakesNothing() {
@@ -139,12 +136,9 @@ struct MusicLayerPointerGateTests {
         let host = makeHost()
         #expect(host.wantsPointer)
         #expect(host.acceptsPointer(atLocalPoint: Self.local(Self.layerCenter)))
-        // Everything else has to fall through to the desktop.
         #expect(!host.acceptsPointer(atLocalPoint: Self.local(Self.outside)))
     }
 
-    /// An invisible layer that still eats desktop clicks reads as the desktop
-    /// being broken, and there is nothing on screen to explain it.
     @MainActor
     @Test("a layer with nothing to draw holds no hit region")
     func noTrackReleasesThePointer() {

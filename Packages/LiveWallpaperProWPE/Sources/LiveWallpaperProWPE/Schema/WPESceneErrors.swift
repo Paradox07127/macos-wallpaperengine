@@ -1,7 +1,6 @@
 import Foundation
 import LiveWallpaperCore
 
-/// Failure modes from `WPESceneDocumentParser`.
 public enum WPESceneDocumentError: Error, LocalizedError, Equatable, Sendable {
     case invalidUTF8
     case rootNotObject
@@ -25,8 +24,6 @@ public enum WPESceneDocumentError: Error, LocalizedError, Equatable, Sendable {
     }
 }
 
-/// Failure modes that surface from the scene runtime when a parsed scene
-/// cannot be staged.
 public enum SceneRenderingError: Error, LocalizedError, Equatable, Sendable {
     case cacheRootMissing
     case parseFailed(String)
@@ -49,7 +46,6 @@ public enum SceneRenderingError: Error, LocalizedError, Equatable, Sendable {
     }
 }
 
-/// Per-layer failure recorded by `WPEMetalSceneRenderer.load()`.
 public enum SceneLoadDiagnostic: Equatable, Sendable {
     case texture(layer: String, error: WPETexDecodeError)
     case legacyUnsupportedTexture(layer: String)
@@ -61,15 +57,12 @@ public enum SceneLoadDiagnostic: Equatable, Sendable {
     public var errorDescription: String {
         switch self {
         case let .texture(layer, error):
-            // The decoder says which of a dozen faults it hit; the layer name
-            // alone told the reader nothing they could act on.
             String(localized: "error.scene.load_diagnostic.texture", defaultValue: "The image for '\(layer)' couldn't be loaded: \(error.errorDescription ?? "").", bundle: .appLanguage, comment: "Diagnostic shown when a scene image layer texture cannot be loaded. First placeholder is the layer name, second is the decoder's reason.")
         case .legacyUnsupportedTexture(let layer):
             String(localized: "error.scene.load_diagnostic.legacy_unsupported_texture", defaultValue: "The image format used by '\(layer)' is no longer supported.", bundle: .appLanguage, comment: "Diagnostic shown when a scene image layer uses a legacy unsupported texture format.")
         case .fileMissing(let layer, let path):
             String(localized: "error.scene.load_diagnostic.file_missing.with_path", defaultValue: "A file required by the '\(layer)' layer is missing: \(path).", bundle: .appLanguage, comment: "Diagnostic shown when a scene layer references a missing file. First placeholder is the layer name, second is the missing relative path.")
         case let .crossPackageReference(layer, path):
-            // `fileMissing` already names its path; this one had one too.
             String(localized: "error.scene.load_diagnostic.cross_package_reference", defaultValue: "The layer '\(layer)' requires files from an external package, which is not supported: \(path).", bundle: .appLanguage, comment: "Diagnostic shown when a scene layer references files from another Wallpaper Engine package. First placeholder is the layer name, second is the referenced path.")
         case let .materialUnresolved(layer, reason):
             String(localized: "error.scene.load_diagnostic.material_unresolved", defaultValue: "A rendering feature needed by '\(layer)' is not supported yet: \(reason).", bundle: .appLanguage, comment: "Diagnostic shown when a scene layer uses an unresolved material or rendering feature. First placeholder is the layer name, second is which feature.")
@@ -79,16 +72,12 @@ public enum SceneLoadDiagnostic: Equatable, Sendable {
     }
 }
 
-/// Diagnostic emitted when a non-critical field is missing or unsupported.
 public struct WPESceneDiagnostic: Equatable, Sendable {
     public enum Severity: String, Sendable, Equatable {
         case info
         case warning
 
-        /// Callers that log a collected diagnostic must not pick a level of
-        /// their own: `LogFileSink` admits `warning` to the user's runtime log,
-        /// so hard-coding it published every `info` note as a user-visible
-        /// warning. Exhaustive on purpose — a new case must choose a level.
+        /// Callers must not pick a log level of their own: `LogFileSink` admits `warning` to the user's runtime log, so hard-coding it would publish every `info` note as a user-visible warning. Exhaustive on purpose — a new case must choose a level.
         public var logLevel: Logger.Level {
             switch self {
             case .info: return .info

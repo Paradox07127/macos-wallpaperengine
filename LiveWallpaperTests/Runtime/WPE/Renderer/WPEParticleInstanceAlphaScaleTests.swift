@@ -5,10 +5,6 @@ import Metal
 import simd
 import Testing
 
-/// Last mile of `instanceoverride.alpha = { script }`: the renderer ticks the
-/// script (`WPEMetalSceneRenderer+Frame.tickParticleSystems`) and publishes the
-/// returned scalar here. Without it, 2955378002's two "Blinking Stars" systems
-/// drew at their seed alpha at noon while Windows had COLOR.a = 0 throughout.
 @Suite("Particle instance alpha scale")
 struct WPEParticleInstanceAlphaScaleTests {
     @Test("Alpha random uses initializer defaults without changing opaque particles")

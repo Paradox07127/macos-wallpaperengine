@@ -1,7 +1,6 @@
 import SwiftUI
 
-/// Fixed-height title window; hover scrolls overflow without resizing the card.
-/// An invisible text base owns layout. Reduce Motion disables scrolling.
+/// An invisible text base owns the layout, so the scrolling copy cannot resize the card.
 public struct MarqueeText: View {
     private let text: String
     private let lineLimit: Int
@@ -26,10 +25,8 @@ public struct MarqueeText: View {
     private var overflow: CGFloat { max(0, contentHeight - windowHeight) }
     private var shouldScroll: Bool { isActive && !reduceMotion && overflow > 0.5 }
 
-    /// The crawl restarts whenever this changes, not just when scrolling turns on or off: resizing
-    /// the window changes how far the text has to travel while the pointer stays put, and an
-    /// animation still aiming at the old distance would stop short of the last line. Rounded to half
-    /// a point so measurement jitter can't restart it every frame.
+    /// Distance is in the plan so a resize restarts the crawl; rounded to half a point
+    /// so measurement jitter can't restart it every frame.
     private var plan: ScrollPlan {
         ScrollPlan(isScrolling: shouldScroll, distance: (overflow * 2).rounded() / 2)
     }
@@ -44,10 +41,8 @@ public struct MarqueeText: View {
             .lineLimit(lineLimit, reservesSpace: true)
             .opacity(0)
             .accessibilityHidden(true)
-            // `onGeometryChange` rather than `GeometryReader` + `PreferenceKey`:
-            // a grid page carries one of these per card, and this reports the
-            // height only when it changes instead of reducing a preference on
-            // every layout pass. macOS 13+, so no availability gate.
+            // `onGeometryChange`, not `GeometryReader` + `PreferenceKey`: no preference
+            // reduced on every layout pass.
             .onGeometryChange(for: CGFloat.self, of: \.size.height) { windowHeight = $0 }
             .overlay(alignment: .top) {
                 Text(verbatim: text)

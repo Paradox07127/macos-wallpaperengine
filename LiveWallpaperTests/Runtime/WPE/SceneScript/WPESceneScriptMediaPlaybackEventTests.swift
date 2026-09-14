@@ -2,10 +2,6 @@ import Foundation
 @testable import LiveWallpaper
 import Testing
 
-/// GitHub issue #133: 120 copies of `ReferenceError: Can't find variable:
-/// MediaPlaybackEvent` — scenes read the global from module top level, so the
-/// whole module (including `update()`) dies and WPEScriptFaultPolicy eventually
-/// quarantines the entry point for good.
 @Suite(.serialized)
 @MainActor
 struct WPESceneScriptMediaPlaybackEventTests {
@@ -44,8 +40,6 @@ struct WPESceneScriptMediaPlaybackEventTests {
         #expect(try instance(script: script).tickString() == "0,1,2")
     }
 
-    /// Workshop scenes branch on `event.state == 1`, so the constants have to be
-    /// genuine Numbers, not opaque objects that merely stringify.
     @Test("The constants are JS Numbers, not objects that stringify to digits")
     func constantsAreNumbers() throws {
         let script = """
@@ -60,10 +54,6 @@ struct WPESceneScriptMediaPlaybackEventTests {
         #expect(try instance(script: script).tickString() == "numbers")
     }
 
-    /// The authored script from workshop scene 3713073223, which is one of the
-    /// four that were throwing. Verbatim shape: the global is read at module
-    /// top level, and `mediaPlaybackChanged` is exported but never called here —
-    /// exactly the case where the ReferenceError used to take `update()` down.
     @Test("The real authored script from a scene that was throwing now evaluates")
     func authoredSceneScriptSurvives() throws {
         let script = """
@@ -83,10 +73,6 @@ struct WPESceneScriptMediaPlaybackEventTests {
             return 'hidden';
         }
         """
-        // The authored original returns the assignment itself, i.e. a Boolean;
-        // this harness is a string-valued property script, so the returns are
-        // spelled as strings. Everything that made the scene die — the module
-        // top-level read and the exported callback — is verbatim.
         #expect(try instance(script: script).tickString() == "hidden")
     }
 
@@ -102,10 +88,6 @@ struct WPESceneScriptMediaPlaybackEventTests {
     }
 }
 
-/// An init-only module (no `update`) still hosts media handlers, and its
-/// `batchTick` used to return at the `hasUpdateFunction` guard BEFORE the
-/// overdue-async check — a hung `mediaPlaybackChanged` therefore never poisoned
-/// the instance and its engine lane + governor permit stayed occupied forever.
 @Suite("Init-only transform media fail-close")
 struct WPEInitOnlyTransformMediaFailCloseTests {
     @Test("A hung media handler on an init-only transform still fail-closes")
@@ -123,7 +105,6 @@ struct WPEInitOnlyTransformMediaFailCloseTests {
             tickBudget: 0.05,
             governor: WPESceneScriptExecutionGovernor(limit: 4)
         )
-        // init's value is being held (the init-only contract).
         #expect(instance.batchTick(pointerPosition: .zero).value == SIMD3(5, 6, 7))
 
         instance.liveDispatchMediaEvent(.playbackChanged(.playing))

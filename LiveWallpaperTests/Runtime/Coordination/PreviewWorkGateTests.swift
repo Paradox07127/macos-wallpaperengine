@@ -37,8 +37,6 @@ struct PreviewWorkGateTests {
 
         let highWater = await peak.highWater
         #expect(highWater <= 3, "Ran \(highWater) at once against a limit of 3.")
-        // Control: a gate that serialised everything — or a harness that never
-        // actually overlapped — would satisfy the ceiling for the wrong reason.
         #expect(highWater > 1, "Nothing ever overlapped, so the ceiling proves nothing.")
         #expect(await gate.activeCount == 0, "A slot leaked.")
     }
@@ -65,8 +63,6 @@ struct PreviewWorkGateTests {
         let gate = PreviewWorkGate(limit: 1)
         let task = Task {
             await gate.run {
-                // The contract callers follow: check cancellation first, so an
-                // abandoned tile frees the lane instead of holding it.
                 guard !Task.isCancelled else { return }
                 try? await Task.sleep(for: .milliseconds(500))
             }
@@ -75,7 +71,6 @@ struct PreviewWorkGateTests {
         await task.value
         #expect(await gate.activeCount == 0)
 
-        // The lane is usable immediately afterwards.
         await gate.run {}
         #expect(await gate.activeCount == 0)
     }
@@ -85,7 +80,6 @@ struct PreviewWorkGateTests {
         let gate = PreviewWorkGate(limit: 1)
         let occupied = Counter()
 
-        // Fill the only lane, then queue behind it and cancel while queued.
         let holder = Task { await gate.run { try? await Task.sleep(for: .milliseconds(120)) } }
         try? await Task.sleep(for: .milliseconds(20))
         let queued = Task {
@@ -98,9 +92,6 @@ struct PreviewWorkGateTests {
         await holder.value
         await queued.value
 
-        // The cancelled waiter is admitted, sees the cancellation and leaves
-        // without doing the work — which is what keeps it from blocking the
-        // tiles the reader is actually looking at.
         #expect(await occupied.value == 0)
         #expect(await gate.activeCount == 0)
     }
@@ -110,11 +101,9 @@ struct PreviewWorkGateTests {
         let gate = PreviewWorkGate(limit: 1)
         let ran = Counter()
 
-        // Occupy the only lane for a while.
         let holder = Task { await gate.run { try? await Task.sleep(for: .milliseconds(300)) } }
         try? await Task.sleep(for: .milliseconds(30))
 
-        // Queue several waiters and abandon them, as a fast scroll does.
         let abandoned = (0..<5).map { _ in
             Task { await gate.run { await ran.bump() } }
         }
@@ -123,8 +112,7 @@ struct PreviewWorkGateTests {
         abandoned.forEach { $0.cancel() }
         try? await Task.sleep(for: .milliseconds(50))
 
-        // They are gone from the queue *before* the lane frees up — that is what
-        // keeps a newly visible tile from waiting behind work nobody wants.
+        // They are gone from the queue *before* the lane frees up.
         #expect(await gate.queuedCount == 0)
 
         for task in abandoned { await task.value }
@@ -135,8 +123,8 @@ struct PreviewWorkGateTests {
     @Test("Cancellation bookkeeping does not accumulate")
     func cancellationBookkeepingStaysBounded() async {
         let gate = PreviewWorkGate(limit: 1)
-        // Churn admitted-then-cancelled callers: a cancel that lands after the
-        // waiter was already handed a slot must not be filed away forever.
+        // Churn admitted-then-cancelled callers: the cancel lands after the slot
+        // was already handed out.
         for _ in 0..<40 {
             let task = Task { await gate.run { try? await Task.sleep(for: .milliseconds(1)) } }
             task.cancel()

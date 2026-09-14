@@ -7,9 +7,7 @@ import Metal
 private func wpeRenderTargetDimension(_ base: CGFloat, scale: Double) -> Int {
     // WPE effect FBO scale is a downsample divisor: scale 4 means one quarter size.
     let divisor = scale.isFinite && scale > 0 ? scale : 1
-    // TRUNCATE, don't round: RenderDoc shows WPE at 278x250 for a 557x500 source
-    // and 1185x1080 for 2371x2160, where rounding gives 279 and 1186. Only exact
-    // .5 cases differ, which is why even-sized sources matched all along.
+    // TRUNCATE, don't round.
     let pixels = Double(base) / divisor
     guard !pixels.isNaN, pixels > 1 else { return 1 }
     // An unrepresentable edge remains oversized, so the shared descriptor
@@ -17,9 +15,7 @@ private func wpeRenderTargetDimension(_ base: CGFloat, scale: Double) -> Int {
     return Int(min(pixels, Double(wpeMaxRenderTargetEdge)))
 }
 
-/// Ceiling for a computed render-target edge. Not a Metal limit — just small
-/// enough that the conversion below cannot trap and large enough that Metal is
-/// still the one to reject a genuinely impossible size.
+/// Ceiling so Int conversion cannot trap; Metal still rejects a genuinely impossible size.
 private let wpeMaxRenderTargetEdge = 1 << 20
 
 /// WPE effect FBO `fit`: preserve aspect ratio and make the longest edge equal
@@ -32,10 +28,7 @@ private func wpeFitRenderTargetExtent(_ base: CGSize, fit: Double?) -> (width: I
     guard width.isFinite, height.isFinite, longest > 0 else { return nil }
     let ratio = fit / longest
     guard ratio.isFinite else { return nil }
-    // Scene data is third-party: an authored `"fit": 1e30` makes these products
-    // exceed Int, and `Int(_:)` traps rather than saturating. Clamp in Double
-    // space first — far above any real texture, so Metal's own dimension check
-    // still reports an oversize allocation instead of us crashing.
+    // `Int(_:)` traps rather than saturating; clamp in Double first so Metal still reports an oversize allocation.
     func pixels(_ value: Double) -> Int {
         let rounded = (value * ratio).rounded()
         guard rounded.isFinite else { return 1 }
@@ -44,11 +37,6 @@ private func wpeFitRenderTargetExtent(_ base: CGSize, fit: Double?) -> (width: I
     return (pixels(width), pixels(height))
 }
 
-/// Identity for a pooled Metal render target. Same name + same scaled
-/// dimensions + same format share a slot; if a pass would read its own
-/// destination texture (e.g. `.previous` ping-pong), the pool returns the
-/// per-slot secondary allocation so Metal never samples from and renders
-/// into the same texture in one encoder.
 struct WPEMetalRenderTargetKey: Hashable {
     let name: String
     let width: Int
@@ -65,27 +53,15 @@ struct WPEMetalRenderTargetKey: Hashable {
     }
 }
 
-/// Persistent FBO/layer-composite allocation pool used by `WPEMetalRenderExecutor`.
-/// Allocations live across `render(...)` calls and are released on
-/// `applyPerformanceProfile(.suspended)`, `reload()`, `cleanup()`. `MTLHeap` is
-/// preferred when `heapTextureSizeAndAlign` reports non-zero, otherwise falls back to
-/// discrete `makeTexture`; the heap reference is held next to the texture so the heap isn't deallocated while the texture is still in the pool.
 final class WPEMetalRenderTargetPool {
     /// Set per scene by the executor: HDR scenes promote 8-bit FBOs to
     /// half-float (see `pixelFormat(forFBOFormat:promoteLDRToHDR:)`).
     var promotesLDRFormatsToHDR = false
 
-    /// World-canvas → render-target pixel ratio, set per frame by the executor (its
-    /// `outputPixelScale`). 1 = bit-identical to the pre-scaling pool. Applied uniformly to
-    /// EVERY canvas the key derivation sees — partial scaling is forbidden
-    /// (`wpe_blend_composite_fragment` maps `[[position]]` onto snapshot texels 1:1, and off-size targets fall out of the shared alias heap; see the `WPEMetalLayerLocalFBOScale` note above).
+    /// 1 = bit-identical to the pre-scaling pool. Partial scaling is forbidden.
     var pixelScale: Double = 1
 
-    /// Register a pooled target with the WORLD size it stands for. Without this
-    /// the registry reports the scaled physical size as the world size, and a
-    /// non-identity layer with no authored `size` — whose object quad falls back
-    /// to the source texture's world dimensions — shrinks by the pixel scale.
-    /// Identity at scale 1.
+    /// Register the WORLD size; without this the registry reports scaled physical size and identity-less layers shrink by the pixel scale. Identity at scale 1.
     private func registerWorldSize(of texture: MTLTexture) {
         guard pixelScale < 1 else {
             WPEMetalTextureMetadataRegistry.shared.register(texture: texture)
@@ -108,22 +84,14 @@ final class WPEMetalRenderTargetPool {
         var secondary: Allocation?
     }
 
-    /// A render target's within-frame lifetime `[firstPass, lastPass]` (flattened
-    /// pass order), fed by the executor so the pool can pack non-overlapping
-    /// targets into one shared heap. Lifetimes are computed conservatively (last
-    /// use never under-estimated), so a target is only made aliasable AFTER its
-    /// real last GPU use — never before (which would corrupt the frame).
+    /// Last use is never under-estimated, so a target is only made aliasable AFTER its real last GPU use.
     struct AliasInterval: Equatable {
         let key: WPEMetalRenderTargetKey
         let firstPass: Int
         let lastPass: Int
     }
 
-    /// Pixel footprint for a layer-private effect FBO: the layer's own footprint instead of
-    /// the full scene. Used by BOTH `targetKey` (allocation) and `diagnosticKey` (alias
-    /// planning) so they can never mis-key. nil → keep the full-scene default (scene alias or
-    /// cross-layer declared FBO); only `layer.localFBOs` entries qualify. (A
-    /// `WPEMetalLayerLocalFBOScale` downsample knob was tried + removed: shrinking a scene-sized FBO took it OUT of the shared FBO-aliasing heap → separate allocation → device-measured memory went UP, not down.)
+    /// nil → keep the full-scene default; only `layer.localFBOs` entries qualify.
     static func layerLocalFBOPixelSize(
         fboName: String,
         layer: WPERenderLayer,
@@ -136,38 +104,24 @@ final class WPEMetalRenderTargetPool {
         return layerCompositeSize(for: layer, sceneSize: sceneSize, memo: memo)
     }
 
-    /// Shared with the executor (`sceneCaptureUtilityOutputGeometry`) so both
-    /// the key derivation here and the fullscreen-copy decision there reuse one
-    /// per-layer classification per set of inputs. Same single-render-thread
-    /// invariant as the rest of this pool.
     let sceneCaptureGeometryMemo = WPESceneCaptureOutputGeometryMemo()
 
     private let device: MTLDevice
     private let maximumTextureDimension2D: Int
     private var slots: [WPEMetalRenderTargetKey: Slot] = [:]
     private var declaredFBOs: [String: WPERenderFBO] = [:]
-    /// One zero stand-in per declared FBO that a pass samples before any pass has
-    /// written it (motionblur's cross-frame `_rt_FullCompoBuffer1` history,
-    /// `unique:true`). WPE treats a freshly created RT as all-zero, so the first
-    /// read must see zero rather than fail the scene. Cached by name so a per-frame
-    /// re-miss reuses it instead of re-allocating.
+    /// WPE treats a freshly created RT as all-zero, so the first read must see zero rather than fail the scene.
     private var zeroPlaceholderTextures: [String: MTLTexture] = [:]
 
-    // Aliasing state (per-frame heap-backed sharing of non-overlapping targets).
     private var aliasHeap: MTLHeap?
     private var aliasLastPassByKey: [WPEMetalRenderTargetKey: Int] = [:]
     private var aliasFrameTextures: [WPEMetalRenderTargetKey: (texture: MTLTexture, lastPass: Int)] = [:]
     private var aliasPlanSignature: Int?
 
-    /// Everything `prepare` derives its work from. Comparing INPUTS instead of the
-    /// post-descriptor plan signature is what lets a structurally stable frame skip the
-    /// `declaredFBOs` rebuild AND the per-interval `heapTextureSizeAndAlign` driver queries —
-    /// the old signature was hashed only AFTER both had already run. Full equality (not a hash) so a collision cannot serve a stale plan.
+    /// Compare INPUTS, not the post-descriptor plan signature. Full equality (not a hash) so a collision cannot serve a stale plan.
     private struct PrepareInputs: Equatable {
         let pipelineIdentity: Int
-        /// Both are pool state the caller sets before `prepare`, and neither is
-        /// fully encoded in the interval keys: an already-float FBO keeps the
-        /// same key across an HDR toggle.
+        /// Neither field is fully encoded in the interval keys: an already-float FBO keeps the same key across an HDR toggle.
         let pixelScale: Double
         let promotesLDRFormatsToHDR: Bool
         let aliasIntervals: [AliasInterval]
@@ -186,11 +140,7 @@ final class WPEMetalRenderTargetPool {
             ?? WPEMetalTextureLimits.maximum2DTextureDimension(for: device)
     }
 
-    /// `pipelineIdentity` must change whenever `pipeline.layers`' declared FBOs
-    /// could differ; the executor passes its `fboAliasTopologyRebuildCount`,
-    /// which is bumped by the very same structural revalidation that already
-    /// gates its cached per-target `WPERenderFBO` specs. nil = the caller cannot
-    /// vouch for that, so nothing is skipped.
+    /// nil = the caller cannot vouch, so nothing is skipped.
     func prepare(
         pipeline: WPEPreparedRenderPipeline,
         aliasIntervals: [AliasInterval] = [],
@@ -248,11 +198,7 @@ final class WPEMetalRenderTargetPool {
         releaseAliasState()
     }
 
-    /// Non-nil ONLY when `name` is a declared local FBO. Returns a cached, CPU-zeroed stand-in
-    /// so a first-frame read of an unwritten declared target resolves to all-zero (WPE's
-    /// semantics for a freshly created RT) instead of throwing; undeclared names return nil so
-    /// the caller still raises `missingTexture` — a genuine graph/transpile bug must stay loud.
-    /// `declaredFBOs` is scene-wide, so equal FBO names share a stand-in across layers; per-layer scoping requires a corpus case with colliding unwritten names before changing this.
+    /// Non-nil ONLY when `name` is a declared local FBO; undeclared names return nil so the caller still raises `missingTexture`.
     func zeroFilledPlaceholderTexture(forDeclaredFBO name: String) -> MTLTexture? {
         let lookupName = WPERenderTargetNames.PuppetClip.baseName(of: name) ?? name
         guard let spec = declaredFBOs[lookupName] else { return nil }
@@ -318,11 +264,7 @@ final class WPEMetalRenderTargetPool {
         return texture
     }
 
-    /// Start of each `render()`. Drops the prior frame's aliasable textures so this frame
-    /// allocates fresh. What makes that safe across the two frames the executor keeps in
-    /// flight is the heap's `.tracked` hazard mode, NOT the serial queue: `MTLHeap.h` has the
-    /// driver delay reads/writes on every tracked-heap resource until in-flight access
-    /// finishes. The objects must be dropped rather than reused — Apple documents reading/writing through an already-aliased instance as undefined behaviour, so keeping them to skip `makeTexture` isn't available here.
+    /// Safety across in-flight frames is the heap's `.tracked` hazard mode, NOT the serial queue. Drop objects rather than reuse them — reading/writing an already-aliased instance is undefined.
     func beginAliasFrame() {
         guard !aliasFrameTextures.isEmpty else { return }
         for entry in aliasFrameTextures.values {
@@ -331,9 +273,7 @@ final class WPEMetalRenderTargetPool {
         aliasFrameTextures.removeAll(keepingCapacity: true)
     }
 
-    /// After each pass: any aliased target whose last use is this pass is made
-    /// aliasable so a later target can reuse its heap memory. The driver (tracked
-    /// automatic heap) inserts the read-before-write barrier.
+    /// The driver (tracked automatic heap) inserts the read-before-write barrier.
     func endPass(passIndex: Int) {
         guard !aliasFrameTextures.isEmpty else { return }
         for (key, entry) in aliasFrameTextures where entry.lastPass == passIndex {
@@ -342,9 +282,6 @@ final class WPEMetalRenderTargetPool {
         }
     }
 
-    /// Read-only twin of `texture(...)` keying: the slot key a target resolves to
-    /// WITHOUT allocating. Used to compute conservative alias intervals for the
-    /// FBO placement-heap aliasing plan statically.
     func diagnosticKey(
         for target: WPERenderTarget,
         layer: WPERenderLayer,
@@ -359,10 +296,6 @@ final class WPEMetalRenderTargetPool {
         )
     }
 
-    /// Structural half of `diagnosticKey`: the FBO spec a target's key derives
-    /// from. Inputs are pipeline structure only (target name, declared/local
-    /// FBOs) — never per-frame geometry or scene size — so the executor's alias
-    /// topology may cache the result across frames.
     func diagnosticSpec(
         for target: WPERenderTarget,
         layer: WPERenderLayer,
@@ -392,10 +325,7 @@ final class WPEMetalRenderTargetPool {
         }
     }
 
-    /// Per-frame half of `diagnosticKey`: applies the current scene size, layer
-    /// geometry and HDR promotion to a structural spec. `spec` MUST come from
-    /// `diagnosticSpec` for the same target (the composed overload above is the
-    /// contract; a foreign spec would mis-key the alias plan).
+    /// `spec` MUST come from `diagnosticSpec` for the same target; a foreign spec would mis-key the alias plan.
     func diagnosticKey(
         for target: WPERenderTarget,
         spec: WPERenderFBO,
@@ -419,11 +349,7 @@ final class WPEMetalRenderTargetPool {
         )
     }
 
-    /// The single pixel-dimension derivation shared by `targetKey` (allocation),
-    /// `diagnosticKey` (alias planning) and `worldCanvasSize` (world geometry) — three
-    /// consumers that mis-render the frame the moment they disagree. `pixelScale` converts
-    /// each world canvas through `WPEMetalFXSpatialUpscaler.scaledCanvasSize` BEFORE the
-    /// authored scale-divisor/fit derivation, so a downsample chain keeps WPE's truncation semantics relative to its (scaled) chain head; authored `fit` (an absolute pixel edge) scales linearly.
+    /// `pixelScale` converts each world canvas through `scaledCanvasSize` BEFORE the authored scale-divisor/fit derivation.
     private func keyDimensions(
         for target: WPERenderTarget,
         spec: WPERenderFBO,
@@ -487,11 +413,7 @@ final class WPEMetalRenderTargetPool {
         )
     }
 
-    /// The WORLD-space canvas a pooled target represents: the same derivation as
-    /// its pixel key, at pixelScale 1. This is what quad NDC math and text-glyph
-    /// vertex normalization must use as their canvas — with scaling active the
-    /// destination texture's own dimensions are `pixelScale` SMALLER than the
-    /// world canvas, and using them would grow the content by 1/pixelScale.
+    /// With scaling active the destination texture is `pixelScale` SMALLER than the world canvas; using texture dimensions would grow content by 1/pixelScale.
     func worldCanvasSize(
         for target: WPERenderTarget,
         layer: WPERenderLayer,
@@ -528,9 +450,6 @@ final class WPEMetalRenderTargetPool {
             pixelFormat: pixelFormat
         )
 
-        // Aliased primary: heap-backed, shared with non-overlapping targets.
-        // Ping-pong secondaries (textureToAvoid != nil) and non-planned keys fall
-        // through to the discrete per-key path below.
         if textureToAvoid == nil, let lastPass = aliasLastPassByKey[key] {
             return try aliasTexture(for: key, lastPass: lastPass)
         }
@@ -605,11 +524,7 @@ final class WPEMetalRenderTargetPool {
         sceneSize: CGSize,
         memo: WPESceneCaptureOutputGeometryMemo? = nil
     ) -> CGSize {
-        // Fullscreen WPE compose/project utility layers capture the full frame,
-        // so their layer-composite target MUST be scene-sized. Local
-        // composelayer boxes still use their authored local texture size; their
-        // capture shader samples the matching scene subregion before downstream
-        // effects run in layer-local UV space.
+        // Fullscreen compose/project layer-composite targets MUST be scene-sized. Local composelayer boxes use their authored local texture size.
         if layer.isUtilityModelLayer,
            layer.groupCompositeSource == nil,
            (memo?.outputGeometry(
@@ -709,7 +624,7 @@ final class WPEMetalRenderTargetPool {
         }
         let signature = hasher.finalize()
         if aliasPlanSignature == signature, aliasHeap != nil {
-            return // same scene/plan as last prepare — keep the heap.
+            return
         }
 
         releaseAliasState()
@@ -783,10 +698,7 @@ final class WPEMetalRenderTargetPool {
         return remainder == 0 ? size : size + alignment - remainder
     }
 
-    /// HDR scenes promote 8-bit color targets to `.rgba16Float` (WPE renders the
-    /// whole scene graph in half-float under `general.hdr`) — otherwise >1
-    /// emissive dies at the FIRST layer-composite copy and the godrays/bloom
-    /// chain never sees it. Alpha masks (`r8`) stay 8-bit.
+    /// HDR scenes promote 8-bit color targets to `.rgba16Float`; otherwise >1 emissive dies at the first layer-composite copy. Alpha masks (`r8`) stay 8-bit.
     static func pixelFormat(forFBOFormat format: String, promoteLDRToHDR: Bool) -> MTLPixelFormat {
         switch format.lowercased() {
         case "rgba16f", "rgba_half", "rgba16161616f":

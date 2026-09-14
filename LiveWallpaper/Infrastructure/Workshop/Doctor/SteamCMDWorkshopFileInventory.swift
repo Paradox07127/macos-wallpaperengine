@@ -42,8 +42,6 @@
         FileManager
     ) -> SteamCMDWorkshopDirectoryIdentity?
 
-    /// Owns SteamCMD Workshop path interpretation and target-only inventory reads.
-    /// Callers retain security-scope ownership for user-selected work directories.
     final class SteamCMDWorkshopFileInventory: SteamCMDWorkshopFileInventoryServing, @unchecked Sendable {
         private static let wallpaperEngineAppID: UInt32 = 431_960
 
