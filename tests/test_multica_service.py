@@ -24,7 +24,7 @@ class ServiceTests(unittest.TestCase):
         self.addCleanup(temp.cleanup)
         self.cfg = {'enabled': True, 'state_path': str(Path(temp.name).resolve() / 'state.sqlite'),
                     'multica_path': '/example/multica', 'multica_profile': 'profile',
-                    'workspace_id': 'workspace', 'workspaces_root': temp.name,
+                    'workspace_id': 'workspace', 'workspaces_root': str(Path(temp.name).resolve()),
                     'python_path': '/example/python'}
         self.calls = []
 

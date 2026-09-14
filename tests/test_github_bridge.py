@@ -1028,15 +1028,15 @@ class BridgeTests(unittest.TestCase):
         self.assertFalse(any("old same-second edit" in body for body in bodies))
 
     def test_timeout_kills_descendant_after_direct_child_already_exited(self):
-        pid_file = self.root / "descendant.pid"
+        stop_file = self.root / "descendant.stop"
         heartbeat = self.root / "heartbeat"
-        child_code = ("import os,time,pathlib;pathlib.Path(" + repr(str(pid_file)) + ").write_text(str(os.getpid()))\n"
-                      "for i in range(2000):\n with open(" + repr(str(heartbeat)) + ", 'a') as f: f.write('x')\n time.sleep(0.01)\n")
+        child_code = ("import time,pathlib\nfor i in range(500):\n"
+                      " if pathlib.Path(" + repr(str(stop_file)) + ").exists(): break\n"
+                      " with open(" + repr(str(heartbeat)) + ", 'a') as f: f.write('x')\n time.sleep(0.01)\n")
         parent_code = "import subprocess,sys,os;subprocess.Popen([sys.executable,'-c'," + repr(child_code) + "]);os._exit(0)"
         command = bridge.Commands({**self.cfg, "command_timeout": 1})
         with self.assertRaisesRegex(bridge.BridgeError, "timed out"):
             command.run([sys.executable, "-c", parent_code])
-        pid = int(pid_file.read_text())
         try:
             deadline = time.monotonic() + 2
             previous, stable = None, 0
@@ -1048,10 +1048,9 @@ class BridgeTests(unittest.TestCase):
             self.assertGreater(previous, 0)
             self.assertEqual(stable, 5, "descendant heartbeat did not stop after timeout")
         finally:
-            try:
-                os.kill(pid, 9)
-            except ProcessLookupError:
-                pass
+            # Cooperative fixture cleanup; never signal a PID already reaped
+            # by the implementation. The child also has a five-second bound.
+            stop_file.write_text("stop", encoding="utf-8")
 
     def test_invalid_collection_and_routing_fields_rejected_before_start(self):
         original = json.loads(self.config_path.read_text())
@@ -1619,6 +1618,233 @@ class BridgeTests(unittest.TestCase):
         lock.unlink()
         with bridge.process_lock(self.cfg['state_path']):
             self.assertEqual(lock.stat().st_mode & 0o777, 0o600)
+
+    def test_reaction_observation_reuses_legacy_done_authorization_version(self):
+        self.app.intake_issue(self.issue(), BEFORE)
+        self.remote.permissions['public-maintainer'] = 'write'
+        self.app.observation = 'legacy-v8-observation'
+        item = self.followup()
+        self.app.observation = None
+        self.app.drain_triage_pending()
+        self.assertEqual(len(self.trigger_comments()), 1)
+        self.app.observation = 'reaction-only-observation'
+        self.app.intake_comment({**item, 'reactions': {'total_count': 1}})
+        self.app.observation = None
+        self.app.drain_triage_pending()
+        self.assertEqual(self.state.db.execute('SELECT COUNT(*) FROM triage_pending').fetchone()[0], 1)
+        self.assertEqual(len(self.trigger_comments()), 1)
+
+    def test_new_observation_reuses_legacy_sending_authorization(self):
+        self.app.intake_issue(self.issue(), BEFORE)
+        self.remote.permissions['public-maintainer'] = 'write'
+        self.app.observation = 'legacy-v8-observation'
+        item = self.followup()
+        self.app.observation = None
+        self.remote.lose_comment_ack = True
+        with patch.object(bridge, 'utcnow', return_value=TIME):
+            self.app.drain_triage_pending()
+        self.app.observation = 'reaction-only-observation'
+        self.app.intake_comment({**item, 'reactions': {'total_count': 2}})
+        self.app.observation = None
+        self.assertEqual(self.state.db.execute('SELECT COUNT(*) FROM triage_pending').fetchone()[0], 1)
+        with patch.object(bridge, 'utcnow', return_value='2026-09-15T10:02:00Z'):
+            self.app.drain_triage_pending()
+        self.assertEqual(len(self.trigger_comments()), 1)
+        self.assertEqual(set(self.queue_status().values()), {'done'})
+
+    def test_legacy_duplicate_pending_never_sends_after_canonical_done(self):
+        self.app.intake_issue(self.issue(), BEFORE)
+        self.remote.permissions['public-maintainer'] = 'write'
+        self.followup()
+        self.app.drain_triage_pending()
+        self.state.db.execute("INSERT INTO triage_pending(event,source,remote_id,login,created_at,comment_id,author_id,comment_version) "
+                              "SELECT event||':old-extra-observation',source,remote_id,login,created_at,comment_id,author_id,comment_version FROM triage_pending")
+        self.state.db.commit()
+        self.app.drain_triage_pending()
+        self.assertEqual(len(self.trigger_comments()), 1)
+        self.assertEqual(sorted(self.queue_status().values()), ['denied', 'done'])
+
+    def test_ordinary_issue_receipt_and_snapshot_rollback_together(self):
+        self.app.intake_issue(self.issue(body='A'), BEFORE)
+        source = f'github:{bridge.ALLOWED_REPOSITORY}:issue:7'
+        prior = self.state.get('meta', 'snapshot:' + source)
+        self.state.db.execute("CREATE TEMP TRIGGER fail_update BEFORE INSERT ON meta "
+                              "WHEN NEW.key LIKE 'snapshot-time:%' BEGIN SELECT RAISE(ABORT,'crash'); END")
+        updated = self.issue(body='B', updated_at='2026-09-15T10:00:01Z')
+        with self.assertRaises(bridge.sqlite3.IntegrityError):
+            self.app.intake_issue(updated, BEFORE)
+        self.assertEqual(self.state.get('meta', 'snapshot:' + source), prior)
+        self.state.db.execute('DROP TRIGGER fail_update')
+        self.app.intake_issue(updated, BEFORE)
+        self.assertNotEqual(self.state.get('meta', 'snapshot:' + source), prior)
+        self.assertEqual(len(self.remote.comments['00000000-0000-0000-0000-000000000001']), 1)
+        self.app.intake_issue(self.issue(body='A', updated_at='2026-09-15T10:00:02Z'), BEFORE)
+        self.assertEqual(len(self.remote.comments['00000000-0000-0000-0000-000000000001']), 2)
+
+    def test_legacy_done_ordinary_receipt_repairs_missing_snapshot(self):
+        self.app.intake_issue(self.issue(body='A'), BEFORE)
+        source = f'github:{bridge.ALLOWED_REPOSITORY}:issue:7'
+        prior = self.state.get('meta', 'snapshot:' + source)
+        updated = self.issue(body='B', updated_at='2026-09-15T10:00:01Z')
+        self.app.intake_issue(updated, BEFORE)
+        expected = self.state.get('meta', 'snapshot:' + source)
+        self.state.meta('snapshot:' + source, prior)  # Existing v8 partial commit.
+        self.state.meta('snapshot-time:' + source, TIME)
+        count = len(self.writes())
+        self.app.intake_issue(updated, BEFORE)
+        self.assertEqual(self.state.get('meta', 'snapshot:' + source), expected)
+        self.assertEqual(len(self.writes()), count)
+
+    def test_fresh_fifo_does_not_starve_an_older_pr_behind_new_issues(self):
+        self.state.db.execute("INSERT INTO intake_events(key,kind,payload) VALUES (?,?,?)",
+                              ('earlier-pr', 'pr', json.dumps(self.pr())))
+        for number in range(100, 200):
+            self.state.db.execute("INSERT INTO intake_events(key,kind,payload) VALUES (?,?,?)",
+                                  (f'new-issue-{number}', 'issue', json.dumps(self.issue(number=number, labels=[]))))
+        self.state.db.commit()
+        self.app.drain_intake_events(BEFORE, time.monotonic() + 10)
+        self.assertEqual(self.state.db.execute("SELECT status FROM intake_events WHERE key='earlier-pr'").fetchone()[0], 'done')
+        self.assertEqual(len(self.remote.issues), 1)
+
+    def test_unknown_trigger_reconciles_before_revoked_permission_or_deleted_comment(self):
+        self.app.intake_issue(self.issue(), BEFORE)
+        self.remote.permissions['public-maintainer'] = 'write'
+        item = self.followup()
+        self.remote.lose_comment_ack = True
+        with patch.object(bridge, 'utcnow', return_value=TIME):
+            self.app.drain_triage_pending()
+        self.remote.permissions['public-maintainer'] = 'read'
+        self.remote.source_comments.pop(item['id'])
+        calls = len(self.remote.calls)
+        with patch.object(bridge, 'utcnow', return_value='2026-09-15T10:02:00Z'):
+            self.app.drain_triage_pending()
+        self.assertEqual(set(self.queue_status().values()), {'done'})
+        self.assertEqual(len(self.trigger_comments()), 1)
+        self.assertTrue(all(call[0] == 'multica' and call[1][:3] == ['issue', 'comment', 'list']
+                            for call in self.remote.calls[calls:]))
+
+    def test_unknown_trigger_without_receipt_stays_unknown_after_permission_revoked(self):
+        self.app.intake_issue(self.issue(), BEFORE)
+        self.remote.permissions['public-maintainer'] = 'write'
+        self.followup()
+        self.remote.lose_comment_ack = True
+        with patch.object(bridge, 'utcnow', return_value=TIME):
+            self.app.drain_triage_pending()
+        self.remote.comments.clear()  # Remote read cannot presently confirm delivery.
+        self.remote.permissions['public-maintainer'] = 'read'
+        with patch.object(bridge, 'utcnow', return_value='2026-09-15T10:02:00Z'):
+            self.app.drain_triage_pending()
+        self.assertEqual(self.state.db.execute('SELECT status,reason FROM triage_pending').fetchone(), ('pending', 'delivery_unknown'))
+        self.assertIn('intent', [row[0] for row in self.state.db.execute("SELECT state FROM operations WHERE key LIKE '%authorized-triage'")])
+
+    def test_cancelled_unmapped_initialization_does_not_hold_comments_forever(self):
+        source = f'github:{bridge.ALLOWED_REPOSITORY}:issue:7'
+        self.remote.fail_resource = '/issues/7/comments?'
+        with self.assertRaises(bridge.BridgeError):
+            self.app.intake_issue(self.issue(), BEFORE)
+        self.remote.fail_resource = None
+        self.app.intake_issue(self.issue(labels=[], updated_at='2026-09-15T10:00:01Z'), BEFORE)
+        self.assertEqual(self.state.get('meta', 'initial-triage:' + source), 'cancelled')
+        self.app.intake_comment(self.comment())
+        self.assertEqual(self.remote.issues, {})
+
+    def test_cancelled_unknown_create_retains_reconciliation_evidence(self):
+        source = f'github:{bridge.ALLOWED_REPOSITORY}:issue:7'
+        self.remote.lose_create_ack = True
+        with self.assertRaises(bridge.BridgeError):
+            self.app.intake_issue(self.issue(), BEFORE)
+        self.app.intake_issue(self.issue(labels=[], updated_at='2026-09-15T10:00:01Z'), BEFORE)
+        self.assertEqual(self.state.get('meta', 'initial-triage:' + source), 'cancelled_delivery_unknown')
+        self.assertEqual(self.state.get('operations', 'create:' + source, valuecol='state'), 'intent')
+        self.app.intake_comment(self.comment())
+        self.assertEqual(len(self.remote.issues), 1)
+        self.assertIsNotNone(self.state.get('meta', 'create-body:' + source))
+
+    def test_same_pending_status_does_not_post_again_while_delivery_retries(self):
+        self.pr()
+        request = self.app.job(HEAD, BASE, 'pr', pr_number=8)
+        self.assertTrue(self.app.pending(request))
+        writes = len(self.writes())
+        self.assertTrue(self.app.pending(request))
+        self.assertEqual(len(self.writes()), writes)
+
+    def test_duplicate_json_config_keys_are_rejected(self):
+        with self.assertRaisesRegex(bridge.BridgeError, 'Duplicate'):
+            bridge.parse_json('{"enabled":false,"enabled":true}')
+        self.config_path.write_text('{"enabled":false,"enabled":true}', encoding='utf-8')
+        with self.assertRaisesRegex(bridge.BridgeError, 'Duplicate'):
+            bridge.load_config(self.config_path)
+
+    def test_cleanup_wait_error_still_closes_child_pipes(self):
+        launch = bridge.subprocess.Popen
+        children = []
+        def capture(*args, **kwargs):
+            child = launch(*args, **kwargs)
+            wait = child.wait
+            def timeout_after_reap(*args, **kwargs):
+                wait(*args, **kwargs)  # Actual fixture safely reaped first.
+                raise subprocess.TimeoutExpired('fixture', 5)
+            child.wait = timeout_after_reap
+            children.append(child)
+            return child
+        with patch.object(bridge.subprocess, 'Popen', side_effect=capture):
+            with self.assertRaisesRegex(bridge.BridgeError, 'cleanup'):
+                bridge.Commands(self.cfg).run([sys.executable, '-c', "print('{}')"])
+        self.assertTrue(children[0].stdout.closed)
+        self.assertTrue(children[0].stderr.closed)
+
+    def test_stale_history_count_empty_tail_restarts_from_first_page_once(self):
+        self.remote.issue_threads[7] = [self.comment(identifier=500 + index) for index in range(90)]
+        history, events = self.app.initial_history(self.issue(comments=250))
+        self.assertEqual([item['id'] for item in history], list(range(570, 590)))
+        endpoints = [call[1] for call in self.remote.calls if call[0] == 'gh']
+        self.assertEqual([parse_qs(urlsplit(url).query)['page'][0] for url in endpoints], ['2', '1'])
+
+    def test_pr_issue_list_row_can_only_defer_unmapped_comment_temporarily(self):
+        source = f'github:{bridge.ALLOWED_REPOSITORY}:issue:7'
+        self.state.db.execute("INSERT INTO intake_events(key,kind,payload) VALUES (?,?,?)",
+                              ('comment-first', 'comment', json.dumps(self.comment())))
+        self.state.db.execute("INSERT INTO intake_events(key,kind,payload,source) VALUES (?,?,?,?)",
+                              ('pr-in-issues-list', 'issue', json.dumps(self.issue(pull_request={'url': 'example'})), source))
+        self.state.db.commit()
+        with patch.object(bridge, 'utcnow', return_value=TIME):
+            self.app.drain_intake_events(BEFORE, time.monotonic() + 10)
+        self.assertEqual(self.state.db.execute("SELECT status FROM intake_events WHERE key='pr-in-issues-list'").fetchone()[0], 'done')
+        with patch.object(bridge, 'utcnow', return_value='2026-09-15T10:02:00Z'):
+            self.app.drain_intake_events(BEFORE, time.monotonic() + 10)
+        self.assertEqual(set(row[0] for row in self.state.db.execute('SELECT status FROM intake_events')), {'done'})
+        self.assertEqual(self.remote.calls, [])
+
+    def test_legacy_later_done_blocks_earlier_pending_authorization(self):
+        self.app.intake_issue(self.issue(), BEFORE)
+        self.remote.permissions['public-maintainer'] = 'write'
+        self.followup()
+        earlier, remote = self.state.db.execute('SELECT event,remote_id FROM triage_pending').fetchone()
+        later = earlier + ':later-v8-observation'
+        self.state.db.execute("INSERT INTO triage_pending(event,source,remote_id,login,created_at,status,comment_id,author_id,comment_version) "
+                              "SELECT ?,source,remote_id,login,created_at,'done',comment_id,author_id,comment_version FROM triage_pending", (later,))
+        self.state.db.commit()
+        self.app.append(remote, later + ':authorized-triage', 'Legacy delivered trigger', AGENT)
+        writes = len(self.writes())
+        self.app.drain_triage_pending()
+        self.assertEqual(len(self.writes()), writes)
+        self.assertEqual(self.state.db.execute('SELECT status,reason FROM triage_pending WHERE event=?', (earlier,)).fetchone(),
+                         ('denied', 'duplicate_authorization_version'))
+
+    def test_legacy_later_unknown_blocks_earlier_pending_authorization(self):
+        self.app.intake_issue(self.issue(), BEFORE)
+        self.remote.permissions['public-maintainer'] = 'write'
+        self.followup()
+        earlier, remote = self.state.db.execute('SELECT event,remote_id FROM triage_pending').fetchone()
+        later = earlier + ':later-v8-observation'
+        self.state.db.execute("INSERT INTO triage_pending(event,source,remote_id,login,created_at,status,comment_id,author_id,comment_version) "
+                              "SELECT ?,source,remote_id,login,created_at,'denied',comment_id,author_id,comment_version FROM triage_pending", (later,))
+        self.state.db.commit()
+        self.state.operation('comment:' + later + ':authorized-triage', 'intent', remote)
+        writes = len(self.writes())
+        self.app.drain_triage_pending()
+        self.assertEqual(len(self.writes()), writes)
+        self.assertEqual(self.state.get('operations', 'comment:' + later + ':authorized-triage', valuecol='state'), 'intent')
 
 
 if __name__ == "__main__":

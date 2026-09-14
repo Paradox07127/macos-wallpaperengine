@@ -29,7 +29,7 @@ import tempfile
 import time
 from typing import Any
 
-POLICY_VERSION = "multica-mmrun-static-v8"
+POLICY_VERSION = "multica-mmrun-static-v9"
 RELEASE_VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.]+)?\Z")
 SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 SHA = re.compile(r"[0-9a-f]{40}\Z")
@@ -37,6 +37,7 @@ JOB = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,95}\Z")
 RUN = re.compile(r"^RUN ([A-Za-z0-9][A-Za-z0-9_.-]{0,95})\s+models=", re.M)
 MODEL_NAMES = {"codex", "grok", "claude", "agy"}
 MAX_REPORT_BYTES = 8 * 1024 * 1024
+MAX_SCRIPT_BYTES = 8 * 1024 * 1024
 MAX_ATTESTATION_BYTES = MAX_REPORT_BYTES * (2 * len(MODEL_NAMES)) + 1024 * 1024
 MAX_COMMAND_STDOUT_BYTES = 16 * 1024 * 1024
 MAX_COMMAND_STDERR_BYTES = 1024 * 1024
@@ -201,7 +202,7 @@ def failed_result(job_dir: Path, manifest: Any, reason: str, *, artifacts=None, 
     except (ReviewError, OSError, KeyError, TypeError, ValueError):
         return {"job_id": job_dir.name, "verdict": "FAILED", "attestation_path": None, "reasons": [reason]}
 
-def digest(path: Path, *, max_bytes: int = MAX_REPORT_BYTES) -> str:
+def digest(path: Path, *, max_bytes: int = MAX_SCRIPT_BYTES) -> str:
     return read_bytes_snapshot(path, max_bytes=max_bytes, consumer=lambda chunk: None)[1]
 
 
@@ -464,12 +465,25 @@ def git_environment() -> dict[str, str]:
     return env
 
 
+def kill_unreaped_command_group(proc):
+    """Same WNOWAIT contract as capture: retain leader identity through cleanup."""
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    except PermissionError:
+        observed = os.waitid(os.P_PID, proc.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+        if sys.platform != "darwin" or observed is None:
+            raise
+
+
 def bounded_command(argv, *, cwd=None, env=None, timeout=30,
                     stdout_limit=MAX_COMMAND_STDOUT_BYTES, stderr_limit=MAX_COMMAND_STDERR_BYTES, stdout_sink=None):
     """Bound controller output before allocation; own and clean up this process group."""
     deadline = time.monotonic() + timeout
     proc = subprocess.Popen(argv, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True, shell=False)
+    can_signal = True
     buffers = {"stdout": bytearray(), "stderr": bytearray()}
     limits = {"stdout": stdout_limit, "stderr": stderr_limit}
     sizes = {"stdout": 0, "stderr": 0}
@@ -500,18 +514,31 @@ def bounded_command(argv, *, cwd=None, env=None, timeout=30,
                             stdout_sink.write(chunk)
                         else:
                             buffers[name].extend(chunk)
-            rc = proc.wait(timeout=max(0.001, deadline - time.monotonic()))
+            while True:
+                check_deadline()
+                try:
+                    observed = os.waitid(os.P_PID, proc.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+                except ChildProcessError as exc:
+                    can_signal = False
+                    raise ReviewError("COMMAND_CHILD_IDENTITY_LOST") from exc
+                if observed is not None:
+                    break
+                if time.monotonic() >= deadline:
+                    raise subprocess.TimeoutExpired(argv, timeout)
+                time.sleep(min(0.01, max(0, deadline - time.monotonic())))
         try:
             stdout = bytes(buffers["stdout"]).decode("utf-8")
         except UnicodeError as exc:
             raise ReviewError("PREPARATION_COMMAND_INVALID_UTF8") from exc
+        kill_unreaped_command_group(proc)
+        can_signal = False
+        rc = proc.wait(timeout=5)
         return subprocess.CompletedProcess(argv, rc, stdout=stdout, stderr="")
     except BaseException:
-        try:
-            os.killpg(proc.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        proc.wait(timeout=5)
+        if can_signal:
+            kill_unreaped_command_group(proc)
+            can_signal = False
+            proc.wait(timeout=5)
         raise
     finally:
         proc.stdout.close()
@@ -629,7 +656,7 @@ def verify_frozen(manifest: dict[str, Any]) -> None:
 
 
 def make_readonly(frozen: Path) -> None:
-    # Do not follow repository symlinks or chmod the shared Git metadata directory.
+    # The independent frozen .git is read-only too; never follow repository symlinks.
     for directory, dirs, files in os.walk(frozen, followlinks=False, topdown=False):
         for name in files + dirs:
             path = Path(directory) / name
@@ -1035,6 +1062,35 @@ def attestation_path(manifest: dict[str, Any]) -> Path:
     return path
 
 
+def canonical_equal(left, right):
+    return json.dumps(left, sort_keys=True, separators=(",", ":"), allow_nan=False) == json.dumps(right, sort_keys=True, separators=(",", ":"), allow_nan=False)
+
+
+STABLE_ATTESTATION_FIELDS = ("schema_version", "job_id", "kind", "version", "repo", "source_repo", "base_sha", "head_sha",
+    "merge_base_sha", "tree_sha", "frozen_checkout", "policy", "provenance", "mmrun_run_id", "created_at", "controller_checkout",
+    "empty_delta", "release_empty_delta", "dispatch_request_sha256", "dispatch_receipt_path", "dispatch_receipt_sha256",
+    "dispatch_result", "terminal_evidence_path", "terminal_evidence_sha256", "verdict", "attestation_path", "artifact_root",
+    "artifacts", "reports", "findings", "reasons", "limitations")
+
+
+def repair_attestation_pointer(job_dir, result, hashed):
+    pointer = job_dir / "attestation.json"
+    expected = {"schema_version": 1, "job_id": result["job_id"], "verdict": result["verdict"],
+                "attestation_path": result["attestation_path"], "sha256": hashed}
+    if pointer.is_symlink():
+        raise ReviewError("ATTESTATION_POINTER_SYMLINK")
+    current = None
+    if pointer.exists():
+        try:
+            current = load_json(pointer, max_bytes=65536)
+        except CollectionUnavailable:
+            raise
+        except ReviewError:
+            pass  # This is an advisory cache; the full original was revalidated.
+    if not canonical_equal(current, expected):
+        write_json(pointer, expected)
+
+
 def attest(job_dir: Path, manifest: dict[str, Any], verdict: str, *, reasons: list[str] | None = None,
            artifacts: list[dict[str, str]] | None = None, reports: dict[str, Any] | None = None) -> dict[str, Any]:
     run_id = manifest.get("mmrun_run_id")
@@ -1050,10 +1106,17 @@ def attest(job_dir: Path, manifest: dict[str, Any], verdict: str, *, reasons: li
               "reasons": reasons or [], "limitations": ["Static review only; no build, runtime, archive, or release certification.",
                   "Raw event streams are not read or hashed.", "Frozen checkout retained; no automatic cleanup."]}
     if destination.exists():
-        original = require_object(load_json(destination, max_bytes=MAX_ATTESTATION_BYTES), "EXISTING_ATTESTATION_INVALID")
+        original, original_hash, _ = read_json_snapshot(destination, max_bytes=MAX_ATTESTATION_BYTES)
+        require_object(original, "EXISTING_ATTESTATION_INVALID")
         if original.get("verdict") in ("PASS", "NEEDS_REVIEW"):
-            if (verdict == original["verdict"] and artifacts == original.get("artifacts")
-                    and manifest.get("terminal_evidence_sha256") == original.get("terminal_evidence_sha256")):
+            if verdict in ("PASS", "NEEDS_REVIEW"):
+                if (not canonical_equal({key: original.get(key) for key in STABLE_ATTESTATION_FIELDS},
+                                        {key: result.get(key) for key in STABLE_ATTESTATION_FIELDS})
+                        or type(original.get("collected_at")) not in (int, float)
+                        or not math.isfinite(original["collected_at"]) or original["collected_at"] <= 0):
+                    result.update(verdict="FAILED", attestation_path=None, reasons=["HISTORICAL_ATTESTATION_MISMATCH"])
+                    return result
+                repair_attestation_pointer(job_dir, original, original_hash)
                 return original
             # Preserve the original completed review. This return value describes
             # current validity only and cannot advertise historical PASS as fresh.
@@ -1062,9 +1125,8 @@ def attest(job_dir: Path, manifest: dict[str, Any], verdict: str, *, reasons: li
     if len((json.dumps(result, ensure_ascii=False, indent=2) + "\n").encode()) > MAX_ATTESTATION_BYTES:
         result.update(verdict="FAILED", reports={}, findings=[], artifacts=[], reasons=["ATTESTATION_SIZE_LIMIT"])
     write_json(destination, result)
-    # Never create a second, model-readable copy of a peer's report.
-    write_json(job_dir / "attestation.json", {"schema_version": 1, "job_id": manifest["job_id"],
-               "verdict": result["verdict"], "attestation_path": str(destination), "sha256": digest(destination, max_bytes=MAX_ATTESTATION_BYTES)})
+    # The cache contains identity/hash only, never a second peer report.
+    repair_attestation_pointer(job_dir, result, digest(destination, max_bytes=MAX_ATTESTATION_BYTES))
     return result
 
 
@@ -1277,23 +1339,38 @@ def record_terminal_failure(job_dir: Path, manifest, reason: str, artifacts=None
     write_json(job_dir / "manifest.json", manifest)
 
 
-def validate_dispatch_contract(job_dir: Path, manifest: dict[str, Any]) -> None:
-    """Shared collector/gate contract: actual request and all execution inputs."""
-    reject_terminal_failure(job_dir, manifest)
+def make_dispatch_request(job_dir: Path, manifest):
     provenance = require_object(manifest.get("provenance"), "PROVENANCE_NOT_OBJECT")
-    validate_execution_provenance(provenance)
+    policy = require_object(manifest.get("policy"), "POLICY_NOT_OBJECT")
+    expected_policy = review_policy(manifest.get("kind"), policy.get("models"))
+    if policy != expected_policy or provenance.get("models") != policy["models"]:
+        raise ReviewError("DISPATCH_MODEL_POLICY_MISMATCH")
+    executable = provenance["mmrun_path"]
+    if manifest.get("empty_delta") is True:
+        argv = [executable, "start", "--mode", "review", "--schema", str(Path(provenance["mmrun_d_snapshot"]) / "review.schema.json"),
+                "--dir", manifest["frozen_checkout"], "--models", ",".join(policy["models"]), "--tag", "multica:empty-delta"]
+    else:
+        argv = [executable, "review", "--base", manifest["base_sha"], "--exhaustive", "--dir", manifest["frozen_checkout"],
+                "--models", ",".join(policy["models"]), "--notes-file", str(job_dir / "review-notes.txt")]
+    return {"schema_version": 1, "job_id": manifest["job_id"], "candidate": candidate_identity(manifest),
+            "policy": policy, "argv": argv, "executable_sha256": provenance["mmrun_sha256"], "provenance": provenance,
+            "cwd": manifest["controller_checkout"],
+            "stdin": str(job_dir / "release-prompt.txt") if manifest.get("empty_delta") else os.devnull}
+
+
+def validate_dispatch_contract(job_dir: Path, manifest: dict[str, Any]) -> None:
+    """The same exact request is produced, dispatched and checked by collector/gate."""
+    reject_terminal_failure(job_dir, manifest)
+    validate_execution_provenance(manifest["provenance"])
     request, hashed, _ = read_json_snapshot(job_dir / "dispatch-request.json")
-    require_object(request, "DISPATCH_REQUEST_NOT_OBJECT")
-    argv = request.get("argv")
-    if (hashed != manifest.get("dispatch_request_sha256")
-            or type(request.get("schema_version")) is not int or request["schema_version"] != 1
-            or request.get("job_id") != manifest.get("job_id")
-            or request.get("candidate") != candidate_identity(manifest)
-            or request.get("provenance") != provenance
-            or request.get("executable_sha256") != provenance.get("mmrun_sha256")
-            or type(argv) is not list or not argv or any(type(v) is not str for v in argv)
-            or argv[0] != provenance.get("mmrun_path")):
+    expected = make_dispatch_request(job_dir, manifest)
+    if (hashed != manifest.get("dispatch_request_sha256") or not canonical_equal(request, expected)):
         raise ReviewError("DISPATCH_REQUEST_CONTRACT_MISMATCH")
+
+
+def validate_model_status_set(root: Path, models) -> None:
+    if {p.name for p in root.glob("*.status")} != {f"{model}.status" for model in models}:
+        raise ReviewError("Missing/unexpected model status artifact")
 
 
 def write_json_once(path: Path, value: Any) -> None:
@@ -1369,6 +1446,7 @@ def _collect_locked(job_dir: Path, *, initial_wait=False) -> dict[str, Any]:
                 "reasons": ["MANIFEST_NOT_OBJECT"]}
     reports: dict[str, Any] = {}
     artifacts: list[dict[str, str]] = []
+    terminal_observed = False
     try:
         validate_manifest_policy(manifest)
         if manifest["job_id"] != job_dir.name or manifest["kind"] not in ("pr", "release"):
@@ -1415,9 +1493,7 @@ def _collect_locked(job_dir: Path, *, initial_wait=False) -> dict[str, Any]:
                 or meta.get("models") != ",".join(models)
                 or meta.get("session") != manifest["provenance"]["session"]):
             raise ReviewError("mmrun metadata does not match this exact review job")
-        expected_statuses = {f"{model}.status" for model in models}
-        if {p.name for p in root.glob("*.status")} != expected_statuses:
-            raise ReviewError("Missing/unexpected model status artifact")
+        validate_model_status_set(root, models)
         bind_worker_identities(manifest, root)
         write_json(job_dir / "manifest.json", manifest)
         status_snapshots = {model: read_text_snapshot(root / f"{model}.status") for model in models}
@@ -1433,6 +1509,7 @@ def _collect_locked(job_dir: Path, *, initial_wait=False) -> dict[str, Any]:
             raise ReviewError("MODEL_EXECUTION_FAILED_OR_STALE")
         if any(s == "RUNNING" for s in statuses.values()):
             return pending(job_dir, "Models still running; full evidence validation deferred until terminal status")
+        terminal_observed = True
         if initial_wait:
             validate_target_evidence(manifest)
         artifacts.append({"path": "run.meta", "sha256": meta_hash})
@@ -1484,7 +1561,13 @@ def _collect_locked(job_dir: Path, *, initial_wait=False) -> dict[str, Any]:
     except (ReviewError, OSError, KeyError, TypeError, ValueError) as exc:
         if isinstance(exc, OSError) and temporary_os_error(exc):
             return pending(job_dir, "EVIDENCE_TEMPORARILY_UNAVAILABLE")
-        return failed_result(job_dir, manifest, str(exc) if isinstance(exc, ReviewError) else "EVIDENCE_VALIDATION_FAILED", artifacts=artifacts, reports=reports)
+        reason = str(exc) if isinstance(exc, ReviewError) else "EVIDENCE_VALIDATION_FAILED"
+        if terminal_observed:
+            try:
+                record_terminal_failure(job_dir, manifest, reason, artifacts)
+            except (ReviewError, OSError, ValueError, TypeError):
+                reason = "TERMINAL_FAILURE_RECORD_UNAVAILABLE"
+        return failed_result(job_dir, manifest, reason, artifacts=artifacts, reports=reports)
 
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
@@ -1504,18 +1587,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
 def _dispatch_locked(args, job_dir, manifest, env, deadline):
     validate_execution_provenance(manifest["provenance"])
     validate_execution_environment(env, manifest["provenance"])
-    executable = str(Path(args.mmrun).expanduser().resolve())
-    if manifest.get("empty_delta") is True:
-        argv = [executable, "start", "--mode", "review", "--schema", str(Path(env["MMRUN_D"]) / "review.schema.json"),
-                "--dir", manifest["frozen_checkout"], "--models", ",".join(args.models), "--tag", "multica:empty-delta"]
-    else:
-        argv = [executable, "review", "--base", args.base, "--exhaustive", "--dir", manifest["frozen_checkout"],
-                "--models", ",".join(args.models), "--notes-file", str(job_dir / "review-notes.txt")]
-    request = {"schema_version": 1, "job_id": manifest["job_id"], "candidate": candidate_identity(manifest), "argv": argv,
-               "executable_sha256": manifest["provenance"]["mmrun_sha256"],
-               "provenance": manifest["provenance"],
-               "cwd": manifest["controller_checkout"],
-               "stdin": str(job_dir / "release-prompt.txt") if manifest.get("empty_delta") else os.devnull}
+    if (str(Path(args.mmrun).expanduser().resolve()) != manifest["provenance"]["mmrun_path"]
+            or args.base != manifest["base_sha"] or args.models != manifest["policy"]["models"]):
+        raise ReviewError("DISPATCH_ARGUMENT_POLICY_MISMATCH")
+    request = make_dispatch_request(job_dir, manifest)
     write_json(job_dir / "dispatch-request.json", request)
     manifest.update(phase="DISPATCHING", spawn_intent=True, dispatch_request_sha256=digest(job_dir / "dispatch-request.json"))
     write_json(job_dir / "manifest.json", manifest)

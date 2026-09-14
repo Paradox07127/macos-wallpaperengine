@@ -259,7 +259,7 @@ class ExecutorTests(unittest.TestCase):
 
     def test_lost_comment_ack_is_reconciled_without_duplicate_comment(self):
         self.commands.lose_comment_ack = True
-        with self.assertRaises(executor.bridge.BridgeError):
+        with self.assertRaises(executor.JobError):
             self.publish()
         self.assertFalse((self.job_dir / "published.json").exists())
         self.assertEqual(len(self.commands.comments), 1)
@@ -449,7 +449,7 @@ class ExecutorTests(unittest.TestCase):
     def test_invisible_ambiguous_comment_is_not_sent_twice(self):
         self.commands.lose_comment_ack = True
         self.commands.hide_comments = True
-        with self.assertRaises(executor.bridge.BridgeError):
+        with self.assertRaises(executor.JobError):
             self.publish()
         self.assertEqual(self.publish()['state'], 'awaiting_comment_reconciliation')
         self.assertEqual(len(self.commands.comments), 1)
@@ -764,7 +764,7 @@ class ExecutorTests(unittest.TestCase):
 
     def test_untrusted_exact_comment_cannot_reconcile_uncertain_write(self):
         self.commands.lose_comment_ack = True
-        with self.assertRaises(executor.bridge.BridgeError):
+        with self.assertRaises(executor.JobError):
             self.publish()
         self.commands.comments[0]['author_id'] = 'attacker'
         self.assertEqual(self.publish()['state'], 'awaiting_comment_reconciliation')
@@ -1028,24 +1028,93 @@ class ExecutorTests(unittest.TestCase):
         self.assertEqual(attempts, 2)
         self.assertEqual(len(self.commands.comments), 1)
 
-    def test_new_generation_during_result_comment_cannot_update_shared_issue(self):
-        new_job = 'pr-7-' + 'f' * 24
+    def test_generation_lock_is_held_through_status_comment_and_update(self):
         original = self.commands.multica
-        def changed_generation(argv, body=None):
-            result = original(argv, body)
-            if argv[:3] == ['issue', 'comment', 'add']:
-                with executor.bridge.issue_generation_lock(self.cfg, self.req['multica_issue_id']) as locked:
-                    self.assertTrue(locked)
-                    executor.bridge.set_generation(self.cfg, self.req['multica_issue_id'], new_job)
-            return result
-        with patch.object(self.commands, 'multica', side_effect=changed_generation):
-            self.assertEqual(self.publish()['state'], 'superseded')
-        self.assertEqual(self.commands.updates, [])
+        def competing_intake(argv, body=None):
+            with executor.bridge.issue_generation_lock(self.cfg, self.req['multica_issue_id']) as locked:
+                self.assertFalse(locked)
+            return original(argv, body)
+        def status_post(payload):
+            with executor.bridge.issue_generation_lock(self.cfg, self.req['multica_issue_id']) as locked:
+                self.assertFalse(locked)
+        self.commands.after_status = status_post
+        with patch.object(self.commands, 'multica', side_effect=competing_intake):
+            self.assertEqual(self.publish()['state'], 'success')
+        self.assertEqual(len(self.commands.updates), 1)
         self.assertEqual(len(self.commands.comments), 1)
-        self.assertIn(self.head, self.commands.comments[0]['content'])
-        self.assertIn('it is historical', self.commands.comments[0]['content'])
+
+    def test_generation_missing_changed_or_busy_revokes_even_cached_success(self):
+        for condition in ('missing', 'changed', 'busy'):
+            with self.subTest(condition=condition):
+                with executor.bridge.issue_generation_lock(self.cfg, self.req['multica_issue_id']):
+                    executor.bridge.set_generation(self.cfg, self.req['multica_issue_id'], self.job_id)
+                self.publish()
+                if condition == 'missing':
+                    executor.bridge.generation_path(self.cfg, self.req['multica_issue_id']).unlink()
+                    self.assertEqual(self.publish()['state'], 'awaiting_issue_generation')
+                elif condition == 'changed':
+                    with executor.bridge.issue_generation_lock(self.cfg, self.req['multica_issue_id']):
+                        executor.bridge.set_generation(self.cfg, self.req['multica_issue_id'], 'pr-7-' + 'f' * 24)
+                    self.assertEqual(self.publish()['state'], 'superseded')
+                else:
+                    with executor.bridge.issue_generation_lock(self.cfg, self.req['multica_issue_id']):
+                        self.assertEqual(self.publish()['state'], 'busy')
+                self.assertEqual(self.commands.statuses[-1][1]['state'], 'pending')
+
+    def test_missing_generation_never_writes_first_success(self):
+        executor.bridge.generation_path(self.cfg, self.req['multica_issue_id']).unlink()
+        self.assertEqual(self.publish()['state'], 'awaiting_issue_generation')
+        self.assertEqual(self.commands.statuses, [])
+        self.assertEqual(self.commands.comments, [])
+
+    def test_policy_evaluation_bridge_error_withholds_owned_success(self):
+        self.publish()
+        with patch.object(executor, 'current_policy', side_effect=executor.bridge.BridgeError('invalid release models')):
+            with self.assertRaises(executor.JobError):
+                self.publish()
         self.assertEqual(self.commands.statuses[-1][1]['state'], 'pending')
-        self.assertFalse((self.job_dir / 'published.json').exists())
+
+    def test_transient_manifest_unavailability_withholds_without_failed_comment(self):
+        self.publish()
+        original = executor.runner.load_json
+        def unavailable(path):
+            if Path(path) == self.review_dir / 'manifest.json':
+                raise executor.runner.CollectionUnavailable('volume busy')
+            return original(path)
+        with patch.object(executor.runner, 'load_json', side_effect=unavailable):
+            self.assertEqual(self.publish()['state'], 'pending')
+        self.assertEqual(self.commands.statuses[-1][1]['state'], 'pending')
+        self.assertEqual(len(self.commands.comments), 1)
+        self.assertNotIn('FAILED', self.commands.comments[0]['content'])
+
+    def test_cached_confirmation_must_match_deterministic_comment_body(self):
+        self.publish()
+        path = next((self.job_dir / 'comment-intents').glob('*.json'))
+        record = json.loads(path.read_text())
+        record['body_sha256'] = 'f' * 64
+        executor.atomic(path, record)
+        with self.assertRaises(executor.JobError):
+            self.publish()
+        self.assertEqual(self.commands.statuses[-1][1]['state'], 'pending')
+        self.assertEqual(len(self.commands.comments), 1)
+
+    def test_single_retired_job_has_no_current_verdict_but_batch_remains_healthy(self):
+        self.assertEqual(executor.exit_code({'state': 'retired', 'recorded_verdict': 'PASS'}), 3)
+        self.assertEqual(executor.exit_code([{'state': 'retired', 'recorded_verdict': 'PASS'}]), 0)
+
+    def test_target_change_during_fetch_never_starts_runner(self):
+        (self.review_dir / 'manifest.json').unlink()
+        def fetched(argv, **kwargs):
+            if 'fetch' in argv:
+                self.commands.pr['draft'] = True
+                return subprocess.CompletedProcess(argv, 0)
+            return subprocess.CompletedProcess(argv, 0, stdout='https://github.com/' + self.cfg['repository'])
+        with patch.object(executor.bridge, 'Commands', return_value=self.commands), \
+                patch.object(executor.subprocess, 'run', side_effect=fetched), \
+                patch.object(executor, 'execute_runner') as launch:
+            self.assertEqual(executor.run_job(self.cfg, self.job_id)['verdict'], 'SUPERSEDED')
+        launch.assert_not_called()
+        self.assertEqual(json.loads((self.job_dir / 'execution.json').read_text())['phase'], 'NOT_DISPATCHED')
 
     def test_target_change_after_comment_cannot_update_issue_even_before_intake(self):
         original = self.commands.multica
@@ -1114,7 +1183,7 @@ class ExecutorTests(unittest.TestCase):
         output = io.StringIO()
         with patch.object(executor.bridge, 'load_config', return_value=self.cfg), contextlib.redirect_stdout(output):
             code = executor.main(['--config', 'fixture', 'collect', '--job-id', self.job_id])
-        self.assertEqual(code, 0)
+        self.assertEqual(code, 3)
         self.assertEqual(json.loads(output.getvalue())['recorded_verdict'], 'PASS')
         self.assertNotIn('PRIVATE_PEER_REPORT', output.getvalue())
 
@@ -1186,7 +1255,7 @@ class ExecutorTests(unittest.TestCase):
 
     def test_uncertain_comment_reads_only_send_window_with_full_body(self):
         self.commands.lose_comment_ack = True
-        with self.assertRaises(executor.bridge.BridgeError):
+        with self.assertRaises(executor.JobError):
             self.publish()
         intent_path = next((self.job_dir / 'comment-intents').glob('*.json'))
         created = json.loads(intent_path.read_text())['at']
@@ -1238,13 +1307,14 @@ class ExecutorTests(unittest.TestCase):
         self.assertEqual((stray / 'request.json').read_text(), 'private backup')
 
 
-    def test_invalid_generation_record_withholds_newly_written_success(self):
+    def test_invalid_generation_record_withholds_previously_written_success(self):
+        self.publish()
         executor.bridge.generation_path(self.cfg, self.req['multica_issue_id']).write_text('[]')
         with self.assertRaises(executor.JobError):
             self.publish()
         self.assertEqual(self.commands.statuses[-1][1]['state'], 'pending')
-        self.assertEqual(self.commands.updates, [])
-        self.assertFalse((self.job_dir / 'published.json').exists())
+        self.assertEqual(len(self.commands.updates), 1)
+        self.assertTrue((self.job_dir / 'published.json').exists())
 
 
     def test_missing_review_directory_after_launch_is_unknown_not_quiescent(self):

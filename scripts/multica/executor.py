@@ -342,6 +342,14 @@ def _run_attempt(cfg, req, commands, *, dispatch_reserved=False):
                                  stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=180)
         if fetched.returncode:
             raise JobError('Could not fetch verified review commits')
+        phase = 'post-fetch target validation'
+        if not current_target(cfg, req, commands):
+            execution['phase'] = 'NOT_DISPATCHED'
+            atomic(directory / 'execution.json', execution)
+            atomic(directory / 'execution-result.json', {
+                'verdict': 'FAILED', 'job_id': job_id, 'runner_job_id': runner_id,
+                'reasons': ['Target changed during fetch; no runner or models started']})
+            return {'verdict': 'SUPERSEDED', 'job_id': job_id, 'runner_job_id': runner_id}
         argv = [sys.executable, str(Path(__file__).with_name('review_runner.py')), 'run',
                 '--repo', str(source), '--base', req['base_sha'], '--head', req['head_sha'],
                 '--kind', req['kind'], '--job-id', runner_id, '--state-dir', cfg['review_state_dir'],
@@ -720,6 +728,24 @@ def revoke_job_status(cfg, req, commands):
 
 
 def publish_locked(cfg, req, commands, records, runner_id):
+    # Lock order is publication -> status -> issue. Intake releases its status
+    # lock before taking the issue lock; never acquire another status lock here.
+    with bridge.issue_generation_lock(cfg, req['multica_issue_id']) as locked:
+        if not locked:
+            revoke_owned_status(cfg, req, runner_id, commands)
+            return {'job_id': req['job_id'], 'state': 'busy'}
+        try:
+            generation = bridge.current_generation(cfg, req['multica_issue_id'])
+        except bridge.BridgeError as exc:
+            raise JobError('Shared issue generation record is invalid') from exc
+        if generation != req['job_id']:
+            revoke_owned_status(cfg, req, runner_id, commands)
+            return {'job_id': req['job_id'], 'state': (
+                'awaiting_issue_generation' if generation is None else 'superseded')}
+        return publish_generation_locked(cfg, req, commands, records, runner_id)
+
+
+def publish_generation_locked(cfg, req, commands, records, runner_id):
     job_id = req['job_id']
     receipt = records / 'published.json'
     status_intent = records / 'publish-status-intent.json'
@@ -755,6 +781,9 @@ def publish_locked(cfg, req, commands, records, runner_id):
     # A matching remote status never substitutes for fresh evidence validation.
     try:
         result = attempt_result(cfg, req)
+    except runner.CollectionUnavailable:
+        revoke_owned_status(cfg, req, runner_id, commands)
+        return {'job_id': job_id, 'state': 'pending'}
     except (JobError, runner.ReviewError, OSError, ValueError, TypeError, KeyError, RecursionError):
         if previous is None and intent is None:
             raise
@@ -767,6 +796,14 @@ def publish_locked(cfg, req, commands, records, runner_id):
         raise JobError('Unsupported publication verdict')
     revision = result_revision(req, runner_id, result)
     payload = status_payload(req, verdict, runner_id, revision)
+    marker = 'multica-result-' + runner_id + '-' + revision[:24]
+    # /note prevents the cloud task's default human-comment fallback dispatch.
+    # Evidence paths are local; publishing them discloses machine directory names.
+    body = (f'/note\n{marker}\n\nStatic review result: {verdict}\n'
+            f"Head: {req['head_sha']}\nBase: {req['base_sha']}\nAttempt: {runner_id}\n"
+            f'Result revision: {revision} (supersedes earlier results for this attempt).\n'
+            'This record describes only the head and attempt above; after a newer review starts, it is historical.\n'
+            'This is a static-review result only. Build/runtime/release checks and maintainer approval remain required.')
     matches = remote_status_matches(cfg, req, payload, commands)
     if previous and previous.get('revision') == revision and matches:
         confirmation = publication_record(records / 'comment-intents' / (revision + '.json'))
@@ -775,7 +812,7 @@ def publish_locked(cfg, req, commands, records, runner_id):
                     'job_id': job_id, 'runner_job_id': runner_id,
                     'issue_id': req['multica_issue_id'], 'revision': revision}.items())
                 or not isinstance(confirmation.get('body_sha256'), str)
-                or not re.fullmatch(r'[0-9a-f]{64}', confirmation['body_sha256'])):
+                or confirmation['body_sha256'] != bridge.digest(body)):
             raise JobError('Published result lacks a valid comment confirmation')
         try:
             bridge.comment_ack(cfg, {'id': confirmation.get('comment_id')}, req['multica_issue_id'], '')
@@ -808,14 +845,6 @@ def publish_locked(cfg, req, commands, records, runner_id):
     if not remote_status_matches(cfg, req, payload, commands):
         raise JobError('Status write is unconfirmed; durable intent retained') from write_error
     atomic(status_intent, dict(journal, state='verified'))
-    marker = 'multica-result-' + runner_id + '-' + revision[:24]
-    # /note prevents the cloud task's default human-comment fallback dispatch.
-    # Evidence paths are local; publishing them discloses machine directory names.
-    body = (f'/note\n{marker}\n\nStatic review result: {verdict}\n'
-            f"Head: {req['head_sha']}\nBase: {req['base_sha']}\nAttempt: {runner_id}\n"
-            f'Result revision: {revision} (supersedes earlier results for this attempt).\n'
-            'This record describes only the head and attempt above; after a newer review starts, it is historical.\n'
-            'This is a static-review result only. Build/runtime/release checks and maintainer approval remain required.')
     intent_path = records / 'comment-intents' / (revision + '.json')
     comment_intent = publication_record(intent_path)
     identity = {'job_id': job_id, 'runner_job_id': runner_id, 'issue_id': req['multica_issue_id'],
@@ -863,22 +892,13 @@ def publish_locked(cfg, req, commands, records, runner_id):
             raise JobError('Confirmed comment record lacks a valid acknowledgement') from exc
     else:
         raise JobError('Unknown publication comment intent state')
-    # A PR's Multica issue is shared across head SHAs. Its generation lock is
-    # distinct from the per-head GitHub status lock and is shared with intake.
-    with bridge.issue_generation_lock(cfg, req['multica_issue_id']) as locked:
-        if not locked:
-            return {'job_id': job_id, 'state': 'busy'}
-        try:
-            generation = bridge.current_generation(cfg, req['multica_issue_id'])
-        except bridge.BridgeError as exc:
-            raise JobError('Shared issue generation record is invalid') from exc
-        if generation is None:
-            return {'job_id': job_id, 'state': 'awaiting_issue_generation'}
-        if generation != job_id or not confirmed_target(cfg, req, runner_id, commands):
-            revoke_owned_status(cfg, req, runner_id, commands)
-            atomic(status_intent, dict(journal, state='revoked'))
-            return {'job_id': job_id, 'state': 'superseded'}
-        commands.multica(['issue', 'update', req['multica_issue_id'], '--status', 'in_review', '--no-start', '--output', 'json'])
+    # The generation lock remains held through the remote issue update and
+    # durable receipt; a competing head cannot advance its mapping mid-publish.
+    if not confirmed_target(cfg, req, runner_id, commands):
+        revoke_owned_status(cfg, req, runner_id, commands)
+        atomic(status_intent, dict(journal, state='revoked'))
+        return {'job_id': job_id, 'state': 'superseded'}
+    commands.multica(['issue', 'update', req['multica_issue_id'], '--status', 'in_review', '--no-start', '--output', 'json'])
     atomic(receipt, {'job_id': job_id, 'runner_job_id': runner_id, 'state': payload['state'], 'verdict': verdict,
                      'revision': revision, 'head_sha': req['head_sha'], 'context': payload['context'], 'at': bridge.utcnow()})
     atomic(status_intent, dict(journal, state='complete'))
@@ -907,7 +927,7 @@ def publish_result(cfg, job_id, commands=None):
                 runner_id, records = active_attempt(cfg, req)
                 runner.durable_mkdir(records)
                 return publish_locked(cfg, req, commands, records, runner_id)
-            except (JobError, runner.ReviewError, OSError, ValueError, TypeError, KeyError, AttributeError, RecursionError) as exc:
+            except (JobError, runner.ReviewError, bridge.BridgeError, OSError, ValueError, TypeError, KeyError, AttributeError, RecursionError) as exc:
                 # Request identity and the ownership lock precede all local
                 # publication/attempt record reads. Corruption never preserves
                 # our green status merely because its own receipt is unreadable.
@@ -975,7 +995,7 @@ def exit_code(result):
     if verdict == 'SUPERSEDED' or result.get('state') == 'superseded':
         return 4
     if verdict in ('RUNNING', 'NOT_STARTED') or result.get('state') in (
-            'pending', 'busy', 'awaiting_issue_mapping', 'awaiting_issue_generation', 'awaiting_comment_reconciliation'):
+            'pending', 'busy', 'retired', 'awaiting_issue_mapping', 'awaiting_issue_generation', 'awaiting_comment_reconciliation'):
         return 3
     return 0
 

@@ -117,9 +117,8 @@ class CollectTests(unittest.TestCase):
                                            session="multica-job-1", mmrun_home=str(self.root / "mmruns"))
         helper = Path(runner.__file__).with_name("runner_dispatch.py")
         self.manifest["provenance"].update(dispatch_helper=str(helper), dispatch_helper_sha256=runner.digest(helper))
-        runner.write_json(self.job / "dispatch-request.json", {"schema_version": 1, "job_id": "job-1",
-            "argv": [str(self.executable)], "executable_sha256": self.manifest["provenance"]["mmrun_sha256"],
-            "provenance": self.manifest["provenance"], "candidate": runner.candidate_identity(self.manifest)})
+        self.manifest.update(controller_checkout=str(self.root), empty_delta=False)
+        runner.write_json(self.job / "dispatch-request.json", runner.make_dispatch_request(self.job, self.manifest))
         self.manifest["dispatch_request_sha256"] = runner.digest(self.job / "dispatch-request.json")
         self.outcome = {"schema_version": 1, "job_id": "job-1", "started": True, "exit_code": 0,
                         "request_sha256": self.manifest["dispatch_request_sha256"]}
@@ -166,6 +165,8 @@ class CollectTests(unittest.TestCase):
     def test_blocking_findings_override_approve(self):
         for severity in ("critical", "major"):
             # Each severity is an independent synthetic attempt.
+            runner.attestation_path(self.manifest).unlink(missing_ok=True)
+            (self.job / "attestation.json").unlink(missing_ok=True)
             (self.job / "terminal-evidence.json").unlink(missing_ok=True)
             runner.write_json(self.job / "manifest.json", self.manifest)
             runner.write_json(self.artifacts / "codex.json", dict(report(), findings=[finding(severity)]))
@@ -417,6 +418,7 @@ class LaunchTests(unittest.TestCase):
             executable.write_text("not executed")
             args.mmrun = str(executable)
             manifest["provenance"] = fixture_provenance(job, executable)
+            manifest.update(base_sha=BASE, head_sha=HEAD, tree_sha=TREE, policy=runner.review_policy("pr", ["codex", "grok"]))
             env = {"MMRUN_D": str(job), "CODEX_HOME": str(job)}
             process = Mock(pid=123)
             process.wait.side_effect = subprocess.TimeoutExpired("mmrun", 1)
@@ -442,6 +444,7 @@ class LaunchTests(unittest.TestCase):
             executable.write_text("not executed")
             args.mmrun = str(executable)
             manifest["provenance"] = fixture_provenance(job, executable)
+            manifest.update(base_sha=BASE, head_sha=HEAD, tree_sha=TREE, policy=runner.review_policy("pr", ["codex", "grok"]))
             env = {"MMRUN_D": str(job), "CODEX_HOME": str(job)}
             with patch.object(runner, "preparing", return_value=contextlib.nullcontext((job, manifest, env))), patch.object(runner.subprocess, "Popen", side_effect=OSError("no executable")):
                 self.assertEqual(runner.run(args)["verdict"], "FAILED")
@@ -1415,7 +1418,7 @@ class V7EvidenceSnapshotTests(unittest.TestCase):
         for _ in range(2):
             result = runner.collect(self.job)
             self.assertEqual(result['verdict'], 'FAILED')
-            self.assertIn('TERMINAL_EVIDENCE_CHANGED', result['reasons'])
+            self.assertIn(result['reasons'][0], ('TERMINAL_EVIDENCE_CHANGED', 'ATTEMPT_PREVIOUSLY_FAILED'))
         self.assertEqual(baseline.read_bytes(), original)
         self.assertEqual(baseline.stat().st_mode & 0o222, 0)
         runner.write_json_once(baseline, {'replacement': True})
@@ -1430,6 +1433,8 @@ class V7EvidenceSnapshotTests(unittest.TestCase):
     def test_semantic_status_and_metadata_are_bound_to_recorded_snapshot(self):
         original_read = runner.read_bytes_snapshot
         for name in ('codex.status', 'run.meta', 'codex.meta'):
+            (self.job / 'terminal-failure.json').unlink(missing_ok=True)
+            runner.write_json(self.job / 'manifest.json', self.manifest)
             target = self.artifacts / name; original = target.read_bytes()
             mutated = False
             def interleave(path, **kwargs):
@@ -1457,6 +1462,8 @@ class V7EvidenceSnapshotTests(unittest.TestCase):
 
     def test_artifact_limits_precede_reads_and_hashes(self):
         for name in ('codex.status', 'run.meta', 'codex.json', 'codex.out'):
+            (self.job / 'terminal-failure.json').unlink(missing_ok=True)
+            runner.write_json(self.job / 'manifest.json', self.manifest)
             target = self.artifacts / name; original = target.read_bytes()
             with target.open('wb') as stream:
                 stream.truncate(runner.artifact_limit(target) + 1)
@@ -1470,9 +1477,11 @@ class V7EvidenceSnapshotTests(unittest.TestCase):
 
     def test_output_requires_utf8_nonwhitespace_text(self):
         path = self.artifacts / 'codex.out'
-        for value in (b' \n\t', b'valid prefix\xff'):
+        for value, reason in ((b' \n\t', 'ARTIFACT_OUTPUT_EMPTY'), (b'valid prefix\xff', 'ARTIFACT_INVALID_UTF8')):
+            (self.job / 'terminal-failure.json').unlink(missing_ok=True)
+            runner.write_json(self.job / 'manifest.json', self.manifest)
             path.write_bytes(value)
-            self.assertEqual(runner.collect(self.job)['verdict'], 'FAILED')
+            self.assertEqual(runner.collect(self.job)['reasons'], [reason])
 
     def test_dispatch_request_and_inputs_remain_required_after_pass(self):
         self.assertEqual(runner.collect(self.job)['verdict'], 'PASS')
@@ -1598,7 +1607,7 @@ class V8TerminalAndIdentityTests(unittest.TestCase):
     def test_release_version_is_bound_to_original_request_and_terminal_baseline(self):
         self.manifest.update(kind='release', version='1.2.3', policy=runner.review_policy('release', ['codex', 'grok']))
         request = runner.load_json(self.job / 'dispatch-request.json')
-        request['candidate'] = runner.candidate_identity(self.manifest)
+        request = runner.make_dispatch_request(self.job, self.manifest)
         runner.write_json(self.job / 'dispatch-request.json', request)
         self.manifest['dispatch_request_sha256'] = runner.artifact_digest(self.job / 'dispatch-request.json')
         runner.write_json(self.job / 'dispatch-result.json', dict(self.outcome, request_sha256=self.manifest['dispatch_request_sha256']))
@@ -1711,6 +1720,151 @@ class V8HistoricalEvidenceTests(unittest.TestCase):
             with self.assertRaisesRegex(runner.ReviewError, 'NOT_REGULAR_OR_OVERSIZED'):
                 runner.digest(regular)
             opened.assert_not_called()
+
+
+class V9TerminalContractTests(unittest.TestCase):
+    setUp = CollectTests.setUp
+    git_reply = CollectTests.git_reply
+
+    def test_done_artifact_errors_latch_and_cannot_be_repaired_into_pass(self):
+        for case in ('oversized', 'missing', 'invalid_utf8'):
+            # Each subcase starts an independent synthetic attempt.
+            (self.job / 'terminal-failure.json').unlink(missing_ok=True)
+            runner.write_json(self.job / 'manifest.json', self.manifest)
+            target = self.artifacts / ('codex.out' if case == 'invalid_utf8' else 'codex.json')
+            original = target.read_bytes()
+            if case == 'missing':
+                target.unlink()
+            elif case == 'oversized':
+                with target.open('wb') as stream:
+                    stream.truncate(runner.MAX_REPORT_BYTES + 1)
+            else:
+                target.write_bytes(b'bad utf8 \xff')
+            with self.subTest(case=case):
+                self.assertEqual(runner.collect(self.job)['verdict'], 'FAILED')
+                self.assertTrue((self.job / 'terminal-failure.json').is_file())
+                target.write_bytes(original)
+                current = runner.collect(self.job)
+                self.assertEqual(current['reasons'], ['ATTEMPT_PREVIOUSLY_FAILED'])
+
+    def test_done_transient_reads_and_collection_budget_do_not_latch(self):
+        original_read = runner.read_bytes_snapshot
+        for exception in (runner.CollectionUnavailable('temporary'), runner.CollectionDeadline('budget')):
+            def interrupted(path, **kwargs):
+                if path == self.artifacts / 'codex.json':
+                    raise exception
+                return original_read(path, **kwargs)
+            with self.subTest(exception=type(exception)), patch.object(runner, 'read_bytes_snapshot', side_effect=interrupted):
+                self.assertEqual(runner.collect(self.job)['verdict'], 'RUNNING_TIMEOUT')
+            self.assertFalse((self.job / 'terminal-failure.json').exists())
+            self.assertEqual(runner.collect(self.job)['verdict'], 'PASS')
+
+    def test_terminal_pointer_is_rebuilt_from_fully_revalidated_original(self):
+        first = runner.collect(self.job); self.assertEqual(first['verdict'], 'PASS')
+        full = runner.attestation_path(self.manifest); original = full.read_bytes()
+        pointer = self.job / 'attestation.json'
+        for stale in (None, {}, {'schema_version': 1, 'job_id': 'wrong', 'verdict': 'FAILED', 'sha256': '0' * 64}):
+            if stale is None:
+                pointer.unlink()
+            else:
+                runner.write_json(pointer, stale)
+            self.assertEqual(runner.collect(self.job)['verdict'], 'PASS')
+            value = runner.load_json(pointer)
+            self.assertEqual(value['job_id'], self.job.name)
+            self.assertEqual(value['attestation_path'], str(full))
+            self.assertEqual(value['sha256'], runner.digest(full, max_bytes=runner.MAX_ATTESTATION_BYTES))
+            self.assertEqual(full.read_bytes(), original)
+
+    def test_terminal_reuse_rejects_corrupted_stable_fields_without_overwriting_history(self):
+        self.assertEqual(runner.collect(self.job)['verdict'], 'PASS')
+        path = runner.attestation_path(self.manifest); original_bytes = path.read_bytes()
+        original = runner.load_json(path, max_bytes=runner.MAX_ATTESTATION_BYTES)
+        for key, value in (('head_sha', 'd' * 40), ('attestation_path', '/wrong/evidence'),
+                           ('schema_version', True), ('policy', {}), ('reports', {}), ('job_id', 'other')):
+            changed = copy.deepcopy(original); changed[key] = value; runner.write_json(path, changed)
+            corrupted_bytes = path.read_bytes()
+            with self.subTest(key=key):
+                result = runner.collect(self.job)
+                self.assertEqual(result['verdict'], 'FAILED'); self.assertIsNone(result['attestation_path'])
+                self.assertEqual(result['reasons'], ['HISTORICAL_ATTESTATION_MISMATCH'])
+                self.assertEqual(path.read_bytes(), corrupted_bytes)
+            path.write_bytes(original_bytes)
+
+    def test_dispatch_policy_and_all_arguments_must_match_recorded_contract(self):
+        original_request = runner.load_json(self.job / 'dispatch-request.json')
+        cases = []
+        for flag in ('--models', '--base', '--dir', '--notes-file'):
+            changed = copy.deepcopy(original_request); changed['argv'][changed['argv'].index(flag) + 1] = 'changed'
+            cases.append(changed)
+        changed = copy.deepcopy(original_request); changed['argv'] += ['--models', 'codex']; cases.append(changed)
+        changed = copy.deepcopy(original_request); changed['policy'] = {}; cases.append(changed)
+        for request in cases:
+            # Rehashing the request and receipt must not hide changed semantics.
+            runner.write_json(self.job / 'dispatch-request.json', request)
+            current = copy.deepcopy(self.manifest)
+            current['dispatch_request_sha256'] = runner.artifact_digest(self.job / 'dispatch-request.json')
+            runner.write_json(self.job / 'dispatch-result.json', dict(self.outcome, request_sha256=current['dispatch_request_sha256']))
+            runner.write_json(self.job / 'manifest.json', current)
+            self.assertEqual(runner.collect(self.job)['reasons'], ['DISPATCH_REQUEST_CONTRACT_MISMATCH'])
+
+    def test_manifest_cannot_drop_a_dispatched_model(self):
+        changed = copy.deepcopy(self.manifest)
+        changed['policy'] = runner.review_policy('pr', ['codex'])
+        runner.write_json(self.job / 'manifest.json', changed)
+        self.assertEqual(runner.collect(self.job)['reasons'], ['DISPATCH_MODEL_POLICY_MISMATCH'])
+
+    def test_initial_supervisor_identity_failure_proves_no_child_was_started(self):
+        spec = importlib.util.spec_from_file_location('v9_dispatch', Path(runner.__file__).with_name('runner_dispatch.py'))
+        helper = importlib.util.module_from_spec(spec)
+        with patch.dict(sys.modules, {'review_runner': runner}):
+            spec.loader.exec_module(helper)
+        with patch.object(helper, 'process_identity', side_effect=runner.ReviewError('unavailable')), patch.object(helper.subprocess, 'Popen') as spawn:
+            self.assertEqual(helper.supervise(self.job), 0)
+        spawn.assert_not_called()
+        outcome = runner.load_json(self.job / 'dispatch-result.json')
+        self.assertIs(outcome['started'], False)
+        self.assertEqual(outcome['exit_code'], 127)
+        self.assertEqual(outcome['error'], 'SUPERVISOR_IDENTITY_UNAVAILABLE')
+
+    def test_initial_supervisor_identity_write_failure_records_no_start(self):
+        spec = importlib.util.spec_from_file_location('v9_dispatch_write', Path(runner.__file__).with_name('runner_dispatch.py'))
+        helper = importlib.util.module_from_spec(spec)
+        with patch.dict(sys.modules, {'review_runner': runner}):
+            spec.loader.exec_module(helper)
+        original = helper.write_json
+        def interrupted(path, value):
+            if path.name == 'dispatch-identity.json':
+                raise OSError('identity storage unavailable')
+            return original(path, value)
+        with patch.object(helper, 'write_json', side_effect=interrupted), patch.object(helper.subprocess, 'Popen') as spawn:
+            self.assertEqual(helper.supervise(self.job), 0)
+        spawn.assert_not_called()
+        outcome = runner.load_json(self.job / 'dispatch-result.json')
+        self.assertIs(outcome['started'], False)
+        self.assertEqual(outcome['request_sha256'], runner.artifact_digest(self.job / 'dispatch-request.json'))
+        self.assertEqual(outcome['exit_code'], 127)
+
+
+class V9UnreapedCleanupTests(unittest.TestCase):
+    def test_invalid_utf8_is_cleaned_before_leader_identity_is_reaped(self):
+        cleanup = runner.kill_unreaped_command_group; observed = []
+        def verified(proc):
+            value = os.waitid(os.P_PID, proc.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+            self.assertIsNotNone(value)
+            observed.append(proc)
+            return cleanup(proc)
+        with patch.object(runner, 'kill_unreaped_command_group', side_effect=verified):
+            with self.assertRaisesRegex(runner.ReviewError, 'PREPARATION_COMMAND_INVALID_UTF8'):
+                runner.bounded_command([sys.executable, '-c', 'import os;os.write(1,b"\\xff")'])
+        self.assertEqual(len(observed), 1)
+        self.assertIsNotNone(observed[0].poll())
+
+    def test_exception_after_reaping_never_signals_old_process_group(self):
+        with patch.object(runner, 'kill_unreaped_command_group', wraps=runner.kill_unreaped_command_group) as cleanup, patch.object(
+                runner.subprocess, 'CompletedProcess', side_effect=ValueError('post-reap conversion')):
+            with self.assertRaisesRegex(ValueError, 'post-reap conversion'):
+                runner.bounded_command([sys.executable, '-c', 'print("fixture")'])
+        cleanup.assert_called_once()
 
 
 if __name__ == "__main__":

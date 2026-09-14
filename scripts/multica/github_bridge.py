@@ -72,8 +72,15 @@ def parse_json(text):
                 raise BridgeError("JSON nesting exceeds supported depth")
         elif char in "]}":
             depth -= 1
+    def unique_object(pairs):
+        value = {}
+        for key, item in pairs:
+            if key in value:
+                raise BridgeError("Duplicate JSON object key")
+            value[key] = item
+        return value
     try:
-        return json.loads(text)
+        return json.loads(text, object_pairs_hook=unique_object)
     except (json.JSONDecodeError, RecursionError) as exc:
         raise BridgeError("Response was not supported JSON") from exc
 
@@ -509,23 +516,25 @@ class Commands:
         finally:
             if proc is not None:
                 try:
-                    os.killpg(proc.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-                except PermissionError:
-                    # Darwin reports EPERM for a zombie-only group. Keep the
-                    # PID reserved while confirming its leader has exited;
-                    # an active leader's cleanup failure must still surface.
-                    if (sys.platform != "darwin" or os.waitid(os.P_PID, proc.pid,
-                            os.WEXITED | os.WNOHANG | os.WNOWAIT) is None):
-                        raise
-                try:
-                    proc.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    if finished:
-                        raise BridgeError("CLI cleanup did not complete; remote outcome may be uncertain")
-                for name in outputs:
-                    getattr(proc, name).close()
+                    try:
+                        os.killpg(proc.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                    except PermissionError:
+                        # Darwin reports EPERM for a zombie-only group. Keep the
+                        # PID reserved while confirming its leader has exited;
+                        # an active leader's cleanup failure must still surface.
+                        if (sys.platform != "darwin" or os.waitid(os.P_PID, proc.pid,
+                                os.WEXITED | os.WNOHANG | os.WNOWAIT) is None):
+                            raise
+                    try:
+                        proc.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        if finished:
+                            raise BridgeError("CLI cleanup did not complete; remote outcome may be uncertain")
+                finally:
+                    for name in outputs:
+                        getattr(proc, name).close()
 
     def github_time(self):
         headers = self.run([self.cfg["gh_path"], "api", "--hostname", "github.com", "--method", "GET",
@@ -728,6 +737,17 @@ class Bridge:
         self.state.operation(op, "done", remote_id)
         return remote_id
 
+    def reconcile_comment(self, remote_id, op):
+        """Read-only recovery of a write that may already have triggered work."""
+        created = self.state.get("operations", op, valuecol="created_at")
+        comments = rows(self.commands.multica(["issue", "comment", "list", remote_id,
+                                               "--since", since_overlap(created), "--output", "json"]))
+        original_body = self.state.get("meta", "comment-body:" + op)
+        if original_body is not None and any(trusted_comment(self.cfg, item, original_body) for item in comments):
+            self.state.operation(op, "done", remote_id)
+            return
+        raise BridgeError("Uncertain operation " + op + ": authenticated full comment not found; explicit reconciliation required")
+
     def append(self, remote_id, event_key, body, agent_id=None):
         op = "comment:" + event_key
         status = self.state.get("operations", op, valuecol="state")
@@ -739,16 +759,8 @@ class Bridge:
         expected_body = prefix + token + "\n" + mention + body
         # A mutable issue description is not proof that a comment was delivered.
         if status == "intent":
-            # Human bridge only writes top-level comments. --since includes full
-            # content, and an output cap makes oversized recovery fail closed.
-            created = self.state.get("operations", op, valuecol="created_at")
-            comments = rows(self.commands.multica(["issue", "comment", "list", remote_id,
-                                                   "--since", since_overlap(created), "--output", "json"]))
-            original_body = self.state.get("meta", "comment-body:" + op)
-            if original_body is not None and any(trusted_comment(self.cfg, item, original_body) for item in comments):
-                self.state.operation(op, "done", remote_id)
-                return
-            raise BridgeError("Uncertain operation " + op + ": authenticated full comment not found; explicit reconciliation required")
+            self.reconcile_comment(remote_id, op)
+            return
         self.report(f"{'PLAN ' if self.dry_run else ''}append {event_key}")
         if not self.dry_run:
             # Mention only trusted configured IDs; source text is quoted JSON.
@@ -801,7 +813,9 @@ class Bridge:
         recent = deque(maxlen=self.cfg["max_history_comments"])
         recent.extend(self.pages(f"issues/{number}/comments", {}, start_page=start))
         if start > 1 and not recent:
-            raise BridgeError("Comment count changed during history fetch; retry with a fresh issue snapshot")
+            # Stored issue counts can outlive deleted comments. One bounded
+            # restart prevents every retry from requesting the same empty tail.
+            recent.extend(self.pages(f"issues/{number}/comments", {}, start_page=1))
         included, events = [], []
         budget = self.cfg["max_history_chars"]
         for comment in reversed(recent):
@@ -847,6 +861,12 @@ class Bridge:
                 and self.state.get("meta", "history-receipts:" + source) != "done"):
             self.initial_receipts(source, remote_id, parse_json(saved))
 
+    def issue_receipt(self, source, remote, event, fingerprint, updated_at):
+        with self.state.db:
+            self.state.db.execute("INSERT OR REPLACE INTO operations VALUES (?,?,?,?)", (event, "done", remote, utcnow()))
+            for key, value in (("snapshot:" + source, fingerprint), ("snapshot-time:" + source, updated_at)):
+                self.state.db.execute("INSERT OR REPLACE INTO meta VALUES (?,?)", (key, value))
+
     def triage_snapshot(self, item, history):
         return self.source_body("github_issue", item, {
             "history_comments": history,
@@ -867,7 +887,12 @@ class Bridge:
             self.restore_history_receipts(source, mapped)
         eligible = self.cfg["triage_label"] in labels or (self.cfg["triage_all_new"] and timestamp(item.get("created_at")) >= timestamp(baseline))
         if not mapped and not eligible:
-            self.state.meta("source-admission:" + source, "ignored")
+            with self.state.db:
+                self.state.db.execute("INSERT OR REPLACE INTO meta VALUES (?,?)", ("source-admission:" + source, "ignored"))
+                if self.state.get("meta", "initial-triage:" + source) == "pending":
+                    uncertain = self.state.get("operations", "create:" + source, valuecol="state") == "intent"
+                    self.state.db.execute("INSERT OR REPLACE INTO meta VALUES (?,?)",
+                                          ("initial-triage:" + source, "cancelled_delivery_unknown" if uncertain else "cancelled"))
             return
         self.state.meta("source-admission:" + source, "selected")
         previous_time = self.state.get("meta", "snapshot-time:" + source)
@@ -886,6 +911,8 @@ class Bridge:
         if getattr(self, "observation", None):
             event += ":observation:" + digest(self.observation)[:24]
         if self.state.get("operations", event, valuecol="state") == "done":
+            remote = self.state.get("operations", event, valuecol="remote_id")
+            self.issue_receipt(source, remote, event, fingerprint, item["updated_at"])
             return
         existing = self.remote_issue(source)
         initial_key = "initial-triage:" + source
@@ -928,9 +955,7 @@ class Bridge:
             return
         if existing:
             self.append(remote, event, body)
-        self.state.operation(event, "done", remote)
-        self.state.meta(snapshot_key, fingerprint)
-        self.state.meta("snapshot-time:" + source, item["updated_at"])
+        self.issue_receipt(source, remote, event, fingerprint, item["updated_at"])
 
     def intake_comment(self, item):
         # Ignore bot output to prevent an eventual outbound adapter echo loop.
@@ -945,6 +970,9 @@ class Bridge:
         source = f"github:{self.repo}:issue:{int(match[1])}"
         remote = self.state.get("mappings", source, "source", "remote_id")
         if not remote:
+            if (self.state.get("meta", "source-admission:" + source) == "ignored"
+                    and str(self.state.get("meta", "initial-triage:" + source)).startswith("cancelled")):
+                return
             selected = self.state.get("meta", "source-admission:" + source) == "selected"
             initializing = self.state.get("meta", "initial-triage:" + source) == "pending"
             pending_issue = self.state.db.execute("SELECT 1 FROM intake_events WHERE kind='issue' AND source=? AND status='pending' LIMIT 1",
@@ -974,6 +1002,13 @@ class Bridge:
             valid_login = isinstance(login, str) and bool(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]{0,38}", login))
             author_id = public_user(item).get("id")
             valid_identity = valid_login and type(author_id) is int and author_id > 0
+            # Display observations can change reactions/profile metadata. The
+            # author and immutable comment version authorize at most one run,
+            # including rows written by older bridge versions.
+            if valid_identity and self.state.db.execute(
+                    "SELECT 1 FROM triage_pending WHERE comment_version=? AND author_id=? LIMIT 1",
+                    (version_event, author_id)).fetchone():
+                return
             self.state.db.execute("INSERT OR IGNORE INTO triage_pending "
                                   "(event,source,remote_id,login,created_at,status,reason,comment_id,author_id,comment_version) "
                                   "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -1008,9 +1043,6 @@ class Bridge:
         for event, source, remote, login, comment_id, author_id, version in pending:
             if deadline is not None and time.monotonic() >= deadline:
                 break
-            if sent >= self.cfg["max_triage_followups_per_tick"]:
-                self.queue_result(event, "pending", "tick_limit", count=False)
-                continue
             trigger_event = event + ":authorized-triage"
             trigger_op = "comment:" + trigger_event
             # Acknowledged remote trigger plus local crash: finish the receipt,
@@ -1019,6 +1051,36 @@ class Bridge:
                 self.state.meta("triage-last:" + source, utcnow())
                 self.queue_result(event, "done", "recovered_trigger_receipt")
                 sent += 1
+                continue
+            if self.state.get("operations", trigger_op, valuecol="state") == "intent":
+                try:
+                    self.reconcile_comment(remote, trigger_op)
+                except BridgeError:
+                    self.queue_result(event, "pending", "delivery_unknown", 60)
+                else:
+                    self.state.meta("triage-last:" + source, utcnow())
+                    self.queue_result(event, "done", "recovered_trigger_receipt")
+                    sent += 1
+                continue
+            # Reconcile any historical send above, but never send a second
+            # copy of a legacy duplicate authorization version.
+            canonical = another_send = None
+            if version is not None and author_id is not None:
+                canonical = self.state.db.execute(
+                    "SELECT event FROM triage_pending WHERE comment_version=? AND author_id=? ORDER BY rowid LIMIT 1",
+                    (version, author_id)).fetchone()
+                # A later observation may already have sent while an earlier
+                # row was deferred. Historical delivery/intent wins over FIFO.
+                another_send = self.state.db.execute(
+                    "SELECT 1 FROM triage_pending q WHERE comment_version=? AND author_id=? AND event!=? "
+                    "AND (status='done' OR EXISTS(SELECT 1 FROM operations WHERE "
+                    "key='comment:'||q.event||':authorized-triage' AND state IN ('done','intent'))) LIMIT 1",
+                    (version, author_id, event)).fetchone()
+            if another_send or (canonical and canonical[0] != event):
+                self.queue_result(event, "denied", "duplicate_authorization_version")
+                continue
+            if sent >= self.cfg["max_triage_followups_per_tick"]:
+                self.queue_result(event, "pending", "tick_limit", count=False)
                 continue
             last = self.state.get("meta", "triage-last:" + source)
             if last:
@@ -1116,6 +1178,9 @@ class Bridge:
                         if (matching.get("state") in ("success", "failure")
                                 and re.match(re.escape(request["job_id"]) + r"(?:-retry-[0-9a-f]{12})?:", str(matching.get("description", "")))):
                             return True  # Keep the final status; finish local delivery/generation recovery.
+                        if (matching.get("state") == "pending" and matching.get("description") == request["job_id"] +
+                                ": Waiting for trusted Multica review attestation"):
+                            return True
                         break
                     if len(statuses) < 100:
                         break
@@ -1348,7 +1413,7 @@ class Bridge:
 
     def drain_intake_events(self, baseline, deadline):
         candidates = fair_candidates(self.state.db, "intake_events", "rowid,key,kind,payload,attempts",
-                                     "attempts,CASE kind WHEN 'issue' THEN 0 WHEN 'comment' THEN 1 ELSE 2 END,rowid")
+                                     "rowid")
         for sequence, key, kind, payload, attempts in candidates:
             if time.monotonic() >= deadline:
                 break

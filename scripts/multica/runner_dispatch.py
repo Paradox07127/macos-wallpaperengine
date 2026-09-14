@@ -15,8 +15,18 @@ def supervise(job_dir: Path) -> int:
     request = require_object(load_json(request_path), "DISPATCH_REQUEST_NOT_OBJECT")
     identity = {'schema_version': 1, 'job_id': job_dir.name,
                 'request_sha256': digest(request_path), 'supervisor_pid': os.getpid(),
-                'supervisor_identity': process_identity(os.getpid()), 'started': False}
-    write_json(job_dir / 'dispatch-identity.json', identity)
+                'started': False}
+    try:
+        identity['supervisor_identity'] = process_identity(os.getpid())
+        if identity['supervisor_identity'] is None:
+            raise ReviewError('SUPERVISOR_IDENTITY_UNKNOWN')
+        write_json(job_dir / 'dispatch-identity.json', identity)
+    except (OSError, ValueError, TypeError, ReviewError):
+        # We have not entered any child-spawn path, and return immediately after
+        # publishing this terminal proof. No temporary false result precedes Popen.
+        write_json(job_dir / 'dispatch-result.json', dict(identity, exit_code=127,
+                   error='SUPERVISOR_IDENTITY_UNAVAILABLE', finished_at=time.time()))
+        return 0
     try:
         argv = request['argv']
         if (request['job_id'] != job_dir.name or type(argv) is not list or not argv

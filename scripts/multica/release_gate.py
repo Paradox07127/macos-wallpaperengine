@@ -14,7 +14,7 @@ from review_runner import (POLICY_VERSION, MAX_ATTESTATION_BYTES, ReviewError,
                            validate_report, git as controlled_git, job_lock, validate_dispatch_receipt,
                            RELEASE_VERSION, read_json_snapshot, JOB, parse_kv,
                            TEXT_LIMITS, artifact_limit, read_text_snapshot, read_output_snapshot, artifact_digest,
-                           validate_dispatch_contract, validate_terminal_evidence, review_policy, verify_frozen)
+                           validate_dispatch_contract, validate_terminal_evidence, review_policy, verify_frozen, validate_model_status_set)
 
 
 class GateError(ValueError):
@@ -224,6 +224,7 @@ def _validate_locked(repo, evidence, base_sha, head_sha):
             or run_meta.get("workdir") != str(repo) or run_meta.get("mode") != "review"
             or run_meta.get("models") != ",".join(models)):
         raise GateError("RUN_METADATA_IDENTITY_MISMATCH")
+    enforce_contract(validate_model_status_set, root, models)
     for model in models:
         for suffix in ("json", "status", "meta", "out"):
             if model + "." + suffix not in verified:

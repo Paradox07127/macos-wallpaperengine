@@ -21,7 +21,7 @@ The stable local root is `$HOME/Documents/Codex/Multica`:
 | Path beneath the root | Purpose |
 | --- | --- |
 | `local/config.json` | Local routing, paths, models and the service `enabled` switch |
-| `bridge-v8/` | Installed copies of these helpers and `mmrun-compat-v4` |
+| `bridge-v9/` | Installed copies of these helpers and `mmrun-compat-v4` |
 | `repository-v3/` | Dedicated complete Git mirror used to fetch review targets |
 | `local/state/intake.sqlite3` | Intake checkpoint, mappings and write reconciliation |
 | `local/state/jobs/<job-id>/` | Immutable request and executor/publication receipts |
@@ -40,7 +40,7 @@ access and valid GitHub/Multica/model authentication. Check `launchctl` for the 
 installation and execution state rather than inferring that the job is running
 from this README. Initial provisioning leaves `enabled: false` until activation. Do not enable a second
 cloud bridge in parallel. Old `bridge/`, `bridge-v3/`, `bridge-v4/`, `bridge-v5/` and root `config.json`, if retained from a
-migration, are historical; all active examples use `bridge-v8/` and `local/config.json`.
+migration, are historical; all active examples use `bridge-v9/` and `local/config.json`.
 
 Issue intake uses the `agent-triage` label, with `triage_all_new: false`.
 Set `bridge_actor_id` to the local Multica member UUID used by the CLI. Recovery
@@ -163,8 +163,8 @@ MULTICA_ROOT="$HOME/Documents/Codex/Multica"
 MULTICA_PYTHON=/opt/homebrew/opt/python@3.14/bin/python3.14
 MULTICA_CONFIG="$MULTICA_ROOT/local/config.json"
 
-"$MULTICA_PYTHON" "$MULTICA_ROOT/bridge-v8/github_bridge.py" --config "$MULTICA_CONFIG" doctor
-"$MULTICA_PYTHON" "$MULTICA_ROOT/bridge-v8/github_bridge.py" --config "$MULTICA_CONFIG" poll --once --dry-run
+"$MULTICA_PYTHON" "$MULTICA_ROOT/bridge-v9/github_bridge.py" --config "$MULTICA_CONFIG" doctor
+"$MULTICA_PYTHON" "$MULTICA_ROOT/bridge-v9/github_bridge.py" --config "$MULTICA_CONFIG" poll --once --dry-run
 launchctl print "gui/$(id -u)/ai.multica.github-bridge"
 ls -lt "$MULTICA_ROOT/logs"
 ```
@@ -217,7 +217,7 @@ preparation process.
 mmrun dispatcher exit result even when the foreground wait times out. Missing
 completion evidence remains incomplete; finished model files alone cannot make
 an attempt pass. Keep the controller directory, request, supervisor receipt and
-model artifacts together when diagnosing interrupted work. The v8 contract snapshots
+model artifacts together when diagnosing interrupted work. The v9 contract snapshots
 the review schema and filesystem fence into each job, retains a profile evidence
 copy, and rechecks the canonical paths and hashes of execution inputs before dispatch
 and collection. Codex continues using its existing authenticated profile; these
@@ -261,9 +261,9 @@ does not turn an error response or incomplete report into approval.
 Prepare the copy after placing `mmrun_compat.py` at its stable installed path:
 
 ```sh
-"$MULTICA_PYTHON" "$MULTICA_ROOT/bridge-v8/mmrun_compat.py" prepare \
+"$MULTICA_PYTHON" "$MULTICA_ROOT/bridge-v9/mmrun_compat.py" prepare \
   --source "$HOME/.claude/bin/mmrun" \
-  --output "$MULTICA_ROOT/bridge-v8/mmrun-compat-v4"
+  --output "$MULTICA_ROOT/bridge-v9/mmrun-compat-v4"
 ```
 
 `prepare` invokes no model and writes the separate copy, its
@@ -271,13 +271,13 @@ Prepare the copy after placing `mmrun_compat.py` at its stable installed path:
 path collisions, snapshots and rechecks the source, and publishes without replacing
 a concurrently created destination. Existing executable/sidecar permissions must
 match 0700/0600; a restored non-executable copy is rejected. Preparation only reads
-regular input files up to 16 MiB. Runtime capture uses independent pipes to enforce
+regular input files up to 8 MiB. Runtime capture uses independent pipes to enforce
 32 MiB stdout, 8 MiB stderr and 32 MiB per capture file, including providers that
 share one log file. Overflow or timeout terminates the owned process group before
 report collection. These limits apply to captured output; the provider's existing
 state databases are not size-limited. Original upstream mode remains a legacy
 option without this runtime capture guarantee; Claude requires compat mode. The installed config must set `mmrun_path` to
-`$HOME/Documents/Codex/Multica/bridge-v8/mmrun-compat-v4`; the executor passes
+`$HOME/Documents/Codex/Multica/bridge-v9/mmrun-compat-v4`; the executor passes
 that value as `review_runner.py run --mmrun ...`. A direct runner invocation must
 also explicitly pass `--mmrun` because its default remains the original installed
 script. With a redirected `CODEX_HOME`, pass the configured real profile home as
@@ -306,7 +306,7 @@ upload or publish a release. Replace all placeholders in this **disabled example
 with maintainer-selected values before use:
 
 ```text
-"$MULTICA_PYTHON" "$MULTICA_ROOT/bridge-v8/github_bridge.py" --config "$MULTICA_CONFIG" \
+"$MULTICA_PYTHON" "$MULTICA_ROOT/bridge-v9/github_bridge.py" --config "$MULTICA_CONFIG" \
   request-release --base FULL_40_CHARACTER_BASE_COMMIT \
   --head FULL_40_CHARACTER_REVIEWED_HEAD_COMMIT --version MAJOR.MINOR.PATCH --dry-run
 ```
@@ -336,13 +336,13 @@ The following are **disabled examples**, not commands to run until real, verifie
 values replace every placeholder:
 
 ```text
-"$MULTICA_PYTHON" "$MULTICA_ROOT/bridge-v8/release_gate.py" check \
+"$MULTICA_PYTHON" "$MULTICA_ROOT/bridge-v9/release_gate.py" check \
   --repo "$MULTICA_ROOT/local/state/reviews/RELEASE_JOB_ID/frozen" \
   --attestation ABSOLUTE_ATTESTATION_PATH_FROM_VERIFIED_EXECUTOR_RECEIPT \
   --base-sha FULL_40_CHARACTER_BASE_COMMIT \
   --head-sha FULL_40_CHARACTER_REVIEWED_HEAD_COMMIT
 
-"$MULTICA_PYTHON" "$MULTICA_ROOT/bridge-v8/release_gate.py" plan \
+"$MULTICA_PYTHON" "$MULTICA_ROOT/bridge-v9/release_gate.py" plan \
   --repo "$MULTICA_ROOT/local/state/reviews/RELEASE_JOB_ID/frozen" \
   --attestation ABSOLUTE_ATTESTATION_PATH_FROM_VERIFIED_EXECUTOR_RECEIPT \
   --base-sha FULL_40_CHARACTER_BASE_COMMIT \
@@ -355,8 +355,7 @@ not be silently copied from an arbitrary attestation. Both are full lowercase Gi
 SHA-1 commit IDs. HEAD must equal the reviewed head; the base must exist and be its
 ancestor; the current tree ID must equal the reviewed tree. Staged, unstaged,
 untracked and dirty submodule changes block the check. Store evidence outside the
-checkout, or in an intentionally ignored evidence directory, so it does not itself
-make the tree dirty.
+checkout. The frozen checkout also rejects untracked ignored files.
 
 Use the attestation location reported by the verified executor receipt, not a
 similarly named file supplied by a model or copied from an older run. `review_runner`
@@ -434,7 +433,7 @@ automatic retry loop is implied even when the failure preceded model dispatch. A
 operator can explicitly request a new attempt:
 
 ```text
-python3 "$MULTICA_ROOT/bridge-v8/executor.py" --config "$MULTICA_ROOT/local/config.json" \
+python3 "$MULTICA_ROOT/bridge-v9/executor.py" --config "$MULTICA_ROOT/local/config.json" \
   retry --job-id LOGICAL_JOB_ID
 ```
 
@@ -447,7 +446,7 @@ If an attempt was interrupted before it could record a terminal result, use the
 explicit recovery entry point before retrying:
 
 ```text
-python3 "$MULTICA_ROOT/bridge-v8/executor.py" --config "$MULTICA_CONFIG" \
+python3 "$MULTICA_ROOT/bridge-v9/executor.py" --config "$MULTICA_CONFIG" \
   recover --job-id LOGICAL_JOB_ID
 ```
 

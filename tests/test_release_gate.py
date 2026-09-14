@@ -53,7 +53,8 @@ class ReleaseGateTests(unittest.TestCase):
             f"runid=evidence\nmode=review\nworkdir={self.repo}\nmodels=codex,grok\nsession=fixture-session\n")
         self.evidence = {
             "schema_version": 1, "kind": "release", "verdict": "PASS", "version": "1.2.3",
-            "repo": str(self.repo), "base_sha": self.base, "head_sha": self.head,
+            "repo": str(self.repo), "frozen_checkout": str(self.repo), "controller_checkout": str(self.root),
+            "empty_delta": False, "base_sha": self.base, "head_sha": self.head,
             "tree_sha": self.git("rev-parse", "HEAD^{tree}"),
             "artifact_root": str(self.artifact_root), "mmrun_run_id": "evidence",
             "provenance": {"mmrun_home": str(self.root), "session": "fixture-session"},
@@ -87,9 +88,7 @@ class ReleaseGateTests(unittest.TestCase):
             review_runner_path=str(Path(runner.__file__).resolve()), review_runner_sha256=gate.file_hash(Path(runner.__file__)),
             dispatch_helper=str(helper), dispatch_helper_sha256=gate.file_hash(helper),
             codex_home=str(self.root), mmrun_d_snapshot=str(self.root))
-        request = {'schema_version': 1, 'job_id': self.evidence['job_id'], 'argv': [str(executable)],
-                   'provenance': self.evidence['provenance'], 'executable_sha256': gate.file_hash(executable),
-                   'candidate': runner.candidate_identity(self.evidence)}
+        request = runner.make_dispatch_request(self.root, self.evidence)
         runner.write_json(self.root / 'dispatch-request.json', request)
         hashed = gate.file_hash(self.root / 'dispatch-request.json')
         self.evidence['dispatch_request_sha256'] = hashed
@@ -341,7 +340,7 @@ class ReleaseGateTests(unittest.TestCase):
                 artifact["sha256"] = hashlib.sha256(meta.read_bytes()).hexdigest()
         self.refresh_contract()
         self.save()
-        with self.assertRaisesRegex(gate.GateError, "required model evidence missing"):
+        with self.assertRaisesRegex(gate.GateError, "Missing/unexpected model status artifact"):
             self.validate()
 
     def test_fifo_and_oversize_attestation_rejected_before_open_or_hash(self):
@@ -521,6 +520,20 @@ class V8GateIdentityTests(unittest.TestCase):
         (self.repo / '.git/info/exclude').write_text('ignored-artifact\n')
         (self.repo / 'ignored-artifact').write_text('unreviewed')
         with self.assertRaisesRegex(gate.GateError, 'unreviewed ignored files'):
+            self.validate()
+
+
+class V9GateModelSetTests(unittest.TestCase):
+    setUp = ReleaseGateTests.setUp
+    refresh_contract = ReleaseGateTests.refresh_contract
+    git = ReleaseGateTests.git
+    save = ReleaseGateTests.save
+    validate = ReleaseGateTests.validate
+
+    def test_unlisted_status_is_rejected_even_when_all_bound_hashes_match(self):
+        self.assertEqual(self.validate()['status'], 'STATIC_REVIEW_VERIFIED')
+        (self.artifact_root / 'agy.status').write_text('RUNNING')
+        with self.assertRaisesRegex(gate.GateError, 'Missing/unexpected model status artifact'):
             self.validate()
 
 

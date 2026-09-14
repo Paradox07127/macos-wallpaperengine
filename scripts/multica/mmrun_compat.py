@@ -28,7 +28,7 @@ import tempfile
 
 VERSION = "mmrun-provider-transport-v4"
 MAX_OUTPUT_BYTES = 32 * 1024 * 1024
-MAX_SCRIPT_BYTES = 16 * 1024 * 1024
+MAX_SCRIPT_BYTES = 8 * 1024 * 1024
 MAX_STDERR_BYTES = 8 * 1024 * 1024
 SESSION_ANCHOR = '      sid=$(cat "$rd/grok.session")'
 OUTPUT_ANCHOR = '''        "$GROK_BIN" --prompt-file "$rd/prompt.md" -s "$sid" "${args[@]}" > "$rd/grok.raw" 2>&1
@@ -271,6 +271,8 @@ def prepare(source_path, output_path):
         source_bytes, source_identity = input_snapshot(source_path)
         helper_bytes, helper_identity = input_snapshot(helper)
         rendered = add_claude_provider(patched_source(source_bytes.decode("utf-8"), helper, sys.executable), helper, sys.executable)
+        if len(rendered.encode("utf-8")) > MAX_SCRIPT_BYTES:
+            raise CompatibilityError("Prepared script exceeds runner input limit")
         provenance = {"version": VERSION, "source": str(source_path),
                       "source_sha256": hashlib.sha256(source_bytes).hexdigest(),
                       "output": str(output_path), "output_sha256": hashlib.sha256(rendered.encode()).hexdigest(),

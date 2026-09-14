@@ -109,6 +109,16 @@ class NormalizationTests(unittest.TestCase):
 
 
 class LocalCopyTests(unittest.TestCase):
+    def test_patch_growth_cannot_publish_script_larger_than_runner_limit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source, output = Path(tmp) / 'source', Path(tmp) / 'copy'
+            value = self.source().encode()
+            source.write_bytes(value + b'#' + b'x' * (compat.MAX_SCRIPT_BYTES - len(value) - 1))
+            with self.assertRaisesRegex(compat.CompatibilityError, 'Prepared script exceeds'):
+                compat.prepare(source, output)
+            self.assertFalse(output.exists())
+            self.assertFalse(output.with_name(output.name + '.provenance.json').exists())
+
     def source(self):
         anchors = compat.CLAUDE_ANCHORS
         return ('#!/usr/bin/env bash\n# --tools read_file,grep,list_dir\n# sandbox-exec original guard\n'
