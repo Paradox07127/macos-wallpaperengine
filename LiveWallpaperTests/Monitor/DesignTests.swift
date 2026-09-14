@@ -20,6 +20,37 @@ struct DesignTests {
         #expect(colorEq(Design.loadBandColor(0.95), Design.signalCoral))
     }
 
+    /// The ring and the header dot are the two elements a user compares at a
+    /// glance; before `Design.Load` they banded at 0.8/0.4 and 0.85/0.60, so a
+    /// reading of 0.81 drew a red ring beside an amber dot.
+    @Test("Ring and state dot change band at exactly the same readings")
+    func loadBandsAgreeAcrossElements() {
+        for fraction in stride(from: 0.0, through: 1.0, by: 0.01) {
+            let ringIsHot = colorEq(Design.loadBandColor(fraction), Design.signalCoral)
+            let dotIsHot = colorEq(Design.loadDotColor(fraction), Design.signalCoral)
+            #expect(ringIsHot == dotIsHot, "hot band disagrees at \(fraction)")
+
+            let ringIsElevated = colorEq(Design.loadBandColor(fraction), Design.signalAmber)
+            let dotIsElevated = colorEq(Design.loadDotColor(fraction), Design.signalAmber)
+            #expect(ringIsElevated == dotIsElevated, "elevated band disagrees at \(fraction)")
+        }
+    }
+
+    /// Resting is the one place they are meant to differ: the ring keeps a live
+    /// metric's steel, the dot goes quiet.
+    @Test("At rest the ring reads as measuring and the dot as idle")
+    func restingBandsDifferByRole() {
+        #expect(colorEq(Design.loadBandColor(0.1), Design.loadSteel))
+        #expect(colorEq(Design.loadDotColor(0.1), Design.signalIdle))
+    }
+
+    @Test("Load thresholds stay ordered and inside the unit range")
+    func loadThresholdsOrdered() {
+        #expect(Design.Load.elevated > 0)
+        #expect(Design.Load.elevated < Design.Load.hot)
+        #expect(Design.Load.hot < 1)
+    }
+
     @Test("Type scale honours the mock's clamps")
     func typeScale() {
         let small = Design.TypeScale(cellHeight: 60)

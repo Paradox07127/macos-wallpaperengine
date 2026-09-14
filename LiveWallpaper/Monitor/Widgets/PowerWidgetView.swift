@@ -16,7 +16,7 @@ struct PowerWidgetView: View {
     var body: some View {
         GeometryReader { geo in
             let cellHeight = geo.size.height / 2   // both sizes are 2 rows tall
-            WidgetContainer(label: "Power", systemImage: powerSymbol, cellHeight: cellHeight, content: {
+            WidgetContainer(label: WidgetFactory.displayName(.power), systemImage: powerSymbol, cellHeight: cellHeight, content: {
                 switch context.placement.size {
                 case .small:  smallBody(cellHeight: cellHeight)
                 case .medium: mediumBody(cellHeight: cellHeight)
@@ -141,7 +141,7 @@ struct PowerWidgetView: View {
             if model.powerSource == "ac" {
                 PowerPlugBadge().frame(width: width, height: height)
             } else {
-                Text(verbatim: "—")
+                Text(verbatim: Design.noData)
                     .font(Design.heroFont(size: height))
                     .foregroundStyle(Design.inkMuted)
                     .frame(width: width, height: height)
@@ -151,17 +151,11 @@ struct PowerWidgetView: View {
 
     @ViewBuilder
     private func hero(size: CGFloat) -> some View {
-        if let pct = model.heroPercent {
-            HStack(alignment: .firstTextBaseline, spacing: 0) {
-                Text(verbatim: "\(pct)")
-                    .font(Design.heroFont(size: size))
-                    .monospacedDigit()
-                    .foregroundStyle(Design.inkPrimary)
-                Text(verbatim: "%")
-                    .font(Design.subFont(size: size * 0.4))
-                    .foregroundStyle(Design.inkFaint)
-            }
-            .lineLimit(1)
+        if let level = model.level {
+            HeroPercent(fraction: level, baseSize: size)
+                .accessibilityElement()
+                .accessibilityLabel(Text("Battery"))
+                .accessibilityValue(Text(verbatim: Format.percent(level)))
         } else {
             Text(verbatim: model.sourceReadout)
                 .font(Design.heroFont(size: size))
@@ -300,12 +294,7 @@ struct MonitorPowerModel {
     }
 
     var sourceReadout: String {
-        powerSource == "ac" ? "AC" : "—"
-    }
-
-    var heroPercent: Int? {
-        guard let level else { return nil }
-        return Int((min(1, max(0, level)) * 100).rounded())
+        powerSource == "ac" ? "AC" : Design.noData
     }
 
     var status: String {

@@ -34,11 +34,11 @@ final class WidgetReadoutFitTests: XCTestCase {
         return CTLineGetTypographicBounds(line, nil, nil, nil)
     }
 
-    /// Rendered width of CPU's hero readout — digits at `heroSize`, "%" at
+    /// Rendered width of the shared `HeroPercent` readout — digits at `heroSize`, "%" at
     /// `heroSize * heroUnitRatio`, `spacing: 0`.
     private func heroWidth(_ digits: String, heroSize: CGFloat) -> CGFloat {
         width(digits, font(heroSize, monospacedDigit: true))
-            + width("%", font(heroSize * CPUWidgetView.heroUnitRatio, monospacedDigit: false))
+            + width("%", font(heroSize * Design.heroUnitRatio, monospacedDigit: false))
     }
 
     // MARK: - Fixtures
@@ -46,6 +46,13 @@ final class WidgetReadoutFitTests: XCTestCase {
     /// One CPU tile: the ring's centre box is `side * 0.62` (`ArcGauge`), and
     /// `side` is what the widget actually laid out — measured, since the ring is
     /// `aspectRatio(1, .fit)` and its own frame does not tell you.
+    ///
+    /// GPU has no rows here on purpose. Its rings carry `.frame(width:)`
+    /// literals, but the ring is `min(width, height)` and those rows are
+    /// height-bound, so the literal is an upper bound on the drawn side — a
+    /// fixture built on it would pass while the real ring truncated. GPU's fit
+    /// is covered structurally below instead, until its rings are measured the
+    /// way CPU's were.
     private struct GaugeCase {
         let name: String
         let cellHeight: CGFloat
@@ -78,35 +85,35 @@ final class WidgetReadoutFitTests: XCTestCase {
     /// The tile the reported truncation came from.
     private static let mediumTileName = "M @1.0"
 
-    /// The floor `CPUWidgetView.heroReadout` declares.
+    /// The floor `HeroPercent` declares.
     private let heroScaleFloor: CGFloat = 0.6
 
     // MARK: - heroSize is a pure function of the digit count
 
     func testHeroSizeShrinksOnlyAtThreeDigits() {
         let base: CGFloat = 32.13
-        XCTAssertEqual(CPUWidgetView.heroSize(base: base, digits: 1), base)
-        XCTAssertEqual(CPUWidgetView.heroSize(base: base, digits: 2), base)
-        XCTAssertEqual(CPUWidgetView.heroSize(base: base, digits: 3),
-                       base * CPUWidgetView.threeDigitHeroShrink)
+        XCTAssertEqual(Design.heroSize(base: base, digits: 1), base)
+        XCTAssertEqual(Design.heroSize(base: base, digits: 2), base)
+        XCTAssertEqual(Design.heroSize(base: base, digits: 3),
+                       base * Design.threeDigitHeroShrink)
     }
 
     func testWholeNumberReachesThreeDigitsOnlyAtFullLoad() {
-        XCTAssertEqual(CPUWidgetView.wholeNumber(0).count, 1)
-        XCTAssertEqual(CPUWidgetView.wholeNumber(0.37).count, 2)
-        XCTAssertEqual(CPUWidgetView.wholeNumber(0.994).count, 2)
-        XCTAssertEqual(CPUWidgetView.wholeNumber(0.996).count, 3)
-        XCTAssertEqual(CPUWidgetView.wholeNumber(1), "100")
+        XCTAssertEqual(Format.wholeNumber(0).count, 1)
+        XCTAssertEqual(Format.wholeNumber(0.37).count, 2)
+        XCTAssertEqual(Format.wholeNumber(0.994).count, 2)
+        XCTAssertEqual(Format.wholeNumber(0.996).count, 3)
+        XCTAssertEqual(Format.wholeNumber(1), "100")
         // Out-of-range samples clamp rather than widening past three digits.
-        XCTAssertEqual(CPUWidgetView.wholeNumber(4.2), "100")
-        XCTAssertEqual(CPUWidgetView.wholeNumber(.nan), "0")
+        XCTAssertEqual(Format.wholeNumber(4.2), "100")
+        XCTAssertEqual(Format.wholeNumber(.nan), "0")
     }
 
     // MARK: - 100% fits the ring's centre box
 
     func testFullLoadHeroFitsEveryGaugeCentre() {
         for tile in gaugeCases {
-            let size = CPUWidgetView.heroSize(base: tile.base, digits: 3)
+            let size = Design.heroSize(base: tile.base, digits: 3)
             let needed = tile.boxWidth / heroWidth("100", heroSize: size)
             XCTAssertGreaterThanOrEqual(
                 needed, heroScaleFloor,
@@ -124,16 +131,43 @@ final class WidgetReadoutFitTests: XCTestCase {
     /// could pass on a box that was never tight.
     func testFullLoadHeroWithoutTheDigitShrinkIsUnderTheFloor() throws {
         let medium = try XCTUnwrap(gaugeCases.first { $0.name == Self.mediumTileName })
-        let unshrunk = CPUWidgetView.heroSize(base: medium.base, digits: 2)
+        let unshrunk = Design.heroSize(base: medium.base, digits: 2)
         let needed = medium.boxWidth / heroWidth("100", heroSize: unshrunk)
         XCTAssertLessThan(needed, heroScaleFloor)
+    }
+
+    // MARK: - Every gauge centre draws the shared readout
+
+    /// The shrink lives in `HeroPercent`, so a widget only has it while it draws
+    /// its hero through that view. GPU shipped its own copy without the shrink
+    /// and truncated; this is what stops the copy coming back.
+    func testGaugeCentresUseTheSharedHeroReadout() throws {
+        let widgets = [
+            "LiveWallpaper/Monitor/Widgets/CPUWidgetView.swift",
+            "LiveWallpaper/Monitor/Widgets/GPUWidgetView.swift",
+            "LiveWallpaper/Monitor/Widgets/MemoryWidgetView.swift",
+            "LiveWallpaper/Monitor/Widgets/PowerWidgetView.swift",
+            "LiveWallpaper/Monitor/Widgets/SystemOverviewWidgetView.swift",
+        ]
+        for path in widgets {
+            let source = try RepositoryRoot.source(path)
+            XCTAssertTrue(
+                source.contains("HeroPercent("),
+                "\(path) stopped drawing its hero reading through HeroPercent"
+            )
+            // Control: the shape the bug had — digits and a "%" sized by hand.
+            XCTAssertFalse(
+                source.contains(#"Text(verbatim: "%")"#),
+                "\(path) hand-sizes a \"%\" again instead of using HeroPercent"
+            )
+        }
     }
 
     /// The shrink must not overshoot into an illegibly small reading: three
     /// digits stay at least half the two-digit size.
     func testDigitShrinkStaysWithinHalfTheBaseSize() {
-        XCTAssertGreaterThan(CPUWidgetView.threeDigitHeroShrink, 0.5)
-        XCTAssertLessThan(CPUWidgetView.threeDigitHeroShrink, 1.0)
+        XCTAssertGreaterThan(Design.threeDigitHeroShrink, 0.5)
+        XCTAssertLessThan(Design.threeDigitHeroShrink, 1.0)
     }
 
     // MARK: - Reserved columns in the "top process" rows

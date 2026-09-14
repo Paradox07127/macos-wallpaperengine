@@ -92,8 +92,15 @@ enum Format {
     }
 
     static func percent(_ fraction: Double) -> String {
+        "\(wholeNumber(fraction))%"
+    }
+
+    /// 0…1 → whole-number string with no "%" ("37"), for callers that draw
+    /// their own separately-styled unit. Same clamp and rounding as `percent`,
+    /// so the two can never disagree about what a reading says.
+    static func wholeNumber(_ fraction: Double) -> String {
         let f = fraction.isFinite ? min(max(fraction, 0), 1) : 0
-        return "\(Int((f * 100).rounded()))%"
+        return "\(Int((f * 100).rounded()))"
     }
 
     static func interfaceTypeLabel(_ type: String?) -> String {

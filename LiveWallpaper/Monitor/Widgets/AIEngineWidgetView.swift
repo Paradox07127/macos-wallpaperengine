@@ -34,7 +34,7 @@ private struct AIEngineContent: View {
     private var processes: [MonitorANEProcess]? { system?.aneProcesses }
     var body: some View {
         WidgetContainer(
-            label: "ANE Memory",
+            label: WidgetFactory.displayName(.aiEngine),
             systemImage: WidgetFactory.icon(.aiEngine),
             cellHeight: cellHeight,
             status: { statusAccessory }
@@ -52,7 +52,7 @@ private struct AIEngineContent: View {
     @ViewBuilder
     private var statusAccessory: some View {
         if state == .unsampled {
-            Text(verbatim: "-")
+            Text(verbatim: Design.noData)
                 .tracking(0.5)
                 .foregroundStyle(Design.inkFaint)
         } else {
@@ -118,10 +118,10 @@ private struct AIEngineContent: View {
                     .frame(width: 9, height: 9)
                 Text("ANE Memory")
                     .font(Design.heroFont(size: scale.hero * 0.5))
-                    .tracking(scale.label * 0.12)
+                    .tracking(Design.labelTracking(size: scale.label))
                     .foregroundStyle(Design.inkMuted)
             }
-            Text(verbatim: "-")
+            Text(verbatim: Design.noData)
                 .font(Design.captionFont(size: scale.caption))
                 .foregroundStyle(Design.inkFaint)
                 .multilineTextAlignment(.center)
@@ -290,13 +290,14 @@ private struct AIEngineContent: View {
         let top = list.first?.footprintBytes ?? 1
         return VStack(alignment: .leading, spacing: rowGap ?? scale.caption * 0.34) {
             HStack(spacing: 10) {
-                Text(verbatim: "PROGRAM")
+                Text("Program")
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Text(verbatim: "ANE MEM")
                     .frame(width: memColumnWidth, alignment: .trailing)
             }
             .font(Design.labelFont(size: scale.label * 0.98))
-            .tracking(scale.label * 0.08)
+            .textCase(.uppercase)
+            .tracking(Design.labelTracking(size: scale.label))
             .foregroundStyle(Design.inkFaint)
 
             ForEach(Array(list.enumerated()), id: \.offset) { _, proc in

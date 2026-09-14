@@ -126,7 +126,7 @@ struct AgentSessionWidgetView: View {
         @ViewBuilder body: @escaping () -> some View
     ) -> some View {
         WidgetContainer(
-            label: AgentSessionStrings.title,
+            label: WidgetFactory.displayName(.fleet),
             systemImage: WidgetFactory.icon(.fleet),
             cellHeight: cellHeight,
             status: { headerStatus(scale: scale) },

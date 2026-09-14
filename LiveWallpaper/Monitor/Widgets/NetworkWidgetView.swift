@@ -25,7 +25,7 @@ struct NetworkWidgetView: View {
             let rowSpan: CGFloat = context.placement.size == .large ? 2 : 1
             let cellHeight = geo.size.height / (2 * rowSpan)
             WidgetContainer(
-                label: "Network",
+                label: WidgetFactory.displayName(.network),
                 systemImage: headerSymbol,
                 cellHeight: cellHeight,
                 status: { headerStatus(cellHeight: cellHeight) },
@@ -167,19 +167,12 @@ struct NetworkWidgetView: View {
     }
 
     private func peakTag(scale: Design.TypeScale) -> some View {
-        HStack(spacing: 4) {
-            RoundedRectangle(cornerRadius: 1, style: .continuous)
-                .fill(Design.oklch(0.72, 0.09, 60).opacity(0.85))
-                .frame(width: 5, height: 5)
-            Text(verbatim: "↓ PEAK")
-                .tracking(Design.labelTracking(size: scale.label))
-                .foregroundStyle(Design.inkFaint)
-            Text(verbatim: history.values(history.netRx, in: chartWindow(seconds: chartWindowSeconds)).max().map { Format.rate($0) } ?? "—")
-                .monospacedDigit()
-                .foregroundStyle(Design.inkMuted)
-        }
-        .font(Design.labelFont(size: scale.label))
-        .monitorChip(scale)
+        let rx = history.values(history.netRx, in: chartWindow(seconds: chartWindowSeconds)).max()
+        return PeakTag(
+            glyph: "↓",
+            value: rx.map { Format.rate($0) } ?? Design.noData,
+            scale: scale
+        )
         .padding(scale.label * 0.3)
     }
 
@@ -282,11 +275,11 @@ struct NetworkWidgetView: View {
     private func dualRate(scale: Design.TypeScale) -> some View {
         let size = scale.sub * 1.12
         return VStack(alignment: .leading, spacing: scale.label * 0.35) {
-            rateRow(label: "↓", labelColor: Self.rxColor,
+            rateRow(label: "↓", labelColor: Self.rxColor, direction: "Download",
                     text: Self.rateText(rxRate, available: netReadingsAvailable),
                     font: Design.subFont(size: size),
                     unitSize: size * 0.62)
-            rateRow(label: "↑", labelColor: Self.txColor,
+            rateRow(label: "↑", labelColor: Self.txColor, direction: "Upload",
                     text: Self.rateText(txRate, available: netReadingsAvailable),
                     font: Design.subFont(size: size),
                     unitSize: size * 0.62)
@@ -294,7 +287,8 @@ struct NetworkWidgetView: View {
     }
 
     private func rateRow(
-        label: String, labelColor: Color, text: String, font: Font, unitSize: CGFloat
+        label: String, labelColor: Color, direction: LocalizedStringKey,
+        text: String, font: Font, unitSize: CGFloat
     ) -> some View {
         let parts = Self.splitRate(text)
         return HStack(alignment: .firstTextBaseline, spacing: 4) {
@@ -315,6 +309,9 @@ struct NetworkWidgetView: View {
         }
         .lineLimit(1)
         .minimumScaleFactor(0.7)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(direction))
+        .accessibilityValue(Text(verbatim: text))
     }
 
     // MARK: - Derived data
@@ -411,7 +408,7 @@ struct NetworkWidgetView: View {
     /// The current-rate readout falls back to the peak tag's own "—" when the
     /// sampler has no reading yet (or the last one failed) — never a fake 0 B/s.
     nonisolated static func rateText(_ bytesPerSec: Double, available: Bool) -> String {
-        available ? Format.rate(bytesPerSec) : "—"
+        available ? Format.rate(bytesPerSec) : Design.noData
     }
 
     nonisolated static func splitRate(_ text: String) -> (value: String, unit: String) {

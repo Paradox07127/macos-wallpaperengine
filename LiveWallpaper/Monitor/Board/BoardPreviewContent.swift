@@ -126,7 +126,7 @@ struct MonitorPreviewEmptyTile: View {
             cornerRadius: cornerRadius
         ) {
             VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
-                Text(verbatim: "—")
+                Text(verbatim: Design.noData)
                     .font(DesignTokens.Typography.hero)
                 Text(MonitorBoardPreviewStrings.noReadings)
                     .font(DesignTokens.Typography.body)

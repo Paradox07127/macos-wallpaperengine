@@ -104,7 +104,8 @@ struct ArcGauge<Center: View>: View {
             var tick = Path()
             tick.move(to: CGPoint(x: center.x + cos(angle) * inner, y: center.y + sin(angle) * inner))
             tick.addLine(to: CGPoint(x: center.x + cos(angle) * outer, y: center.y + sin(angle) * outer))
-            ctx.stroke(tick, with: .color(Design.inkPrimary.opacity(0.9)),
+            // Same colour as `PeakTag`'s swatch: the tag is this tick's legend.
+            ctx.stroke(tick, with: .color(Design.peakMarker),
                        style: StrokeStyle(lineWidth: stroke * 0.28, lineCap: .round))
         }
     }

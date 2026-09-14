@@ -16,17 +16,17 @@ struct PowerWidgetTests {
     func desktopHasNoFakePercent() {
         let m = MonitorPowerModel(system: system { $0.batteryLevel = nil; $0.powerSource = nil })
         #expect(m.hasBattery == false)
-        #expect(m.heroPercent == nil)
+        #expect(m.level == nil)
         #expect(m.status == "Readings unavailable")
-        #expect(m.sourceReadout == "—")
+        #expect(m.sourceReadout == Design.noData)
     }
 
     @Test("A known battery source remains a battery when charge is unavailable")
     func partialBatteryReading() {
         let battery = MonitorPowerModel(system: system { $0.powerSource = "battery" })
         #expect(battery.hasBattery)
-        #expect(battery.heroPercent == nil)
-        #expect(battery.sourceReadout == "—")
+        #expect(battery.level == nil)
+        #expect(battery.sourceReadout == Design.noData)
         #expect(battery.status == "Battery")
         let adapter = MonitorPowerModel(system: system { $0.powerSource = "ac" })
         #expect(adapter.sourceReadout == "AC")
@@ -37,7 +37,8 @@ struct PowerWidgetTests {
     func heroPercentRounds() {
         let m = MonitorPowerModel(system: system { $0.batteryLevel = 0.626; $0.powerSource = "ac" })
         #expect(m.hasBattery)
-        #expect(m.heroPercent == 63)
+        // The hero draws `level` through the board's shared readout.
+        #expect(Format.wholeNumber(m.level ?? 0) == "63")
     }
 
     @Test("Status precedence: charged > charging > adapter > battery")

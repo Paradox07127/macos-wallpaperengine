@@ -102,16 +102,16 @@ final class CPUWidgetTests: XCTestCase {
     }
 
     func testWholePercentRoundsAndClamps() {
-        XCTAssertEqual(CPUWidgetView.wholePercent(0.374), "37%")
-        XCTAssertEqual(CPUWidgetView.wholePercent(1.4), "100%")
-        XCTAssertEqual(CPUWidgetView.wholePercent(-0.2), "0%")
+        XCTAssertEqual(Format.percent(0.374), "37%")
+        XCTAssertEqual(Format.percent(1.4), "100%")
+        XCTAssertEqual(Format.percent(-0.2), "0%")
     }
 
     func testWholeNumberRoundsAndClampsWithoutPercentSign() {
-        XCTAssertEqual(CPUWidgetView.wholeNumber(0.374), "37")
-        XCTAssertEqual(CPUWidgetView.wholeNumber(1.4), "100")
-        XCTAssertEqual(CPUWidgetView.wholeNumber(-0.2), "0")
-        XCTAssertFalse(CPUWidgetView.wholeNumber(0.5).contains("%"))
+        XCTAssertEqual(Format.wholeNumber(0.374), "37")
+        XCTAssertEqual(Format.wholeNumber(1.4), "100")
+        XCTAssertEqual(Format.wholeNumber(-0.2), "0")
+        XCTAssertFalse(Format.wholeNumber(0.5).contains("%"))
     }
 
     func testRPMValueRoundsAndClamps() {
