@@ -3,6 +3,7 @@ import contextlib
 import copy
 import io
 import json
+import os
 import subprocess
 import fcntl
 from pathlib import Path
@@ -13,6 +14,8 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts/multica"))
 import executor
+
+REAL_COLLECT = executor.runner.collect
 
 
 class FakeCommands:
@@ -33,11 +36,13 @@ class FakeCommands:
             return {}
         if "/pulls/" in endpoint:
             return copy.deepcopy(self.pr)
-        if endpoint.endswith('/status'):
+        if endpoint.split('?', 1)[0].endswith('/status'):
             latest = {}
             for _, payload in self.statuses:
                 latest[payload['context']] = payload
-            return {'statuses': list(latest.values())}
+            page = int(endpoint.rsplit('page=', 1)[-1]) if '?' in endpoint else 1
+            rows = list(latest.values())
+            return {'statuses': rows[(page - 1) * 100:page * 100], 'total_count': len(rows)}
         if '/commits/' in endpoint:
             return {'sha': endpoint.rsplit('/', 1)[1]}
         raise AssertionError("Unexpected GitHub read: " + endpoint)
@@ -68,7 +73,7 @@ class ExecutorTests(unittest.TestCase):
             "jobs_dir": str(self.root / "jobs"), "review_state_dir": str(self.root / "reviews"),
             "review_models": ["codex", "grok"],
             "codex_home": str(self.root / 'codex'), "state_path": str(self.root / "state.json"),
-            "bridge_actor_id": "trusted-actor",
+            "bridge_actor_id": "trusted-actor", "gh_path": "/trusted/gh",
         }
         Path(self.cfg["repository_path"]).mkdir()
         self.head, self.base = "a" * 40, "b" * 40
@@ -126,7 +131,8 @@ class ExecutorTests(unittest.TestCase):
         self.assertEqual(len(self.commands.updates), 1)
         self.assertIn("in_review", self.commands.updates[0])
         self.assertEqual(self.collector.call_count, 2)
-        self.collector.assert_called_with(self.review_dir)
+        self.assertEqual(self.collector.call_args.args, (self.review_dir,))
+        self.assertGreater(self.collector.call_args.kwargs["deadline"], executor.time.monotonic())
 
     def test_new_head_or_base_never_marks_old_sha_success(self):
         for field in ("head", "base"):
@@ -304,7 +310,7 @@ class ExecutorTests(unittest.TestCase):
             (self.job_dir / 'execution-result.json').unlink(missing_ok=True)
             with self.subTest(name=name), \
                     patch.object(executor.bridge, 'Commands', return_value=self.commands), \
-                    patch.object(executor.runner, 'git', return_value=remote), \
+                    patch.object(executor, 'fetch_origin', return_value=remote), \
                     patch.object(executor.subprocess, 'run', side_effect=responses):
                 result = executor.run_job(self.cfg, self.job_id)
                 self.assertEqual(result['verdict'], 'FAILED')
@@ -324,7 +330,7 @@ class ExecutorTests(unittest.TestCase):
                      subprocess.CompletedProcess([], 1, stdout=json.dumps({
                          'job_id': self.job_id, 'verdict': 'FAILED', 'reasons': []}))]
         with patch.object(executor.bridge, 'Commands', return_value=self.commands), \
-                patch.object(executor.runner, 'git', return_value=origin), \
+                patch.object(executor, 'fetch_origin', return_value=origin), \
                 patch.object(executor.subprocess, 'run', side_effect=responses) as process:
             executor.run_job(self.cfg, self.job_id)
         fetch = process.call_args_list[0].args[0]
@@ -332,6 +338,20 @@ class ExecutorTests(unittest.TestCase):
                                  '--no-filter', 'origin', self.base, self.head])
         self.assertFalse(any(argument.startswith('--filter') for argument in fetch))
         self.assertNotIn('blob:none', ' '.join(fetch))
+
+    def test_missing_model_list_never_falls_back_to_exhausted_grok(self):
+        (self.review_dir / 'manifest.json').unlink()
+        cfg = dict(self.cfg)
+        cfg.pop('review_models')
+        responses = [subprocess.CompletedProcess([], 0, stdout='', stderr=''),
+                     subprocess.CompletedProcess([], 1, stdout=json.dumps({
+                         'job_id': self.job_id, 'verdict': 'FAILED', 'reasons': []}))]
+        with patch.object(executor, 'fetch_origin', return_value='https://github.com/' + cfg['repository']), \
+                patch.object(executor.subprocess, 'run', side_effect=responses) as process:
+            executor._run_attempt(cfg, self.req, self.commands)
+        argv = process.call_args_list[-1].args[0]
+        self.assertEqual(argv[argv.index('--models') + 1], 'claude,codex')
+        self.assertEqual(argv[argv.index('--mmrun-kind') + 1], 'compat')
 
     def test_target_read_failure_is_recorded_after_identity_validation(self):
         with patch.object(executor.bridge, 'Commands', return_value=self.commands), \
@@ -356,7 +376,8 @@ class ExecutorTests(unittest.TestCase):
         with self.assertRaises(executor.JobError):
             executor.run_job(self.cfg, self.job_id)
         output = io.StringIO()
-        with patch.object(executor.bridge, 'load_config', return_value=self.cfg), contextlib.redirect_stdout(output):
+        with patch.object(executor.bridge, 'load_config', return_value=self.cfg), \
+                patch.object(executor.bridge, 'Commands', return_value=self.commands), contextlib.redirect_stdout(output):
             code = executor.main(['--config', 'fixture', 'collect-all'])
         self.assertEqual(code, 0)
         self.assertEqual(json.loads(output.getvalue())[0]['state'], 'retired')
@@ -454,7 +475,7 @@ class ExecutorTests(unittest.TestCase):
         protected = self.root / 'old-protected-attestation.json'
         protected.write_text('old reports stay intact')
         original_manifest = (self.review_dir / 'manifest.json').read_bytes()
-        def collected(directory):
+        def collected(directory, **kwargs):
             return {'job_id': directory.name,
                     'verdict': 'NEEDS_REVIEW' if directory == self.review_dir else 'PASS',
                     'reasons': [], 'attestation_path': str(protected if directory == self.review_dir
@@ -476,7 +497,7 @@ class ExecutorTests(unittest.TestCase):
                 'attestation_path': str(self.root / 'new-protected-attestation.json')}))
         with patch.object(executor.bridge, 'Commands', return_value=self.commands), \
                 patch.object(executor.secrets, 'token_hex', return_value='1' * 12), \
-                patch.object(executor.runner, 'git', return_value='https://github.com/' + self.cfg['repository']), \
+                patch.object(executor, 'fetch_origin', return_value='https://github.com/' + self.cfg['repository']), \
                 patch.object(executor.subprocess, 'run', side_effect=process) as launch:
             result = executor.retry_job(self.cfg, self.job_id)
             self.assertEqual(result['verdict'], 'PASS')
@@ -578,7 +599,7 @@ class ExecutorTests(unittest.TestCase):
         (self.job_dir / 'execution.json').write_text(json.dumps(old_start))
         (self.job_dir / 'execution-result.json').write_text(json.dumps(old_result))
         with patch.object(executor.bridge, 'Commands', return_value=self.commands), \
-                patch.object(executor.runner, 'git', return_value='https://github.com/' + self.cfg['repository']), \
+                patch.object(executor, 'fetch_origin', return_value='https://github.com/' + self.cfg['repository']), \
                 patch.object(executor.subprocess, 'run', return_value=subprocess.CompletedProcess([], 1)) as launch:
             self.assertEqual(executor.run_job(self.cfg, self.job_id)['verdict'], 'FAILED')
             launch.assert_not_called()
@@ -693,7 +714,7 @@ class ExecutorTests(unittest.TestCase):
 
     def test_target_change_during_revalidation_revokes_matching_receipt(self):
         self.publish()
-        def changed(directory):
+        def changed(directory, **kwargs):
             self.commands.pr['draft'] = True
             return {'verdict': 'PASS', 'reasons': [], 'head_sha': self.head}
         self.collector.side_effect = changed
@@ -862,6 +883,187 @@ class ExecutorTests(unittest.TestCase):
         self.assertEqual(visited, [self.job_id, second])
         self.cfg['collection_budget_seconds'] = 0
         self.assertEqual(executor.collect_all(self.cfg), [])
+
+
+    def test_retired_policy_revokes_only_its_own_published_success(self):
+        self.publish()
+        self.cfg['policy_version'] = 'next'
+        self.assertEqual(self.publish()['state'], 'retired')
+        self.assertEqual(self.commands.statuses[-1][1]['state'], 'pending')
+        self.assertEqual(self.collector.call_count, 1)
+        count = len(self.commands.statuses)
+        self.assertEqual(self.publish()['state'], 'retired')
+        self.assertEqual(len(self.commands.statuses), count)
+        newer = dict(self.req, job_id='pr-7-' + 'f' * 24)
+        self.commands.gh('new-policy', executor.status_payload(newer, 'PASS'))
+        count = len(self.commands.statuses)
+        self.assertEqual(self.publish()['state'], 'retired')
+        self.assertEqual(len(self.commands.statuses), count)
+        self.assertEqual(self.commands.statuses[-1][1]['state'], 'success')
+
+    def test_retired_policy_revokes_prior_retry_without_cloud_mapping(self):
+        retry_id = self.job_id + '-retry-' + 'a' * 12
+        self.commands.gh('old-retry', executor.status_payload(self.req, 'PASS', retry_id))
+        self.cfg['review_models'] = ['codex']
+        self.req['multica_issue_id'] = None
+        self.write_request()
+        self.assertEqual(self.publish()['state'], 'retired')
+        self.assertEqual(self.commands.statuses[-1][1]['state'], 'pending')
+        self.collector.assert_not_called()
+
+    def test_malformed_manifest_shapes_downgrade_published_pass(self):
+        shapes = [[], None, {'policy': None}, {'policy': []}, {'provenance': None},
+                  {'provenance': []}, {'source_repo': None}]
+        for shape in shapes:
+            with self.subTest(shape=shape):
+                self.write_manifest()
+                self.assertEqual(self.publish()['state'], 'success')
+                invalid = dict(self.manifest, **shape) if isinstance(shape, dict) else shape
+                (self.review_dir / 'manifest.json').write_text(json.dumps(invalid))
+                self.assertEqual(self.publish()['state'], 'failure')
+                self.assertEqual(self.commands.statuses[-1][1]['state'], 'failure')
+
+    def test_status_pagination_finds_and_revokes_second_page(self):
+        for index in range(100):
+            self.commands.statuses.append(('other', {'context': 'other-' + str(index),
+                'state': 'success', 'description': 'unrelated'}))
+        self.commands.gh('target', executor.status_payload(self.req, 'PASS'))
+        self.cfg['policy_version'] = 'next'
+        self.assertEqual(self.publish()['state'], 'retired')
+        self.assertEqual(self.commands.statuses[-1][1]['state'], 'pending')
+
+    def test_status_second_page_failure_is_unknown_without_post(self):
+        for index in range(100):
+            self.commands.statuses.append(('other', {'context': 'other-' + str(index),
+                'state': 'success', 'description': 'unrelated'}))
+        self.commands.gh('target', executor.status_payload(self.req, 'PASS'))
+        original = self.commands.gh
+        def fail_page(endpoint, payload=None):
+            if 'page=2' in endpoint:
+                raise executor.bridge.BridgeError('page unavailable')
+            return original(endpoint, payload)
+        self.cfg['policy_version'] = 'next'
+        with patch.object(self.commands, 'gh', side_effect=fail_page), self.assertRaises(executor.bridge.BridgeError):
+            self.publish()
+        self.assertEqual(len(self.commands.statuses), 101)
+
+    def test_collection_passes_remaining_local_budget_and_timeout_stays_pending(self):
+        self.publish()
+        self.collector.return_value = {'verdict': 'RUNNING_TIMEOUT', 'reasons': ['collection budget exhausted']}
+        cfg = dict(self.cfg, collection_job_budget_seconds=1, collection_budget_seconds=30)
+        with patch.object(executor.bridge, 'Commands', return_value=self.commands):
+            results = executor.collect_all(cfg)
+        self.assertEqual(results[0]['state'], 'pending')
+        remaining = self.collector.call_args.kwargs['deadline'] - executor.time.monotonic()
+        self.assertGreater(remaining, 0)
+        self.assertLessEqual(remaining, 1)
+        self.assertEqual(self.commands.statuses[-1][1]['state'], 'pending')
+        self.assertEqual(json.loads((self.job_dir / 'published.json').read_text())['verdict'], 'PASS')
+
+    def test_real_runner_expired_budget_preserves_evidence_and_withholds_success(self):
+        self.publish()
+        evidence = self.review_dir / 'attestation.json'
+        evidence.write_text('preserved previous evidence')
+        self.collector.side_effect = REAL_COLLECT
+        cfg = dict(self.cfg, _collection_deadline=executor.time.monotonic() - 1)
+        result = executor.publish_result(cfg, self.job_id, self.commands)
+        self.assertEqual(result['state'], 'pending')
+        self.assertEqual(evidence.read_text(), 'preserved previous evidence')
+        self.assertEqual(self.commands.statuses[-1][1]['state'], 'pending')
+        self.assertEqual(json.loads((self.job_dir / 'published.json').read_text())['verdict'], 'PASS')
+
+
+
+class FetchEnvironmentTests(unittest.TestCase):
+    """Real Git/file transport tests; no GitHub credentials or network are used."""
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix='multica-fetch-test-')
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name).resolve()
+        self.clean = executor.runner.git_environment()
+        self.author = self.root / 'author'
+        self.author.mkdir()
+        self.git(self.author, 'init', '-q', '-b', 'main')
+        self.git(self.author, 'config', 'user.name', 'Fixture')
+        self.git(self.author, 'config', 'user.email', 'fixture@example.invalid')
+        (self.author / 'initial.txt').write_text('initial blob')
+        self.git(self.author, 'add', '.')
+        self.git(self.author, 'commit', '-qm', 'initial')
+        self.server = self.root / 'server.git'
+        self.git(self.root, 'clone', '-q', '--bare', str(self.author), str(self.server))
+        self.git(self.server, 'config', 'uploadpack.allowFilter', 'true')
+        self.mirror = self.root / 'mirror.git'
+        self.git(self.root, 'clone', '-q', '--bare', '--filter=blob:none', self.server.as_uri(), str(self.mirror))
+        self.helper = self.root / 'trusted gh'
+        self.helper.write_text('#!/bin/sh\nprintf "username=fixture\\npassword=fixture-secret\\n"\n')
+        self.helper.chmod(0o700)
+        self.cfg = {'gh_path': str(self.helper)}
+
+    def git(self, repo, *args, env=None, input_text=None, check=True):
+        return subprocess.run(['git', '-C', str(repo), *args], env=env or self.clean,
+                              text=True, input=input_text, capture_output=True, check=check, timeout=20)
+
+    def missing(self):
+        output = self.git(self.mirror, 'rev-list', '--objects', '--all', '--missing=print').stdout
+        return [row for row in output.splitlines() if row.startswith('?')]
+
+    def test_real_fetch_ignores_injected_repo_global_rewrites_and_hooks(self):
+        hook = self.root / 'hooks'
+        hook.mkdir()
+        marker = self.root / 'UNTRUSTED_HOOK_RAN'
+        (hook / 'reference-transaction').write_text('#!/bin/sh\ntouch ' + str(marker) + '\n')
+        (hook / 'reference-transaction').chmod(0o700)
+        self.git(self.mirror, 'config', 'core.hooksPath', str(hook))
+        global_config = self.root / 'hostile.gitconfig'
+        global_config.write_text('[url "ext::false "]\n insteadOf = file://\n')
+        inherited = {'GIT_DIR': str(self.author / '.git'), 'GIT_WORK_TREE': str(self.author),
+                     'GIT_CONFIG_GLOBAL': str(global_config), 'GIT_CONFIG_COUNT': '1',
+                     'GIT_CONFIG_KEY_0': 'core.hooksPath', 'GIT_CONFIG_VALUE_0': str(hook),
+                     'GIT_SSH_COMMAND': 'touch ' + str(marker), 'SSH_AUTH_SOCK': 'fixture-agent'}
+        with patch.dict(os.environ, inherited):
+            env = executor.fetch_git_environment(self.cfg)
+        self.assertNotIn('GIT_DIR', env)
+        self.assertNotIn('GIT_WORK_TREE', env)
+        self.assertEqual(env['GIT_CONFIG_GLOBAL'], os.devnull)
+        self.assertEqual(env['SSH_AUTH_SOCK'], 'fixture-agent')
+        self.assertEqual(executor.fetch_origin(self.mirror, env), self.server.as_uri())
+        # Only this isolated test permits file://. Production permits https/ssh.
+        local_env = dict(env, GIT_ALLOW_PROTOCOL='file')
+        self.git(self.mirror, 'fetch', '-q', '--no-filter', '--refetch', 'origin', 'main:main', env=local_env)
+        self.assertEqual(self.missing(), [])
+        self.assertFalse(marker.exists())
+        (self.author / 'new.txt').write_text('new blob')
+        self.git(self.author, 'add', '.')
+        self.git(self.author, 'commit', '-qm', 'new')
+        self.git(self.author, 'push', '-q', str(self.server), 'main')
+        self.git(self.mirror, 'fetch', '-q', '--no-filter', 'origin', 'main:main', env=local_env)
+        self.assertEqual(self.missing(), [])
+        self.assertFalse(marker.exists())
+        # Ordinary diffs also run: no invalid diff.external="" override.
+        self.assertIn('new.txt', self.git(self.mirror, 'diff', '--stat', 'HEAD~1', 'HEAD', env=local_env).stdout)
+
+    def test_real_git_credential_uses_only_explicit_trusted_helper(self):
+        marker = self.root / 'UNTRUSTED_AUTH_RAN'
+        hostile = '!touch ' + str(marker)
+        self.git(self.mirror, 'config', 'credential.helper', hostile)
+        self.git(self.mirror, 'config', 'credential.https://github.com.helper', hostile)
+        env = executor.fetch_git_environment(self.cfg)
+        response = self.git(self.mirror, 'credential', 'fill', env=env,
+                            input_text='protocol=https\nhost=github.com\npath=owner/repo\n\n')
+        self.assertIn('password=fixture-secret', response.stdout)
+        self.assertFalse(marker.exists())
+        self.assertEqual(env['GIT_ALLOW_PROTOCOL'], 'https:ssh')
+        denied = self.git(self.mirror, 'ls-remote', 'ext::touch ' + str(marker), env=env, check=False)
+        self.assertNotEqual(denied.returncode, 0)
+        self.assertFalse(marker.exists())
+
+    def test_no_filter_does_not_pretend_to_rehydrate_known_partial_head(self):
+        env = dict(executor.fetch_git_environment(self.cfg), GIT_ALLOW_PROTOCOL='file')
+        self.assertTrue(self.missing())
+        self.git(self.mirror, 'fetch', '-q', '--no-filter', 'origin', 'main:main', env=env)
+        self.assertTrue(self.missing())
+        self.git(self.mirror, 'fetch', '-q', '--no-filter', '--refetch', 'origin', 'main:main', env=env)
+        self.assertEqual(self.missing(), [])
 
 
 

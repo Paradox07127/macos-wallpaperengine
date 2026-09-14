@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import argparse
 from contextlib import contextmanager
+from contextvars import ContextVar
 import fcntl
+import ctypes
 import hashlib
 import json
 import math
@@ -24,11 +26,13 @@ import tempfile
 import time
 from typing import Any
 
-POLICY_VERSION = "multica-mmrun-static-v3"
+POLICY_VERSION = "multica-mmrun-static-v4"
+RELEASE_VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.]+)?\Z")
+SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 SHA = re.compile(r"[0-9a-f]{40}\Z")
 JOB = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,95}\Z")
 RUN = re.compile(r"^RUN ([A-Za-z0-9][A-Za-z0-9_.-]{0,95})\s+models=", re.M)
-MODEL_NAMES = {"codex", "grok", "agy"}
+MODEL_NAMES = {"codex", "grok", "claude", "agy"}
 MAX_REPORT_BYTES = 8 * 1024 * 1024
 MAX_ATTESTATION_BYTES = MAX_REPORT_BYTES * (2 * len(MODEL_NAMES)) + 1024 * 1024
 MAX_INLINE_TREE_BYTES = 256 * 1024
@@ -50,7 +54,67 @@ class ReviewError(Exception):
     """An input, process, version, or evidence invariant failed."""
 
 
+
+class CollectionDeadline(Exception):
+    """Collection yielded without changing a completed verdict."""
+
+
+_COLLECTION_DEADLINE = ContextVar("collection_deadline", default=None)
+
+
+@contextmanager
+def collection_budget(deadline=None):
+    previous = _COLLECTION_DEADLINE.get()
+    effective = min(previous, deadline) if previous is not None and deadline is not None else (previous if deadline is None else deadline)
+    token = _COLLECTION_DEADLINE.set(effective)
+    try:
+        check_deadline()
+        yield
+    finally:
+        _COLLECTION_DEADLINE.reset(token)
+
+
+def check_deadline() -> None:
+    deadline = _COLLECTION_DEADLINE.get()
+    if deadline is not None and time.monotonic() >= deadline:
+        raise CollectionDeadline("COLLECTION_BUDGET_EXHAUSTED")
+
+
+def command_timeout(default: float) -> float:
+    check_deadline()
+    deadline = _COLLECTION_DEADLINE.get()
+    return default if deadline is None else min(default, max(0.001, deadline - time.monotonic()))
+
+
+def fsync_directory(path: Path) -> None:
+    fd = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def durable_mkdir(path: Path, *, mode: int = 0o700) -> None:
+    if path.exists():
+        return
+    durable_mkdir(path.parent, mode=mode)
+    try:
+        path.mkdir(mode=mode)
+    except FileExistsError:
+        if path.is_symlink() or not path.is_dir():
+            raise ReviewError("DURABLE_DIRECTORY_REPLACED")
+    fsync_directory(path)
+    fsync_directory(path.parent)
+
+
+def reject_symlink_ancestors(path: Path) -> None:
+    for part in (path, *path.parents):
+        check_deadline()
+        if part.is_symlink():
+            raise ReviewError("SYMLINK_EVIDENCE_PATH")
+
 def digest(path: Path) -> str:
+    check_deadline()
     if path.suffix == ".raw" or ".raw." in path.name:
         raise ReviewError("Raw event streams are deliberately not read")
     if path.is_symlink() or not path.is_file():
@@ -58,6 +122,7 @@ def digest(path: Path) -> str:
     h = hashlib.sha256()
     with path.open("rb") as stream:
         for chunk in iter(lambda: stream.read(65536), b""):
+            check_deadline()
             h.update(chunk)
     return h.hexdigest()
 
@@ -72,6 +137,7 @@ def write_json(path: Path, value: Any) -> None:
             stream.flush()
             os.fsync(stream.fileno())
         temporary.replace(path)
+        fsync_directory(path.parent)
     finally:
         temporary.unlink(missing_ok=True)
 
@@ -107,9 +173,9 @@ def review_policy(kind: str, models: list[str]) -> dict[str, Any]:
     if kind not in ("pr", "release") or type(models) is not list or any(type(m) is not str for m in models):
         raise ReviewError("Invalid review kind/models")
     if not models or len(set(models)) != len(models) or not set(models) <= MODEL_NAMES:
-        raise ReviewError("models must be a nonempty unique list of codex,grok,agy")
-    if kind == "release" and not {"codex", "grok"}.issubset(models):
-        raise ReviewError("Release static review requires both codex and grok baseline reviewers")
+        raise ReviewError("models must be a nonempty unique list of codex,grok,claude,agy")
+    if kind == "release" and ("codex" not in models or not {"grok", "claude"}.intersection(models)):
+        raise ReviewError("Release static review requires codex plus grok or claude baseline reviewers")
     return {"version": POLICY_VERSION, "models": models,
             "scope": "release_tree_and_base_delta" if kind == "release" else "merge_base_to_head_delta",
             "all_models_approve": True, "blocked_severities": ["critical", "major"],
@@ -117,6 +183,8 @@ def review_policy(kind: str, models: list[str]) -> dict[str, Any]:
 
 
 def validate_manifest_policy(manifest: dict[str, Any]) -> None:
+    if manifest.get("kind") == "release" and (type(manifest.get("version")) is not str or not RELEASE_VERSION.fullmatch(manifest["version"])):
+        raise ReviewError("RELEASE_VERSION_REQUIRED")
     if type(manifest.get("schema_version")) is not int or manifest["schema_version"] != 1:
         raise ReviewError("Unsupported manifest schema version")
     policy = manifest.get("policy")
@@ -129,6 +197,7 @@ def validate_manifest_policy(manifest: dict[str, Any]) -> None:
 
 
 def load_json(path: Path, *, max_bytes: int = MAX_REPORT_BYTES) -> Any:
+    check_deadline()
     if path.is_symlink() or not path.is_file() or path.stat().st_size > max_bytes:
         raise ReviewError(f"Missing, oversized, or symlink JSON: {path}")
 
@@ -163,6 +232,7 @@ def validate_report(report: Any) -> dict[str, Any]:
         raise ReviewError("findings must be an array")
     keys = {"severity", "file", "line", "quote", "claim", "failure_scenario", "suggestion"}
     for finding in report["findings"]:
+        check_deadline()
         if type(finding) is not dict or set(finding) != keys:
             raise ReviewError("Finding has missing or additional fields")
         if finding["severity"] not in ("critical", "major", "minor", "optional"):
@@ -204,13 +274,17 @@ def git_environment() -> dict[str, str]:
 def command(argv: list[str], cwd: Path | None = None, *, timeout: float = 30,
             env: dict[str, str] | None = None) -> str:
     try:
-        result = subprocess.run(argv, cwd=cwd, env=env, text=True, capture_output=True, timeout=timeout, check=False)
-    except (OSError, subprocess.TimeoutExpired) as exc:
+        result = subprocess.run(argv, cwd=cwd, env=env, text=True, capture_output=True, timeout=command_timeout(timeout), check=False)
+    except subprocess.TimeoutExpired as exc:
+        check_deadline()
+        raise ReviewError("PREPARATION_COMMAND_TIMEOUT") from exc
+    except OSError as exc:
         # Command output can contain credentials or hostile repository text.
         # Never copy argv/stderr into an attestation or a public comment.
         raise ReviewError("PREPARATION_COMMAND_UNAVAILABLE") from exc
     if result.returncode:
         raise ReviewError(f"PREPARATION_COMMAND_EXIT_{result.returncode}")
+    check_deadline()
     return result.stdout.strip()
 
 
@@ -292,7 +366,9 @@ def verify_frozen(manifest: dict[str, Any]) -> None:
     # This is an input check, not a replacement for the model's OS permissions.
     root = frozen.resolve()
     for directory, dirs, files in os.walk(frozen, followlinks=False):
+        check_deadline()
         for name in dirs + files:
+            check_deadline()
             path = Path(directory) / name
             if path.is_symlink():
                 try:
@@ -365,13 +441,16 @@ def environment(args: argparse.Namespace) -> tuple[dict[str, str], dict[str, Any
                                   "mmrun_kind": getattr(args, "mmrun_kind", "compat"),
                                   "dispatch_helper": str(Path(__file__).with_name("runner_dispatch.py").resolve()),
                                   "dispatch_helper_sha256": digest(Path(__file__).with_name("runner_dispatch.py").resolve()),
-                                  "mmrun_home": str(mmrun_home), "session": env["MMRUN_SESSION"]}
+                                  "mmrun_home": str(mmrun_home), "session": env["MMRUN_SESSION"],
+                                  "models": list(args.models), "input_files": {}}
+    if "claude" in args.models and provenance["mmrun_kind"] != "compat":
+        raise ReviewError("CLAUDE_REQUIRES_COMPAT_EXECUTABLE")
     compat_sidecar = Path(provenance["mmrun_path"] + ".provenance.json")
     if provenance["mmrun_kind"] not in ("upstream", "compat"):
         raise ReviewError("Unknown mmrun executable kind")
     if provenance["mmrun_kind"] == "compat" or compat_sidecar.exists() or compat_sidecar.is_symlink():
         compat = load_json(compat_sidecar)
-        if (compat.get("version") != "mmrun-grok-transport-v2"
+        if (compat.get("version") != "mmrun-provider-transport-v3"
                 or compat.get("security_flags_changed") is not False
                 or compat.get("output") != provenance["mmrun_path"]
                 or compat.get("output_sha256") != provenance["mmrun_sha256"]):
@@ -382,6 +461,7 @@ def environment(args: argparse.Namespace) -> tuple[dict[str, str], dict[str, Any
         provenance["compatibility"] = compat
     schema = Path(env["MMRUN_D"]) / "review.schema.json"
     provenance["upstream_schema_sha256"] = digest(schema)
+    provenance["input_files"]["schema"] = {"path": str(schema), "sha256": provenance["upstream_schema_sha256"]}
     if "codex" in args.models:
         default_home = home / ".codex"
         inherited = Path(env.get("CODEX_HOME", str(default_home))).expanduser().resolve()
@@ -404,13 +484,18 @@ def environment(args: argparse.Namespace) -> tuple[dict[str, str], dict[str, Any
             raise ReviewError("Read-only mm profile may not grant filesystem write access")
         env["CODEX_HOME"] = str(codex_home)
         provenance.update(codex_home=str(codex_home), codex_profile_sha256=digest(profile))
-    if set(args.models) & {"grok", "agy"}:
-        provenance["fence_sha256"] = digest(Path(env["MMRUN_D"]) / "fence.sb")
+        provenance["input_files"]["codex_profile"] = {"path": str(profile), "sha256": provenance["codex_profile_sha256"]}
+    if set(args.models) & {"grok", "claude", "agy"}:
+        fence = Path(env["MMRUN_D"]) / "fence.sb"
+        provenance["fence_sha256"] = digest(fence)
+        provenance["input_files"]["fence"] = {"path": str(fence), "sha256": provenance["fence_sha256"]}
     return env, provenance
 
 
 @contextmanager
 def preparing(args: argparse.Namespace):
+    if args.kind == "release" and (type(getattr(args, "version", None)) is not str or not RELEASE_VERSION.fullmatch(args.version)):
+        raise ReviewError("RELEASE_VERSION_REQUIRED")
     if not JOB.fullmatch(args.job_id) or args.job_id in (".", ".."):
         raise ReviewError("Invalid job ID")
     policy = review_policy(args.kind, args.models)
@@ -426,16 +511,99 @@ def preparing(args: argparse.Namespace):
     job_dir = Path(args.state_dir).expanduser().resolve() / args.job_id
     if job_dir.exists() or job_dir.is_symlink():
         raise ReviewError("Job already exists: use collect or choose a new job ID")
-    job_dir.mkdir(parents=True, mode=0o700)
+    durable_mkdir(job_dir)
     with job_lock(job_dir) as locked:
         if not locked:
             raise ReviewError("Preparation already locked")
-        write_json(job_dir / "preparing.json", {"controller_pid": os.getpid(), "job_id": args.job_id})
+        write_json(job_dir / "preparing.json", {"controller_pid": os.getpid(),
+                   "controller_identity": process_identity(os.getpid()), "job_id": args.job_id})
         yield _prepare_checkout(args, repo, tree, merge_base, env, provenance, job_dir, policy)
 
 
 
+
+def snapshot_inputs(job_dir: Path, env: dict[str, str], provenance: dict[str, Any]) -> None:
+    """Snapshot mmrun data inputs, preserving the existing authenticated Codex home."""
+    snapshots = job_dir / "input-snapshots"
+    durable_mkdir(snapshots)
+    inputs = provenance["input_files"]
+    for name, filename in (("schema", "review.schema.json"), ("fence", "fence.sb"),
+                           ("codex_profile", "mm.config.toml")):
+        if name not in inputs:
+            continue
+        record = inputs[name]
+        source = Path(record["path"])
+        reject_symlink_ancestors(source)
+        if digest(source) != record["sha256"]:
+            raise ReviewError("EXECUTION_INPUT_CHANGED")
+        destination = snapshots / filename
+        with destination.open("xb") as out, source.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(65536), b""):
+                out.write(chunk)
+            out.flush()
+            os.fsync(out.fileno())
+        destination.chmod(0o400)
+        if digest(destination) != record["sha256"] or digest(source) != record["sha256"]:
+            raise ReviewError("EXECUTION_INPUT_CHANGED_DURING_SNAPSHOT")
+        snapshot = {"path": str(destination), "sha256": record["sha256"]}
+        if name == "codex_profile":
+            # Upstream exec -p mm uses this user's existing CODEX_HOME/auth.
+            # Preserve it; revalidate the actual profile plus its evidence copy.
+            inputs["codex_profile_snapshot"] = snapshot
+        else:
+            inputs[name] = dict(snapshot, source_path=str(source))
+    snapshots.chmod(0o500)
+    fsync_directory(snapshots)
+    fsync_directory(job_dir)
+    env["MMRUN_D"] = str(snapshots)
+    provenance["mmrun_d_snapshot"] = str(snapshots)
+
+
+def record_prompt_input(path: Path, provenance: dict[str, Any], name: str) -> None:
+    path.chmod(0o400)
+    with path.open("rb") as stream:
+        os.fsync(stream.fileno())
+    fsync_directory(path.parent)
+    provenance["input_files"][name] = {"path": str(path), "sha256": digest(path)}
+
+
+def validate_input_files(provenance: dict[str, Any], *, include_prompts=True) -> None:
+    inputs = provenance.get("input_files")
+    if type(inputs) is not dict:
+        raise ReviewError("EXECUTION_INPUT_MANIFEST_REQUIRED")
+    models = provenance.get("models")
+    if type(models) is not list or not models or not set(models) <= MODEL_NAMES:
+        raise ReviewError("EXECUTION_MODEL_MANIFEST_REQUIRED")
+    required = {"schema"}
+    if include_prompts:
+        required.add("notes")
+    if "codex" in models:
+        required.add("codex_profile")
+        if include_prompts:
+            required.add("codex_profile_snapshot")
+    if set(models) & {"grok", "claude", "agy"}:
+        required.add("fence")
+    if not required <= inputs.keys():
+        raise ReviewError("EXECUTION_INPUT_MANIFEST_INCOMPLETE")
+    for record in inputs.values():
+        if (type(record) is not dict or type(record.get("path")) is not str
+                or not Path(record["path"]).is_absolute() or type(record.get("sha256")) is not str
+                or not SHA256.fullmatch(record["sha256"])):
+            raise ReviewError("EXECUTION_INPUT_RECORD_INVALID")
+        path = Path(record["path"])
+        reject_symlink_ancestors(path)
+        if str(path.resolve()) != record["path"] or digest(path) != record["sha256"]:
+            raise ReviewError("EXECUTION_INPUT_CHANGED")
+
+def validate_execution_environment(env: dict[str, str], provenance: dict[str, Any]) -> None:
+    if env.get("MMRUN_D") != provenance.get("mmrun_d_snapshot"):
+        raise ReviewError("EXECUTION_SCHEMA_ENVIRONMENT_CHANGED")
+    if "codex" in provenance["models"] and env.get("CODEX_HOME") != provenance.get("codex_home"):
+        raise ReviewError("EXECUTION_CODEX_HOME_CHANGED")
+
+
 def validate_execution_provenance(provenance: dict[str, Any]) -> None:
+    validate_input_files(provenance)
     if provenance.get("mmrun_kind") not in ("upstream", "compat"):
         raise ReviewError("MMRUN_KIND_REQUIRED")
     for key, hash_key in (("mmrun_path", "mmrun_sha256"), ("dispatch_helper", "dispatch_helper_sha256")):
@@ -444,7 +612,7 @@ def validate_execution_provenance(provenance: dict[str, Any]) -> None:
             raise ReviewError("EXECUTION_PROVENANCE_CHANGED")
     if provenance["mmrun_kind"] == "compat" or "compatibility" in provenance:
         compat = load_json(Path(provenance["mmrun_path"] + ".provenance.json"))
-        if (compat != provenance.get("compatibility") or compat.get("version") != "mmrun-grok-transport-v2"
+        if (compat != provenance.get("compatibility") or compat.get("version") != "mmrun-provider-transport-v3"
                 or compat.get("security_flags_changed") is not False
                 or compat.get("output") != provenance["mmrun_path"]
                 or compat.get("output_sha256") != provenance["mmrun_sha256"]):
@@ -464,8 +632,10 @@ def _prepare_checkout(args, repo, tree, merge_base, env, provenance, job_dir, po
                                "source_repo": str(repo), "repo": str(frozen), "base_sha": args.base, "head_sha": args.head,
                                "merge_base_sha": merge_base, "tree_sha": tree, "frozen_checkout": str(frozen), "policy": policy,
                                "provenance": provenance, "mmrun_run_id": None,
-                               "created_at": time.time(), "controller_pid": os.getpid(), "phase": "PREPARED",
+                               "created_at": time.time(), "controller_pid": os.getpid(),
+                               "controller_identity": process_identity(os.getpid()), "phase": "PREPARED",
                                "controller_checkout": str(Path(__file__).resolve().parent)}
+    snapshot_inputs(job_dir, env, provenance)
     freeze_repository(repo, frozen, args.base, args.head)
     if getattr(args, "version", None):
         manifest["version"] = args.version
@@ -489,6 +659,7 @@ def _prepare_checkout(args, repo, tree, merge_base, env, provenance, job_dir, po
               f"Head: {args.head}\nReviewed merge-base for triple-dot delta: {merge_base}\nTree: {tree}\n")
     (job_dir / "review-notes.txt").write_text(notes)
     manifest["provenance"]["notes_sha256"] = digest(job_dir / "review-notes.txt")
+    record_prompt_input(job_dir / "review-notes.txt", provenance, "notes")
     manifest["empty_delta"] = empty_delta(frozen, args.base, args.head)
     manifest["release_empty_delta"] = args.kind == "release" and manifest["empty_delta"]
     if manifest["empty_delta"]:
@@ -501,6 +672,8 @@ def _prepare_checkout(args, repo, tree, merge_base, env, provenance, job_dir, po
                   "\n## 待审内容\n" + inline_small_tree(frozen, args.head))
         (job_dir / "release-prompt.txt").write_text(prompt)
         manifest["provenance"]["release_prompt_sha256"] = digest(job_dir / "release-prompt.txt")
+        record_prompt_input(job_dir / "release-prompt.txt", provenance, "full_tree_prompt")
+    validate_input_files(provenance)
     # This is the first collector-visible manifest, after all frozen inputs exist.
     write_json(job_dir / "manifest.json", manifest)
     return job_dir, manifest, env
@@ -537,7 +710,7 @@ def attest(job_dir: Path, manifest: dict[str, Any], verdict: str, *, reasons: li
     run_id = manifest.get("mmrun_run_id")
     root = Path(manifest["provenance"]["mmrun_home"]) / run_id if run_id else None
     destination = attestation_path(manifest)
-    destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    durable_mkdir(destination.parent)
     result = {**manifest, "verdict": verdict, "collected_at": time.time(), "attestation_path": str(destination),
               "artifact_root": str(root) if root else None, "artifacts": artifacts or [],
               "reports": reports or {}, "findings": [dict(finding, model=model)
@@ -553,16 +726,19 @@ def attest(job_dir: Path, manifest: dict[str, Any], verdict: str, *, reasons: li
     return result
 
 
-def collect(job_dir: Path) -> dict[str, Any]:
+def collect(job_dir: Path, *, deadline=None) -> dict[str, Any]:
     if job_dir.is_symlink():
         raise ReviewError("Job directory may not be a symlink")
     job_dir = job_dir.resolve()
-    with job_lock(job_dir) as locked:
-        if not locked:
-            return pending(job_dir, "Preparation, dispatch, or collection in progress; processes retained")
-        if not (job_dir / "manifest.json").exists():
-            return pending(job_dir, "No prepared manifest has been published")
-        return _collect_locked(job_dir)
+    try:
+        with collection_budget(deadline), job_lock(job_dir) as locked:
+            if not locked:
+                return pending(job_dir, "Preparation, dispatch, or collection in progress; processes retained")
+            if not (job_dir / "manifest.json").exists():
+                return pending(job_dir, "No prepared manifest has been published")
+            return _collect_locked(job_dir)
+    except CollectionDeadline:
+        return pending(job_dir, "Collection budget exhausted; evidence retained for the next pass")
 
 
 def process_alive(pid: Any) -> bool:
@@ -577,6 +753,116 @@ def process_alive(pid: Any) -> bool:
         return True
 
 
+
+def process_identity(pid: int) -> dict[str, Any] | None:
+    """Kernel process birth identity; PID alone is never sufficient for recovery."""
+    if type(pid) is not int or pid <= 0:
+        raise ReviewError("PROCESS_IDENTITY_INVALID")
+    if not process_alive(pid):
+        return None
+    if sys.platform == "darwin":
+        class BSDInfo(ctypes.Structure):
+            _fields_ = [("prefix", ctypes.c_uint32 * 12), ("comm", ctypes.c_char * 16),
+                        ("name", ctypes.c_char * 32), ("tail", ctypes.c_uint32 * 6),
+                        ("started_sec", ctypes.c_uint64), ("started_usec", ctypes.c_uint64)]
+        info = BSDInfo()
+        lib = ctypes.CDLL("/usr/lib/libproc.dylib", use_errno=True)
+        result = lib.proc_pidinfo(pid, 3, 0, ctypes.byref(info), ctypes.sizeof(info))
+        if result == ctypes.sizeof(info) and info.started_sec:
+            return {"pid": pid, "platform": "darwin", "start": f"{info.started_sec}:{info.started_usec}",
+                    "started_at": info.started_sec + info.started_usec / 1_000_000}
+    elif sys.platform.startswith("linux"):
+        try:
+            raw = Path(f"/proc/{pid}/stat").read_text()
+            ticks = int(raw[raw.rfind(")") + 2:].split()[19])
+            boot = Path("/proc/sys/kernel/random/boot_id").read_text().strip()
+            return {"pid": pid, "platform": "linux", "start": boot + ":" + str(ticks)}
+        except (OSError, ValueError, IndexError):
+            pass
+    if not process_alive(pid):
+        return None
+    raise ReviewError("PROCESS_START_IDENTITY_UNAVAILABLE")
+
+
+def identity_alive(identity: Any) -> bool:
+    if (type(identity) is not dict or type(identity.get("pid")) is not int or identity["pid"] <= 0
+            or type(identity.get("start")) is not str or not identity["start"]
+            or identity.get("platform") not in ("darwin", "linux")):
+        raise ReviewError("PROCESS_START_IDENTITY_REQUIRED")
+    current = process_identity(identity["pid"])
+    return current is not None and (current["platform"], current["start"]) == (identity["platform"], identity["start"])
+
+
+def recorded_process_alive(manifest: dict[str, Any], role: str) -> bool:
+    identity = manifest.get(role + "_identity")
+    if identity is not None:
+        if identity.get("pid") != manifest.get(role + "_pid"):
+            raise ReviewError("PROCESS_IDENTITY_PID_MISMATCH")
+        return identity_alive(identity)
+    pid = manifest.get(role + "_pid")
+    if pid is None:
+        return False
+    if not process_alive(pid):
+        return False
+    raise ReviewError("LIVE_PROCESS_START_IDENTITY_UNKNOWN")
+
+
+def bind_worker_identities(manifest: dict[str, Any], root: Path) -> None:
+    """Bind an upstream worker PID while it is observable, using its birth time.
+
+    Upstream records epoch seconds in <model>.started before writing <model>.pid.
+    A process born later cannot be that worker. Missing birth metadata is unknown.
+    """
+    identities = manifest.setdefault("worker_identities", {})
+    for model in manifest["policy"]["models"]:
+        check_deadline()
+        if model in identities:
+            continue
+        pid_path = root / f"{model}.pid"
+        if not pid_path.exists():
+            continue
+        if pid_path.is_symlink() or pid_path.stat().st_size > 32:
+            raise ReviewError("WORKER_PID_UNKNOWN")
+        raw = pid_path.read_text().strip()
+        if not raw.isdecimal() or int(raw) <= 0:
+            raise ReviewError("WORKER_PID_UNKNOWN")
+        current = process_identity(int(raw))
+        if current is None:
+            continue
+        started_path = root / f"{model}.started"
+        if started_path.is_symlink() or not started_path.is_file() or started_path.stat().st_size > 32:
+            raise ReviewError("WORKER_START_TIME_UNKNOWN")
+        started = started_path.read_text().strip()
+        if not started.isdecimal():
+            raise ReviewError("WORKER_START_TIME_UNKNOWN")
+        if current["platform"] == "linux":
+            # Linux's boot timestamp + ticks resolves the same epoch used upstream.
+            boot_line = next((line for line in Path("/proc/stat").read_text().splitlines() if line.startswith("btime ")), None)
+            if boot_line is None:
+                raise ReviewError("WORKER_START_TIME_UNKNOWN")
+            birth = int(boot_line.split()[1]) + int(current["start"].rsplit(":", 1)[1]) / os.sysconf("SC_CLK_TCK")
+        else:
+            birth = current["started_at"]
+        if birth > int(started) + 2:
+            # Persist that this PID belongs to a later/different process; do not
+            # bind its identity as if it had launched this worker.
+            identities[model] = {"pid": int(raw), "reused": True, "worker_started": int(started)}
+        elif birth < int(started) - 2:
+            raise ReviewError("WORKER_START_IDENTITY_UNKNOWN")
+        else:
+            identities[model] = current
+
+
+def validate_dispatch_receipt(outcome: Any, job_id: Any, request_hash: Any) -> None:
+    if (type(job_id) is not str or not JOB.fullmatch(job_id) or job_id in (".", "..")
+            or type(request_hash) is not str or not SHA256.fullmatch(request_hash)):
+        raise ReviewError("DISPATCH_BINDING_REQUIRED")
+    if (type(outcome) is not dict or type(outcome.get("schema_version")) is not int
+            or outcome["schema_version"] != 1 or outcome.get("job_id") != job_id
+            or outcome.get("request_sha256") != request_hash or type(outcome.get("exit_code")) is not int
+            or type(outcome.get("started")) is not bool):
+        raise ReviewError("DISPATCH_RECEIPT_INVALID")
+
 def refresh_worker_status(manifest: dict[str, Any]) -> None:
     """Use upstream's PID check and 30s startup grace; never kill workers."""
     provenance = manifest["provenance"]
@@ -589,8 +875,9 @@ def refresh_worker_status(manifest: dict[str, Any]) -> None:
     env["MMRUN_SESSION"] = provenance["session"]
     try:
         result = subprocess.run([str(executable), "status", manifest["mmrun_run_id"]], env=env,
-                                text=True, capture_output=True, timeout=30, check=False)
+                                text=True, capture_output=True, timeout=command_timeout(30), check=False)
     except (OSError, subprocess.TimeoutExpired) as exc:
+        check_deadline()
         raise ReviewError("MODEL_LIVENESS_UNAVAILABLE") from exc
     if result.returncode:
         raise ReviewError("mmrun status failed to verify model liveness")
@@ -614,7 +901,7 @@ def _collect_locked(job_dir: Path) -> dict[str, Any]:
         if "dispatch_exit" in manifest and (type(manifest["dispatch_exit"]) is not int or manifest["dispatch_exit"] != 0):
             raise ReviewError("DISPATCH_NONZERO_EXIT")
         if not manifest.get("dispatch_result") or not manifest.get("dispatch_receipt_sha256"):
-            if any(process_alive(manifest.get(key)) for key in ("supervisor_pid", "dispatch_pid", "controller_pid")):
+            if any(recorded_process_alive(manifest, role) for role in ("supervisor", "dispatch", "controller")):
                 return attest(job_dir, manifest, "RUNNING_TIMEOUT", reasons=["Awaiting dispatcher completion receipt"])
             raise ReviewError("DISPATCH_COMPLETION_UNKNOWN")
         if manifest["dispatch_result"].get("started") is not True:
@@ -644,6 +931,8 @@ def _collect_locked(job_dir: Path) -> dict[str, Any]:
         expected_statuses = {f"{model}.status" for model in models}
         if {p.name for p in root.glob("*.status")} != expected_statuses:
             raise ReviewError("Missing/unexpected model status artifact")
+        bind_worker_identities(manifest, root)
+        write_json(job_dir / "manifest.json", manifest)
         statuses = {}
         for model in models:
             status_file = root / f"{model}.status"
@@ -660,8 +949,9 @@ def _collect_locked(job_dir: Path) -> dict[str, Any]:
         if any(s == "RUNNING" for s in statuses.values()):
             return attest(job_dir, manifest, "RUNNING_TIMEOUT", reasons=["Models still running; no process killed or checkout removed"])
         names = ["run.meta"] + [f"{m}.{suffix}" for m in models for suffix in ("status", "meta", "json", "out")]
-        if "grok" in models and (root / "grok.normalized.json").exists():
-            names.append("grok.normalized.json")
+        for provider in ("grok", "claude"):
+            if provider in models and (root / f"{provider}.normalized.json").exists():
+                names.append(f"{provider}.normalized.json")
         for name in names:
             path = root / name
             artifact_hash = digest(path)
@@ -687,6 +977,7 @@ def _collect_locked(job_dir: Path) -> dict[str, Any]:
                 reasons.append(f"{model}: findings were omitted")
             if any(f["severity"] in ("critical", "major") for f in report["findings"]):
                 reasons.append(f"{model}: blocking findings")
+        check_deadline()
         return attest(job_dir, manifest, "NEEDS_REVIEW" if reasons else "PASS", reasons=reasons, artifacts=artifacts, reports=reports)
     except (ReviewError, OSError, KeyError, TypeError, ValueError) as exc:
         return attest(job_dir, manifest, "FAILED", reasons=[str(exc) if isinstance(exc, ReviewError) else "EVIDENCE_VALIDATION_FAILED"], artifacts=artifacts, reports=reports)
@@ -699,13 +990,15 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     if result is not None:
         return result
     while True:
-        result = collect(job_dir)
+        result = collect(job_dir, deadline=deadline)
         if result["verdict"] != "RUNNING_TIMEOUT" or time.monotonic() >= deadline:
             return result
         time.sleep(min(args.poll_interval, max(0, deadline - time.monotonic())))
 
 
 def _dispatch_locked(args, job_dir, manifest, env, deadline):
+    validate_execution_provenance(manifest["provenance"])
+    validate_execution_environment(env, manifest["provenance"])
     executable = str(Path(args.mmrun).expanduser().resolve())
     if manifest.get("empty_delta") is True:
         argv = [executable, "start", "--mode", "review", "--schema", str(Path(env["MMRUN_D"]) / "review.schema.json"),
@@ -715,6 +1008,7 @@ def _dispatch_locked(args, job_dir, manifest, env, deadline):
                 "--models", ",".join(args.models), "--notes-file", str(job_dir / "review-notes.txt")]
     request = {"schema_version": 1, "job_id": manifest["job_id"], "argv": argv,
                "executable_sha256": manifest["provenance"]["mmrun_sha256"],
+               "provenance": manifest["provenance"],
                "cwd": manifest["controller_checkout"],
                "stdin": str(job_dir / "release-prompt.txt") if manifest.get("empty_delta") else os.devnull}
     write_json(job_dir / "dispatch-request.json", request)
@@ -731,6 +1025,7 @@ def _dispatch_locked(args, job_dir, manifest, env, deadline):
                                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                                 stderr=subprocess.DEVNULL, start_new_session=True, shell=False)
         manifest["supervisor_pid"] = proc.pid
+        manifest["supervisor_identity"] = process_identity(proc.pid)
         write_json(job_dir / "manifest.json", manifest)
         try:
             proc.wait(timeout=max(0.01, deadline - time.monotonic()))
@@ -765,15 +1060,12 @@ def recover_dispatch(job_dir: Path, manifest: dict[str, Any]) -> None:
             identity = load_json(identity_path)
             if identity.get("job_id") != manifest["job_id"] or identity.get("request_sha256") != request_hash:
                 raise ReviewError("DISPATCH_IDENTITY_MISMATCH")
-            for key in ("supervisor_pid", "dispatch_pid"):
+            for key in ("supervisor_pid", "dispatch_pid", "supervisor_identity", "dispatch_identity"):
                 if key in identity:
                     manifest[key] = identity[key]
         if receipt.exists():
             outcome = load_json(receipt)
-            if (type(outcome.get("schema_version")) is not int or outcome["schema_version"] != 1
-                    or outcome.get("job_id") != manifest["job_id"] or outcome.get("request_sha256") != request_hash
-                    or type(outcome.get("exit_code")) is not int or type(outcome.get("started")) is not bool):
-                raise ReviewError("DISPATCH_RESULT_INVALID")
+            validate_dispatch_receipt(outcome, manifest["job_id"], request_hash)
             manifest.update(dispatch_exit=outcome["exit_code"], dispatch_result=outcome,
                             dispatch_receipt_path=str(receipt), dispatch_receipt_sha256=digest(receipt),
                             phase="DISPATCHED" if outcome["exit_code"] == 0 else "DISPATCH_FAILED")
@@ -794,6 +1086,7 @@ def recover_dispatch(job_dir: Path, manifest: dict[str, Any]) -> None:
         if not candidates and root.is_dir() and session:
             with os.scandir(root) as entries:
                 for count, entry in enumerate(entries):
+                    check_deadline()
                     if count >= 4096:
                         raise ReviewError("SESSION_RECOVERY_SCAN_LIMIT")
                     if not JOB.fullmatch(entry.name) or not entry.is_dir(follow_symlinks=False):
@@ -824,7 +1117,7 @@ def require_quiescent(job_dir: Path, models: list[str] | None = None) -> None:
         preparing_state = load_json(preparing_path)
         if (type(preparing_state.get("controller_pid")) is not int or preparing_state["controller_pid"] <= 0
                 or preparing_state.get("job_id") != job_dir.name
-                or process_alive(preparing_state.get("controller_pid"))):
+                or recorded_process_alive(preparing_state, "controller")):
             raise ReviewError("PREPARATION_STILL_ACTIVE_OR_UNKNOWN")
         if (job_dir / "dispatch-request.json").exists():
             raise ReviewError("DISPATCH_IDENTITY_UNKNOWN")
@@ -833,7 +1126,7 @@ def require_quiescent(job_dir: Path, models: list[str] | None = None) -> None:
     recover_dispatch(job_dir, manifest)
     if type(manifest.get("controller_pid")) is not int or manifest["controller_pid"] <= 0:
         raise ReviewError("CONTROLLER_IDENTITY_UNKNOWN")
-    if any(process_alive(manifest.get(key)) for key in ("controller_pid", "supervisor_pid", "dispatch_pid")):
+    if any(recorded_process_alive(manifest, role) for role in ("controller", "supervisor", "dispatch")):
         raise ReviewError("REVIEW_CONTROLLER_STILL_ACTIVE")
     if not manifest.get("dispatch_request_sha256"):
         if manifest.get("phase") == "PREPARED" and not (job_dir / "dispatch-request.json").exists():
@@ -854,14 +1147,24 @@ def require_quiescent(job_dir: Path, models: list[str] | None = None) -> None:
     if (metadata.get("session") != manifest["provenance"]["session"]
             or metadata.get("workdir") != manifest["frozen_checkout"] or metadata.get("runid") != run_id):
         raise ReviewError("WORKER_SESSION_MISMATCH")
+    bind_worker_identities(manifest, root)
+    write_json(job_dir / "manifest.json", manifest)
     expected = set(manifest["policy"]["models"]) | set(models or [])
     for model in expected:
         pid_path = root / f"{model}.pid"
         if pid_path.is_symlink() or not pid_path.is_file() or pid_path.stat().st_size > 32:
             raise ReviewError("WORKER_PID_UNKNOWN")
         raw = pid_path.read_text().strip()
-        if not raw.isdecimal() or int(raw) <= 0 or process_alive(int(raw)):
+        if not raw.isdecimal() or int(raw) <= 0:
             raise ReviewError("WORKER_ACTIVE_OR_UNKNOWN")
+        identity = manifest.get("worker_identities", {}).get(model)
+        if identity is not None:
+            if identity.get("pid") != int(raw):
+                raise ReviewError("WORKER_PID_CHANGED")
+            if not identity.get("reused") and identity_alive(identity):
+                raise ReviewError("WORKER_ACTIVE_OR_UNKNOWN")
+        elif process_alive(int(raw)):
+            raise ReviewError("WORKER_START_IDENTITY_UNKNOWN")
         # Worker death alone does not prove a detached child has finished.
         # A terminal worker receipt is required, even for failed reports.
         values = kv(root / f"{model}.meta")
@@ -877,7 +1180,7 @@ def parser() -> argparse.ArgumentParser:
     launch.add_argument("--base", required=True)
     launch.add_argument("--head", required=True)
     launch.add_argument("--kind", choices=("pr", "release"), required=True)
-    launch.add_argument("--models", default="codex,grok", type=lambda value: value.split(","))
+    launch.add_argument("--models", default="codex,claude", type=lambda value: value.split(","))
     launch.add_argument("--timeout", type=float, default=3600)
     launch.add_argument("--poll-interval", type=float, default=2)
     launch.add_argument("--mmrun-kind", choices=("compat", "upstream"), default="compat")

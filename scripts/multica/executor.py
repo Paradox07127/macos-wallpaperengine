@@ -160,28 +160,70 @@ def allowed_origin(value, repository):
     return bool(re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', name)) and name.lower() == repository.lower()
 
 
+def fetch_git_environment(cfg):
+    """Use the same controller-owned Git settings for origin checks and fetch.
+
+    gh authenticates using its own trusted config or GH_TOKEN/GITHUB_TOKEN.
+    SSH uses the normal agent/default identities, never inherited SSH commands.
+    """
+    env = runner.git_environment()
+    env.update(GIT_ALLOW_PROTOCOL='https:ssh', GIT_LFS_SKIP_SMUDGE='1',
+               GIT_SSH_COMMAND='/usr/bin/ssh -F /dev/null -oBatchMode=yes',
+               SSH_ASKPASS_REQUIRE='never')
+    env.pop('SSH_ASKPASS', None)
+    helper = '!' + shlex.quote(cfg['gh_path']) + ' auth git-credential'
+    overrides = [('credential.helper', ''), ('credential.helper', helper),
+                 ('credential.https://github.com.helper', ''),
+                 ('credential.https://github.com.helper', helper),
+                 ('credential.interactive', 'false'), ('credential.useHttpPath', 'false'),
+                 ('core.sshCommand', env['GIT_SSH_COMMAND']),
+                 ('remote.origin.uploadpack', 'git-upload-pack'),
+                 ('fetch.recurseSubmodules', 'false'), ('gc.auto', '0'),
+                 ('maintenance.auto', 'false'), ('fetch.writeCommitGraph', 'false')]
+    offset = int(env['GIT_CONFIG_COUNT'])
+    for index, (key, value) in enumerate(overrides, offset):
+        env[f'GIT_CONFIG_KEY_{index}'] = key
+        env[f'GIT_CONFIG_VALUE_{index}'] = value
+    env['GIT_CONFIG_COUNT'] = str(offset + len(overrides))
+    return env
+
+
+def fetch_origin(source, env):
+    # get-url expands insteadOf using exactly the config visible to fetch.
+    result = subprocess.run(['git', '-C', str(source), 'remote', 'get-url', 'origin'],
+                            env=env, text=True, capture_output=True, timeout=30)
+    if result.returncode:
+        raise JobError('Could not resolve source fetch origin')
+    return result.stdout.strip()
+
+
 def collect_verified(cfg, req):
     runner_id, _ = active_attempt(cfg, req)
     directory = Path(cfg['review_state_dir']) / runner_id
     if not (directory / 'manifest.json').exists():
         return None
     manifest = runner.load_json(directory / 'manifest.json')
+    if not isinstance(manifest, dict) or any(not isinstance(manifest.get(key), dict) for key in ('policy', 'provenance')):
+        raise JobError('Review manifest and policy/provenance must be objects')
     if (manifest.get('job_id') != runner_id or manifest.get('kind') != req['kind']
             or manifest.get('head_sha') != req['head_sha'] or manifest.get('base_sha') != req['base_sha']):
         raise JobError('Review manifest does not match intake request')
     source = manifest.get('source_repo', manifest.get('repo'))
-    if Path(source).resolve() != Path(cfg['repository_path']).resolve():
+    if not isinstance(source, str) or not source or Path(source).resolve() != Path(cfg['repository_path']).resolve():
         raise JobError('Review belongs to another source repository')
     if manifest.get('policy', {}).get('version') != runner.POLICY_VERSION:
         raise JobError('Review policy mismatch')
-    if manifest.get('policy') != runner.review_policy(req['kind'], sorted(cfg.get('review_models', ['codex', 'grok']))):
+    if manifest.get('policy') != runner.review_policy(req['kind'], sorted(cfg.get('review_models', ['claude', 'codex']))):
         raise JobError('Required review policy changed')
     if manifest.get('provenance', {}).get('mmrun_kind') != cfg.get('mmrun_kind', 'compat'):
         raise JobError('Review transport identity changed')
     if req['kind'] == 'release' and manifest.get('version') != req.get('version'):
         raise JobError('Review release version mismatch')
     # Re-read the actual reports, statuses, and frozen tree. Never trust an agent's PASS string.
-    result = runner.collect(directory)
+    result = runner.collect(directory, deadline=cfg.get('_collection_deadline',
+                            time.monotonic() + cfg.get('collection_job_budget_seconds', 60)))
+    if not isinstance(result, dict):
+        raise JobError('Collector result must be an object')
     # The runner owns the protected evidence path. Never point agents to a local
     # full-report copy outside that protected root.
     if result.get('verdict') in ('PASS', 'NEEDS_REVIEW', 'FAILED') and not result.get('attestation_path'):
@@ -253,12 +295,10 @@ def _run_attempt(cfg, req, commands):
         atomic(directory / 'execution.json', execution)
         source = Path(cfg['repository_path']).resolve()
         phase = 'origin validation'
-        origin = runner.git(source, 'remote', 'get-url', 'origin')
+        env = fetch_git_environment(cfg)
+        origin = fetch_origin(source, env)
         if not allowed_origin(origin, cfg['repository']):
             raise JobError('Source repository origin is not the configured GitHub repository')
-        env = os.environ.copy()
-        env['GIT_LFS_SKIP_SMUDGE'] = '1'
-        env['GIT_TERMINAL_PROMPT'] = '0'
         phase = 'fetch'
         fetched = subprocess.run(['git', '-C', str(source), 'fetch', '-q', '--no-filter', 'origin',
                                   req['base_sha'], req['head_sha']], env=env,
@@ -268,7 +308,7 @@ def _run_attempt(cfg, req, commands):
         argv = [sys.executable, str(Path(__file__).with_name('review_runner.py')), 'run',
                 '--repo', str(source), '--base', req['base_sha'], '--head', req['head_sha'],
                 '--kind', req['kind'], '--job-id', runner_id, '--state-dir', cfg['review_state_dir'],
-                '--models', ','.join(cfg.get('review_models', ['codex', 'grok'])),
+                '--models', ','.join(cfg.get('review_models', ['claude', 'codex'])),
                 '--timeout', str(cfg.get('review_timeout_seconds', 3600)),
                 '--codex-home', cfg['codex_home'], '--mmrun-kind', cfg.get('mmrun_kind', 'compat')]
         if req['kind'] == 'release':
@@ -325,7 +365,7 @@ def require_quiescent(cfg, req, runner_id):
         if not locked:
             raise JobError('Cannot retry while preparation or collection is active')
         try:
-            runner.require_quiescent(directory, models=cfg.get('review_models', ['codex', 'grok']))
+            runner.require_quiescent(directory, models=cfg.get('review_models', ['claude', 'codex']))
         except runner.ReviewError as exc:
             raise JobError('Runner cannot prove this attempt is quiescent') from exc
 
@@ -467,11 +507,25 @@ def status_payload(req, verdict, runner_id=None, revision=''):
 
 
 def remote_status(cfg, req, commands):
-    current = commands.gh(f"repos/{cfg['repository']}/commits/{req['head_sha']}/status")
-    if not isinstance(current, dict) or not isinstance(current.get('statuses'), list):
-        raise JobError('Unexpected combined commit status response')
-    return next((row for row in current['statuses']
-                 if isinstance(row, dict) and row.get('context') == bridge.status_context(req)), None)
+    count = 0
+    for page in range(1, 101):
+        current = commands.gh(f"repos/{cfg['repository']}/commits/{req['head_sha']}/status?per_page=100&page={page}")
+        if (not isinstance(current, dict) or not isinstance(current.get('statuses'), list)
+                or any(not isinstance(row, dict) for row in current['statuses'])):
+            raise JobError('Unexpected combined commit status response')
+        rows = current['statuses']
+        total = current.get('total_count')
+        if total is not None and (type(total) is not int or total < 0):
+            raise JobError('Unexpected combined status total count')
+        match = next((row for row in rows if row.get('context') == bridge.status_context(req)), None)
+        if match is not None:
+            return match
+        count += len(rows)
+        if len(rows) < 100:
+            if total is not None and count < total:
+                raise JobError('Incomplete combined status pagination')
+            return None
+    raise JobError('Combined status pagination limit reached; context is unknown')
 
 
 def remote_status_matches(cfg, req, payload, commands):
@@ -484,7 +538,7 @@ def revoke_owned_status(cfg, req, runner_id, commands):
     # Call only while holding the shared context lock. Never revoke another
     # generation's newer result when an older controller resumes after a crash.
     latest = remote_status(cfg, req, commands)
-    if latest and str(latest.get('description', '')).startswith(runner_id + ':'):
+    if latest and latest.get('state') != 'pending' and str(latest.get('description', '')).startswith(runner_id + ':'):
         commands.gh(f"repos/{cfg['repository']}/statuses/{req['head_sha']}",
                     {'state': 'pending', 'context': bridge.status_context(req),
                      'description': runner_id + ': target verification incomplete; result withheld'})
@@ -603,14 +657,22 @@ def publish_locked(cfg, req, commands, records, runner_id):
 
 def publish_result(cfg, job_id, commands=None):
     directory, req = request(cfg, job_id, allow_retired=True)
-    if not current_policy(cfg, req):
-        return {'job_id': job_id, 'state': 'retired'}
     commands = commands or bridge.Commands(cfg)
     with (directory / 'publish.lock').open('a') as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             return {'job_id': job_id, 'state': 'busy'}
+        if not current_policy(cfg, req):
+            with bridge.status_lock(cfg, req) as locked:
+                if not locked:
+                    return {'job_id': job_id, 'state': 'busy'}
+                latest = remote_status(cfg, req, commands)
+                owner = re.match(r'^(' + re.escape(job_id) + r'(?:-retry-[0-9a-f]{12})?):',
+                                 str(latest.get('description', '')) if latest else '')
+                if owner:
+                    revoke_owned_status(cfg, req, owner.group(1), commands)
+            return {'job_id': job_id, 'state': 'retired'}
         if not req.get('multica_issue_id'):
             return {'job_id': job_id, 'state': 'awaiting_issue_mapping'}
         runner_id, records = active_attempt(cfg, req)
@@ -636,7 +698,9 @@ def collect_all(cfg):
             break
         atomic(cursor_path, {'last_job_id': path.parent.name})
         try:
-            results.append(publish_result(cfg, path.parent.name, commands))
+            job_cfg = dict(cfg, _collection_deadline=min(deadline - 10, time.monotonic() +
+                            cfg.get('collection_job_budget_seconds', 60)))
+            results.append(publish_result(job_cfg, path.parent.name, commands))
         except Exception as exc:
             results.append({'job_id': path.parent.name, 'state': 'error', 'error': type(exc).__name__})
     return results

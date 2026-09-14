@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Create a narrow local mmrun copy for current Grok JSON transport compatibility.
+"""Prepare a separate mmrun copy with strict Grok and read-only Claude adapters.
 
 Never edits the installed mmrun and never invokes a model. The generated copy
-preserves all sandbox, tool, permission and provider flags. Its only changes are
-fresh Grok session IDs per attempt, split stdout/stderr, and JSON normalization.
+preserves the existing providers' sandbox, tool and permission flags. Claude is
+available only for static review, with restricted file tools and the same fence.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ import sys
 import tempfile
 
 
-VERSION = "mmrun-grok-transport-v2"
+VERSION = "mmrun-provider-transport-v3"
 MAX_OUTPUT_BYTES = 32 * 1024 * 1024
 SESSION_ANCHOR = '      sid=$(cat "$rd/grok.session")'
 OUTPUT_ANCHOR = '''        "$GROK_BIN" --prompt-file "$rd/prompt.md" -s "$sid" "${args[@]}" > "$rd/grok.raw" 2>&1
@@ -46,7 +46,7 @@ def constant(value):
     raise CompatibilityError("Non-finite JSON value: " + value)
 
 
-def normalize(text):
+def normalize(text, provider="grok"):
     """Accept one terminal JSON envelope, with optional non-JSON log prefix.
 
     No arbitrary last-object fallback: the envelope must end the stream and
@@ -54,7 +54,7 @@ def normalize(text):
     Downstream review_runner still independently validates the report schema.
     """
     if len(text.encode("utf-8")) > MAX_OUTPUT_BYTES:
-        raise CompatibilityError("Grok stdout exceeds the transport size limit")
+        raise CompatibilityError("Provider stdout exceeds the transport size limit")
     decoder = json.JSONDecoder(object_pairs_hook=pairs, parse_constant=constant)
     # Parse the first envelope once. Searching inside a malformed outer object
     # could discard its error flag and mistake an inner result for success.
@@ -68,24 +68,31 @@ def normalize(text):
     if (offset < 0 or indentation.strip()
             or any(line.strip() and not log_line.fullmatch(line.strip())
                    for line in diagnostics.splitlines())):
-        raise CompatibilityError("Expected a top-level Grok JSON result envelope")
+        raise CompatibilityError("Expected a top-level provider JSON result envelope")
     try:
         envelope, end = decoder.raw_decode(text, offset)
     except (ValueError, CompatibilityError) as exc:
-        raise CompatibilityError("Malformed Grok JSON result envelope") from exc
+        raise CompatibilityError("Malformed provider JSON result envelope") from exc
     if not isinstance(envelope, dict) or text[end:].strip():
-        raise CompatibilityError("Expected exactly one terminal Grok JSON result envelope")
+        raise CompatibilityError("Expected exactly one terminal provider JSON result envelope")
     if envelope.get("isError") or envelope.get("is_error") or envelope.get("error"):
-        raise CompatibilityError("Grok envelope reports an error")
-    stops = [envelope[key] for key in ("stopReason", "stop_reason") if key in envelope]
-    if len(stops) == 2 and stops[0] != stops[1]:
-        raise CompatibilityError("Conflicting completion aliases")
-    if not stops or any(stop not in ("end_turn", "stop", "completed") for stop in stops):
-        raise CompatibilityError("Grok did not report normal end-of-turn completion")
+        raise CompatibilityError("Provider envelope reports an error")
+    if provider == "claude":
+        if (envelope.get("type") != "result" or envelope.get("subtype") != "success"
+                or envelope.get("is_error") is not False):
+            raise CompatibilityError("Claude did not report a successful terminal result")
+    elif provider == "grok":
+        stops = [envelope[key] for key in ("stopReason", "stop_reason") if key in envelope]
+        if len(stops) == 2 and stops[0] != stops[1]:
+            raise CompatibilityError("Conflicting completion aliases")
+        if not stops or any(stop not in ("end_turn", "stop", "completed") for stop in stops):
+            raise CompatibilityError("Grok did not report normal end-of-turn completion")
+    else:
+        raise CompatibilityError("Unsupported provider")
     values = [envelope[key] for key in ("structuredOutput", "structured_output") if key in envelope]
     if len(values) == 2 and values[0] != values[1]:
         raise CompatibilityError("Conflicting structured output aliases")
-    report = values[0] if values else envelope.get("text")
+    report = values[0] if values else envelope.get("result" if provider == "claude" else "text")
     if isinstance(report, str):
         stripped = report.strip()
         if stripped.startswith("```json\n") and stripped.endswith("\n```"):
@@ -93,9 +100,9 @@ def normalize(text):
         try:
             report = json.loads(stripped, object_pairs_hook=pairs, parse_constant=constant)
         except (ValueError, CompatibilityError) as exc:
-            raise CompatibilityError("Grok result text is not a single JSON object") from exc
+            raise CompatibilityError("Provider result text is not a single JSON object") from exc
     if not isinstance(report, dict) or not report:
-        raise CompatibilityError("Grok structured result is missing or not an object")
+        raise CompatibilityError("Provider structured result is missing or not an object")
     result = {"structured_output": report}
     # Keep only known transport metadata; never reproduce logging or thoughts.
     for source, destination in (("usage", "usage"), ("total_cost_usd", "total_cost_usd"),
@@ -131,6 +138,49 @@ def file_hash(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+CLAUDE_ANCHORS = {
+    "binary": 'CODEX_BIN="${CODEX_BIN:-codex}"',
+    "models": 'ALL_MODELS="codex grok agy"',
+    "start": 'case "$m" in codex|grok|agy) ;; *) die "unsupported model: $m ($ALL_MODELS)";; esac',
+    "workdir": '  [ -d "$wd" ] || die "workdir not found: $wd"',
+    "case": '    agy)\n',
+    "run": 'case "$m" in codex|grok|agy) ;; *) die "--model 必须是 $ALL_MODELS 之一";; esac',
+}
+
+
+def add_claude_provider(source, helper, python):
+    for name, anchor in CLAUDE_ANCHORS.items():
+        if source.count(anchor) != 1:
+            raise CompatibilityError("Installed mmrun changed: Claude anchor mismatch: " + name)
+    normalizer = " ".join(shlex.quote(str(v)) for v in (python, helper))
+    clause = '''    claude)
+      [ "$mode" = review ] || { echo "Claude adapter supports static review only" >&2; return 64; }
+      local args=(-p --model opus --output-format json --restricted --safe-mode
+                  --strict-mcp-config --mcp-config '{"mcpServers":{}}'
+                  --tools "Read,Grep,Glob" --permission-mode plan
+                  --no-session-persistence --system-prompt-snapshot off)
+      [ -n "$schema" ] && args+=(--json-schema "$(cat "$schema")")
+      (cd "$wd" && "$SELF" __fence "$ROOT/.no-write" "$HOME/.claude" "$rd/prompt.md" "$wd" \\
+        "$CLAUDE_BIN" "${args[@]}" < "$rd/prompt.md") > "$rd/claude.stdout" 2> "$rd/claude.raw"
+      rc=$?
+      local transport_rc=0
+      NORMALIZER normalize --provider claude --input "$rd/claude.stdout" > "$rd/claude.normalized.json" 2>> "$rd/claude.raw" || transport_rc=$?
+      if [ "$rc" -eq 0 ] && [ "$transport_rc" -ne 0 ]; then rc=$transport_rc; fi
+      jq -c '.structured_output' "$rd/claude.normalized.json" > "$rd/claude.out" 2>/dev/null
+      jq -r '.total_cost_usd // empty' "$rd/claude.normalized.json" > "$rd/claude.cost" 2>/dev/null
+      jq -c '.usage // empty' "$rd/claude.normalized.json" > "$rd/claude.usage" 2>/dev/null
+      sid=$(jq -r '.session_id // empty' "$rd/claude.normalized.json" 2>/dev/null)
+      ;;
+'''.replace("NORMALIZER", normalizer)
+    source = source.replace(CLAUDE_ANCHORS["binary"], CLAUDE_ANCHORS["binary"] + '\nCLAUDE_BIN="${CLAUDE_BIN:-$HOME/.local/bin/claude}"')
+    source = source.replace(CLAUDE_ANCHORS["models"], 'ALL_MODELS="codex grok agy claude"')
+    source = source.replace(CLAUDE_ANCHORS["start"], CLAUDE_ANCHORS["start"].replace('codex|grok|agy)', 'codex|grok|agy|claude)'))
+    source = source.replace(CLAUDE_ANCHORS["workdir"], '''  case ",$models," in *,claude,*) [ "$mode" = review ] || die "Claude adapter supports static review only";; esac
+''' + CLAUDE_ANCHORS["workdir"])
+    source = source.replace(CLAUDE_ANCHORS["run"], 'case "$m" in codex|grok|agy) ;; *) die "Implementation mode supports codex, grok, agy; Claude is review-only";; esac')
+    return source.replace(CLAUDE_ANCHORS["case"], clause + CLAUDE_ANCHORS["case"])
+
+
 def atomic_text(path, text, mode):
     fd, temporary = tempfile.mkstemp(prefix="." + path.name + "-", dir=path.parent)
     try:
@@ -140,6 +190,11 @@ def atomic_text(path, text, mode):
             stream.flush()
             os.fsync(stream.fileno())
         os.replace(temporary, path)
+        directory = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)
@@ -152,10 +207,21 @@ def prepare(source_path, output_path):
     if output_path.is_symlink() or output_path.resolve() == source_path:
         raise CompatibilityError("Output must be a separate non-symlink local copy")
     source = source_path.read_text()
-    rendered = patched_source(source, helper, sys.executable)
+    rendered = add_claude_provider(patched_source(source, helper, sys.executable), helper, sys.executable)
     if output_path.exists() and output_path.read_text() != rendered:
         raise CompatibilityError("Output already contains different content; use a new output path")
+    missing = []
+    directory = output_path.parent
+    while not directory.exists():
+        missing.append(directory)
+        directory = directory.parent
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    for directory in reversed(missing):
+        parent = os.open(directory.parent, os.O_RDONLY)
+        try:
+            os.fsync(parent)
+        finally:
+            os.close(parent)
     if not output_path.exists():
         atomic_text(output_path, rendered, 0o700)
     output_path.chmod(0o700)
@@ -163,7 +229,9 @@ def prepare(source_path, output_path):
                   "output": str(output_path.resolve()), "output_sha256": file_hash(output_path),
                   "helper": str(helper), "helper_sha256": file_hash(helper), "python": sys.executable,
                   "changes": ["fresh Grok session UUID for every attempt", "separate stdout and stderr",
-                              "normalize terminal structuredOutput/structured_output envelope"],
+                              "normalize terminal structuredOutput/structured_output envelope",
+                              "static-only Claude Opus with restricted Read/Grep/Glob tools, empty MCP and filesystem fence"],
+                  "added_providers": ["claude"],
                   "security_flags_changed": False}
     sidecar = output_path.with_name(output_path.name + ".provenance.json")
     if sidecar.is_symlink():
@@ -173,13 +241,14 @@ def prepare(source_path, output_path):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     commands = parser.add_subparsers(dest="command", required=True)
-    build = commands.add_parser("prepare")
+    build = commands.add_parser("prepare", allow_abbrev=False)
     build.add_argument("--source", required=True)
     build.add_argument("--output", required=True)
-    convert = commands.add_parser("normalize")
+    convert = commands.add_parser("normalize", allow_abbrev=False)
     convert.add_argument("--input", required=True)
+    convert.add_argument("--provider", choices=("grok", "claude"), default="grok")
     args = parser.parse_args(argv)
     try:
         if args.command == "prepare":
@@ -189,8 +258,8 @@ def main(argv=None):
             if path.is_symlink() or path.suffix == ".raw" or ".raw." in path.name:
                 raise CompatibilityError("Only a dedicated, non-symlink stdout capture may be normalized")
             if path.stat().st_size > MAX_OUTPUT_BYTES:
-                raise CompatibilityError("Grok stdout exceeds the transport size limit")
-            result = normalize(path.read_text())
+                raise CompatibilityError("Provider stdout exceeds the transport size limit")
+            result = normalize(path.read_text(), args.provider)
         print(json.dumps(result, ensure_ascii=False))
         return 0
     except (OSError, UnicodeError, ValueError, CompatibilityError) as exc:

@@ -36,6 +36,22 @@ def finding(severity="major"):
             "claim": "Empty input is indexed.", "failure_scenario": "An empty list raises IndexError.", "suggestion": None}
 
 
+def fixture_provenance(root, executable, models=None):
+    root.mkdir(parents=True, exist_ok=True)
+    models = ["codex", "grok"] if models is None else models
+    inputs = {}
+    for name in ("schema", "fence", "notes", "codex_profile", "codex_profile_snapshot"):
+        path = root / ("input-" + name)
+        path.write_text("trusted fixture " + name)
+        inputs[name] = {"path": str(path), "sha256": runner.digest(path)}
+    helper = Path(runner.__file__).with_name("runner_dispatch.py")
+    return {"mmrun_kind": "upstream", "mmrun_path": str(executable),
+            "mmrun_sha256": runner.digest(executable), "mmrun_home": str(root / "mmruns"),
+            "session": "fixture", "models": models, "input_files": inputs,
+            "dispatch_helper": str(helper), "dispatch_helper_sha256": runner.digest(helper),
+            "codex_home": str(root), "mmrun_d_snapshot": str(root)}
+
+
 class ReportSchemaTests(unittest.TestCase):
     def test_valid_report(self):
         self.assertEqual(runner.validate_report(report())["verdict"], "approve")
@@ -95,6 +111,8 @@ class CollectTests(unittest.TestCase):
                          "provenance": {"mmrun_home": str(self.root / "mmruns"), "session": "multica-job-1",
                                         "mmrun_kind": "upstream", "mmrun_path": str(self.executable), "mmrun_sha256": runner.digest(self.executable)},
                          "mmrun_run_id": RUN_ID}
+        self.manifest["provenance"] = dict(fixture_provenance(self.root, self.executable),
+                                           session="multica-job-1", mmrun_home=str(self.root / "mmruns"))
         helper = Path(runner.__file__).with_name("runner_dispatch.py")
         self.manifest["provenance"].update(dispatch_helper=str(helper), dispatch_helper_sha256=runner.digest(helper))
         runner.write_json(self.job / "dispatch-request.json", {"job_id": "job-1"})
@@ -219,7 +237,7 @@ class CollectTests(unittest.TestCase):
 
     def test_release_with_advanced_base_tip_still_fails(self):
         ancestor = "e" * 40
-        self.manifest.update(kind="release", merge_base_sha=ancestor)
+        self.manifest.update(kind="release", version="1.2.3", merge_base_sha=ancestor)
         self.manifest["policy"] = runner.review_policy("release", ["codex", "grok"])
         runner.write_json(self.job / "manifest.json", self.manifest)
         original = self.git_reply
@@ -261,6 +279,7 @@ class CollectTests(unittest.TestCase):
     def test_release_cannot_drop_required_reviewer_during_collection(self):
         manifest = copy.deepcopy(self.manifest)
         manifest["kind"] = "release"
+        manifest["version"] = "1.2.3"
         manifest["policy"] = runner.review_policy("release", ["codex", "grok"])
         manifest["policy"]["models"] = ["codex"]
         runner.write_json(self.job / "manifest.json", manifest)
@@ -335,9 +354,10 @@ class CollectTests(unittest.TestCase):
 
     def test_live_and_dead_dispatch_without_run_id(self):
         (self.job / "dispatch-result.json").unlink()
-        runner.write_json(self.job / "manifest.json", dict(self.manifest, mmrun_run_id=None, dispatch_pid=123))
+        runner.write_json(self.job / "manifest.json", dict(self.manifest, mmrun_run_id=None, dispatch_pid=123,
+                     dispatch_identity={"pid":123,"start":"fixture","platform":"darwin"}))
         for alive, verdict in ((True, "RUNNING_TIMEOUT"), (False, "FAILED")):
-            with patch.object(runner, "process_alive", return_value=alive):
+            with patch.object(runner, "process_alive", return_value=alive), patch.object(runner, "identity_alive", return_value=alive):
                 self.assertEqual(runner.collect(self.job)["verdict"], verdict)
 
     def test_upstream_status_marks_dead_worker_stale(self):
@@ -386,9 +406,14 @@ class LaunchTests(unittest.TestCase):
                         "dispatch_helper_sha256": runner.digest(Path(runner.__file__).with_name("runner_dispatch.py"))},
                         "controller_checkout": str(job), "frozen_checkout": str(frozen)}
             args = argparse.Namespace(timeout=1, mmrun="/trusted/mmrun", base=BASE, models=["codex", "grok"], poll_interval=1)
+            executable = job / "fake-mmrun"
+            executable.write_text("not executed")
+            args.mmrun = str(executable)
+            manifest["provenance"] = fixture_provenance(job, executable)
+            env = {"MMRUN_D": str(job), "CODEX_HOME": str(job)}
             process = Mock(pid=123)
             process.wait.side_effect = subprocess.TimeoutExpired("mmrun", 1)
-            with patch.object(runner, "preparing", return_value=contextlib.nullcontext((job, manifest, {}))), patch.object(runner.subprocess, "Popen", return_value=process) as popen:
+            with patch.object(runner, "preparing", return_value=contextlib.nullcontext((job, manifest, env))), patch.object(runner.subprocess, "Popen", return_value=process) as popen:
                 result = runner.run(args)
             self.assertEqual(result["verdict"], "RUNNING_TIMEOUT")
             process.kill.assert_not_called()
@@ -406,7 +431,12 @@ class LaunchTests(unittest.TestCase):
                         "dispatch_helper_sha256": runner.digest(Path(runner.__file__).with_name("runner_dispatch.py"))},
                         "controller_checkout": str(job), "frozen_checkout": str(job / "frozen")}
             args = argparse.Namespace(timeout=1, mmrun="/trusted/mmrun", base=BASE, models=["codex", "grok"], poll_interval=1)
-            with patch.object(runner, "preparing", return_value=contextlib.nullcontext((job, manifest, {}))), patch.object(runner.subprocess, "Popen", side_effect=OSError("no executable")):
+            executable = job / "fake-mmrun"
+            executable.write_text("not executed")
+            args.mmrun = str(executable)
+            manifest["provenance"] = fixture_provenance(job, executable)
+            env = {"MMRUN_D": str(job), "CODEX_HOME": str(job)}
+            with patch.object(runner, "preparing", return_value=contextlib.nullcontext((job, manifest, env))), patch.object(runner.subprocess, "Popen", side_effect=OSError("no executable")):
                 self.assertEqual(runner.run(args)["verdict"], "FAILED")
             saved = runner.load_json(job / "manifest.json")
             self.assertEqual(saved["phase"], "DISPATCH_FAILED")
@@ -436,7 +466,7 @@ class LaunchTests(unittest.TestCase):
                 path.write_text("trusted fixture\n")
             (root / "review.schema.json").write_text("{}")
             (root / "fence.sb").write_text("unchanged fixture")
-            sidecar = {"version": "mmrun-grok-transport-v2", "security_flags_changed": False,
+            sidecar = {"version": "mmrun-provider-transport-v3", "security_flags_changed": False,
                        "output": str(executable), "output_sha256": runner.digest(executable),
                        "source": str(source), "source_sha256": runner.digest(source),
                        "helper": str(helper), "helper_sha256": runner.digest(helper)}
@@ -523,13 +553,17 @@ class OfflineGitPreparationTests(unittest.TestCase):
         runner.git(self.repo, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
                    "-c", "core.hooksPath=/dev/null", "commit", "-qm", "fixture")
         self.head = runner.git(self.repo, "rev-parse", "HEAD")
-        self.args = argparse.Namespace(repo=str(self.repo), base=self.head, head=self.head, kind="release",
+        self.args = argparse.Namespace(repo=str(self.repo), base=self.head, head=self.head, kind="release", version="1.2.3",
                                        models=["codex", "grok"], job_id="empty-delta", state_dir=str(self.root / "reviews"),
                                        timeout=1, poll_interval=1, mmrun="/trusted/mmrun")
         self.provenance = {"mmrun_home": str(self.root / "mmruns"), "session": "fixture", "mmrun_sha256": "a" * 64,
                            "dispatch_helper": str(Path(runner.__file__).with_name("runner_dispatch.py")),
                            "dispatch_helper_sha256": runner.digest(Path(runner.__file__).with_name("runner_dispatch.py"))}
-        self.env = {"MMRUN_D": str(self.root / "mmd")}
+        executable = self.root / "mock-mmrun"
+        executable.write_text("not executed")
+        self.args.mmrun = str(executable)
+        self.provenance = fixture_provenance(self.root, executable)
+        self.env = {"MMRUN_D": str(self.root), "CODEX_HOME": str(self.root)}
 
     def cleanup(self):
         for directory, dirs, files in os.walk(self.root):
@@ -663,9 +697,9 @@ class HardenedCollectionTests(unittest.TestCase):
 
     def test_delayed_nonzero_dispatch_receipt_overrides_done_reports(self):
         (self.job / "dispatch-result.json").unlink()
-        manifest = dict(self.manifest, supervisor_pid=43210)
+        manifest = dict(self.manifest, supervisor_pid=43210, supervisor_identity={"pid":43210,"start":"fixture","platform":"darwin"})
         runner.write_json(self.job / "manifest.json", manifest)
-        with patch.object(runner, "process_alive", return_value=True):
+        with patch.object(runner, "process_alive", return_value=True), patch.object(runner, "identity_alive", return_value=True):
             self.assertEqual(runner.collect(self.job)["verdict"], "RUNNING_TIMEOUT")
         runner.write_json(self.job / "dispatch-result.json", dict(self.outcome, exit_code=7))
         self.assertEqual(runner.collect(self.job)["verdict"], "FAILED")
@@ -835,10 +869,11 @@ class SupervisorTests(unittest.TestCase):
             executable.chmod(0o700)
             runner.write_json(job / "dispatch-request.json", {"job_id": job.name,
                 "argv": [str(executable)], "executable_sha256": runner.digest(executable),
-                "cwd": str(job), "stdin": os.devnull})
+                "cwd": str(job), "stdin": os.devnull, "provenance": fixture_provenance(job, executable)})
             helper = str(Path(runner.__file__).with_name("runner_dispatch.py"))
             parent = "import subprocess,sys; subprocess.Popen([sys.executable,sys.argv[1],sys.argv[2]],start_new_session=True,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)"
-            subprocess.run([sys.executable, "-c", parent, helper, str(job)], check=True)
+            subprocess.run([sys.executable, "-c", parent, helper, str(job)], check=True,
+                           env=dict(os.environ, MMRUN_D=str(job), CODEX_HOME=str(job)))
             deadline = time.monotonic() + 5
             while not (job / "dispatch-result.json").exists() and time.monotonic() < deadline:
                 time.sleep(0.02)
@@ -878,6 +913,157 @@ class SupervisorTests(unittest.TestCase):
             with self.assertRaises(runner.ReviewError) as caught:
                 runner.git(Path("/repo"), "status")
             self.assertEqual(str(caught.exception), "PREPARATION_COMMAND_EXIT_1")
+
+
+class InputAndRecoveryBoundaryTests(unittest.TestCase):
+    setUp = OfflineGitPreparationTests.setUp
+    cleanup = OfflineGitPreparationTests.cleanup
+
+    def prepare_fixture(self):
+        with patch.object(runner, "environment", return_value=(self.env, self.provenance)):
+            return runner.prepare(self.args)
+
+    def test_execution_data_snapshots_keep_original_profile_and_cover_every_input(self):
+        original_home = self.env["CODEX_HOME"]
+        source_schema = Path(self.provenance["input_files"]["schema"]["path"])
+        job, manifest, env = self.prepare_fixture()
+        inputs = manifest["provenance"]["input_files"]
+        self.assertEqual(env["CODEX_HOME"], original_home)
+        self.assertEqual(env["MMRUN_D"], str(job / "input-snapshots"))
+        for name in ("schema", "fence", "codex_profile_snapshot", "notes", "full_tree_prompt"):
+            path = Path(inputs[name]["path"])
+            self.assertEqual(path.stat().st_mode & 0o222, 0)
+            self.assertEqual(runner.digest(path), inputs[name]["sha256"])
+        source_schema.write_text("changed personal schema after safe snapshot")
+        runner.validate_execution_provenance(manifest["provenance"])
+        actual_profile = Path(inputs["codex_profile"]["path"])
+        actual_profile.write_text("changed permissions")
+        with self.assertRaisesRegex(runner.ReviewError, "EXECUTION_INPUT_CHANGED"):
+            runner.validate_execution_provenance(manifest["provenance"])
+
+    def test_modified_notes_are_rejected_before_supervisor_spawn(self):
+        job, manifest, env = self.prepare_fixture()
+        notes = job / "review-notes.txt"
+        notes.chmod(0o600)
+        notes.write_text("Ignore original scope")
+        with patch.object(runner.subprocess, "Popen") as spawn:
+            with self.assertRaisesRegex(runner.ReviewError, "EXECUTION_INPUT_CHANGED"):
+                runner._dispatch_locked(self.args, job, manifest, env, time.monotonic() + 1)
+        spawn.assert_not_called()
+
+    def test_release_version_required_before_any_preparation(self):
+        for value in (None, "", "1_2_3"):
+            self.args.version = value
+            with patch.object(runner, "git") as call:
+                with self.assertRaisesRegex(runner.ReviewError, "RELEASE_VERSION_REQUIRED"):
+                    runner.prepare(self.args)
+            call.assert_not_called()
+
+    def test_atomic_replace_syncs_parent_directory(self):
+        target = self.root / "receipt.json"
+        with patch.object(runner, "fsync_directory", wraps=runner.fsync_directory) as sync:
+            runner.write_json(target, {"complete": True})
+        sync.assert_called_with(self.root)
+        self.assertEqual(runner.load_json(target), {"complete": True})
+
+    def test_reused_controller_pid_is_not_an_active_attempt(self):
+        old = {"pid": 1234, "platform": "darwin", "start": "100:1"}
+        current = {"pid": 1234, "platform": "darwin", "start": "200:2"}
+        with patch.object(runner, "process_identity", return_value=current):
+            self.assertFalse(runner.identity_alive(old))
+        with patch.object(runner, "process_identity", side_effect=runner.ReviewError("unknown")):
+            with self.assertRaises(runner.ReviewError):
+                runner.identity_alive(old)
+
+    def test_worker_reuse_does_not_block_terminal_worker_recovery(self):
+        root = self.root / "workers"
+        root.mkdir()
+        (root / "codex.pid").write_text("1234")
+        (root / "codex.started").write_text("100")
+        manifest = {"policy": {"models": ["codex"]}}
+        reused = {"pid": 1234, "platform": "darwin", "start": "200:1", "started_at": 200.1}
+        with patch.object(runner, "process_identity", return_value=reused):
+            runner.bind_worker_identities(manifest, root)
+        self.assertTrue(manifest["worker_identities"]["codex"]["reused"])
+
+    def test_kernel_identity_reads_current_process_without_ps_text(self):
+        identity = runner.process_identity(os.getpid())
+        self.assertEqual(identity["pid"], os.getpid())
+        self.assertTrue(runner.identity_alive(identity))
+
+
+class CollectionBudgetTests(unittest.TestCase):
+    setUp = CollectTests.setUp
+    git_reply = CollectTests.git_reply
+
+    def test_expired_budget_returns_pending_without_rewriting_previous_pass(self):
+        runner.collect(self.job)
+        path = runner.attestation_path(self.manifest)
+        before = path.read_bytes()
+        result = runner.collect(self.job, deadline=time.monotonic() - 1)
+        self.assertEqual(result["verdict"], "RUNNING_TIMEOUT")
+        self.assertIsNone(result["attestation_path"])
+        self.assertEqual(path.read_bytes(), before)
+
+    def test_budget_checked_between_hash_chunks(self):
+        path = self.root / "bounded-hash"
+        path.write_bytes(b"x" * 200_000)
+        with patch.object(runner.time, "monotonic", side_effect=[0, 0, 0, 2]):
+            with self.assertRaises(runner.CollectionDeadline):
+                with runner.collection_budget(1):
+                    runner.digest(path)
+
+    def test_git_subprocess_receives_remaining_budget(self):
+        with runner.collection_budget(time.monotonic() + 0.25), patch.object(
+                runner.subprocess, "run", return_value=Mock(returncode=0, stdout="")) as call:
+            runner.command(["git", "status"], timeout=30)
+        self.assertGreater(call.call_args.kwargs["timeout"], 0)
+        self.assertLessEqual(call.call_args.kwargs["timeout"], 0.25)
+
+    def test_directory_walk_cooperatively_checks_budget(self):
+        calls = 0
+        original = runner.check_deadline
+        def budget():
+            nonlocal calls
+            calls += 1
+            if calls >= 2:
+                raise runner.CollectionDeadline()
+            original()
+        (self.frozen / "file.txt").write_text("fixture")
+        with patch.object(runner, "check_deadline", side_effect=budget):
+            with self.assertRaises(runner.CollectionDeadline):
+                runner.verify_frozen(self.manifest)
+
+    def test_reused_controller_pid_allows_proven_never_spawned_attempt_recovery(self):
+        self.manifest.update(controller_pid=1234,
+                             controller_identity={"pid":1234,"platform":"darwin","start":"100:1"})
+        runner.write_json(self.job / "manifest.json", self.manifest)
+        runner.write_json(self.job / "dispatch-result.json", dict(self.outcome, started=False, exit_code=127))
+        current = {"pid":1234,"platform":"darwin","start":"200:1"}
+        with patch.object(runner, "process_identity", return_value=current):
+            runner.require_quiescent(self.job)
+
+    def test_every_bound_execution_input_is_revalidated_on_collection(self):
+        inputs = self.manifest["provenance"]["input_files"]
+        for name in ("schema", "fence", "notes", "codex_profile", "codex_profile_snapshot"):
+            path = Path(inputs[name]["path"])
+            original = path.read_bytes()
+            path.write_text("replaced " + name)
+            self.assertEqual(runner.collect(self.job)["verdict"], "FAILED", name)
+            path.write_bytes(original)
+
+
+class ClaudePolicyTests(unittest.TestCase):
+    def test_default_and_release_baselines(self):
+        args = runner.parser().parse_args(["run", "--repo", "/repo", "--base", BASE, "--head", HEAD,
+                                          "--kind", "pr", "--job-id", "fixture", "--state-dir", "/tmp/state"])
+        self.assertEqual(args.models, ["codex", "claude"])
+        self.assertEqual(runner.review_policy("release", ["codex", "claude"])["models"], ["codex", "claude"])
+        runner.review_policy("release", ["codex", "grok"])
+        runner.review_policy("release", ["codex", "grok", "claude"])
+        for models in (["claude"], ["codex"], ["codex", "agy"]):
+            with self.assertRaises(runner.ReviewError):
+                runner.review_policy("release", models)
 
 
 if __name__ == "__main__":

@@ -10,6 +10,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 TOOL_DIR = Path(__file__).resolve().parents[1] / "scripts/multica"
 sys.path.insert(0, str(TOOL_DIR))
@@ -47,7 +48,7 @@ class ReleaseGateTests(unittest.TestCase):
                                   "out": "review complete\n"}.items():
                 (self.artifact_root / (model + "." + suffix)).write_text(value)
         self.evidence = {
-            "schema_version": 1, "kind": "release", "verdict": "PASS",
+            "schema_version": 1, "kind": "release", "verdict": "PASS", "version": "1.2.3",
             "repo": str(self.repo), "base_sha": self.base, "head_sha": self.head,
             "tree_sha": self.git("rev-parse", "HEAD^{tree}"),
             "artifact_root": str(self.artifact_root),
@@ -59,7 +60,7 @@ class ReleaseGateTests(unittest.TestCase):
                 path.read_bytes()).hexdigest()} for path in sorted(self.artifact_root.iterdir())],
         }
         receipt = self.root / "dispatch-result.json"
-        outcome = {"started": True, "exit_code": 0, "job_id": "fixture", "request_sha256": "a" * 64}
+        outcome = {"schema_version": 1, "started": True, "exit_code": 0, "job_id": "fixture", "request_sha256": "a" * 64}
         receipt.write_text(json.dumps(outcome))
         self.evidence.update(job_id="fixture", dispatch_result=outcome, dispatch_receipt_path=str(receipt),
                              dispatch_request_sha256="a" * 64,
@@ -215,6 +216,84 @@ class ReleaseGateTests(unittest.TestCase):
         self.evidence["reports"] = {"fixture": "x" * (8 * 1024 * 1024 + 1)}
         self.save()
         self.assertEqual(self.validate()["status"], "STATIC_REVIEW_VERIFIED")
+
+    def test_receipt_requires_complete_typed_identity_fields(self):
+        baseline = copy.deepcopy(self.evidence)
+        for key, value in (("schema_version", None), ("schema_version", True),
+                           ("job_id", None), ("job_id", ""), ("request_sha256", None),
+                           ("request_sha256", "a" * 63)):
+            self.evidence = copy.deepcopy(baseline)
+            outcome = self.evidence["dispatch_result"]
+            if value is None:
+                outcome.pop(key, None)
+            else:
+                outcome[key] = value
+            counterpart = "dispatch_request_sha256" if key == "request_sha256" else key
+            if key in ("job_id", "request_sha256"):
+                self.evidence.pop(counterpart, None)
+                if value is not None:
+                    self.evidence[counterpart] = value
+            receipt = Path(self.evidence["dispatch_receipt_path"])
+            receipt.write_text(json.dumps(outcome))
+            self.evidence["dispatch_receipt_sha256"] = gate.file_hash(receipt)
+            self.save()
+            with self.subTest(key=key, value=value), self.assertRaises((gate.GateError, gate.ReviewError)):
+                self.validate()
+
+    def test_symlink_ancestor_attestation_is_rejected(self):
+        alias = self.root / "redirected"
+        alias.symlink_to(self.root, target_is_directory=True)
+        with self.assertRaisesRegex(gate.GateError, "symlink"):
+            gate.validate(self.repo, alias / self.attestation.name, self.base, self.head)
+
+    def test_control_evidence_mutation_during_artifact_validation_blocks(self):
+        baseline = copy.deepcopy(self.evidence)
+        for mutate in ("attestation", "receipt"):
+            self.evidence = copy.deepcopy(baseline)
+            receipt = Path(self.evidence["dispatch_receipt_path"])
+            receipt.write_text(json.dumps(self.evidence["dispatch_result"]))
+            self.save()
+            original = gate.file_hash
+            changed = False
+            def hashing(path):
+                nonlocal changed
+                if path.parent == self.artifact_root and not changed:
+                    changed = True
+                    if mutate == "attestation":
+                        self.evidence["verdict"] = "FAILED"
+                        self.save()
+                    else:
+                        receipt.write_text("{}")
+                return original(path)
+            with patch.object(gate, "file_hash", side_effect=hashing):
+                with self.subTest(mutate=mutate), self.assertRaises(gate.GateError):
+                    self.validate()
+
+    def test_gate_respects_collector_lifecycle_lock(self):
+        with gate.job_lock(self.root) as locked:
+            self.assertTrue(locked)
+            with self.assertRaisesRegex(gate.GateError, "lifecycle is busy"):
+                self.validate()
+
+    def test_release_attestation_without_version_blocks(self):
+        self.evidence.pop("version")
+        self.save()
+        with self.assertRaisesRegex(gate.GateError, "version"):
+            self.validate()
+
+    def test_claude_can_replace_grok_but_every_listed_model_must_approve(self):
+        self.evidence["policy"]["models"] = ["codex", "claude"]
+        for artifact in self.evidence["artifacts"]:
+            if artifact["path"].startswith("grok."):
+                old = self.artifact_root / artifact["path"]
+                artifact["path"] = artifact["path"].replace("grok.", "claude.")
+                old.rename(self.artifact_root / artifact["path"])
+        self.save()
+        self.assertEqual(self.validate()["status"], "STATIC_REVIEW_VERIFIED")
+        self.evidence["policy"]["models"].append("grok")
+        self.save()
+        with self.assertRaisesRegex(gate.GateError, "required model evidence missing"):
+            self.validate()
 
 
 if __name__ == "__main__":

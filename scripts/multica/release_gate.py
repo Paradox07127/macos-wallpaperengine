@@ -12,7 +12,7 @@ from pathlib import Path
 
 from github_bridge import RELEASE_VERSION
 from review_runner import (POLICY_VERSION, MAX_ATTESTATION_BYTES, ReviewError, load_json,
-                           validate_report, git as controlled_git)
+                           validate_report, git as controlled_git, job_lock, validate_dispatch_receipt, JOB)
 
 
 class GateError(ValueError):
@@ -47,6 +47,39 @@ def file_hash(path):
 
 
 def validate(repo, attestation, base_sha, head_sha):
+    """Hold the collector lifecycle lock and pin both control evidence files."""
+    attestation = Path(attestation).absolute()
+    reject_symlinks(attestation)
+    initial_hash = file_hash(attestation)
+    identity = attestation.stat()
+    evidence = load_json(attestation, max_bytes=MAX_ATTESTATION_BYTES)
+    if type(evidence) is not dict:
+        raise GateError("attestation must be a JSON object")
+    receipt_path = evidence.get("dispatch_receipt_path")
+    if type(receipt_path) is not str or not Path(receipt_path).is_absolute():
+        raise GateError("dispatch receipt path required")
+    receipt = Path(receipt_path)
+    reject_symlinks(receipt)
+    job_dir = receipt.parent
+    if job_dir != Path(repo).resolve(strict=True).parent:
+        raise GateError("dispatcher receipt must share the frozen checkout lifecycle directory")
+    with job_lock(job_dir) as locked:
+        if not locked:
+            raise GateError("review lifecycle is busy; retry validation")
+        reject_symlinks(attestation)
+        if file_hash(attestation) != initial_hash:
+            raise GateError("attestation changed before lifecycle lock")
+        result = _validate_locked(repo, attestation, base_sha, head_sha)
+        reject_symlinks(attestation)
+        final_identity = attestation.stat()
+        if ((identity.st_dev, identity.st_ino, identity.st_size, identity.st_mtime_ns)
+                != (final_identity.st_dev, final_identity.st_ino, final_identity.st_size, final_identity.st_mtime_ns)
+                or file_hash(attestation) != initial_hash):
+            raise GateError("attestation changed during validation")
+        return result
+
+
+def _validate_locked(repo, attestation, base_sha, head_sha):
     """Fail closed; return an evidence summary, not authorization to publish."""
     repo = Path(repo).resolve(strict=True)
     if Path(git(repo, "rev-parse", "--show-toplevel")).resolve() != repo:
@@ -58,6 +91,8 @@ def validate(repo, attestation, base_sha, head_sha):
         raise GateError("attestation must be a JSON object")
     if type(evidence.get("schema_version")) is not int or evidence["schema_version"] != 1:
         raise GateError("unsupported attestation schema")
+    if type(evidence.get("version")) is not str or not RELEASE_VERSION.fullmatch(evidence["version"]):
+        raise GateError("a valid reviewed release version is required")
     if evidence.get("kind") != "release" or evidence.get("verdict") != "PASS":
         raise GateError("a release PASS attestation is required")
     if evidence.get("repo") != str(repo):
@@ -82,7 +117,10 @@ def validate(repo, attestation, base_sha, head_sha):
     receipt_path = evidence.get("dispatch_receipt_path")
     if type(receipt_path) is not str or not Path(receipt_path).is_absolute():
         raise GateError("dispatch receipt path required")
+    validate_dispatch_receipt(outcome, evidence.get("job_id"), evidence.get("dispatch_request_sha256"))
+    full_sha(evidence.get("dispatch_receipt_sha256"), "dispatch_receipt_sha256", 64)
     reject_symlinks(Path(receipt_path))
+    receipt_identity = Path(receipt_path).stat()
     if (load_json(Path(receipt_path)) != outcome
             or file_hash(Path(receipt_path)) != evidence.get("dispatch_receipt_sha256")
             or outcome.get("request_sha256") != evidence.get("dispatch_request_sha256")
@@ -134,10 +172,10 @@ def validate(repo, attestation, base_sha, head_sha):
         raise GateError("attestation does not use the full static release review policy")
     models = policy.get("models")
     if not isinstance(models, list) or any(not isinstance(m, str) for m in models) or (
-        len(set(models)) != len(models) or not {"codex", "grok"}.issubset(models)
-        or not set(models).issubset({"codex", "grok", "agy"})
+        len(set(models)) != len(models) or "codex" not in models or not {"grok", "claude"}.intersection(models)
+        or not set(models).issubset({"codex", "grok", "claude", "agy"})
     ):
-        raise GateError("release review must use the codex + grok model policy")
+        raise GateError("release review must use codex plus grok or claude")
     for model in models:
         for suffix in ("json", "status", "meta", "out"):
             if model + "." + suffix not in verified:
@@ -165,6 +203,13 @@ def validate(repo, attestation, base_sha, head_sha):
         repo, "status", "--porcelain=v1", "--untracked-files=all", "--ignore-submodules=none"
     ):
         raise GateError("repository changed while validating evidence")
+    reject_symlinks(Path(receipt_path))
+    receipt_final = Path(receipt_path).stat()
+    if ((receipt_identity.st_dev, receipt_identity.st_ino, receipt_identity.st_size, receipt_identity.st_mtime_ns)
+            != (receipt_final.st_dev, receipt_final.st_ino, receipt_final.st_size, receipt_final.st_mtime_ns)
+            or file_hash(Path(receipt_path)) != evidence["dispatch_receipt_sha256"]
+            or load_json(Path(receipt_path)) != outcome):
+        raise GateError("dispatcher receipt changed during validation")
     return {"status": "STATIC_REVIEW_VERIFIED", "repo": str(repo), "base_sha": base_sha,
             "head_sha": head_sha, "artifacts_verified": len(seen), "published": False,
             "version": evidence.get("version")}
@@ -187,7 +232,7 @@ def main(argv=None):
     try:
         result = validate(args.repo, args.attestation, args.base_sha, args.head_sha)
         if args.action == "plan":
-            if result.get("version") is not None and result["version"] != args.version:
+            if result["version"] != args.version:
                 raise GateError("packaging version differs from reviewed release version")
             script = Path(result["repo"]) / "scripts/release-app.sh"
             if not script.is_file():

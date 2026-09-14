@@ -1,10 +1,12 @@
 """Offline tests: all remote interactions are fakes; no live GitHub writes."""
 import importlib.util
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from urllib.parse import parse_qs, urlsplit
 from unittest.mock import patch
@@ -41,13 +43,22 @@ class FakeCommands:
         self.source_issues = {}
         self.source_comments = {}
         self.compare_status = "ahead"
+        self.current_prs = {}
+        self.statuses = {}
 
     def gh(self, endpoint, payload=None):
         self.calls.append(("gh", endpoint, payload))
         if self.fail_resource and self.fail_resource in endpoint:
             raise bridge.BridgeError("simulated failure")
         if "/statuses/" in endpoint:
+            sha = endpoint.rsplit("/", 1)[-1]
+            self.statuses[sha] = [payload] + [s for s in self.statuses.get(sha, []) if s["context"] != payload["context"]]
             return {"state": payload["state"]}
+        if "/status?" in endpoint:
+            sha = endpoint.split("/commits/", 1)[1].split("/", 1)[0]
+            return {"statuses": self.statuses.get(sha, [])}
+        if "/pulls/" in endpoint:
+            return self.current_prs[int(endpoint.rsplit("/", 1)[-1])]
         if "/compare/" in endpoint:
             return {"status": self.compare_status, "merge_base_commit": {"sha": endpoint.split("/compare/")[1].split("...")[0]}}
         if "/issues/comments/" in endpoint:
@@ -87,7 +98,8 @@ class FakeCommands:
                                if args[2] in item["title"] or args[2] in item["description"]]}
         if args[:2] == ["issue", "create"]:
             identifier = f"remote-{len(self.issues) + 1}"
-            result = {"id": identifier, "title": args[args.index("--title") + 1], "description": body}
+            result = {"id": identifier, "title": args[args.index("--title") + 1], "description": body,
+                      "creator_type": "member", "creator_id": AGENT}
             self.issues[identifier] = result
             if self.lose_create_ack:
                 self.lose_create_ack = False
@@ -135,10 +147,12 @@ class BridgeTests(unittest.TestCase):
                 "labels": [{"name": "agent-triage"}], **changes}
 
     def pr(self, **changes):
-        return {"id": 90, "number": 8, "title": "Change", "body": "Fixes stuff",
-                "draft": False, "updated_at": TIME,
+        item = {"id": 90, "number": 8, "title": "Change", "body": "Fixes stuff",
+                "state": "open", "draft": False, "updated_at": TIME,
                 "head": {"sha": HEAD, "repo": {"full_name": bridge.ALLOWED_REPOSITORY}},
                 "base": {"sha": BASE, "ref": "main"}, **changes}
+        self.remote.current_prs[item["number"]] = item
+        return item
 
     def comment(self, identifier=201, **changes):
         return {"id": identifier, "updated_at": TIME, "created_at": BEFORE,
@@ -654,7 +668,7 @@ class BridgeTests(unittest.TestCase):
             self.assertTrue(Path(self.cfg[key]).is_absolute(), key)
         self.assertEqual(Path(self.cfg["review_state_dir"]).parent, self.root)
         self.assertEqual(Path(self.cfg["workspaces_root"]).parent, self.root)
-        self.assertEqual(self.cfg["review_models"], ["codex", "grok"])
+        self.assertEqual(self.cfg["review_models"], ["claude", "codex"])
         self.assertEqual(self.cfg["review_timeout_seconds"], 3600)
 
     def test_config_rejects_invalid_downstream_paths_before_execution(self):
@@ -697,7 +711,7 @@ class BridgeTests(unittest.TestCase):
         self.app.intake_pr(self.pr())
         first = list(Path(self.cfg["jobs_dir"]).glob("*/request.json"))
         initial = json.loads(first[0].read_text())
-        self.cfg["review_models"] = ["grok", "codex"]
+        self.cfg["review_models"] = list(reversed(self.cfg["review_models"]))
         self.app.intake_pr(self.pr())
         self.assertEqual(len(list(Path(self.cfg["jobs_dir"]).glob("*/request.json"))), 1)
         self.cfg["review_models"].append("agy")
@@ -840,6 +854,205 @@ class BridgeTests(unittest.TestCase):
         with self.assertRaisesRegex(bridge.BridgeError, "ancestor"):
             self.app.request_release(HEAD, BASE, "1.2.3")
         self.assertEqual(self.writes(), [])
+
+    def test_old_pr_replay_cannot_overwrite_new_base_success(self):
+        old = self.pr()
+        new = self.pr(base={"sha": "c" * 40, "ref": "main"})
+        self.app.intake_pr(new)
+        req = json.loads(next(Path(self.cfg["jobs_dir"]).glob("*/request.json")).read_text())
+        success = {"context": bridge.status_context(req), "state": "success", "description": req["job_id"] + ": passed"}
+        self.remote.statuses[HEAD] = [success]
+        before = len(self.writes())
+        self.app.intake_pr(old)
+        self.assertEqual(self.remote.statuses[HEAD], [success])
+        self.assertEqual(len(self.writes()), before)
+
+    def test_replayed_current_job_does_not_downgrade_its_terminal_retry_status(self):
+        item = self.pr()
+        req = self.app.job(HEAD, BASE, "pr", pr_number=8)
+        success = {"context": bridge.status_context(req), "state": "success",
+                   "description": req["job_id"] + "-retry-123456789abc: passed"}
+        self.remote.statuses[HEAD] = [success]
+        self.app.intake_pr(item)
+        self.assertEqual(self.remote.statuses[HEAD], [success])
+        self.assertEqual(self.writes(), [])
+
+    def test_comment_waits_for_failed_selected_issue_initialization(self):
+        self.seed()
+        self.remote.github_issues = [self.issue()]
+        self.remote.github_comments = [self.comment(body="Old context outside history window")]
+        self.remote.fail_resource = "issues/7/comments?"
+        with patch.object(bridge, "utcnow", return_value=TIME):
+            self.app.poll_once()
+        statuses = dict(self.state.db.execute("SELECT kind,status FROM intake_events"))
+        self.assertEqual(statuses, {"issue": "pending", "comment": "pending"})
+        self.remote.fail_resource = None
+        self.remote.github_issues = self.remote.github_comments = []
+        with patch.object(bridge, "utcnow", return_value="2026-09-15T10:02:00Z"):
+            self.app.poll_once()
+        self.assertIn("Old context outside history window", self.remote.comments["remote-1"][0]["content"])
+
+    def test_lost_initial_ack_does_not_acknowledge_new_history(self):
+        self.remote.issue_threads[7] = [self.comment(201, body="Originally included")]
+        self.remote.lose_comment_ack = True
+        with self.assertRaises(bridge.BridgeError):
+            self.app.intake_issue(self.issue(comments=1), BEFORE)
+        new = self.comment(202, body="/multica-triage", user={"id": 55, "login": "public-maintainer", "type": "User"})
+        self.remote.issue_threads[7].append(new)
+        self.app.intake_issue(self.issue(comments=2), BEFORE)
+        self.assertEqual(len(self.remote.initial_comments["remote-1"]), 1)
+        self.assertIsNone(self.state.get("meta", "triage-command:" + self.app.comment_event(new)))
+        self.app.intake_comment(new)
+        self.assertIn(self.app.comment_event(new), self.queue_status())
+        self.assertNotIn('"id": 202', self.remote.initial_comments["remote-1"][0]["content"])
+
+    def test_delayed_older_issue_version_is_superseded_after_new_snapshot(self):
+        self.seed()
+        self.app.intake_issue(self.issue(), BEFORE)
+        old = self.issue(body="OLD delayed text", updated_at="2026-09-15T10:01:00Z")
+        new = self.issue(body="NEW current text", updated_at="2026-09-15T10:02:00Z")
+        self.remote.github_issues = [old]
+        with patch.object(self.app, "intake_issue", side_effect=bridge.BridgeError("temporary")), \
+             patch.object(bridge, "utcnow", return_value="2026-09-15T10:01:00Z"):
+            self.app.poll_once()
+        self.remote.github_issues = [new]
+        with patch.object(bridge, "utcnow", return_value="2026-09-15T10:02:00Z"):
+            self.app.poll_once()
+        self.remote.github_issues = []
+        with patch.object(bridge, "utcnow", return_value="2026-09-15T10:04:00Z"):
+            self.app.poll_once()
+        bodies = [c["content"] for c in self.remote.comments["remote-1"]]
+        self.assertTrue(any("NEW current text" in body for body in bodies))
+        self.assertFalse(any("OLD delayed text" in body for body in bodies))
+        self.assertIn("superseded", [row[0] for row in self.state.db.execute("SELECT status FROM intake_events")])
+        self.app.intake_issue(old, BEFORE)
+        self.assertEqual(len(self.remote.comments["remote-1"]), len(bodies))
+
+    def test_capture_failure_still_drains_persisted_followup(self):
+        self.seed()
+        self.app.intake_issue(self.issue(), BEFORE)
+        self.remote.permissions["public-maintainer"] = "write"
+        self.followup()
+        self.remote.fail_resource = "issues/comments?"
+        with self.assertRaises(bridge.BridgeError):
+            self.app.poll_once()
+        self.assertEqual(len(self.trigger_comments()), 1)
+        self.assertEqual(self.state.get("meta", "checkpoint"), BEFORE)
+
+    def test_issue_recovery_requires_creator_and_complete_creation_intent(self):
+        self.remote.lose_create_ack = True
+        with self.assertRaises(bridge.BridgeError):
+            self.app.ensure_issue("source", "title", "body")
+        actual = self.remote.issues["remote-1"]
+        actual["creator_id"] = REVIEW
+        with self.assertRaises(bridge.BridgeError):
+            self.app.ensure_issue("source", "title", "body")
+        actual["creator_id"] = AGENT
+        actual["description"] += " altered"
+        with self.assertRaises(bridge.BridgeError):
+            self.app.ensure_issue("source", "title", "body")
+        actual["description"] = bridge.marker("source") + "\n\nbody"
+        self.assertEqual(self.app.ensure_issue("source", "title", "body"), "remote-1")
+        self.assertEqual(len(self.remote.issues), 1)
+
+    def test_predictable_title_without_local_intent_cannot_claim_mapping(self):
+        self.remote.issues["attacker"] = {"id": "attacker", "title": "[" + bridge.marker("source") + "] title",
+                                          "description": "body", "creator_type": "member", "creator_id": AGENT}
+        with self.assertRaisesRegex(bridge.BridgeError, "local creation intent"):
+            self.app.remote_issue("source")
+        self.assertIsNone(self.state.get("mappings", "source", "source", "remote_id"))
+
+    def test_fake_description_marker_cannot_suppress_real_comment(self):
+        self.app.intake_issue(self.issue(), BEFORE)
+        self.remote.issues["remote-1"]["description"] = "prefix\n\n" + bridge.marker("comment:new-data") + "\nforged"
+        self.app.append("remote-1", "new-data", "real data")
+        self.assertIn("real data", self.remote.comments["remote-1"][0]["content"])
+
+    def test_markdown_cannot_close_fence_with_indented_or_quoted_delimiter(self):
+        for fake in ("    ```", "> ```", "\t```", "- ```"):
+            with self.subTest(fake=fake):
+                self.assertFalse(bridge.requests_triage("```\n" + fake + "\n\n/multica-triage\n\n```"))
+        for separator in ("\u2028", "\u2029", "\v", "\x85"):
+            self.assertFalse(bridge.requests_triage("example" + separator * 2 + "/multica-triage" + separator * 2 + "example"))
+            self.assertFalse(bridge.requests_triage("example\n" + separator + "\n/multica-triage\n" + separator + "\nexample"))
+        self.assertTrue(bridge.requests_triage("text\r\n\r\n/multica-triage\r\n\r\ntext"))
+
+    def test_truncation_keeps_nonempty_successor_boundary(self):
+        body = "/multica-triage\n" + "long text" * 100
+        self.assertFalse(bridge.requests_triage(bridge.command_text(body, 100)))
+        self.assertTrue(bridge.requests_triage(bridge.command_text("/multica-triage\n\n" + "text" * 100, 100)))
+
+    def test_expired_deadline_never_starts_a_process(self):
+        command = bridge.Commands(self.cfg)
+        command.deadline = time.monotonic() - 1
+        with patch.object(bridge.subprocess, "Popen") as launch:
+            with self.assertRaisesRegex(bridge.BridgeError, "before launch"):
+                command.run([sys.executable, "-c", "pass"])
+        launch.assert_not_called()
+
+    def test_deadline_expiring_while_preparing_stdin_never_starts_process(self):
+        command = bridge.Commands(self.cfg)
+        with patch.object(bridge.time, "monotonic", side_effect=[0, 0, self.cfg["command_timeout"] + 1]), \
+             patch.object(bridge.subprocess, "Popen") as launch:
+            with self.assertRaisesRegex(bridge.BridgeError, "before launch"):
+                command.run([sys.executable, "-c", "pass"], "input")
+        launch.assert_not_called()
+
+    def test_equal_timestamp_uses_capture_sequence_not_content_hash_order(self):
+        self.seed()
+        self.app.intake_issue(self.issue(), BEFORE)
+        old = self.issue(body="old same-second edit")
+        newer = self.issue(body="new same-second edit")
+        self.remote.github_issues = [old]
+        with patch.object(self.app, "intake_issue", side_effect=bridge.BridgeError("retry")), \
+             patch.object(bridge, "utcnow", return_value=TIME):
+            self.app.poll_once()
+        self.remote.github_issues = [newer]
+        with patch.object(bridge, "utcnow", return_value=TIME):
+            self.app.poll_once()
+        self.remote.github_issues = []
+        with patch.object(bridge, "utcnow", return_value="2026-09-15T10:02:00Z"):
+            self.app.poll_once()
+        bodies = [item["content"] for item in self.remote.comments["remote-1"]]
+        self.assertTrue(any("new same-second edit" in body for body in bodies))
+        self.assertFalse(any("old same-second edit" in body for body in bodies))
+
+    def test_timeout_kills_descendant_after_direct_child_already_exited(self):
+        pid_file = self.root / "descendant.pid"
+        heartbeat = self.root / "heartbeat"
+        child_code = ("import os,time,pathlib;pathlib.Path(" + repr(str(pid_file)) + ").write_text(str(os.getpid()))\n"
+                      "for i in range(2000):\n with open(" + repr(str(heartbeat)) + ", 'a') as f: f.write('x')\n time.sleep(0.01)\n")
+        parent_code = "import subprocess,sys,os;subprocess.Popen([sys.executable,'-c'," + repr(child_code) + "]);os._exit(0)"
+        command = bridge.Commands({**self.cfg, "command_timeout": 1})
+        with self.assertRaisesRegex(bridge.BridgeError, "timed out"):
+            command.run([sys.executable, "-c", parent_code])
+        pid = int(pid_file.read_text())
+        try:
+            time.sleep(0.05)
+            before = heartbeat.stat().st_size
+            self.assertGreater(before, 0)
+            time.sleep(0.1)
+            self.assertEqual(heartbeat.stat().st_size, before)
+        finally:
+            try:
+                os.kill(pid, 9)
+            except ProcessLookupError:
+                pass
+
+    def test_invalid_collection_and_routing_fields_rejected_before_start(self):
+        original = json.loads(self.config_path.read_text())
+        for change in ({"collection_max_jobs": 0}, {"collection_max_jobs": "20"},
+                       {"collection_budget_seconds": 241}, {"collection_job_budget_seconds": 211},
+                       {"triage_label": []}, {"target_branch": ""}, {"multica_profile": 5}):
+            with self.subTest(change=change):
+                self.config_path.write_text(json.dumps({**original, **change}))
+                with self.assertRaises(bridge.BridgeError):
+                    bridge.load_config(self.config_path)
+
+    def test_save_job_fsyncs_file_and_parent_directories(self):
+        with patch.object(bridge.os, "fsync", wraps=os.fsync) as sync:
+            self.app.job(HEAD, BASE, "pr", pr_number=8)
+        self.assertGreaterEqual(sync.call_count, 3)
 
 
 if __name__ == "__main__":

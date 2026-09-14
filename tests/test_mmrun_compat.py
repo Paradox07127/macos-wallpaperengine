@@ -3,8 +3,12 @@
 import importlib.util
 import json
 from pathlib import Path
+import os
+import stat
+import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
 
 SPEC = importlib.util.spec_from_file_location("mmrun_compat", Path(__file__).resolve().parents[1] / "scripts/multica/mmrun_compat.py")
@@ -16,6 +20,18 @@ REPORT = {"verdict": "request_changes", "summary": "Still gathering evidence.", 
 
 
 class NormalizationTests(unittest.TestCase):
+    def test_claude_requires_explicit_successful_terminal_envelope(self):
+        envelope = {'type': 'result', 'subtype': 'success', 'is_error': False,
+                    'structured_output': REPORT}
+        self.assertEqual(compat.normalize(json.dumps(envelope), 'claude')['structured_output'], REPORT)
+        for fields in ({'type': 'assistant'}, {'subtype': 'error_max_turns'},
+                       {'is_error': True}, {'is_error': None}):
+            with self.subTest(fields=fields), self.assertRaises(compat.CompatibilityError):
+                compat.normalize(json.dumps(dict(envelope, **fields)), 'claude')
+        del envelope['is_error']
+        with self.assertRaises(compat.CompatibilityError):
+            compat.normalize(json.dumps(envelope), 'claude')
+
     def test_camel_case_mixed_prefix_preserves_nonapproval(self):
         text = "warning: diagnostic prefix\n" + json.dumps({"text": "", "structuredOutput": REPORT, "stopReason": "end_turn", "thought": "not public", "usage": {"input_tokens": 1}})
         result = compat.normalize(text)
@@ -92,7 +108,32 @@ class NormalizationTests(unittest.TestCase):
 
 class LocalCopyTests(unittest.TestCase):
     def source(self):
-        return '#!/usr/bin/env bash\n# --tools read_file,grep,list_dir\n# sandbox-exec original guard\n' + compat.SESSION_ANCHOR + '\n      env "${GROK_ENV[@]}" "$SELF" __fence "$w" "$HOME/.grok" "$rd/prompt.md" "$ro" \\\n' + compat.OUTPUT_ANCHOR + '\n'
+        anchors = compat.CLAUDE_ANCHORS
+        return ('#!/usr/bin/env bash\n# --tools read_file,grep,list_dir\n# sandbox-exec original guard\n'
+                + anchors['binary'] + '\n' + anchors['models']
+                + '\nrun_once() {\n  case "$m" in\n    grok)\n'
+                + compat.SESSION_ANCHOR + '\n      env "${GROK_ENV[@]}" "$SELF" __fence "$w" "$HOME/.grok" "$rd/prompt.md" "$ro" \\\n'
+                + compat.OUTPUT_ANCHOR + '\n      ;;\n' + anchors['case']
+                + '      :\n      ;;\n  esac\n}\nstart_fixture() {\n'
+                + anchors['workdir'] + '\n    ' + anchors['start']
+                + '\n}\nrun_fixture() {\n  ' + anchors['run'] + '\n}\n')
+
+    def test_claude_adapter_is_fenced_static_only_and_parseable(self):
+        text = compat.add_claude_provider(self.source(), '/helper with spaces.py', '/usr/bin/python3')
+        self.assertIn('--restricted --safe-mode', text)
+        self.assertIn('--tools "Read,Grep,Glob" --permission-mode plan', text)
+        self.assertIn('--no-session-persistence', text)
+        self.assertIn('--strict-mcp-config --mcp-config', text)
+        self.assertIn('"$SELF" __fence "$ROOT/.no-write" "$HOME/.claude"', text)
+        self.assertNotIn('--dangerously-skip-permissions', text)
+        self.assertIn('Claude adapter supports static review only', text)
+        result = subprocess.run(['bash', '-n'], input=text, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_claude_anchor_mismatch_refuses_partial_patch(self):
+        for key, anchor in compat.CLAUDE_ANCHORS.items():
+            with self.subTest(anchor=key), self.assertRaises(compat.CompatibilityError):
+                compat.add_claude_provider(self.source().replace(anchor, ''), '/helper', '/python')
 
     def test_only_expected_grok_changes(self):
         original = self.source()
@@ -134,6 +175,23 @@ class LocalCopyTests(unittest.TestCase):
             output.write_text("existing unrelated content")
             with self.assertRaises(compat.CompatibilityError):
                 compat.prepare(source, output)
+
+    def test_directory_sync_failure_does_not_claim_prepared_copy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source, output = Path(tmp) / 'original', Path(tmp) / 'copy'
+            source.write_text(self.source())
+            real_fsync = os.fsync
+
+            def fail_directory(fd):
+                if stat.S_ISDIR(os.fstat(fd).st_mode):
+                    raise OSError('simulated directory sync failure')
+                real_fsync(fd)
+
+            with mock.patch.object(compat.os, 'fsync', side_effect=fail_directory):
+                with self.assertRaises(OSError):
+                    compat.prepare(source, output)
+            self.assertFalse(output.with_name(output.name + '.provenance.json').exists())
+            self.assertEqual(source.read_text(), self.source())
 
 
 if __name__ == "__main__":
