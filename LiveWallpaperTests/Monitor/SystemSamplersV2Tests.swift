@@ -263,13 +263,18 @@ struct SystemSamplersV2Tests {
 
     @Test("includeTopProcesses convenience init only flips the top-processes gate")
     func convenienceInitGating() {
+        // Through the initializer, not a hand-built Options: the whole point is that
+        // `includeTopProcesses` reaches `options.topProcesses` and touches nothing else.
+        let on = SystemMetricsSource(includeTopProcesses: true).debugOptions
+        let off = SystemMetricsSource(includeTopProcesses: false).debugOptions
+
+        #expect(on.topProcesses == true)
+        #expect(off.topProcesses == false)
+
         var expected = SystemMetricsSource.Options.default
         expected.topProcesses = true
-        var built = SystemMetricsSource.Options.default
-        built.topProcesses = true
-        #expect(built == expected)
-        #expect(built.gpu == true)
-        #expect(built.ane == false)
+        #expect(on == expected)
+        #expect(off == SystemMetricsSource.Options.default)
     }
 
     @Test("Disabling a gate is representable and distinct from the default")

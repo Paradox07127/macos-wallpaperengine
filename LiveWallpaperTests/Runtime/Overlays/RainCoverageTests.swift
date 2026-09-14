@@ -10,7 +10,7 @@ final class RainCoverageTests: XCTestCase {
     /// Fraction of pixels in each horizontal third that carry a particle.
     @MainActor
     private func coverageByThird(
-        effect: ParticleEffect, tilt: CGFloat, settle: TimeInterval
+        effect: ParticleEffect, tilt: CGFloat, settle: TimeInterval, density: CGFloat = 1.8
     ) throws -> [Double] {
         guard let screen = NSScreen.main else { throw XCTSkip("no screen") }
         try CaptureEnvironment.requireUnlockedScreen()
@@ -37,7 +37,7 @@ final class RainCoverageTests: XCTestCase {
         window.orderFrontRegardless()
         defer { window.orderOut(nil) }
 
-        view.setEffect(effect, density: 1.8, tiltRadians: tilt)
+        view.setEffect(effect, density: density, tiltRadians: tilt)
         // The field has to fill before it can be measured: a short settle
         // reports a hole that is only "these have not arrived yet".
         RunLoop.current.run(until: Date().addingTimeInterval(settle))
@@ -90,7 +90,14 @@ final class RainCoverageTests: XCTestCase {
 
     @MainActor
     func testHeavierRainIsVisiblyDenserThanLight() throws {
-        let heavy = try coverageByThird(effect: .rain, tilt: 0, settle: 4).reduce(0, +)
+        // `density` is the emitter's birth rate (ParticleOverlayView.setEffect), so the two
+        // runs differ by 4.5x in drops emitted. Compared against each other, not against a
+        // fixed number: absolute coverage moves with panel size and settle time.
+        let heavy = try coverageByThird(effect: .rain, tilt: 0, settle: 4, density: 1.8).reduce(0, +)
+        let light = try coverageByThird(effect: .rain, tilt: 0, settle: 4, density: 0.4).reduce(0, +)
         XCTAssertGreaterThan(heavy, 0.01, "no rain rendered at all")
+        XCTAssertGreaterThan(light, 0, "the light run rendered nothing, so the comparison is vacuous")
+        XCTAssertGreaterThan(heavy, light * 1.3,
+                             "heavy \(heavy) is not visibly denser than light \(light)")
     }
 }

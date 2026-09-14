@@ -197,7 +197,7 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
         playbackSpeed = try c.decodeIfPresent(Double.self, forKey: .playbackSpeed) ?? 1.0
         fitMode = try c.decodeIfPresent(VideoFitMode.self, forKey: .fitMode) ?? .aspectFill
         videoDisplayMode = try c.decodeIfPresent(VideoDisplayMode.self, forKey: .videoDisplayMode) ?? .perDisplay
-        frameRateLimit = try c.decodeIfPresent(FrameRateLimit.self, forKey: .frameRateLimit) ?? .matchDisplay
+        let decodedFrameRateLimit = try c.decodeIfPresent(FrameRateLimit.self, forKey: .frameRateLimit)
         particleEffect = try c.decodeIfPresent(ParticleEffect.self, forKey: .particleEffect) ?? .none
         effectConfig = try c.decodeIfPresent(VideoEffectConfig.self, forKey: .effectConfig) ?? .default
         scheduleSlots = try c.decodeIfPresent([ScheduleSlot].self, forKey: .scheduleSlots)
@@ -227,6 +227,11 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
 
         let decodedWallpaper = try c.decode(WallpaperContent.self, forKey: .activeWallpaper)
         activeWallpaper = decodedWallpaper
+        // A config written before this key existed records no cap. Resolve it the same way the
+        // memberwise init does — per wallpaper type — so the two entry points cannot disagree
+        // about what "unset" means (a scene would otherwise decode as uncapped, never .fps30).
+        frameRateLimit = decodedFrameRateLimit
+            ?? FrameRateLimit.naturalDefault(for: decodedWallpaper.wallpaperType)
         savedVideoBookmarkData = try c.decodeIfPresent(Data.self, forKey: .savedVideoBookmarkData)
             ?? decodedWallpaper.activeVideoBookmarkData
         if savedVideoPackageEntryName == nil {

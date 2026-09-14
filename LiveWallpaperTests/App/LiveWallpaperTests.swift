@@ -59,7 +59,7 @@ struct SettingsWindowLayoutTests {
         let htmlContent = try #require(Self.slice(
             source,
             from: "private var htmlContent",
-            to: "/// A Wallpaper Engine web project's shipped preview asset"
+            to: "private var wpeWebPreviewURL:"
         ))
 
         #expect(!htmlContent.contains("ScrollView"))
@@ -566,14 +566,24 @@ struct FrameRateLimitTests {
 
     @Test("60 FPS limit: video below limit → no limit needed")
     func fps60BelowVideo() {
-        let result = FrameRateLimit.matchDisplay.getEffectiveLimit(videoFrameRate: 30, screenRefreshRate: 60)
+        let result = FrameRateLimit.fps60.getEffectiveLimit(videoFrameRate: 30, screenRefreshRate: 60)
         #expect(result == 0)
     }
 
     @Test("60 FPS limit: screen below limit → cap to screen")
     func fps60ScreenBelow() {
-        let result = FrameRateLimit.matchDisplay.getEffectiveLimit(videoFrameRate: 120, screenRefreshRate: 48)
+        let result = FrameRateLimit.fps60.getEffectiveLimit(videoFrameRate: 120, screenRefreshRate: 48)
         #expect(result == 48)
+    }
+
+    /// The only inputs where `.fps60` and `.matchDisplay` diverge: below 60 Hz both land on
+    /// the panel, so a suite that only probes 60 Hz cannot tell the cap from no cap at all.
+    @Test("60 FPS limit on a 120 Hz panel caps at 60, unlike matchDisplay")
+    func fps60CapsBelowAProMotionPanel() {
+        let capped = FrameRateLimit.fps60.getEffectiveLimit(videoFrameRate: 120, screenRefreshRate: 120)
+        let uncapped = FrameRateLimit.matchDisplay.getEffectiveLimit(videoFrameRate: 120, screenRefreshRate: 120)
+        #expect(capped == 60)
+        #expect(uncapped == 0)
     }
 
     @Test("A 30 target on a 24 Hz panel yields 24, not half of it")
@@ -1181,7 +1191,7 @@ struct ResolveCompositionFPSTests {
     @Test("60 FPS limit on 120fps source on 60Hz → 60")
     func fps60Capped() {
         let fps = FrameRateLimit.resolveCompositionFPS(
-            limit: .matchDisplay,
+            limit: .fps60,
             videoFrameRate: 120,
             screenRefreshRate: 60
         )
@@ -1191,7 +1201,7 @@ struct ResolveCompositionFPSTests {
     @Test("60 FPS limit on 30fps source → use native 30")
     func fps60BelowSourceUsesNative() {
         let fps = FrameRateLimit.resolveCompositionFPS(
-            limit: .matchDisplay,
+            limit: .fps60,
             videoFrameRate: 30,
             screenRefreshRate: 60
         )

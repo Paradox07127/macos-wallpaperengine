@@ -655,7 +655,7 @@ struct VideoSessionLifecycleTests {
             manager.range(of: "func retryRuntimeSession(for screen: Screen)")
         )
         let tail = manager[retry.lowerBound...]
-        let end = try #require(tail.range(of: "\n    /// Subscribes"))
+        let end = try #require(tail.range(of: "\n    func observeRuntimeErrors("))
         let body = String(tail[..<end.lowerBound])
 
         #expect(body.contains("screen.runtimeSession?.wallpaperType == .scene"))

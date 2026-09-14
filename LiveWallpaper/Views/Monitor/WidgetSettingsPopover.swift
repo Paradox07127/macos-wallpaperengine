@@ -197,7 +197,7 @@ struct WidgetSettingsPopover: View {
         optionRow("Sampling interval") {
             GlassSegmentedPicker(
                 selection: Binding(
-                    get: { MonitorWidgetDraft.gpuSampleSeconds(placement) ?? 6 },
+                    get: { MonitorWidgetDraft.gpuSampleSeconds(placement) ?? MonitorWidgetDraft.gpuDefaultSeconds },
                     set: { onUpdate(MonitorWidgetDraft.settingGPUSampleSeconds($0, on: placement)) }
                 ),
                 values: MonitorWidgetDraft.gpuSampleChoices,
@@ -431,7 +431,7 @@ enum MonitorWidgetDraft {
         _ value: Double, on placement: MonitorWidgetPlacement
     ) -> MonitorWidgetPlacement {
         var next = placement
-        if value == 6 || !gpuSampleChoices.contains(value) {
+        if value == gpuDefaultSeconds || !gpuSampleChoices.contains(value) {
             next.options.removeValue(forKey: gpuSampleSecondsKey)
         } else {
             next.options[gpuSampleSecondsKey] = .number(value)

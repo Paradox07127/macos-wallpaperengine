@@ -58,7 +58,6 @@ final class WorkshopSetupController {
 
     /// Not observed: assigning the handle would invalidate every view that
     /// reads this controller, for a value none of them render.
-    @ObservationIgnored private var installTask: Task<Void, Never>?
 
     init(doctor: SteamCMDDoctorService, defaults: UserDefaults = .appScoped()) {
         self.doctor = doctor
@@ -132,7 +131,7 @@ final class WorkshopSetupController {
     /// the binary instead of trusting the install's success report.
     func runManagedInstall() {
         beginSetupAction()
-        installTask = Task {
+        Task {
             switch await installer.install() {
             case .installed:
                 isVerifyingInstall = true
@@ -151,7 +150,6 @@ final class WorkshopSetupController {
                 // outcome, or this one was cancelled — neither is an error.
                 break
             }
-            installTask = nil
         }
     }
 

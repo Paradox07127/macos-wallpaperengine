@@ -100,7 +100,14 @@ final class SystemMetricsSource: MonitorDataSource, Sendable {
     }
 
     #if DEBUG
-    var debugNetPathStarted: Bool { netPath.debugIsStarted }
+    var debugNetPathStarted: Bool {
+        netPath.debugIsStarted
+    }
+
+    /// The gates the initializer actually resolved, which are otherwise private.
+    var debugOptions: Options {
+        options
+    }
     #endif
 
     func start(sink: any MonitorSnapshotSink) async {

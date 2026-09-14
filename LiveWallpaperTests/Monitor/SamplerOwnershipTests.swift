@@ -228,8 +228,12 @@ struct MonitorSamplerOwnershipCharacterizationTests {
     @Test("empty and agent-only widget sets do not demand system metrics")
     func agentOnlyDemandGate() {
         #expect(!MonitorRuntimeOptions.requiresSystemMetrics(for: []))
+        // Every agent-only kind, not `.fleet` twice: these three are the set `mixedDemandGate`
+        // subtracts, so a kind that quietly starts demanding system metrics has to show up here.
         #expect(!MonitorRuntimeOptions.requiresSystemMetrics(for: [.fleet]))
-        #expect(!MonitorRuntimeOptions.requiresSystemMetrics(for: [.fleet]))
+        #expect(!MonitorRuntimeOptions.requiresSystemMetrics(for: [.weather]))
+        #expect(!MonitorRuntimeOptions.requiresSystemMetrics(for: [.nixieClock]))
+        #expect(!MonitorRuntimeOptions.requiresSystemMetrics(for: [.fleet, .weather, .nixieClock]))
 
         let kinds: Set<MonitorWidgetKind> = [.fleet]
         let options = MonitorRuntimeOptions(

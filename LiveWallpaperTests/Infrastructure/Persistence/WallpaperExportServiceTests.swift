@@ -451,9 +451,10 @@ struct WallpaperExportServiceTests {
 
         #expect(rig.service.items.isEmpty, "the removed entry must not come back")
         #expect(try rig.manifestOnDisk().items.isEmpty)
+        // No `manifest.lock` term: the lock lives at sharedRoot/manifest.lock, a sibling of
+        // Videos/, so filtering for it here would only hide a real leftover of that name.
         let leftovers = try FileManager.default
             .contentsOfDirectory(atPath: rig.videosDirectory.path)
-            .filter { $0 != "manifest.lock" }
         #expect(leftovers.isEmpty, "nor its files: \(leftovers)")
     }
 
@@ -587,7 +588,7 @@ struct WallpaperExportServiceTests {
 
         #expect(rig.service.items.isEmpty, "a choice invisible in the panel must not be recorded")
         let leftovers = (try? FileManager.default.contentsOfDirectory(atPath: rig.videosDirectory.path)) ?? []
-        #expect(leftovers.filter { !$0.hasPrefix(".") && $0 != "manifest.lock" }.isEmpty,
+        #expect(leftovers.filter { !$0.hasPrefix(".") }.isEmpty,
                 "the copied video must be rolled back, not stranded: \(leftovers)")
     }
 
