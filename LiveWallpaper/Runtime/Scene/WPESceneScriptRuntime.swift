@@ -1452,7 +1452,7 @@ final class WPESceneScriptInstance {
         engine.setObject(setProperty, forKeyedSubscript: "setPropertyValue" as NSString)
         let audioBridge = WPESceneScriptAudioBridge()
         audioBridge.install(in: engine, context: context)
-        // openURL stub must exist (undefined call throws out of cursorClick mid-handler).
+        // `openUserShortcut` stub must exist (an undefined call throws out of cursorClick mid-handler).
         let openUserShortcut: @convention(block) (String) -> Bool = { _ in false }
         engine.setObject(openUserShortcut, forKeyedSubscript: "openUserShortcut" as NSString)
         // isRunningInEditor is always false here; an undefined call throws and discards the rest of update().

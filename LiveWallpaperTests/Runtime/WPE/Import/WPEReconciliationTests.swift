@@ -223,8 +223,11 @@ struct WPEReconciliationTests {
         #expect(WPEOrigin.matchesBookmark(videoBookmark, origin: origin))
     }
 
-    @Test("matchesBookmark returns true for a real security-scoped bookmark inside the cache")
-    func matchesBookmarkAcceptsRealBookmarkInsideCache() throws {
+    /// The true-positive counterpart would have to write into the real Application Support
+    /// cache that `matchesCacheBookmark` resolves against; this suite deliberately stays out
+    /// of the user container, so the cache-hit path is left to the integration layer.
+    @Test("matchesBookmark rejects a real security-scoped bookmark outside the cache")
+    func matchesBookmarkRejectsRealBookmarkOutsideCache() throws {
         let temp = FileManager.default.temporaryDirectory
             .appendingPathComponent("wpe-match-test-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: temp) }

@@ -112,12 +112,14 @@ struct WPEMappedPackageWriteFenceTests {
     // MARK: - Source fence: no in-place writer may appear
 
     /// `swiftFiles(under:)` returns [] for a path that does not exist and reports no error, so a renamed root
-    /// must be named, not merely folded into an aggregate file count.
+    /// must be named, not merely folded into an aggregate file count. Every root below is a
+    /// production tree with no test sources under it, so nothing here filters them out —
+    /// adding a root that carries its own `Tests/` needs that decided again, not assumed.
     private static func sweep(_ roots: [String]) -> (files: [URL], emptyRoots: [String]) {
         var files: [URL] = []
         var emptyRoots: [String] = []
         for root in roots {
-            let found = RepositoryRoot.swiftFiles(under: root).filter { !$0.path.contains("/Tests/") }
+            let found = RepositoryRoot.swiftFiles(under: root)
             if found.isEmpty {
                 emptyRoots.append(root)
             }

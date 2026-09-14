@@ -358,7 +358,7 @@ struct CriticalMemoryPressureFanoutTests {
             "resolveAndApplyPerformanceState was renamed — re-point this contract"
         )
         let rest = source[start.lowerBound...]
-        guard let end = rest.range(of: "\n    /// Layers the adaptive background") else {
+        guard let end = rest.range(of: "\n    private func applyAdaptiveFrameRate(") else {
             return String(rest)
         }
         return String(rest[..<end.lowerBound])

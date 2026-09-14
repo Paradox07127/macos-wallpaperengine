@@ -94,8 +94,25 @@ struct WPEMetalRenderExecutorTests {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let executor = try WPEMetalRenderExecutor(device: device)
         executor.untranslatableShaderReasonByPassID["layer0.0"] = "no translator"
+        executor.seedCompiledShaderResultsByPassID([
+            (passID: "layer1.0", result: WPEShaderCompileResult(
+                library: executor.defaultLibrary,
+                vertexFunctionName: "vertex_fn",
+                fragmentFunctionName: "fragment_fn",
+                mslSource: "// seeded",
+                uniformLayout: [],
+                samplerNames: [],
+                textureSlotCount: 0
+            )),
+        ])
+        #expect(!executor.compiledShaderResultByPassID.isEmpty, "seeding failed, so the clear below proves nothing")
+
         executor.releaseTransientResources()
+
         #expect(executor.untranslatableShaderReasonByPassID.isEmpty)
+        // The other half the title claims: both maps are pass-id keyed, so a reload that kept
+        // either one would hand a reused id the previous scene's shader.
+        #expect(executor.compiledShaderResultByPassID.isEmpty)
     }
 
     private func shaderCompileRequest(sourceHash: String) -> WPEShaderCompileRequest {

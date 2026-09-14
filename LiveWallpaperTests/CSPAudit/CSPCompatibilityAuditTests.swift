@@ -188,7 +188,7 @@ struct CSPAuditReport: Sendable {
         var lines: [String] = []
         lines.append("CSP audit summary (corpus = \(corpus.count) projects)")
         lines.append(String(repeating: "—", count: 88))
-        lines.append(String(format: "%-30s %8s %14s %14s %8s",
+        lines.append(String(format: "%-30@ %8@ %14@ %14@ %8@",
                             "Candidate", "Total", "Zero-Violation", "With-Violation", "Storage"))
         lines.append(String(repeating: "—", count: 88))
         for row in rows {
@@ -196,7 +196,7 @@ struct CSPAuditReport: Sendable {
                 ? "—"
                 : String(format: "%.1f%%",
                          Double(row.zeroViolationProjects) / Double(row.totalProjects) * 100)
-            lines.append(String(format: "%-30s %8d %14d (%6s) %14d %8d",
+            lines.append(String(format: "%-30@ %8d %14d (%6@) %14d %8d",
                                 row.candidate.displayName,
                                 row.totalProjects,
                                 row.zeroViolationProjects,

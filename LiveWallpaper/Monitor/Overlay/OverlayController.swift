@@ -356,7 +356,6 @@ final class OverlayController: NSObject {
         restackSameLevelHosts()
     }
 
-    /// Drops every module host on this display.
     func teardown(screenID: CGDirectDisplayID) {
         for key in Array(hosts.keys) where key.screenID == screenID {
             teardown(key: key, animated: false)

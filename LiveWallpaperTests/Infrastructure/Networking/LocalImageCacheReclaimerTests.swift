@@ -130,9 +130,9 @@ struct LocalImageCacheReclaimerTests {
         #expect(counter.count == 1)
     }
 
-    // MARK: - (b) The last close does fire, and empties all three caches
+    // MARK: - (b) The last close does fire, and empties all four caches
 
-    @Test("The last window closing empties all three local-source caches")
+    @Test("The last window closing empties all four local-source caches")
     func lastWindowCloseEmptiesEveryLocalImageCache() async throws {
         try fillLocalImageCaches()
         let reclaimer = LocalImageCacheReclaimer(delay: Self.testDelay) {
@@ -197,9 +197,6 @@ struct LocalImageCacheReclaimerTests {
         await waitUntil { counter.count > 0 }
         #expect(counter.count == 1)
     }
-
-    // MARK: - (e) A superseded pending purge stays superseded
-
 
     // MARK: - (f) A poster generated for a cancelled requester is never inserted
 

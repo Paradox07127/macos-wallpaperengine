@@ -144,7 +144,6 @@ extension ScreenManager {
         }
     }
 
-    /// Subscribes the manager to a session's error changes so the SwiftUI banner refreshes when a player or web view starts / clears a failure.
     func observeRuntimeErrors(for session: any WallpaperRuntimeSession) {
         let notify: @MainActor () -> Void = { [weak self] in
             self?.markWallpaperSessionStateChanged()

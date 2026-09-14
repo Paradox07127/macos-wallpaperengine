@@ -212,7 +212,7 @@ struct OverlayVisibilityLifecycleCharacterizationTests {
         let hostCreation = try sourceSlice(
             controller,
             from: "let board = HostView(",
-            to: "/// Drops every module host on this display."
+            to: "func teardown(screenID:"
         )
         let visibilityUpdate = try sourceSlice(
             controller,

@@ -13,7 +13,7 @@ struct AbsenceHibernationWiringTests {
         )
         let rest = source[start.lowerBound...]
         // Up to the next top-level declaration in the extension.
-        guard let end = rest.range(of: "\n    /// Layers the adaptive background") else {
+        guard let end = rest.range(of: "\n    private func applyAdaptiveFrameRate(") else {
             return String(rest)
         }
         return String(rest[..<end.lowerBound])

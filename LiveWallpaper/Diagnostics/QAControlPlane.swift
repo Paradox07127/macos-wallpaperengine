@@ -131,32 +131,6 @@ final class QAControlPlane {
         return fd
     }
 
-    private enum SocketState {
-        case free
-        case stale
-        case occupied
-    }
-
-    private nonisolated static func probe(_ path: String) -> SocketState {
-        guard FileManager.default.fileExists(atPath: path) else { return .free }
-        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
-        guard fd >= 0 else { return .stale }
-        defer { close(fd) }
-        var addr = sockaddr_un()
-        addr.sun_family = sa_family_t(AF_UNIX)
-        let bytes = Array(path.utf8)
-        guard bytes.count < MemoryLayout.size(ofValue: addr.sun_path) else { return .stale }
-        withUnsafeMutableBytes(of: &addr.sun_path) { raw in
-            raw.copyBytes(from: bytes)
-            raw[bytes.count] = 0
-        }
-        let size = socklen_t(MemoryLayout<sockaddr_un>.size)
-        let connected = withUnsafePointer(to: &addr) { pointer in
-            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, size) }
-        }
-        return connected == 0 ? .occupied : .stale
-    }
-
     private nonisolated static func inode(of path: String) -> ino_t? {
         var info = stat()
         return stat(path, &info) == 0 ? info.st_ino : nil
