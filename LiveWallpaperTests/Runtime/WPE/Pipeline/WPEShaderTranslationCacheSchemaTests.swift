@@ -73,6 +73,13 @@ struct WPEShaderTranslationCacheSchemaTests {
     /// 2026-09-09: schema 9 forces the small waterflow blend helper inline so the
     /// compiler can share phase expressions with cycles; no shader math is changed.
     /// 2026-09-10: schema 10 adds guarded water power and single-mip sampling fast paths.
+    /// 2026-09-13, MSL-neutral, so `schemaVersion` stays at 10: f7baa97 rewrote only
+    /// `WPERenderPipelineBuilder.build` (canonical composite rotation and the new
+    /// full-frame passthrough elision, both flipped to on-by-default). Those run on the
+    /// already-prepared pipeline, after stage-3 has produced every pass's source, and
+    /// they rebuild passes carrying `shader`/`combos`/`comboValues` through untouched —
+    /// only `source`, `target` and the FBO references in `textures` are swapped. Nothing
+    /// that feeds `translateFragment` moves, so warm entries stay valid.
     static let expectedFingerprint = "80516915d6dabd8ee063e12d4825674bec9dfe84af519a320b2df9f361e13be5"
 
     @Test("Hosted shader cache defaults stay in the process configuration scratch tree")

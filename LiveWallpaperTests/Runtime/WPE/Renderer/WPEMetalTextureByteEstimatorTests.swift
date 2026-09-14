@@ -87,13 +87,41 @@ struct WPEMetalTextureByteEstimatorTests {
         ) == 16_777_216 * 3)
     }
 
-    @Test("Static-layer cache bills through the shared estimator")
-    func staticLayerCacheUsesEstimator() throws {
+    /// The static-layer cache is the one byte-accounting path that must NOT use
+    /// this estimator. It reserves budget from a descriptor before allocating and
+    /// `recordSnapshot` then rejects anything over that reservation
+    /// (`texture.allocatedSize <= reserved`), so both sides have to be Metal's own
+    /// number. Measured on this device, the estimator under-counts every render
+    /// target by 2-8% against `allocatedSize` (rgba16Float 1920x1080: 16_588_800 vs
+    /// 16_842_752), which would make that guard reject every snapshot and silently
+    /// disable the cache. `heapTextureSizeAndAlign(descriptor:).size` equals the
+    /// resulting `allocatedSize` exactly, so reserve and record agree by construction.
+    @Test("Static-layer cache bills through Metal's own allocation size, not the estimator")
+    func staticLayerCacheBillsRealAllocationSize() throws {
         let targets = try RepositoryRoot.source(
             "LiveWallpaper/Runtime/Metal/WPEMetalRenderExecutor+Targets.swift"
         )
-        #expect(targets.contains("WPEMetalTextureByteEstimator.estimatedBytes(of:"))
+        #expect(targets.contains("device.heapTextureSizeAndAlign(descriptor: descriptor).size"))
+        #expect(targets.contains("bytes += cached.allocatedSize"))
         #expect(!targets.contains("staticLayerCacheBytesPerPixel"))
+        #expect(!targets.contains("WPEMetalTextureByteEstimator"))
+    }
+
+    /// The estimator keeps the paths that hold a texture but no reservation to
+    /// honour: the LRU's resident-bytes total, the memory-audit census, and the
+    /// animated-.tex frame total.
+    @Test("Estimator still owns the LRU, census and animated-texture totals")
+    func estimatorRetainsItsCallers() throws {
+        for path in [
+            "LiveWallpaper/Runtime/Metal/WPEMetalSceneRenderer+Textures.swift",
+            "LiveWallpaper/Runtime/Metal/WPEMetalTextureMetadataRegistry.swift",
+            "LiveWallpaper/Runtime/Assets/WPETexAnimatedTextureSource.swift",
+        ] {
+            #expect(
+                try RepositoryRoot.source(path).contains("WPEMetalTextureByteEstimator.estimatedBytes(of:"),
+                Comment(rawValue: path)
+            )
+        }
     }
 
     @Test("Every memory tier ships a bounded texture-cache budget")
