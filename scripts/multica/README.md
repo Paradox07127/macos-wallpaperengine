@@ -16,7 +16,7 @@ The stable local root is `$HOME/Documents/Codex/Multica`:
 | `repository/` | Dedicated Git mirror/checkout used to fetch review targets |
 | `state/intake.sqlite3` | Intake checkpoint, mappings and write reconciliation |
 | `state/jobs/<job-id>/` | Immutable request and executor/publication receipts |
-| `state/reviews/<job-id>/` | Frozen checkout, review manifest and attestation |
+| `state/reviews/<job-id>/` | Frozen checkout, review manifest and model evidence |
 | `workspaces/` | Multica daemon workspaces |
 | `logs/` | Local service logs |
 
@@ -40,6 +40,93 @@ Fork PRs must not execute, even if someone adds a label. The controller must val
 repository identity and immutable revisions from GitHub metadata before dispatch. Labels are routing signals,
 not authorization for a release or arbitrary external actions. If intake identity or
 revision checks fail, leave the job blocked.
+
+### Feedback intake and safe Triage
+
+Keep `triage_all_new: false` for normal operation. A maintainer adds `agent-triage`
+when a report is ready for an initial assessment. That label is an explicit intake
+decision: the maintainer still judges whether the report belongs to this project.
+It does not authorize running commands from the report, fetching attachments or
+publishing anything.
+
+Configure the **cloud Triage agent**, identified by `triage_agent_id`, separately
+from Review Coordinator. For its Claude Code runtime, disable tools with
+`--tools ''`, use strict MCP configuration with an empty MCP server set, and enable
+Multica Safe Mode. Verify the effective runtime configuration after changing the
+agent. These settings belong to the cloud agent; editing local `config.json`
+alone does not apply them. Tools-disabled operation is not an operating-system
+sandbox, and Review Coordinator's executor access must not be given to Triage.
+
+The initial intake creates an unassigned Backlog issue, assigns Triage using
+`--no-start`, and then sends exactly one explicit mention carrying the bounded
+title, body and recent public comments. This supplies the information a
+tools-disabled agent needs without requiring `issue get`. It keeps public author
+logins, bot flags and original links, but does not read profile email fields or
+download the linked attachments. Triage should distinguish evidence, prior
+answers and missing information in its response.
+
+Later issue edits and ordinary comments are **data updates only**. The bridge
+starts those Multica comments with `/note`, which suppresses the platform's
+assignee fallback. Simply omitting an `@mention` is insufficient. Unrelated
+discussion or an injected instruction therefore does not automatically launch
+another investigation. Bot comments are ignored.
+
+A maintainer can request a follow-up by posting this complete line on the
+original GitHub issue:
+
+```text
+/multica-triage
+```
+
+The bridge ignores the command inside a Markdown quote, fenced/indented code or
+additional text on the same line. It verifies the comment author's **current**
+repository permission through GitHub's collaborator-permission API; only
+`write`, `maintain` or `admin` qualifies. A claimed role in the body or
+`author_association` does not authorize a run. The resulting agent trigger contains
+a fresh API snapshot of the issue and bounded recent comments, with a fixed
+bridge instruction; it does not promote the external command body into a tool
+instruction. Reports and follow-up questions stay in Multica. No GitHub reply or
+external message is sent by this intake bridge.
+
+| Local setting | Default | Effect |
+| --- | --- | --- |
+| `triage_label` | `agent-triage` | Opt-in initial intake |
+| `triage_all_new` | `false` | Avoid automatically admitting all new reports |
+| `max_body_chars` | `12000` | Hard limit for an external body; commands beyond it do not execute |
+| `max_history_comments` | `20` | Maximum recent comments in a snapshot |
+| `max_history_chars` | `20000` | Combined JSON text budget for those comments |
+| `triage_cooldown_seconds` | `600` | Per-issue interval between follow-up delivery attempts |
+| `max_triage_followups_per_tick` | `3` | Follow-up delivery attempts per service tick |
+
+The follow-up limits do **not** count initial label-approved intake or PR review.
+Uncertain deliveries count as attempts, so a lost acknowledgement cannot evade
+the limits. Deferred follow-ups remain in SQLite and are retried on later ticks,
+including ticks without new GitHub activity. A permission 404 or insufficient
+permission becomes an observable `denied` record; transient API failures remain
+`pending`. After fixing a denied request's permission, post a new explicit request.
+`doctor` prints the queue totals. For individual reasons, inspect the local state
+read-only:
+
+```sh
+sqlite3 -readonly "$HOME/Documents/Codex/Multica/state/intake.sqlite3" \
+  'SELECT status, reason, COUNT(*) FROM triage_pending GROUP BY status, reason;'
+```
+
+### Review status names
+
+The bridge writes only pending statuses; the trusted collector validates the
+versioned policy and attestation before publishing a result. Status contexts are
+scoped to the work being reviewed:
+
+- PR: `multica/review/pr-<number>`.
+- Release candidate: `multica/release/<job_id>`.
+
+This keeps two PRs or release candidates at the same commit from overwriting each
+other's status. Use the request manifest's revisions and the installed runner's
+policy/evidence paths when collecting. Existing statuses under older shared names
+are historical and must not be treated as approval for a new candidate. These
+helpers do not themselves install a GitHub branch-protection rule or grant final
+release approval.
 
 ### Read-only diagnosis and dry run
 
@@ -149,13 +236,13 @@ values replace every placeholder:
 ```text
 "$MULTICA_PYTHON" "$MULTICA_ROOT/bridge/release_gate.py" check \
   --repo "$MULTICA_ROOT/state/reviews/RELEASE_JOB_ID/frozen" \
-  --attestation "$MULTICA_ROOT/state/reviews/RELEASE_JOB_ID/attestation.json" \
+  --attestation ABSOLUTE_ATTESTATION_PATH_FROM_VERIFIED_EXECUTOR_RECEIPT \
   --base-sha FULL_40_CHARACTER_BASE_COMMIT \
   --head-sha FULL_40_CHARACTER_REVIEWED_HEAD_COMMIT
 
 "$MULTICA_PYTHON" "$MULTICA_ROOT/bridge/release_gate.py" plan \
   --repo "$MULTICA_ROOT/state/reviews/RELEASE_JOB_ID/frozen" \
-  --attestation "$MULTICA_ROOT/state/reviews/RELEASE_JOB_ID/attestation.json" \
+  --attestation ABSOLUTE_ATTESTATION_PATH_FROM_VERIFIED_EXECUTOR_RECEIPT \
   --base-sha FULL_40_CHARACTER_BASE_COMMIT \
   --head-sha FULL_40_CHARACTER_REVIEWED_HEAD_COMMIT \
   --sku pro --version MAJOR.MINOR.PATCH
@@ -169,7 +256,9 @@ untracked and dirty submodule changes block the check. Store evidence outside th
 checkout, or in an intentionally ignored evidence directory, so it does not itself
 make the tree dirty.
 
-`review_runner` supplies a JSON attestation with `schema_version: 1`, `kind: release`,
+Use the attestation location reported by the verified executor receipt, not a
+similarly named file supplied by a model or copied from an older run. `review_runner`
+supplies a JSON attestation with its supported `schema_version`, `kind: release`,
 `verdict: PASS`, the canonical frozen checkout as `repo`, the input checkout as
 `source_repo`, `base_sha`, `head_sha`, `tree_sha`,
 `policy`, an absolute `artifact_root`, and a nonempty `artifacts` list. Each artifact
@@ -220,8 +309,27 @@ implemented here.
 ## Tests
 
 ```sh
+python3 -m unittest discover -s tests -p 'test_github_bridge.py'
+python3 -m unittest discover -s tests -p 'test_multica_service.py'
 python3 -m unittest discover -s tests -p 'test_release_gate.py'
 ```
 
-Tests create disposable Git repositories and evidence files. They do not build the
-app, invoke the real release script, publish, or commit changes in this repository.
+Bridge and service tests mock the CLIs, network and daemon operations. Gate tests
+create disposable Git repositories and evidence files. They do not build the app,
+invoke the real release script, publish, or commit changes in this repository.
+
+## Explicit retry after a failed review
+
+A repeated `run` collects the existing attempt; it never silently starts another
+paid model run. After inspecting an actual `FAILED` or `NEEDS_REVIEW` result, an
+operator can explicitly request a new attempt:
+
+```text
+python3 "$MULTICA_ROOT/bridge/executor.py" --config "$MULTICA_ROOT/config.json" \
+  retry --job-id LOGICAL_JOB_ID
+```
+
+Retry checks the current GitHub target and refuses passed, live, busy, unknown or
+superseded work. Earlier frozen checkouts, complete reports and receipts remain
+intact. `attempt.json` selects the new runner ID; subsequent collect/publish calls
+still use the same logical job ID. No automatic retry loop is enabled.

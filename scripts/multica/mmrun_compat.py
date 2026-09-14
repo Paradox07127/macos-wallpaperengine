@@ -53,26 +53,24 @@ def normalize(text):
     if len(text.encode("utf-8")) > MAX_OUTPUT_BYTES:
         raise CompatibilityError("Grok stdout exceeds the transport size limit")
     decoder = json.JSONDecoder(object_pairs_hook=pairs, parse_constant=constant)
-    candidates = []
-    for offset, char in enumerate(text):
-        if char != "{":
-            continue
-        try:
-            value, end = decoder.raw_decode(text, offset)
-        except (ValueError, CompatibilityError):
-            continue
-        if not isinstance(value, dict):
-            continue
-        if not any(key in value for key in ("structuredOutput", "structured_output", "text")):
-            continue
-        candidates.append((value, end))
-    if len(candidates) != 1 or text[candidates[0][1]:].strip():
+    # Parse the first envelope once. Searching inside a malformed outer object
+    # could discard its error flag and mistake an inner result for success.
+    offset = text.find("{")
+    prefix = text[:offset] if offset >= 0 else text
+    if offset < 0 or "[" in prefix or (prefix.strip() and not prefix.endswith("\n")):
+        raise CompatibilityError("Expected a top-level Grok JSON result envelope")
+    try:
+        envelope, end = decoder.raw_decode(text, offset)
+    except (ValueError, CompatibilityError) as exc:
+        raise CompatibilityError("Malformed Grok JSON result envelope") from exc
+    if not isinstance(envelope, dict) or text[end:].strip():
         raise CompatibilityError("Expected exactly one terminal Grok JSON result envelope")
-    envelope = candidates[0][0]
     if envelope.get("isError") or envelope.get("is_error") or envelope.get("error"):
         raise CompatibilityError("Grok envelope reports an error")
-    stop = envelope.get("stopReason", envelope.get("stop_reason"))
-    if stop is not None and stop not in ("end_turn", "stop", "completed"):
+    stops = [envelope[key] for key in ("stopReason", "stop_reason") if key in envelope]
+    if len(stops) == 2 and stops[0] != stops[1]:
+        raise CompatibilityError("Conflicting completion aliases")
+    if any(stop not in ("end_turn", "stop", "completed") for stop in stops):
         raise CompatibilityError("Grok did not report normal end-of-turn completion")
     values = [envelope[key] for key in ("structuredOutput", "structured_output") if key in envelope]
     if len(values) == 2 and values[0] != values[1]:

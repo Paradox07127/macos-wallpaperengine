@@ -60,6 +60,20 @@ class NormalizationTests(unittest.TestCase):
         with self.assertRaises(compat.CompatibilityError):
             compat.normalize(text)
 
+    def test_truncated_error_wrapper_cannot_salvage_inner_approval(self):
+        inner = json.dumps({'structuredOutput': dict(REPORT, verdict='approve')})
+        for text in ('{"isError":true,"result":' + inner, '[' + inner,
+                     '{"broken":\n' + inner, 'warning {broken\n' + inner):
+            with self.subTest(text=text), self.assertRaises(compat.CompatibilityError):
+                compat.normalize(text)
+
+    def test_conflicting_or_null_completion_aliases_fail(self):
+        for fields in ({'stopReason': 'end_turn', 'stop_reason': 'cancelled'},
+                       {'stopReason': 'end_turn', 'stop_reason': 'completed'},
+                       {'stopReason': None}):
+            with self.subTest(fields=fields), self.assertRaises(compat.CompatibilityError):
+                compat.normalize(json.dumps(dict(structuredOutput=REPORT, **fields)))
+
 
 class LocalCopyTests(unittest.TestCase):
     def source(self):
