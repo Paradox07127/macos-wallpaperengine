@@ -135,12 +135,58 @@ struct WPECorpusFailurePatternsTests {
 
     // MARK: - Named FBO chains (Blue Archive — blur_start_2)
 
+    /// Blue Archive authors its blur as a chain of plain (un-prefixed) FBO names:
+    /// one pass renders `blur_start_1`, the next reads it and writes `blur_start_2`.
+    /// Each read has to land on THAT name's prior write — resolving to a sibling
+    /// target, or falling back to the scene attachment, blurs the wrong image.
     @Test("Scene-authored named FBO chain reads must resolve to prior writes")
-    func sceneAuthoredFBOChain() {
-        let knownSceneFBOName = "blur_start_2"
-        let documentedSceneCount = 2
-        #expect(knownSceneFBOName.hasPrefix("blur_"))
-        #expect(documentedSceneCount == 2)
+    func sceneAuthoredFBOChain() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let output = try #require(Self.scratchTexture(device: device))
+        let blurStart1 = try #require(Self.scratchTexture(device: device))
+        let blurStart2 = try #require(Self.scratchTexture(device: device))
+        var frameState = WPEMetalFrameState(output: output, sceneSize: CGSize(width: 4, height: 4))
+
+        // Before the producing pass runs, a chain read is a scene authoring error
+        // and must throw rather than silently bind the scene attachment.
+        #expect(throws: WPEMetalRenderExecutorError.self) {
+            _ = try WPEMetalShaderInputs.resolve(
+                reference: .fbo("blur_start_2"),
+                textures: [:],
+                frameState: frameState,
+                currentTargetID: .scene
+            )
+        }
+
+        frameState.registerWrite(texture: blurStart1, targetID: .named("blur_start_1"))
+        frameState.registerWrite(texture: blurStart2, targetID: .named("blur_start_2"))
+
+        let resolvedSecond = try WPEMetalShaderInputs.resolve(
+            reference: .fbo("blur_start_2"),
+            textures: [:],
+            frameState: frameState,
+            currentTargetID: .scene
+        )
+        #expect(resolvedSecond === blurStart2)
+        #expect(resolvedSecond !== blurStart1, "a chain read must not pick up a sibling stage")
+        #expect(resolvedSecond !== output, "a chain read must not fall back to the scene attachment")
+
+        let resolvedFirst = try WPEMetalShaderInputs.resolve(
+            reference: .fbo("blur_start_1"),
+            textures: [:],
+            frameState: frameState,
+            currentTargetID: .scene
+        )
+        #expect(resolvedFirst === blurStart1)
+    }
+
+    private static func scratchTexture(device: MTLDevice) -> MTLTexture? {
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .rgba8Unorm, width: 4, height: 4, mipmapped: false
+        )
+        descriptor.usage = [.shaderRead, .renderTarget]
+        descriptor.storageMode = .shared
+        return device.makeTexture(descriptor: descriptor)
     }
 
     // MARK: - Helper / #if-guarded uniform extraction (Simple_Audio_Bars)

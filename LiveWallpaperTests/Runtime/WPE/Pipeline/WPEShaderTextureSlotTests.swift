@@ -129,6 +129,10 @@ struct WPEShaderTextureSlotTests {
             preprocessedSource: Self.chroma4LikeSource
         )
         #expect(result.mslSource.contains("texture(8)"))
-        #expect(!result.mslSource.contains("texture(5)_g_Texture8"))
+        // Slot 5 is absent from the source, so enumeration order would shift
+        // every sampler above the hole down by one (g_Texture6→tex5, 8→tex7).
+        #expect(result.mslSource.contains("[[maybe_unused]] auto g_Texture6 = tex6;"))
+        #expect(result.mslSource.contains("[[maybe_unused]] auto g_Texture7 = tex7;"))
+        #expect(result.mslSource.contains("[[maybe_unused]] auto g_Texture8 = tex8;"))
     }
 }

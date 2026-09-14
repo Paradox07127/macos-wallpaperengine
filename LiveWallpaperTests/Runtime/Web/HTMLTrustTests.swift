@@ -534,10 +534,27 @@ struct LoopbackTrustTests {
     /// persisted allowlist — otherwise "revoke" would appear to work and then
     /// silently have no effect.
     @Test("Loopback is never persisted into the allowlist")
+    @MainActor
     func loopbackIsNotPersisted() throws {
         let origin = try #require(TrustedHTMLOrigin(url: URL(string: "http://localhost:3000")!))
         #expect(origin.isLoopback)
         #expect(!origin.isSecure, "loopback over http is still cleartext")
+        // The actual gate: `trust` and `normalizeOrigins` both filter on this.
+        #expect(!origin.canBeTrusted, "loopback must stay ineligible for an allowlist entry")
+
+        let persistence = InMemoryTrustedHostPersistence()
+        let store = TrustedHostStore(persistence: persistence)
+        #expect(store.trust(origin) == false)
+        #expect(store.origins.isEmpty)
+        #expect(persistence.stored.isEmpty)
+
+        // A loopback entry already on disk (hand-edited, or written by a build
+        // that did admit it) must be dropped on load, not carried forward.
+        let seeded = InMemoryTrustedHostPersistence()
+        seeded.stored = [origin.rawValue]
+        let reloaded = TrustedHostStore(persistence: seeded)
+        #expect(reloaded.origins.isEmpty)
+        #expect(seeded.stored.isEmpty)
     }
 }
 

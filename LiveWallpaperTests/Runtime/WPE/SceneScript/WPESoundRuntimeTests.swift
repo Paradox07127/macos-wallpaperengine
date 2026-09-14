@@ -171,15 +171,49 @@ struct WPESoundRuntimeTests {
         #expect(document.soundObjects.isEmpty)
     }
 
+    /// Read through `playerVolume`, the only observable the master gain reaches.
+    /// The scene volume is deliberately below 1 so an unclamped master above 1
+    /// would scale the track UP instead of leaving it at its authored gain —
+    /// with `sceneVolume == 1` the product clamp in `effectiveVolume` hides the
+    /// missing clamp entirely.
     @Test("setMasterVolume clamps to [0, 1]")
     func masterVolumeClamps() throws {
-        let resolver = WPEMultiRootResourceResolver(
-            primaryRootURL: FileManager.default.temporaryDirectory,
-            dependencyMounts: []
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WPESoundRuntimeMasterClamp-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try Self.writeTinyWAV(to: root.appendingPathComponent("clamp.wav"))
+
+        let runtime = WPESoundRuntime(
+            resolver: WPEMultiRootResourceResolver(primaryRootURL: root, dependencyMounts: [])
         )
-        let runtime = WPESoundRuntime(resolver: resolver)
-        runtime.setMasterVolume(-1.5)
+        defer { runtime.stop() }
+        let sound = WPESceneSoundObject(
+            id: "clamp",
+            name: "Clamp",
+            soundRelativePaths: ["clamp.wav"],
+            volume: 0.5,
+            playbackMode: "loop",
+            startSilent: true
+        )
+
+        #expect(runtime.prepare(sounds: [sound]) == 1)
+        var snapshot = try #require(runtime.debugTrackSnapshots().first)
+        #expect(snapshot.playerVolume == 0.5)
+
         runtime.setMasterVolume(2.0)
+        snapshot = try #require(runtime.debugTrackSnapshots().first)
+        #expect(snapshot.playerVolume == 0.5, "master above 1 must not amplify the authored 0.5")
+
+        runtime.setMasterVolume(-1.5)
+        snapshot = try #require(runtime.debugTrackSnapshots().first)
+        #expect(snapshot.playerVolume == 0)
+
+        // Back inside the range the master scales normally, so the clamp is not
+        // a latch: 0.5 scene × 0.5 master.
+        runtime.setMasterVolume(0.5)
+        snapshot = try #require(runtime.debugTrackSnapshots().first)
+        #expect(snapshot.playerVolume == 0.25)
     }
 
     @Test("prepare() attaches without playing; play() is a no-op when nothing prepared")
