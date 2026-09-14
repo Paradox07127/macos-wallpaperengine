@@ -82,7 +82,8 @@ struct WPEMetalTextureLoader: @unchecked Sendable {
         from payload: WPETexTexturePayload,
         label: String,
         colorSpace: WPEMetalColorSpace = .sRGB,
-        maxSourceEdge: Int? = nil
+        maxSourceEdge: Int? = nil,
+        preserveMipmaps: Bool = false
     ) async throws -> MTLTexture {
         try Task.checkCancellation()
         if payload.videoPayload != nil {
@@ -104,7 +105,8 @@ struct WPEMetalTextureLoader: @unchecked Sendable {
                 device: device,
                 capabilities: capabilities,
                 colorSpace: colorSpace,
-                maxSourceEdge: maxSourceEdge
+                maxSourceEdge: maxSourceEdge,
+                preserveMipmaps: preserveMipmaps
             )
         }
     }
@@ -144,7 +146,7 @@ struct WPEMetalTextureLoader: @unchecked Sendable {
         frames.reserveCapacity(animation.frames.count)
         for (frameIndex, frame) in animation.frames.enumerated() {
             try Task.checkCancellation()
-            guard let atlasMip = frame.mipmaps.first else {
+            guard !frame.mipmaps.isEmpty else {
                 throw WPEMetalTextureLoaderError.malformedPayload(
                     "animation frame \(frameIndex) is missing its source atlas mipmap"
                 )
@@ -155,13 +157,14 @@ struct WPEMetalTextureLoader: @unchecked Sendable {
             } else {
                 let framePayload = WPETexTexturePayload(
                     info: payload.info,
-                    mipmaps: [atlasMip],
+                    mipmaps: frame.mipmaps,
                     hasAnimationFrames: false
                 )
                 texture = try await makeTexture(
                     from: framePayload,
                     label: "\(label) image \(frame.imageID)",
-                    colorSpace: colorSpace
+                    colorSpace: colorSpace,
+                    preserveMipmaps: true
                 )
                 atlasTextures[frame.imageID] = texture
             }
@@ -256,13 +259,14 @@ struct WPEMetalTextureLoader: @unchecked Sendable {
         return !label.lowercased().contains("mask")
     }
 
-    private static func makeTextureSynchronously(
+    static func makeTextureSynchronously(
         from payload: WPETexTexturePayload,
         label: String,
         device: MTLDevice,
         capabilities: WPEMetalTextureCapabilities,
         colorSpace: WPEMetalColorSpace = .sRGB,
-        maxSourceEdge: Int? = nil
+        maxSourceEdge: Int? = nil,
+        preserveMipmaps: Bool = false
     ) throws -> MTLTexture {
         guard let format = payload.info.format else {
             throw WPEMetalTextureLoaderError.malformedPayload("unknown texture format \(payload.info.textureFormatCode)")
@@ -290,7 +294,7 @@ struct WPEMetalTextureLoader: @unchecked Sendable {
         // decoded level before the flag has anything to do. `allSatisfy` covers the one way the
         // decoder's scope can disagree: `mipChainOverride` is read fresh on both sides, so a
         // user flipping it mid-load leaves levels without bytes — upload the one level we do have instead of failing the texture.
-        let mipChainEligible = Self.uploadsMipChain(scalingActive: maxSourceEdge != nil)
+        let mipChainEligible = (preserveMipmaps || Self.uploadsMipChain(scalingActive: maxSourceEdge != nil))
             && selectedMipmaps.count > 1
             && selectedMipmaps.allSatisfy { !$0.bytes.isEmpty }
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(

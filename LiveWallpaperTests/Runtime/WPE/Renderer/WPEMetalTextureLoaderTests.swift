@@ -17,7 +17,7 @@ struct WPEMetalTextureLoaderTests {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let executor = try WPEMetalRenderExecutor(device: device)
         // Windows Lofi Cafe uses 32x128 drop textures and velocity-based stretch,
-        // including flags=4. Keep depth zero to isolate trail geometry from projection.
+        // flags=4 sits one eye-distance behind the canvas: its footprint is halved.
         let definition = try #require(WPEParticleDefinitionParser.parse(dictionary: [
             "flags": max(0, flags), "maxcount": 1,
             "emitter": [["name": "boxrandom", "instantaneous": 1, "rate": 0]],
@@ -29,7 +29,7 @@ struct WPEMetalTextureLoaderTests {
         let system = try #require(WPEParticleSystem(
             definition: definition, device: device,
             sceneTransform: WPEParticleSceneTransform(
-                sceneSize: SIMD2<Float>(256, 256), objectOrigin: SIMD3<Float>(128, 128, 0),
+                sceneSize: SIMD2<Float>(256, 256), objectOrigin: SIMD3<Float>(128, 128, flags == 4 ? -128 : 0),
                 objectScale: SIMD3<Float>(scale.x, scale.y, 1), objectAngleZ: scale.z
             ), seed: 133
         ))
@@ -52,7 +52,10 @@ struct WPEMetalTextureLoaderTests {
         let queue = try #require(device.makeCommandQueue())
         let command = try #require(queue.makeCommandBuffer())
         let size = CGSize(width: 256, height: 256)
-        var state = WPEMetalFrameState(output: output, sceneSize: size)
+        var state = WPEMetalFrameState(output: output, sceneSize: size, cameraUniforms: WPEMetalCameraUniforms(
+            orthogonalProjection: .init(width: 256, height: 256, auto: false), sceneCamera: .defaultCamera,
+            perspectiveOverrideFOVDegrees: 90
+        ))
         try executor.encodeParticleSystem(
             system, into: command, output: output, sceneSize: size, cameraParallax: .neutral,
             texturesByMaterial: [ObjectIdentifier(system): albedo], normalsByMaterial: [:],
@@ -73,8 +76,9 @@ struct WPEMetalTextureLoaderTests {
         }
         let width = try #require(xs.max()) - #require(xs.min()) + 1
         let height = try #require(ys.max()) - #require(ys.min()) + 1
-        let localWidth = Int(8 * abs(scale.x))
-        let localHeight = Int((flags < 0 ? 8 : 160) * abs(scale.y))
+        let depthScale: Float = flags == 4 ? 0.5 : 1
+        let localWidth = Int(4 * abs(scale.x) * depthScale)
+        let localHeight = Int((flags < 0 ? 4 : 80) * abs(scale.y) * depthScale)
         let expectedWidth = scale.z == 0 ? localWidth : localHeight
         let expectedHeight = scale.z == 0 ? localHeight : localWidth
         #expect(abs(width - expectedWidth) <= 1)
@@ -139,28 +143,31 @@ struct WPEMetalTextureLoaderTests {
     func animatedNormalMapsPreserveLinearSampling() async throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
         // Lofi Cafe's flat atlas border: red=mask, green=normal Y, alpha=normal X.
-        let bytes = Data([255, 129, 0, 128])
+        let bytes = Data([255, 129, 0, 128, 255, 129, 0, 128, 255, 129, 0, 128, 255, 129, 0, 128])
         let info = WPETexInfo(
-            containerVersion: 5, infoVersion: 1, width: 1, height: 1,
+            containerVersion: 5, infoVersion: 1, width: 2, height: 2,
             textureFormatCode: WPETexFormat.rgba8888.rawValue,
-            format: .rgba8888, mipmapCount: 1, flags: 0
+            format: .rgba8888, mipmapCount: 2, flags: 0
         )
-        let mip = WPETexTextureMipmap(index: 0, width: 1, height: 1, bytes: bytes)
+        let mip = WPETexTextureMipmap(index: 0, width: 2, height: 2, bytes: bytes)
+        let smallMip = WPETexTextureMipmap(index: 1, width: 1, height: 1, bytes: Data([255, 129, 0, 128]))
         let rect = CGRect(x: 0, y: 0, width: 1, height: 1)
         let payload = WPETexTexturePayload(
             info: info, mipmaps: [], hasAnimationFrames: true,
             animationTrack: WPETexAnimationTrack(
-                frames: [WPETexAnimationFrame(imageID: 0, duration: 0.1, mipmaps: [mip], subRect: rect)],
+                frames: [WPETexAnimationFrame(imageID: 0, duration: 0.1, mipmaps: [mip, smallMip], subRect: rect)],
                 frameRate: 10, loop: true
             )
         )
         let streaming = WPETexStreamingPayload(
             info: info,
-            compressedImages: [WPETexCompressedImage(width: 1, height: 1, payloads: [
+            compressedImages: [WPETexCompressedImage(width: 2, height: 2, payloads: [
                 WPETexCompressedMipmap(
-                    index: 0, width: 1, height: 1, isCompressed: false,
+                    index: 0, width: 2, height: 2, isCompressed: false,
                     compressedBytes: bytes, decompressedByteCount: bytes.count
                 ),
+                WPETexCompressedMipmap(index: 1, width: 1, height: 1, isCompressed: false,
+                                       compressedBytes: smallMip.bytes, decompressedByteCount: smallMip.bytes.count),
             ])],
             frames: [WPETexStreamingFrame(imageID: 0, subRect: rect, duration: 0.1)],
             frameRate: 10, loop: true
@@ -174,6 +181,8 @@ struct WPEMetalTextureLoaderTests {
         let initial = try #require(eager.texture(at: 0))
         eager.applyPerformanceProfile(.suspended)
         let restored = try #require(eager.texture(at: 0))
+        #expect(initial.mipmapLevelCount == 2)
+        #expect(restored.mipmapLevelCount == 2)
         let lazy = try loader.makeLazyAnimatedTextureSource(from: streaming, label: "normal", colorSpace: .linear)
         let streamed = try #require(lazy.texture(at: 0))
         for texture in [initial, restored, streamed] {

@@ -1426,8 +1426,8 @@ public enum WPEParticleDefinitionParser {
                     }
                     hasColorInitializer = true
                 case "alpharandom":
-                    alphaMin = WPEValueParser.double(entry["min"]) ?? alphaMin
-                    alphaMax = WPEValueParser.double(entry["max"]) ?? alphaMax
+                    alphaMin = WPEValueParser.double(entry["min"]) ?? 0.05
+                    alphaMax = WPEValueParser.double(entry["max"]) ?? 1
                 case "alpha":
                     if let v = WPEValueParser.double(entry["value"]) {
                         alphaMin = v; alphaMax = v

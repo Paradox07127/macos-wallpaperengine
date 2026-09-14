@@ -131,6 +131,30 @@ extension WPEMetalRenderExecutor {
             projection.padding.z = Float(texture.height) / Float(max(texture.width, 1))
         }
 
+        if system.definition.isPerspective, !system.usesRibbonGeometry,
+           frameState.cameraUniforms.perspectiveOverrideFOVDegrees > 0, averageScale > 0 {
+            let scale = transform.objectScale
+            let c = transform.cosAngleZ
+            let s = transform.sinAngleZ
+            let model = simd_float4x4(columns: (
+                SIMD4(c * scale.x, s * scale.x, 0, 0),
+                SIMD4(-s * scale.y, c * scale.y, 0, 0),
+                SIMD4(0, 0, scale.z, 0), SIMD4(0, 0, 0, 1)
+            ))
+            if abs(simd_determinant(model)) > 0.000001,
+               let viewProjection = WPEMetalObjectUniforms.matrix4x4(
+                   fromColumnMajor: frameState.cameraUniforms.objectPerspectiveViewProjectionMatrix) {
+                projection.sceneSize.z = 1
+                projection.viewProjection = simd_float4x4(columns: (
+                    SIMD4<Float>(viewProjection.columns.0), SIMD4<Float>(viewProjection.columns.1),
+                    SIMD4<Float>(viewProjection.columns.2), SIMD4<Float>(viewProjection.columns.3)
+                ))
+                projection.modelToWorld = model
+                projection.worldToModel = model.inverse
+                projection.eyeAndSizeScale = SIMD4(0, 0, Float(viewProjection.columns.3.w), averageScale)
+            }
+        }
+
         let useFrameRects = system.frameRectsBuffer != nil
         var sprite = WPEParticleSpriteParams(
             grid: SIMD4<Float>(
@@ -159,6 +183,7 @@ extension WPEMetalRenderExecutor {
         encoder.setVertexBytes(&projection, length: MemoryLayout<WPEParticleProjection>.stride, index: 2)
         encoder.setFragmentBytes(&sprite, length: MemoryLayout<WPEParticleSpriteParams>.stride, index: 0)
         encoder.setFragmentTexture(texture, index: 0)
+        encoder.setFragmentSamplerState(customShaderSamplerState(for: texture, useMipmaps: texture.mipmapLevelCount > 1), index: 0)
         if let groupMask {
             encoder.setFragmentTexture(groupMask, index: 1)
         }
@@ -167,6 +192,7 @@ extension WPEMetalRenderExecutor {
             // scene-so-far snapshot. sceneSize (projection) lets the fragment turn
             // its pixel position into a screen UV for the background sample.
             encoder.setFragmentTexture(refractNormal, index: 1)
+            encoder.setFragmentSamplerState(customShaderSamplerState(for: refractNormal, useMipmaps: (refractNormal?.mipmapLevelCount ?? 1) > 1), index: 1)
             encoder.setFragmentTexture(refractBackground, index: 2)
             encoder.setFragmentBytes(&projection, length: MemoryLayout<WPEParticleProjection>.stride, index: 1)
         }

@@ -16,7 +16,7 @@ struct WPEParticleInstance {
     var positionAndSize: SIMD4<Float>
     var color: SIMD4<Float>
     var rotationAndLife: SIMD4<Float>
-    /// TRAILRENDERER: xy local velocity for direction, z local 3D speed for stretch.
+    /// xyz = local trail velocity; w = unprojected scene-centered depth.
     var velocity: SIMD4<Float> = SIMD4<Float>(0, 0, 0, 0)
 }
 
@@ -324,6 +324,9 @@ final class WPEParticleSystem {
     /// Recorded only once a child attaches (`recordsSpawnEvents`) — nothing else reads it.
     private(set) var spawnEventsThisTick: [SIMD3<Float>] = []
     private var recordsSpawnEvents = false
+    private var spawnEventTimesThisTick: [Double] = []
+    private var followEventCursor = 0
+    private var simulationNow: Double = 0
 
     private let attractors: [WPEParticleControlPointAttractor]
     private let emitterTracksPointer: Bool
@@ -634,9 +637,9 @@ final class WPEParticleSystem {
         directions: SIMD3<Double>,
         gaussian: (_ mean: Double, _ stddev: Double) -> Double
     ) -> SIMD3<Double> {
-        let u = directions.x > 0 ? gaussian(0, directions.x) : 0
-        let v = directions.y > 0 ? gaussian(0, directions.y) : 0
-        let w = directions.z > 0 ? gaussian(0, directions.z) : 0
+        let u = abs(directions.x) > 1e-6 ? gaussian(0, 1) : 0
+        let v = abs(directions.y) > 1e-6 ? gaussian(0, 1) : 0
+        let w = abs(directions.z) > 1e-6 ? gaussian(0, 1) : 0
         let norm = (u * u + v * v + w * w).squareRoot()
         guard norm > 0 else { return SIMD3<Double>(0, 0, 0) }
         return SIMD3<Double>(u, v, w) / norm
@@ -806,7 +809,7 @@ final class WPEParticleSystem {
             let sway = sin(particle.age * particle.oscPosFrequency + particle.oscPosPhase)
             drawPosition += oscillatePositionMask * (sway * particle.oscPosScale)
         }
-        if definition.isPerspective {
+        if definition.isPerspective, usesRibbonGeometry {
             let scale = perspectiveDepthScale(depth: particle.position.z)
             let vp = sceneTransform.renderOrigin
             drawPosition = SIMD3<Float>(
@@ -899,12 +902,12 @@ final class WPEParticleSystem {
             }
             pointer[written] = WPEParticleInstance(
                 positionAndSize: SIMD4<Float>(
-                    drawPosition.x, drawPosition.y, visualScaleSigns.x, spriteSize
+                    drawPosition.x, drawPosition.y, visualScaleSigns.x, spriteSize * 0.5
                 ),
                 color: SIMD4<Float>(rgb.x, rgb.y, rgb.z, alpha),
                 rotationAndLife: SIMD4<Float>(particle.rotationZ, lifetimeFraction, frameIndex, visualScaleSigns.y),
                 velocity: SIMD4<Float>(
-                    localVelocity.x, localVelocity.y, simd_length(localVelocity), 0
+                    localVelocity.x, localVelocity.y, localVelocity.z, drawPosition.z
                 )
             )
             written += 1
@@ -1157,20 +1160,33 @@ final class WPEParticleSystem {
         recordsSpawnEvents = true
         // Upper bound on births observable in one tick.
         spawnEventsThisTick.reserveCapacity(capacity)
+        spawnEventTimesThisTick.reserveCapacity(capacity)
     }
 
     private var systemElapsed: Double = 0
 
     private func advance(now: Double) {
+        guard now.isFinite else { return }
         spawnEventsThisTick.removeAll(keepingCapacity: true)
+        spawnEventTimesThisTick.removeAll(keepingCapacity: true)
+        followEventCursor = 0
         defer { lastTickTime = now }
-        if firstTickTime == nil { firstTickTime = now }
-        let dt: Float
-        if let last = lastTickTime {
-            dt = Float(max(0, min(now - last, 0.1)))
-        } else {
-            dt = 0
+        if firstTickTime == nil {
+            firstTickTime = now
         }
+        // Bound catch-up after suspension, but keep low-FPS frames from emitting
+        // one large, zero-age batch. Each simulation step is at most 1/60 second.
+        let delta = max(0, min(now - (lastTickTime ?? now), 0.1))
+        let steps = max(1, Int(ceil(delta * 60 - 1e-6)))
+        let step = delta / Double(steps)
+        for index in 0 ..< steps {
+            advanceStep(now: now - delta + Double(index + 1) * step,
+                        dt: Float(step))
+        }
+    }
+
+    private func advanceStep(now: Double, dt: Float) {
+        simulationNow = now
         let elapsed = now - (firstTickTime ?? now)
         systemElapsed = elapsed
         // Drag is `-2·strength·v` (algorism.h `DragForce`).
@@ -1193,6 +1209,55 @@ final class WPEParticleSystem {
                 threshold: Float(attractor.threshold),
                 scale: Float(attractor.scale)
             ))
+        }
+
+        // `duration` bounds births only. After pre-sim, starttime is history so the window starts at 0.
+        let emissionStart = presimulatingStartDelay || startDelayWasPresimulated
+            ? 0
+            : max(0, definition.startDelay)
+        let hasStartedEmitting = presimulatingStartDelay || elapsed >= emissionStart
+        let isWithinDuration = definition.duration.map {
+            elapsed <= emissionStart + $0
+        } ?? true
+        let emitterCanSpawn = definition.emitterShape.isRuntimeSupported
+        if hasStartedEmitting, emitterCanSpawn {
+            if definition.instantaneousCount > 0 {
+                if requiresFollowParent {
+                    // eventfollow: burst once per parent birth, not once per system.
+                    if isWithinDuration {
+                        emitFollowBursts(upTo: now)
+                    }
+                } else if !hasEmittedBurst,
+                          isWithinDuration || (lastTickTime ?? emissionStart) <= emissionStart {
+                    var blocked = false
+                    for _ in 0 ..< definition.instantaneousCount {
+                        guard let slot = nextFreeSlot() else { break }
+                        if !spawn(into: slot) {
+                            // No live cursor: retry the burst next tick instead of burning it.
+                            blocked = true
+                            break
+                        }
+                    }
+                    if !blocked {
+                        hasEmittedBurst = true
+                    }
+                }
+            }
+            if isWithinDuration, definition.rate > 0 {
+                // Audio response scales the continuous rate only — bursts stay
+                // authored-size (reference: AudioResponseScale multiplies emit_speed).
+                var rate = definition.rate
+                if let audioState = definition.emitterAudioState, let spectrum = audioSpectrum16 {
+                    rate *= audioState.emissionScale(spectrum16: spectrum)
+                }
+                spawnAccumulator += Double(dt) * rate
+                while spawnAccumulator >= 1 {
+                    spawnAccumulator -= 1
+                    guard let slot = nextFreeSlot() else { break }
+                    spawn(into: slot)
+                }
+                spawnAccumulator = min(spawnAccumulator, 1)
+            }
         }
 
         resetPrimaryCache()
@@ -1250,50 +1315,6 @@ final class WPEParticleSystem {
         }
         lastAttractorAffectedCount = attractorAffectedThisTick
 
-        // `duration` bounds births only. After pre-sim, starttime is history so the window starts at 0.
-        let emissionStart = presimulatingStartDelay || startDelayWasPresimulated
-            ? 0
-            : max(0, definition.startDelay)
-        let hasStartedEmitting = presimulatingStartDelay || elapsed >= emissionStart
-        let isWithinDuration = definition.duration.map {
-            elapsed <= emissionStart + $0
-        } ?? true
-        let emitterCanSpawn = definition.emitterShape.isRuntimeSupported
-        if hasStartedEmitting, emitterCanSpawn {
-            if definition.instantaneousCount > 0 {
-                if requiresFollowParent {
-                    // eventfollow: burst once per parent birth, not once per system.
-                    if isWithinDuration { emitFollowBursts() }
-                } else if !hasEmittedBurst,
-                          isWithinDuration || (lastTickTime ?? emissionStart) <= emissionStart {
-                    var blocked = false
-                    for _ in 0..<definition.instantaneousCount {
-                        guard let slot = nextFreeSlot() else { break }
-                        if !spawn(into: slot) {
-                            // No live cursor: retry the burst next tick instead of burning it.
-                            blocked = true
-                            break
-                        }
-                    }
-                    if !blocked { hasEmittedBurst = true }
-                }
-            }
-            if isWithinDuration, definition.rate > 0 {
-                // Audio response scales the continuous rate only — bursts stay
-                // authored-size (reference: AudioResponseScale multiplies emit_speed).
-                var rate = definition.rate
-                if let audioState = definition.emitterAudioState, let spectrum = audioSpectrum16 {
-                    rate *= audioState.emissionScale(spectrum16: spectrum)
-                }
-                spawnAccumulator += Double(dt) * rate
-                while spawnAccumulator >= 1 {
-                    spawnAccumulator -= 1
-                    guard let slot = nextFreeSlot() else { break }
-                    spawn(into: slot)
-                }
-                spawnAccumulator = min(spawnAccumulator, 1)
-            }
-        }
         // Mirrors the spawn gates above exactly: `elapsed` is monotonic within a load, so once
         // every gate is closed no later tick can reopen one. A pointer-blocked burst keeps
         // `hasEmittedBurst` false and an eventfollow child without a duration stays emittable —
@@ -1399,7 +1420,7 @@ final class WPEParticleSystem {
     }
 
     /// 3413921910 meteor children are a birth-point flash (no velocity/gravity).
-    private func emitFollowBursts() {
+    private func emitFollowBursts(upTo now: Double) {
         guard let parent = followParent, !parent.spawnEventsThisTick.isEmpty else { return }
         let injected = injectedControlPoints[followControlPointID]
         defer {
@@ -1409,13 +1430,18 @@ final class WPEParticleSystem {
                 injectedControlPoints.removeValue(forKey: followControlPointID)
             }
         }
-        for event in parent.spawnEventsThisTick {
+        // Parent events remain ordered across its substeps. Consume each only
+        // when the child's simulation clock reaches that birth time.
+        while followEventCursor < parent.spawnEventsThisTick.count {
+            guard parent.spawnEventTimesThisTick[followEventCursor] <= now + 1e-7 else { break }
+            let event = parent.spawnEventsThisTick[followEventCursor]
+            followEventCursor += 1
             // One roll per event: 0.5 accompanies half the parent's particles, not half of sessions.
             if spawnProbability < 1, Double.random(in: 0..<1, using: &rng) >= spawnProbability {
                 continue
             }
             injectedControlPoints[followControlPointID] = event
-            for _ in 0..<definition.instantaneousCount {
+            for _ in 0 ..< definition.instantaneousCount {
                 guard let slot = nextFreeSlot() else { return }
                 if !spawn(into: slot) { return }
             }
@@ -1457,7 +1483,10 @@ final class WPEParticleSystem {
                 directions: definition.directionMask,
                 gaussian: { mean, stddev in self.gaussian(mean: mean, stddev: stddev) }
             )
-            let signedPoint = Self.applyEmitterSign(normal * radius, sign: definition.sign)
+            let axisScale = SIMD3<Double>(abs(definition.directionMask.x),
+                                          abs(definition.directionMask.y),
+                                          abs(definition.directionMask.z))
+            let signedPoint = Self.applyEmitterSign(normal * axisScale * radius, sign: definition.sign)
             dispersal = SIMD3<Float>(
                 Float(signedPoint.x), Float(signedPoint.y), Float(signedPoint.z)
             )
@@ -1588,8 +1617,13 @@ final class WPEParticleSystem {
         )
         liveSlots.markLive(slot)
         notePrimaryCandidate(age: 0, slot: slot, position: position)
-        if trailPointCount > 0 { resetTrailHistory(slot, to: position) }
-        if recordsSpawnEvents { spawnEventsThisTick.append(position) }
+        if trailPointCount > 0 {
+            resetTrailHistory(slot, to: position)
+        }
+        if recordsSpawnEvents {
+            spawnEventsThisTick.append(position)
+            spawnEventTimesThisTick.append(simulationNow)
+        }
         return true
     }
 

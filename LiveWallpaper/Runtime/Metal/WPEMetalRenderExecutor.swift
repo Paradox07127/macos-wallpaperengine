@@ -392,17 +392,17 @@ final class WPEMetalRenderExecutor {
     /// texture's TEXI flags (registered at load in `WPEMetalTextureMetadataRegistry`).
     /// Unregistered textures (render targets / framebuffers) and unbound slots fall
     /// back to clamp-to-edge + linear — the safe default that never wraps.
-    func customShaderSamplerState(for texture: MTLTexture?) -> MTLSamplerState {
+    func customShaderSamplerState(for texture: MTLTexture?, useMipmaps: Bool = false) -> MTLSamplerState {
         let resolution = texture.map { WPEMetalTextureMetadataRegistry.shared.resolution(for: $0) }
-        return customShaderSamplerState(resolution: resolution)
+        return customShaderSamplerState(resolution: resolution, useMipmaps: useMipmaps)
     }
 
-    func customShaderSamplerState(resolution: WPEMetalTextureResolution?) -> MTLSamplerState {
+    func customShaderSamplerState(resolution: WPEMetalTextureResolution?, useMipmaps: Bool = false) -> MTLSamplerState {
         let clamp = resolution?.clampUVs ?? true
         let nearest = resolution?.noInterpolation ?? false
-        let key = (clamp ? 1 : 0) | (nearest ? 2 : 0)
+        let key = (clamp ? 1 : 0) | (nearest ? 2 : 0) | (useMipmaps ? 4 : 0)
         if let cached = customSamplerStateCache[key] { return cached }
-        let descriptor = customShaderSamplerDescriptor(clamp: clamp, nearest: nearest)
+        let descriptor = customShaderSamplerDescriptor(clamp: clamp, nearest: nearest, useMipmaps: useMipmaps)
         // Force-unwrap matches the executor's other GPU-object creation: a valid
         // descriptor never fails to produce a sampler state on a live device.
         let state = device.makeSamplerState(descriptor: descriptor)!
@@ -413,12 +413,12 @@ final class WPEMetalRenderExecutor {
     /// The single source of truth for the custom-pass sampler. The oracle's
     /// trace describes THIS descriptor rather than re-deriving address/filter,
     /// so a recorded sampler can never drift from the bound one.
-    func customShaderSamplerDescriptor(clamp: Bool, nearest: Bool) -> MTLSamplerDescriptor {
+    func customShaderSamplerDescriptor(clamp: Bool, nearest: Bool, useMipmaps: Bool = false) -> MTLSamplerDescriptor {
         let descriptor = MTLSamplerDescriptor()
         let filter: MTLSamplerMinMagFilter = nearest ? .nearest : .linear
         descriptor.minFilter = filter
         descriptor.magFilter = filter
-        if WPEMetalTextureLoader.allowsMipFiltering, !nearest {
+        if useMipmaps || WPEMetalTextureLoader.allowsMipFiltering, !nearest {
             // Default `.notMipmapped` samples level 0 only, matching today's
             // level-0-only upload; opt in to trilinear filtering across the
             // chain the loader now uploads under the same flag. Nearest
