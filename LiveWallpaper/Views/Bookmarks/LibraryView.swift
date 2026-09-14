@@ -115,7 +115,7 @@ struct LibraryView: View {
             icon: "bookmark",
             tint: DesignTokens.Colors.LibraryTint.bookmarks,
             title: "No bookmarks yet",
-            message: "Use the bookmark button on a display to save its wallpaper and settings."
+            message: "Use the bookmark button on a display to save its wallpaper. Applying one swaps the wallpaper and leaves that display's settings alone."
         )
     }
 

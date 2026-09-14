@@ -161,6 +161,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         observeDockVisibilityChanges()
         observeShowOnboardingRequests()
 
+        #if DEBUG
+        QAControlPlane.startIfEnabled(screenManager: manager)
+        #endif
+
         if !runtimeOptions.isTesting,
            manager.featureCatalog.isEnabled(.globalShortcuts) {
             globalShortcutManager = GlobalShortcutManager(
@@ -313,6 +317,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         closeApplicationWindowsForTermination()
         SystemMonitor.shared.shutdown()
         screenManager?.tearDownForTermination()
+        #if DEBUG
+        QAControlPlane.shutdown()
+        #endif
         #if !LITE_BUILD
         SystemAudioCaptureManager.shared.shutdown()
         #endif

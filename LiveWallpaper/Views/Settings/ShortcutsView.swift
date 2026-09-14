@@ -141,13 +141,12 @@ struct ShortcutsView: View {
 
     /// Save bindings and the master switch together.
     private func persistSettings() {
-        var settings = SettingsManager.shared.loadGlobalSettings()
-        settings.globalShortcuts = bindings
-        settings.globalShortcutsEnabled = globalShortcutsEnabled
-        SettingsManager.shared.saveGlobalSettings(settings)
-        Task { @MainActor in
-            NotificationCenter.default.post(name: .globalShortcutsDidChange, object: nil)
-        }
+        GlobalSettingsCommit.apply(
+            GlobalSettingsCommit.ShortcutsPageFields(
+                globalShortcutsEnabled: globalShortcutsEnabled,
+                globalShortcuts: bindings
+            )
+        )
     }
 
     private func validate(_ binding: GlobalShortcutBinding, for action: GlobalShortcutAction) -> ValidationResult {

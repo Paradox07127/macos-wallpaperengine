@@ -396,32 +396,27 @@ struct GeneralSettingsView: View {
 
     // MARK: - Settings Persistence
 
-    /// Read-modify-write preserves settings owned by other pages.
+    /// Commits through `GlobalSettingsCommit` so a non-UI writer reaches the same
+    /// persistence and apply chain this page does.
     func updateGlobalSettings() {
-        var settings = SettingsManager.shared.loadGlobalSettings()
-        let dockChanged = settings.showInDock != showInDock
-        let weatherChanged = settings.weatherLocation != weatherLocation
-        settings.globalPauseOnBattery = globalPauseOnBattery
-        settings.preservePlaybackOnLock = preservePlaybackOnLock
-        settings.startOnLogin = startOnLogin
-        settings.pauseOnFullScreen = pauseOnFullScreen
-        settings.pauseOnWindowOcclusion = pauseOnWindowOcclusion
-        settings.pauseInLowPowerMode = pauseInLowPowerMode
-        settings.applicationPerformanceRules = applicationRules
-        settings.showInDock = showInDock
-        settings.wallpaperVisibleInScreenCapture = wallpaperVisibleInScreenCapture
-        settings.videoCacheMaxBytesPerScreen = Int(videoCacheBudgetMB) * 1024 * 1024
-        settings.audioResponseEnabled = audioResponseEnabled
-        settings.adaptiveFrameRateEnabled = adaptiveFrameRateEnabled
-        settings.weatherLocation = weatherLocation
-        SettingsManager.shared.saveGlobalSettings(settings)
-        screenManager.handleGlobalSettingsChanged()
-        if dockChanged {
-            postSettingsNotificationAsync(.dockVisibilityDidChange)
-        }
-        if weatherChanged {
-            postSettingsNotificationAsync(.weatherLocationPreferenceDidChange)
-        }
+        GlobalSettingsCommit.apply(
+            GlobalSettingsCommit.GeneralPageFields(
+                globalPauseOnBattery: globalPauseOnBattery,
+                preservePlaybackOnLock: preservePlaybackOnLock,
+                startOnLogin: startOnLogin,
+                pauseOnFullScreen: pauseOnFullScreen,
+                pauseOnWindowOcclusion: pauseOnWindowOcclusion,
+                pauseInLowPowerMode: pauseInLowPowerMode,
+                applicationPerformanceRules: applicationRules,
+                showInDock: showInDock,
+                wallpaperVisibleInScreenCapture: wallpaperVisibleInScreenCapture,
+                videoCacheMaxBytesPerScreen: Int(videoCacheBudgetMB) * 1024 * 1024,
+                audioResponseEnabled: audioResponseEnabled,
+                adaptiveFrameRateEnabled: adaptiveFrameRateEnabled,
+                weatherLocation: weatherLocation
+            ),
+            screenManager: screenManager
+        )
     }
 
     /// Defers the post to the next MainActor turn so it does not fire inside
