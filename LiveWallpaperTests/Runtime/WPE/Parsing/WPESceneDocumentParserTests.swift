@@ -2232,6 +2232,47 @@ struct WPESceneDocumentParserTests {
         #expect(layer.alpha == 0)
     }
 
+    @Test("shape:quad layer with an explicit null image still parses as a quad surface")
+    func shapeQuadWithNullImageStillParses() throws {
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 3840, "height": 2160, "auto": true]],
+            "objects": [[
+                "id": 11,
+                "name": "Null-image beam",
+                "image": NSNull(),
+                "shape": "quad",
+            ]],
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+        let document = try WPESceneDocumentParser.parse(data: data)
+
+        let layer = try #require(document.imageObjects.first)
+        #expect(layer.id == "11")
+        #expect(layer.imageRelativePath == "models/util/solidlayer.json")
+        #expect(layer.alpha == 0)
+    }
+
+    @Test("Object with an explicit null image still runs its visible-script as a host")
+    func nullImageObjectStillBecomesScriptHost() throws {
+        let payload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 3840, "height": 2160, "auto": true]],
+            "objects": [[
+                "id": 12,
+                "name": "Null-image script host",
+                "image": NSNull(),
+                "visible": ["script": "export function update(value) { return value; }"],
+            ]],
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [])
+        let document = try WPESceneDocumentParser.parse(data: data)
+
+        let host = try #require(document.scriptHostObjects.first)
+        #expect(host.id == "12")
+        #expect(host.visibleScript.contains("update(value)"))
+    }
+
     @Test("shape:quad with an invisible effect still keeps a transparent base")
     func shapeQuadInvisibleEffectStaysTransparent() throws {
         let payload: [String: Any] = [

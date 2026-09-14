@@ -347,8 +347,8 @@ public enum WPESceneDocumentParser {
                    diagnostics: &diagnostics
             ) {
                 imageObjects.append(object)
-            } else if entry["image"] == nil,
-                      entry["model"] == nil,
+            } else if !hasValue(entry, "image"),
+                      !hasValue(entry, "model"),
                       let object = parseScriptHostObject(entry, diagnostics: &diagnostics) {
                 scriptHostObjects.append(object)
             }
@@ -1008,11 +1008,17 @@ public enum WPESceneDocumentParser {
         return memo
     }
 
-    private static func objectID(in dict: [String: Any], fallback: String? = nil) -> String? {
-        if let id = dict["id"] as? String, !id.isEmpty { return id }
-        if let id = parseInt(dict["id"]) { return String(id) }
-        if let name = dict["name"] as? String, !name.isEmpty { return name }
-        return fallback
+    private static func objectID(in dict: [String: Any]) -> String? {
+        if let id = dict["id"] as? String, !id.isEmpty {
+            return id
+        }
+        if let id = parseInt(dict["id"]) {
+            return String(id)
+        }
+        if let name = dict["name"] as? String, !name.isEmpty {
+            return name
+        }
+        return nil
     }
 
     private static func parentID(in dict: [String: Any]) -> String? {
@@ -1739,7 +1745,7 @@ public enum WPESceneDocumentParser {
     /// draws these as a 4-corner perspective quad fed by an effect's
     /// `EffectPerspectiveUV` points.
     private static func isShapeQuadLayer(_ entry: [String: Any]) -> Bool {
-        guard entry["image"] == nil, entry["model"] == nil else { return false }
+        guard !hasValue(entry, "image"), !hasValue(entry, "model") else { return false }
         return (entry["shape"] as? String)?.lowercased() == "quad"
     }
 
