@@ -22,7 +22,8 @@ extension GeneralSettingsView {
             SettingRow(
                 icon: "square.grid.2x2",
                 iconColor: .orange,
-                title: "Library tile size"
+                title: "Library tile size",
+                info: "Applies to bookmarks, schemes, Workshop, and every other library page."
             ) {
                 libraryTileSizePicker
             }

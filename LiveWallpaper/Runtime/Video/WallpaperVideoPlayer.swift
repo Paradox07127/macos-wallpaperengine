@@ -1,6 +1,7 @@
 import AppKit
 @preconcurrency import AVKit
 import Combine
+import CoreImage
 import CoreVideo
 import LiveWallpaperCore
 import QuartzCore
@@ -1261,6 +1262,51 @@ final class WallpaperVideoPlayer {
               requestedFrameRateLimit > 0,
               currentVideoComposition == nil else { return }
         setFrameRateLimit(requestedFrameRateLimit)
+    }
+
+    // MARK: - Cover capture
+
+    /// The frame on screen right now, as an image.
+    ///
+    /// Read through a temporary `AVPlayerItemVideoOutput` rather than
+    /// `AVAssetImageGenerator`: the output delivers the *composited* frame, so a
+    /// wallpaper with colour effects or Force SDR applied is captured the way the
+    /// display is actually showing it, not the way the file is stored.
+    func currentFrameImage(timeout: Duration = .milliseconds(600)) async -> NSImage? {
+        guard !isCleanedUp, let item = player?.currentItem else { return nil }
+        let output = AVPlayerItemVideoOutput(
+            pixelBufferAttributes: WallpaperVideoOutputNegotiation.pixelBufferAttributes(
+                forcingBGRA: usesExtendedDynamicRange
+            )
+        )
+        bindVideoOutput(output, to: item)
+        defer { unbindVideoOutput(output, from: item) }
+
+        let deadline = ContinuousClock.now.advanced(by: timeout)
+        while ContinuousClock.now < deadline {
+            guard player?.currentItem === item, !isCleanedUp else { return nil }
+            let itemTime = output.itemTime(forHostTime: CACurrentMediaTime())
+            var displayTime = CMTime.invalid
+            if let buffer = output.copyPixelBuffer(
+                forItemTime: itemTime,
+                itemTimeForDisplay: &displayTime
+            ) {
+                return Self.image(from: buffer)
+            }
+            do {
+                try await Task.sleep(for: .milliseconds(16))
+            } catch {
+                return nil
+            }
+        }
+        return nil
+    }
+
+    private static func image(from buffer: CVPixelBuffer) -> NSImage? {
+        let ciImage = CIImage(cvPixelBuffer: buffer)
+        let context = CIContext()
+        guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else { return nil }
+        return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
     }
 
     // MARK: - Video Output Ownership

@@ -22,6 +22,11 @@ public struct ScreenScheme: Identifiable, Codable, Equatable, Sendable {
     /// Identity-stripped on the way in (see `stripped`), re-bound on the way out.
     public var configuration: ScreenConfiguration
     public var overlay: MonitorOverlayConfiguration
+    /// File name of the still captured off the display when this was saved, in
+    /// the app's cover directory. A scheme's cover includes its overlay layers.
+    /// Not carried by an exported configuration bundle — the PNG lives outside
+    /// it — so an imported scheme falls back to the computed thumbnail.
+    public var coverFileName: String?
 
     public init(
         name: String,
@@ -30,7 +35,8 @@ public struct ScreenScheme: Identifiable, Codable, Equatable, Sendable {
         id: UUID = UUID(),
         createdAt: Date = Date(),
         updatedAt: Date = Date(),
-        sourceDisplayName: String? = nil
+        sourceDisplayName: String? = nil,
+        coverFileName: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -42,10 +48,11 @@ public struct ScreenScheme: Identifiable, Codable, Equatable, Sendable {
         // display's identity by forgetting to ask.
         self.configuration = Self.stripped(configuration)
         self.overlay = overlay
+        self.coverFileName = coverFileName
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, createdAt, updatedAt, sourceDisplayName, configuration, overlay
+        case id, name, createdAt, updatedAt, sourceDisplayName, configuration, overlay, coverFileName
     }
 
     /// Hand-written for one field: `MonitorOverlayConfiguration` fails its decode
@@ -64,6 +71,7 @@ public struct ScreenScheme: Identifiable, Codable, Equatable, Sendable {
         sourceDisplayName = try c.decodeIfPresent(String.self, forKey: .sourceDisplayName)
         configuration = try c.decode(ScreenConfiguration.self, forKey: .configuration)
         overlay = (try? c.decode(MonitorOverlayConfiguration.self, forKey: .overlay)) ?? .default
+        coverFileName = try c.decodeIfPresent(String.self, forKey: .coverFileName)
     }
 
     /// Blanks the two display-identity fields with sentinels.

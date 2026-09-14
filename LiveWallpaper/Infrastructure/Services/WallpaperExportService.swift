@@ -123,6 +123,14 @@ final class WallpaperExportService {
         item.thumbnailFileName.map { videosDirectory.appendingPathComponent($0) }
     }
 
+    /// The copy macOS plays, for Show in Finder. Nil once the file is gone —
+    /// the manifest entry can outlive it if the shared folder was cleared out
+    /// from underneath us.
+    func videoURL(for item: SystemWallpaperManifest.Item) -> URL? {
+        let url = videosDirectory.appendingPathComponent(item.fileName)
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
     // MARK: - Status
 
     var status: Status {

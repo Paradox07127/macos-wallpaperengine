@@ -41,6 +41,47 @@ public final class SchemeStore {
         return scheme
     }
 
+    /// Overwrites an existing slot in place, keeping its id, name and creation
+    /// date. One display can hold several schemes, so re-capturing is "replace
+    /// the one you picked", never "update the display's scheme".
+    @discardableResult
+    public func replace(
+        _ id: UUID,
+        configuration: ScreenConfiguration,
+        overlay: MonitorOverlayConfiguration,
+        sourceDisplayName: String? = nil
+    ) -> ScreenScheme? {
+        guard let index = schemes.firstIndex(where: { $0.id == id }) else { return nil }
+        let existing = schemes[index]
+        // Rebuilt through the memberwise init so the identity strip in
+        // `ScreenScheme.init` runs on the incoming configuration too; assigning
+        // the fields one by one would archive the live display's screenID.
+        let replacement = ScreenScheme(
+            name: existing.name,
+            configuration: configuration,
+            overlay: overlay,
+            id: existing.id,
+            createdAt: existing.createdAt,
+            updatedAt: Date(),
+            sourceDisplayName: sourceDisplayName?.trimmingCharacters(in: .whitespacesAndNewlines)
+                ?? existing.sourceDisplayName
+        )
+        schemes[index] = replacement
+        persist()
+        Logger.info("Scheme replaced in place", category: .ui)
+        return replacement
+    }
+
+    /// Records the cover captured for a scheme. Separate from `add`/`replace`
+    /// because the capture is asynchronous — the scheme has to exist before the
+    /// composed frame comes back.
+    public func setCover(_ fileName: String?, for id: UUID) {
+        guard let index = schemes.firstIndex(where: { $0.id == id }),
+              schemes[index].coverFileName != fileName else { return }
+        schemes[index].coverFileName = fileName
+        persist()
+    }
+
     public func remove(_ id: UUID) {
         let countBefore = schemes.count
         schemes.removeAll { $0.id == id }

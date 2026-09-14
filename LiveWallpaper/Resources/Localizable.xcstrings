@@ -2294,6 +2294,36 @@
         }
       }
     },
+    "'%1$@' is overwritten with what %2$@ is showing now. The setup saved under that name cannot be recovered." : {
+      "comment" : "Confirm message for overwriting a saved scheme. Placeholders are the scheme name and the source display name.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "'%1$@' se sobrescribe con lo que %2$@ muestra ahora. La configuración guardada con ese nombre no se puede recuperar."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「%1$@」は %2$@ が現在表示している内容で上書きされます。その名前で保存されていた設定は元に戻せません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%1$@”会被 %2$@ 当前显示的内容覆盖。以该名称保存的设置无法恢复。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "「%1$@」會被 %2$@ 目前顯示的內容覆蓋。以該名稱儲存的設定無法復原。"
+          }
+        }
+      }
+    },
     "'%1$@' replaces the wallpaper, overlay layout, and every setting on %2$@. Save that display's current setup as a scheme first if you want it back." : {
       "comment" : "Confirm message for applying a saved scheme. Placeholders are the scheme name and the target display name.",
       "extractionState" : "manual",
@@ -6031,6 +6061,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "套用至所有疊加層預覽。"
+          }
+        }
+      }
+    },
+    "Applies to bookmarks, schemes, Workshop, and every other library page." : {
+      "comment" : "Settings row subtitle under Library tile size: which pages the size applies to.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Applies to bookmarks, schemes, Workshop, and every other library page."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se aplica a marcadores, esquemas, Workshop y todas las demás páginas de la biblioteca."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ブックマーク、スキーム、Workshop など、すべてのライブラリページに適用されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "作用于书签、方案、创意工坊等所有库页面。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "作用於書籤、方案、創意工坊等所有庫頁面。"
           }
         }
       }
@@ -17972,40 +18037,6 @@
         }
       }
     },
-    "Delete bookmark" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Delete bookmark"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Eliminar marcador"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ブックマークを削除"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "删除书签"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "刪除書籤"
-          }
-        }
-      }
-    },
     "Delete leftover test artifacts?" : {
       "comment" : "Confirmation dialog title for deleting leftover test temp directories (debug builds only).",
       "extractionState" : "manual",
@@ -28996,13 +29027,13 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "资料库图块大小"
+            "value" : "卡片大小"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "資料庫圖塊大小"
+            "value" : "卡片大小"
           }
         }
       }
@@ -33813,7 +33844,7 @@
       }
     },
     "Name" : {
-      "comment" : "Workshop library sort order.",
+      "comment" : "Saved library sort order: alphabetical.\nWorkshop library sort order.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -34263,6 +34294,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "從不暫停"
+          }
+        }
+      }
+    },
+    "New Scheme" : {
+      "comment" : "Picker option: save the capture as a brand new scheme rather than overwriting one.",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esquema nuevo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新規スキーム"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新建方案"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新增方案"
           }
         }
       }
@@ -39292,6 +39352,95 @@
         }
       }
     },
+    "Overwrite Scheme" : {
+      "comment" : "Confirm button title for overwriting a saved scheme with a display's current setup.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sobrescribir esquema"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スキームを上書き"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "覆盖方案"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "覆蓋方案"
+          }
+        }
+      }
+    },
+    "Overwrite this saved scheme?" : {
+      "comment" : "Confirm title for overwriting a saved scheme with a display's current setup.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "¿Sobrescribir este esquema guardado?"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この保存済みスキームを上書きしますか？"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "覆盖这个已保存的方案？"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "覆蓋這個已儲存的方案？"
+          }
+        }
+      }
+    },
+    "Overwrites the chosen scheme with this display's wallpaper, overlays, and all settings." : {
+      "comment" : "Explanation shown when the save-scheme popover is set to overwrite an existing scheme.",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sobrescribe el esquema elegido con el fondo de pantalla, las superposiciones y todos los ajustes de esta pantalla."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選択したスキームを、このディスプレイの壁紙・オーバーレイ・すべての設定で上書きします。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用这块屏幕的壁纸、叠加层与全部设置覆盖所选方案。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用這台顯示器的桌布、疊加層與全部設定覆蓋所選方案。"
+          }
+        }
+      }
+    },
     "Packaged" : {
       "comment" : "Scene badge: assets live inside the package.",
       "extractionState" : "manual",
@@ -44256,7 +44405,7 @@
       }
     },
     "Recent" : {
-      "comment" : "Workshop library sort order: most recently imported first.",
+      "comment" : "Saved library sort order: most recent first.\nWorkshop library sort order: most recently imported first.",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -46612,6 +46761,64 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "取代這台顯示器的全部設定？"
+          }
+        }
+      }
+    },
+    "Replace with %@" : {
+      "comment" : "Tile action: overwrite this saved scheme with a named display's current setup. The placeholder is the display name.",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reemplazar con %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ で置き換える"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用 %@ 替换"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用 %@ 取代"
+          }
+        }
+      }
+    },
+    "Replace with Current Setup" : {
+      "comment" : "Tile action: overwrite this saved scheme with the only display's current setup.",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reemplazar con la configuración actual"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "現在の設定で置き換える"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用当前设置替换"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用目前設定取代"
           }
         }
       }
@@ -49831,6 +50038,35 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "將此顯示器的桌布、疊加層和設定儲存為方案。"
+          }
+        }
+      }
+    },
+    "Save to" : {
+      "comment" : "Label above a picker choosing whether to create a new scheme or overwrite an existing one.",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guardar en"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存先"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存到"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "儲存到"
           }
         }
       }
@@ -64226,6 +64462,35 @@
         }
       }
     },
+    "This wallpaper's file is missing" : {
+      "comment" : "Tooltip on a saved bookmark or scheme whose media file can no longer be found.",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Falta el archivo de este fondo de pantalla"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この壁紙のファイルが見つかりません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此壁纸的文件已丢失"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此壁紙的檔案已遺失"
+          }
+        }
+      }
+    },
     "Three Months" : {
       "comment" : "Workshop Most Popular window (Steam's SharedFiles_Browse_Trend_Option_ThreeMonths).",
       "localizations" : {
@@ -65706,7 +65971,7 @@
       }
     },
     "Type" : {
-      "comment" : "Workshop tag group: Scene / Video / Web.",
+      "comment" : "Saved library sort order: grouped by wallpaper type.\nWorkshop tag group: Scene / Video / Web.",
       "localizations" : {
         "en" : {
           "stringUnit" : {

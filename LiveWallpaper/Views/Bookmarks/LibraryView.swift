@@ -1,5 +1,6 @@
-import SwiftUI
+import AppKit
 import LiveWallpaperCore
+import SwiftUI
 
 struct LibraryView: View {
     @Environment(\.libraryTileSize) private var tileSize
@@ -10,6 +11,9 @@ struct LibraryView: View {
     @State private var searchText: String = ""
     @State private var typeFilter: BookmarkTypeFilter = .all
     @State private var pendingDestructive: PendingDestructive?
+    @State private var dragSession = LibraryDragSession()
+    @AppStorage(SavedLibrarySortOrder.preferencesKey, store: .appScoped())
+    private var sortOrder: SavedLibrarySortOrder = .recent
 
 
     var body: some View {
@@ -41,7 +45,12 @@ struct LibraryView: View {
                 resultCount: filteredBookmarks.count,
                 totalCount: store.bookmarks.count
             ) {
-                typeChipRow
+                HStack(spacing: DesignTokens.LibraryFilterBar.contentSpacing) {
+                    typeChipRow
+                    Spacer(minLength: 0)
+                    SavedLibrarySortPicker(selection: $sortOrder)
+                }
+                .frame(maxWidth: .infinity)
             }
         } else {
             LibraryFilterBar(
@@ -49,7 +58,13 @@ struct LibraryView: View {
                 searchPrompt: "Search bookmarks",
                 resultCount: filteredBookmarks.count,
                 totalCount: store.bookmarks.count
-            )
+            ) {
+                HStack(spacing: DesignTokens.LibraryFilterBar.contentSpacing) {
+                    Spacer(minLength: 0)
+                    SavedLibrarySortPicker(selection: $sortOrder)
+                }
+                .frame(maxWidth: .infinity)
+            }
         }
     }
 
@@ -86,12 +101,44 @@ struct LibraryView: View {
                                 ) { store.remove(bookmark.id) }
                             }
                         )
+                        .onDrag {
+                            NSItemProvider(object: dragSession.begin(payload: bookmark.id.uuidString) as NSString)
+                        } preview: {
+                            LibraryDragPreview(systemImage: bookmark.iconName)
+                        }
                     }
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, DesignTokens.Spacing.cardInset)
             }
+            .overlay(alignment: .top) {
+                if dragSession.isDragging, !screenManager.screens.isEmpty {
+                    dropBar
+                }
+            }
+            .animation(.easeInOut(duration: 0.2), value: dragSession.isDragging)
         }
+    }
+
+    private var dropBar: some View {
+        LibraryDragApplyBar(
+            screens: screenManager.screens,
+            onCancel: { dragSession.end() },
+            makeDropHandler: { screen in
+                { identifier, loadFailed in
+                    dragSession.end()
+                    guard !loadFailed,
+                          let identifier,
+                          let id = UUID(uuidString: identifier),
+                          // Re-read both sides: the library and the display list can
+                          // both change while the provider read is in flight.
+                          let bookmark = store.bookmarks.first(where: { $0.id == id }),
+                          let target = screenManager.screens.first(where: { $0.id == screen.id })
+                    else { return }
+                    screenManager.applyBookmark(bookmark, to: target)
+                }
+            }
+        )
     }
 
     private var typeChipRow: some View {
@@ -139,7 +186,12 @@ struct LibraryView: View {
         if !trimmed.isEmpty {
             result = result.filter { $0.label.localizedCaseInsensitiveContains(trimmed) }
         }
-        return result
+        return sortOrder.sorted(
+            result,
+            name: \.label,
+            date: \.createdAt,
+            type: \.wallpaperType
+        )
     }
 
     // MARK: - Apply
@@ -175,27 +227,57 @@ private struct BookmarkTile: View {
 
     @State private var isHovering = false
     @State private var thumbnail: NSImage?
+    @State private var location = LibraryContentLocation.unknown
+    @State private var showingTargets = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(WallpaperExportService.self) private var exportService
 
     var body: some View {
         thumbnailTile
             .frame(maxWidth: .infinity, alignment: .leading)
-        .galleryTileChrome(isHovering: isHovering, reduceMotion: reduceMotion)
+            .galleryTileChrome(isHovering: isHovering, reduceMotion: reduceMotion)
             .settledHover { isHovering = $0 }
-        .contextMenu { contextMenu }
-        .task(id: bookmark.id) { await loadThumbnail() }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(accessibilityLabel)
-        .accessibilityActions {
-            if screens.count == 1, let only = screens.first {
-                Button("Apply") { onApply(only) }
-            } else if screens.count > 1 {
-                Button("Apply to All Displays", action: onApplyToAll)
+            .popover(isPresented: $showingTargets, arrowEdge: .bottom) {
+                LibraryApplyTargetList(
+                    screens: screens,
+                    onApply: onApply,
+                    onApplyToAll: onApplyToAll,
+                    dismiss: { showingTargets = false }
+                )
             }
-            Button("Rename", action: onStartRename)
+            .help(applyHelp)
+            .contextMenu { contextMenu }
+            // Keyed on the cover too: it is written asynchronously after the
+            // save, and the tile has to pick it up when it lands.
+            .task(id: TileContentKey(id: bookmark.id, coverFileName: bookmark.coverFileName)) {
+                await loadTileContent()
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(accessibilityLabel)
+            .accessibilityActions {
+                if screens.count == 1, let only = screens.first {
+                    Button("Apply") { onApply(only) }
+                } else if screens.count > 1 {
+                    Button("Apply to All Displays", action: onApplyToAll)
+                }
+                Button("Rename", action: onStartRename)
+            }
+            .accessibilityAction(.delete, onDelete)
+    }
+
+    private var applyHelp: Text {
+        location.isAvailable
+            ? Text("Apply")
+            : Text("This wallpaper's file is missing")
+    }
+
+    private func applyFromCard() {
+        guard !isRenaming, location.isAvailable else { return }
+        if screens.count == 1, let only = screens.first {
+            onApply(only)
+        } else if screens.count > 1 {
+            showingTargets = true
         }
-        .accessibilityAction(.delete, onDelete)
     }
 
     private var accessibilityLabel: Text {
@@ -212,6 +294,17 @@ private struct BookmarkTile: View {
             .overlay { tileContent }
             .aspectRatio(16.0 / 9.0, contentMode: .fit)
             .clipped()
+            // Scoped to the artwork, not the whole card: the title band carries
+            // the overflow button and, while renaming, a text field — an
+            // ancestor tap gesture over those is at best ambiguous and at worst
+            // steals the click that was meant for them.
+            .contentShape(Rectangle())
+            .onTapGesture { applyFromCard() }
+            .overlay {
+                if !location.isAvailable {
+                    LibraryTileUnavailableVeil()
+                }
+            }
             .overlay(alignment: .topLeading) {
                 typeBadge
                     .padding(DesignTokens.Spacing.sm)
@@ -231,8 +324,7 @@ private struct BookmarkTile: View {
                 .adaptiveGlassSurface(.roundedRectangle(0), stroked: false)
         } else {
             ThumbnailTitleBand(title: bookmark.label, isHovering: isHovering) {
-                applyControl
-                deleteButton
+                overflowButton
             }
         }
     }
@@ -267,25 +359,47 @@ private struct BookmarkTile: View {
             .accessibilityHidden(true)
     }
 
-    private var applyControl: some View {
-        LibraryTileApplyControl(
-            screens: screens,
-            tint: bookmark.presentationTint,
-            onApply: onApply,
-            onApplyToAll: onApplyToAll
-        )
+    private var overflowButton: some View {
+        LibraryTileOverflowButton { dismiss in
+            Button("Rename") {
+                dismiss()
+                onStartRename()
+            }
+            if let revealURL = location.revealURL {
+                Button("Show in Finder") {
+                    dismiss()
+                    NSWorkspace.shared.activateFileViewerSelecting([revealURL])
+                }
+            }
+            systemWallpaperActions(dismiss: dismiss)
+            Divider()
+            Button("Delete", role: .destructive) {
+                dismiss()
+                onDelete()
+            }
+            .destructiveControlTint()
+        }
     }
 
-    private var deleteButton: some View {
-        Button(role: .destructive, action: onDelete) {
-            Image(systemName: "trash")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(DesignTokens.Colors.Status.danger)
-                .frame(width: 22, height: 22)
-                .contentShape(Rectangle())
+    @ViewBuilder
+    private func systemWallpaperActions(dismiss: @escaping () -> Void) -> some View {
+        if #available(macOS 26.0, *), case .video = bookmark.content {
+            if exportService.isPublished(bookmarkID: bookmark.id) {
+                // Not disabled while in use: the System Wallpaper page
+                // deliberately allows removing the playing video (macOS
+                // 27.0's own Remove crashes, so ours must work), and the
+                // two entry points must agree.
+                Button("Remove from System Wallpaper") {
+                    dismiss()
+                    try? exportService.remove(itemID: bookmark.id.uuidString)
+                }
+            } else {
+                Button("Add to System Wallpaper") {
+                    dismiss()
+                    Task { try? await exportService.publish(bookmark: bookmark) }
+                }
+            }
         }
-        .buttonStyle(.borderless)
-        .help(Text("Delete bookmark"))
     }
 
     // MARK: Metadata
@@ -319,6 +433,26 @@ private struct BookmarkTile: View {
 
     /// Run via `.task(id: bookmark.id)` so SwiftUI cancels the decode +
     /// security-scoped resolve when the tile leaves the viewport on fast-scroll.
+    @MainActor
+    private func loadTileContent() async {
+        thumbnail = nil
+        // Resolved before the artwork: Show in Finder and the unavailable veil
+        // both read it, and neither should wait on a decode.
+        location = LibraryContentLocator.locate(
+            content: bookmark.content,
+            wpeOrigin: bookmark.wpeOrigin
+        )
+        // A cover is a still of the real display taken when this was saved, so
+        // it beats anything recomputed from the file — and it is the only
+        // artwork a scene bookmark has at all.
+        if let coverFileName = bookmark.coverFileName,
+           let cover = WallpaperCoverStore.shared.cover(named: coverFileName) {
+            thumbnail = cover
+            return
+        }
+        await loadThumbnail()
+    }
+
     @MainActor
     private func loadThumbnail() async {
         thumbnail = nil
@@ -374,7 +508,7 @@ private struct BookmarkTile: View {
 
     @ViewBuilder
     private var contextMenu: some View {
-        if !screens.isEmpty {
+        if !screens.isEmpty, location.isAvailable {
             ForEach(screens, id: \.id) { screen in
                 Button("Apply to \(screen.name)") { onApply(screen) }
             }
@@ -384,24 +518,13 @@ private struct BookmarkTile: View {
             Divider()
         }
         Button("Rename", action: onStartRename)
-        Button("Delete", role: .destructive, action: onDelete)
-        if #available(macOS 26.0, *) {
-            if case .video = bookmark.content {
-                Divider()
-                if exportService.isPublished(bookmarkID: bookmark.id) {
-                    // Not disabled while in use: the System Wallpaper page
-                    // deliberately allows removing the playing video (macOS
-                    // 27.0's own Remove crashes, so ours must work), and the
-                    // two entry points must agree.
-                    Button("Remove from System Wallpaper") {
-                        try? exportService.remove(itemID: bookmark.id.uuidString)
-                    }
-                } else {
-                    Button("Add to System Wallpaper") {
-                        Task { try? await exportService.publish(bookmark: bookmark) }
-                    }
-                }
+        if let revealURL = location.revealURL {
+            Button("Show in Finder") {
+                NSWorkspace.shared.activateFileViewerSelecting([revealURL])
             }
         }
+        systemWallpaperActions(dismiss: {})
+        Divider()
+        Button("Delete", role: .destructive, action: onDelete)
     }
 }

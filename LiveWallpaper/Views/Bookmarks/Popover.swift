@@ -130,7 +130,7 @@ struct Popover: View {
             guard !trimmed.isEmpty, trimmed != existing.label else { dismiss(); return }
             store.rename(existing.id, to: trimmed)
         } else {
-            store.add(
+            let saved = store.add(
                 label: trimmed,
                 content: content,
                 sourceDisplayName: sourceDisplayName(for: content),
@@ -139,6 +139,12 @@ struct Popover: View {
                 // applying it fails. The Workshop-side add has always passed this.
                 wpeOrigin: screenManager.getConfiguration(for: screen)?.wpeOrigin
             )
+            // Only when the bookmark is the wallpaper this display is actually
+            // playing: the inspector tab can hold a candidate that was never
+            // committed, and a still of the *current* wallpaper would be a lie.
+            if screenManager.getConfiguration(for: screen)?.activeWallpaper == content {
+                screenManager.captureCover(forBookmark: saved.id, from: screen)
+            }
         }
         dismiss()
     }

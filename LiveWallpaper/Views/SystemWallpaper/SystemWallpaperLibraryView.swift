@@ -1,3 +1,4 @@
+import AppKit
 import ImageIO
 import LiveWallpaperCore
 import SwiftUI
@@ -73,6 +74,7 @@ struct SystemWallpaperLibraryView: View {
                         SystemWallpaperTile(
                             item: item,
                             thumbnailURL: service.thumbnailURL(for: item),
+                            videoURL: service.videoURL(for: item),
                             isInUse: service.isItemInUse(item.id),
                             onRemove: {
                                 pendingDestructive = PendingDestructive(
@@ -300,6 +302,7 @@ enum SystemWallpaperVideoImport {
 private struct SystemWallpaperTile: View {
     let item: SystemWallpaperManifest.Item
     let thumbnailURL: URL?
+    let videoURL: URL?
     let isInUse: Bool
     let onRemove: () -> Void
 
@@ -311,11 +314,37 @@ private struct SystemWallpaperTile: View {
         preview
             .galleryTileChrome(isHovering: isHovering, reduceMotion: reduceMotion)
             .settledHover { isHovering = $0 }
-        .contextMenu {
-            Button("Remove from System Wallpaper", role: .destructive, action: onRemove)
+            .contextMenu {
+                if let videoURL {
+                    Button("Show in Finder") {
+                        NSWorkspace.shared.activateFileViewerSelecting([videoURL])
+                    }
+                    Divider()
+                }
+                Button("Remove from System Wallpaper", role: .destructive, action: onRemove)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(accessibilityLabel)
+    }
+
+    /// The same single affordance every other library card carries. There is no
+    /// tap-to-apply here: macOS owns which System Wallpaper is on screen, and
+    /// this page only publishes and withdraws them.
+    private var overflowButton: some View {
+        LibraryTileOverflowButton { dismiss in
+            if let videoURL {
+                Button("Show in Finder") {
+                    dismiss()
+                    NSWorkspace.shared.activateFileViewerSelecting([videoURL])
+                }
+                Divider()
+            }
+            Button("Remove from System Wallpaper", role: .destructive) {
+                dismiss()
+                onRemove()
+            }
+            .destructiveControlTint()
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(accessibilityLabel)
     }
 
     private var accessibilityLabel: Text {
@@ -339,25 +368,13 @@ private struct SystemWallpaperTile: View {
         .frame(maxWidth: .infinity)
         .aspectRatio(16.0 / 9.0, contentMode: .fit)
         .clipped()
-        .overlay(alignment: .topTrailing) {
-            if isHovering {
-                Button(action: onRemove) {
-                    Image(systemName: "xmark")
-                        .font(.caption2.weight(.semibold))
-                        .padding(6)
-                }
-                .buttonStyle(.plain)
-                .floatingGlyphGlass(hovered: isHovering)
-                .padding(DesignTokens.Spacing.sm)
-                .accessibilityLabel(Text("Remove from System Wallpaper"))
-            }
-        }
         .overlay(alignment: .bottom) {
             ThumbnailTitleBand(title: item.title, isHovering: isHovering) {
                 if isInUse {
                     ThumbnailPresenceCheck(tint: DesignTokens.Colors.Status.active)
                         .accessibilityLabel(Text("On screen"))
                 }
+                overflowButton
             }
         }
         // Keyed on the entry's own timestamp, not on the URL: a republish

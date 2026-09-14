@@ -1,6 +1,7 @@
-import SwiftUI
+import AppKit
 import AVFoundation
 import LiveWallpaperCore
+import SwiftUI
 
 struct AerialThumbnailCacheKey: Hashable {
     private let path: String
@@ -51,8 +52,8 @@ private final class AerialThumbnailCache {
     }
 }
 
-/// Aerials are managed by macOS, so there is no rename / delete affordance and
-/// tapping the tile is a no-op.
+/// Aerials are managed by macOS, so the tile offers no rename or delete — but it
+/// applies and drags like every other library card.
 struct ThumbnailCard: View {
     let asset: AerialAsset
     let screens: [Screen]
@@ -62,29 +63,49 @@ struct ThumbnailCard: View {
     @State private var isHovering = false
     @State private var thumbnail: NSImage?
     @State private var formatInfo: VideoFormatInfo?
+    @State private var location = LibraryContentLocation.unknown
+    @State private var showingTargets = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         thumbnailTile
             .frame(maxWidth: .infinity, alignment: .leading)
-        .galleryTileChrome(isHovering: isHovering, reduceMotion: reduceMotion)
+            .galleryTileChrome(isHovering: isHovering, reduceMotion: reduceMotion)
             .settledHover { hovering in
                 guard !screens.isEmpty else { return }
                 isHovering = hovering
             }
-        .contextMenu { contextMenu }
-        .task { await loadThumbnailIfNeeded() }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(accessibilityText)
-        .accessibilityActions {
-            if screens.count == 1, let only = screens.first {
-                Button("Apply") { onApply(only) }
-            } else if screens.count > 1 {
-                ForEach(screens, id: \.id) { screen in
-                    Button("Apply to \(screen.name)") { onApply(screen) }
-                }
-                Button("Apply to All Displays", action: onApplyToAll)
+            .popover(isPresented: $showingTargets, arrowEdge: .bottom) {
+                LibraryApplyTargetList(
+                    screens: screens,
+                    onApply: onApply,
+                    onApplyToAll: onApplyToAll,
+                    dismiss: { showingTargets = false }
+                )
             }
+            .help(location.isAvailable ? Text("Apply") : Text("This wallpaper's file is missing"))
+            .contextMenu { contextMenu }
+            .task { await loadTileContent() }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(accessibilityText)
+            .accessibilityActions {
+                if screens.count == 1, let only = screens.first {
+                    Button("Apply") { onApply(only) }
+                } else if screens.count > 1 {
+                    ForEach(screens, id: \.id) { screen in
+                        Button("Apply to \(screen.name)") { onApply(screen) }
+                    }
+                    Button("Apply to All Displays", action: onApplyToAll)
+                }
+            }
+    }
+
+    private func applyFromCard() {
+        guard location.isAvailable else { return }
+        if screens.count == 1, let only = screens.first {
+            onApply(only)
+        } else if screens.count > 1 {
+            showingTargets = true
         }
     }
 
@@ -99,13 +120,24 @@ struct ThumbnailCard: View {
             .overlay { tileContent }
             .aspectRatio(16.0 / 9.0, contentMode: .fit)
             .clipped()
+            // Scoped to the artwork, not the whole card: the title band carries
+            // the overflow button and, while renaming, a text field — an
+            // ancestor tap gesture over those is at best ambiguous and at worst
+            // steals the click that was meant for them.
+            .contentShape(Rectangle())
+            .onTapGesture { applyFromCard() }
+            .overlay {
+                if !location.isAvailable {
+                    LibraryTileUnavailableVeil()
+                }
+            }
             .overlay(alignment: .topTrailing) {
                 formatBadgeRow
                     .padding(DesignTokens.Spacing.sm)
             }
             .overlay(alignment: .bottom) {
                 ThumbnailTitleBand(title: asset.displayName, isHovering: isHovering) {
-                    applyControl
+                    overflowButton
                 }
             }
     }
@@ -143,26 +175,37 @@ struct ThumbnailCard: View {
         }
     }
 
-    private var applyControl: some View {
-        LibraryTileApplyControl(
-            screens: screens,
-            tint: .accentColor,
-            onApply: onApply,
-            onApplyToAll: onApplyToAll
-        )
+    /// Only appears when there is something to offer: an aerial has no rename or
+    /// delete, so a grant that no longer resolves leaves the menu empty.
+    @ViewBuilder
+    private var overflowButton: some View {
+        if let revealURL = location.revealURL {
+            LibraryTileOverflowButton { dismiss in
+                Button("Show in Finder") {
+                    dismiss()
+                    NSWorkspace.shared.activateFileViewerSelecting([revealURL])
+                }
+            }
+        }
     }
 
     // MARK: Context menu
 
     @ViewBuilder
     private var contextMenu: some View {
-        if !screens.isEmpty {
+        if !screens.isEmpty, location.isAvailable {
             ForEach(screens, id: \.id) { screen in
                 Button("Apply to \(screen.name)") { onApply(screen) }
             }
             if screens.count > 1 {
                 Divider()
                 Button("Apply to All Displays", action: onApplyToAll)
+            }
+        }
+        if let revealURL = location.revealURL {
+            Divider()
+            Button("Show in Finder") {
+                NSWorkspace.shared.activateFileViewerSelecting([revealURL])
             }
         }
     }
@@ -177,6 +220,17 @@ struct ThumbnailCard: View {
     }
 
     // MARK: Thumbnail loader
+
+    @MainActor
+    private func loadTileContent() async {
+        // Resolved before the artwork: Show in Finder and the unavailable veil
+        // both read it, and neither should wait on a decode.
+        location = LibraryContentLocator.locate(
+            content: .video(bookmarkData: asset.bookmarkData),
+            wpeOrigin: nil
+        )
+        await loadThumbnailIfNeeded()
+    }
 
     @MainActor
     private func loadThumbnailIfNeeded() async {

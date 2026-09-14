@@ -14,10 +14,14 @@ struct PanelChrome: ViewModifier {
     private var liquidGlass = MonitorPanelAppearance.defaultGlass
 
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.monitorForcesOpaquePanels) private var forcesOpaquePanels
 
     @ViewBuilder
     func body(content: Content) -> some View {
-        if MonitorPanelAppearance.usesGlass(liquidGlass, reduceTransparency: reduceTransparency) {
+        if MonitorPanelAppearance.usesGlass(
+            liquidGlass,
+            reduceTransparency: reduceTransparency || forcesOpaquePanels
+        ) {
             glassCard(content)
         } else {
             paintedCard(content)
@@ -169,4 +173,15 @@ struct MonitorGrain: View {
     }
     .padding(40)
     .background(Design.boardWash)
+}
+
+extension EnvironmentValues {
+    /// Forces every widget card onto its painted branch. Set only while a board
+    /// is being read into a bitmap for a scheme cover: `cacheDisplay` skips a
+    /// `glassEffect` subtree outright — card *and* the text inside it — so a
+    /// glass board would be captured as holes.
+    ///
+    /// A key of its own because `accessibilityReduceTransparency`, which gates
+    /// the same branch, is read-only in `EnvironmentValues`.
+    @Entry var monitorForcesOpaquePanels: Bool = false
 }

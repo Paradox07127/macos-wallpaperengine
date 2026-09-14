@@ -19,11 +19,39 @@ extension ScreenManager {
             overlay: monitorOverlay(for: screen),
             sourceDisplayName: screen.name
         )
+        captureCover(forScheme: scheme.id, from: screen)
         Logger.info(
             "Capture Scheme: captured screen \(screen.id) as scheme \(scheme.id)",
             category: .screenManager
         )
         return scheme
+    }
+
+    /// Overwrites an existing scheme with what `screen` is showing now. The
+    /// reverse of `applyScheme`, and deliberately targets one named slot: a
+    /// display can hold several schemes.
+    @discardableResult
+    func recaptureScheme(_ scheme: ScreenScheme, from screen: Screen) -> ScreenScheme? {
+        guard !isTerminating,
+              let configuration = configurationStore.get(
+                  for: screen.id,
+                  fingerprint: screen.displayFingerprint
+              ) else { return nil }
+
+        let replaced = SchemeStore.shared.replace(
+            scheme.id,
+            configuration: configuration,
+            overlay: monitorOverlay(for: screen),
+            sourceDisplayName: screen.name
+        )
+        if replaced != nil {
+            captureCover(forScheme: scheme.id, from: screen)
+        }
+        Logger.info(
+            "Replace Scheme: re-captured screen \(screen.id) over scheme \(scheme.id)",
+            category: .screenManager
+        )
+        return replaced
     }
 
     /// Whole-screen overwrite: wallpaper content, every per-screen setting, and
