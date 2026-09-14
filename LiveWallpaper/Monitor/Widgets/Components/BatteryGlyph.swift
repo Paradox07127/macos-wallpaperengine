@@ -4,22 +4,18 @@ struct BatteryGlyph: View {
     var level: Double
     var charging: Bool = false
     var charged: Bool = false
-    /// Low / critical thresholds (fractions). Below `low` → amber/coral tint
-    /// (only when not charging); below `critical` → coral.
+    /// Low-battery tint threshold, as a fraction (0.20 = 20%).
     var lowThreshold: Double = 0.20
-    var criticalThreshold: Double = 0.10
     var cornerRadius: CGFloat = 5
 
     @Environment(\.monitorReduceMotion) private var reduceMotion
 
     init(level: Double, charging: Bool = false, charged: Bool = false,
-         lowThreshold: Double = 0.20, criticalThreshold: Double = 0.10,
-         cornerRadius: CGFloat = 5) {
+         lowThreshold: Double = 0.20, cornerRadius: CGFloat = 5) {
         self.level = level
         self.charging = charging
         self.charged = charged
         self.lowThreshold = lowThreshold
-        self.criticalThreshold = criticalThreshold
         self.cornerRadius = cornerRadius
     }
 
