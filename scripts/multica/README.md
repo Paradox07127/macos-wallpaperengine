@@ -1,9 +1,18 @@
 # Multica workflow tools
 
-These local helpers poll GitHub on this Mac, route work through the **cloud Multica
-workspace** using profile `desktop-api.multica.ai`, and execute through a local
-runtime. This is not a self-hosted Multica deployment. The allowed GitHub repository
-is `Paradox07127/macos-wallpaperengine`.
+These helpers poll GitHub on the Mac and route work through a self-hosted Multica
+workspace, then dispatch the configured local runtimes. The deployed dashboard is
+`http://127.0.0.1:3000`, API is `http://127.0.0.1:8080`, and CLI profile is
+`desktop-127.0.0.1-8080`. The allowed GitHub repository is
+`Paradox07127/macos-wallpaperengine`.
+
+Multica's official Docker deployment (PostgreSQL, backend and frontend) and its
+local account are provisioned separately. Bind its published ports to loopback;
+the GitHub polling bridge needs outbound access and does not require a public
+webhook. The Mac must be awake with Docker, a logged-in user session and valid
+provider credentials. Self-hosting does not replace model subscriptions or API
+billing. See the [official self-host guide](https://multica.ai/docs/self-host-quickstart)
+and [Desktop configuration](https://multica.ai/docs/desktop-app).
 
 ## Installed layout and operation
 
@@ -11,27 +20,36 @@ The stable local root is `$HOME/Documents/Codex/Multica`:
 
 | Path beneath the root | Purpose |
 | --- | --- |
-| `config.json` | Local routing, paths, models and the service `enabled` switch |
-| `bridge/` | Installed copies of these helpers and `mmrun-compat` |
+| `local/config.json` | Local routing, paths, models and the service `enabled` switch |
+| `bridge-v3/` | Installed copies of these helpers and `mmrun-compat-v2` |
 | `repository/` | Dedicated Git mirror/checkout used to fetch review targets |
-| `state/intake.sqlite3` | Intake checkpoint, mappings and write reconciliation |
-| `state/jobs/<job-id>/` | Immutable request and executor/publication receipts |
-| `state/reviews/<job-id>/` | Frozen checkout, review manifest and model evidence |
-| `workspaces/` | Multica daemon workspaces |
+| `local/state/intake.sqlite3` | Intake checkpoint, mappings and write reconciliation |
+| `local/state/jobs/<job-id>/` | Immutable request and executor/publication receipts |
+| `local/state/reviews/<job-id>/` | Frozen checkout, review manifest and model evidence |
+| `local/workspaces/` | Multica daemon workspaces |
 | `logs/` | Local service logs |
 
 The LaunchAgent label is `ai.multica.github-bridge`, with its plist at
 `~/Library/LaunchAgents/ai.multica.github-bridge.plist`. Its configured cadence is
-90 seconds, with `RunAtLoad`; it runs `service.py --config .../config.json` once per
+90 seconds, with `RunAtLoad`; it runs `service.py --config .../local/config.json` once per
 tick. A tick checks the `enabled` switch, ensures the Multica daemon is available,
 polls intake once, and collects finished reviews even if that intake poll failed.
 Launchd supplies the cadence; running the service is not a precise delivery-time
 guarantee. This local path requires a logged-in user session, an awake Mac, network
 access and valid GitHub/Multica/model authentication. Check `launchctl` for the live
 installation and execution state rather than inferring that the job is running
-from this README. Initial provisioning leaves `enabled: false` until activation.
+from this README. Initial provisioning leaves `enabled: false` until activation. Do not enable a second
+cloud bridge in parallel. Old `bridge/` and root `config.json`, if retained from a
+migration, are historical; all active examples use `bridge-v3/` and `local/config.json`.
 
 Issue intake uses the `agent-triage` label, with `triage_all_new: false`.
+Set `bridge_actor_id` to the local Multica member UUID used by the CLI. Recovery
+accepts only exact controlled comments authored by that member; another agent or
+a quoted marker cannot act as a delivery receipt.
+
+A job identity binds its immutable revisions and effective review policy, including
+the deployment policy token, runner contract and normalized reviewer set. Changing
+that policy requires a new review; old receipts are not approval under a new contract.
 
 GitHub issue intake is opt-in through the configured label. PR execution is
 restricted to non-draft PRs from branches in the allowed repository targeting `main`;
@@ -49,11 +67,11 @@ decision: the maintainer still judges whether the report belongs to this project
 It does not authorize running commands from the report, fetching attachments or
 publishing anything.
 
-Configure the **cloud Triage agent**, identified by `triage_agent_id`, separately
+Configure the **self-hosted Triage agent**, identified by `triage_agent_id`, separately
 from Review Coordinator. For its Claude Code runtime, disable tools with
 `--tools ''`, use strict MCP configuration with an empty MCP server set, and enable
 Multica Safe Mode. Verify the effective runtime configuration after changing the
-agent. These settings belong to the cloud agent; editing local `config.json`
+agent. These settings belong to the self-hosted agent; editing `local/config.json`
 alone does not apply them. Tools-disabled operation is not an operating-system
 sandbox, and Review Coordinator's executor access must not be given to Triage.
 
@@ -78,8 +96,9 @@ original GitHub issue:
 /multica-triage
 ```
 
-The bridge ignores the command inside a Markdown quote, fenced/indented code or
-additional text on the same line. It verifies the comment author's **current**
+The command must be an unindented top-level paragraph: use blank lines before
+and after it when adding explanatory prose. The bridge rejects Markdown quotes,
+list-contained examples, fenced/indented code and HTML code blocks. It verifies the comment author's **current**
 repository permission through GitHub's collaborator-permission API; only
 `write`, `maintain` or `admin` qualifies. A claimed role in the body or
 `author_association` does not authorize a run. The resulting agent trigger contains
@@ -104,11 +123,12 @@ the limits. Deferred follow-ups remain in SQLite and are retried on later ticks,
 including ticks without new GitHub activity. A permission 404 or insufficient
 permission becomes an observable `denied` record; transient API failures remain
 `pending`. After fixing a denied request's permission, post a new explicit request.
-`doctor` prints the queue totals. For individual reasons, inspect the local state
+Before delivery, the original GitHub comment is read again: a deleted or withdrawn
+command does not remain authorization. `doctor` prints the queue totals. For individual reasons, inspect the local state
 read-only:
 
 ```sh
-sqlite3 -readonly "$HOME/Documents/Codex/Multica/state/intake.sqlite3" \
+sqlite3 -readonly "$HOME/Documents/Codex/Multica/local/state/intake.sqlite3" \
   'SELECT status, reason, COUNT(*) FROM triage_pending GROUP BY status, reason;'
 ```
 
@@ -137,16 +157,19 @@ creating Multica work or writing GitHub statuses. Neither triggers model reviews
 ```sh
 MULTICA_ROOT="$HOME/Documents/Codex/Multica"
 MULTICA_PYTHON=/opt/homebrew/opt/python@3.14/bin/python3.14
-MULTICA_CONFIG="$MULTICA_ROOT/config.json"
+MULTICA_CONFIG="$MULTICA_ROOT/local/config.json"
 
-"$MULTICA_PYTHON" "$MULTICA_ROOT/bridge/github_bridge.py" --config "$MULTICA_CONFIG" doctor
-"$MULTICA_PYTHON" "$MULTICA_ROOT/bridge/github_bridge.py" --config "$MULTICA_CONFIG" poll --once --dry-run
+"$MULTICA_PYTHON" "$MULTICA_ROOT/bridge-v3/github_bridge.py" --config "$MULTICA_CONFIG" doctor
+"$MULTICA_PYTHON" "$MULTICA_ROOT/bridge-v3/github_bridge.py" --config "$MULTICA_CONFIG" poll --once --dry-run
 launchctl print "gui/$(id -u)/ai.multica.github-bridge"
 ls -lt "$MULTICA_ROOT/logs"
 ```
 
 `executor.py --config "$MULTICA_CONFIG" collect --job-id JOB_ID` revalidates a
 specific review and updates its local attestation without publishing a result.
+Collection revalidates current evidence before trusting a previous GitHub success;
+publication intent and a shared status-context lock support interrupted-write
+reconciliation. A newer job must not be overwritten by an old job’s rollback.
 `publish` and `collect-all` are **external write operations**: after verification
 they can write GitHub commit statuses and Multica comments/status. Here “publish”
 means publishing a static review result, never publishing an application release.
@@ -165,6 +188,24 @@ Unloading the timer does not cancel already running model reviews or stop the
 Multica daemon. Inspect those runs separately. For a deliberate restart after
 reviewing config, use `launchctl bootstrap "gui/$(id -u)"` with the same plist path.
 
+### Frozen inputs and dispatcher evidence
+
+The runner prepares each target in an independent Git object repository with
+system/global configuration and executable Git extensions disabled. Hooks or
+filters configured in the source checkout cannot run during preparation. The
+frozen worktree is read-only for review and is preserved as evidence.
+
+`runner_dispatch.py` is a trusted, hash-bound supervisor. It records the final
+mmrun dispatcher exit result even when the foreground wait times out. Missing
+completion evidence remains incomplete; finished model files alone cannot make
+an attempt pass. Keep the controller directory, request, supervisor receipt and
+model artifacts together when diagnosing interrupted work.
+
+Personal `mmrun clean` may remove old review directories. Archive an accepted
+review's attestation and artifacts before that cleanup when long-term audit
+history is required. A deleted or changed evidence set must not remain a fresh
+approval; these helpers do not turn temporary model output into permanent storage.
+
 ### mmrun compatibility copy
 
 The original `$HOME/.claude/bin/mmrun` is retained unchanged. A prepared
@@ -176,21 +217,24 @@ does not turn an error response or incomplete report into approval.
 Prepare the copy after placing `mmrun_compat.py` at its stable installed path:
 
 ```sh
-"$MULTICA_PYTHON" "$MULTICA_ROOT/bridge/mmrun_compat.py" prepare \
+"$MULTICA_PYTHON" "$MULTICA_ROOT/bridge-v3/mmrun_compat.py" prepare \
   --source "$HOME/.claude/bin/mmrun" \
-  --output "$MULTICA_ROOT/bridge/mmrun-compat"
+  --output "$MULTICA_ROOT/bridge-v3/mmrun-compat-v2"
 ```
 
 `prepare` invokes no model and writes only the separate copy and its
 `.provenance.json` sidecar. The installed config must set `mmrun_path` to
-`$HOME/Documents/Codex/Multica/bridge/mmrun-compat`; the executor passes
+`$HOME/Documents/Codex/Multica/bridge-v3/mmrun-compat-v2`; the executor passes
 that value as `review_runner.py run --mmrun ...`. A direct runner invocation must
 also explicitly pass `--mmrun` because its default remains the original installed
 script. With a redirected `CODEX_HOME`, pass the configured real profile home as
 `--codex-home $HOME/.codex` as well.
 
-The runner verifies the copy, source and helper hashes against the provenance
-sidecar. If the original script or compatibility helper changes, prepare a newly
+Set `mmrun_kind` to `compat` in the config (and `--mmrun-kind compat` for direct
+runner commands). A missing compatibility sidecar is an error. The runner verifies
+the copy, source and helper hashes against that required provenance sidecar.
+Grok must provide an explicit normal terminal stop reason; a parseable partial
+result is not sufficient. If the original script or compatibility helper changes, prepare a newly
 reviewed copy. Changed patch anchors fail closed; a destination containing different
 content is not overwritten. Choose a new output filename, verify its provenance,
 then update `mmrun_path` deliberately. Do not delete evidence or overwrite the
@@ -204,13 +248,13 @@ upload or publish a release. Replace all placeholders in this **disabled example
 with maintainer-selected values before use:
 
 ```text
-"$MULTICA_PYTHON" "$MULTICA_ROOT/bridge/github_bridge.py" --config "$MULTICA_CONFIG" \
+"$MULTICA_PYTHON" "$MULTICA_ROOT/bridge-v3/github_bridge.py" --config "$MULTICA_CONFIG" \
   request-release --base FULL_40_CHARACTER_BASE_COMMIT \
   --head FULL_40_CHARACTER_REVIEWED_HEAD_COMMIT --version MAJOR.MINOR.PATCH --dry-run
 ```
 
 Only remove `--dry-run` when intentionally dispatching the candidate review. Inspect
-the corresponding `state/jobs/<job-id>/request.json`, then collect its attestation.
+the corresponding `local/state/jobs/<job-id>/request.json`, then collect its attestation.
 Do not infer success from a task having started or from a model's `DONE` status.
 After a verified release-kind PASS, use the gate below. No timer or example here
 enables automatic application publication.
@@ -234,14 +278,14 @@ The following are **disabled examples**, not commands to run until real, verifie
 values replace every placeholder:
 
 ```text
-"$MULTICA_PYTHON" "$MULTICA_ROOT/bridge/release_gate.py" check \
-  --repo "$MULTICA_ROOT/state/reviews/RELEASE_JOB_ID/frozen" \
+"$MULTICA_PYTHON" "$MULTICA_ROOT/bridge-v3/release_gate.py" check \
+  --repo "$MULTICA_ROOT/local/state/reviews/RELEASE_JOB_ID/frozen" \
   --attestation ABSOLUTE_ATTESTATION_PATH_FROM_VERIFIED_EXECUTOR_RECEIPT \
   --base-sha FULL_40_CHARACTER_BASE_COMMIT \
   --head-sha FULL_40_CHARACTER_REVIEWED_HEAD_COMMIT
 
-"$MULTICA_PYTHON" "$MULTICA_ROOT/bridge/release_gate.py" plan \
-  --repo "$MULTICA_ROOT/state/reviews/RELEASE_JOB_ID/frozen" \
+"$MULTICA_PYTHON" "$MULTICA_ROOT/bridge-v3/release_gate.py" plan \
+  --repo "$MULTICA_ROOT/local/state/reviews/RELEASE_JOB_ID/frozen" \
   --attestation ABSOLUTE_ATTESTATION_PATH_FROM_VERIFIED_EXECUTOR_RECEIPT \
   --base-sha FULL_40_CHARACTER_BASE_COMMIT \
   --head-sha FULL_40_CHARACTER_REVIEWED_HEAD_COMMIT \
@@ -309,10 +353,11 @@ implemented here.
 ## Tests
 
 ```sh
-python3 -m unittest discover -s tests -p 'test_github_bridge.py'
-python3 -m unittest discover -s tests -p 'test_multica_service.py'
-python3 -m unittest discover -s tests -p 'test_release_gate.py'
+python3 -m unittest discover -s tests -p 'test_*.py'
 ```
+
+Python 3.12 is the supported minimum. CI runs the contracts on both 3.12 and
+3.14; the deployed Mac uses Homebrew Python 3.14.
 
 Bridge and service tests mock the CLIs, network and daemon operations. Gate tests
 create disposable Git repositories and evidence files. They do not build the app,
@@ -325,7 +370,7 @@ paid model run. After inspecting an actual `FAILED` or `NEEDS_REVIEW` result, an
 operator can explicitly request a new attempt:
 
 ```text
-python3 "$MULTICA_ROOT/bridge/executor.py" --config "$MULTICA_ROOT/config.json" \
+python3 "$MULTICA_ROOT/bridge-v3/executor.py" --config "$MULTICA_ROOT/local/config.json" \
   retry --job-id LOGICAL_JOB_ID
 ```
 
@@ -333,3 +378,17 @@ Retry checks the current GitHub target and refuses passed, live, busy, unknown o
 superseded work. Earlier frozen checkouts, complete reports and receipts remain
 intact. `attempt.json` selects the new runner ID; subsequent collect/publish calls
 still use the same logical job ID. No automatic retry loop is enabled.
+
+If an attempt was interrupted before it could record a terminal result, use the
+explicit recovery entry point before retrying:
+
+```text
+python3 "$MULTICA_ROOT/bridge-v3/executor.py" --config "$MULTICA_CONFIG" \
+  recover --job-id LOGICAL_JOB_ID
+```
+
+Recovery only records a failed orphan after proving the relevant processes have
+stopped; it does not start a model. Missing process identity is not proof of an
+idle attempt. If recovery cannot establish that proof, inspect the recorded
+process/session state and leave it blocked instead of deleting evidence or
+repeating `run`. An explicit subsequent `retry` remains a separate action.

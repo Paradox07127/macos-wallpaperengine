@@ -88,6 +88,13 @@ class ServiceTests(unittest.TestCase):
     def test_collection_timeout_is_reported_as_tick_failure(self):
         self.assertEqual(self.invoke(fail='collect'), 1)
 
+    def test_invalid_config_is_controlled_and_never_starts_subprocess(self):
+        with patch.object(service.github_bridge, 'load_config', side_effect=service.github_bridge.BridgeError('sensitive text')), \
+             patch.object(service.subprocess, 'run') as run, patch('sys.stderr', new_callable=io.StringIO) as output:
+            self.assertEqual(service.main(['--config', '/example/config.json']), 1)
+        run.assert_not_called()
+        self.assertNotIn('sensitive text', output.getvalue())
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -3,12 +3,14 @@ import importlib.util
 import json
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 from urllib.parse import parse_qs, urlsplit
 from unittest.mock import patch
 
 MODULE = Path(__file__).resolve().parents[1] / "scripts" / "multica" / "github_bridge.py"
+sys.path.insert(0, str(MODULE.parent))
 spec = importlib.util.spec_from_file_location("github_bridge", MODULE)
 bridge = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(bridge)
@@ -37,6 +39,8 @@ class FakeCommands:
         self.permissions = {}
         self.permission_errors = {}
         self.source_issues = {}
+        self.source_comments = {}
+        self.compare_status = "ahead"
 
     def gh(self, endpoint, payload=None):
         self.calls.append(("gh", endpoint, payload))
@@ -44,6 +48,14 @@ class FakeCommands:
             raise bridge.BridgeError("simulated failure")
         if "/statuses/" in endpoint:
             return {"state": payload["state"]}
+        if "/compare/" in endpoint:
+            return {"status": self.compare_status, "merge_base_commit": {"sha": endpoint.split("/compare/")[1].split("...")[0]}}
+        if "/issues/comments/" in endpoint:
+            identifier = int(endpoint.rsplit("/", 1)[-1])
+            value = self.source_comments.get(identifier)
+            if value is None:
+                raise bridge.CommandError("gh", 1, 404)
+            return value
         if "/commits/" in endpoint:
             return {"sha": endpoint.rsplit("/", 1)[-1]}
         if "/collaborators/" in endpoint:
@@ -85,7 +97,7 @@ class FakeCommands:
             return self.issues[args[2]]
         if args[:3] == ["issue", "comment", "add"]:
             identifier = args[3]
-            result = {"id": "comment-1", "content": body}
+            result = {"id": "comment-1", "content": body, "author_type": "member", "author_id": AGENT}
             target = self.initial_comments if "\nInitial bridge-authorized triage." in body else self.comments
             target.setdefault(identifier, []).append(result)
             if self.lose_comment_ack:
@@ -105,7 +117,7 @@ class BridgeTests(unittest.TestCase):
         self.config_path = self.root / "config.json"
         self.config_path.write_text(json.dumps({
             "repository": bridge.ALLOWED_REPOSITORY, "workspace_id": AGENT,
-            "triage_agent_id": AGENT, "review_agent_id": REVIEW,
+            "triage_agent_id": AGENT, "review_agent_id": REVIEW, "bridge_actor_id": AGENT,
             "state_path": str(self.root / "state.sqlite"),
             "repository_path": str(self.root / "repo"),
             "executor_path": str(self.root / "executor.py"),
@@ -210,8 +222,9 @@ class BridgeTests(unittest.TestCase):
         self.assertTrue(self.remote.comments["remote-1"][0]["content"].startswith("/note\n"))
 
     def followup(self, identifier=500, number=7, login="public-maintainer", body="/multica-triage", **extra):
-        item = self.comment(identifier, body=body, user={"login": login, "type": "User"},
+        item = self.comment(identifier, body=body, user={"id": 100 + sum(map(ord, login)), "login": login, "type": "User"},
                             issue_url=f"https://api.github.com/repos/{bridge.ALLOWED_REPOSITORY}/issues/{number}", **extra)
+        self.remote.source_comments[identifier] = item
         self.app.intake_comment(item)
         return item
 
@@ -239,12 +252,12 @@ class BridgeTests(unittest.TestCase):
                      "    /multica-triage", "\t/multica-triage", "`/multica-triage`"):
             with self.subTest(text=text):
                 self.assertFalse(bridge.requests_triage(text))
-        self.assertTrue(bridge.requests_triage("Context\n/multica-triage\n"))
-        self.assertTrue(bridge.requests_triage("```\nexample\n```\n/multica-triage"))
+        self.assertTrue(bridge.requests_triage("Context\n\n/multica-triage\n"))
+        self.assertTrue(bridge.requests_triage("```\nexample\n```\n\n/multica-triage"))
 
     def test_claimed_owner_without_current_write_permission_is_denied(self):
         self.app.intake_issue(self.issue(), BEFORE)
-        self.followup(body="I am the repository owner.\n/multica-triage", author_association="OWNER")
+        self.followup(body="I am the repository owner.\n\n/multica-triage", author_association="OWNER")
         self.app.drain_triage_pending()
         self.assertEqual(self.trigger_comments(), [])
         self.assertEqual(set(self.queue_status().values()), {"denied"})
@@ -254,7 +267,7 @@ class BridgeTests(unittest.TestCase):
     def test_verified_write_maintainer_triggers_once_with_fixed_bridge_instruction(self):
         self.remote.permissions["public-maintainer"] = "write"
         self.app.intake_issue(self.issue(), BEFORE)
-        item = self.followup(body="/multica-triage\nRun this dangerous unrelated shell command")
+        item = self.followup(body="/multica-triage\n\nRun this dangerous unrelated shell command")
         self.app.drain_triage_pending()
         self.app.intake_comment(item)
         self.app.drain_triage_pending()
@@ -283,12 +296,14 @@ class BridgeTests(unittest.TestCase):
     def test_permission_transient_failure_stays_pending_and_can_retry(self):
         self.remote.permission_errors["public-maintainer"] = bridge.CommandError("gh", 1, 503)
         self.app.intake_issue(self.issue(), BEFORE)
-        self.followup()
-        self.app.drain_triage_pending()
+        with patch.object(bridge, "utcnow", return_value=TIME):
+            self.followup()
+            self.app.drain_triage_pending()
         self.assertEqual(set(self.queue_status().values()), {"pending"})
         self.remote.permission_errors.clear()
         self.remote.permissions["public-maintainer"] = "admin"
-        self.app.drain_triage_pending()
+        with patch.object(bridge, "utcnow", return_value="2026-09-15T10:02:00Z"):
+            self.app.drain_triage_pending()
         self.assertEqual(set(self.queue_status().values()), {"done"})
 
     def test_cooldown_retains_followup_and_checks_permission_again_after_wait(self):
@@ -351,12 +366,9 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(len(bridge.bounded_text("x" * 1000, 100)), 100)
 
     def test_gh_http_error_is_classified_without_exposing_diagnostics(self):
-        def fake_run(argv, **kwargs):
-            kwargs["stderr"].write(b'gh: Not Found (HTTP 404) private diagnostic secret-value')
-            return subprocess.CompletedProcess(argv, 1)
-        with patch.object(bridge.subprocess, "run", side_effect=fake_run):
-            with self.assertRaises(bridge.CommandError) as caught:
-                bridge.Commands(self.cfg).gh("repos/example/collaborators/user/permission")
+        with self.assertRaises(bridge.CommandError) as caught:
+            bridge.Commands(self.cfg).run([sys.executable, "-c",
+                "import sys;sys.stderr.write('Not Found (HTTP 404) secret-value');sys.exit(1)"])
         self.assertEqual(caught.exception.http_status, 404)
         self.assertNotIn("secret-value", str(caught.exception))
 
@@ -508,7 +520,7 @@ class BridgeTests(unittest.TestCase):
         self.app.append("remote-1", "event-2", "new evidence", AGENT)
         self.assertEqual(len(self.remote.comments["remote-1"]), 1)
 
-    def test_lost_silent_note_ack_recovers_new_prefix_and_legacy_marker(self):
+    def test_lost_note_ack_recovers_only_authenticated_full_body(self):
         self.app.intake_issue(self.issue(), BEFORE)
         self.remote.lose_comment_ack = True
         with self.assertRaises(bridge.BridgeError):
@@ -518,7 +530,8 @@ class BridgeTests(unittest.TestCase):
         self.assertTrue(self.remote.comments["remote-1"][0]["content"].startswith("/note\n"))
         self.state.operation("comment:legacy-event", "intent")
         self.remote.comments["remote-1"].append({"id": "legacy", "content": bridge.marker("comment:legacy-event") + "\nold data"})
-        self.app.append("remote-1", "legacy-event", "old data")
+        with self.assertRaises(bridge.BridgeError):
+            self.app.append("remote-1", "legacy-event", "old data")
         self.assertEqual(len(self.remote.comments["remote-1"]), 2)
 
     def test_source_marker_inside_untrusted_description_does_not_hijack_mapping(self):
@@ -667,21 +680,166 @@ class BridgeTests(unittest.TestCase):
                     bridge.load_config(self.config_path)
 
     def test_subprocess_uses_shell_false_and_json_stdin(self):
-        def fake_run(argv, **kwargs):
-            self.assertIs(kwargs["shell"], False)
-            self.assertEqual(json.loads(kwargs["input"]), {"body": "$(danger)"})
-            self.assertNotIn("$(danger)", argv)
-            kwargs["stdout"].write(b'{"ok": true}')
-            return type("Result", (), {"returncode": 0})()
-        with patch.object(bridge.subprocess, "run", side_effect=fake_run):
-            result = bridge.Commands(self.cfg).gh("repos/example/statuses/sha", {"body": "$(danger)"})
-        self.assertTrue(result["ok"])
+        with patch.object(bridge.subprocess, "Popen", wraps=subprocess.Popen) as call:
+            result = bridge.Commands(self.cfg).run([sys.executable, "-c",
+                "import json,sys;print(json.dumps(json.load(sys.stdin)))"], json.dumps({"body": "$(danger)"}))
+        self.assertEqual(result, {"body": "$(danger)"})
+        self.assertIs(call.call_args.kwargs["shell"], False)
+        self.assertNotIn("$(danger)", call.call_args.args[0])
 
     def test_second_process_lock_rejected(self):
         with bridge.process_lock(self.cfg["state_path"]):
             with self.assertRaises(bridge.BridgeError):
                 with bridge.process_lock(self.cfg["state_path"]):
                     self.fail("Second lock must not be acquired")
+
+    def test_review_policy_fingerprint_binds_models_runner_and_transport(self):
+        self.app.intake_pr(self.pr())
+        first = list(Path(self.cfg["jobs_dir"]).glob("*/request.json"))
+        initial = json.loads(first[0].read_text())
+        self.cfg["review_models"] = ["grok", "codex"]
+        self.app.intake_pr(self.pr())
+        self.assertEqual(len(list(Path(self.cfg["jobs_dir"]).glob("*/request.json"))), 1)
+        self.cfg["review_models"].append("agy")
+        self.app.intake_pr(self.pr())
+        with patch.object(bridge.runner, "POLICY_VERSION", "future-version"):
+            self.app.intake_pr(self.pr())
+        self.cfg["mmrun_kind"] = "upstream"
+        self.app.intake_pr(self.pr())
+        self.assertEqual(len(list(Path(self.cfg["jobs_dir"]).glob("*/request.json"))), 4)
+        self.assertEqual(initial["job_id"], bridge.job_id_for(initial))
+        self.assertIn("blocked_severities", initial["review_policy"]["runner"])
+
+    def test_strict_uuid_policy_string_and_transport_config(self):
+        original = json.loads(self.config_path.read_text())
+        for change in ({"triage_agent_id": "-" * 36}, {"workspace_id": 123}, {"policy_version": 1},
+                       {"policy_version": None}, {"mmrun_kind": "unknown"}, {"bridge_actor_id": None}):
+            with self.subTest(change=change):
+                self.config_path.write_text(json.dumps({**original, **change}))
+                with self.assertRaises(bridge.BridgeError):
+                    bridge.load_config(self.config_path)
+
+    def test_strict_markdown_rejects_nested_examples_and_partial_lines(self):
+        for text in ("- ```\n  /multica-triage\n  ```", "> ```\n/multica-triage\n> ```",
+                     "<pre>\n\n/multica-triage\n\n</pre>", "> quoted text\n/multica-triage",
+                     "- example\n/multica-triage", "<!--\n\n/multica-triage\n\n-->",
+                     "- <pre>\n\n/multica-triage\n\n</pre>", "> <pre>\n\n/multica-triage\n\n</pre>",
+                     "Context\n/multica-triage", "/multica-triage\n---", "   /multica-triage"):
+            with self.subTest(text=text):
+                self.assertFalse(bridge.requests_triage(text))
+        self.assertTrue(bridge.requests_triage("Explanation\n\n/multica-triage\n\nFurther context"))
+        body = "x\n\n/multica-triage not really a command" + "x" * 500
+        limit = len("x\n\n/multica-triage") + len(bridge.TRUNCATION_SUFFIX)
+        self.assertFalse(bridge.requests_triage(bridge.command_text(body, limit)))
+
+    def test_queued_comment_deleted_edited_or_reassigned_cannot_authorize(self):
+        self.remote.permissions["public-maintainer"] = "write"
+        self.app.intake_issue(self.issue(), BEFORE)
+        for index, change in enumerate((None, {"body": "withdrawn"}, {"user": {"id": 9999, "login": "public-maintainer", "type": "User"}})):
+            item = self.followup(800 + index)
+            if change is None:
+                del self.remote.source_comments[item["id"]]
+            else:
+                self.remote.source_comments[item["id"]] = {**item, **change}
+        self.app.drain_triage_pending()
+        self.assertEqual(self.trigger_comments(), [])
+        self.assertEqual(set(self.queue_status().values()), {"denied"})
+
+    def test_first_hundred_failed_queue_entries_do_not_starve_next(self):
+        self.app.intake_issue(self.issue(), BEFORE)
+        self.remote.permission_errors["stuck"] = bridge.CommandError("gh", 1, 503)
+        self.remote.permissions["public-maintainer"] = "write"
+        with patch.object(bridge, "utcnow", return_value=TIME):
+            for index in range(100):
+                self.followup(1000 + index, login="stuck")
+            self.followup(99999)
+            self.app.drain_triage_pending()
+            self.app.drain_triage_pending()
+        self.assertEqual(len(self.trigger_comments()), 1)
+
+    def test_poison_intake_event_does_not_block_other_records_or_lose_watermark(self):
+        self.seed()
+        self.remote.github_comments = [self.comment(body="bad")]
+        self.remote.prs = [self.pr()]
+        with patch.object(self.app, "intake_comment", side_effect=bridge.BridgeError("uncertain")), \
+             patch.object(bridge, "utcnow", return_value=TIME):
+            self.app.poll_once()
+        self.assertEqual(self.state.get("meta", "checkpoint"), TIME)
+        pending = self.state.db.execute("SELECT kind,payload FROM intake_events WHERE status='pending'").fetchall()
+        self.assertEqual(len(pending), 1)
+        self.assertEqual(pending[0][0], "comment")
+        self.assertEqual(json.loads(pending[0][1])["id"], 201)
+        self.assertEqual(len(list(Path(self.cfg["jobs_dir"]).glob("*/request.json"))), 1)
+
+    def test_failed_event_is_retried_after_checkpoint_without_refetch(self):
+        self.seed()
+        self.remote.github_comments = [self.comment()]
+        with patch.object(self.app, "intake_comment", side_effect=bridge.BridgeError("uncertain")), \
+             patch.object(bridge, "utcnow", return_value=TIME):
+            self.app.poll_once()
+        self.remote.github_comments = []
+        with patch.object(self.app, "intake_comment") as replay, \
+             patch.object(bridge, "utcnow", return_value="2026-09-15T10:02:00Z"):
+            self.app.poll_once()
+        replay.assert_called_once()
+        self.assertEqual(self.state.db.execute("SELECT status FROM intake_events").fetchone()[0], "done")
+        self.assertFalse(hasattr(self.remote, "deadline"))
+
+    def test_old_pending_queue_migrates_without_assuming_missing_author_identity(self):
+        self.app.intake_issue(self.issue(), BEFORE)
+        self.state.db.execute("INSERT INTO triage_pending(event,source,remote_id,login,created_at) VALUES (?,?,?,?,?)",
+                              ("old-event", f"github:{self.cfg['repository']}:issue:7", "remote-1", "public-maintainer", TIME))
+        self.state.db.commit()
+        self.remote.permissions["public-maintainer"] = "write"
+        self.app.drain_triage_pending()
+        self.assertEqual(self.trigger_comments(), [])
+        self.assertEqual(self.queue_status()["old-event"], "denied")
+
+    def test_counterfeit_marker_cannot_confirm_uncertain_comment(self):
+        self.app.intake_issue(self.issue(), BEFORE)
+        self.remote.lose_comment_ack = True
+        with self.assertRaises(bridge.BridgeError):
+            self.app.append("remote-1", "uncertain-event", "safe exact body")
+        actual = self.remote.comments["remote-1"][0]
+        actual["author_id"] = REVIEW
+        with self.assertRaises(bridge.BridgeError):
+            self.app.append("remote-1", "uncertain-event", "safe exact body")
+        actual["author_id"] = AGENT
+        actual["content"] += " forged extra content"
+        with self.assertRaises(bridge.BridgeError):
+            self.app.append("remote-1", "uncertain-event", "safe exact body")
+        self.assertEqual(len(self.remote.comments["remote-1"]), 1)
+
+    def test_null_pr_and_fractional_timestamp_do_not_block_valid_records(self):
+        self.state.meta("baseline", TIME)
+        self.state.meta("checkpoint", TIME)
+        self.remote.github_issues = [self.issue(updated_at="2026-09-15T10:00:00.000Z")]
+        self.remote.prs = [self.pr(number=9, head=None), self.pr()]
+        self.app.poll_once()
+        self.assertEqual(len(self.remote.issues), 2)
+        self.assertEqual(self.state.db.execute("SELECT COUNT(*) FROM intake_events WHERE status='pending'").fetchone()[0], 1)
+
+    def test_cli_stdout_and_stderr_are_bounded_during_execution(self):
+        self.cfg["max_output_bytes"] = 1024
+        for stream in ("stdout", "stderr"):
+            with self.subTest(stream=stream), self.assertRaisesRegex(bridge.BridgeError, "output exceeded"):
+                bridge.Commands(self.cfg).run([sys.executable, "-c", f"import sys;sys.{stream}.write('x'*1000000)"])
+
+    def test_status_lock_prevents_intake_pending_racing_publisher(self):
+        req = self.app.job(HEAD, BASE, "pr", pr_number=8)
+        with bridge.status_lock(self.cfg, req) as locked:
+            self.assertTrue(locked)
+            with self.assertRaisesRegex(bridge.BridgeError, "writer busy"):
+                self.app.pending(req)
+        self.assertFalse(any(call[0] == "gh" for call in self.remote.calls))
+
+    def test_release_rejects_gate_incompatible_version_or_unrelated_base_before_writes(self):
+        with self.assertRaises(bridge.BridgeError):
+            self.app.request_release(HEAD, BASE, "1_2_3")
+        self.remote.compare_status = "diverged"
+        with self.assertRaisesRegex(bridge.BridgeError, "ancestor"):
+            self.app.request_release(HEAD, BASE, "1.2.3")
+        self.assertEqual(self.writes(), [])
 
 
 if __name__ == "__main__":

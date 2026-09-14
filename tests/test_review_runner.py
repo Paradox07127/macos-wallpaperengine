@@ -2,6 +2,9 @@
 
 import argparse
 import copy
+import contextlib
+import sys
+import time
 from concurrent.futures import ThreadPoolExecutor
 import importlib.util
 import json
@@ -90,8 +93,15 @@ class CollectTests(unittest.TestCase):
                          "base_sha": BASE, "head_sha": HEAD, "merge_base_sha": BASE, "tree_sha": TREE, "frozen_checkout": str(self.frozen),
                          "policy": runner.review_policy("pr", ["codex", "grok"]),
                          "provenance": {"mmrun_home": str(self.root / "mmruns"), "session": "multica-job-1",
-                                        "mmrun_path": str(self.executable), "mmrun_sha256": runner.digest(self.executable)},
+                                        "mmrun_kind": "upstream", "mmrun_path": str(self.executable), "mmrun_sha256": runner.digest(self.executable)},
                          "mmrun_run_id": RUN_ID}
+        helper = Path(runner.__file__).with_name("runner_dispatch.py")
+        self.manifest["provenance"].update(dispatch_helper=str(helper), dispatch_helper_sha256=runner.digest(helper))
+        runner.write_json(self.job / "dispatch-request.json", {"job_id": "job-1"})
+        self.manifest["dispatch_request_sha256"] = runner.digest(self.job / "dispatch-request.json")
+        self.outcome = {"schema_version": 1, "job_id": "job-1", "started": True, "exit_code": 0,
+                        "request_sha256": self.manifest["dispatch_request_sha256"]}
+        runner.write_json(self.job / "dispatch-result.json", self.outcome)
         runner.write_json(self.job / "manifest.json", self.manifest)
         (self.artifacts / "run.meta").write_text(
             f"runid={RUN_ID}\nmode=review\nworkdir={self.frozen}\nmodels=codex,grok\nsession=multica-job-1\n")
@@ -312,7 +322,7 @@ class CollectTests(unittest.TestCase):
         self.assertFalse((self.job / "attestation.json").exists())
 
     def test_explicit_dispatch_failure_cannot_be_rewritten_pending(self):
-        for extra in ({"dispatch_exit": 1}, {"dispatch_exit": 0}, {"dispatch_error": "cannot spawn"}):
+        for extra in ({"dispatch_error": "cannot spawn"},):
             with self.subTest(extra=extra):
                 manifest = dict(self.manifest, mmrun_run_id=None, **extra)
                 runner.write_json(self.job / "manifest.json", manifest)
@@ -320,10 +330,11 @@ class CollectTests(unittest.TestCase):
                 self.assertEqual(runner.collect(self.job)["verdict"], "FAILED")
 
     def test_nonzero_dispatch_even_with_run_id_fails(self):
-        runner.write_json(self.job / "manifest.json", dict(self.manifest, dispatch_exit=1))
+        runner.write_json(self.job / "dispatch-result.json", dict(self.outcome, exit_code=1))
         self.assertEqual(runner.collect(self.job)["verdict"], "FAILED")
 
     def test_live_and_dead_dispatch_without_run_id(self):
+        (self.job / "dispatch-result.json").unlink()
         runner.write_json(self.job / "manifest.json", dict(self.manifest, mmrun_run_id=None, dispatch_pid=123))
         for alive, verdict in ((True, "RUNNING_TIMEOUT"), (False, "FAILED")):
             with patch.object(runner, "process_alive", return_value=alive):
@@ -362,7 +373,7 @@ class LaunchTests(unittest.TestCase):
     def test_reject_short_sha_before_any_subprocess(self):
         with patch.object(runner.subprocess, "run") as call:
             with self.assertRaises(runner.ReviewError):
-                runner.check_target(Path("/repo"), "abc", HEAD)
+                runner.check_target(Path("/repo"), "abc", HEAD, kind="pr")
             call.assert_not_called()
 
     def test_timeout_does_not_kill_process_or_remove_checkout(self):
@@ -370,12 +381,14 @@ class LaunchTests(unittest.TestCase):
             job = Path(tmp).resolve()
             frozen = job / "frozen"
             frozen.mkdir()
-            manifest = {"job_id": job.name, "kind": "pr", "mmrun_run_id": None, "provenance": {"mmrun_home": str(job / "mmruns")},
+            manifest = {"job_id": job.name, "kind": "pr", "mmrun_run_id": None, "provenance": {"mmrun_home": str(job / "mmruns"), "session": "fixture", "mmrun_sha256": "a" * 64,
+                        "dispatch_helper": str(Path(runner.__file__).with_name("runner_dispatch.py")),
+                        "dispatch_helper_sha256": runner.digest(Path(runner.__file__).with_name("runner_dispatch.py"))},
                         "controller_checkout": str(job), "frozen_checkout": str(frozen)}
             args = argparse.Namespace(timeout=1, mmrun="/trusted/mmrun", base=BASE, models=["codex", "grok"], poll_interval=1)
             process = Mock(pid=123)
             process.wait.side_effect = subprocess.TimeoutExpired("mmrun", 1)
-            with patch.object(runner, "prepare", return_value=(job, manifest, {})), patch.object(runner.subprocess, "Popen", return_value=process) as popen:
+            with patch.object(runner, "preparing", return_value=contextlib.nullcontext((job, manifest, {}))), patch.object(runner.subprocess, "Popen", return_value=process) as popen:
                 result = runner.run(args)
             self.assertEqual(result["verdict"], "RUNNING_TIMEOUT")
             process.kill.assert_not_called()
@@ -388,14 +401,16 @@ class LaunchTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             job = Path(tmp).resolve()
             manifest = {"job_id": job.name, "kind": "pr", "mmrun_run_id": None,
-                        "provenance": {"mmrun_home": str(job / "mmruns")},
+                        "provenance": {"mmrun_home": str(job / "mmruns"), "session": "fixture", "mmrun_sha256": "a" * 64,
+                        "dispatch_helper": str(Path(runner.__file__).with_name("runner_dispatch.py")),
+                        "dispatch_helper_sha256": runner.digest(Path(runner.__file__).with_name("runner_dispatch.py"))},
                         "controller_checkout": str(job), "frozen_checkout": str(job / "frozen")}
             args = argparse.Namespace(timeout=1, mmrun="/trusted/mmrun", base=BASE, models=["codex", "grok"], poll_interval=1)
-            with patch.object(runner, "prepare", return_value=(job, manifest, {})), patch.object(runner.subprocess, "Popen", side_effect=OSError("no executable")):
+            with patch.object(runner, "preparing", return_value=contextlib.nullcontext((job, manifest, {}))), patch.object(runner.subprocess, "Popen", side_effect=OSError("no executable")):
                 self.assertEqual(runner.run(args)["verdict"], "FAILED")
             saved = runner.load_json(job / "manifest.json")
             self.assertEqual(saved["phase"], "DISPATCH_FAILED")
-            self.assertIn("no executable", saved["dispatch_error"])
+            self.assertEqual("DISPATCH_SUPERVISOR_START_FAILED", saved["dispatch_error"])
 
     def test_atomic_json_writers_use_independent_temporary_files(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -408,7 +423,7 @@ class LaunchTests(unittest.TestCase):
 
     def test_redirected_codex_home_requires_explicit_choice(self):
         args = argparse.Namespace(mmrun_home="/tmp/test-mmruns", job_id="job", mmrun_d="/tmp/test-mmd",
-                                  mmrun="/tmp/test-mmrun", models=["codex"], codex_home=None)
+                                  mmrun="/tmp/test-mmrun", mmrun_kind="upstream", models=["codex"], codex_home=None)
         with patch.object(runner, "digest", return_value="a" * 64), patch.dict(runner.os.environ, {"CODEX_HOME": "/tmp/redirected"}):
             with self.assertRaisesRegex(runner.ReviewError, "redirected"):
                 runner.environment(args)
@@ -421,13 +436,13 @@ class LaunchTests(unittest.TestCase):
                 path.write_text("trusted fixture\n")
             (root / "review.schema.json").write_text("{}")
             (root / "fence.sb").write_text("unchanged fixture")
-            sidecar = {"version": "mmrun-grok-transport-v1", "security_flags_changed": False,
+            sidecar = {"version": "mmrun-grok-transport-v2", "security_flags_changed": False,
                        "output": str(executable), "output_sha256": runner.digest(executable),
                        "source": str(source), "source_sha256": runner.digest(source),
                        "helper": str(helper), "helper_sha256": runner.digest(helper)}
             runner.write_json(Path(str(executable) + ".provenance.json"), sidecar)
             args = argparse.Namespace(mmrun_home=str(root / "mmruns"), job_id="job", mmrun_d=str(root),
-                                      mmrun=str(executable), models=["grok"], codex_home=None)
+                                      mmrun=str(executable), mmrun_kind="upstream", models=["grok"], codex_home=None)
             _, provenance = runner.environment(args)
             self.assertEqual(provenance["compatibility"], sidecar)
             helper.write_text("changed helper\n")
@@ -440,7 +455,7 @@ class LaunchTests(unittest.TestCase):
             for name in ("mmrun", "review.schema.json", "fence.sb"):
                 (root / name).write_text("fixture")
             args = argparse.Namespace(mmrun_home=str(root / "mmruns"), job_id="x" * 95 + "1", mmrun_d=str(root),
-                                      mmrun=str(root / "mmrun"), models=["grok"], codex_home=None)
+                                      mmrun=str(root / "mmrun"), mmrun_kind="upstream", models=["grok"], codex_home=None)
             first, _ = runner.environment(args)
             args.job_id = "x" * 95 + "2"
             second, _ = runner.environment(args)
@@ -511,7 +526,9 @@ class OfflineGitPreparationTests(unittest.TestCase):
         self.args = argparse.Namespace(repo=str(self.repo), base=self.head, head=self.head, kind="release",
                                        models=["codex", "grok"], job_id="empty-delta", state_dir=str(self.root / "reviews"),
                                        timeout=1, poll_interval=1, mmrun="/trusted/mmrun")
-        self.provenance = {"mmrun_home": str(self.root / "mmruns"), "session": "fixture"}
+        self.provenance = {"mmrun_home": str(self.root / "mmruns"), "session": "fixture", "mmrun_sha256": "a" * 64,
+                           "dispatch_helper": str(Path(runner.__file__).with_name("runner_dispatch.py")),
+                           "dispatch_helper_sha256": runner.digest(Path(runner.__file__).with_name("runner_dispatch.py"))}
         self.env = {"MMRUN_D": str(self.root / "mmd")}
 
     def cleanup(self):
@@ -556,7 +573,7 @@ class OfflineGitPreparationTests(unittest.TestCase):
         def git_with_alias(repo, *args, **kwargs):
             if args == ("rev-parse", "--show-toplevel"):
                 return str(alias)
-            if args[:2] == ("worktree", "add"):
+            if args[0] == "fetch":
                 seen_timeouts.append(kwargs.get("timeout"))
             return original(repo, *args, **kwargs)
         with patch.object(runner, "environment", return_value=(self.env, self.provenance)), patch.object(
@@ -580,10 +597,11 @@ class OfflineGitPreparationTests(unittest.TestCase):
         process = Mock(pid=123)
         process.wait.side_effect = subprocess.TimeoutExpired("mmrun", 1)
         def launch(argv, **kwargs):
-            self.assertEqual(argv[1:4], ["start", "--mode", "review"])
-            self.assertIn("--schema", argv)
-            self.assertNotIn("--wt", argv)
-            content = kwargs["stdin"].read()
+            request = runner.load_json(Path(argv[-1]) / "dispatch-request.json")
+            self.assertEqual(request["argv"][1:4], ["start", "--mode", "review"])
+            self.assertIn("--schema", request["argv"])
+            self.assertNotIn("--wt", request["argv"])
+            content = Path(request["stdin"]).read_bytes()
             self.assertIn(b"[empty delta]", content)
             self.assertIn(b"release fixture", content)
             job = Path(self.args.state_dir) / self.args.job_id
@@ -592,7 +610,7 @@ class OfflineGitPreparationTests(unittest.TestCase):
         # subprocess.run uses Popen for Git too, so prepare before mocking.
         with patch.object(runner, "environment", return_value=(self.env, self.provenance)):
             prepared = runner.prepare(self.args)
-        with patch.object(runner, "prepare", return_value=prepared), patch.object(runner.subprocess, "Popen", side_effect=launch):
+        with patch.object(runner, "preparing", return_value=contextlib.nullcontext(prepared)), patch.object(runner.subprocess, "Popen", side_effect=launch):
             result = runner.run(self.args)
         self.assertEqual(result["verdict"], "RUNNING_TIMEOUT")
         process.kill.assert_not_called()
@@ -614,13 +632,186 @@ class OfflineGitPreparationTests(unittest.TestCase):
         self.assertIn("Review only this frozen checkout: " + manifest["frozen_checkout"], notes)
         process = Mock(pid=123)
         process.wait.side_effect = subprocess.TimeoutExpired("mmrun", 1)
-        with patch.object(runner, "prepare", return_value=prepared), patch.object(
+        with patch.object(runner, "preparing", return_value=contextlib.nullcontext(prepared)), patch.object(
                 runner.subprocess, "Popen", return_value=process) as launch:
             result = runner.run(self.args)
-        argv = launch.call_args.args[0]
+        argv = runner.load_json(job / "dispatch-request.json")["argv"]
         self.assertEqual(argv[1:5], ["review", "--base", self.args.base, "--exhaustive"])
         self.assertEqual(argv[argv.index("--notes-file") + 1], str(job / "review-notes.txt"))
         self.assertEqual(result["verdict"], "RUNNING_TIMEOUT")
+
+
+class HardenedCollectionTests(unittest.TestCase):
+    setUp = CollectTests.setUp
+    git_reply = CollectTests.git_reply
+    # Reuse complete mature-job fixtures for the new receipt boundaries.
+    def test_missing_receipt_with_done_reports_never_passes(self):
+        (self.job / "dispatch-result.json").unlink()
+        result = runner.collect(self.job)
+        self.assertEqual(result["verdict"], "FAILED")
+        self.assertIn("DISPATCH_COMPLETION_UNKNOWN", result["reasons"])
+
+    def test_removing_receipt_after_pass_does_not_reuse_cached_success(self):
+        self.assertEqual(runner.collect(self.job)["verdict"], "PASS")
+        (self.job / "dispatch-result.json").unlink()
+        self.assertEqual(runner.collect(self.job)["verdict"], "FAILED")
+
+    def test_changed_dispatch_helper_provenance_blocks_collection(self):
+        self.manifest["provenance"]["dispatch_helper_sha256"] = "0" * 64
+        runner.write_json(self.job / "manifest.json", self.manifest)
+        self.assertEqual(runner.collect(self.job)["verdict"], "FAILED")
+
+    def test_delayed_nonzero_dispatch_receipt_overrides_done_reports(self):
+        (self.job / "dispatch-result.json").unlink()
+        manifest = dict(self.manifest, supervisor_pid=43210)
+        runner.write_json(self.job / "manifest.json", manifest)
+        with patch.object(runner, "process_alive", return_value=True):
+            self.assertEqual(runner.collect(self.job)["verdict"], "RUNNING_TIMEOUT")
+        runner.write_json(self.job / "dispatch-result.json", dict(self.outcome, exit_code=7))
+        self.assertEqual(runner.collect(self.job)["verdict"], "FAILED")
+
+    def test_failed_dispatch_recovers_runid_from_session_metadata(self):
+        runner.write_json(self.job / "manifest.json", dict(self.manifest, mmrun_run_id=None))
+        runner.write_json(self.job / "dispatch-result.json", dict(self.outcome, exit_code=1))
+        self.assertEqual(runner.collect(self.job)["verdict"], "FAILED")
+        self.assertEqual(runner.load_json(self.job / "manifest.json")["mmrun_run_id"], RUN_ID)
+
+    def test_quiescence_requires_worker_pid_and_terminal_receipt(self):
+        self.manifest["controller_pid"] = 98765
+        runner.write_json(self.job / "manifest.json", self.manifest)
+        with patch.object(runner, "process_alive", return_value=False):
+            with self.assertRaisesRegex(runner.ReviewError, "WORKER_PID_UNKNOWN"):
+                runner.require_quiescent(self.job)
+            for model in ("codex", "grok"):
+                (self.artifacts / (model + ".pid")).write_text("98766")
+            runner.require_quiescent(self.job)
+            (self.artifacts / "grok.meta").unlink()
+            with self.assertRaises(runner.ReviewError):
+                runner.require_quiescent(self.job)
+
+    def test_quote_four_lines_rejected(self):
+        invalid = dict(report(), findings=[dict(finding("minor"), quote="one\ntwo\nthree\nfour")])
+        runner.write_json(self.artifacts / "codex.json", invalid)
+        self.assertEqual(runner.collect(self.job)["verdict"], "FAILED")
+
+    def test_aggregate_attestation_has_distinct_size_budget(self):
+        huge = dict(report(), summary="x" * (runner.MAX_REPORT_BYTES // 2 + 100))
+        for model in ("codex", "grok"):
+            runner.write_json(self.artifacts / (model + ".json"), huge)
+        result = runner.collect(self.job)
+        self.assertEqual(result["verdict"], "PASS")
+        path = runner.attestation_path(self.manifest)
+        self.assertGreater(path.stat().st_size, runner.MAX_REPORT_BYTES)
+        self.assertEqual(runner.load_json(path, max_bytes=runner.MAX_ATTESTATION_BYTES)["verdict"], "PASS")
+
+
+class IsolationTests(unittest.TestCase):
+    setUp = OfflineGitPreparationTests.setUp
+    cleanup = OfflineGitPreparationTests.cleanup
+    def test_source_hook_and_filter_do_not_execute_or_transfer(self):
+        marker = self.root / "must-not-exist"
+        hooks = self.repo / ".githooks"
+        hooks.mkdir()
+        hook = hooks / "post-checkout"
+        hook.write_text("#!/bin/sh\ntouch '" + str(marker) + "'\n")
+        hook.chmod(0o700)
+        (self.repo / ".gitattributes").write_text("*.txt filter=evil\n")
+        runner.git(self.repo, "add", ".")
+        runner.git(self.repo, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "hostile extension fixture")
+        self.args.head = runner.git(self.repo, "rev-parse", "HEAD")
+        runner.git(self.repo, "config", "core.hooksPath", ".githooks")
+        runner.git(self.repo, "config", "filter.evil.smudge", "touch '" + str(marker) + "'; cat")
+        with patch.object(runner, "environment", return_value=(self.env, self.provenance)):
+            _, manifest, _ = runner.prepare(self.args)
+        self.assertFalse(marker.exists())
+        frozen = Path(manifest["frozen_checkout"])
+        self.assertTrue((frozen / ".git").is_dir())
+        self.assertFalse((frozen / ".git/objects/info/alternates").exists())
+        self.assertNotIn("evil", (frozen / ".git/config").read_text())
+        self.assertNotIn("hooksPath", (frozen / ".git/config").read_text())
+
+    def test_unrelated_source_commit_is_not_present_in_frozen_objects(self):
+        runner.git(self.repo, "checkout", "--orphan", "unrelated")
+        (self.repo / "other.txt").write_text("unrelated data")
+        runner.git(self.repo, "add", ".")
+        runner.git(self.repo, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "unrelated")
+        unrelated = runner.git(self.repo, "rev-parse", "HEAD")
+        runner.git(self.repo, "checkout", "--detach", self.args.head)
+        with patch.object(runner, "environment", return_value=(self.env, self.provenance)):
+            _, manifest, _ = runner.prepare(self.args)
+        with self.assertRaises(runner.ReviewError):
+            runner.git(Path(manifest["frozen_checkout"]), "cat-file", "-e", unrelated)
+
+    def test_pr_empty_delta_is_explicit_and_review_mode_ready(self):
+        self.args.kind = "pr"
+        with patch.object(runner, "environment", return_value=(self.env, self.provenance)):
+            job, manifest, _ = runner.prepare(self.args)
+        self.assertTrue(manifest["empty_delta"])
+        self.assertIn("PR merge-base-to-head delta is empty", (job / "release-prompt.txt").read_text())
+
+    def test_preparation_and_dispatch_keep_one_lock(self):
+        def dispatch(args, job, manifest, env, deadline):
+            self.assertEqual(runner.collect(job)["verdict"], "RUNNING_TIMEOUT")
+            with runner.job_lock(job) as locked:
+                self.assertFalse(locked)
+            return {"verdict": "RUNNING_TIMEOUT"}
+        with patch.object(runner, "environment", return_value=(self.env, self.provenance)), patch.object(
+                runner, "_dispatch_locked", side_effect=dispatch):
+            self.assertEqual(runner.run(self.args)["verdict"], "RUNNING_TIMEOUT")
+
+
+class SupervisorTests(unittest.TestCase):
+    def test_detached_supervisor_records_exit_after_launcher_returns(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            job = Path(tmp).resolve()
+            executable = job / "fake-mmrun"
+            executable.write_text("#!/bin/sh\nsleep 0.15\necho 'RUN fixture models=codex'\nexit 7\n")
+            executable.chmod(0o700)
+            runner.write_json(job / "dispatch-request.json", {"job_id": job.name,
+                "argv": [str(executable)], "executable_sha256": runner.digest(executable),
+                "cwd": str(job), "stdin": os.devnull})
+            helper = str(Path(runner.__file__).with_name("runner_dispatch.py"))
+            parent = "import subprocess,sys; subprocess.Popen([sys.executable,sys.argv[1],sys.argv[2]],start_new_session=True,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)"
+            subprocess.run([sys.executable, "-c", parent, helper, str(job)], check=True)
+            deadline = time.monotonic() + 5
+            while not (job / "dispatch-result.json").exists() and time.monotonic() < deadline:
+                time.sleep(0.02)
+            outcome = runner.load_json(job / "dispatch-result.json")
+            self.assertEqual(outcome["exit_code"], 7)
+            self.assertTrue(outcome["started"])
+
+    def test_compatibility_mode_requires_sidecar_and_resolves_executable_symlink(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            executable = root / "mmrun"
+            executable.write_text("fixture")
+            alias = root / "alias"
+            alias.symlink_to(executable)
+            (root / "review.schema.json").write_text("{}")
+            args = argparse.Namespace(mmrun=str(alias), mmrun_kind="compat", mmrun_home=str(root / "runs"),
+                                      mmrun_d=str(root), job_id="fixture", models=[], codex_home=None)
+            with self.assertRaises(runner.ReviewError):
+                runner.environment(args)
+            args.mmrun_kind = "upstream"
+            _, provenance = runner.environment(args)
+            self.assertEqual(provenance["mmrun_path"], str(executable))
+            self.assertEqual(provenance["mmrun_sha256"], runner.digest(executable))
+
+    def test_empty_delta_checks_exit_status_without_materializing_patch(self):
+        for rc, empty in ((0, True), (1, False)):
+            with patch.object(runner.subprocess, "run", return_value=Mock(returncode=rc)) as call:
+                self.assertIs(runner.empty_delta(Path("/repo"), BASE, HEAD), empty)
+                self.assertIn("--quiet", call.call_args.args[0])
+                self.assertIn("--no-textconv", call.call_args.args[0])
+        with patch.object(runner.subprocess, "run", return_value=Mock(returncode=2)):
+            with self.assertRaises(runner.ReviewError):
+                runner.empty_delta(Path("/repo"), BASE, HEAD)
+
+    def test_external_command_stderr_never_becomes_attestation_reason(self):
+        with patch.object(runner.subprocess, "run", return_value=Mock(returncode=1, stderr="SECRET_REPOSITORY_DATA", stdout="")):
+            with self.assertRaises(runner.ReviewError) as caught:
+                runner.git(Path("/repo"), "status")
+            self.assertEqual(str(caught.exception), "PREPARATION_COMMAND_EXIT_1")
 
 
 if __name__ == "__main__":

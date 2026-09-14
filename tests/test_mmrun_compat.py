@@ -25,20 +25,35 @@ class NormalizationTests(unittest.TestCase):
         self.assertNotIn("text", result)
 
     def test_pretty_snake_case_envelope(self):
-        result = compat.normalize(json.dumps({"structured_output": REPORT}, indent=2))
+        result = compat.normalize(json.dumps({"structured_output": REPORT, "stop_reason": "completed"}, indent=2))
         self.assertEqual(result["structured_output"]["verdict"], "request_changes")
 
     def test_json_text_legacy_envelope(self):
-        result = compat.normalize(json.dumps({"text": json.dumps(REPORT)}))
+        result = compat.normalize(json.dumps({"text": json.dumps(REPORT), "stopReason": "stop"}))
         self.assertEqual(result["structured_output"], REPORT)
+
+    def test_diagnostic_brackets_and_indented_envelope(self):
+        for prefix in ("[warn] diagnostic\n", "warning: diagnostic\n  ", "  ",
+                       "[info] model ready\n[debug] result follows\n\t"):
+            with self.subTest(prefix=prefix):
+                result = compat.normalize(prefix + json.dumps({"structuredOutput": REPORT, "stopReason": "end_turn"}))
+                self.assertEqual(result["structured_output"], REPORT)
+
+    def test_unknown_prefix_or_missing_completion_is_rejected(self):
+        terminal = json.dumps({"structuredOutput": REPORT, "stopReason": "end_turn"})
+        for text in ("arbitrary prefix\n" + terminal, "[warn] " + terminal,
+                     "[\n" + terminal, json.dumps({"structuredOutput": REPORT}),
+                     json.dumps({"structuredOutput": REPORT, "completed": True})):
+            with self.subTest(text=text), self.assertRaises(compat.CompatibilityError):
+                compat.normalize(text)
 
     def test_conflicting_aliases_fail(self):
         with self.assertRaises(compat.CompatibilityError):
-            compat.normalize(json.dumps({"structuredOutput": REPORT, "structured_output": {"verdict": "approve"}}))
+            compat.normalize(json.dumps({"structuredOutput": REPORT, "structured_output": {"verdict": "approve"}, "stopReason": "end_turn"}))
 
     def test_duplicate_report_key_fails(self):
         with self.assertRaises(compat.CompatibilityError):
-            compat.normalize('{"structuredOutput":{"verdict":"approve","verdict":"request_changes"}}')
+            compat.normalize('{"stopReason":"end_turn","structuredOutput":{"verdict":"approve","verdict":"request_changes"}}')
 
     def test_explicit_error_and_nonterminal_stop_fail(self):
         for extra in ({"isError": True}, {"error": "failed"}, {"stopReason": "max_turns"}, {"stop_reason": "cancelled"}):
@@ -53,7 +68,7 @@ class NormalizationTests(unittest.TestCase):
     def test_missing_and_empty_result_fail(self):
         for data in ({}, {"structuredOutput": {}}, {"structuredOutput": []}, {"structuredOutput": None}):
             with self.subTest(data=data), self.assertRaises(compat.CompatibilityError):
-                compat.normalize(json.dumps(data))
+                compat.normalize(json.dumps(dict(data, stopReason="end_turn")))
 
     def test_multiple_result_envelopes_are_ambiguous(self):
         text = json.dumps({"structuredOutput": REPORT}) + "\n" + json.dumps({"structuredOutput": dict(REPORT, verdict="approve")})
@@ -61,7 +76,7 @@ class NormalizationTests(unittest.TestCase):
             compat.normalize(text)
 
     def test_truncated_error_wrapper_cannot_salvage_inner_approval(self):
-        inner = json.dumps({'structuredOutput': dict(REPORT, verdict='approve')})
+        inner = json.dumps({'structuredOutput': dict(REPORT, verdict='approve'), 'stopReason': 'end_turn'})
         for text in ('{"isError":true,"result":' + inner, '[' + inner,
                      '{"broken":\n' + inner, 'warning {broken\n' + inner):
             with self.subTest(text=text), self.assertRaises(compat.CompatibilityError):

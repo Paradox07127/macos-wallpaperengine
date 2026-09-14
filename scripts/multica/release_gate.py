@@ -10,7 +10,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-from review_runner import POLICY_VERSION, ReviewError, load_json, validate_report
+from github_bridge import RELEASE_VERSION
+from review_runner import (POLICY_VERSION, MAX_ATTESTATION_BYTES, ReviewError, load_json,
+                           validate_report, git as controlled_git)
 
 
 class GateError(ValueError):
@@ -18,12 +20,10 @@ class GateError(ValueError):
 
 
 def git(repo, *args):
-    result = subprocess.run(
-        ["git", "-C", str(repo), *args], capture_output=True, text=True, check=False, timeout=30
-    )
-    if result.returncode:
-        raise GateError("git validation failed: " + " ".join(args))
-    return result.stdout.strip()
+    try:
+        return controlled_git(repo, *args)
+    except ReviewError as exc:
+        raise GateError("GIT_VALIDATION_FAILED") from exc
 
 
 def full_sha(value, name, length=40):
@@ -53,7 +53,7 @@ def validate(repo, attestation, base_sha, head_sha):
         raise GateError("--repo must name the repository root")
     full_sha(base_sha, "base_sha")
     full_sha(head_sha, "head_sha")
-    evidence = load_json(Path(attestation))
+    evidence = load_json(Path(attestation), max_bytes=MAX_ATTESTATION_BYTES)
     if not isinstance(evidence, dict):
         raise GateError("attestation must be a JSON object")
     if type(evidence.get("schema_version")) is not int or evidence["schema_version"] != 1:
@@ -75,6 +75,19 @@ def validate(repo, attestation, base_sha, head_sha):
         raise GateError("reviewed tree does not match HEAD")
     if git(repo, "status", "--porcelain=v1", "--untracked-files=all", "--ignore-submodules=none"):
         raise GateError("worktree must be clean, including untracked files and submodules")
+    outcome = evidence.get("dispatch_result")
+    if (type(outcome) is not dict or type(outcome.get("exit_code")) is not int
+            or outcome["exit_code"] != 0 or outcome.get("started") is not True):
+        raise GateError("successful dispatcher completion receipt required")
+    receipt_path = evidence.get("dispatch_receipt_path")
+    if type(receipt_path) is not str or not Path(receipt_path).is_absolute():
+        raise GateError("dispatch receipt path required")
+    reject_symlinks(Path(receipt_path))
+    if (load_json(Path(receipt_path)) != outcome
+            or file_hash(Path(receipt_path)) != evidence.get("dispatch_receipt_sha256")
+            or outcome.get("request_sha256") != evidence.get("dispatch_request_sha256")
+            or outcome.get("job_id") != evidence.get("job_id")):
+        raise GateError("dispatcher receipt does not match reviewed job")
     root_value = evidence.get("artifact_root")
     if not isinstance(root_value, str) or not Path(root_value).is_absolute():
         raise GateError("artifact_root must be an absolute path")
@@ -99,7 +112,10 @@ def validate(repo, attestation, base_sha, head_sha):
             raise GateError("artifact path must stay inside artifact_root")
         path = root / relative
         reject_symlinks(path)
-        path = path.resolve(strict=True)
+        try:
+            path = path.resolve(strict=True)
+        except FileNotFoundError as exc:
+            raise GateError("missing artifact: " + name) from exc
         if not path.is_relative_to(root) or not path.is_file() or path in seen:
             raise GateError("artifact must be a unique regular file inside artifact_root")
         seen.add(path)
@@ -150,7 +166,8 @@ def validate(repo, attestation, base_sha, head_sha):
     ):
         raise GateError("repository changed while validating evidence")
     return {"status": "STATIC_REVIEW_VERIFIED", "repo": str(repo), "base_sha": base_sha,
-            "head_sha": head_sha, "artifacts_verified": len(seen), "published": False}
+            "head_sha": head_sha, "artifacts_verified": len(seen), "published": False,
+            "version": evidence.get("version")}
 
 
 def main(argv=None):
@@ -165,11 +182,13 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if args.action == "plan" and (not args.sku or not args.version):
         parser.error("plan requires --sku and --version")
-    if args.version and not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.]+)?", args.version):
+    if args.version and not RELEASE_VERSION.fullmatch(args.version):
         parser.error("invalid --version")
     try:
         result = validate(args.repo, args.attestation, args.base_sha, args.head_sha)
         if args.action == "plan":
+            if result.get("version") is not None and result["version"] != args.version:
+                raise GateError("packaging version differs from reviewed release version")
             script = Path(result["repo"]) / "scripts/release-app.sh"
             if not script.is_file():
                 raise GateError("existing release-app.sh is missing")

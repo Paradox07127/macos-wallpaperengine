@@ -26,7 +26,11 @@ def main(argv=None):
     parser = argparse.ArgumentParser(allow_abbrev=False)
     parser.add_argument('--config', required=True)
     args = parser.parse_args(argv)
-    cfg = github_bridge.load_config(args.config)
+    try:
+        cfg = github_bridge.load_config(args.config)
+    except (github_bridge.BridgeError, ValueError, KeyError, TypeError, OSError) as exc:
+        print(f'Bridge configuration rejected: {type(exc).__name__}', file=sys.stderr)
+        return 1
     enabled = cfg.get('enabled', False)
     if type(enabled) is not bool:
         print('Invalid enabled setting: expected a JSON boolean', file=sys.stderr)

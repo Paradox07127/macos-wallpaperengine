@@ -46,7 +46,7 @@ class FakeCommands:
         if argv[:3] == ["issue", "comment", "list"]:
             return [] if self.hide_comments else copy.deepcopy(self.comments)
         if argv[:3] == ["issue", "comment", "add"]:
-            self.comments.append({"id": "comment-id", "content": body})
+            self.comments.append({"id": "comment-id", "content": body, "author_type": "member", "author_id": "trusted-actor"})
             if self.lose_comment_ack:
                 self.lose_comment_ack = False
                 raise executor.bridge.BridgeError("Response lost after comment was written")
@@ -67,11 +67,13 @@ class ExecutorTests(unittest.TestCase):
             "repository_path": str(self.root / "source"), "target_branch": "main",
             "jobs_dir": str(self.root / "jobs"), "review_state_dir": str(self.root / "reviews"),
             "review_models": ["codex", "grok"],
-            "codex_home": str(self.root / 'codex'),
+            "codex_home": str(self.root / 'codex'), "state_path": str(self.root / "state.json"),
+            "bridge_actor_id": "trusted-actor",
         }
         Path(self.cfg["repository_path"]).mkdir()
         self.head, self.base = "a" * 40, "b" * 40
-        key = "|".join([self.cfg["repository"], self.head, self.base, "1", "pr", "7", ""])
+        key = "|".join([self.cfg["repository"], self.head, self.base, "1", "pr", "7", "",
+                        executor.bridge.policy_fingerprint(self.cfg)])
         self.job_id = "pr-7-" + executor.bridge.digest(key)[:24]
         self.job_dir = Path(self.cfg["jobs_dir"]) / self.job_id
         self.job_dir.mkdir(parents=True)
@@ -80,6 +82,8 @@ class ExecutorTests(unittest.TestCase):
             "repository_path": self.cfg["repository_path"], "policy_version": "1", "kind": "pr",
             "pr_number": 7, "head_sha": self.head, "base_sha": self.base,
             "multica_issue_id": "internal-issue-id",
+            "policy_fingerprint": executor.bridge.policy_fingerprint(self.cfg),
+            "review_policy": executor.bridge.effective_policy(self.cfg),
         }
         self.write_request()
         self.review_dir = Path(self.cfg["review_state_dir"]) / self.job_id
@@ -88,8 +92,8 @@ class ExecutorTests(unittest.TestCase):
             "schema_version": 1, "job_id": self.job_id, "kind": "pr",
             "repo": str(self.review_dir / "frozen"), "source_repo": self.cfg["repository_path"],
             "head_sha": self.head, "base_sha": self.base,
-            "policy": {"version": executor.runner.POLICY_VERSION, "models": ["codex", "grok"]},
-            "provenance": {"mmrun_home": str(self.root / 'mmruns')},
+            "policy": executor.runner.review_policy("pr", ["codex", "grok"]),
+            "provenance": {"mmrun_home": str(self.root / 'mmruns'), "mmrun_kind": "compat"},
         }
         self.write_manifest()
         self.pr = {"state": "open", "draft": False,
@@ -121,7 +125,8 @@ class ExecutorTests(unittest.TestCase):
         self.assertTrue(self.commands.comments[0]['content'].startswith('/note\n'))
         self.assertEqual(len(self.commands.updates), 1)
         self.assertIn("in_review", self.commands.updates[0])
-        self.collector.assert_called_once_with(self.review_dir)
+        self.assertEqual(self.collector.call_count, 2)
+        self.collector.assert_called_with(self.review_dir)
 
     def test_new_head_or_base_never_marks_old_sha_success(self):
         for field in ("head", "base"):
@@ -359,7 +364,7 @@ class ExecutorTests(unittest.TestCase):
         self.collector.return_value = {'verdict': 'FAILED', 'reasons': ['evidence changed']}
         self.assertEqual(self.publish()['state'], 'failure')
         self.assertEqual(self.commands.statuses[-1][1]['state'], 'failure')
-        self.assertEqual(len(self.commands.comments), 1)
+        self.assertEqual(len(self.commands.comments), 2)
 
     def test_target_changes_during_status_post_restore_pending(self):
         def change_base(payload):
@@ -425,6 +430,8 @@ class ExecutorTests(unittest.TestCase):
         self.assertFalse((self.job_dir / 'execution.json').exists())
 
     def test_explicit_retry_preserves_old_evidence_and_publishes_new_attempt(self):
+        self.enterContext(patch.object(executor.runner, "require_quiescent"))
+        self.enterContext(patch.object(executor, "no_active_controller"))
         old_frozen = self.review_dir / 'frozen'
         old_frozen.mkdir()
         (old_frozen / 'source.txt').write_text('old immutable review input')
@@ -547,6 +554,8 @@ class ExecutorTests(unittest.TestCase):
         self.assertFalse((self.job_dir / 'attempt.json').exists())
 
     def test_failed_preparation_requires_explicit_retry_and_keeps_each_attempt(self):
+        self.enterContext(patch.object(executor.runner, "require_quiescent"))
+        self.enterContext(patch.object(executor, "no_active_controller"))
         (self.review_dir / 'manifest.json').unlink()
         old_start = {'job_id': self.job_id, 'started_at': 'first'}
         old_result = {'job_id': self.job_id, 'verdict': 'FAILED', 'reasons': ['origin failed']}
@@ -589,6 +598,8 @@ class ExecutorTests(unittest.TestCase):
         self.collector.assert_not_called()
 
     def test_retry_pending_write_failure_is_persisted_without_launch(self):
+        self.enterContext(patch.object(executor.runner, "require_quiescent"))
+        self.enterContext(patch.object(executor, "no_active_controller"))
         self.collector.return_value = {'verdict': 'NEEDS_REVIEW', 'reasons': []}
         read = self.commands.gh
         def broken(endpoint, payload=None):
@@ -622,6 +633,220 @@ class ExecutorTests(unittest.TestCase):
             code = executor.main(['--config', 'fixture', 'retry', '--job-id', self.job_id])
         self.assertEqual(code, 2)
         retry.assert_called_once_with(self.cfg, self.job_id)
+
+    def test_unchanged_remote_pass_revalidates_and_revises_comment(self):
+        self.publish()
+        old_body = self.commands.comments[0]['content']
+        self.collector.return_value = {'verdict': 'FAILED', 'reasons': ['evidence changed']}
+        self.assertEqual(self.publish()['state'], 'failure')
+        self.assertEqual(self.collector.call_count, 2)
+        self.assertEqual(len(self.commands.comments), 2)
+        self.assertNotEqual(old_body, self.commands.comments[-1]['content'])
+        self.assertIn('supersedes earlier results', self.commands.comments[-1]['content'])
+        self.assertNotIn(str(self.root), self.commands.comments[-1]['content'])
+
+    def test_corrupt_manifest_revokes_previously_published_success(self):
+        self.publish()
+        self.manifest['head_sha'] = 'c' * 40
+        self.write_manifest()
+        self.assertEqual(self.publish()['state'], 'failure')
+        self.assertEqual(self.commands.statuses[-1][1]['state'], 'failure')
+        self.assertEqual(len(self.commands.comments), 2)
+
+    def test_status_ack_lost_after_write_and_target_change_is_reconciled(self):
+        original = self.commands.gh
+        def gh(endpoint, payload=None):
+            result = original(endpoint, payload)
+            if payload and payload['state'] == 'success':
+                self.commands.pr['draft'] = True
+                raise executor.bridge.BridgeError('response lost')
+            return result
+        with patch.object(self.commands, 'gh', side_effect=gh):
+            self.assertEqual(self.publish()['state'], 'superseded')
+        self.assertEqual(self.commands.statuses[-1][1]['state'], 'pending')
+        intent = json.loads((self.job_dir / 'publish-status-intent.json').read_text())
+        self.assertEqual(intent['state'], 'revoked')
+        self.assertEqual(self.commands.comments, [])
+
+    def test_completed_success_is_revoked_when_same_head_target_changes(self):
+        self.publish()
+        self.commands.pr['base']['sha'] = 'c' * 40
+        self.assertEqual(self.publish()['state'], 'superseded')
+        self.assertEqual(self.commands.statuses[-1][1]['state'], 'pending')
+        self.assertEqual(len(self.commands.comments), 1)
+
+    def test_target_change_during_revalidation_revokes_matching_receipt(self):
+        self.publish()
+        def changed(directory):
+            self.commands.pr['draft'] = True
+            return {'verdict': 'PASS', 'reasons': [], 'head_sha': self.head}
+        self.collector.side_effect = changed
+        self.assertEqual(self.publish()['state'], 'superseded')
+        self.assertEqual(self.commands.statuses[-1][1]['state'], 'pending')
+        self.assertEqual(len(self.commands.comments), 1)
+
+    def test_unknown_status_intent_survives_crash_and_revokes_on_next_tick(self):
+        original = self.commands.gh
+        def gh(endpoint, payload=None):
+            if payload:
+                original(endpoint, payload)
+                raise KeyboardInterrupt('crash after accepted write')
+            return original(endpoint)
+        with patch.object(self.commands, 'gh', side_effect=gh), self.assertRaises(KeyboardInterrupt):
+            self.publish()
+        self.assertEqual(json.loads((self.job_dir / 'publish-status-intent.json').read_text())['state'], 'sending')
+        self.commands.pr['draft'] = True
+        self.assertEqual(self.publish()['state'], 'superseded')
+        self.assertEqual(self.commands.statuses[-1][1]['state'], 'pending')
+
+    def test_old_rollback_cannot_overwrite_newer_generation(self):
+        newer = dict(self.req, base_sha='c' * 40)
+        newer['job_id'] = executor.bridge.job_id_for(newer)
+        def replaced(payload):
+            if payload['state'] == 'success' and payload['description'].startswith(self.job_id + ':'):
+                self.commands.pr['base']['sha'] = 'c' * 40
+                self.commands.statuses.append(('new-controller', executor.status_payload(newer, 'PASS')))
+        self.commands.after_status = replaced
+        self.assertEqual(self.publish()['state'], 'superseded')
+        self.assertEqual(len(self.commands.statuses), 2)
+        self.assertTrue(self.commands.statuses[-1][1]['description'].startswith(newer['job_id'] + ':'))
+
+    def test_publication_and_intake_share_context_lock_across_job_ids(self):
+        newer = dict(self.req, job_id='pr-7-' + 'f' * 24, base_sha='c' * 40)
+        with executor.bridge.status_lock(self.cfg, newer) as locked:
+            self.assertTrue(locked)
+            self.assertEqual(self.publish()['state'], 'busy')
+        self.collector.assert_not_called()
+        self.assertEqual(self.commands.statuses, [])
+
+    def test_untrusted_exact_comment_cannot_reconcile_uncertain_write(self):
+        self.commands.lose_comment_ack = True
+        with self.assertRaises(executor.bridge.BridgeError):
+            self.publish()
+        self.commands.comments[0]['author_id'] = 'attacker'
+        self.assertEqual(self.publish()['state'], 'awaiting_comment_reconciliation')
+        self.assertEqual(len(self.commands.comments), 1)
+        self.commands.comments[0]['author_id'] = 'trusted-actor'
+        self.commands.comments[0]['content'] += '\nquoted by another discussion'
+        self.assertEqual(self.publish()['state'], 'awaiting_comment_reconciliation')
+        self.assertFalse((self.job_dir / 'published.json').exists())
+
+    def test_effective_policy_and_legacy_history_retire_without_collecting(self):
+        self.cfg['review_models'] = ['codex']
+        self.assertEqual(self.publish()['state'], 'retired')
+        with self.assertRaises(executor.JobError):
+            executor.run_job(self.cfg, self.job_id)
+        self.cfg['review_models'] = ['codex', 'grok']
+        self.req.pop('policy_fingerprint')
+        self.req.pop('review_policy')
+        legacy_key = '|'.join([self.cfg['repository'], self.head, self.base, '1', 'pr', '7', ''])
+        legacy_id = 'pr-7-' + executor.bridge.digest(legacy_key)[:24]
+        self.req['job_id'] = legacy_id
+        directory = Path(self.cfg['jobs_dir']) / legacy_id
+        directory.mkdir()
+        (directory / 'request.json').write_text(json.dumps(self.req))
+        self.assertEqual(executor.publish_result(self.cfg, legacy_id, self.commands)['state'], 'retired')
+        self.collector.assert_not_called()
+
+    def test_policy_fingerprint_tampering_is_rejected(self):
+        self.req['review_policy']['runner']['static_only'] = False
+        self.write_request()
+        with self.assertRaises(executor.JobError):
+            self.publish()
+        self.req['policy_fingerprint'] = executor.bridge.digest(json.dumps(
+            self.req['review_policy'], sort_keys=True, separators=(',', ':')))
+        self.write_request()
+        with self.assertRaises(executor.JobError):
+            self.publish()
+        self.assertEqual(self.commands.statuses, [])
+
+    def test_orphan_recovery_preserves_evidence_and_never_starts_models(self):
+        (self.review_dir / 'manifest.json').unlink()
+        start = {'job_id': self.job_id, 'runner_job_id': self.job_id, 'controller_pid': 99999}
+        executor.atomic(self.job_dir / 'execution.json', start)
+        with patch.object(executor, 'no_active_controller') as inspect, \
+                patch.object(executor.runner, 'require_quiescent') as quiet, \
+                patch.object(executor.subprocess, 'run') as launch:
+            result = executor.recover_job(self.cfg, self.job_id)
+            self.assertEqual(result['verdict'], 'FAILED')
+            inspect.assert_called_once_with(self.job_id)
+            quiet.assert_called_once_with(self.review_dir, models=['codex', 'grok'])
+            launch.assert_not_called()
+            with patch.object(executor.bridge, 'Commands', return_value=self.commands):
+                self.assertEqual(executor.run_job(self.cfg, self.job_id)['verdict'], 'FAILED')
+        self.assertEqual(json.loads((self.job_dir / 'execution.json').read_text()), start)
+        self.assertFalse((self.job_dir / 'execution-result.json').exists())
+        self.assertEqual(self.commands.statuses, [])
+
+    def test_missing_retry_selector_requires_explicit_identity_recovery(self):
+        retry_id = self.job_id + '-retry-' + '1' * 12
+        snapshot = {'schema_version': 1, 'job_id': self.job_id, 'runner_job_id': retry_id}
+        executor.atomic(self.job_dir / 'attempts' / retry_id / 'attempt.json', snapshot)
+        with self.assertRaises(executor.JobError):
+            executor.active_attempt(self.cfg, self.req)
+        with patch.object(executor, 'no_active_controller'), patch.object(executor, 'require_quiescent'):
+            recovered = executor.recover_job(self.cfg, self.job_id, retry_id)
+        self.assertEqual(recovered['runner_job_id'], retry_id)
+        self.assertEqual(recovered['verdict'], 'FAILED')
+        self.assertEqual(executor.active_attempt(self.cfg, self.req)[0], retry_id)
+        self.assertTrue((self.review_dir / 'manifest.json').exists())
+
+    def test_orphan_process_identity_unknown_or_live_refuses_recovery(self):
+        (self.review_dir / 'manifest.json').unlink()
+        executor.atomic(self.job_dir / 'execution.json', {'job_id': self.job_id})
+        cases = [subprocess.CompletedProcess([], 1, stdout=''),
+                 subprocess.CompletedProcess([], 0, stdout='99999 python review_runner.py run --job-id ' + self.job_id)]
+        for response in cases:
+            with self.subTest(response=response.returncode), \
+                    patch.object(executor.subprocess, 'run', return_value=response), self.assertRaises(executor.JobError):
+                executor.recover_job(self.cfg, self.job_id)
+        self.assertFalse((self.job_dir / 'recovery.json').exists())
+
+    def test_retry_target_changes_after_selection_records_not_dispatched(self):
+        self.collector.return_value = {'verdict': 'FAILED', 'reasons': []}
+        def draft_after_pending(payload):
+            self.commands.pr['draft'] = True
+        self.commands.after_status = draft_after_pending
+        with patch.object(executor.bridge, 'Commands', return_value=self.commands), \
+                patch.object(executor, 'require_quiescent'), patch.object(executor.subprocess, 'run') as launch:
+            result = executor.retry_job(self.cfg, self.job_id)
+        self.assertEqual(result['verdict'], 'SUPERSEDED')
+        self.assertEqual(executor.exit_code(result), 4)
+        _, records = executor.active_attempt(self.cfg, self.req)
+        self.assertEqual(json.loads((records / 'execution-result.json').read_text())['verdict'], 'FAILED')
+        launch.assert_not_called()
+
+    def test_canonical_ssh_origins_and_foreign_origin_rejection(self):
+        repository = self.cfg['repository']
+        for value in ('https://github.com/' + repository, 'git@github.com:' + repository + '.git',
+                      'ssh://git@github.com/' + repository + '.git'):
+            self.assertTrue(executor.allowed_origin(value, repository))
+        for value in ('https://github.com.evil/' + repository, 'https://secret@github.com/' + repository,
+                      'ssh://git@elsewhere/' + repository, 'git@github.com:' + repository + '/..',
+                      'https://github.com/' + repository + '?secret=1'):
+            self.assertFalse(executor.allowed_origin(value, repository))
+
+    def test_collection_rotates_before_work_and_honors_batch_bound(self):
+        second = 'pr-8-' + 'e' * 24
+        executor.atomic(Path(self.cfg['jobs_dir']) / second / 'request.json', {})
+        self.cfg['collection_max_jobs'] = 1
+        visited = []
+        def publish(cfg, job_id, commands):
+            cursor = json.loads((self.root / 'executor-collection.json').read_text())
+            self.assertEqual(cursor['last_job_id'], job_id)
+            visited.append(job_id)
+            if len(visited) == 1:
+                raise KeyboardInterrupt('service killed')
+            return {'job_id': job_id, 'state': 'retired'}
+        with patch.object(executor, 'publish_result', side_effect=publish), \
+                patch.object(executor.bridge, 'Commands', return_value=self.commands):
+            with self.assertRaises(KeyboardInterrupt):
+                executor.collect_all(self.cfg)
+            self.assertEqual(len(executor.collect_all(self.cfg)), 1)
+        self.assertEqual(visited, [self.job_id, second])
+        self.cfg['collection_budget_seconds'] = 0
+        self.assertEqual(executor.collect_all(self.cfg), [])
+
 
 
 if __name__ == "__main__":

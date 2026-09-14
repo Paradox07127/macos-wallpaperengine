@@ -12,6 +12,9 @@ import subprocess
 import sys
 import tempfile
 import secrets
+import shlex
+import time
+from urllib.parse import urlsplit
 
 import github_bridge as bridge
 import review_runner as runner
@@ -32,7 +35,14 @@ def atomic(path, value):
         with os.fdopen(fd, 'w') as stream:
             json.dump(value, stream, ensure_ascii=False, indent=2)
             stream.write('\n')
+            stream.flush()
+            os.fsync(stream.fileno())
         os.replace(name, path)
+        directory_fd = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
     finally:
         if os.path.exists(name):
             os.unlink(name)
@@ -65,15 +75,32 @@ def request(cfg, job_id, *, allow_retired=False):
     version = data.get('version')
     if version is not None and not isinstance(version, str):
         raise JobError('Invalid release version')
-    key = '|'.join([cfg['repository'], data['head_sha'], data['base_sha'],
-                    policy, data['kind'], str(data.get('pr_number') or ''),
-                    version or ''])
-    prefix = f"pr-{data['pr_number']}-" if data['kind'] == 'pr' else 'release-'
-    if job_id != prefix + bridge.digest(key)[:24]:
+    if data['kind'] == 'release' and (not isinstance(version, str) or not bridge.RELEASE_VERSION.fullmatch(version)):
+        raise JobError('Release job requires an exact supported version')
+    fingerprint = data.get('policy_fingerprint')
+    if fingerprint is None:
+        # Legacy history is inspectable, never eligible for execution/publication.
+        key = '|'.join([cfg['repository'], data['head_sha'], data['base_sha'],
+                        policy, data['kind'], str(data.get('pr_number') or ''), version or ''])
+        prefix = f"pr-{data['pr_number']}-" if data['kind'] == 'pr' else 'release-'
+        expected_id = prefix + bridge.digest(key)[:24]
+    else:
+        if not isinstance(fingerprint, str) or not re.fullmatch(r'[0-9a-f]{64}', fingerprint):
+            raise JobError('Invalid effective policy fingerprint')
+        if fingerprint != bridge.digest(json.dumps(data.get('review_policy'), sort_keys=True, separators=(',', ':'))):
+            raise JobError('Effective policy object does not match its fingerprint')
+        expected_id = bridge.job_id_for(data)
+    if job_id != expected_id:
         raise JobError('Job ID does not match immutable request fields')
-    if not allow_retired and policy != cfg['policy_version']:
+    if not allow_retired and not current_policy(cfg, data):
         raise JobError('Job policy is no longer current')
     return path.parent, data
+
+
+def current_policy(cfg, req):
+    return (req.get('policy_version') == cfg['policy_version']
+            and req.get('policy_fingerprint') == bridge.policy_fingerprint(cfg, req['kind'])
+            and req.get('review_policy') == bridge.effective_policy(cfg, req['kind']))
 
 
 def current_target(cfg, req, commands):
@@ -97,6 +124,8 @@ def active_attempt(cfg, req):
     job_dir = Path(cfg['jobs_dir']).resolve() / logical
     selector = job_dir / 'attempt.json'
     runner_id = logical
+    if not selector.exists() and not selector.is_symlink() and any((job_dir / 'attempts').glob('*/attempt.json')):
+        raise JobError('Retry history exists but active selector is missing; explicitly recover the selected runner ID')
     if selector.exists() or selector.is_symlink():
         value = runner.load_json(selector)
         if (not isinstance(value, dict) or value.get('schema_version') != 1
@@ -110,6 +139,25 @@ def active_attempt(cfg, req):
     if records.is_symlink() or records.parent.is_symlink():
         raise JobError('Attempt records may not be symlinked')
     return runner_id, records
+
+
+def allowed_origin(value, repository):
+    """Accept canonical GitHub HTTPS/SSH origins, never another host or URL credentials."""
+    if value.startswith('git@github.com:'):
+        name = value[len('git@github.com:'):]
+    else:
+        parsed = urlsplit(value)
+        if parsed.hostname is None or parsed.hostname.lower() != 'github.com' or parsed.query or parsed.fragment:
+            return False
+        if parsed.scheme == 'https' and (parsed.username is not None or parsed.password is not None or parsed.port not in (None, 443)):
+            return False
+        if parsed.scheme == 'ssh' and (parsed.username != 'git' or parsed.password is not None or parsed.port not in (None, 22)):
+            return False
+        if parsed.scheme not in ('https', 'ssh'):
+            return False
+        name = parsed.path.removeprefix('/')
+    name = name.rstrip('/').removesuffix('.git')
+    return bool(re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', name)) and name.lower() == repository.lower()
 
 
 def collect_verified(cfg, req):
@@ -126,8 +174,12 @@ def collect_verified(cfg, req):
         raise JobError('Review belongs to another source repository')
     if manifest.get('policy', {}).get('version') != runner.POLICY_VERSION:
         raise JobError('Review policy mismatch')
-    if manifest.get('policy', {}).get('models') != cfg.get('review_models', ['codex', 'grok']):
-        raise JobError('Required reviewer set changed')
+    if manifest.get('policy') != runner.review_policy(req['kind'], sorted(cfg.get('review_models', ['codex', 'grok']))):
+        raise JobError('Required review policy changed')
+    if manifest.get('provenance', {}).get('mmrun_kind') != cfg.get('mmrun_kind', 'compat'):
+        raise JobError('Review transport identity changed')
+    if req['kind'] == 'release' and manifest.get('version') != req.get('version'):
+        raise JobError('Review release version mismatch')
     # Re-read the actual reports, statuses, and frozen tree. Never trust an agent's PASS string.
     result = runner.collect(directory)
     # The runner owns the protected evidence path. Never point agents to a local
@@ -151,7 +203,8 @@ def summary(result):
 def failed_execution(directory, job_id, runner_job_id=None):
     """A runner failure before manifest creation may fail the check, never pass it."""
     execution_path = directory / 'execution.json'
-    result_path = directory / 'execution-result.json'
+    recovery = directory / 'recovery.json'
+    result_path = recovery if recovery.exists() else directory / 'execution-result.json'
     if not execution_path.exists() or not result_path.exists():
         return None
     execution = runner.load_json(execution_path)
@@ -165,6 +218,7 @@ def failed_execution(directory, job_id, runner_job_id=None):
     if result.get('verdict') != 'FAILED':
         return None  # Even a claimed PASS requires independently collected evidence.
     return {'verdict': 'FAILED', 'job_id': job_id, 'runner_job_id': runner_job_id or job_id,
+            'recovered': result.get('recovered') is True,
             'reasons': ['The local runner failed before creating a review manifest. '
                         'Inspect this job\'s execution-result.json; no review approval exists.']}
 
@@ -178,9 +232,14 @@ def _run_attempt(cfg, req, commands):
     phase = 'target validation'
     try:
         if not current_target(cfg, req, commands):
-            return {'verdict': 'SUPERSEDED', 'job_id': job_id}
+            if runner_id != job_id and not already_started:
+                atomic(directory / 'execution.json', {'job_id': job_id, 'runner_job_id': runner_id,
+                                                      'phase': 'NOT_DISPATCHED', 'controller_pid': os.getpid()})
+                atomic(directory / 'execution-result.json', {'job_id': job_id, 'runner_job_id': runner_id,
+                       'verdict': 'FAILED', 'reasons': ['Target changed before retry dispatch; no models started']})
+            return {'verdict': 'SUPERSEDED', 'job_id': job_id, 'runner_job_id': runner_id}
         phase = 'existing evidence validation'
-        existing = collect_verified(cfg, req)
+        existing = attempt_result(cfg, req)
         if existing is not None:
             return summary(existing)
         previous = failed_execution(directory, job_id, runner_id)
@@ -189,17 +248,19 @@ def _run_attempt(cfg, req, commands):
         if already_started:
             return {'verdict': 'RUNNING_TIMEOUT', 'job_id': job_id, 'runner_job_id': runner_id,
                     'reasons': ['Attempt already started; collect evidence before an explicit retry']}
-        atomic(directory / 'execution.json', {'job_id': job_id, 'runner_job_id': runner_id,
-                                              'started_at': bridge.utcnow()})
+        execution = {'job_id': job_id, 'runner_job_id': runner_id, 'controller_pid': os.getpid(),
+                     'phase': 'PREPARING', 'started_at': bridge.utcnow()}
+        atomic(directory / 'execution.json', execution)
         source = Path(cfg['repository_path']).resolve()
         phase = 'origin validation'
         origin = runner.git(source, 'remote', 'get-url', 'origin')
-        if origin.rstrip('/').removesuffix('.git') != 'https://github.com/' + cfg['repository']:
+        if not allowed_origin(origin, cfg['repository']):
             raise JobError('Source repository origin is not the configured GitHub repository')
         env = os.environ.copy()
         env['GIT_LFS_SKIP_SMUDGE'] = '1'
+        env['GIT_TERMINAL_PROMPT'] = '0'
         phase = 'fetch'
-        fetched = subprocess.run(['git', '-C', str(source), 'fetch', '--filter=blob:none', 'origin',
+        fetched = subprocess.run(['git', '-C', str(source), 'fetch', '-q', '--filter=blob:none', 'origin',
                                   req['base_sha'], req['head_sha']], env=env,
                                  stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=180)
         if fetched.returncode:
@@ -209,10 +270,14 @@ def _run_attempt(cfg, req, commands):
                 '--kind', req['kind'], '--job-id', runner_id, '--state-dir', cfg['review_state_dir'],
                 '--models', ','.join(cfg.get('review_models', ['codex', 'grok'])),
                 '--timeout', str(cfg.get('review_timeout_seconds', 3600)),
-                '--codex-home', cfg['codex_home']]
+                '--codex-home', cfg['codex_home'], '--mmrun-kind', cfg.get('mmrun_kind', 'compat')]
+        if req['kind'] == 'release':
+            argv.extend(['--version', req['version']])
         if cfg.get('mmrun_path'):
             argv.extend(['--mmrun', cfg['mmrun_path']])
         phase = 'runner process'
+        execution['phase'] = 'RUNNER_LAUNCH_INTENT'
+        atomic(directory / 'execution.json', execution)
         completed = subprocess.run(argv, env=env, text=True, capture_output=True)
         phase = 'runner result validation'
         result = json.loads(completed.stdout)
@@ -252,42 +317,94 @@ def run_job(cfg, job_id):
 
 
 def require_quiescent(cfg, req, runner_id):
-    """A FAILED collector result can coexist with another still-running model."""
+    """Delegate session/dispatcher recovery to the runner's authoritative journal."""
     directory = Path(cfg['review_state_dir']) / runner_id
     if not directory.exists():
-        return  # Preparation failed before a runner directory existed.
+        return
     with runner.job_lock(directory) as locked:
         if not locked:
             raise JobError('Cannot retry while preparation or collection is active')
-        manifest_path = directory / 'manifest.json'
-        if not manifest_path.exists():
-            return
-        manifest = runner.load_json(manifest_path)
-        if runner.process_alive(manifest.get('dispatch_pid')):
-            raise JobError('Cannot retry while the previous dispatcher is alive')
-        run_id = manifest.get('mmrun_run_id')
-        if not run_id:
-            return
-        if not isinstance(run_id, str) or not runner.JOB.fullmatch(run_id):
-            raise JobError('Cannot establish previous worker identity')
-        root = Path(manifest['provenance']['mmrun_home']) / run_id
-        if root.is_symlink() or not root.is_dir():
-            raise JobError('Cannot establish previous model liveness')
-        for model in cfg.get('review_models', ['codex', 'grok']):
-            status = root / (model + '.status')
-            if status.is_symlink() or not status.is_file() or status.stat().st_size > 4096:
-                raise JobError('Cannot establish previous model status')
-            if status.read_text().strip() == 'RUNNING':
-                raise JobError('Cannot retry while a previous model is RUNNING')
-            pid_file = root / (model + '.pid')
-            if pid_file.exists() or pid_file.is_symlink():
-                if pid_file.is_symlink() or not pid_file.is_file() or pid_file.stat().st_size > 4096:
-                    raise JobError('Cannot establish previous model process identity')
-                value = pid_file.read_text().strip()
-                if not value.isdigit():
-                    raise JobError('Invalid previous worker PID')
-                if runner.process_alive(int(value)):
-                    raise JobError('Cannot retry while a previous model process is alive')
+        try:
+            runner.require_quiescent(directory, models=cfg.get('review_models', ['codex', 'grok']))
+        except runner.ReviewError as exc:
+            raise JobError('Runner cannot prove this attempt is quiescent') from exc
+
+
+def no_active_controller(runner_id):
+    """Prove no matching controller survived a crash; never kill any process."""
+    try:
+        table = subprocess.run(['/bin/ps', '-axo', 'pid=,command='], text=True,
+                               capture_output=True, timeout=20, check=False)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise JobError('Cannot inspect orphan controller identity') from exc
+    if table.returncode:
+        raise JobError('Cannot inspect orphan controller identity')
+    for line in table.stdout.splitlines():
+        fields = line.strip().split(None, 1)
+        if len(fields) != 2 or not fields[0].isdigit() or int(fields[0]) == os.getpid():
+            continue
+        if runner_id not in fields[1]:
+            continue
+        try:
+            args = shlex.split(fields[1])
+        except ValueError:
+            raise JobError('Cannot parse a possible orphan controller command')
+        if runner_id in args or 'multica-' + runner_id in args:
+            raise JobError('A controller for this attempt is still alive')
+
+
+def attempt_result(cfg, req):
+    result = collect_verified(cfg, req)
+    runner_id, records = active_attempt(cfg, req)
+    failed = failed_execution(records, req['job_id'], runner_id)
+    if result is None or (result.get('verdict') in ('RUNNING', 'RUNNING_TIMEOUT')
+                          and failed is not None and failed.get('recovered')):
+        return failed or result
+    return result
+
+
+def recover_job(cfg, job_id, selected_runner_id=None):
+    """Record a proven orphan as FAILED; this action never starts models."""
+    directory, req = request(cfg, job_id)
+    with (directory / 'executor.lock').open('a') as execute_lock, (directory / 'publish.lock').open('a') as publish_lock:
+        for lock in (execute_lock, publish_lock):
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                raise JobError('Cannot recover while execution or publication is active')
+        if selected_runner_id is not None:
+            if not re.fullmatch(re.escape(job_id) + r'-retry-[0-9a-f]{12}', selected_runner_id):
+                raise JobError('Selected recovery attempt does not belong to this job')
+            selector = directory / 'attempt.json'
+            if selector.exists() or selector.is_symlink():
+                if active_attempt(cfg, req)[0] != selected_runner_id:
+                    raise JobError('Cannot replace an existing active attempt selector')
+            else:
+                # The operator chooses the missing selector explicitly. Do not infer
+                # the newest or most favorable result from historical attempts.
+                snapshot = runner.load_json(directory / 'attempts' / selected_runner_id / 'attempt.json')
+                if not isinstance(snapshot, dict) or snapshot.get('job_id') != job_id or snapshot.get('runner_job_id') != selected_runner_id:
+                    raise JobError('Preserved attempt identity mismatch')
+                for identifier in [job_id] + [p.parent.name for p in (directory / 'attempts').glob('*/attempt.json')]:
+                    no_active_controller(identifier)
+                    require_quiescent(cfg, req, identifier)
+                atomic(selector, snapshot)
+        runner_id, records = active_attempt(cfg, req)
+        existing = attempt_result(cfg, req)
+        if existing is not None and existing.get('verdict') in ('PASS', 'FAILED', 'NEEDS_REVIEW'):
+            return summary(existing)
+        if not (records / 'execution.json').exists() and runner_id == job_id:
+            raise JobError('No started attempt exists to recover')
+        no_active_controller(runner_id)
+        require_quiescent(cfg, req, runner_id)
+        if not (records / 'execution.json').exists():
+            atomic(records / 'execution.json', {'job_id': job_id, 'runner_job_id': runner_id,
+                                               'phase': 'NOT_DISPATCHED', 'recovered_at': bridge.utcnow()})
+        result = {'job_id': job_id, 'runner_job_id': runner_id, 'verdict': 'FAILED',
+                  'recovered': True, 'recovered_at': bridge.utcnow(),
+                  'reasons': ['Orphan recovery proved no active controllers or workers; explicit retry required']}
+        atomic(records / 'recovery.json', result)
+        return result
 
 
 def retry_job(cfg, job_id):
@@ -303,9 +420,11 @@ def retry_job(cfg, job_id):
         if not current_target(cfg, req, commands):
             raise JobError('Cannot retry a superseded target')
         prior_id, prior_records = active_attempt(cfg, req)
-        prior = collect_verified(cfg, req) or failed_execution(prior_records, job_id, prior_id)
+        prior = attempt_result(cfg, req)
         if prior is None or prior.get('verdict') not in ('FAILED', 'NEEDS_REVIEW'):
             raise JobError('Explicit retry requires a completed FAILED or NEEDS_REVIEW attempt')
+        if not (Path(cfg['review_state_dir']) / prior_id).exists():
+            no_active_controller(prior_id)
         require_quiescent(cfg, req, prior_id)
         runner_id = job_id + '-retry-' + secrets.token_hex(6)
         if len(runner_id) > 96:
@@ -323,10 +442,13 @@ def retry_job(cfg, job_id):
         atomic(records / 'attempt.json', selection)
         atomic(directory / 'attempt.json', selection)
         try:
-            commands.gh(f"repos/{cfg['repository']}/statuses/{req['head_sha']}",
-                        {'state': 'pending', 'context': bridge.status_context(req),
-                         'description': runner_id + ': explicit review retry requested'})
-        except (bridge.BridgeError, OSError, ValueError, TypeError, subprocess.SubprocessError) as exc:
+            with bridge.status_lock(cfg, req) as locked:
+                if not locked:
+                    raise JobError('Status context is busy; retry was not dispatched')
+                commands.gh(f"repos/{cfg['repository']}/statuses/{req['head_sha']}",
+                            {'state': 'pending', 'context': bridge.status_context(req),
+                             'description': runner_id + ': explicit review retry requested'})
+        except (JobError, bridge.BridgeError, OSError, ValueError, TypeError, subprocess.SubprocessError) as exc:
             result = {'job_id': job_id, 'runner_job_id': runner_id, 'verdict': 'FAILED',
                       'reasons': ['Retry pending write failed: ' + type(exc).__name__]}
             atomic(records / 'execution.json', {'job_id': job_id, 'runner_job_id': runner_id,
@@ -336,28 +458,152 @@ def retry_job(cfg, job_id):
         return _run_attempt(cfg, req, commands)
 
 
-def status_payload(req, verdict, runner_id=None):
+def status_payload(req, verdict, runner_id=None, revision=''):
     state = 'success' if verdict == 'PASS' else 'failure'
-    text = ('Static review passed; CI and maintainer approval required'
-            if state == 'success' else 'Static review needs attention; inspect Multica')
+    text = ('Static review passed; CI/maintainer approval required'
+            if state == 'success' else 'Static review needs attention')
     return {'state': state, 'context': bridge.status_context(req),
-            'description': ((runner_id or req['job_id']) + ': ' + text)[:140]}
+            'description': ((runner_id or req['job_id']) + ': ' + revision[:12] + ' ' + text)[:140]}
 
 
-def remote_status_matches(cfg, req, payload, commands):
+def remote_status(cfg, req, commands):
     current = commands.gh(f"repos/{cfg['repository']}/commits/{req['head_sha']}/status")
     if not isinstance(current, dict) or not isinstance(current.get('statuses'), list):
         raise JobError('Unexpected combined commit status response')
-    for item in current['statuses']:
-        if item.get('context') == payload['context']:
-            return all(item.get(key) == payload[key] for key in ('state', 'description'))
-    return False
+    return next((row for row in current['statuses']
+                 if isinstance(row, dict) and row.get('context') == bridge.status_context(req)), None)
+
+
+def remote_status_matches(cfg, req, payload, commands):
+    current = remote_status(cfg, req, commands)
+    return current is not None and all(current.get(key) == payload[key]
+                                       for key in ('state', 'description', 'context'))
+
+
+def revoke_owned_status(cfg, req, runner_id, commands):
+    # Call only while holding the shared context lock. Never revoke another
+    # generation's newer result when an older controller resumes after a crash.
+    latest = remote_status(cfg, req, commands)
+    if latest and str(latest.get('description', '')).startswith(runner_id + ':'):
+        commands.gh(f"repos/{cfg['repository']}/statuses/{req['head_sha']}",
+                    {'state': 'pending', 'context': bridge.status_context(req),
+                     'description': runner_id + ': target verification incomplete; result withheld'})
+
+
+def result_revision(req, runner_id, result):
+    value = {'runner_job_id': runner_id, 'head': req['head_sha'], 'base': req['base_sha'],
+             'policy': req['policy_fingerprint'],
+             **{key: result.get(key) for key in ('verdict', 'reasons', 'artifacts', 'reports', 'tree_sha')}}
+    return bridge.digest(json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=False))
+
+
+def publish_locked(cfg, req, commands, records, runner_id):
+    job_id = req['job_id']
+    receipt = records / 'published.json'
+    status_intent = records / 'publish-status-intent.json'
+    previous = runner.load_json(receipt) if receipt.exists() else None
+    intent = runner.load_json(status_intent) if status_intent.exists() else None
+    for record in (previous, intent):
+        if record is not None and (not isinstance(record, dict) or record.get('job_id') != job_id
+                                   or record.get('head_sha') != req['head_sha']
+                                   or record.get('runner_job_id') != runner_id):
+            raise JobError('Invalid publication identity')
+    try:
+        target_current = current_target(cfg, req, commands)
+    except (bridge.BridgeError, JobError, OSError, ValueError, TypeError, subprocess.SubprocessError):
+        if intent and intent.get('state') != 'complete':
+            revoke_owned_status(cfg, req, runner_id, commands)
+        raise
+    if not target_current:
+        if previous is not None or intent is not None:
+            revoke_owned_status(cfg, req, runner_id, commands)
+            if intent is not None:
+                atomic(status_intent, dict(intent, state='revoked'))
+        return {'job_id': job_id, 'state': 'superseded'}
+    # A matching remote status never substitutes for fresh evidence validation.
+    try:
+        result = attempt_result(cfg, req)
+    except (JobError, runner.ReviewError, OSError, ValueError, TypeError, KeyError):
+        if previous is None and intent is None:
+            raise
+        result = {'verdict': 'FAILED', 'reasons': ['Previously published evidence failed validation']}
+    if result is None or result.get('verdict') in ('RUNNING', 'RUNNING_TIMEOUT'):
+        if previous is not None or intent is not None:
+            revoke_owned_status(cfg, req, runner_id, commands)
+        return {'job_id': job_id, 'state': 'pending'}
+    verdict = result.get('verdict')
+    if verdict not in ('PASS', 'NEEDS_REVIEW', 'FAILED'):
+        raise JobError('Unsupported publication verdict')
+    revision = result_revision(req, runner_id, result)
+    payload = status_payload(req, verdict, runner_id, revision)
+    matches = remote_status_matches(cfg, req, payload, commands)
+    if previous and previous.get('revision') == revision and matches:
+        if not current_target(cfg, req, commands):
+            revoke_owned_status(cfg, req, runner_id, commands)
+            if intent is not None:
+                atomic(status_intent, dict(intent, state='revoked'))
+            return {'job_id': job_id, 'state': 'superseded'}
+        if intent and intent.get('state') != 'complete':
+            atomic(status_intent, dict(intent, state='complete'))
+        return {'job_id': job_id, 'runner_job_id': runner_id, 'state': 'already_published'}
+    journal = {'job_id': job_id, 'runner_job_id': runner_id, 'head_sha': req['head_sha'],
+               'revision': revision, 'payload': payload, 'state': 'sending'}
+    atomic(status_intent, journal)
+    write_error = None
+    if not matches:
+        try:
+            commands.gh(f"repos/{cfg['repository']}/statuses/{req['head_sha']}", payload)
+        except (bridge.BridgeError, OSError, ValueError, TypeError, subprocess.SubprocessError) as exc:
+            # The server may have accepted this POST. Keep intent until an
+            # authoritative read resolves it; never assume a transport error means no write.
+            write_error = exc
+    try:
+        still_current = current_target(cfg, req, commands)
+    except (bridge.BridgeError, JobError, OSError, ValueError, TypeError, subprocess.SubprocessError) as exc:
+        revoke_owned_status(cfg, req, runner_id, commands)
+        raise JobError('Target verification after status write failed; owned result withheld') from exc
+    if not still_current:
+        revoke_owned_status(cfg, req, runner_id, commands)
+        atomic(status_intent, dict(journal, state='revoked'))
+        return {'job_id': job_id, 'state': 'superseded'}
+    if not remote_status_matches(cfg, req, payload, commands):
+        raise JobError('Status write is unconfirmed; durable intent retained') from write_error
+    atomic(status_intent, dict(journal, state='verified'))
+    marker = 'multica-result-' + runner_id + '-' + revision[:24]
+    # /note prevents the cloud task's default human-comment fallback dispatch.
+    # Evidence paths are local; publishing them discloses machine directory names.
+    body = (f'/note\n{marker}\n\nStatic review result: {verdict}\n'
+            f"Head: {req['head_sha']}\nBase: {req['base_sha']}\nAttempt: {runner_id}\n"
+            f'Result revision: {revision} (supersedes earlier results for this attempt).\n'
+            'This is a static-review result only. Build/runtime/release checks and maintainer approval remain required.')
+    intent_path = records / 'comment-intents' / (revision + '.json')
+    comment_intent = runner.load_json(intent_path) if intent_path.exists() else None
+    identity = {'job_id': job_id, 'runner_job_id': runner_id, 'issue_id': req['multica_issue_id'],
+                'revision': revision, 'body_sha256': bridge.digest(body)}
+    if comment_intent is not None and (not isinstance(comment_intent, dict)
+                                      or any(comment_intent.get(key) != value for key, value in identity.items())):
+        raise JobError('Publication comment intent identity mismatch')
+    comments = bridge.rows(commands.multica(['issue', 'comment', 'list', req['multica_issue_id'], '--output', 'json']))
+    found = any(bridge.trusted_comment(cfg, item, body) for item in comments)
+    if found:
+        atomic(intent_path, dict(identity, state='confirmed'))
+    elif comment_intent is not None:
+        if comment_intent.get('state') != 'confirmed':
+            return {'job_id': job_id, 'state': 'awaiting_comment_reconciliation'}
+    else:
+        atomic(intent_path, dict(identity, state='sending', at=bridge.utcnow()))
+        response = commands.multica(['issue', 'comment', 'add', req['multica_issue_id'], '--content-stdin', '--output', 'json'], body)
+        atomic(intent_path, dict(identity, state='confirmed', comment_id=response.get('id') if isinstance(response, dict) else None))
+    commands.multica(['issue', 'update', req['multica_issue_id'], '--status', 'in_review', '--no-start', '--output', 'json'])
+    atomic(receipt, {'job_id': job_id, 'runner_job_id': runner_id, 'state': payload['state'], 'verdict': verdict,
+                     'revision': revision, 'head_sha': req['head_sha'], 'context': payload['context'], 'at': bridge.utcnow()})
+    atomic(status_intent, dict(journal, state='complete'))
+    return {'job_id': job_id, 'runner_job_id': runner_id, 'state': payload['state'], 'verdict': verdict}
 
 
 def publish_result(cfg, job_id, commands=None):
     directory, req = request(cfg, job_id, allow_retired=True)
-    if req['policy_version'] != cfg['policy_version']:
-        # Old jobs remain inspectable but cannot execute or publish under a new policy.
+    if not current_policy(cfg, req):
         return {'job_id': job_id, 'state': 'retired'}
     commands = commands or bridge.Commands(cfg)
     with (directory / 'publish.lock').open('a') as lock:
@@ -369,79 +615,31 @@ def publish_result(cfg, job_id, commands=None):
             return {'job_id': job_id, 'state': 'awaiting_issue_mapping'}
         runner_id, records = active_attempt(cfg, req)
         records.mkdir(parents=True, exist_ok=True, mode=0o700)
-        receipt = records / 'published.json'
-        previous = None
-        if receipt.exists():
-            previous = runner.load_json(receipt)
-            if (not isinstance(previous, dict) or previous.get('job_id', job_id) != job_id
-                    or previous.get('head_sha', req['head_sha']) != req['head_sha']
-                    or previous.get('runner_job_id', job_id) != runner_id):
-                raise JobError('Invalid publication receipt')
-            if not current_target(cfg, req, commands):
-                return {'job_id': job_id, 'state': 'superseded'}
-            if previous.get('state') in ('success', 'failure'):
-                payload = status_payload(req, previous.get('verdict'), runner_id)
-                if remote_status_matches(cfg, req, payload, commands):
-                    return {'job_id': job_id, 'state': 'already_published'}
-                # Intake replay or another write changed the remote status. Revalidate
-                # evidence before repairing it; a local receipt is not remote truth.
-        result = collect_verified(cfg, req)
-        if result is None:
-            result = failed_execution(records, job_id, runner_id)
-        if result is None or result.get('verdict') in ('RUNNING', 'RUNNING_TIMEOUT'):
-            return {'job_id': job_id, 'state': 'pending'}
-        if not current_target(cfg, req, commands):
-            atomic(receipt, {'state': 'superseded', 'job_id': job_id, 'runner_job_id': runner_id, 'at': bridge.utcnow()})
-            return {'job_id': job_id, 'state': 'superseded'}
-        verdict = result.get('verdict')
-        payload = status_payload(req, verdict, runner_id)
-        status_endpoint = f"repos/{cfg['repository']}/statuses/{req['head_sha']}"
-        # The status writer is this fixed controller, not the implementation agent.
-        commands.gh(status_endpoint, payload)
+        with bridge.status_lock(cfg, req) as locked:
+            if not locked:
+                return {'job_id': job_id, 'state': 'busy'}
+            return publish_locked(cfg, req, commands, records, runner_id)
+
+
+def collect_all(cfg):
+    """Rotate before each job so a killed service tick cannot starve later jobs."""
+    paths = sorted(Path(cfg['jobs_dir']).glob('*/request.json'))
+    cursor_path = Path(cfg['state_path']).parent / 'executor-collection.json'
+    cursor = runner.load_json(cursor_path).get('last_job_id', '') if cursor_path.exists() else ''
+    paths.sort(key=lambda p: (p.parent.name <= cursor, p.parent.name))
+    deadline = time.monotonic() + cfg.get('collection_budget_seconds', 210)
+    commands = bridge.Commands(cfg)
+    commands.deadline = deadline  # Commands applies this absolute deadline to every child.
+    results = []
+    for path in paths[:cfg.get('collection_max_jobs', 20)]:
+        if time.monotonic() >= deadline:
+            break
+        atomic(cursor_path, {'last_job_id': path.parent.name})
         try:
-            still_current = current_target(cfg, req, commands)
-        except (bridge.BridgeError, JobError, OSError, ValueError, TypeError, subprocess.SubprocessError):
-            commands.gh(status_endpoint, {'state': 'pending', 'context': payload['context'],
-                                         'description': 'Target could not be rechecked; review result withheld'})
-            raise JobError('Target verification after status write failed; restored pending')
-        if not still_current:
-            commands.gh(status_endpoint, {'state': 'pending', 'context': payload['context'],
-                                         'description': 'Target changed during publication; awaiting current review'})
-            atomic(receipt, {'state': 'superseded', 'job_id': job_id, 'runner_job_id': runner_id, 'at': bridge.utcnow()})
-            return {'job_id': job_id, 'state': 'superseded'}
-        marker = 'multica-result-' + runner_id
-        # Multica otherwise implicitly invokes the assigned agent for a human
-        # comment, even without an explicit mention. /note suppresses dispatch.
-        body = (f'/note\n{marker}\n\nStatic review result: {verdict}\n'
-                f"Head: {req['head_sha']}\nBase: {req['base_sha']}\n"
-                f"Attempt: {runner_id}\n"
-                f"Attestation: {result.get('attestation_path', '')}\n"
-                'This is a static-review result only. Build/runtime/release checks and maintainer approval remain required.\n'
-                + json.dumps(result.get('reasons', []), ensure_ascii=False))
-        intent_path = records / 'publish-comment-intent.json'
-        comments = bridge.rows(commands.multica(['issue', 'comment', 'list', req['multica_issue_id'], '--output', 'json']))
-        found = any(marker in str(c.get('content', '')) for c in comments)
-        intent = runner.load_json(intent_path) if intent_path.exists() else None
-        if intent is not None and (not isinstance(intent, dict) or intent.get('job_id') != job_id
-                                   or intent.get('issue_id') != req['multica_issue_id']
-                                   or intent.get('runner_job_id', job_id) != runner_id):
-            raise JobError('Publication comment intent identity mismatch')
-        if found:
-            atomic(intent_path, {'job_id': job_id, 'runner_job_id': runner_id, 'issue_id': req['multica_issue_id'], 'state': 'confirmed'})
-        elif intent is not None:
-            if intent.get('state') != 'confirmed':
-                # A prior write may still be processing remotely. Never repeat it
-                # merely because this list response does not show the marker yet.
-                return {'job_id': job_id, 'state': 'awaiting_comment_reconciliation'}
-        else:
-            atomic(intent_path, {'job_id': job_id, 'runner_job_id': runner_id, 'issue_id': req['multica_issue_id'],
-                                 'state': 'sending', 'at': bridge.utcnow()})
-            commands.multica(['issue', 'comment', 'add', req['multica_issue_id'], '--content-stdin', '--output', 'json'], body)
-            atomic(intent_path, {'job_id': job_id, 'runner_job_id': runner_id, 'issue_id': req['multica_issue_id'], 'state': 'confirmed'})
-        commands.multica(['issue', 'update', req['multica_issue_id'], '--status', 'in_review', '--no-start', '--output', 'json'])
-        atomic(receipt, {'job_id': job_id, 'runner_job_id': runner_id, 'state': payload['state'], 'verdict': verdict,
-                         'head_sha': req['head_sha'], 'context': payload['context'], 'at': bridge.utcnow()})
-        return {'job_id': job_id, 'runner_job_id': runner_id, 'state': payload['state'], 'verdict': verdict}
+            results.append(publish_result(cfg, path.parent.name, commands))
+        except Exception as exc:
+            results.append({'job_id': path.parent.name, 'state': 'error', 'error': type(exc).__name__})
+    return results
 
 
 def exit_code(result):
@@ -452,6 +650,8 @@ def exit_code(result):
         return runner.EXIT_CODES[verdict]
     if result.get('state') in ('failure', 'error'):
         return 1
+    if verdict == 'SUPERSEDED' or result.get('state') == 'superseded':
+        return 4
     if verdict in ('RUNNING', 'NOT_STARTED') or result.get('state') in (
             'pending', 'busy', 'awaiting_issue_mapping', 'awaiting_comment_reconciliation'):
         return 3
@@ -465,6 +665,9 @@ def main(argv=None):
     for name in ('run', 'retry', 'collect', 'publish'):
         cmd = commands.add_parser(name, allow_abbrev=False)
         cmd.add_argument('--job-id', required=True)
+    recovery = commands.add_parser('recover', allow_abbrev=False)
+    recovery.add_argument('--job-id', required=True)
+    recovery.add_argument('--runner-job-id')
     commands.add_parser('collect-all', allow_abbrev=False)
     args = parser.parse_args(argv)
     try:
@@ -473,23 +676,20 @@ def main(argv=None):
             result = run_job(cfg, args.job_id)
         elif args.action == 'retry':
             result = retry_job(cfg, args.job_id)
+        elif args.action == 'recover':
+            result = recover_job(cfg, args.job_id, args.runner_job_id)
         elif args.action == 'collect':
             _, req = request(cfg, args.job_id)
             runner_id, records = active_attempt(cfg, req)
-            result = collect_verified(cfg, req) or failed_execution(records, args.job_id, runner_id) or {'verdict': 'NOT_STARTED', 'job_id': args.job_id, 'runner_job_id': runner_id}
+            result = attempt_result(cfg, req) or {'verdict': 'RUNNING_TIMEOUT' if (records / 'execution.json').exists() else 'NOT_STARTED', 'job_id': args.job_id, 'runner_job_id': runner_id}
         elif args.action == 'publish':
             result = publish_result(cfg, args.job_id)
         else:
-            result = []
-            for path in sorted(Path(cfg['jobs_dir']).glob('*/request.json')):
-                try:
-                    result.append(publish_result(cfg, path.parent.name))
-                except Exception as exc:
-                    result.append({'job_id': path.parent.name, 'state': 'error', 'error': str(exc)})
+            result = collect_all(cfg)
         printable = [summary(row) for row in result] if isinstance(result, list) else summary(result)
         print(json.dumps(printable, ensure_ascii=False))
         return exit_code(result)
-    except (JobError, runner.ReviewError, bridge.BridgeError, ValueError, OSError, subprocess.SubprocessError) as exc:
+    except (JobError, runner.ReviewError, bridge.BridgeError, ValueError, TypeError, KeyError, OSError, subprocess.SubprocessError) as exc:
         print(json.dumps({'verdict': 'FAILED', 'error': str(exc)}, ensure_ascii=False))
         return 1
 

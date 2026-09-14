@@ -11,12 +11,15 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
+import re
 import shlex
 import sys
+import tempfile
 
 
-VERSION = "mmrun-grok-transport-v1"
+VERSION = "mmrun-grok-transport-v2"
 MAX_OUTPUT_BYTES = 32 * 1024 * 1024
 SESSION_ANCHOR = '      sid=$(cat "$rd/grok.session")'
 OUTPUT_ANCHOR = '''        "$GROK_BIN" --prompt-file "$rd/prompt.md" -s "$sid" "${args[@]}" > "$rd/grok.raw" 2>&1
@@ -57,7 +60,14 @@ def normalize(text):
     # could discard its error flag and mistake an inner result for success.
     offset = text.find("{")
     prefix = text[:offset] if offset >= 0 else text
-    if offset < 0 or "[" in prefix or (prefix.strip() and not prefix.endswith("\n")):
+    # Accept only complete, recognized diagnostic lines before the object.
+    # An arbitrary prefix could actually be a truncated JSON array/wrapper.
+    diagnostics = prefix.rpartition("\n")[0] if "\n" in prefix else ""
+    indentation = prefix.rpartition("\n")[2]
+    log_line = re.compile(r"(?:\[(?:warn(?:ing)?|info|debug|error|trace)\]|(?:warning|warn|info|debug|error|trace):)\s+[^{}]*", re.I)
+    if (offset < 0 or indentation.strip()
+            or any(line.strip() and not log_line.fullmatch(line.strip())
+                   for line in diagnostics.splitlines())):
         raise CompatibilityError("Expected a top-level Grok JSON result envelope")
     try:
         envelope, end = decoder.raw_decode(text, offset)
@@ -70,7 +80,7 @@ def normalize(text):
     stops = [envelope[key] for key in ("stopReason", "stop_reason") if key in envelope]
     if len(stops) == 2 and stops[0] != stops[1]:
         raise CompatibilityError("Conflicting completion aliases")
-    if any(stop not in ("end_turn", "stop", "completed") for stop in stops):
+    if not stops or any(stop not in ("end_turn", "stop", "completed") for stop in stops):
         raise CompatibilityError("Grok did not report normal end-of-turn completion")
     values = [envelope[key] for key in ("structuredOutput", "structured_output") if key in envelope]
     if len(values) == 2 and values[0] != values[1]:
@@ -121,6 +131,20 @@ def file_hash(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def atomic_text(path, text, mode):
+    fd, temporary = tempfile.mkstemp(prefix="." + path.name + "-", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w") as stream:
+            os.fchmod(stream.fileno(), mode)
+            stream.write(text)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
 def prepare(source_path, output_path):
     source_path = Path(source_path).expanduser().resolve()
     output_path = Path(output_path).expanduser().absolute()
@@ -133,8 +157,7 @@ def prepare(source_path, output_path):
         raise CompatibilityError("Output already contains different content; use a new output path")
     output_path.parent.mkdir(parents=True, exist_ok=True)
     if not output_path.exists():
-        with output_path.open("x") as stream:
-            stream.write(rendered)
+        atomic_text(output_path, rendered, 0o700)
     output_path.chmod(0o700)
     provenance = {"version": VERSION, "source": str(source_path), "source_sha256": file_hash(source_path),
                   "output": str(output_path.resolve()), "output_sha256": file_hash(output_path),
@@ -145,7 +168,7 @@ def prepare(source_path, output_path):
     sidecar = output_path.with_name(output_path.name + ".provenance.json")
     if sidecar.is_symlink():
         raise CompatibilityError("Provenance sidecar may not be a symlink")
-    sidecar.write_text(json.dumps(provenance, indent=2) + "\n")
+    atomic_text(sidecar, json.dumps(provenance, indent=2) + "\n", 0o600)
     return provenance
 
 

@@ -17,6 +17,8 @@ import json
 import os
 from pathlib import Path
 import re
+import selectors
+import signal
 import sqlite3
 import subprocess
 import sys
@@ -24,10 +26,13 @@ import tempfile
 import time
 from urllib.parse import urlencode
 
+import review_runner as runner
+
 ALLOWED_REPOSITORY = "Paradox07127/macos-wallpaperengine"
-STATUS_CONTEXT = "multica/review"
 SHA = re.compile(r"^[0-9a-f]{40}$")
-UUID = re.compile(r"^[0-9a-fA-F-]{36}$")
+UUID = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+RELEASE_VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.]+)?\Z")
+TRUNCATION_SUFFIX = "\n[Truncated; evidence missing beyond this point.]"
 
 
 class BridgeError(RuntimeError):
@@ -60,12 +65,64 @@ def utcnow():
 
 
 def since_overlap(value):
-    stamp = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    stamp = timestamp(value)
     return (stamp - dt.timedelta(seconds=2)).isoformat().replace("+00:00", "Z")
 
 
 def digest(value):
     return hashlib.sha256(value.encode()).hexdigest()
+
+
+def timestamp(value):
+    if not isinstance(value, str):
+        raise BridgeError("Timestamp must be text")
+    result = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if result.tzinfo is None:
+        raise BridgeError("Timestamp must include its timezone")
+    return result
+
+
+def effective_policy(cfg, kind="pr"):
+    try:
+        policy = runner.review_policy(kind, sorted(cfg["review_models"]))
+    except (runner.ReviewError, KeyError, TypeError, ValueError) as exc:
+        raise BridgeError("Invalid effective review policy") from exc
+    return {"deployment": cfg["policy_version"], "runner": policy, "mmrun_kind": cfg.get("mmrun_kind", "compat")}
+
+
+def policy_fingerprint(cfg, kind="pr"):
+    return digest(json.dumps(effective_policy(cfg, kind), sort_keys=True, separators=(",", ":")))
+
+
+def job_id_for(request):
+    key = "|".join([request["repository"], request["head_sha"], request["base_sha"],
+                    request["policy_version"], request["kind"], str(request.get("pr_number") or ""),
+                    request.get("version") or "", request["policy_fingerprint"]])
+    prefix = f"pr-{request['pr_number']}-" if request["kind"] == "pr" else "release-"
+    return prefix + digest(key)[:24]
+
+
+@contextlib.contextmanager
+def status_lock(cfg, request):
+    root = Path(cfg["state_path"]).parent / "status-locks"
+    root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    key = "|".join([cfg["repository"], request["head_sha"], status_context(request)])
+    fd = os.open(root / (digest(key) + ".lock"), os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    try:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            yield False
+        else:
+            yield True
+    finally:
+        os.close(fd)
+
+
+def trusted_comment(cfg, item, body):
+    return (isinstance(item, dict) and bool(cfg.get("bridge_actor_id"))
+            and item.get("author_type") == "member" and item.get("author_id") == cfg["bridge_actor_id"]
+            and item.get("content") == body)
 
 
 def marker(key):
@@ -74,28 +131,72 @@ def marker(key):
 
 def bounded_text(value, limit=12000):
     text = str(value or "")
-    suffix = "\n[Truncated; read original source if needed.]"
+    suffix = TRUNCATION_SUFFIX
     return text if len(text) <= limit else (text[:max(0, limit - len(suffix))] + suffix)[:limit]
 
 
 def public_user(item):
+    if not isinstance(item, dict):
+        raise BridgeError("Source item must be an object")
     user = item.get("user") or {}
     return user if isinstance(user, dict) else {}
 
 
+def command_text(value, limit):
+    if not isinstance(value, str):
+        return ""
+    if len(value) <= limit:
+        return value
+    # Never convert a cut-off source line into a standalone command.
+    prefix = value[:max(0, limit - len(TRUNCATION_SUFFIX))]
+    return prefix.rsplit("\n", 1)[0] if "\n" in prefix else ""
+
+
 def requests_triage(text):
-    """Only an entire non-quoted, non-code Markdown line is a command."""
+    """Conservative Markdown authorization: one unindented top-level paragraph."""
     fence = None
-    for line in text.splitlines():
-        match = re.match(r"^ {0,3}(`{3,}|~{3,})", line)
+    container = False
+    html_end = None
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        stripped = line.lstrip()
+        if html_end:
+            if re.search(html_end, line, re.I):
+                html_end = None
+            continue
+        if not line.strip() and fence is None:
+            container = False
+            continue
+        # Recognize quoted/list fences too, but never promote their contents.
+        normalized = re.sub(r"^(?:\s*>\s*)+", "", stripped)
+        normalized = re.sub(r"^(?:[-+*]|\d+[.)])\s+", "", normalized)
+        if re.match(r"^ {0,3}(?:>|[-+*]\s|\d+[.)]\s)", line):
+            container = True
+        match = re.match(r"^\s*(`{3,}|~{3,})", normalized)
         if match:
             delimiter = match.group(1)
             if fence is None:
                 fence = delimiter
-            elif delimiter[0] == fence[0] and len(delimiter) >= len(fence) and not line[match.end():].strip():
+            elif delimiter[0] == fence[0] and len(delimiter) >= len(fence) and not normalized[match.end():].strip():
                 fence = None
             continue
-        if fence is None and re.fullmatch(r" {0,3}/multica-triage[ \t]*", line):
+        if fence is not None:
+            continue
+        html_text = normalized.lstrip()
+        html = re.match(r"<(pre|code|script|style|textarea|[A-Za-z][A-Za-z0-9-]*)(?:\s|>|/)", html_text)
+        if html_text.startswith("<!--"):
+            html_end = r"-->"
+        elif html:
+            html_end = r"</" + re.escape(html[1]) + r"\s*>"
+        elif html_text.startswith(("<?", "<!")):
+            html_end = r">"
+        if html_end:
+            if re.search(html_end, line, re.I):
+                html_end = None
+            continue
+        if (not container and re.fullmatch(r"/multica-triage[ \t]*", line)
+                and (index == 0 or not lines[index - 1].strip())
+                and (index == len(lines) - 1 or not lines[index + 1].strip())):
             return True
     return False
 
@@ -147,6 +248,7 @@ def load_config(path):
         "max_history_comments": 20, "max_history_chars": 20000,
         "triage_cooldown_seconds": 600, "max_triage_followups_per_tick": 3,
         "review_models": ["codex", "grok"], "review_timeout_seconds": 3600,
+        "mmrun_kind": "compat", "intake_tick_budget_seconds": 180,
     }
     cfg = {**defaults, **cfg}
     cfg["config_path"] = str(Path(path).resolve())
@@ -159,8 +261,8 @@ def load_config(path):
     cfg.setdefault("workspaces_root", str(state_parent / "workspaces"))
     cfg.setdefault("codex_home", str(Path.home() / ".codex"))
     cfg.setdefault("policy_version", "1")
-    for key in ("workspace_id", "triage_agent_id", "review_agent_id"):
-        if not UUID.fullmatch(str(cfg.get(key, ""))):
+    for key in ("workspace_id", "triage_agent_id", "review_agent_id", "bridge_actor_id"):
+        if not isinstance(cfg.get(key), str) or not UUID.fullmatch(cfg[key]):
             raise BridgeError(f"{key} must be a UUID")
     if cfg.get("project_id") and (not isinstance(cfg["project_id"], str) or not UUID.fullmatch(cfg["project_id"])):
         raise BridgeError("project_id must be a UUID")
@@ -176,6 +278,7 @@ def load_config(path):
                                    ("max_history_comments", 1, 20), ("max_history_chars", 1024, 64000),
                                    ("triage_cooldown_seconds", 1, 86400), ("max_triage_followups_per_tick", 1, 20),
                                    ("review_timeout_seconds", 1, 86400),
+                                   ("intake_tick_budget_seconds", 1, 240),
                                    ("max_output_bytes", 1024, 32 * 1024 * 1024)):
         if type(cfg[key]) is not int or not minimum <= cfg[key] <= maximum:
             raise BridgeError(f"Invalid {key}")
@@ -185,8 +288,11 @@ def load_config(path):
     if (not isinstance(models, list) or not models or any(not isinstance(model, str) for model in models)
             or len(set(models)) != len(models) or not set(models) <= {"codex", "grok", "agy"}):
         raise BridgeError("review_models must be a nonempty unique list of codex, grok and/or agy")
-    if not re.fullmatch(r"[A-Za-z0-9._-]{1,80}", str(cfg["policy_version"])):
+    cfg["review_models"] = sorted(models)
+    if not isinstance(cfg["policy_version"], str) or not re.fullmatch(r"[A-Za-z0-9._-]{1,80}", cfg["policy_version"]):
         raise BridgeError("Invalid policy_version")
+    if cfg["mmrun_kind"] not in ("compat", "upstream"):
+        raise BridgeError("Invalid mmrun_kind")
     return cfg
 
 
@@ -195,30 +301,55 @@ class Commands:
         self.cfg = cfg
 
     def run(self, argv, input_text=None):
-        # Disk-backed bounded capture avoids retaining arbitrary CLI output in RAM.
-        with tempfile.TemporaryFile() as output, tempfile.TemporaryFile() as errors:
-            try:
-                result = subprocess.run(argv, input=input_text.encode() if input_text is not None else None,
-                                        stdout=output, stderr=errors, shell=False,
-                                        timeout=self.cfg["command_timeout"])
-            except (OSError, subprocess.TimeoutExpired) as exc:
-                raise BridgeError(f"Command failed ({type(exc).__name__}); remote outcome may be uncertain") from exc
-            if result.returncode:
-                # Do not echo CLI errors which may contain URLs, tokens, or source text.
-                errors.seek(0)
-                # gh includes "(HTTP 404)" on permission/not-found failures.
-                # Retain only the numeric code, never its diagnostic text.
-                match = re.search(rb"\bHTTP ([1-5][0-9]{2})\b", errors.read(8192))
-                raise CommandError(Path(argv[0]).name, result.returncode,
-                                   int(match.group(1)) if match else None)
-            if output.tell() > self.cfg["max_output_bytes"]:
-                raise BridgeError("CLI response exceeded configured output limit")
-            output.seek(0)
-            raw = output.read().decode("utf-8")
-            try:
-                return json.loads(raw) if raw.strip() else {}
-            except json.JSONDecodeError as exc:
-                raise BridgeError("CLI response was not JSON") from exc
+        # Bound both streams while the process runs, before bytes can fill disk.
+        outputs = {"stdout": bytearray(), "stderr": bytearray()}
+        maximum = self.cfg["max_output_bytes"]
+        deadline = min(time.monotonic() + self.cfg["command_timeout"], getattr(self, "deadline", float("inf")))
+        proc = None
+        try:
+            with tempfile.TemporaryFile() as source, selectors.DefaultSelector() as selector:
+                if input_text is not None:
+                    source.write(input_text.encode())
+                source.seek(0)
+                proc = subprocess.Popen(argv, stdin=source, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                        shell=False, start_new_session=True)
+                for name in outputs:
+                    stream = getattr(proc, name)
+                    os.set_blocking(stream.fileno(), False)
+                    selector.register(stream, selectors.EVENT_READ, name)
+                while selector.get_map():
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise BridgeError("CLI timed out; remote outcome may be uncertain")
+                    for key, _ in selector.select(min(remaining, 0.1)):
+                        chunk = os.read(key.fileobj.fileno(), 65536)
+                        if not chunk:
+                            selector.unregister(key.fileobj)
+                            continue
+                        if sum(len(value) for value in outputs.values()) + len(chunk) > maximum:
+                            raise BridgeError("CLI output exceeded configured limit; remote outcome may be uncertain")
+                        outputs[key.data].extend(chunk)
+                proc.wait(timeout=max(0.01, deadline - time.monotonic()))
+                if proc.returncode:
+                    match = re.search(rb"\bHTTP ([1-5][0-9]{2})\b", outputs["stderr"][:8192])
+                    raise CommandError(Path(argv[0]).name, proc.returncode, int(match.group(1)) if match else None)
+                raw = outputs["stdout"].decode("utf-8")
+                try:
+                    return json.loads(raw) if raw.strip() else {}
+                except json.JSONDecodeError as exc:
+                    raise BridgeError("CLI response was not JSON") from exc
+        except (OSError, UnicodeError, subprocess.TimeoutExpired) as exc:
+            raise BridgeError(f"Command failed ({type(exc).__name__}); remote outcome may be uncertain") from exc
+        finally:
+            if proc is not None:
+                if proc.poll() is None:
+                    try:
+                        os.killpg(proc.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                    proc.wait(timeout=5)
+                for name in outputs:
+                    getattr(proc, name).close()
 
     def gh(self, endpoint, payload=None):
         args = [self.cfg["gh_path"], "api", "--method", "POST" if payload is not None else "GET", endpoint]
@@ -249,7 +380,18 @@ class State:
                 login TEXT NOT NULL, created_at TEXT NOT NULL,
                 status TEXT NOT NULL DEFAULT 'pending', reason TEXT NOT NULL DEFAULT 'awaiting_permission'
             );
+            CREATE TABLE IF NOT EXISTS intake_events (
+                key TEXT PRIMARY KEY, kind TEXT NOT NULL, payload TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0,
+                next_attempt_at TEXT NOT NULL DEFAULT '', last_error TEXT NOT NULL DEFAULT ''
+            );
         """)
+        columns = {row[1] for row in self.db.execute("PRAGMA table_info(triage_pending)")}
+        for name, declaration in (("comment_id", "INTEGER"), ("author_id", "INTEGER"),
+                                  ("comment_version", "TEXT"), ("next_attempt_at", "TEXT NOT NULL DEFAULT ''"),
+                                  ("attempts", "INTEGER NOT NULL DEFAULT 0")):
+            if name not in columns:
+                self.db.execute(f"ALTER TABLE triage_pending ADD COLUMN {name} {declaration}")
         self.db.commit()
 
     def get(self, table, key, keycol="key", valuecol="value"):
@@ -353,6 +495,9 @@ class Bridge:
         if status == "done":
             return
         token = marker(op)
+        mention = f"[@Intake](mention://agent/{agent_id})\n" if agent_id else ""
+        prefix = "" if agent_id else "/note\n"
+        expected_body = prefix + token + "\n" + mention + body
         if not self.dry_run:
             # An initial issue description may already contain this event after
             # create succeeded but its local acknowledgement was lost.
@@ -368,22 +513,21 @@ class Bridge:
             created = self.state.get("operations", op, valuecol="created_at")
             comments = rows(self.commands.multica(["issue", "comment", "list", remote_id,
                                                    "--since", since_overlap(created), "--output", "json"]))
-            if any(item.get("content", "").startswith((token + "\n", "/note\n" + token + "\n"))
-                   for item in comments):
+            original_body = self.state.get("meta", "comment-body:" + op)
+            if original_body is not None and any(trusted_comment(self.cfg, item, original_body) for item in comments):
                 self.state.operation(op, "done", remote_id)
                 return
             raise BridgeError("Prior comment outcome uncertain; refusing an automatic duplicate or duplicate agent trigger")
         self.report(f"{'PLAN ' if self.dry_run else ''}append {event_key}")
         if not self.dry_run:
             # Mention only trusted configured IDs; source text is quoted JSON.
-            mention = f"[@Intake](mention://agent/{agent_id})\n" if agent_id else ""
             # Multica also routes ordinary human comments to the assignee. A
             # missing mention is NOT a no-run guarantee: /note must be the very
             # first token to activate its server-side no-trigger path.
-            prefix = "" if agent_id else "/note\n"
+            self.state.meta("comment-body:" + op, expected_body)
             self.state.operation(op, "intent")
             self.commands.multica(["issue", "comment", "add", remote_id, "--content-stdin", "--output", "json"],
-                                  prefix + token + "\n" + mention + body)
+                                  expected_body)
         self.state.operation(op, "done", remote_id)
 
     def source_body(self, kind, item, extra=None):
@@ -404,6 +548,9 @@ class Bridge:
                 + encoded)
 
     def comment_event(self, item):
+        if type(item.get("id")) is not int or item["id"] < 1:
+            raise BridgeError("Comment ID must be a positive integer")
+        timestamp(item.get("updated_at"))
         fingerprint = digest(str(item.get("body") or ""))[:16]
         return f"github-comment:{self.repo}:{int(item['id'])}:{item['updated_at']}:{fingerprint}"
 
@@ -479,7 +626,7 @@ class Bridge:
         labels = {label["name"] for label in raw_labels if isinstance(label, dict)
                   and isinstance(label.get("name"), str) and label["name"]}
         mapped = self.state.get("mappings", source, "source", "remote_id")
-        eligible = self.cfg["triage_label"] in labels or (self.cfg["triage_all_new"] and item.get("created_at", "") >= baseline)
+        eligible = self.cfg["triage_label"] in labels or (self.cfg["triage_all_new"] and timestamp(item.get("created_at")) >= timestamp(baseline))
         if not mapped and not eligible:
             return
         # A new comment also changes the issue's updated_at/comments count. Only
@@ -549,17 +696,24 @@ class Bridge:
             return
         # Inspect only the same bounded source text that was retained. A command
         # hidden past the truncation boundary must not authorize execution.
-        if requests_triage(bounded_text(item.get("body"), self.cfg["max_body_chars"])):
+        if requests_triage(command_text(item.get("body"), self.cfg["max_body_chars"])):
             login = public_user(item).get("login", "")
             valid_login = isinstance(login, str) and bool(re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]{0,38}", login))
-            self.state.db.execute("INSERT OR IGNORE INTO triage_pending VALUES (?, ?, ?, ?, ?, ?, ?)",
+            author_id = public_user(item).get("id")
+            valid_identity = valid_login and type(author_id) is int and author_id > 0
+            self.state.db.execute("INSERT OR IGNORE INTO triage_pending "
+                                  "(event,source,remote_id,login,created_at,status,reason,comment_id,author_id,comment_version) "
+                                  "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                                   (event, source, remote, login if valid_login else "", utcnow(),
-                                   "pending" if valid_login else "denied",
-                                   "awaiting_permission" if valid_login else "invalid_public_login"))
+                                   "pending" if valid_identity else "denied",
+                                   "awaiting_permission" if valid_identity else "invalid_public_identity",
+                                   item["id"], author_id if type(author_id) is int else None, event))
             self.state.db.commit()
 
-    def queue_result(self, event, status, reason):
-        self.state.db.execute("UPDATE triage_pending SET status=?, reason=? WHERE event=?", (status, reason, event))
+    def queue_result(self, event, status, reason, delay=0):
+        due = (timestamp(utcnow()) + dt.timedelta(seconds=delay)).isoformat().replace("+00:00", "Z") if delay else ""
+        self.state.db.execute("UPDATE triage_pending SET status=?, reason=?, next_attempt_at=?, attempts=attempts+1 WHERE event=?",
+                              (status, reason, due, event))
         self.state.db.commit()
         self.report(f"Triage follow-up {status}: {event} ({reason})")
 
@@ -567,7 +721,7 @@ class Bridge:
         counts = dict(self.state.db.execute("SELECT status, COUNT(*) FROM triage_pending GROUP BY status"))
         self.report("Triage follow-up queue: " + ", ".join(f"{key}={counts.get(key, 0)}" for key in ("pending", "done", "denied")))
 
-    def drain_triage_pending(self):
+    def drain_triage_pending(self, deadline=None):
         """Rate limits defer work durably; none of them delete pending events.
 
         The per-tick cap covers explicit follow-ups only. Initial label-approved
@@ -576,9 +730,12 @@ class Bridge:
         sent = 0
         permissions = {}
         pending = self.state.db.execute(
-            "SELECT event, source, remote_id, login FROM triage_pending WHERE status='pending' "
-            "ORDER BY created_at, event LIMIT 100").fetchall()
-        for event, source, remote, login in pending:
+            "SELECT event, source, remote_id, login, comment_id, author_id, comment_version FROM triage_pending "
+            "WHERE status='pending' AND (next_attempt_at='' OR next_attempt_at<=?) "
+            "ORDER BY next_attempt_at, attempts, created_at, event LIMIT 100", (utcnow(),)).fetchall()
+        for event, source, remote, login, comment_id, author_id, version in pending:
+            if deadline is not None and time.monotonic() >= deadline:
+                break
             if sent >= self.cfg["max_triage_followups_per_tick"]:
                 self.queue_result(event, "pending", "tick_limit")
                 continue
@@ -596,7 +753,7 @@ class Bridge:
                 elapsed = (dt.datetime.fromisoformat(utcnow().replace("Z", "+00:00"))
                            - dt.datetime.fromisoformat(last.replace("Z", "+00:00"))).total_seconds()
                 if elapsed < self.cfg["triage_cooldown_seconds"]:
-                    self.queue_result(event, "pending", "issue_cooldown")
+                    self.queue_result(event, "pending", "issue_cooldown", self.cfg["triage_cooldown_seconds"] - int(elapsed))
                     continue
             if login not in permissions:
                 try:
@@ -614,7 +771,7 @@ class Bridge:
                 self.queue_result(event, "denied", "current_repository_permission_insufficient")
                 continue
             if permission != "allowed":
-                self.queue_result(event, "pending", permission)
+                self.queue_result(event, "pending", permission, 60)
                 continue
             try:
                 number = int(source.rsplit(":issue:", 1)[1])
@@ -623,11 +780,23 @@ class Bridge:
                     raise BridgeError("Unexpected issue snapshot response")
                 history, _ = self.initial_history(current)
                 snapshot = self.triage_snapshot(current, history)
+                if type(comment_id) is not int or type(author_id) is not int:
+                    self.queue_result(event, "denied", "legacy_comment_identity_missing")
+                    continue
+                latest = self.commands.gh(f"repos/{self.repo}/issues/comments/{comment_id}")
+                if (not isinstance(latest, dict) or latest.get("id") != comment_id
+                        or public_user(latest).get("id") != author_id or public_user(latest).get("login") != login
+                        or public_user(latest).get("type") != "User"
+                        or latest.get("issue_url") != f"https://api.github.com/repos/{self.repo}/issues/{number}"
+                        or self.comment_event(latest) != version
+                        or not requests_triage(command_text(latest.get("body"), self.cfg["max_body_chars"]))):
+                    self.queue_result(event, "denied", "authorization_comment_changed_or_withdrawn")
+                    continue
             except CommandError as exc:
-                self.queue_result(event, "denied" if exc.http_status == 404 else "pending", "source_snapshot_unavailable")
+                self.queue_result(event, "denied" if exc.http_status == 404 else "pending", "source_snapshot_unavailable", 60)
                 continue
-            except (BridgeError, KeyError, ValueError):
-                self.queue_result(event, "pending", "source_snapshot_unavailable")
+            except (BridgeError, KeyError, ValueError, TypeError):
+                self.queue_result(event, "pending", "source_snapshot_unavailable", 60)
                 continue
             # Count attempts, not just acknowledged writes: a timeout might
             # already have woken the remote agent. Apply cooldown conservatively
@@ -643,7 +812,7 @@ class Bridge:
                             "access, or send external messages. Follow the configured Triage role.\n\n" + snapshot,
                             self.cfg["triage_agent_id"])
             except BridgeError:
-                self.queue_result(event, "pending", "trigger_delivery_uncertain")
+                self.queue_result(event, "pending", "trigger_delivery_uncertain", 60)
                 continue
             self.queue_result(event, "done", "maintainer_trigger_delivered")
         self.triage_summary()
@@ -654,27 +823,30 @@ class Bridge:
             raise BridgeError("Invalid PR head SHA")
         self.report(f"{'PLAN ' if self.dry_run else ''}pending {head}")
         if not self.dry_run:
-            self.commands.gh(f"repos/{self.repo}/statuses/{head}", {
-                "state": "pending", "context": status_context(request),
-                "description": "Waiting for trusted Multica review attestation",
-            })
+            with status_lock(self.cfg, request) as locked:
+                if not locked:
+                    raise BridgeError("GitHub status writer busy; durable event retained")
+                self.commands.gh(f"repos/{self.repo}/statuses/{head}", {
+                    "state": "pending", "context": status_context(request),
+                    "description": "Waiting for trusted Multica review attestation",
+                })
 
     def job(self, head, base, kind, pr_number=None, version=None):
-        key = "|".join([self.repo, head, base, str(self.cfg["policy_version"]), kind,
-                        str(pr_number or ""), version or ""])
-        job_id = (f"pr-{pr_number}-" if kind == "pr" else "release-") + digest(key)[:24]
-        manifest = {"schema_version": 1, "job_id": job_id, "repository": self.repo,
+        manifest = {"schema_version": 1, "repository": self.repo,
                     "repository_path": self.cfg["repository_path"], "head_sha": head,
                     "base_sha": base, "kind": kind, "policy_version": self.cfg["policy_version"],
+                    "review_policy": effective_policy(self.cfg, kind), "policy_fingerprint": policy_fingerprint(self.cfg, kind),
                     "created_at": utcnow(), "multica_issue_id": None}
         if pr_number is not None:
             manifest["pr_number"] = pr_number
         if version is not None:
             manifest["version"] = version
+        job_id = manifest["job_id"] = job_id_for(manifest)
         path = Path(self.cfg["jobs_dir"]) / job_id / "request.json"
         if path.exists():
             existing = json.loads(path.read_text())
-            for field in ("job_id", "repository", "repository_path", "head_sha", "base_sha", "kind", "policy_version", "pr_number", "version"):
+            for field in ("job_id", "repository", "repository_path", "head_sha", "base_sha", "kind", "policy_version", "pr_number", "version",
+                          "review_policy", "policy_fingerprint"):
                 if existing.get(field) != manifest.get(field):
                     raise BridgeError("Existing job manifest conflicts with requested immutable input")
             manifest = existing
@@ -708,7 +880,11 @@ class Bridge:
                 + json.dumps(command) + "\n\n")
 
     def intake_pr(self, item):
+        if not isinstance(item, dict) or type(item.get("number")) is not int or item["number"] < 1:
+            raise BridgeError("PR identity must be a positive number")
         number = int(item["number"])
+        if not isinstance(item.get("head"), dict) or not isinstance(item.get("base"), dict):
+            raise BridgeError("PR head/base must be objects")
         head = item.get("head", {}).get("sha", "")
         base = item.get("base", {}).get("sha", "")
         if not SHA.fullmatch(head) or not SHA.fullmatch(base):
@@ -716,7 +892,7 @@ class Bridge:
         own = ((item.get("head", {}).get("repo") or {}).get("full_name") == self.repo
                and item.get("base", {}).get("ref") == self.cfg["target_branch"])
         source = f"github:{self.repo}:pr:{number}"
-        event = (source + ":review:" + head + ":" + base + ":" + str(self.cfg["policy_version"])
+        event = (source + ":review:" + head + ":" + base + ":" + policy_fingerprint(self.cfg, "pr")
                  + ":" + str(own))
         if item.get("draft"):
             return
@@ -742,6 +918,13 @@ class Bridge:
         self.state.operation(event, "done", remote)
 
     def poll_once(self):
+        self.commands.deadline = time.monotonic() + self.cfg["intake_tick_budget_seconds"]
+        try:
+            return self._poll_once()
+        finally:
+            del self.commands.deadline
+
+    def _poll_once(self):
         now = utcnow()
         checkpoint = self.state.get("meta", "checkpoint")
         if not checkpoint:
@@ -758,30 +941,64 @@ class Bridge:
         # Base-tip and local-policy changes need a new review even if GitHub did
         # not update the PR timestamp. Event keys deduplicate unchanged PRs.
         prs = list(self.pages("pulls", {"state": "open", "sort": "updated", "direction": "desc"}))
-        for item in issues:
-            if "pull_request" not in item and item.get("updated_at", "") >= baseline:
-                self.intake_issue(item, baseline)
-        for item in comments:
-            if item.get("updated_at", "") >= baseline:
-                self.intake_comment(item)
-        # Follow-ups have priority over new PR review dispatch, and are retried
-        # even on ticks containing no new GitHub comments.
-        self.drain_triage_pending()
-        for item in prs:
-            self.intake_pr(item)
-        self.state.meta("checkpoint", now)
-        self.report(f"Poll complete: {len(issues)} issue records, {len(comments)} comments, {len(prs)} PRs inspected")
+        # Capture every fetched event before advancing the watermark. A single
+        # uncertain remote write cannot strand unrelated records behind it.
+        with self.state.db:
+            for kind, values in (("issue", issues), ("comment", comments), ("pr", prs)):
+                for item in values:
+                    payload = json.dumps(item, sort_keys=True, separators=(",", ":"))
+                    identity = payload + (policy_fingerprint(self.cfg, "pr") if kind == "pr" else "")
+                    self.state.db.execute("INSERT OR IGNORE INTO intake_events(key,kind,payload) VALUES (?,?,?)",
+                                          (kind + ":" + digest(identity), kind, payload))
+            self.state.db.execute("INSERT OR REPLACE INTO meta VALUES ('checkpoint', ?)", (now,))
+        deadline = self.commands.deadline
+        inbox_deadline = min(deadline, time.monotonic() + self.cfg["intake_tick_budget_seconds"] / 2)
+        self.drain_intake_events(baseline, inbox_deadline)
+        self.drain_triage_pending(deadline)
+        waiting = self.state.db.execute("SELECT COUNT(*) FROM intake_events WHERE status='pending'").fetchone()[0]
+        self.report(f"Poll captured {len(issues)} issues, {len(comments)} comments, {len(prs)} PRs; deferred events={waiting}")
+
+    def drain_intake_events(self, baseline, deadline):
+        candidates = self.state.db.execute(
+            "SELECT key,kind,payload,attempts FROM intake_events WHERE status='pending' AND "
+            "(next_attempt_at='' OR next_attempt_at<=?) ORDER BY next_attempt_at,attempts,"
+            "CASE kind WHEN 'issue' THEN 0 WHEN 'comment' THEN 1 ELSE 2 END,key LIMIT 100", (utcnow(),)).fetchall()
+        for key, kind, payload, attempts in candidates:
+            if time.monotonic() >= deadline:
+                break
+            try:
+                item = json.loads(payload)
+                if not isinstance(item, dict):
+                    raise BridgeError("Source event must be an object")
+                if kind == "pr":
+                    self.intake_pr(item)
+                elif timestamp(item.get("updated_at")) >= timestamp(baseline):
+                    if kind == "comment":
+                        self.intake_comment(item)
+                    elif "pull_request" not in item:
+                        self.intake_issue(item, baseline)
+                self.state.db.execute("UPDATE intake_events SET status='done',last_error='' WHERE key=?", (key,))
+            except (BridgeError, ValueError, KeyError, TypeError, AttributeError, OSError) as exc:
+                due = (timestamp(utcnow()) + dt.timedelta(seconds=min(3600, 30 * 2 ** min(attempts, 7)))).isoformat().replace("+00:00", "Z")
+                self.state.db.execute("UPDATE intake_events SET attempts=attempts+1,next_attempt_at=?,last_error=? WHERE key=?",
+                                      (due, type(exc).__name__, key))
+                self.report(f"Deferred intake event {key}: {type(exc).__name__}")
+            self.state.db.commit()
 
     def request_release(self, head, base, version):
         if not SHA.fullmatch(head) or not SHA.fullmatch(base):
             raise BridgeError("Release head/base must be full lowercase 40-character commit SHAs")
-        if not re.fullmatch(r"[0-9A-Za-z][0-9A-Za-z._+-]{0,79}", version):
+        if not isinstance(version, str) or not RELEASE_VERSION.fullmatch(version):
             raise BridgeError("Invalid release version")
         for sha in (head, base):
             commit = self.commands.gh(f"repos/{self.repo}/commits/{sha}")
             if commit.get("sha") != sha:
                 raise BridgeError("Release commit could not be verified in the allowed repository")
-        source = f"github:{self.repo}:release:{version}:{head}:{base}:{self.cfg['policy_version']}"
+        comparison = self.commands.gh(f"repos/{self.repo}/compare/{base}...{head}")
+        if (not isinstance(comparison, dict) or comparison.get("status") not in ("ahead", "identical")
+                or (comparison.get("merge_base_commit") or {}).get("sha") != base):
+            raise BridgeError("Release base must be an ancestor of head")
+        source = f"github:{self.repo}:release:{version}:{head}:{base}:{policy_fingerprint(self.cfg, 'release')}"
         manifest = self.job(head, base, "release", version=version)
         body = ("Review this release candidate only. Do not publish, tag, upload assets, or invoke a publishing command.\n" +
                 json.dumps({"repository": self.repo, "head_sha": head, "base_sha": base,
@@ -805,14 +1022,14 @@ class Bridge:
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
     parser.add_argument("--config", required=True)
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("doctor")
-    poll = sub.add_parser("poll")
+    poll = sub.add_parser("poll", allow_abbrev=False)
     poll.add_argument("--once", action="store_true")
     poll.add_argument("--dry-run", action="store_true")
-    release = sub.add_parser("request-release")
+    release = sub.add_parser("request-release", allow_abbrev=False)
     release.add_argument("--head", required=True)
     release.add_argument("--base", required=True)
     release.add_argument("--version", required=True)
@@ -840,7 +1057,7 @@ def main(argv=None):
             finally:
                 state.db.close()
         return 0
-    except (BridgeError, ValueError, KeyError, OSError, sqlite3.Error) as exc:
+    except (BridgeError, ValueError, KeyError, TypeError, AttributeError, OSError, sqlite3.Error) as exc:
         print(f"Bridge stopped: {exc}", file=sys.stderr)
         return 1
 

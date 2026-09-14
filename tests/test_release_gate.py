@@ -58,6 +58,12 @@ class ReleaseGateTests(unittest.TestCase):
             "artifacts": [{"path": path.name, "sha256": hashlib.sha256(
                 path.read_bytes()).hexdigest()} for path in sorted(self.artifact_root.iterdir())],
         }
+        receipt = self.root / "dispatch-result.json"
+        outcome = {"started": True, "exit_code": 0, "job_id": "fixture", "request_sha256": "a" * 64}
+        receipt.write_text(json.dumps(outcome))
+        self.evidence.update(job_id="fixture", dispatch_result=outcome, dispatch_receipt_path=str(receipt),
+                             dispatch_request_sha256="a" * 64,
+                             dispatch_receipt_sha256=hashlib.sha256(receipt.read_bytes()).hexdigest())
         self.attestation = self.root / "attestation.json"
         self.save()
 
@@ -119,7 +125,7 @@ class ReleaseGateTests(unittest.TestCase):
         with self.assertRaises(gate.GateError):
             self.validate()
         path.unlink()
-        with self.assertRaises(OSError):
+        with self.assertRaises(gate.GateError):
             self.validate()
 
     def test_traversal_absolute_and_symlink_artifacts_block(self):
@@ -189,6 +195,26 @@ class ReleaseGateTests(unittest.TestCase):
         self.save()
         with self.assertRaises(gate.GateError):
             self.validate()
+
+    def test_reviewed_version_must_match_packaging_plan(self):
+        self.evidence["version"] = "1.2.3"
+        self.save()
+        with contextlib.redirect_stderr(io.StringIO()):
+            code = gate.main(["plan", "--repo", str(self.repo), "--attestation", str(self.attestation),
+                              "--base-sha", self.base, "--head-sha", self.head,
+                              "--sku", "pro", "--version", "9.9.9"])
+        self.assertEqual(code, 1)
+
+    def test_missing_or_nonzero_dispatch_receipt_blocks(self):
+        self.evidence.pop("dispatch_result")
+        self.save()
+        with self.assertRaisesRegex(gate.GateError, "dispatcher"):
+            self.validate()
+
+    def test_attestation_uses_aggregate_report_budget(self):
+        self.evidence["reports"] = {"fixture": "x" * (8 * 1024 * 1024 + 1)}
+        self.save()
+        self.assertEqual(self.validate()["status"], "STATIC_REVIEW_VERIFIED")
 
 
 if __name__ == "__main__":
