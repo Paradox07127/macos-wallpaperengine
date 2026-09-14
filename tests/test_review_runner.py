@@ -708,6 +708,38 @@ class HardenedCollectionTests(unittest.TestCase):
 class IsolationTests(unittest.TestCase):
     setUp = OfflineGitPreparationTests.setUp
     cleanup = OfflineGitPreparationTests.cleanup
+    def test_plain_frozen_diff_works_without_inherited_diff_or_pack_hooks(self):
+        (self.repo / "file.txt").write_text("changed release fixture\n")
+        runner.git(self.repo, "add", "file.txt")
+        runner.git(self.repo, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
+                   "commit", "-qm", "nonempty diff fixture")
+        self.args.head = runner.git(self.repo, "rev-parse", "HEAD")
+        marker = self.root / "external-command-must-not-run"
+        extension = self.root / "hostile-extension"
+        extension.write_text("#!/bin/sh\ntouch '" + str(marker) + "'\nexit 99\n")
+        extension.chmod(0o700)
+        runner.git(self.repo, "config", "diff.external", str(extension))
+        runner.git(self.repo, "config", "uploadpack.packObjectsHook", str(extension))
+        global_config = self.root / "fake-global.gitconfig"
+        global_config.write_text('[diff]\n external = "' + str(extension) + '"\n'
+                                 '[uploadpack]\n packObjectsHook = "' + str(extension) + '"\n')
+        with patch.dict(os.environ, {"GIT_CONFIG_GLOBAL": str(global_config),
+                                     "GIT_EXTERNAL_DIFF": str(extension)}), patch.object(
+                runner, "environment", return_value=(self.env, self.provenance)):
+            _, manifest, _ = runner.prepare(self.args)
+            # Match the upstream mmrun's ordinary Git diff: no --no-ext-diff.
+            result = subprocess.run(["git", "-C", manifest["frozen_checkout"], "diff",
+                                     self.args.base + "..." + self.args.head],
+                                    env=runner.git_environment(), text=True, capture_output=True, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("+changed release fixture", result.stdout)
+        self.assertFalse(marker.exists())
+        # The ordinary diff has no empty external executable configured.
+        config = runner.git(Path(manifest["frozen_checkout"]), "config", "--list")
+        self.assertNotIn("diff.external=", config)
+        # uploadpack.packObjectsHook='' remains safe: the real local upload-pack
+        # used by preparation above completed instead of trying an empty command.
+
     def test_missing_promisor_blob_fails_before_freeze_without_lazy_fetch(self):
         marker = self.root / "lazy-fetch-must-not-run"
         upload = self.root / "fake-upload-pack"

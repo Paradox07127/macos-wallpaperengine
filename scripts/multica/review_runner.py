@@ -187,9 +187,12 @@ def git_environment() -> dict[str, str]:
                GIT_NO_REPLACE_OBJECTS="1", GIT_NO_LAZY_FETCH="1")
     # These also reach upload-pack subprocesses. A fresh frozen repo has no
     # source-local filter config, templates, alternates, or shared objects.
+    # Do not set diff.external to an empty value: Git treats it as an
+    # executable name. Ordinary mmrun diffs are safe in the fresh repository
+    # because source config is absent and global/system config stays disabled.
     overrides = {"core.hooksPath": os.devnull, "core.fsmonitor": "false",
                  "core.attributesFile": os.devnull, "core.excludesFile": os.devnull,
-                 "diff.external": "", "uploadpack.packObjectsHook": "",
+                 "uploadpack.packObjectsHook": "",
                  "submodule.recurse": "false", "protocol.ext.allow": "never"}
     env["GIT_CONFIG_COUNT"] = str(len(overrides))
     for index, (key, value) in enumerate(overrides.items()):
