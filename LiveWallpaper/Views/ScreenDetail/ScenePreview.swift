@@ -536,20 +536,21 @@ private final class AspectFillAnimatedImageView: NSView {
 
     private func startPlayback() {
         guard let decoded, decoded.frameCount > 1 else { return }
+        let initialIndex = currentFrameIndex
         playbackTask = Task { @MainActor [weak self] in
+            var index = initialIndex
             while !Task.isCancelled {
-                guard let self else { return }
-                let index = self.currentFrameIndex
                 let delay = decoded.frameDelays.indices.contains(index)
                     ? decoded.frameDelays[index]
                     : 0.1
-                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-                guard !Task.isCancelled else { return }
                 let next = (index + 1) % decoded.frameCount
-                let frame = await Task.detached(priority: .userInitiated) {
-                    decoded.frame(at: next)
-                }.value
-                guard !Task.isCancelled else { return }
+                let frame = await PreviewFrameLoader.frame(after: delay) {
+                    await Task.detached(priority: .userInitiated) {
+                        decoded.frame(at: next)
+                    }.value
+                }
+                guard !Task.isCancelled, let self else { return }
+                index = next
                 self.currentFrameIndex = next
                 if let frame { self.layer?.contents = frame }
             }

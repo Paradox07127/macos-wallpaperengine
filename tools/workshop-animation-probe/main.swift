@@ -12,6 +12,7 @@ func arg(_ name: String, _ fallback: String) -> String {
 @MainActor enum AnimationMetrics {
     static var bodyEvaluations = 0
     static var frames = 0
+    static var frameTimes: [String: [Double]] = [:]
 }
 actor ProbeAssets {
     static let shared = ProbeAssets()
@@ -68,13 +69,13 @@ func cpuSeconds() -> Double {
         model.active = phase != "static"
         model.presented = phase != "hidden-host"
         try await Task.sleep(for: .milliseconds(250))
-        AnimationMetrics.bodyEvaluations = 0; AnimationMetrics.frames = 0
+        AnimationMetrics.bodyEvaluations = 0; AnimationMetrics.frames = 0; AnimationMetrics.frameTimes = [:]
         let cpu = cpuSeconds(), start = CACurrentMediaTime(), thermal = ProcessInfo.processInfo.thermalState.rawValue
         var gaps: [Double] = []
         while CACurrentMediaTime() - start < Double(arg("seconds", "3"))! {
             let t = CACurrentMediaTime(); try await Task.sleep(for: .milliseconds(16)); gaps.append((CACurrentMediaTime() - t) * 1000)
         }
-        results.append(["phase": phase, "seconds": CACurrentMediaTime() - start, "cpuSeconds": cpuSeconds() - cpu, "bodyEvaluations": AnimationMetrics.bodyEvaluations, "frames": AnimationMetrics.frames, "mainActorGapMs": gaps, "thermalBefore": thermal, "thermalAfter": ProcessInfo.processInfo.thermalState.rawValue])
+        results.append(["phase": phase, "seconds": CACurrentMediaTime() - start, "cpuSeconds": cpuSeconds() - cpu, "bodyEvaluations": AnimationMetrics.bodyEvaluations, "frames": AnimationMetrics.frames, "frameTimes": AnimationMetrics.frameTimes, "mainActorGapMs": gaps, "thermalBefore": thermal, "thermalAfter": ProcessInfo.processInfo.thermalState.rawValue])
     }
     try JSONSerialization.data(withJSONObject: ["mode": mode, "count": count, "source": source.path, "results": results], options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: arg("output", "/private/tmp/animation.json")))
     print(results.map { ["phase": $0["phase"]!, "bodies": $0["bodyEvaluations"]!, "frames": $0["frames"]!] })

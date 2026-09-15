@@ -215,7 +215,10 @@ final class GIFAnimationController {
             var index = 0
             while !Task.isCancelled {
                 let delay = index < gif.frameDelays.count ? gif.frameDelays[index] : 0.1
-                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                let next = (index + 1) % gif.frameCount
+                let frame = await PreviewFrameLoader.frame(after: delay) {
+                    await GIFAnimationController.decode(gif, at: next)
+                }
                 // The task strongly holds `gif` and its `CGImageSource`, so `[weak self]` only
                 // frees the controller — and `LazyVGrid` can drop a tile without `onDisappear`.
                 // `deinit` can't: the class is `@MainActor`, so it may not touch the task handles.
@@ -225,9 +228,7 @@ final class GIFAnimationController {
                     GIFPlaybackCoordinator.shared.endPlayback(id: id)
                     break
                 }
-                index = (index + 1) % gif.frameCount
-                let frame = await GIFAnimationController.decode(gif, at: index)
-                guard !Task.isCancelled else { break }
+                index = next
                 if let frame { self.displayedFrame = frame }
             }
         }

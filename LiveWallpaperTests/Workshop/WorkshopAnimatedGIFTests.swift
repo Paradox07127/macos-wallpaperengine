@@ -493,6 +493,58 @@ struct InstalledPreviewPlaybackLifecycleTests {
     }
 }
 
+@MainActor
+@Suite("Preview frame timing", .serialized)
+struct PreviewFrameTimingTests {
+    private actor DecodeProbe {
+        var started = false
+        var continuation: CheckedContinuation<Int?, Never>?
+
+        func decode() async -> Int? {
+            started = true
+            return await withCheckedContinuation { continuation = $0 }
+        }
+
+        func finish() {
+            continuation?.resume(returning: 7)
+            continuation = nil
+        }
+    }
+
+    @Test("An already cancelled playback does not start decoding")
+    func cancelledBeforeDecode() async {
+        let probe = DecodeProbe()
+        let task = Task {
+            await PreviewFrameLoader.frame(after: 0.1) { await probe.decode() }
+        }
+        task.cancel()
+        #expect(await task.value == nil)
+        #expect(await probe.started == false)
+    }
+
+    @Test("Cancellation while decoding discards the prepared frame")
+    func cancelledDuringDecode() async throws {
+        let probe = DecodeProbe()
+        let task = Task {
+            await PreviewFrameLoader.frame(after: 10) { await probe.decode() }
+        }
+        while await !probe.started {
+            try await Task.sleep(for: .milliseconds(1))
+        }
+        task.cancel()
+        await probe.finish()
+        #expect(await task.value == nil)
+    }
+
+    @Test("A frame prepared early still waits for its display interval")
+    func preparedFrameWaits() async {
+        let start = ContinuousClock.now
+        let result = await PreviewFrameLoader.frame(after: 0.06) { 7 }
+        #expect(result == 7)
+        #expect(start.duration(to: .now) >= .milliseconds(55))
+    }
+}
+
 // MARK: - Fixtures
 
 enum GIFTestFixtures {

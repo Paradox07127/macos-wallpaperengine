@@ -31,6 +31,26 @@ struct ThumbnailPlaybackGate: Equatable {
     }
 }
 
+/// Prepare during the current frame's display interval, then publish at its
+/// deadline. Waiting before decoding adds decode time to every authored delay.
+enum PreviewFrameLoader {
+    static func frame<Value: Sendable>(
+        after delay: TimeInterval,
+        decode: @Sendable () async -> Value?
+    ) async -> Value? {
+        guard !Task.isCancelled else { return nil }
+        let deadline = ContinuousClock.now.advanced(by: .seconds(delay))
+        let frame = await decode()
+        guard !Task.isCancelled else { return nil }
+        do {
+            try await Task.sleep(until: deadline, clock: .continuous)
+        } catch {
+            return nil
+        }
+        return frame
+    }
+}
+
 @MainActor
 final class GIFPlaybackCoordinator {
     static let shared = GIFPlaybackCoordinator()
