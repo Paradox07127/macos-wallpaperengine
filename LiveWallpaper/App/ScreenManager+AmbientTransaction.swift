@@ -122,6 +122,12 @@ extension ScreenManager {
                     let error = candidate.runtimeError ?? .wallpaperPreparationFailed(type: candidate.wallpaperType, timedOut: result == .timedOut)
                     var cause = WallpaperFailureCause.runtime(error)
                     var diagnostics = ""
+                    // Web's counterpart of the scene branch below; `WebFailureCause` is what
+                    // keeps a 404, a revoked folder and a renderer crash from sharing one code.
+                    if let ambient = candidate as? AmbientWallpaperSession,
+                       let webCause = ambient.loadFailureCause {
+                        cause = webCause
+                    }
                     #if !LITE_BUILD
                     if let scene = candidate as? SceneWallpaperSession {
                         cause = scene.loadFailureCause ?? scene.loadError.map(SceneFailureCause.make) ?? cause

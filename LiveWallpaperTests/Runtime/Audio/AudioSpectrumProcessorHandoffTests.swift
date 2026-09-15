@@ -254,8 +254,10 @@ struct AudioSpectrumProcessorHandoffTests {
             if let frame = processor.analyzeIfDue(nowNanos: now) {
                 frames += 1
                 #expect(frame.left.count == AudioSpectrumFrame.binCount)
-                #expect(frame.left.allSatisfy { $0.isFinite && $0 >= 0 && $0 <= 1 })
-                #expect(frame.right.allSatisfy { $0.isFinite && $0 >= 0 && $0 <= 1 })
+                // Finite and non-negative is the analyzer's contract; the 0...1 ceiling belongs
+                // to `AudioSpectrumBroker.snapshot()`, not here.
+                #expect(frame.left.allSatisfy { $0.isFinite && $0 >= 0 })
+                #expect(frame.right.allSatisfy { $0.isFinite && $0 >= 0 })
             }
             now &+= AudioSpectrumProcessor.minAnalysisIntervalNanos
             Thread.sleep(forTimeInterval: 0.001)
