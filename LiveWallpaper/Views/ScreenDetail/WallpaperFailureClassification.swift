@@ -65,6 +65,7 @@ extension WallpaperFailureCause {
         "texture.metal_compression",
         "texture.metal_format",
         "texture.metal_unavailable",
+        "web.blocked_port",
     ]
 
     /// The content is gone or unreadable; pointing us at it again is the fix,
@@ -75,6 +76,7 @@ extension WallpaperFailureCause {
         "runtime.sandboxRevoked",
         "scene.cache_missing",
         "scene.source_unavailable",
+        "web.resource_denied",
     ]
 
     /// Present but incomplete — a named file the project expects is absent.
@@ -82,6 +84,7 @@ extension WallpaperFailureCause {
         "graph.file_missing",
         "scene.cross_package",
         "scene.file_missing",
+        "web.entry_missing",
     ]
 
     var failureClass: WallpaperFailureClass {

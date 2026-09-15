@@ -47,13 +47,28 @@ struct AudioSpectrumProcessorTests {
         #expect(attackPeak > releaseDrop)
     }
 
-    @Test("Normalization stays inside zero one range")
-    func normalizationStaysInsideZeroOneRange() {
+    /// Wallpaper Engine's documented web contract allows bins above 1, so the dB window's top
+    /// is a reference point, not a ceiling: past it the same slope keeps going.
+    @Test("A signal past the dB window's top runs above one instead of saturating")
+    func loudSignalRunsAboveOne() {
         let processor = AudioSpectrumProcessor()
         let left = Self.sineWave(cycles: 16, amplitude: 50)
         let right = Self.sineWave(cycles: 24, amplitude: 50)
 
         let frame = processor.process(left: left, right: right, timestampNanos: 6)
+
+        #expect(Self.isNonNegative(frame.left))
+        #expect(Self.isNonNegative(frame.right))
+        #expect((frame.left.max() ?? 0) > 1)
+        #expect((frame.right.max() ?? 0) > 1)
+    }
+
+    @Test("Control: a signal inside the dB window still lands in zero to one")
+    func moderateSignalStaysInsideZeroOneRange() {
+        let processor = AudioSpectrumProcessor()
+        let quiet = Self.sineWave(cycles: 16, amplitude: 0.004)
+
+        let frame = processor.process(left: quiet, right: quiet, timestampNanos: 6)
 
         #expect(Self.isNormalized(frame.left))
         #expect(Self.isNormalized(frame.right))
@@ -103,12 +118,13 @@ struct AudioSpectrumProcessorTests {
 
         // The frame's arrays share storage with the processor's output buffers.
         broker.attachAnalyzer(SpectrumAnalyzerStub(analyzed))
-        _ = broker.snapshot()
+        _ = broker.snapshot(clampedTo01: false)
 
         let silence = [Float](repeating: 0, count: 2048)
         _ = processor.process(left: silence, right: silence, timestampNanos: 2)
 
-        let snapshot = broker.snapshot()
+        // Unclamped: this asserts aliasing, so it must compare against the analyzer's own values.
+        let snapshot = broker.snapshot(clampedTo01: false)
         #expect(snapshot.left == expectedLeft)
         #expect(snapshot.right == expectedRight)
         #expect(snapshot.timestampNanos == 1)
@@ -127,6 +143,12 @@ struct AudioSpectrumProcessorTests {
     private static func isNormalized(_ values: [Float]) -> Bool {
         values.allSatisfy { value in
             value.isFinite && value >= 0 && value <= 1
+        }
+    }
+
+    private static func isNonNegative(_ values: [Float]) -> Bool {
+        values.allSatisfy { value in
+            value.isFinite && value >= 0
         }
     }
 }

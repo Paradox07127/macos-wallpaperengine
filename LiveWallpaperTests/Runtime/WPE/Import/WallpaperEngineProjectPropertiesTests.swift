@@ -814,4 +814,26 @@ struct ScenePresetLayerFilterTests {
         let layer: [String: WallpaperEngineProjectPropertyValue] = ["anything": .number(1)]
         #expect(empty.declaredEditableValues(layer) == layer)
     }
+
+    /// The empty string an unset `file`/`directory`/`textinput` row gets is a web-delivery rule
+    /// (`WallpaperEngineWebPropertyBridge`), not a schema default: promoting it here would make
+    /// scene presets and `condition` evaluation see `""` where they currently see "unset".
+    @Test("An unset file row stays absent from schema defaults")
+    func unsetFileRowStaysAbsentFromSchemaDefaults() throws {
+        let schema = try WallpaperEngineProjectPropertySchema.parse(data: Data("""
+        {
+          "general": {
+            "properties": {
+              "image": { "type": "file", "text": "Custom Image" },
+              "cityname": { "type": "textinput", "text": "City" },
+              "opacity": { "type": "slider", "text": "Opacity", "value": 50 }
+            }
+          }
+        }
+        """.utf8))
+
+        #expect(schema.defaultValues["image"] == nil)
+        #expect(schema.defaultValues["cityname"] == nil)
+        #expect(schema.defaultValues["opacity"] == .number(50))
+    }
 }

@@ -22,6 +22,26 @@ final class SpectrumAnalyzerStub: AudioSpectrumAnalyzing, @unchecked Sendable {
 
 @Suite("Audio spectrum broker")
 struct AudioSpectrumBrokerTests {
+    /// The renderer and the Monitor bars are drawn against a 0...1 domain; only the web
+    /// visualizer, whose contract allows more, asks for the unsaturated value.
+    @Test("Bins above one survive storage and only the opt-out snapshot shows them")
+    func binsAboveOneOnlySurviveTheUnclampedSnapshot() {
+        let broker = AudioSpectrumBroker()
+        broker.attachAnalyzer(SpectrumAnalyzerStub(AudioSpectrumFrame(
+            validatedLeft: [Float](repeating: 1.75, count: AudioSpectrumFrame.binCount),
+            validatedRight: [Float](repeating: 0.5, count: AudioSpectrumFrame.binCount),
+            timestampNanos: 7
+        )))
+
+        let raw = broker.snapshot(clampedTo01: false)
+        let clamped = broker.snapshot()
+
+        #expect(raw.left[0] == 1.75)
+        #expect(raw.right[0] == 0.5)
+        #expect(clamped.left[0] == 1)
+        #expect(clamped.right[0] == 0.5)
+    }
+
     @Test("Default snapshot is silence")
     func defaultSnapshotIsSilence() {
         let broker = AudioSpectrumBroker()

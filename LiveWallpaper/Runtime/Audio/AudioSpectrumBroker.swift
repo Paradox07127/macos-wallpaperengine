@@ -29,7 +29,8 @@ final class AudioSpectrumBroker: Sendable {
         lock.withLock { $0.analyzer = analyzer }
     }
 
-    func snapshot() -> AudioSpectrumFrame {
+    /// `clampedTo01: false` is the Wallpaper Engine web-visualizer domain, where bins may exceed 1.
+    func snapshot(clampedTo01: Bool = true) -> AudioSpectrumFrame {
         lock.withLock { state in
             if let fresh = state.analyzer?.analyzeIfDue(nowNanos: DispatchTime.now().uptimeNanoseconds) {
                 Self.copyChannel(fresh.left, into: &state.left)
@@ -38,8 +39,12 @@ final class AudioSpectrumBroker: Sendable {
             }
             // Sanitizing copy-out so returned frame owns independent buffers (no COW).
             return AudioSpectrumFrame(
-                left: state.left,
-                right: state.right,
+                validatedLeft: AudioSpectrumFrame.normalizedBins(
+                    state.left, count: AudioSpectrumFrame.binCount, clampedTo01: clampedTo01
+                ),
+                validatedRight: AudioSpectrumFrame.normalizedBins(
+                    state.right, count: AudioSpectrumFrame.binCount, clampedTo01: clampedTo01
+                ),
                 timestampNanos: state.timestampNanos
             )
         }
@@ -56,7 +61,7 @@ final class AudioSpectrumBroker: Sendable {
     private static func copyChannel(_ source: [Float], into target: inout [Float]) {
         for index in target.indices {
             let value = index < source.count ? source[index] : 0
-            target[index] = AudioSpectrumFrame.clamp(value)
+            target[index] = AudioSpectrumFrame.sanitize(value)
         }
     }
 }

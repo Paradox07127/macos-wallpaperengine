@@ -16,6 +16,9 @@ final class AmbientWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackC
         }
     }
     var onRuntimeErrorChange: (@MainActor () -> Void)?
+    /// The classified counterpart of `runtimeError`, mirroring `SceneWallpaperSession`: the
+    /// transaction prefers it so a web failure reaches the surface as more than one bucket.
+    private(set) var loadFailureCause: WallpaperFailureCause?
     /// Manual pause is not an absence: the user may unpause any moment, so it
     /// gets its own much longer dwell instead of reusing the view's absence
     /// constant. Matches `SceneWallpaperSession.userPauseHibernationDelay`.
@@ -196,6 +199,10 @@ final class AmbientWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackC
 
     func recordRuntimeError(_ error: WallpaperRuntimeError) {
         runtimeError = error
+    }
+
+    func recordLoadFailureCause(_ cause: WallpaperFailureCause) {
+        loadFailureCause = cause
     }
 
     func cleanup() {

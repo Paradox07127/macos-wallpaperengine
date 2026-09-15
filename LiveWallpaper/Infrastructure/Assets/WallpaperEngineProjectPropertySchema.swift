@@ -340,6 +340,15 @@ extension WallpaperEngineProjectPropertySchema {
         case group
         case unsupported
 
+        /// Rows whose "user has not chosen yet" state is an empty string. Omitting the key instead
+        /// leaves a page on its own initializer, and the common `var custom = {}` is truthy in JS.
+        var deliversEmptyStringWhenUnset: Bool {
+            switch self {
+            case .textinput, .file, .directory: true
+            default: false
+            }
+        }
+
         var isEditable: Bool {
             switch self {
             case .bool, .slider, .combo, .color, .textinput, .file, .directory:
