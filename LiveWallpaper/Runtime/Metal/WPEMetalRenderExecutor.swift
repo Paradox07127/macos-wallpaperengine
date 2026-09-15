@@ -605,6 +605,8 @@ final class WPEMetalRenderExecutor {
     /// `.inactive` until planned, so an executor that is never planned renders at full resolution — the pre-feature path, bit for bit.
     var upscalePlan: WPEMetalUpscalePlan = .inactive
     var lastPresentedDrawableSize: CGSize = .zero
+    /// Cumulative seconds spent acquiring drawables, confined to the render actor.
+    var drawableAcquisitionSeconds: TimeInterval = 0
     /// Drain at the end of the same frame — NOT at the demote site — so the pixel-keyed purge happens after the command buffer is committed rather than between encode and commit.
     private var presentSideDemotionPending = false
 

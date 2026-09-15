@@ -61,6 +61,7 @@ extension WPEMetalSceneRenderer {
         ownVisibilityByID = [:]
         liveTextVisibility = [:]
         clearSceneScriptRuntimeState()
+        sceneScriptBatchDispatcher.releaseLanesForSceneRetirement()
         // Retire only after destroy() has synchronously released JSC callbacks; late queued completions would still run.
         sceneScriptLoadState.retireCurrent()
         loadDiagnostics = nil
@@ -537,6 +538,7 @@ extension WPEMetalSceneRenderer {
     var frameDemand: WPEFrameDemand {
         var demand: WPEFrameDemand = []
         if hasAnimatedShaderPasses { demand.insert(.animatedShaders) }
+        if !dynamicOriginAnimations.isEmpty { demand.insert(.animations) }
         if sceneSupportsAudioProcessing { demand.insert(.audioReactive) }
         if !dynamicTextureSources.isEmpty { demand.insert(.dynamicTextures) }
         if particleSystems.contains(where: { !$0.isPermanentlyIdle && !$0.isBlockedOnAbsentPointer }) {
@@ -556,7 +558,10 @@ extension WPEMetalSceneRenderer {
             // A scene whose only live driver is a text script must keep the loop running or it freezes at frame 0.
             || !textScriptInstances.isEmpty
             || !textVisibleScriptInstances.isEmpty
-            || !textAlphaScriptInstances.isEmpty {
+            || !textAlphaScriptInstances.isEmpty
+            || !effectConstantScriptInstances.isEmpty
+            || !effectVisibilityScriptInstances.isEmpty
+            || !sharedEffectConstantReadFans.isEmpty {
             demand.insert(.scripts)
         }
         if pointerDrivenContent { demand.insert(.pointer) }
@@ -611,7 +616,11 @@ extension WPEMetalSceneRenderer {
     /// Local `effects/…` and workshop `workshop/…` shaders sample `g_Time` / `g_AudioSpectrum*`; `solidcolor`, `genericimage2/4`, `compose`, `copy` do not.
     static func pipelineHasAnimatedPasses(_ pipeline: WPEPreparedRenderPipeline) -> Bool {
         pipeline.layers.contains { layer in
-            layer.passes.contains { prepared in
+            if layer.puppetModel != nil
+                || layer.graphLayer.geometry.alphaAnimation != nil
+                || layer.graphLayer.geometry.colorAnimation != nil { return true }
+            return layer.passes.contains { prepared in
+                if prepared.hasAnimatedUniformValues { return true }
                 let shader = prepared.pass.shader.lowercased()
                 return shader.contains("effects/") || shader.contains("workshop/")
             }
@@ -740,6 +749,7 @@ extension WPEMetalSceneRenderer {
         ownVisibilityByID = [:]
         liveTextVisibility = [:]
         clearSceneScriptRuntimeState()
+        sceneScriptBatchDispatcher.releaseLanesForSceneRetirement()
         sceneScriptLoadState.retireCurrent()
         releaseDynamicTextureSources()
         particleSystems.removeAll(keepingCapacity: false)
@@ -908,6 +918,7 @@ struct WPEFrameDemand: OptionSet, Sendable {
     static let particles = Self(rawValue: 1 << 3)
     static let scripts = Self(rawValue: 1 << 4)
     static let pointer = Self(rawValue: 1 << 5)
+    static let animations = Self(rawValue: 1 << 6)
 }
 
 struct WPESceneRuntimeActivity: Equatable, Sendable {

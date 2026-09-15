@@ -127,6 +127,130 @@ struct WPEFrameDemandTests {
         #expect(stack.surface.mtkView.isPaused)
     }
 
+    @Test("Effect-only script readers keep a static scene active", arguments: ["constant", "visibility", "shared"])
+    func effectOnlyScriptsKeepFrames(family: String) async throws {
+        let fixture = try FrameDemandFixture.make()
+        defer { fixture.cleanup() }
+        let stack = try FrameDemandRendererStack.make(fixture)
+        let renderer = stack.renderer
+        defer { renderer.cleanup() }
+        try await stack.load()
+        let key = WPEEffectConstantScriptKey(passID: "solid", uniform: "g_Alpha")
+        if family == "shared" {
+            renderer.sharedEffectConstantReadFans[key] = ("animatedAlpha", .scalar)
+        } else {
+            let instance = try WPEDynamicTransformScriptInstance(
+                script: family == "visibility"
+                    ? "export function update(value) { return !value; }"
+                    : "export function update(value) { return value + 0.1; }",
+                seed: SIMD3<Double>(1, 0, 0),
+                valueShape: family == "visibility" ? .boolean : .scalar,
+                canvasSize: SIMD2<Double>(64, 64),
+                batchDispatcher: renderer.sceneScriptBatchDispatcher
+            )
+            if family == "visibility" {
+                renderer.effectVisibilityScriptInstances["solid"] = instance
+            } else {
+                renderer.effectConstantScriptInstances[key] = instance
+            }
+        }
+        renderer.synchronizeFrameDemand()
+        #expect(renderer.frameDemand.contains(.scripts))
+        #expect(renderer.needsContinuousFrames)
+        #expect(!stack.surface.mtkView.isPaused)
+        for instance in renderer.effectConstantScriptInstances.values {
+            _ = instance.destroy()
+        }
+        for instance in renderer.effectVisibilityScriptInstances.values {
+            _ = instance.destroy()
+        }
+        renderer.effectConstantScriptInstances.removeAll()
+        renderer.effectVisibilityScriptInstances.removeAll()
+        renderer.sharedEffectConstantReadFans.removeAll()
+        renderer.synchronizeFrameDemand()
+        #expect(renderer.frameDemand.isEmpty)
+        #expect(stack.surface.mtkView.isPaused)
+    }
+
+    @Test("Authored origin animation keeps frames without shaders or scripts")
+    func authoredOriginKeepsFrames() async throws {
+        let fixture = try FrameDemandFixture.make()
+        defer { fixture.cleanup() }
+        let stack = try FrameDemandRendererStack.make(fixture)
+        let renderer = stack.renderer
+        defer { renderer.cleanup() }
+        try await stack.load()
+        renderer.dynamicOriginAnimations["solid"] = Self.animatedValue
+        renderer.synchronizeFrameDemand()
+        #expect(renderer.needsContinuousFrames)
+        #expect(!stack.surface.mtkView.isPaused)
+        renderer.dynamicOriginAnimations.removeAll()
+        renderer.synchronizeFrameDemand()
+        #expect(renderer.frameDemand.isEmpty)
+    }
+
+    @Test("Retired origin animation cannot restart pacing during a failed wake")
+    func retiredOriginAnimationStaysIdle() async throws {
+        let fixture = try FrameDemandFixture.make()
+        defer { fixture.cleanup() }
+        let stack = try FrameDemandRendererStack.make(fixture)
+        let renderer = stack.renderer
+        defer { renderer.cleanup() }
+        try await stack.load()
+        renderer.dynamicOriginAnimations["solid"] = Self.animatedValue
+        renderer.synchronizeFrameDemand()
+        #expect(renderer.needsContinuousFrames)
+        renderer.applyPerformanceProfile(.suspended)
+        #expect(await stack.actor.hibernate())
+        #expect(renderer.dynamicOriginAnimations.isEmpty)
+        renderer.applyPerformanceProfile(.quality)
+        #expect(renderer.frameDemand.isEmpty)
+        #expect(stack.surface.mtkView.isPaused)
+
+        try Data("invalid scene".utf8).write(to: fixture.root.appendingPathComponent("scene.json"))
+        var reloadFailed = false
+        do {
+            try await stack.actor.reload()
+        } catch {
+            reloadFailed = true
+        }
+        #expect(reloadFailed)
+        #expect(!renderer.didLoad)
+        #expect(renderer.frameDemand.isEmpty)
+        #expect(stack.surface.mtkView.isPaused)
+    }
+
+    @Test("Animated uniforms on a builtin pass retain continuous frame demand")
+    func builtinAnimatedUniformKeepsFrames() async throws {
+        let fixture = try FrameDemandFixture.make()
+        defer { fixture.cleanup() }
+        let stack = try FrameDemandRendererStack.make(fixture)
+        defer { stack.renderer.cleanup() }
+        try await stack.load()
+        let pipeline = try #require(stack.renderer.renderPipeline)
+        let layer = try #require(pipeline.layers.first)
+        let original = try #require(layer.passes.first)
+        let animatedPass = WPEPreparedRenderPass(
+            pass: original.pass, shader: original.shader,
+            textureBindings: original.textureBindings, comboValues: original.comboValues,
+            uniformValues: ["g_Alpha": .animated(Self.animatedValue)]
+        )
+        let animated = WPEPreparedRenderPipeline(layers: [WPEPreparedRenderLayer(
+            graphLayer: layer.graphLayer, passes: [animatedPass]
+        )])
+        #expect(WPEMetalSceneRenderer.pipelineHasAnimatedPasses(animated))
+        #expect(!WPEMetalSceneRenderer.pipelineHasAnimatedPasses(pipeline))
+    }
+
+    private static var animatedValue: WPESceneAnimatedValue {
+        WPESceneAnimatedValue(
+            animation: WPESceneNumericAnimation(
+                tracks: [[.init(frame: 0, value: 0), .init(frame: 30, value: 1)], [], []],
+                fps: 30, length: 30, mode: "loop", wrapLoop: true
+            ), scalarFallback: 0, vectorFallback: [0, 0, 0]
+        )
+    }
+
     @Test("Fully released on-demand videos carry no demand; a rebuilt source re-arms the loop")
     func releasedOnDemandVideoSettlesAndRebuildRearms() async throws {
         let fixture = try FrameDemandFixture.make()
