@@ -287,6 +287,7 @@ extension HTMLWallpaperView {
         let request = mediaLifecycleState.request(suspended)
         guard request.changed else { return }
         reloadScheduler.setSuspended(suspended)
+        reconcileAudioSpectrumPump()
 
         if suspended {
             cancelPackageBackingForSuspend()

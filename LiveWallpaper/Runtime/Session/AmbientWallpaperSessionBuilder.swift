@@ -203,6 +203,9 @@ final class AmbientWallpaperSessionBuilder {
         htmlView.onError = { [weak session] error in
             session?.recordRuntimeError(error)
         }
+        htmlView.onFailureCause = { [weak session] cause in
+            session?.recordLoadFailureCause(cause)
+        }
 
         htmlView.apply(effective)
         htmlView.loadSource(effectiveSource)

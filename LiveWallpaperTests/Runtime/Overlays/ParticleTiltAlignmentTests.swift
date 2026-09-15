@@ -1,5 +1,6 @@
 import AppKit
 import LiveWallpaperCore
+import Metal
 import QuartzCore
 import XCTest
 @testable import LiveWallpaper
@@ -11,7 +12,7 @@ final class ParticleTiltAlignmentTests: XCTestCase {
 
     // MARK: - Capture harness
 
-    /// A grayscale screen capture of `view`, rows normalised so row 0 is the top of
+    /// A grayscale capture of the layer tree, rows normalised so row 0 is the top of
     /// what the user sees — calibrated in-frame by a marker, not assumed.
     private struct Frame {
         let pixels: [UInt8]
@@ -24,108 +25,137 @@ final class ParticleTiltAlignmentTests: XCTestCase {
         func lit(_ x: Int, _ y: Int) -> Bool { pixels[y * width + x] > 24 }
     }
 
+    private struct MarkerNotFound: Error, CustomStringConvertible {
+        var description: String {
+            "calibration marker not found — the offscreen capture is empty"
+        }
+    }
+
     private static let markerSide: CGFloat = 16
+    /// Backing pixels per point. Fixed rather than read off a display: nothing here
+    /// reaches a screen, and every pixel threshold below is written at 2x.
+    private static let captureScale: CGFloat = 2
+
+    /// Renders a detached layer tree into a texture. There is no window, so nothing
+    /// appears on screen, nothing can occlude the capture, a locked screen cannot
+    /// black it out, and animation time is stepped by hand instead of waited out.
+    @MainActor
+    private final class OffscreenStage {
+        private let texture: MTLTexture
+        private let renderer: CARenderer
+        private var now = CACurrentMediaTime()
+
+        init(size: CGSize, build: (NSView) -> Void) throws {
+            let scale = ParticleTiltAlignmentTests.captureScale
+            let side = ParticleTiltAlignmentTests.markerSide
+
+            let host = NSView(frame: NSRect(origin: .zero, size: size))
+            host.wantsLayer = true
+            let root = try XCTUnwrap(host.layer, "the host view has no backing layer")
+            root.backgroundColor = NSColor.black.cgColor
+            root.contentsScale = scale
+
+            build(host)
+
+            // Outside a window AppKit never parents a subview's layer, so the tree
+            // handed to CARenderer would otherwise hold nothing but the marker.
+            for sub in host.subviews {
+                if let layer = sub.layer, layer.superlayer !== root {
+                    layer.frame = sub.frame
+                    root.addSublayer(layer)
+                }
+            }
+
+            let device = try XCTUnwrap(MTLCreateSystemDefaultDevice(), "no Metal device")
+            let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+                pixelFormat: .bgra8Unorm,
+                width: Int(size.width * scale), height: Int(size.height * scale),
+                mipmapped: false
+            )
+            descriptor.usage = [.shaderRead, .shaderWrite, .renderTarget]
+            descriptor.storageMode = .shared
+            texture = try XCTUnwrap(device.makeTexture(descriptor: descriptor), "no texture")
+
+            // CARenderer maps a layer point onto a texture pixel 1:1 — `contentsScale`
+            // does not enter into it — so a 2x capture needs the tree scaled up inside
+            // a container sized in backing pixels. Without this the whole scene lands
+            // in one corner and the rest of the capture is black.
+            let container = CALayer()
+            container.frame = CGRect(x: 0, y: 0,
+                                     width: size.width * scale, height: size.height * scale)
+            container.backgroundColor = NSColor.black.cgColor
+            root.anchorPoint = .zero
+            root.position = .zero
+            root.transform = CATransform3DMakeScale(scale, scale, 1)
+            container.addSublayer(root)
+
+            renderer = CARenderer(mtlTexture: texture)
+            renderer.layer = container
+            renderer.bounds = container.bounds
+
+            // Calibration marker at the view's top-left in AppKit's y-up space, added
+            // last so it is never covered: a full-bounds layer under test sits above
+            // whatever was added before it, clear background or not.
+            let marker = CALayer()
+            marker.frame = CGRect(x: 0, y: size.height - side, width: side, height: side)
+            marker.backgroundColor = NSColor.white.cgColor
+            root.addSublayer(marker)
+
+            // The tree only reaches the render server once a transaction commits.
+            CATransaction.begin()
+            root.setNeedsDisplay()
+            root.displayIfNeeded()
+            root.layoutIfNeeded()
+            CATransaction.commit()
+            CATransaction.flush()
+
+        }
+
+        /// Steps animation time in 60 Hz increments, landing exactly on the target so
+        /// a caller's `gap` is the interval it asked for rather than a rounded one.
+        ///
+        /// `pumpingRunLoop` also spends the wall clock: `MeteorShower` schedules its
+        /// launches on a `Timer`, which a purely simulated clock never fires.
+        func advance(by seconds: TimeInterval, pumpingRunLoop: Bool = false) {
+            let target = now + seconds
+            while now < target {
+                now = min(now + 1.0 / 60.0, target)
+                if pumpingRunLoop {
+                    RunLoop.current.run(until: Date().addingTimeInterval(1.0 / 60.0))
+                    now = CACurrentMediaTime()
+                }
+                renderer.beginFrame(atTime: now, timeStamp: nil)
+                renderer.addUpdate(renderer.bounds)
+                renderer.render()
+                renderer.endFrame()
+                CATransaction.flush()
+            }
+        }
+
+        func image() throws -> CGImage {
+            let width = texture.width, height = texture.height
+            var bgra = [UInt8](repeating: 0, count: width * height * 4)
+            texture.getBytes(&bgra, bytesPerRow: width * 4,
+                             from: MTLRegionMake2D(0, 0, width, height), mipmapLevel: 0)
+            let provider = try XCTUnwrap(CGDataProvider(data: Data(bgra) as CFData))
+            // `bgra8Unorm` on a little-endian host is byteOrder32Little + alpha first.
+            return try XCTUnwrap(CGImage(
+                width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
+                bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue
+                    | CGBitmapInfo.byteOrder32Little.rawValue),
+                provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent
+            ))
+        }
+    }
 
     @MainActor
     private func capture(
         _ build: (NSView) -> Void, size: CGSize, settle: TimeInterval
     ) throws -> Frame {
-        guard let screen = NSScreen.main else { throw XCTSkip("no screen") }
-        try CaptureEnvironment.requireUnlockedScreen()
-        let frame = NSRect(
-            x: screen.frame.midX - size.width / 2,
-            y: screen.frame.midY - size.height / 2,
-            width: size.width, height: size.height
-        )
-
-        let window = NSWindow(contentRect: frame, styleMask: [.borderless],
-                              backing: .buffered, defer: false)
-        // Above ordinary windows, not at the wallpaper's level: an occluded window
-        // stops updating its backing store and the capture comes back black.
-        window.level = .floating
-        window.isOpaque = true
-        window.backgroundColor = .black
-        defer { window.orderOut(nil) }
-
-        let view = NSView(frame: NSRect(origin: .zero, size: size))
-        view.wantsLayer = true
-        view.layer?.backgroundColor = NSColor.black.cgColor
-
-        // Calibration marker at the view's top-left in AppKit's y-up space.
-        let marker = CALayer()
-        marker.frame = CGRect(x: 0, y: size.height - Self.markerSide,
-                              width: Self.markerSide, height: Self.markerSide)
-        marker.backgroundColor = NSColor.white.cgColor
-        view.layer?.addSublayer(marker)
-
-        build(view)
-        window.contentView = view
-        window.orderFrontRegardless()
-        RunLoop.current.run(until: Date().addingTimeInterval(settle))
-        return try snapshot(of: window, size: size)
-    }
-
-    /// Retried: the compositor hands back an all-black backing store just after the
-    /// window is ordered in. A capture that never shows the marker still fails.
-    @MainActor
-    private func snapshot(of window: NSWindow, size: CGSize) throws -> Frame {
-        for _ in 0 ..< 9 {
-            if let frame = try calibratedFrame(of: window, size: size) {
-                return frame
-            }
-            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
-        }
-        return try XCTUnwrap(
-            calibratedFrame(of: window, size: size),
-            "calibration marker not found — the capture is not showing the host view"
-        )
-    }
-
-    /// `nil` when the calibration marker is not in the capture.
-    @MainActor
-    private func calibratedFrame(of window: NSWindow, size: CGSize) throws -> Frame? {
-        // This window's own backing store, not the screen region it occupies:
-        // `.optionOnScreenOnly` over a rect captures whatever is in front.
-        let shot = try XCTUnwrap(
-            CGWindowListCreateImage(
-                .null, [.optionIncludingWindow], CGWindowID(window.windowNumber),
-                [.boundsIgnoreFraming, .bestResolution]),
-            "window capture returned nil"
-        )
-
-        let width = shot.width, height = shot.height
-        var pixels = [UInt8](repeating: 0, count: width * height)
-        guard let ctx = CGContext(
-            data: &pixels, width: width, height: height, bitsPerComponent: 8,
-            bytesPerRow: width, space: CGColorSpaceCreateDeviceGray(),
-            bitmapInfo: CGImageAlphaInfo.none.rawValue
-        ) else { throw XCTSkip("no context") }
-        ctx.draw(shot, in: CGRect(x: 0, y: 0, width: width, height: height))
-
-        let band = max(Int(Self.markerSide) * height / Int(size.height) / 2, 3)
-        let strip = max(Int(Self.markerSide) * width / Int(size.width) / 2, 3)
-        func brightness(rows: Range<Int>) -> Int {
-            rows.reduce(0) { sum, y in
-                sum + (0..<strip).reduce(0) { $0 + Int(pixels[y * width + $1]) }
-            }
-        }
-        let head = brightness(rows: 0 ..< band)
-        let tail = brightness(rows: (height - band) ..< height)
-        guard head != tail else {
-            return nil
-        }
-        if head < tail {
-            var flipped = [UInt8](repeating: 0, count: width * height)
-            for y in 0..<height {
-                let src = (height - 1 - y) * width
-                for x in 0..<width { flipped[y * width + x] = pixels[src + x] }
-            }
-            pixels = flipped
-        }
-        return Frame(
-            pixels: pixels, width: width, height: height,
-            firstDataColumn: min(strip * 3, width - 1)
-        )
+        let stage = try OffscreenStage(size: size, build: build)
+        stage.advance(by: settle)
+        return try frame(from: stage, size: size)
     }
 
     @MainActor
@@ -141,43 +171,56 @@ final class ParticleTiltAlignmentTests: XCTestCase {
     @MainActor
     private func captureSeries(
         _ build: (NSView) -> Void, size: CGSize, settle: TimeInterval, gap: TimeInterval, count: Int,
+        onWallClock: Bool = false,
         until isEnough: (Frame) -> Bool = { _ in false }
     ) throws -> [Frame] {
-        guard let screen = NSScreen.main else { throw XCTSkip("no screen") }
-        try CaptureEnvironment.requireUnlockedScreen()
-        let frame = NSRect(
-            x: screen.frame.midX - size.width / 2,
-            y: screen.frame.midY - size.height / 2,
-            width: size.width, height: size.height
-        )
-        let window = NSWindow(contentRect: frame, styleMask: [.borderless],
-                              backing: .buffered, defer: false)
-        // Above ordinary windows, not at the wallpaper's level: an occluded window
-        // stops updating its backing store and the capture comes back black.
-        window.level = .floating
-        window.isOpaque = true
-        window.backgroundColor = .black
-        defer { window.orderOut(nil) }
-
-        let view = NSView(frame: NSRect(origin: .zero, size: size))
-        view.wantsLayer = true
-        view.layer?.backgroundColor = NSColor.black.cgColor
-        let marker = CALayer()
-        marker.frame = CGRect(x: 0, y: size.height - Self.markerSide,
-                              width: Self.markerSide, height: Self.markerSide)
-        marker.backgroundColor = NSColor.white.cgColor
-        view.layer?.addSublayer(marker)
-
-        build(view)
-        window.contentView = view
-        window.orderFrontRegardless()
-        RunLoop.current.run(until: Date().addingTimeInterval(settle))
-        var frames = try [snapshot(of: window, size: size)]
+        let stage = try OffscreenStage(size: size, build: build)
+        stage.advance(by: settle, pumpingRunLoop: onWallClock)
+        var frames = try [frame(from: stage, size: size)]
         for _ in 1 ..< max(count, 1) where !isEnough(frames[frames.count - 1]) {
-            RunLoop.current.run(until: Date().addingTimeInterval(gap))
-            try frames.append(snapshot(of: window, size: size))
+            stage.advance(by: gap, pumpingRunLoop: onWallClock)
+            try frames.append(frame(from: stage, size: size))
         }
         return frames
+    }
+
+    /// The marker fixes which end of the capture is the top; nothing here assumes the
+    /// texture's row order.
+    @MainActor
+    private func frame(from stage: OffscreenStage, size: CGSize) throws -> Frame {
+        let shot = try stage.image()
+        let width = shot.width, height = shot.height
+        var pixels = [UInt8](repeating: 0, count: width * height)
+        guard let ctx = CGContext(
+            data: &pixels, width: width, height: height, bitsPerComponent: 8,
+            bytesPerRow: width, space: CGColorSpaceCreateDeviceGray(),
+            bitmapInfo: CGImageAlphaInfo.none.rawValue
+        ) else { throw XCTSkip("no context") }
+        ctx.draw(shot, in: CGRect(x: 0, y: 0, width: width, height: height))
+
+        let side = Int(Self.markerSide)
+        let band = max(side * height / Int(size.height) / 2, 3)
+        let strip = max(side * width / Int(size.width) / 2, 3)
+        func brightness(rows: Range<Int>) -> Int {
+            rows.reduce(0) { sum, y in
+                sum + (0..<strip).reduce(0) { $0 + Int(pixels[y * width + $1]) }
+            }
+        }
+        let head = brightness(rows: 0 ..< band)
+        let tail = brightness(rows: (height - band) ..< height)
+        guard head != tail else { throw MarkerNotFound() }
+        if head < tail {
+            var flipped = [UInt8](repeating: 0, count: width * height)
+            for y in 0..<height {
+                let src = (height - 1 - y) * width
+                for x in 0..<width { flipped[y * width + x] = pixels[src + x] }
+            }
+            pixels = flipped
+        }
+        return Frame(
+            pixels: pixels, width: width, height: height,
+            firstDataColumn: min(strip * 3, width - 1)
+        )
     }
 
     // MARK: - Measurements
@@ -512,7 +555,8 @@ final class ParticleTiltAlignmentTests: XCTestCase {
             let overlay = ParticleOverlayView(frame: view.bounds)
             view.addSubview(overlay)
             overlay.setEffect(.meteors, density: 3, tiltRadians: 0)
-        }, size: CGSize(width: 800, height: 600), settle: 1.8, gap: 0.4, count: 20, until: lit)
+        }, size: CGSize(width: 800, height: 600), settle: 1.8, gap: 0.4, count: 20,
+           onWallClock: true, until: lit)
 
         var sawAMeteor = false
         for (index, frame) in frames.enumerated() {
