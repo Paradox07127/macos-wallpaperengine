@@ -166,17 +166,24 @@ final class FolderURLSchemeHandler: NSObject, WKURLSchemeHandler, @unchecked Sen
 
         activeTasks[taskID]?.cancel()
 
-        let worker = Task.detached(priority: .userInitiated) { [weak self, source, mime, rangeHeader, url, delivery, taskID, cspHeader] in
+        let oggAccess: OggSourceAccess? = if case let .file(file) = source, OggAudioTranscoder.isOggFamily(file), let root = activeFolderURL {
+            OggSourceAccess(root: root)
+        } else {
+            nil
+        }
+        let worker = Task.detached(priority: .userInitiated) { [weak self, source, mime, rangeHeader, url, delivery, taskID, cspHeader, oggAccess] in
             var source = source
             var mime = mime
-            // Prefer cached AAC for Ogg (WebKit decoder is unreliable).
-            if case .file(let oggURL) = source,
-               OggAudioTranscoder.isOggFamily(oggURL),
-               let aac = OggAudioTranscoder.shared.transcodedM4A(forOgg: oggURL) {
-                source = .file(aac)
-                mime = Self.mimeType(for: aac)
-            }
             do {
+                try Task.checkCancellation()
+                // Wait asynchronously; the decode owns its folder access until it really finishes.
+                if case let .file(oggURL) = source,
+                   OggAudioTranscoder.isOggFamily(oggURL),
+                   let aac = await OggAudioTranscoder.shared.transcodedM4A(forOgg: oggURL, access: oggAccess) {
+                    source = .file(aac)
+                    mime = Self.mimeType(for: aac)
+                }
+                try Task.checkCancellation()
                 let totalLength = try Self.totalLength(of: source)
                 let range = Self.byteRange(from: rangeHeader, totalLength: totalLength)
                 let statusCode = range == nil ? 200 : 206
