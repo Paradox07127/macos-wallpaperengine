@@ -116,8 +116,6 @@ struct ThumbnailCard: View {
             .overlay { tileContent }
             .aspectRatio(16.0 / 9.0, contentMode: .fit)
             .clipped()
-            // Scoped to the artwork, not the whole card: an ancestor tap gesture over the title
-            // band would steal the overflow button's click.
             .contentShape(Rectangle())
             .onTapGesture { applyFromCard() }
             .overlay {
@@ -128,6 +126,7 @@ struct ThumbnailCard: View {
             .overlay(alignment: .topTrailing) {
                 formatBadgeRow
                     .padding(DesignTokens.Spacing.sm)
+                    .allowsHitTesting(false)
             }
             .overlay(alignment: .bottom) {
                 ThumbnailTitleBand(title: asset.displayName, isHovering: isHovering) {

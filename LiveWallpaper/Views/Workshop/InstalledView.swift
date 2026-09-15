@@ -150,9 +150,7 @@ struct InstalledView: View {
                 VStack(spacing: DesignTokens.Spacing.sm) {
                     LibraryFilterBar(
                         searchText: $model.searchText,
-                        searchPrompt: "Search library",
-                        resultCount: nil,
-                        totalCount: model.entries.count
+                        searchPrompt: "Search library"
                     ) {
                         HStack(spacing: DesignTokens.LibraryFilterBar.contentSpacing) {
                             WorkshopFiltersToggle(isExpanded: $model.showFilters, activeFilterCount: model.activeFilterCount)
@@ -190,8 +188,16 @@ struct InstalledView: View {
 
                 Divider()
                 gallery(visibleEntries)
+                LibraryStatusBar(summary: statusSummary(shown: visibleEntries.count))
             }
         }
+    }
+
+    private func statusSummary(shown: Int) -> Text {
+        let total = model.entries.count
+        return shown == total
+            ? Text("\(total) wallpapers")
+            : Text("\(shown) of \(total) shown")
     }
 
     @ViewBuilder
@@ -206,10 +212,13 @@ struct InstalledView: View {
                         .font(.callout)
                         .foregroundStyle(DesignTokens.Colors.Status.danger)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 20)
+                        .padding(.horizontal, DesignTokens.LibraryGrid.horizontalPadding)
                         .padding(.top, DesignTokens.Spacing.sm)
                 }
-                LazyVGrid(columns: DesignTokens.LibraryGrid.columns(for: tileSize), spacing: DesignTokens.LibraryGrid.spacing) {
+                LazyVGrid(
+                    columns: DesignTokens.LibraryGrid.columns(for: tileSize, aspect: .square),
+                    spacing: DesignTokens.LibraryGrid.spacing
+                ) {
                     ForEach(visibleEntries, id: \.id) { entry in
                         let bookmarked = bookmarkStore.containsWPEBookmark(workshopID: entry.origin.workshopID)
                         HistoryRow(
@@ -237,8 +246,7 @@ struct InstalledView: View {
                         }
                     }
                 }
-                .padding(.horizontal, 20)
-                .padding(.vertical, DesignTokens.Spacing.cardInset)
+                .libraryGridPadding()
                 .background(
                     Color.clear
                         .contentShape(Rectangle())

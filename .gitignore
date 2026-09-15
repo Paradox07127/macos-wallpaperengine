@@ -114,6 +114,7 @@ skills/
 .notes/
 archived/
 CLAUDE.md
+AGENTS.md
 
 !LiveWallpaperTests/Fixtures/
 LiveWallpaperTests/Fixtures/*

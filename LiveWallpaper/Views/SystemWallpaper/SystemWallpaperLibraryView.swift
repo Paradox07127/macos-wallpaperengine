@@ -60,11 +60,22 @@ struct SystemWallpaperLibraryView: View {
     }
 
     private var gallery: some View {
+        VStack(spacing: 0) {
+            galleryScroll
+            LibraryStatusBar(summary: Text("\(service.items.count) videos")) {
+                if service.diskUsageBytes > 0 {
+                    Text("Disk usage: \(WorkshopByteFormatter.platformDefault.string(fromByteCount: service.diskUsageBytes))")
+                }
+            }
+        }
+    }
+
+    private var galleryScroll: some View {
         ScrollView {
             LazyVStack(spacing: DesignTokens.Spacing.lg) {
                 notice
                 LazyVGrid(
-                    columns: DesignTokens.LibraryGrid.columns(for: tileSize),
+                    columns: DesignTokens.LibraryGrid.columns(for: tileSize, aspect: .wide),
                     spacing: DesignTokens.LibraryGrid.spacing
                 ) {
                     ForEach(service.items) { item in
@@ -88,7 +99,7 @@ struct SystemWallpaperLibraryView: View {
                 playbackModeRow
                 footnote
             }
-            .padding(DesignTokens.Spacing.lg)
+            .libraryGridPadding()
             .animation(.easeOut(duration: 0.2), value: service.items)
         }
     }
@@ -196,9 +207,6 @@ struct SystemWallpaperLibraryView: View {
 
     private var footnote: some View {
         VStack(alignment: .leading, spacing: 2) {
-            if service.diskUsageBytes > 0 {
-                Text("Disk usage: \(WorkshopByteFormatter.platformDefault.string(fromByteCount: service.diskUsageBytes))")
-            }
             Text("Removing a video here also deletes the system's copy from disk.")
             if !service.items.isEmpty {
                 Button("Remove All from System Wallpaper", role: .destructive) {

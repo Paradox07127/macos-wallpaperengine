@@ -98,44 +98,54 @@ struct SystemWallpaperCandidateTile: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        Button(action: onToggle) {
-            VStack(spacing: 0) {
-                poster
-                ThumbnailTitleBand(title: candidate.title, isHovering: isHovering) { EmptyView() }
-            }
-        }
-        .buttonStyle(.plain)
-        .galleryTileChrome(isHovering: isHovering, isSelected: isSelected, reduceMotion: reduceMotion)
-        .settledHover { isHovering = $0 }
-        .task(id: candidate.id) { thumbnail = await candidate.thumbnail() }
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
-        .accessibilityLabel(Text(verbatim: candidate.title))
+        Button(action: onToggle) { poster }
+            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .galleryTileChrome(isHovering: isHovering, isSelected: isSelected, reduceMotion: reduceMotion)
+            .settledHover { isHovering = $0 }
+            .task(id: candidate.id) { thumbnail = await candidate.thumbnail() }
+            .accessibilityAddTraits(isSelected ? .isSelected : [])
+            .accessibilityLabel(Text(verbatim: candidate.title))
     }
 
+    /// Artwork must stay an `overlay`: as a sibling, `scaledToFill` reports the scaled
+    /// size and the tile grows out of its grid column.
     private var poster: some View {
-        ZStack {
-            Rectangle().fill(Color.accentColor.opacity(0.12))
-            if let thumbnail {
-                Image(nsImage: thumbnail)
-                    .resizable()
-                    .interpolation(.high)
-                    .scaledToFill()
-            } else {
-                Image(systemName: "film")
-                    .font(.system(size: 28, weight: .light))
-                    .foregroundStyle(Color.accentColor.opacity(0.85))
+        Rectangle()
+            .fill(Color.accentColor.opacity(0.12))
+            .overlay { artwork }
+            .aspectRatio(16.0 / 9.0, contentMode: .fit)
+            .clipped()
+            .overlay(alignment: .topTrailing) {
+                selectionMark
+                    .padding(DesignTokens.Spacing.sm)
+                    .allowsHitTesting(false)
             }
+            .overlay(alignment: .bottom) {
+                ThumbnailTitleBand(title: candidate.title, isHovering: isHovering) { EmptyView() }
+            }
+    }
+
+    @ViewBuilder
+    private var artwork: some View {
+        if let thumbnail {
+            Image(nsImage: thumbnail)
+                .resizable()
+                .interpolation(.high)
+                .scaledToFill()
+        } else {
+            Image(systemName: "film")
+                .font(.system(size: 28, weight: .light))
+                .foregroundStyle(Color.accentColor.opacity(0.85))
         }
-        .aspectRatio(16 / 9, contentMode: .fill)
-        .clipped()
-        .overlay(alignment: .topTrailing) {
-            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(isSelected ? Color.accentColor : DesignTokens.Colors.overlayForeground)
-                .padding(6)
-                .floatingGlyphGlass(hovered: isHovering, opacity: 0.72)
-                .padding(8)
-                .accessibilityHidden(true)
-        }
+    }
+
+    private var selectionMark: some View {
+        Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundStyle(isSelected ? Color.accentColor : DesignTokens.Colors.overlayForeground)
+            .frame(width: 22, height: 22)
+            .floatingGlyphGlass(hovered: isHovering, opacity: 0.72)
+            .accessibilityHidden(true)
     }
 }
