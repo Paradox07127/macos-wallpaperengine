@@ -1,9 +1,7 @@
 import Foundation
 
 struct WPEAdaptiveRenderQoS {
-
-    /// The two QoS tiers the thread moves between. `.economy` maps to
-    /// `.utility` (E-core eligible); `.high` to `.userInteractive` (P-core).
+    /// Requested QoS tiers; the operating system chooses core placement.
     enum Level: Equatable {
         case economy
         case high
@@ -21,8 +19,7 @@ struct WPEAdaptiveRenderQoS {
     private var writeIndex = 0
     private var sampleCount = 0
 
-    /// Frames still owed a forced `.high` after load/reload. Custom shaders are
-    /// prewarmed, but first-frame PSO misses still must not be judged on E-cores.
+    /// Frames still owed a forced `.high` after load/reload.
     private var boostFramesRemaining = 0
 
     /// When false the thread is pinned at `.high` forever: `record` never returns a downgrade.
@@ -43,8 +40,7 @@ struct WPEAdaptiveRenderQoS {
         self.lowerFraction = lowerFraction
         self.windowSize = max(1, windowSize)
         self.samples = [Double](repeating: 0, count: max(1, windowSize))
-        // Disabled ⇒ pinned high. Enabled ⇒ start economy and let the window earn
-        // a promotion, so a light scene never spends a frame on the P-cores.
+        // Disabled preserves the high-QoS escape hatch.
         self.level = isEnabled ? .economy : .high
     }
 
@@ -59,9 +55,10 @@ struct WPEAdaptiveRenderQoS {
         boostFramesRemaining = max(boostFramesRemaining, max(0, frames))
     }
 
-    mutating func record(frameDuration seconds: Double) -> Level? {
-        guard isEnabled else { return nil } // pinned high; nothing to decide
-        samples[writeIndex] = max(0, seconds)
+    mutating func record(frameDuration seconds: Double, drawableWait: Double = 0) -> Level? {
+        guard isEnabled, seconds.isFinite, drawableWait.isFinite else { return nil }
+        // Keep runnable delay and other work in the budget; only exclude measured drawable acquisition.
+        samples[writeIndex] = max(0, seconds - max(0, drawableWait))
         writeIndex = (writeIndex + 1) % windowSize
         sampleCount = min(sampleCount + 1, windowSize)
 
@@ -100,4 +97,23 @@ struct WPEAdaptiveRenderQoS {
     #if DEBUG
     var boostFramesRemainingForTesting: Int { boostFramesRemaining }
     #endif
+}
+
+/// Process-only comparison modes; no persistent playback preferences are changed.
+enum WPERenderQoSMode: String, Sendable {
+    case adaptive
+    case adaptiveWall = "adaptive-wall"
+    case utility
+    case userInitiated = "user-initiated"
+    case userInteractive = "user-interactive"
+
+    var isAdaptive: Bool {
+        self == .adaptive || self == .adaptiveWall
+    }
+
+    /// Keep the current policy until the acquisition-adjusted experiment passes performance gates.
+    static func resolve(environment: [String: String], adaptiveEnabled: Bool) -> Self {
+        environment["WPE_RENDER_QOS_MODE"].flatMap(Self.init(rawValue:))
+            ?? (adaptiveEnabled ? .adaptiveWall : .userInteractive)
+    }
 }

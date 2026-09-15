@@ -3,118 +3,226 @@ import CryptoKit
 import Foundation
 import LiveWallpaperCore
 
-/// Bounded wait then poison→raw ogg so a hung decode cannot stall the wallpaper. Caller must hold security scope on `oggURL`.
-final class OggAudioTranscoder: @unchecked Sendable {
+/// Coalesces requests without blocking the Swift pool; abandoned workers keep their slot until they return.
+actor OggAudioTranscoder {
+    typealias Decode = @Sendable (URL, URL, @escaping @Sendable () -> Bool) -> URL?
     static let shared = OggAudioTranscoder()
 
     private let cacheDirectory: URL
-    // Concurrent: one hung decode must not HOL-block or poison other keys.
-    private let queue = DispatchQueue(label: "com.livewallpaper.ogg-transcode", qos: .utility, attributes: .concurrent)
-    private let lock = NSLock()
+    private let queue = DispatchQueue(
+        label: "com.livewallpaper.ogg-transcode", qos: .utility,
+        attributes: .concurrent, autoreleaseFrequency: .workItem
+    )
+    private let maximumConcurrent: Int
+    private let maximumPending: Int
+    private let decodeOverride: Decode?
+    private nonisolated let deadline: TimeInterval
     private enum Outcome { case ready(URL); case unavailable }
-    /// `.unavailable` poisons failed/hung keys (no retry).
     private var memo: [String: Outcome] = [:]
-    private var pending: [String: DispatchGroup] = [:]
-    /// Bound wait (~real cost ≪1s); hang mid-read cannot be cancelled.
-    private let deadline: TimeInterval = 6
+    private var didSweepCache = false
+    private var pending: [String: Job] = [:]
+    private var waiting: [String] = []
+    private var running: [UUID: Job] = [:]
+    private static let maxCacheBytes: UInt64 = 256 * 1024 * 1024
 
-    private static let maxCacheBytes: UInt64 = 256 * 1024 * 1024  // 256 MiB
+    /// Shared with the blocking worker; every mutable access is protected by this lock.
+    private final class Cancellation: @unchecked Sendable {
+        private let lock = NSLock()
+        private var cancelled = false
+        var isCancelled: Bool {
+            lock.lock(); defer { lock.unlock() }; return cancelled
+        }
 
-    private init() {
+        func cancel() {
+            lock.lock(); cancelled = true; lock.unlock()
+        }
+    }
+
+    /// Waiters and timeout are actor-confined. The GCD worker reads only immutable
+    /// inputs and the lock-protected cancellation flag.
+    private final class Job: @unchecked Sendable {
+        let id = UUID()
+        let key: String
+        let source: URL
+        let destination: URL
+        let access: OggSourceAccess?
+        let cancellation = Cancellation()
+        var waiters: [UUID: CheckedContinuation<URL?, Never>] = [:]
+        var timeout: Task<Void, Never>?
+
+        init(key: String, source: URL, destination: URL, access: OggSourceAccess?) {
+            self.key = key
+            self.source = source
+            self.destination = destination
+            self.access = access
+        }
+    }
+
+    init(
+        cacheDirectory: URL? = nil,
+        maximumConcurrent: Int = 2,
+        maximumPending: Int = 32,
+        deadline: TimeInterval = 6,
+        decode: Decode? = nil
+    ) {
         let caches = (try? FileManager.default.url(
             for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true
         )) ?? FileManager.default.temporaryDirectory
-        cacheDirectory = caches.appendingPathComponent("OggTranscode", isDirectory: true)
-        try? FileManager.default.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
-        queue.async { [self] in enforceSizeLimit() }
+        self.cacheDirectory = cacheDirectory ?? caches.appendingPathComponent("OggTranscode", isDirectory: true)
+        self.maximumConcurrent = max(1, maximumConcurrent)
+        self.maximumPending = max(1, maximumPending)
+        self.deadline = max(0.001, deadline)
+        decodeOverride = decode
+        try? FileManager.default.createDirectory(at: self.cacheDirectory, withIntermediateDirectories: true)
     }
 
-    static func isOggFamily(_ url: URL) -> Bool {
+    nonisolated static func isOggFamily(_ url: URL) -> Bool {
         ["ogg", "oga", "opus"].contains(url.pathExtension.lowercased())
     }
 
-    /// Cached AAC or nil (caller serves raw ogg). Concurrent callers coalesce.
-    func transcodedM4A(forOgg oggURL: URL) -> URL? {
-        guard Self.isOggFamily(oggURL), let key = cacheKey(for: oggURL) else { return nil }
-        let destination = cacheDirectory.appendingPathComponent(key).appendingPathExtension("m4a")
-
-        lock.lock()
-        switch memo[key] {
-        case .ready(let url): lock.unlock(); return url
-        case .unavailable:    lock.unlock(); return nil   // poisoned this session — never serve, even if a late .m4a lands
-        case nil:             break
+    /// The access lease is acquired before detaching from the folder owner and retained by the actual worker.
+    func transcodedM4A(forOgg source: URL, access: OggSourceAccess? = nil) async -> URL? {
+        guard !Task.isCancelled, Self.isOggFamily(source), let key = cacheKey(for: source) else { return nil }
+        if !didSweepCache {
+            didSweepCache = true
+            enforceSizeLimit()
         }
-        // Disk cache from a prior session wins — but only after the poison check
-        // above, so a stale/late file can't bypass an in-session poison.
+        let destination = cacheDirectory.appendingPathComponent(key).appendingPathExtension("m4a")
+        switch memo[key] {
+        case let .ready(url):
+            if FileManager.default.fileExists(atPath: url.path) {
+                return url
+            }
+            memo[key] = nil
+        case .unavailable: return nil
+        case nil: break
+        }
         if FileManager.default.fileExists(atPath: destination.path) {
             memo[key] = .ready(destination)
-            lock.unlock()
             return destination
         }
-        if let group = pending[key] {
-            lock.unlock()
-            if group.wait(timeout: .now() + deadline) == .success {
-                return readyURL(forKey: key)
-            }
-            return arbitrateAfterTimeout(forKey: key)
-        }
-        let group = DispatchGroup()
-        group.enter()
-        pending[key] = group
-        lock.unlock()
-
-        queue.async { [self] in
-            // Timeout arbitration poisons the key; the decode loop polls that as a cancel signal so it cannot outlive the caller's security scope.
-            let produced = transcode(oggURL, to: destination, isCancelled: {
-                lock.lock()
-                defer { lock.unlock() }
-                if case .unavailable = memo[key] {
-                    return true
+        let requestID = UUID()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                guard !Task.isCancelled else { continuation.resume(returning: nil); return }
+                if let job = pending[key] {
+                    job.waiters[requestID] = continuation
+                    return
                 }
-                return false
-            })
-            lock.lock()
-            if case .unavailable = memo[key] {
-                // A caller already timed out and poisoned this key — honor it and
-                // drop the late artifact so it can't resurface as a cache hit.
-                if let produced { try? FileManager.default.removeItem(at: produced) }
-            } else {
-                memo[key] = produced.map(Outcome.ready) ?? .unavailable
+                guard pending.count < maximumPending else {
+                    memo[key] = .unavailable
+                    continuation.resume(returning: nil)
+                    return
+                }
+                let job = Job(key: key, source: source, destination: destination, access: access)
+                job.waiters[requestID] = continuation
+                pending[key] = job
+                waiting.append(key)
+                let jobID = job.id
+                let delay = deadline
+                job.timeout = Task { [weak self] in
+                    do { try await Task.sleep(for: .seconds(delay)) } catch { return }
+                    await self?.expire(key: key, id: jobID)
+                }
+                startAvailableWork()
             }
-            pending[key] = nil
-            group.leave()
-            lock.unlock()
-            if produced != nil { enforceSizeLimit() }
-        }
-
-        guard group.wait(timeout: .now() + deadline) == .success else {
-            return arbitrateAfterTimeout(forKey: key)
-        }
-        return readyURL(forKey: key)
-    }
-
-    /// Timeout: honor committed result, else poison (no mixed AAC/ogg for one key).
-    private func arbitrateAfterTimeout(forKey key: String) -> URL? {
-        lock.lock()
-        defer { lock.unlock() }
-        switch memo[key] {
-        case .ready(let url): return url
-        case .unavailable:    return nil
-        case nil:             memo[key] = .unavailable; return nil
+        } onCancel: {
+            Task { await self.cancelRequest(key: key, requestID: requestID) }
         }
     }
 
-    private func readyURL(forKey key: String) -> URL? {
-        lock.lock()
-        defer { lock.unlock() }
-        if case .ready(let url) = memo[key] { return url }
-        return nil
+    private func startAvailableWork() {
+        while running.count < maximumConcurrent, !waiting.isEmpty {
+            let key = waiting.removeFirst()
+            guard let job = pending[key] else { continue }
+            running[job.id] = job
+            // A cancelled generation can finish after a replacement starts. It never writes the shared cache path.
+            let staged = cacheDirectory.appendingPathComponent(".\(key).\(job.id.uuidString).m4a")
+            let decoder = decodeOverride
+            queue.async { [self, job] in
+                let produced: URL? = autoreleasepool {
+                    guard !job.cancellation.isCancelled else { return nil }
+                    if let decoder {
+                        return decoder(job.source, staged) { job.cancellation.isCancelled }
+                    }
+                    return transcode(job.source, to: staged, isCancelled: { job.cancellation.isCancelled })
+                }
+                Task { await self.complete(job, produced: produced, staged: staged) }
+            }
+        }
     }
 
-    func transcode(_ source: URL, to destination: URL, isCancelled: () -> Bool) -> URL? {
+    private func cancelRequest(key: String, requestID: UUID) {
+        guard let job = pending[key], let waiter = job.waiters.removeValue(forKey: requestID) else { return }
+        waiter.resume(returning: nil)
+        guard job.waiters.isEmpty else { return }
+        // Cancellation has not served raw bytes, so a later request may try again.
+        pending[key] = nil
+        waiting.removeAll { $0 == key }
+        job.timeout?.cancel()
+        job.timeout = nil
+        job.cancellation.cancel()
+    }
+
+    private func expire(key: String, id: UUID) {
+        guard let job = pending[key], job.id == id else { return }
+        memo[key] = .unavailable
+        pending[key] = nil
+        waiting.removeAll { $0 == key }
+        job.cancellation.cancel()
+        finishWaiters(job, result: nil)
+        // A timed-out decode may still be inside AVAudioFile.read. running retains its lease and slot.
+    }
+
+    private func complete(_ job: Job, produced: URL?, staged: URL) {
+        defer {
+            try? FileManager.default.removeItem(at: staged)
+            try? FileManager.default.removeItem(at: staged.appendingPathExtension("partial"))
+            running[job.id] = nil
+            startAvailableWork()
+        }
+        guard pending[job.key]?.id == job.id else { return }
+        var result: URL?
+        if produced != nil, !job.cancellation.isCancelled {
+            do {
+                try FileManager.default.moveItem(at: staged, to: job.destination)
+                result = job.destination
+            } catch { result = nil }
+        }
+        memo[job.key] = result.map(Outcome.ready) ?? .unavailable
+        finishWaiters(job, result: result)
+        pending[job.key] = nil
+        if result != nil {
+            enforceSizeLimit()
+        }
+    }
+
+    private func finishWaiters(_ job: Job, result: URL?) {
+        job.timeout?.cancel()
+        job.timeout = nil
+        let waiters = job.waiters.values
+        job.waiters.removeAll()
+        for waiter in waiters {
+            waiter.resume(returning: result)
+        }
+    }
+
+    #if DEBUG
+    func sweepCacheForTesting() {
+        enforceSizeLimit()
+    }
+
+    var workSnapshot: (running: Int, pending: Int, waiters: Int) {
+        (running.count, pending.count, pending.values.reduce(0) { $0 + $1.waiters.count })
+    }
+    #endif
+
+    nonisolated func transcode(_ source: URL, to destination: URL, isCancelled: () -> Bool) -> URL? {
         let partial = destination.appendingPathExtension("partial")
         try? FileManager.default.removeItem(at: partial)
+        defer { try? FileManager.default.removeItem(at: partial) }
         do {
+            guard !isCancelled() else { return nil }
             let input = try AVAudioFile(forReading: source)
             let format = input.processingFormat
             let total = input.length
@@ -156,6 +264,7 @@ final class OggAudioTranscoder: @unchecked Sendable {
                 // Far fewer frames than ~90% of `length` means `read` threw mid-stream rather than at EOF, so reject it instead of caching a truncated file.
                 guard Double(written) >= Double(total) * 0.9 else { throw TranscodeError.truncated }
             }
+            guard !isCancelled() else { return nil }
             try FileManager.default.moveItem(at: partial, to: destination)
             Logger.info(
                 "Ogg→AAC transcoded \(source.lastPathComponent) (\(written)/\(total) frames)",
@@ -186,7 +295,7 @@ final class OggAudioTranscoder: @unchecked Sendable {
         guard let children = try? fm.contentsOfDirectory(
             at: cacheDirectory,
             includingPropertiesForKeys: [.fileSizeKey, .contentModificationDateKey, .isRegularFileKey],
-            options: [.skipsHiddenFiles]
+            options: []
         ) else { return }
 
         var files: [(url: URL, size: UInt64, modified: Date)] = []
@@ -196,6 +305,13 @@ final class OggAudioTranscoder: @unchecked Sendable {
                   values.isRegularFile == true else { continue }
             let size = UInt64(max(0, values.fileSize ?? 0))
             let modified = values.contentModificationDate ?? .distantPast
+            if url.lastPathComponent.hasPrefix(".") {
+                if let jobID = Self.stagingJobID(for: url), running[jobID] == nil,
+                   modified < Date(timeIntervalSinceNow: -3600) {
+                    try? fm.removeItem(at: url)
+                }
+                continue
+            }
             if url.pathExtension == "partial" {
                 // Fresh `.partial` belongs to a possibly-running transcode; a stale one is an orphan. Either way it never counts against the budget.
                 if modified < Date(timeIntervalSinceNow: -3600) {
@@ -212,19 +328,23 @@ final class OggAudioTranscoder: @unchecked Sendable {
         for file in files.sorted(by: { $0.modified < $1.modified }) {
             if total <= Self.maxCacheBytes { break }
             let key = file.url.deletingPathExtension().lastPathComponent
-            // Check-and-delete under `lock` so a concurrent request can't re-promote the path between check and delete.
-            lock.lock()
             if pending[key] != nil {
-                lock.unlock()
                 continue
             }
             let previous = memo[key]
             memo[key] = nil
             let removed = (try? fm.removeItem(at: file.url)) != nil
             if !removed { memo[key] = previous }
-            lock.unlock()
             if removed { total -= file.size }
         }
+    }
+
+    private static func stagingJobID(for url: URL) -> UUID? {
+        let parts = url.lastPathComponent.split(separator: ".", omittingEmptySubsequences: false)
+        guard parts.count == 4 || (parts.count == 5 && parts[4] == "partial"),
+              parts[0].isEmpty, parts[1].count == 64,
+              parts[1].allSatisfy(\.isHexDigit), parts[3] == "m4a" else { return nil }
+        return UUID(uuidString: String(parts[2]))
     }
 
     private enum TranscodeError: Error { case timedOut, truncated, cancelled }

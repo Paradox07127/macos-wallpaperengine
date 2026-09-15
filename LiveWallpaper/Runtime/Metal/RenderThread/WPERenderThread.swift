@@ -1,4 +1,5 @@
 import Foundation
+import LiveWallpaperCore
 import QuartzCore
 
 /// Persistent serial render thread with a live run loop for display-link callbacks.
@@ -49,9 +50,24 @@ final class WPERenderThread: @unchecked Sendable {
     /// serial — so no lock, matching this class's `@unchecked Sendable` contract.
     private var adaptiveQoS: WPEAdaptiveRenderQoS
 
-    init(label: String = "com.livewallpaper.render", adaptiveQoSEnabled: Bool? = nil) {
+    private let qosMode: WPERenderQoSMode
+    private let qosDiagnosticsEnabled = ProcessInfo.processInfo.environment["WPE_RENDER_QOS_DIAGNOSTICS"] == "1"
+    private var diagnosticFrames = 0
+    private var diagnosticHighFrames = 0
+    private var diagnosticWallSeconds = 0.0
+    private var diagnosticDrawableSeconds = 0.0
+
+    init(
+        label: String = "com.livewallpaper.render",
+        adaptiveQoSEnabled: Bool? = nil,
+        qosMode: WPERenderQoSMode? = nil
+    ) {
         let adaptiveEnabled = adaptiveQoSEnabled ?? Self.adaptiveQoSEnabledFromDefaults
-        self.adaptiveQoS = WPEAdaptiveRenderQoS(isEnabled: adaptiveEnabled)
+        self.qosMode = qosMode ?? WPERenderQoSMode.resolve(
+            environment: adaptiveQoSEnabled == nil ? ProcessInfo.processInfo.environment : [:],
+            adaptiveEnabled: adaptiveEnabled
+        )
+        adaptiveQoS = WPEAdaptiveRenderQoS(isEnabled: self.qosMode.isAdaptive)
         let handoff = LoopHandoff()
         let ready = DispatchSemaphore(value: 0)
         let finished = finishedSemaphore
@@ -131,19 +147,44 @@ final class WPERenderThread: @unchecked Sendable {
     /// Deferred to the first frame so the thread's `.userInteractive` base holds until frames actually flow.
     private var didSyncInitialQoS = false
 
-    func noteFrameDuration(_ seconds: Double) {
+    func noteFrameDuration(_ seconds: Double, drawableWait: Double = 0) {
         assert(isCurrent, "noteFrameDuration must run on the render thread")
         if !didSyncInitialQoS {
             didSyncInitialQoS = true
             applyQoS(adaptiveQoS.level)
         }
-        if let level = adaptiveQoS.record(frameDuration: seconds) {
+        if let level = adaptiveQoS.record(
+            frameDuration: seconds,
+            drawableWait: qosMode == .adaptiveWall ? 0 : drawableWait
+        ) {
             applyQoS(level)
+        }
+        if qosDiagnosticsEnabled {
+            recordDiagnostics(wall: seconds, drawable: drawableWait)
         }
     }
 
-    /// Pin `.high` for the first `frames` frames after a scene load/reload, so the
-    /// heavy warm-up (lazy shader transpile) isn't throttled onto the E-cores.
+    private func recordDiagnostics(wall: Double, drawable: Double) {
+        diagnosticFrames += 1
+        diagnosticWallSeconds += wall
+        diagnosticDrawableSeconds += drawable
+        if qosMode == .userInteractive || (qosMode.isAdaptive && adaptiveQoS.level == .high) {
+            diagnosticHighFrames += 1
+        }
+        guard diagnosticFrames == 120 else { return }
+        Logger.notice(
+            "[render-qos] mode=\(qosMode.rawValue) frames=\(diagnosticFrames) high=\(diagnosticHighFrames) "
+                + "wallMs=\(diagnosticWallSeconds * 1000 / Double(diagnosticFrames)) "
+                + "drawableMs=\(diagnosticDrawableSeconds * 1000 / Double(diagnosticFrames))",
+            category: .wpeRender
+        )
+        diagnosticFrames = 0
+        diagnosticHighFrames = 0
+        diagnosticWallSeconds = 0
+        diagnosticDrawableSeconds = 0
+    }
+
+    /// Request `.high` during load/reload warm-up in adaptive modes.
     func boostRenderQoSWarmup(frames: Int = 120) {
         assert(isCurrent, "boostRenderQoSWarmup must run on the render thread")
         adaptiveQoS.boost(frames: frames)
@@ -155,10 +196,12 @@ final class WPERenderThread: @unchecked Sendable {
     }
 
     private func applyQoS(_ level: WPEAdaptiveRenderQoS.Level) {
-        let qos: qos_class_t
-        switch level {
-        case .economy: qos = QOS_CLASS_UTILITY
-        case .high: qos = QOS_CLASS_USER_INTERACTIVE
+        let qos: qos_class_t = switch qosMode {
+        case .utility: QOS_CLASS_UTILITY
+        case .userInitiated: QOS_CLASS_USER_INITIATED
+        case .userInteractive: QOS_CLASS_USER_INTERACTIVE
+        case .adaptive, .adaptiveWall:
+            level == .economy ? QOS_CLASS_UTILITY : QOS_CLASS_USER_INTERACTIVE
         }
         pthread_set_qos_class_self_np(qos, 0)
     }

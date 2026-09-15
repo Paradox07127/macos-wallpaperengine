@@ -202,6 +202,50 @@ struct WPERenderThreadTests {
         await shutdownAtUtility { thread.shutdown() }
     }
 
+    @Test("Fixed QoS comparison modes survive both overload and warm-up", arguments: [
+        WPERenderQoSMode.utility, .userInitiated, .userInteractive,
+    ])
+    func fixedModesChangeRealThread(mode: WPERenderQoSMode) async {
+        let thread = WPERenderThread(label: "test.qos.fixed", qosMode: mode)
+        defer { thread.shutdown() }
+        let box = QoSBox()
+        let done = Counter()
+        thread.perform {
+            thread.boostRenderQoSWarmup()
+            for _ in 0 ..< 180 {
+                thread.noteFrameDuration(0.050, drawableWait: 0.020)
+            }
+            box.set(qos_class_self())
+            done.increment()
+        }
+        #expect(await eventually { done.count == 1 })
+        let expected: qos_class_t = switch mode {
+        case .utility: QOS_CLASS_UTILITY
+        case .userInitiated: QOS_CLASS_USER_INITIATED
+        default: QOS_CLASS_USER_INTERACTIVE
+        }
+        #expect(box.value == expected)
+    }
+
+    @Test("Only acquisition-adjusted mode excludes drawable time on the real thread", arguments: [
+        WPERenderQoSMode.adaptiveWall, .adaptive,
+    ])
+    func adaptiveModesUseSelectedMeasurement(mode: WPERenderQoSMode) async {
+        let thread = WPERenderThread(label: "test.qos.measurement", qosMode: mode)
+        defer { thread.shutdown() }
+        let box = QoSBox()
+        let done = Counter()
+        thread.perform {
+            for _ in 0 ..< 180 {
+                thread.noteFrameDuration(0.013, drawableWait: 0.012)
+            }
+            box.set(qos_class_self())
+            done.increment()
+        }
+        #expect(await eventually { done.count == 1 })
+        #expect(box.value == (mode == .adaptiveWall ? QOS_CLASS_USER_INTERACTIVE : QOS_CLASS_UTILITY))
+    }
+
     @Test("escape hatch OFF keeps the OS thread at userInteractive despite cheap frames")
     func disabledEscapeHatchKeepsRealThreadHigh() async {
         let thread = WPERenderThread(label: "test.qos.pinned", adaptiveQoSEnabled: false)
@@ -237,6 +281,53 @@ private final class QoSBox: @unchecked Sendable {
 }
 
 struct WPEAdaptiveRenderQoSTests {
+    @Test("Drawable backpressure does not masquerade as CPU pressure")
+    func drawableWaitDoesNotPromote() {
+        var corrected = WPEAdaptiveRenderQoS(isEnabled: true)
+        var wallOnly = WPEAdaptiveRenderQoS(isEnabled: true)
+        for _ in 0 ..< 180 {
+            _ = corrected.record(frameDuration: 0.013, drawableWait: 0.012)
+            _ = wallOnly.record(frameDuration: 0.013)
+        }
+        #expect(corrected.level == .economy)
+        #expect(wallOnly.level == .high)
+        #expect(corrected.record(frameDuration: 0.025, drawableWait: 0.001) == nil)
+        for _ in 0 ..< 10 {
+            _ = corrected.record(frameDuration: 0.025, drawableWait: 0.001)
+        }
+        #expect(corrected.level == .high)
+    }
+
+    @Test("Subtracting drawable acquisition keeps warm-up and clamps invalid timing")
+    func drawableTimingBoundaries() {
+        var qos = WPEAdaptiveRenderQoS(isEnabled: true)
+        qos.boost(frames: 2)
+        #expect(qos.record(frameDuration: .nan) == nil)
+        #expect(qos.boostFramesRemainingForTesting == 2)
+        #expect(qos.record(frameDuration: 0.013, drawableWait: 0.012) == .high)
+        #expect(qos.record(frameDuration: 0.013, drawableWait: 0.012) == nil)
+        for _ in 0 ..< 90 {
+            _ = qos.record(frameDuration: 0.001, drawableWait: 0.002)
+        }
+        #expect(qos.level == .economy)
+        for _ in 0 ..< 90 {
+            _ = qos.record(frameDuration: 0.012, drawableWait: -1)
+        }
+        #expect(qos.level == .high)
+    }
+
+    @Test("Process-only modes resolve explicitly and invalid values preserve the escape hatch")
+    func diagnosticModeResolution() {
+        for mode in [WPERenderQoSMode.adaptive, .adaptiveWall, .utility, .userInitiated, .userInteractive] {
+            #expect(WPERenderQoSMode.resolve(
+                environment: ["WPE_RENDER_QOS_MODE": mode.rawValue], adaptiveEnabled: false
+            ) == mode)
+        }
+        #expect(WPERenderQoSMode.resolve(environment: [:], adaptiveEnabled: true) == .adaptiveWall)
+        #expect(WPERenderQoSMode.resolve(
+            environment: ["WPE_RENDER_QOS_MODE": "invalid"], adaptiveEnabled: false
+        ) == .userInteractive)
+    }
 
     @Test("disabled escape hatch pins .high and never downgrades")
     func disabledPinsHigh() {

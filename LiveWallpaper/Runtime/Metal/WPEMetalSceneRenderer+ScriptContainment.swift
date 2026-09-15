@@ -402,6 +402,7 @@ extension WPEMetalSceneRenderer {
         textAlphaScriptInstances.removeAll(keepingCapacity: false)
         particleAlphaScriptInstances.removeAll(keepingCapacity: false)
         liveParticleInstanceAlpha.removeAll(keepingCapacity: false)
+        dynamicOriginAnimations.removeAll(keepingCapacity: false)
         dynamicOriginScriptInstances.removeAll(keepingCapacity: false)
         dynamicScaleScriptInstances.removeAll(keepingCapacity: false)
         dynamicAnglesScriptInstances.removeAll(keepingCapacity: false)

@@ -61,7 +61,7 @@ extension WPEMetalRenderExecutor {
         #else
         let forceDrawableMiss = false
         #endif
-        guard !forceDrawableMiss, let drawable = layer.nextDrawable() else {
+        guard !forceDrawableMiss, let drawable = acquireDrawable(from: layer) else {
             // A dropped frame, not an error — but a sustained run means drawable starvation, so keep it visible in Release: first 5 misses, then every 300th.
             let missCount = presentDrawableMissCount.withLock { count -> Int in
                 count += 1
@@ -132,6 +132,12 @@ extension WPEMetalRenderExecutor {
             }
         }
         return true
+    }
+
+    private func acquireDrawable(from layer: CAMetalLayer) -> CAMetalDrawable? {
+        let start = CACurrentMediaTime()
+        defer { drawableAcquisitionSeconds += CACurrentMediaTime() - start }
+        return layer.nextDrawable()
     }
 
     private func encodePresentPass(
