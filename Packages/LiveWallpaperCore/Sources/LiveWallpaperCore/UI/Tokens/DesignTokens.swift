@@ -131,25 +131,45 @@ public enum DesignTokens {
     }
 
     public enum LibraryGrid {
-        public static let minimumColumnWidth: CGFloat = 240
-        public static let maximumColumnWidth: CGFloat = 288
+        public static let minimumColumnWidth: CGFloat = 184
+        public static let maximumColumnWidth: CGFloat = 220
 
-        /// The 16:9 pages draw a tile barely half the height of the square Workshop card at
-        /// the same column width, so the whole ladder sits one step higher.
-        public static func columnWidths(for size: LibraryTileSize) -> (min: CGFloat, max: CGFloat) {
-            switch size {
-            case .small: (168, 200)
-            case .medium: (minimumColumnWidth, maximumColumnWidth)
-            case .large: (336, 408)
+        /// Tile shape, which decides the ladder: `.wide` is 16:9, `.square` is Workshop.
+        public enum Aspect {
+            case square
+            case wide
+        }
+
+        public static func columnWidths(
+            for size: LibraryTileSize,
+            aspect: Aspect
+        ) -> (min: CGFloat, max: CGFloat) {
+            switch aspect {
+            case .square:
+                switch size {
+                case .small: (128, 152)
+                case .medium: (minimumColumnWidth, maximumColumnWidth)
+                case .large: (248, 300)
+                }
+            case .wide:
+                switch size {
+                case .small: (240, 288)
+                case .medium: (320, 384)
+                case .large: (432, 520)
+                }
             }
         }
 
-        /// Off the spacing scale on purpose: the tiles are square and read as a
-        /// mosaic, where `lg` opened the rows wider than the columns look.
+        /// Off the spacing scale on purpose: the tiles read as a mosaic, where `lg`
+        /// opened the rows wider than the columns look.
         public static let spacing: CGFloat = 14
 
-        public static func columns(for size: LibraryTileSize) -> [GridItem] {
-            let widths = columnWidths(for: size)
+        /// Equal to the filter bar's, so a card's leading edge lands under the search field.
+        public static let horizontalPadding: CGFloat = LibraryFilterBar.horizontalPadding
+        public static let verticalPadding: CGFloat = Spacing.cardInset
+
+        public static func columns(for size: LibraryTileSize, aspect: Aspect) -> [GridItem] {
+            let widths = columnWidths(for: size, aspect: aspect)
             return [GridItem(.adaptive(minimum: widths.min, maximum: widths.max), spacing: spacing)]
         }
     }
@@ -252,6 +272,11 @@ public enum DesignTokens {
         public static let searchMinWidth: CGFloat = 132
         public static let searchIdealWidth: CGFloat = 168
         public static let searchMaxWidth: CGFloat = 216
+    }
+
+    public enum LibraryStatusBar {
+        public static let horizontalPadding: CGFloat = Spacing.xl
+        public static let verticalPadding: CGFloat = 6
     }
 
     /// Without these floors macOS 26 `NavigationSplitView` squeezes the detail column
