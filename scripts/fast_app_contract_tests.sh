@@ -31,6 +31,7 @@ SUITES=(
   SettingsWindowLayoutTests
   # One grid inset and one column ladder across every library page.
   LibraryGalleryLayoutTests
+  SystemWallpaperTileGeometryTests
   # Screen ↔ runtime-session ownership, including the crossfade retire path.
   ScreenRuntimeOwnershipTests
   InfrastructureRuntimeBoundaryTests
@@ -91,6 +92,14 @@ SUITES=(
   BookmarkContentOnlyTests
   ConfigurationPorterTests
   ScreenSchemePersistenceTests
+  # Preview ownership and authored slider values must survive UI refactors.
+  WPESliderDetentBudgetTests
+  WallpaperCoverStoreTests
+  PreviewWorkGateTests
+  PreviewRequestPoolTests
+  PreviewFilesystemWorkTests
+  HTMLSnapshotProducerOwnershipTests
+  ThumbnailServiceAdmissionTests
   # Cancelled playlist media work must not repopulate an invalidated cache.
   PlaylistMetadataLifecycleTests
   InstalledPreviewPlaybackLifecycleTests

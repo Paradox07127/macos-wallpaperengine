@@ -263,8 +263,11 @@ func mouse(_ type: CGEventType, at point: CGPoint) {
             let before = Metrics.hoverTimes.count, t = CACurrentMediaTime()
             mouse(.mouseMoved, at: session.point(column: column))
             try await Task.sleep(for: .milliseconds(550)); session.flush()
-            if Metrics.hoverTimes.count > before { hoverLatency.append((Metrics.hoverTimes[before] - t) * 1000) }
-            else { errors.append("hover \(column) not delivered") }
+            if Metrics.hoverTimes.count > before {
+                hoverLatency.append((Metrics.hoverTimes[before] - t) * 1000)
+            } else {
+                errors.append("hover \(column) not delivered")
+            }
             let clicks = Metrics.clicks
             mouse(.leftMouseDown, at: session.point(column: column))
             try await Task.sleep(for: .milliseconds(20))
