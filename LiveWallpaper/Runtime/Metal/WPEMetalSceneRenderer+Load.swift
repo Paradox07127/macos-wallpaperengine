@@ -161,7 +161,7 @@ extension WPEMetalSceneRenderer {
         let entryReader = entryResolver
         let sceneDescriptor = descriptor
         let sceneCacheRoot = projectManifestRootURL ?? cacheRootURL
-        let parsedDocument = try await Task.detached(priority: .userInitiated) {
+        let parsedDocument = try await CancellableBackgroundWork.run {
             let data = try entryReader.data(relativePath: sceneDescriptor.entryFile)
             let userValues = WallpaperEngineProjectPropertySchema.effectiveSceneValues(
                 descriptor: sceneDescriptor,
@@ -176,7 +176,7 @@ extension WPEMetalSceneRenderer {
                         .joined(separator: "\n")
             )
             return try WPESceneDocumentParser.parse(data: data, userValues: userValues)
-        }.value
+        }
         try checkCurrentSceneScriptLoad(scriptLoadToken)
         // Promote text to image layers before the graph so paint order / effects / parallax share one graph. After-the-fact overlay cannot hide a later character.
         let textFonts = WPETextFontResolver(resolver: resourceResolver)
@@ -215,12 +215,12 @@ extension WPEMetalSceneRenderer {
         let mounts = dependencyMounts
         let engineRoot = effectiveEngineAssetsRootURL
         let provider = sceneAssetProvider
-        let graph = try await Task.detached(priority: .userInitiated) {
+        let graph = try await CancellableBackgroundWork.run {
             let builder = provider.map {
                 WPERenderGraphBuilder(primaryProvider: $0, dependencyMounts: mounts, engineAssetsRootURL: engineRoot)
             } ?? WPERenderGraphBuilder(cacheRootURL: cacheRoot, dependencyMounts: mounts, engineAssetsRootURL: engineRoot)
             return try builder.build(document: document)
-        }.value
+        }
         try checkCurrentSceneScriptLoad(scriptLoadToken)
         #if DEBUG
         let graphShaderImplementationInventory = WPEShaderImplementationInventory.graphEntries(
@@ -239,12 +239,12 @@ extension WPEMetalSceneRenderer {
 
         debugStage("pipeline.build", "begin")
         onProgress?(String(localized: "Preparing render pipeline", bundle: .appLanguage, comment: "Scene load progress: compiling Metal pipeline state."))
-        let (pipeline, canonicalRotation, passthroughElision) = try await Task.detached(priority: .userInitiated) {
+        let (pipeline, canonicalRotation, passthroughElision) = try await CancellableBackgroundWork.run {
             let builder = provider.map {
                 WPERenderPipelineBuilder(primaryProvider: $0, dependencyMounts: mounts, engineAssetsRootURL: engineRoot)
             } ?? WPERenderPipelineBuilder(cacheRootURL: cacheRoot, dependencyMounts: mounts, engineAssetsRootURL: engineRoot)
             return try builder.buildReportingCanonicalRotation(graph: graph, sceneHDR: document.general.hdr)
-        }.value
+        }
         try checkCurrentSceneScriptLoad(scriptLoadToken)
         lastCanonicalRotation = canonicalRotation
         lastFullFramePassthroughElision = passthroughElision

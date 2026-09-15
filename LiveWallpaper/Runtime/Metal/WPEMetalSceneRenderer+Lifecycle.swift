@@ -61,6 +61,7 @@ extension WPEMetalSceneRenderer {
         ownVisibilityByID = [:]
         liveTextVisibility = [:]
         clearSceneScriptRuntimeState()
+        sceneScriptBatchDispatcher.releaseLanesForSceneRetirement()
         // Retire only after destroy() has synchronously released JSC callbacks; late queued completions would still run.
         sceneScriptLoadState.retireCurrent()
         loadDiagnostics = nil
@@ -748,6 +749,7 @@ extension WPEMetalSceneRenderer {
         ownVisibilityByID = [:]
         liveTextVisibility = [:]
         clearSceneScriptRuntimeState()
+        sceneScriptBatchDispatcher.releaseLanesForSceneRetirement()
         sceneScriptLoadState.retireCurrent()
         releaseDynamicTextureSources()
         particleSystems.removeAll(keepingCapacity: false)
