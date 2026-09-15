@@ -1,5 +1,6 @@
 import AppKit
 @preconcurrency import AVFoundation
+import LiveWallpaperCore
 import WebKit
 
 @MainActor
@@ -18,8 +19,10 @@ final class WallpaperThumbnailService {
         return c
     }()
 
-    /// The task hands the poster back instead of inserting it — see `cacheGeneratedPoster`.
-    private var inFlightVideoTasks: [String: Task<(image: NSImage, cost: Int)?, Never>] = [:]
+    private let videoRequests: PreviewRequestPool<NSImage>
+    private let formatRequests: PreviewRequestPool<VideoFormatInfo>
+    private let htmlGate: PreviewWorkGate
+    private var cacheGenerations: [String: UUID] = [:]
 
     /// Held strong until snapshot completion — WKWebView fails silently if released mid-load.
     private var pendingWebViews: [
@@ -33,62 +36,78 @@ final class WallpaperThumbnailService {
         HTMLSnapshotLeaseState.LeaseID: HTMLSnapshotWaiter
     ] = [:]
 
-    private init() {}
+    init(videoGate: PreviewWorkGate = .video, htmlGate: PreviewWorkGate = .html) {
+        videoRequests = PreviewRequestPool(gate: videoGate)
+        formatRequests = PreviewRequestPool(gate: videoGate)
+        self.htmlGate = htmlGate
+    }
 
     func cachedThumbnail(forKey key: String) -> NSImage? {
         cache.object(forKey: key as NSString)
     }
 
-    func videoPosterImage(for url: URL, cacheKey: String) async -> NSImage? {
-        if let cached = cachedThumbnail(forKey: cacheKey) { return cached }
-        if let inFlight = inFlightVideoTasks[cacheKey] {
-            return cacheGeneratedPoster(await inFlight.value, forKey: cacheKey)
+    func videoPosterImage(
+        for url: URL,
+        cacheKey: String,
+        tolerance: (before: CMTime, after: CMTime) = (.zero, CMTime(seconds: 1, preferredTimescale: 600))
+    ) async -> NSImage? {
+        guard !Task.isCancelled else { return nil }
+        if let cached = cachedThumbnail(forKey: cacheKey) {
+            return cached
         }
-
-        let task = Task<(image: NSImage, cost: Int)?, Never> {
+        let generation = cacheGeneration(for: cacheKey)
+        let image = await videoRequests.value(for: cacheKey) {
             let didStart = url.startAccessingSecurityScopedResource()
-            defer { if didStart { url.stopAccessingSecurityScopedResource() } }
-
-            let asset = AVURLAsset(url: url)
-            let generator = AVAssetImageGenerator(asset: asset)
+            defer {
+                if didStart {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
+            let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
             generator.appliesPreferredTrackTransform = true
             generator.maximumSize = CGSize(width: 480, height: 270)
-            generator.requestedTimeToleranceBefore = .zero
-            generator.requestedTimeToleranceAfter = CMTime(seconds: 1, preferredTimescale: 600)
-
-            do {
-                let (cgImage, _) = try await generator.image(at: .zero)
-                let size = NSSize(width: cgImage.width, height: cgImage.height)
-                let image = NSImage(cgImage: cgImage, size: size)
-                return (image, Self.estimatedCost(of: cgImage))
-            } catch {
-                return nil
+            generator.requestedTimeToleranceBefore = tolerance.before
+            generator.requestedTimeToleranceAfter = tolerance.after
+            return await withTaskCancellationHandler {
+                do {
+                    let (cgImage, _) = try await generator.image(at: .zero)
+                    guard !Task.isCancelled else { return nil }
+                    return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+                } catch { return nil }
+            } onCancel: {
+                generator.cancelAllCGImageGeneration()
             }
         }
-
-        inFlightVideoTasks[cacheKey] = task
-        let generated = await task.value
-        inFlightVideoTasks.removeValue(forKey: cacheKey)
-        return cacheGeneratedPoster(generated, forKey: cacheKey)
+        return cacheGeneratedPreview(image, forKey: cacheKey, generation: generation)
     }
 
-    /// Insert on the requester's side of the await: the generator task is unstructured, so inserting inside it would land a poster after a one-shot reclaim.
-    private func cacheGeneratedPoster(
-        _ generated: (image: NSImage, cost: Int)?,
-        forKey cacheKey: String
-    ) -> NSImage? {
-        guard let generated, !Task.isCancelled else { return nil }
-        WPEImageCacheMeter.recordInsert(
-            generated.image, cost: generated.cost, in: .wallpaperThumbnail
-        )
-        cache.setObject(generated.image, forKey: cacheKey as NSString, cost: generated.cost)
-        return generated.image
+    func videoFormatInfo(for url: URL, cacheKey: String) async -> VideoFormatInfo? {
+        await formatRequests.value(for: cacheKey) {
+            let didStart = url.startAccessingSecurityScopedResource()
+            defer {
+                if didStart {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
+            return try? await PlayableVideoLoader.detectFormat(at: url)
+        }
     }
 
-    /// width × height × 4 (RGBA) — drives `NSCache.totalCostLimit` so the cache
-    /// stays bounded in MB, not just object count.
-    private static func estimatedCost(of image: CGImage) -> Int {
-        image.width * image.height * 4
+    private func cacheGeneration(for key: String) -> UUID {
+        if let generation = cacheGenerations[key] {
+            return generation
+        }
+        let generation = UUID()
+        cacheGenerations[key] = generation
+        return generation
+    }
+
+    private func cacheGeneratedPreview(_ image: NSImage?, forKey key: String, generation: UUID) -> NSImage? {
+        guard !Task.isCancelled, cacheGenerations[key] == generation, let image else { return nil }
+        let cost = Self.estimatedCost(of: image)
+        WPEImageCacheMeter.recordInsert(image, cost: cost, in: .wallpaperThumbnail)
+        cache.setObject(image, forKey: key as NSString, cost: cost)
+        return image
     }
 
     func htmlSnapshotImage(
@@ -96,7 +115,10 @@ final class WallpaperThumbnailService {
         targetSize: CGSize = CGSize(width: 480, height: 270),
         timeout: TimeInterval = 6
     ) async -> NSImage? {
-        if let cached = cachedThumbnail(forKey: request.cacheKey) { return cached }
+        guard !Task.isCancelled else { return nil }
+        if let cached = cachedThumbnail(forKey: request.cacheKey) {
+            return cached
+        }
         let acquisition = htmlSnapshotLeaseState.acquire(cacheKey: request.cacheKey)
         let lease = acquisition.lease
         let waiter = HTMLSnapshotWaiter()
@@ -122,6 +144,16 @@ final class WallpaperThumbnailService {
     }
 
     func invalidate(cacheKey: String) {
+        cacheGenerations.removeValue(forKey: cacheKey)
+        videoRequests.invalidate(cacheKey)
+        formatRequests.invalidate(cacheKey)
+        if let invalidated = htmlSnapshotLeaseState.invalidate(cacheKey: cacheKey) {
+            htmlProducerTasks.removeValue(forKey: invalidated.producerID)?.cancel()
+            cancelPendingHTMLSnapshot(producerID: invalidated.producerID)
+            for leaseID in invalidated.leaseIDs {
+                htmlWaiters.removeValue(forKey: leaseID)?.resolve(nil)
+            }
+        }
         cache.removeObject(forKey: cacheKey as NSString)
     }
 
@@ -226,17 +258,7 @@ final class WallpaperThumbnailService {
         let image = await pending.takeSnapshot(with: snapshotConfig)
         guard !Task.isCancelled else { return nil }
 
-        if let image {
-            let cost = Self.estimatedCost(of: image)
-            WPEImageCacheMeter.recordInsert(image, cost: cost, in: .wallpaperThumbnail)
-            cache.setObject(
-                image,
-                forKey: request.cacheKey as NSString,
-                cost: cost
-            )
-            return image
-        }
-        return nil
+        return image
     }
 
     private func startHTMLSnapshotProducer(
@@ -246,15 +268,20 @@ final class WallpaperThumbnailService {
         producerID: HTMLSnapshotLeaseState.ProducerID
     ) {
         let cacheKey = request.cacheKey
+        let generation = cacheGeneration(for: cacheKey)
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
-            let image = await self.captureHTMLSnapshot(
-                request: request,
-                targetSize: targetSize,
-                timeout: timeout,
-                producerID: producerID
-            )
-            self.completeHTMLSnapshotProducer(
+            let captured = await htmlGate.run { @MainActor in
+                guard !Task.isCancelled else { return nil as NSImage? }
+                return await self.captureHTMLSnapshot(
+                    request: request,
+                    targetSize: targetSize,
+                    timeout: timeout,
+                    producerID: producerID
+                )
+            }
+            let image = cacheGeneratedPreview(captured, forKey: cacheKey, generation: generation)
+            completeHTMLSnapshotProducer(
                 cacheKey: cacheKey,
                 producerID: producerID,
                 image: image
@@ -268,7 +295,7 @@ final class WallpaperThumbnailService {
     ) {
         let action = htmlSnapshotLeaseState.release(lease)
         htmlWaiters.removeValue(forKey: lease.leaseID)?.resolve(nil)
-        guard case .cancelProducer(let producerID) = action else { return }
+        guard case let .cancelProducer(producerID) = action else { return }
         htmlProducerTasks.removeValue(forKey: producerID)?.cancel()
         cancelPendingHTMLSnapshot(producerID: producerID)
     }

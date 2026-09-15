@@ -333,6 +333,19 @@ struct HTMLSnapshotProducerOwnershipTests {
         #expect(state.producerID(for: "same-key") == nil)
     }
 
+    @Test func invalidationReleasesAllWaitersAndPermitsFreshProducer() {
+        var state = HTMLSnapshotLeaseState()
+        let first = state.acquire(cacheKey: "changed").lease
+        let second = state.acquire(cacheKey: "changed").lease
+        let cancelled = state.invalidate(cacheKey: "changed")
+        #expect(cancelled?.producerID == first.producerID)
+        #expect(cancelled?.leaseIDs == [first.leaseID, second.leaseID])
+        let replacement = state.acquire(cacheKey: "changed").lease
+        #expect(replacement.producerID != first.producerID)
+        #expect(state.complete(cacheKey: "changed", producerID: first.producerID).isEmpty)
+        #expect(state.waiterCount(for: "changed") == 1)
+    }
+
     @Test("Late completion cannot retire replacement producer for same key")
     func staleCompletionPreservesReplacement() throws {
         var state = HTMLSnapshotLeaseState()
@@ -611,5 +624,54 @@ struct PrivateNetworkTrustTests {
             "http://example.com:80",
         ])
         #expect(normalized.map(\.rawValue) == ["http://192.168.1.199:3456", "https://example.com:443"])
+    }
+}
+
+@MainActor
+@Suite("Thumbnail service admission", .serialized)
+struct ThumbnailServiceAdmissionTests {
+    @Test(arguments: [false, true])
+    func cancelledPreviewLeavesOccupiedGate(isHTML: Bool) async throws {
+        let gate = PreviewWorkGate(limit: 1)
+        let service = WallpaperThumbnailService(videoGate: gate, htmlGate: gate)
+        let holder = Task {
+            await gate.run { try? await Task.sleep(for: .seconds(30)) }
+        }
+        defer { holder.cancel() }
+        let deadline = ContinuousClock.now.advanced(by: .seconds(3))
+        while await gate.activeCount == 0, ContinuousClock.now < deadline {
+            await Task.yield()
+        }
+        try #require(await gate.activeCount == 1)
+        let url = URL(fileURLWithPath: "/tmp/preview-must-not-load-\(UUID().uuidString)")
+        let request = HTMLSnapshotRequest(
+            source: .file(bookmarkData: Data()),
+            loadURL: url,
+            cacheKey: "queued",
+            effectiveConfig: .default,
+            localReadAccessRoot: url.deletingLastPathComponent()
+        )
+        let pending = Task {
+            if isHTML {
+                return await service.htmlSnapshotImage(request: request)
+            }
+            return await service.videoPosterImage(for: url, cacheKey: "queued")
+        }
+        defer { pending.cancel() }
+        while await gate.queuedCount == 0, ContinuousClock.now < deadline {
+            await Task.yield()
+        }
+        try #require(await gate.queuedCount == 1)
+        pending.cancel()
+        #expect(await pending.value == nil)
+        while await gate.queuedCount != 0, ContinuousClock.now < deadline {
+            await Task.yield()
+        }
+        #expect(await gate.queuedCount == 0)
+        #expect(await gate.activeCount == 1)
+        #expect(service.cachedThumbnail(forKey: "queued") == nil)
+        holder.cancel()
+        await holder.value
+        #expect(await gate.activeCount == 0)
     }
 }

@@ -41,8 +41,7 @@ enum PropertyValueLogic {
         return property.fraction ? 0.1 : 1
     }
 
-    /// Set AT the cliff: SwiftUI's slider gets ~4× slower per layout pass beyond
-    /// ~1000 detents and saturates there. Counts stops, not intervals.
+    /// Maximum stops exposed by the stepped Slider view, including both endpoints.
     static let maximumSliderDetents = 1000.0
 
     /// Step for the `Slider` *view* only; writes still snap to the authored step.
@@ -64,12 +63,7 @@ enum PropertyValueLogic {
     }
 
     static func normalizedSliderValue(_ raw: Double, for property: Property) -> Double {
-        let range = sliderRange(for: property)
-        let clamped = clamp(raw, to: range)
-        let step = sliderStep(for: property)
-        guard step > 0 else { return clamped }
-        let stepped = ((clamped - range.lowerBound) / step).rounded() * step + range.lowerBound
-        return clamp(stepped, to: range)
+        SliderValueGrid(in: sliderRange(for: property), step: sliderStep(for: property)).normalized(raw)
     }
 
     static func formattedNumber(_ value: Double, for property: Property) -> String {

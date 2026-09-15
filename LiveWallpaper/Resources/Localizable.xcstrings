@@ -1633,6 +1633,41 @@
         }
       }
     },
+    "%lld aerials" : {
+      "comment" : "Library status bar: the number of aerials in the library. %lld is the count.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld aerials"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld Aerials"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aerials %lld 件"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 个航拍"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 個空拍"
+          }
+        }
+      }
+    },
     "%lld agents" : {
       "comment" : "Agent Session widget header: number of tracked agent sessions.",
       "localizations" : {
@@ -1658,6 +1693,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld 個代理"
+          }
+        }
+      }
+    },
+    "%lld bookmarks" : {
+      "comment" : "Library status bar: the number of saved bookmarks. %lld is the count.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld bookmarks"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld marcadores"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ブックマーク %lld 件"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 个书签"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 個書籤"
           }
         }
       }
@@ -1910,6 +1980,41 @@
         }
       }
     },
+    "%lld of %lld shown" : {
+      "comment" : "Library status bar when a search or filter narrows the page. The first %lld is how many are shown, the second the library size.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld of %lld shown"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld de %lld mostrados"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld / %lld 件を表示"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已显示 %lld / %lld 项"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已顯示 %lld / %lld 項"
+          }
+        }
+      }
+    },
     "%lld of 3 ready" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2046,6 +2151,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld 項待處理"
+          }
+        }
+      }
+    },
+    "%lld schemes" : {
+      "comment" : "Library status bar: the number of saved schemes. %lld is the count.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld schemes"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld esquemas"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "構成 %lld 件"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 个方案"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 個方案"
           }
         }
       }
@@ -2187,6 +2327,41 @@
         }
       }
     },
+    "%lld videos" : {
+      "comment" : "System Wallpaper status bar: the number of videos macOS has a copy of. %lld is the count.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld videos"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld vídeos"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "動画 %lld 本"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 个视频"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 部影片"
+          }
+        }
+      }
+    },
     "%lld videos copied for macOS to play" : {
       "comment" : "Storage tile subtitle; %lld is the number of videos published to System Wallpaper.",
       "localizations" : {
@@ -2218,6 +2393,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "為 macOS 播放而複製的 %lld 部影片"
+          }
+        }
+      }
+    },
+    "%lld wallpapers" : {
+      "comment" : "Workshop library status bar: the number of installed wallpapers. %lld is the count.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld wallpapers"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld fondos de pantalla"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "壁紙 %lld 件"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 个壁纸"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 個桌布"
           }
         }
       }
@@ -62359,6 +62569,146 @@
         }
       }
     },
+    "The page stopped loading before it finished." : {
+      "comment" : "Web wallpaper failure reason shown when a frame load is interrupted.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The page stopped loading before it finished."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La página dejó de cargarse antes de terminar."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ページの読み込みが完了前に中断されました。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "页面在加载完成前中断了。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "頁面在載入完成前中斷了。"
+          }
+        }
+      }
+    },
+    "The page tried to load from a network port the system blocks." : {
+      "comment" : "Web wallpaper failure reason shown when WebKit refuses a restricted port.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The page tried to load from a network port the system blocks."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La página intentó cargarse desde un puerto de red que el sistema bloquea."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ページがシステムでブロックされているネットワークポートから読み込もうとしました。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "页面试图从系统禁止的网络端口加载内容。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "頁面試圖從系統封鎖的網路連接埠載入內容。"
+          }
+        }
+      }
+    },
+    "The page's server answered with error %lld." : {
+      "comment" : "Web wallpaper failure reason. The placeholder is an HTTP status code such as 500.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The page's server answered with error %lld."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El servidor de la página respondió con el error %lld."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ページのサーバーがエラー %lld を返しました。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "页面所在的服务器返回了错误 %lld。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "頁面所在的伺服器傳回了錯誤 %lld。"
+          }
+        }
+      }
+    },
+    "The page's server could not be reached." : {
+      "comment" : "Web wallpaper failure reason shown when a remote page's host does not answer.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The page's server could not be reached."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo conectar con el servidor de la página."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ページのサーバーに接続できませんでした。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法连接到页面所在的服务器。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法連線到頁面所在的伺服器。"
+          }
+        }
+      }
+    },
     "The project settings path is not safe to open." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -63307,6 +63657,76 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "影片「%@」在其創意工坊包中遺失。"
+          }
+        }
+      }
+    },
+    "The wallpaper's entry page is missing from its folder." : {
+      "comment" : "Web wallpaper failure reason shown when the HTML file the project names cannot be served.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The wallpaper's entry page is missing from its folder."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Falta la página de entrada en la carpeta del fondo de pantalla."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "壁紙のフォルダにエントリページがありません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "壁纸文件夹里缺少入口页面。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "桌布資料夾裡缺少進入頁面。"
+          }
+        }
+      }
+    },
+    "The wallpaper's folder could not be read. Re-pick the source to restore permission." : {
+      "comment" : "Web wallpaper failure reason shown when the sandbox refuses the project folder.",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The wallpaper's folder could not be read. Re-pick the source to restore permission."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo leer la carpeta del fondo de pantalla. Vuelve a elegir el origen para restaurar el permiso."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "壁紙のフォルダを読み取れませんでした。ソースを選び直して権限を回復してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法读取壁纸文件夹。重新选择来源以恢复访问权限。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法讀取桌布資料夾。重新選擇來源以恢復存取權限。"
           }
         }
       }

@@ -60,11 +60,22 @@ struct SystemWallpaperLibraryView: View {
     }
 
     private var gallery: some View {
+        VStack(spacing: 0) {
+            galleryScroll
+            LibraryStatusBar(summary: Text("\(service.items.count) videos")) {
+                if service.diskUsageBytes > 0 {
+                    Text("Disk usage: \(WorkshopByteFormatter.platformDefault.string(fromByteCount: service.diskUsageBytes))")
+                }
+            }
+        }
+    }
+
+    private var galleryScroll: some View {
         ScrollView {
             LazyVStack(spacing: DesignTokens.Spacing.lg) {
                 notice
                 LazyVGrid(
-                    columns: DesignTokens.LibraryGrid.columns(for: tileSize),
+                    columns: DesignTokens.LibraryGrid.columns(for: tileSize, aspect: .wide),
                     spacing: DesignTokens.LibraryGrid.spacing
                 ) {
                     ForEach(service.items) { item in
@@ -88,7 +99,7 @@ struct SystemWallpaperLibraryView: View {
                 playbackModeRow
                 footnote
             }
-            .padding(DesignTokens.Spacing.lg)
+            .libraryGridPadding()
             .animation(.easeOut(duration: 0.2), value: service.items)
         }
     }
@@ -96,7 +107,7 @@ struct SystemWallpaperLibraryView: View {
     @ViewBuilder
     private var notice: some View {
         switch service.status {
-        case .failed(let message):
+        case let .failed(message):
             noticeRow(
                 icon: "exclamationmark.triangle.fill",
                 tint: DesignTokens.Colors.Status.warning,
@@ -134,12 +145,12 @@ struct SystemWallpaperLibraryView: View {
         }
     }
 
-    private func noticeRow<Action: View>(
+    private func noticeRow(
         icon: String,
         tint: Color,
         title: Text,
         detail: Text? = nil,
-        @ViewBuilder action: () -> Action
+        @ViewBuilder action: () -> some View
     ) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: DesignTokens.Spacing.md) {
             Image(systemName: icon)
@@ -196,9 +207,6 @@ struct SystemWallpaperLibraryView: View {
 
     private var footnote: some View {
         VStack(alignment: .leading, spacing: 2) {
-            if service.diskUsageBytes > 0 {
-                Text("Disk usage: \(WorkshopByteFormatter.platformDefault.string(fromByteCount: service.diskUsageBytes))")
-            }
             Text("Removing a video here also deletes the system's copy from disk.")
             if !service.items.isEmpty {
                 Button("Remove All from System Wallpaper", role: .destructive) {
@@ -293,7 +301,7 @@ enum SystemWallpaperVideoImport {
 // MARK: - Tile
 
 @available(macOS 26.0, *)
-private struct SystemWallpaperTile: View {
+struct SystemWallpaperTile: View {
     let item: SystemWallpaperManifest.Item
     let thumbnailURL: URL?
     let videoURL: URL?
@@ -345,42 +353,48 @@ private struct SystemWallpaperTile: View {
     }
 
     private var preview: some View {
-        ZStack {
-            if let thumbnail {
-                Image(decorative: thumbnail, scale: 1)
-                    .resizable()
-                    .scaledToFill()
-            } else {
-                Image(systemName: "film")
-                    .font(.title)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .aspectRatio(16.0 / 9.0, contentMode: .fit)
-        .clipped()
-        .overlay(alignment: .bottom) {
-            ThumbnailTitleBand(title: item.title, isHovering: isHovering) {
-                if isInUse {
-                    ThumbnailPresenceCheck(tint: DesignTokens.Colors.Status.active)
-                        .accessibilityLabel(Text("On screen"))
+        // Artwork must not contribute its intrinsic aspect ratio to the grid's layout.
+        Rectangle()
+            .fill(Color.secondary.opacity(0.12))
+            .overlay {
+                if let thumbnail {
+                    Image(decorative: thumbnail, scale: 1)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    Image(systemName: "film")
+                        .font(.title)
+                        .foregroundStyle(.secondary)
                 }
-                overflowButton
             }
-        }
-        // Keyed on the entry's own timestamp, not on the URL: a republish rewrites the same
-        // `<id>.jpg` path, so the URL never changes and the tile would keep its stale poster.
-        .task(id: item.addedAt) {
-            guard let thumbnailURL else { return }
-            thumbnail = await SystemWallpaperThumbnails.image(for: thumbnailURL)
-        }
+            .frame(maxWidth: .infinity)
+            .aspectRatio(16.0 / 9.0, contentMode: .fit)
+            .clipped()
+            .overlay(alignment: .bottom) {
+                ThumbnailTitleBand(title: item.title, isHovering: isHovering) {
+                    if isInUse {
+                        ThumbnailPresenceCheck(tint: DesignTokens.Colors.Status.active)
+                            .accessibilityLabel(Text("On screen"))
+                    }
+                    overflowButton
+                }
+            }
+            // Keyed on the entry's own timestamp, not on the URL: a republish rewrites the same
+            // `<id>.jpg` path, so the URL never changes and the tile would keep its stale poster.
+            .task(id: item.addedAt) {
+                thumbnail = nil
+                guard let thumbnailURL else { return }
+                let loaded = await SystemWallpaperThumbnails.image(for: thumbnailURL)
+                guard !Task.isCancelled else { return }
+                thumbnail = loaded
+            }
     }
 }
 
 /// Internal visibility lets cache-reclaimer tests observe purges.
 enum SystemWallpaperThumbnails {
-    /// 220 pt (`LibraryGrid.maximumColumnWidth`) at 2×, with headroom. The tile
-    /// is 16:9 and so is the poster, so `scaledToFill` never crops here.
+    /// Bound eager decoding independently of the source aspect ratio. The tile
+    /// keeps its own 16:9 geometry and crops non-wide posters with scaledToFill.
     private static let maxPixelSize = 512
 
     nonisolated(unsafe) static let cache: NSCache<NSString, CGImageBox> = {
@@ -394,17 +408,21 @@ enum SystemWallpaperThumbnails {
 
     final class CGImageBox {
         let image: CGImage
-        init(_ image: CGImage) { self.image = image }
+        init(_ image: CGImage) {
+            self.image = image
+        }
     }
 
     /// The cache key carries the modification date: keyed by URL alone, a regenerated
     /// thumbnail would serve old pixels for the rest of the session.
     static func image(for url: URL) async -> CGImage? {
-        await Task.detached(priority: .userInitiated) { () -> CGImage? in
+        await PreviewWorkGate.shared.runDetached { () -> CGImage? in
             let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
                 .contentModificationDate?.timeIntervalSinceReferenceDate ?? 0
             let key = "\(modified)|\(url.absoluteString)" as NSString
-            if let cached = cache.object(forKey: key) { return cached.image }
+            if let cached = cache.object(forKey: key) {
+                return cached.image
+            }
 
             guard let data = try? Data(contentsOf: url),
                   let source = CGImageSourceCreateWithData(
@@ -418,15 +436,17 @@ enum SystemWallpaperThumbnails {
                       // Produce the pixels here, on this background thread,
                       // rather than lazily on the thread that draws the layer.
                       kCGImageSourceShouldCacheImmediately: true,
-                      kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
+                      kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
                   ] as CFDictionary) else {
                 return nil
             }
+            // A completed decode remains reusable even if its tile just left the viewport.
+            // Cancellation still withdraws queued work and prevents publishing to that tile.
             let box = CGImageBox(decoded)
             let cost = decoded.bytesPerRow * decoded.height
             WPEImageCacheMeter.recordInsert(box, cost: cost, in: .systemWallpaperLibrary)
             cache.setObject(box, forKey: key, cost: cost)
             return decoded
-        }.value
+        }
     }
 }

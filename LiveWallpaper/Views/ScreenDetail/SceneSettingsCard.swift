@@ -400,10 +400,10 @@ struct WPESceneCustomSettingsCard: View {
                 titleBadge: badge(for: property)
             ) {
                 HStack(spacing: DesignTokens.Inspector.sliderValueSpacing) {
-                    Slider(
+                    QuantizedSlider(
                         value: numberBinding(for: property),
                         in: ValueLogic.sliderRange(for: property),
-                        step: ValueLogic.displaySliderStep(for: property),
+                        step: ValueLogic.sliderStep(for: property),
                         onEditingChanged: { editing in
                             if !editing { Task { @MainActor in await commitPendingEditorState() } }
                         }

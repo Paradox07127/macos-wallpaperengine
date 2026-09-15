@@ -1,7 +1,7 @@
 import Foundation
 import LiveWallpaperCore
 
-struct LibraryContentLocation {
+struct LibraryContentLocation: Sendable {
     /// Folder or file to select in Finder. Nil for content with no local file
     /// (a remote page, inline HTML) and for content whose grant no longer resolves.
     var revealURL: URL?
@@ -13,10 +13,23 @@ struct LibraryContentLocation {
 }
 
 enum LibraryContentLocator {
-    /// Resolving a security-scoped bookmark touches the filesystem, so call this
-    /// from the tile's `.task`, never from `body`.
-    @MainActor
+    /// A view task still inherits MainActor; filesystem access needs explicit offloading.
     static func locate(
+        content: WallpaperContent,
+        wpeOrigin: WPEOrigin?
+    ) async -> LibraryContentLocation {
+        await PreviewWorkGate.shared.runDetached {
+            locateSynchronously(content: content, wpeOrigin: wpeOrigin)
+        } ?? .unknown
+    }
+
+    static func resolvePreviewBookmark(_ data: Data?) async -> SecurityScopedBookmarkResolver.Resolved? {
+        await PreviewWorkGate.shared.runDetached {
+            try? SecurityScopedBookmarkResolver.shared.resolve(data, target: .transient).get()
+        }
+    }
+
+    private static func locateSynchronously(
         content: WallpaperContent,
         wpeOrigin: WPEOrigin?
     ) -> LibraryContentLocation {

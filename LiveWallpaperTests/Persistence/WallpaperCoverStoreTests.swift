@@ -24,7 +24,7 @@ struct WallpaperCoverStoreTests {
     }
 
     @Test("A stored cover reads back and lands under the entry's id")
-    func storeAndRead() throws {
+    func storeAndRead() async throws {
         let (store, root) = try Self.makeStore()
         defer { try? FileManager.default.removeItem(at: root) }
 
@@ -34,11 +34,11 @@ struct WallpaperCoverStoreTests {
         #expect(FileManager.default.fileExists(
             atPath: root.appendingPathComponent("Covers/\(fileName)").path
         ))
-        #expect(store.cover(named: fileName) != nil)
+        #expect(await store.cover(named: fileName) != nil)
     }
 
     @Test("A cover read through a fresh store comes off disk, not the cache")
-    func readsFromDisk() throws {
+    func readsFromDisk() async throws {
         let (writer, root) = try Self.makeStore()
         defer { try? FileManager.default.removeItem(at: root) }
 
@@ -47,7 +47,7 @@ struct WallpaperCoverStoreTests {
         // A second store instance shares the directory but not the NSCache, so a
         // hit here proves the PNG actually reached disk.
         let reader = WallpaperCoverStore(directory: ConfigurationDirectory(root: root))
-        #expect(reader.cover(named: fileName) != nil)
+        #expect(await reader.cover(named: fileName) != nil)
     }
 
     @Test("Re-storing an entry overwrites its cover rather than leaving a second file")
@@ -65,16 +65,16 @@ struct WallpaperCoverStoreTests {
     }
 
     @Test("Removing a cover deletes the file and drops the cached image")
-    func removeDeletesFileAndCache() throws {
+    func removeDeletesFileAndCache() async throws {
         let (store, root) = try Self.makeStore()
         defer { try? FileManager.default.removeItem(at: root) }
 
         let id = UUID()
         let fileName = try #require(store.store(Self.solidImage(.red), for: id))
-        #expect(store.cover(named: fileName) != nil)
+        #expect(await store.cover(named: fileName) != nil)
 
         store.remove(named: fileName)
-        #expect(store.cover(named: fileName) == nil)
+        #expect(await store.cover(named: fileName) == nil)
         #expect(!FileManager.default.fileExists(
             atPath: root.appendingPathComponent("Covers/\(fileName)").path
         ))
@@ -111,24 +111,85 @@ struct WallpaperCoverStoreTests {
     }
 
     @Test("Sweeping a directory that was never written does not throw")
-    func orphanSweepWithNoDirectory() throws {
+    func orphanSweepWithNoDirectory() async throws {
         let (store, root) = try Self.makeStore()
         defer { try? FileManager.default.removeItem(at: root) }
         store.removeOrphans(keeping: ["nothing.png"])
-        #expect(store.cover(named: "nothing.png") == nil)
+        #expect(await store.cover(named: "nothing.png") == nil)
     }
 
     @Test("Removing everything takes the directory with it")
-    func removeAll() throws {
+    func removeAll() async throws {
         let (store, root) = try Self.makeStore()
         defer { try? FileManager.default.removeItem(at: root) }
 
         let fileName = try #require(store.store(Self.solidImage(.red), for: UUID()))
         store.removeAll()
-        #expect(store.cover(named: fileName) == nil)
+        #expect(await store.cover(named: fileName) == nil)
         #expect(!FileManager.default.fileExists(
             atPath: root.appendingPathComponent("Covers").path
         ))
+    }
+
+    @Test func concurrentColdReadsPreserveImages() async throws {
+        let (writer, root) = try Self.makeStore()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let names = try (0 ..< 50).map { _ in
+            try #require(writer.store(Self.solidImage(.blue), for: UUID()))
+        }
+        let reader = WallpaperCoverStore(directory: ConfigurationDirectory(root: root))
+        let tasks = names.map { name in Task { await reader.cover(named: name) } }
+        for (name, task) in zip(names, tasks) {
+            let expected = try #require(NSImage(contentsOf: root.appendingPathComponent("Covers/\(name)")))
+            let actual = try #require(await task.value)
+            #expect(actual.size == expected.size)
+            #expect(abs(actual.size.width / actual.size.height - 8.0 / 6.0) < 0.0001)
+        }
+    }
+
+    @Test func replacingCoverInvalidatesQueuedColdRead() async throws {
+        let (writer, root) = try Self.makeStore()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let id = UUID()
+        let name = try #require(writer.store(Self.solidImage(.red), for: id))
+        let gate = PreviewWorkGate(limit: 1)
+        let reader = WallpaperCoverStore(directory: ConfigurationDirectory(root: root), readGate: gate)
+        let blocker = CoverReadBlocker()
+        let holder = Task { await gate.run { await blocker.wait() } }
+        let deadline = ContinuousClock.now.advanced(by: .seconds(3))
+        while await gate.activeCount == 0, ContinuousClock.now < deadline {
+            await Task.yield()
+        }
+        try #require(await gate.activeCount == 1)
+        let pending = Task { await reader.cover(named: name) }
+        while await gate.queuedCount == 0, ContinuousClock.now < deadline {
+            await Task.yield()
+        }
+        #expect(await gate.queuedCount == 1)
+        _ = reader.store(Self.solidImage(.green, size: NSSize(width: 12, height: 9)), for: id)
+        #expect(await pending.value?.size == NSSize(width: 12, height: 9))
+        await blocker.open()
+        await holder.value
+        #expect(await reader.cover(named: name)?.size == NSSize(width: 12, height: 9))
+        reader.remove(named: name)
+        #expect(await reader.cover(named: name) == nil)
+    }
+
+    private actor CoverReadBlocker {
+        private var opened = false
+        private var continuation: CheckedContinuation<Void, Never>?
+        func wait() async {
+            if opened {
+                return
+            }
+            await withCheckedContinuation { continuation = $0 }
+        }
+
+        func open() {
+            opened = true
+            continuation?.resume()
+            continuation = nil
+        }
     }
 }
 

@@ -1,4 +1,5 @@
 import Testing
+import Foundation
 import CoreGraphics
 @testable import LiveWallpaper
 
@@ -94,5 +95,108 @@ struct PlaylistRowMetadataTests {
             folder: "Wallpapers"
         )
         #expect(meta.subtitle == "1080p · Wallpapers")
+    }
+}
+
+@MainActor
+@Suite("Playlist metadata request lifecycle", .serialized)
+struct PlaylistMetadataLifecycleTests {
+    private final class Probe {
+        var releases: [Int: CheckedContinuation<Void, Never>] = [:]
+        var started = 0
+        var active = 0
+        var peak = 0
+    }
+
+    private func waitUntil(_ condition: () -> Bool) async throws {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(3))
+        while !condition(), ContinuousClock.now < deadline {
+            await Task.yield()
+        }
+        try #require(condition())
+    }
+
+    @Test func staleInvalidatedProducerCannotRepopulateCache() async throws {
+        let probe = Probe()
+        let gate = PreviewWorkGate(limit: 2)
+        let service = MetadataService(gate: gate) { _ in
+            probe.started += 1
+            let generation = probe.started
+            await withCheckedContinuation { probe.releases[generation] = $0 }
+            return RowMetadata(resolution: nil, duration: Double(generation), folder: nil)
+        }
+        let bookmark = Data([1])
+        let old = Task { await service.metadata(for: bookmark) }
+        try await waitUntil { probe.started == 1 }
+        service.invalidate(bookmark)
+        #expect(await old.value == .empty)
+        let replacement = Task { await service.metadata(for: bookmark) }
+        try await waitUntil { probe.started == 2 }
+        probe.releases[2]?.resume()
+        #expect(await replacement.value.duration == 2)
+        probe.releases[1]?.resume()
+        let deadline = ContinuousClock.now.advanced(by: .seconds(3))
+        while await gate.activeCount > 0, ContinuousClock.now < deadline {
+            await Task.yield()
+        }
+        try #require(await gate.activeCount == 0)
+        #expect(await service.metadata(for: bookmark).duration == 2)
+        #expect(probe.started == 2)
+    }
+
+    @Test func cancellingOneRowKeepsOtherConsumerAndCache() async throws {
+        let probe = Probe()
+        let service = MetadataService { _ in
+            probe.started += 1
+            await withCheckedContinuation { probe.releases[1] = $0 }
+            return RowMetadata(resolution: nil, duration: 42, folder: nil)
+        }
+        let bookmark = Data([2])
+        let first = Task { await service.metadata(for: bookmark) }
+        try await waitUntil { probe.started == 1 }
+        let second = Task { await service.metadata(for: bookmark) }
+        try await waitUntil { service.requests.waiterCount == 2 }
+        first.cancel()
+        #expect(await first.value == .empty)
+        probe.releases[1]?.resume()
+        #expect(await second.value.duration == 42)
+        #expect(await service.metadata(for: bookmark).duration == 42)
+        #expect(probe.started == 1)
+    }
+
+    @Test func abandonedQueuedRowDoesNotOpenMedia() async throws {
+        let probe = Probe()
+        let service = MetadataService(gate: PreviewWorkGate(limit: 1)) { _ in
+            probe.started += 1
+            await withCheckedContinuation { probe.releases[1] = $0 }
+            return RowMetadata(resolution: nil, duration: 1, folder: nil)
+        }
+        let holder = Task { await service.metadata(for: Data([1])) }
+        try await waitUntil { probe.started == 1 }
+        let queued = Task { await service.metadata(for: Data([2])) }
+        try await waitUntil { service.requests.requestCount == 2 }
+        queued.cancel()
+        #expect(await queued.value == .empty)
+        probe.releases[1]?.resume()
+        #expect(await holder.value.duration == 1)
+        #expect(probe.started == 1)
+        #expect(service.requests.requestCount == 0)
+    }
+
+    @Test func distinctMediaLoadsRespectBudget() async {
+        let probe = Probe()
+        let service = MetadataService { data in
+            probe.active += 1
+            probe.peak = max(probe.peak, probe.active)
+            defer { probe.active -= 1 }
+            try? await Task.sleep(for: .milliseconds(2))
+            return RowMetadata(resolution: nil, duration: Double(data[0]), folder: nil)
+        }
+        let tasks = (1 ... 40).map { value in Task { await service.metadata(for: Data([UInt8(value)])) } }
+        for (index, task) in tasks.enumerated() {
+            #expect(await task.value.duration == Double(index + 1))
+        }
+        #expect(probe.peak == 2)
+        #expect(service.requests.requestCount == 0)
     }
 }

@@ -28,57 +28,50 @@ struct LibraryView: View {
         if store.bookmarks.isEmpty {
             emptyState
         } else {
+            let visible = filteredBookmarks
             VStack(spacing: 0) {
                 filterBar
                 Divider()
-                gallery
+                gallery(visible)
+                LibraryStatusBar(summary: statusSummary(shown: visible.count))
             }
         }
     }
 
-    @ViewBuilder
     private var filterBar: some View {
-        if showsTypeChips {
-            LibraryFilterBar(
-                searchText: $searchText,
-                searchPrompt: "Search bookmarks",
-                resultCount: filteredBookmarks.count,
-                totalCount: store.bookmarks.count
-            ) {
-                HStack(spacing: DesignTokens.LibraryFilterBar.contentSpacing) {
+        LibraryFilterBar(searchText: $searchText, searchPrompt: "Search bookmarks") {
+            HStack(spacing: DesignTokens.LibraryFilterBar.contentSpacing) {
+                if showsTypeChips {
                     typeChipRow
-                    Spacer(minLength: 0)
-                    SavedLibrarySortPicker(selection: $sortOrder)
                 }
-                .frame(maxWidth: .infinity)
+                Spacer(minLength: 0)
+                SavedLibrarySortPicker(selection: $sortOrder)
             }
-        } else {
-            LibraryFilterBar(
-                searchText: $searchText,
-                searchPrompt: "Search bookmarks",
-                resultCount: filteredBookmarks.count,
-                totalCount: store.bookmarks.count
-            ) {
-                HStack(spacing: DesignTokens.LibraryFilterBar.contentSpacing) {
-                    Spacer(minLength: 0)
-                    SavedLibrarySortPicker(selection: $sortOrder)
-                }
-                .frame(maxWidth: .infinity)
-            }
+            .frame(maxWidth: .infinity)
         }
     }
 
+    private func statusSummary(shown: Int) -> Text {
+        let total = store.bookmarks.count
+        return shown == total
+            ? Text("\(total) bookmarks")
+            : Text("\(shown) of \(total) shown")
+    }
+
     @ViewBuilder
-    private var gallery: some View {
-        if filteredBookmarks.isEmpty {
+    private func gallery(_ visible: [WallpaperBookmark]) -> some View {
+        if visible.isEmpty {
             IllustratedEmptyState(
                 symbol: "magnifyingglass",
                 title: "No bookmarks match your search"
             )
         } else {
             ScrollView {
-                LazyVGrid(columns: DesignTokens.LibraryGrid.columns(for: tileSize), spacing: DesignTokens.LibraryGrid.spacing) {
-                    ForEach(filteredBookmarks) { bookmark in
+                LazyVGrid(
+                    columns: DesignTokens.LibraryGrid.columns(for: tileSize, aspect: .wide),
+                    spacing: DesignTokens.LibraryGrid.spacing
+                ) {
+                    ForEach(visible) { bookmark in
                         BookmarkTile(
                             bookmark: bookmark,
                             screens: screenManager.screens,
@@ -108,8 +101,7 @@ struct LibraryView: View {
                         }
                     }
                 }
-                .padding(.horizontal, 20)
-                .padding(.vertical, DesignTokens.Spacing.cardInset)
+                .libraryGridPadding()
             }
             .overlay(alignment: .top) {
                 if dragSession.isDragging, !screenManager.screens.isEmpty {
@@ -293,8 +285,6 @@ private struct BookmarkTile: View {
             .overlay { tileContent }
             .aspectRatio(16.0 / 9.0, contentMode: .fit)
             .clipped()
-            // Scoped to the artwork, not the whole card: an ancestor tap gesture would steal the
-            // title band's overflow button and rename-field clicks.
             .contentShape(Rectangle())
             .onTapGesture { applyFromCard() }
             .overlay {
@@ -352,6 +342,7 @@ private struct BookmarkTile: View {
             .frame(width: 20, height: 20)
             .floatingGlyphGlass(hovered: false)
             .opacity(thumbnail == nil ? 0 : 1)
+            .allowsHitTesting(false)
             .accessibilityHidden(true)
     }
 
@@ -430,18 +421,22 @@ private struct BookmarkTile: View {
         thumbnail = nil
         // Resolved before the artwork: Show in Finder and the unavailable veil
         // both read it, and neither should wait on a decode.
-        location = LibraryContentLocator.locate(
+        let resolvedLocation = await LibraryContentLocator.locate(
             content: bookmark.content,
             wpeOrigin: bookmark.wpeOrigin
         )
+        guard !Task.isCancelled else { return }
+        location = resolvedLocation
         // A cover is a still of the real display taken when this was saved, so
         // it beats anything recomputed from the file — and it is the only
         // artwork a scene bookmark has at all.
         if let coverFileName = bookmark.coverFileName,
-           let cover = WallpaperCoverStore.shared.cover(named: coverFileName) {
+           let cover = await WallpaperCoverStore.shared.cover(named: coverFileName),
+           !Task.isCancelled {
             thumbnail = cover
             return
         }
+        guard !Task.isCancelled else { return }
         await loadThumbnail()
     }
 
@@ -459,10 +454,7 @@ private struct BookmarkTile: View {
             // Packaged videos resolve to a scene.pkg, which has no plain video
             // poster frame; skip the thumbnail rather than mis-decode the pkg.
             guard packageEntryName == nil else { break }
-            guard case .success(let resolved) = SecurityScopedBookmarkResolver.shared.resolve(
-                bookmarkData,
-                target: .transient
-            ) else { return }
+            guard let resolved = await LibraryContentLocator.resolvePreviewBookmark(bookmarkData) else { return }
             guard !Task.isCancelled else { return }
             if let image = await WallpaperThumbnailService.shared.videoPosterImage(
                 for: resolved.url,

@@ -230,11 +230,12 @@ enum HTMLPreviewKey {
         config: HTMLConfig,
         cacheKey: String
     ) async -> NSImage? {
-        let compatibility = HTMLWallpaperCompatibilityPolicy.runtimeConfig(
-            source: source,
-            config: config,
-            trustedOrigins: TrustedHostStore.shared.originSet
-        )
+        let trustedOrigins = TrustedHostStore.shared.originSet
+        guard let effectiveConfig = await PreviewWorkGate.shared.runDetached({
+            HTMLWallpaperCompatibilityPolicy.runtimeConfig(
+                source: source, config: config, trustedOrigins: trustedOrigins
+            ).config
+        }), !Task.isCancelled else { return nil }
         switch source {
         case .url(let url):
             return await WallpaperThumbnailService.shared.htmlSnapshotImage(
@@ -242,7 +243,7 @@ enum HTMLPreviewKey {
                     source: source,
                     loadURL: url,
                     cacheKey: cacheKey,
-                    effectiveConfig: compatibility.config,
+                    effectiveConfig: effectiveConfig,
                     localReadAccessRoot: nil
                 )
             )
@@ -252,7 +253,7 @@ enum HTMLPreviewKey {
                 bookmarkData: bookmarkData,
                 appendingIndex: nil,
                 cacheKey: cacheKey,
-                compatibility: compatibility
+                effectiveConfig: effectiveConfig
             )
         case .folder(let bookmarkData, let indexFileName):
             return await snapshotFromBookmark(
@@ -260,7 +261,7 @@ enum HTMLPreviewKey {
                 bookmarkData: bookmarkData,
                 appendingIndex: indexFileName,
                 cacheKey: cacheKey,
-                compatibility: compatibility
+                effectiveConfig: effectiveConfig
             )
         case .inline:
             return nil
@@ -273,12 +274,10 @@ enum HTMLPreviewKey {
         bookmarkData: Data,
         appendingIndex: String?,
         cacheKey: String,
-        compatibility: HTMLWallpaperCompatibilityResult
+        effectiveConfig: HTMLConfig
     ) async -> NSImage? {
-        guard case .success(let resolved) = SecurityScopedBookmarkResolver.shared.resolve(
-            bookmarkData,
-            target: .transient
-        ) else { return nil }
+        guard let resolved = await LibraryContentLocator.resolvePreviewBookmark(bookmarkData),
+              !Task.isCancelled else { return nil }
         let url = resolved.url
         let didStart = url.startAccessingSecurityScopedResource()
         defer { if didStart { url.stopAccessingSecurityScopedResource() } }
@@ -286,7 +285,9 @@ enum HTMLPreviewKey {
         let target: URL
         if let index = appendingIndex {
             target = url.appendingPathComponent(index)
-            guard FileManager.default.fileExists(atPath: target.path) else { return nil }
+            guard await PreviewWorkGate.shared.runDetached({
+                FileManager.default.fileExists(atPath: target.path)
+            }) == true, !Task.isCancelled else { return nil }
         } else {
             target = url
         }
@@ -295,7 +296,7 @@ enum HTMLPreviewKey {
                 source: source,
                 loadURL: target,
                 cacheKey: cacheKey,
-                effectiveConfig: compatibility.config,
+                effectiveConfig: effectiveConfig,
                 localReadAccessRoot: appendingIndex == nil
                     ? target.deletingLastPathComponent()
                     : url

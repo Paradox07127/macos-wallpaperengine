@@ -317,7 +317,7 @@ struct PlaylistSection: View {
             onDragChanged: { translationY, locationY in
                 if draggingID != entry.id {
                     draggingID = entry.id
-                    dragSnapshotFrames = rowFrames
+                    dragSnapshotFrames = rowFrames.sorted { $0.frame.minY < $1.frame.minY }
                 }
                 dragOffsetY = translationY
                 insertionIndex = computeInsertionIndex(pointerY: locationY)
@@ -348,9 +348,7 @@ struct PlaylistSection: View {
     }
 
     private func computeInsertionIndex(pointerY: CGFloat) -> Int {
-        let frames = dragSnapshotFrames ?? rowFrames
-        guard !frames.isEmpty else { return 0 }
-        let sorted = frames.sorted { $0.frame.minY < $1.frame.minY }
+        let sorted = dragSnapshotFrames ?? rowFrames.sorted { $0.frame.minY < $1.frame.minY }
         for (idx, rowFrame) in sorted.enumerated() {
             if pointerY < rowFrame.frame.midY {
                 return idx
@@ -495,9 +493,7 @@ struct PlaylistSection: View {
         WallpaperThumbnailService.shared.invalidate(
             cacheKey: AsyncRowThumbnail.cacheKey(for: bookmark)
         )
-        Task.detached(priority: .utility) {
-            await MetadataService.shared.invalidate(bookmark)
-        }
+        MetadataService.shared.invalidate(bookmark)
     }
 
     private func applyEntriesAfterRemove(_ newEntries: [PlaylistEntry], removedPrimary: Bool) {
