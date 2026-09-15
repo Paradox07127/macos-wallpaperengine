@@ -168,9 +168,14 @@ actor WPEDisplayRenderActor {
             renderer?.renderAndPresentFrame()
             return
         }
+        guard let renderer else { return }
+        let acquisitionStart = renderer.executor.drawableAcquisitionSeconds
         let start = CACurrentMediaTime()
-        renderer?.renderAndPresentFrame()
-        thread.noteFrameDuration(CACurrentMediaTime() - start)
+        renderer.renderAndPresentFrame()
+        thread.noteFrameDuration(
+            CACurrentMediaTime() - start,
+            drawableWait: renderer.executor.drawableAcquisitionSeconds - acquisitionStart
+        )
     }
 
     // MARK: - CADisplayLink Frame Driver
@@ -338,8 +343,7 @@ actor WPEDisplayRenderActor {
 
     func load() async throws {
         try await renderer?.load(on: self)
-        // Prewarm already compiled custom shaders; first frames can still miss
-        // PSO signatures, so pin P-cores across the warm-up window.
+        // First frames can still miss PSO signatures after prewarming.
         thread?.boostRenderQoSWarmup()
     }
 
