@@ -48,11 +48,9 @@ struct AsyncRowThumbnail: View {
             image = cached
             return
         }
-        let resolverResult = SecurityScopedBookmarkResolver.shared.resolve(
-            bookmark,
-            target: .transient
-        )
-        guard case .success(let resolved) = resolverResult else { return }
+        image = nil
+        guard let resolved = await LibraryContentLocator.resolvePreviewBookmark(bookmark),
+              !Task.isCancelled else { return }
         let loaded = await WallpaperThumbnailService.shared.videoPosterImage(
             for: resolved.url,
             cacheKey: cacheKey

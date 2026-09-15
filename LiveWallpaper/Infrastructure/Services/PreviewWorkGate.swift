@@ -3,6 +3,8 @@ import Foundation
 /// Callers must check `Task.isCancelled` first inside `run`. Not reentrant — a full gate deadlocks against itself.
 actor PreviewWorkGate {
     static let shared = PreviewWorkGate(limit: 4)
+    static let video = PreviewWorkGate(limit: 2)
+    static let html = PreviewWorkGate(limit: 2)
 
     private let limit: Int
     private var active = 0
@@ -18,9 +20,17 @@ actor PreviewWorkGate {
         self.limit = max(1, limit)
     }
 
-    var activeCount: Int { active }
-    var queuedCount: Int { queue.count }
-    var retainedCancellationIDs: Int { cancelledBeforeRegistration.count + pending.count }
+    var activeCount: Int {
+        active
+    }
+
+    var queuedCount: Int {
+        queue.count
+    }
+
+    var retainedCancellationIDs: Int {
+        cancelledBeforeRegistration.count + pending.count
+    }
 
     func run<T: Sendable>(_ work: @Sendable () async -> T) async -> T {
         let queued = PreviewSignpost.begin("gate.queued")
@@ -29,8 +39,29 @@ actor PreviewWorkGate {
         let holdsSlot = await acquire()
         PreviewSignpost.end("gate.queued", queued)
         let result = await work()
-        if holdsSlot { release() }
+        if holdsSlot {
+            release()
+        }
         return result
+    }
+
+    /// Admit synchronous filesystem work before starting its background task.
+    func runDetached<Value: Sendable>(
+        _ work: @escaping @Sendable () -> Value?
+    ) async -> Value? {
+        await run {
+            guard !Task.isCancelled else { return nil }
+            let worker = Task.detached(priority: .utility) {
+                guard !Task.isCancelled else { return nil as Value? }
+                return work()
+            }
+            return await withTaskCancellationHandler {
+                let result = await worker.value
+                return Task.isCancelled ? nil : result
+            } onCancel: {
+                worker.cancel()
+            }
+        }
     }
 
     private func acquire() async -> Bool {
@@ -78,5 +109,87 @@ actor PreviewWorkGate {
             }
         }
         active -= 1
+    }
+}
+
+/// A key owns one producer; cancelling one waiter must not cancel another card's result.
+@MainActor
+final class PreviewRequestPool<Value: Sendable> {
+    private struct Request {
+        let id: UUID
+        let task: Task<Void, Never>
+        var waiters: [UUID: CheckedContinuation<Value?, Never>]
+    }
+
+    private let gate: PreviewWorkGate
+    private var requests: [String: Request] = [:]
+
+    init(gate: PreviewWorkGate) {
+        self.gate = gate
+    }
+
+    var requestCount: Int {
+        requests.count
+    }
+
+    var waiterCount: Int {
+        requests.values.reduce(0) { $0 + $1.waiters.count }
+    }
+
+    func value(
+        for key: String,
+        operation: @escaping @MainActor @Sendable () async -> Value?
+    ) async -> Value? {
+        let waiterID = UUID()
+        let result: Value? = await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                guard !Task.isCancelled else { continuation.resume(returning: nil); return }
+                if requests[key] != nil {
+                    requests[key]?.waiters[waiterID] = continuation
+                    return
+                }
+                let id = UUID()
+                let task = Task { @MainActor in
+                    let value = await gate.run {
+                        guard !Task.isCancelled else { return nil as Value? }
+                        return await operation()
+                    }
+                    complete(key: key, id: id, value: Task.isCancelled ? nil : value)
+                }
+                requests[key] = Request(id: id, task: task, waiters: [waiterID: continuation])
+            }
+        } onCancel: {
+            Task { @MainActor in self.cancel(key: key, waiterID: waiterID) }
+        }
+        return Task.isCancelled ? nil : result
+    }
+
+    func invalidate(_ key: String) {
+        guard let request = requests.removeValue(forKey: key) else { return }
+        request.task.cancel()
+        for waiter in request.waiters.values {
+            waiter.resume(returning: nil)
+        }
+    }
+
+    func invalidateAll() {
+        for key in Array(requests.keys) {
+            invalidate(key)
+        }
+    }
+
+    private func cancel(key: String, waiterID: UUID) {
+        guard let waiter = requests[key]?.waiters.removeValue(forKey: waiterID) else { return }
+        waiter.resume(returning: nil)
+        if requests[key]?.waiters.isEmpty == true {
+            invalidate(key)
+        }
+    }
+
+    private func complete(key: String, id: UUID, value: Value?) {
+        guard requests[key]?.id == id, let request = requests.removeValue(forKey: key) else { return }
+        for waiter in request.waiters.values {
+            waiter.resume(returning: value)
+        }
     }
 }

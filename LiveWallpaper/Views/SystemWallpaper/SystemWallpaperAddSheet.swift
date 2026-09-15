@@ -6,7 +6,6 @@ import SwiftUI
 struct SystemWallpaperAddSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(WallpaperExportService.self) private var service
-    @Environment(\.libraryTileSize) private var tileSize
 
     @State private var store = BookmarkStore.shared
     @State private var selection: Set<SystemWallpaperCandidate.ID> = []
@@ -67,8 +66,10 @@ struct SystemWallpaperAddSheet: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             ScrollView {
+                // Not the window's tile-size setting: at this sheet's fixed 620 pt,
+                // `.large` leaves one column.
                 LazyVGrid(
-                    columns: DesignTokens.LibraryGrid.columns(for: tileSize),
+                    columns: DesignTokens.LibraryGrid.columns(for: .small, aspect: .wide),
                     spacing: DesignTokens.LibraryGrid.spacing
                 ) {
                     ForEach(candidates) { candidate in
@@ -79,7 +80,7 @@ struct SystemWallpaperAddSheet: View {
                         )
                     }
                 }
-                .padding(DesignTokens.Spacing.lg)
+                .libraryGridPadding()
             }
         }
     }

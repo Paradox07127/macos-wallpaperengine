@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import ImageIO
 import LiveWallpaperCore
 
 @MainActor
@@ -13,29 +14,59 @@ final class WallpaperCoverStore {
         return c
     }()
 
+    private let reads: PreviewRequestPool<CGImage>
+    private var readGenerations: [String: UUID] = [:]
+
     private let root: URL
     private let fileManager: FileManager
 
     init(
         directory: ConfigurationDirectory = ConfigurationDirectory(),
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        readGate: PreviewWorkGate = .shared
     ) {
         root = directory.root.appendingPathComponent("Covers", isDirectory: true)
         self.fileManager = fileManager
+        reads = PreviewRequestPool(gate: readGate)
     }
 
     // MARK: - Read
 
-    func cover(named fileName: String) -> NSImage? {
+    func cover(named fileName: String) async -> NSImage? {
+        guard !Task.isCancelled else { return nil }
         if let cached = cache.object(forKey: fileName as NSString) {
             return cached
         }
+        let generation = readGenerations[fileName] ?? UUID()
+        readGenerations[fileName] = generation
         let url = root.appendingPathComponent(fileName, isDirectory: false)
-        guard let data = try? Data(contentsOf: url), let image = NSImage(data: data) else {
-            return nil
+        let decoded = await reads.value(for: fileName) {
+            let worker = Task.detached(priority: .utility) { () -> CGImage? in
+                guard !Task.isCancelled,
+                      let data = try? Data(contentsOf: url),
+                      let source = CGImageSourceCreateWithData(data as CFData, nil),
+                      !Task.isCancelled else { return nil }
+                return CGImageSourceCreateImageAtIndex(source, 0, [
+                    kCGImageSourceShouldCacheImmediately: true,
+                ] as CFDictionary)
+            }
+            return await withTaskCancellationHandler {
+                await worker.value
+            } onCancel: { worker.cancel() }
         }
-        cache.setObject(image, forKey: fileName as NSString, cost: Self.cost(of: image))
+        guard !Task.isCancelled else { return nil }
+        guard readGenerations[fileName] == generation else {
+            return cache.object(forKey: fileName as NSString)
+        }
+        guard let decoded else { return nil }
+        let image = NSImage(cgImage: decoded, size: NSSize(width: decoded.width, height: decoded.height))
+        cache.setObject(image, forKey: fileName as NSString, cost: decoded.bytesPerRow * decoded.height)
         return image
+    }
+
+    private func invalidateRead(_ fileName: String) {
+        readGenerations.removeValue(forKey: fileName)
+        reads.invalidate(fileName)
     }
 
     // MARK: - Write
@@ -53,11 +84,13 @@ final class WallpaperCoverStore {
             Logger.warning("Cover write failed: \(error.localizedDescription)", category: .ui)
             return nil
         }
+        invalidateRead(fileName)
         cache.setObject(image, forKey: fileName as NSString, cost: Self.cost(of: image))
         return fileName
     }
 
     func remove(named fileName: String) {
+        invalidateRead(fileName)
         cache.removeObject(forKey: fileName as NSString)
         try? fileManager.removeItem(at: root.appendingPathComponent(fileName, isDirectory: false))
     }
@@ -70,6 +103,8 @@ final class WallpaperCoverStore {
     }
 
     func removeAll() {
+        readGenerations.removeAll()
+        reads.invalidateAll()
         cache.removeAllObjects()
         try? fileManager.removeItem(at: root)
     }

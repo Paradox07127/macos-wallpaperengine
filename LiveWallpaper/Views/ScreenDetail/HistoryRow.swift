@@ -34,11 +34,19 @@ struct HistoryRow: View {
     @State private var showingFileActions = false
     @State private var bookmarkHovering = false
     @State private var resolutionLabel: String?
+    @State private var previewURL: URL?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.galleryCardPreferences) private var cardPreferences
 
     var body: some View {
         cardContainer
+            .task(id: entry) {
+                previewURL = nil
+                let origin = entry.origin
+                let resolved = await PreviewWorkGate.shared.runDetached { origin.sourcePreviewURL }
+                guard !Task.isCancelled else { return }
+                previewURL = resolved
+            }
             .task(id: resolutionProbeKey) { await loadResolutionIfNeeded() }
             .galleryTileChrome(
                 isHovering: isHovering,
@@ -83,10 +91,11 @@ struct HistoryRow: View {
     private var card: some View {
         VStack(spacing: 0) {
             WPEPreviewView(
-                imageURL: entry.origin.sourcePreviewURL,
+                imageURL: previewURL,
                 securityScopedBookmarkData: entry.origin.sourceFolderBookmark,
                 playbackMode: .hoverToPlay,
-                previewSize: .tile
+                previewSize: .tile,
+                hovered: isHovering
             )
             .overlay(alignment: .topTrailing) {
                 AdaptiveGlassContainer(spacing: DesignTokens.Spacing.xs) {

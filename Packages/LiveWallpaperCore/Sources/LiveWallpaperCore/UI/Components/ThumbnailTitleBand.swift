@@ -30,11 +30,13 @@ public struct ThumbnailTitleBand<Leading: View, Trailing: View>: View {
         HStack(spacing: DesignTokens.Spacing.xs) {
             leading
 
+            // Click-through, or the band blocks the whole-card apply gesture beneath it.
             MarqueeText(title, lineLimit: 2, isActive: isHovering)
                 .font(DesignTokens.Typography.bodyEmphasized)
                 .foregroundStyle(DesignTokens.Colors.overlayForeground)
                 .frame(height: isHovering ? lineHeight * 2 : lineHeight, alignment: .top)
                 .clipped()
+                .allowsHitTesting(false)
 
             Spacer(minLength: 0)
 
@@ -45,8 +47,8 @@ public struct ThumbnailTitleBand<Leading: View, Trailing: View>: View {
         .padding(.bottom, DesignTokens.Spacing.sm)
         .padding(.top, DesignTokens.Spacing.xs)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(alignment: .bottom) { scrim }
-        .background(alignment: .leading) { lineSizer }
+        .background(alignment: .bottom) { scrim.allowsHitTesting(false) }
+        .background(alignment: .leading) { lineSizer.allowsHitTesting(false) }
         .animation(DesignTokens.motion(reduceMotion, .easeOut(duration: 0.15)), value: isHovering)
     }
 

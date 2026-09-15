@@ -89,6 +89,9 @@ SUITES=(
   BookmarkContentOnlyTests
   ConfigurationPorterTests
   ScreenSchemePersistenceTests
+  # Cancelled playlist media work must not repopulate an invalidated cache.
+  PlaylistMetadataLifecycleTests
+  InstalledPreviewPlaybackLifecycleTests
   # System Wallpaper publish/status machine, including the provider stamp: a
   # leftover appex used to condemn the installed one and pause the whole page.
   WallpaperExportServiceTests

@@ -7,6 +7,10 @@ struct AerialThumbnailCacheKey: Hashable {
     private let path: String
     private let fileSize: Int64
 
+    var previewKey: String {
+        "aerial::\(path)::\(fileSize)"
+    }
+
     init(asset: AerialAsset) {
         path = asset.url.standardizedFileURL.path
         fileSize = asset.fileSize ?? -1
@@ -83,7 +87,11 @@ struct ThumbnailCard: View {
             }
             .help(location.isAvailable ? Text("Apply") : Text("This wallpaper's file is missing"))
             .contextMenu { contextMenu }
-            .task { await loadTileContent() }
+            .task(id: AerialThumbnailCacheKey(asset: asset)) {
+                thumbnail = nil
+                formatInfo = nil
+                await loadTileContent()
+            }
             .accessibilityElement(children: .combine)
             .accessibilityLabel(accessibilityText)
             .accessibilityActions {
@@ -116,8 +124,6 @@ struct ThumbnailCard: View {
             .overlay { tileContent }
             .aspectRatio(16.0 / 9.0, contentMode: .fit)
             .clipped()
-            // Scoped to the artwork, not the whole card: an ancestor tap gesture over the title
-            // band would steal the overflow button's click.
             .contentShape(Rectangle())
             .onTapGesture { applyFromCard() }
             .overlay {
@@ -128,6 +134,7 @@ struct ThumbnailCard: View {
             .overlay(alignment: .topTrailing) {
                 formatBadgeRow
                     .padding(DesignTokens.Spacing.sm)
+                    .allowsHitTesting(false)
             }
             .overlay(alignment: .bottom) {
                 ThumbnailTitleBand(title: asset.displayName, isHovering: isHovering) {
@@ -219,10 +226,12 @@ struct ThumbnailCard: View {
     private func loadTileContent() async {
         // Resolved before the artwork: Show in Finder and the unavailable veil
         // both read it, and neither should wait on a decode.
-        location = LibraryContentLocator.locate(
+        let resolvedLocation = await LibraryContentLocator.locate(
             content: .video(bookmarkData: asset.bookmarkData),
             wpeOrigin: nil
         )
+        guard !Task.isCancelled else { return }
+        location = resolvedLocation
         await loadThumbnailIfNeeded()
     }
 
@@ -234,48 +243,41 @@ struct ThumbnailCard: View {
         if let cached = AerialThumbnailCache.shared.entry(for: cacheKey) {
             thumbnail = cached.thumbnail
             formatInfo = cached.formatInfo
-            if cached.thumbnail != nil { return }
+            if cached.thumbnail != nil {
+                return
+            }
         }
 
-        let bookmarkData = asset.bookmarkData
-        let resolved: URL? = await Task.detached { () -> URL? in
-            try? SecurityScopedBookmarkResolver.shared
-                .resolve(bookmarkData, target: .transient).get().url
-        }.value
-
-        guard let url = resolved else { return }
+        guard let resolved = await LibraryContentLocator.resolvePreviewBookmark(asset.bookmarkData),
+              !Task.isCancelled else { return }
+        let url = resolved.url
 
         let didStart = url.startAccessingSecurityScopedResource()
-        defer { if didStart { url.stopAccessingSecurityScopedResource() } }
+        defer {
+            if didStart {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
 
         var loadedFormatInfo = formatInfo
-        if let info = try? await PlayableVideoLoader.detectFormat(at: url) {
+        if let info = await WallpaperThumbnailService.shared.videoFormatInfo(for: url, cacheKey: cacheKey.previewKey) {
             guard !Task.isCancelled else { return }
             loadedFormatInfo = info
             formatInfo = info
         }
 
-        let avAsset = AVURLAsset(url: url)
-        let generator = AVAssetImageGenerator(asset: avAsset)
-        generator.appliesPreferredTrackTransform = true
-        generator.maximumSize = CGSize(width: 480, height: 270)
-
-        do {
-            let image = try await generator.image(at: .zero).image
-            guard !Task.isCancelled else { return }
-            let nsImage = NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
-            thumbnail = nsImage
+        guard !Task.isCancelled else { return }
+        let image = await WallpaperThumbnailService.shared.videoPosterImage(
+            for: url, cacheKey: cacheKey.previewKey,
+            tolerance: (.positiveInfinity, .positiveInfinity)
+        )
+        guard !Task.isCancelled else { return }
+        thumbnail = image
+        if image != nil || loadedFormatInfo != nil {
             AerialThumbnailCache.shared.insert(
-                AerialThumbnailCacheEntry(thumbnail: nsImage, formatInfo: loadedFormatInfo),
+                AerialThumbnailCacheEntry(thumbnail: image, formatInfo: loadedFormatInfo),
                 for: cacheKey
             )
-        } catch {
-            if loadedFormatInfo != nil {
-                AerialThumbnailCache.shared.insert(
-                    AerialThumbnailCacheEntry(thumbnail: nil, formatInfo: loadedFormatInfo),
-                    for: cacheKey
-                )
-            }
         }
     }
 }

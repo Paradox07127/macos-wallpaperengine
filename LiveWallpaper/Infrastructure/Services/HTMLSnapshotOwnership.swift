@@ -22,8 +22,8 @@ struct HTMLSnapshotLeaseState {
 
         var lease: Lease {
             switch self {
-            case .start(let lease), .join(let lease):
-                return lease
+            case let .start(lease), let .join(lease):
+                lease
             }
         }
     }
@@ -101,6 +101,11 @@ struct HTMLSnapshotLeaseState {
         return entry.leaseIDs
     }
 
+    mutating func invalidate(cacheKey: String) -> (producerID: ProducerID, leaseIDs: Set<LeaseID>)? {
+        guard let entry = entriesByCacheKey.removeValue(forKey: cacheKey) else { return nil }
+        return (entry.producerID, entry.leaseIDs)
+    }
+
     #if DEBUG
     func producerID(for cacheKey: String) -> ProducerID? {
         entriesByCacheKey[cacheKey]?.producerID
@@ -125,11 +130,11 @@ final class HTMLSnapshotWaiter {
     func wait() async -> NSImage? {
         switch state {
         case .pending:
-            return await withCheckedContinuation { continuation in
+            await withCheckedContinuation { continuation in
                 self.continuation = continuation
             }
-        case .resolved(let image):
-            return image
+        case let .resolved(image):
+            image
         }
     }
 

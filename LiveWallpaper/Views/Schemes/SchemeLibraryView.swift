@@ -28,44 +28,34 @@ struct SchemeLibraryView: View {
         if store.schemes.isEmpty {
             emptyState
         } else {
+            let visible = filteredSchemes
             VStack(spacing: 0) {
                 filterBar
                 Divider()
-                gallery
+                gallery(visible)
+                LibraryStatusBar(summary: statusSummary(shown: visible.count))
             }
         }
     }
 
-    @ViewBuilder
     private var filterBar: some View {
-        if showsTypeChips {
-            LibraryFilterBar(
-                searchText: $searchText,
-                searchPrompt: "Search schemes",
-                resultCount: filteredSchemes.count,
-                totalCount: store.schemes.count
-            ) {
-                HStack(spacing: DesignTokens.LibraryFilterBar.contentSpacing) {
+        LibraryFilterBar(searchText: $searchText, searchPrompt: "Search schemes") {
+            HStack(spacing: DesignTokens.LibraryFilterBar.contentSpacing) {
+                if showsTypeChips {
                     typeChipRow
-                    Spacer(minLength: 0)
-                    SavedLibrarySortPicker(selection: $sortOrder)
                 }
-                .frame(maxWidth: .infinity)
+                Spacer(minLength: 0)
+                SavedLibrarySortPicker(selection: $sortOrder)
             }
-        } else {
-            LibraryFilterBar(
-                searchText: $searchText,
-                searchPrompt: "Search schemes",
-                resultCount: filteredSchemes.count,
-                totalCount: store.schemes.count
-            ) {
-                HStack(spacing: DesignTokens.LibraryFilterBar.contentSpacing) {
-                    Spacer(minLength: 0)
-                    SavedLibrarySortPicker(selection: $sortOrder)
-                }
-                .frame(maxWidth: .infinity)
-            }
+            .frame(maxWidth: .infinity)
         }
+    }
+
+    private func statusSummary(shown: Int) -> Text {
+        let total = store.schemes.count
+        return shown == total
+            ? Text("\(total) schemes")
+            : Text("\(shown) of \(total) shown")
     }
 
     private var typeChipRow: some View {
@@ -85,16 +75,19 @@ struct SchemeLibraryView: View {
     }
 
     @ViewBuilder
-    private var gallery: some View {
-        if filteredSchemes.isEmpty {
+    private func gallery(_ visible: [ScreenScheme]) -> some View {
+        if visible.isEmpty {
             IllustratedEmptyState(
                 symbol: "magnifyingglass",
                 title: "No schemes match your search"
             )
         } else {
             ScrollView {
-                LazyVGrid(columns: DesignTokens.LibraryGrid.columns(for: tileSize), spacing: DesignTokens.LibraryGrid.spacing) {
-                    ForEach(filteredSchemes) { scheme in
+                LazyVGrid(
+                    columns: DesignTokens.LibraryGrid.columns(for: tileSize, aspect: .wide),
+                    spacing: DesignTokens.LibraryGrid.spacing
+                ) {
+                    ForEach(visible) { scheme in
                         SchemeTile(
                             scheme: scheme,
                             screens: screenManager.screens,
@@ -124,8 +117,7 @@ struct SchemeLibraryView: View {
                         }
                     }
                 }
-                .padding(.horizontal, DesignTokens.Spacing.xl)
-                .padding(.vertical, DesignTokens.Spacing.cardInset)
+                .libraryGridPadding()
             }
             .overlay(alignment: .top) {
                 if dragSession.isDragging, !screenManager.screens.isEmpty {
@@ -315,7 +307,6 @@ private struct SchemeTile: View {
             .overlay { tileContent }
             .aspectRatio(16.0 / 9.0, contentMode: .fit)
             .clipped()
-            // Scoped to the artwork, not the whole card: the title band carries the overflow button and a rename field that an ancestor tap would steal.
             .contentShape(Rectangle())
             .onTapGesture { applyFromCard() }
             .overlay {
@@ -326,10 +317,12 @@ private struct SchemeTile: View {
             .overlay(alignment: .topLeading) {
                 sourceBadge
                     .padding(DesignTokens.Spacing.sm)
+                    .allowsHitTesting(false)
             }
             .overlay(alignment: .topTrailing) {
                 updatedBadge
                     .padding(DesignTokens.Spacing.sm)
+                    .allowsHitTesting(false)
             }
             .overlay(alignment: .bottom) { bottomBand }
     }
@@ -480,17 +473,21 @@ private struct SchemeTile: View {
     @MainActor
     private func loadTileContent() async {
         thumbnail = nil
-        location = LibraryContentLocator.locate(
+        let resolvedLocation = await LibraryContentLocator.locate(
             content: scheme.configuration.activeWallpaper,
             wpeOrigin: scheme.configuration.wpeOrigin
         )
+        guard !Task.isCancelled else { return }
+        location = resolvedLocation
         // A scheme's cover also carries its overlay layers, which no recomputed
         // thumbnail can show — so it wins outright when one exists.
         if let coverFileName = scheme.coverFileName,
-           let cover = WallpaperCoverStore.shared.cover(named: coverFileName) {
+           let cover = await WallpaperCoverStore.shared.cover(named: coverFileName),
+           !Task.isCancelled {
             thumbnail = cover
             return
         }
+        guard !Task.isCancelled else { return }
         await loadThumbnail()
     }
 
@@ -508,10 +505,7 @@ private struct SchemeTile: View {
             // A packaged video resolves to a scene.pkg, which has no plain
             // poster frame; skip rather than mis-decode the package.
             guard packageEntryName == nil else { return }
-            guard case let .success(resolved) = SecurityScopedBookmarkResolver.shared.resolve(
-                bookmarkData,
-                target: .transient
-            ) else { return }
+            guard let resolved = await LibraryContentLocator.resolvePreviewBookmark(bookmarkData) else { return }
             guard !Task.isCancelled else { return }
             if let image = await WallpaperThumbnailService.shared.videoPosterImage(
                 for: resolved.url,

@@ -1,11 +1,14 @@
 #if !LITE_BUILD
+import AppKit
 import CoreGraphics
 import Foundation
 import ImageIO
+@testable import LiveWallpaper
+import LiveWallpaperCore
+import Observation
 import SwiftUI
 import Testing
 import UniformTypeIdentifiers
-@testable import LiveWallpaper
 
 @Suite("WorkshopAnimatedGIF bounded decode")
 struct WorkshopAnimatedGIFDecodeTests {
@@ -354,6 +357,139 @@ struct GIFAnimationControllerTests {
         controller.stop()
         try? await Task.sleep(nanoseconds: 150_000_000)
         #expect(controller.isAnimating == false)
+    }
+}
+
+@MainActor
+@Suite("Installed preview playback lifecycle", .serialized)
+struct InstalledPreviewPlaybackLifecycleTests {
+    @Observable
+    final class Presentation {
+        var hovered = true
+        var presented = true
+        var included = true
+    }
+
+    @Test("Parent hover and presentation stop real layer playback and permit resuming")
+    func installedPreviewStopsOutsidePresentation() async throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("installed-lifecycle-\(UUID().uuidString).gif")
+        try GIFTestFixtures.gif(width: 16, height: 16, frameCount: 3, delay: 0.08).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let state = Presentation()
+        let host = NSHostingView(rootView: Preview(state: state, url: url))
+        host.sizingOptions = []
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 200, height: 200), styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        window.orderFront(nil)
+        defer { window.close() }
+        await GIFTestFixtures.waitUntil { imageView(in: host)?.layer?.contents != nil }
+        let view = try #require(imageView(in: host))
+        #expect(try await changes(in: view) > 0, "Visible hovered control must animate")
+
+        state.presented = false
+        try await Task.sleep(for: .milliseconds(150))
+        #expect(try await changes(in: view) == 0, "A retained hidden host must stop producing frames")
+        state.presented = true
+        #expect(try await changes(in: view) > 0, "Reopening the host must resume playback")
+
+        state.hovered = false
+        try await Task.sleep(for: .milliseconds(150))
+        #expect(try await changes(in: view) == 0, "The parent's settled hover owns playback")
+        state.hovered = true
+        #expect(try await changes(in: view) > 0)
+
+        state.included = false
+        await GIFTestFixtures.waitUntil { view.layer?.contents == nil }
+        #expect(view.layer?.contents == nil, "Removing the preview must clear its retained layer")
+    }
+
+    @Observable
+    final class EntryPresentation {
+        var entry: WPEHistoryEntry
+        init(entry: WPEHistoryEntry) {
+            self.entry = entry
+        }
+    }
+
+    private struct HistoryPreview: View {
+        let state: EntryPresentation
+        var body: some View {
+            HistoryRow(entry: state.entry, isActive: false, onRemove: {})
+                .frame(width: 200, height: 200)
+        }
+    }
+
+    @Test("Installed cards load local artwork and replace it when their entry changes")
+    func installedCardReloadsChangedEntry() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("installed-card-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try GIFTestFixtures.png(width: 16, height: 16).write(to: folder.appendingPathComponent("first.png"))
+        try GIFTestFixtures.png(width: 32, height: 32).write(to: folder.appendingPathComponent("second.png"))
+        let bookmark = try folder.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
+        func entry(_ preview: String) -> WPEHistoryEntry {
+            WPEHistoryEntry(origin: WPEOrigin(
+                workshopID: "1", title: "Fixture", originalType: .scene,
+                sourceFolderBookmark: bookmark, cacheRelativePath: nil, previewFileName: preview
+            ), importedAt: Date(timeIntervalSince1970: 0))
+        }
+        let state = EntryPresentation(entry: entry("first.png"))
+        let host = NSHostingView(rootView: HistoryPreview(state: state))
+        host.sizingOptions = []
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 200, height: 200), styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        window.orderFront(nil)
+        defer { window.close() }
+        func width() -> Int? {
+            guard let contents = imageView(in: host)?.layer?.contents else { return nil }
+            // The specific image view stores CGImage frames in its layer.
+            // swiftlint:disable:next force_cast
+            return (contents as! CGImage).width
+        }
+        await GIFTestFixtures.waitUntil { width() == 16 }
+        #expect(width() == 16)
+        // Same workshop ID and import stamp; changing the resource itself must reload.
+        state.entry = entry("second.png")
+        await GIFTestFixtures.waitUntil { width() == 32 }
+        #expect(width() == 32)
+    }
+
+    private struct Preview: View {
+        let state: Presentation
+        let url: URL
+
+        var body: some View {
+            Group {
+                if state.included {
+                    WPEPreviewView(imageURL: url, playbackMode: .hoverToPlay, previewSize: .tile, hovered: state.hovered)
+                }
+            }
+            .environment(\.inspectorContentIsVisible, state.presented)
+            .frame(width: 200, height: 200)
+        }
+    }
+
+    private func imageView(in view: NSView) -> NSView? {
+        if String(describing: type(of: view)) == "AspectFillAnimatedImageView" {
+            return view
+        }
+        return view.subviews.lazy.compactMap { imageView(in: $0) }.first
+    }
+
+    private func changes(in view: NSView) async throws -> Int {
+        var prior = view.layer?.contents.map { $0 as AnyObject }
+        var count = 0
+        for _ in 0 ..< 20 {
+            try await Task.sleep(for: .milliseconds(20))
+            let current = view.layer?.contents.map { $0 as AnyObject }
+            if current !== prior {
+                count += 1
+            }
+            prior = current
+        }
+        return count
     }
 }
 

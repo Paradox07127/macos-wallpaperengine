@@ -2,36 +2,46 @@ import Foundation
 @preconcurrency import AVFoundation
 import LiveWallpaperCore
 
-actor MetadataService {
+@MainActor
+final class MetadataService {
     static let shared = MetadataService()
 
     private var cache: [String: RowMetadata] = [:]
-    private var inFlight: [String: Task<RowMetadata, Never>] = [:]
+    let requests: PreviewRequestPool<RowMetadata>
+    private let load: @MainActor @Sendable (Data) async -> RowMetadata
     private let cacheLimit = 256
 
-    private init() {}
+    init(
+        gate: PreviewWorkGate = PreviewWorkGate(limit: 2),
+        load: @escaping @MainActor @Sendable (Data) async -> RowMetadata = MetadataService.loadMetadata
+    ) {
+        requests = PreviewRequestPool(gate: gate)
+        self.load = load
+    }
 
-    /// Cancellation is cooperative: a caller's parent-task cancellation drops
-    /// their wait but does not invalidate the shared in-flight computation.
+    /// Shared consumers keep one bounded producer alive until the last row leaves.
     func metadata(for bookmark: Data) async -> RowMetadata {
+        guard !Task.isCancelled else { return .empty }
         let key = cacheKey(for: bookmark)
-        if let cached = cache[key] { return cached }
-        if let pending = inFlight[key] { return await pending.value }
-
-        let task = Task<RowMetadata, Never> {
-            await MetadataService.loadMetadata(for: bookmark)
+        if let cached = cache[key] {
+            return cached
         }
-        inFlight[key] = task
-        let result = await task.value
-        inFlight.removeValue(forKey: key)
-        if result != .empty {
-            storeInCache(result, for: key)
-        }
-        return result
+        return await requests.value(for: key) { [self] in
+            let result = await load(bookmark)
+            // An invalidated producer can finish after its replacement. It must
+            // neither publish to a row nor repopulate the invalidated cache.
+            guard !Task.isCancelled else { return nil }
+            if result != .empty {
+                storeInCache(result, for: key)
+            }
+            return result
+        } ?? .empty
     }
 
     func invalidate(_ bookmark: Data) {
-        cache.removeValue(forKey: cacheKey(for: bookmark))
+        let key = cacheKey(for: bookmark)
+        cache.removeValue(forKey: key)
+        requests.invalidate(key)
     }
 
     private func storeInCache(_ value: RowMetadata, for key: String) {
@@ -49,19 +59,20 @@ actor MetadataService {
 
     // MARK: - Loader
 
-    private static func loadMetadata(for bookmark: Data) async -> RowMetadata {
-        let resolverResult = SecurityScopedBookmarkResolver.shared.resolve(
-            bookmark,
-            target: .transient
-        )
-        guard case .success(let resolved) = resolverResult else {
+    private nonisolated static func loadMetadata(for bookmark: Data) async -> RowMetadata {
+        guard let resolved = await LibraryContentLocator.resolvePreviewBookmark(bookmark),
+              !Task.isCancelled else {
             return .empty
         }
         let url = resolved.url
         let folder = url.deletingLastPathComponent().lastPathComponent
 
         let didStart = url.startAccessingSecurityScopedResource()
-        defer { if didStart { url.stopAccessingSecurityScopedResource() } }
+        defer {
+            if didStart {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
 
         let asset = AVURLAsset(url: url)
         async let durationLoad: CMTime? = {
@@ -83,7 +94,7 @@ actor MetadataService {
         )
     }
 
-    private static func loadResolution(from asset: AVURLAsset) async -> CGSize? {
+    private nonisolated static func loadResolution(from asset: AVURLAsset) async -> CGSize? {
         guard let tracks = try? await asset.loadTracks(withMediaType: .video),
               let track = tracks.first
         else { return nil }

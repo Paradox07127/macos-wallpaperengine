@@ -35,33 +35,43 @@ struct WPEPreviewView: View {
     /// preview fill the parent's bounds (16:9 inspector cards) and aspect-fill crop.
     let aspectRatio: CGFloat?
     let previewSize: WPEPreviewSize
+    /// Gallery cards already settle hover for their chrome; reuse that signal
+    /// so passing the pointer during a scroll cannot start a separate animation.
+    let hovered: Bool?
 
     @State private var loadAttempt: Int = 0
     @State private var loadFailed: Bool = false
     @State private var isHovering: Bool = false
+    @State private var isVisible = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.inspectorContentIsVisible) private var hostIsPresented
 
     init(
         imageURL: URL?,
         securityScopedBookmarkData: Data? = nil,
         playbackMode: WPEPreviewPlaybackMode = .autoPlay,
         aspectRatio: CGFloat? = 1,
-        previewSize: WPEPreviewSize = .pane
+        previewSize: WPEPreviewSize = .pane,
+        hovered: Bool? = nil
     ) {
         self.imageURL = imageURL
         self.securityScopedBookmarkData = securityScopedBookmarkData
         self.playbackMode = playbackMode
         self.aspectRatio = aspectRatio
         self.previewSize = previewSize
+        self.hovered = hovered
     }
 
     private var shouldAnimate: Bool {
-        guard !reduceMotion else { return false }
-        switch playbackMode {
-        case .staticPoster: return false
-        case .autoPlay: return true
-        case .hoverToPlay: return isHovering
-        }
+        guard playbackMode != .staticPoster else { return false }
+        return ThumbnailPlaybackGate(
+            isVisible: isVisible,
+            hostIsPresented: hostIsPresented,
+            isHovered: hovered ?? isHovering,
+            reduceMotion: reduceMotion,
+            isBlurred: false,
+            trigger: playbackMode == .hoverToPlay ? .hover : .auto
+        ).allowsPlayback
     }
 
     var body: some View {
@@ -87,9 +97,11 @@ struct WPEPreviewView: View {
         }
         .modifier(OptionalAspectRatio(aspectRatio))
         .clipped()
-        .onHover { hovering in
-            if playbackMode == .hoverToPlay { isHovering = hovering }
-        }
+        .modifier(PreviewHoverInput(enabled: playbackMode == .hoverToPlay && hovered == nil) {
+            isHovering = $0
+        })
+        .onAppear { isVisible = true }
+        .onDisappear { isVisible = false; isHovering = false }
         .overlay(alignment: .bottomTrailing) {
             if loadFailed {
                 retryBadge
@@ -313,6 +325,19 @@ enum WPEPreviewImageDecodeBudget {
             return nil
         }
         return (width, height)
+    }
+}
+
+private struct PreviewHoverInput: ViewModifier {
+    let enabled: Bool
+    let action: (Bool) -> Void
+
+    func body(content: Content) -> some View {
+        if enabled {
+            content.settledHover(action)
+        } else {
+            content
+        }
     }
 }
 

@@ -95,16 +95,20 @@ struct AerialsLibraryView: View {
     }
 
     private var galleryWithFilter: some View {
-        VStack(spacing: 0) {
-            LibraryFilterBar(
-                searchText: $searchText,
-                searchPrompt: "Search aerials",
-                resultCount: filteredAssets.count,
-                totalCount: library.assets.count
-            )
+        let visible = filteredAssets
+        return VStack(spacing: 0) {
+            LibraryFilterBar(searchText: $searchText, searchPrompt: "Search aerials")
             Divider()
-            galleryGrid
+            galleryGrid(visible)
+            LibraryStatusBar(summary: statusSummary(shown: visible.count))
         }
+    }
+
+    private func statusSummary(shown: Int) -> Text {
+        let total = library.assets.count
+        return shown == total
+            ? Text("\(total) aerials")
+            : Text("\(shown) of \(total) shown")
     }
 
     private var filteredAssets: [AerialAsset] {
@@ -152,28 +156,30 @@ struct AerialsLibraryView: View {
     }
 
     @ViewBuilder
-    private var galleryGrid: some View {
-        if filteredAssets.isEmpty {
+    private func galleryGrid(_ visible: [AerialAsset]) -> some View {
+        if visible.isEmpty {
             IllustratedEmptyState(
                 symbol: "magnifyingglass",
                 title: "No aerials match your search"
             )
         } else {
             ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: DesignTokens.LibraryGrid.spacing) {
                     if library.isScanning {
-                        HStack(spacing: 8) {
+                        HStack(spacing: DesignTokens.Spacing.sm) {
                             ProgressView()
                                 .controlSize(.small)
                             Text("Scanning library…")
                                 .font(DesignTokens.Typography.body)
                                 .foregroundStyle(.secondary)
                         }
-                        .padding(.horizontal, 4)
                     }
 
-                    LazyVGrid(columns: DesignTokens.LibraryGrid.columns(for: tileSize), spacing: DesignTokens.LibraryGrid.spacing) {
-                        ForEach(filteredAssets) { asset in
+                    LazyVGrid(
+                        columns: DesignTokens.LibraryGrid.columns(for: tileSize, aspect: .wide),
+                        spacing: DesignTokens.LibraryGrid.spacing
+                    ) {
+                        ForEach(visible) { asset in
                             ThumbnailCard(
                                 asset: asset,
                                 screens: screenManager.screens,
@@ -188,7 +194,7 @@ struct AerialsLibraryView: View {
                         }
                     }
                 }
-                .padding(20)
+                .libraryGridPadding()
             }
             .overlay(alignment: .top) {
                 if dragSession.isDragging, !screenManager.screens.isEmpty {

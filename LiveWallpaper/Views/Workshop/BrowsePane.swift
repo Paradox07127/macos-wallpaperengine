@@ -42,7 +42,7 @@ struct BrowsePane: View {
     private static let gridTopAnchor = "workshop.browse.grid.top"
 
     private var gridColumns: [GridItem] {
-        DesignTokens.LibraryGrid.columns(for: tileSize)
+        DesignTokens.LibraryGrid.columns(for: tileSize, aspect: .square)
     }
 
     var body: some View {

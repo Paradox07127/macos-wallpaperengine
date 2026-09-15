@@ -28,6 +28,8 @@ struct WebTransformCanvas<Content: View>: View {
     /// and committing while one still runs compounds its next total onto the value just written.
     private enum GestureKind: Hashable { case drag, magnify, rotate }
     @State private var activeGestures: Set<GestureKind> = []
+    @GestureState private var isRecognizing = false
+    @State private var gestureInterrupted = false
 
     /// One preview point is this many CSS pixels on the display.
     /// `min`, not the width ratio: `scaledToFill` crops one axis, so the *other* sets the scale.
@@ -58,6 +60,19 @@ struct WebTransformCanvas<Content: View>: View {
             }
             .contentShape(Rectangle())
             .gesture(manipulation, isEnabled: isArmed)
+            .onChange(of: isArmed) { _, armed in
+                if !armed {
+                    interruptGesture()
+                }
+            }
+            .onChange(of: screen.id) { _, _ in interruptGesture() }
+            .onChange(of: isRecognizing) { _, recognizing in
+                if !recognizing {
+                    resetGestureState()
+                    gestureInterrupted = false
+                }
+            }
+            .onDisappear { interruptGesture() }
             .onTapGesture(count: 2) {
                 if isArmed {
                     resetTransform()
@@ -135,11 +150,13 @@ struct WebTransformCanvas<Content: View>: View {
         drag
             .simultaneously(with: magnify)
             .simultaneously(with: rotate)
+            .updating($isRecognizing) { _, recognizing, _ in recognizing = true }
     }
 
     private var drag: some Gesture {
         DragGesture(minimumDistance: 1)
             .onChanged { value in
+                guard !gestureInterrupted, isArmed else { return }
                 beginGesture(.drag)
                 // A mouse has neither pinch nor twist.
                 let flags = NSEvent.modifierFlags
@@ -161,6 +178,7 @@ struct WebTransformCanvas<Content: View>: View {
     private var magnify: some Gesture {
         MagnifyGesture()
             .onChanged { value in
+                guard !gestureInterrupted, isArmed else { return }
                 beginGesture(.magnify)
                 magnification = value.magnification
             }
@@ -170,6 +188,7 @@ struct WebTransformCanvas<Content: View>: View {
     private var rotate: some Gesture {
         RotateGesture()
             .onChanged { value in
+                guard !gestureInterrupted, isArmed else { return }
                 beginGesture(.rotate)
                 rotationDelta = value.rotation
             }
@@ -184,9 +203,17 @@ struct WebTransformCanvas<Content: View>: View {
     }
 
     private func endGesture(_ kind: GestureKind) {
-        activeGestures.remove(kind)
+        guard !gestureInterrupted, isArmed,
+              activeGestures.remove(kind) != nil else { return }
         guard activeGestures.isEmpty else { return }
         commit()
+    }
+
+    private func interruptGesture() {
+        // A display switch can leave the recognizer tracking the same fingers.
+        // Discard its remaining samples until it ends or is cancelled.
+        gestureInterrupted = isRecognizing
+        resetGestureState()
     }
 
     private func commit() {

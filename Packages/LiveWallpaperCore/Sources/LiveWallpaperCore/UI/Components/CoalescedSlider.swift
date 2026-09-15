@@ -1,5 +1,54 @@
 import SwiftUI
 
+/// Values snap to this grid without creating a view for each possible stop.
+public struct SliderValueGrid {
+    public let range: ClosedRange<Double>
+    public let step: Double
+
+    public init(in range: ClosedRange<Double>, step: Double) {
+        self.range = range
+        self.step = step
+    }
+
+    public func normalized(_ value: Double) -> Double {
+        let clamped = min(max(value, range.lowerBound), range.upperBound)
+        guard step.isFinite, step > 0 else { return clamped }
+        let snapped = ((clamped - range.lowerBound) / step).rounded() * step + range.lowerBound
+        return min(max(snapped, range.lowerBound), range.upperBound)
+    }
+}
+
+/// A continuous track whose writes snap to the authored value grid.
+public struct QuantizedSlider: View {
+    @Binding private var value: Double
+    private let grid: SliderValueGrid
+    private let onEditingChanged: (Bool) -> Void
+
+    public init(
+        value: Binding<Double>,
+        in range: ClosedRange<Double>,
+        step: Double,
+        onEditingChanged: @escaping (Bool) -> Void = { _ in }
+    ) {
+        _value = value
+        grid = SliderValueGrid(in: range, step: step)
+        self.onEditingChanged = onEditingChanged
+    }
+
+    public var body: some View {
+        Slider(value: normalizedBinding, in: grid.range, onEditingChanged: onEditingChanged)
+    }
+
+    private var normalizedBinding: Binding<Double> {
+        Binding(get: { value }, set: { next in
+            let normalized = grid.normalized(next)
+            if value != normalized {
+                value = normalized
+            }
+        })
+    }
+}
+
 public enum CoalescedSliderSizing {
     case fixed(CGFloat)
     case flexible(minimum: CGFloat, maximum: CGFloat)
@@ -9,6 +58,7 @@ public struct CoalescedSlider<Readout: View>: View {
     private let committedValue: Double
     private let range: ClosedRange<Double>
     private let step: Double?
+    private let quantizationStep: Double?
     private let owner: AnyHashable
     private let quietWindow: Duration
     private let controlSize: ControlSize
@@ -19,12 +69,14 @@ public struct CoalescedSlider<Readout: View>: View {
     private let readout: (Double) -> Readout
 
     /// - Parameters:
+    ///   - quantizationStep: snaps writes on a continuous track; takes precedence over display `step`.
     ///   - owner: what the value belongs to (display, plus the wallpaper). A reused row
     ///     keeps its `@State`, so without this a drag can commit onto another subject.
     public init(
         value: Double,
         in range: ClosedRange<Double>,
         step: Double? = nil,
+        quantizationStep: Double? = nil,
         owner: AnyHashable,
         quietWindow: Duration = .milliseconds(180),
         controlSize: ControlSize = .small,
@@ -37,6 +89,7 @@ public struct CoalescedSlider<Readout: View>: View {
         self.committedValue = value
         self.range = range
         self.step = step
+        self.quantizationStep = quantizationStep
         self.owner = owner
         self.quietWindow = quietWindow
         self.controlSize = controlSize
@@ -77,7 +130,9 @@ public struct CoalescedSlider<Readout: View>: View {
 
     @ViewBuilder
     private var slider: some View {
-        if let step {
+        if let quantizationStep {
+            QuantizedSlider(value: binding, in: range, step: quantizationStep, onEditingChanged: editingChanged)
+        } else if let step {
             Slider(value: binding, in: range, step: step, onEditingChanged: editingChanged)
         } else {
             Slider(value: binding, in: range, onEditingChanged: editingChanged)

@@ -164,7 +164,7 @@ struct BrowseCardLayoutCostTests {
 
     private func measure(_ variant: Variant) -> Double {
         let items = makeItems(Self.cardCount)
-        let columns = DesignTokens.LibraryGrid.columns(for: .medium)
+        let columns = DesignTokens.LibraryGrid.columns(for: .medium, aspect: .square)
         var total: Double = 0
         for _ in 0 ..< Self.iterations {
             let grid = ScrollView {
@@ -379,7 +379,7 @@ struct BrowseThumbnailWrapperCostTests {
     }
 
     private func measure(_ variant: Variant) -> Double {
-        let columns = DesignTokens.LibraryGrid.columns(for: .medium)
+        let columns = DesignTokens.LibraryGrid.columns(for: .medium, aspect: .square)
         var total: Double = 0
         for _ in 0 ..< Self.iterations {
             let grid = ScrollView {

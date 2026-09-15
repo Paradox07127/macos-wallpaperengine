@@ -115,7 +115,7 @@ struct WPEProjectCustomSettingsCard: View {
                 CoalescedSlider(
                     value: numberBinding(for: property).wrappedValue,
                     in: ValueLogic.sliderRange(for: property),
-                    step: ValueLogic.displaySliderStep(for: property),
+                    quantizationStep: ValueLogic.sliderStep(for: property),
                     owner: [AnyHashable(screen.id), AnyHashable(projectKey ?? "")],
                     accessibilityLabel: Text(verbatim: property.displayText),
                     accessibilityValue: { Text(verbatim: ValueLogic.formattedNumber($0, for: property)) },
