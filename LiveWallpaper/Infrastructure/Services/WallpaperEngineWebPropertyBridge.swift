@@ -10,14 +10,17 @@ enum WallpaperEngineWebPropertyBridge {
             return nil
         }
 
-        // 3-stage delivery against startup races: inject, defineProperty hook, RAF poll.
+        // The hook is installed at once, but delivery waits for `load`: Wallpaper Engine delivers
+        // once the wallpaper is ready, and a page that builds its GL state in a load handler throws
+        // if the listener runs at documentEnd — the throw then eats every property after it.
         return """
         (function () {
             var properties = \(json);
             var delivered = false;
-
+            var ready = false;
             function deliver(listener) {
-                if (delivered || !listener || typeof listener.applyUserProperties !== 'function') return;
+                if (!ready || delivered) return;
+                if (!listener || typeof listener.applyUserProperties !== 'function') return;
                 delivered = true;
                 try {
                     listener.applyUserProperties(properties);
@@ -25,12 +28,10 @@ enum WallpaperEngineWebPropertyBridge {
                     console.error('Loomscreen failed to apply Wallpaper Engine properties', error);
                 }
             }
-
-            deliver(window.wallpaperPropertyListener);
-            if (delivered) return;
-
+            // Installed before `load` on purpose: a page that assigns its listener later must still
+            // be captured, including when `load` has already been missed.
             try {
-                var current;
+                var current = window.wallpaperPropertyListener;
                 Object.defineProperty(window, 'wallpaperPropertyListener', {
                     configurable: true,
                     get: function () { return current; },
@@ -40,22 +41,37 @@ enum WallpaperEngineWebPropertyBridge {
                     }
                 });
             } catch (e) {}
-
-            // Stage 3 — short polling fallback for pages that mutate an
-            // already-defined property instead of assigning to the window.
-            var attempts = 0;
-            function pollFallback() {
-                if (delivered) return;
+            function becomeReady() {
+                if (ready) return;
+                ready = true;
                 deliver(window.wallpaperPropertyListener);
-                if (delivered) return;
-                if (attempts++ < 60) {
-                    window.requestAnimationFrame(pollFallback);
+                // Short polling fallback for pages that mutate an already-defined property
+                // instead of assigning to the window.
+                var attempts = 0;
+                function pollFallback() {
+                    if (delivered) return;
+                    deliver(window.wallpaperPropertyListener);
+                    if (delivered) return;
+                    if (attempts++ < 60) {
+                        window.requestAnimationFrame(pollFallback);
+                    }
                 }
+                pollFallback();
             }
-            pollFallback();
+            if (document.readyState === 'complete') {
+                becomeReady();
+            } else {
+                window.addEventListener('load', becomeReady);
+                // One hanging subresource can hold `load` forever. Before this bridge waited,
+                // properties always arrived at documentEnd, so the wait has to be bounded.
+                window.setTimeout(becomeReady, \(Self.readinessFallbackMilliseconds));
+            }
         })();
         """
     }
+
+    /// Long enough that a normally-loading page always wins the race.
+    static let readinessFallbackMilliseconds = 10000
 
     static func applyScript(
         schema: WallpaperEngineProjectPropertySchema,
@@ -157,8 +173,17 @@ enum WallpaperEngineWebPropertyBridge {
         let values = schema.effectiveValues(overrides: overrides)
         var payload: [String: Any] = [:]
         for property in schema.properties {
-            if let allowedKeys, !allowedKeys.contains(property.key) { continue }
-            guard let value = values[property.key]?.jsonObject else { continue }
+            if let allowedKeys, !allowedKeys.contains(property.key) {
+                continue
+            }
+            let value: Any
+            if let resolved = values[property.key]?.jsonObject {
+                value = resolved
+            } else if property.type.deliversEmptyStringWhenUnset {
+                value = ""
+            } else {
+                continue
+            }
             let wrapped: [String: Any] = ["value": value]
             guard JSONSerialization.isValidJSONObject(wrapped) else { continue }
             payload[property.key] = wrapped

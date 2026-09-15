@@ -316,10 +316,10 @@ struct WPEOfficialDocsCorpusAuditTests {
         ),
         pageContract(
             "audio/visualizer",
-            status: "missing",
+            status: "partial",
             evidence: "L1_REQUIRED",
-            producer: "none",
-            limitation: "window.wallpaperRegisterAudioListener and its 128-value approximately-30-Hz audio array are not exposed to web wallpapers.",
+            producer: "HTMLWallpaperRuntimeScript.audioSpectrumBridge + HTMLWallpaperView audio pump",
+            limitation: "window.wallpaperRegisterAudioListener delivers 64 left then 64 right bins at about 30 Hz, unclamped so the documented above-1 values survive, but Lite builds ship no system-audio capture at all and the band layout still has no authoritative Wallpaper Engine reference.",
             sourcePath: "docs/en/web/audio/visualizer.md"
         ),
         pageContract(

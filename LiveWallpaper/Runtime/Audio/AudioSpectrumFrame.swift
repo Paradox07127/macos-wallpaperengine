@@ -31,7 +31,7 @@ struct AudioSpectrumFrame: Equatable, Sendable {
         normalizedBins(bins, count: binCount)
     }
 
-    static func normalizedBins(_ bins: [Float], count: Int) -> [Float] {
+    static func normalizedBins(_ bins: [Float], count: Int, clampedTo01: Bool = true) -> [Float] {
         let resolvedCount = max(0, count)
         guard resolvedCount > 0 else { return [] }
 
@@ -39,7 +39,7 @@ struct AudioSpectrumFrame: Equatable, Sendable {
         normalized.reserveCapacity(resolvedCount)
 
         for value in bins.prefix(resolvedCount) {
-            normalized.append(clamp(value))
+            normalized.append(clampedTo01 ? clamp(value) : sanitize(value))
         }
 
         if normalized.count < resolvedCount {
@@ -52,5 +52,12 @@ struct AudioSpectrumFrame: Equatable, Sendable {
     static func clamp(_ value: Float) -> Float {
         guard value.isFinite else { return 0 }
         return min(max(value, 0), 1)
+    }
+
+    /// Storage keeps the analyzer's own magnitude: Wallpaper Engine's web visualizer contract
+    /// allows bins above 1, so the 0...1 ceiling belongs to the consumers drawn against it.
+    static func sanitize(_ value: Float) -> Float {
+        guard value.isFinite else { return 0 }
+        return max(value, 0)
     }
 }

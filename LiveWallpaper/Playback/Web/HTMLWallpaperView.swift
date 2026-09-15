@@ -68,12 +68,17 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
     /// `nonisolated(unsafe)`: only mutated from MainActor code, but deinit (released on an
     /// arbitrary queue) also removes the observer, which Swift 6 can't prove safe.
     nonisolated(unsafe) var thermalObserver: NSObjectProtocol?
+    /// Set by the page calling `wallpaperRegisterAudioListener`; cleared on every navigation.
+    var audioSpectrumListenerActive = false
+    var audioSpectrumPumpTask: Task<Void, Never>?
+    var audioSpectrumCaptureRetained = false
     var lastRafThrottleRatio: Int = 1
     /// User ceiling, independent of thermal ratio and suspend. Nil: no gate; reports 60 to Wallpaper Engine.
     var targetFrameRateLimit: Int?
     var lastRafTargetFrameIntervalMilliseconds: Double = 0
 
     var onError: (@MainActor (WallpaperRuntimeError) -> Void)?
+    var onFailureCause: (@MainActor (WallpaperFailureCause) -> Void)?
     var preparationGeneration: UInt64 = 0
     var completedNavigationGeneration: UInt64?
     var failedPreparationGeneration: UInt64?
@@ -147,6 +152,8 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
         webView.allowsLinkPreview = false
 
         installBaselineUserScripts(for: nil)
+        installAudioSpectrumMessageHandler()
+        installConsoleForwarderMessageHandler()
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.autoresizingMask = [.width, .height]
@@ -155,6 +162,15 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
     private func installBaselineUserScripts(for config: HTMLConfig?) {
         let controller = webView.configuration.userContentController
         controller.removeAllUserScripts()
+
+        // First: it must survive an uncaught throw in any later script, including our own.
+        if let consoleForwarderScript {
+            controller.addUserScript(WKUserScript(
+                source: consoleForwarderScript,
+                injectionTime: .atDocumentStart,
+                forMainFrameOnly: true
+            ))
+        }
 
         // Every frame (not main-only): an ad/iframe owns timers, rAF and canvases the main frame's hooks cannot reach.
         controller.addUserScript(WKUserScript(
@@ -171,6 +187,14 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
             injectionTime: .atDocumentStart,
             forMainFrameOnly: true
         ))
+
+        if let audioSpectrumBridgeScript {
+            controller.addUserScript(WKUserScript(
+                source: audioSpectrumBridgeScript,
+                injectionTime: .atDocumentStart,
+                forMainFrameOnly: true
+            ))
+        }
 
         if let wallpaperEnginePropertyBootstrapScript {
             controller.addUserScript(WKUserScript(
@@ -586,26 +610,28 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
                 Logger.error("HTML folder load: missing session nonce for \(indexFileName)", category: .screenManager)
                 // Nothing loads after this, and without a report the display
                 // just stays blank with no banner and no reason.
-                reportError(.webNavigationFailed(
-                    folderURL, code: nil,
-                    description: String(
-                        localized: "The local web session could not be started.",
-                        bundle: .appLanguage, comment: "Web wallpaper load failure when the folder handler had no session nonce."
-                    )
-                ))
+                let reason = String(
+                    localized: "The local web session could not be started.",
+                    bundle: .appLanguage, comment: "Web wallpaper load failure when the folder handler had no session nonce."
+                )
+                reportError(
+                    .webNavigationFailed(folderURL, code: nil, description: reason),
+                    cause: WallpaperFailureCause(code: "web.session_unavailable", reason: reason)
+                )
                 return
             }
             let escapedIndex = indexFileName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? indexFileName
             let urlString = "\(FolderURLSchemeHandler.scheme)://\(FolderURLSchemeHandler.host)/\(escapedIndex)?n=\(nonce)"
             guard let url = URL(string: urlString) else {
                 Logger.error("HTML folder load: failed to build scheme URL for \(indexFileName)", category: .screenManager)
-                reportError(.webNavigationFailed(
-                    folderURL, code: nil,
-                    description: String(
-                        localized: "The page address for \(indexFileName) could not be built.",
-                        bundle: .appLanguage, comment: "Web wallpaper load failure when the internal scheme URL could not be formed. The placeholder is the index file name."
-                    )
-                ))
+                let reason = String(
+                    localized: "The page address for \(indexFileName) could not be built.",
+                    bundle: .appLanguage, comment: "Web wallpaper load failure when the internal scheme URL could not be formed. The placeholder is the index file name."
+                )
+                reportError(
+                    .webNavigationFailed(folderURL, code: nil, description: reason),
+                    cause: WallpaperFailureCause(code: "web.session_unavailable", reason: reason)
+                )
                 return
             }
             let request = URLRequest(url: url)
@@ -832,8 +858,11 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
         }
     }
 
-    private func reportError(_ error: WallpaperRuntimeError) {
+    private func reportError(_ error: WallpaperRuntimeError, cause: WallpaperFailureCause? = nil) {
         failedPreparationGeneration = preparationGeneration
+        if let cause {
+            onFailureCause?(cause)
+        }
         onError?(error)
     }
 
@@ -891,6 +920,7 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
         restartPackageBackingAfterResume = false
         trackerBlockingRequested = false
         reloadScheduler.invalidate()
+        reconcileAudioSpectrumPump()
         onError = nil
         if let token = thermalObserver {
             NotificationCenter.default.removeObserver(token)
@@ -900,6 +930,12 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
         webView.navigationDelegate = nil
         webView.uiDelegate = nil
         webView.configuration.userContentController.removeAllUserScripts()
+        webView.configuration.userContentController.removeScriptMessageHandler(
+            forName: Self.audioSpectrumMessageName
+        )
+        webView.configuration.userContentController.removeScriptMessageHandler(
+            forName: Self.consoleMessageName
+        )
         if let list = compiledTrackerRuleList, hasTrackerRulesAttached {
             webView.configuration.userContentController.remove(list)
             hasTrackerRulesAttached = false
@@ -968,6 +1004,7 @@ extension HTMLWallpaperView: WKNavigationDelegate {
             navigation,
             currentGeneration: preparationGeneration
         )
+        dropAudioSpectrumListeners()
     }
 
     func webView(
@@ -1067,11 +1104,16 @@ extension HTMLWallpaperView: WKNavigationDelegate {
             category: .screenManager
         )
         if shouldRetryNavigationFailure() { return }
-        reportError(.webNavigationFailed(
-            navigationFailureURL(webView: webView, error: nsError),
-            code: nsError.code,
-            description: nsError.localizedDescription
-        ))
+        reportError(
+            .webNavigationFailed(
+                navigationFailureURL(webView: webView, error: nsError),
+                code: nsError.code,
+                description: nsError.localizedDescription
+            ),
+            cause: WebFailureCause.navigation(
+                domain: nsError.domain, code: nsError.code, description: nsError.localizedDescription
+            )
+        )
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
@@ -1086,33 +1128,46 @@ extension HTMLWallpaperView: WKNavigationDelegate {
             category: .screenManager
         )
         if shouldRetryNavigationFailure() { return }
+        let cause = WebFailureCause.navigation(
+            domain: nsError.domain, code: nsError.code, description: nsError.localizedDescription
+        )
         if nsError.domain == NSURLErrorDomain, nsError.code == NSURLErrorNotConnectedToInternet {
-            reportError(.networkOffline)
+            reportError(.networkOffline, cause: cause)
         } else {
-            reportError(.webNavigationFailed(
-                navigationFailureURL(webView: webView, error: nsError),
-                code: nsError.code,
-                description: nsError.localizedDescription
-            ))
+            reportError(
+                .webNavigationFailed(
+                    navigationFailureURL(webView: webView, error: nsError),
+                    code: nsError.code,
+                    description: nsError.localizedDescription
+                ),
+                cause: cause
+            )
         }
     }
 
     /// No `didFail` on process death — recover via shared retry budget (not a hot loop).
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         guard !isCleaningUp else { return }
+        // The listeners died with the process. Without this the pump keeps pushing into a dead
+        // page for the whole backoff, and once the retry budget is spent no navigation ever
+        // arrives to release the capture tap.
+        dropAudioSpectrumListeners()
         Logger.error(
             "HTML wallpaper WebContent process terminated; reloading source. url=\(webView.url?.absoluteString ?? "<no url>")",
             category: .screenManager
         )
         if shouldRetryNavigationFailure() { return }
-        reportError(.webNavigationFailed(
+        reportError(
+            .webNavigationFailed(
             webView.url ?? Self.aboutBlank,
             code: nil,
             description: String(
                 localized: "The web renderer process crashed repeatedly.",
                 bundle: .appLanguage, comment: "Runtime error detail shown when an HTML wallpaper's WebKit content process keeps crashing and the retry budget is exhausted."
             )
-        ))
+            ),
+            cause: WebFailureCause.rendererCrashed()
+        )
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse, decisionHandler: @escaping @MainActor @Sendable (WKNavigationResponsePolicy) -> Void) {
@@ -1131,7 +1186,13 @@ extension HTMLWallpaperView: WKNavigationDelegate {
         Logger.warning("HTML wallpaper response: HTTP \(response.statusCode) for host \(response.url?.host ?? "?")", category: .screenManager)
         guard isForMainFrame else { return }
         let failingURL = response.url ?? currentURL ?? Self.aboutBlank
-        reportError(.webNavigationFailed(failingURL, code: response.statusCode, description: "HTTP \(response.statusCode)"))
+        reportError(
+            .webNavigationFailed(failingURL, code: response.statusCode, description: "HTTP \(response.statusCode)"),
+            cause: WebFailureCause.httpStatus(
+                response.statusCode,
+                isLocalProject: failingURL.scheme == FolderURLSchemeHandler.scheme
+            )
+        )
     }
 }
 

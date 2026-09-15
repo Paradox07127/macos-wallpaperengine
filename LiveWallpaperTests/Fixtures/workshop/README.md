@@ -1,5 +1,25 @@
 # Workshop browse-page fixtures
 
+## Identities are synthetic
+
+Every third-party Steam identity in these files was replaced after capture, so
+no URL, id or name here resolves to a real account:
+
+- **SteamID64** — 26 of them, swapped for same-length `7656119000000000N`. The
+  length is what matters: the SSR payload is a triple-escaped JS string literal,
+  and a same-length swap leaves its byte shape untouched.
+- **`persona_name`** (and the matching `>By …</a>` in the grid) — 27 of them,
+  replaced keeping the ASCII / non-ASCII split, so the parser still sees both.
+- **`avatar`** byte arrays and the creator page's avatar hash.
+- **`short_description`** — only the 7 that carried someone's handle (bilibili,
+  抖音, artist credits). Remapped character by character within the same
+  character class, so length, escaping and the CJK/ASCII/emoji mix all survive;
+  the text is deliberately meaningless. The other 23 are untouched.
+
+Assertions in `WorkshopPublicSearchSSRTests.swift` were moved to the synthetic
+values in the same pass. The capture URLs quoted below are the scrubbed form —
+they are provenance, not something to re-fetch.
+
 Source: one live GET of
 `https://steamcommunity.com/workshop/browse/?appid=431960&browsesort=trend&days=7&p=1&excludedtags[]=Application&excludedtags[]=Asset&excludedtags[]=Preset`
 captured 2026-09-07T03 (746 KB, 30 results, `total_count` 2747905). The
@@ -36,7 +56,7 @@ on the escaped SSR literal; each replacement must hit exactly once):
 ## Creator page (`creator_empty_page.html`, 44 KB)
 
 Source: one live GET of
-`https://steamcommunity.com/profiles/76561199471797274/myworkshopfiles/?appid=431960&numperpage=30&p=999`
+`https://steamcommunity.com/profiles/76561190000000024/myworkshopfiles/?appid=431960&numperpage=30&p=999`
 captured 2026-09-07 (73 KB, HTTP 200, 0 `filedetails/?id=` anchors — the
 creator's items fit on page 1, so p=999 is past the end). The profile workshop
 page is the legacy server-rendered template, not the React browse page: it has

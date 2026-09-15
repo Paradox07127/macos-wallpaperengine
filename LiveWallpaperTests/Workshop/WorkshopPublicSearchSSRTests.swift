@@ -71,12 +71,12 @@ struct WorkshopPublicSearchSSRTests {
 
         let first = try #require(page.items.first)
         #expect(first.title == "windows xp2（朋友的酒）")
-        #expect(first.creatorID == "76561199471797274")
-        #expect(first.creatorPersonaName == "海嗣收容专家")
+        #expect(first.creatorID == "76561190000000024")
+        #expect(first.creatorPersonaName == "创作者01号")
         #expect(first.previewImageURL?.absoluteString
             == "https://images.steamusercontent.com/ugc/12506494599842728983/02B16F0FC38B65438430F8CEAE44F9B38479522A/")
         #expect(first.tags == ["Video", "Abstract", "Wallpaper", "3840 x 2160", "Everyone"])
-        #expect(first.shortDescription == "朋友的酒DJ-Remix，关注B站 Seaboorn收容专家 喵，谢谢喵")
+        #expect(first.shortDescription == "测试样例EF-Hijkl，析字P内 Stuvwxyz占位数据 染，析字段")
         #expect(first.subscriptionCount == 10605)
         #expect(first.viewCount == 2046)
         #expect(first.favoriteCount == 392)
@@ -85,14 +85,14 @@ struct WorkshopPublicSearchSSRTests {
 
         let second = page.items[1]
         #expect(second.title == "The Binding of Isaac - DOGMA")
-        #expect(second.creatorPersonaName == "brugabrug")
+        #expect(second.creatorPersonaName == "Creator 01")
         #expect(second.previewImageURL?.absoluteString
             == "https://images.steamusercontent.com/ugc/11016948313923971054/2D6E802865F37636D9B68499CDA5974F0AC07224/")
         #expect(second.tags == ["Scene", "Game", "Wallpaper", "Video Texture", "Customizable", "3840 x 2160", "Everyone"])
 
         let third = page.items[2]
         #expect(third.title == "邦多利-朋友的酒")
-        #expect(third.creatorPersonaName == "喜多郁代")
+        #expect(third.creatorPersonaName == "创作者02号")
         #expect(third.previewImageURL?.absoluteString
             == "https://images.steamusercontent.com/ugc/15750383326586884951/6E8AAC000A6047AFABE1871EC11E2ABAD983EAAA/")
         #expect(third.tags == ["Video", "Anime", "Wallpaper", "3840 x 2160", "Everyone"])
@@ -210,7 +210,7 @@ struct WorkshopPublicSearchSSRTests {
     /// Steam's empty-state container tells that apart from a challenge page.
     @Test("An empty creator page is an empty page with no next cursor")
     func emptyCreatorPageIsAnEmptyPage() async throws {
-        let request = WorkshopQueryRequest(sort: .lastUpdated, page: 999, creatorSteamID: "76561199471797274")
+        let request = WorkshopQueryRequest(sort: .lastUpdated, page: 999, creatorSteamID: "76561190000000024")
         try KeylessPageStub.configure(html: Self.fixture("creator_empty_page.html"), details: .resolveAll(notFound: []))
         let (source, directory) = Self.makeSource()
         defer { try? FileManager.default.removeItem(at: directory) }

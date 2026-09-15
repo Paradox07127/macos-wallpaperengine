@@ -1403,6 +1403,121 @@ enum HTMLWallpaperRuntimeScript {
         """
     }
 
+    // MARK: - WPE audio visualizer
+
+    /// `window.wallpaperRegisterAudioListener`. The host only pays for the capture tap once a page
+    /// has actually registered, so registration posts to `messageName` rather than being polled.
+    static func audioSpectrumBridge(messageName: String) -> String {
+        """
+        (function () {
+            if (window.__lwAudioSpectrumInstalled__) return;
+            window.__lwAudioSpectrumInstalled__ = true;
+            var listeners = [];
+            window.wallpaperRegisterAudioListener = function (callback) {
+                if (typeof callback !== 'function') return;
+                listeners.push(callback);
+                try {
+                    window.webkit.messageHandlers.\(messageName).postMessage(listeners.length);
+                } catch (e) {}
+            };
+            window.__lwPushAudioSpectrum__ = function (values) {
+                for (var i = 0; i < listeners.length; i++) {
+                    try {
+                        listeners[i](values);
+                    } catch (e) {}
+                }
+            };
+        })();
+        """
+    }
+
+    /// Wallpaper Engine hands the callback one plain array per frame; `values` arrives as a
+    /// `callAsyncJavaScript` argument so 128 numbers never go through string formatting.
+    static let audioSpectrumPush = """
+    if (typeof window.__lwPushAudioSpectrum__ === 'function') { window.__lwPushAudioSpectrum__(values); }
+    """
+
+    // MARK: - Page diagnostics (DEBUG)
+
+    /// Wallpaper pages have no devtools here, so a silent `console.error` or an uncaught throw is
+    /// invisible — and an uncaught throw at top level kills every later script in the file.
+    /// `budget` stops a page that errors inside its own rAF loop from flooding the log.
+    static func consoleForwarder(messageName: String, budget: Int = 200) -> String {
+        """
+        (function () {
+            if (window.__lwConsoleForwarderInstalled__) return;
+            window.__lwConsoleForwarderInstalled__ = true;
+            var budget = \(max(1, budget));
+            function post(level, text) {
+                if (budget <= 0) return;
+                budget--;
+                if (budget === 0) text = text + ' [further page messages suppressed]';
+                try {
+                    window.webkit.messageHandlers.\(messageName).postMessage({
+                        level: level,
+                        text: String(text).slice(0, 2000)
+                    });
+                } catch (e) {}
+            }
+            // An Error's own properties are non-enumerable, so JSON.stringify gives `{}` and
+            // drops exactly the message and frame a stuck page is diagnosed by.
+            function describe(value) {
+                if (typeof value === 'string') return value;
+                try {
+                    if (value && typeof value.message === 'string' && typeof value.name === 'string') {
+                        var frames = String(value.stack || '').split('\\n').slice(0, 3).join(' | ');
+                        return value.name + ': ' + value.message + (frames ? ' @ ' + frames : '');
+                    }
+                    var json = JSON.stringify(value);
+                    return json === undefined ? String(value) : json;
+                } catch (e) {
+                    return String(value);
+                }
+            }
+            function join(args) {
+                var parts = [];
+                for (var i = 0; i < args.length; i++) {
+                    parts.push(describe(args[i]));
+                }
+                return parts.join(' ');
+            }
+            var levels = ['log', 'info', 'warn', 'error', 'debug'];
+            for (var i = 0; i < levels.length; i++) {
+                (function (level) {
+                    var original = console[level];
+                    console[level] = function () {
+                        post(level, join(arguments));
+                        if (typeof original === 'function') original.apply(console, arguments);
+                    };
+                })(levels[i]);
+            }
+            window.addEventListener('error', function (event) {
+                post('uncaught', (event.message || 'Script error')
+                    + ' @ ' + (event.filename || '?') + ':' + (event.lineno || 0));
+            });
+            window.addEventListener('unhandledrejection', function (event) {
+                post('rejection', describe(event.reason));
+            });
+            // One-shot liveness probe. A frozen wallpaper whose clock still ticks means rAF is
+            // gated while timers are not, and only `rafFrames` vs `hidden` separates WebKit's own
+            // visibility throttle from our suspend path.
+            setTimeout(function () {
+                var frames = 0;
+                var live = true;
+                (function tick() { frames++; if (live) requestAnimationFrame(tick); })();
+                setTimeout(function () {
+                    live = false;
+                    post('probe', 'hidden=' + document.hidden
+                        + ' visibility=' + document.visibilityState
+                        + ' rafFramesIn2s=' + frames
+                        + ' audioBridge=' + (typeof window.wallpaperRegisterAudioListener)
+                        + ' size=' + window.innerWidth + 'x' + window.innerHeight);
+                }, 2000);
+            }, 1000);
+        })();
+        """
+    }
+
     // MARK: - WPE general property notification
 
     static func wallpaperEngineGeneralProperties(fps: Int) -> String {

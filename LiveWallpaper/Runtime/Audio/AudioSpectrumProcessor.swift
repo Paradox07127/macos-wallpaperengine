@@ -244,12 +244,14 @@ final class AudioSpectrumProcessor: AudioSpectrumAnalyzing, @unchecked Sendable 
             } else {
                 let magnitude = max(mean * configuration.gain, configuration.noiseFloor)
                 let db = 20 * log10f(magnitude)
-                target = min(max((db - configuration.minDB) / dbRange, 0), 1)
+                // maxDB is the 1.0 reference, not a ceiling: louder content keeps the same slope
+                // so the web visualizer sees the above-1 values its contract allows.
+                target = max((db - configuration.minDB) / dbRange, 0)
             }
 
             let coefficient = target > previous[index] ? attackCoefficient : releaseCoefficient
             let smoothed = previous[index] + coefficient * (target - previous[index])
-            output[index] = min(max(smoothed, 0), 1)
+            output[index] = max(smoothed, 0)
         }
 
         copyInPlace(output, into: &previous)
