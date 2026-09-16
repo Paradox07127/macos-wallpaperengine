@@ -596,6 +596,10 @@ struct WPEDisplayRenderActorTests {
         #expect(range.preferred == 30)
         let clamped = WPEDisplayRenderActor.frameRateRange(forPreferredFPS: 0)
         #expect(clamped.maximum == 1)
+        #expect(WPEDisplayRenderActor.frameRateRange(forPreferredFPS: 24).preferred == 60)
+        #expect(WPEDisplayRenderActor.frameRateRange(forPreferredFPS: 45).preferred == 60)
+        #expect(WPEDisplayRenderActor.frameRateRange(forPreferredFPS: 60, displayFramesPerSecond: 144).preferred == 144)
+        #expect(WPEDisplayRenderActor.frameRateRange(forPreferredFPS: 24, displayFramesPerSecond: 240).preferred == 24)
     }
 
     @Test("link pacing setters buffer pause + fps on the render thread even with no link installed")

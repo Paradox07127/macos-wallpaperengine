@@ -400,13 +400,13 @@ final class ScreenManager {
 
     @ObservationIgnored var refreshRateCache: [CGDirectDisplayID: Int] = [:]
 
-    /// Falls back to NSScreen.maximumFramesPerSecond rather than a flat 60: CGDisplayMode.refreshRate reports 0 on some panels, and frame-rate caps are divisors of this number, so a 120 Hz display read as 60 would halve every ceiling.
+    /// Use the selected mode's nominal rate; variable-refresh modes fall back to AppKit's active ceiling.
     func getScreenRefreshRate(for screenID: CGDirectDisplayID) -> Int {
         if let cached = refreshRateCache[screenID] { return cached }
 
         let modeRate = CGDisplayCopyDisplayMode(screenID).map(\.refreshRate) ?? 0
         let rate = modeRate > 0
-            ? Int(modeRate)
+            ? max(1, Int(modeRate.rounded()))
             : (displayRegistry.findNSScreen(for: screenID)?.maximumFramesPerSecond ?? 60)
         refreshRateCache[screenID] = rate
         return rate

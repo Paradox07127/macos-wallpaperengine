@@ -94,7 +94,7 @@ final class WPERenderSurface: NSObject, MTKViewDelegate {
               let target = displayLinkTarget,
               let screen = mtkView.window?.screen ?? NSScreen.main else { return }
         let link = screen.displayLink(target: target, selector: #selector(WPEDisplayLinkTarget.step(_:)))
-        let handoff = WPEDisplayLinkHandoff(link: link)
+        let handoff = WPEDisplayLinkHandoff(link: link, maximumFramesPerSecond: screen.configuredFramesPerSecond)
         displayLinkGeneration &+= 1
         let generation = displayLinkGeneration
         let previousTask = displayLinkLifecycleTask

@@ -11,6 +11,7 @@ private enum DisplayDefaultsKind {
 struct DisplayDefaultsView: View {
     @Environment(\.featureCatalog) private var featureCatalog
     @Environment(ScreenManager.self) private var screenManager
+    @State private var displayFrameRate = NSScreen.main?.configuredFramesPerSecond ?? 60
     @State private var displayDefaults = SettingsManager.shared.loadDisplayDefaults()
     @Binding private var pendingSearchAnchor: SettingsSearchAnchor?
 
@@ -41,6 +42,9 @@ struct DisplayDefaultsView: View {
                 .displayDefaultsScene
             ]
         )
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
+            displayFrameRate = NSScreen.main?.configuredFramesPerSecond ?? 60
+        }
     }
 
     @ViewBuilder
@@ -110,6 +114,7 @@ struct DisplayDefaultsView: View {
     private var webSection: some View {
         Section {
             audioRows(for: .html)
+            frameRateRow(for: .html)
             interactionRow(for: .html)
         } header: {
             SettingsSearchSectionHeader("Web", anchor: .displayDefaultsWeb)
@@ -163,11 +168,6 @@ struct DisplayDefaultsView: View {
         }
     }
 
-    /// Menu labels use the main display; other displays resolve the target to their own refresh-rate divisors.
-    private var mainDisplayRefreshRate: Double {
-        Double(NSScreen.main?.maximumFramesPerSecond ?? 60)
-    }
-
     private func frameRateRow(for kind: DisplayDefaultsKind) -> some View {
         SettingRow(
             icon: "gauge.with.dots.needle.bottom.50percent",
@@ -175,17 +175,15 @@ struct DisplayDefaultsView: View {
             title: "Frame Rate",
             info: kind == .video
                 ? "Never faster than the video's own frame rate"
-                : "Each display uses the closest rate it can deliver"
+                : "Max follows the display's refresh rate"
         ) {
-            Picker("", selection: playbackBinding(\.frameRateLimit, for: kind)) {
-                ForEach(FrameRateLimit.availableCases(forRefreshRate: mainDisplayRefreshRate)) { limit in
-                    Text(verbatim: limit.title(forRefreshRate: mainDisplayRefreshRate)).tag(limit)
-                }
-            }
-            .pickerStyle(.menu)
-            .labelsHidden()
-            .fixedSize()
-            .accessibilityLabel(Text("Default frame rate"))
+            FrameRateControl(
+                value: playbackBinding(\.frameRateLimit, for: kind),
+                displayFramesPerSecond: displayFrameRate,
+                accessibilityLabel: Text("Default frame rate")
+            )
+            .id(kind)
+            .frame(width: 300)
         }
     }
 

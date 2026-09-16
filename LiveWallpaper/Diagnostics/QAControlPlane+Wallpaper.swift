@@ -164,11 +164,13 @@ extension QAControlPlane {
                 let fit: VideoFitMode = try Self.rawRepresentable(value, key)
                 pending.append((key, { manager.updateFitMode(fit, for: screen) }))
             case "frameRateLimit":
-                let raw = try Int(Self.number(value, key))
-                guard let limit = FrameRateLimit(rawValue: raw) else {
+                let requested = try Self.number(value, key)
+                let maximum = manager.getScreenRefreshRate(for: screen.id)
+                guard requested.isFinite, requested == requested.rounded(),
+                      requested >= 0, requested <= Double(maximum),
+                      let limit = FrameRateLimit(rawValue: Int(requested)) else {
                     throw QAError.message(
-                        "Rejected frameRateLimit: \(raw) is not one of "
-                            + FrameRateLimit.allCases.map { String($0.rawValue) }.joined(separator: ", ")
+                        "Rejected frameRateLimit: use 0 for Max or a whole FPS value from 1 through \(maximum)"
                     )
                 }
                 pending.append((key, { manager.updateFrameRateLimit(limit, for: screen) }))

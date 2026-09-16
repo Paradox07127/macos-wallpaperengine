@@ -17819,6 +17819,41 @@
         }
       }
     },
+    "Custom frame rate" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Custom frame rate"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Frecuencia de fotogramas personalizada"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "カスタムフレームレート"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自定义帧率"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自訂影格率"
+          }
+        }
+      }
+    },
     "Customizable" : {
       "comment" : "Workshop tag: the wallpaper exposes user properties.",
       "localizations" : {
@@ -21835,41 +21870,6 @@
         }
       }
     },
-    "Each display uses the closest rate it can deliver" : {
-      "comment" : "Subtitle of the default frame-rate row: a display whose refresh rate is not a multiple of the chosen rate runs at the closest rate it can.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Each display uses the closest rate it can deliver"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cada pantalla usa la velocidad más próxima que puede ofrecer"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "各ディスプレイは実現できる最も近いレートを使用します"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "每台显示器取它能达到的最接近帧率"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "每台顯示器取其所能達到的最接近影格率"
-          }
-        }
-      }
-    },
     "Edit" : {
       "comment" : "A button label that opens a dialog for editing CSS.",
       "localizations" : {
@@ -22562,6 +22562,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "引擎資源"
+          }
+        }
+      }
+    },
+    "Enter 1–%lld FPS or Max" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enter 1–%lld FPS or Max"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Introduce entre 1 y %lld FPS o Máx."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1〜%lld FPS、または最大を入力"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "输入 1–%lld FPS 或最高"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "輸入 1–%lld FPS 或最高"
           }
         }
       }
@@ -23413,6 +23448,41 @@
           }
         }
       }
+    },
+    "FPS" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "FPS"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "FPS"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "FPS"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "FPS"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "FPS"
+          }
+        }
+      },
+      "extractionState" : "manual"
     },
     "FX" : {
       "comment" : "Scene badge: the scene applies an image effect.",
@@ -32192,6 +32262,76 @@
           }
         }
       }
+    },
+    "Max" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Max"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Máx."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最大"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最高"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最高"
+          }
+        }
+      }
+    },
+    "Max follows the display's refresh rate" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Max follows the display's refresh rate"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Máx. sigue la frecuencia de actualización de la pantalla"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最大はディスプレイのリフレッシュレートに合わせます"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最高档跟随显示器刷新率"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最高檔跟隨顯示器更新率"
+          }
+        }
+      },
+      "extractionState" : "manual"
     },
     "Measurement" : {
       "localizations" : {

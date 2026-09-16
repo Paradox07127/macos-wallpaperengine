@@ -47,6 +47,19 @@ struct HTMLPerformanceTargetTests {
 
     // MARK: - What the gate actually does to a running rAF loop
 
+    @Test("Custom targets reach the rAF gate without divisor rounding", arguments: [24, 37, 45])
+    func customTargetsKeepAverageRate(fps: Int) throws {
+        let context = try makeRafHarness()
+        let target = try #require(FrameRateLimit(rawValue: fps))
+        let ceiling = target.frameRate(forRefreshRate: 60)
+        let interval = HTMLFramePacingPolicy.minimumFrameIntervalMilliseconds(forCeiling: ceiling, displayRefreshRate: 60)
+        context.evaluateScript(HTMLWallpaperRuntimeScript.rafTargetFrameInterval(milliseconds: interval))
+        context.evaluateScript("startLoop(); run(600, 1000 / 60);")
+        #expect(context.exception?.toString() == nil)
+        let frames = Int(context.evaluateScript("dispatched")?.toInt32() ?? -1)
+        #expect(abs(frames - fps * 10) <= 1)
+    }
+
     @Test("A 30 FPS target dispatches ~30 rAF callbacks per simulated second")
     func targetThirtyDispatchesThirtyCallbacksPerSecond() throws {
         let context = try makeRafHarness()

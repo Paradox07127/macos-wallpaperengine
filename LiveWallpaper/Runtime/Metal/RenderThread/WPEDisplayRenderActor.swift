@@ -178,6 +178,12 @@ actor WPEDisplayRenderActor {
         )
     }
 
+    func renderDisplayLinkFrame(at timestamp: Double) {
+        guard !linkPaused,
+              frameCadence.shouldRender(at: timestamp, framesPerSecond: linkPreferredFPS) else { return }
+        renderFrame()
+    }
+
     // MARK: - CADisplayLink Frame Driver
     // `isPaused` is the only knob Apple documents as thread-safe; `preferredFrameRateRange` is not, so neither is touched off the render thread.
 
@@ -187,6 +193,8 @@ actor WPEDisplayRenderActor {
     /// Buffered pacing so an install that races the first `applyPacing` still ends on the right state.
     private var linkPaused = true
     private var linkPreferredFPS = WPEMetalSceneRenderer.defaultPreferredFPS
+    private var linkDisplayFPS = 60
+    private var frameCadence = FrameRateCadence()
 
     func replaceDisplayLink(
         _ handoff: WPEDisplayLinkHandoff,
@@ -199,6 +207,8 @@ actor WPEDisplayRenderActor {
         displayLink?.invalidate()
         let link = handoff.link
         displayLink = link
+        linkDisplayFPS = max(1, handoff.maximumFramesPerSecond)
+        frameCadence.reset()
         applyLinkPacing()
         add(link)
     }
@@ -207,14 +217,21 @@ actor WPEDisplayRenderActor {
         displayLinkLifecycle.stop(generation: generation)
         displayLink?.invalidate()
         displayLink = nil
+        frameCadence.reset()
     }
 
     func setLinkPaused(_ paused: Bool) {
+        if linkPaused != paused {
+            frameCadence.reset()
+        }
         linkPaused = paused
         applyLinkPacing()
     }
 
     func setLinkPreferredFPS(_ fps: Int) {
+        if linkPreferredFPS != fps {
+            frameCadence.reset()
+        }
         linkPreferredFPS = fps
         // Keep the QoS budget on the live cadence so a 30fps wallpaper isn't judged
         // against a 60fps frame budget. Runs on the render thread (this actor).
@@ -225,12 +242,14 @@ actor WPEDisplayRenderActor {
     private func applyLinkPacing() {
         guard let displayLink else { return }
         displayLink.isPaused = linkPaused
-        displayLink.preferredFrameRateRange = Self.frameRateRange(forPreferredFPS: linkPreferredFPS)
+        displayLink.preferredFrameRateRange = Self.frameRateRange(
+            forPreferredFPS: linkPreferredFPS, displayFramesPerSecond: linkDisplayFPS
+        )
     }
 
-    /// Fixed-cadence range (min == max == preferred), the same contract `MTKView.preferredFramesPerSecond` used.
-    static func frameRateRange(forPreferredFPS fps: Int) -> CAFrameRateRange {
-        let clamped = Float(max(1, fps))
+    /// Callback frequency and content frequency differ for non-divisor targets.
+    static func frameRateRange(forPreferredFPS fps: Int, displayFramesPerSecond: Int = 60) -> CAFrameRateRange {
+        let clamped = Float(FrameRateCadence.driverFramesPerSecond(target: fps, display: displayFramesPerSecond))
         return CAFrameRateRange(minimum: clamped, maximum: clamped, preferred: clamped)
     }
 

@@ -2,6 +2,13 @@ import SwiftUI
 import AppKit
 import LiveWallpaperCore
 
+#Preview("Custom frame rate") {
+    @Previewable @State var rate = FrameRateLimit.fps24
+    FrameRateControl(value: $rate, displayFramesPerSecond: 60)
+        .frame(width: 320)
+        .padding(16)
+}
+
 struct PlaybackControls: View {
     var screen: Screen
     var wallpaperType: WallpaperType
@@ -31,28 +38,19 @@ struct PlaybackControls: View {
     @State private var showingVolume = false
     @State private var showingSpeed = false
     @State private var showingFrameRate = false
-    @State private var draggingFrameRateIndex: Double?
-
     private var frameRateSymbol: String {
-        switch displayedFrameRate {
-        case .fps15: "gauge.with.dots.needle.0percent"
-        case .fps30: "gauge.with.dots.needle.33percent"
-        case .fps60: "gauge.with.dots.needle.67percent"
-        case .matchDisplay: "gauge.with.dots.needle.100percent"
+        if frameRateLimit == .matchDisplay {
+            return "gauge.with.dots.needle.100percent"
+        }
+        switch frameRateLimit.rawValue {
+        case ...24: return "gauge.with.dots.needle.0percent"
+        case ...45: return "gauge.with.dots.needle.33percent"
+        default: return "gauge.with.dots.needle.67percent"
         }
     }
 
-    /// Labels resolve against this display: scene and web land on a divisor of the
-    /// panel, video is additionally bounded by the file's own frame rate.
     private func frameRateTitle(_ limit: FrameRateLimit) -> String {
-        let refreshRate = Double(screenManager.getScreenRefreshRate(for: screen.id))
-        guard wallpaperType == .video else {
-            return limit.title(forRefreshRate: refreshRate)
-        }
-        return limit.videoTitle(
-            forRefreshRate: refreshRate,
-            sourceFrameRate: screen.videoPlayer?.videoFrameRate ?? 0
-        )
+        limit.title(forRefreshRate: Double(screenManager.getScreenRefreshRate(for: screen.id)))
     }
 
     @State private var lockScreenExtracted = false
@@ -257,8 +255,7 @@ struct PlaybackControls: View {
         abs(speed - speed.rounded()) < 0.001 ? "\(Int(speed))×" : String(format: "%.2g×", speed)
     }
 
-    /// Indexes into the cases this display can tell apart — a 60 Hz panel has no
-    /// step above 60, so "match display" is not offered there.
+    /// The saved target stays distinct from Max on every display.
     private var frameRateControl: some View {
         let forceSDRActive = Self.frameRateDisabled(wallpaperType: wallpaperType, videoColorSpace: videoColorSpace)
         return Button {
@@ -280,79 +277,13 @@ struct PlaybackControls: View {
     }
 
     private var frameRatePopover: some View {
-        VStack(spacing: DesignTokens.Spacing.sm) {
-            Slider(
-                value: frameRateIndexBinding,
-                in: 0 ... Double(max(frameRateCases.count - 1, 1)),
-                step: 1,
-                onEditingChanged: { editing in
-                    if editing {
-                        draggingFrameRateIndex = frameRateIndexBinding.wrappedValue
-                    } else {
-                        commitDraggedFrameRate()
-                    }
-                }
-            )
-            .controlSize(.small)
-            .accessibilityLabel(Text("Frame rate limit"))
-            .accessibilityValue(Text(verbatim: frameRateTitle(displayedFrameRate)))
-            Text(verbatim: frameRateTitle(displayedFrameRate))
-                .font(DesignTokens.Typography.metric)
-                .foregroundStyle(.secondary)
-        }
-        .frame(width: 180)
+        FrameRateControl(
+            value: frameRateBinding,
+            displayFramesPerSecond: screenManager.getScreenRefreshRate(for: screen.id)
+        )
+        .id(screen.id)
+        .frame(width: 320)
         .padding(DesignTokens.Spacing.md)
-    }
-
-    /// The cap being dragged towards, before it is written: a drag crosses every
-    /// cap in between, and each write persists and reconfigures the session.
-    private var displayedFrameRate: FrameRateLimit {
-        guard let index = draggingFrameRateIndex else { return frameRateLimit }
-        return frameRate(atIndex: index)
-    }
-
-    private func commitDraggedFrameRate() {
-        defer { draggingFrameRateIndex = nil }
-        guard let index = draggingFrameRateIndex else { return }
-        let chosen = frameRate(atIndex: index)
-        // The top step can resolve to the same rate as a saved `.matchDisplay`
-        // (`.fps60` at 60 Hz); writing it would silently cap a later, faster display.
-        let refreshRate = Double(screenManager.getScreenRefreshRate(for: screen.id))
-        guard !chosen.resolvesToSameRate(as: frameRateLimit, forRefreshRate: refreshRate) else { return }
-        frameRateBinding.wrappedValue = chosen
-    }
-
-    private func frameRate(atIndex position: Double) -> FrameRateLimit {
-        let cases = frameRateCases
-        let index = min(max(Int(position.rounded()), 0), cases.count - 1)
-        return cases[index]
-    }
-
-    private var frameRateCases: [FrameRateLimit] {
-        FrameRateLimit.availableCases(
-            forRefreshRate: Double(screenManager.getScreenRefreshRate(for: screen.id))
-        )
-    }
-
-    /// A saved cap can be absent from this display's steps; fall back to the step
-    /// that resolves to the same rate rather than snapping to the slowest.
-    private var frameRateIndex: Int {
-        let cases = frameRateCases
-        if let exact = cases.firstIndex(of: frameRateLimit) {
-            return exact
-        }
-        let refreshRate = Double(screenManager.getScreenRefreshRate(for: screen.id))
-        let resolved = frameRateLimit.frameRate(forRefreshRate: refreshRate)
-        return cases.firstIndex { $0.frameRate(forRefreshRate: refreshRate) == resolved } ?? 0
-    }
-
-    private var frameRateIndexBinding: Binding<Double> {
-        Binding(
-            get: {
-                draggingFrameRateIndex ?? Double(frameRateIndex)
-            },
-            set: { draggingFrameRateIndex = $0 }
-        )
     }
 
     private var lockScreenControl: some View {
@@ -416,10 +347,7 @@ struct PlaybackControls: View {
     // MARK: - Row availability
 
     private var showsFrameRateRow: Bool {
-        switch wallpaperType {
-        case .video, .scene: true
-        case .html: false
-        }
+        true
     }
 
     private var mouseInteractionBinding: Binding<Bool> {
