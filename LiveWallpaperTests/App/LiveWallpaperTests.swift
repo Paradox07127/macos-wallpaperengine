@@ -1248,7 +1248,7 @@ struct ResolveCompositionFPSTests {
 
         let data24 = try JSONEncoder().encode(24)
         let decoded24 = try JSONDecoder().decode(FrameRateLimit.self, from: data24)
-        #expect(decoded24 == .fps30)
+        #expect(decoded24 == .fps24)
     }
 }
 
