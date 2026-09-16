@@ -381,7 +381,8 @@ struct WPERenderGraphBuilder: Sendable {
             alphaAnimation: child.alphaAnimation,
             color: child.color,
             colorAnimation: child.colorAnimation,
-            brightness: child.brightness
+            brightness: child.brightness,
+            shapePoints: child.shapePoints
         )
     }
 
@@ -497,8 +498,8 @@ struct WPERenderGraphBuilder: Sendable {
         // The puppet mesh draws model→scene with no Y flip, so map the anchor with a +Y sign; subtract
         // the parent mesh center so the offset is in the same composite frame the vertex shader uses.
         let local = SIMD2<Double>(
-            abs(parentGeometry.scale.x) * (anchorPoint.x - parentGeometry.puppetMeshCenter.x),
-            abs(parentGeometry.scale.y) * (anchorPoint.y - parentGeometry.puppetMeshCenter.y)
+            parentGeometry.scale.x * (anchorPoint.x - parentGeometry.puppetMeshCenter.x),
+            parentGeometry.scale.y * (anchorPoint.y - parentGeometry.puppetMeshCenter.y)
         )
         let cosine = cos(parentGeometry.angles.z)
         let sine = sin(parentGeometry.angles.z)
@@ -674,12 +675,11 @@ struct WPERenderGraphBuilder: Sendable {
         return paths
     }
 
-        /// Hidden-but-scripted effects stay gated: dropping them also drops the
-        /// producer that opens the gate (3151551777 `Night (Cycle)` / `shared.shownight`).
-        static func scriptVisibilityGate(for effect: WPESceneImageEffect) -> WPEPassVisibilityGate? {
-            guard !effect.visible, let script = effect.visibleScript else { return nil }
-            return WPEPassVisibilityGate(script: script, initialVisible: effect.visible)
-        }
+    /// Scripted effects can open or close after loading, regardless of their initial value.
+    static func scriptVisibilityGate(for effect: WPESceneImageEffect) -> WPEPassVisibilityGate? {
+        guard let script = effect.visibleScript else { return nil }
+        return WPEPassVisibilityGate(script: script, initialVisible: effect.visible)
+    }
 
         static func buildsIntoGraph(_ effect: WPESceneImageEffect) -> Bool {
             effect.visible || scriptVisibilityGate(for: effect) != nil
@@ -2368,6 +2368,7 @@ private extension WPERenderPass {
     func replacingSceneAliasReferences(with replacement: WPETextureReference) -> WPERenderPass {
         let newSource = source.replacingSceneAlias(with: replacement)
         let newTextures = textures.mapValues { $0.replacingSceneAlias(with: replacement) }
+        let newBinds = binds.mapValues { $0.replacingSceneAlias(with: replacement) }
         return WPERenderPass(
             id: id,
             phase: phase,
@@ -2375,7 +2376,7 @@ private extension WPERenderPass {
             source: newSource,
             target: target,
             textures: newTextures,
-            binds: binds,
+            binds: newBinds,
             constants: constants,
             combos: combos,
             userTextureBindings: userTextureBindings,

@@ -93,7 +93,9 @@ extension WPEMetalRenderExecutor {
             if upscalePlan.isActive,
                upscalePlan.declineIsConclusive(forDrawableSize: lastPresentedDrawableSize) {
                 upscalePlan = upscalePlan.demotedToNative()
-                // `previousFrameHistory` is validated against the WORLD size, unchanged here, so its old smaller textures would keep being served to `.previous` — and `copyTexture` sizes the blit from the DESTINATION, a validation error once the destination grows.
+                // `previousFrameHistory` is validated against the unchanged WORLD
+                // size; discard its lower-resolution history when returning to
+                // native rendering instead of feeding stale scaled content back.
                 notePresentSideDemotion()
                 Logger.notice(
                     "[metalfx] scaler declined a planned frame — rendering native for this scene "

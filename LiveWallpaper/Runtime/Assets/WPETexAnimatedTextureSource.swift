@@ -68,12 +68,11 @@ struct WPETexAnimatedAtlasProvider {
         guard payload.compressedImages.indices.contains(imageID) else {
             throw Failure.missingImage(imageID)
         }
+        try WPETexMipValidation.streamingImage(payload.compressedImages[imageID])
         let sourceMipmaps = payload.compressedImages[imageID].payloads
         guard !sourceMipmaps.isEmpty else { throw Failure.missingMipmap(imageID) }
         let mipmaps = try sourceMipmaps.map { mipmap in
-            let bytes = try decodedBytes(from: mipmap)
-            let expected = format.expectedByteCount(width: mipmap.width, height: mipmap.height)
-            guard bytes.count >= expected else { throw Failure.truncatedImageBytes(imageID) }
+            let bytes = try WPETexMipValidation.decodedBytes(mipmap, format: format)
             return WPETexTextureMipmap(index: mipmap.index, width: mipmap.width,
                                        height: mipmap.height, bytes: bytes)
         }
@@ -85,16 +84,7 @@ struct WPETexAnimatedAtlasProvider {
         )
     }
 
-    private func decodedBytes(from mipmap: WPETexCompressedMipmap) throws -> Data {
-        guard mipmap.isCompressed else {
-            guard mipmap.compressedBytes.count >= mipmap.decompressedByteCount else {
-                throw Failure.truncatedImageBytes(mipmap.index)
-            }
-            return mipmap.compressedBytes.prefix(mipmap.decompressedByteCount).materializedData()
-        }
-        guard let output = mipmap.lz4Inflated() else { throw Failure.decompressionFailed(mipmap.index) }
-        return output
-    }
+
 }
 
 extension WPETexCompressedMipmap {

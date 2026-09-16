@@ -661,12 +661,19 @@ struct WPETexDecoder: Sendable {
             }
             frames.append(frameMipmaps)
         }
-        return WPETexBitmapBlock(
+        let bitmap = WPETexBitmapBlock(
             version: bitmapVersion,
             sourceImageFormatCode: sourceImageFormatCode,
             isVideoPayload: isVideoPayload,
             frames: frames
         )
+        // Encoded image/video payloads have their own decoder geometry contract.
+        if !bitmap.usesEncodedImagePayload, !bitmap.isVideoPayload {
+            for frame in frames {
+                try WPETexMipValidation.geometry(frame.map { ($0.index, $0.width, $0.height) })
+            }
+        }
+        return bitmap
     }
 
     private func parseMipmap(

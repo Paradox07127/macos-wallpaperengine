@@ -279,8 +279,10 @@ extension WPEMetalSceneRenderer {
         if let pipeline = renderPipeline {
             let previousPipeline = pipeline
             renderPipeline = pipeline
-                .applyingLayerVisibility(liveLayerVisibilityIncludingText)
-                .applyingLayerAlpha(liveLayerAlphaIncludingText)
+                .applyingFrameOverlay(WPEFrameOverlay(
+                    visibility: liveLayerVisibilityIncludingText,
+                    alpha: liveLayerAlphaIncludingText
+                ))
             if !needsContinuousFrames {
                 do {
                     let frame = try renderCurrentFrame(inputs: makeFrameInputs())

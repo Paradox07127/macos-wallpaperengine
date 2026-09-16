@@ -191,14 +191,7 @@ extension WPEShaderTranspiler {
 
     private static func helperParameterType(for uniform: WPEUniformDecl) -> String {
         if uniform.arrayLength != nil {
-            switch uniform.type {
-            case "vec2": return "thread const float2*"
-            case "vec3": return "thread const float3*"
-            case "vec4": return "thread const float4*"
-            case "int":  return "thread const int*"
-            case "bool": return "thread const bool*"
-            default:     return "thread const float*"
-            }
+            return "thread const \(uniform.metalType)*"
         }
         return uniform.metalType
     }

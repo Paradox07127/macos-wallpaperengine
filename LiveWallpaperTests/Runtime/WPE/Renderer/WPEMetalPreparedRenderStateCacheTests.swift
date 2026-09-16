@@ -193,7 +193,7 @@ struct WPEMetalPreparedRenderStateCacheTests {
         table[0] = slot0
         table[3] = slot3
 
-        let slots = executor.packTranslatedUniforms(
+        let slots = try executor.packTranslatedUniforms(
             for: packingPass(values: [:]),
             layout: [
                 WPEUniformSlot(name: "g_Texture0Resolution", glslType: "vec4", slot: 0, slotCount: 1),

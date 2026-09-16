@@ -482,9 +482,9 @@ final class WPEMetalRenderExecutor {
         return submission
     }
     /// Cleared `.previous` bootstrap textures, one per (target, size, format).
-    /// They are only ever read (seeded before the target's first write of the
-    /// frame), so the creation-time clear stays valid for the cache lifetime.
-    var bootstrapPreviousTextureCache: [BootstrapPreviousKey: MTLTexture] = [:]
+    /// Cross-buffer reuse requires a successful clear completion; encoding a
+    /// clear in an abandoned/failed buffer does not publish initialized data.
+    var bootstrapPreviousTextureCache: [BootstrapPreviousKey: WPEMetalBootstrapTexture] = [:]
     /// Scratch textures (one per size/format) holding a stable snapshot of the
     /// scene for a pass that reads `.previous` while ALSO writing to the scene.
     var sceneReadHazardSnapshotCache: [BootstrapPreviousKey: MTLTexture] = [:]
@@ -750,6 +750,7 @@ final class WPEMetalRenderExecutor {
         }
         defer {
             if staticLayerCacheEnabled { staticLayerCompositeCache.discardUnsubmittedWork(for: commandBuffer) }
+            discardUnsubmittedBootstrapTextures(for: commandBuffer)
         }
         WPEFrameOccupancyMeter.count(.sceneCommandBuffer)
         // Video conversions first: they write textures the scene passes below sample, and same-buffer order is what guarantees write-before-read.
@@ -817,16 +818,14 @@ final class WPEMetalRenderExecutor {
             diagnostics.sceneAliasDirectBinds = frameState.sceneAliasDirectBinds
         }
         currentSceneSize = size
-        groupingContainerObjectIDs = Set(
-            preparedPipeline.layers.compactMap { layer -> String? in
-                guard let parentID = layer.graphLayer.parentObjectID,
-                      layer.graphLayer.passes.contains(where: { $0.target == .scene })
-                else { return nil }
-                return parentID
-            }
-        )
+        groupingContainerObjectIDs = preparedPipeline.layers.reduce(into: Set<String>()) { parents, layer in
+            guard let parentID = layer.graphLayer.parentObjectID,
+                  layer.graphLayer.passes.contains(where: { $0.target == .scene })
+            else { return }
+            parents.insert(parentID)
+        }
         parallaxRootCenterByObjectID = Self.parallaxRootCenters(
-            for: preparedPipeline.layers.map(\.graphLayer),
+            for: preparedPipeline.layers.lazy.map(\.graphLayer),
             sceneSize: size,
             objectParentByID: parallaxObjectParentByID,
             hostDepthByObjectID: parallaxHostDepthByObjectID,
@@ -1296,19 +1295,19 @@ final class WPEMetalRenderExecutor {
         for pass: WPEPreparedRenderPass,
         layout: [WPEUniformSlot],
         texturesBySlot: WPEMetalTextureSlotTable? = nil
-    ) -> PackedTranslatedUniforms {
+    ) throws -> PackedTranslatedUniforms {
         guard !layout.isEmpty else { return .empty }
         if let frameSlot = currentUniformArenaSlot,
            let region = uniformArena.reserve(
                slotCount: Self.translatedSlotCount(for: layout), frameSlot: frameSlot
            ) {
-            packTranslatedUniformSlots(
+            try packTranslatedUniformSlots(
                 for: pass, layout: layout, texturesBySlot: texturesBySlot, into: region.storage
             )
             return .arena(region)
         }
         return .array(
-            packTranslatedUniforms(for: pass, layout: layout, texturesBySlot: texturesBySlot)
+            try packTranslatedUniforms(for: pass, layout: layout, texturesBySlot: texturesBySlot)
         )
     }
 
@@ -1955,36 +1954,6 @@ final class WPEMetalRenderExecutor {
         encoder.endEncoding()
     }
 
-    func copyTexture(
-        _ source: MTLTexture,
-        to destination: MTLTexture,
-        commandBuffer: MTLCommandBuffer,
-        traceLabel: @autoclosure () -> String = "copy",
-        generateMipmaps: Bool = false
-    ) throws {
-        guard let blit = commandBuffer.makeBlitCommandEncoder() else {
-            throw WPEMetalRenderExecutorError.commandBufferFailed
-        }
-        blit.applyTraceLabel(traceLabel())
-        WPEFrameOccupancyMeter.count(.helperEncoder)
-        blit.copy(
-            from: source,
-            sourceSlice: 0,
-            sourceLevel: 0,
-            sourceOrigin: MTLOrigin(),
-            sourceSize: MTLSize(width: destination.width, height: destination.height, depth: 1),
-            to: destination,
-            destinationSlice: 0,
-            destinationLevel: 0,
-            destinationOrigin: MTLOrigin()
-        )
-        if generateMipmaps, destination.mipmapLevelCount > 1 {
-            blit.generateMipmaps(for: destination)
-            WPEFrameOccupancyMeter.count(.reflectionMipGeneration)
-        }
-        blit.endEncoding()
-    }
-
     /// It must be a separate texture, not the live scene target — this pass draws into that target, and sampling it would be an undefined read-write.
     private func captureReflectionSourceIfNeeded(
         pass: WPEPreparedRenderPass,
@@ -2292,27 +2261,26 @@ final class WPEMetalRenderExecutor {
 
     /// The static half of the shift, `(nodePos - camPos) * depth * amount`, must be evaluated ONCE at the root — feeding each child its own origin turns the rigid translation into an anisotropic scale of the subtree about the scene centre by `(1 + depth * amount)`.
     static func parallaxRootCenters(
-        for layers: [WPERenderLayer],
+        for layers: some Collection<WPERenderLayer>,
         sceneSize: CGSize,
         objectParentByID: [String: String] = [:],
         hostDepthByObjectID: [String: SIMD2<Double>] = [:],
         hostOriginByObjectID: [String: SIMD2<Double>] = [:]
     ) -> [String: SIMD2<Float>] {
         guard layers.contains(where: { $0.parentObjectID != nil }) else { return [:] }
-        let geometryByID = Dictionary(
-            layers.map { ($0.objectID, $0.geometry) }, uniquingKeysWith: { first, _ in first }
-        )
         // Same anchor-node selection as the depth propagation, so the depth and the static-term origin always come from the SAME node — a non-drawn group host counts.
+        var geometryByID: [String: WPERenderLayerGeometry] = [:]
+        geometryByID.reserveCapacity(layers.count)
         var depthByID = hostDepthByObjectID
-        for layer in layers where depthByID[layer.objectID] == nil {
-            depthByID[layer.objectID] = layer.parallaxDepth
-        }
         var parentByID = objectParentByID
-        if parentByID.isEmpty {
-            parentByID = Dictionary(
-                layers.compactMap { layer in layer.parentObjectID.map { (layer.objectID, $0) } },
-                uniquingKeysWith: { first, _ in first }
-            )
+        let inferParents = parentByID.isEmpty
+        for layer in layers {
+            let id = layer.objectID
+            if geometryByID[id] == nil { geometryByID[id] = layer.geometry }
+            if depthByID[id] == nil { depthByID[id] = layer.parallaxDepth }
+            if inferParents, parentByID[id] == nil, let parent = layer.parentObjectID {
+                parentByID[id] = parent
+            }
         }
         var centers: [String: SIMD2<Float>] = [:]
         for layer in layers where layer.parentObjectID != nil {
@@ -2907,20 +2875,9 @@ final class WPEMetalRenderExecutor {
     }
 
     func passReadsCurrentTarget(_ pass: WPEPreparedRenderPass, targetID: WPEMetalTargetID) -> Bool {
-        func reads(_ reference: WPETextureReference) -> Bool {
-            switch (reference, targetID) {
-            case (.previous, _):
-                return true
-            case (.fbo(let name), .named(let targetName)):
-                return name == targetName
-            default:
-                return false
-            }
-        }
-        return reads(pass.pass.source)
-            || pass.pass.textures.values.contains(where: reads)
-            || pass.pass.binds.values.contains(where: reads)
-            || pass.textureBindings.values.contains(where: reads)
+        if pass.access.hasPreviousReference { return true }
+        guard case .named(let name) = targetID else { return false }
+        return pass.access.fboNames.contains(name)
     }
 
     func translatedPipelineState(
@@ -2980,6 +2937,7 @@ final class WPEMetalRenderExecutor {
     /// Sendable value and no bare `MTLDevice` is captured.
     struct WPETranslatedPipelinePrewarm: @unchecked Sendable {
         let device: MTLDevice
+        let defaultLibrary: MTLLibrary
         let result: WPEShaderCompileResult
         let vertexName: String?
         let blendMode: String
@@ -3009,7 +2967,7 @@ final class WPEMetalRenderExecutor {
             depthPixelFormat: prewarm.depthPixelFormat.rawValue
         )
         guard let vertex = result.library.makeFunction(name: resolvedVertexName)
-            ?? prewarm.device.makeDefaultLibrary()?.makeFunction(name: resolvedVertexName),
+            ?? prewarm.defaultLibrary.makeFunction(name: resolvedVertexName),
               let fragment = result.library.makeFunction(name: result.fragmentFunctionName) else {
             return nil
         }
@@ -3037,10 +2995,10 @@ final class WPEMetalRenderExecutor {
         for pass: WPEPreparedRenderPass,
         layout: [WPEUniformSlot],
         texturesBySlot: WPEMetalTextureSlotTable? = nil
-    ) -> [SIMD4<Float>] {
+    ) throws -> [SIMD4<Float>] {
         var slots = [SIMD4<Float>](repeating: SIMD4<Float>(0, 0, 0, 0), count: Self.translatedSlotCount(for: layout))
-        slots.withUnsafeMutableBufferPointer {
-            packTranslatedUniformSlots(
+        try slots.withUnsafeMutableBufferPointer {
+            try packTranslatedUniformSlots(
                 for: pass, layout: layout, texturesBySlot: texturesBySlot, into: $0
             )
         }
@@ -3048,14 +3006,14 @@ final class WPEMetalRenderExecutor {
     }
 
     /// The packing itself, over storage the caller owns. `slots` MUST arrive zeroed:
-    /// each case below writes only the lanes its `glslType` covers and leaves the
-    /// rest — vec3's `.w`, slots no uniform claims — at whatever was already there.
+    /// each claimed column writes all four lanes (unused lanes are zero). Slots
+    /// not claimed by any uniform retain the caller-provided zero fill.
     func packTranslatedUniformSlots(
         for pass: WPEPreparedRenderPass,
         layout: [WPEUniformSlot],
         texturesBySlot: WPEMetalTextureSlotTable?,
         into slots: UnsafeMutableBufferPointer<SIMD4<Float>>
-    ) {
+    ) throws {
         let plans = uniformPlans(for: pass, layout: layout)
         let frame = frameUniformContext
         let useDirectPacking = derivedUniformPackingEnabled
@@ -3072,40 +3030,7 @@ final class WPEMetalRenderExecutor {
                 frame: frame,
                 texturesBySlot: texturesBySlot
             )
-            if let length = u.arrayLength {
-                Self.packArrayUniform(value, glslType: u.glslType, length: length, slot: u.slot, into: slots)
-                continue
-            }
-            switch u.glslType {
-            case "float", "int", "bool":
-                slots[u.slot].x = Self.scalarValue(value, default: 0)
-            case "vec2", "ivec2", "bvec2":
-                let v = Self.vectorValue(value, count: 2)
-                slots[u.slot] = SIMD4<Float>(v[0], v[1], 0, 0)
-            case "vec3", "ivec3", "bvec3":
-                let v = Self.vectorValue(value, count: 3)
-                slots[u.slot] = SIMD4<Float>(v[0], v[1], v[2], 0)
-            case "vec4", "ivec4", "bvec4":
-                let v = Self.vectorValue(value, count: 4)
-                slots[u.slot] = SIMD4<Float>(v[0], v[1], v[2], v[3])
-            case "mat2":
-                let v = Self.vectorValue(value, count: 4)
-                slots[u.slot] = SIMD4<Float>(v[0], v[1], 0, 0)
-                slots[u.slot + 1] = SIMD4<Float>(v[2], v[3], 0, 0)
-            case "mat3":
-                let v = Self.vectorValue(value, count: 9)
-                slots[u.slot] = SIMD4<Float>(v[0], v[1], v[2], 0)
-                slots[u.slot + 1] = SIMD4<Float>(v[3], v[4], v[5], 0)
-                slots[u.slot + 2] = SIMD4<Float>(v[6], v[7], v[8], 0)
-            case "mat4":
-                let v = Self.vectorValue(value, count: 16)
-                slots[u.slot] = SIMD4<Float>(v[0], v[1], v[2], v[3])
-                slots[u.slot + 1] = SIMD4<Float>(v[4], v[5], v[6], v[7])
-                slots[u.slot + 2] = SIMD4<Float>(v[8], v[9], v[10], v[11])
-                slots[u.slot + 3] = SIMD4<Float>(v[12], v[13], v[14], v[15])
-            default:
-                slots[u.slot].x = Self.scalarValue(value, default: 0)
-            }
+            try WPEUniformPacking.pack(value, uniform: u, into: slots)
         }
     }
 
@@ -3240,54 +3165,6 @@ final class WPEMetalRenderExecutor {
         case .animated(let v): return Float(v.scalar(at: 0) ?? Double(fallback))
         case .string(let s): return Float(s) ?? fallback
         case nil:            return fallback
-        }
-    }
-
-    /// Packs a GLSL array uniform into `length` consecutive `float4` slots — one element per slot. A previous `values:` overload packed every array as `vec4[N]`, silently corrupting scalar `float[N]` uniforms like `g_AudioSpectrum*[N]`.
-    private static func packArrayUniform(
-        _ value: WPESceneShaderConstantValue?,
-        glslType: String,
-        length: Int,
-        slot: Int,
-        into slots: UnsafeMutableBufferPointer<SIMD4<Float>>
-    ) {
-        let components: Int
-        switch glslType {
-        case "vec2": components = 2
-        case "vec3": components = 3
-        case "vec4": components = 4
-        default: components = 1 // float / int / bool — scalar element, read via `.x`
-        }
-        let flat = vectorValue(value, count: length * components)
-        for i in 0..<length {
-            let slotIndex = slot + i
-            guard slotIndex < slots.count else { break }
-            let base = i * components
-            slots[slotIndex] = SIMD4<Float>(
-                base < flat.count ? flat[base] : 0,
-                components > 1 && base + 1 < flat.count ? flat[base + 1] : 0,
-                components > 2 && base + 2 < flat.count ? flat[base + 2] : 0,
-                components > 3 && base + 3 < flat.count ? flat[base + 3] : 0
-            )
-        }
-    }
-
-    private static func vectorValue(_ value: WPESceneShaderConstantValue?, count: Int) -> [Float] {
-        switch value {
-        case .vector(let v):
-            var out = v.map(Float.init)
-            while out.count < count { out.append(0) }
-            return out
-        case .animated(let v):
-            var out = (v.vector(at: 0) ?? []).map(Float.init)
-            while out.count < count { out.append(0) }
-            return out
-        case .number(let n):
-            var out = [Float](repeating: 0, count: count)
-            out[0] = Float(n)
-            return out
-        default:
-            return [Float](repeating: 0, count: count)
         }
     }
 

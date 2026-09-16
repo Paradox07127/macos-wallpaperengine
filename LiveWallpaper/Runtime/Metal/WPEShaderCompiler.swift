@@ -92,8 +92,7 @@ enum WPEShaderCompilerError: Error, Sendable, Equatable {
 /// Process-wide MSL+reflection cache; the payload is text, never `MTLLibrary`.
 /// All mutable state sits behind `lock`.
 final class WPEShaderTranslationCache: @unchecked Sendable {
-    /// 11: rebuild Pulse colour arithmetic at the managed linear/encoded boundary.
-    static let schemaVersion = 12
+    static let schemaVersion = 13
     static let shared = WPEShaderTranslationCache()
 
     struct Payload: Codable, Equatable, Sendable {

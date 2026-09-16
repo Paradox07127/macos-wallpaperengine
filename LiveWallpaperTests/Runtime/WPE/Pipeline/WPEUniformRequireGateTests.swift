@@ -84,7 +84,7 @@ struct WPEUniformRequireGateTests {
             let pass = runtimePass(["g_Point0": .vector(point)])
             #expect(slot.requiredCombos["DIRECTDRAW"] == 0 && pass.pass.combos["DIRECTDRAW"] == 1)
             #expect(executor.uniformPlans(for: pass, layout: [slot])[0].directPacking == nil)
-            let packed = executor.packTranslatedUniforms(for: pass, layout: [slot])
+            let packed = try executor.packTranslatedUniforms(for: pass, layout: [slot])
             #expect(packed == [SIMD4<Float>(Float(point[0]), Float(point[1]), 0, 0)])
         }
         #expect(executor.uniformPlanCompileCount == 1)
@@ -115,10 +115,10 @@ struct WPEUniformRequireGateTests {
         let pass = runtimePass(["g_Texture0Resolution": .vector(sentinel)])
         #expect(slot.requiredCombos["DIRECTDRAW"] == 0 && pass.pass.combos["DIRECTDRAW"] == 1)
         #expect(executor.uniformPlans(for: pass, layout: [slot])[0].directPacking == .textureResolution(0))
-        #expect(executor.packTranslatedUniforms(for: pass, layout: [slot], texturesBySlot: table)
+        #expect(try executor.packTranslatedUniforms(for: pass, layout: [slot], texturesBySlot: table)
             == [SIMD4<Float>(8, 4, 8, 4)])
         table.reset()
-        #expect(executor.packTranslatedUniforms(for: pass, layout: [slot], texturesBySlot: table)
+        #expect(try executor.packTranslatedUniforms(for: pass, layout: [slot], texturesBySlot: table)
             == [SIMD4<Float>(71, 72, 73, 74)])
         #expect(executor.uniformPlanCompileCount == 1)
     }

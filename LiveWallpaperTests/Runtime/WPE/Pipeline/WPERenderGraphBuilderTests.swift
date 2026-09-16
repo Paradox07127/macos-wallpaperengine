@@ -455,8 +455,8 @@ struct WPERenderGraphBuilderTests {
         ])
     }
 
-    @Test("Attachment-anchor origin rewrite keeps shape:quad points on the layer geometry")
-    func attachmentAnchorRewriteKeepsShapeQuadPoints() throws {
+    @Test("Attachment anchors follow signed parent scales and preserve shape points", arguments: [1.0, -1.0])
+    func attachmentAnchorRewriteKeepsShapeQuadPoints(scale: Double) throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("WPERenderGraphBuilderTests-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -484,7 +484,7 @@ struct WPERenderGraphBuilderTests {
             "objects": [
                 [
                     "id": 7, "name": "body", "type": "image", "image": "models/body.json",
-                    "origin": "1000 1000 0", "size": "2000 2000", "scale": "1 1 1"
+                    "origin": "1000 1000 0", "size": "2000 2000", "scale": "\(scale) \(scale) 1"
                 ],
                 [
                     "id": 96, "name": "beam", "shape": "quad",
@@ -512,7 +512,7 @@ struct WPERenderGraphBuilderTests {
         let graph = try WPERenderGraphBuilder(cacheRootURL: root).build(document: document)
         let beam = try #require(graph.layers.first { $0.objectID == "96" })
 
-        #expect(beam.geometry.origin == SIMD3<Double>(1000, 1300, 0))
+        #expect(beam.geometry.origin == SIMD3<Double>(1100 - 100 * scale, 1200 + 100 * scale, 0))
         #expect(beam.geometry.shapePoints == [
             SIMD2<Double>(0.4, 0.25),
             SIMD2<Double>(0.6, 0.25),
@@ -2675,8 +2675,8 @@ struct WPERenderGraphBuilderTests {
         ]
     }
 
-    @Test("Hidden effect whose visibility is a SceneScript stays in the graph, gated, with its constant script")
-    func scriptGatedHiddenEffectStaysInGraphWithConstantScript() throws {
+    @Test("Scripted effects retain a gate and constant scripts for either initial visibility", arguments: [false, true])
+    func scriptGatedHiddenEffectStaysInGraphWithConstantScript(initialVisible: Bool) throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("WPERenderGraphBuilderTests-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -2684,7 +2684,7 @@ struct WPERenderGraphBuilderTests {
         try writeGatedEffectAssets(root: root)
 
         let payload = gatedEffectScene(
-            effectVisible: ["script": Self.nightGateScript, "value": false]
+            effectVisible: ["script": Self.nightGateScript, "value": initialVisible]
         )
         let document = try WPESceneDocumentParser.parse(
             data: JSONSerialization.data(withJSONObject: payload)
@@ -2696,7 +2696,7 @@ struct WPERenderGraphBuilderTests {
         try #require(layer.passes.count == 3)
         let effectPass = layer.passes[1]
         let gate = try #require(effectPass.visibilityGate)
-        #expect(gate.initialVisible == false)
+        #expect(gate.initialVisible == initialVisible)
         #expect(gate.script.script == Self.nightGateScript)
         #expect(effectPass.constantScripts["multiply1"]?.script == Self.nightAmountScript)
 

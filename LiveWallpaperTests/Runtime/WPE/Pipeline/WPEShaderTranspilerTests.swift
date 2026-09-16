@@ -570,9 +570,9 @@ struct WPEShaderTranspilerTests {
             shaderName: "ivecbvec",
             preprocessedSource: source
         )
-        #expect(result.mslSource.contains("int2 g_Grid = int2(u.vals[0].xy)"))
-        #expect(result.mslSource.contains("int3 g_Triple = int3(u.vals[1].xyz)"))
-        #expect(result.mslSource.contains("bool2 g_Flags = u.vals[3].xy > float2(0.5)"))
+        #expect(result.mslSource.contains("int2 g_Grid = as_type<int2>(u.vals[0].xy)"))
+        #expect(result.mslSource.contains("int3 g_Triple = as_type<int3>(u.vals[1].xyz)"))
+        #expect(result.mslSource.contains("bool2 g_Flags = u.vals[3].xy != float2(0.0)"))
         #expect(!result.mslSource.contains("int2 g_Grid = u.vals[0].x"))
         let device = try #require(MTLCreateSystemDefaultDevice())
         let opts = MTLCompileOptions()
@@ -1257,7 +1257,7 @@ struct WPEShaderTranspilerTests {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let executor = try WPEMetalRenderExecutor(device: device)
 
-        let slots = executor.packTranslatedUniforms(
+        let slots = try executor.packTranslatedUniforms(
             for: preparedPass,
             layout: result.uniformLayout
         )
@@ -2829,7 +2829,7 @@ struct WPEShaderTranslationCacheTests {
         #expect(cache.memoryHitCountForTesting == 1)
         #expect(second.mslSource == first.mslSource)
         #expect(second.uniformLayout == first.uniformLayout)
-        #expect(second.library !== first.library, "each compile still makeLibrary's on this device")
+        #expect(second.library === first.library, "live libraries are shared by compiler clients on the same device")
     }
 
     @Test("Dropping memory still hits disk with the same MSL and layout")

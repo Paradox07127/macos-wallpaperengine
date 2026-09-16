@@ -106,10 +106,12 @@ final class WPEMetalSolidSceneRun {
                 return samplesAttachment(texture, output: output) ? "attachment-alias" : nil
             }
         }
-        return rejection(pass.pass.source)
-            ?? pass.textureBindings.values.lazy.compactMap(rejection).first
-            ?? pass.pass.textures.values.lazy.compactMap(rejection).first
-            ?? pass.pass.binds.values.lazy.compactMap(rejection).first
+        // Keep the existing prepared-before-raw diagnostic priority. Physical
+        // alias and this-frame producer checks cannot be reduced to read sets.
+        return rejection(pass.access.source)
+            ?? pass.access.references(in: .preparedBindings).lazy.compactMap(rejection).first
+            ?? pass.access.references(in: .rawTextures).lazy.compactMap(rejection).first
+            ?? pass.access.references(in: .rawBinds).lazy.compactMap(rejection).first
     }
 
     /// Views share their parent's allocation. Heap/buffer identity is deliberately
@@ -142,16 +144,7 @@ final class WPEMetalSolidSceneRun {
               case .material = pass.pass.phase else { return false }
         // The builder inserts source at slot 0 even though solid shaders do not sample.
         // Reject dependencies that could request a snapshot before dispatch.
-        func independent(_ reference: WPETextureReference) -> Bool {
-            switch reference {
-            case .image, .asset: return true
-            case .previous, .fbo: return false
-            }
-        }
-        return independent(pass.pass.source)
-            && pass.textureBindings.values.allSatisfy(independent)
-            && pass.pass.textures.values.allSatisfy(independent)
-            && pass.pass.binds.values.allSatisfy(independent)
+        return !pass.access.hasPreviousReference && pass.access.fboNames.isEmpty
     }
 }
 

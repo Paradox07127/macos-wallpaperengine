@@ -26,6 +26,11 @@ struct WPEUniformSlot: Equatable {
     /// Empty means unconditional. Deliberately NOT consulted when resolving a value (see `WPEMetalRenderExecutor+UniformPlan.compileUniformPlan`).
     let requiredCombos: [String: Int]
 
+    /// Shape/stride are derived from the serialized GLSL type, never inferred
+    /// from array length or slot count; cache replay retains the same ABI.
+    var typeLayout: WPEUniformType? { WPEUniformType(glslType: glslType) }
+    var arrayElementStride: Int? { typeLayout?.elementStride }
+
     init(
         name: String,
         glslType: String,
@@ -168,6 +173,9 @@ struct WPEUniformDecl: Equatable {
         case "mat2": return "float2x2"
         case "mat3": return "float3x3"
         case "mat4": return "float4x4"
+        case "uvec2": return "uint2"
+        case "uvec3": return "uint3"
+        case "uvec4": return "uint4"
         case "ivec2": return "int2"
         case "ivec3": return "int3"
         case "ivec4": return "int4"

@@ -331,7 +331,12 @@ struct WPEMetalRenderScaleTests {
         executor.outputTexturePool = [texture]
         executor.bootstrapPreviousTextureCache[
             .init(targetID: .scene, width: 64, height: 64, pixelFormat: .rgba8Unorm)
-        ] = texture
+        ] = WPEMetalBootstrapTexture(
+            texture: texture,
+            initialization: WPEMetalBootstrapInitialization(
+                commandBuffer: try #require(executor.textureSourceCommandQueue.makeCommandBuffer())
+            )
+        )
         executor.sceneReadHazardSnapshotCache[
             .init(targetID: .scene, width: 64, height: 64, pixelFormat: .rgba8Unorm)
         ] = texture
