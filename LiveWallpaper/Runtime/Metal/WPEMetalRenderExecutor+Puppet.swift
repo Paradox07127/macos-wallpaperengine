@@ -1158,6 +1158,7 @@ extension WPEMetalRenderExecutor {
             modelViewProjectionMatrix: viewProjection * modelMatrix,
             modelMatrix: modelMatrix,
             viewProjectionMatrix: viewProjection,
+            normalMatrix: Self.sceneModelNormalMatrix(from: modelMatrix),
             modeAndPadding: SIMD4<Float>(
                 Float(paletteState.bonePalette.count),
                 paletteState.skinningEnabled,
@@ -1165,6 +1166,22 @@ extension WPEMetalRenderExecutor {
                 0
             ),
             eyeAndPadding: SIMD4<Float>(Float(eye.x), Float(eye.y), Float(eye.z), 0)
+        )
+    }
+
+    /// Derived from the same Float model matrix the positions use, through the transpiled path's producer, so both paths share one singular-scale policy (identity).
+    private static func sceneModelNormalMatrix(from modelMatrix: simd_float4x4) -> simd_float3x3 {
+        let model = simd_double4x4(
+            SIMD4<Double>(modelMatrix.columns.0),
+            SIMD4<Double>(modelMatrix.columns.1),
+            SIMD4<Double>(modelMatrix.columns.2),
+            SIMD4<Double>(modelMatrix.columns.3)
+        )
+        let normal = WPEMetalObjectUniforms.normalMatrix(from: model)
+        return simd_float3x3(
+            SIMD3<Float>(normal.columns.0),
+            SIMD3<Float>(normal.columns.1),
+            SIMD3<Float>(normal.columns.2)
         )
     }
 

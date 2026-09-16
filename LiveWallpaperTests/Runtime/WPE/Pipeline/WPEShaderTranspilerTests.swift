@@ -2785,6 +2785,47 @@ struct WPEShaderTranspilerTests {
         opts.languageVersion = .version3_0
         _ = try device.makeLibrary(source: result.mslSource, options: opts)
     }
+
+    @Test("Prelude `#define lerp mix` keeps its own name, so mix routing is not mistaken for an authored mix macro")
+    func preludeLerpMacroKeepsItsNameAndRoutesMix() throws {
+        // The stage-3 prelude spells these exactly like this (`WPEShaderBuiltinMacros.glslPreludeLines`).
+        let source = """
+        #define lerp mix
+        #define frac fract
+        uniform float amount;
+        void main() { gl_FragColor = vec4(lerp(0.0, 1.0, amount), frac(amount), 0.0, 1.0); }
+        """
+        let result = try WPEShaderTranspiler.translateFragment(shaderName: "test/prelude_lerp", preprocessedSource: source)
+        #expect(!result.mslSource.contains("#define mix mix"))
+        #expect(!result.mslSource.contains("#define fract fract"))
+        // Pattern 2 of `routingGLSLMixCalls` rewrites the object-like alias body.
+        #expect(result.mslSource.contains("#define lerp wpe_glsl_mix"))
+        #expect(result.mslSource.contains("#define frac fract"))
+        #expect(result.mslSource.contains("wpe_glsl_mix(0.0, 1.0, amount)"))
+        #expect(result.mslSource.contains("fract(amount)"))
+        #expect(!result.mslSource.contains("WPE-DIAGNOSTIC"))
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let opts = MTLCompileOptions()
+        opts.languageVersion = .version3_0
+        _ = try device.makeLibrary(source: result.mslSource, options: opts)
+    }
+
+    @Test("A macro named after an MSL reserved word is renamed together with its uses")
+    func reservedWordMacroNameIsRenamedWithItsUses() throws {
+        // Corpus form: workshop 2798319181 gaussian.frag `#define kernel 3`.
+        let source = """
+        #define kernel 3
+        uniform float amount;
+        void main() { gl_FragColor = vec4(float(kernel) * amount); }
+        """
+        let result = try WPEShaderTranspiler.translateFragment(shaderName: "test/reserved_macro", preprocessedSource: source)
+        #expect(result.mslSource.contains("#define kernelValues 3"))
+        #expect(result.mslSource.contains("float(kernelValues)"))
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let opts = MTLCompileOptions()
+        opts.languageVersion = .version3_0
+        _ = try device.makeLibrary(source: result.mslSource, options: opts)
+    }
 }
 
 @Suite("WPE shader translation disk cache")

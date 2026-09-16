@@ -42,6 +42,13 @@ extension WPEShaderTranspiler {
                 lines.append("inline float wpe_glsl_mix(\(type) x, \(type) y, \(factor) a) { return (1.0 - float(a)) * float(x) + float(a) * float(y); }")
             }
         }
+        // Mixed scalar endpoints (`mix(x, 1, t)`) are otherwise ambiguous between the float and int overloads above.
+        for (lhs, rhs) in [("float", "int"), ("int", "float")] {
+            for factor in ["float", "int", "uint"] {
+                lines.append("inline float wpe_glsl_mix(\(lhs) x, \(rhs) y, \(factor) a) { return (1.0 - float(a)) * float(x) + float(a) * float(y); }")
+            }
+            lines.append("inline float wpe_glsl_mix(\(lhs) x, \(rhs) y, bool a) { return a ? float(y) : float(x); }")
+        }
         for scalar in ["float", "int", "uint", "bool"] {
             lines.append("inline \(scalar) wpe_glsl_mix(\(scalar) x, \(scalar) y, bool a) { return a ? y : x; }")
             for width in 2 ... 4 {
@@ -55,6 +62,9 @@ extension WPEShaderTranspiler {
         return lines.joined(separator: "\n")
     }
 
+    /// Prepended to the MSL when routing is skipped; the intrinsic calls in that shader then keep `metal::mix` semantics (no extrapolation guarantee).
+    static let authoredMixDiagnostic = "// WPE-DIAGNOSTIC: mix routing skipped (authored mix): the shader defines its own mix, so intrinsic mix calls keep metal::mix semantics."
+
     /// Run after HLSL narrowing/resource threading. Do not retarget an authored
     /// mix function or macro: that name belongs to the shader, not the intrinsic.
     /// Qualified metal::mix and comments likewise retain their original meaning.
@@ -62,7 +72,7 @@ extension WPEShaderTranspiler {
         let authored = authoredHelpers + "\n" + authoredMain
         if parseHelperFunctions(in: authoredHelpers).contains(where: { $0.name == "mix" })
             || maskComments(authored).range(of: #"(?m)^\s*#\s*define\s+mix(?:\s|\()"#, options: .regularExpression) != nil {
-            return source
+            return authoredMixDiagnostic + "\n" + source
         }
         let masked = maskComments(source)
         // Also route an object-like alias (#define INTERPOLATE mix), which does

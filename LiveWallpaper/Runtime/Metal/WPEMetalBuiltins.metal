@@ -366,8 +366,9 @@ struct WPEPuppetMeshUniforms {
 
 struct WPESceneModelMeshUniforms {
     float4x4 modelViewProjectionMatrix;
-    float4x4 modelMatrix;          // world position + normal rotation
+    float4x4 modelMatrix;          // world position
     float4x4 viewProjectionMatrix; // screen-space normal for the reflection offset
+    float3x3 normalMatrix;         // transpose(inverse(mat3(modelMatrix))); identity when singular
     float4 modeAndPadding; // x=bone palette count; y=skinning enabled; z,w reserved
     float4 eyeAndPadding;  // xyz = g_EyePosition
 };
@@ -486,9 +487,9 @@ vertex WPESceneModelVertexOut wpe_scene_model_mesh_vertex(
     float4 position = skinned
         ? wpe_skin_puppet_position(v, bonePalette, paletteCount)
         : float4(v.position.xyz, 1.0);
-    // Skinning moves the surface, so the normal has to follow it. The palette
-    // is rigid here (bind-pose composition, no non-uniform per-bone scale), so
-    // the rotation part is the correct normal transform.
+    // Skinning moves the surface, so the normal follows it. The skinned normal uses each
+    // bone's upper 3x3 as-is (no per-bone inverse-transpose): exact only for rigid or
+    // uniformly scaled bones, and the palette evaluator does emit per-bone scale.
     float3 localNormal = skinned
         ? wpe_skin_puppet_normal(v, bonePalette, paletteCount)
         : v.normal.xyz;
@@ -498,9 +499,7 @@ vertex WPESceneModelVertexOut wpe_scene_model_mesh_vertex(
     out.uv = v.uv.xy;
     float4 worldPos = u.modelMatrix * position;
     out.worldPos = worldPos.xyz;
-    out.worldNormal = normalize(float3x3(
-        u.modelMatrix[0].xyz, u.modelMatrix[1].xyz, u.modelMatrix[2].xyz
-    ) * localNormal);
+    out.worldNormal = normalize(u.normalMatrix * localNormal);
     out.screenPos = out.position.xyw;
     return out;
 }

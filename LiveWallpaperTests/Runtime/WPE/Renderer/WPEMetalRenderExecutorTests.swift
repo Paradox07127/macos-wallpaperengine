@@ -5305,22 +5305,88 @@ private extension WPEMetalRenderExecutorTests {
     func abortedBootstrapPreviousRecovers() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let executor = try WPEMetalRenderExecutor(device: device)
+        // Named FBOs never carry across frames, so every frame's first `.previous` read of the FBO goes through the bootstrap cache.
+        let fbo = WPERenderFBO(name: "_rt_Empty", scale: 1, format: "rgba8888")
         let previous = preparedBuiltinPass(copyPass(
-            id: "layer.0", source: .previous, target: .scene, blending: "disabled"
+            id: "layer.0", source: .previous, target: .fbo(name: fbo.name), blending: "disabled"
         ), bindings: [0: .previous])
+        let toScene = preparedBuiltinPass(copyPass(
+            id: "layer.1", source: .fbo(fbo.name), target: .scene, blending: "disabled"
+        ), bindings: [0: .fbo(fbo.name)])
         let missing = preparedBuiltinPass(copyPass(
             id: "layer.1", source: .image("missing.png"), target: .scene, blending: "disabled"
         ), bindings: [0: .image("missing.png")])
-        #expect(throws: (any Error).self) {
-            try executor.render(pipeline: preparedPipeline(localFBOs: [], passes: [previous, missing]),
-                                size: CGSize(width: 2, height: 2), textures: [:])
+        let size = CGSize(width: 2, height: 2)
+        let transparentBlack = Pixel(r: 0, g: 0, b: 0, a: 0)
+
+        #expect(throws: WPEMetalRenderExecutorError.missingTexture(.image("missing.png"))) {
+            try executor.render(pipeline: preparedPipeline(localFBOs: [fbo], passes: [previous, missing]),
+                                size: size, textures: [:])
         }
         #expect(executor.bootstrapPreviousTextureCache.isEmpty)
-        let output = try executor.render(pipeline: preparedPipeline(localFBOs: [], passes: [previous]),
-                                         size: CGSize(width: 2, height: 2), textures: [:])
+
+        let output = try executor.render(pipeline: preparedPipeline(localFBOs: [fbo], passes: [previous, toScene]),
+                                         size: size, textures: [:])
         #expect(executor.bootstrapPreviousTextureCache.count == 1)
-        let pixel = try readPixel(output, x: 1, y: 1)
-        #expect(pixel.r == 0 && pixel.g == 0 && pixel.b == 0 && pixel.a == 0)
+        let recovered = try #require(executor.bootstrapPreviousTextureCache.values.first)
+        let outputPixel = try readPixel(output, x: 1, y: 1)
+        let recoveredPixel = try readPixel(recovered.texture, x: 1, y: 1)
+        #expect(outputPixel == transparentBlack)
+        #expect(recoveredPixel == transparentBlack)
+
+        // `render` waits for the GPU, but the completed handler that marks the clear ready may still be in flight.
+        let probe = try #require(executor.commandQueue.makeCommandBuffer())
+        let deadline = Date().addingTimeInterval(2)
+        while !recovered.initialization.canRead(in: probe), Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.001)
+        }
+        #expect(recovered.initialization.canRead(in: probe))
+
+        _ = try executor.render(pipeline: preparedPipeline(localFBOs: [fbo], passes: [previous, toScene]),
+                                size: size, textures: [:])
+        #expect(executor.bootstrapPreviousTextureCache.count == 1)
+        let reused = try #require(executor.bootstrapPreviousTextureCache.values.first)
+        #expect(reused.texture === recovered.texture)
+    }
+
+    @Test("Discarding one command buffer's unsubmitted bootstrap clears keeps other buffers' entries")
+    func discardUnsubmittedBootstrapKeepsOtherOwners() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let aborted = try #require(executor.commandQueue.makeCommandBuffer())
+        let submitted = try #require(executor.commandQueue.makeCommandBuffer())
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .bgra8Unorm, width: 2, height: 2, mipmapped: false
+        )
+        descriptor.usage = [.renderTarget, .shaderRead]
+        descriptor.storageMode = .private
+        func entry(owner: MTLCommandBuffer) throws -> WPEMetalBootstrapTexture {
+            let texture = try #require(device.makeTexture(descriptor: descriptor))
+            return WPEMetalBootstrapTexture(
+                texture: texture,
+                initialization: WPEMetalBootstrapInitialization(commandBuffer: owner)
+            )
+        }
+        let abortedKey = WPEMetalRenderExecutor.BootstrapPreviousKey(
+            targetID: .scene, width: 2, height: 2, pixelFormat: .bgra8Unorm
+        )
+        let submittedKey = WPEMetalRenderExecutor.BootstrapPreviousKey(
+            targetID: .named("_rt_Other"), width: 2, height: 2, pixelFormat: .bgra8Unorm
+        )
+        executor.bootstrapPreviousTextureCache[abortedKey] = try entry(owner: aborted)
+        executor.bootstrapPreviousTextureCache[submittedKey] = try entry(owner: submitted)
+
+        executor.discardUnsubmittedBootstrapTextures(for: aborted)
+
+        #expect(executor.bootstrapPreviousTextureCache[abortedKey] == nil)
+        #expect(executor.bootstrapPreviousTextureCache[submittedKey] != nil)
+
+        // A committed buffer's entry is the completion token's business, not the discard path's.
+        submitted.commit()
+        submitted.waitUntilCompleted()
+        #expect(submitted.status == .completed)
+        executor.discardUnsubmittedBootstrapTextures(for: submitted)
+        #expect(executor.bootstrapPreviousTextureCache[submittedKey] != nil)
     }
 
     @Test("Bootstraps missing FBO previous with a transparent cleared texture on first render")

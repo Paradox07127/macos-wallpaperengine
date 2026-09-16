@@ -213,7 +213,8 @@ extension WPEShaderTranspiler {
         )
     }
 
-    /// Self-referential `mix` is emitted by WPE and retains the Metal intrinsic.
+    /// The identity form (`#define mix mix`) can only come from authored source now that the prelude's
+    /// `#define lerp mix` keeps its own name; it does not change what `mix` means, so it does not block the rewrite.
     private static func overridesWaterIntrinsics(_ source: String, names: Set<String>) -> Bool {
         let joined = source.replacingOccurrences(of: "\\\r\n", with: "")
             .replacingOccurrences(of: "\\\n", with: "")

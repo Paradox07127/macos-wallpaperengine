@@ -460,9 +460,9 @@ extension WPEShaderTranspiler {
     }
 
     private static func rewriteReservedIdentifiers(_ source: String) -> String {
-        var result = wordReplace(source, find: "kernel", replace: "kernelValues")
-        result = wordReplace(result, find: "or", replace: "orValue")
-        result = wordReplace(result, find: "fragment", replace: "fragmentValue")
+        var result = wordReplace(source, find: "kernel", replace: "kernelValues", renamesMacroNames: true)
+        result = wordReplace(result, find: "or", replace: "orValue", renamesMacroNames: true)
+        result = wordReplace(result, find: "fragment", replace: "fragmentValue", renamesMacroNames: true)
         return result
     }
 
@@ -637,7 +637,7 @@ extension WPEShaderTranspiler {
             )
         }
         for renamedArray in renamedArrays {
-            result = wordReplace(result, find: renamedArray.from, replace: renamedArray.to)
+            result = wordReplace(result, find: renamedArray.from, replace: renamedArray.to, renamesMacroNames: true)
         }
         return result
     }
@@ -718,9 +718,10 @@ extension WPEShaderTranspiler {
         var ambiguous: Set<String> = []
         var scalarArrays: Set<String> = []
         for uniform in uniforms {
-            let width = vectorWidth(ofType: uniform.metalType)
-            widths[uniform.name] = width
-            if uniform.arrayLength != nil, width == 1 { scalarArrays.insert(uniform.name) }
+            // Matrices are neither scalar nor vector; `float3x3 m[N]` keeps `m[i][c]` intact.
+            guard let type = WPEUniformType(glslType: uniform.type), type.columns == 1 else { continue }
+            widths[uniform.name] = type.rows
+            if uniform.arrayLength != nil, type.rows == 1 { scalarArrays.insert(uniform.name) }
         }
         // Locals. Name-based, not scope-aware (same caveat as `rewriteFloatArraySubscripts`): a
         // name declared at two different widths is dropped rather than guessed.
@@ -1114,7 +1115,12 @@ extension WPEShaderTranspiler {
         )
     }
 
-    private static func wordReplace(_ source: String, find: String, replace: String) -> String {
+    /// A `#define`'s own name is skipped unless `renamesMacroNames`: spelling substitutions would otherwise turn the
+    /// prelude's `#define lerp mix` into `#define mix mix`, which reads as an authored mix override downstream.
+    /// Symbol renames (reserved words, arrays) must still rename the macro together with its uses.
+    private static func wordReplace(
+        _ source: String, find: String, replace: String, renamesMacroNames: Bool = false
+    ) -> String {
         guard !find.isEmpty else { return source }
         var result = ""
         result.reserveCapacity(source.count)
@@ -1136,7 +1142,7 @@ extension WPEShaderTranspiler {
                     let n = source[afterIndex]
                     nextOK = !n.isLetter && !n.isNumber && n != "_"
                 }
-                if priorOK && nextOK {
+                if priorOK && nextOK && (renamesMacroNames || !isDefineMacroName(in: source, at: index)) {
                     result += replace
                     index = afterIndex
                     continue
@@ -1146,6 +1152,16 @@ extension WPEShaderTranspiler {
             index = source.index(after: index)
         }
         return result
+    }
+
+    private static func isDefineMacroName(in source: String, at index: String.Index) -> Bool {
+        let lineStart = source[..<index].lastIndex(of: "\n").map { source.index(after: $0) } ?? source.startIndex
+        var prefix = source[lineStart ..< index].drop(while: { $0 == " " || $0 == "\t" })
+        guard prefix.first == "#" else { return false }
+        prefix = prefix.dropFirst().drop(while: { $0 == " " || $0 == "\t" })
+        guard prefix.hasPrefix("define") else { return false }
+        let gap = prefix.dropFirst("define".count)
+        return !gap.isEmpty && gap.allSatisfy { $0 == " " || $0 == "\t" }
     }
 
     /// Identifier replacement variant for expressions where an existing

@@ -99,6 +99,69 @@ struct WPEMetalMathCompatibilityTests {
         }
     }
 
+    @Test("An authored mix function or macro skips routing and says so in the MSL", arguments: ["function", "macro", "identity"])
+    func authoredMixSkipsRoutingWithDiagnostic(kind: String) throws {
+        let sources = [
+            "function": """
+            uniform float amount;
+            float mix(float x, float y, float a, float extra) { return x + y + a + extra; }
+            void main() { gl_FragColor = vec4(mix(1.0, 2.0, amount, 0.5), mix(0.0, 1.0, amount), 0.0, 1.0); }
+            """,
+            "macro": """
+            uniform float amount;
+            #define mix(a, b, t) ((a) + (b) + (t))
+            void main() { gl_FragColor = vec4(mix(1.0, 2.0, amount), 0.0, 0.0, 1.0); }
+            """,
+            // An authored self-referential macro is still the author claiming the name.
+            "identity": """
+            #define mix mix
+            uniform float amount;
+            void main() { gl_FragColor = vec4(mix(1.0, 2.0, amount), 0.0, 0.0, 1.0); }
+            """,
+        ]
+        let result = try WPEShaderTranspiler.translateFragment(
+            shaderName: "test/authored_mix_\(kind)", preprocessedSource: #require(sources[kind])
+        )
+        #expect(result.mslSource.hasPrefix("// WPE-DIAGNOSTIC: mix routing skipped (authored mix)"))
+        #expect(result.mslSource.contains("mix(1.0, 2.0, amount"))
+        #expect(!result.mslSource.contains("wpe_glsl_mix(1.0, 2.0, amount") && !result.mslSource.contains("wpe_glsl_mix(0.0, 1.0, amount"))
+        if let device = MTLCreateSystemDefaultDevice() {
+            _ = try device.makeLibrary(source: result.mslSource, options: WPEMetalLibraryRegistry.Configuration().makeOptions())
+        }
+    }
+
+    @Test("Mixed integer/float scalar endpoints (blur_combine's `mix(x, 1, t)`) resolve and interpolate")
+    func mixedIntegerAndFloatEndpointsResolve() throws {
+        guard let device = MTLCreateSystemDefaultDevice() else { return }
+        // Corpus form: workshop blur_combine.frag `float div = mix(blurred.a, 1, step(blurred.a, 0));`.
+        let source = """
+        uniform sampler2D g_Texture0;
+        varying vec2 v_TexCoord;
+        void main() {
+            vec4 blurred = texSample2D(g_Texture0, v_TexCoord);
+            float div = mix(blurred.a, 1, step(blurred.a, 0));
+            float lead = mix(0, blurred.r, blurred.g);
+            float pick = mix(blurred.b, 1, blurred.a > 0.5);
+            gl_FragColor = vec4(div, lead, pick, 1.0);
+        }
+        """
+        let result = try WPEShaderTranspiler.translateFragment(shaderName: "test/mixed_mix", preprocessedSource: source)
+        #expect(result.mslSource.contains("wpe_glsl_mix(blurred.a, 1, step(blurred.a, 0))"))
+        _ = try device.makeLibrary(source: result.mslSource, options: WPEMetalLibraryRegistry.Configuration().makeOptions())
+
+        let kernel = """
+        kernel void check(device const float4* values [[buffer(0)]], device float4* output [[buffer(1)]], uint id [[thread_position_in_grid]]) {
+            float4 v = values[id];
+            output[id] = float4(wpe_glsl_mix(v.x, 1, v.z), wpe_glsl_mix(0, v.y, v.z), wpe_glsl_mix(v.x, 1, true), wpe_glsl_mix(v.x, 1, false));
+        }
+        """
+        let cases: [SIMD4<Float>] = [SIMD4(0.25, 4, 0.5, 0), SIMD4(2, -3, 1.5, 0)]
+        let values = try run(device: device, fast: false, kernel: kernel, inputs: cases)
+        for (index, v) in cases.enumerated() {
+            #expect(values[index] == SIMD4((1 - v.z) * v.x + v.z * 1, v.z * v.y, 1, v.x), "case \(index)")
+        }
+    }
+
     @Test("Native reflection uses ordered smoothstep edges and extrapolation helpers")
     func nativeSourceContract() throws {
         let source = try RepositoryRoot.source("LiveWallpaper/Runtime/Metal/WPEMetalBuiltins.metal")

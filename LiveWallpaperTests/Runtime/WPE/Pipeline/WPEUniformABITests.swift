@@ -139,8 +139,11 @@ struct WPEUniformABITests {
                         expression = type.rows == 1 ? "uint4(as_type<uint>(\(name)), 0, 0, 0)" : "as_type<uint4>(\(name))"
                     } else if type.scalar == .uint {
                         expression = type.rows == 1 ? "uint4(\(name), 0, 0, 0)" : name
+                    } else if type.rows == 1 {
+                        expression = "uint4(\(name) ? 1u : 0u, 0u, 0u, 0u)"
                     } else {
-                        expression = "uint4(\(name), false)"
+                        let tail = String(repeating: ", 0u", count: 4 - type.rows)
+                        expression = "uint4(select(uint\(type.rows)(0u), uint\(type.rows)(1u), \(name))\(tail))"
                     }
                     writes.append("    output[\(slotIndex)] = \(expression);")
                     let packed = slots[slotIndex]

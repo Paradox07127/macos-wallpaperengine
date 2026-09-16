@@ -537,7 +537,9 @@ struct WPEMetalDrawTextureMetadataTests {
         table.set(texture: texture, samplingDescriptor: nil, sampler: sampler, resolution: snapshot, at: 0)
         let reference = WPEMetalTextureSlotTable()
         reference[0] = texture // The existing, uncached registry fallback.
-        #expect(try packed(executor: executor, table: table) == try packed(executor: executor, table: reference))
+        let packedTable = try packed(executor: executor, table: table)
+        let packedReference = try packed(executor: executor, table: reference)
+        #expect(packedTable == packedReference)
         #expect(try packed(executor: executor, table: table) == [SIMD4<Float>(8, 4, 5, 3)])
         #expect(table.resolution(at: 0) == snapshot)
         #expect(executor.customShaderSamplerState(resolution: nil) === executor.customShaderSamplerState(for: nil))
@@ -830,7 +832,9 @@ struct WPEMetalDerivedUniformPackingTests {
                 }
                 return (DispatchTime.now().uptimeNanoseconds - start, checksum)
             }
-            #expect(try run(enabled: false, iterations: 8).1 == try run(enabled: true, iterations: 8).1)
+            let disabledChecksum = try run(enabled: false, iterations: 8).1
+            let enabledChecksum = try run(enabled: true, iterations: 8).1
+            #expect(disabledChecksum == enabledChecksum)
             var expected: UInt64?
             for block in 0 ..< 12 {
                 let enabled = block % 4 == 1 || block % 4 == 2 // ABBA, repeated three times.

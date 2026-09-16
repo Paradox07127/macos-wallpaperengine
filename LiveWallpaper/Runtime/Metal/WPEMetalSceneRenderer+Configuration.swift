@@ -30,7 +30,8 @@ extension WPEMetalSceneRenderer {
         guard let manualValue else { return tier.defaultTextureCacheBudgetBytes }
         let mib = (manualValue as? NSNumber)?.intValue ?? 0
         guard mib > 0 else { return nil }
-        return mib * 1_048_576
+        let bytes = mib.multipliedReportingOverflow(by: 1_048_576)
+        return bytes.overflow ? nil : bytes.partialValue
     }
 
     /// When true, emitters with no authored start offset are also pre-populated to their steady-state spread. Emitters with `starttime > 0` always prewarm.

@@ -606,7 +606,7 @@ struct WPECorpusFailurePatternsTests {
         let opts = MTLCompileOptions()
         opts.languageVersion = .version3_0
 
-        #expect(result.mslSource.contains("albedo.rgb = mix(albedo.rgb, newAlbedo, mask);"))
+        #expect(result.mslSource.contains("albedo.rgb = wpe_glsl_mix(albedo.rgb, newAlbedo, mask);"))
         _ = try device.makeLibrary(source: result.mslSource, options: opts)
     }
 

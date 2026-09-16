@@ -113,9 +113,14 @@ final class WPEMetalRenderExecutor {
     /// VRAM budget for cached composites (MiB; default 256). Over budget → LRU eviction, never wrong.
     static let staticLayerCacheBudgetBytes: Int = {
         let raw = UserDefaults.standard.object(forKey: staticLayerCacheBudgetMiBDefaultsKey)
-        let mib = (raw as? NSNumber)?.intValue ?? 256
-        return max(0, mib) * 1_048_576
+        return resolvedStaticLayerCacheBudgetBytes(mib: (raw as? NSNumber)?.intValue ?? 256)
     }()
+
+    /// Negative → 0; a product that overflows `Int` → the 256 MiB default.
+    static func resolvedStaticLayerCacheBudgetBytes(mib: Int) -> Int {
+        let bytes = max(0, mib).multipliedReportingOverflow(by: 1_048_576)
+        return bytes.overflow ? 256 * 1_048_576 : bytes.partialValue
+    }
 
     let device: MTLDevice
     let commandQueue: MTLCommandQueue

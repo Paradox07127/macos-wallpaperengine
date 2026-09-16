@@ -82,12 +82,13 @@ struct WPERenderPipelineBuilder: Sendable {
         canonicalRotation: WPECanonicalCompositeRotationReport,
         fullFramePassthroughElision: WPEFullFramePassthroughElisionReport
     ) {
+        // FBO names are scene-global and `WPEMetalRenderTargetPool` allocates each name from the last declaration in
+        // layer order; a per-layer map would decode `TEXnFORMAT` channels against a different format than the allocation.
+        let fboFormats = Dictionary(
+            graph.layers.flatMap(\.localFBOs).map { ($0.name, $0.format) },
+            uniquingKeysWith: { _, latest in latest }
+        )
         let layers = try graph.layers.map { layer in
-            // A pass samples only this layer's FBOs; global scene aliases are absent here and correctly fall back to RGBA.
-            let fboFormats = Dictionary(
-                layer.localFBOs.map { ($0.name, $0.format) },
-                uniquingKeysWith: { _, latest in latest }
-            )
             let passes = try layer.passes.map { pass in
                 try preparedPass(for: pass, fboFormats: fboFormats)
             }
@@ -876,12 +877,10 @@ private struct WPEShaderSourceLoader: Sendable {
         comboValues: [String: Int],
         includeStack: [String]
     ) throws -> String {
-        var includedPaths = Set<String>()
         let expanded = try expandIncludes(
             in: source,
             logicalPath: logicalPath,
-            includeStack: includeStack,
-            includedPaths: &includedPaths
+            includeStack: includeStack
         )
         let requiredRemoved = commentRequireDirectives(in: expanded)
         let macroNeutralized = stripPreludeMacroRedefines(in: requiredRemoved)
@@ -1039,8 +1038,7 @@ private struct WPEShaderSourceLoader: Sendable {
     private func expandIncludes(
         in source: String,
         logicalPath: String,
-        includeStack: [String],
-        includedPaths: inout Set<String>
+        includeStack: [String]
     ) throws -> String {
         var output: [String] = []
         for line in source.components(separatedBy: .newlines) {
@@ -1048,21 +1046,21 @@ private struct WPEShaderSourceLoader: Sendable {
                 output.append(line)
                 continue
             }
-            output.append(try includeSource(
+            try output.append(includeSource(
                 includePath,
                 requestedBy: logicalPath,
-                includeStack: includeStack,
-                includedPaths: &includedPaths
+                includeStack: includeStack
             ))
         }
         return output.joined(separator: "\n")
     }
 
+    /// Expansion runs before conditionals are evaluated, so include-once must be a preprocessor guard, not an
+    /// expansion-time set: a set would let an include inside a dead `#if` branch swallow a later live one.
     private func includeSource(
         _ includePath: String,
         requestedBy: String,
-        includeStack: [String],
-        includedPaths: inout Set<String>
+        includeStack: [String]
     ) throws -> String {
         if Self.resolverPreferredBuiltinHeaders.contains((includePath as NSString).lastPathComponent),
            let resolvedPath = resolvedIncludePath(includePath, requestedBy: requestedBy) {
@@ -1070,31 +1068,23 @@ private struct WPEShaderSourceLoader: Sendable {
             if includeStack.contains(identity) {
                 throw WPERenderPipelineError.includeCycle(path: includePath)
             }
-            guard includedPaths.insert(identity).inserted else {
-                return "// include-once: \(resolvedPath)"
-            }
             let source = try readRawUTF8(path: resolvedPath)
-            return try expandIncludes(
+            return try Self.includeOnceGuarded(identity: identity, body: expandIncludes(
                 in: source,
                 logicalPath: resolvedPath,
-                includeStack: includeStack + [identity],
-                includedPaths: &includedPaths
-            )
+                includeStack: includeStack + [identity]
+            ))
         }
         if let builtin = builtinInclude(named: includePath) {
             let identity = "builtin:\((includePath as NSString).lastPathComponent)"
             if includeStack.contains(identity) {
                 throw WPERenderPipelineError.includeCycle(path: includePath)
             }
-            guard includedPaths.insert(identity).inserted else {
-                return "// include-once: \(identity)"
-            }
-            return try expandIncludes(
+            return try Self.includeOnceGuarded(identity: identity, body: expandIncludes(
                 in: builtin,
                 logicalPath: "shaders/\((includePath as NSString).lastPathComponent)",
-                includeStack: includeStack + [identity],
-                includedPaths: &includedPaths
-            )
+                includeStack: includeStack + [identity]
+            ))
         }
 
         guard let resolvedPath = resolvedIncludePath(includePath, requestedBy: requestedBy) else {
@@ -1104,17 +1094,22 @@ private struct WPEShaderSourceLoader: Sendable {
         if includeStack.contains(identity) {
             throw WPERenderPipelineError.includeCycle(path: includePath)
         }
-        guard includedPaths.insert(identity).inserted else {
-            return "// include-once: \(resolvedPath)"
-        }
 
         let source = try readRawUTF8(path: resolvedPath)
-        return try expandIncludes(
+        return try Self.includeOnceGuarded(identity: identity, body: expandIncludes(
             in: source,
             logicalPath: resolvedPath,
-            includeStack: includeStack + [identity],
-            includedPaths: &includedPaths
-        )
+            includeStack: includeStack + [identity]
+        ))
+    }
+
+    /// The guard name derives from the include identity only (not the requesting file or stage), so the
+    /// memoized expansion of one stage never disagrees with another about which copy is live.
+    private static func includeOnceGuarded(identity: String, body: String) -> String {
+        let readable = (identity as NSString).lastPathComponent
+            .map { $0.isASCII && ($0.isLetter || $0.isNumber) ? $0 : "_" }
+        let macro = "WPE_INCLUDED_\(String(readable))_\(WPEShaderSourceDigest.hex(identity).prefix(12))"
+        return "#ifndef \(macro)\n#define \(macro)\n\(body)\n#endif"
     }
 
     /// Official/project headers are authoritative when present; the builtin is an asset-missing fallback.

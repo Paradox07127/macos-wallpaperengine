@@ -4,7 +4,7 @@ import Metal
 
 /// Completion callbacks publish only to their own token, never into the
 /// executor's dictionary: an older failure cannot invalidate a newer entry.
-final class WPEMetalBootstrapInitialization: @unchecked Sendable {
+final class WPEMetalBootstrapInitialization: @unchecked Sendable { // after init, `state`/`owner` are only accessed under `lock`
     private enum State { case encoded, ready, failed }
     private let lock = NSLock()
     private var state = State.encoded

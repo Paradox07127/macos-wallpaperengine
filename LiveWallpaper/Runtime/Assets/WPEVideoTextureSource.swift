@@ -145,6 +145,8 @@ final class WPEVideoTextureSource {
     /// HDR fallback engaged — outputs are pinned to 32BGRA for the source's lifetime.
     private var forcedBGRAOutput = false
     private var loggedUnsupportedFormat = false
+    private var loggedSRGBWrapFailure = false
+    private var loggedSampleViewFailure = false
 
     enum PublishPath {
         case biPlanar
@@ -157,6 +159,12 @@ final class WPEVideoTextureSource {
     private(set) var workingTextureClearsForTesting = 0
     var didForceBGRAOutputForTesting: Bool { forcedBGRAOutput }
     private(set) var publishedFrameCountForTesting = 0
+    /// Fault injection for the two sRGB-decode sites and the allocation clear.
+    var forceSRGBWrapFailureForTesting = false
+    var forceSampleViewFailureForTesting = false
+    var forceWorkingTextureClearFailureForTesting = false
+    private(set) var srgbWrapFailuresForTesting = 0
+    private(set) var sampleViewFailuresForTesting = 0
     #endif
 
     private struct StagedFrame {
@@ -573,8 +581,13 @@ final class WPEVideoTextureSource {
     private func publishBGRA(pixelBuffer: CVPixelBuffer) {
         let width = CVPixelBufferGetWidth(pixelBuffer)
         let height = CVPixelBufferGetHeight(pixelBuffer)
+        #if DEBUG
+        let forceWrapFailure = forceSRGBWrapFailureForTesting
+        #else
+        let forceWrapFailure = false
+        #endif
         var cvTexture: CVMetalTexture?
-        var status = CVMetalTextureCacheCreateTextureFromImage(
+        let status = CVMetalTextureCacheCreateTextureFromImage(
             kCFAllocatorDefault,
             textureCache,
             pixelBuffer,
@@ -585,22 +598,21 @@ final class WPEVideoTextureSource {
             0,
             &cvTexture
         )
-        if status != kCVReturnSuccess {
-            status = CVMetalTextureCacheCreateTextureFromImage(
-                kCFAllocatorDefault,
-                textureCache,
-                pixelBuffer,
-                nil,
-                .bgra8Unorm,
-                width,
-                height,
-                0,
-                &cvTexture
-            )
-        }
-        guard status == kCVReturnSuccess,
+        guard !forceWrapFailure,
+              status == kCVReturnSuccess,
               let cvTexture,
               let texture = CVMetalTextureGetTexture(cvTexture) else {
+            // No plain-unorm retry: the renderer would sample its gamma bytes as linear. The last frame stays published.
+            #if DEBUG
+            srgbWrapFailuresForTesting += 1
+            #endif
+            if !loggedSRGBWrapFailure {
+                loggedSRGBWrapFailure = true
+                Logger.warning(
+                    "[WPE.video] sRGB BGRA wrap failed (CVReturn \(status)) — keeping the last frame",
+                    category: .wpeRender
+                )
+            }
             return
         }
         #if DEBUG
@@ -796,10 +808,8 @@ final class WPEVideoTextureSource {
             height: height,
             mipmapped: false
         )
-        // `.pixelFormatView` is required for the sRGB view below. Omitting it happens to work on
-        // this Mac even under the Metal validation layer, but that's undocumented tolerance:
-        // without the flag the view can fail elsewhere and the `?? target` fallback would
-        // silently sample gamma bytes as linear — brighter video, no log.
+        // `.pixelFormatView` is required for the sRGB view below; omitting it happens to work on
+        // this Mac but is undocumented tolerance, and a failed view refuses every NV12 frame.
         descriptor.usage = [.renderTarget, .shaderRead, .pixelFormatView]
         descriptor.storageMode = .private
         guard let target = device.makeTexture(descriptor: descriptor) else { return nil }
@@ -807,20 +817,47 @@ final class WPEVideoTextureSource {
         // The pass stores gamma R'G'B' bytes in a non-sRGB target; the renderer
         // samples through this sRGB view — byte-identical to the old
         // `.bgra8Unorm_srgb` CV wrap, with no double gamma conversion.
-        let sampleView = target.makeTextureView(pixelFormat: .bgra8Unorm_srgb) ?? target
-        // Clear once at allocation, not per frame: texture(at:) hands a staged target out before conversion, so an unwritten .private backing would sample as undefined if the encoder is nil.
-        if let commandBuffer = conversionQueue.makeCommandBuffer() {
-            let clearPass = MTLRenderPassDescriptor()
-            clearPass.colorAttachments[0].texture = target
-            clearPass.colorAttachments[0].loadAction = .clear
-            clearPass.colorAttachments[0].clearColor = MTLClearColorMake(0, 0, 0, 1)
-            clearPass.colorAttachments[0].storeAction = .store
-            commandBuffer.makeRenderCommandEncoder(descriptor: clearPass)?.endEncoding()
-            commandBuffer.commit()
+        #if DEBUG
+        let forceViewFailure = forceSampleViewFailureForTesting
+        #else
+        let forceViewFailure = false
+        #endif
+        guard !forceViewFailure, let sampleView = target.makeTextureView(pixelFormat: .bgra8Unorm_srgb) else {
+            // Handing out the raw target instead would sample its gamma bytes as linear. The last frame stays published.
             #if DEBUG
-            workingTextureClearsForTesting += 1
+            sampleViewFailuresForTesting += 1
             #endif
+            if !loggedSampleViewFailure {
+                loggedSampleViewFailure = true
+                Logger.warning(
+                    "[WPE.video] sRGB view of the NV12 working texture failed — keeping the last frame",
+                    category: .wpeRender
+                )
+            }
+            return nil
         }
+        // Clear once at allocation, not per frame: texture(at:) hands a staged target out before conversion, so an unwritten .private backing would sample as undefined if the encoder is nil.
+        let clearPass = MTLRenderPassDescriptor()
+        clearPass.colorAttachments[0].texture = target
+        clearPass.colorAttachments[0].loadAction = .clear
+        clearPass.colorAttachments[0].clearColor = MTLClearColorMake(0, 0, 0, 1)
+        clearPass.colorAttachments[0].storeAction = .store
+        #if DEBUG
+        let forceClearFailure = forceWorkingTextureClearFailureForTesting
+        #else
+        let forceClearFailure = false
+        #endif
+        // An uncleared texture is never cached or handed out; the next frame allocates again.
+        guard !forceClearFailure,
+              let clearBuffer = conversionQueue.makeCommandBuffer(),
+              let clearEncoder = clearBuffer.makeRenderCommandEncoder(descriptor: clearPass) else {
+            return nil
+        }
+        clearEncoder.endEncoding()
+        clearBuffer.commit()
+        #if DEBUG
+        workingTextureClearsForTesting += 1
+        #endif
         workingTarget = target
         workingSampleView = sampleView
         return (target, sampleView)
