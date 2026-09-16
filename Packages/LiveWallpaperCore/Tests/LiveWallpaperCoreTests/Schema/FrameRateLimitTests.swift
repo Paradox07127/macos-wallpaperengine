@@ -20,13 +20,12 @@ struct FrameRateLimitTargetResolutionTests {
         #expect(FrameRateLimit.matchDisplay.frameRate(forRefreshRate: 60) == 60)
     }
 
-    /// `CADisplayLink` only wakes on a divisor, so a target rounds *down*: asking for
-    /// 60 and being handed 72 would be the opposite of a cap.
+    /// The runtime handles fractional cadence; settings retain the requested rate.
     @Test("A target never resolves above itself on an awkward panel")
-    func targetsRoundDownNotUp() {
-        #expect(FrameRateLimit.fps60.frameRate(forRefreshRate: 144) == 48)
-        #expect(FrameRateLimit.fps30.frameRate(forRefreshRate: 144) == 29)
-        #expect(FrameRateLimit.fps15.frameRate(forRefreshRate: 144) == 14)
+    func targetsAreNotQuantized() {
+        #expect(FrameRateLimit.fps60.frameRate(forRefreshRate: 144) == 60)
+        #expect(FrameRateLimit.fps30.frameRate(forRefreshRate: 144) == 30)
+        #expect(FrameRateLimit.fps15.frameRate(forRefreshRate: 144) == 15)
         #expect(FrameRateLimit.matchDisplay.frameRate(forRefreshRate: 144) == 144)
     }
 
@@ -34,7 +33,7 @@ struct FrameRateLimitTargetResolutionTests {
     func targetAboveTheSlowPanelYieldsThePanel() {
         #expect(FrameRateLimit.fps60.frameRate(forRefreshRate: 24) == 24)
         #expect(FrameRateLimit.fps30.frameRate(forRefreshRate: 24) == 24)
-        #expect(FrameRateLimit.fps15.frameRate(forRefreshRate: 24) == 12)
+        #expect(FrameRateLimit.fps15.frameRate(forRefreshRate: 24) == 15)
     }
 
     @Test("A display that reports no refresh rate is treated as 60 Hz")
@@ -43,15 +42,12 @@ struct FrameRateLimitTargetResolutionTests {
         #expect(FrameRateLimit.fps30.frameRate(forRefreshRate: 0) == 30)
     }
 
-    /// At 60 Hz and below, "match display" runs at the same rate as the 60 step;
-    /// offering both would put two identical entries in one menu.
-    @Test("Steps that resolve to the same rate are offered once")
-    func availableCasesDropDuplicates() {
-        #expect(FrameRateLimit.availableCases(forRefreshRate: 60) == [.fps15, .fps30, .fps60])
-        #expect(
-            FrameRateLimit.availableCases(forRefreshRate: 240)
-                == [.fps15, .fps30, .fps60, .matchDisplay]
-        )
+    @Test("Presets fit the configured display rate and Max stays distinct")
+    func presetsKeepTheirIdentity() {
+        let presets: [FrameRateLimit] = [.fps15, .fps24, .fps30, .fps45, .fps60, .fps120, .matchDisplay]
+        #expect(FrameRateLimit.availableCases(forRefreshRate: 60) == presets.filter { $0 != .fps120 })
+        #expect(FrameRateLimit.availableCases(forRefreshRate: 240) == presets)
+        #expect(FrameRateLimit.fps120.title != FrameRateLimit.matchDisplay.title)
     }
 
     /// Landing a drag on the top step must not overwrite a saved `.matchDisplay`, or a
@@ -64,8 +60,7 @@ struct FrameRateLimitTargetResolutionTests {
         #expect(FrameRateLimit.fps30.resolvesToSameRate(as: .fps60, forRefreshRate: 60) == false)
     }
 
-    /// Video re-times through `AVVideoComposition` rather than vsync, so it holds an
-    /// exact 60 where a scene falls to 48 - but is still bounded by the file's own rate.
+    /// Video remains bounded by the source file as well as the display.
     @Test("Video is bounded by the file and by the panel, not quantised by either")
     func videoClampsToTheSourceAndPanel() {
         #expect(FrameRateLimit.fps60.videoFrameRate(forRefreshRate: 144, sourceFrameRate: 120) == 60)
@@ -81,7 +76,7 @@ struct FrameRateLimitTargetResolutionTests {
         let steps = FrameRateLimit.allCases.map {
             $0.videoFrameRate(forRefreshRate: 144, sourceFrameRate: 30)
         }
-        #expect(steps == [15, 30, 30, 30])
+        #expect(steps == [15, 24, 30, 30, 30, 30, 30])
     }
 }
 
@@ -93,7 +88,7 @@ struct FrameRateLimitDecodingTests {
 
     @Test("Current raw values round-trip")
     func currentValuesRoundTrip() throws {
-        for limit in FrameRateLimit.allCases {
+        for limit in FrameRateLimit.allCases + [1, 2, 3, 4, 23, 37, 144, 999, 1000].compactMap({ FrameRateLimit(rawValue: $0) }) {
             let data = try JSONEncoder().encode(limit)
             #expect(try JSONDecoder().decode(FrameRateLimit.self, from: data) == limit)
         }
@@ -104,7 +99,7 @@ struct FrameRateLimitDecodingTests {
         #expect(try decode(0) == .matchDisplay)
         #expect(try decode(60) == .fps60)
         #expect(try decode(30) == .fps30)
-        #expect(try decode(24) == .fps30)
+        #expect(try decode(24) == .fps24)
         #expect(try decode(15) == .fps15)
     }
 
@@ -120,6 +115,6 @@ struct FrameRateLimitDecodingTests {
 
     @Test("An unknown raw value falls back to the panel's own rate")
     func unknownValue() throws {
-        #expect(try decode(999) == .matchDisplay)
+        #expect(try decode(-1) == .matchDisplay)
     }
 }

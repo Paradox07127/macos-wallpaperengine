@@ -137,8 +137,8 @@ extension PlaybackCoordinator {
 
     func applyFrameRateLimit(_ frameRateLimit: FrameRateLimit, to screen: Screen) {
         let screenRefreshRate = refreshRateLookup(screen.id)
-        // The stored limit is a divisor; this is the only layer that knows which
-        // panel it divides, so every runtime below here receives whole frames.
+        // Resolve Max and the panel ceiling here; preserve custom targets without
+        // snapping them to refresh-rate divisors.
         let ceiling = frameRateLimit.frameRate(forRefreshRate: Double(screenRefreshRate))
 
         #if !LITE_BUILD

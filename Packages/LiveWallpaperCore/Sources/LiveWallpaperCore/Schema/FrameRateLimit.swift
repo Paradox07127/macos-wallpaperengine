@@ -1,71 +1,91 @@
 import SwiftUI
 
-/// A cap expressed as a target frame rate, plus one case that declines to cap and follows
-/// the panel. Scene and web pace with `CADisplayLink`, which only wakes on a divisor of the
-/// refresh rate, so a target resolves to the fastest divisor not exceeding it.
-public enum FrameRateLimit: Int, CaseIterable, Identifiable, Codable, Sendable {
-    // Declared low-to-high: the per-display slider indexes these cases in order, so the
-    // order is the order the user drags through.
-    case fps15 = 15
-    case fps30 = 30
-    case fps60 = 60
-    /// Every vsync the panel offers. The only case that can exceed 60.
-    case matchDisplay = 0
+/// A user-selected content frame rate. Zero follows the display; positive values
+/// remain absolute targets across displays and are paced by the runtime.
+public struct FrameRateLimit: RawRepresentable, CaseIterable, Identifiable, Codable, Hashable, Sendable {
+    /// Serialization safety; editing and runtime limits come from the selected display mode.
+    public static let supportedFrameRates = 1 ... Int(Int32.max)
+    public let rawValue: Int
 
-    public var id: Int { rawValue }
+    public init?(rawValue: Int) {
+        guard rawValue == 0 || Self.supportedFrameRates.contains(rawValue) else { return nil }
+        self.rawValue = rawValue
+    }
 
-    /// `nil` for `matchDisplay`, which has no target to resolve against.
+    private init(preset: Int) {
+        rawValue = preset
+    }
+
+    public static let fps15 = Self(preset: 15)
+    public static let fps24 = Self(preset: 24)
+    public static let fps30 = Self(preset: 30)
+    public static let fps45 = Self(preset: 45)
+    public static let fps60 = Self(preset: 60)
+    public static let fps120 = Self(preset: 120)
+    public static let matchDisplay = Self(preset: 0)
+    public static let allCases: [Self] = [.fps15, .fps24, .fps30, .fps45, .fps60, .fps120, .matchDisplay]
+
+    public var id: Int {
+        rawValue
+    }
+
     private var targetFrameRate: Double? {
         rawValue > 0 ? Double(rawValue) : nil
     }
 
-    /// Always the rate the display will actually run at, never the target — the two differ
-    /// whenever the refresh rate is not a multiple of the target.
-    public func title(forRefreshRate refreshRate: Double) -> String {
-        Self.fpsTitle(frameRate(forRefreshRate: refreshRate))
+    /// Show the saved intent, even when the current display or video is slower.
+    public var title: String {
+        self == .matchDisplay
+            ? String(localized: "Max", bundle: .appLanguage, comment: "Frame rate follows the display without a user cap.")
+            : Self.fpsTitle(rawValue)
     }
 
-    /// Same label for the video path, which is bounded by the source file as well.
-    public func videoTitle(forRefreshRate refreshRate: Double, sourceFrameRate: Double) -> String {
-        Self.fpsTitle(videoFrameRate(forRefreshRate: refreshRate, sourceFrameRate: sourceFrameRate))
+    public func title(forRefreshRate refreshRate: Double) -> String {
+        self == .matchDisplay ? title : Self.fpsTitle(frameRate(forRefreshRate: refreshRate))
+    }
+
+    public func videoTitle(forRefreshRate _: Double, sourceFrameRate _: Double) -> String {
+        title
     }
 
     private static func fpsTitle(_ framesPerSecond: Int) -> String {
-        String(
-            localized: "\(framesPerSecond) FPS",
-            bundle: .appLanguage,
-            comment: "Frame-rate cap label. The placeholder is the resulting frames per second on that display."
-        )
+        String(localized: "\(framesPerSecond) FPS", bundle: .appLanguage,
+               comment: "The selected target frame rate.")
     }
 
-    /// Raw values written by earlier builds. The absolute era (0/60/30/24/15) maps onto the
-    /// same numbers; only 24 needs a rule. The divisor era (1…4) is read against a 60 Hz panel,
-    /// and `full` becomes `matchDisplay` so a 120/240 Hz display keeps running as it did.
-    private static let legacyRates: [Int: FrameRateLimit] = [
-        24: .fps30,
-        1: .matchDisplay,
-        2: .fps30,
-        3: .fps15,
-        4: .fps15,
-    ]
+    private enum CodingKeys: String, CodingKey { case framesPerSecond }
 
     public init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        let rawValue = try container.decode(Int.self)
-        if let known = FrameRateLimit(rawValue: rawValue) {
-            self = known
-        } else {
-            self = FrameRateLimit.legacyRates[rawValue] ?? .matchDisplay
+        if let container = try? decoder.container(keyedBy: CodingKeys.self) {
+            let raw = try container.decode(Int.self, forKey: .framesPerSecond)
+            self = Self(rawValue: raw) ?? .matchDisplay
+            return
+        }
+        let raw = try decoder.singleValueContainer().decode(Int.self)
+        // Old scalar 1...4 meant full/half/third/quarter, never 1...4 FPS.
+        switch raw {
+        case 1: self = .matchDisplay
+        case 2: self = .fps30
+        case 3, 4: self = .fps15
+        default: self = Self(rawValue: raw) ?? .matchDisplay
         }
     }
 
-    /// The rate this cap produces on a display: scene and web divide the panel, so the target
-    /// is rounded down onto a divisor rather than requested as-is.
+    public func encode(to encoder: Encoder) throws {
+        if (1 ... 4).contains(rawValue) {
+            // Disambiguate new low custom rates from legacy divisor settings.
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(rawValue, forKey: .framesPerSecond)
+        } else {
+            var container = encoder.singleValueContainer()
+            try container.encode(rawValue)
+        }
+    }
+
+    /// Bound the requested content rate by the panel, without divisor rounding.
     public func frameRate(forRefreshRate refreshRate: Double) -> Int {
         let panel = panelRate(refreshRate)
-        guard let target = targetFrameRate else { return max(1, Int(panel.rounded())) }
-        let divisor = max(1, (panel / target).rounded(.up))
-        return max(1, Int((panel / divisor).rounded()))
+        return max(1, Int(min(panel, targetFrameRate ?? panel).rounded()))
     }
 
     /// Video re-times through `AVVideoComposition`, which honours any whole rate, so the
@@ -79,14 +99,12 @@ public enum FrameRateLimit: Int, CaseIterable, Identifiable, Codable, Sendable {
 
     /// No display reported a rate (headless, or between reconfigurations).
     private func panelRate(_ refreshRate: Double) -> Double {
-        refreshRate > 0 ? refreshRate : 60
+        refreshRate.isFinite && refreshRate > 0 ? min(refreshRate, Double(Int32.max)) : 60
     }
 
-    /// The cases worth offering on a display, low to high. `matchDisplay` drops out at 60 Hz
-    /// and below, where it resolves to the same rate as `fps60`.
+    /// Keep Max distinct from an explicit cap, including on slower displays.
     public static func availableCases(forRefreshRate refreshRate: Double) -> [FrameRateLimit] {
-        var seen: Set<Int> = []
-        return allCases.filter { seen.insert($0.frameRate(forRefreshRate: refreshRate)).inserted }
+        allCases.filter { $0 == .matchDisplay || Double($0.rawValue) <= refreshRate }
     }
 
     /// True when both produce the same on-screen rate — e.g. `.matchDisplay` and `.fps60` at 60 Hz.
@@ -103,7 +121,7 @@ public enum FrameRateLimit: Int, CaseIterable, Identifiable, Codable, Sendable {
     public func getEffectiveLimit(videoFrameRate: Double, screenRefreshRate: Double) -> Float {
         if self == .matchDisplay {
             // Uncapped still cannot outrun the panel; a faster source is pulled down to it.
-            if screenRefreshRate > 0 && videoFrameRate > screenRefreshRate {
+            if screenRefreshRate > 0, videoFrameRate > screenRefreshRate {
                 return Float(screenRefreshRate)
             }
             return 0
@@ -140,10 +158,10 @@ public enum FrameRateLimit: Int, CaseIterable, Identifiable, Codable, Sendable {
     }
 }
 
-extension FrameRateLimit {
+public extension FrameRateLimit {
     /// New-config seed: scene 30 (WPE Balanced / avoid doubled `g_Time`, and the
     /// rate a scene costs the least at); video/html uncapped (native path).
-    public static func naturalDefault(for wallpaperType: WallpaperType) -> FrameRateLimit {
+    static func naturalDefault(for wallpaperType: WallpaperType) -> FrameRateLimit {
         switch wallpaperType {
         case .scene: .fps30
         case .video, .html: .matchDisplay

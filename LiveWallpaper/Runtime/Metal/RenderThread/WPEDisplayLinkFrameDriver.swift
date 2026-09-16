@@ -11,9 +11,10 @@ final class WPEDisplayLinkTarget: NSObject {
         super.init()
     }
 
-    @objc func step(_: CADisplayLink) {
+    @objc func step(_ link: CADisplayLink) {
         // assumeIsolated grants sync access via checkIsolated — a misrouted callback would trap rather than race.
-        renderActor?.assumeIsolatedOnRenderThread { $0.renderFrame() }
+        let timestamp = link.targetTimestamp
+        renderActor?.assumeIsolatedOnRenderThread { $0.renderDisplayLinkFrame(at: timestamp) }
     }
 }
 
@@ -23,6 +24,7 @@ final class WPEDisplayLinkTarget: NSObject {
 /// handoff, or hands the same link to two actors.
 struct WPEDisplayLinkHandoff: @unchecked Sendable {
     let link: CADisplayLink
+    var maximumFramesPerSecond: Int = 60
 }
 
 /// Off-thread calls hop back to the render actor instead of entering
