@@ -2810,6 +2810,28 @@ struct WPEShaderTranspilerTests {
         _ = try device.makeLibrary(source: result.mslSource, options: opts)
     }
 
+    @Test("A mix definition inside a comment does not switch routing off")
+    func commentedOutMixDefinitionStillRoutes() throws {
+        let source = """
+        uniform float amount;
+        /* legacy helpers, kept for reference:
+        vec3 mix(vec3 a, vec3 b, float t) { return a + (b - a) * t; }
+        float mod(float a, float b) { return a - b * floor(a / b); }
+        */
+        // float mix(float a, float b, float t) { return a; }
+        void main() { gl_FragColor = vec4(mix(vec3(0.0), vec3(1.0), amount * 2.0), mod(amount, 0.5)); }
+        """
+        let result = try WPEShaderTranspiler.translateFragment(shaderName: "test/commented_mix", preprocessedSource: source)
+        #expect(!result.mslSource.contains("WPE-DIAGNOSTIC"))
+        #expect(result.mslSource.contains("wpe_glsl_mix(float3(0.0), float3(1.0), amount * 2.0)"))
+        // The compatibility prelude must still supply `mod`; a commented definition is no definition.
+        #expect(result.mslSource.contains("inline float mod(float x, float y)"))
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let opts = MTLCompileOptions()
+        opts.languageVersion = .version3_0
+        _ = try device.makeLibrary(source: result.mslSource, options: opts)
+    }
+
     @Test("A macro named after an MSL reserved word is renamed together with its uses")
     func reservedWordMacroNameIsRenamedWithItsUses() throws {
         // Corpus form: workshop 2798319181 gaussian.frag `#define kernel 3`.

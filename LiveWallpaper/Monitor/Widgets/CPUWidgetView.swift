@@ -85,7 +85,7 @@ struct CPUWidgetView: View {
                 Spacer(minLength: 0)
 
                 if showTrend {
-                    Sparkline(points: trendPoints, window: trendWindow, domain: 0 ... 1, bandColored: true, guides: [0.4, 0.8])
+                    Sparkline(points: trendPoints, window: trendWindow, domain: 0 ... 1, bandColored: true, guides: Sparkline.loadGuides)
                         .frame(maxWidth: .infinity)
                         .frame(height: max(cellHeight * 0.24, 20))
                 }
@@ -142,7 +142,7 @@ struct CPUWidgetView: View {
                         if showHeatmap {
                             coreHeatStrip(scale: scale)
                         }
-                        Sparkline(points: trendPoints, window: trendWindow, domain: 0 ... 1, bandColored: true, guides: [0.4, 0.8])
+                        Sparkline(points: trendPoints, window: trendWindow, domain: 0 ... 1, bandColored: true, guides: Sparkline.loadGuides)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .frame(minHeight: max(cellHeight * 0.18, 20))
                             .overlay(alignment: .topTrailing) { peakInlineTag(scale: scale) }

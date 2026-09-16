@@ -19,8 +19,6 @@ struct WPEMetalSceneQuadBatchStats {
     var draws = 0
     var texturedDraws = 0
     var rejectedPasses: [String: Int] = [:]
-    /// Compatibility for the oracle schema; counts are pass decisions, not unique layers.
-    var rejectedLayers: [String: Int] { rejectedPasses }
 }
 
 /// Only the owner closes borrowed encoders.

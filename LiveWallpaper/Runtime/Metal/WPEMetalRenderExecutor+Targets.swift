@@ -466,8 +466,7 @@ extension WPEMetalRenderExecutor {
         layer: WPERenderLayer,
         commandBuffer: MTLCommandBuffer,
         frameState: inout WPEMetalFrameState,
-        snapshots: inout [String: MTLTexture],
-        bytes: inout Int
+        snapshots: inout [String: MTLTexture]
     ) {
         var keys: [String: WPEMetalRenderTargetKey] = [:]
         var targetBytes: [String: Int] = [:]
@@ -515,7 +514,6 @@ extension WPEMetalRenderExecutor {
                 frameState.seedPreviousTexture(cached, targetID: .named(targetName))
                 frameState.markInitialized(cached)
                 snapshots[targetName] = cached
-                bytes += cached.allocatedSize
             } catch {
                 staticLayerCompositeCache.abandon(layerID: layer.objectID, commandBuffer: commandBuffer)
                 Logger.warning(
@@ -718,6 +716,7 @@ extension WPEMetalRenderExecutor {
         renderPass.colorAttachments[0].storeAction = .store
         renderPass.colorAttachments[0].clearColor = clearColor(for: targetID)
         gpuPassProfiler?.attach(renderPass, to: commandBuffer, label: "bootstrapClear")
+        closeSharedSceneEncoderForHelperEncoder()
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPass) else {
             throw WPEMetalRenderExecutorError.commandBufferFailed
         }

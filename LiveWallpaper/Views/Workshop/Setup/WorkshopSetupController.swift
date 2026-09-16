@@ -56,9 +56,6 @@ final class WorkshopSetupController {
     private static let manualBindingKey = "loomscreen.workshop.doctor.hasManualBinding.v1"
     @ObservationIgnored private let defaults: UserDefaults
 
-    /// Not observed: assigning the handle would invalidate every view that
-    /// reads this controller, for a value none of them render.
-
     init(doctor: SteamCMDDoctorService, defaults: UserDefaults = .appScoped()) {
         self.doctor = doctor
         self.defaults = defaults

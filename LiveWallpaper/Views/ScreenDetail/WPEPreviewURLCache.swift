@@ -55,7 +55,10 @@ final class WPEPreviewURLCache {
             var next = resolved
             for (origin, url) in urls {
                 let key = Key(origin)
-                next[key] = .some(url)
+                // A named file that does not resolve today (volume unmounted) is retried next prefetch; only an origin naming no preview is settled.
+                if url != nil || origin.previewFileName == nil {
+                    next[key] = .some(url)
+                }
                 inFlight.remove(key)
             }
             resolved = next

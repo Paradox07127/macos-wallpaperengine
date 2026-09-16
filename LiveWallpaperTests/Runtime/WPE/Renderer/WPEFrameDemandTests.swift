@@ -242,6 +242,31 @@ struct WPEFrameDemandTests {
         #expect(!WPEMetalSceneRenderer.pipelineHasAnimatedPasses(pipeline))
     }
 
+    /// A mesh without animation clips is a static prop; only clips (or the layer's own
+    /// alpha/colour animation) justify continuous frames.
+    @Test("A puppet model animates only when it carries animation clips")
+    func staticModelDoesNotDemandFrames() async throws {
+        let fixture = try FrameDemandFixture.make()
+        defer { fixture.cleanup() }
+        let stack = try FrameDemandRendererStack.make(fixture)
+        defer { stack.renderer.cleanup() }
+        try await stack.load()
+        let pipeline = try #require(stack.renderer.renderPipeline)
+        let layer = try #require(pipeline.layers.first)
+        let staticModel = WPEPuppetModel(version: 23, meshes: [])
+        let still = WPEPreparedRenderPipeline(layers: [WPEPreparedRenderLayer(
+            graphLayer: layer.graphLayer, puppetModel: staticModel, passes: layer.passes
+        )])
+        #expect(!WPEMetalSceneRenderer.pipelineHasAnimatedPasses(still))
+        let clip = WPEPuppetAnimation(id: 0, name: "idle", mode: "loop", fps: 30, frameCount: 30, channels: [])
+        let animated = WPEPreparedRenderPipeline(layers: [WPEPreparedRenderLayer(
+            graphLayer: layer.graphLayer,
+            puppetModel: WPEPuppetModel(version: 23, meshes: [], animations: [clip]),
+            passes: layer.passes
+        )])
+        #expect(WPEMetalSceneRenderer.pipelineHasAnimatedPasses(animated))
+    }
+
     private static var animatedValue: WPESceneAnimatedValue {
         WPESceneAnimatedValue(
             animation: WPESceneNumericAnimation(

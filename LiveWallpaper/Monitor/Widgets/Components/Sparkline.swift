@@ -13,6 +13,8 @@ struct Sparkline: View {
     var lineColor: Color = Design.signalAmber
     var showArea: Bool = true
     var guides: [Double] = []
+    /// Guide lines for a 0…1 load trace, on the same readings where `loadBandColor` changes.
+    static let loadGuides: [Double] = [Design.Load.elevated, Design.Load.hot]
     var lineWidth: CGFloat = 1.6
 
     /// Draw paths in one Canvas pass. Keep the endpoint dot outside Canvas so its glow is not clipped.
@@ -214,7 +216,7 @@ extension [MonitorHistoryPoint] {
     let window = MonitorChartWindow(reference: now, seconds: 10, interval: 1)
     VStack(spacing: 20) {
         Sparkline(points: .evenlySpaced([0.2, 0.35, 0.28, 0.55, 0.72, 0.68, 0.9, 0.84], endingAt: now),
-                  window: window, domain: 0 ... 1, bandColored: true, guides: [0.4, 0.8])
+                  window: window, domain: 0 ... 1, bandColored: true, guides: Sparkline.loadGuides)
             .frame(width: 260, height: 60)
 
         Sparkline(points: .evenlySpaced([12, 18, nil, 22, 31, 26, 20, 24], endingAt: now),

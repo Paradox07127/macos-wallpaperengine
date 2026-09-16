@@ -46,12 +46,6 @@ final class LibraryDragSession {
         removeMonitorsFromAnyIsolation()
     }
 
-    #if DEBUG
-    var activeMonitorCount: Int {
-        (localMonitor == nil ? 0 : 1) + (globalMonitor == nil ? 0 : 1)
-    }
-    #endif
-
     @discardableResult
     func begin(payload: String) -> String {
         removeMonitorsFromAnyIsolation()

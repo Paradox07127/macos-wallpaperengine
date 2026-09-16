@@ -70,7 +70,7 @@ extension WPEShaderTranspiler {
     /// Qualified metal::mix and comments likewise retain their original meaning.
     static func routingGLSLMixCalls(in source: String, authoredHelpers: String, authoredMain: String) -> String {
         let authored = authoredHelpers + "\n" + authoredMain
-        if parseHelperFunctions(in: authoredHelpers).contains(where: { $0.name == "mix" })
+        if parseHelperFunctions(in: maskComments(authoredHelpers)).contains(where: { $0.name == "mix" })
             || maskComments(authored).range(of: #"(?m)^\s*#\s*define\s+mix(?:\s|\()"#, options: .regularExpression) != nil {
             return authoredMixDiagnostic + "\n" + source
         }

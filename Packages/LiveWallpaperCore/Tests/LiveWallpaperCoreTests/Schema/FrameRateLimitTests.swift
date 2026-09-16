@@ -50,16 +50,6 @@ struct FrameRateLimitTargetResolutionTests {
         #expect(FrameRateLimit.fps120.title != FrameRateLimit.matchDisplay.title)
     }
 
-    /// Landing a drag on the top step must not overwrite a saved `.matchDisplay`, or a
-    /// later 120 Hz display would sit capped at 60 for a value the user never touched.
-    @Test("Same-rate steps at 60 Hz are recognized; distinct rates and higher panels are not")
-    func resolvesToSameRate() {
-        #expect(FrameRateLimit.matchDisplay.resolvesToSameRate(as: .fps60, forRefreshRate: 60))
-        #expect(FrameRateLimit.fps60.resolvesToSameRate(as: .matchDisplay, forRefreshRate: 60))
-        #expect(FrameRateLimit.matchDisplay.resolvesToSameRate(as: .fps60, forRefreshRate: 120) == false)
-        #expect(FrameRateLimit.fps30.resolvesToSameRate(as: .fps60, forRefreshRate: 60) == false)
-    }
-
     /// Video remains bounded by the source file as well as the display.
     @Test("Video is bounded by the file and by the panel, not quantised by either")
     func videoClampsToTheSourceAndPanel() {
@@ -115,6 +105,22 @@ struct FrameRateLimitDecodingTests {
 
     @Test("An unknown raw value falls back to the panel's own rate")
     func unknownValue() throws {
-        #expect(try decode(-1) == .matchDisplay)
+        #expect(try decode(-5) == .matchDisplay)
+        #expect(try decode(Int(Int32.min)) == .matchDisplay)
+    }
+
+    /// 1…4 collide with the divisor-era scalars, and a keyed object makes the 0.6.7 decoder
+    /// throw away the whole configuration array; a negative scalar reads as "unknown" there.
+    @Test("Custom 1–4 FPS encode as negative scalars an older decoder degrades to Max")
+    func lowCustomRatesStayScalar() throws {
+        for fps in 1 ... 4 {
+            let limit = try #require(FrameRateLimit(rawValue: fps))
+            let encoded = try JSONEncoder().encode(limit)
+            #expect(String(bytes: encoded, encoding: .utf8) == "-\(fps)")
+            #expect(try JSONDecoder().decode(FrameRateLimit.self, from: encoded) == limit)
+        }
+        #expect(try decode(-1) == FrameRateLimit(rawValue: 1))
+        let preset = try JSONEncoder().encode(FrameRateLimit.fps24)
+        #expect(String(bytes: preset, encoding: .utf8) == "24")
     }
 }

@@ -48,6 +48,38 @@ public struct FrameRateSliderScale {
     }
 }
 
+/// The text field's decisions, kept pure so the view stays a thin shell.
+enum FrameRateTextEntry {
+    enum BlurOutcome: Equatable {
+        case unchanged
+        case invalid
+        case commit(FrameRateLimit)
+    }
+
+    /// What the field shows for `value` on this display: the saved target clamped to the panel.
+    static func text(for value: FrameRateLimit, upperBound: Int) -> String {
+        value == .matchDisplay ? value.title : String(min(value.rawValue, upperBound))
+    }
+
+    static func parse(_ text: String, upperBound: Int) -> FrameRateLimit? {
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if text.caseInsensitiveCompare("max") == .orderedSame
+            || text.caseInsensitiveCompare(FrameRateLimit.matchDisplay.title) == .orderedSame {
+            return .matchDisplay
+        }
+        guard let fps = Int(text), (1 ... upperBound).contains(fps) else { return nil }
+        return FrameRateLimit(rawValue: fps)
+    }
+
+    /// Losing focus commits only an edit: the field shows a saved 120 as "60" on a 60 Hz
+    /// display, and writing that back would clamp the target for every other display too.
+    static func blurCommit(text: String, value: FrameRateLimit, upperBound: Int) -> BlurOutcome {
+        guard text.trimmingCharacters(in: .whitespacesAndNewlines)
+            != self.text(for: value, upperBound: upperBound) else { return .unchanged }
+        return parse(text, upperBound: upperBound).map { .commit($0) } ?? .invalid
+    }
+}
+
 /// Shared by per-display playback and display defaults. A drag edits local state;
 /// release, a preset click, or a submitted text value commits through the binding.
 public struct FrameRateControl: View {
@@ -56,6 +88,8 @@ public struct FrameRateControl: View {
     private let accessibilityLabel: Text
     @State private var draggingPosition: Double?
     @State private var isDragging = false
+    /// Samples that arrive outside an editing bracket (scroll wheel, a track click) commit once they settle, like `CoalescedSlider`.
+    @State private var pendingCommit: Task<Void, Never>?
     @State private var input = ""
     @State private var invalidInput = false
     @FocusState private var inputFocused: Bool
@@ -137,10 +171,16 @@ public struct FrameRateControl: View {
         }
         .onChange(of: inputFocused) { wasFocused, focused in
             if wasFocused, !focused {
-                commitInput()
+                switch FrameRateTextEntry.blurCommit(text: input, value: value, upperBound: scale.upperBound) {
+                case .unchanged: break
+                case .invalid: invalidInput = true
+                case let .commit(chosen): commit(chosen)
+                }
             }
         }
         .onDisappear {
+            pendingCommit?.cancel()
+            pendingCommit = nil
             isDragging = false
             draggingPosition = nil
         }
@@ -171,7 +211,12 @@ public struct FrameRateControl: View {
         Binding(get: { draggingPosition ?? scale.position(for: value) }, set: { position in
             let chosen = scale.value(at: position)
             draggingPosition = scale.position(for: chosen)
-            if !isDragging {
+            guard !isDragging else { return }
+            pendingCommit?.cancel()
+            pendingCommit = Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(180))
+                guard !Task.isCancelled else { return }
+                pendingCommit = nil
                 commit(chosen)
             }
         })
@@ -179,6 +224,8 @@ public struct FrameRateControl: View {
 
     private func editingChanged(_ editing: Bool) {
         isDragging = editing
+        pendingCommit?.cancel()
+        pendingCommit = nil
         if editing {
             inputFocused = false
         } else if let position = draggingPosition {
@@ -197,12 +244,7 @@ public struct FrameRateControl: View {
     }
 
     private func commitInput() {
-        let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
-        if text.caseInsensitiveCompare("max") == .orderedSame
-            || text.caseInsensitiveCompare(FrameRateLimit.matchDisplay.title) == .orderedSame {
-            commit(.matchDisplay)
-        } else if let fps = Int(text), (1 ... scale.upperBound).contains(fps),
-                  let chosen = FrameRateLimit(rawValue: fps) {
+        if let chosen = FrameRateTextEntry.parse(input, upperBound: scale.upperBound) {
             commit(chosen)
         } else {
             invalidInput = true
@@ -225,7 +267,7 @@ public struct FrameRateControl: View {
     }
 
     private func resetInput() {
-        input = boundedValue == .matchDisplay ? boundedValue.title : String(boundedValue.rawValue)
+        input = FrameRateTextEntry.text(for: value, upperBound: scale.upperBound)
         invalidInput = false
     }
 }

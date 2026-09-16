@@ -30,9 +30,6 @@ struct WPETexAnimatedAtlasProvider {
     enum Failure: Error, Equatable {
         case missingImage(Int)
         case missingMipmap(Int)
-        case decompressionFailed(Int)
-        case truncatedImageBytes(Int)
-        case textureAllocationFailed
     }
 
     let payload: WPETexStreamingPayload

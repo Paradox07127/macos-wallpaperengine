@@ -98,6 +98,9 @@ struct WorkshopDetailIdentityHeader: View {
                 .font(DesignTokens.Typography.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
+                // The split lives in a tooltip, which VoiceOver never reads.
+                .accessibilityLabel(voteSplitText.map { Text(verbatim: ratingCountText) + Text(verbatim: ", ") + $0 }
+                    ?? Text(verbatim: ratingCountText))
         }
         .modifier(OptionalHelp(text: voteSplitText))
     }

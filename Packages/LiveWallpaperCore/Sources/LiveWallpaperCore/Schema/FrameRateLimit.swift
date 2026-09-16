@@ -44,42 +44,29 @@ public struct FrameRateLimit: RawRepresentable, CaseIterable, Identifiable, Coda
         self == .matchDisplay ? title : Self.fpsTitle(frameRate(forRefreshRate: refreshRate))
     }
 
-    public func videoTitle(forRefreshRate _: Double, sourceFrameRate _: Double) -> String {
-        title
-    }
-
     private static func fpsTitle(_ framesPerSecond: Int) -> String {
         String(localized: "\(framesPerSecond) FPS", bundle: .appLanguage,
                comment: "The selected target frame rate.")
     }
 
-    private enum CodingKeys: String, CodingKey { case framesPerSecond }
-
+    /// Scalars only: a keyed object makes the 0.6.7 decoder throw away the whole configuration
+    /// array, whereas any scalar it does not know reads as Max there.
     public init(from decoder: Decoder) throws {
-        if let container = try? decoder.container(keyedBy: CodingKeys.self) {
-            let raw = try container.decode(Int.self, forKey: .framesPerSecond)
-            self = Self(rawValue: raw) ?? .matchDisplay
-            return
-        }
         let raw = try decoder.singleValueContainer().decode(Int.self)
-        // Old scalar 1...4 meant full/half/third/quarter, never 1...4 FPS.
         switch raw {
+        // Old scalar 1...4 meant full/half/third/quarter, never 1...4 FPS.
         case 1: self = .matchDisplay
         case 2: self = .fps30
         case 3, 4: self = .fps15
+        case -4 ... -1: self = Self(rawValue: -raw) ?? .matchDisplay
         default: self = Self(rawValue: raw) ?? .matchDisplay
         }
     }
 
     public func encode(to encoder: Encoder) throws {
-        if (1 ... 4).contains(rawValue) {
-            // Disambiguate new low custom rates from legacy divisor settings.
-            var container = encoder.container(keyedBy: CodingKeys.self)
-            try container.encode(rawValue, forKey: .framesPerSecond)
-        } else {
-            var container = encoder.singleValueContainer()
-            try container.encode(rawValue)
-        }
+        var container = encoder.singleValueContainer()
+        // 1...4 FPS are stored negated so they cannot be read as the divisor-era scalars.
+        try container.encode((1 ... 4).contains(rawValue) ? -rawValue : rawValue)
     }
 
     /// Bound the requested content rate by the panel, without divisor rounding.
@@ -105,11 +92,6 @@ public struct FrameRateLimit: RawRepresentable, CaseIterable, Identifiable, Coda
     /// Keep Max distinct from an explicit cap, including on slower displays.
     public static func availableCases(forRefreshRate refreshRate: Double) -> [FrameRateLimit] {
         allCases.filter { $0 == .matchDisplay || Double($0.rawValue) <= refreshRate }
-    }
-
-    /// True when both produce the same on-screen rate — e.g. `.matchDisplay` and `.fps60` at 60 Hz.
-    public func resolvesToSameRate(as other: FrameRateLimit, forRefreshRate refreshRate: Double) -> Bool {
-        frameRate(forRefreshRate: refreshRate) == other.frameRate(forRefreshRate: refreshRate)
     }
 
     /// Plain video only: anything below the source pays for an `AVVideoComposition` pass;

@@ -66,18 +66,6 @@ extension WPEPreparedRenderPipeline {
         return WPEPreparedRenderPipeline(layers: changedLayers)
     }
 
-    func applyingLayerVisibility(_ visibility: [String: Bool]) -> WPEPreparedRenderPipeline {
-        applyingFrameOverlay(WPEFrameOverlay(visibility: visibility))
-    }
-
-    func applyingLayerAlpha(_ alpha: [String: Double]) -> WPEPreparedRenderPipeline {
-        applyingFrameOverlay(WPEFrameOverlay(alpha: alpha))
-    }
-
-    func applyingLayerColor(_ color: [String: SIMD3<Double>]) -> WPEPreparedRenderPipeline {
-        applyingFrameOverlay(WPEFrameOverlay(colors: color))
-    }
-
     /// Solid g_Color is bound from uniformValues, never geometry. Write tint through here or an override freezes at load-time color. Component-wise so alpha cannot clobber authored rgb.
     private static func passesApplyingLayerTint(
         _ passes: [WPEPreparedRenderPass],

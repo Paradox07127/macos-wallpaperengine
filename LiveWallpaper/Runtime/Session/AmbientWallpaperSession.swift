@@ -166,6 +166,7 @@ final class AmbientWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackC
         guard let retryTarget = performanceTarget as? any HTMLWallpaperRetrying else { return }
         let result = await retryTarget.retryCurrentSource(timeout: .seconds(5))
         guard result == .ready else { return }
+        loadFailureCause = nil
         runtimeError = nil
     }
 
@@ -201,7 +202,8 @@ final class AmbientWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackC
         runtimeError = error
     }
 
-    func recordLoadFailureCause(_ cause: WallpaperFailureCause) {
+    /// nil: the failure that follows carries no classification, so a stale cause must not be republished with it.
+    func recordLoadFailureCause(_ cause: WallpaperFailureCause?) {
         loadFailureCause = cause
     }
 

@@ -31,6 +31,7 @@ extension WPEMetalRenderExecutor {
         if source === destination, !needsMipmaps {
             return
         }
+        closeSharedSceneEncoderForHelperEncoder()
         let exactCopy = source.pixelFormat == destination.pixelFormat
             && source.width == destination.width && source.height == destination.height
 

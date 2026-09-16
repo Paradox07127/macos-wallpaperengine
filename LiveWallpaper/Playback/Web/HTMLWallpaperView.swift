@@ -78,7 +78,8 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
     var lastRafTargetFrameIntervalMilliseconds: Double = 0
 
     var onError: (@MainActor (WallpaperRuntimeError) -> Void)?
-    var onFailureCause: (@MainActor (WallpaperFailureCause) -> Void)?
+    /// Always precedes `onError`; nil clears a cause an earlier failure published.
+    var onFailureCause: (@MainActor (WallpaperFailureCause?) -> Void)?
     var preparationGeneration: UInt64 = 0
     var completedNavigationGeneration: UInt64?
     var failedPreparationGeneration: UInt64?
@@ -129,6 +130,12 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
         packageBackingTask?.cancel()
         hibernationDwell.cancel()
         restoreCoverDeadlineTask?.cancel()
+        audioSpectrumPumpTask?.cancel()
+        #if !LITE_BUILD
+        if audioSpectrumCaptureRetained {
+            Task { @MainActor in SystemAudioCaptureManager.shared.release() }
+        }
+        #endif
         let url = activeSecurityScopedURL
         if let url {
             Task { @MainActor in
@@ -860,9 +867,7 @@ final class HTMLWallpaperView: NSView, HTMLWallpaperConfigApplying {
 
     private func reportError(_ error: WallpaperRuntimeError, cause: WallpaperFailureCause? = nil) {
         failedPreparationGeneration = preparationGeneration
-        if let cause {
-            onFailureCause?(cause)
-        }
+        onFailureCause?(cause)
         onError?(error)
     }
 
@@ -1004,6 +1009,11 @@ extension HTMLWallpaperView: WKNavigationDelegate {
             navigation,
             currentGeneration: preparationGeneration
         )
+    }
+
+    /// The old document (and its audio listener) is gone only once the new one commits; a
+    /// provisional load that fails leaves the old page — and its pump — running.
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
         dropAudioSpectrumListeners()
     }
 
@@ -1129,7 +1139,10 @@ extension HTMLWallpaperView: WKNavigationDelegate {
         )
         if shouldRetryNavigationFailure() { return }
         let cause = WebFailureCause.navigation(
-            domain: nsError.domain, code: nsError.code, description: nsError.localizedDescription
+            domain: nsError.domain, code: nsError.code, description: nsError.localizedDescription,
+            // A provisional failure has no committed URL, so the source decides.
+            isLocalProject: currentLocalReadAccessRoot != nil
+                || navigationFailureURL(webView: webView, error: nsError).scheme == FolderURLSchemeHandler.scheme
         )
         if nsError.domain == NSURLErrorDomain, nsError.code == NSURLErrorNotConnectedToInternet {
             reportError(.networkOffline, cause: cause)

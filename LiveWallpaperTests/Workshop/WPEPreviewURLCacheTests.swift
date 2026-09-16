@@ -69,6 +69,28 @@ struct WPEPreviewURLCacheTests {
         #expect(calls.withLock { $0 }.filter { $0 == "none" }.count == 1)
     }
 
+    /// An unmounted volume resolves to nothing today and to a path once it is back; only an
+    /// origin that names no preview file is settled for good.
+    @Test("A named preview that fails to resolve is retried on the next prefetch")
+    func unresolvedNamedPreviewIsRetried() async {
+        let available = OSAllocatedUnfairLock(initialState: false)
+        let calls = OSAllocatedUnfairLock(initialState: 0)
+        let cache = WPEPreviewURLCache(resolve: { origin in
+            calls.withLock { $0 += 1 }
+            return available.withLock { $0 } ? Self.url(origin) : nil
+        })
+        let entry = Self.entry("late", bookmark: "a")
+        cache.prefetch([entry])
+        await GIFTestFixtures.waitUntil { calls.withLock { $0 } == 1 }
+        await Task.yield()
+        #expect(cache.url(for: entry.origin) == nil)
+
+        available.withLock { $0 = true }
+        cache.prefetch([entry])
+        await GIFTestFixtures.waitUntil { cache.url(for: entry.origin) != nil }
+        #expect(calls.withLock { $0 } == 2)
+    }
+
     @Test("Changing the preview file under the same bookmark resolves a new path")
     func changedPreviewFileReResolves() async {
         let calls = OSAllocatedUnfairLock(initialState: 0)

@@ -81,7 +81,7 @@ extension WPEMetalSceneRenderer {
         let isRequired: Bool
     }
 
-    enum WPEParallelTextureResult: @unchecked Sendable {
+    enum WPEParallelTextureResult: @unchecked Sendable { // MTLTexture is documented thread-safe; ferries it across the actor hop.
         case staticTexture(MTLTexture)
         case needsOnActor
         case skipped

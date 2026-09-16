@@ -688,6 +688,46 @@ struct HTMLPerformanceTargetTests {
     }
 }
 
+@Suite("Ambient session failure cause lifecycle")
+@MainActor
+struct AmbientFailureCauseTests {
+    private final class RetryingTarget: WallpaperPerformanceConfigurable, HTMLWallpaperRetrying {
+        var result: WallpaperPreparationResult = .ready
+
+        func applyPerformanceProfile(_: WallpaperPerformanceProfile) {}
+
+        func retryCurrentSource(timeout _: Duration) async -> WallpaperPreparationResult {
+            result
+        }
+    }
+
+    /// A stale cause would otherwise be republished by the next failure that carries none.
+    @Test("A successful retry clears the classified cause, and a cause-less failure does not revive it")
+    func retryClearsCause() async throws {
+        let target = RetryingTarget()
+        let session = AmbientWallpaperSession(window: NSWindow(), wallpaperType: .html, performanceTarget: target)
+        defer { session.cleanup() }
+        let url = try #require(URL(string: "https://offline.invalid/"))
+        session.recordLoadFailureCause(WallpaperFailureCause(code: "web.entry_missing", reason: "missing", canRetry: false))
+        session.recordRuntimeError(.webNavigationFailed(url, code: 404, description: "missing"))
+        #expect(session.loadFailureCause?.code == "web.entry_missing")
+
+        await session.retry()
+        #expect(session.runtimeError == nil)
+        #expect(session.loadFailureCause == nil)
+
+        session.recordLoadFailureCause(nil)
+        session.recordRuntimeError(.webNavigationFailed(url, code: nil, description: "timeout"))
+        #expect(session.runtimeError != nil)
+        #expect(session.loadFailureCause == nil)
+
+        target.result = .failed
+        session.recordLoadFailureCause(WallpaperFailureCause(code: "web.offline", reason: "offline"))
+        await session.retry()
+        #expect(session.loadFailureCause?.code == "web.offline", "a failed retry keeps the cause")
+    }
+}
+
 @MainActor
 private final class RecordingHTMLPerformanceTarget:
     WallpaperPerformanceConfigurable,

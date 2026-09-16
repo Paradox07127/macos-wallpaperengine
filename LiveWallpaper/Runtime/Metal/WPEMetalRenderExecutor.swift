@@ -846,8 +846,10 @@ final class WPEMetalRenderExecutor {
         )
 
         let solidRun = WPEMetalSolidSceneRun { [targetPool] in targetPool.endPass(passIndex: $0) }
+        sharedSceneRun = solidRun
         var quadStats = WPEMetalSceneQuadBatchStats()
         defer {
+            sharedSceneRun = nil
             solidRun.end()
             lastSolidSceneBatchStats = (solidRun.encoderCount, solidRun.drawCount)
             quadStats.encoders = solidRun.encoderCount
@@ -998,7 +1000,6 @@ final class WPEMetalRenderExecutor {
                 }
             }
             var pendingStaticSnapshots: [String: MTLTexture] = [:]
-            var pendingStaticBytes = 0
             frameState.layerEntrySceneWriteGeneration = frameState.sceneWriteGeneration
             let graphLayer = layerApplyingAttachmentFollow(layer.graphLayer, context: attachmentContext)
             let skinningState = attachmentContext.skinningByObjectID[layer.graphLayer.objectID]
@@ -1121,8 +1122,7 @@ final class WPEMetalRenderExecutor {
                         layer: graphLayer,
                         commandBuffer: commandBuffer,
                         frameState: &frameState,
-                        snapshots: &pendingStaticSnapshots,
-                        bytes: &pendingStaticBytes
+                        snapshots: &pendingStaticSnapshots
                     )
                 }
                 #if DEBUG
@@ -1345,6 +1345,16 @@ final class WPEMetalRenderExecutor {
 
     var particlePipelineCache: [ParticlePipelineKey: MTLRenderPipelineState] = [:]
     var refractionBackground: MTLTexture?
+
+    /// The frame's solid scene run while `render` is on the stack. Admission keeps helper encoders
+    /// off admitted passes; this is the backstop for a helper encoder that would otherwise open
+    /// while the shared render encoder is still recording.
+    var sharedSceneRun: WPEMetalSolidSceneRun?
+
+    /// Blit and helper render encoders cannot coexist with an open render encoder on the same command buffer.
+    func closeSharedSceneEncoderForHelperEncoder() {
+        sharedSceneRun?.end()
+    }
 
     /// A ping-pong composite's physical texture is reused across passes, so a later source-over pass writing the SAME named target would otherwise blend over an earlier pass's stale result. Only load when genuinely needed.
     private func shouldLoadExistingAttachment(
@@ -2599,7 +2609,10 @@ final class WPEMetalRenderExecutor {
                   height: output.height,
                   pixelFormat: output.pixelFormat
               ),
-              let blit = commandBuffer.makeBlitCommandEncoder() else {
+              let blit = {
+                  closeSharedSceneEncoderForHelperEncoder()
+                  return commandBuffer.makeBlitCommandEncoder()
+              }() else {
             return
         }
         WPEFrameOccupancyMeter.count(.helperEncoder)

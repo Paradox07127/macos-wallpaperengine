@@ -321,9 +321,9 @@ struct WPEMetalFBOAliasStructuralGenerationTests {
         let base = makeAliasFormsPipeline()
         _ = executor.fboAliasIntervals(pipeline: base, sceneSize: Self.sceneSize)
 
-        let tinted = base.applyingLayerAlpha(["fx": 0.25]).applyingLayerColor(
-            ["fx": SIMD3<Double>(0.1, 0.2, 0.3)]
-        )
+        let tinted = base.applyingFrameOverlay(WPEFrameOverlay(
+            alpha: ["fx": 0.25], colors: ["fx": SIMD3<Double>(0.1, 0.2, 0.3)]
+        ))
         _ = executor.fboAliasIntervals(pipeline: tinted, sceneSize: Self.sceneSize)
 
         #expect(executor.fboAliasTopologyRebuildCount == 1)

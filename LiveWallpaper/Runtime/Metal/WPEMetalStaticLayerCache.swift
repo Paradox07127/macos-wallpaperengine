@@ -93,38 +93,7 @@ enum WPEMetalStaticLayerClassifier {
     }
 }
 
-/// Reject an oversized single entry outright; else admit and evict inline with no "active this frame" exemption (unlike `WPEMetalTextureCacheLRU`).
-struct WPEMetalStaticLayerCacheLRU: Equatable, Sendable {
-    private var core: WPEMetalLRUByteBudget<String>
-
-    var budgetBytes: Int { core.budgetBytes }
-    var totalBytes: Int { core.totalBytes }
-    var entries: [String: WPEMetalLRUByteBudget<String>.Entry] { core.entries }
-
-    init(budgetBytes: Int) {
-        core = WPEMetalLRUByteBudget(budgetBytes: budgetBytes)
-    }
-
-    mutating func touch(_ key: String) {
-        core.touch(key)
-    }
-
-    @discardableResult
-    mutating func admit(_ key: String, bytes: Int) -> [String] {
-        guard bytes > 0, bytes <= core.budgetBytes else {
-            core.remove(key)
-            return []
-        }
-        core.record(key, bytes: bytes)
-        return core.evictOverBudget(protecting: [])
-    }
-
-    mutating func removeAll() {
-        core.removeAll()
-    }
-}
-
-private final class WPEMetalStaticCacheCompletionLease: @unchecked Sendable {
+private final class WPEMetalStaticCacheCompletionLease: @unchecked Sendable { // `lock` (NSLock) guards both sets; completion handlers and the render thread only touch them inside it.
     private let lock = NSLock()
     private var pendingBuffers: Set<ObjectIdentifier> = []
     private var retiredTextures: [MTLTexture] = []

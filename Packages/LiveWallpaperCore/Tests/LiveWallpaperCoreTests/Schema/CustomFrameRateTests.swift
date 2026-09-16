@@ -69,6 +69,23 @@ struct CustomFrameRateTests {
         #expect(scale.position(for: top) != scale.position(for: .matchDisplay))
     }
 
+    /// A saved 120 on a 60 Hz display reads "60"; committing that text on blur would clamp the
+    /// saved target for every display the user never touched this control on.
+    @Test("Losing focus without editing never writes the display-clamped value back")
+    func blurKeepsUnclampedSavedRate() throws {
+        let shown = FrameRateTextEntry.text(for: .fps120, upperBound: 60)
+        #expect(shown == "60")
+        #expect(FrameRateTextEntry.blurCommit(text: shown, value: .fps120, upperBound: 60) == .unchanged)
+        #expect(FrameRateTextEntry.blurCommit(text: " 60 ", value: .fps120, upperBound: 60) == .unchanged)
+        #expect(FrameRateTextEntry.blurCommit(text: "Max", value: .matchDisplay, upperBound: 60) == .unchanged)
+        let custom = try #require(FrameRateLimit(rawValue: 48))
+        #expect(FrameRateTextEntry.blurCommit(text: "48", value: .fps120, upperBound: 60) == .commit(custom))
+        #expect(FrameRateTextEntry.blurCommit(text: " max ", value: .fps30, upperBound: 60) == .commit(.matchDisplay))
+        #expect(FrameRateTextEntry.blurCommit(text: "600", value: .fps120, upperBound: 60) == .invalid)
+        #expect(FrameRateTextEntry.blurCommit(text: "0", value: .fps30, upperBound: 60) == .invalid)
+        #expect(FrameRateTextEntry.blurCommit(text: "", value: .fps30, upperBound: 60) == .invalid)
+    }
+
     @Test("Custom rates retain their meaning in defaults and bookmarks")
     func settingsRoundTrip() throws {
         for fps in [1, 4, 24, 37, 45, 120, 1000] {

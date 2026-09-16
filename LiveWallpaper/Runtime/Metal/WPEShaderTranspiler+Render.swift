@@ -350,7 +350,7 @@ extension WPEShaderTranspiler {
         helpers: String,
         comboValues: [String: Int]
     ) {
-        let existingFunctionNames = Set(parseHelperFunctions(in: helpers).map(\.name))
+        let existingFunctionNames = Set(parseHelperFunctions(in: maskComments(helpers)).map(\.name))
 
         if !existingFunctionNames.contains("mod") {
             out.append("inline float mod(float x, float y) { return x - y * floor(x / y); }")

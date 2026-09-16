@@ -3891,7 +3891,8 @@ struct WPEFullFramePassthroughElisionTests {
         "passthrough-inputs-extra", "passthrough-target", "passthrough-shader", "passthrough-clearalpha",
         "passthrough-blending", "passthrough-depth", "passthrough-script", "passthrough-user-textures",
         "passthrough-gate", "scene-write-before-rewrite", "first-rewriter-reads-passthrough",
-        "first-rewriter-binds-previous", "private-composite-alias", "external-private-composite-access",
+        "first-rewriter-binds-previous", "first-rewriter-blends-destination", "private-composite-alias",
+        "external-private-composite-access",
     ])
     func rejects(reason: String) {
         let names = WPERenderTargetNames.ImageLayerComposite.make(objectID: "post")
@@ -3955,6 +3956,10 @@ struct WPEFullFramePassthroughElisionTests {
             passes[2] = pass(id: "post.2", source: .fbo(names.b), target: .layerComposite(name: names.a),
                              rawBinds: [1: .previous])
             expected = "first-rewriter-reads-passthrough"
+        case "first-rewriter-blends-destination":
+            // Additive over the passthrough's scene copy is not additive over a cleared target.
+            passes[2] = pass(id: "post.2", source: .fbo(names.b), target: .layerComposite(name: names.a),
+                             blending: "additive")
         case "private-composite-alias":
             passes[1] = pass(id: "post.1", source: .fbo(names.a.lowercased()), target: .layerComposite(name: names.b))
         case "external-private-composite-access":

@@ -121,6 +121,33 @@ struct OggAudioTranscoderSchedulingTests {
         #expect(await second.value != nil)
         try await poll { await transcoder.workSnapshot.running == 0 }
         #expect(gate.starts == 2)
+        // Overflow is a transient condition, not a verdict on the file.
+        #expect(await transcoder.transcodedM4A(forOgg: rejectedURL) != nil)
+        #expect(gate.starts == 3)
+    }
+
+    /// The deadline bounds the decode, not the wait behind other jobs: a queued job that
+    /// starts late and finishes within its own deadline must not be expired as unavailable.
+    @Test("The deadline starts when a job runs, not when it queues")
+    func deadlineStartsAtRun() async throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let gate = DecodeGate()
+        defer { gate.release() }
+        let transcoder = fixture.transcoder(gate: gate, deadline: 0.4)
+        let first = Task { await transcoder.transcodedM4A(forOgg: fixture.source) }
+        try await poll { gate.starts == 1 }
+        let secondURL = try fixture.source(named: "second.ogg")
+        let second = Task { await transcoder.transcodedM4A(forOgg: secondURL) }
+        try await poll { await transcoder.workSnapshot.pending == 2 }
+        try await Task.sleep(for: .milliseconds(300))
+        gate.release(index: 1)
+        #expect(await first.value != nil)
+        try await poll { gate.starts == 2 }
+        try await Task.sleep(for: .milliseconds(300))
+        gate.release(index: 2)
+        #expect(await second.value != nil)
+        #expect(await transcoder.transcodedM4A(forOgg: secondURL) != nil)
     }
 
     @Test("Already cancelled requests never enter the decoder")
