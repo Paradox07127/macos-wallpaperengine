@@ -87,7 +87,7 @@ struct ThumbnailCard: View {
             }
             .help(location.isAvailable ? Text("Apply") : Text("This wallpaper's file is missing"))
             .contextMenu { contextMenu }
-            .task(id: AerialThumbnailCacheKey(asset: asset)) {
+            .tileTask(id: AerialThumbnailCacheKey(asset: asset)) {
                 thumbnail = nil
                 formatInfo = nil
                 await loadTileContent()

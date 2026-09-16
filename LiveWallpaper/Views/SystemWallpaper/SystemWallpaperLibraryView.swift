@@ -381,7 +381,7 @@ struct SystemWallpaperTile: View {
             }
             // Keyed on the entry's own timestamp, not on the URL: a republish rewrites the same
             // `<id>.jpg` path, so the URL never changes and the tile would keep its stale poster.
-            .task(id: item.addedAt) {
+            .tileTask(id: item.addedAt) {
                 thumbnail = nil
                 guard let thumbnailURL else { return }
                 let loaded = await SystemWallpaperThumbnails.image(for: thumbnailURL)

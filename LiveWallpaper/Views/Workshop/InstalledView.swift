@@ -223,6 +223,7 @@ struct InstalledView: View {
                         let bookmarked = bookmarkStore.containsWPEBookmark(workshopID: entry.origin.workshopID)
                         HistoryRow(
                             entry: entry,
+                            previewURL: WPEPreviewURLCache.shared.url(for: entry.origin),
                             isActive: isActive(entry),
                             allowsInlineApply: true,
                             isSelected: model.selectedEntry?.id == entry.id,

@@ -415,7 +415,7 @@ struct InstalledPreviewPlaybackLifecycleTests {
     private struct HistoryPreview: View {
         let state: EntryPresentation
         var body: some View {
-            HistoryRow(entry: state.entry, isActive: false, onRemove: {})
+            HistoryRow(entry: state.entry, previewURL: state.entry.origin.sourcePreviewURL, isActive: false, onRemove: {})
                 .frame(width: 200, height: 200)
         }
     }
@@ -456,6 +456,72 @@ struct InstalledPreviewPlaybackLifecycleTests {
         #expect(width() == 32)
     }
 
+    private struct HistoryGrid: View {
+        let entries: [WPEHistoryEntry]
+
+        var body: some View {
+            ScrollView {
+                LazyVGrid(columns: [GridItem(.fixed(90)), GridItem(.fixed(90))], spacing: 10) {
+                    ForEach(entries) { entry in
+                        HistoryRow(entry: entry, previewURL: entry.origin.sourcePreviewURL, isActive: false, onRemove: {})
+                    }
+                }
+            }
+            .frame(width: 200, height: 200)
+        }
+    }
+
+    @Test("A card scrolled out of the viewport and back keeps its image view and artwork")
+    func installedCardSurvivesScrollingAway() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("installed-scroll-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try GIFTestFixtures.png(width: 16, height: 16).write(to: folder.appendingPathComponent("preview.png"))
+        let bookmark = try folder.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
+        let entries = (0 ..< 16).map { index in
+            WPEHistoryEntry(origin: WPEOrigin(
+                workshopID: "\(index)", title: "Fixture \(index)", originalType: .scene,
+                sourceFolderBookmark: bookmark, cacheRelativePath: nil, previewFileName: "preview.png"
+            ), importedAt: Date(timeIntervalSince1970: 0))
+        }
+        let host = NSHostingView(rootView: HistoryGrid(entries: entries))
+        host.sizingOptions = []
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 200, height: 200), styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        window.orderFront(nil)
+        defer { window.close() }
+
+        func topLeftImageView() -> NSView? {
+            // Window coordinates are y-up, so the top-left card has the largest y.
+            imageViews(in: host).max { lhs, rhs in
+                let l = lhs.convert(lhs.bounds.origin, to: nil)
+                let r = rhs.convert(rhs.bounds.origin, to: nil)
+                return (l.y, -l.x) < (r.y, -r.x)
+            }
+        }
+        await GIFTestFixtures.waitUntil { topLeftImageView()?.layer?.contents != nil }
+        let first = try #require(topLeftImageView())
+        #expect(first.layer?.contents != nil)
+
+        let scroll = try #require(scrollView(in: host))
+        func scrollTo(_ y: CGFloat) async throws {
+            scroll.contentView.scroll(to: NSPoint(x: 0, y: y))
+            scroll.reflectScrolledClipView(scroll.contentView)
+            host.layoutSubtreeIfNeeded()
+            window.displayIfNeeded()
+            try await Task.sleep(for: .milliseconds(120))
+        }
+        let maxY = (scroll.documentView?.frame.height ?? 0) - scroll.contentSize.height
+        #expect(maxY > 300, "The fixture grid must extend several viewports past the first row")
+        try await scrollTo(maxY)
+        try await scrollTo(0)
+        await GIFTestFixtures.waitUntil { topLeftImageView()?.layer?.contents != nil }
+        let back = try #require(topLeftImageView())
+        #expect(back === first, "Scrolling back must not rebuild the card's image view")
+        #expect(back.layer?.contents != nil)
+    }
+
     private struct Preview: View {
         let state: Presentation
         let url: URL
@@ -476,6 +542,20 @@ struct InstalledPreviewPlaybackLifecycleTests {
             return view
         }
         return view.subviews.lazy.compactMap { imageView(in: $0) }.first
+    }
+
+    private func imageViews(in view: NSView) -> [NSView] {
+        if String(describing: type(of: view)) == "AspectFillAnimatedImageView" {
+            return [view]
+        }
+        return view.subviews.flatMap { imageViews(in: $0) }
+    }
+
+    private func scrollView(in view: NSView) -> NSScrollView? {
+        if let scroll = view as? NSScrollView {
+            return scroll
+        }
+        return view.subviews.lazy.compactMap { scrollView(in: $0) }.first
     }
 
     private func changes(in view: NSView) async throws -> Int {

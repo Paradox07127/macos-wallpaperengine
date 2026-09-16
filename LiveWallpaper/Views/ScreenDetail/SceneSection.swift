@@ -97,6 +97,7 @@ struct SceneSection: View {
                     ForEach(recentImports.prefix(recentGridCap)) { entry in
                         HistoryRow(
                             entry: entry,
+                            previewURL: WPEPreviewURLCache.shared.url(for: entry.origin),
                             isActive: activeWorkshopID == entry.id,
                             onTap: { handleTap(entry: entry) },
                             onRemove: { handleRemove(entry: entry) }
@@ -187,6 +188,7 @@ struct SceneSection: View {
         recentImports = SettingsManager.shared.loadGlobalSettings().recentWPEImports.filter {
             $0.origin.originalType == .scene
         }
+        WPEPreviewURLCache.shared.prefetch(Array(recentImports.prefix(recentGridCap)))
     }
 
     private func selectUnsupportedImportIfNeeded(from notification: Notification) {
