@@ -3,8 +3,8 @@ import JavaScriptCore
 @testable import LiveWallpaper
 import Testing
 
-/// JavaScriptCore has no `window.webkit`, no DOM events, no page `console` and no timers, so
-/// all of them are stubbed and recorded here.
+/// JavaScriptCore has no `window.webkit`, no DOM events and no page `console`, so all three
+/// are stubbed and recorded here.
 private func makeConsoleContext(budget: Int = 200) throws -> JSContext {
     let context = try #require(JSContext())
     context.evaluateScript(
@@ -29,13 +29,6 @@ private func makeConsoleContext(budget: Int = 200) throws -> JSContext {
         var domListeners = {};
         window.addEventListener = function (type, handler) { domListeners[type] = handler; };
         function fire(type, event) { if (domListeners[type]) domListeners[type](event); }
-        // The liveness probe schedules work; these stubs never fire it, which keeps the
-        // forwarder's own assertions about console and DOM events independent of it.
-        var pendingTimers = [];
-        window.setTimeout = function (callback) { pendingTimers.push(callback); return pendingTimers.length; };
-        window.requestAnimationFrame = function () { return 1; };
-        var setTimeout = window.setTimeout;
-        var requestAnimationFrame = window.requestAnimationFrame;
         """
     )
     context.evaluateScript(
