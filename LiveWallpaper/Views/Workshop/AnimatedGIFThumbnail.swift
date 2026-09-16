@@ -204,6 +204,17 @@ final class GIFAnimationController {
         }
     }
 
+    #if DEBUG
+    var clientIDForTesting: UUID {
+        clientID
+    }
+
+    /// Synchronous `play`: lets a test register a replacement in the same turn that stopped its predecessor.
+    func beginPlaybackNowForTesting() {
+        beginPlayback()
+    }
+    #endif
+
     private func beginPlayback() {
         guard case .animatedGIF(let gif) = asset, playbackTask == nil else { return }
         let id = clientID
@@ -219,10 +230,12 @@ final class GIFAnimationController {
                 let frame = await PreviewFrameLoader.frame(after: delay) {
                     await GIFAnimationController.decode(gif, at: next)
                 }
+                // Cancellation comes from `stop()`, which already released the slot; a later `play()` may have re-registered this same id.
+                guard !Task.isCancelled else { break }
                 // The task strongly holds `gif` and its `CGImageSource`, so `[weak self]` only
                 // frees the controller — and `LazyVGrid` can drop a tile without `onDisappear`.
                 // `deinit` can't: the class is `@MainActor`, so it may not touch the task handles.
-                guard !Task.isCancelled, let self else {
+                guard let self else {
                     // Nobody is left to call `stop()`, so release the LRU slot here or a dead
                     // client holds one of the eight until it is evicted.
                     GIFPlaybackCoordinator.shared.endPlayback(id: id)

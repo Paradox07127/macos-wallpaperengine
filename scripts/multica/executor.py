@@ -191,6 +191,23 @@ def allowed_origin(value, repository):
     return bool(re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', name)) and name.lower() == repository.lower()
 
 
+CREDENTIAL_ENVIRONMENT_KEYS = ('GH_TOKEN', 'GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN',
+                               'SSH_AUTH_SOCK', 'SSH_AGENT_PID')
+
+
+def runner_environment(cfg):
+    """Environment for the model runner: the controller's Git isolation without its credentials.
+
+    The fetch environment carries gh's credential helper and the SSH agent so the controller
+    can talk to origin; the runner publishes model output back to the PR, so none of that may
+    reach it. It also keeps Git on local protocols only.
+    """
+    env = runner.git_environment()
+    for key in CREDENTIAL_ENVIRONMENT_KEYS:
+        env.pop(key, None)
+    return env
+
+
 def fetch_git_environment(cfg):
     """Use the same controller-owned Git settings for origin checks and fetch.
 
@@ -367,7 +384,8 @@ def _run_attempt(cfg, req, commands, *, dispatch_reserved=False):
             # Preparation has independently bounded Git stages before the
             # runner's model deadline. Bound this wrapper too, without treating
             # detached workers as stopped or authorizing an automatic retry.
-            completed = execute_runner(argv, env=env, timeout=cfg.get('review_timeout_seconds', 3600) + 1200)
+            completed = execute_runner(argv, env=runner_environment(cfg),
+                                       timeout=cfg.get('review_timeout_seconds', 3600) + 1200)
         except RunnerNotStarted:
             execution['phase'] = 'NOT_DISPATCHED'
             execution['launch_failure'] = 'POPEN_FAILED'

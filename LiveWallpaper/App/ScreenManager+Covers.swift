@@ -27,15 +27,16 @@ extension ScreenManager {
         let expectedContent = configuration.activeWallpaper
         let token = CoverCaptureGenerations.begin(id)
         Task { @MainActor in
-            guard let image = await WallpaperCoverCapture.captureWallpaper(
+            let image = await WallpaperCoverCapture.captureWallpaper(
                 screen: screen,
                 configuration: configuration
-            ) else { return }
+            )
+            // Claim first: a capture that yields nothing must still retire its generation entry.
+            guard CoverCaptureGenerations.claim(token, for: id), let image else { return }
             // The display may have moved on to a different wallpaper while the
             // frame was being read; that frame is not this bookmark.
             guard getConfiguration(for: screen)?.activeWallpaper == expectedContent else { return }
-            guard CoverCaptureGenerations.claim(token, for: id),
-                  BookmarkStore.shared.bookmarks.contains(where: { $0.id == id }) else { return }
+            guard BookmarkStore.shared.bookmarks.contains(where: { $0.id == id }) else { return }
             // One expression, no suspension point: the file lands and its name is recorded before the orphan sweep can observe a file no entry names yet.
             BookmarkStore.shared.setCover(
                 WallpaperCoverStore.shared.store(image, for: id),
@@ -46,14 +47,16 @@ extension ScreenManager {
 
     func captureCover(forScheme id: UUID, from screen: Screen) {
         guard let configuration = getConfiguration(for: screen) else { return }
+        let expectedContent = configuration.activeWallpaper
         let token = CoverCaptureGenerations.begin(id)
         Task { @MainActor in
-            guard let image = await WallpaperCoverCapture.captureWithOverlay(
+            let image = await WallpaperCoverCapture.captureWithOverlay(
                 screen: screen,
                 configuration: configuration
-            ) else { return }
-            guard CoverCaptureGenerations.claim(token, for: id),
-                  SchemeStore.shared.schemes.contains(where: { $0.id == id }) else { return }
+            )
+            guard CoverCaptureGenerations.claim(token, for: id), let image else { return }
+            guard getConfiguration(for: screen)?.activeWallpaper == expectedContent else { return }
+            guard SchemeStore.shared.schemes.contains(where: { $0.id == id }) else { return }
             SchemeStore.shared.setCover(
                 WallpaperCoverStore.shared.store(image, for: id),
                 for: id

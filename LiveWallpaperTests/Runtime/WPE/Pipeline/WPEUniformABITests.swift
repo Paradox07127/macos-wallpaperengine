@@ -53,18 +53,23 @@ struct WPEUniformABITests {
         #expect(try packed(.number(Double(UInt32.max)), name: "scalar", type: "uint")[0].x.bitPattern == UInt32.max)
     }
 
-    @Test(arguments: [Double.nan, Double.infinity, -Double.infinity, Double(Int32.max) + 1, Double(Int32.min) - 1])
-    func invalidSignedIntegersFailBeforeBinding(value: Double) {
-        #expect(throws: WPEUniformPackingError.self) {
-            try packed(.vector([0, value]), name: "invalid", type: "ivec2")
-        }
+    /// A script-driven `uniform int` past the range must not fail the whole frame; the
+    /// conversion saturates like AArch64 `fcvtzs` (NaN → 0) instead of throwing.
+    @Test(arguments: [
+        (Double.nan, Int32(0)), (Double.infinity, Int32.max), (-Double.infinity, Int32.min),
+        (Double(Int32.max) + 1, Int32.max), (Double(Int32.min) - 1, Int32.min), (1e300, Int32.max),
+    ] as [(Double, Int32)])
+    func outOfRangeSignedIntegersSaturate(value: Double, expected: Int32) throws {
+        let slots = try packed(.vector([0, value]), name: "saturated", type: "ivec2")
+        #expect(slots[0].y.bitPattern == UInt32(bitPattern: expected))
     }
 
-    @Test(arguments: [Double.nan, Double.infinity, -1, Double(UInt32.max) + 1])
-    func invalidUnsignedIntegersFailBeforeBinding(value: Double) {
-        #expect(throws: WPEUniformPackingError.self) {
-            try packed(.number(value), name: "invalid", type: "uint")
-        }
+    @Test(arguments: [
+        (Double.nan, UInt32(0)), (Double.infinity, UInt32.max), (-1, UInt32(0)),
+        (Double(UInt32.max) + 1, UInt32.max), (-1e300, UInt32(0)),
+    ] as [(Double, UInt32)])
+    func outOfRangeUnsignedIntegersSaturate(value: Double, expected: UInt32) throws {
+        #expect(try packed(.number(value), name: "saturated", type: "uint")[0].x.bitPattern == expected)
     }
 
     @Test func fractionalIntegerConversionTruncatesAndBooleanArraysUseAllComponents() throws {

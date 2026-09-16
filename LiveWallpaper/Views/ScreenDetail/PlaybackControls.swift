@@ -104,9 +104,7 @@ struct PlaybackControls: View {
         if playbackSpeed != nil {
             rows.append(.speed)
         }
-        if showsFrameRateRow {
-            rows.append(.frameRate)
-        }
+        rows.append(.frameRate)
         if showsMouseInteractionRow {
             rows.append(contentsOf: [.mouseInteraction, .clickInteraction])
         }
@@ -345,10 +343,6 @@ struct PlaybackControls: View {
     }
 
     // MARK: - Row availability
-
-    private var showsFrameRateRow: Bool {
-        true
-    }
 
     private var mouseInteractionBinding: Binding<Bool> {
         Binding(

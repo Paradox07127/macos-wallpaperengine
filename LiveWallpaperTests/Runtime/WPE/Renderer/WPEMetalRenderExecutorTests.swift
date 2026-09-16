@@ -6141,13 +6141,15 @@ private extension WPEMetalRenderExecutorTests {
             dynamicTextureNames: []) == nil)
     }
 
-    @Test("Static layer cache LRU evicts oldest over budget")
-    func staticLayerCacheLRUEvictsOldestOverBudget() {
-        var lru = WPEMetalStaticLayerCacheLRU(budgetBytes: 100)
-        #expect(lru.admit("a", bytes: 40).isEmpty)
-        #expect(lru.admit("b", bytes: 40).isEmpty)
+    @Test("LRU byte budget evicts oldest over budget")
+    func lruByteBudgetEvictsOldestOverBudget() {
+        var lru = WPEMetalLRUByteBudget<String>(budgetBytes: 100)
+        lru.record("a", bytes: 40)
+        lru.record("b", bytes: 40)
+        #expect(lru.evictOverBudget(protecting: []).isEmpty)
         lru.touch("a")
-        let evicted = lru.admit("c", bytes: 40)
+        lru.record("c", bytes: 40)
+        let evicted = lru.evictOverBudget(protecting: [])
         #expect(evicted == ["b"])
         #expect(lru.entries["a"] != nil)
         #expect(lru.entries["b"] == nil)

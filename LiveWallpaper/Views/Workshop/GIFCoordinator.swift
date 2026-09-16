@@ -88,6 +88,12 @@ final class GIFPlaybackCoordinator {
         freezers.removeValue(forKey: id)
     }
 
+    #if DEBUG
+    var activeClientIDsForTesting: [UUID] {
+        lruOrder
+    }
+    #endif
+
     func touch(id: UUID) {
         lruOrder.removeAll { $0 == id }
         lruOrder.append(id)

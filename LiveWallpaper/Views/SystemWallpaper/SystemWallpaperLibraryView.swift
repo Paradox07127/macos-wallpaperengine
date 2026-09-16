@@ -397,7 +397,7 @@ enum SystemWallpaperThumbnails {
     /// keeps its own 16:9 geometry and crops non-wide posters with scaledToFill.
     private static let maxPixelSize = 512
 
-    nonisolated(unsafe) static let cache: NSCache<NSString, CGImageBox> = {
+    nonisolated(unsafe) static let cache: NSCache<NSString, CGImageBox> = { // NSCache is thread-safe; the box is immutable.
         let cache = NSCache<NSString, CGImageBox>()
         cache.countLimit = 128
         cache.totalCostLimit = 32 * 1024 * 1024

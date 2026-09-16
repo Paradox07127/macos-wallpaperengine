@@ -430,6 +430,27 @@ struct HTMLWallpaperNavigationPolicyTests {
         #expect(view.failedPreparationGeneration == 42)
     }
 
+    /// The folder scheme answers a missing file with the file error, not an HTTP 404, so the
+    /// classifier has to read that error as the project's entry page being absent.
+    @MainActor
+    @Test("A local project without its entry page reports web.entry_missing")
+    func missingEntryPageIsClassified() async throws {
+        let folder = makeReadRoot()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let bookmark = try #require(ResourceUtilities.createBookmark(for: folder))
+        let view = HTMLWallpaperView(frame: CGRect(x: 0, y: 0, width: 64, height: 64), initialEphemeral: true)
+        defer { view.cleanup() }
+        var causes: [WallpaperFailureCause?] = []
+        view.onFailureCause = { causes.append($0) }
+        view.loadSource(.folder(bookmarkData: bookmark, indexFileName: "index.html"))
+        let deadline = ContinuousClock.now + .seconds(10)
+        while causes.isEmpty, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(causes.last??.code == "web.entry_missing")
+        #expect(causes.last??.canRetry == false)
+    }
+
     private func makeReadRoot() -> URL {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("LWNavPolicy-\(UUID().uuidString)", isDirectory: true)

@@ -300,6 +300,24 @@ struct WallpaperVideoPlayerHibernationTests {
         #expect(source.contains("setupPlayer(with: url)"))
     }
 
+    // MARK: - Cover capture
+
+    /// A scheme saved while the video is paused still needs a cover; the output attached for
+    /// the capture must deliver the frame the layer is already showing.
+    @Test("A paused player still yields its current frame for a cover")
+    func pausedPlayerYieldsCurrentFrame() async throws {
+        let harness = try await Harness.make()
+        defer { harness.cleanup() }
+        harness.player.play()
+        try await Harness.waitUntil("playback starts") { harness.player.isPlaying }
+        try await Harness.waitUntil("the layer has a picture") { harness.player.isReadyForDisplay }
+        harness.player.pause()
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(!harness.player.isPlaying)
+        let image = await harness.player.currentFrameImage()
+        #expect(image != nil)
+    }
+
     // MARK: - Harness
 
     @MainActor

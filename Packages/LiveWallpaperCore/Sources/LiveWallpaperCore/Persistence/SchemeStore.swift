@@ -58,7 +58,9 @@ public final class SchemeStore {
             createdAt: existing.createdAt,
             updatedAt: Date(),
             sourceDisplayName: sourceDisplayName?.trimmingCharacters(in: .whitespacesAndNewlines)
-                ?? existing.sourceDisplayName
+                ?? existing.sourceDisplayName,
+            // Stays named until the recapture lands: an unnamed PNG is an orphan to the sweep.
+            coverFileName: existing.coverFileName
         )
         schemes[index] = replacement
         persist()

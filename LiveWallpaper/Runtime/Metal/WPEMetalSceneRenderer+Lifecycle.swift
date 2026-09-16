@@ -618,7 +618,7 @@ extension WPEMetalSceneRenderer {
     /// Local `effects/…` and workshop `workshop/…` shaders sample `g_Time` / `g_AudioSpectrum*`; `solidcolor`, `genericimage2/4`, `compose`, `copy` do not.
     static func pipelineHasAnimatedPasses(_ pipeline: WPEPreparedRenderPipeline) -> Bool {
         pipeline.layers.contains { layer in
-            if layer.puppetModel != nil
+            if layer.puppetModel?.animations.isEmpty == false
                 || layer.graphLayer.geometry.alphaAnimation != nil
                 || layer.graphLayer.geometry.colorAnimation != nil { return true }
             return layer.passes.contains { prepared in

@@ -136,9 +136,11 @@ struct SavedLibraryCoverTests {
         #expect(persistence.saveCount == savesAtStart)
     }
 
+    /// The cover stays named until the recapture lands: an unnamed PNG is an orphan to the
+    /// sweep, and a recapture that yields no frame would leave the scheme blank for good.
     @MainActor
-    @Test("Replacing a scheme keeps its identity, re-strips the display, and drops the stale cover")
-    func replaceKeepsIdentityAndClearsCover() throws {
+    @Test("Replacing a scheme keeps its identity, re-strips the display, and keeps its cover")
+    func replaceKeepsIdentityAndKeepsCover() throws {
         let persistence = MemorySchemePersistence()
         let store = SchemeStore(persistence: persistence)
         let original = store.add(
@@ -166,7 +168,7 @@ struct SavedLibraryCoverTests {
         #expect(replaced.configuration.screenID == ScreenScheme.unboundScreenID)
         #expect(replaced.configuration.displayFingerprint == nil)
         #expect(replaced.configuration.playbackSpeed == 1.5)
-        #expect(replaced.coverFileName == nil)
+        #expect(replaced.coverFileName == "old.png")
         #expect(store.schemes.count == 1)
     }
 

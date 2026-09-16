@@ -41,6 +41,11 @@ struct DesignTests {
         #expect(colorEq(Design.loadDotColor(0.1), Design.signalIdle))
     }
 
+    @Test("Sparkline guides sit on the load band thresholds")
+    func sparklineGuidesMatchLoadBands() {
+        #expect(Sparkline.loadGuides == [Design.Load.elevated, Design.Load.hot])
+    }
+
     @Test("Load thresholds stay ordered and inside the unit range")
     func loadThresholdsOrdered() {
         #expect(Design.Load.elevated > 0)

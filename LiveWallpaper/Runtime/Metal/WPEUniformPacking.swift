@@ -36,22 +36,26 @@ enum WPEUniformPacking {
                     case .float: packed[row] = Float(number)
                     case .bool: packed[row] = number != 0 ? 1 : 0
                     case .int:
-                        let integer = number.rounded(.towardZero)
-                        guard integer.isFinite, integer >= Double(Int32.min), integer <= Double(Int32.max) else {
-                            throw WPEUniformPackingError(uniformName: uniform.name, reason: "component \(index) is outside the finite Int32 range")
-                        }
-                        packed[row] = Float(bitPattern: UInt32(bitPattern: Int32(integer)))
+                        packed[row] = Float(bitPattern: UInt32(bitPattern: Self.saturatingInt32(number)))
                     case .uint:
-                        let integer = number.rounded(.towardZero)
-                        guard integer.isFinite, integer >= 0, integer <= Double(UInt32.max) else {
-                            throw WPEUniformPackingError(uniformName: uniform.name, reason: "component \(index) is outside the finite UInt32 range")
-                        }
-                        packed[row] = Float(bitPattern: UInt32(integer))
+                        packed[row] = Float(bitPattern: Self.saturatingUInt32(number))
                     }
                 }
                 slots[uniform.slot + element * type.elementSlotCount + column] = packed
             }
         }
+    }
+
+    /// AArch64 `fcvtzs` semantics: truncate, saturate at the bounds, NaN → 0. A script that drives
+    /// an `int` uniform out of range must not fail the whole frame.
+    static func saturatingInt32(_ value: Double) -> Int32 {
+        guard !value.isNaN else { return 0 }
+        return Int32(min(max(value.rounded(.towardZero), Double(Int32.min)), Double(Int32.max)))
+    }
+
+    static func saturatingUInt32(_ value: Double) -> UInt32 {
+        guard !value.isNaN else { return 0 }
+        return UInt32(min(max(value.rounded(.towardZero), 0), Double(UInt32.max)))
     }
 
     /// Retains the existing scalar-string and vector zero-padding conventions.

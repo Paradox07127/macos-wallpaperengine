@@ -4,7 +4,7 @@ import Foundation
 import Metal
 
 /// Shares live libraries across renderers without extending their GPU lifetime.
-final class WPEMetalLibraryRegistry: @unchecked Sendable {
+final class WPEMetalLibraryRegistry: @unchecked Sendable { // every mutable field is read/written only inside `condition` (NSCondition) lock/unlock; compiles run outside it on immutable inputs
     struct Configuration: Hashable, Sendable {
         var languageVersion: MTLLanguageVersion = .version3_0
         var fastMathEnabled = true

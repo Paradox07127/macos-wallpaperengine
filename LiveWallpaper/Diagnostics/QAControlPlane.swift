@@ -57,6 +57,8 @@ final class QAControlPlane {
         }
         guard let fd = Self.makeListener(at: path) else {
             Logger.error("[QA] control plane could not listen at \(path)", category: .lifecycle)
+            close(lock)
+            lockFD = -1
             return
         }
         listenerFD = fd
@@ -240,7 +242,7 @@ final class QAControlPlane {
 
     // MARK: - Dispatch
 
-    private func respond(to line: String) -> String {
+    func respond(to line: String) -> String {
         // A request can be queued before shutdown and run after it; committing then would
         // change settings in an app whose ScreenManager is already torn down.
         guard !isStopped else { return Self.failure("Control plane is shutting down") }
@@ -492,7 +494,15 @@ final class QAControlPlane {
     private func defaultsSet(_ arguments: [String: Any]) throws -> Any {
         guard let key = arguments["key"] as? String else { throw QAError.message("Missing key") }
         guard let value = arguments["value"] else { throw QAError.message("Missing value") }
-        UserDefaults.standard.set(value, forKey: key)
+        if value is NSNull {
+            UserDefaults.standard.removeObject(forKey: key)
+        } else {
+            // `UserDefaults.set` raises an ObjC exception (a crash) for anything that is not a property list.
+            guard PropertyListSerialization.propertyList(value, isValidFor: .binary) else {
+                throw QAError.message("Value is not a property list (a null inside a container is not allowed)")
+            }
+            UserDefaults.standard.set(value, forKey: key)
+        }
         return ["key": key, "value": UserDefaults.standard.object(forKey: key) ?? NSNull()]
     }
 

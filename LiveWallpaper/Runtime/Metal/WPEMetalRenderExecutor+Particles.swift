@@ -30,6 +30,7 @@ extension WPEMetalRenderExecutor {
         descriptor.colorAttachments[0].loadAction = .load
         descriptor.colorAttachments[0].storeAction = .store
         gpuPassProfiler?.attach(descriptor, to: commandBuffer, label: "particles")
+        closeSharedSceneEncoderForHelperEncoder()
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
             throw WPEMetalRenderExecutorError.commandBufferFailed
         }
@@ -113,8 +114,8 @@ extension WPEMetalRenderExecutor {
             projection.padding.z = Float(texture.height) / Float(max(texture.width, 1))
         }
 
-        if system.definition.isPerspective, !system.usesRibbonGeometry,
-           frameState.cameraUniforms.perspectiveOverrideFOVDegrees > 0, averageScale > 0 {
+        if system.definition.isPerspective, !system.usesRibbonGeometry, averageScale > 0,
+           let particleViewProjection = frameState.cameraUniforms.particlePerspectiveViewProjectionMatrix {
             let scale = transform.objectScale
             let c = transform.cosAngleZ
             let s = transform.sinAngleZ
@@ -124,8 +125,7 @@ extension WPEMetalRenderExecutor {
                 SIMD4(0, 0, scale.z, 0), SIMD4(0, 0, 0, 1)
             ))
             if abs(simd_determinant(model)) > 0.000001,
-               let viewProjection = WPEMetalObjectUniforms.matrix4x4(
-                   fromColumnMajor: frameState.cameraUniforms.objectPerspectiveViewProjectionMatrix) {
+               let viewProjection = WPEMetalObjectUniforms.matrix4x4(fromColumnMajor: particleViewProjection) {
                 projection.sceneSize.z = 1
                 projection.viewProjection = simd_float4x4(columns: (
                     SIMD4<Float>(viewProjection.columns.0), SIMD4<Float>(viewProjection.columns.1),

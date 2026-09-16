@@ -5,12 +5,16 @@ import LiveWallpaperCore
 /// `index.html`, a revoked folder grant, a 404, a renderer crash — collapses into one
 /// `runtime.webNavigationFailed` bucket and the surface can only say "it didn't load".
 enum WebFailureCause {
-    static func navigation(domain: String, code: Int, description: String) -> WallpaperFailureCause {
+    /// `isLocalProject`: the folder scheme serves a missing entry page as the file error, never
+    /// as an HTTP 404, so only there does a Cocoa "no such file" mean the project lacks its page.
+    static func navigation(domain: String, code: Int, description: String, isLocalProject: Bool = false) -> WallpaperFailureCause {
         switch domain {
         case NSURLErrorDomain:
             urlError(code: code, description: description)
         case "WebKitErrorDomain":
             webKitError(code: code, description: description)
+        case NSCocoaErrorDomain where isLocalProject && (code == NSFileReadNoSuchFileError || code == NSFileNoSuchFileError):
+            entryMissing
         default:
             WallpaperFailureCause(code: "web.\(domain).\(code)", reason: description)
         }

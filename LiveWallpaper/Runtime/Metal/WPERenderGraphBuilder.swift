@@ -1984,6 +1984,10 @@ extension WPERenderGraphBuilder {
             guard !rewriter.textureReferences.contains(where: {
                 $0 == .previous || canonicalAlias($0, matches: composite)
             }) else { return .reject("first-rewriter-reads-passthrough") }
+            // Additive/multiply/screen load the composite they write; without the passthrough that is a cleared target, not the scene.
+            guard !WPEMetalRenderExecutor.blendModeRequiresExistingDestination(rewriter.pass.blending) else {
+                return .reject("first-rewriter-blends-destination")
+            }
         }
         return .elide(composite: composite, rewriteEnd: rewriteEnd)
     }

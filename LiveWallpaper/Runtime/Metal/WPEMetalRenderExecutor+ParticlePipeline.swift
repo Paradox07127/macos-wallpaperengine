@@ -40,6 +40,7 @@ extension WPEMetalRenderExecutor {
             refractionBackground = tex
             bg = tex
         }
+        closeSharedSceneEncoderForHelperEncoder()
         guard let blit = commandBuffer.makeBlitCommandEncoder() else { return nil }
         WPEFrameOccupancyMeter.count(.helperEncoder)
         blit.copy(from: output, to: bg)

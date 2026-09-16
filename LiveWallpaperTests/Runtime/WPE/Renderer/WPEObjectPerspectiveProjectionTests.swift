@@ -135,6 +135,32 @@ struct WPEObjectPerspectiveProjectionTests {
         #expect(uniforms.objectViewProjectionMatrix(objectID: "112") == uniforms.viewProjectionMatrix)
     }
 
+    /// Particles differ from image objects: `perspective: true` systems project through the
+    /// default `general.fov` camera even when no override is authored (the stock "Snow
+    /// perspective" asset adds depth to any 2D scene; waywallen `SceneObjectParsers.cpp`
+    /// replaces `general.fov` with the override rather than enabling the camera with it).
+    @Test("Perspective particles fall back to general.fov when no override FOV is authored")
+    func particlesFallBackToGeneralFOV() {
+        let camera = WPESceneCamera(
+            center: .zero, eye: SIMD3(0, 0, 1), up: SIMD3(0, 1, 0), nearZ: 0.01, farZ: 10000, fov: 50
+        )
+        let canvas = WPESceneOrthogonalProjection(width: 3840, height: 2160, auto: false)
+        let plain = WPEMetalCameraUniforms(
+            orthogonalProjection: canvas, sceneCamera: camera, perspectiveOverrideFOVDegrees: 0
+        )
+        #expect(plain.particlePerspectiveViewProjectionMatrix
+            == Self.matrix(canvas: CGSize(width: 3840, height: 2160), fov: 50))
+        #expect(plain.usesObjectPerspective(objectID: "112") == false, "image objects keep the override contract")
+        let overridden = WPEMetalCameraUniforms(
+            orthogonalProjection: canvas, sceneCamera: camera, perspectiveOverrideFOVDegrees: 90
+        )
+        #expect(overridden.particlePerspectiveViewProjectionMatrix == overridden.objectPerspectiveViewProjectionMatrix)
+        let scene3D = WPEMetalCameraUniforms(
+            orthogonalProjection: canvas, sceneCamera: camera, usesPerspectiveProjection: true
+        )
+        #expect(scene3D.particlePerspectiveViewProjectionMatrix == nil, "a 3D scene projects through its own camera")
+    }
+
     @Test("The perspective eye is the canvas centre at z = 2000")
     func perspectiveEyeIsCanvasCentre() {
         let uniforms = WPEMetalCameraUniforms(

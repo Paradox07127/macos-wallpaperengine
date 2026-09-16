@@ -91,7 +91,7 @@ enum WPEStaticPresentRetry {
 
 /// Calls the executor's source-release closure exactly once, even if a delayed
 /// poster consumer invokes its callback more than once or abandons it.
-final class WPEPresentSourceRelease: @unchecked Sendable {
+final class WPEPresentSourceRelease: @unchecked Sendable { // `lock` protects the one-shot closure.
     private let lock = NSLock()
     private var action: (@Sendable () -> Void)?
 

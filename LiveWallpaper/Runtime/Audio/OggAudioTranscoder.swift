@@ -109,8 +109,8 @@ actor OggAudioTranscoder {
                     job.waiters[requestID] = continuation
                     return
                 }
+                // Overflow is transient: not memoised, so the file is tried again once the queue drains.
                 guard pending.count < maximumPending else {
-                    memo[key] = .unavailable
                     continuation.resume(returning: nil)
                     return
                 }
@@ -118,12 +118,8 @@ actor OggAudioTranscoder {
                 job.waiters[requestID] = continuation
                 pending[key] = job
                 waiting.append(key)
-                let jobID = job.id
-                let delay = deadline
-                job.timeout = Task { [weak self] in
-                    do { try await Task.sleep(for: .seconds(delay)) } catch { return }
-                    await self?.expire(key: key, id: jobID)
-                }
+                // Bounds the wait behind stuck decodes; restarted once the job itself runs.
+                armTimeout(job)
                 startAvailableWork()
             }
         } onCancel: {
@@ -136,6 +132,8 @@ actor OggAudioTranscoder {
             let key = waiting.removeFirst()
             guard let job = pending[key] else { continue }
             running[job.id] = job
+            // The deadline bounds the decode, not the wait behind other jobs.
+            armTimeout(job)
             // A cancelled generation can finish after a replacement starts. It never writes the shared cache path.
             let staged = cacheDirectory.appendingPathComponent(".\(key).\(job.id.uuidString).m4a")
             let decoder = decodeOverride
@@ -149,6 +147,17 @@ actor OggAudioTranscoder {
                 }
                 Task { await self.complete(job, produced: produced, staged: staged) }
             }
+        }
+    }
+
+    private func armTimeout(_ job: Job) {
+        job.timeout?.cancel()
+        let key = job.key
+        let jobID = job.id
+        let delay = deadline
+        job.timeout = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(delay)) } catch { return }
+            await self?.expire(key: key, id: jobID)
         }
     }
 

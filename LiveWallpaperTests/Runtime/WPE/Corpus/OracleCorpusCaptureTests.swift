@@ -262,7 +262,7 @@ struct OracleCorpusCaptureTests {
                         "encoders": quadStats.encoders,
                         "draws": quadStats.draws,
                         "texturedDraws": quadStats.texturedDraws,
-                        "rejectedLayers": quadStats.rejectedLayers,
+                        "rejectedLayers": quadStats.rejectedPasses,
                     ] as [String: Any]
                     renderWork["solidScene"] = ["encoders": solidStats.encoders, "draws": solidStats.draws]
                     renderWork["canonicalRotation"] = [

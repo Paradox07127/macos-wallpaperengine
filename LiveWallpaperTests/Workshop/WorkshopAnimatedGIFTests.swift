@@ -246,6 +246,29 @@ struct GIFPlaybackCoordinatorTests {
     }
 }
 
+@Suite("GIF controller stale frame task", .serialized)
+@MainActor
+struct GIFAnimationControllerStaleTaskTests {
+    /// `stop()` already released the slot; a cancelled frame task waking up afterwards must
+    /// not unregister the playback that reused the same client id.
+    @Test("A cancelled frame task never unregisters the playback that replaced it")
+    func staleTaskKeepsReplacementRegistered() async throws {
+        let controller = GIFAnimationController()
+        controller.setAsset(GIFTestFixtures.animatedAsset(frameCount: 3))
+        controller.play(debounced: false)
+        await GIFTestFixtures.waitUntil { controller.isAnimating }
+        #expect(controller.isAnimating)
+        // Same turn, no suspension: the stale task can only run after the replacement registered.
+        controller.stop()
+        controller.beginPlaybackNowForTesting()
+        #expect(controller.isAnimating)
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(GIFPlaybackCoordinator.shared.activeClientIDsForTesting.contains(controller.clientIDForTesting))
+        controller.stop()
+        #expect(!GIFPlaybackCoordinator.shared.activeClientIDsForTesting.contains(controller.clientIDForTesting))
+    }
+}
+
 @Suite("ThumbnailPlaybackGate")
 struct ThumbnailPlaybackGateTests {
     @Test("Grid gate requires visibility, hover, motion, and unblurred content")

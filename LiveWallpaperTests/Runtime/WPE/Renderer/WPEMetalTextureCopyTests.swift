@@ -167,6 +167,32 @@ struct WPEMetalTextureCopyTests {
         }
     }
 
+    /// A blit cannot open while the solid scene run's render encoder is still recording on the
+    /// same command buffer; the copy has to end that encoder before it asks for a blit.
+    @Test("A copy ends the shared scene encoder before opening its blit")
+    func copyEndsSharedSceneEncoder() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let source = try texture(device, .rgba8Unorm, 2, 2)
+        let destination = try texture(device, .rgba8Unorm, 2, 2)
+        let scene = try texture(device, .rgba8Unorm, 2, 2)
+        let command = try #require(executor.textureSourceCommandQueue.makeCommandBuffer())
+        let descriptor = MTLRenderPassDescriptor()
+        descriptor.colorAttachments[0].texture = scene
+        descriptor.colorAttachments[0].loadAction = .clear
+        descriptor.colorAttachments[0].storeAction = .store
+        let run = WPEMetalSolidSceneRun()
+        run.encoder = try #require(command.makeRenderCommandEncoder(descriptor: descriptor))
+        run.destinationTexture = scene
+        executor.sharedSceneRun = run
+        defer { executor.sharedSceneRun = nil }
+        try executor.copyTexture(source, to: destination, commandBuffer: command)
+        #expect(run.encoder == nil)
+        command.commit()
+        command.waitUntilCompleted()
+        #expect(command.error == nil)
+    }
+
     private func texture(_ device: MTLDevice, _ format: MTLPixelFormat, _ width: Int, _ height: Int, mipmapped: Bool = false) throws -> MTLTexture {
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: format, width: width, height: height, mipmapped: mipmapped)
         descriptor.storageMode = .shared

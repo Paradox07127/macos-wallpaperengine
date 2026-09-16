@@ -246,9 +246,10 @@ private struct BookmarkTile: View {
             .accessibilityElement(children: .combine)
             .accessibilityLabel(accessibilityLabel)
             .accessibilityActions {
-                if screens.count == 1, let only = screens.first {
+                // Same gate as the tap and the context menu.
+                if location.isAvailable, screens.count == 1, let only = screens.first {
                     Button("Apply") { onApply(only) }
-                } else if screens.count > 1 {
+                } else if location.isAvailable, screens.count > 1 {
                     Button("Apply to All Displays", action: onApplyToAll)
                 }
                 Button("Rename", action: onStartRename)

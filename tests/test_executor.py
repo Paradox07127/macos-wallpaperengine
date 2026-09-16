@@ -1677,6 +1677,21 @@ class FetchEnvironmentTests(unittest.TestCase):
         # Ordinary diffs also run: no invalid diff.external="" override.
         self.assertIn('new.txt', self.git(self.mirror, 'diff', '--stat', 'HEAD~1', 'HEAD', env=local_env).stdout)
 
+    def test_runner_environment_carries_no_credentials(self):
+        # The fetch environment wires gh's credential helper and the SSH agent in for the
+        # controller's own fetch; the model runner must see neither, nor any GitHub token.
+        inherited = {'GH_TOKEN': 'ghp_fixture', 'GITHUB_TOKEN': 'ghs_fixture', 'GH_ENTERPRISE_TOKEN': 'x',
+                     'SSH_AUTH_SOCK': 'fixture-agent', 'SSH_AGENT_PID': '1', 'HOME': str(self.root)}
+        with patch.dict(os.environ, inherited):
+            env = executor.runner_environment(self.cfg)
+        for key in ('GH_TOKEN', 'GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN', 'SSH_AUTH_SOCK', 'SSH_AGENT_PID'):
+            self.assertNotIn(key, env)
+        self.assertEqual(env['HOME'], str(self.root))
+        self.assertEqual(env['GIT_ALLOW_PROTOCOL'], 'file')
+        values = [env[key] for key in env if key.startswith('GIT_CONFIG_VALUE_')]
+        self.assertFalse(any('auth git-credential' in value for value in values))
+        self.assertNotIn('GIT_SSH_COMMAND', env)
+
     def test_real_git_credential_uses_only_explicit_trusted_helper(self):
         marker = self.root / 'UNTRUSTED_AUTH_RAN'
         hostile = '!touch ' + str(marker)

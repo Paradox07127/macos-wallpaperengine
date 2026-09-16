@@ -362,6 +362,10 @@ struct WPEMetalCameraUniforms: Equatable, Sendable {
     /// Column-major, same layout as `viewProjectionMatrix`. Equals it when no perspective
     /// camera exists.
     let objectPerspectiveViewProjectionMatrix: [Double]
+    /// `perspective: true` particle systems in a 2D scene: the override FOV when authored, else
+    /// `general.fov` (the override replaces the default camera's FOV, it does not enable it).
+    /// nil in a 3D scene, whose own camera already projects everything.
+    let particlePerspectiveViewProjectionMatrix: [Double]?
     let sceneCamera: WPESceneCamera
     /// Raw `general.ambientcolor`/`skylightcolor` (no sRGB conversion).
     let lightAmbientColor: SIMD3<Double>
@@ -420,6 +424,10 @@ struct WPEMetalCameraUniforms: Equatable, Sendable {
                 width: width, height: height, fovDegrees: perspectiveOverrideFOVDegrees
             )
             : sceneMatrix
+        let particleFOV = perspectiveOverrideFOVDegrees > 0 ? perspectiveOverrideFOVDegrees : sceneCamera.fov
+        particlePerspectiveViewProjectionMatrix = usesPerspectiveProjection || particleFOV <= 0
+            ? nil
+            : Self.objectPerspectiveViewProjectionMatrix(width: width, height: height, fovDegrees: particleFOV)
     }
 
     func usesObjectPerspective(objectID: String) -> Bool {
@@ -502,6 +510,7 @@ struct WPEMetalCameraUniforms: Equatable, Sendable {
         perspectiveOverrideFOVDegrees = 0
         perspectiveObjectIDs = []
         objectPerspectiveViewProjectionMatrix = viewProjectionMatrix
+        particlePerspectiveViewProjectionMatrix = nil
         self.sceneCamera = sceneCamera
         self.lightAmbientColor = lightAmbientColor
         self.lightSkylightColor = lightSkylightColor
