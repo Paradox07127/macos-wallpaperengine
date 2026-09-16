@@ -411,7 +411,7 @@ struct WPETranslatedPipelinePrewarmPlanTests {
         #expect(
             WPETranslatedPipelinePrewarmPlan.colorPixelFormat(
                 target: .fbo(name: "_rt_Mask"),
-                localFBOs: fbos,
+                declaredFBOs: fbos,
                 sceneColorFormat: .bgra8Unorm,
                 hdr: false
             ) == .r8Unorm
@@ -419,7 +419,7 @@ struct WPETranslatedPipelinePrewarmPlanTests {
         #expect(
             WPETranslatedPipelinePrewarmPlan.colorPixelFormat(
                 target: .scene,
-                localFBOs: fbos,
+                declaredFBOs: fbos,
                 sceneColorFormat: .rgba16Float,
                 hdr: true
             ) == .rgba16Float
@@ -427,7 +427,7 @@ struct WPETranslatedPipelinePrewarmPlanTests {
         #expect(
             WPETranslatedPipelinePrewarmPlan.colorPixelFormat(
                 target: .fbo(name: "_rt_Color"),
-                localFBOs: [WPERenderFBO(name: "_rt_Color", scale: 1, format: "rgba8888")],
+                declaredFBOs: [WPERenderFBO(name: "_rt_Color", scale: 1, format: "rgba8888")],
                 sceneColorFormat: .bgra8Unorm,
                 hdr: true
             ) == .rgba16Float,
@@ -435,6 +435,24 @@ struct WPETranslatedPipelinePrewarmPlanTests {
         )
         #expect(WPETranslatedPipelinePrewarmPlan.depthPixelFormat(needsDepth: false) == .invalid)
         #expect(WPETranslatedPipelinePrewarmPlan.depthPixelFormat(needsDepth: true) == .depth32Float)
+    }
+
+    @Test("A name declared by several layers resolves to the last declaration, matching the target pool")
+    func duplicateFBODeclarationsResolveToTheLast() {
+        // Layer order: an earlier layer declares rg1616f, a later one r8; the pool keys the texture from the later one.
+        let declared = [
+            WPERenderFBO(name: "_rt_Dup", scale: 1, format: "rg1616f"),
+            WPERenderFBO(name: "_rt_Other", scale: 1, format: "rgba8888"),
+            WPERenderFBO(name: "_rt_Dup", scale: 1, format: "r8"),
+        ]
+        #expect(
+            WPETranslatedPipelinePrewarmPlan.colorPixelFormat(
+                target: .fbo(name: "_rt_Dup"),
+                declaredFBOs: declared,
+                sceneColorFormat: .bgra8Unorm,
+                hdr: false
+            ) == .r8Unorm
+        )
     }
 }
 

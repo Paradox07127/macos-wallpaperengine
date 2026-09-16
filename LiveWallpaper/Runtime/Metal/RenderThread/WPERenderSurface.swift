@@ -211,7 +211,8 @@ enum WPEDisplayHDROutput {
     /// once frames are in flight is the race `WPEPresentLayer` warns about.
     static func apply(to layer: CAMetalLayer, hdrOutputEnabled: Bool) {
         guard hdrOutputEnabled else { return }
-        layer.colorspace = CGColorSpace(name: CGColorSpace.extendedLinearDisplayP3)
+        // The scene works in linear sRGB (sRGB textures decode in hardware, no pass converts primaries); a P3 tag would reinterpret every saturated colour.
+        layer.colorspace = CGColorSpace(name: CGColorSpace.extendedLinearSRGB)
         layer.wantsExtendedDynamicRangeContent = true
     }
 }

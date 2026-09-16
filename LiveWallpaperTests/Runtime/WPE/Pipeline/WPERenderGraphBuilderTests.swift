@@ -512,7 +512,8 @@ struct WPERenderGraphBuilderTests {
         let graph = try WPERenderGraphBuilder(cacheRootURL: root).build(document: document)
         let beam = try #require(graph.layers.first { $0.objectID == "96" })
 
-        #expect(beam.geometry.origin == SIMD3<Double>(1100 - 100 * scale, 1200 + 100 * scale, 0))
+        // parent origin (1000,1000) + scale·child local origin (100,200) + scale·anchor offset (-100,100): x cancels.
+        #expect(beam.geometry.origin == SIMD3<Double>(1000, 1000 + 300 * scale, 0))
         #expect(beam.geometry.shapePoints == [
             SIMD2<Double>(0.4, 0.25),
             SIMD2<Double>(0.6, 0.25),
@@ -744,6 +745,265 @@ struct WPERenderGraphBuilderTests {
         let outerIdx = try #require(ids.firstIndex(of: "outer"))
         #expect(childIdx < innerIdx)
         #expect(innerIdx < outerIdx)
+    }
+
+    // MARK: - Group-local geometry field fidelity (G2)
+
+    private static let shapeQuadPoints = [
+        SIMD2<Double>(0.4, 0.25),
+        SIMD2<Double>(0.6, 0.25),
+        SIMD2<Double>(0.94451, 0.83623),
+        SIMD2<Double>(0.09498, 0.88795),
+    ]
+
+    private func writeGroupShapeQuadAssets(root: URL) throws {
+        try writeJSON(["material": "materials/util/composelayer.json"], to: root.appendingPathComponent("models/util/composelayer.json"))
+        try writeJSON([
+            "passes": [["shader": "compose", "textures": ["_rt_FullFrameBuffer"]]],
+        ], to: root.appendingPathComponent("materials/util/composelayer.json"))
+        try writeJSON([
+            "passes": [[
+                "material": "materials/effects/lightshafts.json",
+                "bind": [["index": 0, "name": "previous"]],
+            ]],
+        ], to: root.appendingPathComponent("effects/lightshafts/effect.json"))
+        try writeJSON([
+            "passes": [["shader": "effects/lightshafts", "blending": "normal"]],
+        ], to: root.appendingPathComponent("materials/effects/lightshafts.json"))
+    }
+
+    private func shapeQuadObject(id: String, parent: String) -> [String: Any] {
+        [
+            "id": id, "name": "beam", "shape": "quad", "parent": parent,
+            "origin": "600 450 0", "size": "300 120", "alignment": "topleft",
+            "alpha": [
+                "value": 0.6,
+                "animation": [
+                    "c0": [["frame": 0, "value": 0.6], ["frame": 30, "value": 0.2]],
+                    "options": ["fps": 30, "length": 30, "mode": "loop"],
+                ],
+            ],
+            "color": [
+                "value": "0.2 0.5 0.9",
+                "animation": [
+                    "c0": [["frame": 0, "value": 0.2], ["frame": 30, "value": 1]],
+                    "c1": [["frame": 0, "value": 0.5], ["frame": 30, "value": 1]],
+                    "c2": [["frame": 0, "value": 0.9], ["frame": 30, "value": 1]],
+                    "options": ["fps": 30, "length": 30, "mode": "loop"],
+                ],
+            ],
+            "brightness": 1.4,
+            "effects": [[
+                "id": 97,
+                "file": "effects/lightshafts/effect.json",
+                "visible": true,
+                "passes": [[
+                    "combos": ["DIRECTDRAW": 1, "RENDERING": 1],
+                    "constantshadervalues": [
+                        "point0": "0.4 0.25",
+                        "point1": "0.6 0.25",
+                        "point2": "0.94451 0.83623",
+                        "point3": "0.09498 0.88795",
+                    ],
+                ]],
+            ]],
+        ]
+    }
+
+    @Test("Group-local geometry keeps a shape:quad child's corner points and every copied field")
+    func groupLocalGeometryKeepsShapePointsAndCopiedFields() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WPERenderGraphBuilderTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try writeGroupShapeQuadAssets(root: root)
+
+        let scenePayload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 1000, "height": 800, "auto": true]],
+            "objects": [
+                ["id": "group", "name": "Group", "type": "image", "image": "models/util/composelayer.json", "origin": "500 400 0", "size": "200 100 0"],
+                shapeQuadObject(id: "96", parent: "group"),
+            ],
+        ]
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: scenePayload))
+        let graph = try WPERenderGraphBuilder(cacheRootURL: root).build(document: document)
+
+        let beam = try #require(graph.layers.first { $0.objectID == "96" })
+        #expect(beam.groupRenderTarget == "_rt_layerGroup_group")
+        #expect(beam.passes.last?.target == .fbo(name: "_rt_layerGroup_group"))
+        let authored = beam.geometry
+        try #require(authored.alphaAnimation != nil)
+        try #require(authored.colorAnimation != nil)
+        let local = try #require(beam.groupLocalGeometry)
+
+        // world (500+600, 400+450) − group origin (500,400) + half group size (100,50).
+        #expect(local.origin == SIMD3<Double>(700, 500, 0))
+        #expect(local.shapePoints == Self.shapeQuadPoints)
+        #expect(local.shapePoints == authored.shapePoints)
+        #expect(local.alignment == .topLeft)
+        #expect(local.alignment == authored.alignment)
+        #expect(local.size == CGSize(width: 300, height: 120))
+        #expect(local.size == authored.size)
+        #expect(local.puppetMeshCenter == authored.puppetMeshCenter)
+        #expect(local.alpha == 0.6)
+        #expect(local.alpha == authored.alpha)
+        #expect(local.alphaAnimation == authored.alphaAnimation)
+        #expect(local.color == SIMD3<Double>(0.2, 0.5, 0.9))
+        #expect(local.color == authored.color)
+        #expect(local.colorAnimation == authored.colorAnimation)
+        #expect(local.brightness == 1.4)
+        #expect(local.brightness == authored.brightness)
+    }
+
+    @Test("Nested group: a shape:quad child keeps its corner points in the nearest group's local geometry")
+    func nestedGroupLocalGeometryKeepsShapePoints() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WPERenderGraphBuilderTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try writeGroupShapeQuadAssets(root: root)
+
+        let scenePayload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 1000, "height": 800, "auto": true]],
+            "objects": [
+                ["id": "outer", "name": "Outer", "type": "image", "image": "models/util/composelayer.json", "origin": "500 400 0", "size": "600 400 0"],
+                ["id": "inner", "name": "Inner", "type": "image", "image": "models/util/composelayer.json", "parent": "outer", "origin": "500 400 0", "size": "200 100 0"],
+                shapeQuadObject(id: "96", parent: "inner"),
+            ],
+        ]
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: scenePayload))
+        let graph = try WPERenderGraphBuilder(cacheRootURL: root).build(document: document)
+
+        let beam = try #require(graph.layers.first { $0.objectID == "96" })
+        #expect(beam.groupRenderTarget == "_rt_layerGroup_inner")
+        #expect(beam.groupLocalGeometry?.shapePoints == Self.shapeQuadPoints)
+        #expect(beam.groupLocalGeometry?.alphaAnimation == beam.geometry.alphaAnimation)
+        #expect(beam.groupLocalGeometry?.colorAnimation == beam.geometry.colorAnimation)
+
+        let inner = try #require(graph.layers.first { $0.objectID == "inner" })
+        #expect(inner.groupRenderTarget == "_rt_layerGroup_outer")
+        #expect(inner.groupLocalGeometry?.shapePoints == nil)
+    }
+
+    // MARK: - Group scene-alias rewrite covers explicit binds (F11)
+
+    private func writeGroupBlendEffectAssets(root: URL) throws {
+        try writeJSON(["material": "materials/util/composelayer.json"], to: root.appendingPathComponent("models/util/composelayer.json"))
+        try writeJSON([
+            "passes": [["shader": "compose", "textures": ["_rt_FullFrameBuffer"]]],
+        ], to: root.appendingPathComponent("materials/util/composelayer.json"))
+        try writeJSON(["material": "materials/child.json"], to: root.appendingPathComponent("models/child.json"))
+        try writeJSON([
+            "passes": [["shader": "genericimage2", "textures": ["child_albedo"]]],
+        ], to: root.appendingPathComponent("materials/child.json"))
+        try writeJSON([
+            "passes": [[
+                "material": "materials/effects/blend.json",
+                "bind": [["index": 0, "name": "previous"], ["index": 1, "name": "_rt_FullFrameBuffer"]],
+            ]],
+        ], to: root.appendingPathComponent("effects/blend/effect.json"))
+        try writeJSON([
+            "passes": [["shader": "effects/blend", "blending": "normal"]],
+        ], to: root.appendingPathComponent("materials/effects/blend.json"))
+    }
+
+    private var blendEffect: [String: Any] {
+        ["id": 9, "file": "effects/blend/effect.json", "visible": true]
+    }
+
+    private func referencesSceneAlias(_ pass: WPERenderPass) -> Bool {
+        let refs = [pass.source] + Array(pass.textures.values) + Array(pass.binds.values)
+        return refs.contains {
+            if case let .fbo(name) = $0 {
+                WPETextureReference.isSceneAliasName(name)
+            } else {
+                false
+            }
+        }
+    }
+
+    @Test("Composelayer group effect binds to _rt_FullFrameBuffer resolve to the group buffer; the same bind outside a group stays a scene alias")
+    func composelayerGroupEffectBindsFollowGroupBuffer() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WPERenderGraphBuilderTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try writeGroupBlendEffectAssets(root: root)
+
+        let scenePayload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 1000, "height": 800, "auto": true]],
+            "objects": [
+                ["id": "group", "name": "Group", "type": "image", "image": "models/util/composelayer.json", "origin": "500 400 0", "size": "200 100 0", "effects": [blendEffect]],
+                ["id": "child", "name": "Child", "type": "image", "image": "models/child.json", "parent": "group", "origin": "500 400 0", "size": "40 30 0"],
+                ["id": "solo", "name": "Solo", "type": "image", "image": "models/child.json", "origin": "100 100 0", "size": "40 30 0", "effects": [blendEffect]],
+            ],
+        ]
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: scenePayload))
+        let graph = try WPERenderGraphBuilder(cacheRootURL: root).build(document: document)
+        let groupTarget = WPETextureReference.fbo("_rt_layerGroup_group")
+
+        let group = try #require(graph.layers.first { $0.objectID == "group" })
+        let compose = try #require(group.passes.first { $0.shader == "compose" })
+        #expect(compose.source == groupTarget)
+        #expect(compose.textures[0] == groupTarget)
+        let blend = try #require(group.passes.first { $0.shader == "effects/blend" })
+        #expect(blend.binds[0] == .previous)
+        #expect(blend.binds[1] == groupTarget)
+        #expect(!group.passes.contains(where: referencesSceneAlias))
+
+        let solo = try #require(graph.layers.first { $0.objectID == "solo" })
+        let soloBlend = try #require(solo.passes.first { $0.shader == "effects/blend" })
+        #expect(soloBlend.binds[1] == .fbo(WPESceneAliasName.fullFrameBuffer))
+
+        let prepared = try WPERenderPipelineBuilder(cacheRootURL: root).build(graph: graph)
+        let preparedGroup = try #require(prepared.layers.first { $0.graphLayer.objectID == "group" })
+        let preparedBlend = try #require(preparedGroup.passes.first { $0.pass.shader == "effects/blend" })
+        #expect(preparedBlend.textureBindings[1] == groupTarget)
+        #expect(preparedBlend.textureBindings[0] == preparedBlend.pass.source)
+        let preparedSolo = try #require(prepared.layers.first { $0.graphLayer.objectID == "solo" })
+        let preparedSoloBlend = try #require(preparedSolo.passes.first { $0.pass.shader == "effects/blend" })
+        #expect(preparedSoloBlend.textureBindings[1] == .fbo(WPESceneAliasName.fullFrameBuffer))
+    }
+
+    @Test("Nested composelayer groups each bind _rt_FullFrameBuffer to their own (nearest) group buffer")
+    func nestedComposelayerGroupEffectBindsNearestGroupBuffer() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WPERenderGraphBuilderTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try writeGroupBlendEffectAssets(root: root)
+
+        let scenePayload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 1000, "height": 800, "auto": true]],
+            "objects": [
+                ["id": "outer", "name": "Outer", "type": "image", "image": "models/util/composelayer.json", "origin": "500 400 0", "size": "600 400 0", "effects": [blendEffect]],
+                ["id": "inner", "name": "Inner", "type": "image", "image": "models/util/composelayer.json", "parent": "outer", "origin": "500 400 0", "size": "200 100 0", "effects": [blendEffect]],
+                ["id": "child", "name": "Child", "type": "image", "image": "models/child.json", "parent": "inner", "origin": "500 400 0", "size": "40 30 0"],
+            ],
+        ]
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: scenePayload))
+        let graph = try WPERenderGraphBuilder(cacheRootURL: root).build(document: document)
+
+        let inner = try #require(graph.layers.first { $0.objectID == "inner" })
+        let innerBlend = try #require(inner.passes.first { $0.shader == "effects/blend" })
+        #expect(innerBlend.binds[1] == .fbo("_rt_layerGroup_inner"))
+        #expect(inner.passes.last?.target == .fbo(name: "_rt_layerGroup_outer"))
+        #expect(!inner.passes.contains(where: referencesSceneAlias))
+
+        let outer = try #require(graph.layers.first { $0.objectID == "outer" })
+        let outerBlend = try #require(outer.passes.first { $0.shader == "effects/blend" })
+        #expect(outerBlend.binds[1] == .fbo("_rt_layerGroup_outer"))
+        #expect(outer.passes.last?.target == .scene)
+        #expect(!outer.passes.contains(where: referencesSceneAlias))
+
+        let prepared = try WPERenderPipelineBuilder(cacheRootURL: root).build(graph: graph)
+        let preparedInner = try #require(prepared.layers.first { $0.graphLayer.objectID == "inner" })
+        let preparedInnerBlend = try #require(preparedInner.passes.first { $0.pass.shader == "effects/blend" })
+        #expect(preparedInnerBlend.textureBindings[1] == .fbo("_rt_layerGroup_inner"))
     }
 
     @Test("Three-level composelayer group nesting keeps producer-before-consumer order")
@@ -2523,6 +2783,61 @@ struct WPERenderGraphBuilderTests {
         #expect(layer.passes[2].binds[0] == .fbo("blur_start_2"))
     }
 
+    @Test("An effect bind naming an `_rt_` FBO declared by another object's effect resolves to .fbo on the reading layer")
+    func crossLayerEffectFBOBindResolvesToFBO() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WPERenderGraphBuilderTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+
+        try writeJSON(["material": "materials/layer.json"], to: root.appendingPathComponent("models/layer.json"))
+        try writeJSON([
+            "passes": [["shader": "genericimage2", "textures": ["layer_albedo"]]],
+        ], to: root.appendingPathComponent("materials/layer.json"))
+        try writeJSON([
+            "fbos": [["name": "_rt_CrossLayer", "scale": 1, "format": "rg88"]],
+            "passes": [[
+                "material": "materials/effects/write_cross.json",
+                "target": "_rt_CrossLayer",
+                "bind": [["index": 0, "name": "previous"]],
+            ]],
+        ], to: root.appendingPathComponent("effects/writer/effect.json"))
+        try writeJSON([
+            "passes": [[
+                "material": "materials/effects/read_cross.json",
+                "bind": [["index": 1, "name": "_rt_CrossLayer"]],
+            ]],
+        ], to: root.appendingPathComponent("effects/reader/effect.json"))
+        try writeJSON(["passes": [["shader": "effects/write_cross"]]],
+                      to: root.appendingPathComponent("materials/effects/write_cross.json"))
+        try writeJSON(["passes": [["shader": "effects/read_cross"]]],
+                      to: root.appendingPathComponent("materials/effects/read_cross.json"))
+
+        let scenePayload: [String: Any] = [
+            "camera": ["center": "0 0 0"],
+            "general": ["orthogonalprojection": ["width": 1920, "height": 1080, "auto": true]],
+            "objects": [
+                [
+                    "id": "writer", "name": "Writer", "type": "image", "image": "models/layer.json",
+                    "effects": [["id": 1, "file": "effects/writer/effect.json"]],
+                ],
+                [
+                    "id": "reader", "name": "Reader", "type": "image", "image": "models/layer.json",
+                    "effects": [["id": 2, "file": "effects/reader/effect.json"]],
+                ],
+            ],
+        ]
+        let document = try WPESceneDocumentParser.parse(data: JSONSerialization.data(withJSONObject: scenePayload))
+
+        let graph = try WPERenderGraphBuilder(cacheRootURL: root).build(document: document)
+        let writer = try #require(graph.layers.first(where: { $0.objectID == "writer" }))
+        let reader = try #require(graph.layers.first(where: { $0.objectID == "reader" }))
+        #expect(writer.localFBOs == [WPERenderFBO(name: "_rt_CrossLayer", scale: 1, format: "rg88")])
+        #expect(reader.localFBOs.isEmpty)
+        let readPass = try #require(reader.passes.first(where: { $0.shader == "effects/read_cross" }))
+        #expect(readPass.binds[1] == .fbo("_rt_CrossLayer"))
+    }
+
     @Test("Both solidlayer model variants use the premultiplied solidlayer builtin")
     func solidLayerVariantsUsePremultipliedBuiltin() throws {
         func shaders(forModel model: String) throws -> [String] {
@@ -2762,6 +3077,61 @@ struct WPERenderGraphBuilderTests {
         let gateIDs = graph.layers.flatMap { $0.passes.compactMap(\.visibilityGate?.id) }
         #expect(gateIDs.count == 2)
         #expect(Set(gateIDs).count == 1)
+    }
+
+    @Test("Initially visible scripted effect keeps a prepared gate whose real script flips true→false→true")
+    func initiallyVisibleScriptedEffectGateFlipsWithRealScript() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WPERenderGraphBuilderTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try writeGatedEffectAssets(root: root)
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("shaders/effects"), withIntermediateDirectories: true)
+        try Data("void main() { gl_Position = vec4(0.0); }".utf8)
+            .write(to: root.appendingPathComponent("shaders/effects/lut.vert"))
+        try Data("uniform sampler2D g_Texture0;\nuniform float multiply1;\nvoid main() { gl_FragColor = texSample2D(g_Texture0, vec2(0.5)) * multiply1; }".utf8)
+            .write(to: root.appendingPathComponent("shaders/effects/lut.frag"))
+
+        let payload = gatedEffectScene(
+            effectVisible: ["script": Self.nightGateScript, "value": true]
+        )
+        let document = try WPESceneDocumentParser.parse(
+            data: JSONSerialization.data(withJSONObject: payload)
+        )
+        let graph = try WPERenderGraphBuilder(cacheRootURL: root).build(document: document)
+        let prepared = try WPERenderPipelineBuilder(cacheRootURL: root).build(graph: graph)
+        let layer = try #require(prepared.layers.first)
+
+        let gated = try #require(layer.passes.first { $0.pass.visibilityGate != nil })
+        let gate = try #require(gated.pass.visibilityGate)
+        #expect(gated.pass.shader == "effects/lut")
+        #expect(gate.initialVisible == true)
+        #expect(gate.script.script == Self.nightGateScript)
+        #expect(gated.pass.constantScripts["multiply1"]?.script == Self.nightAmountScript)
+        // A closed gate is a passthrough copy into a composite (encodeGatedPassthrough); the scene draw itself is never gated.
+        guard case .layerComposite = gated.pass.target else {
+            Issue.record("gated pass must write a layer composite, got \(gated.pass.target)")
+            return
+        }
+        #expect(layer.passes.filter { $0.pass.target == .scene }.map(\.pass.visibilityGate) == [nil])
+
+        let shared = WPESharedScriptState()
+        let instance = try WPEDynamicTransformScriptInstance(
+            script: gate.script.script,
+            scriptProperties: gate.script.scriptProperties,
+            seed: gate.script.seed,
+            valueShape: .boolean,
+            canvasSize: SIMD2<Double>(1920, 1080),
+            shared: shared
+        )
+        defer { _ = instance.destroy() }
+        var observed: [Double] = []
+        for (frame, shownight) in [true, false, true].enumerated() {
+            shared.set("shownight", shownight)
+            let value = try #require(instance.tick(pointerPosition: .zero, runtimeSeconds: Double(frame) / 30))
+            observed.append(value.x)
+        }
+        #expect(observed == [1, 0, 1])
     }
 
     // MARK: - Puppet placement (preserve authored canvas)

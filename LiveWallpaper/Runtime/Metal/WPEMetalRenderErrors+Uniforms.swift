@@ -347,9 +347,11 @@ struct WPEPuppetMeshUniforms {
 /// Layout MUST match `WPESceneModelMeshUniforms` in `WPEMetalBuiltins.metal`.
 struct WPESceneModelMeshUniforms {
     var modelViewProjectionMatrix: simd_float4x4
-    /// Kept separate from the composed MVP: generic2/generic4 need the WORLD position and world normal, and the view-projection alone (screen-space reflection offset).
+    /// Kept separate from the composed MVP: generic2/generic4 need the WORLD position, and the view-projection alone (screen-space reflection offset).
     var modelMatrix: simd_float4x4
     var viewProjectionMatrix: simd_float4x4
+    /// `transpose(inverse(mat3(modelMatrix)))` for world normals (WPE `g_NormalModelMatrix`); identity when the 3×3 is singular.
+    var normalMatrix: simd_float3x3
     /// x = bone palette count, y = skinning enabled (1/0), z/w reserved.
     var modeAndPadding: SIMD4<Float>
     /// xyz = g_EyePosition, w reserved.

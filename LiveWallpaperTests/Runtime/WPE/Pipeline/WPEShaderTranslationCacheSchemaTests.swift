@@ -13,6 +13,8 @@ struct WPEShaderTranslationCacheSchemaTests {
     static let translatorSources = [
         "LiveWallpaper/Runtime/Metal/WPEShaderTranspiler.swift",
         "LiveWallpaper/Runtime/Metal/WPEShaderTranspiler+Main.swift",
+        "LiveWallpaper/Runtime/Metal/WPEShaderTranspiler+Math.swift",
+        "LiveWallpaper/Runtime/Metal/WPEShaderTranspiler+Uniforms.swift",
         "LiveWallpaper/Runtime/Metal/WPEShaderTranspiler+Helpers.swift",
         "LiveWallpaper/Runtime/Metal/WPEShaderTranspiler+Preprocessor.swift",
         "LiveWallpaper/Runtime/Metal/WPEShaderTranspiler+Render.swift",
@@ -21,13 +23,17 @@ struct WPEShaderTranslationCacheSchemaTests {
         "LiveWallpaper/Runtime/Metal/WPEShaderTranspilerTypes.swift",
         "LiveWallpaper/Runtime/Metal/WPEShaderPreprocessor.swift",
         "LiveWallpaper/Runtime/Metal/WPESwiftShaderCompiler.swift",
+        // The uniform ABI: `WPEUniformType` shapes the MSL accessors and `WPEUniformPacking` the CPU bytes
+        // they read, so a cached MSL from either side's previous layout would misread the other.
+        "LiveWallpaper/Runtime/Metal/WPEUniformType.swift",
+        "LiveWallpaper/Runtime/Metal/WPEUniformPacking.swift",
         // Stage 3 lives here: `#include` expansion, prelude, implicit combo defines and the
         // `gl_FragColor` rewrite shape the MSL before the preprocessor above sees the source.
         "LiveWallpaper/Runtime/Metal/WPERenderPipelineBuilder.swift",
     ]
 
-    static let expectedSchemaVersion = 13
-    static let expectedFingerprint = "e9cfb10130784fc8ff26dd1be061c21eb08c101f822388db0a401132bc662f0c"
+    static let expectedSchemaVersion = 14
+    static let expectedFingerprint = "10661ccd1713cae05bbd62e404cddd1bf5549755adc9ecaf1796a31dd78146dd"
 
     @Test("Hosted shader cache defaults stay in the process configuration scratch tree")
     func defaultCacheRootIsIsolated() {

@@ -58,7 +58,9 @@ struct WPEDisplayHDROutputTests {
 
     /// EDR needs all three: a float format, an extended-range colorspace, and the
     /// request itself - the request is not optional decoration.
-    @Test("on sets the extended-linear colorspace and requests EDR")
+    /// The tag must name the scene's working space: sRGB textures decode to linear sRGB and no
+    /// pass converts primaries, so a Display P3 tag would reinterpret every saturated colour.
+    @Test("on tags the drawable extended-linear sRGB and requests EDR")
     func onRequestsEDR() {
         let layer = CAMetalLayer()
         layer.colorspace = nil
@@ -67,7 +69,8 @@ struct WPEDisplayHDROutputTests {
         WPEDisplayHDROutput.apply(to: layer, hdrOutputEnabled: true)
 
         #expect(layer.wantsExtendedDynamicRangeContent == true)
-        #expect(layer.colorspace?.name == CGColorSpace.extendedLinearDisplayP3)
+        #expect(layer.colorspace?.name == CGColorSpace.extendedLinearSRGB)
+        #expect(layer.colorspace?.name != CGColorSpace.extendedLinearDisplayP3)
     }
 
     /// The four pairings the present path can produce. Only float→8-bit is refused: the

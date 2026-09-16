@@ -116,7 +116,14 @@ final class WPEMetalRenderTargetPool {
     private var aliasHeap: MTLHeap?
     private var aliasLastPassByKey: [WPEMetalRenderTargetKey: Int] = [:]
     private var aliasFrameTextures: [WPEMetalRenderTargetKey: (texture: MTLTexture, lastPass: Int)] = [:]
-    private var aliasPlanSignature: Int?
+    /// What `aliasHeap` was sized for. Keys are deliberately absent: the same size/lifetime
+    /// sequence under different keys reuses the heap but must still refresh `aliasLastPassByKey`.
+    private struct AliasPlanInputs: Equatable {
+        let intervals: [WPEMetalFBOAliasPlanner.Interval]
+        let alignment: Int
+    }
+
+    private var aliasPlanInputs: AliasPlanInputs?
 
     /// Compare INPUTS, not the post-descriptor plan signature. Full equality (not a hash) so a collision cannot serve a stale plan.
     private struct PrepareInputs: Equatable {
@@ -173,7 +180,7 @@ final class WPEMetalRenderTargetPool {
         // Assigned last: `prepareAliasPlan` clears this via `releaseAliasState`
         // mid-rebuild. A planner that produced no heap (allocation failure) is
         // NOT stable — leave the cache empty so the next frame retries.
-        lastPrepareInputs = aliasPlanSignature == nil ? nil : inputs
+        lastPrepareInputs = aliasPlanInputs == nil ? nil : inputs
     }
 
     func releaseAll() {
@@ -616,14 +623,9 @@ final class WPEMetalRenderTargetPool {
             return
         }
 
-        var hasher = Hasher()
-        for interval in plannerIntervals {
-            hasher.combine(interval.size)
-            hasher.combine(interval.firstPass)
-            hasher.combine(interval.lastPass)
-        }
-        let signature = hasher.finalize()
-        if aliasPlanSignature == signature, aliasHeap != nil {
+        let planInputs = AliasPlanInputs(intervals: plannerIntervals, alignment: maxAlignment)
+        if aliasPlanInputs == planInputs, aliasHeap != nil {
+            aliasLastPassByKey = lastPassByKey
             return
         }
 
@@ -641,7 +643,7 @@ final class WPEMetalRenderTargetPool {
 
         aliasHeap = heap
         aliasLastPassByKey = lastPassByKey
-        aliasPlanSignature = signature
+        aliasPlanInputs = planInputs
     }
 
     private func releaseAliasState() {
@@ -652,7 +654,7 @@ final class WPEMetalRenderTargetPool {
         aliasFrameTextures.removeAll(keepingCapacity: false)
         aliasLastPassByKey.removeAll(keepingCapacity: false)
         aliasHeap = nil
-        aliasPlanSignature = nil
+        aliasPlanInputs = nil
     }
 
     private func makeAllocation(key: WPEMetalRenderTargetKey, label: String) throws -> Allocation {

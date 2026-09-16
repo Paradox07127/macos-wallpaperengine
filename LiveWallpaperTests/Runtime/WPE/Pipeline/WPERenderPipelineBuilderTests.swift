@@ -378,6 +378,135 @@ struct WPERenderPipelineBuilderTests {
         }
     }
 
+    private static let crossLayerFormats: [(authored: String, abi: Int)] = [
+        ("rg88", WPEOfficialTextureFormatABI.rg88),
+        ("r8", WPEOfficialTextureFormatABI.r8),
+        ("rg1616f", WPEOfficialTextureFormatABI.rg1616F),
+    ]
+
+    @Test(
+        "TEXnFORMAT for an FBO declared by another layer follows that declaration (the pool allocates it that way)",
+        arguments: crossLayerFormats.indices
+    )
+    func textureFormatsForCrossLayerFBOReferencesFollowTheDeclaringLayer(formatIndex: Int) throws {
+        let format = Self.crossLayerFormats[formatIndex]
+        let writer = WPERenderLayer(
+            objectID: "writer",
+            objectName: "Declares and writes the FBO",
+            imagePath: "normal",
+            materialPath: nil,
+            geometry: .identity,
+            compositeA: "wa",
+            compositeB: "wb",
+            localFBOs: [WPERenderFBO(name: "_rt_CrossLayer", scale: 1, format: format.authored)],
+            passes: [formatProbePass(id: "writer.0", target: .fbo(name: "_rt_CrossLayer"), textures: [:])]
+        )
+        let reader = WPERenderLayer(
+            objectID: "reader",
+            objectName: "Samples the other layer's FBO",
+            imagePath: "normal",
+            materialPath: nil,
+            geometry: .identity,
+            compositeA: "ra",
+            compositeB: "rb",
+            localFBOs: [],
+            passes: [
+                formatProbePass(
+                    id: "reader.0",
+                    target: .scene,
+                    textures: [1: .fbo("_rt_CrossLayer"), 2: .previous, 3: .fbo("_rt_FullFrameBuffer")]
+                ),
+                // Feedback into the other layer's FBO: `.previous` inherits its declared format too.
+                formatProbePass(id: "reader.1", target: .fbo(name: "_rt_CrossLayer"), textures: [1: .previous]),
+            ]
+        )
+        let fixture = try makeFixture(files: formatProbeShaderFiles)
+        defer { fixture.cleanup() }
+
+        let pipeline = try WPERenderPipelineBuilder(cacheRootURL: fixture.root)
+            .build(graph: WPERenderGraph(layers: [writer, reader]))
+        let readerPasses = try #require(pipeline.layers.last?.passes)
+        #expect(readerPasses[0].comboValues["TEX1FORMAT"] == format.abi)
+        #expect(readerPasses[0].comboValues["TEX2FORMAT"] == WPEOfficialTextureFormatABI.rgba8888)
+        #expect(readerPasses[0].comboValues["TEX3FORMAT"] == WPEOfficialTextureFormatABI.rgba8888)
+        #expect(readerPasses[1].comboValues["TEX1FORMAT"] == format.abi)
+    }
+
+    @Test("Duplicate FBO names across layers resolve to the last declaration, matching the pool's allocation")
+    func duplicateFBONamesResolveToTheLastDeclarationLikeThePool() throws {
+        let first = WPERenderLayer(
+            objectID: "first",
+            objectName: "First declaration",
+            imagePath: "normal",
+            materialPath: nil,
+            geometry: .identity,
+            compositeA: "fa",
+            compositeB: "fb",
+            localFBOs: [WPERenderFBO(name: "_rt_Dup", scale: 1, format: "rg1616f")],
+            passes: [formatProbePass(id: "first.0", target: .scene, textures: [1: .fbo("_rt_Dup")])]
+        )
+        let second = WPERenderLayer(
+            objectID: "second",
+            objectName: "Last declaration wins",
+            imagePath: "normal",
+            materialPath: nil,
+            geometry: .identity,
+            compositeA: "sa",
+            compositeB: "sb",
+            localFBOs: [WPERenderFBO(name: "_rt_Dup", scale: 1, format: "r8")],
+            passes: [formatProbePass(id: "second.0", target: .scene, textures: [1: .fbo("_rt_Dup")])]
+        )
+        let fixture = try makeFixture(files: formatProbeShaderFiles)
+        defer { fixture.cleanup() }
+
+        let pipeline = try WPERenderPipelineBuilder(cacheRootURL: fixture.root)
+            .build(graph: WPERenderGraph(layers: [first, second]))
+        for layer in pipeline.layers {
+            #expect(
+                layer.passes[0].comboValues["TEX1FORMAT"] == WPEOfficialTextureFormatABI.r8,
+                Comment(rawValue: layer.graphLayer.objectID)
+            )
+        }
+
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let pool = WPEMetalRenderTargetPool(device: device)
+        pool.prepare(pipeline: pipeline)
+        #expect(pool.zeroFilledPlaceholderTexture(forDeclaredFBO: "_rt_Dup")?.pixelFormat == .r8Unorm)
+    }
+
+    private var formatProbeShaderFiles: [String: String] {
+        [
+            "shaders/effects/format_probe.vert": """
+            attribute vec3 a_Position;
+            void main() { gl_Position = vec4(a_Position, 1.0); }
+            """,
+            "shaders/effects/format_probe.frag": """
+            #include "common_fragment.h"
+            void main() { gl_FragColor = vec4(1.0); }
+            """,
+        ]
+    }
+
+    private func formatProbePass(
+        id: String, target: WPERenderTarget, textures: [Int: WPETextureReference]
+    ) -> WPERenderPass {
+        WPERenderPass(
+            id: id,
+            phase: .effect(file: "effects/format_probe/effect.json"),
+            shader: "effects/format_probe",
+            source: .image("normal"),
+            target: target,
+            textures: textures,
+            binds: [:],
+            constants: [:],
+            combos: [:],
+            blending: "normal",
+            cullMode: "nocull",
+            depthTest: "disabled",
+            depthWrite: "disabled"
+        )
+    }
+
     @Test("SceneScript transform journal overlays current-generation assignments before geometry preparation")
     func sceneScriptTransformJournalGeometryMerge() throws {
         let layer = WPERenderLayer(
@@ -1327,9 +1456,261 @@ struct WPERenderPipelineBuilderTests {
         ])
 
         let pipeline = try WPERenderPipelineBuilder(cacheRootURL: fixture.root).build(graph: graph)
-        let source = try #require(pipeline.layers.first?.passes.first?.shader?.fragmentSource)
-        #expect(source.components(separatedBy: "official_once_marker = 1.0").count - 1 == 1)
-        #expect(source.contains("include-once: shaders/common_blur.h"))
+        let pass = try #require(pipeline.layers.first?.passes.first)
+        let effective = try effectiveFragmentSource(of: pass)
+        #expect(occurrences(of: "official_once_marker = 1.0", in: effective) == 1)
+        #expect(!effective.contains("#include"))
+        try compileFragment(of: pass)
+    }
+
+    @Test("An include inside a dead `#if 0` branch does not consume the once-only slot of a later live include")
+    func includeInsideDeadBranchDoesNotConsumeIncludeOnce() throws {
+        let fixture = try makeFixture(files: [
+            "shaders/effects/once_h.h": "float once_h_marker(float x) { return x * 2.0; }",
+            "shaders/effects/dead_include.vert": "void main() { gl_Position = vec4(0.0); }",
+            "shaders/effects/dead_include.frag": """
+            #if 0
+            #include "once_h.h"
+            #endif
+            #include "once_h.h"
+            void main() { gl_FragColor = vec4(once_h_marker(0.5)); }
+            """,
+        ])
+        defer { fixture.cleanup() }
+
+        let pipeline = try WPERenderPipelineBuilder(cacheRootURL: fixture.root)
+            .build(graph: includeProbeGraph(shader: "effects/dead_include"))
+        let pass = try #require(pipeline.layers.first?.passes.first)
+        let effective = try effectiveFragmentSource(of: pass)
+        #expect(occurrences(of: "float once_h_marker(float x)", in: effective) == 1)
+        try compileFragment(of: pass)
+    }
+
+    @Test("Nested includes reached through a dead branch still expand exactly once each")
+    func nestedIncludeThroughDeadBranchKeepsOneCopyEach() throws {
+        let fixture = try makeFixture(files: [
+            "shaders/effects/once_g.h": "float once_g_marker(float x) { return x + 1.0; }",
+            "shaders/effects/once_h.h": """
+            #include "once_g.h"
+            float once_h_marker(float x) { return once_g_marker(x) * 2.0; }
+            """,
+            "shaders/effects/nested_dead.vert": "void main() { gl_Position = vec4(0.0); }",
+            "shaders/effects/nested_dead.frag": """
+            #if 0
+            #include "once_h.h"
+            #endif
+            #include "once_h.h"
+            #include "once_g.h"
+            void main() { gl_FragColor = vec4(once_h_marker(0.5)); }
+            """,
+        ])
+        defer { fixture.cleanup() }
+
+        let pipeline = try WPERenderPipelineBuilder(cacheRootURL: fixture.root)
+            .build(graph: includeProbeGraph(shader: "effects/nested_dead"))
+        let pass = try #require(pipeline.layers.first?.passes.first)
+        let effective = try effectiveFragmentSource(of: pass)
+        #expect(occurrences(of: "float once_g_marker(float x)", in: effective) == 1)
+        #expect(occurrences(of: "float once_h_marker(float x)", in: effective) == 1)
+        try compileFragment(of: pass)
+    }
+
+    @Test("A combo-gated include takes effect only in the branch the combo selects", arguments: [0, 1])
+    func comboGatedIncludeFollowsComboValue(comboValue: Int) throws {
+        let fixture = try makeFixture(files: [
+            "shaders/effects/once_h.h": "float once_h_marker(float x) { return x * 2.0; }",
+            "shaders/effects/once_k.h": "float once_k_marker(float x) { return x + 1.0; }",
+            "shaders/effects/combo_include.vert": "void main() { gl_Position = vec4(0.0); }",
+            "shaders/effects/combo_include.frag": """
+            // [COMBO] {"combo":"PROBEINCLUDE","default":0}
+            #if PROBEINCLUDE
+            #include "once_h.h"
+            #else
+            #include "once_k.h"
+            #endif
+            #include "once_k.h"
+            void main() {
+                gl_FragColor = vec4(once_k_marker(0.5));
+            #if PROBEINCLUDE
+                gl_FragColor += vec4(once_h_marker(0.5));
+            #endif
+            }
+            """,
+        ])
+        defer { fixture.cleanup() }
+
+        let pipeline = try WPERenderPipelineBuilder(cacheRootURL: fixture.root)
+            .build(graph: includeProbeGraph(shader: "effects/combo_include", combos: ["PROBEINCLUDE": comboValue]))
+        let pass = try #require(pipeline.layers.first?.passes.first)
+        let effective = try effectiveFragmentSource(of: pass)
+        #expect(occurrences(of: "float once_k_marker(float x)", in: effective) == 1)
+        #expect(occurrences(of: "float once_h_marker(float x)", in: effective) == comboValue)
+        try compileFragment(of: pass)
+    }
+
+    @Test("`#ifdef`/`#undef` gate includes by the macro state at that point of the source")
+    func ifdefAndUndefGateIncludes() throws {
+        let fixture = try makeFixture(files: [
+            "shaders/effects/once_h.h": "float once_h_marker(float x) { return x * 2.0; }",
+            "shaders/effects/once_k.h": "float once_k_marker(float x) { return x + 1.0; }",
+            "shaders/effects/ifdef_include.vert": "void main() { gl_Position = vec4(0.0); }",
+            "shaders/effects/ifdef_include.frag": """
+            #ifdef NEVER_DEFINED_PROBE
+            #include "once_h.h"
+            #endif
+            #define WANT_ONCE_H
+            #ifdef WANT_ONCE_H
+            #include "once_h.h"
+            #endif
+            #undef WANT_ONCE_H
+            #ifdef WANT_ONCE_H
+            #include "once_k.h"
+            #endif
+            #ifndef WANT_ONCE_H
+            #include "once_h.h"
+            #endif
+            void main() { gl_FragColor = vec4(once_h_marker(0.5)); }
+            """,
+        ])
+        defer { fixture.cleanup() }
+
+        let pipeline = try WPERenderPipelineBuilder(cacheRootURL: fixture.root)
+            .build(graph: includeProbeGraph(shader: "effects/ifdef_include"))
+        let pass = try #require(pipeline.layers.first?.passes.first)
+        let effective = try effectiveFragmentSource(of: pass)
+        #expect(occurrences(of: "float once_h_marker(float x)", in: effective) == 1)
+        #expect(occurrences(of: "float once_k_marker(float x)", in: effective) == 0)
+        try compileFragment(of: pass)
+    }
+
+    @Test("An unguarded official header and a builtin header both compile when included twice")
+    func repeatedUnguardedOfficialAndBuiltinHeadersCompile() throws {
+        // Modelled on the official `common_blending.h`, which ships without an include guard.
+        let fixture = try makeFixture(files: [
+            "shaders/common_blending.h": """
+            vec3 BlendLinearDodge(vec3 base, vec3 blend) { return base + blend; }
+            vec3 BlendOpacityProbe(vec3 base, vec3 blend, float opacity) { return mix(base, BlendLinearDodge(base, blend), opacity); }
+            """,
+            "shaders/effects/twice.vert": "void main() { gl_Position = vec4(0.0); }",
+            "shaders/effects/twice.frag": """
+            #include "common_blending.h"
+            #include "common_composite.h"
+            #include "common_blending.h"
+            #include "common_composite.h"
+            void main() { gl_FragColor = vec4(BlendOpacityProbe(vec3(0.1), vec3(0.2), 0.5), 1.0); }
+            """,
+        ])
+        defer { fixture.cleanup() }
+
+        let pipeline = try WPERenderPipelineBuilder(cacheRootURL: fixture.root)
+            .build(graph: includeProbeGraph(shader: "effects/twice"))
+        let pass = try #require(pipeline.layers.first?.passes.first)
+        let effective = try effectiveFragmentSource(of: pass)
+        #expect(occurrences(of: "vec3 BlendLinearDodge(vec3 base, vec3 blend)", in: effective) == 1)
+        #expect(occurrences(of: "wpe_common_composite_included", in: effective) == 1)
+        try compileFragment(of: pass)
+    }
+
+    @Test("A real include cycle still throws includeCycle; a missing header still throws includeMissing")
+    func includeCycleAndMissingHeaderStillThrow() throws {
+        let fixture = try makeFixture(files: [
+            "shaders/effects/cycle_a.h": "#include \"cycle_b.h\"",
+            "shaders/effects/cycle_b.h": "#include \"cycle_a.h\"",
+            "shaders/effects/self.h": "#include \"self.h\"",
+            "shaders/effects/cycle.vert": "void main() { gl_Position = vec4(0.0); }",
+            "shaders/effects/cycle.frag": "#include \"cycle_a.h\"\nvoid main() { gl_FragColor = vec4(1.0); }",
+            "shaders/effects/selfcycle.vert": "void main() { gl_Position = vec4(0.0); }",
+            "shaders/effects/selfcycle.frag": "#include \"self.h\"\nvoid main() { gl_FragColor = vec4(1.0); }",
+            "shaders/effects/missing.vert": "void main() { gl_Position = vec4(0.0); }",
+            "shaders/effects/missing.frag": "#include \"nope.h\"\nvoid main() { gl_FragColor = vec4(1.0); }",
+        ])
+        defer { fixture.cleanup() }
+        let builder = WPERenderPipelineBuilder(cacheRootURL: fixture.root)
+
+        #expect(throws: WPERenderPipelineError.includeCycle(path: "cycle_a.h")) {
+            try builder.build(graph: includeProbeGraph(shader: "effects/cycle"))
+        }
+        #expect(throws: WPERenderPipelineError.includeCycle(path: "self.h")) {
+            try builder.build(graph: includeProbeGraph(shader: "effects/selfcycle"))
+        }
+        #expect(throws: WPERenderPipelineError.includeMissing(path: "nope.h", requestedBy: "shaders/effects/missing.frag")) {
+            try builder.build(graph: includeProbeGraph(shader: "effects/missing"))
+        }
+    }
+
+    @Test("A commented-out `#include` line is not expanded")
+    func commentedIncludeLineIsIgnored() throws {
+        let fixture = try makeFixture(files: [
+            "shaders/effects/once_h.h": "float once_h_marker(float x) { return x * 2.0; }",
+            "shaders/effects/commented.vert": "void main() { gl_Position = vec4(0.0); }",
+            "shaders/effects/commented.frag": """
+            // #include "nope.h"
+            /* #include "nope.h" */
+            #include "once_h.h" // trailing comment
+            void main() { gl_FragColor = vec4(once_h_marker(0.5)); }
+            """,
+        ])
+        defer { fixture.cleanup() }
+
+        let pipeline = try WPERenderPipelineBuilder(cacheRootURL: fixture.root)
+            .build(graph: includeProbeGraph(shader: "effects/commented"))
+        let pass = try #require(pipeline.layers.first?.passes.first)
+        let effective = try effectiveFragmentSource(of: pass)
+        #expect(occurrences(of: "float once_h_marker(float x)", in: effective) == 1)
+        try compileFragment(of: pass)
+    }
+
+    private func includeProbeGraph(shader: String, combos: [String: Int] = [:]) -> WPERenderGraph {
+        WPERenderGraph(layers: [
+            WPERenderLayer(
+                objectID: "1",
+                objectName: "Layer",
+                imagePath: "materials/base.png",
+                materialPath: nil,
+                geometry: .identity,
+                compositeA: "a",
+                compositeB: "b",
+                localFBOs: [],
+                passes: [WPERenderPass(
+                    id: "1.0",
+                    phase: .effect(file: "\(shader)/effect.json"),
+                    shader: shader,
+                    source: .image("materials/base.png"),
+                    target: .scene,
+                    textures: [:],
+                    binds: [:],
+                    constants: [:],
+                    combos: combos,
+                    blending: "normal",
+                    cullMode: "nocull",
+                    depthTest: "disabled",
+                    depthWrite: "disabled"
+                )]
+            ),
+        ])
+    }
+
+    /// The fragment source after the same branch stripping the transpiler applies; raw expansion text is not what compiles.
+    private func effectiveFragmentSource(of pass: WPEPreparedRenderPass) throws -> String {
+        let source = try #require(pass.shader?.fragmentSource)
+        return WPEShaderTranspiler.stripInactivePreprocessorBranches(in: source)
+    }
+
+    private func occurrences(of needle: String, in haystack: String) -> Int {
+        haystack.components(separatedBy: needle).count - 1
+    }
+
+    private func compileFragment(of pass: WPEPreparedRenderPass) throws {
+        let shader = try #require(pass.shader)
+        let result = try WPEShaderTranspiler.translateFragment(
+            shaderName: shader.name,
+            preprocessedSource: shader.fragmentSource,
+            comboValues: pass.comboValues
+        )
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let options = MTLCompileOptions()
+        options.languageVersion = .version3_0
+        _ = try device.makeLibrary(source: result.mslSource, options: options)
     }
 
     @Test("Expands common_fragment.h ConvertSampleR8 used by WPE 2.8 font.frag")

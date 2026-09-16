@@ -43,9 +43,10 @@ enum WPETranslatedPipelinePrewarmPlan {
         return names.filter { seen.insert($0 ?? "").inserted }
     }
 
+    /// `declaredFBOs` is every layer's declarations in layer order; the last one wins, as in `WPEMetalRenderTargetPool.prepare`.
     static func colorPixelFormat(
         target: WPERenderTarget,
-        localFBOs: [WPERenderFBO],
+        declaredFBOs: [WPERenderFBO],
         sceneColorFormat: MTLPixelFormat,
         hdr: Bool
     ) -> MTLPixelFormat {
@@ -53,7 +54,7 @@ enum WPETranslatedPipelinePrewarmPlan {
         case .scene, .layerComposite:
             return sceneColorFormat
         case .fbo(let name):
-            let format = localFBOs.first(where: { $0.name == name })?.format ?? "rgba8888"
+            let format = declaredFBOs.last(where: { $0.name == name })?.format ?? "rgba8888"
             return WPEMetalRenderTargetPool.pixelFormat(forFBOFormat: format, promoteLDRToHDR: hdr)
         }
     }
@@ -171,6 +172,7 @@ extension WPEMetalSceneRenderer {
         var pipelinePrewarms: [WPEMetalRenderExecutor.WPETranslatedPipelinePrewarm] = []
         var seenPipelineKeys = Set<String>()
         var passIDSeeds: [(passID: String, result: WPEShaderCompileResult)] = []
+        let declaredFBOs = pipeline.layers.flatMap(\.graphLayer.localFBOs)
         for layer in pipeline.layers {
             for pass in layer.passes where pass.shader?.isBuiltin == false {
                 guard let request = try? WPEMetalRenderExecutor.makeCompileRequest(for: pass, recordFailure: false),
@@ -183,7 +185,7 @@ extension WPEMetalSceneRenderer {
                 )
                 let colorPixelFormat = WPETranslatedPipelinePrewarmPlan.colorPixelFormat(
                     target: pass.pass.target,
-                    localFBOs: layer.graphLayer.localFBOs,
+                    declaredFBOs: declaredFBOs,
                     sceneColorFormat: sceneColorFormat,
                     hdr: hdr
                 )
