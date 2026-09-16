@@ -6,12 +6,18 @@ import Metal
 struct WPESwiftShaderCompiler: Sendable {
     let device: MTLDevice
     let translationCache: WPEShaderTranslationCache
+    let libraryRegistry: WPEMetalLibraryRegistry
     /// Fragment-only: vertex execution stays on the built-in fullscreen quad; model/vertex-domain shaders are never compiled here.
     static let fixedVertexFunctionName = "wpe_fullscreen_vertex"
 
-    init(device: MTLDevice, translationCache: WPEShaderTranslationCache = .shared) {
+    init(
+        device: MTLDevice,
+        translationCache: WPEShaderTranslationCache = .shared,
+        libraryRegistry: WPEMetalLibraryRegistry = .shared
+    ) {
         self.device = device
         self.translationCache = translationCache
+        self.libraryRegistry = libraryRegistry
     }
 
     func compile(_ request: WPEShaderCompileRequest, recordFailure: Bool = true) throws -> WPEShaderCompileResult {
@@ -110,11 +116,7 @@ struct WPESwiftShaderCompiler: Sendable {
     ) throws -> WPEShaderCompileResult {
         let library: MTLLibrary
         do {
-            let options = MTLCompileOptions()
-            options.languageVersion = .version3_0
-            // Pin so a disk replay matches the compile that produced the MSL.
-            options.fastMathEnabled = true
-            library = try device.makeLibrary(source: mslSource, options: options)
+            library = try libraryRegistry.library(device: device, source: mslSource)
         } catch {
             if recordFailure {
                 WPESceneDebugArtifacts.shared.recordShaderFailure(

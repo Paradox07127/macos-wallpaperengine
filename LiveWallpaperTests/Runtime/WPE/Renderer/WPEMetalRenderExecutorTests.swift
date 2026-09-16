@@ -1680,7 +1680,7 @@ struct WPEMetalRenderExecutorTests {
             comboValues: [:],
             uniformValues: [:]
         )
-        let slots = executor.packTranslatedUniforms(
+        let slots = try executor.packTranslatedUniforms(
             for: prepared,
             layout: [
                 WPEUniformSlot(
@@ -1751,7 +1751,7 @@ struct WPEMetalRenderExecutorTests {
             comboValues: [:],
             uniformValues: [:]
         )
-        let slots = executor.packTranslatedUniforms(
+        let slots = try executor.packTranslatedUniforms(
             for: prepared,
             layout: [
                 WPEUniformSlot(
@@ -1779,7 +1779,7 @@ struct WPEMetalRenderExecutorTests {
         let layout = [
             WPEUniformSlot(name: "g_AudioSpectrum64Left", glslType: "float", slot: 0, slotCount: 64, arrayLength: 64)
         ]
-        let slots = executor.packTranslatedUniforms(
+        let slots = try executor.packTranslatedUniforms(
             for: packingPass(values: ["g_AudioSpectrum64Left": .vector(bins)]),
             layout: layout
         )
@@ -1797,7 +1797,7 @@ struct WPEMetalRenderExecutorTests {
         let layout = [
             WPEUniformSlot(name: "u_Points", glslType: "vec2", slot: 0, slotCount: 4, arrayLength: 4)
         ]
-        let slots = executor.packTranslatedUniforms(
+        let slots = try executor.packTranslatedUniforms(
             for: packingPass(values: ["u_Points": .vector(flat)]),
             layout: layout
         )
@@ -5299,6 +5299,28 @@ private extension WPEMetalRenderExecutorTests {
         #expect(pixel.g <= 5)
         #expect(pixel.b <= 5)
         #expect(pixel.a <= 5)
+    }
+
+    @Test("Aborted first previous clear is discarded before the next frame recovers")
+    func abortedBootstrapPreviousRecovers() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let previous = preparedBuiltinPass(copyPass(
+            id: "layer.0", source: .previous, target: .scene, blending: "disabled"
+        ), bindings: [0: .previous])
+        let missing = preparedBuiltinPass(copyPass(
+            id: "layer.1", source: .image("missing.png"), target: .scene, blending: "disabled"
+        ), bindings: [0: .image("missing.png")])
+        #expect(throws: (any Error).self) {
+            try executor.render(pipeline: preparedPipeline(localFBOs: [], passes: [previous, missing]),
+                                size: CGSize(width: 2, height: 2), textures: [:])
+        }
+        #expect(executor.bootstrapPreviousTextureCache.isEmpty)
+        let output = try executor.render(pipeline: preparedPipeline(localFBOs: [], passes: [previous]),
+                                         size: CGSize(width: 2, height: 2), textures: [:])
+        #expect(executor.bootstrapPreviousTextureCache.count == 1)
+        let pixel = try readPixel(output, x: 1, y: 1)
+        #expect(pixel.r == 0 && pixel.g == 0 && pixel.b == 0 && pixel.a == 0)
     }
 
     @Test("Bootstraps missing FBO previous with a transparent cleared texture on first render")

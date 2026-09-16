@@ -466,8 +466,8 @@ extension WPEMetalRenderExecutor {
         let anchor = SIMD2<Float>(originXPixels - sceneWidth * 0.5, originYPixels - sceneHeight * 0.5)
         let center = anchor + Self.alignmentCenterOffset(alignment: geometry.alignment, width: width, height: height)
         let local = SIMD2<Float>(
-            (point.x - Float(geometry.puppetMeshCenter.x)) * scaleX,
-            (point.y - Float(geometry.puppetMeshCenter.y)) * scaleY
+            (point.x - Float(geometry.puppetMeshCenter.x)) * scaleX * (geometry.scale.x < 0 ? -1 : 1),
+            (point.y - Float(geometry.puppetMeshCenter.y)) * scaleY * (geometry.scale.y < 0 ? -1 : 1)
         )
         let angle = Float(geometry.angles.z)
         let c = cos(angle)

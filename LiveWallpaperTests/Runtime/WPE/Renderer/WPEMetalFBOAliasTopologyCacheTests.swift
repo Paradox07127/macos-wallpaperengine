@@ -9,6 +9,30 @@ import Testing
 @Suite("WPE Metal FBO alias topology cache")
 struct WPEMetalFBOAliasTopologyCacheTests {
 
+    @Test("Same pass id and target with new read bindings invalidates alias topology")
+    func changedReadBindingsInvalidateTopology() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let executor = try WPEMetalRenderExecutor(device: device)
+        let sceneSize = CGSize(width: 64, height: 64)
+        func pipeline(reading name: String) -> WPEPreparedRenderPipeline {
+            WPEPreparedRenderPipeline(layers: [aliasLayer(objectID: "refs", passes: [
+                aliasPass(id: "write-a", source: .image("source"), target: .fbo(name: "a")),
+                aliasPass(id: "write-b", source: .image("source"), target: .fbo(name: "b")),
+                aliasPass(id: "read", source: .fbo(name), target: .scene),
+            ])])
+        }
+        let first = executor.fboAliasIntervals(pipeline: pipeline(reading: "a"), sceneSize: sceneSize)
+        #expect(first.first { $0.key.name == "a" }?.lastPass == 2)
+        let changed = pipeline(reading: "b")
+        let second = executor.fboAliasIntervals(pipeline: changed, sceneSize: sceneSize)
+        #expect(executor.fboAliasTopologyRebuildCount == 2)
+        #expect(second.first { $0.key.name == "a" }?.lastPass == 0)
+        #expect(second.first { $0.key.name == "b" }?.lastPass == 2)
+        #expect(normalizedAliasIntervals(second) == normalizedAliasIntervals(
+            referenceFBOAliasIntervals(executor: executor, pipeline: changed, sceneSize: sceneSize)
+        ))
+    }
+
     @Test("Cached-topology path matches the reference full scan across target forms")
     func cachedPathMatchesReferenceAcrossForms() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
@@ -124,20 +148,22 @@ struct WPEMetalFBOAliasTopologyCacheTests {
         #expect(!topology.matches(WPEPreparedRenderPipeline(layers: layers)))
     }
 
-    @Test("A stale topology produces wrong intervals — invalidation is load-bearing")
+    @Test("Binding changes reject a stale topology whose forced reuse produces wrong intervals")
     func staleTopologyProducesWrongIntervals() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let executor = try WPEMetalRenderExecutor(device: device)
         let sceneSize = CGSize(width: 1024, height: 768)
         let base = makeAliasFormsPipeline()
+        _ = executor.fboAliasIntervals(pipeline: base, sceneSize: sceneSize)
+        #expect(executor.fboAliasTopologyRebuildCount == 1)
         let staleTopology = executor.computeFBOAliasTopology(pipeline: base)
 
-        // The (id, target) signature deliberately does not re-check a pass's
-        // texture-reference SET: that is invariant within a load, and a reload clears
-        // the cache.
+        // IDs and targets are unchanged, but access facts now make rewiring a
+        // cache miss. No reload is needed to invalidate the old read lifetimes.
         let rewired = makeAliasFormsPipeline(fxFinalReadsBlur: true)
-        #expect(staleTopology.matches(rewired))
+        #expect(!staleTopology.matches(rewired))
 
+        // Deliberately bypass the guard to retain evidence of why it is required.
         let stale = executor.fboAliasIntervals(
             topology: staleTopology, pipeline: rewired, sceneSize: sceneSize
         )
@@ -148,8 +174,10 @@ struct WPEMetalFBOAliasTopologyCacheTests {
             normalizedAliasIntervals(stale) != normalizedAliasIntervals(correct),
             "stale topology must be observably wrong, or the cache guard has no teeth"
         )
-        // The executor never held `staleTopology`, so the guarded call is a fresh build.
+        // The real entry point must replace the already-warm base cache, not
+        // merely produce the correct result on a previously empty cache.
         let guarded = executor.fboAliasIntervals(pipeline: rewired, sceneSize: sceneSize)
+        #expect(executor.fboAliasTopologyRebuildCount == 2)
         #expect(normalizedAliasIntervals(guarded) == normalizedAliasIntervals(correct))
     }
 

@@ -382,7 +382,7 @@ struct WPEUniformResolutionPlanTests {
         executor.frameUniformContext = fixture.frame
         defer { executor.frameUniformContext = .empty }
 
-        let actual = executor.packTranslatedUniforms(
+        let actual = try executor.packTranslatedUniforms(
             for: pass,
             layout: fixture.layout,
             texturesBySlot: fixture.textures
@@ -408,7 +408,7 @@ struct WPEUniformResolutionPlanTests {
         let pass = fixture.prepared.layers[0].passes[0]
         executor.frameUniformContext = .empty
 
-        let actual = executor.packTranslatedUniforms(for: pass, layout: fixture.layout)
+        let actual = try executor.packTranslatedUniforms(for: pass, layout: fixture.layout)
         let reference = LegacyReference.packed(
             layout: fixture.layout,
             pass: pass,
@@ -429,7 +429,7 @@ struct WPEUniformResolutionPlanTests {
         executor.frameUniformContext = fixture.frame
         defer { executor.frameUniformContext = .empty }
 
-        let slots = executor.packTranslatedUniforms(
+        let slots = try executor.packTranslatedUniforms(
             for: pass,
             layout: fixture.layout,
             texturesBySlot: fixture.textures
@@ -507,7 +507,7 @@ struct WPEUniformResolutionPlanTests {
         defer { executor.frameUniformContext = .empty }
 
         for _ in 0..<5 {
-            _ = executor.packTranslatedUniforms(
+            _ = try executor.packTranslatedUniforms(
                 for: pass,
                 layout: fixture.layout,
                 texturesBySlot: fixture.textures
@@ -524,11 +524,11 @@ struct WPEUniformResolutionPlanTests {
         executor.frameUniformContext = fixture.frame
         defer { executor.frameUniformContext = .empty }
 
-        let first = executor.packTranslatedUniforms(
+        let first = try executor.packTranslatedUniforms(
             for: pass,
             layout: [WPEUniformSlot(name: "u_Static", glslType: "float", slot: 0, slotCount: 1)]
         )
-        let second = executor.packTranslatedUniforms(
+        let second = try executor.packTranslatedUniforms(
             for: pass,
             layout: [WPEUniformSlot(name: "g_Multiply", glslType: "float", slot: 0, slotCount: 1)]
         )
@@ -555,7 +555,7 @@ struct WPEUniformResolutionPlanTests {
 
         let (before, frame1) = pipeline.addingMetalRuntimeUniforms(Self.runtime, camera: Self.camera)
         executor.frameUniformContext = frame1
-        let firstSlots = executor.packTranslatedUniforms(for: before.layers[0].passes[0], layout: layout)
+        let firstSlots = try executor.packTranslatedUniforms(for: before.layers[0].passes[0], layout: layout)
         #expect(firstSlots[0].x == 0)
 
         let (after, frame2) = pipeline.addingMetalRuntimeUniforms(
@@ -564,7 +564,7 @@ struct WPEUniformResolutionPlanTests {
             scriptedConstants: ["late.0": ["late1": .number(6.5)]]
         )
         executor.frameUniformContext = frame2
-        let secondSlots = executor.packTranslatedUniforms(for: after.layers[0].passes[0], layout: layout)
+        let secondSlots = try executor.packTranslatedUniforms(for: after.layers[0].passes[0], layout: layout)
         executor.frameUniformContext = .empty
         #expect(secondSlots[0].x == 6.5)
         #expect(executor.uniformPlanCompileCount == 2)
@@ -617,7 +617,7 @@ struct WPEUniformResolutionPlanTests {
 
         let first = Self.swapFrame(fixture, scripted: ["early1": .number(4)])
         executor.frameUniformContext = first.frame
-        let firstSlots = executor.packTranslatedUniforms(for: first.pass, layout: fixture.layout)
+        let firstSlots = try executor.packTranslatedUniforms(for: first.pass, layout: fixture.layout)
         #expect(firstSlots[0].x == 4)
         #expect(firstSlots[1].x == 0)
 
@@ -631,7 +631,7 @@ struct WPEUniformResolutionPlanTests {
         #expect(plans[1].steps == [.passValue("g_Late")])
         #expect(executor.uniformPlanCompileCount == 2)
 
-        let secondSlots = executor.packTranslatedUniforms(for: second.pass, layout: fixture.layout)
+        let secondSlots = try executor.packTranslatedUniforms(for: second.pass, layout: fixture.layout)
         #expect(secondSlots[0].x == -1)
         #expect(secondSlots[1].x == 6.5)
     }
@@ -679,7 +679,7 @@ struct WPEUniformResolutionPlanTests {
             )
             executor.frameUniformContext = frame
             sampled.append(
-                executor.packTranslatedUniforms(for: prepared.layers[0].passes[0], layout: layout)[0].x
+                try executor.packTranslatedUniforms(for: prepared.layers[0].passes[0], layout: layout)[0].x
             )
         }
         // Control: the values really did move, so the dictionaries really were rebuilt.

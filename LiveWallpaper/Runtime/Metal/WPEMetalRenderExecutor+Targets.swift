@@ -79,11 +79,9 @@ extension WPEMetalRenderExecutor {
                     return ObjectIdentifier(rootTexture(texture)) == outputRoot ? "scene-texture-alias" : nil
                 }
             }
-            // Inspect all raw and normalized slots without materializing textureReferences.
-            if let reason = referenceRejection(pass.pass.source)
-                ?? pass.pass.textures.values.lazy.compactMap(referenceRejection).first
-                ?? pass.pass.binds.values.lazy.compactMap(referenceRejection).first
-                ?? pass.textureBindings.values.lazy.compactMap(referenceRejection).first {
+            // Cached conservative references retain raw and normalized origins.
+            // Produced-before-read and physical output alias checks remain local.
+            if let reason = pass.access.textureReferences.lazy.compactMap(referenceRejection).first {
                 return reject(reason)
             }
             if isScene { return WPEMetalInitialSceneClearStats(passID: pass.pass.id) }
@@ -213,6 +211,7 @@ extension WPEMetalRenderExecutor {
         struct PassSignature: Equatable {
             let id: String
             let target: WPERenderTarget
+            let access: WPEPreparedPassAccess
         }
 
         struct SignatureEntry: Equatable {
@@ -318,8 +317,9 @@ extension WPEMetalRenderExecutor {
             sizingGeneration = previous.sizingGeneration + 1
         }
 
-        /// Ordered (objectID, imagePath, pass id/target). Texture refs / localFBOs
-        /// are load-invariant; a reload clears the cache.
+        /// Ordered (objectID, imagePath, pass id/target/access). Value-only
+        /// updates share access facts; rewritten bindings invalidate topology.
+        /// localFBOs are load-invariant; a reload clears the cache.
         func matches(_ pipeline: WPEPreparedRenderPipeline) -> Bool {
             guard signature.count == pipeline.layers.count else { return false }
             for (index, layer) in pipeline.layers.enumerated() {
@@ -331,7 +331,8 @@ extension WPEMetalRenderExecutor {
                 }
                 for (passIndex, pass) in layer.passes.enumerated() {
                     let passEntry = entry.passes[passIndex]
-                    if passEntry.id != pass.pass.id || passEntry.target != pass.pass.target {
+                    if passEntry.id != pass.pass.id || passEntry.target != pass.pass.target
+                        || passEntry.access != pass.access {
                         return false
                     }
                 }
@@ -360,7 +361,7 @@ extension WPEMetalRenderExecutor {
                 objectID: layer.graphLayer.objectID,
                 imagePath: layer.graphLayer.imagePath,
                 passes: layer.passes.map {
-                    FBOAliasTopology.PassSignature(id: $0.pass.id, target: $0.pass.target)
+                    FBOAliasTopology.PassSignature(id: $0.pass.id, target: $0.pass.target, access: $0.access)
                 }
             ))
             for pass in layer.passes {
@@ -376,16 +377,12 @@ extension WPEMetalRenderExecutor {
                         declaredFBOs: declaredFBOs
                     )
                 }
-                var readFBONames: [String] = []
-                for reference in pass.textureReferences {
-                    if case .fbo(let name) = reference { readFBONames.append(name) }
-                }
                 let index = items.count
                 items.append(FBOAliasTopology.Item(
                     layerIndex: layerIndex,
                     target: pass.pass.target,
                     spec: spec,
-                    readFBONames: readFBONames,
+                    readFBONames: pass.access.fboNames,
                     marksSecondary: spec != nil
                         && writtenTargets.contains(targetID)
                         && passReadsCurrentTarget(pass, targetID: targetID),
@@ -690,15 +687,17 @@ extension WPEMetalRenderExecutor {
         targetID: WPEMetalTargetID,
         commandBuffer: MTLCommandBuffer
     ) throws -> MTLTexture {
-        // Bootstrap textures are read-only for their whole life, so one cleared allocation per (target, size, format) serves every frame.
+        // Only a successfully completed clear is reusable across buffers. A
+        // first frame still in flight gets its own successor entry; this keeps
+        // failure recovery independent of a previous command buffer's result.
         let key = BootstrapPreviousKey(
             targetID: targetID,
             width: texture.width,
             height: texture.height,
             pixelFormat: texture.pixelFormat
         )
-        if let cached = bootstrapPreviousTextureCache[key] {
-            return cached
+        if let cached = bootstrapPreviousTextureCache[key], cached.initialization.canRead(in: commandBuffer) {
+            return cached.texture
         }
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
             pixelFormat: texture.pixelFormat,
@@ -725,8 +724,23 @@ extension WPEMetalRenderExecutor {
         encoder.applyTraceLabel("bootstrapClear")
         WPEFrameOccupancyMeter.count(.helperEncoder)
         encoder.endEncoding()
-        bootstrapPreviousTextureCache[key] = cleared
+        let initialization = WPEMetalBootstrapInitialization(commandBuffer: commandBuffer)
+        commandBuffer.addCompletedHandler { completed in
+            initialization.complete(succeeded: completed.status == .completed)
+        }
+        bootstrapPreviousTextureCache[key] = WPEMetalBootstrapTexture(texture: cleared, initialization: initialization)
         return cleared
+    }
+
+    func discardUnsubmittedBootstrapTextures(for commandBuffer: MTLCommandBuffer) {
+        switch commandBuffer.status {
+        case .notEnqueued, .enqueued, .error:
+            bootstrapPreviousTextureCache = bootstrapPreviousTextureCache.filter {
+                !$0.value.initialization.belongs(to: commandBuffer)
+            }
+        default:
+            break
+        }
     }
 
 }

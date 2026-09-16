@@ -140,7 +140,7 @@ struct WPERendererOwnershipCharacterizationTests {
                     "var previousFrameHistory: PreviousFrameHistory?",
                     "var outputTexturePool: [MTLTexture] = []",
                     "var recentOutputTextureIDs: [ObjectIdentifier] = []",
-                    "var bootstrapPreviousTextureCache: [BootstrapPreviousKey: MTLTexture] = [:]",
+                    "var bootstrapPreviousTextureCache: [BootstrapPreviousKey: WPEMetalBootstrapTexture] = [:]",
                     "var sceneReadHazardSnapshotCache: [BootstrapPreviousKey: MTLTexture] = [:]",
                 ]
             ),

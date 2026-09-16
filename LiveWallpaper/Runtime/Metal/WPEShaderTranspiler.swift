@@ -181,12 +181,19 @@ struct WPEShaderTranspiler {
                     "shader '\(shaderName)' uniform '\(u.name)' has an unsupported array dimension"
                 )
             }
-            let count = u.arrayLength ?? Self.slotCount(for: u.type)
-            guard count > 0, count <= Self.uniformSlotMaximum - nextSlot else {
+            guard let type = WPEUniformType(glslType: u.type) else {
+                throw WPEShaderCompilerError.translationFailed(
+                    "shader '\(shaderName)' uniform '\(u.name)' has unsupported type '\(u.type)'"
+                )
+            }
+            let elements = u.arrayLength ?? 1
+            guard elements > 0,
+                  elements <= (Self.uniformSlotMaximum - nextSlot) / type.elementSlotCount else {
                 throw WPEShaderCompilerError.translationFailed(
                     "shader '\(shaderName)' uniform '\(u.name)' requires a positive size within the \(Self.uniformSlotMaximum)-slot budget"
                 )
             }
+            let count = elements * type.elementSlotCount
             slots.append(WPEUniformSlot(
                 name: u.name,
                 glslType: u.type,

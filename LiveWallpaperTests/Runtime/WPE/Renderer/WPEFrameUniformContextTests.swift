@@ -193,7 +193,7 @@ struct WPEFrameUniformContextTests {
         var newSlotsByPassID: [String: [SIMD4<Float>]] = [:]
         for layer in prepared.layers {
             for pass in layer.passes {
-                newSlotsByPassID[pass.id] = executor.packTranslatedUniforms(for: pass, layout: layout)
+                newSlotsByPassID[pass.id] = try executor.packTranslatedUniforms(for: pass, layout: layout)
             }
         }
 
@@ -231,7 +231,7 @@ struct WPEFrameUniformContextTests {
                 uniformValues: legacy,
                 materialUniformNames: original.materialUniformNames
             )
-            let referenceSlots = executor.packTranslatedUniforms(for: referencePass, layout: layout)
+            let referenceSlots = try executor.packTranslatedUniforms(for: referencePass, layout: layout)
             let newSlots = try #require(newSlotsByPassID[original.id])
             #expect(
                 newSlots == referenceSlots,
@@ -262,7 +262,7 @@ struct WPEFrameUniformContextTests {
         executor.frameUniformContext = frameUniforms
         defer { executor.frameUniformContext = .empty }
 
-        let slots = executor.packTranslatedUniforms(
+        let slots = try executor.packTranslatedUniforms(
             for: prepared.layers[0].passes[0],
             layout: [Self.slot("g_Time", 0)]
         )
@@ -299,7 +299,7 @@ struct WPEFrameUniformContextTests {
         )
         defer { executor.frameUniformContext = .empty }
 
-        let slots = executor.packTranslatedUniforms(
+        let slots = try executor.packTranslatedUniforms(
             for: pass,
             layout: names.enumerated().map { index, name in
                 Self.slot(name, index, type: "vec3")
@@ -350,8 +350,8 @@ struct WPEFrameUniformContextTests {
         }
 
         executor.frameUniformContext = frameA
-        let packedA = executor.packTranslatedUniforms(for: passA, layout: layout)
-        let packedB = executor.packTranslatedUniforms(for: passB, layout: layout)
+        let packedA = try executor.packTranslatedUniforms(for: passA, layout: layout)
+        let packedB = try executor.packTranslatedUniforms(for: passB, layout: layout)
         #expect(packedA != packedB, "each prepared pass must use its own layer/object matrices")
         #expect(packedA.allSatisfy { $0 != SIMD4<Float>(repeating: -9) })
         #expect(frameA.value(named: "g_ModelViewProjectionMatrix", passID: "missing") == nil)
@@ -365,7 +365,7 @@ struct WPEFrameUniformContextTests {
             cameraUniformValues: cameraB.uniformValues,
             objectUniformValuesByPassID: ["matrix.a": objectA]
         )
-        let packedAfterCameraChange = executor.packTranslatedUniforms(for: passA, layout: layout)
+        let packedAfterCameraChange = try executor.packTranslatedUniforms(for: passA, layout: layout)
         #expect(
             Array(packedAfterCameraChange[4..<8]) != Array(packedA[4..<8]),
             "MVP must be composed from the current camera, not cached with the object"

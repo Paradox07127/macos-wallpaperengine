@@ -1,6 +1,13 @@
 #include <metal_stdlib>
 using namespace metal;
 
+// GLSL/WPE permits extrapolation; metal::mix requires its factor in [0,1].
+// Preserve HDR/negative factors instead of silently clamping authored math.
+template<typename T, typename A>
+static inline T wpe_lerp(T x, T y, A a) {
+    return (A(1) - a) * x + a * y;
+}
+
 struct WPEVertexOut {
     float4 position [[position]];
     float2 uv;
@@ -149,7 +156,7 @@ static inline float3 wpe_ApplyBlending(int blendMode, float3 A, float3 B, float 
     case 32: r = A + A * B; break;
     default: r = B; break;                                                  // Normal
     }
-    return mix(A, r, opacity);
+    return wpe_lerp(A, r, opacity);
 }
 
 vertex WPEVertexOut wpe_fullscreen_vertex(uint vertexID [[vertex_id]]) {
@@ -880,7 +887,7 @@ fragment half4 wpe_effect_colorbalance_fragment(
     rgb = (rgb - 0.5) * max(uniforms.contrast, 0.0) + 0.5;
 
     float luma = dot(rgb, float3(0.2126, 0.7152, 0.0722));
-    rgb = mix(float3(luma), rgb, max(uniforms.saturation, 0.0));
+    rgb = wpe_lerp(float3(luma), rgb, max(uniforms.saturation, 0.0));
 
     return half4(float4(saturate(rgb), color.a));
 }
@@ -933,7 +940,7 @@ fragment half4 wpe_effect_vignette_fragment(
     float innerRadius = max(uniforms.innerRadius, 0.0);
     float outerRadius = max(uniforms.outerRadius, innerRadius + 0.0001);
     float edge = smoothstep(innerRadius, outerRadius, distance(in.uv, float2(0.5, 0.5)));
-    float factor = mix(1.0, 1.0 - saturate(uniforms.intensity), edge);
+    float factor = wpe_lerp(1.0, 1.0 - saturate(uniforms.intensity), edge);
 
     return half4(float4(saturate(color.rgb * factor), color.a));
 }
@@ -1155,8 +1162,8 @@ static inline float3 wpe_scene_model_reflection(
     // WPE's non-Android branch: constant on X, aspect-scaled on Y.
     normal.xy = normal.xy * float2(0.15, 0.15 * u.screen.z);
     screenUV += normal.xy * pow(fresnelTerm, 4.0) * 10.0;
-    float clipReflection = smoothstep(1.3, 1.0, screenUV.x) * smoothstep(-0.3, 0.0, screenUV.x)
-        * smoothstep(1.3, 1.0, screenUV.y) * smoothstep(-0.3, 0.0, screenUV.y);
+    float clipReflection = (1.0 - smoothstep(1.0, 1.3, screenUV.x)) * smoothstep(-0.3, 0.0, screenUV.x)
+        * (1.0 - smoothstep(1.0, 1.3, screenUV.y)) * smoothstep(-0.3, 0.0, screenUV.y);
 
     // Metal textures are top-left origin; the scene capture is stored unflipped,
     // so the clip-space Y from `screenPos` has to be flipped to sample it.
@@ -1188,7 +1195,7 @@ fragment half4 wpe_scene_model_generic4_fragment(
         ? float(texture1.sample(linearSampler, in.uv).a)
         : 0.0;
     float3 light = max(float3(0.0), u.emissive.rgb * albedo.rgb * (maskAlpha * u.emissive.w));
-    float3 hemisphere = mix(
+    float3 hemisphere = wpe_lerp(
         u.skylightColor.rgb, u.ambientLighting.rgb, dot(worldNormal, float3(0.0, 1.0, 0.0)) * 0.5 + 0.5
     );
     float3 ambient = u.ambientLighting.w > 0.5
@@ -1258,7 +1265,7 @@ fragment half4 wpe_scene_model_chroma4_fragment(
     float3 viewVector = eyeToPoint / max(viewDist, 1e-5);
 
     // (1) chroma tint — deliberately unclamped, see header.
-    albedo.rgb *= mix(u.chromaTintBack.rgb, u.chromaTintFront.rgb, dot(viewVector, worldNormal));
+    albedo.rgb *= wpe_lerp(u.chromaTintBack.rgb, u.chromaTintFront.rgb, dot(viewVector, worldNormal));
 
     float maskAlpha = u.brightnessFlags.y > 0.5
         ? float(texture1.sample(linearSampler, in.uv).a)
@@ -1280,7 +1287,7 @@ fragment half4 wpe_scene_model_chroma4_fragment(
             * dot(light, float3(0.299, 0.587, 0.114));
     }
 
-    float3 hemisphere = mix(
+    float3 hemisphere = wpe_lerp(
         u.skylightColor.rgb, u.ambientLighting.rgb, dot(worldNormal, float3(0.0, 1.0, 0.0)) * 0.5 + 0.5
     );
     float3 ambient = u.ambientLighting.w > 0.5
@@ -1326,7 +1333,7 @@ fragment half4 wpe_scene_model_generic2_fragment(
     albedo.rgb *= u.tintColorAlpha.rgb;
     float alpha = albedo.a * u.tintColorAlpha.a;
 
-    float3 hemisphere = mix(
+    float3 hemisphere = wpe_lerp(
         u.skylightColor.rgb,
         u.ambientLighting.rgb,
         dot(normalize(in.worldNormal), float3(0.0, 1.0, 0.0)) * 0.5 + 0.5
@@ -1353,9 +1360,9 @@ fragment half4 wpe_puppet_clippingmaskimage4_fragment(
     float2 maskUV = wpe_logical_texture_uv(in.uv, uniforms.textureUVScale.zw);
     float albedoAlpha = float(texture0.sample(linearSampler, sourceUV).a);
     float mask = float(texture1.sample(linearSampler, maskUV).r);
-    float alpha = mix(pow(albedoAlpha, 4.0), albedoAlpha, mask);
+    float alpha = wpe_lerp(pow(albedoAlpha, 4.0), albedoAlpha, mask);
     float red = mask * alpha;
-    red = mix(red, 1.0 - red, saturate(uniforms.alphaMaskUV.w));
+    red = wpe_lerp(red, 1.0 - red, saturate(uniforms.alphaMaskUV.w));
     return half4(float4(red, 0.0, 0.0, alpha));
 }
 
@@ -1385,10 +1392,10 @@ fragment half4 wpe_genericimage4_puppet_clip_fragment(
     if (mode > 0.5 && mode < 1.5) {
         alpha *= clipping.r;
     } else if (mode > 1.5 && mode < 2.5) {
-        rgb = mix(rgb, clipping.rgb, clipping.a);
+        rgb = wpe_lerp(rgb, clipping.rgb, clipping.a);
     } else if (mode > 2.5) {
         alpha *= clipping.r;
-        rgb = mix(rgb, clipping.rgb, clipping.a);
+        rgb = wpe_lerp(rgb, clipping.rgb, clipping.a);
     }
     return half4(float4(rgb * alpha, alpha));
 }
@@ -1626,8 +1633,8 @@ vertex WPEParticleVertexOut wpe_particle_vertex(
         // the quad's unit corners into the frame's rect.
         float4 rLo = frameRects[frameLoI];
         float4 rHi = frameRects[frameHiI];
-        out.uvCurrent = mix(rLo.xy, rLo.zw, unitUV);
-        out.uvNext = mix(rHi.xy, rHi.zw, unitUV);
+        out.uvCurrent = wpe_lerp(rLo.xy, rLo.zw, unitUV);
+        out.uvNext = wpe_lerp(rHi.xy, rHi.zw, unitUV);
     } else {
         uint colLo = frameLoI % colsI;
         uint rowLo = frameLoI / colsI;
@@ -1884,7 +1891,7 @@ fragment half4 wpe_effect_godrays_combine_fragment(
     float4 albedo = float4(albedoTexture.sample(linearSampler, in.uv));
     if (uniforms.copyBackground == 1u) {
         float4 background = float4(baseTexture.sample(linearSampler, in.uv));
-        albedo.rgb = mix(background.rgb, albedo.rgb, albedo.a);
+        albedo.rgb = wpe_lerp(background.rgb, albedo.rgb, albedo.a);
     }
     albedo.rgb = wpe_ApplyBlending(int(uniforms.blendMode), albedo.rgb, rays.rgb, rays.a);
     albedo.a = saturate(albedo.a + rays.a);
@@ -2005,7 +2012,7 @@ fragment half4 wpe_effect_tint_fragment(
     constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
     float4 sampled = float4(texture0.sample(linearSampler, in.uv));
     float t = saturate(uniforms.intensity);
-    float3 rgb = mix(sampled.rgb, sampled.rgb * uniforms.color.rgb, t);
+    float3 rgb = wpe_lerp(sampled.rgb, sampled.rgb * uniforms.color.rgb, t);
     return half4(float4(rgb, sampled.a));
 }
 
@@ -2066,7 +2073,7 @@ fragment half4 wpe_effect_blend_fragment(
     constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
     float4 sampled = float4(texture0.sample(linearSampler, in.uv));
     float o = saturate(uniforms.opacity);
-    float3 rgb = mix(sampled.rgb, sampled.rgb * uniforms.color.rgb, o);
+    float3 rgb = wpe_lerp(sampled.rgb, sampled.rgb * uniforms.color.rgb, o);
     return half4(float4(rgb, sampled.a));
 }
 
@@ -2182,7 +2189,7 @@ fragment half4 wpe_color_correction_fragment(
 
     // Rec. 709 luma, matching the coefficients the transpiled WPE shaders use.
     float luma = dot(rgb, float3(0.2126, 0.7152, 0.0722));
-    rgb = mix(float3(luma), rgb, settings.saturation);
+    rgb = wpe_lerp(float3(luma), rgb, settings.saturation);
     rgb = (rgb - 0.5) * settings.contrast + 0.5;
     rgb = rgb + settings.brightness;
 

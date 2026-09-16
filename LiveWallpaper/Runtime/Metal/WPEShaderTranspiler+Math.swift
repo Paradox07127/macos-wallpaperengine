@@ -1,0 +1,93 @@
+#if !LITE_BUILD
+import Foundation
+
+extension WPEShaderTranspiler {
+    /// GLSL interpolation permits extrapolation; MSL's mix does not. These
+    /// overloads use arithmetic for numeric factors and selection for booleans.
+    /// In particular, an unselected NaN must not enter a boolean mix via 0*NaN.
+    static var glslMathPrelude: String {
+        var lines = [
+            "inline float wpe_smoothstep(float edge0, float edge1, float x) {",
+            "    if (edge0 == edge1) { return x < edge0 ? 0.0 : 1.0; }",
+            "    float t = metal::clamp((x - edge0) / (edge1 - edge0), 0.0, 1.0);",
+            "    return t * t * (3.0 - 2.0 * t);",
+            "}",
+        ]
+        // Equal edges retain the historical hard threshold; reverse edges are
+        // an explicit WPE extension. Neither policy replaces a nonzero width.
+        for width in 2 ... 4 {
+            let type = "float\(width)"
+            let components = Array("xyzw".prefix(width)).map(String.init)
+            let calls = components.map { "wpe_smoothstep(edge0.\($0), edge1.\($0), x.\($0))" }
+            lines.append("inline \(type) wpe_smoothstep(\(type) edge0, \(type) edge1, \(type) x) { return \(type)(\(calls.joined(separator: ", "))); }")
+            lines.append("inline \(type) wpe_smoothstep(float edge0, float edge1, \(type) x) { return wpe_smoothstep(\(type)(edge0), \(type)(edge1), x); }")
+        }
+        for width in 1 ... 4 {
+            let type = width == 1 ? "float" : "float\(width)"
+            let factorTypes = width == 1 ? ["float", "int", "uint"] : ["float", type, "int", "uint"]
+            let endpoints = width == 1 ? [(type, type)] : [(type, type), ("float", type), (type, "float")]
+            for (lhs, rhs) in endpoints {
+                for factor in factorTypes {
+                    let factorCast = factor == "int" || factor == "uint" ? "float(a)" : "a"
+                    // Weighted sum also avoids overflowing (y-x) for opposite
+                    // large finite endpoints in a valid interpolation interval.
+                    lines.append("inline \(type) wpe_glsl_mix(\(lhs) x, \(rhs) y, \(factor) a) { return (1.0 - \(factorCast)) * x + \(factorCast) * y; }")
+                }
+            }
+        }
+        // Permissive HLSL literals: numeric mix(0, 1, t) must not choose the
+        // integer boolean-selector overload by converting t to bool.
+        for type in ["int", "uint"] {
+            for factor in ["float", "int", "uint"] {
+                lines.append("inline float wpe_glsl_mix(\(type) x, \(type) y, \(factor) a) { return (1.0 - float(a)) * float(x) + float(a) * float(y); }")
+            }
+        }
+        for scalar in ["float", "int", "uint", "bool"] {
+            lines.append("inline \(scalar) wpe_glsl_mix(\(scalar) x, \(scalar) y, bool a) { return a ? y : x; }")
+            for width in 2 ... 4 {
+                let type = "\(scalar)\(width)"
+                let components = Array("xyzw".prefix(width)).map(String.init)
+                let selected = components.map { "a.\($0) ? y.\($0) : x.\($0)" }.joined(separator: ", ")
+                lines.append("inline \(type) wpe_glsl_mix(\(type) x, \(type) y, bool\(width) a) { return \(type)(\(selected)); }")
+                lines.append("inline \(type) wpe_glsl_mix(\(type) x, \(type) y, bool a) { return a ? y : x; }")
+            }
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    /// Run after HLSL narrowing/resource threading. Do not retarget an authored
+    /// mix function or macro: that name belongs to the shader, not the intrinsic.
+    /// Qualified metal::mix and comments likewise retain their original meaning.
+    static func routingGLSLMixCalls(in source: String, authoredHelpers: String, authoredMain: String) -> String {
+        let authored = authoredHelpers + "\n" + authoredMain
+        if parseHelperFunctions(in: authoredHelpers).contains(where: { $0.name == "mix" })
+            || maskComments(authored).range(of: #"(?m)^\s*#\s*define\s+mix(?:\s|\()"#, options: .regularExpression) != nil {
+            return source
+        }
+        let masked = maskComments(source)
+        // Also route an object-like alias (#define INTERPOLATE mix), which does
+        // not have '(' until the preprocessor expands a later invocation.
+        let patterns = [#"(?<![:A-Za-z0-9_])mix(?=\s*\()"#, #"(?m)(?<=\s)mix(?=\s*$)"#]
+        var ranges: [Range<String.Index>] = []
+        for (index, pattern) in patterns.enumerated() {
+            guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
+            for match in regex.matches(in: masked, range: NSRange(masked.startIndex..., in: masked)) {
+                guard let range = Range(match.range, in: masked) else { continue }
+                if index == 1 {
+                    let lineStart = masked[..<range.lowerBound].lastIndex(of: "\n").map { masked.index(after: $0) } ?? masked.startIndex
+                    let prefix = masked[lineStart ..< range.lowerBound]
+                    guard prefix.range(of: #"^\s*#\s*define\s+[A-Za-z_]\w*\s+$"#, options: .regularExpression) != nil else { continue }
+                }
+                let lower = source.index(source.startIndex, offsetBy: masked.distance(from: masked.startIndex, to: range.lowerBound))
+                let upper = source.index(source.startIndex, offsetBy: masked.distance(from: masked.startIndex, to: range.upperBound))
+                ranges.append(lower ..< upper)
+            }
+        }
+        var result = source
+        for range in ranges.sorted(by: { $0.lowerBound > $1.lowerBound }) {
+            result.replaceSubrange(range, with: "wpe_glsl_mix")
+        }
+        return result
+    }
+}
+#endif

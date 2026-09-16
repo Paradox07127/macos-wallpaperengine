@@ -303,9 +303,11 @@ extension WPEMetalSceneRenderer {
         transforms: LiveScriptTransforms
     ) -> WPEPreparedRenderPipeline {
         var result = pipeline
-            .applyingLayerVisibility(liveLayerVisibilityIncludingText)
-            .applyingLayerAlpha(liveLayerAlphaIncludingText)
-            .applyingLayerColor(layerColorsExcludingText(transforms.colors))
+            .applyingFrameOverlay(WPEFrameOverlay(
+                visibility: liveLayerVisibilityIncludingText,
+                alpha: liveLayerAlphaIncludingText,
+                colors: layerColorsExcludingText(transforms.colors)
+            ))
             .applyingLayerTransforms(
                 origins: applyingTextLayerOriginOffsets(
                     transforms.origins,

@@ -696,7 +696,7 @@ struct WPEMetalShaderDispatcher {
         }
 
         resolvedTexturesBySlot.bindFragmentResources(to: encoder, count: result.textureSlotCount)
-        let packedUniforms = executor.packTranslatedUniformsForBinding(
+        let packedUniforms = try executor.packTranslatedUniformsForBinding(
             for: pass,
             layout: result.uniformLayout,
             texturesBySlot: resolvedTexturesBySlot

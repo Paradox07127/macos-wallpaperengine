@@ -35,12 +35,10 @@ struct WPEPreparedRenderPass: Equatable, Sendable, Identifiable {
     var id: String { pass.id }
 
     var textureReferences: [WPETextureReference] {
-        var references: [WPETextureReference] = [pass.source]
-        references.append(contentsOf: pass.textures.values)
-        references.append(contentsOf: pass.binds.values)
-        references.append(contentsOf: textureBindings.values)
-        return references
+        access.textureReferences
     }
+
+    let access: WPEPreparedPassAccess
 
     let pass: WPERenderPass
     let shader: WPEShaderProgram?
@@ -61,11 +59,17 @@ struct WPEPreparedRenderPass: Equatable, Sendable, Identifiable {
         comboValues: [String: Int],
         uniformValues: [String: WPESceneShaderConstantValue],
         materialUniformNames: [String: String] = [:],
-        layerTintOverride: WPELayerTintOverride? = nil
+        layerTintOverride: WPELayerTintOverride? = nil,
+        reusingAccess: WPEPreparedPassAccess? = nil
     ) {
         self.pass = pass
         self.shader = shader
         self.textureBindings = textureBindings
+        if let reusingAccess, reusingAccess.matches(pass: pass, textureBindings: textureBindings) {
+            access = reusingAccess
+        } else {
+            access = WPEPreparedPassAccess(pass: pass, textureBindings: textureBindings)
+        }
         self.comboValues = comboValues
         self.uniformValues = uniformValues
         self.materialUniformNames = materialUniformNames
@@ -159,122 +163,6 @@ struct WPEShaderProgram: Equatable, Sendable {
 }
 
 extension WPEPreparedRenderPipeline {
-    func applyingLayerVisibility(_ visibility: [String: Bool]) -> WPEPreparedRenderPipeline {
-        guard !visibility.isEmpty else { return self }
-        var didChange = false
-        let newLayers = layers.map { layer -> WPEPreparedRenderLayer in
-            let resolved = visibility[layer.graphLayer.objectID] ?? layer.graphLayer.visible
-            guard resolved != layer.graphLayer.visible else { return layer }
-            didChange = true
-            return WPEPreparedRenderLayer(
-                graphLayer: layer.graphLayer.applyingVisible(resolved),
-                puppetModel: layer.puppetModel,
-                passes: layer.passes
-            )
-        }
-        guard didChange else { return self }
-        return WPEPreparedRenderPipeline(layers: newLayers)
-    }
-
-    /// Script layer alpha override (clears authored alpha animation).
-    func applyingLayerAlpha(_ alpha: [String: Double]) -> WPEPreparedRenderPipeline {
-        guard !alpha.isEmpty else { return self }
-        var didChange = false
-        let newLayers = layers.map { layer -> WPEPreparedRenderLayer in
-            guard let value = alpha[layer.graphLayer.objectID] else { return layer }
-            let geometry = layer.graphLayer.geometry
-            guard geometry.alpha != value || geometry.alphaAnimation != nil else { return layer }
-            didChange = true
-            let graphLayer = layer.graphLayer.applyingAlpha(value)
-            return WPEPreparedRenderLayer(
-                graphLayer: graphLayer,
-                puppetModel: layer.puppetModel,
-                passes: Self.passesApplyingLayerTint(
-                    layer.passes, geometry: graphLayer.geometry,
-                    updateColor: false, updateAlpha: true
-                )
-            )
-        }
-        guard didChange else { return self }
-        return WPEPreparedRenderPipeline(layers: newLayers)
-    }
-
-    /// Script layer color override (clears authored color animation).
-    func applyingLayerColor(_ color: [String: SIMD3<Double>]) -> WPEPreparedRenderPipeline {
-        guard !color.isEmpty else { return self }
-        var didChange = false
-        let newLayers = layers.map { layer -> WPEPreparedRenderLayer in
-            guard let value = color[layer.graphLayer.objectID] else { return layer }
-            let geometry = layer.graphLayer.geometry
-            guard geometry.color != value || geometry.colorAnimation != nil else { return layer }
-            didChange = true
-            let graphLayer = layer.graphLayer.applyingColor(value)
-            return WPEPreparedRenderLayer(
-                graphLayer: graphLayer,
-                puppetModel: layer.puppetModel,
-                passes: Self.passesApplyingLayerTint(
-                    layer.passes, geometry: graphLayer.geometry,
-                    updateColor: true, updateAlpha: false
-                )
-            )
-        }
-        guard didChange else { return self }
-        return WPEPreparedRenderPipeline(layers: newLayers)
-    }
-
-    /// Solid g_Color is bound from uniformValues, never geometry. Write tint through here or an override freezes at load-time color. Component-wise so alpha cannot clobber authored rgb.
-    private static func passesApplyingLayerTint(
-        _ passes: [WPEPreparedRenderPass],
-        geometry: WPERenderLayerGeometry,
-        updateColor: Bool,
-        updateAlpha: Bool
-    ) -> [WPEPreparedRenderPass] {
-        passes.map { pass in
-            guard pass.pass.constants["g_Color"] != nil,
-                  Self.consumesLayerColor(pass.pass.shader) else { return pass }
-            let tint = updateColor ? geometry.color * geometry.brightness : nil
-            let alpha = updateAlpha ? geometry.alpha : nil
-            let existing = pass.uniformValues["g_Color"] ?? pass.pass.constants["g_Color"]
-            // An animated g_Color must stay animated: record the claim and let
-            // the per-frame resolve apply it on top of the sampled value.
-            if case .animated = existing {
-                return WPEPreparedRenderPass(
-                    pass: pass.pass,
-                    shader: pass.shader,
-                    textureBindings: pass.textureBindings,
-                    comboValues: pass.comboValues,
-                    uniformValues: pass.uniformValues,
-                    materialUniformNames: pass.materialUniformNames,
-                    layerTintOverride: WPELayerTintOverride(
-                        color: tint ?? pass.layerTintOverride?.color,
-                        alpha: alpha ?? pass.layerTintOverride?.alpha
-                    )
-                )
-            }
-            var vector = existing?.vectorValue ?? [1, 1, 1, 1]
-            while vector.count < 4 { vector.append(1) }
-            if let tint {
-                vector[0] = tint.x
-                vector[1] = tint.y
-                vector[2] = tint.z
-            }
-            if let alpha {
-                vector[3] = alpha
-            }
-            var values = pass.uniformValues
-            values["g_Color"] = .vector(vector)
-            return WPEPreparedRenderPass(
-                pass: pass.pass,
-                shader: pass.shader,
-                textureBindings: pass.textureBindings,
-                comboValues: pass.comboValues,
-                uniformValues: values,
-                materialUniformNames: pass.materialUniformNames,
-                layerTintOverride: pass.layerTintOverride
-            )
-        }
-    }
-
     func applyingLayerTransforms(
         origins: [String: SIMD3<Double>],
         scales: [String: SIMD3<Double>],
@@ -405,7 +293,7 @@ extension WPEPreparedRenderPipeline {
     }
 
     /// Builtins where g_Color is object tint (object.color * brightness); never overwrite foreign g_Color.
-    private static func consumesLayerColor(_ shader: String) -> Bool {
+    static func consumesLayerColor(_ shader: String) -> Bool {
         switch WPEBuiltinShaderName.normalized(shader) {
         case WPEBuiltinShaderKind.solidLayer.rawValue, WPEBuiltinShaderKind.solidColor.rawValue:
             return true
@@ -494,7 +382,8 @@ extension WPEPreparedRenderPipeline {
                         comboValues: pass.comboValues,
                         uniformValues: values,
                         materialUniformNames: pass.materialUniformNames,
-                        layerTintOverride: pass.layerTintOverride
+                        layerTintOverride: pass.layerTintOverride,
+                        reusingAccess: pass.access
                     )
                 }
             )
@@ -541,9 +430,10 @@ private extension WPEPreparedRenderLayer {
             shader: preparedPass.shader,
             textureBindings: preparedPass.textureBindings,
             comboValues: preparedPass.comboValues,
-                uniformValues: preparedPass.uniformValues,
-                materialUniformNames: preparedPass.materialUniformNames,
-                layerTintOverride: preparedPass.layerTintOverride
+            uniformValues: preparedPass.uniformValues,
+            materialUniformNames: preparedPass.materialUniformNames,
+            layerTintOverride: preparedPass.layerTintOverride,
+            reusingAccess: preparedPass.access
         )
         return WPEPreparedRenderLayer(
             graphLayer: graphLayer.createdLayerCopy(state: state, pass: renderPass),
@@ -625,149 +515,6 @@ private extension WPERenderLayer {
             passes: passes,
             groupRenderTarget: groupRenderTarget,
             groupLocalGeometry: groupLocalGeometry,
-            groupCompositeSource: groupCompositeSource,
-            parallaxDepth: parallaxDepth,
-            sortIndex: sortIndex
-        )
-    }
-
-    func applyingVisible(_ visible: Bool) -> WPERenderLayer {
-        WPERenderLayer(
-            objectID: objectID,
-            objectName: objectName,
-            visible: visible,
-            imagePath: imagePath,
-            materialPath: materialPath,
-            puppetPath: puppetPath,
-            parentObjectID: parentObjectID,
-            attachment: attachment,
-            animationLayers: animationLayers,
-            authoredJSON: authoredJSON,
-            geometry: geometry,
-            localGeometry: localGeometry,
-            compositeA: compositeA,
-            compositeB: compositeB,
-            localFBOs: localFBOs,
-            passes: passes,
-            groupRenderTarget: groupRenderTarget,
-            groupLocalGeometry: groupLocalGeometry,
-            groupCompositeSource: groupCompositeSource,
-            parallaxDepth: parallaxDepth,
-            sortIndex: sortIndex
-        )
-    }
-
-    /// Overrides the layer's alpha (clearing the authored alpha animation so a
-    /// later `resolved(at:)` keeps the script-driven value).
-    func applyingAlpha(_ alpha: Double) -> WPERenderLayer {
-        let g = geometry
-        let overridden = WPERenderLayerGeometry(
-            origin: g.origin,
-            scale: g.scale,
-            angles: g.angles,
-            alignment: g.alignment,
-            size: g.size,
-            puppetMeshCenter: g.puppetMeshCenter,
-            alpha: alpha,
-            alphaAnimation: nil,
-            color: g.color,
-            colorAnimation: g.colorAnimation,
-            brightness: g.brightness,
-            shapePoints: g.shapePoints
-        )
-        // Live alpha must update groupLocalGeometry (group-buffer draw source).
-        let overriddenGroupLocal = groupLocalGeometry.map { gl in
-            WPERenderLayerGeometry(
-                origin: gl.origin,
-                scale: gl.scale,
-                angles: gl.angles,
-                alignment: gl.alignment,
-                size: gl.size,
-                puppetMeshCenter: gl.puppetMeshCenter,
-                alpha: alpha,
-                alphaAnimation: nil,
-                color: gl.color,
-                colorAnimation: gl.colorAnimation,
-                brightness: gl.brightness,
-                shapePoints: gl.shapePoints
-            )
-        }
-        return WPERenderLayer(
-            objectID: objectID,
-            objectName: objectName,
-            visible: visible,
-            imagePath: imagePath,
-            materialPath: materialPath,
-            puppetPath: puppetPath,
-            parentObjectID: parentObjectID,
-            attachment: attachment,
-            animationLayers: animationLayers,
-            authoredJSON: authoredJSON,
-            geometry: overridden,
-            localGeometry: localGeometry,
-            compositeA: compositeA,
-            compositeB: compositeB,
-            localFBOs: localFBOs,
-            passes: passes,
-            groupRenderTarget: groupRenderTarget,
-            groupLocalGeometry: overriddenGroupLocal,
-            groupCompositeSource: groupCompositeSource,
-            parallaxDepth: parallaxDepth,
-            sortIndex: sortIndex
-        )
-    }
-
-    func applyingColor(_ color: SIMD3<Double>) -> WPERenderLayer {
-        let g = geometry
-        let overridden = WPERenderLayerGeometry(
-            origin: g.origin,
-            scale: g.scale,
-            angles: g.angles,
-            alignment: g.alignment,
-            size: g.size,
-            puppetMeshCenter: g.puppetMeshCenter,
-            alpha: g.alpha,
-            alphaAnimation: g.alphaAnimation,
-            color: color,
-            colorAnimation: nil,
-            brightness: g.brightness,
-            shapePoints: g.shapePoints
-        )
-        let overriddenGroupLocal = groupLocalGeometry.map { gl in
-            WPERenderLayerGeometry(
-                origin: gl.origin,
-                scale: gl.scale,
-                angles: gl.angles,
-                alignment: gl.alignment,
-                size: gl.size,
-                puppetMeshCenter: gl.puppetMeshCenter,
-                alpha: gl.alpha,
-                alphaAnimation: gl.alphaAnimation,
-                color: color,
-                colorAnimation: nil,
-                brightness: gl.brightness,
-                shapePoints: gl.shapePoints
-            )
-        }
-        return WPERenderLayer(
-            objectID: objectID,
-            objectName: objectName,
-            visible: visible,
-            imagePath: imagePath,
-            materialPath: materialPath,
-            puppetPath: puppetPath,
-            parentObjectID: parentObjectID,
-            attachment: attachment,
-            animationLayers: animationLayers,
-            authoredJSON: authoredJSON,
-            geometry: overridden,
-            localGeometry: localGeometry,
-            compositeA: compositeA,
-            compositeB: compositeB,
-            localFBOs: localFBOs,
-            passes: passes,
-            groupRenderTarget: groupRenderTarget,
-            groupLocalGeometry: overriddenGroupLocal,
             groupCompositeSource: groupCompositeSource,
             parallaxDepth: parallaxDepth,
             sortIndex: sortIndex

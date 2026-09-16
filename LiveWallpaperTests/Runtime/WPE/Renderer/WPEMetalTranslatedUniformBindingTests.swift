@@ -179,7 +179,7 @@ struct WPEMetalTranslatedUniformBindingTests {
         let pass = Self.makePass(id: "arena.parity")
         let slotCount = WPEMetalRenderExecutor.translatedSlotCount(for: layout)
 
-        let reference = executor.packTranslatedUniforms(for: pass, layout: layout)
+        let reference = try executor.packTranslatedUniforms(for: pass, layout: layout)
         #expect(reference.count == slotCount)
         // A layout that packed all zeros would make the comparison below vacuous.
         #expect(reference.contains { $0 != SIMD4<Float>() })
@@ -200,7 +200,7 @@ struct WPEMetalTranslatedUniformBindingTests {
         arena.beginFrame(slot: 0)
         _ = try #require(arena.reserve(slotCount: 4, frameSlot: 0))
 
-        let packed = executor.packTranslatedUniformsForBinding(for: pass, layout: layout)
+        let packed = try executor.packTranslatedUniformsForBinding(for: pass, layout: layout)
         guard case .arena(let region) = packed else {
             Issue.record("expected the arena path, got \(packed)")
             return
@@ -220,7 +220,7 @@ struct WPEMetalTranslatedUniformBindingTests {
 
         let small = Self.coverageLayout()
         let smallBytes = WPEMetalRenderExecutor.translatedSlotCount(for: small) * 16
-        let smallPacked = executor.packTranslatedUniformsForBinding(
+        let smallPacked = try executor.packTranslatedUniformsForBinding(
             for: Self.makePass(id: "arena.small"), layout: small
         )
         #expect(executor.bindTranslatedUniformSlots(smallPacked, to: harness.encoder)
@@ -232,7 +232,7 @@ struct WPEMetalTranslatedUniformBindingTests {
                 name: "u_Big", glslType: "float", slot: 0, slotCount: 300, arrayLength: 300
             )
         ]
-        let largePacked = executor.packTranslatedUniformsForBinding(
+        let largePacked = try executor.packTranslatedUniformsForBinding(
             for: Self.makePass(id: "arena.large"), layout: large
         )
         guard case .arena(let region) = largePacked else {
@@ -264,7 +264,7 @@ struct WPEMetalTranslatedUniformBindingTests {
         }
         #expect(reservations > 0)
 
-        let packed = executor.packTranslatedUniformsForBinding(
+        let packed = try executor.packTranslatedUniformsForBinding(
             for: Self.makePass(id: "arena.overflow"), layout: Self.coverageLayout()
         )
         guard case .array(let slots) = packed else {
@@ -272,7 +272,7 @@ struct WPEMetalTranslatedUniformBindingTests {
             return
         }
         #expect(Self.rawBytes(slots) == Self.rawBytes(
-            executor.packTranslatedUniforms(for: Self.makePass(id: "arena.overflow"),
+            try executor.packTranslatedUniforms(for: Self.makePass(id: "arena.overflow"),
                                             layout: Self.coverageLayout())
         ))
         let outcome = executor.bindTranslatedUniformSlots(packed, to: harness.encoder)
@@ -289,7 +289,7 @@ struct WPEMetalTranslatedUniformBindingTests {
         // have no slot identity to partition the arena by.
         #expect(executor.currentUniformArenaSlot == nil)
 
-        let packed = executor.packTranslatedUniformsForBinding(
+        let packed = try executor.packTranslatedUniformsForBinding(
             for: Self.makePass(id: "arena.nolease"), layout: Self.coverageLayout()
         )
         guard case .array = packed else {
@@ -304,7 +304,7 @@ struct WPEMetalTranslatedUniformBindingTests {
     @Test("An empty layout packs and binds nothing")
     func emptyLayoutIsANoOp() throws {
         let harness = try Self.makeHarness()
-        let packed = harness.executor.packTranslatedUniformsForBinding(
+        let packed = try harness.executor.packTranslatedUniformsForBinding(
             for: Self.makePass(id: "arena.empty"), layout: []
         )
         #expect(packed.isEmpty)
@@ -508,11 +508,11 @@ struct WPEMetalDrawTextureMetadataTests {
 
     private func packed(
         executor: WPEMetalRenderExecutor, table: WPEMetalTextureSlotTable, slots: [Int] = [0]
-    ) -> [SIMD4<Float>] {
+    ) throws -> [SIMD4<Float>] {
         let layout = slots.enumerated().map {
             WPEUniformSlot(name: "g_Texture\($0.element)Resolution", glslType: "vec4", slot: $0.offset, slotCount: 1)
         }
-        return executor.packTranslatedUniforms(for: pass(), layout: layout, texturesBySlot: table)
+        return try executor.packTranslatedUniforms(for: pass(), layout: layout, texturesBySlot: table)
     }
 
     @Test("Snapshot keeps logical dimensions and the same four sampler states",
@@ -537,8 +537,8 @@ struct WPEMetalDrawTextureMetadataTests {
         table.set(texture: texture, samplingDescriptor: nil, sampler: sampler, resolution: snapshot, at: 0)
         let reference = WPEMetalTextureSlotTable()
         reference[0] = texture // The existing, uncached registry fallback.
-        #expect(packed(executor: executor, table: table) == packed(executor: executor, table: reference))
-        #expect(packed(executor: executor, table: table) == [SIMD4<Float>(8, 4, 5, 3)])
+        #expect(try packed(executor: executor, table: table) == try packed(executor: executor, table: reference))
+        #expect(try packed(executor: executor, table: table) == [SIMD4<Float>(8, 4, 5, 3)])
         #expect(table.resolution(at: 0) == snapshot)
         #expect(executor.customShaderSamplerState(resolution: nil) === executor.customShaderSamplerState(for: nil))
     }
@@ -558,24 +558,24 @@ struct WPEMetalDrawTextureMetadataTests {
             let snapshot = registry.resolution(for: first)
             table.set(texture: first, samplingDescriptor: nil,
                       sampler: executor.customShaderSamplerState(resolution: snapshot), resolution: snapshot, at: 0)
-            #expect(packed(executor: executor, table: table) == [SIMD4<Float>(8, 4, Float(logicalWidth), 3)])
+            #expect(try packed(executor: executor, table: table) == [SIMD4<Float>(8, 4, Float(logicalWidth), 3)])
         }
         registry.unregister(texture: first)
         table.reset()
         let unregistered = registry.resolution(for: first)
         table.set(texture: first, samplingDescriptor: nil, resolution: unregistered, at: 0)
         #expect(unregistered.clampUVs && !unregistered.noInterpolation)
-        #expect(packed(executor: executor, table: table) == [SIMD4<Float>(8, 4, 8, 4)])
+        #expect(try packed(executor: executor, table: table) == [SIMD4<Float>(8, 4, 8, 4)])
         table[0] = second
         #expect(table.resolution(at: 0) == nil)
-        #expect(packed(executor: executor, table: table) == [SIMD4<Float>(12, 6, 12, 6)])
+        #expect(try packed(executor: executor, table: table) == [SIMD4<Float>(12, 6, 12, 6)])
         table.set(texture: first, samplingDescriptor: nil, resolution: unregistered, at: 0)
         table.set(texture: second, samplingDescriptor: nil, at: 0)
         #expect(table.resolution(at: 0) == nil)
-        #expect(packed(executor: executor, table: table) == [SIMD4<Float>(12, 6, 12, 6)])
+        #expect(try packed(executor: executor, table: table) == [SIMD4<Float>(12, 6, 12, 6)])
         table.set(texture: nil, samplingDescriptor: nil, resolution: unregistered, at: 0)
         #expect(table.resolution(at: 0) == nil)
-        #expect(packed(executor: executor, table: table) == [SIMD4<Float>(repeating: 0)])
+        #expect(try packed(executor: executor, table: table) == [SIMD4<Float>(repeating: 0)])
         #expect(table.resolution(at: -1) == nil)
         #expect(table.resolution(at: table.slotCount) == nil)
     }
@@ -601,11 +601,11 @@ struct WPEMetalDrawTextureMetadataTests {
             WPEUniformSlot(name: "g_Texture0Translation", glslType: "vec2", slot: 2, slotCount: 1),
             WPEUniformSlot(name: "g_Texture1Translation", glslType: "vec2", slot: 3, slotCount: 1),
         ]
-        let values = executor.packTranslatedUniforms(for: pass(), layout: layout, texturesBySlot: table)
+        let values = try executor.packTranslatedUniforms(for: pass(), layout: layout, texturesBySlot: table)
         #expect(values == [first.rotation, second.rotation,
                            SIMD4<Float>(first.translation.x, first.translation.y, 0, 0),
                            SIMD4<Float>(second.translation.x, second.translation.y, 0, 0)])
-        #expect(packed(executor: executor, table: table, slots: [0, 1])
+        #expect(try packed(executor: executor, table: table, slots: [0, 1])
             == [SIMD4<Float>(8, 4, 8, 4), SIMD4<Float>(8, 4, 8, 4)])
         table.reset()
         #expect(table.resolution(at: 0) == nil && table.resolution(at: 1) == nil)
@@ -667,11 +667,11 @@ struct WPEMetalDerivedUniformPackingTests {
 
     @discardableResult
     private func compare(executor: WPEMetalRenderExecutor, layout: [WPEUniformSlot],
-                         table: WPEMetalTextureSlotTable?) -> [SIMD4<Float>] {
+                         table: WPEMetalTextureSlotTable?) throws -> [SIMD4<Float>] {
         executor.derivedUniformPackingEnabled = false
-        let reference = executor.packTranslatedUniforms(for: pass(), layout: layout, texturesBySlot: table)
+        let reference = try executor.packTranslatedUniforms(for: pass(), layout: layout, texturesBySlot: table)
         executor.derivedUniformPackingEnabled = true
-        let actual = executor.packTranslatedUniforms(for: pass(), layout: layout, texturesBySlot: table)
+        let actual = try executor.packTranslatedUniforms(for: pass(), layout: layout, texturesBySlot: table)
         #expect(bytes(actual) == bytes(reference))
         return actual
     }
@@ -683,7 +683,7 @@ struct WPEMetalDerivedUniformPackingTests {
         executor.setCurrentScenePixelSizeForTesting(CGSize(width: 3841, height: 2161))
         let layout = layout()
         let table = try table(device: device, snapshot: snapshot)
-        let actual = compare(executor: executor, layout: layout, table: table)
+        let actual = try compare(executor: executor, layout: layout, table: table)
         #expect(executor.uniformPlans(for: pass(), layout: layout).compactMap(\.directPacking).count == 8)
         #expect(actual[0] == SIMD4<Float>(Float(1.0 / 3841), Float(1.0 / 2161), 0, 0))
         #expect(actual[1] == SIMD4<Float>(Float(0.5 / 3841), Float(0.5 / 2161), 0, 0))
@@ -692,10 +692,10 @@ struct WPEMetalDerivedUniformPackingTests {
         #expect(actual[4] != actual[6] && actual[5] != actual[7])
         #expect(actual[8] == .zero && actual[9] == SIMD4<Float>(1, 2, 3, 4))
         var storage = [SIMD4<Float>](repeating: SIMD4<Float>(repeating: 99), count: actual.count + 2)
-        storage.withUnsafeMutableBufferPointer {
+        try storage.withUnsafeMutableBufferPointer {
             let region = UnsafeMutableBufferPointer(rebasing: $0[1 ..< (actual.count + 1)])
             region.update(repeating: .zero)
-            executor.packTranslatedUniformSlots(for: pass(), layout: layout, texturesBySlot: table, into: region)
+            try executor.packTranslatedUniformSlots(for: pass(), layout: layout, texturesBySlot: table, into: region)
         }
         #expect(bytes(Array(storage[1 ..< (actual.count + 1)])) == bytes(actual))
         #expect(storage.first == SIMD4<Float>(repeating: 99) && storage.last == SIMD4<Float>(repeating: 99))
@@ -709,8 +709,8 @@ struct WPEMetalDerivedUniformPackingTests {
         for size in [CGSize.zero, CGSize(width: -1, height: 2), CGSize(width: CGFloat.nan, height: 2),
                      CGSize(width: CGFloat.infinity, height: CGFloat.infinity), CGSize(width: 3840, height: 2160)] {
             executor.setCurrentScenePixelSizeForTesting(size)
-            compare(executor: executor, layout: layout(), table: table)
-            let missing = compare(executor: executor, layout: layout(), table: nil)
+            try compare(executor: executor, layout: layout(), table: table)
+            let missing = try compare(executor: executor, layout: layout(), table: nil)
             #expect(missing[3] == SIMD4<Float>(71, 72, 73, 74))
             #expect(missing[6] == SIMD4<Float>(51, 52, 53, 54))
             if !(size.width > 0 && size.height > 0) {
@@ -723,13 +723,13 @@ struct WPEMetalDerivedUniformPackingTests {
             rotation: SIMD4<Float>(-0.0, .infinity, -.infinity, Float(bitPattern: 0x7FC0_1234)),
             translation: SIMD2<Float>(-0.0, Float(bitPattern: 0x7FC0_5678))
         ), at: 1)
-        compare(executor: executor, layout: layout(), table: table)
+        try compare(executor: executor, layout: layout(), table: table)
         table.set(texture: texture, samplingDescriptor: WPETexSpriteSamplingDescriptor(
             rotation: SIMD4<Float>(Float(bitPattern: 0x7F80_1234), Float(bitPattern: 0xFFC0_5678),
                                    Float.leastNonzeroMagnitude, -Float.leastNonzeroMagnitude),
             translation: SIMD2<Float>(Float(bitPattern: 0xFF80_1234), -0.0)
         ), at: 1)
-        compare(executor: executor, layout: layout(), table: table)
+        try compare(executor: executor, layout: layout(), table: table)
         table.set(texture: texture, samplingDescriptor: WPETexSpriteSamplingDescriptor(
             rotation: SIMD4<Float>(Float(bitPattern: 0xFFC0_5678), Float.leastNonzeroMagnitude,
                                    -Float.leastNonzeroMagnitude, -0.0),
@@ -737,7 +737,7 @@ struct WPEMetalDerivedUniformPackingTests {
         ), at: 1)
         #expect(executor.directUniformVector(.textureRotation(1), texturesBySlot: table) != nil)
         #expect(executor.directUniformVector(.textureTranslation(1), texturesBySlot: table) != nil)
-        compare(executor: executor, layout: layout(), table: table)
+        try compare(executor: executor, layout: layout(), table: table)
         for bits: UInt32 in [0x7F80_1234, 0xFF80_1234] {
             for lane in 0 ..< 4 {
                 var rotation = SIMD4<Float>(1, 2, 3, 4)
@@ -746,7 +746,7 @@ struct WPEMetalDerivedUniformPackingTests {
                     rotation: rotation, translation: SIMD2<Float>(5, 6)
                 ), at: 1)
                 #expect(executor.directUniformVector(.textureRotation(1), texturesBySlot: table) == nil)
-                compare(executor: executor, layout: layout(), table: table)
+                try compare(executor: executor, layout: layout(), table: table)
             }
             for lane in 0 ..< 2 {
                 var translation = SIMD2<Float>(5, 6)
@@ -755,11 +755,11 @@ struct WPEMetalDerivedUniformPackingTests {
                     rotation: SIMD4<Float>(1, 2, 3, 4), translation: translation
                 ), at: 1)
                 #expect(executor.directUniformVector(.textureTranslation(1), texturesBySlot: table) == nil)
-                compare(executor: executor, layout: layout(), table: table)
+                try compare(executor: executor, layout: layout(), table: table)
             }
         }
         table[1] = texture // Same texture, but this new binding no longer has TEXS metadata.
-        let missingTEXS = compare(executor: executor, layout: layout(), table: table)
+        let missingTEXS = try compare(executor: executor, layout: layout(), table: table)
         #expect(missingTEXS[6] == SIMD4<Float>(51, 52, 53, 54))
         #expect(missingTEXS[7] == SIMD4<Float>(71, 72, 0, 0))
     }
@@ -774,7 +774,7 @@ struct WPEMetalDerivedUniformPackingTests {
             for type in ["float", "vec2", "vec3", "vec4", "ivec4", "mat2"] where type != original.glslType {
                 let declaration = WPEUniformSlot(name: original.name, glslType: type, slot: 0,
                                                  slotCount: type == "mat2" ? 2 : 1)
-                compare(executor: executor, layout: [declaration], table: table)
+                try compare(executor: executor, layout: [declaration], table: table)
                 #expect(executor.uniformPlans(for: pass(), layout: [declaration])[0].directPacking == nil)
             }
             for declaration in [
@@ -782,11 +782,17 @@ struct WPEMetalDerivedUniformPackingTests {
                 WPEUniformSlot(name: original.name, glslType: original.glslType, slot: 0, slotCount: 2),
                 WPEUniformSlot(name: original.name.lowercased(), glslType: original.glslType, slot: 0, slotCount: 1),
             ] {
-                compare(executor: executor, layout: [declaration], table: table)
+                if declaration.arrayLength == nil && declaration.slotCount != 1 {
+                    #expect(throws: WPEUniformPackingError.self) {
+                        try compare(executor: executor, layout: [declaration], table: table)
+                    }
+                } else {
+                    try compare(executor: executor, layout: [declaration], table: table)
+                }
                 #expect(executor.uniformPlans(for: pass(), layout: [declaration])[0].directPacking == nil)
             }
         }
-        compare(executor: executor, layout: layout(), table: table)
+        try compare(executor: executor, layout: layout(), table: table)
         #expect(executor.uniformPlans(for: pass(), layout: layout()).compactMap(\.directPacking).count == 8)
     }
 
@@ -809,14 +815,14 @@ struct WPEMetalDerivedUniformPackingTests {
             let storage = UnsafeMutableBufferPointer<SIMD4<Float>>.allocate(capacity: count)
             storage.initialize(repeating: .zero)
             defer { storage.deinitialize(); storage.deallocate() }
-            func run(enabled: Bool, iterations: Int) -> (UInt64, UInt64) {
+            func run(enabled: Bool, iterations: Int) throws -> (UInt64, UInt64) {
                 executor.derivedUniformPackingEnabled = enabled
                 var checksum: UInt64 = 0
                 let start = DispatchTime.now().uptimeNanoseconds
                 for iteration in 0 ..< iterations {
                     executor.setCurrentScenePixelSizeForTesting(CGSize(width: 3840 + iteration % 2, height: 2160 + iteration % 3))
                     storage.update(repeating: .zero)
-                    executor.packTranslatedUniformSlots(for: pass, layout: layout, texturesBySlot: table, into: storage)
+                    try executor.packTranslatedUniformSlots(for: pass, layout: layout, texturesBySlot: table, into: storage)
                     for value in storage {
                         checksum = checksum &+ UInt64(value.x.bitPattern) &+ UInt64(value.y.bitPattern)
                         checksum = checksum &+ UInt64(value.z.bitPattern) &+ UInt64(value.w.bitPattern)
@@ -824,11 +830,11 @@ struct WPEMetalDerivedUniformPackingTests {
                 }
                 return (DispatchTime.now().uptimeNanoseconds - start, checksum)
             }
-            #expect(run(enabled: false, iterations: 8).1 == run(enabled: true, iterations: 8).1)
+            #expect(try run(enabled: false, iterations: 8).1 == try run(enabled: true, iterations: 8).1)
             var expected: UInt64?
             for block in 0 ..< 12 {
                 let enabled = block % 4 == 1 || block % 4 == 2 // ABBA, repeated three times.
-                let (elapsed, checksum) = run(enabled: enabled, iterations: iterations)
+                let (elapsed, checksum) = try run(enabled: enabled, iterations: iterations)
                 if let expected {
                     #expect(checksum == expected)
                 } else {

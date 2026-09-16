@@ -76,18 +76,7 @@ extension WPEShaderTranspiler {
         out.append("inline float clamp(int value, int lower, float upper) { return metal::clamp(float(value), float(lower), upper); }")
         out.append("inline float clamp(int value, float lower, int upper) { return metal::clamp(float(value), lower, float(upper)); }")
         out.append("inline float clamp(float value, int lower, int upper) { return metal::clamp(value, float(lower), float(upper)); }")
-        out.append("inline float wpe_smoothstep(float edge0, float edge1, float x) {")
-        out.append("    float width = edge1 - edge0;")
-        out.append("    if (abs(width) <= 1.0e-7) { return x < edge0 ? 0.0 : 1.0; }")
-        out.append("    float t = metal::clamp((x - edge0) / width, 0.0, 1.0);")
-        out.append("    return t * t * (3.0 - 2.0 * t);")
-        out.append("}")
-        out.append("inline float2 wpe_smoothstep(float2 edge0, float2 edge1, float2 x) { return float2(wpe_smoothstep(edge0.x, edge1.x, x.x), wpe_smoothstep(edge0.y, edge1.y, x.y)); }")
-        out.append("inline float3 wpe_smoothstep(float3 edge0, float3 edge1, float3 x) { return float3(wpe_smoothstep(edge0.x, edge1.x, x.x), wpe_smoothstep(edge0.y, edge1.y, x.y), wpe_smoothstep(edge0.z, edge1.z, x.z)); }")
-        out.append("inline float4 wpe_smoothstep(float4 edge0, float4 edge1, float4 x) { return float4(wpe_smoothstep(edge0.x, edge1.x, x.x), wpe_smoothstep(edge0.y, edge1.y, x.y), wpe_smoothstep(edge0.z, edge1.z, x.z), wpe_smoothstep(edge0.w, edge1.w, x.w)); }")
-        out.append("inline float2 wpe_smoothstep(float edge0, float edge1, float2 x) { return wpe_smoothstep(float2(edge0), float2(edge1), x); }")
-        out.append("inline float3 wpe_smoothstep(float edge0, float edge1, float3 x) { return wpe_smoothstep(float3(edge0), float3(edge1), x); }")
-        out.append("inline float4 wpe_smoothstep(float edge0, float edge1, float4 x) { return wpe_smoothstep(float4(edge0), float4(edge1), x); }")
+        out.append(Self.glslMathPrelude)
         if !premultipliedInputSlots.isEmpty {
             out.append("inline float4 wpe_unpremultiply_sample(float4 color) {")
             out.append("    float a = color.a;")
@@ -146,71 +135,7 @@ extension WPEShaderTranspiler {
             let slot = Self.textureSlot(for: sampler.name) ?? index
             out.append("    [[maybe_unused]] auto \(sampler.name) = tex\(slot);")
         }
-        var slotCursor = 0
-        for u in uniforms {
-            if let arrayLength = u.arrayLength {
-                let elementType: String
-                switch u.type {
-                case "vec2": elementType = "float2"
-                case "vec3": elementType = "float3"
-                case "vec4": elementType = "float4"
-                case "int":  elementType = "int"
-                case "bool": elementType = "bool"
-                default:     elementType = "float"
-                }
-                out.append("    [[maybe_unused]] \(elementType) \(u.name)[\(arrayLength)];")
-                for i in 0..<arrayLength {
-                    let read: String
-                    switch elementType {
-                    case "float2": read = "u.vals[\(slotCursor + i)].xy"
-                    case "float3": read = "u.vals[\(slotCursor + i)].xyz"
-                    case "float4": read = "u.vals[\(slotCursor + i)]"
-                    case "int":    read = "int(u.vals[\(slotCursor + i)].x)"
-                    case "bool":   read = "u.vals[\(slotCursor + i)].x > 0.5"
-                    default:       read = "u.vals[\(slotCursor + i)].x"
-                    }
-                    out.append("    \(u.name)[\(i)] = \(read);")
-                }
-                slotCursor += arrayLength
-                continue
-            }
-            let slots = Self.slotCount(for: u.type)
-            switch u.type {
-            case "float":
-                out.append("    [[maybe_unused]] float \(u.name) = u.vals[\(slotCursor)].x;")
-            case "vec2":
-                out.append("    [[maybe_unused]] float2 \(u.name) = u.vals[\(slotCursor)].xy;")
-            case "vec3":
-                out.append("    [[maybe_unused]] float3 \(u.name) = u.vals[\(slotCursor)].xyz;")
-            case "vec4":
-                out.append("    [[maybe_unused]] float4 \(u.name) = u.vals[\(slotCursor)];")
-            case "int":
-                out.append("    [[maybe_unused]] int \(u.name) = int(u.vals[\(slotCursor)].x);")
-            case "ivec2":
-                out.append("    [[maybe_unused]] int2 \(u.name) = int2(u.vals[\(slotCursor)].xy);")
-            case "ivec3":
-                out.append("    [[maybe_unused]] int3 \(u.name) = int3(u.vals[\(slotCursor)].xyz);")
-            case "ivec4":
-                out.append("    [[maybe_unused]] int4 \(u.name) = int4(u.vals[\(slotCursor)]);")
-            case "bool":
-                out.append("    [[maybe_unused]] bool \(u.name) = u.vals[\(slotCursor)].x > 0.5;")
-            case "bvec2":
-                out.append("    [[maybe_unused]] bool2 \(u.name) = u.vals[\(slotCursor)].xy > float2(0.5);")
-            case "bvec3":
-                out.append("    [[maybe_unused]] bool3 \(u.name) = u.vals[\(slotCursor)].xyz > float3(0.5);")
-            case "bvec4":
-                out.append("    [[maybe_unused]] bool4 \(u.name) = u.vals[\(slotCursor)] > float4(0.5);")
-            case "mat2":
-                out.append("    [[maybe_unused]] float2x2 \(u.name) = float2x2(u.vals[\(slotCursor)].xy, u.vals[\(slotCursor + 1)].xy);")
-            case "mat3":
-                out.append("    [[maybe_unused]] float3x3 \(u.name) = float3x3(u.vals[\(slotCursor)].xyz, u.vals[\(slotCursor + 1)].xyz, u.vals[\(slotCursor + 2)].xyz);")
-            case "mat4":
-                out.append("    [[maybe_unused]] float4x4 \(u.name) = float4x4(u.vals[\(slotCursor)], u.vals[\(slotCursor + 1)], u.vals[\(slotCursor + 2)], u.vals[\(slotCursor + 3)]);")
-            default:
-                out.append("    [[maybe_unused]] \(u.metalType) \(u.name) = u.vals[\(slotCursor)].x;")
-            }
-            slotCursor += slots
-        }
+        out.append(contentsOf: Self.uniformDeclarationLines(uniforms))
 
         let uniformNames = Set(uniforms.map(\.name))
         let varyingReconstruction = autoSwayVaryingReconstructionLines(
@@ -281,7 +206,11 @@ extension WPEShaderTranspiler {
         out.append(warningCleanMainBody)
         out.append("    }")
         out.append("}")
-        return out.joined(separator: "\n")
+        return routingGLSLMixCalls(
+            in: out.joined(separator: "\n"),
+            authoredHelpers: warningCleanHelpers,
+            authoredMain: warningCleanMainBody
+        )
     }
 
     /// Self-referential `mix` is emitted by WPE and retains the Metal intrinsic.

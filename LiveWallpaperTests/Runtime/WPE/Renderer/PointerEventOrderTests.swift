@@ -38,11 +38,11 @@ struct PointerEventOrderTests {
         let source = try RepositoryRoot.source(
             "LiveWallpaper/Runtime/Metal/WPEMetalSceneRenderer+Frame.swift"
         )
-        let helper = try #require(source.range(of: "private func applyingLayerScriptTicks("))
+        let helper = try #require(source.range(of: "private func tickLayerPresentationScripts("))
         let buttons = try #require(source.range(of: "dispatchPointerButtonEdges("))
         #expect(
             buttons.lowerBound < helper.lowerBound,
-            "dispatchPointerButtonEdges is nested in applyingLayerScriptTicks again; that helper runs before hover hit-testing"
+            "dispatchPointerButtonEdges is nested in tickLayerPresentationScripts again; that helper runs before hover hit-testing"
         )
     }
 }

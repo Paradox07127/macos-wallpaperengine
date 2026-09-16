@@ -118,6 +118,9 @@ struct WPEMetalTextureLoader: @unchecked Sendable {
                     "animation frame \(frameIndex) is missing its source atlas mipmap"
                 )
             }
+            if let format = payload.info.format {
+                try WPETexMipValidation.decoded(frame.mipmaps, format: format)
+            }
             let texture: MTLTexture
             if let cached = atlasTextures[frame.imageID] {
                 texture = cached
@@ -231,6 +234,12 @@ struct WPEMetalTextureLoader: @unchecked Sendable {
         guard let level0 = payload.largestMipmap else {
             throw WPEMetalTextureLoaderError.malformedPayload("missing mipmap")
         }
+        try WPETexMipValidation.decoded(payload.mipmaps, format: format)
+        let limit = WPEMetalTextureLimits.maximum2DTextureDimension(for: device)
+        // Validate the complete chain before selecting an upload subset.
+        guard level0.width <= 16_384, level0.height <= 16_384 else {
+            throw WPEMetalTextureLoaderError.malformedPayload("source mip dimensions exceed TEX limit")
+        }
         // Data textures (noInterpolation / strip-shaped, min edge ≤64) are exempt: they index by texel, and minifying collapses distinct entries.
         let isDataTexture = payload.info.noInterpolation
             || min(level0.width, level0.height) <= 64
@@ -248,6 +257,17 @@ struct WPEMetalTextureLoader: @unchecked Sendable {
         let mipChainEligible = (preserveMipmaps || Self.uploadsMipChain(scalingActive: maxSourceEdge != nil))
             && selectedMipmaps.count > 1
             && selectedMipmaps.allSatisfy { !$0.bytes.isEmpty }
+        guard mip.width <= limit, mip.height <= limit else {
+            throw WPEMetalTextureLoaderError.malformedPayload("upload mip dimensions exceed device limit")
+        }
+        let uploadMipmaps = mipChainEligible ? selectedMipmaps : [mip]
+        let uploadLayouts = try uploadMipmaps.map { level in
+            let layout = try WPETexMipValidation.layout(format: format, width: level.width, height: level.height)
+            guard level.bytes.count >= layout.byteCount else {
+                throw WPEMetalTextureLoaderError.malformedPayload("missing or truncated upload mip \(level.index)")
+            }
+            return layout
+        }
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
             pixelFormat: mapping.pixelFormat,
             width: mip.width,
@@ -289,15 +309,8 @@ struct WPEMetalTextureLoader: @unchecked Sendable {
             worldHeight: level0.height
         )
 
-        for (uploadLevel, level) in selectedMipmaps.enumerated() {
-            if uploadLevel > 0, !mipChainEligible { break }
-            let levelExpected = format.expectedByteCount(width: level.width, height: level.height)
-            guard level.bytes.count >= levelExpected else {
-                throw WPEMetalTextureLoaderError.malformedPayload(
-                    "mip bytes \(level.bytes.count) smaller than expected \(levelExpected) (level \(level.index))"
-                )
-            }
-            let levelBytesPerRow = try Self.bytesPerRow(width: level.width, mapping: mapping)
+        for (uploadLevel, level) in uploadMipmaps.enumerated() {
+            let levelBytesPerRow = uploadLayouts[uploadLevel].bytesPerRow
             try level.bytes.withUnsafeBytes { raw in
                 guard let baseAddress = raw.baseAddress else {
                     throw WPEMetalTextureLoaderError.malformedPayload(
@@ -315,14 +328,5 @@ struct WPEMetalTextureLoader: @unchecked Sendable {
         return texture
     }
 
-    private static func bytesPerRow(width: Int, mapping: WPEMetalTextureFormatMapping) throws -> Int {
-        if let bytesPerPixel = mapping.bytesPerPixel {
-            return width * bytesPerPixel
-        }
-        if let bytesPerBlock = mapping.bytesPerBlock {
-            return max((width + 3) / 4, 1) * bytesPerBlock
-        }
-        throw WPEMetalTextureLoaderError.malformedPayload("missing row-stride information")
-    }
 }
 #endif

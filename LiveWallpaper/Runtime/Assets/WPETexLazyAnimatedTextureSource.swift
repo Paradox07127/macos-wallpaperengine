@@ -29,6 +29,7 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
     private let loop: Bool
     private let device: MTLDevice
     private let label: String
+    private let format: WPETexFormat
     private let mapping: WPEMetalTextureFormatMapping
     private let alphaChannelPriorityRG88: Bool
     private let maximumTextureDimension2D: Int
@@ -106,6 +107,10 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
         guard let format = payload.info.format else {
             throw Failure.unsupportedFormat(payload.info.textureFormatCode)
         }
+        for image in payload.compressedImages {
+            try WPETexMipValidation.streamingImage(image)
+        }
+        self.format = format
         let caps = capabilities ?? WPEMetalTextureCapabilities(device: device)
         do {
             mapping = try WPEMetalTextureFormatMapper.mapping(for: format, capabilities: caps, colorSpace: colorSpace)
@@ -260,7 +265,7 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
         cancelPrefetch(for: imageID)
         let decoded: Data
         do {
-            decoded = try Self.decodedBytes(from: mipmap)
+            decoded = try WPETexMipValidation.decodedBytes(mipmap, format: format)
         } catch {
             prefetchFailedImageIDs.insert(imageID)
             throw error
@@ -308,11 +313,12 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
             // Capture only Sendable values (never self); render actor harvests later.
             let box = OSAllocatedUnfairLock<PrefetchOutcome>(initialState: .pending)
             let pump = onPrefetchComplete
+            let format = self.format
             let item = DispatchWorkItem { @Sendable in
 #if DEBUG
                 if delay > 0 { Thread.sleep(forTimeInterval: delay) }
 #endif
-                let decoded = try? Self.decodedBytes(from: mipmap)
+                let decoded = try? WPETexMipValidation.decodedBytes(mipmap, format: format)
                 box.withLock { $0 = .done(decoded) }
                 // Harvest now via owner hop (contract tests lock).
                 pump?()
@@ -366,17 +372,6 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
 
     private func cancelPrefetch(for imageID: Int) {
         prefetchJobs.removeValue(forKey: imageID)?.item.cancel()
-    }
-
-    private nonisolated static func decodedBytes(from mipmap: WPETexCompressedMipmap) throws -> Data {
-        if mipmap.isCompressed {
-            guard let output = mipmap.lz4Inflated() else { throw Failure.decompressionFailed(mipmap.index) }
-            return output
-        }
-        guard mipmap.compressedBytes.count >= mipmap.decompressedByteCount else {
-            throw Failure.truncatedImageBytes
-        }
-        return mipmap.compressedBytes.prefix(mipmap.decompressedByteCount).materializedData()
     }
 
     private struct Cropped {

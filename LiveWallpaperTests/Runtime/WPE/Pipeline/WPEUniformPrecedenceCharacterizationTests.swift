@@ -22,8 +22,8 @@ struct WPEUniformPrecedenceCharacterizationTests {
         #expect(planSteps(layout, pass: pass, on: executor) == [
             [.frameGlobal("g_Time"), .passValue("g_Time")]
         ])
-        #expect(pack(layout, pass: pass, on: executor, frame: makeFrame())[0].x == 2.5)
-        #expect(pack(layout, pass: pass, on: executor)[0].x == 999)
+        #expect(try pack(layout, pass: pass, on: executor, frame: makeFrame())[0].x == 2.5)
+        #expect(try pack(layout, pass: pass, on: executor)[0].x == 999)
     }
 
     @Test("An authored material constant beats the frame global of the same name")
@@ -41,13 +41,13 @@ struct WPEUniformPrecedenceCharacterizationTests {
         #expect(planSteps(material, pass: pass, on: executor) == [
             [.passValue("g_Brightness"), .frameGlobal("g_Brightness")],
         ])
-        #expect(pack(material, pass: pass, on: executor, frame: makeFrame())[0].x == 1.5)
+        #expect(try pack(material, pass: pass, on: executor, frame: makeFrame())[0].x == 1.5)
 
         let plain = [WPEUniformSlot(name: "g_Brightness", glslType: "float", slot: 0, slotCount: 1)]
         #expect(planSteps(plain, pass: pass, on: executor) == [
             [.frameGlobal("g_Brightness"), .passValue("g_Brightness")],
         ])
-        #expect(pack(plain, pass: pass, on: executor, frame: makeFrame())[0].x == 0.6)
+        #expect(try pack(plain, pass: pass, on: executor, frame: makeFrame())[0].x == 0.6)
     }
 
     @Test("An earlier candidate's pass value beats a later candidate's frame global")
@@ -64,7 +64,7 @@ struct WPEUniformPrecedenceCharacterizationTests {
         #expect(planSteps(layout, pass: pass, on: executor) == [
             [.passValue("u_Custom"), .frameGlobal("g_Time")]
         ])
-        #expect(pack(layout, pass: pass, on: executor, frame: makeFrame())[0].x == 7)
+        #expect(try pack(layout, pass: pass, on: executor, frame: makeFrame())[0].x == 7)
     }
 
     @Test("A lowercased pass-value hit beats an EXACT raw constant")
@@ -80,9 +80,9 @@ struct WPEUniformPrecedenceCharacterizationTests {
         #expect(planSteps(layout, pass: pass, on: executor) == [
             [.passValue("RATIO"), .passConstant("u_Ratio")]
         ])
-        #expect(pack(layout, pass: pass, on: executor)[0].x == 0.8)
+        #expect(try pack(layout, pass: pass, on: executor)[0].x == 0.8)
         let withoutCaseVariant = makePass(id: "a3b", constants: ["u_Ratio": .number(-1)])
-        #expect(pack(layout, pass: withoutCaseVariant, on: executor)[0].x == -1)
+        #expect(try pack(layout, pass: withoutCaseVariant, on: executor)[0].x == -1)
     }
 
     @Test("A lowercased frame-global hit beats an EXACT raw constant")
@@ -94,8 +94,8 @@ struct WPEUniformPrecedenceCharacterizationTests {
         #expect(planSteps(layout, pass: pass, on: executor) == [
             [.frameGlobal("g_Daytime"), .passConstant("g_daytime")]
         ])
-        #expect(pack(layout, pass: pass, on: executor, frame: makeFrame())[0].x == 0.75)
-        #expect(pack(layout, pass: pass, on: executor)[0].x == -1)
+        #expect(try pack(layout, pass: pass, on: executor, frame: makeFrame())[0].x == 0.75)
+        #expect(try pack(layout, pass: pass, on: executor)[0].x == -1)
     }
 
     @Test("Exact constants beat lowercased constants, and both beat the slot default")
@@ -111,15 +111,15 @@ struct WPEUniformPrecedenceCharacterizationTests {
                 defaultValue: .number(3)
             )
         ]
-        #expect(pack(layout, pass: pass, on: executor)[0].x == 1)
+        #expect(try pack(layout, pass: pass, on: executor)[0].x == 1)
 
         let loweredOnly = makePass(id: "a5b", constants: ["RATIO": .number(2)])
         #expect(planSteps(layout, pass: loweredOnly, on: executor) == [[.passConstant("RATIO")]])
-        #expect(pack(layout, pass: loweredOnly, on: executor)[0].x == 2)
+        #expect(try pack(layout, pass: loweredOnly, on: executor)[0].x == 2)
 
         let empty = makePass(id: "a5c")
         #expect(planSteps(layout, pass: empty, on: executor)[0].isEmpty)
-        #expect(pack(layout, pass: empty, on: executor)[0].x == 3)
+        #expect(try pack(layout, pass: empty, on: executor)[0].x == 3)
     }
 
     @Test("A bound g_TextureNResolution outranks pass values and constants; unbound falls through")
@@ -142,7 +142,7 @@ struct WPEUniformPrecedenceCharacterizationTests {
         #expect(plans[0].textureResolutionSlot == 0)
         #expect(plans[1].textureResolutionSlot == 5)
 
-        let slots = pack(layout, pass: pass, on: executor, textures: textures)
+        let slots = try pack(layout, pass: pass, on: executor, textures: textures)
         // Unregistered texture ⇒ physical size in all four components (§2.3).
         #expect(slots[0] == SIMD4<Float>(24, 6, 24, 6))
         #expect(slots[1] == SIMD4<Float>(5, 5, 5, 5))
@@ -179,7 +179,7 @@ struct WPEUniformPrecedenceCharacterizationTests {
         #expect(plans[1].textureTranslationSlot == 0)
         #expect(plans[2].textureTranslationSlot == 7)
 
-        let slots = pack(layout, pass: pass, on: executor, textures: table)
+        let slots = try pack(layout, pass: pass, on: executor, textures: table)
         #expect(slots[0] == descriptor.rotation)
         #expect(slots[1] == SIMD4<Float>(descriptor.translation.x, descriptor.translation.y, 0, 0))
         // No identity/zero fallback is invented when a slot has a texture but no TEXS descriptor.
@@ -231,7 +231,7 @@ struct WPEUniformPrecedenceCharacterizationTests {
         let plans = executor.uniformPlans(for: pass, layout: layout)
         #expect(plans[0].isTexelSize)
         #expect(plans[0].steps == [.passValue("g_TexelSize")])
-        #expect(pack(layout, pass: pass, on: executor)[0] == SIMD4<Float>(0.5, 0.25, 0, 0))
+        #expect(try pack(layout, pass: pass, on: executor)[0] == SIMD4<Float>(0.5, 0.25, 0, 0))
     }
 
     // MARK: - B. Hit-is-terminal happens BEFORE conversion (§2.6) — and the
@@ -253,10 +253,10 @@ struct WPEUniformPrecedenceCharacterizationTests {
         #expect(planSteps(layout, pass: pass, on: executor) == [
             [.passValue("u_Wrong"), .passConstant("u_Wrong")]
         ])
-        #expect(pack(layout, pass: pass, on: executor)[0] == SIMD4<Float>(0, 0, 0, 0))
+        #expect(try pack(layout, pass: pass, on: executor)[0] == SIMD4<Float>(0, 0, 0, 0))
 
         let constantOnly = makePass(id: "b1b", constants: ["u_Wrong": .vector([1, 2, 3, 4])])
-        #expect(pack(layout, pass: constantOnly, on: executor)[0] == SIMD4<Float>(1, 2, 3, 4))
+        #expect(try pack(layout, pass: constantOnly, on: executor)[0] == SIMD4<Float>(1, 2, 3, 4))
     }
 
     /// Deliberately opposite to the translated path above; the two must not be unified.
@@ -359,7 +359,7 @@ struct WPEUniformPrecedenceCharacterizationTests {
         #expect(planSteps(layout, pass: pass, on: executor) == [[.passValue(chosen)]])
         // The packed value is the CHOSEN key's value, never a merge of the two.
         let expected = try #require(pass.uniformValues[chosen]?.numberValue)
-        #expect(pack(layout, pass: pass, on: executor)[0].x == Float(expected))
+        #expect(try pack(layout, pass: pass, on: executor)[0].x == Float(expected))
 
         #expect(executor.uniformKeyIndex(for: pass).uniformKeys["foo"] == chosen)
         #expect(executor.uniformKeyIndexBuildCount == 1)
@@ -662,7 +662,7 @@ struct WPEUniformPrecedenceCharacterizationTests {
                 name: "top", glslType: "float", slot: 0, slotCount: 1, materialName: "g_Top"
             )
         ]
-        #expect(pack(layout, pass: interleaved, on: executor)[0].x == 0.25)
+        #expect(try pack(layout, pass: interleaved, on: executor)[0].x == 0.25)
 
         let caseVariant = makePass(
             id: "d6b",
@@ -755,7 +755,7 @@ struct WPEUniformPrecedenceCharacterizationTests {
             WPEUniformSlot(name: "u_M3", glslType: "mat3", slot: 2, slotCount: 3),
             WPEUniformSlot(name: "u_M4", glslType: "mat4", slot: 5, slotCount: 4)
         ]
-        let slots = pack(layout, pass: pass, on: executor)
+        let slots = try pack(layout, pass: pass, on: executor)
         #expect(slots.count == 9)
         #expect(slots[0] == SIMD4<Float>(1, 2, 0, 0))
         #expect(slots[1] == SIMD4<Float>(3, 4, 0, 0))
@@ -786,7 +786,7 @@ struct WPEUniformPrecedenceCharacterizationTests {
             WPEUniformSlot(name: "u_V4", glslType: "vec4", slot: 5, slotCount: 2, arrayLength: 2),
             WPEUniformSlot(name: "u_F", glslType: "float", slot: 7, slotCount: 3, arrayLength: 3)
         ]
-        let slots = pack(layout, pass: pass, on: executor)
+        let slots = try pack(layout, pass: pass, on: executor)
         #expect(Array(slots[0...2]) == [
             SIMD4<Float>(1, 2, 0, 0), SIMD4<Float>(3, 4, 0, 0), SIMD4<Float>(5, 6, 0, 0)
         ])
@@ -797,17 +797,18 @@ struct WPEUniformPrecedenceCharacterizationTests {
         ])
     }
 
-    /// ACCIDENTAL: unsupported-type fallout, not a designed ABI.
-    @Test("Integer and boolean vector arrays collapse to one component per element")
-    func integerVectorArraysCollapse() throws {
+    @Test("Integer vector arrays preserve every component as integer bits")
+    func integerVectorArraysPreserveComponents() throws {
         let executor = try makeExecutor()
         let pass = makePass(id: "f3", uniformValues: ["u_IV2": .vector([1, 2, 3, 4])])
         let layout = [
             WPEUniformSlot(name: "u_IV2", glslType: "ivec2", slot: 0, slotCount: 2, arrayLength: 2)
         ]
-        let slots = pack(layout, pass: pass, on: executor)
-        #expect(slots[0] == SIMD4<Float>(1, 0, 0, 0))
-        #expect(slots[1] == SIMD4<Float>(2, 0, 0, 0))
+        let slots = try pack(layout, pass: pass, on: executor)
+        #expect(slots[0].x.bitPattern == 1 && slots[0].y.bitPattern == 2)
+        #expect(slots[1].x.bitPattern == 3 && slots[1].y.bitPattern == 4)
+        #expect(slots[0].z == 0 && slots[0].w == 0)
+        #expect(slots[1].z == 0 && slots[1].w == 0)
     }
 
     @Test("Short vectors zero-pad and the scalar/vector conversion table holds")
@@ -835,7 +836,7 @@ struct WPEUniformPrecedenceCharacterizationTests {
             // `.bool` has no vector conversion at all — it packs as all zero.
             WPEUniformSlot(name: "u_BoolIntoVector", glslType: "vec2", slot: 6, slotCount: 1)
         ]
-        let slots = pack(layout, pass: pass, on: executor)
+        let slots = try pack(layout, pass: pass, on: executor)
         #expect(slots[0] == SIMD4<Float>(1, 0, 0, 0))
         #expect(slots[1].x == 1)
         #expect(slots[2].x == 0)
@@ -890,14 +891,14 @@ struct WPEUniformPrecedenceCharacterizationTests {
         #expect(msl.contains("float3x3 g_M3 = float3x3(u.vals[2].xyz, u.vals[3].xyz, u.vals[4].xyz);"))
         #expect(msl.contains("float4x4 g_M4 = float4x4(u.vals[5], u.vals[6], u.vals[7], u.vals[8]);"))
         #expect(msl.contains("float g_F = u.vals[9].x;"))
-        #expect(msl.contains("int g_I = int(u.vals[10].x);"))
-        #expect(msl.contains("bool g_B = u.vals[11].x > 0.5;"))
-        #expect(msl.contains("int2 g_IV2 = int2(u.vals[12].xy);"))
-        #expect(msl.contains("bool3 g_BV3 = u.vals[13].xyz > float3(0.5);"))
+        #expect(msl.contains("int g_I = as_type<int>(u.vals[10].x);"))
+        #expect(msl.contains("bool g_B = u.vals[11].x != 0.0;"))
+        #expect(msl.contains("int2 g_IV2 = as_type<int2>(u.vals[12].xy);"))
+        #expect(msl.contains("bool3 g_BV3 = u.vals[13].xyz != float3(0.0);"))
         #expect(msl.contains("g_A[0] = u.vals[14].xy;"))
         #expect(msl.contains("g_A[2] = u.vals[16].xy;"))
-        #expect(msl.contains("g_BA[0] = u.vals[17].x > 0.5;"))
-        #expect(msl.contains("g_BA[1] = u.vals[18].x > 0.5;"))
+        #expect(msl.contains("g_BA[0] = u.vals[17].x != 0.0;"))
+        #expect(msl.contains("g_BA[1] = u.vals[18].x != 0.0;"))
     }
 
     // MARK: - G. Invalidation inputs (§2.7)
@@ -912,19 +913,19 @@ struct WPEUniformPrecedenceCharacterizationTests {
         ]
         let textures = WPEMetalTextureSlotTable()
 
-        #expect(pack(layout, pass: pass, on: executor, textures: textures)[0]
+        #expect(try pack(layout, pass: pass, on: executor, textures: textures)[0]
             == SIMD4<Float>(7, 7, 7, 7))
 
         textures[0] = try makeTexture(device: device, width: 16, height: 8)
-        #expect(pack(layout, pass: pass, on: executor, textures: textures)[0]
+        #expect(try pack(layout, pass: pass, on: executor, textures: textures)[0]
             == SIMD4<Float>(16, 8, 16, 8))
 
         textures[0] = try makeTexture(device: device, width: 4, height: 2)
-        #expect(pack(layout, pass: pass, on: executor, textures: textures)[0]
+        #expect(try pack(layout, pass: pass, on: executor, textures: textures)[0]
             == SIMD4<Float>(4, 2, 4, 2))
 
         textures.reset()
-        #expect(pack(layout, pass: pass, on: executor, textures: textures)[0]
+        #expect(try pack(layout, pass: pass, on: executor, textures: textures)[0]
             == SIMD4<Float>(7, 7, 7, 7))
     }
 
@@ -945,21 +946,21 @@ struct WPEUniformPrecedenceCharacterizationTests {
         let pass = makePass(id: "g2", uniformValues: ["g_TexelSize": .vector([-1, -1])])
 
         executor.setCurrentScenePixelSizeForTesting(world)
-        #expect(pack(layout, pass: pass, on: executor)[0] == texel(3840, 2160))
+        #expect(try pack(layout, pass: pass, on: executor)[0] == texel(3840, 2160))
 
         // A packer reading the WORLD size would leave this at 1/3840 instead of doubling the texel.
         executor.setCurrentScenePixelSizeForTesting(half)
-        #expect(pack(layout, pass: pass, on: executor)[0] == texel(1920, 1080))
+        #expect(try pack(layout, pass: pass, on: executor)[0] == texel(1920, 1080))
 
         executor.setCurrentScenePixelSizeForTesting(.zero)
-        #expect(pack(layout, pass: pass, on: executor)[0] == SIMD4<Float>(-1, -1, 0, 0))
+        #expect(try pack(layout, pass: pass, on: executor)[0] == SIMD4<Float>(-1, -1, 0, 0))
         executor.setCurrentScenePixelSizeForTesting(CGSize(width: 100, height: 0))
-        #expect(pack(layout, pass: pass, on: executor)[0] == SIMD4<Float>(-1, -1, 0, 0))
+        #expect(try pack(layout, pass: pass, on: executor)[0] == SIMD4<Float>(-1, -1, 0, 0))
 
         executor.setCurrentScenePixelSizeForTesting(half)
         let otherName = [WPEUniformSlot(name: "g_TexelSize2", glslType: "vec2", slot: 0, slotCount: 1)]
         let otherPass = makePass(id: "g2b", uniformValues: ["g_TexelSize2": .vector([-1, -1])])
-        #expect(pack(otherName, pass: otherPass, on: executor)[0] == SIMD4<Float>(-1, -1, 0, 0))
+        #expect(try pack(otherName, pass: otherPass, on: executor)[0] == SIMD4<Float>(-1, -1, 0, 0))
     }
 
     @Test("g_TexelSizeHalf and g_Screen derive from render-pixel size")
@@ -982,18 +983,18 @@ struct WPEUniformPrecedenceCharacterizationTests {
         #expect(plans[1].isScreen)
 
         executor.setCurrentScenePixelSizeForTesting(CGSize(width: 1920, height: 1080))
-        let full = pack(layout, pass: pass, on: executor)
+        let full = try pack(layout, pass: pass, on: executor)
         #expect(abs(full[0].x - Float(0.5 / 1920.0)) < 0.0000001)
         #expect(abs(full[0].y - Float(0.5 / 1080.0)) < 0.0000001)
         #expect(full[1] == SIMD4<Float>(1920, 1080, Float(1920.0 / 1080.0), 0))
 
         executor.setCurrentScenePixelSizeForTesting(CGSize(width: 960, height: 540))
-        let half = pack(layout, pass: pass, on: executor)
+        let half = try pack(layout, pass: pass, on: executor)
         #expect(abs(half[0].x - Float(0.5 / 960.0)) < 0.0000001)
         #expect(half[1] == SIMD4<Float>(960, 540, Float(960.0 / 540.0), 0))
 
         executor.setCurrentScenePixelSizeForTesting(.zero)
-        let fallback = pack(layout, pass: pass, on: executor)
+        let fallback = try pack(layout, pass: pass, on: executor)
         #expect(fallback[0] == SIMD4<Float>(-1, -1, 0, 0))
         #expect(fallback[1] == SIMD4<Float>(-1, -1, -1, 0))
     }
@@ -1015,11 +1016,11 @@ struct WPEUniformPrecedenceCharacterizationTests {
         }
 
         #expect(executor.advanceShaderFrameTime(runtimeTime: 10) == 0)
-        #expect(pack(layout, pass: pass, on: executor, frame: frame(executor.currentShaderFrameTime))[0].x == 0)
+        #expect(try pack(layout, pass: pass, on: executor, frame: frame(executor.currentShaderFrameTime))[0].x == 0)
 
         let delta = executor.advanceShaderFrameTime(runtimeTime: 10.025)
         #expect(abs(delta - 0.025) < 0.0000001)
-        #expect(abs(pack(layout, pass: pass, on: executor, frame: frame(delta))[0].x - 0.025) < 0.000001)
+        #expect(abs(try pack(layout, pass: pass, on: executor, frame: frame(delta))[0].x - 0.025) < 0.000001)
 
         // Fail-close may encode twice at one timestamp; both encodes are one
         // logical frame and must receive the same shader delta.
@@ -1052,14 +1053,14 @@ struct WPEUniformPrecedenceCharacterizationTests {
                 uniformValues: ["u_Anim": animated.resolved(at: expectation.time)]
             )
             #expect(
-                pack(layout, pass: pass, on: executor)[0].x == expectation.value,
+                try pack(layout, pass: pass, on: executor)[0].x == expectation.value,
                 "t=\(expectation.time)"
             )
         }
 
         // The frame clock here is 2.5s, which would read 1 if the packer honoured it.
         let unresolved = makePass(id: "g3.raw", uniformValues: ["u_Anim": animated])
-        #expect(pack(layout, pass: unresolved, on: executor, frame: makeFrame())[0].x == 0)
+        #expect(try pack(layout, pass: unresolved, on: executor, frame: makeFrame())[0].x == 0)
     }
 }
 
@@ -1184,10 +1185,10 @@ private func pack(
     on executor: WPEMetalRenderExecutor,
     frame: WPEFrameUniformContext = .empty,
     textures: WPEMetalTextureSlotTable? = nil
-) -> [SIMD4<Float>] {
+) throws -> [SIMD4<Float>] {
     executor.frameUniformContext = frame
     defer { executor.frameUniformContext = .empty }
-    return executor.packTranslatedUniforms(for: pass, layout: layout, texturesBySlot: textures)
+    return try executor.packTranslatedUniforms(for: pass, layout: layout, texturesBySlot: textures)
 }
 
 private func planSteps(

@@ -69,8 +69,7 @@ extension WPEMetalSceneRenderer {
             sceneScriptBatchDispatcher.submit(pendingSceneScriptBatchJobs)
             pendingSceneScriptBatchJobs.removeAll(keepingCapacity: true)
         }
-        var framePipeline = applyingLayerScriptTicks(
-            to: pipeline,
+        var frameOverlay = tickLayerPresentationScripts(
             uniforms: uniforms,
             layerScriptPointerFrame: frameContext.layerScriptPointerFrame
         )
@@ -106,9 +105,10 @@ extension WPEMetalSceneRenderer {
             ),
             generation: loadGeneration
         )
+        frameOverlay.colors = layerColorsExcludingText(liveTransforms.colors)
+        var framePipeline = pipeline.applyingFrameOverlay(frameOverlay)
         if !liveTransforms.isEmpty {
             framePipeline = framePipeline
-                .applyingLayerColor(layerColorsExcludingText(liveTransforms.colors))
                 .applyingLayerTransforms(
                     origins: applyingTextLayerOriginOffsets(
                         liveTransforms.origins,
@@ -328,15 +328,14 @@ extension WPEMetalSceneRenderer {
 
     // MARK: - Per-frame script & particle ticks
 
-    private func applyingLayerScriptTicks(
-        to pipeline: WPEPreparedRenderPipeline,
+    private func tickLayerPresentationScripts(
         uniforms: WPEMetalRuntimeUniforms,
         layerScriptPointerFrame: WPEPointerFrame
-    ) -> WPEPreparedRenderPipeline {
+    ) -> WPEFrameOverlay {
         guard !layerScriptInstances.isEmpty || !layerAlphaScriptInstances.isEmpty
             || !textVisibleScriptInstances.isEmpty || !textAlphaScriptInstances.isEmpty
             || !particleAlphaScriptInstances.isEmpty else {
-            return pipeline
+            return WPEFrameOverlay()
         }
         // Sorted by objectID: these scripts cross-talk through shared state, so a
         // stable tick order keeps the frame deterministic (oracle) and behaviour
@@ -387,9 +386,13 @@ extension WPEMetalSceneRenderer {
             }
         }
         stageIntroPhaseAlign()
-        return pipeline
-            .applyingLayerVisibility(liveLayerVisibilityIncludingText)
-            .applyingLayerAlpha(liveLayerAlphaIncludingText)
+        // Capture now: transform/event scripts run later and may mutate live
+        // presentation. The frame keeps the same snapshot as the old early
+        // visibility/alpha application, while the tree is rebuilt only once.
+        return WPEFrameOverlay(
+            visibility: liveLayerVisibilityIncludingText,
+            alpha: liveLayerAlphaIncludingText
+        )
     }
 
     struct LiveScriptTransforms {

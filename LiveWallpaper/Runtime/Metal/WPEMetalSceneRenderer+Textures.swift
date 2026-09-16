@@ -195,6 +195,7 @@ extension WPEMetalSceneRenderer {
                     guard seenPipelineKeys.insert(dedup).inserted else { continue }
                     pipelinePrewarms.append(.init(
                         device: prewarmDevice,
+                        defaultLibrary: executor.defaultLibrary,
                         result: result,
                         vertexName: vertexName,
                         blendMode: blend,
