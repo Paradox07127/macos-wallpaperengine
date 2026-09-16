@@ -1498,22 +1498,6 @@ enum HTMLWallpaperRuntimeScript {
             window.addEventListener('unhandledrejection', function (event) {
                 post('rejection', describe(event.reason));
             });
-            // One-shot liveness probe. A frozen wallpaper whose clock still ticks means rAF is
-            // gated while timers are not, and only `rafFrames` vs `hidden` separates WebKit's own
-            // visibility throttle from our suspend path.
-            setTimeout(function () {
-                var frames = 0;
-                var live = true;
-                (function tick() { frames++; if (live) requestAnimationFrame(tick); })();
-                setTimeout(function () {
-                    live = false;
-                    post('probe', 'hidden=' + document.hidden
-                        + ' visibility=' + document.visibilityState
-                        + ' rafFramesIn2s=' + frames
-                        + ' audioBridge=' + (typeof window.wallpaperRegisterAudioListener)
-                        + ' size=' + window.innerWidth + 'x' + window.innerHeight);
-                }, 2000);
-            }, 1000);
         })();
         """
     }
