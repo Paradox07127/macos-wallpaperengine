@@ -101,7 +101,7 @@ struct SystemWallpaperCandidateTile: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .galleryTileChrome(isHovering: isHovering, isSelected: isSelected, reduceMotion: reduceMotion)
             .settledHover { isHovering = $0 }
-            .task(id: candidate.id) {
+            .tileTask(id: candidate.id) {
                 thumbnail = nil
                 let loaded = await candidate.thumbnail()
                 guard !Task.isCancelled else { return }

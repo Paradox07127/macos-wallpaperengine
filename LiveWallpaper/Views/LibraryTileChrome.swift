@@ -75,6 +75,31 @@ struct LibraryTileUnavailableVeil: View {
     }
 }
 
+/// `.task(id:)` re-runs every time a lazy-grid tile scrolls back into view, so artwork
+/// cleared at the top of its action flashes on each re-appearance. This runs the action
+/// once per id; an action cancelled mid-load runs again on the next appearance.
+private struct TileTask<ID: Equatable>: ViewModifier {
+    let id: ID
+    let action: () async -> Void
+    @State private var completed: ID?
+
+    func body(content: Content) -> some View {
+        content.task(id: id) {
+            guard completed != id else { return }
+            await action()
+            if !Task.isCancelled {
+                completed = id
+            }
+        }
+    }
+}
+
+extension View {
+    func tileTask(id: some Equatable, _ action: @escaping () async -> Void) -> some View {
+        modifier(TileTask(id: id, action: action))
+    }
+}
+
 /// The entry id alone is not enough: a cover is written after the entry is saved, and the tile has to reload when that name appears.
 struct TileContentKey: Hashable {
     let id: UUID

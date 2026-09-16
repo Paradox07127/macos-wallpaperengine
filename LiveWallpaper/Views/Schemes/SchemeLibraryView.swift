@@ -253,7 +253,7 @@ private struct SchemeTile: View {
             .help(applyHelp)
             .contextMenu { contextMenu }
             // Keyed on cover and capture time: the cover is written after capture, and replace-in-place keeps the id — without `updatedAt` an overwrite with no cover would keep the previous artwork.
-            .task(id: TileContentKey(
+            .tileTask(id: TileContentKey(
                 id: scheme.id,
                 coverFileName: scheme.coverFileName,
                 version: scheme.updatedAt

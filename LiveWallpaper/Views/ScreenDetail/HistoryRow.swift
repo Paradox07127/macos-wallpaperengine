@@ -17,6 +17,8 @@ private final class WPEResolutionProbeCache {
 
 struct HistoryRow: View {
     let entry: WPEHistoryEntry
+    /// From `WPEPreviewURLCache`; nil = no preview, or the page has not prefetched yet.
+    let previewURL: URL?
     let isActive: Bool
     var allowsInlineApply: Bool = false
     var isSelected: Bool = false
@@ -34,19 +36,11 @@ struct HistoryRow: View {
     @State private var showingFileActions = false
     @State private var bookmarkHovering = false
     @State private var resolutionLabel: String?
-    @State private var previewURL: URL?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.galleryCardPreferences) private var cardPreferences
 
     var body: some View {
         cardContainer
-            .task(id: entry) {
-                previewURL = nil
-                let origin = entry.origin
-                let resolved = await PreviewWorkGate.shared.runDetached { origin.sourcePreviewURL }
-                guard !Task.isCancelled else { return }
-                previewURL = resolved
-            }
             .task(id: resolutionProbeKey) { await loadResolutionIfNeeded() }
             .galleryTileChrome(
                 isHovering: isHovering,

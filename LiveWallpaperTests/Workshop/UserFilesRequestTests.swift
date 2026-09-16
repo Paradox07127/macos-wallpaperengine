@@ -46,7 +46,8 @@ struct InstalledFilterSnapBackTests {
             loadLastUpdateCheckEpoch: { 0 },
             saveLastUpdateCheckEpoch: { _ in },
             makeMetadataService: { SteamWorkshopMetadataService() },
-            now: Date.init
+            now: Date.init,
+            prefetchPreviewURLs: { _ in }
         ))
     }
 

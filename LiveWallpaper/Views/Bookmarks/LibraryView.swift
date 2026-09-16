@@ -240,7 +240,7 @@ private struct BookmarkTile: View {
             .contextMenu { contextMenu }
             // Keyed on the cover too: it is written asynchronously after the
             // save, and the tile has to pick it up when it lands.
-            .task(id: TileContentKey(id: bookmark.id, coverFileName: bookmark.coverFileName)) {
+            .tileTask(id: TileContentKey(id: bookmark.id, coverFileName: bookmark.coverFileName)) {
                 await loadTileContent()
             }
             .accessibilityElement(children: .combine)
