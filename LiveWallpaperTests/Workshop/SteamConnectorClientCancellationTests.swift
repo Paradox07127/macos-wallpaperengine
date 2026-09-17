@@ -10,6 +10,7 @@ struct SteamConnectorClientCancellationTests {
     /// Holds every reply block and never invokes it, so the client's wait can end only by cancellation (or the 7200 s timer).
     private final class SilentConnector: NSObject, SteamConnectorProtocol {
         let invoked = OSAllocatedUnfairLock(initialState: false)
+        let sawHostExit = OSAllocatedUnfairLock(initialState: false)
         private let held = OSAllocatedUnfairLock<[@Sendable (Data) -> Void]>(initialState: [])
 
         private func hold(_ reply: @escaping @Sendable (Data) -> Void) {
@@ -94,6 +95,7 @@ struct SteamConnectorClientCancellationTests {
         }
 
         func terminateActiveSteamCMDForHostExit(with reply: @escaping @Sendable (Data) -> Void) {
+            sawHostExit.withLock { $0 = true }
             hold(reply)
         }
     }
@@ -143,12 +145,59 @@ struct SteamConnectorClientCancellationTests {
         #expect(finished.withLock { $0 }, "call() ignored Task.cancel and is waiting for a reply that will never come")
     }
 
+    @Test("quitting signals the connector even when the call in flight has no progress channel", .timeLimit(.minutes(1)))
+    @MainActor
+    func hostExitReachesAChildStartedWithoutProgress() async throws {
+        let listener = NSXPCListener.anonymous()
+        let delegate = Delegate()
+        listener.delegate = delegate
+        listener.resume()
+        // `nonisolated(unsafe)`: the endpoint is only read to build a connection; the listener lives for the whole test.
+        nonisolated(unsafe) let endpoint = listener.endpoint
+        SteamConnectorClient.connectionFactoryForTesting = { NSXPCConnection(listenerEndpoint: endpoint) }
+        defer {
+            SteamConnectorClient.connectionFactoryForTesting = nil
+            listener.invalidate()
+        }
+
+        // `probeCachedLogin` spawns SteamCMD but streams no progress, so it is exactly the shape
+        // the in-flight gate has to notice.
+        let probe = Task { _ = await SteamConnectorClient.probeCachedLogin(accountName: "someone") }
+        defer { probe.cancel() }
+        for _ in 0 ..< 50 where !delegate.connector.invoked.withLock({ $0 }) {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(delegate.connector.invoked.withLock { $0 })
+
+        await SteamConnectorClient.terminateActiveSteamCMDForHostExit()
+        #expect(
+            delegate.connector.sawHostExit.withLock { $0 },
+            "quitting never asked the connector to signal its child, so a SteamCMD run with no progress channel outlives the app"
+        )
+    }
+
     // MARK: - Source guards
 
     @Test("the connector treats an invalidated client connection as an abandoned caller")
     func connectorWiresInvalidation() throws {
         let main = try RepositoryRoot.source("SteamConnector/main.swift")
         #expect(main.contains("newConnection.invalidationHandler"))
+        // The connection is the only strong reference, and XPC releases the exported object on
+        // invalidation without documenting whether that happens before or after the handler runs.
+        #expect(
+            !main.contains("[weak exportedObject]"),
+            "a weakly captured exported object may already be nil when the handler fires, which silently disables the whole abandoned-caller path"
+        )
+    }
+
+    @Test("every SteamCMD child is registered, so host exit can reach one started without an operation id")
+    func connectorRegistersEveryChild() throws {
+        let connector = try RepositoryRoot.source("SteamConnector/SteamConnector.swift")
+        #expect(
+            !connector.contains("if let activeOperationID {"),
+            "a child registered only when the caller passed an operation id is invisible to terminateActiveForHostExit"
+        )
+        #expect(!connector.contains("if activeOperationID != nil {"))
     }
 
     @Test("app termination signals the active SteamCMD child before the termination coordinator runs")

@@ -220,12 +220,13 @@ final class SteamCMDActiveProcessRegistry: Sendable {
     private struct Active {
         let pid: pid_t
         let hasOwnGroup: Bool
-        let operationID: String
+        /// `nil` for a run the app never named — a probe, a login, an install. Only host exit signals those.
+        let operationID: String?
     }
 
     private let state = OSAllocatedUnfairLock<Active?>(initialState: nil)
 
-    func register(pid: pid_t, hasOwnGroup: Bool, operationID: String) {
+    func register(pid: pid_t, hasOwnGroup: Bool, operationID: String?) {
         state.withLock { $0 = Active(pid: pid, hasOwnGroup: hasOwnGroup, operationID: operationID) }
     }
 

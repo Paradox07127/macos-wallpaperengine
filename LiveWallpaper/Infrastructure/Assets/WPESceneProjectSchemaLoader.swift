@@ -28,9 +28,30 @@ enum WPESceneProjectSchemaLoader {
         let supportRootPath: String?
     }
 
+    /// `project.json` as it stood when the memo was taken.
+    private struct ProjectFingerprint: Equatable {
+        let size: Int
+        let modified: TimeInterval
+
+        init?(_ url: URL?) {
+            guard let url,
+                  let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]),
+                  let size = values.fileSize,
+                  let modified = values.contentModificationDate
+            else { return nil }
+            self.size = size
+            self.modified = modified.timeIntervalSince1970
+        }
+    }
+
+    private struct CacheEntry {
+        let outcome: Outcome
+        let fingerprint: ProjectFingerprint
+    }
+
     /// Answers about a scene (a schema, or a confirmed absence) are memoized so a re-mounted
     /// inspector can render on its first frame; failed reads are never memoized.
-    private static let cache = OSAllocatedUnfairLock<[CacheKey: Outcome]>(initialState: [:])
+    private static let cache = OSAllocatedUnfairLock<[CacheKey: CacheEntry]>(initialState: [:])
 
     /// Process-lifetime observer; the token is deliberately dropped (never removed).
     private static let observesImports: Bool = {
@@ -67,11 +88,22 @@ enum WPESceneProjectSchemaLoader {
             wpeOrigin: wpeOrigin,
             supportRoot: applicationSupportRootURL ?? defaultApplicationSupportRoot()
         )
-        return cache.withLock { $0[key] }
+        return cache.withLock { $0[key]?.outcome }
     }
 
     static func invalidateCache() {
         cache.withLock { $0.removeAll() }
+    }
+
+    /// The app's own copy of `project.json`, which is the only one a later load can re-stat without
+    /// resolving a security-scoped bookmark. `nil` for every other shape.
+    private static func cachedProjectURL(descriptor: SceneDescriptor, supportRoot: URL?) -> URL? {
+        guard descriptor.assetStorage == .cache,
+              let supportRoot,
+              WPEPathSafety.isSafeCacheRelativePath(descriptor.cacheRelativePath)
+        else { return nil }
+        return cacheFolderURL(supportRoot: supportRoot, cacheRelativePath: descriptor.cacheRelativePath)
+            .appendingPathComponent("project.json")
     }
 
     static func load(
@@ -80,25 +112,27 @@ enum WPESceneProjectSchemaLoader {
         applicationSupportRootURL: URL? = nil
     ) async -> Outcome {
         _ = observesImports
-        if let cached = cachedOutcome(
-            descriptor: descriptor,
-            wpeOrigin: wpeOrigin,
-            applicationSupportRootURL: applicationSupportRootURL
-        ) {
-            return cached
+        let supportRoot = applicationSupportRootURL ?? defaultApplicationSupportRoot()
+        let key = cacheKey(descriptor: descriptor, wpeOrigin: wpeOrigin, supportRoot: supportRoot)
+        let projectURL = cachedProjectURL(descriptor: descriptor, supportRoot: supportRoot)
+        if let entry = cache.withLock({ $0[key] }) {
+            // A fingerprint we cannot take (the folder went away) is not evidence the answer changed;
+            // a different one is.
+            let current = ProjectFingerprint(projectURL)
+            if current == nil || current == entry.fingerprint {
+                return entry.outcome
+            }
         }
         let outcome = await read(
             descriptor: descriptor,
             wpeOrigin: wpeOrigin,
             applicationSupportRootURL: applicationSupportRootURL
         )
-        if outcome.schema != nil || outcome.isExpectedAbsence {
-            let key = cacheKey(
-                descriptor: descriptor,
-                wpeOrigin: wpeOrigin,
-                supportRoot: applicationSupportRootURL ?? defaultApplicationSupportRoot()
-            )
-            cache.withLock { $0[key] = outcome }
+        // Only the app's own copy is memoized: revalidating a source folder would mean resolving its
+        // bookmark on every load, which is the cost the memo exists to avoid.
+        if outcome.schema != nil || outcome.isExpectedAbsence,
+           let fingerprint = ProjectFingerprint(projectURL) {
+            cache.withLock { $0[key] = CacheEntry(outcome: outcome, fingerprint: fingerprint) }
         }
         return outcome
     }
@@ -145,14 +179,18 @@ enum WPESceneProjectSchemaLoader {
 
     // MARK: - Cache path
 
+    private static func cacheFolderURL(supportRoot: URL, cacheRelativePath: String) -> URL {
+        supportRoot
+            .appendingPathComponent("LiveWallpaper", isDirectory: true)
+            .appendingPathComponent(cacheRelativePath, isDirectory: true)
+    }
+
     private static func readFromCache(
         supportRoot: URL,
         cacheRelativePath: String,
         workshopID: String
     ) -> Outcome? {
-        let folderURL = supportRoot
-            .appendingPathComponent("LiveWallpaper", isDirectory: true)
-            .appendingPathComponent(cacheRelativePath, isDirectory: true)
+        let folderURL = cacheFolderURL(supportRoot: supportRoot, cacheRelativePath: cacheRelativePath)
         let projectURL = folderURL.appendingPathComponent("project.json")
         guard FileManager.default.fileExists(atPath: projectURL.path) else {
             return nil
