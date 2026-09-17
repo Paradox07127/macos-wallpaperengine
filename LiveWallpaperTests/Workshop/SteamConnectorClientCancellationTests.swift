@@ -176,7 +176,61 @@ struct SteamConnectorClientCancellationTests {
         )
     }
 
+    @Test("quitting still reaches the connector after the only in-flight call was cancelled", .timeLimit(.minutes(1)))
+    @MainActor
+    func hostExitReachesTheConnectorAfterACancelledCall() async throws {
+        let listener = NSXPCListener.anonymous()
+        let delegate = Delegate()
+        listener.delegate = delegate
+        listener.resume()
+        // `nonisolated(unsafe)`: the endpoint is only read to build a connection; the listener lives for the whole test.
+        nonisolated(unsafe) let endpoint = listener.endpoint
+        SteamConnectorClient.connectionFactoryForTesting = { NSXPCConnection(listenerEndpoint: endpoint) }
+        defer {
+            SteamConnectorClient.connectionFactoryForTesting = nil
+            listener.invalidate()
+        }
+
+        // Termination cancels startup tasks first; the child the probe started is still running.
+        let probe = Task { _ = await SteamConnectorClient.probeCachedLogin(accountName: "someone") }
+        for _ in 0 ..< 50 where !delegate.connector.invoked.withLock({ $0 }) {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(delegate.connector.invoked.withLock { $0 })
+        probe.cancel()
+        _ = await probe.value
+
+        await SteamConnectorClient.terminateActiveSteamCMDForHostExit()
+        #expect(
+            delegate.connector.sawHostExit.withLock { $0 },
+            "a cancelled wait took the in-flight count back to zero, so quitting skipped the only RPC that can signal the child"
+        )
+    }
+
     // MARK: - Source guards
+
+    @Test("the interactive login child is registered like every other SteamCMD child")
+    func connectorRegistersTheLoginChild() throws {
+        let connector = try RepositoryRoot.source("SteamConnector/SteamConnector.swift")
+        let login = try #require(connector.range(of: "static func runLoginSession("))
+        let body = connector[login.upperBound...]
+        let run = try #require(body.range(of: "try process.run()"))
+        let afterRun = body[run.upperBound...].prefix(600)
+        #expect(
+            afterRun.contains("activeSteamCMD.register("),
+            "a login child that is never registered cannot be signalled on host exit"
+        )
+    }
+
+    @Test("SteamCMD termination runs alongside app shutdown, not ahead of it on the same 2 s fuse")
+    func hostExitDoesNotSerialiseAheadOfShutdown() throws {
+        let app = try RepositoryRoot.source("LiveWallpaper/App/LiveWallpaperApp.swift")
+        let terminate = try #require(app.range(of: "func applicationShouldTerminate("))
+        let body = app[terminate.upperBound...]
+        let hostExit = try #require(body.range(of: "terminateActiveSteamCMDForHostExit"))
+        let line = body[..<hostExit.lowerBound].split(separator: "\n").last ?? ""
+        #expect(line.contains("async let"), "a 1 s XPC wait awaited before shutdownForApplication() eats half of the watchdog budget")
+    }
 
     @Test("the connector treats an invalidated client connection as an abandoned caller")
     func connectorWiresInvalidation() throws {

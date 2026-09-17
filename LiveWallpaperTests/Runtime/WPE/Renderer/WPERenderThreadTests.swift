@@ -282,6 +282,40 @@ struct WPERenderThreadTests {
         #expect(await thread.waitUntilStopped(timeout: .seconds(3)))
     }
 
+    @Test("a post while the exit path is still running leftovers never blocks the poster")
+    func postDuringLeftoverDrainDoesNotBlock() async {
+        let thread = WPERenderThread(label: "test.stop.leftover-drain")
+        let aMayFinish = DispatchSemaphore(value: 0)
+        let bMayFinish = DispatchSemaphore(value: 0)
+        let aRunning = Counter()
+        let bRunning = Counter()
+        thread.perform {
+            aRunning.increment()
+            aMayFinish.wait()
+        }
+        #expect(await eventually { aRunning.count == 1 })
+        thread.requestStop()
+        // Queued behind the stop request: the exit path runs it as a leftover.
+        thread.perform {
+            bRunning.increment()
+            bMayFinish.wait()
+        }
+        aMayFinish.signal()
+        #expect(await eventually { bRunning.count == 1 })
+
+        let posted = Counter()
+        let cDone = Counter()
+        Thread.detachNewThread {
+            thread.perform { cDone.increment() }
+            posted.increment()
+        }
+        let returnedPromptly = await eventually(timeout: .seconds(1)) { posted.count == 1 }
+        bMayFinish.signal()
+        #expect(returnedPromptly, "the poster blocked on postShutdownLock for as long as the wedged leftover ran")
+        #expect(await eventually { cDone.count == 1 })
+        #expect(await thread.waitUntilStopped(timeout: .seconds(3)))
+    }
+
     @Test("a render-thread job can request stop and re-enqueue before it returns")
     func sameThreadStopThenPerformDrains() async {
         let thread = WPERenderThread(label: "test.stop.same-thread-reentrant")

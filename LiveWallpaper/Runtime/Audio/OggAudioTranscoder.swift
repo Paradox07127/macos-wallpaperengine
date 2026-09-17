@@ -179,10 +179,7 @@ actor OggAudioTranscoder {
 
     private func expire(key: String, id: UUID, generation: Int) {
         guard let job = pending[key], job.id == id, job.timeoutGeneration == generation else { return }
-        // Only a decode that ran out its deadline is a verdict on the file; a job still queued behind others is not.
-        if running[job.id] != nil {
-            memo[key] = .unavailable
-        }
+        // Not a verdict on the file: the decode may still finish, and `complete` commits it when it does.
         pending[key] = nil
         waiting.removeAll { $0 == key }
         job.cancellation.cancel()
@@ -197,13 +194,24 @@ actor OggAudioTranscoder {
             running[job.id] = nil
             startAvailableWork()
         }
-        guard pending[job.key]?.id == job.id else { return }
+        // A job the watchdog already retired (pending cleared, waiters resumed with nil) can still
+        // commit its file: the next request then finds it instead of re-decoding or giving up.
+        let retiredByWatchdog = pending[job.key]?.id != job.id
+        if retiredByWatchdog, produced == nil {
+            return
+        }
         var result: URL?
-        if produced != nil, !job.cancellation.isCancelled {
+        if produced != nil, retiredByWatchdog || !job.cancellation.isCancelled {
             do {
                 try FileManager.default.moveItem(at: staged, to: job.destination)
                 result = job.destination
             } catch { result = nil }
+        }
+        if retiredByWatchdog {
+            if let result {
+                memo[job.key] = .ready(result)
+            }
+            return
         }
         memo[job.key] = result.map(Outcome.ready) ?? .unavailable
         finishWaiters(job, result: result)

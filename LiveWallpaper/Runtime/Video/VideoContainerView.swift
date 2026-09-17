@@ -146,6 +146,11 @@ final class VideoContainerView: NSView {
 
     // MARK: - Public API — Hibernation Still Frame
 
+    /// The frame on the desktop while the player is released (deep hibernation).
+    var currentStillFrame: CGImage? {
+        stillFrameView.isHidden ? nil : stillFrameView.image
+    }
+
     var isShowingStillFrame: Bool { !stillFrameView.isHidden }
 
     func showStillFrame(_ image: CGImage) {
@@ -264,7 +269,10 @@ private final class StillFrameHostView: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
+    private(set) var image: CGImage?
+
     func setImage(_ image: CGImage?) {
+        self.image = image
         // Implicit animation would cross-fade the still frame in and out.
         CATransaction.begin()
         CATransaction.setDisableActions(true)

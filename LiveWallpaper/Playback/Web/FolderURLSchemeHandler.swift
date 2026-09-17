@@ -44,6 +44,10 @@ final class FolderURLSchemeHandler: NSObject, WKURLSchemeHandler, @unchecked Sen
     /// outranks `cspEnforcementEnabled`, which only ever relaxes the policy.
     var networkIsolationEnabled = false
 
+    /// URLs already answered with the raw Ogg bytes (transcoder busy or timed out). Later Range
+    /// requests must get the same container, or the player splices Ogg and AAC bytes together.
+    private var oggServedRaw: Set<URL> = []
+
     struct ContentSecurityPolicyOverride: Sendable, Equatable {
         enum Disposition: Sendable, Equatable {
             case enforced
@@ -177,11 +181,15 @@ final class FolderURLSchemeHandler: NSObject, WKURLSchemeHandler, @unchecked Sen
             do {
                 try Task.checkCancellation()
                 // Wait asynchronously; the decode owns its folder access until it really finishes.
-                if case let .file(oggURL) = source,
-                   OggAudioTranscoder.isOggFamily(oggURL),
-                   let aac = await OggAudioTranscoder.shared.transcodedM4A(forOgg: oggURL, access: oggAccess) {
-                    source = .file(aac)
-                    mime = Self.mimeType(for: aac)
+                if case let .file(oggURL) = source, OggAudioTranscoder.isOggFamily(oggURL) {
+                    let pinnedRaw = await MainActor.run { self?.oggServedRaw.contains(oggURL) ?? false }
+                    if !pinnedRaw,
+                       let aac = await OggAudioTranscoder.shared.transcodedM4A(forOgg: oggURL, access: oggAccess) {
+                        source = .file(aac)
+                        mime = Self.mimeType(for: aac)
+                    } else {
+                        _ = await MainActor.run { self?.oggServedRaw.insert(oggURL) }
+                    }
                 }
                 try Task.checkCancellation()
                 let totalLength = try Self.totalLength(of: source)
@@ -240,7 +248,10 @@ final class FolderURLSchemeHandler: NSObject, WKURLSchemeHandler, @unchecked Sen
             }
 
             _ = await MainActor.run {
-                self?.activeTasks.removeValue(forKey: taskID)
+                // WebKit reuses a task object after `stop`, so the key may already name a successor.
+                if self?.activeTasks[taskID]?.delivery === delivery {
+                    self?.activeTasks.removeValue(forKey: taskID)
+                }
             }
         }
 

@@ -834,6 +834,12 @@ struct WPEMetalSceneRendererTests {
             image.unlockFocus()
             return image
         }
+        // A blank first frame is only kept when the retry produced something; a failed retry leaves the poster unsettled.
+        let frame = image(fill: NSColor(white: 0.7, alpha: 1))
+        #expect(SceneDetailView.posterToAccept(first: image(fill: .black), firstWasBlank: true, retry: frame) === frame)
+        #expect(SceneDetailView.posterToAccept(first: image(fill: .black), firstWasBlank: true, retry: nil) == nil)
+        #expect(SceneDetailView.posterToAccept(first: nil, firstWasBlank: false, retry: nil) == nil)
+        #expect(SceneDetailView.posterToAccept(first: frame, firstWasBlank: false, retry: nil) === frame)
         #expect(SceneDetailView.isBlankPoster(image(fill: .black)))
         #expect(!SceneDetailView.isBlankPoster(image(fill: .black, dot: .white)))
         #expect(!SceneDetailView.isBlankPoster(image(fill: NSColor(white: 0.7, alpha: 1))))

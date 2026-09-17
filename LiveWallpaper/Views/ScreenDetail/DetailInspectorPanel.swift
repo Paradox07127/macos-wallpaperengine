@@ -188,15 +188,16 @@ struct DetailInspectorPanel: View {
             wpeSceneCustomSettingsResolved = false
             return
         }
+        // A memo paints at once; `load()` still re-stats project.json and replaces it when the file changed.
         if let cached = WPESceneProjectSchemaLoader.cachedOutcome(descriptor: descriptor, wpeOrigin: draft.wpeOrigin) {
             wpeSceneCustomSettingsSchema = cached.schema
             wpeSceneSettingsFailure = nil
             wpeSceneCustomSettingsResolved = true
-            return
+        } else {
+            wpeSceneCustomSettingsSchema = nil
+            wpeSceneSettingsFailure = nil
+            wpeSceneCustomSettingsResolved = false
         }
-        wpeSceneCustomSettingsSchema = nil
-        wpeSceneSettingsFailure = nil
-        wpeSceneCustomSettingsResolved = false
         let outcome = await WPESceneProjectSchemaLoader.load(
             descriptor: descriptor,
             wpeOrigin: draft.wpeOrigin

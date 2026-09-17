@@ -1,6 +1,6 @@
 import Foundation
-import Testing
 @testable import LiveWallpaper
+import Testing
 
 @Suite("SteamCMD active-process cancel registry")
 struct SteamCMDCancelRegistryTests {
@@ -80,6 +80,22 @@ struct SteamCMDCancelRegistryTests {
         #expect(signalled.count == 1)
         #expect(signalled[0].pid == 414)
         #expect(signalled[0].signal == SIGTERM)
+    }
+
+    @Test("after host exit, a child that is registered late is signalled at once")
+    func hostExitLatchSignalsLaterChildren() {
+        let registry = SteamCMDActiveProcessRegistry()
+        defer { SteamCMDActiveProcessRegistry.resetHostExitForTesting() }
+        #expect(!registry.terminateActiveForHostExit(kill: { _, _ in 0 }))
+        #expect(SteamCMDActiveProcessRegistry.hostExiting)
+
+        var signalled: [pid_t] = []
+        registry.register(pid: 515, hasOwnGroup: true, operationID: nil, kill: { pid, sig in
+            signalled.append(pid)
+            #expect(sig == SIGTERM)
+            return 0
+        })
+        #expect(signalled == [-515], "the serial queue started another child after the quit signal and nothing stopped it")
     }
 
     @Test("a cancel for a superseded operation never kills the run that replaced it")

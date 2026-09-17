@@ -125,6 +125,8 @@ struct SchemeLibraryView: View {
         }
     }
 
+    @State private var dropTickets = LibraryDropTickets()
+
     private var dropBar: some View {
         LibraryDragApplyBar(
             screens: screenManager.screens,
@@ -141,15 +143,20 @@ struct SchemeLibraryView: View {
                           screenManager.screens.contains(where: { $0.id == screen.id })
                     else { return }
                     // Same gate as the tile: a veiled scheme is not applied by dropping it either.
+                    let ticket = dropTickets.begin(screenID: screen.id)
                     Task { @MainActor in
                         let location = await LibraryContentLocator.locate(
                             content: scheme.configuration.activeWallpaper,
                             wpeOrigin: scheme.configuration.wpeOrigin
                         )
-                        guard location.isAvailable,
+                        // Replace keeps the id, so the version is what tells a recaptured scheme
+                        // from the one that was dropped; a newer drop or a gone entry applies nothing.
+                        guard dropTickets.isCurrent(ticket), location.isAvailable,
+                              let current = store.schemes.first(where: { $0.id == id }),
+                              current.updatedAt == scheme.updatedAt,
                               let target = screenManager.screens.first(where: { $0.id == screen.id })
                         else { return }
-                        requestApply(scheme, to: target)
+                        requestApply(current, to: target)
                     }
                 }
             }

@@ -43,7 +43,7 @@ extension WPEShaderTranspiler {
             }
         }
         // Mixed scalar endpoints (`mix(x, 1, t)`) are otherwise ambiguous between the float and int overloads above.
-        for (lhs, rhs) in [("float", "int"), ("int", "float")] {
+        for (lhs, rhs) in [("float", "int"), ("int", "float"), ("float", "uint"), ("uint", "float"), ("int", "uint"), ("uint", "int")] {
             for factor in ["float", "int", "uint"] {
                 lines.append("inline float wpe_glsl_mix(\(lhs) x, \(rhs) y, \(factor) a) { return (1.0 - float(a)) * float(x) + float(a) * float(y); }")
             }

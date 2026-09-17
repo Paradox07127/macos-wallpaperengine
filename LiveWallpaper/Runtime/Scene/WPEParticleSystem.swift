@@ -250,6 +250,10 @@ final class WPEParticleSystem {
     let isRope: Bool
     /// `ropetrail`: each particle owns a history ribbon. `isRope`: one ribbon through the pool.
     let usesTrailRibbon: Bool
+    /// Set per frame by the renderer: true when the GPU sprite-perspective path has no matrix to bind
+    /// (a 3D scene camera), so sprites keep the CPU depth scale ribbons always get.
+    var cpuPerspectiveFallback = false
+
     var usesRibbonGeometry: Bool { isRope || usesTrailRibbon }
     private let trailPointCount: Int
     private var trailSamples: [SIMD2<Float>] = []
@@ -788,7 +792,7 @@ final class WPEParticleSystem {
             let sway = sin(particle.age * particle.oscPosFrequency + particle.oscPosPhase)
             drawPosition += oscillatePositionMask * (sway * particle.oscPosScale)
         }
-        if definition.isPerspective, usesRibbonGeometry {
+        if definition.isPerspective, usesRibbonGeometry || cpuPerspectiveFallback {
             let scale = perspectiveDepthScale(depth: particle.position.z)
             let vp = sceneTransform.renderOrigin
             drawPosition = SIMD3<Float>(
@@ -1141,9 +1145,9 @@ final class WPEParticleSystem {
         if firstTickTime == nil {
             firstTickTime = now
         }
-        // Bound catch-up after suspension, but keep low-FPS frames from emitting
-        // one large, zero-age batch. Each simulation step is at most 1/60 second.
-        let delta = max(0, min(now - (lastTickTime ?? now), 0.1))
+        // Bound catch-up after suspension at one second — the longest frame a 1 FPS target produces —
+        // so a low-FPS frame is simulated in full; each simulation step is still at most 1/60 second.
+        let delta = max(0, min(now - (lastTickTime ?? now), 1.0))
         let steps = max(1, Int(ceil(delta * 60 - 1e-6)))
         let step = delta / Double(steps)
         for index in 0 ..< steps {

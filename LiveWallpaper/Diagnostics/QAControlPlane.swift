@@ -488,12 +488,23 @@ final class QAControlPlane {
     private func defaultsGet(_ arguments: [String: Any]) throws -> Any {
         guard let key = arguments["key"] as? String else { throw QAError.message("Missing key") }
         let stored = UserDefaults.standard.object(forKey: key)
-        return ["key": key, "value": stored ?? NSNull(), "isSet": stored != nil]
+        return ["key": key, "value": Self.jsonSafeDefaultsValue(stored), "isSet": stored != nil]
+    }
+
+    /// `Data`/`Date` defaults (bookmarks, migration stamps) would throw an ObjC exception inside
+    /// `JSONSerialization`; they are reported by type instead of by value.
+    nonisolated static func jsonSafeDefaultsValue(_ stored: Any?) -> Any {
+        guard let stored else { return NSNull() }
+        return JSONSerialization.isValidJSONObject([stored]) ? stored : ["opaque": true, "type": String(describing: type(of: stored))]
     }
 
     private func defaultsSet(_ arguments: [String: Any]) throws -> Any {
         guard let key = arguments["key"] as? String else { throw QAError.message("Missing key") }
         guard let value = arguments["value"] else { throw QAError.message("Missing value") }
+        // A key that holds a non-JSON value is product state (a bookmark, a trust table), not a diagnostic knob.
+        if let existing = UserDefaults.standard.object(forKey: key), !JSONSerialization.isValidJSONObject([existing]) {
+            throw QAError.message("\(key) holds \(type(of: existing)) and is not a diagnostic key")
+        }
         if value is NSNull {
             UserDefaults.standard.removeObject(forKey: key)
         } else {
@@ -503,7 +514,7 @@ final class QAControlPlane {
             }
             UserDefaults.standard.set(value, forKey: key)
         }
-        return ["key": key, "value": UserDefaults.standard.object(forKey: key) ?? NSNull()]
+        return ["key": key, "value": Self.jsonSafeDefaultsValue(UserDefaults.standard.object(forKey: key))]
     }
 
     // MARK: - Encoding

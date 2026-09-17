@@ -127,6 +127,7 @@ struct ScenePresetBar: View {
         .lineLimit(1)
         .truncationMode(.tail)
         .accessibilityLabel(Text("Preset"))
+        .accessibilityValue(changedHelp)
         .popover(isPresented: naming(matching: .isRename), arrowEdge: .bottom) {
             namingPopover
         }

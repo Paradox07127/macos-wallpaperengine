@@ -35,8 +35,9 @@ enum WebFailureCause {
                     bundle: .appLanguage,
                     comment: "Web wallpaper failure reason. The placeholder is an HTTP status code such as 500."
                 ),
-                // Only a server-side fault can clear on its own; a 4xx answers the same next time.
-                canRetry: status >= 500
+                // A server-side fault can clear on its own, and so can a request timeout or a rate limit;
+                // any other 4xx answers the same next time.
+                canRetry: status >= 500 || status == 408 || status == 429
             )
         }
     }
@@ -78,8 +79,11 @@ enum WebFailureCause {
 
     private static func urlError(code: Int, description: String, isLocalProject: Bool) -> WallpaperFailureCause {
         switch code {
-        case NSURLErrorFileDoesNotExist, NSURLErrorResourceUnavailable:
+        case NSURLErrorFileDoesNotExist:
             entryMissing
+        // A remote resource can be unavailable for a moment; only a local project's entry is a missing part.
+        case NSURLErrorResourceUnavailable:
+            isLocalProject ? entryMissing : WallpaperFailureCause(code: "web.url_error.\(code)", reason: description)
         // The folder scheme answers an entry path that is a directory with cannotOpenFile.
         case NSURLErrorCannotOpenFile, NSURLErrorFileIsDirectory:
             isLocalProject ? entryMissing : WallpaperFailureCause(code: "web.url_error.\(code)", reason: description)

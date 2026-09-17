@@ -1240,7 +1240,14 @@ final class WallpaperVideoPlayer {
 
     /// Read through a temporary `AVPlayerItemVideoOutput` rather than `AVAssetImageGenerator`: the output delivers the composited frame (colour effects / Force SDR), not the file as stored.
     func currentFrameImage(timeout: Duration = .milliseconds(600)) async -> NSImage? {
-        guard !isCleanedUp, let item = player?.currentItem else { return nil }
+        guard !isCleanedUp else { return nil }
+        guard let item = player?.currentItem else {
+            // Deep hibernation released the player; the desktop is showing the still it left behind.
+            guard let still = videoView?.currentStillFrame else { return nil }
+            return NSImage(cgImage: still, size: NSSize(width: still.width, height: still.height))
+        }
+        // Orientation lives in the track transform; a composition already applied it.
+        let orientation: CGAffineTransform = item.videoComposition == nil ? await Self.preferredTransform(of: item) : .identity
         let output = AVPlayerItemVideoOutput(
             pixelBufferAttributes: WallpaperVideoOutputNegotiation.pixelBufferAttributes(
                 forcingBGRA: usesExtendedDynamicRange
@@ -1258,7 +1265,7 @@ final class WallpaperVideoPlayer {
                 forItemTime: itemTime,
                 itemTimeForDisplay: &displayTime
             ) {
-                return Self.image(from: buffer)
+                return Self.image(from: buffer, orientation: orientation)
             }
             do {
                 try await Task.sleep(for: .milliseconds(16))
@@ -1269,8 +1276,19 @@ final class WallpaperVideoPlayer {
         return nil
     }
 
-    private static func image(from buffer: CVPixelBuffer) -> NSImage? {
-        let ciImage = CIImage(cvPixelBuffer: buffer)
+    private static func preferredTransform(of item: AVPlayerItem) async -> CGAffineTransform {
+        guard let track = try? await item.asset.loadTracks(withMediaType: .video).first,
+              let transform = try? await track.load(.preferredTransform) else { return .identity }
+        return transform
+    }
+
+    /// `orientation` is the track's preferred transform; a rotated phone video is otherwise captured on its side.
+    static func image(from buffer: CVPixelBuffer, orientation: CGAffineTransform = .identity) -> NSImage? {
+        var ciImage = CIImage(cvPixelBuffer: buffer)
+        if !orientation.isIdentity {
+            ciImage = ciImage.transformed(by: orientation)
+            ciImage = ciImage.transformed(by: CGAffineTransform(translationX: -ciImage.extent.minX, y: -ciImage.extent.minY))
+        }
         let context = CIContext()
         guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else { return nil }
         return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))

@@ -116,12 +116,12 @@ enum WPESceneProjectSchemaLoader {
         let key = cacheKey(descriptor: descriptor, wpeOrigin: wpeOrigin, supportRoot: supportRoot)
         let projectURL = cachedProjectURL(descriptor: descriptor, supportRoot: supportRoot)
         if let entry = cache.withLock({ $0[key] }) {
-            // A fingerprint we cannot take (the folder went away) is not evidence the answer changed;
-            // a different one is.
-            let current = ProjectFingerprint(projectURL)
-            if current == nil || current == entry.fingerprint {
+            // Only the app's own copy is memoized, so a fingerprint that cannot be taken means the
+            // file is gone: drop the memo and let the read report what is actually there.
+            if ProjectFingerprint(projectURL) == entry.fingerprint {
                 return entry.outcome
             }
+            cache.withLock { $0.removeValue(forKey: key) }
         }
         let outcome = await read(
             descriptor: descriptor,
