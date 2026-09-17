@@ -48,6 +48,27 @@ struct SceneFailureFlowTests {
         #expect(WPESceneProjectSchemaLoader.cachedOutcome(descriptor: descriptor, wpeOrigin: nil, applicationSupportRootURL: root) == nil)
     }
 
+    @Test("An edited project.json is re-read instead of served from the memo")
+    func sceneSchemaCacheNoticesAnEditedProject() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("schema-edit-\(UUID().uuidString)", isDirectory: true)
+        let descriptor = SceneDescriptor(workshopID: "77", cacheRelativePath: "wpe-cache/77", entryFile: "scene.json", capabilityTier: .imageOnly)
+        let folder = root.appendingPathComponent("LiveWallpaper/wpe-cache/77")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let project = folder.appendingPathComponent("project.json")
+
+        try Data(#"{"general":{"properties":{"enabled":{"type":"bool","text":"Enabled","value":true}}}}"#.utf8).write(to: project)
+        let first = await WPESceneProjectSchemaLoader.load(descriptor: descriptor, wpeOrigin: nil, applicationSupportRootURL: root)
+        #expect(first.schema?.properties.map(\.key) == ["enabled"])
+
+        try Data(#"{"general":{"properties":{"speed":{"type":"slider","text":"Speed","value":0.5,"min":0,"max":1}}}}"#.utf8).write(to: project)
+        let reloaded = await WPESceneProjectSchemaLoader.load(descriptor: descriptor, wpeOrigin: nil, applicationSupportRootURL: root)
+        #expect(
+            reloaded.schema?.properties.map(\.key) == ["speed"],
+            "the memo served a schema for a project.json that has since changed on disk"
+        )
+    }
+
     @MainActor
     @Test("A long author title cannot displace the actual cause from the issue URL")
     func reportKeepsCauseUnderBudget() {

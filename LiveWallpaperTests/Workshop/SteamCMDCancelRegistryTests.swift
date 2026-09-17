@@ -62,6 +62,26 @@ struct SteamCMDCancelRegistryTests {
         }))
     }
 
+    @Test("a child the app never named is reachable by host exit and by nothing else")
+    func unnamedChildIsReachableOnlyByHostExit() {
+        let registry = SteamCMDActiveProcessRegistry()
+        registry.register(pid: 414, hasOwnGroup: false, operationID: nil)
+
+        #expect(!registry.terminateActive(operationID: UUID().uuidString, kill: { _, _ in
+            Issue.record("an id cancel must never signal a child that was never named")
+            return 0
+        }))
+
+        var signalled: [(pid: pid_t, signal: Int32)] = []
+        #expect(registry.terminateActiveForHostExit(kill: { pid, sig in
+            signalled.append((pid, sig))
+            return 0
+        }))
+        #expect(signalled.count == 1)
+        #expect(signalled[0].pid == 414)
+        #expect(signalled[0].signal == SIGTERM)
+    }
+
     @Test("a cancel for a superseded operation never kills the run that replaced it")
     func supersededOperationCancelIsANoOp() {
         let registry = SteamCMDActiveProcessRegistry()

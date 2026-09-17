@@ -140,14 +140,17 @@ struct MonitorGrain: View {
             pixels[i + 3] = 255
         }
 
-        guard let ctx = CGContext(
-            data: &pixels,
-            width: w, height: h,
-            bitsPerComponent: 8,
-            bytesPerRow: bytesPerRow,
-            space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ), let cgImage = ctx.makeImage() else { return nil }
+        let rendered: CGImage? = pixels.withUnsafeMutableBytes { raw in
+            CGContext(
+                data: raw.baseAddress,
+                width: w, height: h,
+                bitsPerComponent: 8,
+                bytesPerRow: bytesPerRow,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            )?.makeImage()
+        }
+        guard let cgImage = rendered else { return nil }
 
         let image = NSImage(cgImage: cgImage, size: NSSize(width: w, height: h))
         cache[key] = image

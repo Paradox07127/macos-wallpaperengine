@@ -212,9 +212,9 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         // nature (the child may already have exec'd), so the signalling
         // below falls back to the bare pid when the group was never created.
         let hasOwnGroup = setpgid(pid, pid) == 0 || getpgid(pid) == pid
-        if let activeOperationID {
-            activeSteamCMD.register(pid: pid, hasOwnGroup: hasOwnGroup, operationID: activeOperationID)
-        }
+        // Unconditional: the queue is serial, and a child started without an id is exactly the one
+        // `terminateActiveForHostExit` has to find when the app quits.
+        activeSteamCMD.register(pid: pid, hasOwnGroup: hasOwnGroup, operationID: activeOperationID)
 
         // Bounded, not accumulating. SteamCMD can emit hundreds of megabytes on a
         // bad run, and this process is unsandboxed; the semantic summary keeps the
@@ -280,9 +280,7 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         state.withLock { $0.finished = true }
         handle.readabilityHandler = nil
         process.waitUntilExit()
-        if activeOperationID != nil {
-            activeSteamCMD.clear()
-        }
+        activeSteamCMD.clear()
         // Close deterministically rather than waiting for the Pipe to be
         // deallocated; a leaked descriptor per run adds up over a session.
         try? handle.close()
