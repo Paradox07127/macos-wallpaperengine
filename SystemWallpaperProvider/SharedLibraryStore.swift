@@ -68,6 +68,13 @@ struct SharedLibraryStore {
         SystemWallpaperPaths.sharedRoot(hostBundleID: hostBundleID)
     }
 
+    /// Nil when the app never declared one (a pre-declaration app) or the file will not decode — never a mismatch.
+    func loadDeclaredProvider() -> SystemWallpaperProviderIdentity? {
+        let url = SystemWallpaperPaths.providerURL(hostBundleID: hostBundleID)
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return try? SystemWallpaperCoding.decoder.decode(SystemWallpaperProviderIdentity.self, from: data)
+    }
+
     func videosDirectory() -> URL {
         SystemWallpaperPaths.videosDirectory(hostBundleID: hostBundleID)
     }

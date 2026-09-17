@@ -45,6 +45,9 @@ struct LogPrivacySourceAuditTests {
         "SystemWallpaperProvider/ProviderStaleness.swift": [
             "loadedBuild": 1,
             "onDisk": 1,
+            // Surface count and connection flag of the idle-retirement verdict — an Int and a Bool.
+            "surfaces": 1,
+            "connected": 1,
         ],
         "SystemWallpaperProvider/WallpaperXPCBridge.swift": [
             "missing.joined(separator:\",\")": 1,

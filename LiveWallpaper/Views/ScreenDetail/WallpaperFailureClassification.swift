@@ -76,6 +76,7 @@ extension WallpaperFailureCause {
         "runtime.sandboxRevoked",
         "scene.cache_missing",
         "scene.source_unavailable",
+        "web.entry_missing",
         "web.resource_denied",
     ]
 
@@ -84,7 +85,6 @@ extension WallpaperFailureCause {
         "graph.file_missing",
         "scene.cross_package",
         "scene.file_missing",
-        "web.entry_missing",
     ]
 
     var failureClass: WallpaperFailureClass {

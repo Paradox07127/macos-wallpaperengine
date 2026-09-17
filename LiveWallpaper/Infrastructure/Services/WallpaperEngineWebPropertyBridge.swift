@@ -17,14 +17,19 @@ enum WallpaperEngineWebPropertyBridge {
         (function () {
             var properties = \(json);
             var delivered = false;
+            var attempted = false;
             var ready = false;
             function deliver(listener) {
                 if (!ready || delivered) return;
                 if (!listener || typeof listener.applyUserProperties !== 'function') return;
-                delivered = true;
+                attempted = true;
                 try {
                     listener.applyUserProperties(properties);
+                    delivered = true;
                 } catch (error) {
+                    // A throw before `load` is the timeout beating a page that builds its GL state in
+                    // its load handler; `load` delivers again. After `load` the page had its chance.
+                    delivered = document.readyState === 'complete';
                     console.error('Loomscreen failed to apply Wallpaper Engine properties', error);
                 }
             }
@@ -42,16 +47,17 @@ enum WallpaperEngineWebPropertyBridge {
                 });
             } catch (e) {}
             function becomeReady() {
-                if (ready) return;
+                var firstCall = !ready;
                 ready = true;
                 deliver(window.wallpaperPropertyListener);
+                if (!firstCall) return;
                 // Short polling fallback for pages that mutate an already-defined property
                 // instead of assigning to the window.
                 var attempts = 0;
                 function pollFallback() {
-                    if (delivered) return;
+                    if (delivered || attempted) return;
                     deliver(window.wallpaperPropertyListener);
-                    if (delivered) return;
+                    if (delivered || attempted) return;
                     if (attempts++ < 60) {
                         window.requestAnimationFrame(pollFallback);
                     }

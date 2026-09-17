@@ -41,10 +41,6 @@ struct BrowsePane: View {
 
     private static let gridTopAnchor = "workshop.browse.grid.top"
 
-    private var gridColumns: [GridItem] {
-        DesignTokens.LibraryGrid.columns(for: tileSize, aspect: .square)
-    }
-
     var body: some View {
         InspectorSplit(
             isMounted: true,
@@ -288,7 +284,7 @@ struct BrowsePane: View {
                     } else if viewModel.displayedItems.isEmpty {
                         scopeEmptyNote
                     } else {
-                        LazyVGrid(columns: gridColumns, spacing: DesignTokens.LibraryGrid.spacing) {
+                        LibraryGalleryGrid(size: tileSize, aspect: .square) {
                             ForEach(viewModel.displayedItems) { item in
                                 browseCard(for: item)
                                     .equatable()
@@ -466,7 +462,7 @@ struct BrowsePane: View {
 
     private var loadingSkeleton: some View {
         ScrollView {
-            LazyVGrid(columns: gridColumns, spacing: DesignTokens.LibraryGrid.spacing) {
+            LibraryGalleryGrid(size: tileSize, aspect: .square) {
                 ForEach(0..<6, id: \.self) { _ in
                     WorkshopSkeletonCard()
                 }

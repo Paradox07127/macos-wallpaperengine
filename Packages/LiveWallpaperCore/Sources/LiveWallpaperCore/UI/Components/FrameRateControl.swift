@@ -50,7 +50,7 @@ public struct FrameRateSliderScale {
 
 /// The text field's decisions, kept pure so the view stays a thin shell.
 enum FrameRateTextEntry {
-    enum BlurOutcome: Equatable {
+    enum CommitDecision: Equatable {
         case unchanged
         case invalid
         case commit(FrameRateLimit)
@@ -71,13 +71,20 @@ enum FrameRateTextEntry {
         return FrameRateLimit(rawValue: fps)
     }
 
-    /// Losing focus commits only an edit: the field shows a saved 120 as "60" on a 60 Hz
-    /// display, and writing that back would clamp the target for every other display too.
-    static func blurCommit(text: String, value: FrameRateLimit, upperBound: Int) -> BlurOutcome {
+    /// Enter or losing focus commits only an edit: the field shows a saved 120 as "60" on a
+    /// 60 Hz display, and writing that back would clamp the target for every other display too.
+    static func commitDecision(text: String, value: FrameRateLimit, upperBound: Int) -> CommitDecision {
         guard text.trimmingCharacters(in: .whitespacesAndNewlines)
             != self.text(for: value, upperBound: upperBound) else { return .unchanged }
         return parse(text, upperBound: upperBound).map { .commit($0) } ?? .invalid
     }
+}
+
+public enum FrameRateControlLayout: Sendable {
+    /// Value readout, custom field, non-linear slider and preset markers on three lines.
+    case slider
+    /// One line: a segment per preset plus the custom field.
+    case presets
 }
 
 /// Shared by per-display playback and display defaults. A drag edits local state;
@@ -85,11 +92,13 @@ enum FrameRateTextEntry {
 public struct FrameRateControl: View {
     @Binding private var value: FrameRateLimit
     private let displayFramesPerSecond: Int
+    private let layout: FrameRateControlLayout
     private let accessibilityLabel: Text
     @State private var draggingPosition: Double?
     @State private var isDragging = false
     /// Samples that arrive outside an editing bracket (scroll wheel, a track click) commit once they settle, like `CoalescedSlider`.
     @State private var pendingCommit: Task<Void, Never>?
+    @State private var pendingChoice: FrameRateLimit?
     @State private var input = ""
     @State private var invalidInput = false
     @FocusState private var inputFocused: Bool
@@ -97,10 +106,12 @@ public struct FrameRateControl: View {
     public init(
         value: Binding<FrameRateLimit>,
         displayFramesPerSecond: Int,
+        layout: FrameRateControlLayout = .slider,
         accessibilityLabel: Text = Text("Frame rate limit")
     ) {
         _value = value
         self.displayFramesPerSecond = displayFramesPerSecond
+        self.layout = layout
         self.accessibilityLabel = accessibilityLabel
     }
 
@@ -121,19 +132,46 @@ public struct FrameRateControl: View {
     }
 
     public var body: some View {
+        Group {
+            switch layout {
+            case .slider: sliderLayout
+            case .presets: presetsLayout
+            }
+        }
+        .onAppear { resetInput() }
+        .onChange(of: value) { _, _ in
+            cancelPendingCommit()
+            draggingPosition = nil
+            resetInput()
+        }
+        .onChange(of: displayFramesPerSecond) { _, _ in
+            cancelPendingCommit()
+            draggingPosition = nil
+            resetInput()
+        }
+        .onChange(of: inputFocused) { wasFocused, focused in
+            if wasFocused, !focused {
+                commitInput()
+            }
+        }
+        .onDisappear {
+            // A wheel nudge followed by closing the popover still counts.
+            if let pendingChoice {
+                commit(pendingChoice)
+            }
+            cancelPendingCommit()
+            isDragging = false
+            draggingPosition = nil
+        }
+    }
+
+    private var sliderLayout: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text(verbatim: displayedValue.title)
                     .monospacedDigit()
                 Spacer(minLength: 12)
-                TextField("FPS", text: $input)
-                    .textFieldStyle(.roundedBorder)
-                    .multilineTextAlignment(.trailing)
-                    .frame(width: 64)
-                    .focused($inputFocused)
-                    .onSubmit(commitInput)
-                    .accessibilityLabel(Text("Custom frame rate"))
-                    .help(inputHelp)
+                customEntryField
             }
             .font(.caption)
 
@@ -160,30 +198,46 @@ public struct FrameRateControl: View {
                     .foregroundStyle(.red)
             }
         }
-        .onAppear { resetInput() }
-        .onChange(of: value) { _, _ in
-            draggingPosition = nil
-            resetInput()
-        }
-        .onChange(of: displayFramesPerSecond) { _, _ in
-            draggingPosition = nil
-            resetInput()
-        }
-        .onChange(of: inputFocused) { wasFocused, focused in
-            if wasFocused, !focused {
-                switch FrameRateTextEntry.blurCommit(text: input, value: value, upperBound: scale.upperBound) {
-                case .unchanged: break
-                case .invalid: invalidInput = true
-                case let .commit(chosen): commit(chosen)
-                }
+    }
+
+    /// A non-preset value (custom, or a target above this panel) highlights no segment; the field still shows it.
+    private var presetsLayout: some View {
+        HStack(spacing: DesignTokens.Spacing.sm) {
+            GlassSegmentedPicker(selection: presetSelection, values: scale.presets) { preset, isSelected in
+                Text(verbatim: preset == .matchDisplay ? preset.title : String(preset.rawValue))
+                    .font(isSelected ? DesignTokens.Typography.bodyEmphasized : DesignTokens.Typography.body)
+                    .monospacedDigit()
             }
+            .frame(width: CGFloat(scale.presets.count) * Self.presetSegmentWidth)
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(accessibilityLabel)
+            if invalidInput {
+                Image(systemName: "exclamationmark.circle")
+                    .foregroundStyle(DesignTokens.Colors.Status.danger)
+                    .help(inputHelp)
+                    .accessibilityLabel(inputHelp)
+            }
+            // A Form would stack the field's title above it and make the row two lines tall.
+            customEntryField
+                .labelsHidden()
         }
-        .onDisappear {
-            pendingCommit?.cancel()
-            pendingCommit = nil
-            isDragging = false
-            draggingPosition = nil
-        }
+    }
+
+    private static let presetSegmentWidth: CGFloat = 44
+
+    private var presetSelection: Binding<FrameRateLimit> {
+        Binding(get: { boundedValue }, set: { commit($0) })
+    }
+
+    private var customEntryField: some View {
+        TextField("FPS", text: $input)
+            .textFieldStyle(.roundedBorder)
+            .multilineTextAlignment(.trailing)
+            .frame(width: 64)
+            .focused($inputFocused)
+            .onSubmit(commitInput)
+            .accessibilityLabel(Text("Custom frame rate"))
+            .help(inputHelp)
     }
 
     private var presetMarkers: some View {
@@ -213,19 +267,26 @@ public struct FrameRateControl: View {
             draggingPosition = scale.position(for: chosen)
             guard !isDragging else { return }
             pendingCommit?.cancel()
+            pendingChoice = chosen
             pendingCommit = Task { @MainActor in
                 try? await Task.sleep(for: .milliseconds(180))
                 guard !Task.isCancelled else { return }
                 pendingCommit = nil
+                pendingChoice = nil
                 commit(chosen)
             }
         })
     }
 
-    private func editingChanged(_ editing: Bool) {
-        isDragging = editing
+    private func cancelPendingCommit() {
         pendingCommit?.cancel()
         pendingCommit = nil
+        pendingChoice = nil
+    }
+
+    private func editingChanged(_ editing: Bool) {
+        isDragging = editing
+        cancelPendingCommit()
         if editing {
             inputFocused = false
         } else if let position = draggingPosition {
@@ -235,6 +296,8 @@ public struct FrameRateControl: View {
 
     private func commit(_ chosen: FrameRateLimit) {
         let chosen = chosen == .matchDisplay ? chosen : (FrameRateLimit(rawValue: min(chosen.rawValue, scale.upperBound)) ?? .matchDisplay)
+        // A newer commit supersedes whatever a settling sample captured.
+        cancelPendingCommit()
         draggingPosition = nil
         if value != chosen {
             value = chosen
@@ -243,11 +306,12 @@ public struct FrameRateControl: View {
         invalidInput = false
     }
 
+    /// Enter and blur share one rule: an unedited field (the saved target shown clamped) commits nothing.
     private func commitInput() {
-        if let chosen = FrameRateTextEntry.parse(input, upperBound: scale.upperBound) {
-            commit(chosen)
-        } else {
-            invalidInput = true
+        switch FrameRateTextEntry.commitDecision(text: input, value: value, upperBound: scale.upperBound) {
+        case .unchanged: invalidInput = false
+        case .invalid: invalidInput = true
+        case let .commit(chosen): commit(chosen)
         }
     }
 

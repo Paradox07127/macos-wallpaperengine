@@ -33,6 +33,19 @@ struct FullScreenOcclusionTests {
         #expect(FullScreenDetector.unionArea(of: [big, small]) == 10_000)
     }
 
+    @Test("Only a window that also covers the menu bar strip counts as a full-screen app")
+    func fullScreenNeedsTheWholeDisplay() {
+        let display = CGRect(x: -1920, y: 0, width: 1920, height: 1080)
+        // A zoomed window on a Dock-less display leaves only the 30 pt menu bar uncovered.
+        let zoomed = CGRect(x: -1920, y: 30, width: 1920, height: 1050)
+        #expect(!FullScreenDetector.windowFillsDisplay(zoomed.intersection(display), display: display))
+        let fullScreen = CGRect(x: -1920, y: 0, width: 1920, height: 1080)
+        #expect(FullScreenDetector.windowFillsDisplay(fullScreen.intersection(display), display: display))
+        let oversized = CGRect(x: -2000, y: -100, width: 2200, height: 1400)
+        #expect(FullScreenDetector.windowFillsDisplay(oversized.intersection(display), display: display))
+        #expect(!FullScreenDetector.windowFillsDisplay(.null, display: display))
+    }
+
     @Test("Tiled windows reach the 85% threshold by union, not by any single window")
     func tiledReaches85Percent() {
         let screenArea: CGFloat = 1_000_000

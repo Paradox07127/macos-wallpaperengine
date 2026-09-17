@@ -90,9 +90,10 @@ struct WallpaperLoadAttempt: Identifiable {
 final class WallpaperLoadState {
     private(set) var attempts: [CGDirectDisplayID: WallpaperLoadAttempt] = [:]
 
-    func begin(for screen: Screen, title: String, sourceURL: URL? = nil, origin: WPEOrigin? = nil) -> UUID {
+    /// `inspecting: false` keeps the detail page on its normal views for the whole attempt; the failure banner still offers "View Details".
+    func begin(for screen: Screen, title: String, sourceURL: URL? = nil, origin: WPEOrigin? = nil, inspecting: Bool = true) -> UUID {
         let id = UUID()
-        attempts[screen.id] = WallpaperLoadAttempt(id: id, screenID: screen.id, screenIdentity: ObjectIdentifier(screen), displayFingerprint: screen.displayFingerprint, title: title, sourceURL: sourceURL, origin: origin)
+        attempts[screen.id] = WallpaperLoadAttempt(id: id, screenID: screen.id, screenIdentity: ObjectIdentifier(screen), displayFingerprint: screen.displayFingerprint, title: title, sourceURL: sourceURL, origin: origin, isInspecting: inspecting)
         return id
     }
 

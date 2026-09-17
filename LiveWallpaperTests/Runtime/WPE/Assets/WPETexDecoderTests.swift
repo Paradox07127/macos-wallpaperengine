@@ -683,3 +683,21 @@ struct WPETexDecoderTests {
         return dst.prefix(written)
     }
 }
+
+extension WPETexDecoderTests {
+    @Test("TEXS rejects nonfinite time and every geometry lane before publishing either payload",
+          arguments: [Float.nan, Float.infinity, -Float.infinity], Array(0 ... 6))
+    func rejectsNonfiniteTEXS(value: Float, field: Int) throws {
+        var data = try makeStreamingTestImage(width: 4, height: 4,
+                                              compressedPayloads: [lz4RawCompress(Data(repeating: 0, count: 64))], decompressedByteCount: 64)
+        _ = try WPETexDecoder().extractStreamingPayload(data: data).get()
+        _ = try WPETexDecoder().extractTexturePayload(data: data).get()
+        let marker = try #require(data.range(of: Data("TEXS0003\0".utf8)))
+        // TEXS3: frameCount, gifWidth, gifHeight, imageID, then time and six geometry floats.
+        let offset = marker.upperBound + 16 + field * 4
+        var bits = value.bitPattern.littleEndian
+        withUnsafeBytes(of: &bits) { data.replaceSubrange(offset ..< (offset + 4), with: $0) }
+        #expect(throws: (any Error).self) { try WPETexDecoder().extractStreamingPayload(data: data).get() }
+        #expect(throws: (any Error).self) { try WPETexDecoder().extractTexturePayload(data: data).get() }
+    }
+}

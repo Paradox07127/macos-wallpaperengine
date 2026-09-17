@@ -44,6 +44,7 @@ extension WPEMetalRenderExecutor {
         )
         descriptor.colorAttachments[0].storeAction = .store
         gpuPassProfiler?.attach(descriptor, to: commandBuffer, label: "textGlyphs")
+        closeSharedSceneEncoderForHelperEncoder()
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
             throw WPEMetalRenderExecutorError.commandBufferFailed
         }
@@ -81,6 +82,7 @@ extension WPEMetalRenderExecutor {
         descriptor.colorAttachments[0].clearColor = MTLClearColorMake(0, 0, 0, 0)
         descriptor.colorAttachments[0].storeAction = .store
         gpuPassProfiler?.attach(descriptor, to: commandBuffer, label: "textBackground")
+        closeSharedSceneEncoderForHelperEncoder()
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
             throw WPEMetalRenderExecutorError.commandBufferFailed
         }

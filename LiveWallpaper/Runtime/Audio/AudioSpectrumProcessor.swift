@@ -251,7 +251,8 @@ final class AudioSpectrumProcessor: AudioSpectrumAnalyzing, @unchecked Sendable 
 
             let coefficient = target > previous[index] ? attackCoefficient : releaseCoefficient
             let smoothed = previous[index] + coefficient * (target - previous[index])
-            output[index] = max(smoothed, 0)
+            // No ceiling above 1 any more, so an overflowing bin (Inf → NaN next frame) must not poison `previous` for good.
+            output[index] = smoothed.isFinite ? max(smoothed, 0) : 0
         }
 
         copyInPlace(output, into: &previous)

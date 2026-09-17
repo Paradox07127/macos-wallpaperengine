@@ -222,6 +222,31 @@ struct WPETexAnimatedTextureSourceSuspendTests {
 @Suite("WPETexAnimatedTextureSource eager byte gate")
 struct WPETexAnimatedTextureSourceGateTests {
 
+    /// 0.6.7 uploaded level 0 only; a chain whose tail is malformed must not lose the animation now
+    /// that the whole chain is decoded for mip-aware sampling.
+    @Test("A malformed mip tail falls back to level 0 instead of failing the atlas")
+    func malformedMipTailFallsBackToBase() throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let base = makeFixtureImage(width: 4, height: 4, blue: 0x20)
+        let level0 = WPETexCompressedMipmap(index: 0, width: 4, height: 4, isCompressed: false,
+                                            compressedBytes: base, decompressedByteCount: base.count)
+        // A level 1 that did not halve: the chain geometry check rejects it.
+        let badTail = WPETexCompressedMipmap(index: 1, width: 4, height: 4, isCompressed: false,
+                                             compressedBytes: base, decompressedByteCount: base.count)
+        let shared = makeSharedStreamingPayload()
+        let payload = WPETexStreamingPayload(
+            info: shared.info,
+            compressedImages: [WPETexCompressedImage(width: 4, height: 4, payloads: [level0, badTail])],
+            frames: [WPETexStreamingFrame(imageID: 0, subRect: CGRect(x: 0, y: 0, width: 2, height: 2), duration: 0.1)],
+            frameRate: shared.frameRate,
+            loop: shared.loop
+        )
+        let provider = try #require(WPETexAnimatedAtlasProvider(payload: payload, device: device, label: "bad-tail"))
+        let atlas = try provider.makeAtlas(imageID: 0)
+        #expect(atlas.mipmapLevelCount == 1)
+        #expect(atlas.width == 4)
+    }
+
     @Test("Unreferenced container images are not billed")
     func unreferencedImagesAreNotBilled() {
         let payload = makeSharedStreamingPayload(extraUnreferencedImage: true)

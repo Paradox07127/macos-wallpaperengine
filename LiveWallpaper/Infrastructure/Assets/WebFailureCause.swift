@@ -10,11 +10,13 @@ enum WebFailureCause {
     static func navigation(domain: String, code: Int, description: String, isLocalProject: Bool = false) -> WallpaperFailureCause {
         switch domain {
         case NSURLErrorDomain:
-            urlError(code: code, description: description)
+            urlError(code: code, description: description, isLocalProject: isLocalProject)
         case "WebKitErrorDomain":
             webKitError(code: code, description: description)
         case NSCocoaErrorDomain where isLocalProject && (code == NSFileReadNoSuchFileError || code == NSFileNoSuchFileError):
             entryMissing
+        case NSCocoaErrorDomain where isLocalProject && code == NSFileReadNoPermissionError:
+            resourceDenied
         default:
             WallpaperFailureCause(code: "web.\(domain).\(code)", reason: description)
         }
@@ -62,20 +64,27 @@ enum WebFailureCause {
         )
     }
 
-    private static func urlError(code: Int, description: String) -> WallpaperFailureCause {
+    private static var resourceDenied: WallpaperFailureCause {
+        WallpaperFailureCause(
+            code: "web.resource_denied",
+            reason: String(
+                localized: "The wallpaper's folder could not be read. Re-pick the source to restore permission.",
+                bundle: .appLanguage,
+                comment: "Web wallpaper failure reason shown when the sandbox refuses the project folder."
+            ),
+            canRetry: false
+        )
+    }
+
+    private static func urlError(code: Int, description: String, isLocalProject: Bool) -> WallpaperFailureCause {
         switch code {
         case NSURLErrorFileDoesNotExist, NSURLErrorResourceUnavailable:
             entryMissing
+        // The folder scheme answers an entry path that is a directory with cannotOpenFile.
+        case NSURLErrorCannotOpenFile, NSURLErrorFileIsDirectory:
+            isLocalProject ? entryMissing : WallpaperFailureCause(code: "web.url_error.\(code)", reason: description)
         case NSURLErrorNoPermissionsToReadFile:
-            WallpaperFailureCause(
-                code: "web.resource_denied",
-                reason: String(
-                    localized: "The wallpaper's folder could not be read. Re-pick the source to restore permission.",
-                    bundle: .appLanguage,
-                    comment: "Web wallpaper failure reason shown when the sandbox refuses the project folder."
-                ),
-                canRetry: false
-            )
+            resourceDenied
         case NSURLErrorNotConnectedToInternet:
             WallpaperFailureCause(
                 code: "web.offline",

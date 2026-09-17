@@ -124,6 +124,12 @@ final class WallpaperVideoPlayer {
     /// Strong retain: resource loader delegate is weak on AVFoundation's side.
     private var inMemoryAssetLoader: InMemoryVideoAssetLoader?
     private(set) var currentVideoComposition: AVVideoComposition?
+    /// Output color conversion overlays the semantic FPS/effects composition without taking ownership.
+    private let colorComposition = VideoColorCompositionController()
+    var effectiveVideoComposition: AVVideoComposition? {
+        colorComposition.composition ?? currentVideoComposition
+    }
+
     /// Distinguishes FPS vs effects vs Force SDR (AVFoundation only exposes the object).
     private(set) var videoCompositionOwner: VideoCompositionOwner = .none
     /// Composition publication gen; stale builds cancel, item replicas may rebind.
@@ -424,17 +430,22 @@ final class WallpaperVideoPlayer {
         timeout: Duration
     ) async -> WallpaperPreparationResult {
         guard base == .ready else { return base }
-        guard currentVideoComposition != nil || isForceSDRActive else { return .ready }
+        guard effectiveVideoComposition != nil || colorComposition.isPreparing || isForceSDRActive else { return .ready }
         let expectedLifecycleGeneration = lifecycleGeneration
+        let expectedColorPreference = lastColorSpacePreference
         let waitsForLateForceSDRComposition = isForceSDRActive && currentVideoComposition == nil
         return await WallpaperPreparationWaiter.withHardDeadline(timeout: timeout) { [weak self] in
             guard let self else { return .cancelled }
-            while self.currentVideoComposition == nil {
-                guard waitsForLateForceSDRComposition,
-                      self.isForceSDRActive,
-                      self.lifecycleGeneration == expectedLifecycleGeneration,
-                      !self.isCleanedUp else {
+            while effectiveVideoComposition == nil {
+                guard lastColorSpacePreference == expectedColorPreference,
+                      lifecycleGeneration == expectedLifecycleGeneration,
+                      !isCleanedUp else {
                     return .cancelled
+                }
+                // An explicit color override may be preparing the source-only composition. Failed
+                // optional color conversion falls back to the source; Force SDR still waits for its owner.
+                guard colorComposition.isPreparing || (waitsForLateForceSDRComposition && isForceSDRActive) else {
+                    return .ready
                 }
                 do {
                     try await Task.sleep(for: .milliseconds(16))
@@ -443,6 +454,7 @@ final class WallpaperVideoPlayer {
                 }
             }
             let expectedCompositionGeneration = self.videoCompositionGeneration
+            let expectedColorRevision = colorComposition.revision
             var coordinator = VideoCompositedFrameReadinessCoordinator(
                 expectedLifecycleGeneration: expectedLifecycleGeneration,
                 expectedCompositionGeneration: expectedCompositionGeneration
@@ -460,6 +472,7 @@ final class WallpaperVideoPlayer {
             defer { unbindOutput() }
 
             while !Task.isCancelled {
+                guard colorComposition.revision == expectedColorRevision else { return .cancelled }
                 if self.runtimeError != nil || self.isCleanedUp {
                     return .failed
                 }
@@ -506,7 +519,7 @@ final class WallpaperVideoPlayer {
                     }
                     guard self.lifecycleGeneration == expectedLifecycleGeneration,
                           self.videoCompositionGeneration == expectedCompositionGeneration,
-                          self.currentVideoComposition != nil else {
+                          effectiveVideoComposition != nil else {
                         return .cancelled
                     }
                     let itemTime = output.itemTime(forHostTime: CACurrentMediaTime())
@@ -666,7 +679,7 @@ final class WallpaperVideoPlayer {
         self.videoView = containerView
 
         // Prefs/format may predate the container — reconcile once layer exists.
-        containerView.applyColorSpacePreference(lastColorSpacePreference)
+        rebuildColorComposition()
         reconcileDynamicRange()
         if lastColorSpacePreference == .forceSDR {
             installSDRComposition()
@@ -900,7 +913,6 @@ final class WallpaperVideoPlayer {
         guard !isCleanedUp else { return }
         let previousPreference = lastColorSpacePreference
         lastColorSpacePreference = preference
-        videoView?.applyColorSpacePreference(preference)
         reconcileDynamicRange()
 
         if preference == .forceSDR {
@@ -913,6 +925,7 @@ final class WallpaperVideoPlayer {
                 setFrameRateLimit(requestedFrameRateLimit)
             }
         }
+        rebuildColorComposition()
     }
 
     private func installSDRComposition() {
@@ -1017,8 +1030,19 @@ final class WallpaperVideoPlayer {
         videoCompositionGeneration &+= 1
         currentVideoComposition = composition
         videoCompositionOwner = composition == nil ? .none : owner
-        applyCurrentCompositionToQueueItems()
+        rebuildColorComposition()
         installQueueItemMaintenanceObserver()
+    }
+
+    private func rebuildColorComposition() {
+        colorComposition.update(
+            base: currentVideoComposition,
+            asset: templatePlayerItem?.asset,
+            preference: lastColorSpacePreference
+        ) { [weak self] in
+            self?.applyCurrentCompositionToQueueItems()
+        }
+        applyCurrentCompositionToQueueItems()
     }
 
     private func invalidateFrameRateCompositionBuild() {
@@ -1030,7 +1054,7 @@ final class WallpaperVideoPlayer {
 
     private func applyCurrentCompositionToQueueItems() {
         guard let queuePlayer = player else { return }
-        let composition = currentVideoComposition
+        let composition = effectiveVideoComposition
         templatePlayerItem?.videoComposition = composition
         queuePlayer.currentItem?.videoComposition = composition
         for item in queuePlayer.items() {
@@ -1437,6 +1461,7 @@ final class WallpaperVideoPlayer {
         currentItemSubscription = nil
         videoCompositionGeneration &+= 1
         currentVideoComposition = nil
+        colorComposition.reset()
         videoCompositionOwner = .none
 
         if inMemoryAssetLoader != nil {

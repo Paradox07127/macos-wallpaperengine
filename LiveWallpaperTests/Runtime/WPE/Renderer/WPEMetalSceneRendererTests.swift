@@ -2,13 +2,14 @@ import AppKit
 import CoreGraphics
 import Foundation
 import ImageIO
+@testable import LiveWallpaper
 import LiveWallpaperCore
 import LiveWallpaperProWPE
 import Metal
 import MetalKit
+import SwiftUI
 import Testing
 import UniformTypeIdentifiers
-@testable import LiveWallpaper
 
 @MainActor
 @Suite("WPE Metal scene renderer")
@@ -440,7 +441,7 @@ struct WPEMetalSceneRendererTests {
         )
         let renderActor = WPEDisplayRenderActor(backing: .main)
         await renderActor.adopt(WPERendererHandoff(renderer: renderer).renderer)
-        defer { renderActor.shutdown() }
+        defer { renderActor.requestStop() }
 
         try await renderActor.load()
         let loaded = try #require(await renderActor.rendererStateSnapshot())
@@ -730,6 +731,135 @@ struct WPEMetalSceneRendererTests {
         ))
     }
 
+    @Test("Same-scene replacement and incremental commits preserve the live poster")
+    func sameScenePreviewRestartPreservesPoster() {
+        var lifecycle = ScenePreviewLifecycleState()
+        let first = NSObject()
+        let second = NSObject()
+        let image = NSImage(size: NSSize(width: 2, height: 2))
+        var poster: NSImage?
+        var state = SceneRenderState.idle
+        _ = lifecycle.restart(workshopID: "42", sessionID: ObjectIdentifier(first), livePoster: &poster, state: &state)
+        poster = image
+        state = .ready
+
+        let replacement = lifecycle.restart(workshopID: "42", sessionID: ObjectIdentifier(second), livePoster: &poster, state: &state)
+        #expect(poster === image)
+        #expect(state == .ready)
+        #expect(lifecycle.awaitsFreshPoster)
+        let incremental = lifecycle.restart(workshopID: "42", sessionID: ObjectIdentifier(second), livePoster: &poster, state: &state)
+        #expect(poster === image)
+        #expect(state == .ready)
+        #expect(!lifecycle.accepts(replacement, sessionID: ObjectIdentifier(second), isCancelled: false))
+        #expect(lifecycle.accepts(incremental, sessionID: ObjectIdentifier(second), isCancelled: false))
+
+        _ = lifecycle.restart(workshopID: "99", sessionID: ObjectIdentifier(second), livePoster: &poster, state: &state)
+        #expect(poster == nil)
+        #expect(state == .idle)
+        #expect(!lifecycle.awaitsFreshPoster)
+    }
+
+    @Test("A recapture request keeps the poster on screen until the next capture lands")
+    func recaptureRequestKeepsPosterUntilFreshOneLands() {
+        var lifecycle = ScenePreviewLifecycleState()
+        let session = NSObject()
+        let image = NSImage(size: NSSize(width: 2, height: 2))
+        var poster: NSImage?
+        var state = SceneRenderState.idle
+        let generation = lifecycle.restart(workshopID: "42", sessionID: ObjectIdentifier(session), livePoster: &poster, state: &state)
+        poster = image
+        state = .ready
+        lifecycle.acceptFreshPoster()
+        #expect(!lifecycle.awaitsFreshPoster)
+
+        lifecycle.requestFreshPoster()
+        #expect(lifecycle.awaitsFreshPoster)
+        #expect(poster === image)
+        #expect(state == .ready)
+        #expect(lifecycle.accepts(generation, sessionID: ObjectIdentifier(session), isCancelled: false))
+
+        lifecycle.acceptFreshPoster()
+        #expect(!lifecycle.awaitsFreshPoster)
+    }
+
+    @Test("A scene page seeds its first frame from the session's cached renderer state")
+    func scenePageSeedsStateFromSessionCache() async throws {
+        let device = try #require(MTLCreateSystemDefaultDevice())
+        let fixture = try MetalSceneFixture.solidColorScene()
+        defer { fixture.cleanup() }
+        try Data("{ not valid json".utf8).write(to: fixture.root.appendingPathComponent("scene.json"))
+        let surface = WPERenderSurface(frame: CGRect(x: 0, y: 0, width: 64, height: 64), device: device)
+        let renderActor = WPEDisplayRenderActor(backing: .main)
+        let renderer = try WPEMetalSceneRenderer(
+            descriptor: fixture.descriptor,
+            cacheRootURL: fixture.root,
+            dependencyMounts: [],
+            surfaceControl: surface,
+            mailbox: surface.mailbox,
+            presentLayer: WPEPresentLayer(layer: surface.metalLayer),
+            drawableSize: surface.metalLayer.drawableSize,
+            device: device
+        )
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 64, height: 64), styleMask: .borderless, backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let session = SceneWallpaperSession(window: window, renderActor: renderActor, surface: surface)
+        defer { session.cleanup() }
+        let origin = WPEOrigin(workshopID: "42", title: "Scene", originalType: .scene, sourceFolderBookmark: Data([1]), cacheRelativePath: nil, previewFileName: nil)
+        func page(_ session: SceneWallpaperSession?) -> SceneDetailView {
+            SceneDetailView(origin: origin, descriptor: fixture.descriptor, session: session, fitMode: .constant(.aspectFill), playbackControls: AnyView(EmptyView()))
+        }
+
+        #expect(page(nil).initialRenderStateForTesting == .notRendering)
+        #expect(page(session).initialRenderStateForTesting == .loading(progress: nil))
+
+        await renderActor.adopt(WPERendererHandoff(renderer: renderer).renderer)
+        await session.beginLoad()
+        guard case .error = page(session).initialRenderStateForTesting else {
+            Issue.record("Expected the cached load failure on the first frame, got \(page(session).initialRenderStateForTesting)")
+            return
+        }
+    }
+
+    @Test("A blank poster is every pixel black; one lit pixel or an empty image is content")
+    func blankPosterDetection() {
+        func image(fill: NSColor, dot: NSColor? = nil) -> NSImage {
+            let image = NSImage(size: NSSize(width: 64, height: 64))
+            image.lockFocus()
+            fill.setFill()
+            NSRect(x: 0, y: 0, width: 64, height: 64).fill()
+            if let dot {
+                dot.setFill()
+                NSRect(x: 30, y: 30, width: 4, height: 4).fill()
+            }
+            image.unlockFocus()
+            return image
+        }
+        #expect(SceneDetailView.isBlankPoster(image(fill: .black)))
+        #expect(!SceneDetailView.isBlankPoster(image(fill: .black, dot: .white)))
+        #expect(!SceneDetailView.isBlankPoster(image(fill: NSColor(white: 0.7, alpha: 1))))
+        #expect(!SceneDetailView.isBlankPoster(NSImage(size: NSSize(width: 2, height: 2))))
+    }
+
+    @Test("Scene poster memory keeps the most recently remembered scenes only")
+    func scenePosterMemoryEvictsLeastRecentlyRemembered() {
+        ScenePosterMemory.forgetAllForTesting()
+        defer { ScenePosterMemory.forgetAllForTesting() }
+        let images = (0 ... ScenePosterMemory.capacity).map { _ in NSImage(size: NSSize(width: 2, height: 2)) }
+        for (index, image) in images.enumerated() {
+            ScenePosterMemory.remember(image, for: "\(index)")
+        }
+        #expect(ScenePosterMemory.rememberedCountForTesting() == ScenePosterMemory.capacity)
+        #expect(ScenePosterMemory.poster(for: "0") == nil)
+        #expect(ScenePosterMemory.poster(for: "1") === images[1])
+
+        // Re-remembering "1" makes "2" the oldest.
+        ScenePosterMemory.remember(images[1], for: "1")
+        ScenePosterMemory.remember(NSImage(size: NSSize(width: 2, height: 2)), for: "fresh")
+        #expect(ScenePosterMemory.poster(for: "2") == nil)
+        #expect(ScenePosterMemory.poster(for: "1") === images[1])
+        #expect(ScenePosterMemory.rememberedCountForTesting() == ScenePosterMemory.capacity)
+    }
+
     @Test("Scene preview polls only while renderer state is unsettled")
     func scenePreviewPollingStopsAtTerminalStates() {
         #expect(SceneRenderState.idle.needsPreviewPolling)
@@ -857,7 +987,7 @@ struct WPEMetalSceneRendererTests {
         defer { fixture.cleanup() }
         let surface = WPERenderSurface(frame: CGRect(x: 0, y: 0, width: 64, height: 64), device: device)
         let renderActor = WPEDisplayRenderActor(backing: .main)
-        defer { renderActor.shutdown() }
+        defer { renderActor.requestStop() }
         let renderer = try WPEMetalSceneRenderer(
             descriptor: fixture.descriptor,
             cacheRootURL: fixture.root,

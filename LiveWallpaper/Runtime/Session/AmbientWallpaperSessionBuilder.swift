@@ -311,7 +311,10 @@ final class AmbientWallpaperSessionBuilder {
             return nil
         }
         let backing = WPEOffMainRenderFlag.backing
-        let surface = WPERenderSurface(frame: rendererFrame, device: device)
+        // Resolve the destination before selecting a drawable format; another screen's HDR capability
+        // must not widen an SDR wallpaper's surface. The window chooses its screen from its global frame.
+        let window = VideoWallpaperWindow(frame: frame)
+        let surface = WPERenderSurface(frame: rendererFrame, device: device, targetScreen: window.screen)
         let renderActor = WPEDisplayRenderActor(backing: backing)
         let surfaceControl: any WPESurfaceControl
         switch backing {
@@ -322,7 +325,6 @@ final class AmbientWallpaperSessionBuilder {
         }
         // Window BEFORE the renderer so the view has a window (and therefore a
         // backing scale) to convert against.
-        let window = VideoWallpaperWindow(frame: frame)
         window.contentView = surface.mtkView
         // One source of truth (`WPERenderSurface.backingDrawableSize`). Reading
         // the layer here returns 0x0 — it stays zero until the first

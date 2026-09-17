@@ -95,6 +95,8 @@ enum SystemWallpaperProviderStaleness {
         case current
         case bundleGone
         case buildChanged(loaded: String, onDisk: String)
+        /// Idle only: the app declares which appex it ships, and this process is not it (another copy of the app, or a leftover build directory).
+        case supersededByDeclared(declaredPath: String)
 
         var shouldRetire: Bool {
             self != .current
@@ -108,6 +110,29 @@ enum SystemWallpaperProviderStaleness {
             return .buildChanged(loaded: loadedBuild, onDisk: onDiskBuild)
         }
         return .current
+    }
+
+    /// For a process serving zero surfaces. A serving process is never retired for a path mismatch — WallpaperAgent keeps every registered provider resident (suspended once it disconnects), so only the declaration says which idle copy is the real one.
+    static func idleVerdict(
+        _ bundleVerdict: Verdict,
+        ownBundlePath: String,
+        declared: SystemWallpaperProviderIdentity?
+    ) -> Verdict {
+        guard bundleVerdict == .current else { return bundleVerdict }
+        guard let declared, !declared.bundlePath.isEmpty,
+              normalizedPath(declared.bundlePath) != normalizedPath(ownBundlePath)
+        else { return .current }
+        return .supersededByDeclared(declaredPath: declared.bundlePath)
+    }
+
+    /// Textual only: `standardizingPath` folds `/private` just when the path exists, and the sandboxed appex cannot stat the app's copy of the path anyway.
+    private static func normalizedPath(_ path: String) -> String {
+        var normalized = (path as NSString).standardizingPath
+        for prefix in ["/private/tmp/", "/private/var/", "/private/etc/"] where normalized.hasPrefix(prefix) {
+            normalized.removeFirst("/private".count)
+            break
+        }
+        return normalized
     }
 }
 
@@ -224,6 +249,11 @@ enum SystemWallpaperPaths {
 
     static func heartbeatURL(hostBundleID: String) -> URL {
         sharedRoot(hostBundleID: hostBundleID).appendingPathComponent("heartbeat.json")
+    }
+
+    /// The appex the installed app ships (`SystemWallpaperProviderIdentity`, pid 0), written by the app at launch.
+    static func providerURL(hostBundleID: String) -> URL {
+        sharedRoot(hostBundleID: hostBundleID).appendingPathComponent("provider.json")
     }
 
     static func videosDirectory(hostBundleID: String) -> URL {

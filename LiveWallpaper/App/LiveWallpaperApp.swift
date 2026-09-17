@@ -101,6 +101,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onboardingCompleted: UserDefaults.standard.bool(forKey: "Onboarding.Completed")
         )
 
+        if !runtimeOptions.isTesting {
+            wallpaperExportService.declareBundledProvider()
+        }
+
         #if !LITE_BUILD
         if !runtimeOptions.isTesting {
             lifecycle.schedule { [weak self] in
@@ -323,6 +327,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 reply()
             }
 
+            #if !LITE_BUILD
+            // A SteamCMD child outlives this process otherwise: it sits in its own process group inside an XPC service launchd reaps with SIGKILL.
+            await SteamConnectorClient.terminateActiveSteamCMDForHostExit()
+            #endif
             await AppTerminationCoordinator.shutdownForApplication()
             watchdog.cancel()
             reply()

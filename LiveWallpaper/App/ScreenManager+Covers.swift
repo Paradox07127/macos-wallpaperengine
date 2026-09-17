@@ -57,10 +57,9 @@ extension ScreenManager {
             guard CoverCaptureGenerations.claim(token, for: id), let image else { return }
             guard getConfiguration(for: screen)?.activeWallpaper == expectedContent else { return }
             guard SchemeStore.shared.schemes.contains(where: { $0.id == id }) else { return }
-            SchemeStore.shared.setCover(
-                WallpaperCoverStore.shared.store(image, for: id),
-                for: id
-            )
+            // A failed write keeps the cover `replace` preserved; unnaming it would hand the PNG to the orphan sweep.
+            guard let fileName = WallpaperCoverStore.shared.store(image, for: id) else { return }
+            SchemeStore.shared.setCover(fileName, for: id)
         }
     }
 }

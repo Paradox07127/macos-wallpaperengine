@@ -146,7 +146,7 @@ private struct GPUWidgetBody: View {
                 }
 
                 if showTrend {
-                    Sparkline(points: trendPoints, window: trendWindow, domain: 0 ... 1, bandColored: true)
+                    Sparkline(points: trendPoints, window: trendWindow, domain: 0 ... 1, bandColored: true, guides: Sparkline.loadGuides)
                         .frame(height: max(cellHeight * 0.24, 20))
                         .overlay(alignment: .topTrailing) {
                             peakTag(size: scale.label * 0.9).padding(2)

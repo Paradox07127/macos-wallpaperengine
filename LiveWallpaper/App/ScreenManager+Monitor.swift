@@ -202,6 +202,13 @@ extension ScreenManager {
         )
     }
 
+    /// The store still describes the running scene here: proposals persist only in `beforeCommit`.
+    private func runningSceneWorkshopID(for screen: Screen) -> String? {
+        guard let stored = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint),
+              case let .scene(current) = stored.activeWallpaper else { return nil }
+        return current.workshopID
+    }
+
     func activateAmbientWallpaper(
         _ definition: WallpaperSessionDefinition,
         for screen: Screen,
@@ -212,9 +219,12 @@ extension ScreenManager {
         let generation = bumpTransition(for: screen.id)
         let expected = screen.runtimeSession
         let attemptID: UUID?
-        if case .scene = definition {
+        if case .scene(let descriptor) = definition {
             let current = wallpaperLoads.attempt(for: screen)
-            let id = current?.phase == .importing ? current!.id : wallpaperLoads.begin(for: screen, title: configuration.wpeOrigin?.title ?? definition.displayName(using: { bookmarkDisplayName(for: $0) }) ?? String(localized: "Scene wallpaper", bundle: .appLanguage), origin: configuration.wpeOrigin)
+            // Rebuilding the scene that is already on screen (a property change) must not swap the detail page to the attempt views.
+            let rebuildsRunningScene = screen.runtimeSession?.wallpaperType == .scene
+                && runningSceneWorkshopID(for: screen) == descriptor.workshopID
+            let id = current?.phase == .importing ? current!.id : wallpaperLoads.begin(for: screen, title: configuration.wpeOrigin?.title ?? definition.displayName(using: { bookmarkDisplayName(for: $0) }) ?? String(localized: "Scene wallpaper", bundle: .appLanguage), origin: configuration.wpeOrigin, inspecting: !rebuildsRunningScene)
             wallpaperLoads.update(id, for: screen) {
                 $0.configuration = configuration
                 $0.origin = configuration.wpeOrigin

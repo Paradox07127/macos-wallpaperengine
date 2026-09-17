@@ -305,6 +305,34 @@ struct WallpaperEngineWebPropertyBridgeTests {
         #expect(context.exception == nil)
     }
 
+    /// The timeout exists for pages whose `load` hangs; a page that is merely slow and builds its
+    /// GL state in its load handler throws when the timeout wins, and must get its properties at `load`.
+    @Test("A listener that throws before load is delivered to again at load, once")
+    func throwingListenerBeforeLoadIsRetriedAtLoad() throws {
+        let context = try makeBootstrapContext(readyState: "loading")
+        context.evaluateScript("""
+        var attempts = 0;
+        var console = { error: function () {} };
+        window.wallpaperPropertyListener = {
+            applyUserProperties: function (p) {
+                attempts++;
+                if (document.readyState !== 'complete') { throw new Error('GL not ready'); }
+                deliveries.push(p);
+            }
+        };
+        """)
+        context.evaluateScript(bootstrapScriptForOneBoolProperty())
+        context.evaluateScript("fireTimeouts();")
+        #expect(context.evaluateScript("attempts")?.toInt32() == 1)
+        #expect(context.evaluateScript("deliveries.length")?.toInt32() == 0)
+
+        context.evaluateScript("fireLoad();")
+        #expect(context.evaluateScript("deliveries.length")?.toInt32() == 1)
+        context.evaluateScript("fireLoad();")
+        #expect(context.evaluateScript("deliveries.length")?.toInt32() == 1)
+        #expect(context.exception == nil)
+    }
+
     /// The hook has to exist before `load`, or a page that assigns its listener during a hang is
     /// invisible to every later delivery attempt.
     @Test("A listener assigned before load is captured and delivered to at load")

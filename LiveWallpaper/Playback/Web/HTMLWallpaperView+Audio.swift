@@ -39,9 +39,11 @@ final class AudioSpectrumMessageProxy: NSObject, WKScriptMessageHandler {
 
     nonisolated func userContentController(
         _: WKUserContentController,
-        didReceive _: WKScriptMessage
+        didReceive message: WKScriptMessage
     ) {
         MainActor.assumeIsolated {
+            // Only the wallpaper's own document registers a visualizer; a subframe posting here must not retain the tap.
+            guard message.frameInfo.isMainFrame else { return }
             target?.noteAudioSpectrumListenerRegistered()
         }
     }

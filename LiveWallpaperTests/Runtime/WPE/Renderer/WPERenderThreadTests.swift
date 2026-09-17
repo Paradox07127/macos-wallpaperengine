@@ -1,6 +1,6 @@
 import Foundation
-import Testing
 @testable import LiveWallpaper
+import Testing
 
 private final class Recorder: @unchecked Sendable {
     private let lock = NSLock()
@@ -14,45 +14,91 @@ private final class Recorder: @unchecked Sendable {
         threads.append(ObjectIdentifier(Thread.current))
     }
 
-    var recordedOrder: [Int] { lock.lock(); defer { lock.unlock() }; return order }
-    var distinctThreads: Set<ObjectIdentifier> { lock.lock(); defer { lock.unlock() }; return Set(threads) }
+    var recordedOrder: [Int] {
+        lock.lock(); defer { lock.unlock() }; return order
+    }
+
+    var distinctThreads: Set<ObjectIdentifier> {
+        lock.lock(); defer { lock.unlock() }; return Set(threads)
+    }
 }
 
 private final class Counter: @unchecked Sendable {
     private let lock = NSLock()
     private var value = 0
-    func increment() { lock.lock(); value += 1; lock.unlock() }
-    var count: Int { lock.lock(); defer { lock.unlock() }; return value }
+    func increment() {
+        lock.lock(); value += 1; lock.unlock()
+    }
+
+    var count: Int {
+        lock.lock(); defer { lock.unlock() }; return value
+    }
 }
 
 private final class OverlapDetector: @unchecked Sendable {
     private let lock = NSLock()
     private var inside = 0
     private var overlapped = false
-    func enter() { lock.lock(); inside += 1; if inside > 1 { overlapped = true }; lock.unlock() }
-    func leave() { lock.lock(); inside -= 1; lock.unlock() }
-    var overlapDetected: Bool { lock.lock(); defer { lock.unlock() }; return overlapped }
+    func enter() {
+        lock.lock(); inside += 1; if inside > 1 {
+            overlapped = true
+        }; lock.unlock()
+    }
+
+    func leave() {
+        lock.lock(); inside -= 1; lock.unlock()
+    }
+
+    var overlapDetected: Bool {
+        lock.lock(); defer { lock.unlock() }; return overlapped
+    }
+}
+
+/// Counter set from the C callout, so the test can wait with `eventually` instead of blocking a cooperative thread.
+private final class BlockingSourceProbe: @unchecked Sendable {
+    let entered = Counter()
+    let release = DispatchSemaphore(value: 0)
+}
+
+/// A source0 callout that parks the render loop mid-pass until the test releases it.
+private func blockingSourceCallout(_ info: UnsafeMutableRawPointer?) {
+    guard let info else { return }
+    let probe = Unmanaged<BlockingSourceProbe>.fromOpaque(info).takeUnretainedValue()
+    probe.entered.increment()
+    probe.release.wait()
+}
+
+private final class LoopSourceHolder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var pair: (source: CFRunLoopSource, loop: CFRunLoop)?
+
+    func store(source: CFRunLoopSource, loop: CFRunLoop) {
+        lock.lock(); pair = (source, loop); lock.unlock()
+    }
+
+    var stored: (source: CFRunLoopSource, loop: CFRunLoop)? {
+        lock.lock(); defer { lock.unlock() }; return pair
+    }
 }
 
 struct WPERenderThreadTests {
-
     @Test("perform runs work serially, FIFO, all on the one render thread")
     func serialFIFOSingleThread() async {
         let thread = WPERenderThread(label: "test.serial")
-        defer { thread.shutdown() }
+        defer { thread.requestStop() }
 
         let recorder = Recorder()
         let done = Counter()
         let n = 200
 
-        for i in 0..<n {
+        for i in 0 ..< n {
             thread.perform { recorder.record(index: i) }
         }
         thread.perform { done.increment() }
         let completed = await eventually { done.count == 1 }
         #expect(completed)
 
-        #expect(recorder.recordedOrder == Array(0..<n))
+        #expect(recorder.recordedOrder == Array(0 ..< n))
         #expect(recorder.distinctThreads.count == 1)
         #expect(!recorder.distinctThreads.contains(synchronousCurrentThreadIdentifier()))
     }
@@ -60,14 +106,16 @@ struct WPERenderThreadTests {
     @Test("isCurrent is true only while executing on the render thread")
     func isCurrentReflectsThread() async {
         let thread = WPERenderThread(label: "test.iscurrent")
-        defer { thread.shutdown() }
+        defer { thread.requestStop() }
 
         #expect(thread.isCurrent == false)
 
         let box = Counter()
         let done = Counter()
         thread.perform {
-            if thread.isCurrent { box.increment() }
+            if thread.isCurrent {
+                box.increment()
+            }
             done.increment()
         }
         let completed = await eventually { done.count == 1 }
@@ -78,7 +126,7 @@ struct WPERenderThreadTests {
     @Test("a Timer added to the render loop fires (run loop stays alive)")
     func timerFires() async {
         let thread = WPERenderThread(label: "test.timer")
-        defer { thread.shutdown() }
+        defer { thread.requestStop() }
 
         let fired = Counter()
         let timer = Timer(timeInterval: 0.01, repeats: false) { _ in fired.increment() }
@@ -94,28 +142,30 @@ struct WPERenderThreadTests {
             "LiveWallpaper/Runtime/Metal/RenderThread/WPERenderThread.swift"
         )
 
-        #expect(source.contains("while keepRunning"))
-        #expect(source.contains("autoreleasepool {\n                    result = CFRunLoopRunInMode("))
+        #expect(source.contains("while true {\n                autoreleasepool {\n                    _ = CFRunLoopRunInMode("))
         #expect(source.contains("60,\n                        true"))
-        #expect(!source.contains("CFRunLoopRun()\n            }\n            finished.signal()"))
+        #expect(source.contains("if loopState.isStopRequested {\n                    break\n                }"))
+        #expect(!source.contains("CFRunLoopRun()"))
+        #expect(!source.contains("CFRunLoopStop("))
     }
 
-    @Test("shutdown drains queued work, is idempotent, and still consumes later work")
+    @Test("stopAndJoin drains queued work, is idempotent, and later work still runs inline")
     func shutdownDrainsAndIdempotent() {
         let thread = WPERenderThread(label: "test.shutdown")
 
         let counter = Counter()
         let n = 100
-        for _ in 0..<n {
+        for _ in 0 ..< n {
             thread.perform { counter.increment() }
         }
-        thread.shutdown()
+        #expect(thread.stopAndJoin())
         #expect(counter.count == n)
+        #expect(thread.hasExited)
 
         thread.perform { counter.increment() }
         #expect(counter.count == n + 1)
 
-        thread.shutdown()
+        #expect(thread.stopAndJoin())
         #expect(counter.count == n + 1)
     }
 
@@ -139,7 +189,7 @@ struct WPERenderThreadTests {
         #expect(started)
 
         Thread.detachNewThread {
-            thread.shutdown()
+            _ = thread.stopAndJoin()
             shutdownReturned.increment()
         }
         try? await Task.sleep(for: .milliseconds(100))
@@ -161,10 +211,178 @@ struct WPERenderThreadTests {
         #expect(overlap.overlapDetected == false)
     }
 
+    @Test("a stop posted while the loop is inside a source callout still exits the thread")
+    func stopPostedDuringSourceCalloutStillExits() async {
+        let thread = WPERenderThread(label: "test.stop.during-source")
+        let probe = BlockingSourceProbe()
+        let holder = LoopSourceHolder()
+
+        thread.perform {
+            var context = CFRunLoopSourceContext()
+            context.info = Unmanaged.passUnretained(probe).toOpaque()
+            context.perform = blockingSourceCallout
+            guard let source = CFRunLoopSourceCreate(nil, 0, &context) else { return }
+            CFRunLoopAddSource(CFRunLoopGetCurrent(), source, .defaultMode)
+            holder.store(source: source, loop: CFRunLoopGetCurrent())
+        }
+        #expect(await eventually { holder.stored != nil })
+        guard let (source, loop) = holder.stored else { return }
+
+        // Park the loop inside a source callout: this pass already counts as "source handled".
+        CFRunLoopSourceSignal(source)
+        CFRunLoopWakeUp(loop)
+        #expect(await eventually { probe.entered.count == 1 })
+
+        let joined = Counter()
+        Thread.detachNewThread {
+            if thread.stopAndJoin(timeout: 3) {
+                joined.increment()
+            }
+        }
+        try? await Task.sleep(for: .milliseconds(100))
+        // The callout returns and CoreFoundation finishes this pass as "source handled".
+        probe.release.signal()
+
+        let exited = await eventually(timeout: .seconds(4)) { joined.count == 1 }
+        #expect(exited, "render thread never exited: the stop was lost to a source handled in the same pass")
+        #expect(thread.hasExited)
+    }
+
+    @Test("perform during the stop window never blocks the poster and still runs the job on the render thread")
+    func performDuringStopWindowDoesNotBlock() async {
+        let thread = WPERenderThread(label: "test.stop.window.nonblocking")
+        let aRunning = Counter()
+        let aMayFinish = DispatchSemaphore(value: 0)
+        thread.perform {
+            aRunning.increment()
+            aMayFinish.wait()
+        }
+        #expect(await eventually { aRunning.count == 1 })
+
+        thread.requestStop()
+        try? await Task.sleep(for: .milliseconds(100))
+
+        let posted = Counter()
+        let ranOnRenderThread = Counter()
+        let bDone = Counter()
+        Thread.detachNewThread {
+            thread.perform {
+                if thread.isCurrent {
+                    ranOnRenderThread.increment()
+                }
+                bDone.increment()
+            }
+            posted.increment()
+        }
+        let returnedPromptly = await eventually(timeout: .seconds(1)) { posted.count == 1 }
+        aMayFinish.signal()
+        #expect(returnedPromptly, "perform blocked its caller during the stop window")
+        #expect(await eventually { bDone.count == 1 })
+        #expect(ranOnRenderThread.count == 1)
+        #expect(await thread.waitUntilStopped(timeout: .seconds(3)))
+    }
+
+    @Test("a render-thread job can request stop and re-enqueue before it returns")
+    func sameThreadStopThenPerformDrains() async {
+        let thread = WPERenderThread(label: "test.stop.same-thread-reentrant")
+        let recorder = Recorder()
+        let posted = Counter()
+        let finished = Counter()
+        thread.perform {
+            recorder.record(index: 0)
+            thread.requestStop()
+            thread.perform {
+                recorder.record(index: 2)
+                // This runs in the exit drain, exercising the recursive post-stop handoff too.
+                thread.perform {
+                    recorder.record(index: 3)
+                    finished.increment()
+                }
+            }
+            recorder.record(index: 1)
+            posted.increment()
+        }
+        #expect(await eventually(timeout: .seconds(2)) { posted.count == 1 }, "stop-window enqueue blocked its own render thread")
+        #expect(await thread.waitUntilStopped(timeout: .seconds(2)))
+        #expect(finished.count == 1)
+        #expect(recorder.recordedOrder == [0, 1, 2, 3])
+        #expect(recorder.distinctThreads.count == 1)
+    }
+
+    @Test("cancelling a stop waiter returns promptly without cancelling the drain")
+    func cancelledStopWaiterDoesNotSpinOrAbandonDrain() async {
+        let thread = WPERenderThread(label: "test.stop.cancelled-wait")
+        let gate = DispatchSemaphore(value: 0)
+        let entered = Counter()
+        let drained = Counter()
+        thread.perform {
+            entered.increment()
+            gate.wait()
+            drained.increment()
+        }
+        #expect(await eventually { entered.count == 1 })
+        thread.requestStop()
+        let waiting = Counter()
+        let returned = Counter()
+        let waiter = Task {
+            waiting.increment()
+            let stopped = await thread.waitUntilStopped(timeout: .seconds(5))
+            returned.increment()
+            return stopped
+        }
+        #expect(await eventually { waiting.count == 1 })
+        waiter.cancel()
+        let returnedPromptly = await eventually(timeout: .milliseconds(500)) { returned.count == 1 }
+        #expect(returnedPromptly, "cancelled sleep must not busy-spin until the five-second timeout")
+        #expect(!thread.hasExited)
+        // Always release the owned test job, including when the cancellation assertion fails.
+        gate.signal()
+        let cancelledResult = await waiter.value
+        if returnedPromptly {
+            #expect(!cancelledResult)
+        }
+        #expect(await thread.waitUntilStopped(timeout: .seconds(2)))
+        #expect(drained.count == 1)
+    }
+
+    @Test("waitUntilStopped reports a wedged thread as false and true once it finally exits")
+    func waitUntilStoppedTimesOutOnWedgedThread() async {
+        let thread = WPERenderThread(label: "test.stop.wedged")
+        let wedge = DispatchSemaphore(value: 0)
+        thread.perform { wedge.wait() }
+        thread.requestStop()
+
+        let clock = ContinuousClock()
+        let start = clock.now
+        let exitedInTime = await thread.waitUntilStopped(timeout: .milliseconds(200))
+        #expect(!exitedInTime)
+        #expect(clock.now - start < .seconds(2), "timeout must bound the wait, not the wedged job")
+        #expect(!thread.hasExited)
+
+        wedge.signal()
+        #expect(await thread.waitUntilStopped(timeout: .seconds(3)))
+        #expect(thread.hasExited)
+    }
+
+    @Test("a stopped and released render thread frees its lifecycle state (no source/context cycle)")
+    func stoppedThreadFreesLifecycle() async {
+        let baseline = WPERenderThread.liveLifecycleCountForTesting
+        var thread: WPERenderThread? = WPERenderThread(label: "test.lifecycle.release")
+        let ran = Counter()
+        thread?.perform { ran.increment() }
+        #expect(await eventually { ran.count == 1 })
+        #expect(thread?.stopAndJoin() == true)
+        #expect(WPERenderThread.liveLifecycleCountForTesting == baseline + 1)
+
+        thread = nil
+        let released = await eventually { WPERenderThread.liveLifecycleCountForTesting == baseline }
+        #expect(released, "lifecycle state leaked after the thread exited and its owner was released")
+    }
+
     @Test("checkIsolated passes on the render thread (bare callback, no task executor)")
     func executorCheckIsolatedOnThread() async {
         let thread = WPERenderThread(label: "test.checkisolated")
-        defer { thread.shutdown() }
+        defer { thread.requestStop() }
         let executor = WPERenderThreadExecutor(thread: thread)
 
         let passed = Counter()
@@ -187,7 +405,9 @@ struct WPERenderThreadTests {
             let box = QoSBox()
             let done = Counter()
             thread.perform {
-                for d in durations { thread.noteFrameDuration(d) }
+                for d in durations {
+                    thread.noteFrameDuration(d)
+                }
                 box.set(qos_class_self())
                 done.increment()
             }
@@ -199,7 +419,7 @@ struct WPERenderThreadTests {
         let economy = await qosAfter(feeding: Array(repeating: 0.002, count: 120))
         #expect(high == QOS_CLASS_USER_INTERACTIVE)
         #expect(economy == QOS_CLASS_UTILITY)
-        await shutdownAtUtility { thread.shutdown() }
+        await shutdownAtUtility { _ = thread.stopAndJoin() }
     }
 
     @Test("Fixed QoS comparison modes survive both overload and warm-up", arguments: [
@@ -207,7 +427,7 @@ struct WPERenderThreadTests {
     ])
     func fixedModesChangeRealThread(mode: WPERenderQoSMode) async {
         let thread = WPERenderThread(label: "test.qos.fixed", qosMode: mode)
-        defer { thread.shutdown() }
+        defer { thread.requestStop() }
         let box = QoSBox()
         let done = Counter()
         thread.perform {
@@ -232,7 +452,7 @@ struct WPERenderThreadTests {
     ])
     func adaptiveModesUseSelectedMeasurement(mode: WPERenderQoSMode) async {
         let thread = WPERenderThread(label: "test.qos.measurement", qosMode: mode)
-        defer { thread.shutdown() }
+        defer { thread.requestStop() }
         let box = QoSBox()
         let done = Counter()
         thread.perform {
@@ -249,12 +469,14 @@ struct WPERenderThreadTests {
     @Test("escape hatch OFF keeps the OS thread at userInteractive despite cheap frames")
     func disabledEscapeHatchKeepsRealThreadHigh() async {
         let thread = WPERenderThread(label: "test.qos.pinned", adaptiveQoSEnabled: false)
-        defer { thread.shutdown() }
+        defer { thread.requestStop() }
 
         let box = QoSBox()
         let done = Counter()
         thread.perform {
-            for _ in 0..<120 { thread.noteFrameDuration(0.001) }
+            for _ in 0 ..< 120 {
+                thread.noteFrameDuration(0.001)
+            }
             box.set(qos_class_self())
             done.increment()
         }
@@ -333,7 +555,7 @@ struct WPEAdaptiveRenderQoSTests {
     func disabledPinsHigh() {
         var qos = WPEAdaptiveRenderQoS(isEnabled: false)
         #expect(qos.level == .high)
-        for _ in 0..<200 {
+        for _ in 0 ..< 200 {
             #expect(qos.record(frameDuration: 0.0005) == nil)
         }
         #expect(qos.level == .high)
@@ -350,13 +572,17 @@ struct WPEAdaptiveRenderQoSTests {
     @Test("hysteresis: mid-band durations neither raise from economy nor lower from high")
     func hysteresisDeadZone() {
         var fromEconomy = WPEAdaptiveRenderQoS(isEnabled: true)
-        for _ in 0..<120 { #expect(fromEconomy.record(frameDuration: 0.008) == nil) }
+        for _ in 0 ..< 120 {
+            #expect(fromEconomy.record(frameDuration: 0.008) == nil)
+        }
         #expect(fromEconomy.level == .economy)
 
         var fromHigh = WPEAdaptiveRenderQoS(isEnabled: true)
         _ = fromHigh.record(frameDuration: 0.012)
         #expect(fromHigh.level == .high)
-        for _ in 0..<120 { #expect(fromHigh.record(frameDuration: 0.008) == nil) }
+        for _ in 0 ..< 120 {
+            #expect(fromHigh.record(frameDuration: 0.008) == nil)
+        }
         #expect(fromHigh.level == .high)
     }
 
@@ -366,8 +592,10 @@ struct WPEAdaptiveRenderQoSTests {
         _ = qos.record(frameDuration: 0.012)
         #expect(qos.level == .high)
         var downgraded = false
-        for _ in 0..<90 where !downgraded {
-            if qos.record(frameDuration: 0.003) == .economy { downgraded = true }
+        for _ in 0 ..< 90 where !downgraded {
+            if qos.record(frameDuration: 0.003) == .economy {
+                downgraded = true
+            }
         }
         #expect(downgraded)
         #expect(qos.level == .economy)
@@ -383,8 +611,10 @@ struct WPEAdaptiveRenderQoSTests {
         #expect(qos.level == .high)
         #expect(qos.boostFramesRemainingForTesting == 0)
         var back = false
-        for _ in 0..<90 where !back {
-            if qos.record(frameDuration: 0.001) == .economy { back = true }
+        for _ in 0 ..< 90 where !back {
+            if qos.record(frameDuration: 0.001) == .economy {
+                back = true
+            }
         }
         #expect(back)
     }
@@ -393,17 +623,18 @@ struct WPEAdaptiveRenderQoSTests {
     func budgetRetarget() {
         var qos = WPEAdaptiveRenderQoS(isEnabled: true)
         qos.setBudget(seconds: 1.0 / 30.0)
-        for _ in 0..<120 { #expect(qos.record(frameDuration: 0.012) == nil) }
+        for _ in 0 ..< 120 {
+            #expect(qos.record(frameDuration: 0.012) == nil)
+        }
         #expect(qos.level == .economy)
     }
 }
 
 struct WPEDisplayRenderActorTests {
-
     @Test("run() hops onto the render thread and isolation is bound to the executor")
     func runExecutesOnRenderThread() async {
         let actor = WPEDisplayRenderActor(label: "test.actor.run")
-        defer { actor.shutdown() }
+        defer { actor.requestStop() }
 
         #expect(actor.isOnRenderThread == false)
 
@@ -414,7 +645,7 @@ struct WPEDisplayRenderActorTests {
     @Test("successive run() calls land on the same render thread")
     func runIsStableThread() async {
         let actor = WPEDisplayRenderActor(label: "test.actor.stable")
-        defer { actor.shutdown() }
+        defer { actor.requestStop() }
 
         let a = await actor.run { _ in ObjectIdentifier(Thread.current) }
         let b = await actor.run { _ in ObjectIdentifier(Thread.current) }
@@ -426,13 +657,15 @@ struct WPEDisplayRenderActorTests {
     @Test("assumeIsolatedOnRenderThread grants sync isolated access from a bare run-loop callback")
     func assumeIsolatedSyncEntry() async {
         let actor = WPEDisplayRenderActor(label: "test.actor.assume")
-        defer { actor.shutdown() }
+        defer { actor.requestStop() }
 
         let box = Counter()
         let done = Counter()
         let timer = Timer(timeInterval: 0.01, repeats: false) { _ in
             let onThread = actor.assumeIsolatedOnRenderThread { iso in iso.isOnRenderThread }
-            if onThread { box.increment() }
+            if onThread {
+                box.increment()
+            }
             done.increment()
         }
         actor.add(timer)
@@ -445,7 +678,7 @@ struct WPEDisplayRenderActorTests {
     @Test("actor work after shutdown is still consumed, not dropped")
     func jobConsumedAfterShutdown() async {
         let actor = WPEDisplayRenderActor(label: "test.actor.postshutdown")
-        actor.shutdown()
+        #expect(await actor.shutdown())
 
         let value = await actor.run { _ in 42 }
         #expect(value == 42)
@@ -457,7 +690,7 @@ struct WPEDisplayRenderActorTests {
     @MainActor
     func mainBackingRunsOnMain() async {
         let actor = WPEDisplayRenderActor(label: "test.actor.main", backing: .main)
-        defer { actor.shutdown() }
+        defer { actor.requestStop() }
 
         let onMain = await actor.run { _ in Thread.isMainThread }
         #expect(onMain == true)
@@ -469,17 +702,17 @@ struct WPEDisplayRenderActorTests {
     @MainActor
     func mainBackingShutdownIsNoOp() async {
         let actor = WPEDisplayRenderActor(label: "test.actor.main.shutdown", backing: .main)
-        actor.shutdown()
+        #expect(await actor.shutdown())
         let value = await actor.run { _ in 7 }
         #expect(value == 7)
     }
 
-#if !LITE_BUILD
+    #if !LITE_BUILD
     @Test("main-backed shim renders the frame synchronously (draw returns = frame produced)")
     @MainActor
     func mainBackedShimRendersSynchronously() {
         let actor = WPEDisplayRenderActor(backing: .main)
-        defer { actor.shutdown() }
+        defer { actor.requestStop() }
         let shim = WPERenderSurfaceClientShim(renderActor: actor, backing: .main)
 
         #expect(shim.completedFrameDeliveries == 0)
@@ -497,14 +730,16 @@ struct WPEDisplayRenderActorTests {
 
         shim.renderAndPresentFrame()
         var delivered = false
-        for _ in 0..<400 where !delivered {
-            if shim.completedFrameDeliveries == 1 { delivered = true; break }
+        for _ in 0 ..< 400 where !delivered {
+            if shim.completedFrameDeliveries == 1 {
+                delivered = true; break
+            }
             try? await Task.sleep(for: .milliseconds(5))
         }
         #expect(delivered)
-        await shutdownAtUtility { actor.shutdown() }
+        #expect(await actor.shutdown())
     }
-#endif
+    #endif
 
     @Test("off-main render flag defaults to true (render-thread backing)")
     func offMainFlagDefaultsTrue() {
@@ -535,7 +770,8 @@ struct WPEDisplayRenderActorTests {
         }
     }
 
-#if !LITE_BUILD
+    #if !LITE_BUILD
+
     // MARK: - M2c2 CADisplayLink frame driver
 
     @Test("display-link build and terminal stop share one ordered lifecycle")
@@ -605,7 +841,7 @@ struct WPEDisplayRenderActorTests {
     @Test("link pacing setters buffer pause + fps on the render thread even with no link installed")
     func linkPacingBuffers() async {
         let actor = WPEDisplayRenderActor(label: "test.link.buffer", backing: .renderThread)
-        defer { actor.shutdown() }
+        defer { actor.requestStop() }
 
         await actor.run { iso in
             iso.setLinkPaused(false)
@@ -622,7 +858,7 @@ struct WPEDisplayRenderActorTests {
     @Test("the pacer routes applyPacing onto the render-thread link buffer")
     func pacerRoutesPacingToLink() async {
         let actor = WPEDisplayRenderActor(label: "test.link.pacer", backing: .renderThread)
-        defer { actor.shutdown() }
+        defer { actor.requestStop() }
         let pacer = WPERenderThreadFramePacer(surface: StubSurfaceControl(), renderActor: actor)
 
         await actor.run { _ in
@@ -657,12 +893,14 @@ struct WPEDisplayRenderActorTests {
             observed = await actor.run { iso in
                 (iso.linkPausedForTesting, iso.linkPreferredFPSForTesting)
             }
-            if observed?.0 == false, observed?.1 == 37 { break }
+            if observed?.0 == false, observed?.1 == 37 {
+                break
+            }
             try await Task.sleep(for: .milliseconds(1))
         }
         #expect(observed?.0 == false)
         #expect(observed?.1 == 37)
-        await shutdownAtUtility { actor.shutdown() }
+        #expect(await actor.shutdown())
     }
 
     @Test("a run-loop callback drives renderFrame on the render thread (link stand-in)")
@@ -673,7 +911,9 @@ struct WPEDisplayRenderActorTests {
         let done = Counter()
         let timer = Timer(timeInterval: 0.01, repeats: false) { _ in
             actor.assumeIsolatedOnRenderThread { iso in
-                if iso.isOnRenderThread { onThread.increment() }
+                if iso.isOnRenderThread {
+                    onThread.increment()
+                }
                 iso.renderFrame()
             }
             done.increment()
@@ -683,9 +923,9 @@ struct WPEDisplayRenderActorTests {
         let completed = await eventually { done.count == 1 }
         #expect(completed)
         #expect(onThread.count == 1)
-        await shutdownAtUtility { actor.shutdown() }
+        #expect(await actor.shutdown())
     }
-#endif
+    #endif
 }
 
 private func eventually(
@@ -695,7 +935,9 @@ private func eventually(
     let clock = ContinuousClock()
     let deadline = clock.now.advanced(by: timeout)
     while clock.now < deadline {
-        if condition() { return true }
+        if condition() {
+            return true
+        }
         try? await Task.sleep(for: .milliseconds(1))
     }
     return condition()
@@ -719,11 +961,11 @@ private func shutdownAtUtility(_ shutdown: @escaping @Sendable () -> Void) async
 
 #if !LITE_BUILD
 private final class StubSurfaceControl: WPESurfaceControl, @unchecked Sendable {
-    func applyPacing(_ update: WPERenderPacingUpdate) {}
+    func applyPacing(_: WPERenderPacingUpdate) {}
     func setNeedsRedraw() {}
     func drawImmediately() {}
     func releaseDrawables() {}
     func detach() {}
-    func setClickCaptureEnabled(_ enabled: Bool) {}
+    func setClickCaptureEnabled(_: Bool) {}
 }
 #endif

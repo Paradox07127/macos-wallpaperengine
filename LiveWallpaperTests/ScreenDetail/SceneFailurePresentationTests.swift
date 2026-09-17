@@ -60,6 +60,16 @@ struct SceneFailurePresentationTests {
         }
     }
 
+    /// 0.6.7's card always linked a Steam item to its Workshop page; the missing-resource
+    /// row must keep that, and must not lead with a setup step the user already finished.
+    @Test("Missing resources keep the Workshop link and drop asset setup once assets are linked")
+    func missingResourcesRecovery() {
+        let reason = FallbackReason.sceneResourceMissing
+        #expect(reason.recovery(workshopID: "1234") == [.configureEngineAssets, .retry, .openWorkshop("1234")])
+        #expect(reason.recovery(workshopID: "1234", engineAssetsAuthorized: true) == [.retry, .openWorkshop("1234")])
+        #expect(reason.recovery(workshopID: "local") == [.configureEngineAssets, .retry])
+    }
+
     @Test("Both surfaces read the same presentation for the same reason")
     func presentationIsSurfaceIndependent() {
         let origin = WPEOrigin(

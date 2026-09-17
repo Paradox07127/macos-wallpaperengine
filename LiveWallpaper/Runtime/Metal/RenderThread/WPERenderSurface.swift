@@ -22,12 +22,12 @@ final class WPERenderSurface: NSObject, MTKViewDelegate {
     private var displayLinkLifecycleTask: Task<Void, Never>?
     private var displayLinkGeneration: UInt64 = 0
 
-    init(frame: CGRect, device: MTLDevice) {
+    init(frame: CGRect, device: MTLDevice, targetScreen: NSScreen? = nil) {
         let view = WPEInteractiveMTKView(frame: frame, device: device)
         view.wantsLayer = true
         let hdrOutput = WPEDisplayHDROutput.shouldRequestHDROutput(
             settingEnabled: WPEDisplayHDROutput.isEnabled,
-            hasCapableScreen: WPEDisplayHDROutput.hasEDRCapableScreen
+            targetMaximumPotentialEDR: targetScreen?.maximumPotentialExtendedDynamicRangeColorComponentValue
         )
         view.colorPixelFormat = WPEDisplayHDROutput.drawablePixelFormat(hdrOutputEnabled: hdrOutput)
         view.clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
@@ -187,7 +187,7 @@ enum WPEDisplayHDROutput {
         UserDefaults.standard.object(forKey: defaultsKey) as? Bool ?? false
     }
 
-    /// `maximumPotential…` is capability and is stable; `maximum…ExtendedDynamicRangeColorComponentValue` tracks current brightness and is NOT usable here.
+    /// Settings UI visibility only. Surface creation must use its own target screen's capability.
     @MainActor
     static var hasEDRCapableScreen: Bool {
         NSScreen.screens.contains { $0.maximumPotentialExtendedDynamicRangeColorComponentValue > 1 }
@@ -197,9 +197,11 @@ enum WPEDisplayHDROutput {
         hdrOutputEnabled ? .rgba16Float : WPEMetalRenderExecutor.outputPixelFormat
     }
 
-    /// The setting alone must not widen the drawable: on an all-SDR setup that pays float bandwidth for output nothing can show.
-    static func shouldRequestHDROutput(settingEnabled: Bool, hasCapableScreen: Bool) -> Bool {
-        settingEnabled && hasCapableScreen
+    /// Use the destination's potential capability, not another attached screen or its current brightness.
+    /// A surface without an identified destination stays SDR until reconstructed for a real screen.
+    static func shouldRequestHDROutput(settingEnabled: Bool, targetMaximumPotentialEDR: CGFloat?) -> Bool {
+        guard settingEnabled, let targetMaximumPotentialEDR else { return false }
+        return targetMaximumPotentialEDR.isFinite && targetMaximumPotentialEDR > 1
     }
 
     /// Ask the drawable format, not the defaults key: the key can be on while the drawable stayed 8-bit, and a plan that believed the key would demote the scene to native for life.

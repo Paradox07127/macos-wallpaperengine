@@ -126,6 +126,28 @@ struct OggAudioTranscoderSchedulingTests {
         #expect(gate.starts == 3)
     }
 
+    /// A job that timed out while still queued never touched the file; the verdict belongs
+    /// only to a decode that ran out of time.
+    @Test("Expiring while queued does not mark the file unavailable")
+    func queuedExpiryIsNotAVerdict() async throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let gate = DecodeGate()
+        defer { gate.release() }
+        let transcoder = fixture.transcoder(gate: gate, deadline: 0.3)
+        let first = Task { await transcoder.transcodedM4A(forOgg: fixture.source) }
+        try await poll { gate.starts == 1 }
+        let secondURL = try fixture.source(named: "second.ogg")
+        #expect(await transcoder.transcodedM4A(forOgg: secondURL) == nil, "expires behind the blocked decode")
+        gate.release(index: 1)
+        _ = await first.value
+        try await poll { await transcoder.workSnapshot.running == 0 }
+        let retry = Task { await transcoder.transcodedM4A(forOgg: secondURL) }
+        try await poll { gate.starts == 2 }
+        gate.release(index: 2)
+        #expect(await retry.value != nil)
+    }
+
     /// The deadline bounds the decode, not the wait behind other jobs: a queued job that
     /// starts late and finishes within its own deadline must not be expired as unavailable.
     @Test("The deadline starts when a job runs, not when it queues")

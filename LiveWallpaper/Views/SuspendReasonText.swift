@@ -29,7 +29,9 @@ enum SuspendReasonText {
             String(localized: "Paused on battery", bundle: .appLanguage)
         case .lowPowerMode:
             String(localized: "Paused in Low Power Mode", bundle: .appLanguage)
-        case .fullScreen, .windowOcclusion:
+        case .fullScreen:
+            String(localized: "Paused for a full-screen app", bundle: .appLanguage)
+        case .windowOcclusion:
             String(localized: "Paused while covered", bundle: .appLanguage)
         case .userAbsent:
             // Excluded from user-visible reasons by localized(for:).

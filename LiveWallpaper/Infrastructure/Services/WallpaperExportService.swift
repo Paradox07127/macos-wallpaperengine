@@ -98,9 +98,21 @@ final class WallpaperExportService {
 
     // MARK: - Paths (contract layout, SystemWallpaperManifest.swift)
 
-    private var manifestURL: URL { dependencies.sharedRoot.appendingPathComponent("manifest.json") }
-    private var heartbeatURL: URL { dependencies.sharedRoot.appendingPathComponent("heartbeat.json") }
-    var videosDirectory: URL { dependencies.sharedRoot.appendingPathComponent("Videos", isDirectory: true) }
+    private var manifestURL: URL {
+        dependencies.sharedRoot.appendingPathComponent("manifest.json")
+    }
+
+    private var heartbeatURL: URL {
+        dependencies.sharedRoot.appendingPathComponent("heartbeat.json")
+    }
+
+    private var providerURL: URL {
+        dependencies.sharedRoot.appendingPathComponent("provider.json")
+    }
+
+    var videosDirectory: URL {
+        dependencies.sharedRoot.appendingPathComponent("Videos", isDirectory: true)
+    }
 
     func thumbnailURL(for item: SystemWallpaperManifest.Item) -> URL? {
         item.thumbnailFileName.map { videosDirectory.appendingPathComponent($0) }
@@ -617,6 +629,17 @@ final class WallpaperExportService {
             nil,
             true
         )
+    }
+
+    /// Writes which appex this app ships; an idle appex instance elsewhere (another copy of the app, a leftover build directory) reads it when the Agent disconnects and retires. A launch step, not an init side effect: the test host is this same app and must not declare a build directory into the real container.
+    func declareBundledProvider() {
+        guard let provider = dependencies.expectedProvider else { return }
+        do {
+            try FileManager.default.createDirectory(at: dependencies.sharedRoot, withIntermediateDirectories: true)
+            try SystemWallpaperCoding.encoder.encode(provider).write(to: providerURL, options: .atomic)
+        } catch {
+            Logger.warning("[systemWallpaper] provider declaration failed: \(error.localizedDescription)", category: .fileAccess)
+        }
     }
 
     // MARK: - Thumbnail

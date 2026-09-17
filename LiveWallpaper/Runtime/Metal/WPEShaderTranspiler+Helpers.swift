@@ -24,6 +24,8 @@ extension WPEShaderTranspiler {
         samplers: [WPESamplerDecl],
         mutableGlobals: [ProgramScopeMutableDecl] = []
     ) -> (helpers: String, mainBody: String) {
+        // Resolve only unshadowed intrinsic calls before by-name resource threading.
+        let helpers = routingMixBeforeAuthoredDeclaration(in: helpers)
         let functions = parseHelperFunctions(in: helpers)
         guard !functions.isEmpty else {
             return (helpers, mainBody)
@@ -382,7 +384,7 @@ extension WPEShaderTranspiler {
         return false
     }
 
-    private static func matchingDelimiter(
+    static func matchingDelimiter(
         in source: String,
         open: String.Index,
         openChar: Character,

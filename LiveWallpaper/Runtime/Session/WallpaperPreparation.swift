@@ -237,14 +237,16 @@ enum WallpaperSessionTransaction {
 }
 
 /// Candidate failure publish policy: cancellation is not user-visible; only current proposals publish.
+/// `isStillCurrent` is consulted only for a failure: the check logs its own "dropped" reason, and a committed
+/// candidate has just advanced the configuration revision it compares against.
 enum WallpaperCandidateErrorPolicy {
     static func errorToPublish(
         _ result: WallpaperPreparationResult,
-        isStillCurrent: Bool,
+        isStillCurrent: @autoclosure () -> Bool,
         candidateError: WallpaperRuntimeError?,
         fallbackWallpaperType: WallpaperType
     ) -> WallpaperRuntimeError? {
-        guard shouldPublish(result, isStillCurrent: isStillCurrent) else {
+        guard shouldPublish(result, isStillCurrent: isStillCurrent()) else {
             return nil
         }
         return candidateError ?? .wallpaperPreparationFailed(
@@ -255,13 +257,13 @@ enum WallpaperCandidateErrorPolicy {
 
     static func shouldPublish(
         _ result: WallpaperPreparationResult,
-        isStillCurrent: Bool
+        isStillCurrent: @autoclosure () -> Bool
     ) -> Bool {
         switch result {
         case .failed, .timedOut:
-            return isStillCurrent
+            isStillCurrent()
         case .ready, .cancelled:
-            return false
+            false
         }
     }
 }

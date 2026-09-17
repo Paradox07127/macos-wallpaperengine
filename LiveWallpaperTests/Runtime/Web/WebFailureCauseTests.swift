@@ -15,6 +15,30 @@ struct WebFailureCauseTests {
         #expect(fromHTTP.code == "web.entry_missing")
         #expect(fromURLError.failureClass == .needsParts)
         #expect(!fromURLError.canRetry)
+        // Retrying the same folder cannot conjure the page; re-picking the source can.
+        #expect(fromURLError.recovery(workshopID: nil, canChooseSource: true) == [.chooseSource])
+    }
+
+    /// The folder scheme hands WebKit plain file errors, never HTTP statuses, so the Cocoa codes
+    /// a local project can produce need the same classification as the URL-error ones.
+    @Test("Local Cocoa file errors classify like their URL-error twins")
+    func localCocoaFileErrorsClassify() {
+        let missing = WebFailureCause.navigation(
+            domain: NSCocoaErrorDomain, code: NSFileReadNoSuchFileError, description: "260", isLocalProject: true
+        )
+        let denied = WebFailureCause.navigation(
+            domain: NSCocoaErrorDomain, code: NSFileReadNoPermissionError, description: "257", isLocalProject: true
+        )
+        let directory = WebFailureCause.navigation(
+            domain: NSURLErrorDomain, code: NSURLErrorCannotOpenFile, description: "dir", isLocalProject: true
+        )
+        let remoteMissing = WebFailureCause.navigation(
+            domain: NSCocoaErrorDomain, code: NSFileReadNoSuchFileError, description: "260", isLocalProject: false
+        )
+        #expect(missing.code == "web.entry_missing")
+        #expect(denied.code == "web.resource_denied")
+        #expect(directory.code == "web.entry_missing")
+        #expect(remoteMissing.code == "web.NSCocoaErrorDomain.260")
     }
 
     @Test("A refused folder offers re-picking the source rather than a Retry that cannot work")

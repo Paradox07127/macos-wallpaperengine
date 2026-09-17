@@ -143,6 +143,11 @@ final class WallpaperXPCBridge: @unchecked Sendable {
         )
     }
 
+    /// Connections the Agent has accepted and not yet invalidated; it disconnects an unused one five minutes after its last call.
+    private var hasLiveConnections: Bool {
+        handlersLock.withLock { !handlers.isEmpty }
+    }
+
     private func activateObserversIfNeeded() {
         observerLock.lock()
         defer { observerLock.unlock() }
@@ -237,6 +242,11 @@ final class WallpaperXPCBridge: @unchecked Sendable {
             // the connection and re-acquires about a second later (contract §9).
             self?.handlersLock.withLock { _ = self?.handlers.removeValue(forKey: ObjectIdentifier(connection)) }
             wpxLog.info("connection invalidated (contexts kept)")
+            guard let self else { return }
+            WallpaperXPCHandler.evaluateIdleRetirement(
+                registry: registry, store: store,
+                hasLiveConnections: { [weak self] in self?.hasLiveConnections ?? false }
+            )
         }
 
         // Wired before resuming so an early callback never sees a nil provider.

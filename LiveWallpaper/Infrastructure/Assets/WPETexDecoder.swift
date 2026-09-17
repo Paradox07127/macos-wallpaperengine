@@ -550,6 +550,13 @@ struct WPETexDecoder: Sendable {
             } else {
                 throw WPETexDecodeError.unsupportedBlock(magic: versionedMagic)
             }
+            // Geometry reaches both GPU sampling descriptors and CPU Int crop
+            // coordinates. Reject nonfinite file values before either path.
+            if let frame = frames.last,
+               ![frame.x, frame.y, frame.width, frame.widthY, frame.heightX, frame.height].allSatisfy(\.isFinite)
+               || !frame.frameTime.isFinite {
+                throw WPETexDecodeError.decodeFailed(mipmap: 0, detail: "Nonfinite TEXS geometry or duration")
+            }
         }
 
         return WPETexFrameInfoBlock(

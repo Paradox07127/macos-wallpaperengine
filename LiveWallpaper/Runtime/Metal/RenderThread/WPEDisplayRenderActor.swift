@@ -71,11 +71,8 @@ actor WPEDisplayRenderActor {
     }
 
     deinit {
-        #if !LITE_BUILD
-        configContinuation.finish()
-        #endif
         // Safety net so a dropped actor never leaks its dedicated thread.
-        thread?.shutdown()
+        requestStop()
     }
 
     // MARK: - Isolated entry points
@@ -116,12 +113,22 @@ actor WPEDisplayRenderActor {
 
     // MARK: - Lifecycle
 
+    /// Never blocks; idempotent. The render thread exits on its own once its current pass is over.
     /// No-op for a `.main` backing, which owns no thread to stop.
-    nonisolated func shutdown() {
+    nonisolated func requestStop() {
         #if !LITE_BUILD
         configContinuation.finish()
         #endif
-        thread?.shutdown()
+        thread?.requestStop()
+    }
+
+    /// Requests the stop and waits for the render thread to exit; false when it is still wedged after
+    /// `timeout` (the thread is leaked, a fault is logged, the caller is never blocked).
+    @discardableResult
+    nonisolated func shutdown(timeout: Duration = .seconds(5)) async -> Bool {
+        requestStop()
+        guard let thread else { return true }
+        return await thread.waitUntilStopped(timeout: timeout)
     }
 
     #if !LITE_BUILD

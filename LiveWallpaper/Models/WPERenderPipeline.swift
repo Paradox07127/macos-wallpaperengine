@@ -583,30 +583,33 @@ enum WPERenderPipelineError: Error, Equatable, LocalizedError, Sendable {
     case shaderMissing(name: String, stage: String, path: String)
     case includeMissing(path: String, requestedBy: String)
     case includeCycle(path: String)
+    case sourceExpansionLimit(path: String, limit: String)
     case invalidSourceEncoding(path: String)
 
     var errorDescription: String? {
         switch self {
-        case .shaderMissing(let name, let stage, let path):
-            return String(
+        case let .shaderMissing(name, stage, path):
+            String(
                 localized: "error.render.pipeline.shader_missing",
                 defaultValue: "WPE shader \(name) is missing \(stage) source at \(path)",
                 bundle: .appLanguage, comment: "Error shown when a Wallpaper Engine shader source file is missing."
             )
-        case .includeMissing(let path, let requestedBy):
-            return String(
+        case let .includeMissing(path, requestedBy):
+            String(
                 localized: "error.render.pipeline.include_missing",
                 defaultValue: "WPE shader include \(path) requested by \(requestedBy) is missing",
                 bundle: .appLanguage, comment: "Error shown when a Wallpaper Engine shader include file is missing."
             )
-        case .includeCycle(let path):
-            return String(
+        case let .includeCycle(path):
+            String(
                 localized: "error.render.pipeline.include_cycle",
                 defaultValue: "WPE shader include cycle detected at \(path)",
                 bundle: .appLanguage, comment: "Error shown when a Wallpaper Engine shader include cycle is detected."
             )
-        case .invalidSourceEncoding(let path):
-            return String(
+        case let .sourceExpansionLimit(path, limit):
+            "WPE shader source exceeds the \(limit) limit at \(path)"
+        case let .invalidSourceEncoding(path):
+            String(
                 localized: "error.render.pipeline.invalid_source_encoding",
                 defaultValue: "WPE shader source is not UTF-8: \(path)",
                 bundle: .appLanguage, comment: "Error shown when a Wallpaper Engine shader source file is not UTF-8."

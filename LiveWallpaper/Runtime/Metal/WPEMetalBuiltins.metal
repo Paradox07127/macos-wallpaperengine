@@ -438,22 +438,36 @@ static inline float3 wpe_skin_puppet_normal(
     if (weightSum <= 0.00001) {
         return v.normal.xyz;
     }
-    float3 source = v.normal.xyz;
-    float3 skinned = float3(0.0);
+    // Match the position's blended linear map, including identity for invalid indices.
+    // Inverting each bone separately then blending its normal is not the inverse of
+    // this map. Weight gradients across the surface are outside linear blend skinning.
+    float3x3 deformation = float3x3(0.0);
     uint4 indices = v.skinBlendIndices;
     float weightArray[4] = { weights.x, weights.y, weights.z, weights.w };
     uint indexArray[4] = { indices.x, indices.y, indices.z, indices.w };
     for (uint i = 0; i < 4; ++i) {
         if (weightArray[i] <= 0.0) { continue; }
+        float3x3 linear = float3x3(1.0);
         if (indexArray[i] < paletteCount) {
             float4x4 bone = bonePalette[indexArray[i]];
-            float3x3 rotation = float3x3(bone[0].xyz, bone[1].xyz, bone[2].xyz);
-            skinned += weightArray[i] * (rotation * source);
-        } else {
-            skinned += weightArray[i] * source;
+            linear = float3x3(bone[0].xyz, bone[1].xyz, bone[2].xyz);
         }
+        deformation += (weightArray[i] / weightSum) * linear;
     }
-    return skinned / weightSum;
+    // Scale before cofactors: a uniformly tiny/large but invertible bone should not
+    // become singular merely because its determinant carries cubed scene units.
+    float3 magnitudes = max(max(abs(deformation[0]), abs(deformation[1])), abs(deformation[2]));
+    float scale = max(max(magnitudes.x, magnitudes.y), magnitudes.z);
+    if (scale <= 0.0) { return v.normal.xyz; }
+    deformation *= 1.0 / scale;
+    float3x3 cofactor = float3x3(cross(deformation[1], deformation[2]),
+                               cross(deformation[2], deformation[0]),
+                               cross(deformation[0], deformation[1]));
+    float determinant = dot(deformation[0], cofactor[0]);
+    if (abs(determinant) < 1e-8) { return v.normal.xyz; }
+    // Final world normalization discards the inverse's positive magnitude. Keep its
+    // determinant sign so mirrored bones follow the existing model-normal convention.
+    return normalize((determinant < 0.0 ? -1.0 : 1.0) * (cofactor * v.normal.xyz));
 }
 
 vertex WPEVertexOut wpe_puppet_mesh_vertex(
@@ -487,9 +501,8 @@ vertex WPESceneModelVertexOut wpe_scene_model_mesh_vertex(
     float4 position = skinned
         ? wpe_skin_puppet_position(v, bonePalette, paletteCount)
         : float4(v.position.xyz, 1.0);
-    // Skinning moves the surface, so the normal follows it. The skinned normal uses each
-    // bone's upper 3x3 as-is (no per-bone inverse-transpose): exact only for rigid or
-    // uniformly scaled bones, and the palette evaluator does emit per-bone scale.
+    // Normals follow the inverse-transpose of the same blended deformation as positions;
+    // the model's separate inverse-transpose then takes them into world space.
     float3 localNormal = skinned
         ? wpe_skin_puppet_normal(v, bonePalette, paletteCount)
         : v.normal.xyz;
@@ -882,13 +895,16 @@ fragment half4 wpe_effect_colorbalance_fragment(
     constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
     float4 color = float4(texture0.sample(linearSampler, in.uv));
 
-    float3 rgb = color.rgb + uniforms.brightness;
+    // These fallback effects receive PMA layer targets. With no coverage, retain
+    // additive RGB verbatim; no straight colour exists on which to apply an offset.
+    if (color.a == 0.0) { return half4(color); }
+    float3 rgb = color.rgb / color.a + uniforms.brightness;
     rgb = (rgb - 0.5) * max(uniforms.contrast, 0.0) + 0.5;
 
     float luma = dot(rgb, float3(0.2126, 0.7152, 0.0722));
     rgb = wpe_lerp(float3(luma), rgb, max(uniforms.saturation, 0.0));
 
-    return half4(float4(saturate(rgb), color.a));
+    return half4(float4(saturate(rgb) * color.a, color.a));
 }
 
 struct WPEBlurUniforms {
@@ -2105,10 +2121,12 @@ fragment half4 wpe_effect_color_grading_fragment(
 ) {
     constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
     float4 sampled = float4(texture0.sample(linearSampler, in.uv));
-    float3 lifted = sampled.rgb + uniforms.lift.rgb;
+    // Preserve zero-coverage additive values, as in the colorbalance fallback.
+    if (sampled.a == 0.0) { return half4(sampled); }
+    float3 lifted = sampled.rgb / sampled.a + uniforms.lift.rgb;
     float3 gained = lifted * max(uniforms.gain.rgb, float3(0.0001));
     float3 graded = pow(saturate(gained), float3(1.0) / max(uniforms.gamma.rgb, float3(0.0001)));
-    return half4(float4(saturate(graded), sampled.a));
+    return half4(float4(saturate(graded) * sampled.a, sampled.a));
 }
 
 struct WPEShimmerUniforms {

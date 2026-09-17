@@ -5,26 +5,25 @@ import Testing
 @Suite("Library grid metrics")
 struct LibraryGridMetricsTests {
     private static let steps: [LibraryTileSize] = [.small, .medium, .large]
+    private static var aspects: [DesignTokens.LibraryGrid.Aspect] {
+        [.square, .wide]
+    }
 
     @Test("A wide step is wider than the square step it shares a name with")
     func wideStepsOuttankSquareSteps() {
         for size in Self.steps {
-            let square = DesignTokens.LibraryGrid.columnWidths(for: size, aspect: .square)
-            let wide = DesignTokens.LibraryGrid.columnWidths(for: size, aspect: .wide)
-            #expect(wide.min > square.min, "wide \(size) min \(wide.min) vs square \(square.min)")
-            #expect(wide.max > square.max, "wide \(size) max \(wide.max) vs square \(square.max)")
+            let square = DesignTokens.LibraryGrid.columnWidth(for: size, aspect: .square)
+            let wide = DesignTokens.LibraryGrid.columnWidth(for: size, aspect: .wide)
+            #expect(wide > square, "wide \(size) \(wide) vs square \(square)")
         }
     }
 
-    @Test("Both ladders climb, and every step can flex")
-    func laddersClimbAndEveryStepCanFlex() {
-        for aspect in [DesignTokens.LibraryGrid.Aspect.square, .wide] {
-            let widths = Self.steps.map { DesignTokens.LibraryGrid.columnWidths(for: $0, aspect: aspect) }
-            for step in widths {
-                #expect(step.min < step.max, "\(aspect) step \(step) cannot flex")
-            }
-            #expect(widths[0].min < widths[1].min, "\(aspect) small is not below medium")
-            #expect(widths[1].min < widths[2].min, "\(aspect) medium is not below large")
+    @Test("Both ladders climb")
+    func laddersClimb() {
+        for aspect in Self.aspects {
+            let widths = Self.steps.map { DesignTokens.LibraryGrid.columnWidth(for: $0, aspect: aspect) }
+            #expect(widths[0] < widths[1], "\(aspect) small is not below medium")
+            #expect(widths[1] < widths[2], "\(aspect) medium is not below large")
         }
     }
 
@@ -33,20 +32,32 @@ struct LibraryGridMetricsTests {
         #expect(DesignTokens.LibraryGrid.horizontalPadding == DesignTokens.LibraryFilterBar.horizontalPadding)
     }
 
-    @Test("Columns carry the ladder's own widths")
-    func columnsCarryTheLaddersWidths() {
-        for aspect in [DesignTokens.LibraryGrid.Aspect.square, .wide] {
+    @Test("Columns are fixed at the ladder's width and pack as many as the width holds")
+    func columnsPackFixedTilesIntoTheWidth() {
+        let spacing = DesignTokens.LibraryGrid.spacing
+        for aspect in Self.aspects {
             for size in Self.steps {
-                let expected = DesignTokens.LibraryGrid.columnWidths(for: size, aspect: aspect)
-                let columns = DesignTokens.LibraryGrid.columns(for: size, aspect: aspect)
-                #expect(columns.count == 1)
-                guard case let .adaptive(minimum, maximum) = columns[0].size else {
-                    Issue.record("\(aspect) \(size) is not an adaptive column")
-                    continue
+                let column = DesignTokens.LibraryGrid.columnWidth(for: size, aspect: aspect)
+                let exactlyThree = column * 3 + spacing * 2
+                let cases: [(width: CGFloat, count: Int)] = [
+                    (exactlyThree, 3),
+                    (exactlyThree - 1, 2),
+                    (column, 1),
+                    (column / 2, 1),
+                    (0, 1),
+                ]
+                for expected in cases {
+                    let columns = DesignTokens.LibraryGrid.columns(for: size, aspect: aspect, fitting: expected.width)
+                    #expect(columns.count == expected.count, "\(aspect) \(size) at \(expected.width): \(columns.count) columns")
+                    for item in columns {
+                        guard case let .fixed(width) = item.size else {
+                            Issue.record("\(aspect) \(size) is not a fixed column")
+                            continue
+                        }
+                        #expect(width == column)
+                        #expect(item.spacing == spacing)
+                    }
                 }
-                #expect(minimum == expected.min)
-                #expect(maximum == expected.max)
-                #expect(columns[0].spacing == DesignTokens.LibraryGrid.spacing)
             }
         }
     }

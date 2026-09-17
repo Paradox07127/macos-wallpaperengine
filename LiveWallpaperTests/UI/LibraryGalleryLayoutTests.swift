@@ -43,7 +43,7 @@ struct LibraryGalleryLayoutTests {
     func everyLibraryGridTakesTheSharedInset() throws {
         for path in Self.widePages + Self.squarePages {
             let source = try RepositoryRoot.source(path)
-            let grids = source.components(separatedBy: "LazyVGrid(").count - 1
+            let grids = source.components(separatedBy: "LibraryGalleryGrid(").count - 1
             let insets = source.components(separatedBy: ".libraryGridPadding()").count - 1
             #expect(
                 grids > 0 && grids == insets,
