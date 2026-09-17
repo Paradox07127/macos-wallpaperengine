@@ -129,18 +129,21 @@ struct Popover: View {
             guard !trimmed.isEmpty, trimmed != existing.label else { dismiss(); return }
             store.rename(existing.id, to: trimmed)
         } else {
+            let configuration = screenManager.getConfiguration(for: screen)
+            // Only when the bookmark is the wallpaper this display is actually
+            // playing: the inspector tab can hold a candidate that was never
+            // committed. The origin follows the same rule — attached to another
+            // content it would make that bookmark a casualty of the scene's removal.
+            let isPlayingContent = configuration?.activeWallpaper == content
             let saved = store.add(
                 label: trimmed,
                 content: content,
                 sourceDisplayName: sourceDisplayName(for: content),
                 // Scene content lives in the Steam library, not the container: without the origin the
                 // saved bookmark cannot be resolved back to its files.
-                wpeOrigin: screenManager.getConfiguration(for: screen)?.wpeOrigin
+                wpeOrigin: isPlayingContent ? configuration?.wpeOrigin : nil
             )
-            // Only when the bookmark is the wallpaper this display is actually
-            // playing: the inspector tab can hold a candidate that was never
-            // committed, and a still of the *current* wallpaper would be a lie.
-            if screenManager.getConfiguration(for: screen)?.activeWallpaper == content {
+            if isPlayingContent {
                 screenManager.captureCover(forBookmark: saved.id, from: screen)
             }
         }

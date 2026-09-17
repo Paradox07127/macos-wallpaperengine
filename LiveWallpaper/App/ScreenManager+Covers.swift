@@ -4,7 +4,7 @@ import LiveWallpaperCore
 
 /// Serializes cover captures per entry so a stale in-flight capture cannot overwrite a newer one.
 @MainActor
-private enum CoverCaptureGenerations {
+enum CoverCaptureGenerations {
     private static var generations: [UUID: UInt64] = [:]
 
     static func begin(_ id: UUID) -> UInt64 {
@@ -13,11 +13,14 @@ private enum CoverCaptureGenerations {
         return next
     }
 
-    /// Clears the entry on the way out so the table cannot grow with the library.
+    /// The counter is kept after a claim: dropping it would reissue token 1 to the next capture while an
+    /// older token 1 may still be in flight. One UInt64 per entry ever captured is the whole cost.
     static func claim(_ token: UInt64, for id: UUID) -> Bool {
-        guard generations[id] == token else { return false }
-        generations[id] = nil
-        return true
+        generations[id] == token
+    }
+
+    static func resetForTesting() {
+        generations.removeAll()
     }
 }
 

@@ -35,10 +35,13 @@ struct SceneFailureFlowTests {
         let loaded = await WPESceneProjectSchemaLoader.load(descriptor: descriptor, wpeOrigin: nil, applicationSupportRootURL: root)
         #expect(loaded.schema?.properties.map(\.key) == ["enabled"])
         try FileManager.default.removeItem(at: project)
+        // The synchronous seed still paints the last known answer on the first frame…
         let cached = WPESceneProjectSchemaLoader.cachedOutcome(descriptor: descriptor, wpeOrigin: nil, applicationSupportRootURL: root)
         #expect(cached?.schema?.properties.map(\.key) == ["enabled"])
+        // …but a load re-stats the file and must not serve a memo for a project.json that is gone.
         let reused = await WPESceneProjectSchemaLoader.load(descriptor: descriptor, wpeOrigin: nil, applicationSupportRootURL: root)
-        #expect(reused.schema?.properties.map(\.key) == ["enabled"])
+        #expect(reused.schema == nil, "load() served the memo for a project.json that no longer exists")
+        #expect(WPESceneProjectSchemaLoader.cachedOutcome(descriptor: descriptor, wpeOrigin: nil, applicationSupportRootURL: root) == nil)
 
         let origin = WPEOrigin(workshopID: "42", title: "Scene", originalType: .scene, sourceFolderBookmark: Data([1]), cacheRelativePath: nil, previewFileName: nil)
         #expect(WPESceneProjectSchemaLoader.cachedOutcome(descriptor: descriptor, wpeOrigin: origin, applicationSupportRootURL: root) == nil)
@@ -46,6 +49,20 @@ struct SceneFailureFlowTests {
         #expect(WPESceneProjectSchemaLoader.cachedOutcome(descriptor: other, wpeOrigin: nil, applicationSupportRootURL: root) == nil)
         WPESceneProjectSchemaLoader.invalidateCache()
         #expect(WPESceneProjectSchemaLoader.cachedOutcome(descriptor: descriptor, wpeOrigin: nil, applicationSupportRootURL: root) == nil)
+    }
+
+    @Test("The inspector never short-circuits on the memo: every mount still runs load()")
+    func inspectorAlwaysRevalidatesTheMemo() throws {
+        let panel = try RepositoryRoot.source("LiveWallpaper/Views/ScreenDetail/DetailInspectorPanel.swift")
+        let start = try #require(panel.range(of: "private func loadWPESceneCustomSettingsSchema() async {"))
+        let body = panel[start.upperBound...].prefix(1800)
+        let hit = try #require(body.range(of: "cachedOutcome(descriptor: descriptor"))
+        let afterHit = body[hit.upperBound...]
+        let load = try #require(afterHit.range(of: "WPESceneProjectSchemaLoader.load("))
+        #expect(
+            !afterHit[..<load.lowerBound].contains("return"),
+            "a memo hit returned before load(), so the size+mtime revalidation never ran on remount"
+        )
     }
 
     @Test("An edited project.json is re-read instead of served from the memo")

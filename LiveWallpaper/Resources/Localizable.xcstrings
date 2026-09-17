@@ -38032,7 +38032,7 @@
       }
     },
     "Name" : {
-      "comment" : "Saved library sort order: alphabetical.",
+      "comment" : "Saved library sort order: alphabetical.\nWorkshop library sort order.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -49365,7 +49365,7 @@
       }
     },
     "Recent" : {
-      "comment" : "Saved library sort order: most recent first.",
+      "comment" : "Saved library sort order: most recent first.\nWorkshop library sort order: most recently imported first.",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -71771,7 +71771,7 @@
       }
     },
     "Type" : {
-      "comment" : "Saved library sort order: grouped by wallpaper type.",
+      "comment" : "Saved library sort order: grouped by wallpaper type.\nWorkshop tag group: Scene / Video / Web.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -72055,7 +72055,7 @@
       }
     },
     "Unavailable" : {
-      "comment" : "Login item service unavailable.",
+      "comment" : "Login item service unavailable.\nWorkshop item removed or hidden on Steam.",
       "localizations" : {
         "es" : {
           "stringUnit" : {

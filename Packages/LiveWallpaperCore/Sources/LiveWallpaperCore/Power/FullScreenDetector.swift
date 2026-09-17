@@ -52,6 +52,13 @@ public final class FullScreenDetector {
         return intersection.width * intersection.height >= displayArea * 0.999
     }
 
+    /// A full-screen window on a notched display may stop at the safe area (1728×1080 of 1728×1117 ≈ 97%),
+    /// which the whole-display rule would file under occlusion. `safeArea` is the display minus its top inset.
+    nonisolated static func windowFillsDisplay(_ window: CGRect, display: CGRect, safeArea: CGRect) -> Bool {
+        windowFillsDisplay(window.intersection(display), display: display)
+            || windowFillsDisplay(window.intersection(safeArea), display: safeArea)
+    }
+
     // MARK: - Setup
 
     private func setupNotifications() {
@@ -151,6 +158,15 @@ public final class FullScreenDetector {
             }
             return (id, CGDisplayBounds(id))
         }
+        // CG bounds are top-left origin, so the notch inset comes off the top edge.
+        let safeAreaFrames: [CGDirectDisplayID: CGRect] = Dictionary(uniqueKeysWithValues: screens.compactMap { screen in
+            guard let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else {
+                return nil
+            }
+            let bounds = CGDisplayBounds(id)
+            let top = screen.safeAreaInsets.top
+            return (id, CGRect(x: bounds.minX, y: bounds.minY + top, width: bounds.width, height: bounds.height - top))
+        })
 
         // Clipped window rectangles per display, used for the union-area
         // occlusion test after the full-screen pass.
@@ -185,7 +201,7 @@ public final class FullScreenDetector {
             for (screenID, cgScreenFrame) in screenFrames {
                 let intersection = windowFrame.intersection(cgScreenFrame)
                 guard !intersection.isNull, !intersection.isEmpty else { continue }
-                if Self.windowFillsDisplay(intersection, display: cgScreenFrame) {
+                if Self.windowFillsDisplay(windowFrame, display: cgScreenFrame, safeArea: safeAreaFrames[screenID] ?? cgScreenFrame) {
                     result[screenID] = true
                 }
                 windowsByScreen[screenID, default: []].append(intersection)

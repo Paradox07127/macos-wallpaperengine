@@ -95,6 +95,7 @@ public struct FrameRateControl: View {
     private let layout: FrameRateControlLayout
     private let accessibilityLabel: Text
     @State private var draggingPosition: Double?
+    @State private var draggingChoice: FrameRateLimit?
     @State private var isDragging = false
     /// Samples that arrive outside an editing bracket (scroll wheel, a track click) commit once they settle, like `CoalescedSlider`.
     @State private var pendingCommit: Task<Void, Never>?
@@ -119,8 +120,10 @@ public struct FrameRateControl: View {
         FrameRateSliderScale(displayFramesPerSecond: displayFramesPerSecond)
     }
 
+    /// `draggingChoice` is the value the drag already snapped to; re-deriving it from the snapped
+    /// position would snap a second time (16 → position 1.11 → 15) and disagree with the commit.
     private var displayedValue: FrameRateLimit {
-        draggingPosition.map { scale.value(at: $0) } ?? boundedValue
+        draggingChoice ?? boundedValue
     }
 
     private var boundedValue: FrameRateLimit {
@@ -142,11 +145,13 @@ public struct FrameRateControl: View {
         .onChange(of: value) { _, _ in
             cancelPendingCommit()
             draggingPosition = nil
+            draggingChoice = nil
             resetInput()
         }
         .onChange(of: displayFramesPerSecond) { _, _ in
             cancelPendingCommit()
             draggingPosition = nil
+            draggingChoice = nil
             resetInput()
         }
         .onChange(of: inputFocused) { wasFocused, focused in
@@ -162,6 +167,7 @@ public struct FrameRateControl: View {
             cancelPendingCommit()
             isDragging = false
             draggingPosition = nil
+            draggingChoice = nil
         }
     }
 
@@ -225,8 +231,11 @@ public struct FrameRateControl: View {
 
     private static let presetSegmentWidth: CGFloat = 44
 
+    /// The stored target, not the clamped readout: a 120 saved on a 60 Hz panel highlights no segment
+    /// (the segments stop at the panel), and a tap on 60 is then an explicit choice rather than a
+    /// silent overwrite of a value another display still uses.
     private var presetSelection: Binding<FrameRateLimit> {
-        Binding(get: { boundedValue }, set: { commit($0) })
+        Binding(get: { value }, set: { commit($0) })
     }
 
     private var customEntryField: some View {
@@ -265,6 +274,7 @@ public struct FrameRateControl: View {
         Binding(get: { draggingPosition ?? scale.position(for: value) }, set: { position in
             let chosen = scale.value(at: position)
             draggingPosition = scale.position(for: chosen)
+            draggingChoice = chosen
             guard !isDragging else { return }
             pendingCommit?.cancel()
             pendingChoice = chosen
@@ -289,8 +299,8 @@ public struct FrameRateControl: View {
         cancelPendingCommit()
         if editing {
             inputFocused = false
-        } else if let position = draggingPosition {
-            commit(scale.value(at: position))
+        } else if let chosen = draggingChoice ?? draggingPosition.map({ scale.value(at: $0) }) {
+            commit(chosen)
         }
     }
 
@@ -299,6 +309,7 @@ public struct FrameRateControl: View {
         // A newer commit supersedes whatever a settling sample captured.
         cancelPendingCommit()
         draggingPosition = nil
+        draggingChoice = nil
         if value != chosen {
             value = chosen
         }
@@ -322,7 +333,7 @@ public struct FrameRateControl: View {
             }
             return
         }
-        let next = boundedValue.rawValue + (increasing ? 1 : -1)
+        let next = value.rawValue + (increasing ? 1 : -1)
         if next > scale.upperBound {
             commit(.matchDisplay)
         } else {

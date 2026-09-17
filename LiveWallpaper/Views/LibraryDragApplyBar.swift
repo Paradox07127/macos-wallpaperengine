@@ -2,6 +2,35 @@ import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
+/// One ticket per display. The drop handler locates the entry asynchronously; by the time that
+/// returns the user may have dropped something else on the display, applied another wallpaper,
+/// or replaced the entry — an older ticket must not apply.
+@MainActor
+struct LibraryDropTicket: Equatable {
+    let screenID: CGDirectDisplayID
+    let generation: UInt64
+}
+
+@MainActor
+final class LibraryDropTickets {
+    private var generations: [CGDirectDisplayID: UInt64] = [:]
+
+    func begin(screenID: CGDirectDisplayID) -> LibraryDropTicket {
+        let next = (generations[screenID] ?? 0) &+ 1
+        generations[screenID] = next
+        return LibraryDropTicket(screenID: screenID, generation: next)
+    }
+
+    /// Superseded by a newer drop on the same display, or by an explicit selection that called `invalidate`.
+    func isCurrent(_ ticket: LibraryDropTicket) -> Bool {
+        generations[ticket.screenID] == ticket.generation
+    }
+
+    func invalidate(screenID: CGDirectDisplayID) {
+        _ = begin(screenID: screenID)
+    }
+}
+
 /// SwiftUI's `onDrag` reports no completion, so a drag released anywhere that is not a drop target would leave the bar on screen forever.
 @MainActor
 @Observable

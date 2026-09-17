@@ -377,7 +377,9 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         with reply: @escaping @Sendable (Data) -> Void
     ) {
         callerLiveness.own(operationID: operationID)
+        let liveness = callerLiveness
         @Sendable func respond(_ outcome: SteamWorkshopDownloadResult.Outcome, tail: String = "", path: String? = nil, executed: String? = nil) {
+            liveness.disown(operationID: operationID)
             let result = SteamWorkshopDownloadResult(
                 outcome: outcome,
                 itemPath: path,
@@ -399,7 +401,6 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         }
 
         let sink = progressSink
-        let liveness = callerLiveness
         let enqueuedAt = Date()
         Self.steamCMDQueue.async {
             guard liveness.isLive(enqueuedAt: enqueuedAt) else { respond(.timedOut); return }
@@ -1145,6 +1146,9 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
             return .failed(.unavailable)
         }
         close(slave)
+        // No process group of its own (the PTY is the session), no operation id: only host exit signals it.
+        activeSteamCMD.register(pid: process.processIdentifier, hasOwnGroup: false, operationID: nil)
+        defer { activeSteamCMD.clear() }
 
         func write(secret: String) {
             var data = Data((secret + "\n").utf8)
@@ -1545,12 +1549,13 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         with reply: @escaping @Sendable (Data) -> Void
     ) {
         callerLiveness.own(operationID: operationID)
+        let liveness = callerLiveness
         @Sendable func send(_ lookup: SteamEngineBuildLookup) {
+            liveness.disown(operationID: operationID)
             reply((try? JSONEncoder().encode(lookup)) ?? Data())
         }
         // Same lock as install and download: an update check must not race a
         // queued SteamCMD run.
-        let liveness = callerLiveness
         let enqueuedAt = Date()
         Self.steamCMDQueue.async {
             guard liveness.isLive(enqueuedAt: enqueuedAt) else {
@@ -1600,7 +1605,9 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         with reply: @escaping @Sendable (Data) -> Void
     ) {
         callerLiveness.own(operationID: operationID)
+        let liveness = callerLiveness
         @Sendable func respond(_ outcome: SteamEngineAssetsResult.Outcome, tail: String = "", assets: String? = nil, build: String? = nil, executed: String? = nil) {
+            liveness.disown(operationID: operationID)
             let result = SteamEngineAssetsResult(
                 outcome: outcome,
                 assetsPath: assets,
@@ -1622,7 +1629,6 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         }
 
         let sink = progressSink
-        let liveness = callerLiveness
         let enqueuedAt = Date()
         Self.steamCMDQueue.async {
             guard liveness.isLive(enqueuedAt: enqueuedAt) else { respond(.timedOut); return }

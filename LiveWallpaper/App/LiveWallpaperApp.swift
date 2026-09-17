@@ -329,9 +329,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
             #if !LITE_BUILD
             // A SteamCMD child outlives this process otherwise: it sits in its own process group inside an XPC service launchd reaps with SIGKILL.
-            await SteamConnectorClient.terminateActiveSteamCMDForHostExit()
+            async let steamCMDTerminated: Void = SteamConnectorClient.terminateActiveSteamCMDForHostExit()
             #endif
             await AppTerminationCoordinator.shutdownForApplication()
+            #if !LITE_BUILD
+            await steamCMDTerminated
+            #endif
             watchdog.cancel()
             reply()
         }

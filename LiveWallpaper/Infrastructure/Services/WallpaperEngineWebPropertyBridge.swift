@@ -15,14 +15,18 @@ enum WallpaperEngineWebPropertyBridge {
         // if the listener runs at documentEnd — the throw then eats every property after it.
         return """
         (function () {
-            var properties = \(json);
+            // Shared with hot updates (`applyScript`): a change that lands before `load` replaces the
+            // documentEnd value here, so the delayed cold-start delivery cannot resurrect it.
+            var properties = window.__loomscreenPendingProperties = \(json);
             var delivered = false;
             var attempted = false;
+            var delivering = false;
             var ready = false;
             function deliver(listener) {
-                if (!ready || delivered) return;
+                if (!ready || delivered || delivering) return;
                 if (!listener || typeof listener.applyUserProperties !== 'function') return;
                 attempted = true;
+                delivering = true;
                 try {
                     listener.applyUserProperties(properties);
                     delivered = true;
@@ -31,18 +35,25 @@ enum WallpaperEngineWebPropertyBridge {
                     // its load handler; `load` delivers again. After `load` the page had its chance.
                     delivered = document.readyState === 'complete';
                     console.error('Loomscreen failed to apply Wallpaper Engine properties', error);
+                } finally {
+                    delivering = false;
                 }
             }
             // Installed before `load` on purpose: a page that assigns its listener later must still
-            // be captured, including when `load` has already been missed.
+            // be captured, including when `load` has already been missed. A page-defined accessor
+            // keeps running: its getter/setter are wrapped, not replaced.
             try {
+                var existing = Object.getOwnPropertyDescriptor(window, 'wallpaperPropertyListener');
                 var current = window.wallpaperPropertyListener;
+                var pageGet = existing && typeof existing.get === 'function' ? existing.get : null;
+                var pageSet = existing && typeof existing.set === 'function' ? existing.set : null;
                 Object.defineProperty(window, 'wallpaperPropertyListener', {
                     configurable: true,
-                    get: function () { return current; },
+                    get: function () { return pageGet ? pageGet.call(window) : current; },
                     set: function (value) {
                         current = value;
-                        deliver(value);
+                        if (pageSet) pageSet.call(window, value);
+                        deliver(pageGet ? pageGet.call(window) : value);
                     }
                 });
             } catch (e) {}
@@ -100,9 +111,15 @@ enum WallpaperEngineWebPropertyBridge {
 
         return """
         (function () {
+            var update = \(json);
+            // Keep the bootstrap's pending table current so a delivery still waiting for `load` sends these values, not the documentEnd ones.
+            var pending = window.__loomscreenPendingProperties;
+            if (pending && typeof pending === 'object') {
+                for (var key in update) { if (Object.prototype.hasOwnProperty.call(update, key)) pending[key] = update[key]; }
+            }
             var listener = window.wallpaperPropertyListener;
             if (listener && typeof listener.applyUserProperties === 'function') {
-                listener.applyUserProperties(\(json));
+                listener.applyUserProperties(update);
             }
         })();
         """

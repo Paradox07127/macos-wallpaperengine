@@ -1934,7 +1934,12 @@ extension WPERenderGraphBuilder {
         // The exact full-frame alias in every slot, raw and resolved: no `.previous`, no mask.
         guard pass.textures == [0: fullFrame],
               first.textureReferences.allSatisfy({ $0 == fullFrame }) else { return .reject("passthrough-inputs") }
-        guard (first.comboValues["CLEARALPHA"] ?? pass.combos["CLEARALPHA"] ?? 0) == 0 else {
+        // Same lookup the dispatcher draws with: exact key first, then case-insensitive.
+        let clearAlpha = first.comboValues["CLEARALPHA"] ?? pass.combos["CLEARALPHA"]
+            ?? first.comboValues.first { $0.key.uppercased() == "CLEARALPHA" }?.value
+            ?? pass.combos.first { $0.key.uppercased() == "CLEARALPHA" }?.value
+            ?? 0
+        guard clearAlpha == 0 else {
             return .reject("passthrough-clearalpha")
         }
         // Same identity bar as the canonical-rotation copy: a culled or depth-tested passthrough is not a 1:1 copy.

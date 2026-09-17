@@ -4,6 +4,26 @@ import Testing
 
 @Suite("Web failure cause")
 struct WebFailureCauseTests {
+    @Test("A request timeout or a rate limit is worth retrying by hand")
+    func transientClientStatusesStayRetryable() {
+        #expect(WebFailureCause.httpStatus(408, isLocalProject: false).canRetry)
+        #expect(WebFailureCause.httpStatus(429, isLocalProject: false).canRetry)
+        #expect(!WebFailureCause.httpStatus(404, isLocalProject: false).canRetry)
+    }
+
+    @Test("A remote resource that is unavailable is not a missing local entry page")
+    func remoteResourceUnavailableIsNotAMissingEntry() {
+        let remote = WebFailureCause.navigation(
+            domain: NSURLErrorDomain, code: NSURLErrorResourceUnavailable, description: "gone", isLocalProject: false
+        )
+        #expect(remote.code != "web.entry_missing")
+        #expect(remote.canRetry)
+        let local = WebFailureCause.navigation(
+            domain: NSURLErrorDomain, code: NSURLErrorResourceUnavailable, description: "gone", isLocalProject: true
+        )
+        #expect(local.code == "web.entry_missing")
+    }
+
     @Test("A missing entry page is a missing part, not a generic load failure")
     func missingEntryPageIsAMissingPart() {
         let fromURLError = WebFailureCause.navigation(

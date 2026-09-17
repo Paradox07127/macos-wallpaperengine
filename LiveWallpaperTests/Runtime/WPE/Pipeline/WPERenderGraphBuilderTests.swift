@@ -3891,6 +3891,7 @@ struct WPEFullFramePassthroughElisionTests {
     @Test("Every admission condition rejects with its own reason and keeps the pipeline", arguments: [
         "composelayer", "non-identity-geometry", "special-layer", "single-pass", "passthrough-inputs-previous",
         "passthrough-inputs-extra", "passthrough-target", "passthrough-shader", "passthrough-clearalpha",
+        "passthrough-clearalpha-lowercase",
         "passthrough-blending", "passthrough-cull", "passthrough-depth", "passthrough-script", "passthrough-user-textures",
         "passthrough-gate", "scene-write-before-rewrite", "first-rewriter-reads-passthrough",
         "first-rewriter-binds-previous", "first-rewriter-blends-destination", "private-composite-alias",
@@ -3931,6 +3932,10 @@ struct WPEFullFramePassthroughElisionTests {
             passes[0] = passthrough(id: "post.0", target: names.a, shader: "passthroughsrgb")
         case "passthrough-clearalpha":
             passes[0] = passthrough(id: "post.0", target: names.a, comboValues: ["CLEARALPHA": 1])
+        case "passthrough-clearalpha-lowercase":
+            // The dispatcher resolves combos case-insensitively; the elision must read the same value it draws with.
+            passes[0] = passthrough(id: "post.0", target: names.a, comboValues: ["clearalpha": 1])
+            expected = "passthrough-clearalpha"
         case "passthrough-blending":
             passes[0] = passthrough(id: "post.0", target: names.a, blending: "premultipliedDisabled")
             expected = "passthrough-render-semantics"

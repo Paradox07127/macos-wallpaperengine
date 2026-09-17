@@ -368,13 +368,22 @@ struct WPESceneCustomSettingsCard: View {
     ) -> some View {
         let isChanged = changedKeys.contains(property.key)
         let rowIconColor = isChanged ? DesignTokens.Colors.Status.warning : .accentColor
+        // The tint is the visual cue; the badge is what VoiceOver reads.
+        let changedBadge: SettingRowTitleBadge? = isChanged
+            ? SettingRowTitleBadge(
+                systemImage: "pencil.circle.fill",
+                tint: DesignTokens.Colors.Status.warning,
+                accessibilityLabel: Text("Changed from preset")
+            )
+            : nil
 
         switch property.type {
         case .bool:
             SettingRow(
                 icon: WPEPropertyRowIcon.symbol(for: property.type),
                 iconColor: rowIconColor,
-                verbatimTitle: property.displayText
+                verbatimTitle: property.displayText,
+                titleBadge: changedBadge
             ) {
                 Toggle("", isOn: boolBinding(for: property))
                     .labelsHidden()
@@ -386,7 +395,8 @@ struct WPESceneCustomSettingsCard: View {
             SettingRow(
                 icon: WPEPropertyRowIcon.symbol(for: property.type),
                 iconColor: rowIconColor,
-                verbatimTitle: property.displayText
+                verbatimTitle: property.displayText,
+                titleBadge: changedBadge
             ) {
                 HStack(spacing: DesignTokens.Inspector.sliderValueSpacing) {
                     QuantizedSlider(
@@ -414,7 +424,8 @@ struct WPESceneCustomSettingsCard: View {
             SettingRow(
                 icon: WPEPropertyRowIcon.symbol(for: property.type),
                 iconColor: rowIconColor,
-                verbatimTitle: property.displayText
+                verbatimTitle: property.displayText,
+                titleBadge: changedBadge
             ) {
                 if property.options.isEmpty {
                     Text(verbatim: currentValue.stringValue)
@@ -444,7 +455,8 @@ struct WPESceneCustomSettingsCard: View {
             SettingRow(
                 icon: WPEPropertyRowIcon.symbol(for: property.type),
                 iconColor: rowIconColor,
-                verbatimTitle: property.displayText
+                verbatimTitle: property.displayText,
+                titleBadge: changedBadge
             ) {
                 ColorPicker("", selection: colorBinding(for: property), supportsOpacity: false)
                     .labelsHidden()
@@ -455,7 +467,8 @@ struct WPESceneCustomSettingsCard: View {
             SettingRow(
                 icon: WPEPropertyRowIcon.symbol(for: property.type),
                 iconColor: rowIconColor,
-                verbatimTitle: property.displayText
+                verbatimTitle: property.displayText,
+                titleBadge: changedBadge
             ) {
                 TextField("", text: stringBinding(for: property))
                     .textFieldStyle(.roundedBorder)

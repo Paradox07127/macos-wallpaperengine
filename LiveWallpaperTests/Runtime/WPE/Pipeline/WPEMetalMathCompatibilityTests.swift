@@ -50,6 +50,20 @@ struct WPEMetalMathCompatibilityTests {
         }
     }
 
+    @Test("Mixed float/uint and int/uint scalar endpoints resolve to one overload")
+    func mixedScalarEndpointsGPU() throws {
+        guard let device = MTLCreateSystemDefaultDevice() else { return }
+        // GLSL promotes the integer endpoint; without an exact overload for each pair MSL reports an
+        // ambiguous call and the whole shader fails to compile.
+        let kernel = """
+        kernel void check(device const float4* values [[buffer(0)]], device float4* output [[buffer(1)]], uint id [[thread_position_in_grid]]) {
+            output[0] = float4(wpe_glsl_mix(0.0, 1u, 0.5), wpe_glsl_mix(1u, 0.0, 0.25), wpe_glsl_mix(0, 4u, 0.5), wpe_glsl_mix(4u, 0, 0.5));
+        }
+        """
+        let values = try run(device: device, fast: false, kernel: kernel, inputs: [SIMD4<Float>(0, 0, 0, 0)])
+        #expect(values[0] == SIMD4<Float>(0.5, 0.75, 2, 2))
+    }
+
     @Test("Boolean mix selects floating, integer, unsigned and Boolean vectors")
     func booleanGPU() throws {
         guard let device = MTLCreateSystemDefaultDevice() else { return }

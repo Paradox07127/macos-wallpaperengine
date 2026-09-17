@@ -518,8 +518,10 @@ extension WPEMetalSceneRenderer {
         // Parents precede their children in `particleSystems` (DFS
         // registration order), so a parent's `primaryLiveParticlePosition`
         // is already this-frame-fresh when its event-follow child ticks.
+        let gpuPerspectiveUnavailable = cameraUniforms.particlePerspectiveViewProjectionMatrix == nil
         for system in particleSystems {
             system.pointerCentered = particlePointer
+            system.cpuPerspectiveFallback = gpuPerspectiveUnavailable
             if let objectID = system.instanceAlphaScriptObjectID,
                let alpha = liveParticleInstanceAlpha[objectID] {
                 system.instanceAlphaScale = Float(max(0, min(1, alpha)))

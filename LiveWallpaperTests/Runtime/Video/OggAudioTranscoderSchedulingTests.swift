@@ -27,6 +27,25 @@ struct OggAudioTranscoderSchedulingTests {
         try await poll { await transcoder.workSnapshot.running == 0 }
     }
 
+    @Test("A decode that finishes after its deadline still commits: the file is not poisoned for the session")
+    func lateDecodeStillCommits() async throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanup() }
+        let gate = DecodeGate()
+        defer { gate.release() }
+        let transcoder = fixture.transcoder(gate: gate, deadline: 0.15)
+        let first = Task { await transcoder.transcodedM4A(forOgg: fixture.source) }
+        try await poll { gate.starts == 1 }
+        // The watchdog fires first and resumes the waiter with nil…
+        #expect(await first.value == nil)
+        // …then the decode completes on its own.
+        gate.release()
+        try await poll { await transcoder.workSnapshot.running == 0 }
+        let later = await transcoder.transcodedM4A(forOgg: fixture.source)
+        #expect(later != nil, "expire won the race against complete, so a decode that succeeded moments later was memoised as unavailable")
+        #expect(gate.starts == 1)
+    }
+
     @Test("Timeout resumes all waiters but keeps the actual decode slot and lease until return")
     func timeoutKeepsSlotAndLease() async throws {
         let fixture = try Fixture()
@@ -49,7 +68,11 @@ struct OggAudioTranscoderSchedulingTests {
         gate.release()
         try await poll { await transcoder.workSnapshot.running == 0 }
         try await poll { released.withLock { $0 } }
-        #expect(try fixture.cacheFiles().isEmpty)
+        // No staged leftovers — but the finished decode is kept, so the next request plays it
+        // instead of timing out again on the same file.
+        let files = try fixture.cacheFiles()
+        #expect(files.filter { $0.lastPathComponent.hasPrefix(".") }.isEmpty)
+        #expect(files.count == 1)
         #expect(gate.starts == 1)
     }
 

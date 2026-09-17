@@ -61,18 +61,26 @@ final class WPERenderThread: @unchecked Sendable {
             return hasExited
         }
 
-        /// Exit path, on the render thread. `.stopped` and the leftover takeover happen under one lock
-        /// acquisition so a concurrent post is either in `leftovers` or runs inline — never orphaned.
-        /// `postShutdownLock` is held across the leftovers so an inline post cannot overlap or overtake them.
+        /// Exit path, on the render thread. Leftovers are drained in rounds while the state stays
+        /// `.stopRequested`, so a post that arrives mid-drain is queued and run here — never inline,
+        /// where it would block its caller on `postShutdownLock` for as long as a leftover runs.
+        /// `.stopped` is published under the same lock acquisition that observes an empty queue,
+        /// so no post is orphaned: it is either in a round or runs inline after.
         func finishStopping() {
             postShutdownLock.lock()
-            condition.lock()
-            state = .stopped
-            let leftovers = jobs
-            jobs.removeAll()
-            condition.unlock()
-            for job in leftovers {
-                job()
+            while true {
+                condition.lock()
+                let leftovers = jobs
+                jobs.removeAll()
+                if leftovers.isEmpty {
+                    state = .stopped
+                    condition.unlock()
+                    break
+                }
+                condition.unlock()
+                for job in leftovers {
+                    job()
+                }
             }
             postShutdownLock.unlock()
             condition.lock()

@@ -211,17 +211,16 @@ enum SteamConnectorClient {
     nonisolated(unsafe) static var connectionFactoryForTesting: (@Sendable () -> NSXPCConnection)?
     #endif
 
-    /// Calls in flight right now; termination only bothers the connector when this is non-zero. Every
-    /// entry point counts: a probe, a login and an install stream no progress and still spawn SteamCMD.
-    private static var inFlightOperations = 0
+    /// Sticky: a wait cancelled by termination has already returned, yet the child it started may still be running.
+    private static var didUseConnector = false
 
-    static var hasInFlightOperation: Bool {
-        inFlightOperations > 0
+    static var hasUsedConnector: Bool {
+        didUseConnector
     }
 
     /// The app is quitting: SIGTERM whatever SteamCMD child is running. The connection-invalidation path in the connector covers a crash on its own; this makes Cmd+Q and Sparkle's quit deterministic instead of a race with launchd reaping the service.
     static func terminateActiveSteamCMDForHostExit() async {
-        guard hasInFlightOperation else { return }
+        guard hasUsedConnector else { return }
         _ = await call(timeout: 1) { connector, reply in
             connector.terminateActiveSteamCMDForHostExit(with: reply)
         }
@@ -250,12 +249,9 @@ enum SteamConnectorClient {
             connection.exportedInterface = NSXPCInterface(with: (any SteamConnectorProgressProtocol).self)
             connection.exportedObject = ProgressReceiver(handler: onProgress)
         }
-        inFlightOperations += 1
+        didUseConnector = true
         connection.resume()
-        defer {
-            connection.invalidate()
-            inFlightOperations -= 1
-        }
+        defer { connection.invalidate() }
 
         // The reply, the error handler, the timeout and cancellation can all
         // fire; whichever takes the continuation out of the box owns it.

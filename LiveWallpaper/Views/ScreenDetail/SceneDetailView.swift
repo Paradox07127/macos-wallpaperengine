@@ -530,6 +530,15 @@ struct SceneDetailView: View {
         return true
     }
 
+    /// A blank first frame followed by a failed retry (the renderer suspended in between) is not a
+    /// poster: accepting it would settle the lifecycle on black until a manual recapture.
+    static func posterToAccept(first: NSImage?, firstWasBlank: Bool, retry: NSImage?) -> NSImage? {
+        if let retry {
+            return retry
+        }
+        return firstWasBlank ? nil : first
+    }
+
     // MARK: - State derivation
 
     var initialRenderStateForTesting: SceneRenderState {
@@ -645,7 +654,8 @@ struct SceneDetailView: View {
             let blank = image.map(Self.isBlankPoster) ?? false
             if (image == nil && isPlaying) || blank, !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(blank ? 100 : 400))
-                image = await targetSession.captureLivePosterFromNextFrame() ?? image
+                let retry = await targetSession.captureLivePosterFromNextFrame()
+                image = Self.posterToAccept(first: image, firstWasBlank: blank, retry: retry)
             }
             guard previewLifecycle.accepts(
                 generation,

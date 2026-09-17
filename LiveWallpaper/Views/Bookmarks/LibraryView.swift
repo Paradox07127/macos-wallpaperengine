@@ -109,6 +109,8 @@ struct LibraryView: View {
         }
     }
 
+    @State private var dropTickets = LibraryDropTickets()
+
     private var dropBar: some View {
         LibraryDragApplyBar(
             screens: screenManager.screens,
@@ -125,14 +127,19 @@ struct LibraryView: View {
                           screenManager.screens.contains(where: { $0.id == screen.id })
                     else { return }
                     // Same gate as the tile: a veiled entry is not applied by dropping it either.
+                    let ticket = dropTickets.begin(screenID: screen.id)
                     Task { @MainActor in
                         let location = await LibraryContentLocator.locate(
                             content: bookmark.content, wpeOrigin: bookmark.wpeOrigin
                         )
-                        guard location.isAvailable,
+                        // Re-read after the suspension: a newer drop, a deleted entry or a re-authorised
+                        // one must win over the snapshot this closure captured.
+                        guard dropTickets.isCurrent(ticket), location.isAvailable,
+                              let current = store.bookmarks.first(where: { $0.id == id }),
+                              current.content == bookmark.content,
                               let target = screenManager.screens.first(where: { $0.id == screen.id })
                         else { return }
-                        screenManager.applyBookmark(bookmark, to: target)
+                        screenManager.applyBookmark(current, to: target)
                     }
                 }
             }

@@ -353,6 +353,52 @@ struct WallpaperEngineWebPropertyBridgeTests {
         #expect(context.exception == nil)
     }
 
+    /// A page may re-assign the listener from inside `applyUserProperties` (`window.wallpaperPropertyListener = this`).
+    /// The setter delivers again; before `delivered` was set that recursed until the stack overflowed.
+    @Test("Re-assigning the listener during delivery delivers once")
+    func listenerReassignmentDuringDeliveryDoesNotRecurse() throws {
+        let context = try makeBootstrapContext(readyState: "complete")
+        context.evaluateScript("""
+        var calls = 0;
+        window.wallpaperPropertyListener = {
+            applyUserProperties: function (p) {
+                calls++;
+                if (calls > 50) { throw new Error('recursion'); }
+                window.wallpaperPropertyListener = this;
+                deliveries.push(p);
+            }
+        };
+        """)
+        context.evaluateScript(bootstrapScriptForOneBoolProperty())
+        #expect(context.exception == nil)
+        #expect(context.evaluateScript("calls")?.toInt32() == 1)
+        #expect(context.evaluateScript("deliveries.length")?.toInt32() == 1)
+    }
+
+    /// A hot update that lands before `load` must not be overwritten when the bootstrap's delayed
+    /// delivery finally fires with the values it captured at documentEnd.
+    @Test("A hot update before load is not overwritten by the cold-start snapshot")
+    func hotUpdateBeforeLoadSurvivesTheSnapshot() throws {
+        let context = try makeBootstrapContext(readyState: "loading")
+        context.evaluateScript(bootstrapScriptForOneBoolProperty())
+        #expect(context.evaluateScript("deliveries.length")?.toInt32() == 0)
+
+        let schema = try WallpaperEngineProjectPropertySchema.parse(data: Data("""
+        { "general": { "properties": { "introanimation": { "type": "bool", "value": true } } } }
+        """.utf8))
+        let update = try #require(WallpaperEngineWebPropertyBridge.applyScript(
+            schema: schema, previousOverrides: [:], overrides: ["introanimation": .bool(false)]
+        ))
+        context.evaluateScript(update)
+        #expect(context.evaluateScript("deliveries.length")?.toInt32() == 1)
+        #expect(context.evaluateScript("deliveries[0].introanimation.value")?.toBool() == false)
+
+        context.evaluateScript("fireLoad();")
+        let last = context.evaluateScript("deliveries[deliveries.length - 1].introanimation.value")?.toBool()
+        #expect(last == false, "the delayed cold-start delivery re-sent the documentEnd value over the user's newer one")
+        #expect(context.exception == nil)
+    }
+
     private func bootstrapScriptForOneBoolProperty() -> String {
         let schema = try? WallpaperEngineProjectPropertySchema.parse(data: Data("""
         {

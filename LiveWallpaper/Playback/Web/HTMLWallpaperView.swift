@@ -1052,8 +1052,11 @@ extension HTMLWallpaperView: WKNavigationDelegate {
             currentGeneration: preparationGeneration
         ) else { return }
         resetNavigationFailureState()
-        // A load that succeeded outside `retry()` (config rebuild, scheduler) still retires the classified cause.
-        onFailureCause?(nil)
+        // A load that succeeded outside `retry()` (config rebuild, scheduler) still retires the classified
+        // cause — unless this generation already failed: an HTTP error page finishes loading like any document.
+        if failedPreparationGeneration != preparationGeneration {
+            onFailureCause?(nil)
+        }
         completedNavigationGeneration = preparationGeneration
         let volume = HTMLWallpaperRuntimeScript.jsNumber(lastAppliedConfig?.audioVolume ?? 1.0)
         let muted = lastAppliedConfig?.muteAudio == true ? "true" : "false"

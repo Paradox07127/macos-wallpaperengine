@@ -191,10 +191,17 @@ final class SteamConnectorCallerLiveness: Sendable {
         state.withLock { $0.ownedOperationIDs.insert(operationID) }
     }
 
-    /// Checked at the top of every queued body. False once the connection is gone or the request waited past the budget (the client has certainly timed out).
+    /// Checked at the top of every queued body and again right before a child is spawned. False once the
+    /// connection is gone, the host is exiting, or the request waited past the budget (the client has certainly timed out).
     func isLive(enqueuedAt: Date, now: Date = Date()) -> Bool {
-        guard !state.withLock({ $0.abandoned }) else { return false }
+        guard !SteamCMDActiveProcessRegistry.hostExiting, !state.withLock({ $0.abandoned }) else { return false }
         return now.timeIntervalSince(enqueuedAt) <= maxQueueWait
+    }
+
+    /// The reply is on its way: a later invalidation of this connection must not signal a successor
+    /// that the app started under the same operation id (dependency chains reuse one attempt id).
+    func disown(operationID: String) {
+        state.withLock { _ = $0.ownedOperationIDs.remove(operationID) }
     }
 
     /// Idempotent. `terminate` receives each operation this connection started; the registry decides whether that operation's child is the active one.
@@ -226,8 +233,28 @@ final class SteamCMDActiveProcessRegistry: Sendable {
 
     private let state = OSAllocatedUnfairLock<Active?>(initialState: nil)
 
-    func register(pid: pid_t, hasOwnGroup: Bool, operationID: String?) {
+    /// Set once by host exit and never cleared: the serial queue would otherwise start the next
+    /// queued body's child after the one that was signalled, and launchd's SIGKILL of the service
+    /// leaves that child running.
+    private static let hostExitState = OSAllocatedUnfairLock(initialState: false)
+
+    static var hostExiting: Bool {
+        hostExitState.withLock { $0 }
+    }
+
+    #if DEBUG
+    /// The latch is process-wide; tests that raise it must lower it again.
+    static func resetHostExitForTesting() {
+        hostExitState.withLock { $0 = false }
+    }
+    #endif
+
+    /// A child registered after this is signalled immediately by `register`.
+    func register(pid: pid_t, hasOwnGroup: Bool, operationID: String?, kill: (pid_t, Int32) -> Int32 = { Darwin.kill($0, $1) }) {
         state.withLock { $0 = Active(pid: pid, hasOwnGroup: hasOwnGroup, operationID: operationID) }
+        if Self.hostExiting {
+            _ = kill(hasOwnGroup ? -pid : pid, SIGTERM)
+        }
     }
 
     func clear() {
@@ -247,7 +274,9 @@ final class SteamCMDActiveProcessRegistry: Sendable {
     }
 
     /// Host exit only: no operation id check, because after a quit there is no later run for a stale cancel to hit.
+    /// Also latches `hostExiting`, so queued bodies bail and a child that slips through `register` is signalled there.
     func terminateActiveForHostExit(kill: (pid_t, Int32) -> Int32 = { Darwin.kill($0, $1) }) -> Bool {
+        Self.hostExitState.withLock { $0 = true }
         guard let active = state.withLock({ $0 }) else { return false }
         _ = kill(active.hasOwnGroup ? -active.pid : active.pid, SIGTERM)
         return true
