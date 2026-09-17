@@ -7,38 +7,42 @@
     <description>Updates for Loomscreen</description>
     <language>en</language>
     <item>
-      <title>Version 0.6.7</title>
-      <pubDate>Tue, 08 Sep 2026 08:52:05 +0000</pubDate>
-      <sparkle:version>0.6.7</sparkle:version>
-      <sparkle:shortVersionString>0.6.7</sparkle:shortVersionString>
+      <title>Version 0.7.0</title>
+      <pubDate>Thu, 17 Sep 2026 07:58:06 +0000</pubDate>
+      <sparkle:version>0.7.0</sparkle:version>
+      <sparkle:shortVersionString>0.7.0</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.6</sparkle:minimumSystemVersion>
       <description sparkle:descriptionFormat="html"><![CDATA[
 <p><strong>What's New</strong></p>
 <ul>
-<li>A Nixie clock overlay: one tube clock per display, on the desktop or above your windows. Drag it to move it, drag its corner to resize</li>
-<li>System Overview tile for the Monitor board — CPU, memory, network, disk and power in a single widget</li>
-<li>A wallpaper that fails to load now says so on the display's page: what failed and why, with Retry, the full details, and a prefilled problem report. Your desktop keeps the wallpaper it had, and the card names it</li>
-<li>The Workshop detail sheet lists the items a wallpaper requires, each openable on its own</li>
-<li>Settings ▸ Workshop: a default sort and time frame for Browse, blurred Mature covers, and hiding items already in your library</li>
+<li>Custom frame rate: any target from 1 FPS up to your display's refresh rate, per display and as a default, with a slider and a number field</li>
+<li>Saved wallpapers and schemes show a real cover — the frame that was on screen when you saved</li>
+<li>A scene you come back to opens on its last live frame instead of the static poster, and the detail page can recapture it</li>
+<li>Pro: HDR output for Wallpaper Engine scenes on EDR displays (Settings ▸ Performance)</li>
 </ul>
 <p><strong>Improvements</strong></p>
 <ul>
-<li>Browsing the Workshop without a Steam API key now reads Steam's own browse page: one request per page, with creator names and a real page count</li>
-<li>Keyed search gained tag groups and search-field targeting, and falls back to the keyless path by itself when Valve rejects the key</li>
-<li>Maturity starts at Everyone, the way the signed-out Steam page browses</li>
-<li>Workshop requests retry a dropped connection or a busy server; a rate limit reports how long it lasts instead of hanging on it</li>
-<li>The Processes and agent tiles show each process's own app icon</li>
+<li>Pro: scenes render with less GPU work per frame — consecutive layers share one encoder, and redundant clears and copies are skipped</li>
+<li>Pro: a scene's scripts, animated textures and background decodes are bounded and reclaimed when the scene goes away</li>
+<li>Library pages use fixed-width columns, so a card keeps its place as the window widens</li>
+<li>The Workshop detail header fits the inspector, and the preset bar is one row</li>
+<li>Web wallpapers receive their properties once the page is ready, and the audio visualizer is bridged</li>
+<li>Quitting stops a SteamCMD download that was still running</li>
+<li>A full-screen app that stops at the notch is recognised as full screen</li>
 </ul>
 <p><strong>Bug Fixes</strong></p>
 <ul>
-<li>Board edit controls were about seven points tall in the inspector preview</li>
-<li>The log sheet kept its first page of text when the log grew while it was open</li>
-<li>Pro: trail particles — rain among them — pointed the wrong way on rotated or scaled emitters</li>
-<li>Pro: an object's alpha script never reached its particles, and animated textures were loaded in the wrong colour space</li>
+<li>A bookmark saved while a Workshop scene was playing could be deleted along with that scene</li>
+<li>Web: a page answering 404 no longer offers Retry, and a missing index page is reported as missing</li>
+<li>Pro: perspective particles in 3D scenes had lost their depth scaling</li>
+<li>Pro: rain and pulse effects are aligned with Wallpaper Engine</li>
+<li>Gallery tiles no longer flash when they scroll back into view</li>
+<li>A low frame rate ran particles at half speed</li>
+<li>The frame-rate field on a 60 Hz display no longer overwrites a 120 FPS target saved for another display</li>
 </ul>
-<p><small>Not notarized — if macOS refuses to open the app, run <code>xattr -dr com.apple.quarantine "/Applications/Loomscreen.app"</code> once; updates Loomscreen installs itself clear the flag. <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.6.7">Full release notes</a> · <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.6.7">完整发布说明</a></small></p>
+<p><small>Not notarized — if macOS refuses to open the app, run <code>xattr -dr com.apple.quarantine "/Applications/Loomscreen.app"</code> once; updates Loomscreen installs itself clear the flag. <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.7.0">Full release notes</a> · <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.7.0">完整发布说明</a></small></p>
       ]]></description>
-      <enclosure url="https://github.com/Paradox07127/macos-wallpaperengine/releases/download/loomscreen-v0.6.7/Loomscreen-0.6.7.dmg" type="application/octet-stream" sparkle:edSignature="A4rHpiUqak4uN7/ACKRep4NoQ+5MDOVepF2elbTDqwm2dYte3P2NvyRDe3LEEAt1a0FNQW4rw2oZQlhh8/VsCg==" length="15472417" />
+      <enclosure url="https://github.com/Paradox07127/macos-wallpaperengine/releases/download/loomscreen-v0.7.0/Loomscreen-0.7.0.dmg" type="application/octet-stream" sparkle:edSignature="OXItbHN3aNmE4AswBKVMOXXCZvbW8ig0SfJ3U5MS3vXoZonbWe4l5oWEWGgKRDLnb0CAq5XrZnqBTOetzvGrCw==" length="15919746" />
     </item>
   </channel>
 </rss>
