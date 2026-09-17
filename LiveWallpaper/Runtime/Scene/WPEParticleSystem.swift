@@ -1136,6 +1136,9 @@ final class WPEParticleSystem {
 
     private var systemElapsed: Double = 0
 
+    /// The previous tick's simulated interval; the catch-up bound scales with it.
+    private var lastFrameInterval: Double = 0
+
     private func advance(now: Double) {
         guard now.isFinite else { return }
         spawnEventsThisTick.removeAll(keepingCapacity: true)
@@ -1145,9 +1148,12 @@ final class WPEParticleSystem {
         if firstTickTime == nil {
             firstTickTime = now
         }
-        // Bound catch-up after suspension at one second — the longest frame a 1 FPS target produces —
-        // so a low-FPS frame is simulated in full; each simulation step is still at most 1/60 second.
-        let delta = max(0, min(now - (lastTickTime ?? now), 1.0))
+        // A frame no longer than twice the previous one is simulated in full (a 1 FPS target
+        // produces 1 s frames); anything longer is a resume from suspension and is bounded to
+        // 0.1 s so the catch-up cannot emit one large batch. Each step is still at most 1/60 s.
+        let raw = max(0, now - (lastTickTime ?? now))
+        let delta = min(raw, max(0.1, 2 * lastFrameInterval))
+        lastFrameInterval = delta
         let steps = max(1, Int(ceil(delta * 60 - 1e-6)))
         let step = delta / Double(steps)
         for index in 0 ..< steps {
