@@ -13,6 +13,54 @@ will be cut once the surface has stabilized through real-world use.
 Entries identify Pro-only features where applicable. Versioned entries describe
 what shipped at that time; current behavior is documented in `docs/`.
 
+## [0.7.0] — 2026-09-17
+
+### Added
+
+- Custom frame rate: any target from 1 FPS up to the display's refresh rate,
+  per display and as a display default, set with a slider or a number field.
+  A target above a display's refresh rate is kept for the displays that can
+  reach it.
+- Saved wallpapers and schemes carry a real cover: the frame that was on
+  screen when they were saved.
+- A scene's detail page reopens on its last live frame instead of the static
+  poster, and can recapture it on demand.
+- Pro: HDR output for Wallpaper Engine scenes on EDR displays, off by default
+  under Settings → Performance.
+
+### Changed
+
+- Pro: consecutive solid scene layers share one render encoder, redundant
+  first-frame clears and full-frame passthrough copies are elided, and
+  derived uniforms are packed directly into SIMD slots.
+- Pro: scene scripts, animated textures and background decodes are bounded
+  per scene and reclaimed when the scene is retired.
+- Library pages lay out in fixed-width columns packed from the leading edge,
+  so a card keeps its place while the window widens.
+- The Workshop detail header fits the inspector's width, and the scene preset
+  bar is a single row with a pull-down menu.
+- Web wallpapers receive their Wallpaper Engine properties once the page is
+  ready, and the audio visualizer is bridged to the system loopback.
+- Quitting signals a SteamCMD child that is still running, including one
+  started by a probe or a login, instead of leaving it to launchd.
+- A full-screen window that stops at the notch's safe area counts as full
+  screen rather than as an ordinary occluding window.
+
+### Fixed
+
+- A bookmark saved while a Workshop scene was playing inherited that scene's
+  origin, so removing the scene deleted the bookmark too.
+- Web: a page answering 4xx was offered Retry after its error document
+  finished loading, and a local project with no index page was classified
+  as a generic load failure.
+- Pro: perspective sprite particles in 3D scenes were drawn as orthographic
+  quads once the CPU depth scale was moved to the GPU path.
+- Pro: rain simulation and pulse rendering are aligned with Wallpaper Engine.
+- Gallery tiles flashed when they scrolled back into view.
+- A low target frame rate simulated particles at a fraction of real time.
+- The frame-rate control on a 60 Hz display highlighted and rewrote a 120 FPS
+  target saved for a faster display.
+
 ## [0.6.7] — 2026-09-08
 
 ### Added
