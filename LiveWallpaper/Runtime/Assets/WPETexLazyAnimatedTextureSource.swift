@@ -13,6 +13,7 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
 
     enum Failure: Error, Equatable, Sendable {
         case missingFrames
+        case invalidFrameGeometryOrTiming
         case unsupportedFormat(Int)
         case missingCompressedImage(Int)
         case missingMipmap(Int)
@@ -107,6 +108,20 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
         guard let format = payload.info.format else {
             throw Failure.unsupportedFormat(payload.info.textureFormatCode)
         }
+        guard payload.frameRate.isFinite else { throw Failure.invalidFrameGeometryOrTiming }
+        for frame in payload.frames {
+            let rect = frame.subRect
+            guard frame.duration.isFinite,
+                  [rect.origin.x, rect.origin.y, rect.size.width, rect.size.height].allSatisfy(\.isFinite) else {
+                throw Failure.invalidFrameGeometryOrTiming
+            }
+            if let descriptor = frame.samplingDescriptor {
+                guard (0 ..< 4).allSatisfy({ descriptor.rotation[$0].isFinite }),
+                      (0 ..< 2).allSatisfy({ descriptor.translation[$0].isFinite }) else {
+                    throw Failure.invalidFrameGeometryOrTiming
+                }
+            }
+        }
         for image in payload.compressedImages {
             try WPETexMipValidation.streamingImage(image)
         }
@@ -129,8 +144,6 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
         self.label = label
         self.maximumTextureDimension2D = maximumTextureDimension2D
             ?? WPEMetalTextureLimits.maximum2DTextureDimension(for: device)
-        self.frameByteCache = frameByteCache
-        self.cacheToken = frameByteCache.registerSource()
 
         var cursor: TimeInterval = 0
         var starts: [TimeInterval] = []
@@ -138,9 +151,12 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
         for frame in payload.frames {
             starts.append(cursor)
             cursor += frame.duration > 0 ? frame.duration : 1.0 / self.frameRate
+            guard cursor.isFinite else { throw Failure.invalidFrameGeometryOrTiming }
         }
         self.frameStartTimes = starts
         self.totalDuration = cursor > 0 ? cursor : Double(payload.frames.count) / self.frameRate
+        self.frameByteCache = frameByteCache
+        cacheToken = frameByteCache.registerSource()
     }
 
     deinit {
@@ -381,13 +397,14 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
         let bytesPerRow: Int
     }
 
-    /// Crop sub-rect (row copy or 4×4 BC blocks). Non-block-aligned BC rects throw. A full-image frame uploads the decoded buffer directly.
+    /// Crop sub-rect (row copy or 4×4 BC blocks). Origins must align; partial
+    /// blocks are legal only at the source edge. Whole images reuse decoded bytes.
     private func crop(image: Data, frame: WPETexStreamingFrame, frameSlot: Int) throws -> Cropped {
         guard compressedImages.indices.contains(frame.imageID),
               let mipmap = compressedImages[frame.imageID].payloads.first else {
             throw Failure.missingCompressedImage(frame.imageID)
         }
-        let rect = pixelRect(frame.subRect, width: mipmap.width, height: mipmap.height)
+        let rect = try pixelRect(frame.subRect, width: mipmap.width, height: mipmap.height)
         try validateTextureDimensions(width: rect.width, height: rect.height)
         let coversFullImage = rect.x == 0 && rect.y == 0
             && rect.width == mipmap.width && rect.height == mipmap.height
@@ -423,8 +440,8 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
         let blockSize = 4
         guard rect.x % blockSize == 0,
               rect.y % blockSize == 0,
-              rect.width % blockSize == 0,
-              rect.height % blockSize == 0 else {
+              rect.width % blockSize == 0 || rect.x + rect.width == mipmap.width,
+              rect.height % blockSize == 0 || rect.y + rect.height == mipmap.height else {
             throw Failure.subRectNotBlockAligned(
                 CGRect(x: rect.x, y: rect.y, width: rect.width, height: rect.height),
                 blockSize: blockSize
@@ -432,8 +449,8 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
         }
         let sourceBlocksX = max((mipmap.width + blockSize - 1) / blockSize, 1)
         let sourceBlocksY = max((mipmap.height + blockSize - 1) / blockSize, 1)
-        let cropBlocksX = rect.width / blockSize
-        let cropBlocksY = rect.height / blockSize
+        let cropBlocksX = (rect.width + blockSize - 1) / blockSize
+        let cropBlocksY = (rect.height + blockSize - 1) / blockSize
         let originBlockX = rect.x / blockSize
         let originBlockY = rect.y / blockSize
         let sourceBytesPerBlockRow = sourceBlocksX * bytesPerBlock
@@ -479,17 +496,22 @@ final class WPETexLazyAnimatedTextureSource: WPEDynamicTextureSource {
         let height: Int
     }
 
-    private func pixelRect(_ rect: CGRect, width: Int, height: Int) -> PixelRect {
+    private func pixelRect(_ rect: CGRect, width: Int, height: Int) throws -> PixelRect {
+        guard [rect.origin.x, rect.origin.y, rect.size.width, rect.size.height].allSatisfy(\.isFinite) else {
+            throw Failure.invalidFrameGeometryOrTiming
+        }
         // Snap float pixel coords to nearest (2415.9999→2416) before clamp — avoids 1px seams.
         let snappedX = rect.origin.x.rounded(.toNearestOrAwayFromZero)
         let snappedY = rect.origin.y.rounded(.toNearestOrAwayFromZero)
         let snappedW = rect.width.rounded(.toNearestOrAwayFromZero)
         let snappedH = rect.height.rounded(.toNearestOrAwayFromZero)
 
-        let x = min(max(Int(snappedX), 0), max(width - 1, 0))
-        let y = min(max(Int(snappedY), 0), max(height - 1, 0))
-        let w = min(max(Int(snappedW), 1), max(width - x, 1))
-        let h = min(max(Int(snappedH), 1), max(height - y, 1))
+        // Clamp in floating point before Int conversion: finite values may
+        // still lie outside Int's range. Mip dimensions have already been bounded.
+        let x = Int(min(max(snappedX, 0), CGFloat(max(width - 1, 0))))
+        let y = Int(min(max(snappedY, 0), CGFloat(max(height - 1, 0))))
+        let w = Int(min(max(snappedW, 1), CGFloat(max(width - x, 1))))
+        let h = Int(min(max(snappedH, 1), CGFloat(max(height - y, 1))))
         return PixelRect(x: x, y: y, width: w, height: h)
     }
 

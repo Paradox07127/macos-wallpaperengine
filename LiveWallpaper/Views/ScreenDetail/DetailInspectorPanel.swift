@@ -21,6 +21,38 @@ struct DetailInspectorPanel: View {
     @State private var wpeSceneCustomSettingsResolved = false
     @State private var wpeSceneSettingsFailure: String?
     @State private var schemaReload = 0
+
+    init(
+        screen: Screen,
+        draft: Binding<DraftState>,
+        screenManager: ScreenManager,
+        featureCatalog: FeatureCatalog,
+        reduceMotion: Bool,
+        inspectorPanelWidth: CGFloat,
+        isColorExpanded: Binding<Bool>,
+        onWallpaperModeChange: @escaping (WallpaperMode) -> Void,
+        showsResetDisplaySettings: Bool,
+        onResetDisplaySettings: @escaping () -> Void
+    ) {
+        self.screen = screen
+        _draft = draft
+        self.screenManager = screenManager
+        self.featureCatalog = featureCatalog
+        self.reduceMotion = reduceMotion
+        self.inspectorPanelWidth = inspectorPanelWidth
+        _isColorExpanded = isColorExpanded
+        self.onWallpaperModeChange = onWallpaperModeChange
+        self.showsResetDisplaySettings = showsResetDisplaySettings
+        self.onResetDisplaySettings = onResetDisplaySettings
+        // A memoized answer renders on the panel's first frame instead of behind the loading placeholder.
+        let current = draft.wrappedValue
+        if current.selectedWallpaperType == .scene,
+           let descriptor = current.sceneDescriptor,
+           let cached = WPESceneProjectSchemaLoader.cachedOutcome(descriptor: descriptor, wpeOrigin: current.wpeOrigin) {
+            _wpeSceneCustomSettingsSchema = State(initialValue: cached.schema)
+            _wpeSceneCustomSettingsResolved = State(initialValue: true)
+        }
+    }
     #endif
 
     var body: some View {
@@ -79,7 +111,11 @@ struct DetailInspectorPanel: View {
                         VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
                             Label("Unable to Read Settings", systemImage: "exclamationmark.triangle")
                             Text(verbatim: failure).textSelection(.enabled)
-                            Button("Reload Settings") { schemaReload += 1 }.buttonStyle(.bordered)
+                            Button("Reload Settings") {
+                                WPESceneProjectSchemaLoader.invalidateCache()
+                                schemaReload += 1
+                            }
+                            .buttonStyle(.bordered)
                         }
                         .font(DesignTokens.Typography.body)
                     } else if wpeSceneCustomSettingsResolved {
@@ -150,6 +186,12 @@ struct DetailInspectorPanel: View {
               let descriptor = draft.sceneDescriptor else {
             wpeSceneCustomSettingsSchema = nil
             wpeSceneCustomSettingsResolved = false
+            return
+        }
+        if let cached = WPESceneProjectSchemaLoader.cachedOutcome(descriptor: descriptor, wpeOrigin: draft.wpeOrigin) {
+            wpeSceneCustomSettingsSchema = cached.schema
+            wpeSceneSettingsFailure = nil
+            wpeSceneCustomSettingsResolved = true
             return
         }
         wpeSceneCustomSettingsSchema = nil

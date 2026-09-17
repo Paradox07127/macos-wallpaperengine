@@ -83,10 +83,7 @@ struct SchemeLibraryView: View {
             )
         } else {
             ScrollView {
-                LazyVGrid(
-                    columns: DesignTokens.LibraryGrid.columns(for: tileSize, aspect: .wide),
-                    spacing: DesignTokens.LibraryGrid.spacing
-                ) {
+                LibraryGalleryGrid(size: tileSize, aspect: .wide) {
                     ForEach(visible) { scheme in
                         SchemeTile(
                             scheme: scheme,
@@ -141,9 +138,19 @@ struct SchemeLibraryView: View {
                           // Re-read both sides: the archive and the display list can
                           // both change while the provider read is in flight.
                           let scheme = store.schemes.first(where: { $0.id == id }),
-                          let target = screenManager.screens.first(where: { $0.id == screen.id })
+                          screenManager.screens.contains(where: { $0.id == screen.id })
                     else { return }
-                    requestApply(scheme, to: target)
+                    // Same gate as the tile: a veiled scheme is not applied by dropping it either.
+                    Task { @MainActor in
+                        let location = await LibraryContentLocator.locate(
+                            content: scheme.configuration.activeWallpaper,
+                            wpeOrigin: scheme.configuration.wpeOrigin
+                        )
+                        guard location.isAvailable,
+                              let target = screenManager.screens.first(where: { $0.id == screen.id })
+                        else { return }
+                        requestApply(scheme, to: target)
+                    }
                 }
             }
         )
@@ -263,7 +270,8 @@ private struct SchemeTile: View {
             .accessibilityElement(children: .combine)
             .accessibilityLabel(accessibilityLabel)
             .accessibilityActions {
-                if screens.count == 1, let only = screens.first {
+                // Same gate as the tap and the context menu.
+                if location.isAvailable, screens.count == 1, let only = screens.first {
                     Button("Apply") { onApply(only) }
                 }
                 Button("Rename", action: onStartRename)

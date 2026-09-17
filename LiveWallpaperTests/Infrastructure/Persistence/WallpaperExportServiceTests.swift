@@ -121,6 +121,29 @@ struct WallpaperExportServiceTests {
         return Rig(service: service, root: root, sourceDirectory: sources)
     }
 
+    // MARK: - Provider declaration
+
+    @Test("The launch step declares the bundled appex so idle instances elsewhere can retire")
+    func launchDeclaresBundledProvider() throws {
+        let installed = SystemWallpaperProviderIdentity(
+            build: "42", bundlePath: "/Applications/Loomscreen.app/Contents/Extensions/P.appex", pid: 0
+        )
+        let rig = try makeRig(expectedProvider: installed)
+        let file = rig.root.appendingPathComponent("provider.json")
+        // Init only reads: the test host is the real app and must not declare itself into the real container.
+        #expect(!FileManager.default.fileExists(atPath: file.path))
+        rig.service.declareBundledProvider()
+        let declared = try SystemWallpaperCoding.decoder.decode(SystemWallpaperProviderIdentity.self, from: Data(contentsOf: file))
+        #expect(declared == installed)
+    }
+
+    @Test("No bundled appex means no declaration file")
+    func launchWithoutProviderDeclaresNothing() throws {
+        let rig = try makeRig(expectedProvider: nil)
+        rig.service.declareBundledProvider()
+        #expect(!FileManager.default.fileExists(atPath: rig.root.appendingPathComponent("provider.json").path))
+    }
+
     // MARK: - Publish
 
     @Test("Shared removal deletes both files — the path the system's own Remove takes")

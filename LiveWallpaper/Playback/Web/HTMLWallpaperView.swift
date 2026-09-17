@@ -1052,6 +1052,8 @@ extension HTMLWallpaperView: WKNavigationDelegate {
             currentGeneration: preparationGeneration
         ) else { return }
         resetNavigationFailureState()
+        // A load that succeeded outside `retry()` (config rebuild, scheduler) still retires the classified cause.
+        onFailureCause?(nil)
         completedNavigationGeneration = preparationGeneration
         let volume = HTMLWallpaperRuntimeScript.jsNumber(lastAppliedConfig?.audioVolume ?? 1.0)
         let muted = lastAppliedConfig?.muteAudio == true ? "true" : "false"
@@ -1121,9 +1123,16 @@ extension HTMLWallpaperView: WKNavigationDelegate {
                 description: nsError.localizedDescription
             ),
             cause: WebFailureCause.navigation(
-                domain: nsError.domain, code: nsError.code, description: nsError.localizedDescription
+                domain: nsError.domain, code: nsError.code, description: nsError.localizedDescription,
+                isLocalProject: isLocalProjectNavigation(webView: webView, error: nsError)
             )
         )
+    }
+
+    /// A provisional failure has no committed URL, so the source decides.
+    private func isLocalProjectNavigation(webView: WKWebView, error: NSError) -> Bool {
+        currentLocalReadAccessRoot != nil
+            || navigationFailureURL(webView: webView, error: error).scheme == FolderURLSchemeHandler.scheme
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
@@ -1140,9 +1149,7 @@ extension HTMLWallpaperView: WKNavigationDelegate {
         if shouldRetryNavigationFailure() { return }
         let cause = WebFailureCause.navigation(
             domain: nsError.domain, code: nsError.code, description: nsError.localizedDescription,
-            // A provisional failure has no committed URL, so the source decides.
-            isLocalProject: currentLocalReadAccessRoot != nil
-                || navigationFailureURL(webView: webView, error: nsError).scheme == FolderURLSchemeHandler.scheme
+            isLocalProject: isLocalProjectNavigation(webView: webView, error: nsError)
         )
         if nsError.domain == NSURLErrorDomain, nsError.code == NSURLErrorNotConnectedToInternet {
             reportError(.networkOffline, cause: cause)

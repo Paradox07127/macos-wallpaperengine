@@ -12,6 +12,13 @@ class ServiceDelegate: NSObject, NSXPCListenerDelegate {
         let exportedObject = SteamConnector()
         exportedObject.progressSink = newConnection.remoteObjectProxy as? any SteamConnectorProgressProtocol
         newConnection.exportedObject = exportedObject
+        // The connection is the client's interest in its work: an app that
+        // cancelled, quit, or crashed must not leave SteamCMD downloading for
+        // nobody. XPC drops this handler after invalidation, so the capture
+        // is not a cycle.
+        newConnection.invalidationHandler = { [weak exportedObject] in
+            exportedObject?.clientWentAway()
+        }
         newConnection.resume()
         return true
     }

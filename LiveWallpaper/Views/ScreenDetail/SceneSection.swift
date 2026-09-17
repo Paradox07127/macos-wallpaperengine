@@ -150,6 +150,7 @@ struct SceneSection: View {
                 origin: origin,
                 descriptor: descriptor,
                 session: session,
+                isPlaying: screenManager.wallpaperSummary(for: screen).activity == .active,
                 fitMode: $fitMode,
                 playbackControls: playbackControls
             )

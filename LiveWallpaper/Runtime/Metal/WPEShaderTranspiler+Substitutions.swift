@@ -882,7 +882,7 @@ extension WPEShaderTranspiler {
 
     /// Ranges of the comma-separated arguments between `open` and `close`, ignoring commas nested
     /// in parentheses or brackets.
-    private static func topLevelArgumentRanges(
+    static func topLevelArgumentRanges(
         in source: String,
         open: String.Index,
         close: String.Index

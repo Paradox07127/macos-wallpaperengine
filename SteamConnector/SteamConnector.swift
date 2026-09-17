@@ -35,10 +35,19 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
     /// nobody listening, after the UI already reported failure.
     private static let maxQueueWait: TimeInterval = 900
 
-    /// True when this request waited so long that its caller has certainly
-    /// timed out. Must be checked at the top of every queued body.
-    private static func callerAbandoned(enqueuedAt: Date) -> Bool {
-        Date().timeIntervalSince(enqueuedAt) > maxQueueWait
+    /// Captured by every queued body (never `self`): the listener marks it
+    /// abandoned when this connection is invalidated.
+    let callerLiveness = SteamConnectorCallerLiveness(maxQueueWait: maxQueueWait)
+
+    /// The client is gone (cancelled, quit, or crashed). Queued work bails at
+    /// its liveness check; the child this connection started is signalled the
+    /// way a user cancel would be.
+    func clientWentAway() {
+        callerLiveness.markAbandoned { operationID in
+            if Self.activeSteamCMD.terminateActive(operationID: operationID) {
+                NSLog("SteamConnector: client gone — signalled active SteamCMD for operation \(operationID)")
+            }
+        }
     }
 
     /// One wording for every entry point that could not produce a binary, so
@@ -340,9 +349,10 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         }
 
         // Off the XPC handler queue: this blocks on a child process.
+        let liveness = callerLiveness
         let enqueuedAt = Date()
         Self.steamCMDQueue.async {
-            guard !Self.callerAbandoned(enqueuedAt: enqueuedAt) else {
+            guard liveness.isLive(enqueuedAt: enqueuedAt) else {
                 respond(SteamCachedLoginResult(outcome: .timedOut, steamID64: nil, diagnosticTail: ""))
                 return
             }
@@ -368,6 +378,7 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         operationID: String,
         with reply: @escaping @Sendable (Data) -> Void
     ) {
+        callerLiveness.own(operationID: operationID)
         @Sendable func respond(_ outcome: SteamWorkshopDownloadResult.Outcome, tail: String = "", path: String? = nil, executed: String? = nil) {
             let result = SteamWorkshopDownloadResult(
                 outcome: outcome,
@@ -390,9 +401,10 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         }
 
         let sink = progressSink
+        let liveness = callerLiveness
         let enqueuedAt = Date()
         Self.steamCMDQueue.async {
-            guard !Self.callerAbandoned(enqueuedAt: enqueuedAt) else { respond(.timedOut); return }
+            guard liveness.isLive(enqueuedAt: enqueuedAt) else { respond(.timedOut); return }
             // Same pre-spawn resolution as every other entry: after the queue
             // wait, so a managed install that landed while this was queued is
             // the one that runs.
@@ -481,9 +493,10 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
             return
         }
 
+        let liveness = callerLiveness
         let enqueuedAt = Date()
         Self.steamCMDQueue.async {
-            guard !Self.callerAbandoned(enqueuedAt: enqueuedAt) else { respond(.timedOut); return }
+            guard liveness.isLive(enqueuedAt: enqueuedAt) else { respond(.timedOut); return }
             guard let steamCMDPath = Self.resolvedExecutablePath() else {
                 respond(.steamCMDUnavailable, tail: Self.noExecutableReason)
                 return
@@ -579,9 +592,10 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         // library directly: an unlink walking the same item tree a running
         // `workshop_download_item` is writing would leave a half-deleted item
         // and a download that reports success over missing files.
+        let liveness = callerLiveness
         let enqueuedAt = Date()
         Self.steamCMDQueue.async {
-            guard !Self.callerAbandoned(enqueuedAt: enqueuedAt) else {
+            guard liveness.isLive(enqueuedAt: enqueuedAt) else {
                 let expired = SteamDeleteResult(
                     outcome: .refused,
                     freedBytes: 0,
@@ -603,6 +617,15 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         reply((try? JSONEncoder().encode(killed)) ?? Data())
     }
 
+    /// Same off-queue reasoning as `cancelActiveSteamCMD`.
+    func terminateActiveSteamCMDForHostExit(with reply: @escaping @Sendable (Data) -> Void) {
+        let killed = Self.activeSteamCMD.terminateActiveForHostExit()
+        if killed {
+            NSLog("SteamConnector: host exiting — signalled active SteamCMD")
+        }
+        reply((try? JSONEncoder().encode(killed)) ?? Data())
+    }
+
     // MARK: - Doctor probes
 
     func inspectSteamCMDBinary(path: String, with reply: @escaping @Sendable (Data) -> Void) {
@@ -616,9 +639,10 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         // codesign spawns, so it belongs behind the same serial queue as
         // SteamCMD: a self-updating binary must not be read mid-rewrite by an
         // inspection racing an install.
+        let liveness = callerLiveness
         let enqueuedAt = Date()
         Self.steamCMDQueue.async {
-            guard !Self.callerAbandoned(enqueuedAt: enqueuedAt) else {
+            guard liveness.isLive(enqueuedAt: enqueuedAt) else {
                 send(.unavailable("inspection expired while queued behind another SteamCMD operation"))
                 return
             }
@@ -662,10 +686,11 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
                 failureCode: .pathNotAbsolute
             ))
         }
+        let liveness = callerLiveness
         let enqueuedAt = Date()
         // codesign spawns; same serial queue as every other binary read.
         Self.steamCMDQueue.async {
-            guard !Self.callerAbandoned(enqueuedAt: enqueuedAt) else {
+            guard liveness.isLive(enqueuedAt: enqueuedAt) else {
                 return send(SteamCMDManualBindResult(
                     outcome: .refused, canonicalPath: nil,
                     failureReason: "bind expired while queued behind another SteamCMD operation",
@@ -848,9 +873,10 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         // Same serial queue as every other SteamCMD entry point: the final step
         // is a real SteamCMD run, and replacing the payload underneath a
         // download in flight would break it.
+        let liveness = callerLiveness
         let enqueuedAt = Date()
         Self.steamCMDQueue.async {
-            guard !Self.callerAbandoned(enqueuedAt: enqueuedAt) else {
+            guard liveness.isLive(enqueuedAt: enqueuedAt) else {
                 send(.failed(
                     .unavailable, "install expired while queued behind another SteamCMD operation",
                     code: .installExpiredInQueue
@@ -1061,9 +1087,10 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         }
         // Same serial queue as every other steamcmd run: an interactive login
         // and a download share one Steam profile and must not interleave.
+        let liveness = callerLiveness
         let enqueuedAt = Date()
         Self.steamCMDQueue.async {
-            guard !Self.callerAbandoned(enqueuedAt: enqueuedAt) else {
+            guard liveness.isLive(enqueuedAt: enqueuedAt) else {
                 send(.failed(.unavailable))
                 return
             }
@@ -1246,9 +1273,10 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         @Sendable func send(_ result: SteamCMDManagedRemovalResult) {
             reply((try? JSONEncoder().encode(result)) ?? Data())
         }
+        let liveness = callerLiveness
         let enqueuedAt = Date()
         Self.steamCMDQueue.async {
-            guard !Self.callerAbandoned(enqueuedAt: enqueuedAt) else {
+            guard liveness.isLive(enqueuedAt: enqueuedAt) else {
                 return send(SteamCMDManagedRemovalResult(
                     outcome: .refused,
                     failureReason: "removal expired while queued behind another SteamCMD operation"
@@ -1282,11 +1310,12 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         @Sendable func send(_ result: SteamAccountSessionRemovalResult) {
             reply((try? JSONEncoder().encode(result)) ?? Data())
         }
+        let liveness = callerLiveness
         let enqueuedAt = Date()
         // On the SteamCMD queue so a removal cannot run while a login or
         // download is using the same profile.
         Self.steamCMDQueue.async {
-            guard !Self.callerAbandoned(enqueuedAt: enqueuedAt) else {
+            guard liveness.isLive(enqueuedAt: enqueuedAt) else {
                 return send(SteamAccountSessionRemovalResult(
                     outcome: .refused,
                     failureReason: "removal expired while queued behind another SteamCMD operation"
@@ -1344,9 +1373,10 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
             send(.refused("probe arguments are not in the allowed diagnostic set"))
             return
         }
+        let liveness = callerLiveness
         let enqueuedAt = Date()
         Self.steamCMDQueue.async {
-            guard !Self.callerAbandoned(enqueuedAt: enqueuedAt) else {
+            guard liveness.isLive(enqueuedAt: enqueuedAt) else {
                 send(.refused("probe expired while queued"))
                 return
             }
@@ -1381,9 +1411,10 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         }
         // Ends in a real SteamCMD run, so it queues behind every other one: a
         // diagnosis racing a self-update would report on a half-written binary.
+        let liveness = callerLiveness
         let enqueuedAt = Date()
         Self.steamCMDQueue.async {
-            guard !Self.callerAbandoned(enqueuedAt: enqueuedAt) else {
+            guard liveness.isLive(enqueuedAt: enqueuedAt) else {
                 send(.unavailable("diagnosis expired while queued behind another SteamCMD operation"))
                 return
             }
@@ -1515,14 +1546,16 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         operationID: String,
         with reply: @escaping @Sendable (Data) -> Void
     ) {
+        callerLiveness.own(operationID: operationID)
         @Sendable func send(_ lookup: SteamEngineBuildLookup) {
             reply((try? JSONEncoder().encode(lookup)) ?? Data())
         }
         // Same lock as install and download: an update check must not race a
         // queued SteamCMD run.
+        let liveness = callerLiveness
         let enqueuedAt = Date()
         Self.steamCMDQueue.async {
-            guard !Self.callerAbandoned(enqueuedAt: enqueuedAt) else {
+            guard liveness.isLive(enqueuedAt: enqueuedAt) else {
                 send(.failed(.timedOut))
                 return
             }
@@ -1568,6 +1601,7 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         operationID: String,
         with reply: @escaping @Sendable (Data) -> Void
     ) {
+        callerLiveness.own(operationID: operationID)
         @Sendable func respond(_ outcome: SteamEngineAssetsResult.Outcome, tail: String = "", assets: String? = nil, build: String? = nil, executed: String? = nil) {
             let result = SteamEngineAssetsResult(
                 outcome: outcome,
@@ -1590,9 +1624,10 @@ final class SteamConnector: NSObject, SteamConnectorProtocol {
         }
 
         let sink = progressSink
+        let liveness = callerLiveness
         let enqueuedAt = Date()
         Self.steamCMDQueue.async {
-            guard !Self.callerAbandoned(enqueuedAt: enqueuedAt) else { respond(.timedOut); return }
+            guard liveness.isLive(enqueuedAt: enqueuedAt) else { respond(.timedOut); return }
             guard let steamCMDPath = Self.resolvedExecutablePath() else {
                 respond(.steamCMDUnavailable, tail: Self.noExecutableReason)
                 return

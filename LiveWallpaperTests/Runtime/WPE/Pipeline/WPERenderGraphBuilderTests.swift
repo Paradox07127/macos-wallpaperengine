@@ -3697,6 +3697,7 @@ struct WPEFullFramePassthroughElisionTests {
     private func pass(
         id: String, shader: String = "effects/opacity", source: WPETextureReference, target: WPERenderTarget,
         phase: WPERenderPassPhase = .effect(file: "effects/opacity/effect.json"), blending: String = "premultiplied",
+        cullMode: String = "nocull",
         depthTest: String = "disabled", bindings: [Int: WPETextureReference]? = nil,
         rawTextures: [Int: WPETextureReference]? = nil, rawBinds: [Int: WPETextureReference] = [:],
         combos: [String: Int] = [:], comboValues: [String: Int] = ["TEST_COMBO": 1],
@@ -3706,7 +3707,7 @@ struct WPEFullFramePassthroughElisionTests {
         let graph = WPERenderPass(
             id: id, phase: phase, shader: shader, source: source, target: target,
             textures: rawTextures ?? [0: source], binds: rawBinds, constants: [:], combos: combos,
-            userTextureBindings: userTextures, blending: blending, cullMode: "nocull",
+            userTextureBindings: userTextures, blending: blending, cullMode: cullMode,
             depthTest: depthTest, depthWrite: "disabled", constantScripts: constantScripts, visibilityGate: visibilityGate
         )
         return WPEPreparedRenderPass(
@@ -3718,13 +3719,14 @@ struct WPEFullFramePassthroughElisionTests {
     }
 
     private func passthrough(id: String, target: String, shader: String = "passthrough", blending: String = "premultiplied",
+                             cullMode: String = "nocull",
                              depthTest: String = "disabled", rawTextures: [Int: WPETextureReference]? = nil,
                              rawBinds: [Int: WPETextureReference] = [:], combos: [String: Int] = [:],
                              comboValues: [String: Int] = [:], constantScripts: [String: WPESceneTransformScript] = [:],
                              visibilityGate: WPEPassVisibilityGate? = nil,
                              userTextures: WPERenderUserTextureBindings = .empty) -> WPEPreparedRenderPass {
         pass(id: id, shader: shader, source: fullFrame, target: .layerComposite(name: target), phase: .material,
-             blending: blending, depthTest: depthTest, rawTextures: rawTextures, rawBinds: rawBinds, combos: combos,
+             blending: blending, cullMode: cullMode, depthTest: depthTest, rawTextures: rawTextures, rawBinds: rawBinds, combos: combos,
              comboValues: comboValues, constantScripts: constantScripts, visibilityGate: visibilityGate,
              userTextures: userTextures)
     }
@@ -3889,7 +3891,7 @@ struct WPEFullFramePassthroughElisionTests {
     @Test("Every admission condition rejects with its own reason and keeps the pipeline", arguments: [
         "composelayer", "non-identity-geometry", "special-layer", "single-pass", "passthrough-inputs-previous",
         "passthrough-inputs-extra", "passthrough-target", "passthrough-shader", "passthrough-clearalpha",
-        "passthrough-blending", "passthrough-depth", "passthrough-script", "passthrough-user-textures",
+        "passthrough-blending", "passthrough-cull", "passthrough-depth", "passthrough-script", "passthrough-user-textures",
         "passthrough-gate", "scene-write-before-rewrite", "first-rewriter-reads-passthrough",
         "first-rewriter-binds-previous", "first-rewriter-blends-destination", "private-composite-alias",
         "external-private-composite-access",
@@ -3934,6 +3936,9 @@ struct WPEFullFramePassthroughElisionTests {
             expected = "passthrough-render-semantics"
         case "passthrough-depth":
             passes[0] = passthrough(id: "post.0", target: names.a, depthTest: "enabled")
+            expected = "passthrough-render-semantics"
+        case "passthrough-cull":
+            passes[0] = passthrough(id: "post.0", target: names.a, cullMode: "normal")
             expected = "passthrough-render-semantics"
         case "passthrough-script":
             passes[0] = passthrough(id: "post.0", target: names.a,

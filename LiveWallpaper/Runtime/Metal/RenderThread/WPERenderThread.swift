@@ -1,5 +1,6 @@
 import Foundation
 import LiveWallpaperCore
+import os
 import QuartzCore
 
 /// Persistent serial render thread with a live run loop for display-link callbacks.
@@ -8,34 +9,106 @@ final class WPERenderThread: @unchecked Sendable {
 
     enum State {
         case running
-        /// New work must NOT run inline yet — that would overlap the still-draining thread and break `SerialExecutor` mutual exclusion. Late posts block until `.stopped`.
-        case stopping
-        /// New work now runs inline on the caller (serialized via `postShutdownLock`) with nothing to overlap.
+        /// The loop exits after its current pass; jobs posted meanwhile are drained by the exit path, still on the render thread.
+        case stopRequested
+        /// New work runs inline on the caller (serialized via `postShutdownLock`) with nothing left to overlap.
         case stopped
     }
 
-    /// One-shot handoff of the run loop from the render thread back to `init`,
-    /// consumed under the ready semaphore. `@unchecked Sendable`: written once on
-    /// the render thread, read once on the init thread with the semaphore as the
-    /// happens-before edge.
+    /// Lifecycle state shared with the run-loop thread. Created before the thread so the
+    /// thread closure never captures a half-initialized `self`. `@unchecked Sendable`: every
+    /// field is guarded by `condition`. It must not reference the loop or the drain source —
+    /// the source's context retains this object, and a back-reference would be a leak cycle.
+    private final class Lifecycle: @unchecked Sendable {
+        let condition = NSCondition()
+        var state: State = .running
+        /// FIFO of posted work. The render thread drains it from `drainSource`, and once more on exit.
+        var jobs: [@Sendable () -> Void] = []
+        /// True once the exit path has run the leftover jobs; joiners wait for this, not for `.stopped`.
+        var hasExited = false
+        /// Recursive because an inline job may itself re-enqueue synchronously. Mutual exclusion is the `SerialExecutor` contract — not same-thread.
+        let postShutdownLock = NSRecursiveLock()
+
+        #if DEBUG
+        static let liveCount = OSAllocatedUnfairLock(initialState: 0)
+
+        init() {
+            Self.liveCount.withLock { $0 += 1 }
+        }
+
+        deinit {
+            Self.liveCount.withLock { $0 -= 1 }
+        }
+        #endif
+
+        func takeJobs() -> [@Sendable () -> Void] {
+            condition.lock()
+            defer { condition.unlock() }
+            let taken = jobs
+            jobs.removeAll(keepingCapacity: true)
+            return taken
+        }
+
+        var isStopRequested: Bool {
+            condition.lock()
+            defer { condition.unlock() }
+            return state != .running
+        }
+
+        var hasExitedValue: Bool {
+            condition.lock()
+            defer { condition.unlock() }
+            return hasExited
+        }
+
+        /// Exit path, on the render thread. `.stopped` and the leftover takeover happen under one lock
+        /// acquisition so a concurrent post is either in `leftovers` or runs inline — never orphaned.
+        /// `postShutdownLock` is held across the leftovers so an inline post cannot overlap or overtake them.
+        func finishStopping() {
+            postShutdownLock.lock()
+            condition.lock()
+            state = .stopped
+            let leftovers = jobs
+            jobs.removeAll()
+            condition.unlock()
+            for job in leftovers {
+                job()
+            }
+            postShutdownLock.unlock()
+            condition.lock()
+            hasExited = true
+            condition.broadcast()
+            condition.unlock()
+        }
+
+        /// Blocks the caller until the thread has exited or `deadline` passes.
+        func waitForExit(until deadline: Date) -> Bool {
+            condition.lock()
+            defer { condition.unlock() }
+            while !hasExited {
+                guard condition.wait(until: deadline) else { break }
+            }
+            return hasExited
+        }
+    }
+
+    /// One-shot handoff of the loop objects from the render thread back to `init`, consumed
+    /// under the ready semaphore. `@unchecked Sendable`: written once on the render thread,
+    /// read once on the init thread with the semaphore as the happens-before edge.
     private final class LoopHandoff: @unchecked Sendable {
         var nsRunLoop: RunLoop?
         var cfRunLoop: CFRunLoop?
+        var drainSource: CFRunLoopSource?
         var pthread: pthread_t?
     }
 
-    private let stateCondition = NSCondition()
-    private var state: State = .running
-
-    /// Recursive because an inline job may itself re-enqueue synchronously. Mutual exclusion is the `SerialExecutor` contract — not same-thread.
-    private let postShutdownLock = NSRecursiveLock()
-
+    private let lifecycle = Lifecycle()
     private let backingThread: Thread
-    private let finishedSemaphore = DispatchSemaphore(value: 0)
 
     /// Populated by the time `init` returns and never mutated afterward.
     private let nsRunLoop: RunLoop
     private let cfRunLoop: CFRunLoop
+    private let drainSource: CFRunLoopSource
     private let backingPThread: pthread_t
 
     /// Escape hatch: `defaults write <bundle> loomscreen.wallpapers.adaptiveRenderQoS.v1 -bool NO` pins `.userInteractive`. Default ON.
@@ -68,35 +141,53 @@ final class WPERenderThread: @unchecked Sendable {
             adaptiveEnabled: adaptiveEnabled
         )
         adaptiveQoS = WPEAdaptiveRenderQoS(isEnabled: self.qosMode.isAdaptive)
+        let loopState = lifecycle
         let handoff = LoopHandoff()
         let ready = DispatchSemaphore(value: 0)
-        let finished = finishedSemaphore
 
         let thread = Thread {
             let ns = RunLoop.current
             let cf = ns.getCFRunLoop()
-            // A bare port is the keep-alive source so the loop never exits for lack of sources; the run loop retains it, so no stored ref needed.
-            ns.add(NSMachPort(), forMode: .common)
+
+            // The drain source is the loop's only permanent source: it keeps the mode non-empty and its callout runs every posted job on this thread.
+            var context = CFRunLoopSourceContext()
+            context.info = Unmanaged.passUnretained(loopState).toOpaque()
+            context.retain = { info in
+                UnsafeRawPointer(Unmanaged<Lifecycle>.fromOpaque(info!).retain().toOpaque())
+            }
+            context.release = { info in
+                Unmanaged<Lifecycle>.fromOpaque(info!).release()
+            }
+            context.perform = { info in
+                let lifecycle = Unmanaged<Lifecycle>.fromOpaque(info!).takeUnretainedValue()
+                for job in lifecycle.takeJobs() {
+                    job()
+                }
+            }
+            let source = CFRunLoopSourceCreate(kCFAllocatorDefault, 0, &context)!
+            CFRunLoopAddSource(cf, source, .commonModes)
 
             handoff.nsRunLoop = ns
             handoff.cfRunLoop = cf
+            handoff.drainSource = source
             handoff.pthread = pthread_self()
             ready.signal()
 
             // Return after each handled source so bridged Objective-C temporaries are released at frame cadence instead of only when the thread exits.
-            var keepRunning = true
-            while keepRunning {
-                var result: CFRunLoopRunResult = .finished
+            while true {
                 autoreleasepool {
-                    result = CFRunLoopRunInMode(
+                    _ = CFRunLoopRunInMode(
                         CFRunLoopMode.defaultMode,
                         60,
                         true
                     )
                 }
-                keepRunning = result != .stopped && result != .finished
+                // The exit decision is ours, not CoreFoundation's: CF's stop flag lives in per-run data and is discarded when a handled source or the timeout returns first, so a `CFRunLoopStop` can be lost. A signalled `drainSource` always makes the run return, so this check is always reached.
+                if loopState.isStopRequested {
+                    break
+                }
             }
-            finished.signal()
+            loopState.finishStopping()
         }
         thread.name = label
         // Base stays `.userInteractive` until the first frame; dropping earlier would invert priority for warm-up and any non-rendering caller.
@@ -105,40 +196,49 @@ final class WPERenderThread: @unchecked Sendable {
 
         thread.start()
         ready.wait()
-        self.nsRunLoop = handoff.nsRunLoop!
-        self.cfRunLoop = handoff.cfRunLoop!
-        self.backingPThread = handoff.pthread!
+        nsRunLoop = handoff.nsRunLoop!
+        cfRunLoop = handoff.cfRunLoop!
+        drainSource = handoff.drainSource!
+        backingPThread = handoff.pthread!
     }
 
     // MARK: - Introspection
 
     var isCurrent: Bool { Thread.current === backingThread }
 
+    #if DEBUG
+    /// Lifecycle objects still alive process-wide; a stopped, released thread must not keep one.
+    static var liveLifecycleCountForTesting: Int {
+        Lifecycle.liveCount.withLock { $0 }
+    }
+    #endif
+
     // MARK: - Work delivery
 
-    /// After shutdown the block runs inline on the caller (serialized via `postShutdownLock`) — it is never dropped.
+    /// Before exit enqueue never blocks the caller. The block is queued for the render thread (FIFO, drained by
+    /// the exit path if it arrives during the stop window); afterwards it runs inline on the caller,
+    /// serialized via `postShutdownLock` — it is never dropped.
     func perform(_ block: @escaping @Sendable () -> Void) {
-        stateCondition.lock()
-        switch state {
-        case .running:
-            // Enqueue under the lock so a post seen as `.running` always lands before the stop block and is drained, never dropped.
-            CFRunLoopPerformBlock(cfRunLoop, CFRunLoopMode.commonModes.rawValue, block)
-            CFRunLoopWakeUp(cfRunLoop)
-            stateCondition.unlock()
-        case .stopping:
-            // Wait for `.stopped` before running inline — otherwise this job would overlap the drain and break mutual exclusion.
-            while state == .stopping { stateCondition.wait() }
-            stateCondition.unlock()
-            runInline(block)
+        lifecycle.condition.lock()
+        switch lifecycle.state {
+        case .running, .stopRequested:
+            lifecycle.jobs.append(block)
+            lifecycle.condition.unlock()
+            signalDrain()
         case .stopped:
-            stateCondition.unlock()
+            lifecycle.condition.unlock()
             runInline(block)
         }
     }
 
+    private func signalDrain() {
+        CFRunLoopSourceSignal(drainSource)
+        CFRunLoopWakeUp(cfRunLoop)
+    }
+
     private func runInline(_ block: @Sendable () -> Void) {
-        postShutdownLock.lock()
-        defer { postShutdownLock.unlock() }
+        lifecycle.postShutdownLock.lock()
+        defer { lifecycle.postShutdownLock.unlock() }
         block()
     }
 
@@ -220,28 +320,83 @@ final class WPERenderThread: @unchecked Sendable {
 
     // MARK: - Shutdown
 
-    /// If called from the render thread itself it cannot join (would deadlock), so it only schedules the stop and returns.
-    func shutdown() {
-        let cf = cfRunLoop
-        stateCondition.lock()
-        guard state == .running else { stateCondition.unlock(); return }
-        state = .stopping
-        // FIFO: this stop block runs after every `.running` post; it is the correct place to publish `.stopped` so an inline post can no longer overlap one.
-        CFRunLoopPerformBlock(cf, CFRunLoopMode.commonModes.rawValue) { [self] in
-            stateCondition.lock()
-            state = .stopped
-            stateCondition.broadcast()
-            stateCondition.unlock()
-            CFRunLoopStop(cf)
+    /// Never blocks; idempotent; safe from any thread including the render thread itself.
+    /// The loop notices the request after its current pass and exits on its own.
+    func requestStop() {
+        lifecycle.condition.lock()
+        guard lifecycle.state == .running else {
+            lifecycle.condition.unlock()
+            return
         }
-        CFRunLoopWakeUp(cf)
-        stateCondition.unlock()
+        lifecycle.state = .stopRequested
+        lifecycle.condition.unlock()
+        // A signalled source persists until handled, so the run returns and the loop sees the request.
+        signalDrain()
+    }
 
-        if isCurrent { return }
+    /// True once the render thread has drained its leftovers and exited.
+    var hasExited: Bool {
+        lifecycle.hasExitedValue
+    }
+
+    /// Resumes once the thread has exited. False on cancellation or after `timeout`; neither abandons
+    /// the requested stop or its queued work. Only timeout logs a fault: cancelling a waiter is normal.
+    @discardableResult
+    func waitUntilStopped(timeout: Duration = .seconds(5)) async -> Bool {
+        if lifecycle.hasExitedValue {
+            return true
+        }
+        guard !Task.isCancelled else { return false }
         let override = pthread_override_qos_class_start_np(
             backingPThread, QOS_CLASS_USER_INTERACTIVE, 0
         )
-        finishedSemaphore.wait()
-        pthread_override_qos_class_end_np(override)
+        defer { pthread_override_qos_class_end_np(override) }
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: timeout)
+        while !lifecycle.hasExitedValue {
+            guard clock.now < deadline else {
+                logExitTimeout(timeout)
+                return false
+            }
+            do {
+                try await Task.sleep(for: .milliseconds(10))
+            } catch {
+                // A cancelled sleep throws immediately on every subsequent call. Do not spin until
+                // the deadline; the loop owns draining and can finish without this particular waiter.
+                return lifecycle.hasExitedValue
+            }
+        }
+        return true
+    }
+
+    /// Synchronous join for callers on a thread they own (tests). Never call it from the main thread
+    /// or an executor thread; production teardown uses `waitUntilStopped`. Returns false from the
+    /// render thread itself (it cannot join itself; the loop exits after the current job) or on timeout.
+    @discardableResult
+    func stopAndJoin(timeout: TimeInterval = 5) -> Bool {
+        requestStop()
+        if isCurrent {
+            return false
+        }
+        if lifecycle.hasExitedValue {
+            return true
+        }
+        let override = pthread_override_qos_class_start_np(
+            backingPThread, QOS_CLASS_USER_INTERACTIVE, 0
+        )
+        defer { pthread_override_qos_class_end_np(override) }
+        let exited = lifecycle.waitForExit(until: Date(timeIntervalSinceNow: timeout))
+        if !exited {
+            logExitTimeout(.seconds(timeout))
+        }
+        return exited
+    }
+
+    private func logExitTimeout(_ timeout: Duration) {
+        Logger.log(
+            "Render thread \(backingThread.name ?? "?") did not exit within \(timeout) — leaving it running",
+            category: .wpeRender,
+            level: .fault
+        )
     }
 }

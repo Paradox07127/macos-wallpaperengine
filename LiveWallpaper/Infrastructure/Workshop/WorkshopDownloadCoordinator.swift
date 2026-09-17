@@ -72,7 +72,7 @@ final class WorkshopDownloadCoordinator {
         attempts[itemID] = nil
         phases[itemID] = .idle
         clearProgress(itemID)
-        // Task.cancel only stops the app-side wait; the SteamCMD child keeps downloading. Scoped to this attempt's id so another item or a retry survives.
+        // Task.cancel invalidates the connection, which makes the connector drop a still-queued run; a child already running is signalled here, scoped to this attempt's id so another item or a retry survives.
         if let cancelledAttempt {
             Task { await SteamConnectorClient.cancelActiveSteamCMD(operationID: cancelledAttempt.uuidString) }
         }

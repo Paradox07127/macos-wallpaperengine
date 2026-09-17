@@ -9,7 +9,7 @@ public final class FullScreenDetector {
     public private(set) var hiddenScreens: [CGDirectDisplayID: Bool] = [:]
 
     /// Per display: >= 85% covered by other apps' windows, union area (overlaps counted
-    /// once). Distinct from `hiddenScreens`, which needs a single >= 95% window.
+    /// once). Distinct from `hiddenScreens`, which needs a single window over the whole display.
     public private(set) var occludedScreens: [CGDirectDisplayID: Bool] = [:]
 
     /// Union-coverage fraction (0...1) behind `occludedScreens`, quantized to
@@ -40,6 +40,16 @@ public final class FullScreenDetector {
     /// surface, and its ordinary windows must count like any other app's.
     public nonisolated static func shouldExcludeWindowOwner(_ ownerName: String) -> Bool {
         ownerName == "Dock" || ownerName == "Window Server" || ownerName == "SystemUIServer"
+    }
+
+    /// `intersection` is the window clipped to `display`. A full-screen app hides the menu bar and
+    /// spans the whole display; a zoomed window on a Dock-less display stops at the menu bar (~97%),
+    /// so anything short of the full area is an ordinary window and belongs to the occlusion rule.
+    nonisolated static func windowFillsDisplay(_ intersection: CGRect, display: CGRect) -> Bool {
+        guard !intersection.isNull, !intersection.isEmpty else { return false }
+        let displayArea = display.width * display.height
+        guard displayArea > 0 else { return false }
+        return intersection.width * intersection.height >= displayArea * 0.999
     }
 
     // MARK: - Setup
@@ -175,9 +185,7 @@ public final class FullScreenDetector {
             for (screenID, cgScreenFrame) in screenFrames {
                 let intersection = windowFrame.intersection(cgScreenFrame)
                 guard !intersection.isNull, !intersection.isEmpty else { continue }
-                let coverage = intersection.width * intersection.height
-                let screenArea = cgScreenFrame.width * cgScreenFrame.height
-                if screenArea > 0, coverage >= screenArea * 0.95 {
+                if Self.windowFillsDisplay(intersection, display: cgScreenFrame) {
                     result[screenID] = true
                 }
                 windowsByScreen[screenID, default: []].append(intersection)

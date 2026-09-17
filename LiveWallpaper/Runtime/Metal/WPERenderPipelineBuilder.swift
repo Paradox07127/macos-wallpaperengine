@@ -877,10 +877,12 @@ private struct WPEShaderSourceLoader: Sendable {
         comboValues: [String: Int],
         includeStack: [String]
     ) throws -> String {
+        var budget = IncludeExpansionBudget()
         let expanded = try expandIncludes(
             in: source,
             logicalPath: logicalPath,
-            includeStack: includeStack
+            includeStack: includeStack,
+            budget: &budget
         )
         let requiredRemoved = commentRequireDirectives(in: expanded)
         let macroNeutralized = stripPreludeMacroRedefines(in: requiredRemoved)
@@ -1035,21 +1037,53 @@ private struct WPEShaderSourceLoader: Sendable {
         "CAST2", "CAST3", "CAST4", "CAST2X2", "CAST3X3", "CAST4X4"
     ]
 
+    /// Includes are guarded only after expansion. Bound all earlier work too;
+    /// a tiny acyclic DAG can otherwise multiply into gigabytes before preprocessing.
+    private struct IncludeExpansionBudget {
+        private var visits = 0
+        private var scannedBytes = 0
+        private var emittedBytes = 0
+
+        mutating func enter(depth: Int, path: String) throws {
+            guard depth < 64 else { throw WPERenderPipelineError.sourceExpansionLimit(path: path, limit: "include depth (64)") }
+            guard visits < 4096 else { throw WPERenderPipelineError.sourceExpansionLimit(path: path, limit: "include visits (4096)") }
+            visits += 1
+        }
+
+        mutating func scan(_ bytes: Int, path: String) throws {
+            guard bytes <= 8 * 1024 * 1024, bytes <= 32 * 1024 * 1024 - scannedBytes else {
+                throw WPERenderPipelineError.sourceExpansionLimit(path: path, limit: "source scan bytes")
+            }
+            scannedBytes += bytes
+        }
+
+        mutating func emit(_ bytes: Int, path: String) throws {
+            guard bytes <= 8 * 1024 * 1024 - emittedBytes else {
+                throw WPERenderPipelineError.sourceExpansionLimit(path: path, limit: "expanded bytes (8 MiB)")
+            }
+            emittedBytes += bytes
+        }
+    }
+
     private func expandIncludes(
         in source: String,
         logicalPath: String,
-        includeStack: [String]
+        includeStack: [String],
+        budget: inout IncludeExpansionBudget
     ) throws -> String {
+        try budget.scan(source.utf8.count, path: logicalPath)
         var output: [String] = []
         for line in source.components(separatedBy: .newlines) {
             guard let includePath = parseIncludePath(from: line) else {
+                try budget.emit(line.utf8.count + 1, path: logicalPath)
                 output.append(line)
                 continue
             }
             try output.append(includeSource(
                 includePath,
                 requestedBy: logicalPath,
-                includeStack: includeStack
+                includeStack: includeStack,
+                budget: &budget
             ))
         }
         return output.joined(separator: "\n")
@@ -1060,8 +1094,10 @@ private struct WPEShaderSourceLoader: Sendable {
     private func includeSource(
         _ includePath: String,
         requestedBy: String,
-        includeStack: [String]
+        includeStack: [String],
+        budget: inout IncludeExpansionBudget
     ) throws -> String {
+        try budget.enter(depth: includeStack.count, path: includePath)
         if Self.resolverPreferredBuiltinHeaders.contains((includePath as NSString).lastPathComponent),
            let resolvedPath = resolvedIncludePath(includePath, requestedBy: requestedBy) {
             let identity = "resolved:\(resolvedPath)"
@@ -1072,8 +1108,9 @@ private struct WPEShaderSourceLoader: Sendable {
             return try Self.includeOnceGuarded(identity: identity, body: expandIncludes(
                 in: source,
                 logicalPath: resolvedPath,
-                includeStack: includeStack + [identity]
-            ))
+                includeStack: includeStack + [identity],
+                budget: &budget
+            ), budget: &budget)
         }
         if let builtin = builtinInclude(named: includePath) {
             let identity = "builtin:\((includePath as NSString).lastPathComponent)"
@@ -1083,8 +1120,9 @@ private struct WPEShaderSourceLoader: Sendable {
             return try Self.includeOnceGuarded(identity: identity, body: expandIncludes(
                 in: builtin,
                 logicalPath: "shaders/\((includePath as NSString).lastPathComponent)",
-                includeStack: includeStack + [identity]
-            ))
+                includeStack: includeStack + [identity],
+                budget: &budget
+            ), budget: &budget)
         }
 
         guard let resolvedPath = resolvedIncludePath(includePath, requestedBy: requestedBy) else {
@@ -1099,17 +1137,21 @@ private struct WPEShaderSourceLoader: Sendable {
         return try Self.includeOnceGuarded(identity: identity, body: expandIncludes(
             in: source,
             logicalPath: resolvedPath,
-            includeStack: includeStack + [identity]
-        ))
+            includeStack: includeStack + [identity],
+            budget: &budget
+        ), budget: &budget)
     }
 
     /// The guard name derives from the include identity only (not the requesting file or stage), so the
     /// memoized expansion of one stage never disagrees with another about which copy is live.
-    private static func includeOnceGuarded(identity: String, body: String) -> String {
+    private static func includeOnceGuarded(identity: String, body: String, budget: inout IncludeExpansionBudget) throws -> String {
         let readable = (identity as NSString).lastPathComponent
             .map { $0.isASCII && ($0.isLetter || $0.isNumber) ? $0 : "_" }
         let macro = "WPE_INCLUDED_\(String(readable))_\(WPEShaderSourceDigest.hex(identity).prefix(12))"
-        return "#ifndef \(macro)\n#define \(macro)\n\(body)\n#endif"
+        let prefix = "#ifndef \(macro)\n#define \(macro)\n"
+        let suffix = "\n#endif"
+        try budget.emit(prefix.utf8.count + suffix.utf8.count + 1, path: identity)
+        return prefix + body + suffix
     }
 
     /// Official/project headers are authoritative when present; the builtin is an asset-missing fallback.

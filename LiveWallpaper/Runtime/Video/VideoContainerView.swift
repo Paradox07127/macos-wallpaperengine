@@ -40,27 +40,8 @@ final class PlayerHostView: NSView {
         guard let playerLayer else { return }
         if #available(macOS 26, *) {
             playerLayer.preferredDynamicRange = enabled ? .high : .standard
-        } else if playerLayer.responds(to: NSSelectorFromString("setWantsExtendedDynamicRangeContent:")) {
-            playerLayer.setValue(enabled, forKey: "wantsExtendedDynamicRangeContent")
-        }
-    }
-
-    /// `.auto`/`.forceSDR` leave layer colorspace nil (Force SDR uses Rec.709 composition).
-    func setColorSpacePreference(_ preference: VideoColorSpace) {
-        guard let playerLayer else { return }
-        let space: CGColorSpace?
-        switch preference {
-        case .auto:        space = nil
-        case .sRGB:        space = CGColorSpace(name: CGColorSpace.sRGB)
-        case .displayP3:   space = CGColorSpace(name: CGColorSpace.displayP3)
-        case .rec2020HDR:  space = CGColorSpace(name: CGColorSpace.itur_2020)
-        case .forceSDR:    space = nil
-        }
-        // AVPlayerLayer has no typed colorspace; KVC hits CALayer.colorspace.
-        if let space {
-            playerLayer.setValue(space, forKey: "colorspace")
         } else {
-            playerLayer.setValue(nil, forKey: "colorspace")
+            playerLayer.wantsExtendedDynamicRangeContent = enabled
         }
     }
 
@@ -155,10 +136,6 @@ final class VideoContainerView: NSView {
 
     func applyHDRPreference(_ enabled: Bool) {
         playerHostView.setExtendedDynamicRangeEnabled(enabled)
-    }
-
-    func applyColorSpacePreference(_ preference: VideoColorSpace) {
-        playerHostView.setColorSpacePreference(preference)
     }
 
     func setSpanRenderConfiguration(_ configuration: VideoSpanRenderConfiguration?) {

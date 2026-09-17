@@ -206,51 +206,97 @@ enum SteamConnectorClient {
         }
     }
 
-    /// One-shot request; nil means connector unreachable (not a Steam "no").
+    #if DEBUG
+    /// Tests substitute an in-process anonymous listener for the XPC service.
+    nonisolated(unsafe) static var connectionFactoryForTesting: (@Sendable () -> NSXPCConnection)?
+    #endif
+
+    /// Long operations (the ones streaming progress) in flight right now; termination only bothers the connector when this is non-zero.
+    private static var inFlightLongOperations = 0
+
+    static var hasInFlightLongOperation: Bool {
+        inFlightLongOperations > 0
+    }
+
+    /// The app is quitting: SIGTERM whatever SteamCMD child is running. The connection-invalidation path in the connector covers a crash on its own; this makes Cmd+Q and Sparkle's quit deterministic instead of a race with launchd reaping the service.
+    static func terminateActiveSteamCMDForHostExit() async {
+        guard hasInFlightLongOperation else { return }
+        _ = await call(timeout: 1) { connector, reply in
+            connector.terminateActiveSteamCMDForHostExit(with: reply)
+        }
+    }
+
+    private static func makeConnection() -> NSXPCConnection {
+        #if DEBUG
+        if let connectionFactoryForTesting {
+            return connectionFactoryForTesting()
+        }
+        #endif
+        return NSXPCConnection(serviceName: serviceName)
+    }
+
+    /// One-shot request; nil means connector unreachable (not a Steam "no"). Honours `Task` cancellation: the connection is invalidated, which is how the connector learns the caller is gone — a cancelled operation still waiting in its queue then never runs.
     private static func call(
         // Client timeout above connector's 900s so the service expires first.
         timeout: TimeInterval = 7200,
         onProgress: (@Sendable (SteamOperationProgress) -> Void)? = nil,
         _ body: @escaping @Sendable (any SteamConnectorProtocol, @escaping @Sendable (Data) -> Void) -> Void
     ) async -> Data? {
-        let connection = NSXPCConnection(serviceName: serviceName)
+        // `nonisolated(unsafe)`: the cancellation handler is the only off-actor user and it calls `invalidate()`, which NSXPCConnection serves from any thread.
+        nonisolated(unsafe) let connection = makeConnection()
         connection.remoteObjectInterface = NSXPCInterface(with: (any SteamConnectorProtocol).self)
         if let onProgress {
             connection.exportedInterface = NSXPCInterface(with: (any SteamConnectorProgressProtocol).self)
             connection.exportedObject = ProgressReceiver(handler: onProgress)
+            inFlightLongOperations += 1
         }
         connection.resume()
-        defer { connection.invalidate() }
+        defer {
+            connection.invalidate()
+            if onProgress != nil {
+                inFlightLongOperations -= 1
+            }
+        }
 
-        // Both the reply and the error handler can fire; whichever lands first
-        // owns the continuation.
-        let settled = OSAllocatedUnfairLock(initialState: false)
-        return await withCheckedContinuation { continuation in
-            @Sendable func finish(_ value: Data?) {
-                let alreadySettled = settled.withLock { done -> Bool in
-                    if done { return true }
-                    done = true
-                    return false
+        // The reply, the error handler, the timeout and cancellation can all
+        // fire; whichever takes the continuation out of the box owns it.
+        let pending = OSAllocatedUnfairLock<CheckedContinuation<Data?, Never>?>(initialState: nil)
+        let finish: @Sendable (Data?) -> Void = { value in
+            let continuation = pending.withLock { box -> CheckedContinuation<Data?, Never>? in
+                defer { box = nil }
+                return box
+            }
+            continuation?.resume(returning: value)
+        }
+
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                pending.withLock { $0 = continuation }
+                // The cancellation handler may already have run before the box was filled.
+                if Task.isCancelled {
+                    finish(nil)
+                    return
                 }
-                guard !alreadySettled else { return }
-                continuation.resume(returning: value)
+                // Runs on the XPC queue: explicitly @Sendable, or it inherits this function's main-actor isolation and traps there.
+                let proxy = connection.remoteObjectProxyWithErrorHandler { @Sendable error in
+                    Logger.warning(
+                        "Steam connector unreachable: \(error.localizedDescription)",
+                        category: .workshop
+                    )
+                    finish(nil)
+                }
+                guard let connector = proxy as? any SteamConnectorProtocol else {
+                    finish(nil)
+                    return
+                }
+                DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout) {
+                    finish(nil)
+                }
+                body(connector) { finish($0) }
             }
-
-            let proxy = connection.remoteObjectProxyWithErrorHandler { error in
-                Logger.warning(
-                    "Steam connector unreachable: \(error.localizedDescription)",
-                    category: .workshop
-                )
-                finish(nil)
-            }
-            guard let connector = proxy as? any SteamConnectorProtocol else {
-                finish(nil)
-                return
-            }
-            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout) {
-                finish(nil)
-            }
-            body(connector) { finish($0) }
+        } onCancel: {
+            finish(nil)
+            connection.invalidate()
         }
     }
 }

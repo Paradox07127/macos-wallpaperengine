@@ -58,7 +58,9 @@ extension FallbackReason {
         }
     }
 
-    func recovery(workshopID: String) -> [WallpaperFailureRecovery] {
+    /// `engineAssetsAuthorized`: assets already linked means "Set Up Assets" would send the user
+    /// back through a step they completed; the Workshop page is then the place to re-download.
+    func recovery(workshopID: String, engineAssetsAuthorized: Bool = false) -> [WallpaperFailureRecovery] {
         let isSteamItem = !workshopID.isEmpty && workshopID.allSatisfy(\.isNumber)
         switch self {
         case let .missingDependency(ids):
@@ -68,7 +70,11 @@ extension FallbackReason {
             }
             return actions
         case .sceneResourceMissing:
-            return [.configureEngineAssets, .retry]
+            var actions: [WallpaperFailureRecovery] = engineAssetsAuthorized ? [.retry] : [.configureEngineAssets, .retry]
+            if isSteamItem {
+                actions.append(.openWorkshop(workshopID))
+            }
+            return actions
         case .sceneParseFailed, .texDecodeFailed:
             return isSteamItem ? [.retry, .openWorkshop(workshopID)] : [.retry]
         case .unsupportedType, .sceneShaderUnsupported, .requiresWindowsPlugin,
@@ -88,7 +94,7 @@ extension FallbackReason {
                 originalType: origin.originalType,
                 engineAssetsAuthorized: engineAssetsAuthorized
             )),
-            recovery: recovery(workshopID: origin.workshopID)
+            recovery: recovery(workshopID: origin.workshopID, engineAssetsAuthorized: engineAssetsAuthorized)
         )
     }
 

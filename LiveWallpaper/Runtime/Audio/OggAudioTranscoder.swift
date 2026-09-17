@@ -49,6 +49,8 @@ actor OggAudioTranscoder {
         let cancellation = Cancellation()
         var waiters: [UUID: CheckedContinuation<URL?, Never>] = [:]
         var timeout: Task<Void, Never>?
+        /// Re-arming bumps this; a timer that already woke before its cancellation landed must not expire the re-armed job.
+        var timeoutGeneration = 0
 
         init(key: String, source: URL, destination: URL, access: OggSourceAccess?) {
             self.key = key
@@ -152,12 +154,14 @@ actor OggAudioTranscoder {
 
     private func armTimeout(_ job: Job) {
         job.timeout?.cancel()
+        job.timeoutGeneration += 1
         let key = job.key
         let jobID = job.id
+        let generation = job.timeoutGeneration
         let delay = deadline
         job.timeout = Task { [weak self] in
             do { try await Task.sleep(for: .seconds(delay)) } catch { return }
-            await self?.expire(key: key, id: jobID)
+            await self?.expire(key: key, id: jobID, generation: generation)
         }
     }
 
@@ -173,9 +177,12 @@ actor OggAudioTranscoder {
         job.cancellation.cancel()
     }
 
-    private func expire(key: String, id: UUID) {
-        guard let job = pending[key], job.id == id else { return }
-        memo[key] = .unavailable
+    private func expire(key: String, id: UUID, generation: Int) {
+        guard let job = pending[key], job.id == id, job.timeoutGeneration == generation else { return }
+        // Only a decode that ran out its deadline is a verdict on the file; a job still queued behind others is not.
+        if running[job.id] != nil {
+            memo[key] = .unavailable
+        }
         pending[key] = nil
         waiting.removeAll { $0 == key }
         job.cancellation.cancel()

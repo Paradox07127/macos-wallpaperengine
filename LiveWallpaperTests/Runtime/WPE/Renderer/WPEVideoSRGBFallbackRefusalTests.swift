@@ -1,6 +1,8 @@
+import CoreMedia
 import CoreVideo
 import Foundation
 @testable import LiveWallpaper
+import LiveWallpaperProWPE
 import Metal
 import simd
 import Testing
@@ -251,5 +253,88 @@ struct WPEVideoSRGBFallbackRefusalTests {
 
     private enum HarnessError: Error {
         case pixelBufferCreateFailed(CVReturn)
+    }
+}
+
+extension WPEVideoSRGBFallbackRefusalTests {
+    @Test("Failed player-level publication retries the same PTS and only success deduplicates it")
+    func failedPlayerFrameRetriesSamePTS() throws {
+        let harness = try Harness.make()
+        defer { harness.tearDown() }
+        let frame = try Harness.bgra(fill: 128)
+        let pts = CMTime(value: 1, timescale: 30)
+        harness.source.forceSRGBWrapFailureForTesting = true
+        harness.source.ingestPlayerLevelFrameForTesting(pixelBuffer: frame, presentationTime: pts)
+        #expect(harness.source.lastPlayerPresentationTimeForTesting == nil)
+        #expect(!harness.source.hasStagedFrameWork)
+        harness.source.forceSRGBWrapFailureForTesting = false
+        harness.source.ingestPlayerLevelFrameForTesting(pixelBuffer: frame, presentationTime: pts)
+        #expect(harness.source.lastPlayerPresentationTimeForTesting == pts)
+        #expect(harness.source.hasStagedFrameWork)
+        #expect(harness.source.driveStagedFrameWorkForTesting())
+        let count = harness.source.publishedFrameCountForTesting
+        harness.source.ingestPlayerLevelFrameForTesting(pixelBuffer: frame, presentationTime: pts)
+        #expect(harness.source.publishedFrameCountForTesting == count)
+    }
+
+    @Test("HDR fallback does not consume the old output PTS and accepts its BGRA replacement")
+    func fallbackRetriesReplacementAtSamePTS() throws {
+        let harness = try Harness.make()
+        defer { harness.tearDown() }
+        let pts = CMTime(value: 2, timescale: 30)
+        let hdr = try Harness.nv12(luma: 128, cb: 128, cr: 128)
+        CVBufferSetAttachment(hdr, kCVImageBufferTransferFunctionKey,
+                              kCVImageBufferTransferFunction_SMPTE_ST_2084_PQ, .shouldPropagate)
+        harness.source.ingestPlayerLevelFrameForTesting(pixelBuffer: hdr, presentationTime: pts)
+        #expect(harness.source.didForceBGRAOutputForTesting)
+        #expect(harness.source.lastPlayerPresentationTimeForTesting == nil)
+        #expect(!harness.source.hasStagedFrameWork)
+        try harness.source.ingestPlayerLevelFrameForTesting(pixelBuffer: Harness.bgra(fill: 128), presentationTime: pts)
+        #expect(harness.source.lastPlayerPresentationTimeForTesting == pts)
+        #expect(harness.source.driveStagedFrameWorkForTesting())
+    }
+
+    @Test("A failed resized conversion aborts the scene and retries without publishing clear black", arguments: [false, true])
+    func conversionFailureAbortsSceneAndRetries(bgraBaseline: Bool) throws {
+        let harness = try Harness.make()
+        defer { harness.tearDown() }
+        let executor = try WPEMetalRenderExecutor(device: harness.device)
+        let initial = try bgraBaseline ? Harness.bgra(fill: 128) : Harness.nv12(luma: 100, cb: 128, cr: 128)
+        harness.source.ingestForTesting(pixelBuffer: initial)
+        let previous = try #require(harness.source.publishedTextureForTesting)
+        _ = try harness.sampleRed(previous) // fence the harness queue before the executor queue reads it
+        let pass = WPERenderPass(id: "video.0", phase: .material, shader: "commands/copy",
+                                 source: .image("video"), target: .scene, textures: [0: .image("video")], binds: [:],
+                                 constants: [:], combos: [:], blending: "disabled", cullMode: "nocull", depthTest: "disabled", depthWrite: "disabled")
+        let prepared = WPEPreparedRenderPass(pass: pass,
+                                             shader: WPEShaderProgram(name: pass.shader, vertexSource: "", fragmentSource: "", isBuiltin: true),
+                                             textureBindings: [0: .image("video")], comboValues: [:], uniformValues: [:])
+        let graph = WPERenderLayer(objectID: "video", objectName: "Video", imagePath: "video", materialPath: nil,
+                                   geometry: .identity, compositeA: "a", compositeB: "b", localFBOs: [], passes: [pass])
+        let pipeline = WPEPreparedRenderPipeline(layers: [.init(graphLayer: graph, passes: [prepared])])
+        let baseline = try executor.render(pipeline: pipeline, size: CGSize(width: 2, height: 2), textures: ["video": previous])
+        let baselineRed = try harness.sampleRed(baseline)
+        try harness.source.ingestForTesting(pixelBuffer: Harness.nv12(luma: 200, cb: 128, cr: 128, size: 128), drivesFrame: false)
+        let staged = try #require(harness.source.texture(at: 0))
+        #expect(staged !== previous)
+        let fence = try #require(harness.queue.makeCommandBuffer())
+        fence.commit(); fence.waitUntilCompleted() // allocation clear only; no conversion
+        let retirements = harness.source.retirementFencesCreatedForTesting
+        harness.source.forceConversionEncoderFailureForTesting = true
+        executor.stageTextureWork([harness.source])
+        #expect(throws: WPEMetalRenderExecutorError.commandBufferFailed) {
+            try executor.render(pipeline: pipeline, size: CGSize(width: 2, height: 2), textures: ["video": staged])
+        }
+        #expect(harness.source.publishedTextureForTesting === previous)
+        #expect(harness.source.hasStagedFrameWork)
+        #expect(harness.source.retirementFencesCreatedForTesting == retirements)
+        #expect(try harness.sampleRed(baseline) == baselineRed)
+        harness.source.forceConversionEncoderFailureForTesting = false
+        executor.stageTextureWork([harness.source])
+        let recovered = try executor.render(pipeline: pipeline, size: CGSize(width: 2, height: 2), textures: ["video": staged])
+        #expect(!harness.source.hasStagedFrameWork)
+        #expect(harness.source.publishedTextureForTesting === staged)
+        #expect(harness.source.retirementFencesCreatedForTesting == retirements + 1)
+        #expect(try harness.sampleRed(recovered) > baselineRed + 0.1)
     }
 }

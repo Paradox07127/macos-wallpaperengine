@@ -23450,6 +23450,7 @@
       }
     },
     "FPS" : {
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -23481,8 +23482,7 @@
             "value" : "FPS"
           }
         }
-      },
-      "extractionState" : "manual"
+      }
     },
     "FX" : {
       "comment" : "Scene badge: the scene applies an image effect.",
@@ -32299,6 +32299,7 @@
       }
     },
     "Max follows the display's refresh rate" : {
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -32330,8 +32331,7 @@
             "value" : "最高檔跟隨顯示器更新率"
           }
         }
-      },
-      "extractionState" : "manual"
+      }
     },
     "Measurement" : {
       "localizations" : {
@@ -34194,7 +34194,7 @@
       }
     },
     "Name" : {
-      "comment" : "Saved library sort order: alphabetical.\nWorkshop library sort order.",
+      "comment" : "Saved library sort order: alphabetical.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -40747,6 +40747,42 @@
         }
       }
     },
+    "Paused for a full-screen app" : {
+      "comment" : "Suspension caused by the full-screen apps setting",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Paused for a full-screen app"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En pausa por una app a pantalla completa"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "フルスクリーンアプリ使用中は一時停止"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "全屏应用时已暂停"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "全螢幕 App 時已暫停"
+          }
+        }
+      }
+    },
     "Paused for system resource limits" : {
       "comment" : "Current pause reason for thermal or memory pressure, not a user toggle.",
       "extractionState" : "manual",
@@ -40856,7 +40892,7 @@
       }
     },
     "Paused while covered" : {
-      "comment" : "Suspension caused by the full-screen or window-occlusion settings",
+      "comment" : "Suspension caused by the window-occlusion setting",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -42590,41 +42626,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "預設集"
-          }
-        }
-      }
-    },
-    "Preset actions" : {
-      "comment" : "Accessibility label for the scene preset overflow menu.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Preset actions"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Acciones de preajuste"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "プリセット操作"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "预设操作"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "預設操作"
           }
         }
       }
@@ -44682,6 +44683,42 @@
         }
       }
     },
+    "Recapture preview" : {
+      "comment" : "Button over the scene preview: capture the preview image again from the running scene.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recapture preview"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volver a capturar la vista previa"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "プレビューを再取得"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新抓取预览"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新擷取預覽"
+          }
+        }
+      }
+    },
     "Receives clicks that would otherwise reach the desktop." : {
       "comment" : "Mouse Interaction help; enabled overlay receives clicks.",
       "extractionState" : "manual",
@@ -44755,7 +44792,7 @@
       }
     },
     "Recent" : {
-      "comment" : "Saved library sort order: most recent first.\nWorkshop library sort order: most recently imported first.",
+      "comment" : "Saved library sort order: most recent first.",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -66531,7 +66568,7 @@
       }
     },
     "Type" : {
-      "comment" : "Saved library sort order: grouped by wallpaper type.\nWorkshop tag group: Scene / Video / Web.",
+      "comment" : "Saved library sort order: grouped by wallpaper type.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -66778,7 +66815,7 @@
       }
     },
     "Unavailable" : {
-      "comment" : "Login item service unavailable.\nWorkshop item removed or hidden on Steam.",
+      "comment" : "Login item service unavailable.",
       "localizations" : {
         "es" : {
           "stringUnit" : {

@@ -19,6 +19,7 @@ protocol WPEDynamicTextureSource: AnyObject {
     /// True when this source decoded a frame whose GPU work still has to ride
     /// the renderer's scene command buffer (see the three calls below).
     var hasStagedFrameWork: Bool { get }
+    var stagedFrameWorkEncodingFailed: Bool { get }
     /// Encode before any pass samples this source. Metal requires fence completed-handlers before commit.
     func encodeStagedFrameWork(into commandBuffer: MTLCommandBuffer)
     func commitStagedFrameWork()
@@ -42,8 +43,18 @@ extension WPEDynamicTextureSource {
         return nil
     }
 
-    var hasStagedFrameWork: Bool { false }
-    func encodeStagedFrameWork(into commandBuffer: MTLCommandBuffer) { _ = commandBuffer }
+    var hasStagedFrameWork: Bool {
+        false
+    }
+
+    var stagedFrameWorkEncodingFailed: Bool {
+        false
+    }
+
+    func encodeStagedFrameWork(into commandBuffer: MTLCommandBuffer) {
+        _ = commandBuffer
+    }
+
     func commitStagedFrameWork() {}
     func rollbackStagedFrameWork() {}
 }

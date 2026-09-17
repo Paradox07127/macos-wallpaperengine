@@ -696,7 +696,13 @@ struct SteamCMDDiagnosisExecutionTests {
         #expect(body.contains("arguments: SteamCMDDiagnosisProbe.arguments"))
         #expect(body.contains("SteamCMDDiagnosisProbe.clampedLaunchTimeout("))
         #expect(body.contains("Self.steamCMDQueue.async"))
-        #expect(body.contains("Self.callerAbandoned(enqueuedAt: enqueuedAt)"))
+        let capture = try #require(body.range(of: "let liveness = callerLiveness"))
+        let enqueue = try #require(body.range(of: "Self.steamCMDQueue.async"))
+        let guardCall = try #require(body.range(of: "guard liveness.isLive(enqueuedAt: enqueuedAt)"))
+        let spawn = try #require(body.range(of: "Self.runSteamCMD("))
+        #expect(capture.lowerBound < enqueue.lowerBound)
+        #expect(enqueue.lowerBound < guardCall.lowerBound)
+        #expect(guardCall.lowerBound < spawn.lowerBound)
     }
 
     @Test("Control: the scan reads one method, and a method that spawns nothing shows it")

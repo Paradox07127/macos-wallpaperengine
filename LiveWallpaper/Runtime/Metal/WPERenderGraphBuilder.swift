@@ -1937,7 +1937,8 @@ extension WPERenderGraphBuilder {
         guard (first.comboValues["CLEARALPHA"] ?? pass.combos["CLEARALPHA"] ?? 0) == 0 else {
             return .reject("passthrough-clearalpha")
         }
-        guard pass.blending.lowercased() == "premultiplied",
+        // Same identity bar as the canonical-rotation copy: a culled or depth-tested passthrough is not a 1:1 copy.
+        guard pass.blending.lowercased() == "premultiplied", pass.cullMode.lowercased() == "nocull",
               pass.depthTest == "disabled", pass.depthWrite == "disabled" else { return .reject("passthrough-render-semantics") }
         guard pass.constantScripts.isEmpty, pass.userTextureBindings.isEmpty else { return .reject("passthrough-dynamic") }
         // A gated passthrough that is skipped leaves stale composite content behind; readers

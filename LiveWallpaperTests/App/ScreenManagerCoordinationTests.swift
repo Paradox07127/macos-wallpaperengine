@@ -751,6 +751,28 @@ struct ScreenManagerCoordinationTests {
         }
     }
 
+    @Test("Same-scene rebuild keeps the page mounted and failure details remain opt-in")
+    func sameSceneRebuildDoesNotInspectAttempt() async throws {
+        let original = Self.makeSceneDescriptor()
+        try await Self.runWithSceneConfiguration(descriptor: original) { manager, screen in
+            let session = TestRuntimeSession(wallpaperType: .scene)
+            screen.installRuntimeSession(session)
+            let replacement = original.withPropertyOverrides(["enabled": .bool(false)])
+
+            await manager.updateSceneDescriptor(replacement, for: screen)
+
+            let attempt = try #require(manager.wallpaperLoads.attempt(for: screen))
+            #expect(!attempt.isInspecting)
+            #expect(manager.inspectedWallpaperAttempt(for: screen) == nil)
+            #expect(attempt.failure != nil)
+            #expect(Self.isSameSession(screen.runtimeSession, session))
+            #expect(manager.getConfiguration(for: screen)?.activeWallpaper == .scene(original))
+
+            manager.inspectWallpaperAttempt(true, for: screen)
+            #expect(manager.inspectedWallpaperAttempt(for: screen)?.id == attempt.id)
+        }
+    }
+
     @Test("An unavailable scene candidate keeps the live session and persisted descriptor")
     func unavailableSceneCandidateKeepsSessionAndConfiguration() async throws {
         let original = Self.makeSceneDescriptor()
@@ -761,6 +783,7 @@ struct ScreenManagerCoordinationTests {
             screen.installRuntimeSession(session)
 
             manager.setSceneWallpaper(descriptor: replacement, origin: nil, for: screen)
+            #expect(manager.inspectedWallpaperAttempt(for: screen) != nil)
             await Self.drainMainQueue()
 
             #expect(session.cleanupCount == 0)

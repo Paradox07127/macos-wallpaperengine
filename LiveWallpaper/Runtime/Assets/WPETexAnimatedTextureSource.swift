@@ -65,13 +65,21 @@ struct WPETexAnimatedAtlasProvider {
         guard payload.compressedImages.indices.contains(imageID) else {
             throw Failure.missingImage(imageID)
         }
-        try WPETexMipValidation.streamingImage(payload.compressedImages[imageID])
         let sourceMipmaps = payload.compressedImages[imageID].payloads
-        guard !sourceMipmaps.isEmpty else { throw Failure.missingMipmap(imageID) }
-        let mipmaps = try sourceMipmaps.map { mipmap in
+        guard let base = sourceMipmaps.first else { throw Failure.missingMipmap(imageID) }
+        func decoded(_ mipmap: WPETexCompressedMipmap) throws -> WPETexTextureMipmap {
             let bytes = try WPETexMipValidation.decodedBytes(mipmap, format: format)
-            return WPETexTextureMipmap(index: mipmap.index, width: mipmap.width,
-                                       height: mipmap.height, bytes: bytes)
+            return WPETexTextureMipmap(index: mipmap.index, width: mipmap.width, height: mipmap.height, bytes: bytes)
+        }
+        let mipmaps: [WPETexTextureMipmap]
+        do {
+            try WPETexMipValidation.streamingImage(payload.compressedImages[imageID])
+            mipmaps = try sourceMipmaps.map(decoded)
+        } catch {
+            // A malformed tail must not cost the animation: level 0 alone is what 0.6.7 uploaded.
+            Logger.warning("\(label) image \(imageID): mip chain rejected (\(error)); uploading level 0 only", category: .wpeRender)
+            let baseLevel = try decoded(base)
+            mipmaps = [baseLevel]
         }
         return try WPEMetalTextureLoader.makeTextureSynchronously(
             from: WPETexTexturePayload(info: payload.info, mipmaps: mipmaps, hasAnimationFrames: false),

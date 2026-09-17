@@ -332,10 +332,12 @@ struct ConnectorQueueExpiryTests {
             encoding: .utf8
         )
         let enqueues = source.components(separatedBy: "Self.steamCMDQueue.async {").count - 1
-        let guards = source.components(separatedBy: "callerAbandoned(enqueuedAt:").count - 1
+        // The liveness object is captured before the enqueue (never `self`) and checked at the top of the body: connection gone or queue wait past the budget, either way the caller is not listening.
+        let captures = source.components(separatedBy: "let liveness = callerLiveness").count - 1
+        let guards = source.components(separatedBy: "guard liveness.isLive(enqueuedAt: enqueuedAt) else").count - 1
         #expect(enqueues > 0)
-        // One definition plus one guard per enqueue.
-        #expect(guards == enqueues + 1, "a queued body is missing its abandonment check")
+        #expect(captures == enqueues, "a queued body enqueues without capturing the caller's liveness")
+        #expect(guards == enqueues, "a queued body is missing its abandonment check")
     }
 
     @Test("The client backstop is longer than the connector's queue expiry")

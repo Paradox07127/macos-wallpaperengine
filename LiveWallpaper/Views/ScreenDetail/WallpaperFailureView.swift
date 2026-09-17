@@ -16,14 +16,22 @@ struct WallpaperFailureView: View {
         failure.cause.failureClass
     }
 
-    /// Historic failures get no recovery row: retrying or re-linking would act on
+    /// Historic failures keep only the Workshop link: retrying or re-linking would act on
     /// the display's current assignment, not on the one being read about.
     private var recovery: [WallpaperFailureRecovery] {
-        guard isCurrentAttempt else { return [] }
-        return failure.cause.recovery(
+        let actions = failure.cause.recovery(
             workshopID: failure.workshopID,
             canChooseSource: onChooseSource != nil
         )
+        guard isCurrentAttempt else {
+            return actions.filter { action in
+                if case .openWorkshop = action {
+                    return true
+                }
+                return false
+            }
+        }
+        return actions
     }
 
     var body: some View {

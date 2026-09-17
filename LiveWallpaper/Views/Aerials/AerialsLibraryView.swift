@@ -175,10 +175,7 @@ struct AerialsLibraryView: View {
                         }
                     }
 
-                    LazyVGrid(
-                        columns: DesignTokens.LibraryGrid.columns(for: tileSize, aspect: .wide),
-                        spacing: DesignTokens.LibraryGrid.spacing
-                    ) {
+                    LibraryGalleryGrid(size: tileSize, aspect: .wide) {
                         ForEach(visible) { asset in
                             ThumbnailCard(
                                 asset: asset,

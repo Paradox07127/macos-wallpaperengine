@@ -191,10 +191,6 @@ def allowed_origin(value, repository):
     return bool(re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', name)) and name.lower() == repository.lower()
 
 
-CREDENTIAL_ENVIRONMENT_KEYS = ('GH_TOKEN', 'GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN',
-                               'SSH_AUTH_SOCK', 'SSH_AGENT_PID')
-
-
 def runner_environment(cfg):
     """Environment for the model runner: the controller's Git isolation without its credentials.
 
@@ -202,10 +198,7 @@ def runner_environment(cfg):
     can talk to origin; the runner publishes model output back to the PR, so none of that may
     reach it. It also keeps Git on local protocols only.
     """
-    env = runner.git_environment()
-    for key in CREDENTIAL_ENVIRONMENT_KEYS:
-        env.pop(key, None)
-    return env
+    return runner.git_environment()
 
 
 def fetch_git_environment(cfg):
@@ -215,6 +208,9 @@ def fetch_git_environment(cfg):
     SSH uses the normal agent/default identities, never inherited SSH commands.
     """
     env = runner.git_environment()
+    # The controller's own fetch may use the agent; only the model runner must not see it.
+    if 'SSH_AUTH_SOCK' in os.environ:
+        env['SSH_AUTH_SOCK'] = os.environ['SSH_AUTH_SOCK']
     env.update(GIT_ALLOW_PROTOCOL='https:ssh', GIT_LFS_SKIP_SMUDGE='1',
                GIT_SSH_COMMAND='/usr/bin/ssh -F /dev/null -oBatchMode=yes',
                SSH_ASKPASS_REQUIRE='never')

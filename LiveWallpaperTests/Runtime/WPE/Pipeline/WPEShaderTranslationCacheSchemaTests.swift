@@ -1,15 +1,15 @@
 #if !LITE_BUILD
 import CryptoKit
 import Foundation
-import Testing
 @testable import LiveWallpaper
+import Metal
+import Testing
 
 /// The disk cache keys on the SHADER SOURCE, not on the code that translates it, so
 /// editing any file below without bumping `WPEShaderTranslationCache.schemaVersion`
 /// keeps serving the previous translator's MSL — silently, since stale MSL still compiles.
 @Suite("WPE shader translation cache schema")
 struct WPEShaderTranslationCacheSchemaTests {
-
     static let translatorSources = [
         "LiveWallpaper/Runtime/Metal/WPEShaderTranspiler.swift",
         "LiveWallpaper/Runtime/Metal/WPEShaderTranspiler+Main.swift",
@@ -32,8 +32,8 @@ struct WPEShaderTranslationCacheSchemaTests {
         "LiveWallpaper/Runtime/Metal/WPERenderPipelineBuilder.swift",
     ]
 
-    static let expectedSchemaVersion = 14
-    static let expectedFingerprint = "10661ccd1713cae05bbd62e404cddd1bf5549755adc9ecaf1796a31dd78146dd"
+    static let expectedSchemaVersion = 15
+    static let expectedFingerprint = "42382f2964f4dbcb5e5db6fae88f9534ab823dc772e6cfb9e29b04c2f416ed8c"
 
     @Test("Hosted shader cache defaults stay in the process configuration scratch tree")
     func defaultCacheRootIsIsolated() {
@@ -43,6 +43,37 @@ struct WPEShaderTranslationCacheSchemaTests {
         let production = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("wpe-msl", isDirectory: true)
         #expect(WPEShaderTranslationCache.defaultRootURL != production)
+    }
+
+    @Test("Schema 14 payload cannot bypass a fresh translation or poison warm replay")
+    func priorSchemaPayloadRecompilesThenReplaysWarm() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let cache = WPEShaderTranslationCache(rootURL: root)
+        let compiler = try WPESwiftShaderCompiler(device: #require(MTLCreateSystemDefaultDevice()), translationCache: cache)
+        let request = WPEShaderCompileRequest(
+            shaderName: "schema-migration", processedVertexSource: "",
+            processedFragmentSource: "uniform int counter;\nvoid main() { gl_FragColor = vec4(float(counter)); }",
+            sourceHash: "schema-migration-fixture", comboValues: [:], textureBindings: [:]
+        )
+        let fresh = try compiler.compile(request)
+        let directory = root.appendingPathComponent("v\(WPEShaderTranslationCache.schemaVersion)")
+        let file = try #require(FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil).first)
+        var old = try JSONDecoder().decode(WPEShaderTranslationCache.Payload.self, from: Data(contentsOf: file))
+        old.schemaVersion = 14
+        old.mslSource = "stale translator payload must not reach Metal"
+        try JSONEncoder().encode(old).write(to: file)
+        cache.dropMemoryForTesting()
+        let repaired = try compiler.compile(request)
+        #expect(repaired.mslSource == fresh.mslSource)
+        #expect(cache.diskHitCountForTesting == 0)
+        #expect(cache.storeCountForTesting == 2)
+        cache.dropMemoryForTesting()
+        #expect(try compiler.compile(request).mslSource == fresh.mslSource)
+        #expect(cache.diskHitCountForTesting == 1)
+        #expect(try compiler.compile(request).mslSource == fresh.mslSource)
+        #expect(cache.memoryHitCountForTesting == 1)
+        #expect(cache.storeCountForTesting == 2)
     }
 
     @Test("A translator edit forces a cache schema bump")
@@ -59,12 +90,12 @@ struct WPEShaderTranslationCacheSchemaTests {
         #expect(
             fingerprint == Self.expectedFingerprint,
             Comment(rawValue: """
-                The GLSL→MSL translator changed. A warm disk cache would keep \
-                serving the previous translator's MSL, so bump \
-                `WPEShaderTranslationCache.schemaVersion` (and \
-                `expectedSchemaVersion` here), then record:
-                    static let expectedFingerprint = "\(fingerprint)"
-                """)
+            The GLSL→MSL translator changed. A warm disk cache would keep \
+            serving the previous translator's MSL, so bump \
+            `WPEShaderTranslationCache.schemaVersion` (and \
+            `expectedSchemaVersion` here), then record:
+                static let expectedFingerprint = "\(fingerprint)"
+            """)
         )
     }
 }

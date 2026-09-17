@@ -590,6 +590,22 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
         Self.writeActiveHeartbeat(registry: registry, store: store)
     }
 
+    /// From the bridge's invalidation handler: the Agent just dropped its proxy, and RunningBoard suspends this process about 100 ms later — the one moment a superseded idle instance can retire without leaving the Agent a dead proxy (it never reconnects on interruption, it errors 4099 until its own 5-minute disconnection).
+    static func evaluateIdleRetirement(
+        registry: SurfaceRegistry,
+        store: SharedLibraryStore,
+        hasLiveConnections: @escaping @Sendable () -> Bool
+    ) {
+        // Same one-way handoff `reapplyPolicy` documents: the registry is
+        // confined to this queue.
+        nonisolated(unsafe) let registry = registry
+        queue.async {
+            ProviderStaleness.exitIfIdleAndSuperseded(
+                registry: registry, store: store, hasLiveConnections: hasLiveConnections
+            )
+        }
+    }
+
     /// The tier for one surface, from its last known system state plus the
     /// manifest as it stands right now. Shared by `update` and the Darwin
     /// notification path so the two can never disagree.

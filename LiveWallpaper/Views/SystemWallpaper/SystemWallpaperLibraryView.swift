@@ -74,10 +74,7 @@ struct SystemWallpaperLibraryView: View {
         ScrollView {
             LazyVStack(spacing: DesignTokens.Spacing.lg) {
                 notice
-                LazyVGrid(
-                    columns: DesignTokens.LibraryGrid.columns(for: tileSize, aspect: .wide),
-                    spacing: DesignTokens.LibraryGrid.spacing
-                ) {
+                LibraryGalleryGrid(size: tileSize, aspect: .wide) {
                     ForEach(service.items) { item in
                         SystemWallpaperTile(
                             item: item,

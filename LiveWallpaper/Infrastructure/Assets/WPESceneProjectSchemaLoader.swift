@@ -2,6 +2,7 @@
 import Foundation
 import LiveWallpaperCore
 import LiveWallpaperProWPE
+import os
 
 enum WPESceneProjectSchemaLoader {
     struct Outcome: Sendable {
@@ -18,10 +19,94 @@ enum WPESceneProjectSchemaLoader {
         }
     }
 
+    private struct CacheKey: Hashable {
+        let workshopID: String
+        let cacheRelativePath: String
+        let entryFile: String
+        let assetStorage: String
+        let originFingerprint: String?
+        let supportRootPath: String?
+    }
+
+    /// Answers about a scene (a schema, or a confirmed absence) are memoized so a re-mounted
+    /// inspector can render on its first frame; failed reads are never memoized.
+    private static let cache = OSAllocatedUnfairLock<[CacheKey: Outcome]>(initialState: [:])
+
+    /// Process-lifetime observer; the token is deliberately dropped (never removed).
+    private static let observesImports: Bool = {
+        _ = NotificationCenter.default.addObserver(
+            forName: .wpeImportDidComplete, object: nil, queue: nil
+        ) { _ in
+            invalidateCache()
+        }
+        return true
+    }()
+
+    private static func cacheKey(
+        descriptor: SceneDescriptor,
+        wpeOrigin: WPEOrigin?,
+        supportRoot: URL?
+    ) -> CacheKey {
+        CacheKey(
+            workshopID: descriptor.workshopID,
+            cacheRelativePath: descriptor.cacheRelativePath,
+            entryFile: descriptor.entryFile,
+            assetStorage: String(describing: descriptor.assetStorage),
+            originFingerprint: wpeOrigin?.sourceFolderBookmark.base64EncodedString(),
+            supportRootPath: supportRoot?.path
+        )
+    }
+
+    static func cachedOutcome(
+        descriptor: SceneDescriptor,
+        wpeOrigin: WPEOrigin?,
+        applicationSupportRootURL: URL? = nil
+    ) -> Outcome? {
+        let key = cacheKey(
+            descriptor: descriptor,
+            wpeOrigin: wpeOrigin,
+            supportRoot: applicationSupportRootURL ?? defaultApplicationSupportRoot()
+        )
+        return cache.withLock { $0[key] }
+    }
+
+    static func invalidateCache() {
+        cache.withLock { $0.removeAll() }
+    }
+
     static func load(
         descriptor: SceneDescriptor,
         wpeOrigin: WPEOrigin?,
         applicationSupportRootURL: URL? = nil
+    ) async -> Outcome {
+        _ = observesImports
+        if let cached = cachedOutcome(
+            descriptor: descriptor,
+            wpeOrigin: wpeOrigin,
+            applicationSupportRootURL: applicationSupportRootURL
+        ) {
+            return cached
+        }
+        let outcome = await read(
+            descriptor: descriptor,
+            wpeOrigin: wpeOrigin,
+            applicationSupportRootURL: applicationSupportRootURL
+        )
+        if outcome.schema != nil || outcome.isExpectedAbsence {
+            let key = cacheKey(
+                descriptor: descriptor,
+                wpeOrigin: wpeOrigin,
+                supportRoot: applicationSupportRootURL ?? defaultApplicationSupportRoot()
+            )
+            cache.withLock { $0[key] = outcome }
+        }
+        return outcome
+    }
+
+    private static func read(
+        descriptor: SceneDescriptor,
+        wpeOrigin: WPEOrigin?,
+        applicationSupportRootURL: URL?
     ) async -> Outcome {
         guard WPEPathSafety.isSafeCacheRelativePath(descriptor.cacheRelativePath) else {
             return Outcome(

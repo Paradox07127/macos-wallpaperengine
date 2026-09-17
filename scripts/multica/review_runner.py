@@ -442,9 +442,18 @@ def validate_report(report: Any) -> dict[str, Any]:
     return report
 
 
+CREDENTIAL_ENVIRONMENT_KEYS = ("GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN",
+                               "SSH_AUTH_SOCK", "SSH_AGENT_PID")
+
+
 def git_environment() -> dict[str, str]:
-    """Do not let controller/global Git extensions run before model sandboxing."""
-    env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    """Do not let controller/global Git extensions run before model sandboxing.
+
+    Credentials are dropped here, at the root every runner environment derives from, so a
+    direct `review_runner.py run` is as clean as one launched by the executor.
+    """
+    env = {key: value for key, value in os.environ.items()
+           if not key.startswith("GIT_") and key not in CREDENTIAL_ENVIRONMENT_KEYS}
     env.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull,
                GIT_ATTR_NOSYSTEM="1", GIT_TERMINAL_PROMPT="0", GIT_ALLOW_PROTOCOL="file",
                GIT_NO_REPLACE_OBJECTS="1", GIT_NO_LAZY_FETCH="1")

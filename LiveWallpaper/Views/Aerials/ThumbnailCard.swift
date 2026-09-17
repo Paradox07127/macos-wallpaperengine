@@ -95,7 +95,10 @@ struct ThumbnailCard: View {
             .accessibilityElement(children: .combine)
             .accessibilityLabel(accessibilityText)
             .accessibilityActions {
-                if screens.count == 1, let only = screens.first {
+                // Same gate as the tap and the context menu.
+                if !location.isAvailable {
+                    EmptyView()
+                } else if screens.count == 1, let only = screens.first {
                     Button("Apply") { onApply(only) }
                 } else if screens.count > 1 {
                     ForEach(screens, id: \.id) { screen in

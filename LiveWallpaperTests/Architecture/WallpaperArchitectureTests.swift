@@ -2426,6 +2426,22 @@ struct ScreenRuntimeOwnershipTests {
         ))
     }
 
+    @Test("A committed or cancelled candidate never consults isStillCurrent")
+    func candidateErrorPublicationSkipsCurrencyCheckUnlessFailed() {
+        var consulted = 0
+        func stillCurrent() -> Bool {
+            consulted += 1
+            return true
+        }
+        _ = WallpaperCandidateErrorPolicy.errorToPublish(.ready, isStillCurrent: stillCurrent(), candidateError: nil, fallbackWallpaperType: .scene)
+        _ = WallpaperCandidateErrorPolicy.shouldPublish(.ready, isStillCurrent: stillCurrent())
+        _ = WallpaperCandidateErrorPolicy.shouldPublish(.cancelled, isStillCurrent: stillCurrent())
+        #expect(consulted == 0)
+        _ = WallpaperCandidateErrorPolicy.errorToPublish(.failed, isStillCurrent: stillCurrent(), candidateError: nil, fallbackWallpaperType: .scene)
+        _ = WallpaperCandidateErrorPolicy.shouldPublish(.timedOut, isStillCurrent: stillCurrent())
+        #expect(consulted == 2)
+    }
+
     @Test("Candidate error publication excludes cancellation and stale failures")
     func candidateErrorPublicationRequiresCurrentFailure() {
         #expect(WallpaperCandidateErrorPolicy.errorToPublish(

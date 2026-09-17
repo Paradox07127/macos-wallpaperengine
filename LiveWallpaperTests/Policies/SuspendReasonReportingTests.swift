@@ -29,6 +29,13 @@ struct SuspendReasonReportingTests {
         #expect(!thermal.isEmpty)
     }
 
+    @Test("Full-screen and window coverage name their own setting")
+    func coverageReasonsNameTheirSetting() throws {
+        let fullScreen = try #require(SuspendReasonText.localized(for: [.fullScreen]))
+        let covered = try #require(SuspendReasonText.localized(for: [.windowOcclusion]))
+        #expect(fullScreen != covered, "Turning off one pause setting must not leave the other's wording unexplained")
+    }
+
     @Test("Every reason the UI can show resolves to a catalogued string")
     func everySurfacedReasonHasText() throws {
         for reason in WallpaperSuspendReason.allCases where reason.isUserVisible {

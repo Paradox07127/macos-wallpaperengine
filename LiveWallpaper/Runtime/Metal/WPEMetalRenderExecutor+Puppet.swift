@@ -2155,6 +2155,7 @@ extension WPEMetalRenderExecutor {
         descriptor.colorAttachments[0].storeAction = .store
         descriptor.colorAttachments[0].clearColor = clearColor
         gpuPassProfiler?.attach(descriptor, to: commandBuffer, label: "puppet-deferred|\(fragmentName)")
+        closeSharedSceneEncoderForHelperEncoder()
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
             throw WPEMetalRenderExecutorError.commandBufferFailed
         }
@@ -2229,6 +2230,7 @@ extension WPEMetalRenderExecutor {
         descriptor.colorAttachments[0].clearColor = clearColor
 
         gpuPassProfiler?.attach(descriptor, to: commandBuffer, label: "puppet|\(fragmentName)")
+        closeSharedSceneEncoderForHelperEncoder()
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
             throw WPEMetalRenderExecutorError.commandBufferFailed
         }

@@ -60,10 +60,14 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
     private var resources: ResourceTables = ResourceTables()
     private var shaderImplementationInventory: [WPEShaderImplementationInventoryEntry] = []
 
-    private init() {}
+    private let artifacts: WPESceneDebugArtifacts
+
+    init(artifacts: WPESceneDebugArtifacts = .shared) {
+        self.artifacts = artifacts
+    }
 
     var isAccumulating: Bool {
-        guard WPESceneDebugArtifacts.shared.isEnabled else { return false }
+        guard artifacts.isEnabled else { return false }
         lock.lock()
         defer { lock.unlock() }
         return scene != nil && !frameComplete
@@ -123,7 +127,7 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         descriptor: String,
         shaderImplementationInventory: [WPEShaderImplementationInventoryEntry] = []
     ) {
-        guard WPESceneDebugArtifacts.shared.isEnabled else { return }
+        guard artifacts.isEnabled else { return }
         lock.lock()
         scene = SceneContext(workshopID: workshopID, projectJsonPath: projectJsonPath, descriptor: descriptor)
         frameComplete = false
@@ -155,7 +159,7 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         usesObjectQuad: Bool,
         nativeState: NativeRenderState
     ) {
-        guard WPESceneDebugArtifacts.shared.isEnabled else { return }
+        guard artifacts.isEnabled else { return }
         lock.lock()
         defer { lock.unlock() }
         guard scene != nil, !frameComplete else { return }
@@ -233,8 +237,9 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
             "slot": 0,
             "resource": bufferResource,
             "rawBytesSha256": sha256Hex(packedBytes),
-            "variables": uniformVariables(layout: result.uniformLayout, slots: packedUniformSlots),
-            "packedSlots": packedUniformSlots.map { [Double($0.x), Double($0.y), Double($0.z), Double($0.w)] }
+            "variables": WPECanonicalUniformTrace.variables(layout: result.uniformLayout, slots: packedUniformSlots),
+            "packedSlots": WPECanonicalUniformTrace.floatSlots(packedUniformSlots),
+            "rawSlotBits": WPECanonicalUniformTrace.bitSlots(packedUniformSlots),
         ]
         // Keyed by authored slot so it lines up with the sampler entries below
         // and with the Windows side's register numbering.
@@ -288,7 +293,7 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         usesObjectQuad: Bool,
         nativeState: NativeRenderState
     ) {
-        guard WPESceneDebugArtifacts.shared.isEnabled else { return }
+        guard artifacts.isEnabled else { return }
         lock.lock()
         defer { lock.unlock() }
         guard scene != nil, !frameComplete else { return }
@@ -411,7 +416,7 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         meshCenter: SIMD2<Float>,
         objectCenterAndSize: SIMD4<Float>?
     ) {
-        guard WPESceneDebugArtifacts.shared.isEnabled else { return }
+        guard artifacts.isEnabled else { return }
         lock.lock()
         defer { lock.unlock() }
         guard scene != nil, !frameComplete else { return }
@@ -578,7 +583,7 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
     }
 
     func recordPassOutputs(_ entries: [(label: String, texture: MTLTexture)]) {
-        guard WPESceneDebugArtifacts.shared.isEnabled else { return }
+        guard artifacts.isEnabled else { return }
         lock.lock()
         let shouldRecord = !frameComplete
         lock.unlock()
@@ -625,7 +630,7 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         vertices: [[String: Any]] = [],
         verticesTruncated: Bool = false
     ) {
-        guard WPESceneDebugArtifacts.shared.isEnabled else { return }
+        guard artifacts.isEnabled else { return }
         lock.lock()
         defer { lock.unlock() }
         guard scene != nil, !frameComplete else { return }
@@ -716,16 +721,17 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         passes.append(passRecord)
     }
 
+    @discardableResult
     func finishFrame(
         outputTexture: MTLTexture,
         runtimeUniforms: WPEMetalRuntimeUniforms?,
         firstFrameStats: WPEMetalTextureVisualStats?,
         resolutionDiagnostics: WPEResolutionDiagnosticsSnapshot,
         frameOrdinal: Int = 0
-    ) {
-        guard WPESceneDebugArtifacts.shared.isEnabled else { return }
+    ) -> Data? {
+        guard artifacts.isEnabled else { return nil }
         lock.lock()
-        guard let scene, !frameComplete else { lock.unlock(); return }
+        guard let scene, !frameComplete else { lock.unlock(); return nil }
         frameComplete = true
         let passSnapshot = passes
         let resourceSnapshot = resources
@@ -815,13 +821,14 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         guard JSONSerialization.isValidJSONObject(trace),
               let data = try? JSONSerialization.data(withJSONObject: trace, options: [.prettyPrinted, .sortedKeys]),
               let text = String(data: data, encoding: .utf8) else {
-            WPESceneDebugArtifacts.shared.appendLog("[canonical-trace] trace.json serialization failed", level: .error)
-            return
+            artifacts.appendLog("[canonical-trace] trace.json serialization failed", level: .error)
+            return nil
         }
-        WPESceneDebugArtifacts.shared.recordNote(name: "trace.json", contents: text)
-        WPESceneDebugArtifacts.shared.appendLog(
+        artifacts.recordNote(name: "trace.json", contents: text)
+        artifacts.appendLog(
             "[canonical-trace] wrote trace.json passes=\(passCount) frame=\(frameOrdinal)", level: .info
         )
+        return data
     }
 
     // MARK: - Description helpers (mirror WPESceneDebugArtifacts)
@@ -929,46 +936,9 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         ]
     }
 
-    private func uniformVariables(layout: [WPEUniformSlot], slots: [SIMD4<Float>]) -> [[String: Any]] {
-        layout.map { uniform in
-            let floats: [Double] = (0..<max(uniform.slotCount, 0)).flatMap { offset -> [Double] in
-                let index = uniform.slot + offset
-                guard slots.indices.contains(index) else { return [] }
-                let v = slots[index]
-                return [Double(v.x), Double(v.y), Double(v.z), Double(v.w)]
-            }
-            var variable: [String: Any] = [
-                "name": uniform.name,
-                "type": uniform.glslType,
-                "slot": uniform.slot,
-                "slotCount": uniform.slotCount,
-                "arrayLength": jsonOrNull(uniform.arrayLength),
-                "materialName": jsonOrNull(uniform.materialName),
-                "rawSlotFloats": floats
-            ]
-            switch uniform.glslType {
-            case "float", "int", "bool":
-                variable["value"] = jsonOrNull(floats.first)
-            case "vec2": variable["value"] = Array(floats.prefix(2))
-            case "vec3": variable["value"] = Array(floats.prefix(3))
-            case "vec4": variable["value"] = Array(floats.prefix(4))
-            case "mat4":
-                let m = Array(floats.prefix(16))
-                variable["value"] = m
-                if m.count == 16 {
-                    variable["matrix4x4"] = m
-                    variable["matrixMajor"] = "row"
-                }
-            default:
-                variable["value"] = floats
-            }
-            return variable
-        }
-    }
-
     private func puppetUniformVariables(_ inputs: [PuppetUniformInput]) -> [[String: Any]] {
         inputs.enumerated().map { index, input in
-            let values = [Double(input.value.x), Double(input.value.y), Double(input.value.z), Double(input.value.w)]
+            let values = WPECanonicalUniformTrace.floatSlots([input.value])[0]
             return [
                 "name": input.name,
                 "type": input.type,
@@ -1024,7 +994,7 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
     private func textureMetrics(_ texture: MTLTexture) -> (sha256: String, visualStats: [String: Any])? {
         // Output ring is `.private`; one staging copy for hash + visual stats.
         guard let texture = WPEMetalTextureSnapshotter.stagedForCPURead(texture) else {
-            WPESceneDebugArtifacts.shared.appendLog(
+            artifacts.appendLog(
                 "[canonical-trace] CPU staging blit failed for texture metrics",
                 level: .warning
             )
@@ -1073,7 +1043,7 @@ final class WPECanonicalTraceRecorder: @unchecked Sendable {
         // `textureMetrics` stages via `stagedForCPURead` (shared or managed).
         // A `.private` texture here is a caller bug — skip rather than hash garbage.
         guard texture.storageMode == .shared || texture.storageMode == .managed else {
-            WPESceneDebugArtifacts.shared.appendLog(
+            artifacts.appendLog(
                 "[canonical-trace] skipped getBytes for non-shared texture (storageMode=\(texture.storageMode.rawValue))",
                 level: .warning
             )

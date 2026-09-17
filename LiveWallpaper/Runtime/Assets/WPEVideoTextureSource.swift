@@ -163,6 +163,15 @@ final class WPEVideoTextureSource {
     var forceSRGBWrapFailureForTesting = false
     var forceSampleViewFailureForTesting = false
     var forceWorkingTextureClearFailureForTesting = false
+    var forceConversionEncoderFailureForTesting = false
+    var publishedTextureForTesting: MTLTexture? {
+        latest?.texture
+    }
+
+    var lastPlayerPresentationTimeForTesting: CMTime? {
+        lastPlayerLevelPresentationTime
+    }
+
     private(set) var srgbWrapFailuresForTesting = 0
     private(set) var sampleViewFailuresForTesting = 0
     #endif
@@ -334,10 +343,9 @@ final class WPEVideoTextureSource {
         }
 
         if #available(macOS 15.0, *), let playerOutput = playerLevelOutput as? WPEPlayerLevelVideoOutput {
-            if let frame = playerOutput.currentFrame(),
-               lastPlayerLevelPresentationTime.map({ CMTimeCompare($0, frame.presentationTime) != 0 }) ?? true {
-                publish(pixelBuffer: frame.pixelBuffer)
-                lastPlayerLevelPresentationTime = frame.presentationTime
+            if let frame = playerOutput.currentFrame() {
+                publishPlayerLevelFrame(pixelBuffer: frame.pixelBuffer,
+                                        presentationTime: frame.presentationTime, output: playerOutput)
             }
             return currentTexture
         }
@@ -506,18 +514,34 @@ final class WPEVideoTextureSource {
         return itemOutputs.first { $0.item === current }?.output
     }
 
-    private func publish(pixelBuffer: CVPixelBuffer) {
+    /// Only a successfully staged frame consumes its PTS. Rebuilding the output
+    /// invalidates the old identity, even if its first replacement has the same PTS.
+    private func publishPlayerLevelFrame(pixelBuffer: CVPixelBuffer, presentationTime: CMTime, output: AnyObject?) {
+        guard lastPlayerLevelPresentationTime.map({ CMTimeCompare($0, presentationTime) != 0 }) ?? true else { return }
+        if publish(pixelBuffer: pixelBuffer), playerLevelOutput === output {
+            lastPlayerLevelPresentationTime = presentationTime
+        }
+    }
+
+    #if DEBUG
+    func ingestPlayerLevelFrameForTesting(pixelBuffer: CVPixelBuffer, presentationTime: CMTime) {
+        publishPlayerLevelFrame(pixelBuffer: pixelBuffer, presentationTime: presentationTime, output: playerLevelOutput)
+    }
+    #endif
+
+    @discardableResult
+    private func publish(pixelBuffer: CVPixelBuffer) -> Bool {
         #if DEBUG
         publishedFrameCountForTesting += 1
         #endif
         sweepRetiredFrames()
         switch CVPixelBufferGetPixelFormatType(pixelBuffer) {
         case kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange:
-            publishBiPlanar(pixelBuffer: pixelBuffer, fullRange: false)
+            return publishBiPlanar(pixelBuffer: pixelBuffer, fullRange: false)
         case kCVPixelFormatType_420YpCbCr8BiPlanarFullRange:
-            publishBiPlanar(pixelBuffer: pixelBuffer, fullRange: true)
+            return publishBiPlanar(pixelBuffer: pixelBuffer, fullRange: true)
         case kCVPixelFormatType_32BGRA:
-            publishBGRA(pixelBuffer: pixelBuffer)
+            return publishBGRA(pixelBuffer: pixelBuffer)
         default:
             // A format outside the requested set — drop the frame, keep the last one.
             if !loggedUnsupportedFormat {
@@ -527,15 +551,16 @@ final class WPEVideoTextureSource {
                     category: .wpeRender
                 )
             }
+            return false
         }
     }
 
-    private func publishBiPlanar(pixelBuffer: CVPixelBuffer, fullRange: Bool) {
+    private func publishBiPlanar(pixelBuffer: CVPixelBuffer, fullRange: Bool) -> Bool {
         if !forcedBGRAOutput, Self.isHDRTransfer(pixelBuffer) {
             rebuildOutputsForBGRAFallback(reason: "HDR transfer function detected")
-            return
+            return false
         }
-        guard let pipeline = ensureConversionPipeline() else { return }
+        guard let pipeline = ensureConversionPipeline() else { return false }
         let lumaWidth = CVPixelBufferGetWidthOfPlane(pixelBuffer, 0)
         let lumaHeight = CVPixelBufferGetHeightOfPlane(pixelBuffer, 0)
         let chromaWidth = CVPixelBufferGetWidthOfPlane(pixelBuffer, 1)
@@ -546,16 +571,16 @@ final class WPEVideoTextureSource {
             kCFAllocatorDefault, textureCache, pixelBuffer, nil,
             .r8Unorm, lumaWidth, lumaHeight, 0, &lumaCV
         ) == kCVReturnSuccess, let lumaCV, let lumaTexture = CVMetalTextureGetTexture(lumaCV) else {
-            return
+            return false
         }
         var chromaCV: CVMetalTexture?
         guard CVMetalTextureCacheCreateTextureFromImage(
             kCFAllocatorDefault, textureCache, pixelBuffer, nil,
             .rg8Unorm, chromaWidth, chromaHeight, 1, &chromaCV
         ) == kCVReturnSuccess, let chromaCV, let chromaTexture = CVMetalTextureGetTexture(chromaCV) else {
-            return
+            return false
         }
-        guard let working = ensureWorkingTexture(width: lumaWidth, height: lumaHeight) else { return }
+        guard let working = ensureWorkingTexture(width: lumaWidth, height: lumaHeight) else { return false }
 
         let matrixAttachment = CVBufferCopyAttachment(pixelBuffer, kCVImageBufferYCbCrMatrixKey, nil) as? String
         let conversion = WPEVideoYCbCrConversion.make(
@@ -576,9 +601,10 @@ final class WPEVideoTextureSource {
                 uniforms: conversion
             )
         )
+        return true
     }
 
-    private func publishBGRA(pixelBuffer: CVPixelBuffer) {
+    private func publishBGRA(pixelBuffer: CVPixelBuffer) -> Bool {
         let width = CVPixelBufferGetWidth(pixelBuffer)
         let height = CVPixelBufferGetHeight(pixelBuffer)
         #if DEBUG
@@ -613,7 +639,7 @@ final class WPEVideoTextureSource {
                     category: .wpeRender
                 )
             }
-            return
+            return false
         }
         #if DEBUG
         lastPublishPathForTesting = .bgra
@@ -621,6 +647,7 @@ final class WPEVideoTextureSource {
         // Nothing to convert, but the publish still goes through staging: the
         // scene command buffer is what fences the frame this one replaces.
         stage(PublishedFrame(texture: texture, retainedSourceTextures: [cvTexture]), conversion: nil)
+        return true
     }
 
     /// Hand a decoded frame to the renderer without publishing it. Replacing an already-staged
@@ -638,21 +665,30 @@ final class WPEVideoTextureSource {
 
     // MARK: - Renderer frame contract
 
-    var hasStagedFrameWork: Bool { staged != nil }
+    var hasStagedFrameWork: Bool {
+        staged != nil
+    }
+
+    private(set) var stagedFrameWorkEncodingFailed = false
 
     /// Encode into the scene command buffer before any scene pass so same-buffer ordering puts the write ahead of every read.
     func encodeStagedFrameWork(into commandBuffer: MTLCommandBuffer) {
+        stagedFrameWorkEncodingFailed = false
         guard !isInvalidated, let staged else { return }
         if let conversion = staged.conversion {
             let passDescriptor = MTLRenderPassDescriptor()
             passDescriptor.colorAttachments[0].texture = conversion.target
             passDescriptor.colorAttachments[0].loadAction = .dontCare
             passDescriptor.colorAttachments[0].storeAction = .store
-            guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: passDescriptor) else {
-                // Nothing encoded and nothing armed, so `commitStagedFrameWork`
-                // will not publish: the frame stays staged for the next buffer
-                // and the working texture keeps the last converted frame — the
-                // very texture object `latest` hands out.
+            #if DEBUG
+            let forceFailure = forceConversionEncoderFailureForTesting
+            #else
+            let forceFailure = false
+            #endif
+            guard !forceFailure, let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: passDescriptor) else {
+                stagedFrameWorkEncodingFailed = true
+                // The renderer already captured the staged texture before encoding.
+                // It must abandon this scene buffer, not sample an unconverted resize target.
                 return
             }
             WPEFrameOccupancyMeter.count(.helperEncoder)
@@ -745,6 +781,7 @@ final class WPEVideoTextureSource {
     private func rebuildOutputsForBGRAFallback(reason: String) {
         guard !forcedBGRAOutput else { return }
         forcedBGRAOutput = true
+        lastPlayerLevelPresentationTime = nil
         bgraFallbackRebuildCountForTesting += 1
         Logger.info(
             "[WPE.video] \(reason) — pinning video output to 32BGRA",
@@ -874,6 +911,10 @@ final class WPEVideoTextureSource {
             return false
         }
         encodeStagedFrameWork(into: commandBuffer)
+        guard !stagedFrameWorkEncodingFailed else {
+            rollbackStagedFrameWork()
+            return false
+        }
         commandBuffer.commit()
         commitStagedFrameWork()
         return true

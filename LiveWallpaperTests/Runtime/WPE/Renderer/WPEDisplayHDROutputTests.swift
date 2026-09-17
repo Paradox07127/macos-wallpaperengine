@@ -38,10 +38,21 @@ struct WPEDisplayHDROutputTests {
 
     @Test("The drawable request needs both the setting and a capable screen")
     func requestNeedsSettingAndCapableScreen() {
-        #expect(WPEDisplayHDROutput.shouldRequestHDROutput(settingEnabled: true, hasCapableScreen: true))
-        #expect(WPEDisplayHDROutput.shouldRequestHDROutput(settingEnabled: true, hasCapableScreen: false) == false)
-        #expect(WPEDisplayHDROutput.shouldRequestHDROutput(settingEnabled: false, hasCapableScreen: true) == false)
-        #expect(WPEDisplayHDROutput.shouldRequestHDROutput(settingEnabled: false, hasCapableScreen: false) == false)
+        #expect(WPEDisplayHDROutput.shouldRequestHDROutput(settingEnabled: true, targetMaximumPotentialEDR: 2))
+        #expect(WPEDisplayHDROutput.shouldRequestHDROutput(settingEnabled: true, targetMaximumPotentialEDR: 1) == false)
+        #expect(WPEDisplayHDROutput.shouldRequestHDROutput(settingEnabled: false, targetMaximumPotentialEDR: 2) == false)
+        #expect(WPEDisplayHDROutput.shouldRequestHDROutput(settingEnabled: false, targetMaximumPotentialEDR: 1) == false)
+    }
+
+    @Test("mixed-screen output uses each target's capability; missing and invalid destinations stay SDR")
+    func targetScreenDeterminesFormat() {
+        let targetCapabilities: [CGFloat?] = [1, 4, nil, .nan, .infinity]
+        let formats = targetCapabilities.map {
+            WPEDisplayHDROutput.drawablePixelFormat(hdrOutputEnabled: WPEDisplayHDROutput.shouldRequestHDROutput(
+                settingEnabled: true, targetMaximumPotentialEDR: $0
+            ))
+        }
+        #expect(formats == [.rgba8Unorm_srgb, .rgba16Float, .rgba8Unorm_srgb, .rgba8Unorm_srgb, .rgba8Unorm_srgb])
     }
 
     @Test("off leaves the layer's colorspace and EDR request untouched")

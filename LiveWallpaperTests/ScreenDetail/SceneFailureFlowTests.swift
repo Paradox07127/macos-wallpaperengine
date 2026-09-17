@@ -18,6 +18,36 @@ struct SceneFailureFlowTests {
         #expect(!result.isExpectedAbsence)
     }
 
+    @Test("Successful scene schemas are synchronously reused without caching failures")
+    func sceneSchemaCacheReusesSuccessfulReads() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("schema-cache-\(UUID().uuidString)", isDirectory: true)
+        let descriptor = SceneDescriptor(workshopID: "42", cacheRelativePath: "wpe-cache/42", entryFile: "scene.json", capabilityTier: .imageOnly)
+        let folder = root.appendingPathComponent("LiveWallpaper/wpe-cache/42")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let project = folder.appendingPathComponent("project.json")
+        try Data("{".utf8).write(to: project)
+        let failed = await WPESceneProjectSchemaLoader.load(descriptor: descriptor, wpeOrigin: nil, applicationSupportRootURL: root)
+        #expect(failed.failure != nil)
+        #expect(WPESceneProjectSchemaLoader.cachedOutcome(descriptor: descriptor, wpeOrigin: nil, applicationSupportRootURL: root) == nil)
+
+        try Data(#"{"general":{"properties":{"enabled":{"type":"bool","text":"Enabled","value":true}}}}"#.utf8).write(to: project)
+        let loaded = await WPESceneProjectSchemaLoader.load(descriptor: descriptor, wpeOrigin: nil, applicationSupportRootURL: root)
+        #expect(loaded.schema?.properties.map(\.key) == ["enabled"])
+        try FileManager.default.removeItem(at: project)
+        let cached = WPESceneProjectSchemaLoader.cachedOutcome(descriptor: descriptor, wpeOrigin: nil, applicationSupportRootURL: root)
+        #expect(cached?.schema?.properties.map(\.key) == ["enabled"])
+        let reused = await WPESceneProjectSchemaLoader.load(descriptor: descriptor, wpeOrigin: nil, applicationSupportRootURL: root)
+        #expect(reused.schema?.properties.map(\.key) == ["enabled"])
+
+        let origin = WPEOrigin(workshopID: "42", title: "Scene", originalType: .scene, sourceFolderBookmark: Data([1]), cacheRelativePath: nil, previewFileName: nil)
+        #expect(WPESceneProjectSchemaLoader.cachedOutcome(descriptor: descriptor, wpeOrigin: origin, applicationSupportRootURL: root) == nil)
+        let other = SceneDescriptor(workshopID: "42", cacheRelativePath: "wpe-cache/42", entryFile: "other.json", capabilityTier: .imageOnly)
+        #expect(WPESceneProjectSchemaLoader.cachedOutcome(descriptor: other, wpeOrigin: nil, applicationSupportRootURL: root) == nil)
+        WPESceneProjectSchemaLoader.invalidateCache()
+        #expect(WPESceneProjectSchemaLoader.cachedOutcome(descriptor: descriptor, wpeOrigin: nil, applicationSupportRootURL: root) == nil)
+    }
+
     @MainActor
     @Test("A long author title cannot displace the actual cause from the issue URL")
     func reportKeepsCauseUnderBudget() {

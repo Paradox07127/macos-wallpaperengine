@@ -76,7 +76,7 @@ struct WPERenderThreadDrainRuntimeTests {
         let installed = await eventually { holder.pair != nil }
         #expect(installed, "tick source never installed on the render loop")
         guard let (source, loop) = holder.pair else {
-            thread.shutdown()
+            thread.requestStop()
             return
         }
 
@@ -99,7 +99,7 @@ struct WPERenderThreadDrainRuntimeTests {
 
         #expect(probe.executed.count == ticks)
         #expect(probe.deallocated.count == ticks)
-        thread.shutdown()
+        thread.requestStop()
     }
 }
 

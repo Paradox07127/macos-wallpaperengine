@@ -131,31 +131,27 @@ public enum DesignTokens {
     }
 
     public enum LibraryGrid {
-        public static let minimumColumnWidth: CGFloat = 184
-        public static let maximumColumnWidth: CGFloat = 220
-
         /// Tile shape, which decides the ladder: `.wide` is 16:9, `.square` is Workshop.
         public enum Aspect {
             case square
             case wide
         }
 
-        public static func columnWidths(
-            for size: LibraryTileSize,
-            aspect: Aspect
-        ) -> (min: CGFloat, max: CGFloat) {
+        /// Fixed on purpose: tiles never stretch with the window, so a card keeps its place
+        /// while the page widens and the slack stays on the trailing edge.
+        public static func columnWidth(for size: LibraryTileSize, aspect: Aspect) -> CGFloat {
             switch aspect {
             case .square:
                 switch size {
-                case .small: (128, 152)
-                case .medium: (minimumColumnWidth, maximumColumnWidth)
-                case .large: (248, 300)
+                case .small: 152
+                case .medium: 220
+                case .large: 300
                 }
             case .wide:
                 switch size {
-                case .small: (240, 288)
-                case .medium: (320, 384)
-                case .large: (432, 520)
+                case .small: 288
+                case .medium: 384
+                case .large: 520
                 }
             }
         }
@@ -168,9 +164,11 @@ public enum DesignTokens {
         public static let horizontalPadding: CGFloat = LibraryFilterBar.horizontalPadding
         public static let verticalPadding: CGFloat = Spacing.cardInset
 
-        public static func columns(for size: LibraryTileSize, aspect: Aspect) -> [GridItem] {
-            let widths = columnWidths(for: size, aspect: aspect)
-            return [GridItem(.adaptive(minimum: widths.min, maximum: widths.max), spacing: spacing)]
+        /// As many fixed columns as `width` holds, never fewer than one.
+        public static func columns(for size: LibraryTileSize, aspect: Aspect, fitting width: CGFloat) -> [GridItem] {
+            let column = columnWidth(for: size, aspect: aspect)
+            let count = max(1, Int(((width + spacing) / (column + spacing)).rounded(.down)))
+            return Array(repeating: GridItem(.fixed(column), spacing: spacing), count: count)
         }
     }
 

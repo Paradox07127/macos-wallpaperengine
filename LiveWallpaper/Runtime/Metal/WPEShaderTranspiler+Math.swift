@@ -62,8 +62,49 @@ extension WPEShaderTranspiler {
         return lines.joined(separator: "\n")
     }
 
-    /// Prepended to the MSL when routing is skipped; the intrinsic calls in that shader then keep `metal::mix` semantics (no extrapolation guarantee).
-    static let authoredMixDiagnostic = "// WPE-DIAGNOSTIC: mix routing skipped (authored mix): the shader defines its own mix, so intrinsic mix calls keep metal::mix semantics."
+    /// GLSL declarations introduce name ownership from their position onward. A
+    /// helper *before* the first authored mix declaration can still call the builtin.
+    /// Protect those calls before resource threading appends the author's uniforms
+    /// to every remaining call with that name. Later calls/macros stay conservative.
+    static func routingMixBeforeAuthoredDeclaration(in source: String) -> String {
+        let masked = maskComments(source)
+        guard !masked.contains("\\\n"),
+              masked.range(of: #"(?m)^\s*#\s*define\s+mix(?:\s|\()"#, options: .regularExpression) == nil,
+              let first = parseHelperFunctions(in: masked).first(where: { $0.name == "mix" }),
+              let declarations = try? NSRegularExpression(pattern: #"\b([A-Za-z_]\w*)\s+(mix)\s*\("#),
+              let calls = try? NSRegularExpression(pattern: #"(?<![:A-Za-z0-9_])mix\s*\("#) else {
+            return source
+        }
+        var boundary = first.parameterRange.lowerBound
+        // Include forward prototypes in the ownership boundary. A return statement
+        // is a call, not a declaration; other uncertain tokens only narrow this scope.
+        for match in declarations.matches(in: masked, range: NSRange(masked.startIndex ..< boundary, in: masked)) {
+            guard let type = Range(match.range(at: 1), in: masked), masked[type] != "return",
+                  let name = Range(match.range(at: 2), in: masked) else { continue }
+            boundary = min(boundary, name.lowerBound)
+        }
+        var replacements: [Range<String.Index>] = []
+        for match in calls.matches(in: masked, range: NSRange(masked.startIndex ..< boundary, in: masked)) {
+            guard let range = Range(match.range, in: masked) else { continue }
+            let lineStart = masked[..<range.lowerBound].lastIndex(of: "\n").map { masked.index(after: $0) } ?? masked.startIndex
+            // Do not mutate macro definitions; expansion and name ownership are a
+            // separate concern, especially when an alias is invoked after the boundary.
+            guard !masked[lineStart ..< range.lowerBound].trimmingCharacters(in: .whitespaces).hasPrefix("#") else { continue }
+            let open = masked.index(before: range.upperBound)
+            guard let close = matchingDelimiter(in: masked, open: open, openChar: "(", closeChar: ")"),
+                  close < boundary, topLevelArgumentRanges(in: masked, open: open, close: close).count == 3 else { continue }
+            let lower = source.index(source.startIndex, offsetBy: masked.distance(from: masked.startIndex, to: range.lowerBound))
+            replacements.append(lower ..< source.index(lower, offsetBy: 3))
+        }
+        var result = source
+        for range in replacements.reversed() {
+            result.replaceSubrange(range, with: "wpe_glsl_mix")
+        }
+        return result
+    }
+
+    /// Prepended to the MSL when routing is skipped; remaining unqualified calls in that shader keep `metal::mix` semantics (no extrapolation guarantee).
+    static let authoredMixDiagnostic = "// WPE-DIAGNOSTIC: mix routing skipped (authored mix): the shader defines its own mix, so remaining unqualified mix calls keep authored/metal::mix semantics."
 
     /// Run after HLSL narrowing/resource threading. Do not retarget an authored
     /// mix function or macro: that name belongs to the shader, not the intrinsic.

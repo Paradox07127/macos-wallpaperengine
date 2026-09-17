@@ -215,10 +215,7 @@ struct InstalledView: View {
                         .padding(.horizontal, DesignTokens.LibraryGrid.horizontalPadding)
                         .padding(.top, DesignTokens.Spacing.sm)
                 }
-                LazyVGrid(
-                    columns: DesignTokens.LibraryGrid.columns(for: tileSize, aspect: .square),
-                    spacing: DesignTokens.LibraryGrid.spacing
-                ) {
+                LibraryGalleryGrid(size: tileSize, aspect: .square) {
                     ForEach(visibleEntries, id: \.id) { entry in
                         let bookmarked = bookmarkStore.containsWPEBookmark(workshopID: entry.origin.workshopID)
                         HistoryRow(

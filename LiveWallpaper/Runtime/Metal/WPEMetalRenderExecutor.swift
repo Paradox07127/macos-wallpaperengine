@@ -777,6 +777,12 @@ final class WPEMetalRenderExecutor {
                 }
             }
         }
+        // Texture bindings may already point to a new staged resize target. A
+        // failed conversion must abort before any scene reads it; the defer
+        // above rolls back every source, including ones encoded before the failure.
+        guard !stagedTextureWork.contains(where: { $0.stagedFrameWorkEncodingFailed }) else {
+            throw WPEMetalRenderExecutorError.commandBufferFailed
+        }
 
         let reusableHistory: PreviousFrameHistory?
         if let history = previousFrameHistory, history.sceneSize == size {
@@ -1961,6 +1967,7 @@ final class WPEMetalRenderExecutor {
         descriptor.colorAttachments[0].storeAction = .store
         descriptor.colorAttachments[0].clearColor = color
         gpuPassProfiler?.attach(descriptor, to: commandBuffer, label: "clear")
+        closeSharedSceneEncoderForHelperEncoder()
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
             throw WPEMetalRenderExecutorError.commandBufferFailed
         }
@@ -2115,6 +2122,7 @@ final class WPEMetalRenderExecutor {
         descriptor.colorAttachments[0].storeAction = .store
 
         gpuPassProfiler?.attach(descriptor, to: commandBuffer, label: "copy|\(layer.objectName)")
+        closeSharedSceneEncoderForHelperEncoder()
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
             throw WPEMetalRenderExecutorError.commandBufferFailed
         }
@@ -2672,6 +2680,7 @@ final class WPEMetalRenderExecutor {
         descriptor.colorAttachments[0].loadAction = .clear
         descriptor.colorAttachments[0].clearColor = MTLClearColorMake(0, 0, 0, 0)
         descriptor.colorAttachments[0].storeAction = .store
+        closeSharedSceneEncoderForHelperEncoder()
         guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor),
               let pipeline = try? renderPipeline(
                   vertexName: "wpe_fullscreen_vertex",

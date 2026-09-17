@@ -57,7 +57,7 @@ public final class SchemeStore {
             id: existing.id,
             createdAt: existing.createdAt,
             updatedAt: Date(),
-            sourceDisplayName: sourceDisplayName?.trimmingCharacters(in: .whitespacesAndNewlines)
+            sourceDisplayName: sourceDisplayName?.trimmingCharacters(in: .whitespacesAndNewlines).nonEmpty
                 ?? existing.sourceDisplayName,
             // Stays named until the recapture lands: an unnamed PNG is an orphan to the sweep.
             coverFileName: existing.coverFileName
@@ -68,10 +68,13 @@ public final class SchemeStore {
         return replacement
     }
 
+    /// Covers are named by id, so a recapture lands under the name the scheme already has;
+    /// `updatedAt` moves anyway because tiles key their artwork on it.
     public func setCover(_ fileName: String?, for id: UUID) {
         guard let index = schemes.firstIndex(where: { $0.id == id }),
-              schemes[index].coverFileName != fileName else { return }
+              fileName != nil || schemes[index].coverFileName != nil else { return }
         schemes[index].coverFileName = fileName
+        schemes[index].updatedAt = Date()
         persist()
     }
 
@@ -145,5 +148,11 @@ public final class SchemeStore {
 
     private func persist() {
         persistence.save(schemes)
+    }
+}
+
+private extension String {
+    var nonEmpty: String? {
+        isEmpty ? nil : self
     }
 }

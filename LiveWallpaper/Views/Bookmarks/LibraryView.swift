@@ -67,10 +67,7 @@ struct LibraryView: View {
             )
         } else {
             ScrollView {
-                LazyVGrid(
-                    columns: DesignTokens.LibraryGrid.columns(for: tileSize, aspect: .wide),
-                    spacing: DesignTokens.LibraryGrid.spacing
-                ) {
+                LibraryGalleryGrid(size: tileSize, aspect: .wide) {
                     ForEach(visible) { bookmark in
                         BookmarkTile(
                             bookmark: bookmark,
@@ -125,9 +122,18 @@ struct LibraryView: View {
                           // Re-read both sides: the library and the display list can
                           // both change while the provider read is in flight.
                           let bookmark = store.bookmarks.first(where: { $0.id == id }),
-                          let target = screenManager.screens.first(where: { $0.id == screen.id })
+                          screenManager.screens.contains(where: { $0.id == screen.id })
                     else { return }
-                    screenManager.applyBookmark(bookmark, to: target)
+                    // Same gate as the tile: a veiled entry is not applied by dropping it either.
+                    Task { @MainActor in
+                        let location = await LibraryContentLocator.locate(
+                            content: bookmark.content, wpeOrigin: bookmark.wpeOrigin
+                        )
+                        guard location.isAvailable,
+                              let target = screenManager.screens.first(where: { $0.id == screen.id })
+                        else { return }
+                        screenManager.applyBookmark(bookmark, to: target)
+                    }
                 }
             }
         )

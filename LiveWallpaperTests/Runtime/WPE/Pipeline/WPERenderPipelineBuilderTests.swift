@@ -2898,3 +2898,59 @@ private extension Data {
         appendLE(uv.y)
     }
 }
+
+extension WPERenderPipelineBuilderTests {
+    @Test("Include expansion rejects an acyclic exponential DAG with a bounded work error")
+    func includeDAGWorkBudget() throws {
+        var files = ["shaders/effects/budget0.h": "float budget_leaf(float x) { return x; }"]
+        for depth in 1 ... 13 {
+            files["shaders/effects/budget\(depth).h"] = "#include \"budget\(depth - 1).h\"\n#include \"budget\(depth - 1).h\""
+        }
+        files["shaders/effects/budget.vert"] = "void main() { gl_Position = vec4(0.0); }"
+        files["shaders/effects/budget.frag"] = "#include \"budget13.h\"\nvoid main() { gl_FragColor = vec4(1.0); }"
+        let fixture = try makeFixture(files: files)
+        defer { fixture.cleanup() }
+        do {
+            _ = try WPERenderPipelineBuilder(cacheRootURL: fixture.root).build(graph: includeProbeGraph(shader: "effects/budget"))
+            Issue.record("Exponential include expansion escaped its work limit")
+        } catch let WPERenderPipelineError.sourceExpansionLimit(_, limit) {
+            #expect(limit == "include visits (4096)")
+        }
+    }
+
+    @Test("Include expansion rejects excessive depth before recursive stack growth")
+    func includeDepthBudget() throws {
+        var files = ["shaders/effects/depth0.h": "float depth_leaf(float x) { return x; }"]
+        for depth in 1 ... 70 {
+            files["shaders/effects/depth\(depth).h"] = "#include \"depth\(depth - 1).h\""
+        }
+        files["shaders/effects/depth.vert"] = "void main() { gl_Position = vec4(0.0); }"
+        files["shaders/effects/depth.frag"] = "#include \"depth70.h\"\nvoid main() { gl_FragColor = vec4(1.0); }"
+        let fixture = try makeFixture(files: files)
+        defer { fixture.cleanup() }
+        do {
+            _ = try WPERenderPipelineBuilder(cacheRootURL: fixture.root).build(graph: includeProbeGraph(shader: "effects/depth"))
+            Issue.record("Deep include expansion escaped its depth limit")
+        } catch let WPERenderPipelineError.sourceExpansionLimit(_, limit) {
+            #expect(limit == "include depth (64)")
+        }
+    }
+
+    @Test("Include expanded-byte budget covers repeated large bodies, even inside a dead branch")
+    func includeOutputByteBudget() throws {
+        let body = "//" + String(repeating: "x", count: 1024 * 1024)
+        let includes = Array(repeating: "#include \"large.h\"", count: 9).joined(separator: "\n")
+        let fixture = try makeFixture(files: [
+            "shaders/effects/large.h": body,
+            "shaders/effects/large.vert": "void main() { gl_Position = vec4(0.0); }",
+            "shaders/effects/large.frag": "#if 0\n" + includes + "\n#endif\nvoid main() { gl_FragColor = vec4(1.0); }",
+        ])
+        defer { fixture.cleanup() }
+        do {
+            _ = try WPERenderPipelineBuilder(cacheRootURL: fixture.root).build(graph: includeProbeGraph(shader: "effects/large"))
+            Issue.record("Large include expansion escaped its byte limit")
+        } catch let WPERenderPipelineError.sourceExpansionLimit(_, limit) {
+            #expect(limit == "expanded bytes (8 MiB)")
+        }
+    }
+}

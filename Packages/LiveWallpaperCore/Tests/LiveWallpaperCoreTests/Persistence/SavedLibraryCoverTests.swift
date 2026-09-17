@@ -126,6 +126,37 @@ struct SavedLibraryCoverTests {
         #expect(persistence.saveCount == savesAfterAdd + 1)
     }
 
+    /// Covers are named by id, so a recapture lands under the same name; the tile keys its
+    /// artwork on `updatedAt`, which therefore has to move.
+    @MainActor
+    @Test("Re-setting a scheme's cover under the same name still bumps updatedAt")
+    func schemeRecaptureBumpsUpdatedAt() async throws {
+        let store = SchemeStore(persistence: MemorySchemePersistence())
+        let scheme = store.add(name: "Desk", configuration: configuration(), overlay: .default)
+        store.setCover("cover.png", for: scheme.id)
+        let first = try #require(store.schemes.first?.updatedAt)
+        try await Task.sleep(for: .milliseconds(5))
+        store.setCover("cover.png", for: scheme.id)
+        let second = try #require(store.schemes.first?.updatedAt)
+        #expect(second > first)
+        #expect(store.schemes.first?.coverFileName == "cover.png")
+    }
+
+    /// Saved scene bookmarks carry their origin; the popover's "already bookmarked" lookup
+    /// keys on content alone, or every Save would insert a duplicate.
+    @MainActor
+    @Test("A bookmark saved with an origin is still found by its content")
+    func originDoesNotHideAnEquivalentBookmark() {
+        let store = BookmarkStore(persistence: MemoryBookmarkPersistence())
+        let content = WallpaperContent.video(bookmarkData: Data([0x0A]))
+        let origin = WPEOrigin(
+            workshopID: "1234", title: "Night", originalType: .video, sourceFolderBookmark: Data([1]),
+            cacheRelativePath: nil, previewFileName: nil, entryFile: nil
+        )
+        let saved = store.add(label: "Night", content: content, wpeOrigin: origin)
+        #expect(store.equivalentBookmark(content: content)?.id == saved.id)
+    }
+
     @MainActor
     @Test("A cover set for an entry that is gone changes nothing")
     func setCoverIgnoresMissingEntry() {

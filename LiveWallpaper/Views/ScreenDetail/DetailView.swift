@@ -352,13 +352,13 @@ struct DetailView: View {
             }
         }
         .confirmDestructive($pendingDestructive)
-        .onAppear { scheduleConfigurationLoad() }
+        .onAppear { loadScreenConfiguration() }
         .onDisappear { cleanupPreviewPlayer() }
         .onChange(of: screenManager.inspectedWallpaperAttempt(for: screen)?.id) { loadScreenConfiguration() }
         .onChange(of: screenManager.inspectedWallpaperAttempt(for: screen)?.configuration) { loadScreenConfiguration() }
         .onChange(of: screen.id) {
             cleanupPreviewPlayer()
-            scheduleConfigurationLoad()
+            loadScreenConfiguration()
         }
         .onReceive(NotificationCenter.default.publisher(for: .selectScreenInSettings)) { notification in
             if notification.userInfo?["screenID"] as? CGDirectDisplayID == screen.id,
@@ -369,7 +369,7 @@ struct DetailView: View {
         .onReceive(NotificationCenter.default.publisher(for: .wallpaperConfigurationDidChange)) { notification in
             guard let changedID = notification.userInfo?["screenID"] as? CGDirectDisplayID,
                   changedID == screen.id else { return }
-            scheduleConfigurationLoad()
+            loadScreenConfiguration()
         }
         .alert(
             dropFailure.map { Text($0.title) } ?? Text(verbatim: ""),
@@ -638,14 +638,7 @@ struct DetailView: View {
         previewController.startPlaybackPreview(from: url, syncTo: screen.videoPlayer?.player)
     }
 
-    private func scheduleConfigurationLoad() {
-        DispatchQueue.main.async {
-            Task { @MainActor in
-                loadScreenConfiguration()
-            }
-        }
-    }
-
+    /// Synchronous on purpose: a deferred load paints the previous screen's draft (or the default video layout) for a frame or two.
     private func loadScreenConfiguration() {
         let config = screenManager.inspectedWallpaperAttempt(for: screen)?.configuration ?? screenManager.getConfiguration(for: screen)
         // The equality guard is load-bearing: reassigning an identical draft

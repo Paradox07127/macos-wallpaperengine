@@ -68,10 +68,7 @@ struct SystemWallpaperAddSheet: View {
             ScrollView {
                 // Not the window's tile-size setting: at this sheet's fixed 620 pt,
                 // `.large` leaves one column.
-                LazyVGrid(
-                    columns: DesignTokens.LibraryGrid.columns(for: .small, aspect: .wide),
-                    spacing: DesignTokens.LibraryGrid.spacing
-                ) {
+                LibraryGalleryGrid(size: .small, aspect: .wide) {
                     ForEach(candidates) { candidate in
                         SystemWallpaperCandidateTile(
                             candidate: candidate,

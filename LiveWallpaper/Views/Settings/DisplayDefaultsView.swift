@@ -180,10 +180,10 @@ struct DisplayDefaultsView: View {
             FrameRateControl(
                 value: playbackBinding(\.frameRateLimit, for: kind),
                 displayFramesPerSecond: displayFrameRate,
+                layout: .presets,
                 accessibilityLabel: Text("Default frame rate")
             )
             .id(kind)
-            .frame(width: 300)
         }
     }
 

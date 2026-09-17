@@ -481,7 +481,8 @@ final class SceneWallpaperSession: WallpaperRuntimeSession, WallpaperPlaybackCon
             await pressureDwell.drain()
             await wake?.value
             await actor.teardownRenderer()
-            actor.shutdown()
+            // Async join: a wedged render thread must cost a leaked thread, never a frozen main thread.
+            await actor.shutdown()
         }
     }
 

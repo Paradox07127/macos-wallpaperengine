@@ -89,6 +89,65 @@ struct SystemWallpaperProviderIdentityTests {
         #expect(verdict.shouldRetire)
     }
 
+    // MARK: - Idle retirement (zero surfaces only)
+
+    @Test("An idle process at the path the installed app declares keeps running")
+    func idleVerdictKeepsDeclaredPath() {
+        let own = "/Applications/Loomscreen.app/Contents/Extensions/P.appex"
+        let verdict = SystemWallpaperProviderStaleness.idleVerdict(
+            .current, ownBundlePath: own, declared: identity(path: own)
+        )
+        #expect(verdict == .current)
+        #expect(!verdict.shouldRetire)
+    }
+
+    @Test("Path comparison survives the /private and trailing-slash spellings")
+    func idleVerdictNormalizesPaths() {
+        let verdict = SystemWallpaperProviderStaleness.idleVerdict(
+            .current,
+            ownBundlePath: "/private/tmp/Build/Loomscreen.app/Contents/Extensions/P.appex/",
+            declared: identity(path: "/tmp/Build/Loomscreen.app/Contents/Extensions/P.appex")
+        )
+        #expect(verdict == .current)
+    }
+
+    @Test("An idle process at another path than the declared one retires")
+    func idleVerdictRetiresSuperseded() {
+        let declared = "/Applications/Loomscreen.app/Contents/Extensions/P.appex"
+        let verdict = SystemWallpaperProviderStaleness.idleVerdict(
+            .current,
+            ownBundlePath: "/Users/me/Downloads/Loomscreen.app/Contents/Extensions/P.appex",
+            declared: identity(path: declared)
+        )
+        #expect(verdict == .supersededByDeclared(declaredPath: declared))
+        #expect(verdict.shouldRetire)
+    }
+
+    @Test("No declaration means the bundle verdict alone decides")
+    func idleVerdictWithoutDeclaration() {
+        let own = "/Applications/Loomscreen.app/Contents/Extensions/P.appex"
+        #expect(SystemWallpaperProviderStaleness.idleVerdict(.current, ownBundlePath: own, declared: nil) == .current)
+        let stale = SystemWallpaperProviderStaleness.idleVerdict(.bundleGone, ownBundlePath: own, declared: nil)
+        #expect(stale == .bundleGone)
+        // A stale bundle wins over a matching declaration: the build on disk is not the one running.
+        let changed = SystemWallpaperProviderStaleness.idleVerdict(
+            .buildChanged(loaded: "9", onDisk: "10"), ownBundlePath: own, declared: identity(path: own)
+        )
+        #expect(changed == .buildChanged(loaded: "9", onDisk: "10"))
+    }
+
+    @Test("The appex runs the idle verdict when the Agent disconnects — the only moment before RunningBoard suspends it")
+    func idleRetirementIsWired() throws {
+        let bridge = try RepositoryRoot.source("SystemWallpaperProvider/WallpaperXPCBridge.swift")
+        let handler = try RepositoryRoot.source("SystemWallpaperProvider/WallpaperXPCHandler.swift")
+        let staleness = try RepositoryRoot.source("SystemWallpaperProvider/ProviderStaleness.swift")
+        let invalidation = try #require(bridge.range(of: "connection.invalidationHandler = {"))
+        #expect(bridge[invalidation.upperBound...].prefix(700).contains("WallpaperXPCHandler.evaluateIdleRetirement("))
+        #expect(handler.contains("ProviderStaleness.exitIfIdleAndSuperseded("))
+        // Never while the Agent still holds a proxy: it keeps using it until its own 5-minute disconnection and every call errors instead of relaunching.
+        #expect(staleness.contains("guard surfaces == 0, !connected else {"))
+    }
+
     // MARK: - Source guards (appex sources never compile into this bundle)
 
     @Test("The appex checks staleness at both moments it can act on the system's behalf")

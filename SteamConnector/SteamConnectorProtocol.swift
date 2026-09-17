@@ -160,6 +160,53 @@ protocol SteamConnectorProtocol {
     /// whether anything was signalled. `operationID` is the id the app passed
     /// when starting the run it wants to stop; anything else is a no-op.
     func cancelActiveSteamCMD(operationID: String, with reply: @escaping @Sendable (Data) -> Void)
+
+    /// The app is quitting: SIGTERMs whatever SteamCMD child is running, no
+    /// operation id required — there is no retry to protect after a quit, and
+    /// the service name is this app's alone. Reply is a JSON `Bool` for
+    /// whether anything was signalled.
+    func terminateActiveSteamCMDForHostExit(with reply: @escaping @Sendable (Data) -> Void)
+}
+
+/// One per accepted connection. The client's interest in its work is the
+/// connection itself: the app cancels by invalidating (`SteamConnectorClient.call`),
+/// and a dead app takes its connections with it. Either way queued bodies
+/// must bail and the child this connection started must be signalled — the
+/// `maxQueueWait` clock alone let an abandoned download run to completion.
+final class SteamConnectorCallerLiveness: Sendable {
+    private struct State {
+        var abandoned = false
+        var ownedOperationIDs: Set<String> = []
+    }
+
+    private let state = OSAllocatedUnfairLock(initialState: State())
+    private let maxQueueWait: TimeInterval
+
+    init(maxQueueWait: TimeInterval) {
+        self.maxQueueWait = maxQueueWait
+    }
+
+    /// Record before enqueueing: the run may register its child only after this connection is already gone.
+    func own(operationID: String) {
+        state.withLock { $0.ownedOperationIDs.insert(operationID) }
+    }
+
+    /// Checked at the top of every queued body. False once the connection is gone or the request waited past the budget (the client has certainly timed out).
+    func isLive(enqueuedAt: Date, now: Date = Date()) -> Bool {
+        guard !state.withLock({ $0.abandoned }) else { return false }
+        return now.timeIntervalSince(enqueuedAt) <= maxQueueWait
+    }
+
+    /// Idempotent. `terminate` receives each operation this connection started; the registry decides whether that operation's child is the active one.
+    func markAbandoned(terminate: (String) -> Void) {
+        let owned = state.withLock { s -> Set<String> in
+            s.abandoned = true
+            return s.ownedOperationIDs
+        }
+        for operationID in owned {
+            terminate(operationID)
+        }
+    }
 }
 
 /// The one SteamCMD child currently running, so a user cancel can reach the
@@ -194,6 +241,13 @@ final class SteamCMDActiveProcessRegistry: Sendable {
     /// signal a different one's child (review finding, both models).
     func terminateActive(operationID: String, kill: (pid_t, Int32) -> Int32 = { Darwin.kill($0, $1) }) -> Bool {
         guard let active = state.withLock({ $0 }), active.operationID == operationID else { return false }
+        _ = kill(active.hasOwnGroup ? -active.pid : active.pid, SIGTERM)
+        return true
+    }
+
+    /// Host exit only: no operation id check, because after a quit there is no later run for a stale cancel to hit.
+    func terminateActiveForHostExit(kill: (pid_t, Int32) -> Int32 = { Darwin.kill($0, $1) }) -> Bool {
+        guard let active = state.withLock({ $0 }) else { return false }
         _ = kill(active.hasOwnGroup ? -active.pid : active.pid, SIGTERM)
         return true
     }

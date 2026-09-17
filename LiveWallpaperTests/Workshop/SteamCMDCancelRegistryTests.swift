@@ -41,6 +41,27 @@ struct SteamCMDCancelRegistryTests {
         #expect(signalled == 777)
     }
 
+    @Test("host exit signals the active child whatever operation it belongs to")
+    func hostExitTerminatesRegardlessOfOperation() {
+        let registry = SteamCMDActiveProcessRegistry()
+        registry.register(pid: 313, hasOwnGroup: true, operationID: UUID().uuidString)
+        var signalled: [(pid: pid_t, signal: Int32)] = []
+
+        #expect(registry.terminateActiveForHostExit(kill: { pid, sig in
+            signalled.append((pid, sig))
+            return 0
+        }))
+        #expect(signalled.count == 1)
+        #expect(signalled[0].pid == -313)
+        #expect(signalled[0].signal == SIGTERM)
+
+        registry.clear()
+        #expect(!registry.terminateActiveForHostExit(kill: { _, _ in
+            Issue.record("an empty registry must signal nothing")
+            return 0
+        }))
+    }
+
     @Test("a cancel for a superseded operation never kills the run that replaced it")
     func supersededOperationCancelIsANoOp() {
         let registry = SteamCMDActiveProcessRegistry()

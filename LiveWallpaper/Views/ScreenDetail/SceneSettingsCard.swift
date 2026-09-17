@@ -92,19 +92,6 @@ struct WPESceneCustomSettingsCard: View {
             onRename: { renamePreset($0, to: $1) },
             onDelete: { deletePreset($0) }
         )
-        .padding(DesignTokens.Spacing.sm)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
-                .fill(DesignTokens.Colors.surfaceSunken)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
-                .strokeBorder(
-                    DesignTokens.Colors.separator.opacity(DesignTokens.Opacity.quietStroke),
-                    lineWidth: DesignTokens.Card.strokeWidth
-                )
-        )
     }
 
     // MARK: - Presets
@@ -117,12 +104,21 @@ struct WPESceneCustomSettingsCard: View {
     /// Keys the user moved away from the applied preset.
     @State private var divergingKeys: Set<String> = []
 
+    private var changedKeys: Set<String> {
+        if activePreset == nil {
+            Set(editor.overrides.keys)
+        } else {
+            divergingKeys
+        }
+    }
+
     /// Diverging keys when a preset is applied; otherwise the increment over the
     /// scene's own defaults — only visible settings, so a hidden row can't inflate it.
     private var changedSettingCount: Int {
-        guard let presentation = editor.presentation else { return 0 }
-        let keys = activePreset == nil ? Set(editor.overrides.keys) : divergingKeys
-        return keys.count { presentation.visibleKeys.contains($0) }
+        guard let presentation = editor.presentation else {
+            return 0
+        }
+        return changedKeys.count { presentation.visibleKeys.contains($0) }
     }
 
     private func refreshPresetDerivedState() {
@@ -205,16 +201,6 @@ struct WPESceneCustomSettingsCard: View {
         refreshPresetDerivedState()
     }
 
-    private func badge(
-        for property: WallpaperEngineProjectPropertySchema.Property
-    ) -> SettingRowTitleBadge? {
-        guard divergingKeys.contains(property.key) else { return nil }
-        return SettingRowTitleBadge(
-            systemImage: "pencil.circle.fill",
-            tint: DesignTokens.Colors.Status.warning,
-            accessibilityLabel: Text("Changed from preset")
-        )
-    }
 
     // MARK: - Reset
 
@@ -380,12 +366,15 @@ struct WPESceneCustomSettingsCard: View {
         for property: WallpaperEngineProjectPropertySchema.Property,
         values: [String: WallpaperEngineProjectPropertyValue]
     ) -> some View {
+        let isChanged = changedKeys.contains(property.key)
+        let rowIconColor = isChanged ? DesignTokens.Colors.Status.warning : .accentColor
+
         switch property.type {
         case .bool:
             SettingRow(
                 icon: WPEPropertyRowIcon.symbol(for: property.type),
-                verbatimTitle: property.displayText,
-                titleBadge: badge(for: property)
+                iconColor: rowIconColor,
+                verbatimTitle: property.displayText
             ) {
                 Toggle("", isOn: boolBinding(for: property))
                     .labelsHidden()
@@ -396,8 +385,8 @@ struct WPESceneCustomSettingsCard: View {
         case .slider:
             SettingRow(
                 icon: WPEPropertyRowIcon.symbol(for: property.type),
-                verbatimTitle: property.displayText,
-                titleBadge: badge(for: property)
+                iconColor: rowIconColor,
+                verbatimTitle: property.displayText
             ) {
                 HStack(spacing: DesignTokens.Inspector.sliderValueSpacing) {
                     QuantizedSlider(
@@ -424,8 +413,8 @@ struct WPESceneCustomSettingsCard: View {
             let optionsCoverCurrent = property.options.contains { $0.value == currentValue }
             SettingRow(
                 icon: WPEPropertyRowIcon.symbol(for: property.type),
-                verbatimTitle: property.displayText,
-                titleBadge: badge(for: property)
+                iconColor: rowIconColor,
+                verbatimTitle: property.displayText
             ) {
                 if property.options.isEmpty {
                     Text(verbatim: currentValue.stringValue)
@@ -454,8 +443,8 @@ struct WPESceneCustomSettingsCard: View {
         case .color:
             SettingRow(
                 icon: WPEPropertyRowIcon.symbol(for: property.type),
-                verbatimTitle: property.displayText,
-                titleBadge: badge(for: property)
+                iconColor: rowIconColor,
+                verbatimTitle: property.displayText
             ) {
                 ColorPicker("", selection: colorBinding(for: property), supportsOpacity: false)
                     .labelsHidden()
@@ -465,8 +454,8 @@ struct WPESceneCustomSettingsCard: View {
         case .textinput:
             SettingRow(
                 icon: WPEPropertyRowIcon.symbol(for: property.type),
-                verbatimTitle: property.displayText,
-                titleBadge: badge(for: property)
+                iconColor: rowIconColor,
+                verbatimTitle: property.displayText
             ) {
                 TextField("", text: stringBinding(for: property))
                     .textFieldStyle(.roundedBorder)
