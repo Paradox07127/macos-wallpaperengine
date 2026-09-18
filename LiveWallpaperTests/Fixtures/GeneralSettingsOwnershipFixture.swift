@@ -13,8 +13,7 @@ enum OwnershipFixture {
     enum Page: String, CaseIterable {
         case general
         case performancePower
-        case audioResponse
-        case weather
+        case integrations
         case backupRestore
         case advanced
         case about
@@ -85,7 +84,8 @@ enum OwnershipFixture {
         switch page {
         case .general:
             statusReads = MountCalls(settingsReads: 0, loginStatusReads: 2, audioStateReads: 0, locationStatusReads: 0)
-        case .audioResponse:
+        case .integrations:
+            // One page now owns both probes; Lite compiles the audio row out entirely.
             let audioStateReads: Int
             switch sku {
             case .pro:
@@ -97,10 +97,8 @@ enum OwnershipFixture {
                 settingsReads: 0,
                 loginStatusReads: 0,
                 audioStateReads: audioStateReads,
-                locationStatusReads: 0
+                locationStatusReads: 2
             )
-        case .weather:
-            statusReads = MountCalls(settingsReads: 0, loginStatusReads: 0, audioStateReads: 0, locationStatusReads: 2)
         case .performancePower, .backupRestore, .advanced, .about:
             statusReads = MountCalls(settingsReads: 0, loginStatusReads: 0, audioStateReads: 0, locationStatusReads: 0)
         }

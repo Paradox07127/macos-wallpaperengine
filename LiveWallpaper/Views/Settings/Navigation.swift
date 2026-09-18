@@ -6,6 +6,8 @@ enum SettingsSearchAnchor: String, Hashable, Identifiable, Sendable {
     case displayDefaultsVideo
     case displayDefaultsWeb
     case displayDefaultsScene
+    case integrationsAudio
+    case integrationsWeather
     case shortcutsMaster
     case shortcutsGlobal
     case storageDashboard
@@ -40,8 +42,7 @@ enum SettingsNavigation: String, CaseIterable, Hashable, Identifiable {
     case displayDefaults
     case systemWallpaper
     case performancePower
-    case audioResponse
-    case weather
+    case integrations
     case shortcuts
     case storage
     case backupRestore
@@ -63,8 +64,9 @@ enum SettingsNavigation: String, CaseIterable, Hashable, Identifiable {
                 } else {
                     false
                 }
-            case .audioResponse:
-                capabilities.sku == .pro
+            case .integrations:
+                // Weather is on every SKU; only the audio row inside compiles out of Lite.
+                true
             case .storage:
                 capabilities.enabledFeatures.contains(.wpeImport)
             case .workshopSetup:
@@ -157,16 +159,15 @@ enum SettingsNavigation: String, CaseIterable, Hashable, Identifiable {
             ]
         ),
         SettingsNavigationItem(
-            destination: .audioResponse,
-            title: "Audio Response",
-            systemImage: "waveform",
-            keywords: ["audio", "music", "sound", "reactive", "frequency spectrum"]
-        ),
-        SettingsNavigationItem(
-            destination: .weather,
-            title: "Weather",
-            systemImage: "cloud.sun",
-            keywords: ["weather", "location", "rain", "snow", "fog", "conditions"]
+            destination: .integrations,
+            title: "Integrations",
+            systemImage: "app.connected.to.app.below.fill",
+            // Audio terms stay out: they belong to a Pro-only section, and the
+            // capability-gated search target below is what must decide their visibility.
+            keywords: [
+                "weather", "location", "rain", "snow", "fog", "conditions",
+                "天气", "位置", "天氣", "天気", "clima",
+            ]
         ),
         SettingsNavigationItem(
             destination: .shortcuts,
@@ -259,6 +260,25 @@ struct SettingsNavigationItem: Identifiable, Equatable {
                     )
                 )
             }
+            return targets
+        case .integrations:
+            var targets: [SettingsNavigationSearchTarget] = []
+            #if !LITE_BUILD
+            targets.append(
+                SettingsNavigationSearchTarget(
+                    label: "Audio Response",
+                    anchor: .integrationsAudio,
+                    keywords: ["audio", "music", "sound", "reactive", "frequency spectrum"]
+                )
+            )
+            #endif
+            targets.append(
+                SettingsNavigationSearchTarget(
+                    label: "Weather",
+                    anchor: .integrationsWeather,
+                    keywords: ["weather", "location", "rain", "snow", "fog", "conditions"]
+                )
+            )
             return targets
         case .shortcuts:
             return [

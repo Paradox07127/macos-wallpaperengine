@@ -55,7 +55,7 @@ extension GeneralSettingsView {
             }
 
         } header: {
-            Text("Weather")
+            SettingsSearchSectionHeader("Weather", anchor: .integrationsWeather)
         }
     }
 
