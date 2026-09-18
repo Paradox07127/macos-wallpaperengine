@@ -57,6 +57,8 @@ fast:
 contracts:
 	@echo "== Release + quality tooling contract =="
 	bash scripts/release_contract_check.sh
+	@echo "== Wallpaper maintenance helper checks =="
+	bash scripts/test_wallpaper_maintenance.sh
 
 # A ratchet, not a sweep: most files still differ from SwiftFormat at whole-file
 # granularity, so only lines this change touched are judged. A whole-repo gate

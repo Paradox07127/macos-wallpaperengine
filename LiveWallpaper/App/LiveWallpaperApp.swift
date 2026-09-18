@@ -103,6 +103,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if !runtimeOptions.isTesting {
             wallpaperExportService.declareBundledProvider()
+            wallpaperExportService.startObservingSharedRoot()
         }
 
         #if !LITE_BUILD

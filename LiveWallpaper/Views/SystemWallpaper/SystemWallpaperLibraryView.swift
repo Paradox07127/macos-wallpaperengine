@@ -10,14 +10,10 @@ struct SystemWallpaperLibraryView: View {
     @Environment(\.libraryTileSize) private var tileSize
     @Environment(WallpaperExportService.self) private var service
     @State private var pendingDestructive: PendingDestructive?
+    @State private var searchText = ""
 
     var body: some View {
-        DetailPageScaffold {
-            VStack(spacing: DesignTokens.Spacing.md) {
-                SystemWallpaperProviderNotice()
-                content
-            }
-        }
+        DetailPageScaffold { content }
             .confirmDestructive($pendingDestructive)
             .toolbar {
                 LibraryIdentityToolbarItem(
@@ -40,12 +36,7 @@ struct SystemWallpaperLibraryView: View {
                 }
             }
             .onAppear { service.refresh() }
-        .task {
-            while !Task.isCancelled {
-                service.refreshProviderStatus()
-                try? await Task.sleep(for: .seconds(2))
-            }
-        }
+            .task { service.startObservingSharedRoot() }
     }
 
     // MARK: - Content
@@ -72,8 +63,10 @@ struct SystemWallpaperLibraryView: View {
 
     private var gallery: some View {
         VStack(spacing: 0) {
+            LibraryFilterBar(searchText: $searchText, searchPrompt: "Search videos")
+            Divider()
             galleryScroll
-            LibraryStatusBar(summary: Text("\(service.items.count) videos")) {
+            LibraryStatusBar(summary: statusSummary) {
                 if service.diskUsageBytes > 0 {
                     Text("Disk usage: \(WorkshopByteFormatter.platformDefault.string(fromByteCount: service.diskUsageBytes))")
                 }
@@ -84,36 +77,45 @@ struct SystemWallpaperLibraryView: View {
     /// Bounded so controls stay adjacent to their labels on wide displays.
     private let maxContentWidth: CGFloat = 560
 
+    private var filteredItems: [SystemWallpaperManifest.Item] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return query.isEmpty ? service.items : service.items.filter { $0.title.localizedCaseInsensitiveContains(query) }
+    }
+
+    private var statusSummary: Text {
+        filteredItems.count == service.items.count
+            ? Text("\(service.items.count) videos")
+            : Text("\(filteredItems.count) of \(service.items.count) shown")
+    }
+
+    @ViewBuilder
     private var galleryScroll: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: DesignTokens.Spacing.lg) {
-                if hasNotice {
-                    notice
-                }
-                LibraryGalleryGrid(size: tileSize, aspect: .wide) {
-                    ForEach(service.items) { item in
-                        SystemWallpaperTile(
-                            item: item,
-                            thumbnailURL: service.thumbnailURL(for: item),
-                            videoURL: service.videoURL(for: item),
-                            isInUse: service.isItemInUse(item.id),
-                            onChoose: { service.openWallpaperSettings() },
-                            onRemove: {
-                                pendingDestructive = PendingDestructive(
-                                    .removeSystemWallpaper(
-                                        title: item.title,
-                                        isInUse: service.isItemInUse(item.id)
-                                    )
-                                ) { try? service.remove(itemID: item.id) }
-                            }
-                        )
-                        .transition(.opacity)
+        if filteredItems.isEmpty {
+            IllustratedEmptyState(symbol: "magnifyingglass", title: "No videos match your search")
+        } else {
+            ScrollView {
+                VStack(alignment: .leading, spacing: DesignTokens.LibraryGrid.spacing) {
+                    if hasNotice {
+                        notice
+                    }
+                    LibraryGalleryGrid(size: tileSize, aspect: .wide) {
+                        ForEach(filteredItems) { item in
+                            SystemWallpaperTile(
+                                item: item,
+                                thumbnailURL: service.thumbnailURL(for: item),
+                                videoURL: service.videoURL(for: item),
+                                isInUse: service.isItemInUse(item.id),
+                                onRemove: {
+                                    pendingDestructive = PendingDestructive(
+                                        .removeSystemWallpaper(title: item.title, isInUse: service.isItemInUse(item.id))
+                                    ) { try? service.remove(itemID: item.id) }
+                                }
+                            )
+                        }
                     }
                 }
-                settingsGroup
+                .libraryGridPadding()
             }
-            .libraryGridPadding()
-            .animation(.easeOut(duration: 0.2), value: service.items)
         }
     }
 
@@ -135,21 +137,7 @@ struct SystemWallpaperLibraryView: View {
             .frame(maxWidth: maxContentWidth, alignment: .leading)
             .transition(.opacity)
             .animation(.easeOut(duration: 0.2), value: service.status)
-        case .publishedNotSelected:
-            InlineNoticeBanner(
-                tint: DesignTokens.Colors.accent,
-                symbol: "arrow.right.circle.fill",
-                title: Text("Choose a wallpaper in System Settings"),
-                surface: .content
-            ) {
-                Button("Open") { service.openWallpaperSettings() }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-            }
-            .frame(maxWidth: maxContentWidth, alignment: .leading)
-            .transition(.opacity)
-            .animation(.easeOut(duration: 0.2), value: service.status)
-        case .inUse, .empty, .systemIncompatible:
+        case .publishedNotSelected, .inUse, .empty, .systemIncompatible:
             EmptyView()
         }
     }
@@ -157,43 +145,11 @@ struct SystemWallpaperLibraryView: View {
     /// Beside `notice` so a case added there fails to compile here too.
     private var hasNotice: Bool {
         switch service.status {
-        case .failed, .publishedNotSelected:
+        case .failed:
             true
-        case .inUse, .empty, .systemIncompatible:
+        case .publishedNotSelected, .inUse, .empty, .systemIncompatible:
             false
         }
-    }
-
-    /// Playback mode applies to the whole system library.
-    private var settingsGroup: some View {
-        GroupBox {
-            Button("System Wallpaper Settings") {
-                NotificationCenter.default.post(name: .openSettingsSection, object: nil,
-                                                userInfo: ["destination": SettingsNavigation.systemWallpaper.rawValue])
-            }
-            .buttonStyle(.bordered)
-
-            if !service.items.isEmpty {
-                Divider()
-                Button("Remove All from System Wallpaper", role: .destructive) {
-                    pendingDestructive = PendingDestructive(
-                        .clearSystemWallpaperLibrary(
-                            itemCount: service.items.count,
-                            formattedSize: WorkshopByteFormatter.platformDefault.string(
-                                fromByteCount: service.diskUsageBytes
-                            )
-                        )
-                    ) { try? service.clearLibrary() }
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .tint(DesignTokens.Colors.Status.danger)
-                .frame(maxWidth: .infinity, alignment: .trailing)
-                .padding(.vertical, DesignTokens.Spacing.xs)
-            }
-        }
-        .groupBoxStyle(ContainerGroupBoxStyle())
-        .frame(maxWidth: maxContentWidth, alignment: .leading)
     }
 
     // MARK: - Empty / unavailable
@@ -272,7 +228,6 @@ struct SystemWallpaperTile: View {
     let thumbnailURL: URL?
     let videoURL: URL?
     let isInUse: Bool
-    var onChoose: () -> Void = {}
     let onRemove: () -> Void
 
     @State private var isHovering = false
@@ -280,9 +235,7 @@ struct SystemWallpaperTile: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        Button(action: onChoose) { preview }
-            .buttonStyle(.plain)
-            .help(Text("Choose this video in System Settings"))
+        preview
             .overlay(alignment: .bottom) {
                 ThumbnailTitleBand(title: item.title, isHovering: isHovering) {
                     if isInUse {
