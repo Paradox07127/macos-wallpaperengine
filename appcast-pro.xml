@@ -7,42 +7,36 @@
     <description>Updates for Loomscreen Pro</description>
     <language>en</language>
     <item>
-      <title>Version 0.7.0</title>
-      <pubDate>Thu, 17 Sep 2026 08:00:56 +0000</pubDate>
-      <sparkle:version>0.7.0</sparkle:version>
-      <sparkle:shortVersionString>0.7.0</sparkle:shortVersionString>
+      <title>Version 0.7.1</title>
+      <pubDate>Fri, 18 Sep 2026 09:41:44 +0000</pubDate>
+      <sparkle:version>0.7.1</sparkle:version>
+      <sparkle:shortVersionString>0.7.1</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.6</sparkle:minimumSystemVersion>
       <description sparkle:descriptionFormat="html"><![CDATA[
 <p><strong>What's New</strong></p>
 <ul>
-<li>Custom frame rate: any target from 1 FPS up to your display's refresh rate, per display and as a default, with a slider and a number field</li>
-<li>Saved wallpapers and schemes show a real cover — the frame that was on screen when you saved</li>
-<li>A scene you come back to opens on its last live frame instead of the static poster, and the detail page can recapture it</li>
-<li>Pro: HDR output for Wallpaper Engine scenes on EDR displays (Settings ▸ Performance)</li>
+<li>Settings ▸ System Wallpaper: see which extension copy macOS loaded, inspect and repair stale registrations, restart the wallpaper service, and optionally recover a stalled connection automatically (macOS 26)</li>
+<li>Settings ▸ Overlays: widget tint, opacity, Liquid Glass and the temperature unit in one place</li>
+<li>The Settings sidebar is grouped into Setup, Playback, Content, Data and Support, with Audio Response and Weather merged into Integrations</li>
+<li>Pro: more Wallpaper Engine puppet models load — .mdl versions are read from a feature table instead of an allowlist, including MDLV0013 puppets</li>
 </ul>
 <p><strong>Improvements</strong></p>
 <ul>
-<li>Pro: scenes render with less GPU work per frame — consecutive layers share one encoder, and redundant clears and copies are skipped</li>
-<li>Pro: a scene's scripts, animated textures and background decodes are bounded and reclaimed when the scene goes away</li>
-<li>Library pages use fixed-width columns, so a card keeps its place as the window widens</li>
-<li>The Workshop detail header fits the inspector, and the preset bar is one row</li>
-<li>Web wallpapers receive their properties once the page is ready, and the audio visualizer is bridged</li>
-<li>Quitting stops a SteamCMD download that was still running</li>
-<li>A full-screen app that stops at the notch is recognised as full screen</li>
+<li>The System Wallpaper library has search and the shared grid; playback scope and bulk removal live in Settings</li>
+<li>A system wallpaper video that fails to play is reported in the app, and the extension retries it</li>
+<li>The System Wallpaper status updates live while the page is open</li>
+<li>Failure details and diagnostic logs open inside the window instead of a sheet</li>
+<li>Loomscreen's own window pauses the wallpaper when it covers a display, like any other app's</li>
 </ul>
 <p><strong>Bug Fixes</strong></p>
 <ul>
-<li>A bookmark saved while a Workshop scene was playing could be deleted along with that scene</li>
-<li>Web: a page answering 404 no longer offers Retry, and a missing index page is reported as missing</li>
-<li>Pro: perspective particles in 3D scenes had lost their depth scaling</li>
-<li>Pro: rain and pulse effects are aligned with Wallpaper Engine</li>
-<li>Gallery tiles no longer flash when they scroll back into view</li>
-<li>A low frame rate ran particles at half speed</li>
-<li>The frame-rate field on a 60 Hz display no longer overwrites a 120 FPS target saved for another display</li>
+<li>Pro: text layers and their opaque backgrounds rendered far lighter than image layers with the same authored colour</li>
+<li>Pro: follow-cursor effects and clicks were offset on displays whose aspect ratio differs from the scene's</li>
+<li>Pro: MDLV0013 puppets were refused</li>
 </ul>
-<p><small>Not notarized — if macOS refuses to open the app, run <code>xattr -dr com.apple.quarantine "/Applications/Loomscreen Pro.app"</code> once; updates Loomscreen Pro installs itself clear the flag. <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.7.0">Full release notes</a> · <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.7.0">完整发布说明</a></small></p>
+<p><small>Not notarized — if macOS refuses to open the app, run <code>xattr -dr com.apple.quarantine "/Applications/Loomscreen Pro.app"</code> once; updates Loomscreen Pro installs itself clear the flag. <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.7.1">Full release notes</a> · <a href="https://github.com/Paradox07127/macos-wallpaperengine/releases/tag/loomscreen-v0.7.1">完整发布说明</a></small></p>
       ]]></description>
-      <enclosure url="https://github.com/Paradox07127/macos-wallpaperengine/releases/download/loomscreen-v0.7.0/Loomscreen-Pro-0.7.0.dmg" type="application/octet-stream" sparkle:edSignature="If2whqQhrFNgoe6UNd3twHl81f1uv4AmxndDAKUqw5wOm5OgL4u1vS2FQd7JWHFTAdPdnlJgSdmpaLtiNJ+QBg==" length="15164713" />
+      <enclosure url="https://github.com/Paradox07127/macos-wallpaperengine/releases/download/loomscreen-v0.7.1/Loomscreen-Pro-0.7.1.dmg" type="application/octet-stream" sparkle:edSignature="ZtSs2UKvE2V5K/a67Wll33caRi2TJq0lMmL+v7nsa+ZGmwitxgwCvz7sRsLvzYEHlavtdrz6/OR8xb5EwXG2Bg==" length="15293199" />
     </item>
   </channel>
 </rss>
