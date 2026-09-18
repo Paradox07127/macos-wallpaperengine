@@ -35,16 +35,17 @@ struct NavigationTests {
         #expect(titles.contains("General"))
         #expect(titles.contains("Performance"))
         #expect(!titles.contains("Performance & Power"))
-        #expect(titles.contains("Audio Response"))
-        #expect(titles.contains("Weather"))
+        #expect(titles.contains("Integrations"))
         #expect(titles.contains("Display Defaults"))
+        // Audio and Weather share a page, but it is named for what it is, not
+        // by stapling the two feature names together.
         #expect(!titles.contains("Audio & Weather"))
         #expect(!titles.contains("Bookmarks"))
         #expect(!titles.contains("Apple Aerials"))
         #expect(!titles.contains("Steam Workshop"))
     }
 
-    @Test("Audio and weather search route to separate settings pages")
+    @Test("Audio and weather search route to their own sections of Integrations")
     func audioAndWeatherSearchRouteSeparately() {
         let audioItems = SettingsNavigation.filteredResults(
             matching: "audio",
@@ -57,10 +58,9 @@ struct NavigationTests {
             includeWorkshopOnline: false
         )
 
-        #expect(audioItems.map(\.destination).contains(.audioResponse))
-        #expect(!audioItems.map(\.destination).contains(.weather))
-        #expect(weatherItems.map(\.destination).contains(.weather))
-        #expect(!weatherItems.map(\.destination).contains(.audioResponse))
+        // Both now live on one page, so the anchor is what keeps them apart.
+        #expect(audioItems.first { $0.destination == .integrations }?.anchor == .integrationsAudio)
+        #expect(weatherItems.first { $0.destination == .integrations }?.anchor == .integrationsWeather)
     }
 
     @Test("Settings search keeps performance concise and hides global reset")
@@ -92,7 +92,7 @@ struct NavigationTests {
         #expect(!items.map(\.destination).contains(.workshopSetup))
     }
 
-    @Test("Lite settings hide the Pro-only audio response page")
+    @Test("Lite hides the Pro-only audio section inside Integrations")
     func liteSettingsHideAudioResponse() {
         let liteItems = SettingsNavigation.availableItems(
             capabilities: .lite,
@@ -103,8 +103,22 @@ struct NavigationTests {
             includeWorkshopOnline: false
         )
 
-        #expect(!liteItems.map(\.destination).contains(.audioResponse))
-        #expect(proItems.map(\.destination).contains(.audioResponse))
+        // Integrations itself ships on both SKUs for Weather; only the audio
+        // section — and therefore its search anchor — is Pro-only.
+        #expect(liteItems.map(\.destination).contains(.integrations))
+        #expect(proItems.map(\.destination).contains(.integrations))
+        let liteAudio = SettingsNavigation.filteredResults(
+            matching: "audio",
+            capabilities: .lite,
+            includeWorkshopOnline: false
+        )
+        let proAudio = SettingsNavigation.filteredResults(
+            matching: "audio",
+            capabilities: .pro,
+            includeWorkshopOnline: false
+        )
+        #expect(!liteAudio.contains { $0.anchor == .integrationsAudio })
+        #expect(proAudio.contains { $0.anchor == .integrationsAudio })
     }
 
     @Test("Display defaults and diagnostics are searchable")
@@ -185,6 +199,7 @@ struct NavigationTests {
         let result = SettingsNavigationSearchResult(
             item: SettingsNavigationItem(
                 destination: .displayDefaults,
+                group: .setup,
                 title: "Display Defaults",
                 systemImage: "rectangle.3.group",
                 keywords: []

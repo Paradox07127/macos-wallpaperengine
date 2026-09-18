@@ -11,6 +11,10 @@ struct SettingsDetailContent: View {
             switch selection ?? .general {
             case .general:
                 GeneralSettingsView(page: .general)
+                    .settingsSearchAnchorScroller(
+                        pendingSearchAnchor: $pendingSearchAnchor,
+                        anchors: [.generalAppearance, .generalStartup, .generalWallpaper]
+                    )
             case .displayDefaults:
                 DisplayDefaultsView(pendingSearchAnchor: $pendingSearchAnchor)
             case .systemWallpaper:
@@ -19,11 +23,21 @@ struct SettingsDetailContent: View {
                 }
             case .performancePower:
                 GeneralSettingsView(page: .performancePower)
+                    .settingsSearchAnchorScroller(
+                        pendingSearchAnchor: $pendingSearchAnchor,
+                        anchors: [.performancePause, .performanceRendering, .performanceMemory]
+                    )
             case .integrations:
                 GeneralSettingsView(page: .integrations)
                     .settingsSearchAnchorScroller(
                         pendingSearchAnchor: $pendingSearchAnchor,
                         anchors: [.integrationsAudio, .integrationsWeather]
+                    )
+            case .overlays:
+                OverlaysSettingsView()
+                    .settingsSearchAnchorScroller(
+                        pendingSearchAnchor: $pendingSearchAnchor,
+                        anchors: [.overlaysAppearance, .overlaysUnits]
                     )
             case .shortcuts:
                 ShortcutsView(pendingSearchAnchor: $pendingSearchAnchor)
