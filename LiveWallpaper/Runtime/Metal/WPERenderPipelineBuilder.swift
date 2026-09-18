@@ -137,17 +137,14 @@ struct WPERenderPipelineBuilder: Sendable {
         if (layer.imagePath as NSString).pathExtension.lowercased() == "mdl" {
             return model
         }
-        // MDLV0021/0023 are pre-assembled; MDLV0019/0020 need MDLA skinning; generations below 19 are refused.
-        guard model.version >= 19 else {
-            let generation = String(format: "MDLV%04d", model.version)
+        // Assembly is chosen from the data (frame-0 against the MDLS raw bind), not the generation
+        // number, so no generation is refused here. A version gate here would reject a puppet the
+        // downstream classifier handles correctly — MDLV0013 is pre-assembled like MDLV0021/0023.
+        if !WPEMdlvFeatures.sampled.contains(model.version) {
             Logger.warning(
-                "WPE scene uses unsupported puppet generation \(generation) "
-                    + "('\(puppetPath)'); refusing to render to avoid a misaligned wallpaper.",
+                "WPE puppet generation MDLV\(String(format: "%04d", model.version)) "
+                    + "('\(puppetPath)') is outside the sampled range; assembling from its data.",
                 category: .wpeRender
-            )
-            throw SceneRenderingError.metalRendererUnsupported(
-                reason: "this wallpaper uses the legacy \(generation) puppet format, "
-                    + "which this renderer cannot assemble correctly"
             )
         }
         return model

@@ -585,8 +585,8 @@ struct WPEMdlParserTests {
         #expect(animation.channels[1].keyframes[1].euler == SIMD3<Float>(0, 0, 0))
         let tail = try #require(animation.tail)
         #expect(tail.mdlaVersion == 6)
-        #expect(tail.blendCurves.hasCurves)
-        #expect(tail.blendCurves.curves.map(\.values) == [[0.25, 0.75], [1, 1]])
+        #expect(tail.blendCurves?.hasCurves == true)
+        #expect(tail.blendCurves?.curves.map(\.values) == [[0.25, 0.75], [1, 1]])
         #expect(tail.scalarCurves?.hasCurves == true)
         #expect(tail.scalarCurves?.curves.map(\.values) == [[2, 2], [3, 4]])
         #expect(tail.unknownSegments.count == 3)
@@ -601,11 +601,87 @@ struct WPEMdlParserTests {
         let tail = try #require(animation.tail)
 
         #expect(tail.mdlaVersion == 5)
-        #expect(tail.blendCurves.hasCurves)
-        #expect(tail.blendCurves.curves.count == 2)
+        #expect(tail.blendCurves?.hasCurves == true)
+        #expect(tail.blendCurves?.curves.count == 2)
         #expect(tail.scalarCurves == nil)
         #expect(tail.unknownSegments.count == 3)
         #expect(tail.unknownSegments.last?.bytes.suffix(3) == Data("{}\0".utf8))
+    }
+
+    @Test("MDLA0001 keeps its channels: the tail is only the trailing event list")
+    func parsesMDLA0001Animation() throws {
+        let model = try WPEMdlParser.parse(data: makeMDLV23WithAnimation(mdlaVersion: 1))
+        let animation = try #require(model.animations.first)
+        let tail = try #require(animation.tail)
+
+        #expect(animation.id == 267)
+        #expect(animation.channels.count == 2)
+        #expect(animation.channels[0].keyframes[0].translation == SIMD3<Float>(1, 2, 3))
+        #expect(animation.channels[1].keyframes[0].translation == SIMD3<Float>(7, 8, 9))
+        #expect(tail.mdlaVersion == 1)
+        #expect(tail.blendCurves == nil)
+        #expect(tail.scalarCurves == nil)
+    }
+
+    @Test("MDLA feature tiers extrapolate past the sampled range instead of dropping the section")
+    func mdlaFeatureLadderExtrapolates() {
+        #expect(WPEMdlaFeatures(version: 1) == WPEMdlaFeatures(version: 2))
+        #expect(WPEMdlaFeatures(version: 7) == WPEMdlaFeatures(version: 6))
+        #expect(WPEMdlvFeatures(version: 10) == WPEMdlvFeatures(version: 13))
+        #expect(WPEMdlvFeatures(version: 99) == WPEMdlvFeatures(version: 23))
+        #expect(WPEMdlvFeatures(version: 13).meshBounds == false)
+        #expect(WPEMdlvFeatures(version: 13).perMeshFlags == false)
+        #expect(WPEMdlvFeatures(version: 23).wideIndices)
+    }
+
+    @Test(
+        "Real Workshop models leave no byte unexplained",
+        .enabled(if: workshopCorpusAvailable)
+    )
+    func workshopModelsParseCompletely() throws {
+        // Blocks the parser consumes by size without decoding them. A new label here means a
+        // section changed shape; an unexplained gap means a section was not recognised at all.
+        let undecodedByDesign = Set<String>([
+            "MDLS bone table",
+            "MDLV uv2 payload",
+            "MDLV vertex extra4",
+            "MDLV vertex tangent",
+            "MDMP body",
+        ])
+        let corpusRoot = try #require(Self.workshopCorpusRoot)
+        let folders = try FileManager.default.contentsOfDirectory(
+            at: corpusRoot,
+            includingPropertiesForKeys: [.isDirectoryKey]
+        )
+        var models = 0
+        for folder in folders {
+            let packageURL = folder.appendingPathComponent("scene.pkg")
+            guard FileManager.default.fileExists(atPath: packageURL.path) else { continue }
+            let handle = try FileHandle(forReadingFrom: packageURL)
+            defer { try? handle.close() }
+            let package = try WallpaperEnginePackage.parseIndex(streamingFrom: handle)
+            for entry in package.entries where entry.name.lowercased().hasSuffix(".mdl") {
+                let data = try package.readEntry(entry, from: handle)
+                var optionalAudit: WPEMdlParseAudit?
+                _ = try WPEMdlParser.parse(data: data, audit: &optionalAudit)
+                let audit = try #require(optionalAudit)
+                let origin = "\(folder.lastPathComponent)/\(entry.name)"
+                models += 1
+
+                #expect(audit.unexplainedGaps.isEmpty, "unexplained gap in \(origin)")
+                if let trailing = audit.trailingLeftover {
+                    let hasContent = data[trailing].contains(where: { $0 != 0 })
+                    #expect(!hasContent, "non-zero trailing bytes in \(origin)")
+                }
+                for section in audit.sections {
+                    for skip in section.intentionallySkippedRanges {
+                        guard data[skip.range].contains(where: { $0 != 0 }) else { continue }
+                        #expect(undecodedByDesign.contains(skip.label), "\(skip.label) in \(origin)")
+                    }
+                }
+            }
+        }
+        #expect(models > 0)
     }
 
     @Test("Recovers mesh and animations when the skeleton is malformed but MDLA is valid")
@@ -1025,6 +1101,7 @@ struct WPEMdlParserTests {
     }
 
     private func appendMDLASection(version: Int = 6, to data: inout Data) {
+        let features = WPEMdlaFeatures(version: version)
         func appendKey(_ t: SIMD3<Float>, _ r: SIMD3<Float>, _ s: SIMD3<Float>) {
             for value in [t.x, t.y, t.z, r.x, r.y, r.z, s.x, s.y, s.z] {
                 data.appendLE(value)
@@ -1046,7 +1123,8 @@ struct WPEMdlParserTests {
         data.appendLE(frameCount)
         data.appendLE(UInt32(0))
         data.appendLE(UInt32(2))
-        data.appendLE(UInt32(0))
+        // Leading word of the first bone track's header; MDLA0001 authors a non-zero value here.
+        data.appendLE(UInt32(version < 3 ? 1 : 0))
         data.appendLE(channelByteCount)
 
         appendKey(SIMD3<Float>(1, 2, 3), SIMD3<Float>(0, 0, 0), SIMD3<Float>(1, 1, 1))
@@ -1056,18 +1134,28 @@ struct WPEMdlParserTests {
         appendKey(SIMD3<Float>(7, 8, 9), SIMD3<Float>(0, 0, 0), SIMD3<Float>(1, 1, 1))
         appendKey(SIMD3<Float>(10, 11, 12), SIMD3<Float>(0, 0, 0), SIMD3<Float>(1, 1, 1))
 
-        data.appendLE(UInt32(0))
-        data.append(UInt8(1))
-        let blendValues: [[Float]] = [[0.25, 0.75], [1, 1]]
-        for values in blendValues {
+        if features.transBlock {
             data.appendLE(UInt32(0))
-            data.appendLE(UInt32(values.count * MemoryLayout<Float>.size))
-            for value in values { data.appendLE(value) }
+            data.append(UInt8(1))
+            let blendValues: [[Float]] = [[0.25, 0.75], [1, 1]]
+            for values in blendValues {
+                data.appendLE(UInt32(0))
+                data.appendLE(UInt32(values.count * MemoryLayout<Float>.size))
+                for value in values {
+                    data.appendLE(value)
+                }
+            }
         }
-        data.append(UInt8(0))
-        let bounds: [Float] = [-1, -2, -3, 4, 5, 6]
-        for value in bounds { data.appendLE(value) }
-        if version == 6 {
+        if features.v4Events {
+            data.append(UInt8(0))
+        }
+        if features.boundingBox {
+            let bounds: [Float] = [-1, -2, -3, 4, 5, 6]
+            for value in bounds {
+                data.appendLE(value)
+            }
+        }
+        if features.scalarCurves {
             data.append(UInt8(1))
             let scalarValues: [[Float]] = [[2, 2], [3, 4]]
             for values in scalarValues {

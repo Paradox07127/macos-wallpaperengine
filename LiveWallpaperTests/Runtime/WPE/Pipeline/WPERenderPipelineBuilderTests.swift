@@ -867,21 +867,22 @@ struct WPERenderPipelineBuilderTests {
         #expect(mesh.parts == [WPEPuppetMeshPart(id: 7, start: 0, count: 3)])
     }
 
-    @Test("A pre-v19 puppet generation refuses the whole scene instead of rendering it misaligned")
-    func legacyPuppetGenerationRefusesScene() throws {
+    @Test(
+        "A pre-v19 puppet loads: assembly comes from the data, not the generation number",
+        arguments: [13, 17]
+    )
+    func legacyPuppetGenerationLoadsInsteadOfRefusing(version: Int) throws {
+        var mdl = makeLegacyPuppetMDLBelow19()
+        mdl.replaceSubrange(0 ..< 8, with: String(format: "MDLV%04d", version).utf8)
         let fixture = try makeFixture(dataFiles: [
-            "models/layer_puppet.mdl": makeLegacyPuppetMDLBelow19()
+            "models/layer_puppet.mdl": mdl,
         ])
         defer { fixture.cleanup() }
 
         let graph = WPERenderGraph(layers: [puppetLayer()])
-
-        #expect {
-            _ = try WPERenderPipelineBuilder(cacheRootURL: fixture.root).build(graph: graph)
-        } throws: { error in
-            guard case SceneRenderingError.metalRendererUnsupported(let reason) = error else { return false }
-            return reason.contains("MDLV0017")
-        }
+        let pipeline = try WPERenderPipelineBuilder(cacheRootURL: fixture.root).build(graph: graph)
+        let model = try #require(pipeline.layers.first?.puppetModel)
+        #expect(model.version == version)
     }
 
     @Test("An MDLV0019 character-sheet puppet loads (it is assembled by skinning, not refused)")

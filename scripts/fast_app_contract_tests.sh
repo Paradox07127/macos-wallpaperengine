@@ -80,6 +80,9 @@ SUITES=(
   WPERendererOwnershipCharacterizationTests
   # Name-table only, no Metal device: an unrecognised model material shader
   # silently swaps a .mdl mesh for a billboard quad (3470948192 star dome).
+  # .mdl section versions. The corpus completeness case skips without
+  # LIVEWALLPAPER_EXTERNAL_FIXTURES; the synthetic per-version cases still run.
+  WPEMdlParserTests
   WPESceneModelMaterialShaderTests
   WPESceneScriptB2bResourceLimitTests
   WPESceneScriptContainmentCharacterizationTests

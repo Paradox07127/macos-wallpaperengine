@@ -39,6 +39,7 @@ public struct WPEMdlParseAudit: Equatable, Sendable {
         case mdls
         case mdat
         case mdla
+        case mdmp
         case mdle
     }
 
@@ -293,7 +294,8 @@ public struct WPEPuppetAnimationRawSegment: Equatable, Sendable {
 public struct WPEPuppetAnimationTail: Equatable, Sendable {
     public let mdlaVersion: Int
     public let sourceRange: Range<Int>
-    public let blendCurves: WPEPuppetAnimationCurveBlock
+    /// `nil` below MDLA0003, which has no such block.
+    public let blendCurves: WPEPuppetAnimationCurveBlock?
     /// `nil` for MDLA0005; MDLA0006 preserves a block even when `hasCurves == false`.
     public let scalarCurves: WPEPuppetAnimationCurveBlock?
     public let unknownSegments: [WPEPuppetAnimationRawSegment]
@@ -301,7 +303,7 @@ public struct WPEPuppetAnimationTail: Equatable, Sendable {
     public init(
         mdlaVersion: Int,
         sourceRange: Range<Int>,
-        blendCurves: WPEPuppetAnimationCurveBlock,
+        blendCurves: WPEPuppetAnimationCurveBlock?,
         scalarCurves: WPEPuppetAnimationCurveBlock?,
         unknownSegments: [WPEPuppetAnimationRawSegment]
     ) {
@@ -912,9 +914,10 @@ private final class WPEMdlParseAuditRecorder {
     }
 
     func recordKnownSkip(label: String, range: Range<Int>) {
-        guard !range.isEmpty, var section = openSection else { return }
-        section.skips.append(WPEMdlParseAudit.KnownSkip(label: label, range: range))
-        openSection = section
+        // Mutate through the optional: binding it to a local would make `openSection` a second
+        // strong reference, so every append would copy the whole array.
+        guard !range.isEmpty, openSection != nil else { return }
+        openSection?.skips.append(WPEMdlParseAudit.KnownSkip(label: label, range: range))
     }
 
     func checkpoint() -> Checkpoint {
@@ -981,6 +984,8 @@ public enum WPEMdlParser {
               let version = Int(versionTag.dropFirst(4)) else {
             throw WPEMdlParserError.invalidHeader
         }
+        let features = WPEMdlvFeatures(version: version)
+        warnIfUnsampled(tag: versionTag, version: version, sampled: WPEMdlvFeatures.sampled)
 
         let headerMeshFlags = try reader.readUInt32()
         let skinCount = try reader.readUInt32()
@@ -1001,7 +1006,7 @@ public enum WPEMdlParser {
 
         for meshIndex in 0..<Int(meshCount) {
             meshes.append(try parseMesh(
-                version: version,
+                features: features,
                 headerMeshFlags: headerMeshFlags,
                 skinCount: skinCount,
                 meshIndex: meshIndex,
@@ -1060,6 +1065,8 @@ public enum WPEMdlParser {
             animations = []
         }
 
+        consumeMorphSectionIfPresent(reader: &metadataReader, auditRecorder: auditRecorder)
+
         let resolvedBones: [WPEPuppetBone]
         let elementAuditCheckpoint = auditRecorder?.checkpoint()
         do {
@@ -1086,6 +1093,53 @@ public enum WPEMdlParser {
             animations: animations,
             attachments: attachments,
             authoredData: data
+        )
+    }
+
+    /// Morph targets. Only the framing is consumed so the bytes are accounted for; the body is a
+    /// per-shape vertex-delta table that nothing downstream reads. Advancing past it keeps the
+    /// section order intact for MDLE.
+    private static func consumeMorphSectionIfPresent(
+        reader: inout WPEMdlBinaryReader,
+        auditRecorder: WPEMdlParseAuditRecorder?
+    ) {
+        guard let offset = reader.findTag("MDMP", from: reader.currentOffset) else { return }
+        let checkpoint = auditRecorder?.checkpoint()
+        var probe = reader
+        do {
+            try probe.seek(to: offset)
+            let tag = try probe.readFixedString(byteCount: 8)
+            guard tag.hasPrefix("MDMP"), let version = Int(tag.suffix(4)), version > 0 else { return }
+            warnIfUnsampled(tag: tag, version: version, sampled: 1 ... 1)
+            auditRecorder?.beginSection(kind: .mdmp, label: tag, start: offset)
+            try readIgnoredUInt8(reader: &probe, auditRecorder: auditRecorder, label: "MDMP section flag")
+            let declaredEnd = try Int(probe.readUInt32())
+            guard declaredEnd > probe.currentOffset, declaredEnd <= probe.dataCount else {
+                throw WPEMdlParserError.invalidHeader
+            }
+            let bodyStart = probe.currentOffset
+            try probe.seek(to: declaredEnd)
+            auditRecorder?.recordKnownSkip(label: "MDMP body", range: bodyStart ..< declaredEnd)
+            auditRecorder?.endSection(at: declaredEnd)
+            reader = probe
+        } catch {
+            if let checkpoint {
+                auditRecorder?.rollback(to: checkpoint)
+            }
+            Logger.warning(
+                "WPE puppet MDL morph section framing is unreadable; skipping it",
+                category: .wpeRender
+            )
+        }
+    }
+
+    /// An unsampled version still parses: the feature ladder extrapolates in both directions, and
+    /// the parse audit reports whatever the extrapolation failed to explain.
+    private static func warnIfUnsampled(tag: String, version: Int, sampled: ClosedRange<Int>) {
+        guard !sampled.contains(version) else { return }
+        Logger.warning(
+            "WPE MDL section \(tag) is outside the sampled range \(sampled); parsing with the nearest tier",
+            category: .wpeRender
         )
     }
 
@@ -1131,7 +1185,7 @@ public enum WPEMdlParser {
     }
 
     private static func parseMesh(
-        version: Int,
+        features: WPEMdlvFeatures,
         headerMeshFlags: UInt32,
         skinCount: UInt32,
         meshIndex: Int,
@@ -1155,7 +1209,7 @@ public enum WPEMdlParser {
             try readIgnoredUInt32(reader: &reader, auditRecorder: auditRecorder, label: "MDLV mesh flag payload")
         }
         let bounds: WPEPuppetMeshBounds?
-        if version >= 17 {
+        if features.meshBounds {
             bounds = WPEPuppetMeshBounds(
                 minimum: SIMD3<Float>(
                     try reader.readFloat(),
@@ -1171,7 +1225,7 @@ public enum WPEMdlParser {
         } else {
             bounds = nil
         }
-        let meshFlags = version > 14 ? try reader.readUInt32() : headerMeshFlags
+        let meshFlags = features.perMeshFlags ? try reader.readUInt32() : headerMeshFlags
         let vertexByteCount = try reader.readUInt32()
         let vertexStride = stride(for: meshFlags)
         guard vertexStride > 0, vertexByteCount % UInt32(vertexStride) == 0 else {
@@ -1195,7 +1249,8 @@ public enum WPEMdlParser {
         }
 
         let indexByteCount = try reader.readUInt32()
-        let indexElementWidth: WPEPuppetIndexElementWidth = version >= 23 && vertexCount > UInt32(UInt16.max)
+        let indexElementWidth: WPEPuppetIndexElementWidth = features.wideIndices
+            && vertexCount > UInt32(UInt16.max)
             ? .uint32
             : .uint16
         let indexStride = UInt32(indexElementWidth.rawValue)
@@ -1220,7 +1275,7 @@ public enum WPEMdlParser {
             throw WPEMdlParserError.invalidIndexBuffer(indexByteCount)
         }
 
-        let parts = version >= 21
+        let parts = features.partTable
             ? try parseVersion21Parts(
                 vertexCount: Int(vertexCount),
                 auditRecorder: auditRecorder,
@@ -1230,7 +1285,7 @@ public enum WPEMdlParser {
 
         // MDLV22+ always stores a mask-count block after each mesh. It must advance the main
         // reader: otherwise a multi-mesh model starts its next mesh four bytes too early.
-        let clipGroups = version > 21
+        let clipGroups = features.clipGroups
             ? parseClipGroups(partCount: parts.count, reader: &reader)
             : []
 
@@ -1468,6 +1523,8 @@ public enum WPEMdlParser {
         let skeletonTag = try reader.readFixedString(byteCount: 8)
         guard skeletonTag.hasPrefix("MDLS") else { return [] }
         let skeletonVersion = Int(skeletonTag.suffix(4)) ?? 0
+        let features = WPEMdlsFeatures(version: skeletonVersion)
+        warnIfUnsampled(tag: skeletonTag, version: skeletonVersion, sampled: WPEMdlsFeatures.sampled)
         auditRecorder?.beginSection(kind: .mdls, label: skeletonTag, start: skeletonOffset)
         try readIgnoredUInt8(reader: &reader, auditRecorder: auditRecorder, label: "MDLS section flag")
         let declaredSectionEnd = Int(try reader.readUInt32())
@@ -1519,7 +1576,7 @@ public enum WPEMdlParser {
                 simulationJSON: simulationJSON
             ))
         }
-        if skeletonVersion == 2, reader.currentOffset + 3 <= skeletonSectionEnd {
+        if features.worldBindsInSection, reader.currentOffset + 3 <= skeletonSectionEnd {
             try readIgnoredUInt16(
                 reader: &reader,
                 auditRecorder: auditRecorder,
@@ -1555,9 +1612,14 @@ public enum WPEMdlParser {
             auditRecorder?.recordKnownSkip(label: "MDLS0002 world-bind padding", range: paddingStart..<paddingEnd)
         }
         if skeletonSectionEnd <= reader.dataCount {
-            let paddingStart = reader.currentOffset
+            let remainderStart = reader.currentOffset
             try reader.seek(to: skeletonSectionEnd)
-            auditRecorder?.recordKnownSkip(label: "MDLS section padding", range: paddingStart..<reader.currentOffset)
+            let remainder = remainderStart ..< reader.currentOffset
+            let isBoneTable = features.boneTable?.byteCount(boneCount: bones.count) == remainder.count
+            auditRecorder?.recordKnownSkip(
+                label: isBoneTable ? "MDLS bone table" : "MDLS section padding",
+                range: remainder
+            )
         }
         auditRecorder?.endSection(at: reader.currentOffset)
         return bones
@@ -1650,7 +1712,8 @@ public enum WPEMdlParser {
         }
         try reader.seek(to: attachmentOffset)
         let tag = try reader.readFixedString(byteCount: 8)
-        guard tag == "MDAT0001" else { return [] }
+        guard tag.hasPrefix("MDAT"), let version = Int(tag.suffix(4)), version > 0 else { return [] }
+        warnIfUnsampled(tag: tag, version: version, sampled: 1 ... 1)
         auditRecorder?.beginSection(kind: .mdat, label: tag, start: attachmentOffset)
         try readIgnoredUInt8(reader: &reader, auditRecorder: auditRecorder, label: "MDAT section flag")
         let declaredSectionEnd = Int(try reader.readUInt32())
@@ -1765,77 +1828,92 @@ public enum WPEMdlParser {
         hasFollowingAnimation: Bool,
         reader: inout WPEMdlBinaryReader
     ) throws -> WPEPuppetAnimationTail {
+        let features = WPEMdlaFeatures(version: mdlaVersion)
         let tailStart = reader.currentOffset
-        let transFlag = try reader.readUInt32()
-        switch transFlag {
-        case 0:
-            if let byteCount = reader.peekUInt32(),
-               isAnimationMainTrackByteCount(byteCount, frameCount: frameCount) {
-                _ = try reader.readUInt32()
-                try skipAnimationFloatPayload(byteCount: byteCount, sectionEnd: sectionEnd, reader: &reader)
-                while reader.peekUInt32() == 0,
-                      let tailByteCount = reader.peekUInt32(relativeOffset: MemoryLayout<UInt32>.size),
-                      isAnimationMainTrackByteCount(tailByteCount, frameCount: frameCount) {
+        if features.transBlock {
+            let transFlag = try reader.readUInt32()
+            switch transFlag {
+            case 0:
+                if let byteCount = reader.peekUInt32(),
+                   isAnimationMainTrackByteCount(byteCount, frameCount: frameCount) {
                     _ = try reader.readUInt32()
+                    try skipAnimationFloatPayload(byteCount: byteCount, sectionEnd: sectionEnd, reader: &reader)
+                    while reader.peekUInt32() == 0,
+                          let tailByteCount = reader.peekUInt32(relativeOffset: MemoryLayout<UInt32>.size),
+                          isAnimationMainTrackByteCount(tailByteCount, frameCount: frameCount) {
+                        _ = try reader.readUInt32()
+                        _ = try reader.readUInt32()
+                        try skipAnimationFloatPayload(
+                            byteCount: tailByteCount,
+                            sectionEnd: sectionEnd,
+                            reader: &reader
+                        )
+                    }
+                }
+            case 1:
+                let extraByteCount = try reader.readUInt32()
+                try skipAnimationFloatPayload(
+                    byteCount: extraByteCount,
+                    sectionEnd: sectionEnd,
+                    reader: &reader
+                )
+                if extraByteCount > 0 {
                     _ = try reader.readUInt32()
+                }
+                let mainByteCount = try reader.readUInt32()
+                try skipAnimationFloatPayload(
+                    byteCount: mainByteCount,
+                    sectionEnd: sectionEnd,
+                    reader: &reader
+                )
+                if extraByteCount > 0 {
+                    _ = try reader.readUInt32()
+                }
+            default:
+                throw WPEMdlParserError.invalidAnimationTail(offset: tailStart)
+            }
+        }
+
+        let prefixEnd = reader.currentOffset
+        let blendCurves: WPEPuppetAnimationCurveBlock? = features.transBlock
+            ? try parseAnimationCurveBlock(
+                boneCount: boneCount,
+                sectionEnd: sectionEnd,
+                reader: &reader
+            )
+            : nil
+        let afterBlend = reader.currentOffset
+
+        if features.v4Events {
+            let hasV4Events = try reader.readUInt8()
+            guard hasV4Events == 0 || hasV4Events == 1 else {
+                throw WPEMdlParserError.invalidAnimationTail(offset: reader.currentOffset - 1)
+            }
+            if hasV4Events == 1 {
+                let eventCount = try reader.readUInt32()
+                guard eventCount <= 65536 else {
+                    throw WPEMdlParserError.invalidAnimationTail(offset: reader.currentOffset - 4)
+                }
+                for _ in 0 ..< eventCount {
+                    _ = try reader.readFloat()
+                    _ = try reader.readUInt32()
+                    let byteCount = try reader.readUInt32()
                     try skipAnimationFloatPayload(
-                        byteCount: tailByteCount,
+                        byteCount: byteCount,
                         sectionEnd: sectionEnd,
                         reader: &reader
                     )
                 }
             }
-        case 1:
-            let extraByteCount = try reader.readUInt32()
-            try skipAnimationFloatPayload(
-                byteCount: extraByteCount,
-                sectionEnd: sectionEnd,
-                reader: &reader
-            )
-            if extraByteCount > 0 { _ = try reader.readUInt32() }
-            let mainByteCount = try reader.readUInt32()
-            try skipAnimationFloatPayload(
-                byteCount: mainByteCount,
-                sectionEnd: sectionEnd,
-                reader: &reader
-            )
-            if extraByteCount > 0 { _ = try reader.readUInt32() }
-        default:
-            throw WPEMdlParserError.invalidAnimationTail(offset: tailStart)
         }
 
-        let prefixEnd = reader.currentOffset
-        let blendCurves = try parseAnimationCurveBlock(
-            boneCount: boneCount,
-            sectionEnd: sectionEnd,
-            reader: &reader
-        )
-        let afterBlend = reader.currentOffset
-
-        let hasV4Events = try reader.readUInt8()
-        guard hasV4Events == 0 || hasV4Events == 1 else {
-            throw WPEMdlParserError.invalidAnimationTail(offset: reader.currentOffset - 1)
-        }
-        if hasV4Events == 1 {
-            let eventCount = try reader.readUInt32()
-            guard eventCount <= 65_536 else {
-                throw WPEMdlParserError.invalidAnimationTail(offset: reader.currentOffset - 4)
-            }
-            for _ in 0..<eventCount {
+        if features.boundingBox {
+            for _ in 0 ..< 6 {
                 _ = try reader.readFloat()
-                _ = try reader.readUInt32()
-                let byteCount = try reader.readUInt32()
-                try skipAnimationFloatPayload(
-                    byteCount: byteCount,
-                    sectionEnd: sectionEnd,
-                    reader: &reader
-                )
             }
         }
-
-        for _ in 0..<6 { _ = try reader.readFloat() }
         let beforeScalar = reader.currentOffset
-        let scalarCurves: WPEPuppetAnimationCurveBlock? = mdlaVersion == 6
+        let scalarCurves: WPEPuppetAnimationCurveBlock? = features.scalarCurves
             ? try parseAnimationCurveBlock(boneCount: boneCount, sectionEnd: sectionEnd, reader: &reader)
             : nil
         let afterScalar = reader.currentOffset
@@ -1891,8 +1969,9 @@ public enum WPEMdlParser {
         try reader.seek(to: animationOffset)
 
         let animationTag = try reader.readFixedString(byteCount: 8)
-        guard animationTag == "MDLA0005" || animationTag == "MDLA0006" else { return [] }
-        guard let mdlaVersion = Int(animationTag.suffix(4)) else { return [] }
+        guard animationTag.hasPrefix("MDLA"),
+              let mdlaVersion = Int(animationTag.suffix(4)), mdlaVersion > 0 else { return [] }
+        warnIfUnsampled(tag: animationTag, version: mdlaVersion, sampled: WPEMdlaFeatures.sampled)
         auditRecorder?.beginSection(kind: .mdla, label: animationTag, start: animationOffset)
         try readIgnoredUInt8(reader: &reader, auditRecorder: auditRecorder, label: "MDLA section flag")
         let declaredSectionEnd = Int(try reader.readUInt32())
@@ -1918,10 +1997,11 @@ public enum WPEMdlParser {
             let signedFrameCount = try reader.readInt32()
             let reserved0 = try reader.readUInt32()
             let channelCount = try reader.readUInt32()
-            let reserved1 = try reader.readUInt32()
+            // Leading word of the first bone track's `(unk, byteCount)` header, not a reserved zero.
+            _ = try reader.readUInt32()
             let channelByteCount = try reader.readUInt32()
 
-            guard reservedID == 0, reserved0 == 0, reserved1 == 0,
+            guard reservedID == 0, reserved0 == 0,
                   fps.isFinite, fps > 0,
                   signedFrameCount > 0, signedFrameCount < 10_000,
                   channelCount > 0, channelCount < 10_000 else {
@@ -1973,9 +2053,11 @@ public enum WPEMdlParser {
                 channels.append(WPEPuppetAnimChannel(boneIndex: channelIndex, keyframes: keyframes))
 
                 if channelIndex + 1 < channelCountInt {
+                    // `(unk, byteCount)` header of the next bone track. Only the byte count is
+                    // checked: the model below stores one keyframe count for every channel.
                     let delimiterMarker = try reader.readUInt32()
                     let delimiterByteCount = try reader.readUInt32()
-                    guard delimiterMarker == 0, delimiterByteCount == channelByteCount else {
+                    guard delimiterByteCount == channelByteCount else {
                         throw WPEMdlParserError.invalidAnimationChannelDelimiter(
                             animationID: Int(id),
                             channelIndex: channelIndex,
