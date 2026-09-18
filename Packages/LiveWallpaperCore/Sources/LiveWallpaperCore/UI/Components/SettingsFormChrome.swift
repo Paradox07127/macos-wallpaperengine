@@ -17,8 +17,12 @@ private struct SettingsFormChrome: ViewModifier {
             .scrollContentBackground(.hidden)
             .contentMargins(.horizontal, DesignTokens.Settings.formHorizontalMargin, for: .scrollContent)
             .contentMargins(.vertical, DesignTokens.Settings.formVerticalMargin, for: .scrollContent)
-            .background(DesignTokens.Colors.pageBackground)
             .frame(minWidth: minWidth, minHeight: minHeight)
+            // Two frames on purpose: the first bounds the form, the second re-expands
+            // the slot so the bounded form centers and the background still fills it.
+            .frame(maxWidth: DesignTokens.Settings.maxContentWidth)
+            .frame(maxWidth: .infinity)
+            .background(DesignTokens.Colors.pageBackground)
     }
 }
 
