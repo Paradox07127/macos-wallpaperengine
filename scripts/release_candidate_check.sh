@@ -247,33 +247,37 @@ for lite_binary in "$LITE_DEBUG_BIN" "$LITE_RELEASE_BIN"; do
     exit 1
   fi
 done
-# Lite ships no XPC service at all. Pro ships exactly one: SteamConnector, which
-# runs SteamCMD outside the sandbox so downloads land in the user's real Steam
-# library. The SceneScript helper retired 2026-07-23 must never come back — it
-# isolated only provably-inert scripts while the dynamic ones ran in-process.
-if [[ -d "$LITE_ARCHIVED_APP/Contents/XPCServices" ]]; then
-  echo "ERROR: $LITE_ARCHIVED_APP unexpectedly embeds an XPC service." >&2
-  exit 1
-fi
-if [[ -d "$PRO_ARCHIVED_APP/Contents/XPCServices" ]]; then
-  pro_services="$(ls "$PRO_ARCHIVED_APP/Contents/XPCServices")"
-  if [[ "$pro_services" != "SteamConnector.xpc" ]]; then
-    echo "ERROR: Pro embeds unexpected XPC service(s): $pro_services" >&2
+# Both SKUs ship WallpaperMaintenance, which runs lsregister/pkill for the system
+# wallpaper extension outside the sandbox. Pro additionally ships SteamConnector,
+# which runs SteamCMD outside the sandbox so downloads land in the user's real
+# Steam library. Every embedded service must stay unsandboxed: a sandboxed
+# SteamConnector would put its STEAMROOT back in the container and silently undo
+# the migration, and a sandboxed WallpaperMaintenance could not reach lsregister.
+# The SceneScript helper retired 2026-07-23 must never come back — it isolated
+# only provably-inert scripts while the dynamic ones ran in-process.
+assert_embedded_xpc_services() {
+  local app="$1" expected="$2" actual service
+  if [[ ! -d "$app/Contents/XPCServices" ]]; then
+    echo "ERROR: $app is missing its Contents/XPCServices (expected: $expected)." >&2
     exit 1
   fi
-  # An unsandboxed helper is the whole point; a sandboxed one would put its
-  # STEAMROOT back in the container and silently undo the migration.
-  if codesign -d --entitlements - --xml \
-      "$PRO_ARCHIVED_APP/Contents/XPCServices/SteamConnector.xpc" 2>/dev/null \
-      | plutil -p - 2>/dev/null | grep -q "com.apple.security.app-sandbox"; then
-    echo "ERROR: SteamConnector is sandboxed; its \$HOME would be the app container." >&2
+  actual="$(ls "$app/Contents/XPCServices" | sort | tr '\n' ' ' | sed 's/ $//')"
+  if [[ "$actual" != "$expected" ]]; then
+    echo "ERROR: $app unexpectedly embeds an XPC service. expected: $expected; found: $actual" >&2
     exit 1
   fi
-else
-  echo "ERROR: $PRO_ARCHIVED_APP is missing its Contents/XPCServices/SteamConnector.xpc." >&2
-  exit 1
-fi
-echo "  ✓ Pro/Lite Debug/Release links, no embedded XPC services, and Lite archive purity verified"
+  for service in $expected; do
+    if codesign -d --entitlements - --xml \
+        "$app/Contents/XPCServices/$service" 2>/dev/null \
+        | plutil -p - 2>/dev/null | grep -q "com.apple.security.app-sandbox"; then
+      echo "ERROR: $service in $app is sandboxed; its \$HOME would be the app container." >&2
+      exit 1
+    fi
+  done
+}
+assert_embedded_xpc_services "$LITE_ARCHIVED_APP" "WallpaperMaintenance.xpc"
+assert_embedded_xpc_services "$PRO_ARCHIVED_APP" "SteamConnector.xpc WallpaperMaintenance.xpc"
+echo "  ✓ Pro/Lite Debug/Release links, embedded XPC services, and Lite archive purity verified"
 
 echo "== Diff whitespace check =="
 git diff --check

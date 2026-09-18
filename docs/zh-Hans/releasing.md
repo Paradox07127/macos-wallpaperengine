@@ -52,11 +52,12 @@ Pro 与 Lite 的冒烟 archive 默认落在
 `/tmp/LoomscreenReleaseCandidate-arm64LiteRelease/Loomscreen-LinkMatrix.xcarchive`。
 它们只做 ad-hoc 签名，目的是走一遍真实的 archive/签名路径。Pro 必须只含 arm64；
 Lite 必须含 arm64，并允许额外带 x86_64——因为 Lite 以 universal 形式发布以支持
-Intel Mac。两者的嵌套签名都必须有效。Pro 必须且只能内嵌一个 XPC 服务 `SteamConnector.xpc`，
-并且它**不能**带 App Sandbox entitlement —— 辅助进程不进沙盒正是关键所在，
-因为一个进了沙盒的辅助进程会把它的 STEAMROOT 放回应用容器里，从而悄悄撤销 Steam
-库迁移。（本段原先描述的 SceneScript XPC 辅助进程已于 2026-07-23 退役。）
-Lite 必须完全不含内嵌 XPC 服务，也不能含 Pro 的渲染器/SceneScript 符号、
+Intel Mac。两者的嵌套签名都必须有效。两个 SKU 都内嵌 `WallpaperMaintenance.xpc`，它替系统壁纸扩展
+运行 `lsregister` 并重启 WallpaperAgent；Pro 额外内嵌 `SteamConnector.xpc`。两个服务都
+**不能**带 App Sandbox entitlement —— 辅助进程不进沙盒正是关键所在：进了沙盒的
+SteamConnector 会把它的 STEAMROOT 放回应用容器里，从而悄悄撤销 Steam 库迁移；进了沙盒的
+维护辅助进程则碰不到 `lsregister`。（本段原先描述的 SceneScript XPC 辅助进程已于
+2026-07-23 退役。）Lite 不能含其他内嵌 XPC 服务，也不能含 Pro 的渲染器/SceneScript 符号、
 JavaScriptCore，或手动链接的 libc++ 动态库。Sparkle 是故意链接的。每次运行都用新的
 `DERIVED_DATA`/archive 路径；门禁拒绝删除或覆盖已存在的 archive。
 

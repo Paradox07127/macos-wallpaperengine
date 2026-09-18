@@ -62,13 +62,15 @@ and
 They are ad-hoc signed only to exercise the real archive/signing path. Pro must
 contain exactly arm64; Lite must contain arm64 and may additionally carry
 x86_64, since Lite ships universal for Intel Macs. Both need valid nested
-signatures. Pro must
-embed exactly one XPC service, `SteamConnector.xpc`, and it must carry **no**
-App Sandbox entitlement — an unsandboxed helper is the whole point, since a
-sandboxed one would put its STEAMROOT back in the app container and silently
-undo the Steam-library migration. (The SceneScript XPC helper this paragraph
-used to describe retired on 2026-07-23.) Lite must contain no embedded XPC
-service at all, and no Pro renderer/SceneScript symbols,
+signatures. Both SKUs embed `WallpaperMaintenance.xpc`, which runs `lsregister`
+and restarts WallpaperAgent for the system wallpaper extension; Pro additionally
+embeds `SteamConnector.xpc`, and neither service may carry an App Sandbox
+entitlement — an unsandboxed helper is the whole point, since a sandboxed
+SteamConnector would put its STEAMROOT back in the app container and silently
+undo the Steam-library migration, and a sandboxed maintenance helper could not
+reach `lsregister`. (The SceneScript XPC helper this paragraph used to describe
+retired on 2026-07-23.) Lite must contain no other embedded XPC service, and no
+Pro renderer/SceneScript symbols,
 JavaScriptCore, or manual libc++ dynamic link. Sparkle is linked on
 purpose. Use a fresh
 `DERIVED_DATA`/archive path for each run; the gate refuses to delete or
