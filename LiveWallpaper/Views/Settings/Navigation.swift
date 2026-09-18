@@ -172,11 +172,11 @@ enum SettingsNavigation: String, CaseIterable, Hashable, Identifiable {
             title: "Display Defaults",
             systemImage: "rectangle.3.group",
             keywords: [
-                "display", "defaults", "display defaults", "screen defaults", "screen default",
+                "screen defaults", "screen default",
                 "playback defaults", "reset display", "new display", "baseline",
                 "frame rate", "fps", "volume", "mute", "scaling", "color space", "interaction",
-                "帧率", "屏幕默认", "显示默认", "預設", "影格率", "フレームレート",
-                "fotogramas", "predeterminados de pantalla",
+                "帧率", "屏幕默认", "显示默认", "影格率", "フレームレート",
+                "fotogramas",
             ]
         ),
         SettingsNavigationItem(
@@ -215,7 +215,7 @@ enum SettingsNavigation: String, CaseIterable, Hashable, Identifiable {
             title: "Overlays",
             systemImage: "square.on.square.badge.person.crop",
             keywords: [
-                "monitor", "widget", "overlay", "tint", "opacity", "liquid glass",
+                "monitor", "widget", "tint", "opacity", "liquid glass",
                 "temperature", "celsius", "fahrenheit",
                 "组件", "浮层", "温度", "浮層", "溫度", "ウィジェット", "温度", "widget",
             ]
@@ -228,7 +228,7 @@ enum SettingsNavigation: String, CaseIterable, Hashable, Identifiable {
             keywords: [
                 "Video playback", "Lock screen only", "extension", "Spaces", "Maintenance",
                 "Inspect Registrations", "Restart Wallpaper Service", "Automatically recover stalled connections",
-                "系统壁纸", "解锁", "锁屏", "播放", "维护", "修复", "重启", "扩展", "維護", "修復", "延伸功能",
+                "解锁", "锁屏", "播放", "维护", "修复", "重启", "扩展", "維護", "修復", "延伸功能",
                 "保守", "修復", "再起動", "mantenimiento", "reparar", "reiniciar",
             ]
         ),
@@ -251,7 +251,7 @@ enum SettingsNavigation: String, CaseIterable, Hashable, Identifiable {
             group: .data,
             title: "Backup & Restore",
             systemImage: "arrow.triangle.2.circlepath",
-            keywords: ["import", "export", "configuration", "backup", "restore", "display defaults", "bookmarks"]
+            keywords: ["import", "export", "configuration", "display defaults", "bookmarks"]
         ),
         SettingsNavigationItem(
             destination: .advanced,
@@ -279,9 +279,19 @@ struct SettingsNavigationItem: Identifiable, Equatable {
 
     var id: SettingsNavigation { destination }
 
-    func searchableText(in bundle: Bundle = .appLanguage) -> String {
-        ([title, title.localized(in: bundle)] + keywords).joined(separator: " ")
+    func searchableText() -> String {
+        Self.searchIndexes[destination] ?? buildSearchableText()
     }
+
+    private func buildSearchableText() -> String {
+        (title.localizedInEveryLanguage + keywords).joined(separator: " ")
+    }
+
+    /// Built once: `allItems` is a `static let`, and the index no longer depends on the
+    /// current language, so it can never go stale.
+    private static let searchIndexes: [SettingsNavigation: String] = Dictionary(
+        uniqueKeysWithValues: SettingsNavigation.allItems.map { ($0.destination, $0.buildSearchableText()) }
+    )
 
     fileprivate func searchTargets(capabilities: ProductCapabilities) -> [SettingsNavigationSearchTarget] {
         switch destination {
@@ -294,7 +304,7 @@ struct SettingsNavigationItem: Identifiable, Equatable {
                         anchor: .displayDefaultsVideo,
                         keywords: [
                             "video", "frame rate", "fps", "volume", "mute", "scaling",
-                            "span displays", "color space", "帧率", "影格率", "フレームレート"
+                            "span displays", "color space", "帧率", "影格率", "フレームレート",
                         ]
                     )
                 )
@@ -306,7 +316,7 @@ struct SettingsNavigationItem: Identifiable, Equatable {
                         anchor: .displayDefaultsWeb,
                         keywords: [
                             "web", "html", "interaction", "pointer", "click", "mute audio",
-                            "web audio"
+                            "web audio",
                         ]
                     )
                 )
@@ -318,7 +328,7 @@ struct SettingsNavigationItem: Identifiable, Equatable {
                         anchor: .displayDefaultsScene,
                         keywords: [
                             "scene", "wallpaper engine", "frame rate", "fps", "scaling",
-                            "interaction", "follow cursor"
+                            "interaction", "follow cursor",
                         ]
                     )
                 )
@@ -428,7 +438,7 @@ struct SettingsNavigationItem: Identifiable, Equatable {
                     anchor: .storageDashboard,
                     keywords: [
                         "storage", "downloaded projects", "engine assets", "projects",
-                        "archives", "download archives", "reclaim"
+                        "archives", "download archives", "reclaim",
                     ]
                 ),
                 SettingsNavigationSearchTarget(
@@ -452,7 +462,7 @@ struct SettingsNavigationItem: Identifiable, Equatable {
                     anchor: .workshopConnection,
                     keywords: [
                         "steam", "steamcmd", "doctor", "diagnostics",
-                        "steam library", "steam account", "sign in"
+                        "steam library", "steam account", "sign in",
                     ]
                 ),
                 SettingsNavigationSearchTarget(
@@ -460,7 +470,7 @@ struct SettingsNavigationItem: Identifiable, Equatable {
                     anchor: .workshopAssets,
                     keywords: [
                         "wallpaper engine assets", "engine assets",
-                        "download from steam", "link folder"
+                        "download from steam", "link folder",
                     ]
                 ),
                 SettingsNavigationSearchTarget(
@@ -513,7 +523,7 @@ private struct SettingsNavigationSearchTarget: Equatable {
     let keywords: [String]
 
     private var searchableText: String {
-        ([label, label.localized(in: .appLanguage)] + keywords).joined(separator: " ")
+        (label.localizedInEveryLanguage + keywords).joined(separator: " ")
     }
 
     func matches(terms: [String]) -> Bool {
@@ -540,6 +550,21 @@ extension String {
     func localized(in bundle: Bundle) -> String {
         String(localized: String.LocalizationValue(self), bundle: bundle)
     }
+
+    /// Every shipped translation of this key, plus the key itself.
+    ///
+    /// Search indexes all of them rather than only the current language: a bilingual user
+    /// running the app in English still searches in their own language, and Apple's own
+    /// `.searchTerms` files mix the two for the same reason.
+    var localizedInEveryLanguage: [String] {
+        [self] + SettingsLocalizationBundles.all.map { localized(in: $0) }
+    }
+}
+
+enum SettingsLocalizationBundles {
+    static let all: [Bundle] = AppLanguagePreference.allCases
+        .filter { $0 != .system }
+        .map { $0.localizationBundle() }
 }
 
 private extension String {
