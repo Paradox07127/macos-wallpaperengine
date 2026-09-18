@@ -19,10 +19,12 @@ struct SettingsDetailContent: View {
                 }
             case .performancePower:
                 GeneralSettingsView(page: .performancePower)
-            case .audioResponse:
-                GeneralSettingsView(page: .audioResponse)
-            case .weather:
-                GeneralSettingsView(page: .weather)
+            case .integrations:
+                GeneralSettingsView(page: .integrations)
+                    .settingsSearchAnchorScroller(
+                        pendingSearchAnchor: $pendingSearchAnchor,
+                        anchors: [.integrationsAudio, .integrationsWeather]
+                    )
             case .shortcuts:
                 ShortcutsView(pendingSearchAnchor: $pendingSearchAnchor)
             case .storage:

@@ -40,7 +40,7 @@ struct GeneralSettingsOwnershipCharacterizationTests {
         #expect(initializer.contains("Self.initialLocationAuthorizationStatus(for: page)"))
         #expect(Self.occurrences(".onAppear { refreshSystemStatusIndicators() }", in: source) == 1)
 
-        for page in [.general, .audioResponse, .weather] as [OwnershipFixture.Page] {
+        for page in [.general, .integrations] as [OwnershipFixture.Page] {
             #expect(
                 scopes.contains("case .\(page.rawValue):"),
                 "Every Settings page needs an explicit system-probe ownership decision"
@@ -52,13 +52,12 @@ struct GeneralSettingsOwnershipCharacterizationTests {
         }
 
         #expect(scopes.contains("case .general:\n            [.loginItem]"))
-        #expect(scopes.contains("case .audioResponse:\n            #if !LITE_BUILD\n            [.audioCapture]"))
-        #expect(scopes.contains("case .weather:\n            [.weatherLocation]"))
+        #expect(scopes.contains("case .integrations:\n            #if !LITE_BUILD\n            [.audioCapture, .weatherLocation]"))
         #expect(scopes.contains("case .performancePower, .backupRestore, .advanced, .about:\n            []"))
 
         #expect(OwnershipFixture.mountCalls(for: .general, sku: .pro) == MountCalls(settingsReads: 1, loginStatusReads: 2, audioStateReads: 0, locationStatusReads: 0))
-        #expect(OwnershipFixture.mountCalls(for: .audioResponse, sku: .pro) == MountCalls(settingsReads: 1, loginStatusReads: 0, audioStateReads: 2, locationStatusReads: 0))
-        #expect(OwnershipFixture.mountCalls(for: .weather, sku: .pro) == MountCalls(settingsReads: 1, loginStatusReads: 0, audioStateReads: 0, locationStatusReads: 2))
+        #expect(OwnershipFixture.mountCalls(for: .integrations, sku: .pro) == MountCalls(settingsReads: 1, loginStatusReads: 0, audioStateReads: 2, locationStatusReads: 2))
+        #expect(OwnershipFixture.mountCalls(for: .integrations, sku: .lite) == MountCalls(settingsReads: 1, loginStatusReads: 0, audioStateReads: 0, locationStatusReads: 2))
         #expect(OwnershipFixture.mountCalls(for: .backupRestore, sku: .lite) == MountCalls(settingsReads: 1, loginStatusReads: 0, audioStateReads: 0, locationStatusReads: 0))
     }
 
@@ -162,7 +161,7 @@ struct GeneralSettingsOwnershipCharacterizationTests {
             .displayDefaults,
         ] + systemWallpaper + [
             .performancePower,
-            .weather,
+            .integrations,
             .shortcuts,
             .backupRestore,
             .advanced,
@@ -183,8 +182,7 @@ struct GeneralSettingsOwnershipCharacterizationTests {
             .displayDefaults,
         ] + systemWallpaper + [
             .performancePower,
-            .audioResponse,
-            .weather,
+            .integrations,
             .shortcuts,
             .storage,
             .backupRestore,
@@ -196,8 +194,7 @@ struct GeneralSettingsOwnershipCharacterizationTests {
             .displayDefaults,
         ] + systemWallpaper + [
             .performancePower,
-            .audioResponse,
-            .weather,
+            .integrations,
             .shortcuts,
             .storage,
             .backupRestore,

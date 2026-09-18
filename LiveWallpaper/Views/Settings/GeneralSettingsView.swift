@@ -8,8 +8,7 @@ import UniformTypeIdentifiers
 enum GeneralSettingsPage: Equatable {
     case general
     case performancePower
-    case audioResponse
-    case weather
+    case integrations
     case backupRestore
     case advanced
     case about
@@ -231,12 +230,9 @@ struct GeneralSettingsView: View {
             settingsForm {
                 performanceSection
             }
-        case .audioResponse:
+        case .integrations:
             settingsForm {
                 audioResponseSection
-            }
-        case .weather:
-            settingsForm {
                 weatherSection
             }
         case .backupRestore:
@@ -272,14 +268,12 @@ struct GeneralSettingsView: View {
         switch page {
         case .general:
             [.loginItem]
-        case .audioResponse:
+        case .integrations:
             #if !LITE_BUILD
-            [.audioCapture]
+            [.audioCapture, .weatherLocation]
             #else
-            []
-            #endif
-        case .weather:
             [.weatherLocation]
+            #endif
         case .performancePower, .backupRestore, .advanced, .about:
             []
         }
@@ -292,13 +286,13 @@ struct GeneralSettingsView: View {
 
     #if !LITE_BUILD
     private static func initialAudioCaptureState(for page: GeneralSettingsPage) -> SystemAudioCaptureManager.State {
-        guard page == .audioResponse else { return .idle }
+        guard page == .integrations else { return .idle }
         return SystemAudioCaptureManager.shared.state
     }
     #endif
 
     private static func initialLocationAuthorizationStatus(for page: GeneralSettingsPage) -> CLAuthorizationStatus {
-        guard page == .weather else { return .notDetermined }
+        guard page == .integrations else { return .notDetermined }
         return CLLocationManager().authorizationStatus
     }
 

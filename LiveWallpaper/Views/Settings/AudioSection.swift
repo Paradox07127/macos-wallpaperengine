@@ -38,7 +38,7 @@ extension GeneralSettingsView {
                 }
             }
         } header: {
-            Text("Audio", comment: "Section header for the audio-response toggle in General settings.")
+            SettingsSearchSectionHeader("Audio", anchor: .integrationsAudio)
         }
         .onAppear { retainAudioCaptureStatusConsumer() }
         .onDisappear { releaseAudioCaptureStatusConsumer() }
