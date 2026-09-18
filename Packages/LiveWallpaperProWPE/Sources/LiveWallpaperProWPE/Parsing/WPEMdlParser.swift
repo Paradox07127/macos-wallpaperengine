@@ -1096,9 +1096,9 @@ public enum WPEMdlParser {
         )
     }
 
-    /// Morph targets. Only the framing is consumed so the bytes are accounted for; the body is a
-    /// per-shape vertex-delta table that nothing downstream reads. Advancing past it keeps the
-    /// section order intact for MDLE.
+    /// Morph targets. The records are walked so a layout change is caught, but nothing downstream
+    /// reads shape deltas, so they are consumed rather than stored. A record the walk cannot follow
+    /// falls back to consuming the declared extent, which the parse audit reports as `MDMP body`.
     private static func consumeMorphSectionIfPresent(
         reader: inout WPEMdlBinaryReader,
         auditRecorder: WPEMdlParseAuditRecorder?
@@ -1106,6 +1106,7 @@ public enum WPEMdlParser {
         guard let offset = reader.findTag("MDMP", from: reader.currentOffset) else { return }
         let checkpoint = auditRecorder?.checkpoint()
         var probe = reader
+        var declaredEnd = 0
         do {
             try probe.seek(to: offset)
             let tag = try probe.readFixedString(byteCount: 8)
@@ -1113,13 +1114,32 @@ public enum WPEMdlParser {
             warnIfUnsampled(tag: tag, version: version, sampled: 1 ... 1)
             auditRecorder?.beginSection(kind: .mdmp, label: tag, start: offset)
             try readIgnoredUInt8(reader: &probe, auditRecorder: auditRecorder, label: "MDMP section flag")
-            let declaredEnd = try Int(probe.readUInt32())
+            // The declared end is an absolute file offset, not a length.
+            declaredEnd = try Int(probe.readUInt32())
             guard declaredEnd > probe.currentOffset, declaredEnd <= probe.dataCount else {
                 throw WPEMdlParserError.invalidHeader
             }
-            let bodyStart = probe.currentOffset
-            try probe.seek(to: declaredEnd)
-            auditRecorder?.recordKnownSkip(label: "MDMP body", range: bodyStart ..< declaredEnd)
+            let bodyCheckpoint = auditRecorder?.checkpoint()
+            var walked = probe
+            do {
+                try walkMorphRecords(
+                    sectionEnd: declaredEnd,
+                    reader: &walked,
+                    auditRecorder: auditRecorder
+                )
+                probe = walked
+            } catch {
+                if let bodyCheckpoint {
+                    auditRecorder?.rollback(to: bodyCheckpoint)
+                }
+                Logger.warning(
+                    "WPE puppet MDL morph records do not match the known layout: \(error)",
+                    category: .wpeRender
+                )
+                let bodyStart = probe.currentOffset
+                try probe.seek(to: declaredEnd)
+                auditRecorder?.recordKnownSkip(label: "MDMP body", range: bodyStart ..< declaredEnd)
+            }
             auditRecorder?.endSection(at: declaredEnd)
             reader = probe
         } catch {
@@ -1131,6 +1151,55 @@ public enum WPEMdlParser {
                 category: .wpeRender
             )
         }
+    }
+
+    /// One MDMP event carries `count` shapes; each shape's delta table is `length / 6` three-`UInt16`
+    /// entries. `shapeID == 0` trails `length` bytes, every other shape trails one `UInt16` per entry.
+    private static func walkMorphRecords(
+        sectionEnd: Int,
+        reader: inout WPEMdlBinaryReader,
+        auditRecorder: WPEMdlParseAuditRecorder?
+    ) throws {
+        while reader.currentOffset < sectionEnd {
+            let eventStart = reader.currentOffset
+            let shapeCount = try reader.readUInt16()
+            let eventTime = try reader.readFloat()
+            try readIgnoredUInt16(reader: &reader, auditRecorder: auditRecorder, label: "MDMP event id")
+            let reserved = try reader.readUInt16()
+            guard eventTime.isFinite, reserved == 0, shapeCount <= maxMeshCount else {
+                throw WPEMdlParserError.invalidHeader
+            }
+            for _ in 0 ..< shapeCount {
+                let shapeID = try reader.readUInt32()
+                let shapeReserved = try reader.readUInt32()
+                _ = try reader.readCString(sectionEnd: sectionEnd)
+                let byteCount = try reader.readUInt32()
+                try readIgnoredUInt32(reader: &reader, auditRecorder: auditRecorder, label: "MDMP shape hash")
+                guard shapeReserved == 0, byteCount % 6 == 0 else {
+                    throw WPEMdlParserError.invalidHeader
+                }
+                let entryCount = Int(byteCount) / 6
+                let trailerBytes = shapeID == 0 ? Int(byteCount) : entryCount * MemoryLayout<UInt16>.size
+                guard reader.currentOffset + Int(byteCount) + trailerBytes <= sectionEnd else {
+                    throw WPEMdlParserError.invalidHeader
+                }
+                try skipKnownBytes(
+                    byteCount: Int(byteCount),
+                    reader: &reader,
+                    auditRecorder: auditRecorder,
+                    label: "MDMP shape deltas"
+                )
+                try skipKnownBytes(
+                    byteCount: trailerBytes,
+                    reader: &reader,
+                    auditRecorder: auditRecorder,
+                    label: "MDMP shape trailer"
+                )
+            }
+            // A record that consumed nothing would loop forever while the section never advances.
+            guard reader.currentOffset > eventStart else { throw WPEMdlParserError.invalidHeader }
+        }
+        guard reader.currentOffset == sectionEnd else { throw WPEMdlParserError.invalidHeader }
     }
 
     /// An unsampled version still parses: the feature ladder extrapolates in both directions, and

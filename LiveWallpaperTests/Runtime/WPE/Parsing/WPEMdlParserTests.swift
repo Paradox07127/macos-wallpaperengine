@@ -608,6 +608,21 @@ struct WPEMdlParserTests {
         #expect(tail.unknownSegments.last?.bytes.suffix(3) == Data("{}\0".utf8))
     }
 
+    @Test("A mesh flagged 2 carries an extra word before the bounding box", arguments: [0, 2])
+    func meshFlagATwoConsumesItsExtraWord(flagA: Int) throws {
+        let model = try WPEMdlParser.parse(data: makeSingleTriangleMDLV23(meshFlagA: UInt32(flagA)))
+        let mesh = try #require(model.meshes.first)
+
+        #expect(mesh.vertices.count == 3)
+        #expect(mesh.indices == [0, 1, 2])
+        // A dropped extra word would shift the bounding box into the vertex buffer.
+        #expect(mesh.vertices[0].position == SIMD3<Float>(-10, -20, 0))
+        #expect(mesh.bounds == WPEPuppetMeshBounds(
+            minimum: SIMD3<Float>(-10, -20, 0),
+            maximum: SIMD3<Float>(10, 20, 0)
+        ))
+    }
+
     @Test("MDLA0001 keeps its channels: the tail is only the trailing event list")
     func parsesMDLA0001Animation() throws {
         let model = try WPEMdlParser.parse(data: makeMDLV23WithAnimation(mdlaVersion: 1))
@@ -646,7 +661,10 @@ struct WPEMdlParserTests {
             "MDLV uv2 payload",
             "MDLV vertex extra4",
             "MDLV vertex tangent",
-            "MDMP body",
+            "MDMP event id",
+            "MDMP shape deltas",
+            "MDMP shape hash",
+            "MDMP shape trailer",
         ])
         let corpusRoot = try #require(Self.workshopCorpusRoot)
         let folders = try FileManager.default.contentsOfDirectory(
@@ -920,7 +938,10 @@ struct WPEMdlParserTests {
         #expect(model.meshes.first?.vertices.count == 1)
     }
 
-    private func makeSingleTriangleMDLV23(normals: [SIMD3<Float>] = []) -> Data {
+    private func makeSingleTriangleMDLV23(
+        normals: [SIMD3<Float>] = [],
+        meshFlagA: UInt32 = 0
+    ) -> Data {
         var data = Data()
         data.append(contentsOf: Array("MDLV0023".utf8))
         data.appendLE(UInt32(0x80000900))
@@ -929,7 +950,10 @@ struct WPEMdlParserTests {
         data.appendLE(UInt32(1))
 
         data.appendCString("materials/test.json")
-        data.appendLE(UInt32(0))
+        data.appendLE(meshFlagA)
+        if meshFlagA == 2 {
+            data.appendLE(UInt32(0))
+        }
         data.appendLE(Float(-10))
         data.appendLE(Float(-20))
         data.appendLE(Float(0))
