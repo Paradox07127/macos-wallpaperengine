@@ -26,7 +26,9 @@ struct SettingsSearchLocalizationTests {
                 !localizedTitle.isEmpty,
                 Comment(rawValue: "\(language): `\(item.title)` resolved to an empty string")
             )
-            let haystack = item.searchableText(in: bundle)
+            // One index carries every language, so this asserts cross-language search:
+            // the zh title must be findable even when the app runs in English.
+            let haystack = item.searchableText()
             #expect(
                 haystack.localizedCaseInsensitiveContains(localizedTitle),
                 Comment(rawValue: "\(language): searching `\(localizedTitle)` cannot find \(item.destination.rawValue)")
@@ -36,10 +38,12 @@ struct SettingsSearchLocalizationTests {
 
     @Test("The English key stays searchable in every language", arguments: languages)
     func englishKeyStaysSearchable(language: String) throws {
-        let bundle = try bundle(for: language)
+        // The index no longer varies by language; resolving the bundle still asserts
+        // that this language ships at all.
+        _ = try bundle(for: language)
 
         for item in SettingsNavigation.allItems {
-            #expect(item.searchableText(in: bundle).localizedCaseInsensitiveContains(item.title))
+            #expect(item.searchableText().localizedCaseInsensitiveContains(item.title))
         }
     }
 
