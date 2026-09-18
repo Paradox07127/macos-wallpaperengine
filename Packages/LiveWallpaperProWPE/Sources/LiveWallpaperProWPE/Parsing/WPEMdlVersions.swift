@@ -24,7 +24,7 @@ public struct WPEMdlvFeatures: Equatable, Sendable {
     /// Index buffers may use 32-bit elements; below this they are always 16-bit.
     public let wideIndices: Bool
 
-    public static let sampled: ClosedRange<Int> = 13 ... 23
+    public static let sampled: ClosedRange<Int> = 4 ... 23
 
     public init(version: Int) {
         perMeshFlags = version >= 15
