@@ -225,7 +225,12 @@ enum SettingsNavigation: String, CaseIterable, Hashable, Identifiable {
             group: .content,
             title: "System Wallpaper",
             systemImage: "macwindow.on.rectangle",
-            keywords: ["Video playback", "Lock screen only", "extension", "Spaces", "系统壁纸", "解锁", "锁屏", "播放"]
+            keywords: [
+                "Video playback", "Lock screen only", "extension", "Spaces", "Maintenance",
+                "Inspect Registrations", "Restart Wallpaper Service", "Automatically recover stalled connections",
+                "系统壁纸", "解锁", "锁屏", "播放", "维护", "修复", "重启", "扩展", "維護", "修復", "延伸功能",
+                "保守", "修復", "再起動", "mantenimiento", "reparar", "reiniciar",
+            ]
         ),
         SettingsNavigationItem(
             destination: .workshopSetup,

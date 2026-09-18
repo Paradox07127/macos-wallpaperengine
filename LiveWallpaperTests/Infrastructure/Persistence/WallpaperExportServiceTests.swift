@@ -123,6 +123,29 @@ struct WallpaperExportServiceTests {
         return Rig(service: service, root: root, sourceDirectory: sources)
     }
 
+    @Test("An atomically written heartbeat reaches the service through the directory watch")
+    func atomicHeartbeatWriteReachesTheWatch() async throws {
+        let rig = try makeRig()
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
+
+        rig.service.startObservingSharedRoot()
+        defer { rig.service.stopObservingSharedRoot() }
+        #expect(rig.service.heartbeat == nil)
+
+        // `.atomic` matches how the appex writes, and it replaces the file by rename:
+        // watching the file instead of its directory stops receiving events right here.
+        try FileManager.default.createDirectory(at: rig.root, withIntermediateDirectories: true)
+        let beat = SystemWallpaperHeartbeat(timestamp: Self.referenceNow, activeChoiceID: "watched")
+        try JSONEncoder().encode(beat).write(to: rig.heartbeatURL, options: .atomic)
+
+        var delivered = false
+        for _ in 0 ..< 60 where !delivered {
+            try await Task.sleep(for: .milliseconds(50))
+            delivered = rig.service.heartbeat?.activeChoiceID == "watched"
+        }
+        #expect(delivered, "the directory watch must deliver an atomically written heartbeat")
+    }
+
     @Test("A failed selected video reports the renderer failure instead of in-use")
     func selectedRendererFailureIsVisible() async throws {
         let rig = try makeRig()

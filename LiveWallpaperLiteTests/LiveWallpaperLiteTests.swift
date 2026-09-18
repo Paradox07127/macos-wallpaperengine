@@ -1,4 +1,5 @@
 import Foundation
+@testable import LiveWallpaper
 import Security
 import Testing
 
@@ -6,7 +7,7 @@ import Testing
 // and report green. The build setting is easy to mistype (Xcode quotes a value
 // typed into the plain-text field), so fail at compile time rather than trust it.
 #if !LITE_BUILD
-    #error("LiveWallpaperLiteTests must compile with LITE_BUILD")
+#error("LiveWallpaperLiteTests must compile with LITE_BUILD")
 #endif
 
 /// Closes the gap `EntitlementAuditTests.liteSignedAuditIsNotPretendedByProTestHost`
@@ -14,6 +15,14 @@ import Testing
 /// signed grants had no test-time gate — only `check_entitlements.sh` at release.
 @Suite("Lite SKU smoke — signed Lite host invariants")
 struct LiteHostSmokeTests {
+    @Test @MainActor func maintenanceServiceIsEmbeddedAndAcceptsLiteHost() async throws {
+        try #require(SystemWallpaperMaintenanceClient.isAvailable)
+        let report = await SystemWallpaperMaintenanceClient.perform(.inspect)
+        #expect(report.outcome == .inspected)
+        #expect(report.errorCode == nil)
+        #expect(report.currentAppPath == SystemWallpaperRegistrationPolicy.canonicalPath(Bundle.main.bundleURL.path))
+    }
+
     private static let proOnlyEntitlement = "com.apple.security.device.audio-input"
 
     private static func runtimeEntitlement(_ key: String) -> Any? {

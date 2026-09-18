@@ -86,6 +86,7 @@ final class WallpaperExportService {
 
     private(set) var items: [SystemWallpaperManifest.Item] = []
     private(set) var heartbeat: SystemWallpaperHeartbeat?
+    let maintenance = SystemWallpaperMaintenanceController()
     private(set) var providerIsRunning = true
     private(set) var lastError: String?
     private(set) var diskUsageBytes: Int64 = 0
@@ -94,6 +95,12 @@ final class WallpaperExportService {
     @ObservationIgnored private let dependencies: Dependencies
     /// Publishes that have started copying but not yet committed, keyed by a per-publish token so two publishes of the same item stay distinct.
     @ObservationIgnored private var activePublishes: [UUID: String] = [:]
+    @ObservationIgnored private var sharedRootWatch: DispatchSourceFileSystemObject?
+    @ObservationIgnored private var stalenessTimer: DispatchSourceTimer?
+
+    /// Covers the two transitions no file write announces: the appex exiting, and a
+    /// heartbeat ageing past `heartbeatFreshnessInterval`. Far below that 300s window.
+    private static let stalenessPollInterval: TimeInterval = 30
 
     init(dependencies: Dependencies = .live()) {
         self.dependencies = dependencies
@@ -203,6 +210,58 @@ final class WallpaperExportService {
     func refreshProviderStatus() {
         heartbeat = loadHeartbeat()
         providerIsRunning = heartbeat?.provider.map { dependencies.isProviderRunning($0.pid) } ?? true
+        maintenance.considerAutomaticRecovery(service: self)
+    }
+
+    /// Idempotent: both System Wallpaper screens call it, and the watch outlives either.
+    ///
+    /// The heartbeat is written with `.atomic`, which replaces the file by rename, so a
+    /// watch on the file itself goes deaf after the first beat — this watches the
+    /// directory instead. One atomic write raises two directory events (the temporary
+    /// file, then the rename); refreshing twice is cheaper than debouncing it.
+    func startObservingSharedRoot() {
+        guard sharedRootWatch == nil else { return }
+
+        try? FileManager.default.createDirectory(
+            at: dependencies.sharedRoot,
+            withIntermediateDirectories: true
+        )
+        let descriptor = open(dependencies.sharedRoot.path, O_EVTONLY)
+        guard descriptor >= 0 else { return }
+
+        // Explicitly `@Sendable`: these handlers run on a utility queue, and a closure
+        // formed inside this `@MainActor` method otherwise inherits that isolation and
+        // traps in `swift_task_isCurrentExecutor` the first time the queue calls it.
+        let reread: @Sendable () -> Void = { [weak self] in
+            Task { @MainActor in self?.refreshProviderStatus() }
+        }
+
+        let watch = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: descriptor,
+            eventMask: [.write, .delete, .rename],
+            queue: .global(qos: .utility)
+        )
+        watch.setEventHandler(handler: reread)
+        let closeDescriptor: @Sendable () -> Void = { close(descriptor) }
+        watch.setCancelHandler(handler: closeDescriptor)
+        watch.resume()
+        sharedRootWatch = watch
+
+        let timer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
+        timer.schedule(
+            deadline: .now() + Self.stalenessPollInterval,
+            repeating: Self.stalenessPollInterval
+        )
+        timer.setEventHandler(handler: reread)
+        timer.resume()
+        stalenessTimer = timer
+    }
+
+    func stopObservingSharedRoot() {
+        sharedRootWatch?.cancel()
+        sharedRootWatch = nil
+        stalenessTimer?.cancel()
+        stalenessTimer = nil
     }
 
     // MARK: - Publish / remove
