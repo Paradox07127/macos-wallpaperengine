@@ -17,15 +17,7 @@ struct BoardSettingsView: View {
     @State private var showsAgentActivity = false
 
     /// Display-only temperature unit for every sensor readout (app-wide, not per-board).
-    @AppStorage(MonitorTemperature.fahrenheitDefaultsKey) private var temperatureFahrenheit = false
-    @AppStorage(MonitorPanelAppearance.tintKey, store: .appScoped())
-    private var widgetTintHex = MonitorPanelAppearance.defaultTintHex
-    @AppStorage(MonitorPanelAppearance.opacityKey, store: .appScoped())
-    private var widgetOpacity = MonitorPanelAppearance.defaultOpacity
-    @AppStorage(MonitorPanelAppearance.glassKey, store: .appScoped())
-    private var widgetLiquidGlass = MonitorPanelAppearance.defaultGlass
 
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     var body: some View {
         VStack(spacing: 12) {
@@ -52,11 +44,6 @@ struct BoardSettingsView: View {
                     mouseInteractionRow
                     Divider()
                     reduceMotionRow
-                    Divider()
-                    temperatureUnitRow
-                    widgetGlassRow
-                    widgetTintRow
-                    widgetOpacityRow
                     Divider()
                     layoutManagementRow
                 }
@@ -153,96 +140,9 @@ struct BoardSettingsView: View {
         }
     }
 
-    private var temperatureUnitRow: some View {
-        SettingRow(
-            icon: "thermometer.variable.and.figure",
-            iconColor: .orange,
-            title: "Temperature"
-        ) {
-            GlassSegmentedPicker(
-                selection: Binding(
-                    get: { temperatureFahrenheit },
-                    set: { temperatureFahrenheit = $0 }
-                ),
-                values: [false, true],
-                shell: .flat
-            ) { fahrenheit, isSelected in
-                Text(verbatim: fahrenheit ? "°F" : "°C")
-                    .font(isSelected ? DesignTokens.Typography.bodyEmphasized : DesignTokens.Typography.body)
-            }
-            .frame(width: 100)
-            .accessibilityElement(children: .contain)
-            .accessibilityLabel(Text("Temperature unit"))
-        }
-    }
 
-    // MARK: - Widget appearance
 
-    @ViewBuilder
-    private var widgetGlassRow: some View {
-        if #available(macOS 26.0, *) {
-            SettingRow(
-                icon: "circle.hexagongrid.circle",
-                iconColor: .teal,
-                title: "Liquid Glass",
-                subtitle: reduceTransparency
-                    ? "Unavailable while Reduce Transparency is on."
-                    : nil,
-                info: "Refracts the wallpaper through widget cards. May increase energy use."
-            ) {
-                Toggle("", isOn: $widgetLiquidGlass)
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
-                    .disabled(reduceTransparency)
-                    .accessibilityLabel(Text("Liquid Glass widget cards"))
-            }
-        }
-    }
 
-    private var widgetTintRow: some View {
-        SettingRow(
-            icon: "paintpalette",
-            iconColor: .teal,
-            title: "Widget tint",
-            valueSubtitle: widgetTintHex.isEmpty ? nil : widgetTintHex
-        ) {
-            HStack(spacing: DesignTokens.Spacing.sm) {
-                ColorPicker("", selection: Binding(
-                    get: { MonitorPanelAppearance.color(fromHex: widgetTintHex) ?? Design.panelFillTop },
-                    set: { widgetTintHex = MonitorPanelAppearance.hex(from: $0) }
-                ), supportsOpacity: false)
-                .labelsHidden()
-                .accessibilityLabel(Text("Widget tint"))
-
-                // Preserve the reset button width beside the localized title.
-                Button("Reset") { widgetTintHex = MonitorPanelAppearance.defaultTintHex }
-                    .controlSize(.small)
-                    .fixedSize()
-                    .disabled(widgetTintHex.isEmpty)
-                    .accessibilityLabel(Text("Reset widget tint to the default"))
-            }
-        }
-    }
-
-    private var widgetOpacityRow: some View {
-        SettingRow(
-            icon: "circle.lefthalf.filled",
-            iconColor: .teal,
-            title: "Widget opacity",
-            valueSubtitle: "\(Int(MonitorPanelAppearance.resolvedOpacity(widgetOpacity) * 100))%"
-        ) {
-            Slider(
-                value: Binding(
-                    get: { MonitorPanelAppearance.resolvedOpacity(widgetOpacity) },
-                    set: { widgetOpacity = $0 }
-                ),
-                in: MonitorPanelAppearance.opacityRange
-            )
-            .frame(width: 104)
-            .accessibilityLabel(Text("Widget opacity"))
-        }
-    }
 
     // MARK: - Layout management (reset / import / export)
 

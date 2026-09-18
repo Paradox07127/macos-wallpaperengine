@@ -43,19 +43,29 @@ struct SettingsSidebar: View {
             .padding(.bottom, DesignTokens.Spacing.sm)
 
             List(selection: sidebarSelection) {
-                Section {
-                    if results.isEmpty {
-                        emptySearchRow
-                    } else {
-                        ForEach(results) { result in
-                            NavigationLink(value: result.destination) {
-                                SettingsSidebarRow(result: result, searchText: searchText)
+                // Search ranks across the whole window, so its hits stay one flat list;
+                // grouping them would scatter the best match down the column.
+                if isSearching {
+                    Section {
+                        if results.isEmpty {
+                            emptySearchRow
+                        } else {
+                            rows(for: results)
+                        }
+                    } header: {
+                        SidebarSectionHeader(title: "Search Results")
+                    }
+                } else {
+                    ForEach(SettingsNavigationGroup.allCases) { group in
+                        let groupResults = results.filter { $0.item.group == group }
+                        if !groupResults.isEmpty {
+                            Section {
+                                rows(for: groupResults)
+                            } header: {
+                                SidebarSectionHeader(title: group.title)
                             }
-                            .accessibilityHint(Text("Open settings category"))
                         }
                     }
-                } header: {
-                    SidebarSectionHeader(title: isSearching ? "Search Results" : "Settings")
                 }
             }
             .listStyle(.sidebar)
@@ -82,6 +92,15 @@ struct SettingsSidebar: View {
         .buttonStyle(.borderless)
         .controlSize(.regular)
         .accessibilityHint(Text("Return to the wallpaper browser sidebar"))
+    }
+
+    private func rows(for results: [SettingsNavigationSearchResult]) -> some View {
+        ForEach(results) { result in
+            NavigationLink(value: result.destination) {
+                SettingsSidebarRow(result: result, searchText: searchText)
+            }
+            .accessibilityHint(Text("Open settings category"))
+        }
     }
 
     private var emptySearchRow: some View {

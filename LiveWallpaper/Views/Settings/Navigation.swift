@@ -1,13 +1,22 @@
 import Foundation
 import LiveWallpaperCore
+import SwiftUI
 
 enum SettingsSearchAnchor: String, Hashable, Identifiable, Sendable {
+    case generalAppearance
+    case generalStartup
+    case generalWallpaper
     case displayDefaultsArrangement
     case displayDefaultsVideo
     case displayDefaultsWeb
     case displayDefaultsScene
     case integrationsAudio
     case integrationsWeather
+    case overlaysAppearance
+    case overlaysUnits
+    case performancePause
+    case performanceRendering
+    case performanceMemory
     case shortcutsMaster
     case shortcutsGlobal
     case storageDashboard
@@ -37,12 +46,37 @@ struct SettingsNavigationSearchResult: Identifiable, Equatable {
     var systemImage: String { item.systemImage }
 }
 
+/// Sidebar grouping. Names avoid every page title so the sidebar never reads
+/// "General > General".
+enum SettingsNavigationGroup: String, CaseIterable, Hashable, Identifiable {
+    case setup
+    case playback
+    case content
+    case data
+    case support
+
+    var id: String {
+        rawValue
+    }
+
+    var title: LocalizedStringKey {
+        switch self {
+        case .setup: "Setup"
+        case .playback: "Playback"
+        case .content: "Content"
+        case .data: "Data"
+        case .support: "Support"
+        }
+    }
+}
+
 enum SettingsNavigation: String, CaseIterable, Hashable, Identifiable {
     case general
     case displayDefaults
     case systemWallpaper
     case performancePower
     case integrations
+    case overlays
     case shortcuts
     case storage
     case backupRestore
@@ -64,8 +98,9 @@ enum SettingsNavigation: String, CaseIterable, Hashable, Identifiable {
                 } else {
                     false
                 }
-            case .integrations:
-                // Weather is on every SKU; only the audio row inside compiles out of Lite.
+            case .integrations, .overlays:
+                // Weather and overlay widgets ship on every SKU; only the audio row
+                // inside Integrations compiles out of Lite.
                 true
             case .storage:
                 capabilities.enabledFeatures.contains(.wpeImport)
@@ -121,6 +156,7 @@ enum SettingsNavigation: String, CaseIterable, Hashable, Identifiable {
     static let allItems: [SettingsNavigationItem] = [
         SettingsNavigationItem(
             destination: .general,
+            group: .setup,
             title: "General",
             systemImage: "gearshape",
             keywords: [
@@ -132,6 +168,7 @@ enum SettingsNavigation: String, CaseIterable, Hashable, Identifiable {
         ),
         SettingsNavigationItem(
             destination: .displayDefaults,
+            group: .setup,
             title: "Display Defaults",
             systemImage: "rectangle.3.group",
             keywords: [
@@ -143,13 +180,15 @@ enum SettingsNavigation: String, CaseIterable, Hashable, Identifiable {
             ]
         ),
         SettingsNavigationItem(
-            destination: .systemWallpaper,
-            title: "System Wallpaper",
-            systemImage: "macwindow.on.rectangle",
-            keywords: ["Video playback", "Lock screen only", "extension", "Spaces", "系统壁纸", "解锁", "锁屏", "播放"]
+            destination: .shortcuts,
+            group: .setup,
+            title: "Shortcuts",
+            systemImage: "command",
+            keywords: ["global shortcuts", "hotkeys", "keyboard"]
         ),
         SettingsNavigationItem(
             destination: .performancePower,
+            group: .playback,
             title: "Performance",
             systemImage: "bolt.circle",
             keywords: [
@@ -160,6 +199,7 @@ enum SettingsNavigation: String, CaseIterable, Hashable, Identifiable {
         ),
         SettingsNavigationItem(
             destination: .integrations,
+            group: .playback,
             title: "Integrations",
             systemImage: "app.connected.to.app.below.fill",
             // Audio terms stay out: they belong to a Pro-only section, and the
@@ -170,46 +210,64 @@ enum SettingsNavigation: String, CaseIterable, Hashable, Identifiable {
             ]
         ),
         SettingsNavigationItem(
-            destination: .shortcuts,
-            title: "Shortcuts",
-            systemImage: "command",
-            keywords: ["global shortcuts", "hotkeys", "keyboard"]
+            destination: .overlays,
+            group: .playback,
+            title: "Overlays",
+            systemImage: "square.on.square.badge.person.crop",
+            keywords: [
+                "monitor", "widget", "overlay", "tint", "opacity", "liquid glass",
+                "temperature", "celsius", "fahrenheit",
+                "组件", "浮层", "温度", "浮層", "溫度", "ウィジェット", "温度", "widget",
+            ]
+        ),
+        SettingsNavigationItem(
+            destination: .systemWallpaper,
+            group: .content,
+            title: "System Wallpaper",
+            systemImage: "macwindow.on.rectangle",
+            keywords: ["Video playback", "Lock screen only", "extension", "Spaces", "系统壁纸", "解锁", "锁屏", "播放"]
+        ),
+        SettingsNavigationItem(
+            destination: .workshopSetup,
+            group: .content,
+            title: "Workshop",
+            systemImage: "cube.transparent",
+            keywords: ["steam", "api key", "steamcmd", "doctor", "online browse"]
         ),
         SettingsNavigationItem(
             destination: .storage,
+            group: .data,
             title: "Storage",
             systemImage: "internaldrive",
             keywords: ["cache", "disk", "wallpaper engine", "downloaded projects", "clear"]
         ),
         SettingsNavigationItem(
             destination: .backupRestore,
+            group: .data,
             title: "Backup & Restore",
             systemImage: "arrow.triangle.2.circlepath",
             keywords: ["import", "export", "configuration", "backup", "restore", "display defaults", "bookmarks"]
         ),
         SettingsNavigationItem(
-            destination: .workshopSetup,
-            title: "Workshop",
-            systemImage: "cube.transparent",
-            keywords: ["steam", "api key", "steamcmd", "doctor", "online browse"]
-        ),
-        SettingsNavigationItem(
             destination: .advanced,
+            group: .support,
             title: "Advanced",
             systemImage: "slider.horizontal.3",
             keywords: ["logs", "diagnostics"]
         ),
         SettingsNavigationItem(
             destination: .about,
+            group: .support,
             title: "About",
             systemImage: "info.circle",
             keywords: ["version", "github", "report bug", "welcome tour"]
-        )
+        ),
     ]
 }
 
 struct SettingsNavigationItem: Identifiable, Equatable {
     let destination: SettingsNavigation
+    let group: SettingsNavigationGroup
     let title: String
     let systemImage: String
     let keywords: [String]
@@ -263,15 +321,15 @@ struct SettingsNavigationItem: Identifiable, Equatable {
             return targets
         case .integrations:
             var targets: [SettingsNavigationSearchTarget] = []
-            #if !LITE_BUILD
-            targets.append(
-                SettingsNavigationSearchTarget(
-                    label: "Audio Response",
-                    anchor: .integrationsAudio,
-                    keywords: ["audio", "music", "sound", "reactive", "frequency spectrum"]
+            if capabilities.sku == .pro {
+                targets.append(
+                    SettingsNavigationSearchTarget(
+                        label: "Audio Response",
+                        anchor: .integrationsAudio,
+                        keywords: ["audio", "music", "sound", "reactive", "frequency spectrum"]
+                    )
                 )
-            )
-            #endif
+            }
             targets.append(
                 SettingsNavigationSearchTarget(
                     label: "Weather",
@@ -280,6 +338,71 @@ struct SettingsNavigationItem: Identifiable, Equatable {
                 )
             )
             return targets
+        case .general:
+            return [
+                SettingsNavigationSearchTarget(
+                    label: "General",
+                    anchor: .generalAppearance,
+                    keywords: ["language", "appearance", "theme", "dark", "light", "tile size", "library"]
+                ),
+                SettingsNavigationSearchTarget(
+                    label: "Startup",
+                    anchor: .generalStartup,
+                    keywords: ["login", "start", "launch", "update", "dock", "menu bar"]
+                ),
+                SettingsNavigationSearchTarget(
+                    label: "Wallpaper",
+                    anchor: .generalWallpaper,
+                    keywords: [
+                        "lock", "lock screen", "capture", "screenshot", "screen capture",
+                        "recording", "sharing", "desktop picture",
+                    ]
+                ),
+            ]
+        case .performancePower:
+            var targets: [SettingsNavigationSearchTarget] = [
+                SettingsNavigationSearchTarget(
+                    label: "Performance & Battery",
+                    anchor: .performancePause,
+                    keywords: [
+                        "pause", "full-screen", "fullscreen", "battery", "low power",
+                        "cover", "occlusion", "application", "rules", "exceptions",
+                    ]
+                ),
+            ]
+            if capabilities.canRender(.scene) {
+                targets.append(
+                    SettingsNavigationSearchTarget(
+                        label: "Rendering",
+                        anchor: .performanceRendering,
+                        keywords: [
+                            "frame rate", "fps", "adaptive", "metalfx", "upscaling",
+                            "hdr", "multithreaded", "rendering",
+                        ]
+                    )
+                )
+            }
+            targets.append(
+                SettingsNavigationSearchTarget(
+                    label: "Memory",
+                    anchor: .performanceMemory,
+                    keywords: ["memory", "ram", "video preload", "preload", "cache"]
+                )
+            )
+            return targets
+        case .overlays:
+            return [
+                SettingsNavigationSearchTarget(
+                    label: "Widgets",
+                    anchor: .overlaysAppearance,
+                    keywords: ["widget", "tint", "opacity", "liquid glass", "panel", "appearance"]
+                ),
+                SettingsNavigationSearchTarget(
+                    label: "Units",
+                    anchor: .overlaysUnits,
+                    keywords: ["temperature", "celsius", "fahrenheit", "unit"]
+                ),
+            ]
         case .shortcuts:
             return [
                 SettingsNavigationSearchTarget(

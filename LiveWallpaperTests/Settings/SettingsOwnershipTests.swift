@@ -156,13 +156,15 @@ struct GeneralSettingsOwnershipCharacterizationTests {
         } else {
             []
         }
+        // Sidebar order is grouped: Setup, Playback, Content, Data, Support.
         let common: [SettingsNavigation] = [
             .general,
             .displayDefaults,
-        ] + systemWallpaper + [
+            .shortcuts,
             .performancePower,
             .integrations,
-            .shortcuts,
+            .overlays,
+        ] + systemWallpaper + [
             .backupRestore,
             .advanced,
             .about,
@@ -180,10 +182,11 @@ struct GeneralSettingsOwnershipCharacterizationTests {
         #expect(shippingPro == [
             .general,
             .displayDefaults,
-        ] + systemWallpaper + [
+            .shortcuts,
             .performancePower,
             .integrations,
-            .shortcuts,
+            .overlays,
+        ] + systemWallpaper + [
             .storage,
             .backupRestore,
             .advanced,
@@ -192,13 +195,14 @@ struct GeneralSettingsOwnershipCharacterizationTests {
         #expect(directPro == [
             .general,
             .displayDefaults,
-        ] + systemWallpaper + [
+            .shortcuts,
             .performancePower,
             .integrations,
-            .shortcuts,
+            .overlays,
+        ] + systemWallpaper + [
+            .workshopSetup,
             .storage,
             .backupRestore,
-            .workshopSetup,
             .advanced,
             .about,
         ])
@@ -296,7 +300,13 @@ struct GeneralSettingsOwnershipCharacterizationTests {
 
         #expect(root.contains("#if !LITE_BUILD\n    @State var audioCaptureState"))
         #expect(audio.contains("#if !LITE_BUILD\n        Section"))
-        #expect(performance.contains("#if !LITE_BUILD\n            SettingRow("))
+        // Rendering is gated as a whole section, not row by row: gating only the rows
+        // would leave Lite with a "Rendering" header and nothing under it.
+        let renderingGate = try Self.slice(performance, from: "#if !LITE_BUILD", until: "#endif")
+        #expect(renderingGate.contains("Adaptive frame rate"))
+        #expect(renderingGate.contains("MetalFX upscaling"))
+        #expect(renderingGate.contains("HDR output"))
+        #expect(renderingGate.contains("Multithreaded rendering"))
         // The update readout is deliberately NOT SKU-gated: both SKUs ship from the same
         // GitHub release, so the unwrapped call site is pinned to keep a `#if` from creeping back.
         #expect(about.contains("UpdateStatusLine()\n                    .padding(.top, 2)"))

@@ -27,7 +27,11 @@ extension GeneralSettingsView {
             ) {
                 libraryTileSizePicker
             }
+        } header: {
+            SettingsSearchSectionHeader("General", anchor: .generalAppearance)
+        }
 
+        Section {
             SettingRow(
                 icon: "power.circle.fill",
                 iconColor: loginItemShowsInlineStatus ? loginItemStatusColor : .green,
@@ -75,6 +79,24 @@ extension GeneralSettingsView {
             }
 
             SettingRow(
+                icon: "dock.rectangle",
+                iconColor: .indigo,
+                title: "Show in Dock",
+                info: "When off, hides the app from the Dock and ⌘Tab. Open it from the menu bar."
+            ) {
+                Toggle("", isOn: $showInDock)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .onChange(of: showInDock) { _, _ in updateGlobalSettings() }
+                    .accessibilityLabel(Text("Show in Dock"))
+                    .accessibilityHint(Text("Toggles whether the app appears in the Dock and the Cmd-Tab switcher"))
+            }
+        } header: {
+            SettingsSearchSectionHeader("Startup", anchor: .generalStartup)
+        }
+
+        Section {
+            SettingRow(
                 icon: "lock.display",
                 iconColor: .blue,
                 title: "Capture video frame when locking",
@@ -101,22 +123,8 @@ extension GeneralSettingsView {
                     .accessibilityLabel(Text("Show wallpaper in screen captures"))
                     .accessibilityHint(Text("Applies to screenshots, recording, and sharing, including widgets. When off, shows the macOS desktop picture."))
             }
-
-            SettingRow(
-                icon: "dock.rectangle",
-                iconColor: .indigo,
-                title: "Show in Dock",
-                info: "When off, hides the app from the Dock and ⌘Tab. Open it from the menu bar."
-            ) {
-                Toggle("", isOn: $showInDock)
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                    .onChange(of: showInDock) { _, _ in updateGlobalSettings() }
-                    .accessibilityLabel(Text("Show in Dock"))
-                    .accessibilityHint(Text("Toggles whether the app appears in the Dock and the Cmd-Tab switcher"))
-            }
         } header: {
-            Text("General")
+            SettingsSearchSectionHeader("Wallpaper", anchor: .generalWallpaper)
         }
     }
 

@@ -39,7 +39,33 @@ extension GeneralSettingsView {
                     .accessibilityHint(Text("Pause when other apps' windows cover at least 85 percent of a display"))
             }
 
-            #if !LITE_BUILD
+            SettingRow(icon: "bolt.circle.fill", iconColor: .yellow, title: "Pause on battery") {
+                Toggle("", isOn: $globalPauseOnBattery)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .onChange(of: globalPauseOnBattery) { _, _ in updateGlobalSettings() }
+                    .accessibilityLabel(Text("Pause on battery"))
+            }
+
+            SettingRow(
+                icon: "hand.raised",
+                iconColor: .blue,
+                title: "Application Pause Rules",
+                subtitle: appExceptionsSubtitle,
+                info: "Rules apply to all displays."
+            ) {
+                Button("Edit") { showAppExceptions = true }
+                    .fixedSize()
+                    .accessibilityLabel(Text("Edit application exceptions"))
+            }
+        } header: {
+            SettingsSearchSectionHeader("Performance & Battery", anchor: .performancePause)
+        }
+
+        #if !LITE_BUILD
+        // Every row here is scene-only, so the whole section compiles out of Lite
+        // rather than leaving a header with nothing under it.
+        Section {
             SettingRow(
                 icon: "gauge.with.dots.needle.33percent",
                 iconColor: .teal,
@@ -103,28 +129,12 @@ extension GeneralSettingsView {
                     .accessibilityLabel(Text("Multithreaded rendering"))
                     .accessibilityHint(Text("Scene wallpapers only. Disable for troubleshooting; changes reload wallpapers."))
             }
-            #endif
+        } header: {
+            SettingsSearchSectionHeader("Rendering", anchor: .performanceRendering)
+        }
+        #endif
 
-            SettingRow(icon: "bolt.circle.fill", iconColor: .yellow, title: "Pause on battery") {
-                Toggle("", isOn: $globalPauseOnBattery)
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                    .onChange(of: globalPauseOnBattery) { _, _ in updateGlobalSettings() }
-                    .accessibilityLabel(Text("Pause on battery"))
-            }
-
-            SettingRow(
-                icon: "hand.raised",
-                iconColor: .blue,
-                title: "Application Pause Rules",
-                subtitle: appExceptionsSubtitle,
-                info: "Rules apply to all displays."
-            ) {
-                Button("Edit") { showAppExceptions = true }
-                    .fixedSize()
-                    .accessibilityLabel(Text("Edit application exceptions"))
-            }
-
+        Section {
             SettingRow(
                 icon: "memorychip",
                 iconColor: .pink,
@@ -164,7 +174,7 @@ extension GeneralSettingsView {
                 }
             }
         } header: {
-            Text("Performance & Battery")
+            SettingsSearchSectionHeader("Memory", anchor: .performanceMemory)
         }
     }
 

@@ -1,146 +1,77 @@
-# Xcode
-#
-# gitignore contributors: remember to update Global/Xcode.gitignore, Objective-C.gitignore & Swift.gitignore
-
-## User settings
+# Xcode user state and build products
 xcuserdata/
 *.xcuserstate
+*.xcuserdatad/
+build/
+DerivedData/
+*.hmap
+*.dSYM
+*.dSYM.zip
+
+# LLVM profile artifacts from -profile-generate / coverage builds
+*.profraw
+*.profdata
+
+# The workspace is per-user except for the SwiftPM pin, which must be shared so
+# every clone resolves the same dependency versions.
 project.xcworkspace/
 !LiveWallpaper.xcodeproj/project.xcworkspace/
 !LiveWallpaper.xcodeproj/project.xcworkspace/xcshareddata/
 LiveWallpaper.xcodeproj/project.xcworkspace/xcshareddata/*
 !LiveWallpaper.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
 !LiveWallpaper.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
-*.xcuserdatad/
-
-## Compatibility with Xcode 8 and earlier (ignoring not required starting Xcode 9)
-*.xcscmblueprint
-*.xccheckout
-
-## Compatibility with Xcode 3 and earlier (ignoring not required starting Xcode 4)
-build/
-DerivedData/
-*.moved-aside
-*.pbxuser
-!default.pbxuser
-*.mode1v3
-!default.mode1v3
-*.mode2v3
-!default.mode2v3
-*.perspectivev3
-!default.perspectivev3
-
-## Obj-C/Swift specific
-*.hmap
-
-## App packaging
-*.ipa
-*.dSYM.zip
-*.dSYM
-
-## Playgrounds
-timeline.xctimeline
-playground.xcworkspace
 
 # Swift Package Manager
-#
-# Add this line if you want to avoid checking in source code from Swift Package Manager dependencies.
-# Packages/
-# Package.pins
-# Package.resolved
-# *.xcodeproj
-#
-# Xcode automatically generates this directory with a .xcworkspacedata file and xcuserdata
-# hence it is not needed unless you have added a package configuration file to your project
 .swiftpm
-
 .build/
 
-Carthage/Build/
-
-# fastlane
-#
-# It is recommended to not store the screenshots in the git repo.
-# Instead, use fastlane to re-generate the screenshots whenever they are needed.
-# For more information about the recommended setup visit:
-# https://docs.fastlane.tools/best-practices/source-control/#source-control
-
-fastlane/report.xml
-fastlane/Preview.html
-fastlane/screenshots/**/*.png
-fastlane/test_output
-
-# macOS specific
+# macOS
 .DS_Store
 .AppleDouble
 .LSOverride
 Icon
-
-# Thumbnails
 ._*
-
-# Files that might appear in the root of a volume
-.DocumentRevisions-V100
-.fseventsd
 .Spotlight-V100
-.TemporaryItems
 .Trashes
-.VolumeIcon.icns
-.com.apple.timemachine.donotpresent
 
-# Directories potentially created on remote AFP share
-.AppleDB
-.AppleDesktop
-Network Trash Folder
-Temporary Items
-.apdisk
+# Python bytecode
+__pycache__/
+*.pyc
 
-# Application specific
-*.swp
-*.log
-*.trace/
-.audit/
-
-buildServer.json
+# Maintainer-local: agent config, notes, probes and one-off tooling. None of it
+# ships, and scripts/ is the only place a gate or release script may live.
 .claude/
 .codegraph/
-
+.notes/
+.periphery.yml
+.playwright-cli/
 .vm-bridge/
+AGENTS.md
+CLAUDE.md
+archived/
+buildServer.json
 cache/
+skills/
 tools/
 trace/
-.playwright-cli/
-skills/
-.notes/
-archived/
-CLAUDE.md
-AGENTS.md
-
-!LiveWallpaperTests/Fixtures/
-LiveWallpaperTests/Fixtures/*
-!LiveWallpaperTests/Fixtures/oracle-golden/
-!LiveWallpaperTests/Fixtures/GeneralSettingsOwnershipFixture.swift
-# Trimmed Steam Workshop browse pages (~1.5 MB of HTML, provenance in the README).
-!LiveWallpaperTests/Fixtures/workshop/
-
-# scripts/ holds only the portable gate and release toolchain: every file here
-# runs on a clean clone via `make verify`, ci.yml or a release. Maintainer-local
-# tooling lives in tools/, ignored wholesale above.
+*.log
+*.swp
+*.trace/
+.audit/
 
 # Instruments trace bundles run to gigabytes each; keep them local. The sibling
 # README.md stays tracked because it is the measurement record, so ignore the
 # bundles individually rather than the whole artifacts/ directory.
 artifacts/**/*.trace/
 
-# Python bytecode
-__pycache__/
-*.pyc
+# Test fixtures are opt-in: only these three survive. workshop/ is ~1.5 MB of
+# trimmed Steam browse pages, provenance in its own README.
+!LiveWallpaperTests/Fixtures/
+LiveWallpaperTests/Fixtures/*
+!LiveWallpaperTests/Fixtures/oracle-golden/
+!LiveWallpaperTests/Fixtures/GeneralSettingsOwnershipFixture.swift
+!LiveWallpaperTests/Fixtures/workshop/
 
-# Local-only baseline; AF-10 lint/format contracts are tracked below.
-.periphery.yml
-!.swiftformat
-!.swiftlint.yml
-
-# LLVM profile artifacts from -profile-generate / coverage builds
-*.profraw
-*.profdata
+# scripts/ holds only the portable gate and release toolchain: every file there
+# runs on a clean clone via `make verify`, ci.yml or a release. Maintainer-local
+# tooling lives in tools/, ignored above.
