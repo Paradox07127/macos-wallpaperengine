@@ -129,8 +129,10 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
                 }
                 let once = ReplyOnce { error in reply(error == nil ? context : nil, error) }
                 startPlayback(surface: surface, choiceID: choiceID, size: size) { error in once.fire(error) }
+                // Past the ceiling the already-built context is the answer: the decoder may
+                // still be opening the file, and an error would tell the Agent the switch failed.
                 Self.queue.asyncAfter(deadline: .now() + Self.firstFrameReplyTimeout) {
-                    once.fire(NSError(domain: "com.loomscreen.wallpaper", code: 7))
+                    once.fire(nil)
                 }
                 return
             }

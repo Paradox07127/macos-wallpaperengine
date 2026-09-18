@@ -1965,13 +1965,23 @@ public enum WPEMdlParser {
                 }
                 for _ in 0 ..< eventCount {
                     _ = try reader.readFloat()
-                    _ = try reader.readUInt32()
-                    let byteCount = try reader.readUInt32()
-                    try skipAnimationFloatPayload(
-                        byteCount: byteCount,
-                        sectionEnd: sectionEnd,
-                        reader: &reader
-                    )
+                    // `(curveCount: UInt16, flags: UInt16)`; every curve after the first is led by a UInt16 id.
+                    let curveCount = try reader.readUInt16()
+                    _ = try reader.readUInt16()
+                    guard curveCount > 0 else {
+                        throw WPEMdlParserError.invalidAnimationTail(offset: reader.currentOffset - 4)
+                    }
+                    for curveIndex in 0 ..< Int(curveCount) {
+                        if curveIndex > 0 {
+                            _ = try reader.readUInt16()
+                        }
+                        let byteCount = try reader.readUInt32()
+                        try skipAnimationFloatPayload(
+                            byteCount: byteCount,
+                            sectionEnd: sectionEnd,
+                            reader: &reader
+                        )
+                    }
                 }
             }
         }

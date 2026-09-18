@@ -13,20 +13,52 @@ extension WPEMetalSceneRenderer {
         let parallaxFrame: WPECameraParallaxFrame
     }
 
-    /// The pointer arrives normalised to the drawable, but every consumer below works in
-    /// scene space, which present crops (`cover`) or insets (`contain`/`center`) whenever
-    /// the aspect ratios differ. Identity when they match, so 16:9 displays are unchanged.
-    private func scenePointer(fromDrawable pointer: SIMD2<Double>) -> SIMD2<Double> {
-        let present = WPEPresentUniforms.make(
+    /// Everything a frame derives from the pointer, in scene space.
+    struct PointerSpace: Equatable {
+        let pointer: SIMD2<Double>
+        let followPointerIsLive: Bool
+        let clickPointerIsLive: Bool
+        let pointerFrame: WPEPointerFrame
+    }
+
+    /// Liveness comes from the mapping, not `isInsideView`: a pointer on a letterbox margin is
+    /// inside the drawable but outside the scene. The click frame goes through the same crop
+    /// as the follow pointer, or shaders and scripts disagree by up to half the cropped extent.
+    static func pointerSpace(
+        present: WPEPresentUniforms,
+        sample: WPEMetalPointerSample,
+        frame: WPEPointerFrame,
+        followEnabled: Bool,
+        clickEnabled: Bool
+    ) -> PointerSpace {
+        let centre = SIMD2<Double>(0.5, 0.5)
+        let inScene = sample.isInsideView ? present.scenePointer(fromDrawablePointer: sample.position) : nil
+        let followPointerIsLive = followEnabled && inScene != nil
+        let pointer = (followEnabled ? inScene : nil) ?? centre
+        let position = present.scenePointer(fromDrawablePointer: frame.position)
+        let click = present.scenePointer(fromDrawablePointer: frame.clickPosition)
+        let clickPointerIsLive = clickEnabled && sample.isInsideView && position != nil && click != nil
+        let pointerFrame = if clickPointerIsLive, let position, let click {
+            WPEPointerFrame(position: position, clickPosition: click, isDown: frame.isDown, isRightDown: frame.isRightDown)
+        } else {
+            WPEPointerFrame(position: pointer, clickPosition: pointer, isDown: false, isRightDown: false)
+        }
+        return PointerSpace(
+            pointer: pointer,
+            followPointerIsLive: followPointerIsLive,
+            clickPointerIsLive: clickPointerIsLive,
+            pointerFrame: pointerFrame
+        )
+    }
+
+    private func presentUniforms() -> WPEPresentUniforms {
+        WPEPresentUniforms.make(
             fitMode: presentFitMode,
             sourceWidth: Int(sceneRenderSize.width),
             sourceHeight: Int(sceneRenderSize.height),
             targetWidth: Int(surfaceDrawableSize.width),
             targetHeight: Int(surfaceDrawableSize.height)
         )
-        // A pointer on a letterbox margin is outside the scene; the neutral centre is what
-        // this frame already uses to mean "no live pointer".
-        return present.scenePointer(fromDrawablePointer: pointer) ?? SIMD2<Double>(0.5, 0.5)
     }
 
     func sampleFrameContext(inputs: WPEFrameInputs) -> FrameContext {
@@ -34,14 +66,17 @@ extension WPEMetalSceneRenderer {
         let pointerSample = (mouseInteractionEnabled || inputs.clickCaptureEnabled)
             ? inputs.pointerSample
             : .inactive
-        let pointerIsInsideView = pointerSample.isInsideView
-        let followPointerIsLive = mouseInteractionEnabled && pointerIsInsideView
-        let clickPointerIsLive = inputs.clickCaptureEnabled && pointerIsInsideView
-        // Oracle overrides are authored in scene space already; a live pointer is
-        // normalised to the drawable and has to be mapped across.
-        let pointer = oracleFrameOverride?.pointer ?? scenePointer(
-            fromDrawable: followPointerIsLive ? pointerSample.position : SIMD2<Double>(0.5, 0.5)
+        let space = Self.pointerSpace(
+            present: presentUniforms(),
+            sample: pointerSample,
+            frame: inputs.pointerFrame,
+            followEnabled: mouseInteractionEnabled,
+            clickEnabled: inputs.clickCaptureEnabled
         )
+        let followPointerIsLive = space.followPointerIsLive
+        let clickPointerIsLive = space.clickPointerIsLive
+        // Oracle overrides are authored in scene space already.
+        let pointer = oracleFrameOverride?.pointer ?? space.pointer
         if !followPointerIsLive && previousPointerWasLive {
             for system in particleSystems where system.tracksPointer {
                 system.clearLiveParticles()
@@ -94,7 +129,7 @@ extension WPEMetalSceneRenderer {
         uniforms.cameraParallax = parallaxFrame
         // Re-apply pointer fields here: the audio path above may have rebuilt `uniforms` via the stereo initializer, which would otherwise reset them.
         let layerScriptPointerFrame = clickPointerIsLive
-            ? inputs.pointerFrame
+            ? space.pointerFrame
             : WPEPointerFrame(
                 position: pointer,
                 clickPosition: pointer,

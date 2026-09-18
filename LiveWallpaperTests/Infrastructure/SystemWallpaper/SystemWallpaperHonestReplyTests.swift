@@ -38,6 +38,20 @@ struct SystemWallpaperHonestReplyTests {
         }
     }
 
+    // MARK: - Switch hand-off
+
+    @Test("The switch hand-off ceiling replies the hosted context, not an error")
+    func firstFrameCeilingRepliesContext() throws {
+        let body = try member(handler(), from: "func acquire")
+        let timer = try #require(body.range(of: "deadline: .now() + Self.firstFrameReplyTimeout"))
+        let after = body[timer.upperBound...].prefix(200)
+        #expect(
+            after.contains("once.fire(nil)"),
+            "a slow first frame falls back to the already-built context; an error reply tells the Agent the switch failed while the decoder is still opening the file"
+        )
+        #expect(!after.contains("code: 7"))
+    }
+
     // MARK: - Removal
 
     @Test("A removal against an unreadable manifest fails instead of reporting the id already gone")

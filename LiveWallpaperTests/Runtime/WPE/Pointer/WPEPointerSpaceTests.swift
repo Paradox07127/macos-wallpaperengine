@@ -64,6 +64,46 @@ struct WPEPointerSpaceTests {
         #expect(u.scenePointer(fromDrawablePointer: SIMD2(0.5, 0.5)) != nil)
     }
 
+    @Test("a pointer on the letterbox margin is inside the drawable but not live")
+    func marginPointerIsNotLive() {
+        let u = uniforms(.contain, target: (Self.builtInW, Self.builtInH))
+        let onMargin = WPEMetalSceneRenderer.pointerSpace(
+            present: u, sample: .inside(SIMD2(0.5, 0.01)), frame: .neutral, followEnabled: true, clickEnabled: false
+        )
+        #expect(!onMargin.followPointerIsLive, "a live flag with a centre pointer keeps tracking particles alive at (0.5, 0.5)")
+        #expect(onMargin.pointer == SIMD2(0.5, 0.5))
+        let inScene = WPEMetalSceneRenderer.pointerSpace(
+            present: u, sample: .inside(SIMD2(0.5, 0.5)), frame: .neutral, followEnabled: true, clickEnabled: false
+        )
+        #expect(inScene.followPointerIsLive)
+    }
+
+    @Test("the click frame is mapped through the same crop as the follow pointer")
+    func clickFrameSharesTheSceneSpace() {
+        let u = uniforms(.cover, target: (Self.builtInW, Self.builtInH))
+        let frame = WPEPointerFrame(position: SIMD2(0, 0.5), clickPosition: SIMD2(0, 0.5), isDown: true, isRightDown: false)
+        let space = WPEMetalSceneRenderer.pointerSpace(
+            present: u, sample: .inside(SIMD2(0, 0.5)), frame: frame, followEnabled: true, clickEnabled: true
+        )
+        #expect(space.clickPointerIsLive)
+        #expect(abs(space.pointerFrame.position.x * Double(Self.sceneW) - 125) < 2, "drawable x = 0 is scene x ≈ 125 under cover")
+        #expect(abs(space.pointerFrame.clickPosition.x * Double(Self.sceneW) - 125) < 2)
+        #expect(space.pointerFrame.position == space.pointer)
+        #expect(space.pointerFrame.isDown)
+    }
+
+    @Test("a click on the letterbox margin is not a click on the scene")
+    func marginClickIsNeutral() {
+        let u = uniforms(.contain, target: (Self.builtInW, Self.builtInH))
+        let frame = WPEPointerFrame(position: SIMD2(0.5, 0.01), clickPosition: SIMD2(0.5, 0.01), isDown: true, isRightDown: false)
+        let space = WPEMetalSceneRenderer.pointerSpace(
+            present: u, sample: .inside(SIMD2(0.5, 0.01)), frame: frame, followEnabled: false, clickEnabled: true
+        )
+        #expect(!space.clickPointerIsLive)
+        #expect(!space.pointerFrame.isDown)
+        #expect(space.pointerFrame.position == SIMD2(0.5, 0.5))
+    }
+
     @Test("stretch maps straight through")
     func stretchIsIdentity() throws {
         let u = uniforms(.stretch, target: (Self.builtInW, Self.builtInH))
