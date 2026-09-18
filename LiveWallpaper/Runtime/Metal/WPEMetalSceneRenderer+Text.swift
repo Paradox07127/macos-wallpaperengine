@@ -113,13 +113,14 @@ extension WPEMetalSceneRenderer {
         mode: WPETextRenderMode
     ) -> SIMD4<Float>? {
         guard mode == .offscreen, object.opaqueBackground else { return nil }
-        let brightness = Float(max(object.backgroundBrightness, 0))
-        return SIMD4<Float>(
-            Float(object.backgroundColor.x) * brightness,
-            Float(object.backgroundColor.y) * brightness,
-            Float(object.backgroundColor.z) * brightness,
-            1
-        )
+        return Self.opaqueTextBackground(object.backgroundColor, brightness: object.backgroundBrightness)
+    }
+
+    /// Same conversion as the glyphs (`linearLayerTint`): the clear and the text share one target.
+    static func opaqueTextBackground(_ color: SIMD3<Double>, brightness: Double) -> SIMD4<Float> {
+        let tint = WPEMetalShaderInputs.linearLayerTint(color)
+        let brightness = Float(max(brightness, 0))
+        return SIMD4<Float>(tint.x * brightness, tint.y * brightness, tint.z * brightness, 1)
     }
 
     /// Recovers the current object-origin anchor from the transformed synthetic

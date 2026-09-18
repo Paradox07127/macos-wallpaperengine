@@ -8,16 +8,22 @@ private final class FakeRegistry: @unchecked Sendable { // Every read/write of s
     private var invocations: [(String, [String])] = []
     let current: String
     let refusesRemoval: Bool
+    /// pkill exits 1 when nothing matched: the agent had already died.
+    let agentAbsent: Bool
 
-    init(current: String, refusesRemoval: Bool = false) {
+    init(current: String, refusesRemoval: Bool = false, agentAbsent: Bool = false) {
         self.current = current
         self.refusesRemoval = refusesRemoval
+        self.agentAbsent = agentAbsent
     }
 
     func run(_ executable: String, _ arguments: [String]) -> WallpaperMaintenanceEngine.Run {
         lock.lock()
         defer { lock.unlock() }
         invocations.append((executable, arguments))
+        if executable == "/usr/bin/pkill" {
+            return .init(code: agentAbsent ? 1 : 0, output: "")
+        }
         if arguments == ["-dump"] {
             var output = "--------\npath: \(current) (0x123)\nidentifier: com.loomscreen.pro\n"
             if !removed {
@@ -78,6 +84,13 @@ private enum EngineChecks {
         try check(partial.outcome == .failed, "partial cleanup is not success")
         try check(refused.calls().contains { $0.1 == ["-f", host.path] }, "retained host re-registered after failure")
         try check(!refused.calls().contains { $0.0 == "/usr/bin/pkill" }, "no restart after incomplete cleanup")
+        let absent = FakeRegistry(current: host.path, agentAbsent: true)
+        let stopped = WallpaperMaintenanceEngine(hostPath: host.path, hostID: "com.loomscreen.pro", home: root.path,
+                                                 run: { absent.run($0, $1) })
+        try check(stopped.restart().outcome == .restarted, "restart with no running agent is not a failure")
+        let stoppedReview = try stopped.inspect()
+        try check(stopped.repair(revision: stoppedReview.revision).outcome == .repaired,
+                  "repair completes when the agent was already gone")
         let output = try WallpaperMaintenanceProcess.run("/usr/bin/printf", ["maintenance-probe"])
         try check(output.code == 0 && output.output == "maintenance-probe", "real process output captured")
         print("Wallpaper maintenance engine: \(passed) checks passed, 0 failed")

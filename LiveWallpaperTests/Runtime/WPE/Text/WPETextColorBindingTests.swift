@@ -44,6 +44,17 @@ struct WPETextColorBindingTests {
         #expect(abs(text.color.z - 0.83137) < 0.001)
     }
 
+    @Test("an opaque text background is linearised like the glyphs drawn over it")
+    func opaqueBackgroundSharesTheGlyphColourSpace() {
+        let grey = SIMD3<Double>(0.5, 0.5, 0.5)
+        let background = WPEMetalSceneRenderer.opaqueTextBackground(grey, brightness: 1)
+        let glyph = WPEMetalShaderInputs.linearLayerTint(grey)
+        #expect(abs(background.x - glyph.x) < 1e-6, "box and glyphs in different colour spaces: same authored grey renders as two shades")
+        #expect(background.x < 0.25, "sRGB 0.5 is linear 0.214; the raw channel would be 0.5")
+        #expect(background.w == 1)
+        #expect(WPEMetalSceneRenderer.opaqueTextBackground(grey, brightness: 0.5).x < background.x)
+    }
+
     /// The shape scene 3554161528 actually ships.
     @Test("a {user,value} wrapper resolves to the authored colour, not the white fallback")
     func userWrappedColor() throws {

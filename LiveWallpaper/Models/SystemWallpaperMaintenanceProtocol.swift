@@ -73,13 +73,19 @@ enum SystemWallpaperRegistrationPolicy {
 
     static func shouldUnregister(path: String, bundleID: String, currentPath: String,
                                  currentID: String, exists: Bool, home: String) -> Bool {
-        guard hostIDs.contains(bundleID), canonicalPath(path) != canonicalPath(currentPath) else { return false }
+        let canonical = canonicalPath(path)
+        guard hostIDs.contains(bundleID), canonical != canonicalPath(currentPath) else { return false }
         if bundleID == currentID || !exists {
             return true
         }
         // Preserve a separately installed edition; only its disposable build registrations qualify.
-        return path.hasPrefix("/private/tmp/") || path.hasPrefix("/tmp/")
-            || path.hasPrefix(home + "/Library/Developer/Xcode/DerivedData/")
+        // Judged on the resolved path: a scratch-directory symlink can point at the installed copy.
+        return isDisposableBuildLocation(canonical, home: home)
+    }
+
+    private static func isDisposableBuildLocation(_ canonical: String, home: String) -> Bool {
+        let derivedData = canonicalPath(home + "/Library/Developer/Xcode/DerivedData") + "/"
+        return canonical.hasPrefix("/private/tmp/") || canonical.hasPrefix("/tmp/") || canonical.hasPrefix(derivedData)
     }
 }
 

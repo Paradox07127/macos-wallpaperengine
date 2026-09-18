@@ -68,6 +68,46 @@ struct SystemWallpaperMaintenanceTests {
                                                                     currentPath: host.path, currentID: "com.loomscreen.pro", exists: true, home: root.path))
     }
 
+    /// A scratch-directory registration can be a symlink to an edition installed elsewhere,
+    /// so the disposable-prefix rule has to judge the resolved path, not the dump's.
+    @Test func disposableAliasOfAnInstalledEditionIsPreserved() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let installed = root.appendingPathComponent("Applications/Loomscreen.app")
+        try FileManager.default.createDirectory(at: installed, withIntermediateDirectories: true)
+        let derivedData = root.appendingPathComponent("Library/Developer/Xcode/DerivedData")
+        try FileManager.default.createDirectory(at: derivedData, withIntermediateDirectories: true)
+        let alias = derivedData.appendingPathComponent("Alias.app")
+        try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: installed)
+        let real = derivedData.appendingPathComponent("Real.app")
+        try FileManager.default.createDirectory(at: real, withIntermediateDirectories: true)
+        let current = root.appendingPathComponent("Applications/Loomscreen Pro.app").path
+        func removes(_ path: String) -> Bool {
+            SystemWallpaperRegistrationPolicy.shouldUnregister(path: path, bundleID: "com.loomscreen",
+                                                               currentPath: current, currentID: "com.loomscreen.pro", exists: true, home: root.path)
+        }
+        #expect(!removes(alias.path), "the alias resolves to an installed edition, which repair must keep")
+        #expect(removes(real.path), "a real scratch build stays disposable")
+    }
+
+    @Test @MainActor func reconnectionRequiresAHealthyBeatFromTheNewProcess() {
+        let began = Date(timeIntervalSince1970: 1000)
+        func beat(pid: Int32, healthy: Bool) -> SystemWallpaperHeartbeat {
+            SystemWallpaperHeartbeat(timestamp: began.addingTimeInterval(5), activeChoiceID: "a", runtimeHealthy: healthy,
+                                     provider: SystemWallpaperProviderIdentity(build: "1", bundlePath: "/x", pid: pid))
+        }
+        func reconnected(_ heartbeat: SystemWallpaperHeartbeat, issue: WallpaperExportService.ProviderIssue? = nil,
+                         running: Bool = true) -> Bool {
+            SystemWallpaperMaintenanceController.isReconnected(heartbeat: heartbeat, began: began, previousPID: 41,
+                                                               issue: issue, running: running)
+        }
+        #expect(reconnected(beat(pid: 42, healthy: true)))
+        #expect(!reconnected(beat(pid: 42, healthy: false)), "a provider that refused its connection over the runtime layout is not verified")
+        #expect(!reconnected(beat(pid: 41, healthy: true)), "the old process's beat")
+        #expect(!reconnected(beat(pid: 42, healthy: true), issue: .unresponsive))
+        #expect(!reconnected(beat(pid: 42, healthy: true), running: false))
+    }
+
     @Test func automaticRecoveryRequiresPersistentFailureAndCooldown() {
         let start = Date(timeIntervalSince1970: 1000)
         var policy = SystemWallpaperRecoveryPolicy(now: start)

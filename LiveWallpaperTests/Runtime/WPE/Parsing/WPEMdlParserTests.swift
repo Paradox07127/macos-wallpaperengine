@@ -623,6 +623,17 @@ struct WPEMdlParserTests {
         ))
     }
 
+    @Test("An MDLA0004 v4 event with several curves is walked curve by curve")
+    func parsesMDLA0004MultiCurveEvent() throws {
+        let model = try WPEMdlParser.parse(data: makeMDLV23WithAnimation(mdlaVersion: 4, v4EventCurves: [[1, 2], [3, 4, 5]]))
+        let animation = try #require(
+            model.animations.first,
+            "a second curve's id read as the trailing event count throws, and the whole animation list falls back to empty"
+        )
+        #expect(animation.channels.count == 2)
+        #expect(animation.tail?.mdlaVersion == 4)
+    }
+
     @Test("MDLA0001 keeps its channels: the tail is only the trailing event list")
     func parsesMDLA0001Animation() throws {
         let model = try WPEMdlParser.parse(data: makeMDLV23WithAnimation(mdlaVersion: 1))
@@ -1098,7 +1109,7 @@ struct WPEMdlParserTests {
         )
     }
 
-    private func makeMDLV23WithAnimation(mdlaVersion: Int = 6) -> Data {
+    private func makeMDLV23WithAnimation(mdlaVersion: Int = 6, v4EventCurves: [[Float]] = []) -> Data {
         var data = Data()
         data.append(contentsOf: Array("MDLV0023".utf8))
         data.appendLE(UInt32(0x80000900))
@@ -1120,11 +1131,11 @@ struct WPEMdlParserTests {
         data.append(UInt8(0))
         data.append(UInt8(0))
 
-        appendMDLASection(version: mdlaVersion, to: &data)
+        appendMDLASection(version: mdlaVersion, v4EventCurves: v4EventCurves, to: &data)
         return data
     }
 
-    private func appendMDLASection(version: Int = 6, to data: inout Data) {
+    private func appendMDLASection(version: Int = 6, v4EventCurves: [[Float]] = [], to data: inout Data) {
         let features = WPEMdlaFeatures(version: version)
         func appendKey(_ t: SIMD3<Float>, _ r: SIMD3<Float>, _ s: SIMD3<Float>) {
             for value in [t.x, t.y, t.z, r.x, r.y, r.z, s.x, s.y, s.z] {
@@ -1171,7 +1182,25 @@ struct WPEMdlParserTests {
             }
         }
         if features.v4Events {
-            data.append(UInt8(0))
+            if v4EventCurves.isEmpty {
+                data.append(UInt8(0))
+            } else {
+                // One event: time, (curveCount, flags), then curves; every curve after the first has a UInt16 id.
+                data.append(UInt8(1))
+                data.appendLE(UInt32(1))
+                data.appendLE(Float(0.5))
+                data.appendLE(UInt16(v4EventCurves.count))
+                data.appendLE(UInt16(0))
+                for (index, values) in v4EventCurves.enumerated() {
+                    if index > 0 {
+                        data.appendLE(UInt16(index))
+                    }
+                    data.appendLE(UInt32(values.count * MemoryLayout<Float>.size))
+                    for value in values {
+                        data.appendLE(value)
+                    }
+                }
+            }
         }
         if features.boundingBox {
             let bounds: [Float] = [-1, -2, -3, 4, 5, 6]

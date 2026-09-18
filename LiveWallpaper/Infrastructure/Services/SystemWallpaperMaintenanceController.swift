@@ -63,9 +63,9 @@ final class SystemWallpaperMaintenanceController {
         for _ in 0 ..< 20 {
             do { try await Task.sleep(for: .seconds(1)) } catch { phase = .idle; return }
             service.refreshProviderStatus()
-            if let heartbeat = service.heartbeat, heartbeat.timestamp >= began,
-               heartbeat.provider?.pid != previousPID, service.providerIssue == nil,
-               service.providerIsRunning {
+            if let heartbeat = service.heartbeat,
+               Self.isReconnected(heartbeat: heartbeat, began: began, previousPID: previousPID,
+                                  issue: service.providerIssue, running: service.providerIsRunning) {
                 phase = .verified
                 return
             }
@@ -84,6 +84,13 @@ final class SystemWallpaperMaintenanceController {
             await recover(service: service)
             recoveryTask = nil
         }
+    }
+
+    /// A new PID alone is not a reconnection: the beat must be the new process's and healthy.
+    static func isReconnected(heartbeat: SystemWallpaperHeartbeat, began: Date, previousPID: Int32?,
+                              issue: WallpaperExportService.ProviderIssue?, running: Bool) -> Bool {
+        heartbeat.timestamp >= began && heartbeat.provider?.pid != previousPID
+            && heartbeat.runtimeHealthy && issue == nil && running
     }
 
     func reveal(_ path: String) {

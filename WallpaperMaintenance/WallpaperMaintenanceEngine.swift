@@ -82,7 +82,8 @@ struct WallpaperMaintenanceEngine: Sendable {
     private func restartAgent() throws {
         // Fixed executable and argv; this cannot signal another user or an arbitrary process.
         let result = try run("/usr/bin/pkill", ["-u", String(getuid()), "-x", "WallpaperAgent"])
-        guard result.code == 0 else { throw Failure.command }
+        // Exit 1 is "nothing matched": an agent that already died is what recovery is for.
+        guard result.code == 0 || result.code == 1 else { throw Failure.command }
     }
 
     enum Failure: Error { case refused, command, timeout, outputTooLarge }
