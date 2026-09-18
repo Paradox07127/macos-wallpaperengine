@@ -13,6 +13,68 @@ will be cut once the surface has stabilized through real-world use.
 Entries identify Pro-only features where applicable. Versioned entries describe
 what shipped at that time; current behavior is documented in `docs/`.
 
+## [0.7.1] — 2026-09-18
+
+### Added
+
+- Settings → System Wallpaper (macOS 26): playback scope, the loaded
+  extension's status and path, registration inspection and repair, Restart
+  Wallpaper Service, and optional automatic recovery of a stalled extension
+  connection. Both SKUs embed a small unsandboxed helper,
+  `WallpaperMaintenance.xpc`, that runs `lsregister` and restarts
+  WallpaperAgent for the current user only; it accepts connections from its
+  own host app alone.
+- Settings → Overlays: widget tint, opacity, Liquid Glass and the temperature
+  unit, shared by every overlay panel; the per-display parts of a board stay
+  in its inspector.
+- The Settings sidebar is grouped into Setup, Playback, Content, Data and
+  Support; Audio Response and Weather merge into Integrations, and every
+  section header is a search anchor.
+- Pro: `.mdl` section versions are decoded from a feature table (MDLV0004–0023,
+  MDLS0001–0004 and MDLA0001–0006 sampled) instead of allowlists, and MDMP
+  morph records are walked; the parse audit reports any byte the ladder
+  cannot explain.
+
+### Changed
+
+- The System Wallpaper library uses the shared search, grid and status
+  components; only its toolbar keeps the native wallpaper settings entry, and
+  the maintenance notices, playback scope and bulk removal moved to Settings.
+- The system wallpaper extension reports a video that failed to play (no
+  video track, decoder failure, or no frame within 5 s) in its heartbeat; the
+  app shows it as a failure and the extension retries the choice on the next
+  system update.
+- The app watches the shared heartbeat directory and polls it every 30 s, so
+  the extension's status updates live and a stopped extension process is
+  detected; a different installed copy providing the wallpaper is reported as
+  information, not as a failure.
+- A system wallpaper extension whose bundle was replaced no longer exits on
+  its own while serving; stale copies are cleaned up from Settings → System
+  Wallpaper instead.
+- Failure details, diagnostic logs and the Workshop privacy notice open as
+  in-window overlays instead of sheets.
+- Loomscreen's own windows count toward the full-screen and occlusion pause
+  like any other app's.
+- Pro: a puppet is no longer refused by its MDLV generation; the assembly
+  path is chosen from the model's data.
+
+### Fixed
+
+- Pro: text layers and their opaque backgrounds applied the authored sRGB
+  colour straight to a linear target, so text rendered far lighter than an
+  image layer with the same colour, and the glyph pass squared its alpha into
+  the intermediate target, which washed out thin glyphs.
+- Pro: the pointer, clicks and script pointer events were not mapped from the
+  drawable into the scene's own space when the display's aspect ratio
+  differed from the scene's, so follow-cursor effects were offset on non-16:9
+  displays; a pointer on a letterbox margin now counts as outside the scene.
+- Pro: MDLV0013 puppets were refused and their MDLA0001 animations dropped.
+
+### Removed
+
+- The multica review tooling and the UI probe tools under `tools/` left the
+  repository.
+
 ## [0.7.0] — 2026-09-17
 
 ### Added
