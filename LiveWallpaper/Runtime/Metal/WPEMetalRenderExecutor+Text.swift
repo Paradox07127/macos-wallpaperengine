@@ -131,10 +131,13 @@ extension WPEMetalRenderExecutor {
         attachment.isBlendingEnabled = true
         attachment.rgbBlendOperation = .add
         attachment.alphaBlendOperation = .add
-        // WPE blends text with SRC_ALPHA/INV_SRC_ALPHA on RGB and alpha. The fragment premultiplies RGB so `.one` is SRC_ALPHA-equivalent there, but the alpha channel must square the source alpha.
+        // The fragment premultiplies RGB, so `.one` is SRC_ALPHA-equivalent there. Alpha
+        // takes `.one` for the same reason: this target is composited later as a
+        // premultiplied image, and squaring its alpha would break `rgb <= alpha` and let
+        // the background through a second time — thin glyphs wash out.
         attachment.sourceRGBBlendFactor = .one
         attachment.destinationRGBBlendFactor = .oneMinusSourceAlpha
-        attachment.sourceAlphaBlendFactor = .sourceAlpha
+        attachment.sourceAlphaBlendFactor = .one
         attachment.destinationAlphaBlendFactor = .oneMinusSourceAlpha
         let state = try device.makeRenderPipelineState(descriptor: descriptor)
         textGlyphPipelineCache[colorPixelFormat.rawValue] = state

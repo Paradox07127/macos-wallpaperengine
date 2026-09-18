@@ -150,14 +150,26 @@ struct SystemWallpaperProviderIdentityTests {
 
     // MARK: - Source guards (appex sources never compile into this bundle)
 
-    @Test("The appex checks staleness at both moments it can act on the system's behalf")
-    func retirementIsWired() throws {
+    @Test("A serving extension never exits from accept or its playback heartbeat")
+    func activeProviderNeverRetires() throws {
         let bridge = try RepositoryRoot.source("SystemWallpaperProvider/WallpaperXPCBridge.swift")
         let handler = try RepositoryRoot.source("SystemWallpaperProvider/WallpaperXPCHandler.swift")
-        // accept(connection:) — the system is about to put this process to work.
-        #expect(bridge.contains("ProviderStaleness.exitIfStale()"))
-        // The keep-alive tick — the only guaranteed wake-up of an idle process.
-        #expect(handler.contains("ProviderStaleness.exitIfStale()"))
+        let staleness = try RepositoryRoot.source("SystemWallpaperProvider/ProviderStaleness.swift")
+        #expect(!bridge.contains("exitIfStale"))
+        #expect(!handler.contains("exitIfStale"))
+        #expect(!staleness.contains("func exitIfStale"))
+        #expect(staleness.contains("guard surfaces == 0, !connected else"))
+    }
+
+    @Test("Playback failures survive IPC persistence without breaking legacy heartbeats")
+    func playbackFailureRoundTrip() throws {
+        var original = beat(provider: identity())
+        original.playbackFailures = ["choice": "video.noFrames"]
+        let decoded = try JSONDecoder().decode(SystemWallpaperHeartbeat.self, from: JSONEncoder().encode(original))
+        #expect(decoded.playbackFailures == original.playbackFailures)
+        let legacy = try JSONDecoder().decode(SystemWallpaperHeartbeat.self,
+                                              from: Data(#"{"timestamp":0,"runtimeHealthy":true}"#.utf8))
+        #expect(legacy.playbackFailures == nil)
     }
 
     @Test("The bridge builds its observers on first connection, not on discovery")

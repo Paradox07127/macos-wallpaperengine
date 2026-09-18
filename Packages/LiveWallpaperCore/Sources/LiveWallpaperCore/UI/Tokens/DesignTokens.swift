@@ -193,6 +193,9 @@ public enum DesignTokens {
         public static let preview: CGFloat = 16
         /// Inspector panel cards.
         public static let panel: CGFloat = 12
+        /// Measured off a live macOS sheet: 22pt, continuous. Containers that stand in
+        /// for a sheet match it, so the two families read as the same surface.
+        public static let sheet: CGFloat = 22
     }
 
     /// Only interaction-state alpha routes through these; decorative strokes, shadows

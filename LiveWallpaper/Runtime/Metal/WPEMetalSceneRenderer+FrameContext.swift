@@ -13,6 +13,22 @@ extension WPEMetalSceneRenderer {
         let parallaxFrame: WPECameraParallaxFrame
     }
 
+    /// The pointer arrives normalised to the drawable, but every consumer below works in
+    /// scene space, which present crops (`cover`) or insets (`contain`/`center`) whenever
+    /// the aspect ratios differ. Identity when they match, so 16:9 displays are unchanged.
+    private func scenePointer(fromDrawable pointer: SIMD2<Double>) -> SIMD2<Double> {
+        let present = WPEPresentUniforms.make(
+            fitMode: presentFitMode,
+            sourceWidth: Int(sceneRenderSize.width),
+            sourceHeight: Int(sceneRenderSize.height),
+            targetWidth: Int(surfaceDrawableSize.width),
+            targetHeight: Int(surfaceDrawableSize.height)
+        )
+        // A pointer on a letterbox margin is outside the scene; the neutral centre is what
+        // this frame already uses to mean "no live pointer".
+        return present.scenePointer(fromDrawablePointer: pointer) ?? SIMD2<Double>(0.5, 0.5)
+    }
+
     func sampleFrameContext(inputs: WPEFrameInputs) -> FrameContext {
         // Click capture stays independent because Interaction can be enabled without Follow Cursor. The snapshot always sampled the pointer, so an inactive gate discards it.
         let pointerSample = (mouseInteractionEnabled || inputs.clickCaptureEnabled)
@@ -21,9 +37,11 @@ extension WPEMetalSceneRenderer {
         let pointerIsInsideView = pointerSample.isInsideView
         let followPointerIsLive = mouseInteractionEnabled && pointerIsInsideView
         let clickPointerIsLive = inputs.clickCaptureEnabled && pointerIsInsideView
-        let pointer = oracleFrameOverride?.pointer ?? (followPointerIsLive
-            ? pointerSample.position
-            : SIMD2<Double>(0.5, 0.5))
+        // Oracle overrides are authored in scene space already; a live pointer is
+        // normalised to the drawable and has to be mapped across.
+        let pointer = oracleFrameOverride?.pointer ?? scenePointer(
+            fromDrawable: followPointerIsLive ? pointerSample.position : SIMD2<Double>(0.5, 0.5)
+        )
         if !followPointerIsLive && previousPointerWasLive {
             for system in particleSystems where system.tracksPointer {
                 system.clearLiveParticles()

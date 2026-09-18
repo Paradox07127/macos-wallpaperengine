@@ -1511,41 +1511,6 @@
         }
       }
     },
-    "%@, on screen now" : {
-      "comment" : "Accessibility label for a System Wallpaper tile the system is currently showing. Placeholder is the video title.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@, on screen now"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@, en pantalla ahora"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@、現在表示中"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@，正在显示"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@，正在顯示"
-          }
-        }
-      }
-    },
     "%@, ready" : {
       "comment" : "Workshop paste row accessibility label. %@ is the workshop item title.",
       "localizations" : {
@@ -1641,6 +1606,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@，已儲存的顯示器方案"
+          }
+        }
+      }
+    },
+    "%@, selected by macOS" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@, selected by macOS"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@, seleccionado por macOS"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@、macOS で選択済み"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@，macOS 已选中"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@，macOS 已選取"
           }
         }
       }
@@ -6343,6 +6342,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "也在以下顯示器上使用：%@"
+          }
+        }
+      }
+    },
+    "Always" : {
+      "comment" : "System wallpaper playback mode: the video plays on the desktop as well as the lock screen.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Always"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Siempre"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "常に再生"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "始终播放"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一律播放"
           }
         }
       }
@@ -12609,6 +12644,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "請選擇 steamcmd 執行檔，或用於啟動它的 steamcmd.sh。"
+          }
+        }
+      }
+    },
+    "Choose this video in System Settings" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose this video in System Settings"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elige este vídeo en Ajustes del Sistema"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "システム設定でこのビデオを選択"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在系统设置中选择此视频"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在系統設定中選擇此影片"
           }
         }
       }
@@ -19773,42 +19842,6 @@
         }
       }
     },
-    "Desktop playback" : {
-      "comment" : "System wallpaper control for behavior after unlocking; same values as the former On the desktop control.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Desktop playback"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Reproducción en el escritorio"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "デスクトップでの再生"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "桌面播放"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "桌面播放"
-          }
-        }
-      }
-    },
     "Desktop: below windows. On Top: above windows." : {
       "comment" : "Supplemental explanation of overlay layer choices. Desktop and On Top refer to the adjacent options, not wallpaper types.",
       "extractionState" : "manual",
@@ -26554,6 +26587,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "匯出元件版面"
+          }
+        }
+      }
+    },
+    "Extension status" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Extension status"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Estado de la extensión"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "機能拡張の状態"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "扩展状态"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "延伸功能狀態"
           }
         }
       }
@@ -34261,6 +34328,42 @@
         }
       }
     },
+    "Lock screen only" : {
+      "comment" : "System wallpaper playback mode: the desktop settles to a still frame after unlocking, while the lock screen keeps playing.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lock screen only"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solo al bloquear"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ロック画面のみ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仅锁屏播放"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "僅鎖定畫面播放"
+          }
+        }
+      }
+    },
     "Locked" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -35092,6 +35195,40 @@
         }
       }
     },
+    "macOS chooses the wallpaper for each display and Space. Importing a video does not apply it to every desktop." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS chooses the wallpaper for each display and Space. Importing a video does not apply it to every desktop."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS gestiona el fondo de cada pantalla y espacio. Importar un vídeo no lo aplica a todos los escritorios."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "各ディスプレイと操作スペースの壁紙は macOS が管理します。ビデオを読み込んでも、すべてのデスクトップには適用されません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS 分别管理各显示器和桌面空间的壁纸。导入视频不会将其应用到所有桌面。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS 分別管理各顯示器和桌面空間的桌布。匯入影片不會將其套用至所有桌面。"
+          }
+        }
+      }
+    },
     "macOS could not find the app service" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -35261,6 +35398,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "macOS 尚未要求定位服務權限"
+          }
+        }
+      }
+    },
+    "macOS is using another copy of the wallpaper extension. Open the installed Loomscreen app and remove old app copies." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS is using another copy of the wallpaper extension. Open the installed Loomscreen app and remove old app copies."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS está usando otra copia de la extensión. Abre la app Loomscreen instalada y elimina las copias antiguas."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS は別の壁紙機能拡張を使用しています。インストール済みの Loomscreen を開き、古いアプリのコピーを削除してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS 正在使用另一份壁纸扩展。请打开已安装的 Loomscreen，并移除旧的应用副本。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS 正在使用另一份桌布延伸功能。請開啟已安裝的 Loomscreen，並移除舊的應用程式副本。"
           }
         }
       }
@@ -42042,41 +42213,6 @@
         }
       }
     },
-    "On screen" : {
-      "comment" : "Badge on the tile whose video the system is currently showing.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "On screen"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "En pantalla"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "表示中"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在显示"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在顯示"
-          }
-        }
-      }
-    },
     "On this display" : {
       "comment" : "Section label above the display-scoped block of the wallpaper failure page.",
       "localizations" : {
@@ -46361,42 +46497,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "播放預覽"
-          }
-        }
-      }
-    },
-    "Play video" : {
-      "comment" : "System wallpaper desktop mode that continues playing video.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Play video"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Reproducir vídeo"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ビデオ再生"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "播放视频"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "播放影片"
           }
         }
       }
@@ -51275,41 +51375,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "移除此帳號在 Loomscreen 中的下載工作階段。再次下載前需重新連線；不影響 Steam 應用程式的登入狀態。"
-          }
-        }
-      }
-    },
-    "Removing a video here also deletes the system's copy from disk." : {
-      "comment" : "Footnote on the System Wallpaper page stating what removal does.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Removing a video here also deletes the system's copy from disk."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Al eliminar un vídeo aquí también se borra la copia del sistema del disco."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ここでビデオを削除すると、システム側のコピーも削除されます。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在此处移除视频会同时删除系统的副本。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在此處移除影片會同時刪除系統的副本。"
           }
         }
       }
@@ -57205,6 +57270,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "選擇影片檔案"
+          }
+        }
+      }
+    },
+    "Selected by macOS" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Selected by macOS"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seleccionado por macOS"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS で選択済み"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS 已选中"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS 已選取"
           }
         }
       }
@@ -64469,42 +64568,6 @@
         }
       }
     },
-    "Still image" : {
-      "comment" : "System wallpaper desktop mode that settles to a still image after unlocking.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Still image"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Imagen fija"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "静止画"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "静态图像"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "靜態影像"
-          }
-        }
-      }
-    },
     "Stopped at the download limit for linked items. Still missing: %@" : {
       "comment" : "Workshop toast subtitle when the linked-item download hit its depth, count or size limit; the placeholder lists the remaining Workshop IDs.",
       "localizations" : {
@@ -65471,6 +65534,74 @@
         }
       }
     },
+    "System Wallpaper needs attention" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "System Wallpaper needs attention"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El fondo del sistema requiere atención"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "システム壁紙の確認が必要です"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系统壁纸需要处理"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系統桌布需要處理"
+          }
+        }
+      }
+    },
+    "System Wallpaper plays exported videos independently of Loomscreen. App wallpaper effects, overlays and playback controls do not apply here." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "System Wallpaper plays exported videos independently of Loomscreen. App wallpaper effects, overlays and playback controls do not apply here."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El fondo del sistema reproduce los vídeos exportados independientemente de Loomscreen. Los efectos, las superposiciones y los controles de reproducción de la app no se aplican aquí."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "システム壁紙は Loomscreen とは独立して書き出したビデオを再生します。アプリ内の壁紙エフェクト、オーバーレイ、再生操作は適用されません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系统壁纸独立于 Loomscreen 播放导出的视频。应用内壁纸的特效、叠加层和播放控制不适用于此处。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系統桌布獨立於 Loomscreen 播放匯出的影片。應用程式內桌布的特效、疊加層和播放控制不適用於此處。"
+          }
+        }
+      }
+    },
     "System Wallpaper requires macOS 26 or later." : {
       "comment" : "Shown when the System Wallpaper page is reached on an unsupported macOS version.",
       "localizations" : {
@@ -65502,6 +65633,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "系統桌布需要 macOS 26 或更新版本。"
+          }
+        }
+      }
+    },
+    "System Wallpaper Settings" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "System Wallpaper Settings"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajustes del fondo del sistema"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "システム壁紙の設定"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系统壁纸设置"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系統桌布設定"
           }
         }
       }
@@ -67398,6 +67563,42 @@
         }
       }
     },
+    "The lock screen and login window always play the video." : {
+      "comment" : "Info tooltip on the system wallpaper playback row, explaining that the mode only governs the desktop.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The lock screen and login window always play the video."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La pantalla de bloqueo y la ventana de inicio de sesión siempre reproducen el vídeo."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ロック画面とログインウインドウでは常に再生されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "锁屏和登录窗口始终播放视频。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "鎖定畫面與登入視窗一律播放影片。"
+          }
+        }
+      }
+    },
     "The network appears to be offline." : {
       "comment" : "Runtime error message.",
       "extractionState" : "manual",
@@ -68418,6 +68619,40 @@
         }
       }
     },
+    "The system wallpaper video could not be loaded. Select it again in System Settings or import another video." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The system wallpaper video could not be loaded. Select it again in System Settings or import another video."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo cargar el vídeo del fondo del sistema. Vuelve a seleccionarlo en Ajustes del Sistema o importa otro vídeo."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "システム壁紙のビデオを読み込めませんでした。システム設定で選び直すか、別のビデオを読み込んでください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法加载系统壁纸视频。请在系统设置中重新选择，或导入其他视频。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法載入系統桌布影片。請在系統設定中重新選擇，或匯入其他影片。"
+          }
+        }
+      }
+    },
     "The unpacked archive contains no SteamCMD executable." : {
       "comment" : "Managed SteamCMD install error.",
       "extractionState" : "manual",
@@ -68699,6 +68934,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "無法播放影片 %@。"
+          }
+        }
+      }
+    },
+    "The wallpaper extension stopped responding. Select the video again in System Settings. If it still fails, sign out and sign back in to restart the system wallpaper service." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The wallpaper extension stopped responding. Select the video again in System Settings. If it still fails, sign out and sign back in to restart the system wallpaper service."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La extensión dejó de responder. Vuelve a seleccionar el vídeo en Ajustes del Sistema. Si sigue fallando, cierra sesión y vuelve a iniciarla para reiniciar el servicio de fondos."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "壁紙機能拡張が応答していません。システム設定でビデオを選び直してください。解決しない場合は、ログアウトして再ログインし、システム壁紙サービスを再起動してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "壁纸扩展已停止响应。请在系统设置中重新选择视频。若仍无效，请注销并重新登录，以重启系统壁纸服务。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "桌布延伸功能已停止回應。請在系統設定中重新選擇影片。若仍無效，請登出並重新登入，以重新啟動系統桌布服務。"
           }
         }
       }
@@ -69782,6 +70051,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "此版本不支援播放場景"
+          }
+        }
+      }
+    },
+    "This version of macOS is not compatible with the wallpaper extension." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This version of macOS is not compatible with the wallpaper extension."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esta versión de macOS no es compatible con la extensión de fondos."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この macOS バージョンは壁紙機能拡張に対応していません。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前 macOS 版本与壁纸扩展不兼容。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "目前 macOS 版本與桌布延伸功能不相容。"
           }
         }
       }
@@ -74255,6 +74558,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "影片或網頁"
+          }
+        }
+      }
+    },
+    "Video playback" : {
+      "comment" : "System wallpaper row title for when the published video plays. The lock screen always plays; this chooses whether the desktop does too.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Video playback"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reproducción de vídeo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ビデオ再生"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "视频播放"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "影片播放"
           }
         }
       }

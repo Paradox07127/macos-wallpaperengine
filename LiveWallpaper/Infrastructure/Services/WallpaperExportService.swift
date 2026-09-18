@@ -15,6 +15,9 @@ final class WallpaperExportService {
         let makeThumbnailJPEG: @Sendable (URL) async -> Data?
         /// The appex this app ships. A heartbeat stamped with anything else is not evidence about our extension. `nil` disables the check.
         var expectedProvider: SystemWallpaperProviderIdentity?
+        var isProviderRunning: @Sendable (Int32) -> Bool = { pid in
+            pid <= 0 || kill(pid, 0) == 0 || errno != ESRCH
+        }
 
         static func live(hostBundleID: String? = Bundle.main.bundleIdentifier) -> Dependencies {
             Dependencies(
@@ -83,6 +86,7 @@ final class WallpaperExportService {
 
     private(set) var items: [SystemWallpaperManifest.Item] = []
     private(set) var heartbeat: SystemWallpaperHeartbeat?
+    private(set) var providerIsRunning = true
     private(set) var lastError: String?
     private(set) var diskUsageBytes: Int64 = 0
     private(set) var playbackMode: SystemWallpaperPlaybackMode = .always
@@ -134,7 +138,15 @@ final class WallpaperExportService {
            heartbeat.barsPublishing {
             return .systemIncompatible
         }
-        if let lastError { return .failed(lastError) }
+        if let lastError {
+            return .failed(lastError)
+        }
+        if let heartbeat, isFresh(heartbeat),
+           let failures = heartbeat.playbackFailures,
+           let item = items.first(where: { failures[$0.id] != nil }) {
+            return .failed(String(localized: "The system wallpaper video could not be loaded. Select it again in System Settings or import another video.", bundle: .appLanguage)
+                + " (" + item.title + ": " + (failures[item.id] ?? "video.failed") + ")")
+        }
         guard !items.isEmpty else { return .empty }
         // Any item on any display counts — after removing the display-1 choice,
         // the display-2 one keeps this in the in-use state.
@@ -161,7 +173,36 @@ final class WallpaperExportService {
     /// Recent and ours. A stale appex keeps its keep-alive running, so without the stamp check a leftover process's fresh-looking beats would look like the shipped extension's state.
     private func isFresh(_ heartbeat: SystemWallpaperHeartbeat) -> Bool {
         guard heartbeat.isFromProvider(matching: dependencies.expectedProvider) else { return false }
+        if !providerIsRunning {
+            return false
+        }
         return dependencies.now().timeIntervalSince(heartbeat.timestamp) < Self.heartbeatFreshnessInterval
+    }
+
+    enum ProviderIssue: Equatable {
+        case differentCopy
+        case stopped
+        case unresponsive
+    }
+
+    var providerIssue: ProviderIssue? {
+        guard let heartbeat else { return nil }
+        let hasActiveChoices = heartbeat.activeChoiceIDs?.isEmpty == false || heartbeat.activeChoiceID != nil
+        if !providerIsRunning {
+            return hasActiveChoices ? .stopped : nil
+        }
+        if dependencies.now().timeIntervalSince(heartbeat.timestamp) >= Self.heartbeatFreshnessInterval {
+            return hasActiveChoices ? .unresponsive : nil
+        }
+        if !heartbeat.isFromProvider(matching: dependencies.expectedProvider) {
+            return .differentCopy
+        }
+        return nil
+    }
+
+    func refreshProviderStatus() {
+        heartbeat = loadHeartbeat()
+        providerIsRunning = heartbeat?.provider.map { dependencies.isProviderRunning($0.pid) } ?? true
     }
 
     // MARK: - Publish / remove
@@ -521,7 +562,7 @@ final class WallpaperExportService {
         }
         playbackMode = manifest?.playbackMode ?? .always
         items = manifest?.items ?? []
-        heartbeat = loadHeartbeat()
+        refreshProviderStatus()
         if let manifest {
             SystemWallpaperLibrary.sweepOrphans(
                 manifest: manifest,

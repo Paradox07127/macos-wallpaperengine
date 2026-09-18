@@ -25,8 +25,8 @@ struct LogPrivacySourceAuditTests {
         "SystemWallpaperProvider/VideoRenderer.swift": [
             "ms": 1,
             "timeout": 1,
-            "WPXLogPrivacy.summary(reader.error)": 1,
-            "WPXLogPrivacy.summary(error)": 1,
+            // Closed, developer-defined video failure codes; no URL or user content.
+            "code": 1,
         ],
         "SystemWallpaperProvider/SharedLibraryStore.swift": [
             "WPXLogPrivacy.summary(error)": 2,

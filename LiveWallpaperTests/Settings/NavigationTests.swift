@@ -1,8 +1,18 @@
-import Testing
 @testable import LiveWallpaper
+import LiveWallpaperCore
+import Testing
 
 @Suite("Settings navigation")
 struct NavigationTests {
+    @Test("System Wallpaper playback settings are reachable in both editions")
+    func systemWallpaperSettingsAreSearchable() {
+        guard #available(macOS 26.0, *) else { return }
+        for capabilities in [LiveWallpaperCore.ProductCapabilities.lite, .pro] {
+            let results = SettingsNavigation.filteredResults(matching: "Video playback", capabilities: capabilities)
+            #expect(results.contains { $0.destination == .systemWallpaper })
+        }
+    }
+
     @Test("Search matches settings titles and keywords")
     func searchMatchesTitlesAndKeywords() {
         let items = SettingsNavigation.filteredResults(

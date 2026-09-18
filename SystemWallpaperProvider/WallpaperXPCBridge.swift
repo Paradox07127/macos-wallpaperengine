@@ -207,9 +207,6 @@ final class WallpaperXPCBridge: @unchecked Sendable {
     }
 
     func accept(connection: NSXPCConnection) -> Bool {
-        // The system is about to put this process to work — the last moment a
-        // build that is no longer installed may still bow out.
-        ProviderStaleness.exitIfStale()
         guard Self.verifyRuntimeLayout() else {
             store.writeHeartbeat(activeChoiceID: nil, runtimeHealthy: false)
             return false

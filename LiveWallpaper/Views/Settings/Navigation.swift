@@ -38,6 +38,7 @@ struct SettingsNavigationSearchResult: Identifiable, Equatable {
 enum SettingsNavigation: String, CaseIterable, Hashable, Identifiable {
     case general
     case displayDefaults
+    case systemWallpaper
     case performancePower
     case audioResponse
     case weather
@@ -56,6 +57,12 @@ enum SettingsNavigation: String, CaseIterable, Hashable, Identifiable {
     ) -> [SettingsNavigationItem] {
         allItems.filter { item in
             switch item.destination {
+            case .systemWallpaper:
+                if #available(macOS 26.0, *) {
+                    true
+                } else {
+                    false
+                }
             case .audioResponse:
                 capabilities.sku == .pro
             case .storage:
@@ -132,6 +139,12 @@ enum SettingsNavigation: String, CaseIterable, Hashable, Identifiable {
                 "帧率", "屏幕默认", "显示默认", "預設", "影格率", "フレームレート",
                 "fotogramas", "predeterminados de pantalla",
             ]
+        ),
+        SettingsNavigationItem(
+            destination: .systemWallpaper,
+            title: "System Wallpaper",
+            systemImage: "macwindow.on.rectangle",
+            keywords: ["Video playback", "Lock screen only", "extension", "Spaces", "系统壁纸", "解锁", "锁屏", "播放"]
         ),
         SettingsNavigationItem(
             destination: .performancePower,

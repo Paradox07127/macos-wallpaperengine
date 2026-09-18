@@ -151,6 +151,8 @@ struct SystemWallpaperHeartbeat: Codable, Equatable {
     var runtimeCheckVersion: Int?
     /// nil provider is unknown, never a mismatch, so a missing stamp cannot make a live extension look dead.
     var provider: SystemWallpaperProviderIdentity?
+    /// Choice ID to renderer failure code; absent in older providers.
+    var playbackFailures: [String: String]?
 
     /// Bump when the private-API layout check changes, or a fixed check cannot overwrite its predecessor's unhealthy verdict.
     static let currentRuntimeCheckVersion = 1
@@ -158,7 +160,8 @@ struct SystemWallpaperHeartbeat: Codable, Equatable {
     init(timestamp: Date, activeChoiceID: String?, activeChoiceIDs: [String]? = nil,
          runtimeHealthy: Bool = true, osVersion: String? = nil,
          runtimeCheckVersion: Int? = SystemWallpaperHeartbeat.currentRuntimeCheckVersion,
-         provider: SystemWallpaperProviderIdentity? = nil) {
+         provider: SystemWallpaperProviderIdentity? = nil,
+         playbackFailures: [String: String]? = nil) {
         self.timestamp = timestamp
         self.activeChoiceID = activeChoiceID
         self.activeChoiceIDs = activeChoiceIDs
@@ -166,11 +169,12 @@ struct SystemWallpaperHeartbeat: Codable, Equatable {
         self.osVersion = osVersion
         self.runtimeCheckVersion = runtimeCheckVersion
         self.provider = provider
+        self.playbackFailures = playbackFailures
     }
 
     private enum CodingKeys: String, CodingKey {
         case timestamp, activeChoiceID, activeChoiceIDs, runtimeHealthy, osVersion, runtimeCheckVersion
-        case provider
+        case provider, playbackFailures
     }
 
     init(from decoder: Decoder) throws {
@@ -182,6 +186,7 @@ struct SystemWallpaperHeartbeat: Codable, Equatable {
         osVersion = try c.decodeIfPresent(String.self, forKey: .osVersion)
         runtimeCheckVersion = try c.decodeIfPresent(Int.self, forKey: .runtimeCheckVersion)
         provider = try c.decodeIfPresent(SystemWallpaperProviderIdentity.self, forKey: .provider)
+        playbackFailures = try c.decodeIfPresent([String: String].self, forKey: .playbackFailures)
     }
 
     /// Reject a beat whose stamp disagrees, and an unstamped beat (leftover 0.6.2). Only a missing expectation disables the check.

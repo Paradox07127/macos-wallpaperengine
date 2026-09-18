@@ -1,13 +1,6 @@
 import Foundation
 import os.log
 
-/// The IO half of `SystemWallpaperProviderStaleness` (the decision itself lives
-/// in `Models/SystemWallpaperManifest.swift`, which this target shares with the
-/// app, so it can be unit-tested).
-///
-/// The stale process cannot be signalled from the sandboxed app, so it retires
-/// itself. Exiting mid-wallpaper is intended: WallpaperAgent re-instantiates the
-/// extension — the installed one — the next time it needs the surface.
 enum ProviderStaleness {
     /// Read straight from `Contents/Info.plist` rather than through `Bundle`:
     /// `Bundle.main.infoDictionary` is the dictionary loaded at launch, which is
@@ -21,13 +14,6 @@ enum ProviderStaleness {
               ) as? [String: Any]
         else { return nil }
         return info["CFBundleVersion"] as? String ?? ""
-    }
-
-    /// Retire this process if the build it is running is no longer installed.
-    /// Called from the keep-alive tick and from `accept(connection:)` — the two
-    /// moments a stale process would otherwise act on the system's behalf.
-    static func exitIfStale(bundle: Bundle = .main) {
-        retire(if: bundleVerdict(bundle: bundle), bundle: bundle)
     }
 
     /// Zero surfaces and zero live connections only — a serving process stays even when it is not the declared copy, and so does one the Agent still holds a proxy to: after an exit the Agent keeps using that proxy until its own 5-minute disconnection and every call errors (NSCocoaErrorDomain 4099) instead of relaunching. Runs on the lifecycle queue right after the Agent's disconnection, before RunningBoard suspends the process.

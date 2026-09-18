@@ -120,8 +120,11 @@ struct WPETextRenderPipelineTests {
         #expect(wideSnapshot.surfaceSize.width > seedSnapshot.surfaceSize.width)
     }
 
-    @Test("Glyph blend matches WPE coverage-squared target alpha")
-    func glyphBlendSquaresCoverageAlpha() throws {
+    /// The glyph FBO is composited later as a premultiplied image, so its alpha has to
+    /// match the coverage its RGB was premultiplied by. Squaring it breaks that invariant
+    /// and the composite lets too much background through — thin text washes out.
+    @Test("Glyph target alpha matches the coverage its RGB was premultiplied by")
+    func glyphTargetAlphaMatchesPremultipliedCoverage() throws {
         let device = try #require(MTLCreateSystemDefaultDevice())
         let executor = try WPEMetalRenderExecutor(device: device)
         let atlasDescriptor = MTLTextureDescriptor.texture2DDescriptor(
@@ -168,7 +171,10 @@ struct WPETextRenderPipelineTests {
         output.getBytes(&halves, bytesPerRow: 32, from: MTLRegionMake2D(0, 0, 4, 4), mipmapLevel: 0)
         let coverage = Float(128) / 255
         let alpha = Float(Float16(bitPattern: halves[(4 + 1) * 4 + 3]))
-        #expect(abs(alpha - coverage * coverage) < 0.01)
+        let red = Float(Float16(bitPattern: halves[(4 + 1) * 4]))
+        #expect(abs(alpha - coverage) < 0.01)
+        // The premultiplied invariant the composite depends on.
+        #expect(abs(red - alpha) < 0.01)
     }
 }
 #endif

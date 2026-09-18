@@ -71,7 +71,7 @@ struct WorkshopStateBadge: View {
 }
 
 struct WorkshopPrivacySheet: View {
-    @Environment(\.dismiss) private var dismiss
+    let onDismiss: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -117,7 +117,7 @@ struct WorkshopPrivacySheet: View {
 
             SheetFooterBar(
                 primaryTitle: "Done",
-                primaryAction: { dismiss() }
+                primaryAction: onDismiss
             )
         }
         .frame(width: SteamSheetWidth.form, height: 460)

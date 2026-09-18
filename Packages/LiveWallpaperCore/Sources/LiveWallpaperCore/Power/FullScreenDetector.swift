@@ -8,7 +8,7 @@ public final class FullScreenDetector {
 
     public private(set) var hiddenScreens: [CGDirectDisplayID: Bool] = [:]
 
-    /// Per display: >= 85% covered by other apps' windows, union area (overlaps counted
+    /// Per display: >= 85% covered by ordinary windows, union area (overlaps counted
     /// once). Distinct from `hiddenScreens`, which needs a single window over the whole display.
     public private(set) var occludedScreens: [CGDirectDisplayID: Bool] = [:]
 
@@ -150,8 +150,6 @@ public final class FullScreenDetector {
             return
         }
 
-        let ownPID = ProcessInfo.processInfo.processIdentifier
-
         let screenFrames: [(id: CGDirectDisplayID, frame: CGRect)] = screens.compactMap { screen in
             guard let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else {
                 return nil
@@ -172,10 +170,11 @@ public final class FullScreenDetector {
         // occlusion test after the full-screen pass.
         var windowsByScreen: [CGDirectDisplayID: [CGRect]] = [:]
 
+        // `layer == 0` is what keeps our own surfaces out: wallpapers sit at desktopWindow-1
+        // and desktopIconWindow+1, overlays at +2, so none can occlude itself into a pause.
+        // Our ordinary windows are layer 0 and cover the desktop like any other app's.
         for info in windowList {
-            guard let pid = info[kCGWindowOwnerPID as String] as? pid_t,
-                  pid != ownPID,
-                  let boundsDict = info[kCGWindowBounds as String] as? [String: CGFloat],
+            guard let boundsDict = info[kCGWindowBounds as String] as? [String: CGFloat],
                   let layer = info[kCGWindowLayer as String] as? Int,
                   layer == 0
             else { continue }

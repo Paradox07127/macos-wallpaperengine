@@ -12,7 +12,12 @@ struct SystemWallpaperLibraryView: View {
     @State private var pendingDestructive: PendingDestructive?
 
     var body: some View {
-        DetailPageScaffold { content }
+        DetailPageScaffold {
+            VStack(spacing: DesignTokens.Spacing.md) {
+                SystemWallpaperProviderNotice()
+                content
+            }
+        }
             .confirmDestructive($pendingDestructive)
             .toolbar {
                 LibraryIdentityToolbarItem(
@@ -35,6 +40,12 @@ struct SystemWallpaperLibraryView: View {
                 }
             }
             .onAppear { service.refresh() }
+        .task {
+            while !Task.isCancelled {
+                service.refreshProviderStatus()
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
     }
 
     // MARK: - Content
@@ -70,10 +81,15 @@ struct SystemWallpaperLibraryView: View {
         }
     }
 
+    /// Bounded so controls stay adjacent to their labels on wide displays.
+    private let maxContentWidth: CGFloat = 560
+
     private var galleryScroll: some View {
         ScrollView {
-            LazyVStack(spacing: DesignTokens.Spacing.lg) {
-                notice
+            LazyVStack(alignment: .leading, spacing: DesignTokens.Spacing.lg) {
+                if hasNotice {
+                    notice
+                }
                 LibraryGalleryGrid(size: tileSize, aspect: .wide) {
                     ForEach(service.items) { item in
                         SystemWallpaperTile(
@@ -81,6 +97,7 @@ struct SystemWallpaperLibraryView: View {
                             thumbnailURL: service.thumbnailURL(for: item),
                             videoURL: service.videoURL(for: item),
                             isInUse: service.isItemInUse(item.id),
+                            onChoose: { service.openWallpaperSettings() },
                             onRemove: {
                                 pendingDestructive = PendingDestructive(
                                     .removeSystemWallpaper(
@@ -93,8 +110,7 @@ struct SystemWallpaperLibraryView: View {
                         .transition(.opacity)
                     }
                 }
-                playbackModeRow
-                footnote
+                settingsGroup
             }
             .libraryGridPadding()
             .animation(.easeOut(duration: 0.2), value: service.items)
@@ -105,28 +121,34 @@ struct SystemWallpaperLibraryView: View {
     private var notice: some View {
         switch service.status {
         case let .failed(message):
-            noticeRow(
-                icon: "exclamationmark.triangle.fill",
+            InlineNoticeBanner(
                 tint: DesignTokens.Colors.Status.warning,
+                symbol: "exclamationmark.triangle.fill",
                 title: Text("Couldn't update System Wallpaper"),
-                detail: Text(verbatim: message)
+                message: Text(verbatim: message),
+                surface: .content
             ) {
                 Button("Dismiss") { service.clearLastError() }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
-                    .fixedSize()
             }
+            .frame(maxWidth: maxContentWidth, alignment: .leading)
+            .transition(.opacity)
+            .animation(.easeOut(duration: 0.2), value: service.status)
         case .publishedNotSelected:
-            noticeRow(
-                icon: "arrow.right.circle.fill",
-                tint: .accentColor,
-                title: Text("Choose a wallpaper in System Settings")
+            InlineNoticeBanner(
+                tint: DesignTokens.Colors.accent,
+                symbol: "arrow.right.circle.fill",
+                title: Text("Choose a wallpaper in System Settings"),
+                surface: .content
             ) {
                 Button("Open") { service.openWallpaperSettings() }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
-                    .fixedSize()
             }
+            .frame(maxWidth: maxContentWidth, alignment: .leading)
+            .transition(.opacity)
+            .animation(.easeOut(duration: 0.2), value: service.status)
         case .inUse, .empty, .systemIncompatible:
             EmptyView()
         }
@@ -142,70 +164,17 @@ struct SystemWallpaperLibraryView: View {
         }
     }
 
-    private func noticeRow(
-        icon: String,
-        tint: Color,
-        title: Text,
-        detail: Text? = nil,
-        @ViewBuilder action: () -> some View
-    ) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: DesignTokens.Spacing.md) {
-            Image(systemName: icon)
-                .foregroundStyle(tint)
-            VStack(alignment: .leading, spacing: 2) {
-                title.font(.callout.weight(.medium))
-                if let detail {
-                    detail
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            Spacer(minLength: DesignTokens.Spacing.sm)
-            action()
-        }
-        .padding(DesignTokens.Spacing.md)
-        .background(
-            RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor))
-        )
-        .transition(.opacity)
-        .animation(.easeOut(duration: 0.2), value: service.status)
-    }
-
     /// Playback mode applies to the whole system library.
-    private var playbackModeRow: some View {
-        HStack(alignment: .firstTextBaseline, spacing: DesignTokens.Spacing.md) {
-            Text("Desktop playback")
-                .font(.callout.weight(.medium))
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: DesignTokens.Spacing.sm)
-            GlassSegmentedPicker(
-                selection: Binding(
-                    get: { service.playbackMode },
-                    set: { service.setPlaybackMode($0) }
-                ),
-                values: [.always, .stillOnDesktop],
-                shell: .flat,
-                title: { (mode: SystemWallpaperPlaybackMode) in
-                    mode == .always ? "Play video" : "Still image"
-                }
-            )
-            .frame(width: 230)
-            .accessibilityElement(children: .contain)
-            .accessibilityLabel(Text("Desktop playback"))
-        }
-        .padding(DesignTokens.Spacing.md)
-        .background(
-            RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor))
-        )
-    }
+    private var settingsGroup: some View {
+        GroupBox {
+            Button("System Wallpaper Settings") {
+                NotificationCenter.default.post(name: .openSettingsSection, object: nil,
+                                                userInfo: ["destination": SettingsNavigation.systemWallpaper.rawValue])
+            }
+            .buttonStyle(.bordered)
 
-    private var footnote: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text("Removing a video here also deletes the system's copy from disk.")
             if !service.items.isEmpty {
+                Divider()
                 Button("Remove All from System Wallpaper", role: .destructive) {
                     pendingDestructive = PendingDestructive(
                         .clearSystemWallpaperLibrary(
@@ -219,12 +188,12 @@ struct SystemWallpaperLibraryView: View {
                 .buttonStyle(.bordered)
                 .controlSize(.small)
                 .tint(DesignTokens.Colors.Status.danger)
-                .padding(.top, DesignTokens.Spacing.xs)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .padding(.vertical, DesignTokens.Spacing.xs)
             }
         }
-        .font(.caption)
-        .foregroundStyle(.secondary)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .groupBoxStyle(ContainerGroupBoxStyle())
+        .frame(maxWidth: maxContentWidth, alignment: .leading)
     }
 
     // MARK: - Empty / unavailable
@@ -303,6 +272,7 @@ struct SystemWallpaperTile: View {
     let thumbnailURL: URL?
     let videoURL: URL?
     let isInUse: Bool
+    var onChoose: () -> Void = {}
     let onRemove: () -> Void
 
     @State private var isHovering = false
@@ -310,7 +280,18 @@ struct SystemWallpaperTile: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        preview
+        Button(action: onChoose) { preview }
+            .buttonStyle(.plain)
+            .help(Text("Choose this video in System Settings"))
+            .overlay(alignment: .bottom) {
+                ThumbnailTitleBand(title: item.title, isHovering: isHovering) {
+                    if isInUse {
+                        ThumbnailPresenceCheck(tint: DesignTokens.Colors.Status.active)
+                            .accessibilityLabel(Text("Selected by macOS"))
+                    }
+                    overflowButton
+                }
+            }
             .galleryTileChrome(isHovering: isHovering, reduceMotion: reduceMotion)
             .settledHover { isHovering = $0 }
             .contextMenu {
@@ -345,7 +326,7 @@ struct SystemWallpaperTile: View {
 
     private var accessibilityLabel: Text {
         isInUse
-            ? Text("\(item.title), on screen now")
+            ? Text("\(item.title), selected by macOS")
             : Text("\(item.title), ready in System Settings")
     }
 
@@ -367,15 +348,6 @@ struct SystemWallpaperTile: View {
             .frame(maxWidth: .infinity)
             .aspectRatio(16.0 / 9.0, contentMode: .fit)
             .clipped()
-            .overlay(alignment: .bottom) {
-                ThumbnailTitleBand(title: item.title, isHovering: isHovering) {
-                    if isInUse {
-                        ThumbnailPresenceCheck(tint: DesignTokens.Colors.Status.active)
-                            .accessibilityLabel(Text("On screen"))
-                    }
-                    overflowButton
-                }
-            }
             // Keyed on the entry's own timestamp, not on the URL: a republish rewrites the same
             // `<id>.jpg` path, so the URL never changes and the tile would keep its stale poster.
             .tileTask(id: item.addedAt) {

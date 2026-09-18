@@ -102,7 +102,7 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
                     return
                 }
 
-                guard let choiceID, choiceID != surface.choiceID else {
+                guard let choiceID, choiceID != surface.choiceID || surface.playbackFailure != nil else {
                     writeActiveHeartbeat()
                     reply(context, nil)
                     return
@@ -127,10 +127,11 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
                     reply(context, nil)
                     return
                 }
-                let once = ReplyOnce { reply(context, nil) }
-                startPlayback(surface: surface, choiceID: choiceID, size: size) { once.fire() }
-                // A video that never produces a frame must not wedge the panel.
-                Self.queue.asyncAfter(deadline: .now() + Self.firstFrameReplyTimeout) { once.fire() }
+                let once = ReplyOnce { error in reply(error == nil ? context : nil, error) }
+                startPlayback(surface: surface, choiceID: choiceID, size: size) { error in once.fire(error) }
+                Self.queue.asyncAfter(deadline: .now() + Self.firstFrameReplyTimeout) {
+                    once.fire(NSError(domain: "com.loomscreen.wallpaper", code: 7))
+                }
                 return
             }
 
@@ -197,7 +198,11 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
             let uuid = Self.surfaceUUID(id: id)
 
             let playbackMode = store.loadManifest().playbackMode
-            let targets = uuid.flatMap { registry.surface(for: $0) }.map { [$0] } ?? registry.all
+            let targets: [WallpaperSurface] = if let uuid {
+                registry.surface(for: uuid).map { [$0] } ?? []
+            } else {
+                registry.all
+            }
             for surface in targets where !surface.isPreview {
                 surface.lastPresentationMode = mode
                 surface.lastActivityState = activity
@@ -472,9 +477,29 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
     }
 
     private func startPlayback(surface: WallpaperSurface, choiceID: String, size: CGSize,
-                               replyOnFirstFrame: (@Sendable () -> Void)?) {
-        guard let url = playableURL(for: choiceID) else { return }
-        surface.renderer.start(url: url, onFirstFrame: replyOnFirstFrame)
+                               replyOnFirstFrame: (@Sendable (Error?) -> Void)?) {
+        guard let url = playableURL(for: choiceID) else {
+            replyOnFirstFrame?(NSError(domain: "com.loomscreen.wallpaper", code: 3))
+            return
+        }
+        surface.playbackGeneration &+= 1
+        surface.playbackFailure = nil
+        let generation = surface.playbackGeneration
+        let uuid = surface.uuid
+        let initialRate = surface.isPreview ? 1 : Self.rate(for: surface, playbackMode: store.loadManifest().playbackMode)
+        let registry = registry
+        let store = store
+        surface.renderer.start(url: url, initialRate: initialRate, onFirstFrame: {
+            replyOnFirstFrame?(nil)
+        }, onFailure: { [weak registry] code in
+            Self.queue.async { [weak registry] in
+                guard let registry, let current = registry.surface(for: uuid),
+                      current.playbackGeneration == generation else { return }
+                current.playbackFailure = code
+                Self.writeActiveHeartbeat(registry: registry, store: store)
+                replyOnFirstFrame?(NSError(domain: "com.loomscreen.wallpaper", code: 8))
+            }
+        })
     }
 
     /// The policy has had an `onBattery` input since day one but nothing ever
@@ -498,16 +523,18 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
     /// timeout race by design.
     private final class ReplyOnce: @unchecked Sendable {
         private let lock = NSLock()
-        private var pending: (() -> Void)?
+        private var pending: ((Error?) -> Void)?
 
-        init(_ body: @escaping () -> Void) { pending = body }
+        init(_ body: @escaping (Error?) -> Void) {
+            pending = body
+        }
 
-        func fire() {
+        func fire(_ error: Error?) {
             lock.lock()
             let body = pending
             pending = nil
             lock.unlock()
-            body?()
+            body?(error)
         }
     }
 
@@ -542,7 +569,14 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
             guard let id = surface.choiceID, seen.insert(id).inserted else { continue }
             active.append(id)
         }
-        store.writeHeartbeat(activeChoiceID: active.first, activeChoiceIDs: active, runtimeHealthy: true)
+        var failures: [String: String] = [:]
+        for surface in registry.all where !surface.isPreview {
+            if let id = surface.choiceID, let failure = surface.playbackFailure {
+                failures[id] = failure
+            }
+        }
+        store.writeHeartbeat(activeChoiceID: active.first, activeChoiceIDs: active,
+                             runtimeHealthy: true, playbackFailures: failures)
         syncHeartbeatKeepAlive(registry: registry, store: store)
     }
 
@@ -577,9 +611,6 @@ final class WallpaperXPCHandler: NSObject, WallpaperExtensionXPCProtocol, @unche
             leeway: .seconds(30)
         )
         timer.setEventHandler {
-            // The tick is this process's only guaranteed wake-up, so it is also
-            // where it notices its own bundle was replaced or deleted under it.
-            ProviderStaleness.exitIfStale()
             writeActiveHeartbeat(registry: registry, store: store)
         }
         heartbeatKeepAlive = timer

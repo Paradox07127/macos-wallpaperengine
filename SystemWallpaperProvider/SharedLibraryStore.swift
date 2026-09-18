@@ -6,7 +6,7 @@ let wpxLog = Logger(subsystem: "com.loomscreen.wallpaper", category: "extension"
 /// Appex-side access to the host app's shared directory. Read-only for the
 /// manifest/videos, write for the heartbeat (via the appex's sandbox
 /// temporary-exception; the main app's entitlements stay untouched).
-struct SharedLibraryStore {
+struct SharedLibraryStore: Sendable {
     let hostBundleID: String
 
     /// The appex bundle id is `<host>.wallpaper`, so the host id is derivable
@@ -79,14 +79,16 @@ struct SharedLibraryStore {
         SystemWallpaperPaths.videosDirectory(hostBundleID: hostBundleID)
     }
 
-    func writeHeartbeat(activeChoiceID: String?, activeChoiceIDs: [String]? = nil, runtimeHealthy: Bool = true) {
+    func writeHeartbeat(activeChoiceID: String?, activeChoiceIDs: [String]? = nil, runtimeHealthy: Bool = true,
+                        playbackFailures: [String: String]? = nil) {
         let beat = SystemWallpaperHeartbeat(
             timestamp: Date(),
             activeChoiceID: activeChoiceID,
             activeChoiceIDs: activeChoiceIDs,
             runtimeHealthy: runtimeHealthy,
             osVersion: SystemWallpaperHeartbeat.currentOSVersion(),
-            provider: .current()
+            provider: .current(),
+            playbackFailures: playbackFailures
         )
         guard let data = try? SystemWallpaperCoding.encoder.encode(beat) else { return }
         let url = SystemWallpaperPaths.heartbeatURL(hostBundleID: hostBundleID)

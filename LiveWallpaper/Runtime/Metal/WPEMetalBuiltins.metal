@@ -39,10 +39,8 @@ fragment half4 wpe_text_glyph_fragment(
     constant float4& color [[buffer(0)]]
 ) {
     constexpr sampler linearSampler(address::clamp_to_edge, filter::linear);
-    // Straight rgb + alpha applied once → premultiplied RGB (blend .one /
-    // .oneMinusSourceAlpha ≡ WPE's SrcAlpha on straight rgb). The alpha
-    // channel blends with .sourceAlpha to match WPE's SrcAlpha/InvSrcAlpha,
-    // which lands coverage² in the target's alpha.
+    // Straight rgb + alpha applied once → premultiplied RGB, so the pipeline's
+    // `.one` / `.oneMinusSourceAlpha` on both channels keeps `rgb <= alpha`.
     float coverage = float(atlas.sample(linearSampler, in.uv).r);
     float alpha = coverage * color.a;
     return half4(float4(color.rgb * alpha, alpha));
