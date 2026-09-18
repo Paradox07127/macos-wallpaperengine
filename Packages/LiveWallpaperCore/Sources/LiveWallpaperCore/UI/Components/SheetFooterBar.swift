@@ -36,47 +36,45 @@ public struct SheetFooterBar<Leading: View>: View {
         self.leading = leading()
     }
 
+    /// No rule above the buttons: a real macOS sheet floats them on the content's own
+    /// background, and the padding is what separates them.
     public var body: some View {
-        VStack(spacing: 0) {
-            Divider()
-
-            HStack(spacing: DesignTokens.Spacing.md) {
-                if let destructiveTitle, let destructiveAction {
-                    Button(role: .destructive, action: destructiveAction) {
-                        Text(destructiveTitle)
-                    }
-                    .buttonStyle(.borderless)
-                    .destructiveControlTint()
+        HStack(spacing: DesignTokens.Spacing.md) {
+            if let destructiveTitle, let destructiveAction {
+                Button(role: .destructive, action: destructiveAction) {
+                    Text(destructiveTitle)
                 }
+                .buttonStyle(.borderless)
+                .destructiveControlTint()
+            }
 
-                leading
+            leading
 
-                Spacer(minLength: 0)
+            Spacer(minLength: 0)
 
-                if let cancelTitle, let cancelAction {
-                    helped(
-                        Button(action: cancelAction) {
-                            Text(cancelTitle)
-                        }
-                        .buttonStyle(.bordered)
-                        .keyboardShortcut(.cancelAction),
-                        cancelHelp
-                    )
-                }
-
+            if let cancelTitle, let cancelAction {
                 helped(
-                    Button(action: primaryAction) {
-                        Text(primaryTitle)
+                    Button(action: cancelAction) {
+                        Text(cancelTitle)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(primaryDisabled),
-                    primaryHelp
+                    .buttonStyle(.bordered)
+                    .keyboardShortcut(.cancelAction),
+                    cancelHelp
                 )
             }
-            .padding(.horizontal, DesignTokens.Spacing.lg)
-            .padding(.vertical, DesignTokens.Spacing.md)
+
+            helped(
+                Button(action: primaryAction) {
+                    Text(primaryTitle)
+                }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+                .disabled(primaryDisabled),
+                primaryHelp
+            )
         }
+        .padding(.horizontal, DesignTokens.Spacing.lg)
+        .padding(.vertical, DesignTokens.Spacing.lg)
     }
 
     @ViewBuilder

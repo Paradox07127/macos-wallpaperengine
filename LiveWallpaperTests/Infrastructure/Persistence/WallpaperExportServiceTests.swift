@@ -91,7 +91,8 @@ struct WallpaperExportServiceTests {
         thumbnailJPEG: Data? = Data([0xFF, 0xD8, 0xFF, 0xE0]),
         now: Date = referenceNow,
         duringThumbnail: PublishHook? = nil,
-        expectedProvider: SystemWallpaperProviderIdentity? = nil
+        expectedProvider: SystemWallpaperProviderIdentity? = nil,
+        isProviderRunning: @escaping @Sendable (Int32) -> Bool = { _ in true }
     ) throws -> Rig {
         let base = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("WallpaperExportServiceTests-\(UUID().uuidString)")
@@ -116,9 +117,68 @@ struct WallpaperExportServiceTests {
                 if let duringThumbnail { await MainActor.run { duringThumbnail.fire() } }
                 return thumbnailJPEG
             },
-            expectedProvider: expectedProvider
+            expectedProvider: expectedProvider,
+            isProviderRunning: isProviderRunning
         ))
         return Rig(service: service, root: root, sourceDirectory: sources)
+    }
+
+    @Test("A failed selected video reports the renderer failure instead of in-use")
+    func selectedRendererFailureIsVisible() async throws {
+        let rig = try makeRig()
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
+        let bookmark = try rig.makeVideoBookmark(label: "Broken clip")
+        try await rig.service.publish(bookmark: bookmark)
+        let id = bookmark.id.uuidString
+        try rig.writeHeartbeat(SystemWallpaperHeartbeat(timestamp: Self.referenceNow,
+                                                        activeChoiceID: id,
+                                                        playbackFailures: [id: "video.noFrames"]))
+        rig.service.refresh()
+        guard case let .failed(message) = rig.service.status else {
+            Issue.record("Renderer failure must be surfaced even when the choice is selected")
+            return
+        }
+        #expect(message.contains("video.noFrames"))
+        try rig.writeHeartbeat(SystemWallpaperHeartbeat(timestamp: Self.referenceNow, activeChoiceID: id,
+                                                        playbackFailures: [:]))
+        rig.service.refreshProviderStatus()
+        #expect(rig.service.status == .inUse(itemTitle: "Broken clip"))
+    }
+
+    @Test("A different provider copy is diagnosed instead of silently ignored")
+    func differentProviderCopyIsDiagnosed() throws {
+        let expected = SystemWallpaperProviderIdentity(build: "42", bundlePath: "/app/P.appex", pid: 0)
+        let rig = try makeRig(expectedProvider: expected)
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
+        try rig.writeHeartbeat(SystemWallpaperHeartbeat(timestamp: Self.referenceNow, activeChoiceID: nil,
+                                                        provider: SystemWallpaperProviderIdentity(build: "42", bundlePath: "/old/P.appex", pid: 0)))
+        rig.service.refreshProviderStatus()
+        #expect(rig.service.providerIssue == .differentCopy)
+    }
+
+    @Test("A stopped provider cannot appear in use even while its heartbeat is fresh")
+    func stoppedProviderIsDiagnosed() async throws {
+        let rig = try makeRig(isProviderRunning: { _ in false })
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
+        let bookmark = try rig.makeVideoBookmark()
+        try await rig.service.publish(bookmark: bookmark)
+        try rig.writeHeartbeat(SystemWallpaperHeartbeat(timestamp: Self.referenceNow,
+                                                        activeChoiceID: bookmark.id.uuidString,
+                                                        provider: SystemWallpaperProviderIdentity(build: "42", bundlePath: "/app/P.appex", pid: 123)))
+        rig.service.refreshProviderStatus()
+        #expect(rig.service.providerIssue == .stopped)
+        #expect(!rig.service.isItemInUse(bookmark.id.uuidString))
+    }
+
+    @Test("An idle provider may exit without a stopped warning")
+    func idleProviderExitIsNotAnError() throws {
+        let rig = try makeRig(isProviderRunning: { _ in false })
+        defer { try? FileManager.default.removeItem(at: rig.root.deletingLastPathComponent()) }
+        try rig.writeHeartbeat(SystemWallpaperHeartbeat(timestamp: Self.referenceNow,
+                                                        activeChoiceID: nil, activeChoiceIDs: [],
+                                                        provider: SystemWallpaperProviderIdentity(build: "42", bundlePath: "/app/P.appex", pid: 123)))
+        rig.service.refreshProviderStatus()
+        #expect(rig.service.providerIssue == nil)
     }
 
     // MARK: - Provider declaration

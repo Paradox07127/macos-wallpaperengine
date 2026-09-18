@@ -45,9 +45,10 @@ struct WallpaperFailureSnapshot: Identifiable, Equatable, Sendable {
         Failed wallpaper: \(title.prefix(160))
         Workshop ID: \(workshopID?.prefix(40) ?? "—")
         Display: \(displayName.prefix(100))
-        Desktop at failure: \(previousWallpaper?.prefix(160) ?? "—")
         Time: \(timestamp.ISO8601Format())
-        \(cause.details.prefix(300))
+        Underlying error: \(cause.details.isEmpty ? "—" : String(cause.details.prefix(300)))
+
+        Desktop still showing: \(previousWallpaper?.prefix(160) ?? "—")
         \(diagnostics.prefix(300))
         """)
     }
@@ -62,8 +63,9 @@ struct WallpaperFailureSnapshot: Identifiable, Equatable, Sendable {
         Stage: \(stage)
         Code: \(cause.code)
         Reason: \(cause.reason)
-        Desktop at failure: \(previousWallpaper ?? "—")
-        \(cause.details)
+        Underlying error: \(cause.details.isEmpty ? "—" : cause.details)
+
+        Desktop still showing: \(previousWallpaper ?? "—")
 
         \(diagnostics)
         """)

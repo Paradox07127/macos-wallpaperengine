@@ -17,6 +17,7 @@ struct ContentView: View {
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var isReloading = false
     @State private var historicalFailure: WallpaperFailureSnapshot?
+    @State private var historicalFailureDetails: WallpaperFailureSnapshot?
     @AppStorage(LibraryTileSize.preferencesKey, store: .appScoped())
     private var libraryTileSizeRaw = LibraryTileSize.medium.rawValue
     private let initialAddWallpaperPromptKind: String?
@@ -49,9 +50,21 @@ struct ContentView: View {
             DownloadToastHost(visibleDisplayID: visibleDisplayID, onOpenFailure: openFailure)
                 .padding(DesignTokens.Spacing.lg)
         }
-        .sheet(item: $historicalFailure) { failure in
-            WallpaperFailureView(failure: failure, isCurrentAttempt: false)
-                .frame(width: 600, height: 480)
+        .infoOverlay(item: $historicalFailure) { failure, dismiss in
+            VStack(spacing: 0) {
+                WallpaperFailureView(
+                    failure: failure,
+                    isCurrentAttempt: false,
+                    onShowDetails: { historicalFailureDetails = failure }
+                )
+                // `WallpaperFailureView` is also used as a whole page, where a footer would
+                // be wrong, so the dismissal lives here rather than inside it.
+                SheetFooterBar(primaryTitle: "Done", primaryAction: dismiss)
+            }
+            .frame(width: 600, height: 400)
+        }
+        .infoOverlay(item: $historicalFailureDetails) { failure, dismiss in
+            WallpaperFailureDetails(failure: failure, onDismiss: dismiss)
         }
         #endif
         .environment(\.libraryTileSize, LibraryTileSize(rawValue: libraryTileSizeRaw) ?? .medium)

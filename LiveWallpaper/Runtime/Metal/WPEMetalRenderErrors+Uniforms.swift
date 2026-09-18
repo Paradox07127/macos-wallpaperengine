@@ -204,6 +204,28 @@ struct WPEPresentUniforms {
         }
         return u
     }
+
+    /// Maps a pointer normalised to the drawable into the scene's own normalised space.
+    ///
+    /// Present crops (`cover`) or insets (`contain`/`center`) the scene whenever the two
+    /// aspect ratios differ, so a pointer that skips this transform is off by up to half
+    /// the cropped extent — zero at the centre, worst at the edges. It is the identity
+    /// when the aspects match, which is why only non-16:9 displays saw it.
+    ///
+    /// Returns nil when the pointer sits on a letterbox margin, i.e. outside the scene.
+    func scenePointer(fromDrawablePointer pointer: SIMD2<Double>) -> SIMD2<Double>? {
+        var scene = SIMD2<Double>(0, 0)
+        for axis in 0 ..< 2 {
+            let ndc = Double(ndcScale[axis])
+            guard ndc > 0 else { return nil }
+            // Undo the quad placement first, then apply the source crop: the two are
+            // applied in that order by the present shader.
+            let quad = (pointer[axis] - (1 - ndc) / 2) / ndc
+            scene[axis] = quad * Double(uvScale[axis]) + Double(uvOffset[axis])
+        }
+        guard (0 ... 1).contains(scene.x), (0 ... 1).contains(scene.y) else { return nil }
+        return scene
+    }
 }
 
 // Per-effect uniform structs. Field order MUST match the matching MSL struct

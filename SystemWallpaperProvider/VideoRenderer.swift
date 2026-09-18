@@ -30,6 +30,9 @@ final class VideoRenderer: @unchecked Sendable {
     private var ptsOffset: CMTime = .zero
     private var maxSampleEnd: CMTime = .zero
     private var firstFrameHandler: (@Sendable () -> Void)?
+    private var failureHandler: (@Sendable (String) -> Void)?
+    private var failureReported = false
+    private var requestGeneration: UInt64 = 0
     private var didSignalFirstFrame = false
     private var currentRate: Double = 0
     /// What the policy last asked for. The first frame must land on this, not
@@ -185,7 +188,9 @@ final class VideoRenderer: @unchecked Sendable {
         return DispatchQueue.main.sync { MainActor.assumeIsolated(read) }
     }
 
-    func start(url: URL, onFirstFrame: (@Sendable () -> Void)? = nil) {
+    func start(url: URL, initialRate: Double = 1,
+               onFirstFrame: (@Sendable () -> Void)? = nil,
+               onFailure: (@Sendable (String) -> Void)? = nil) {
         queue.async { [weak self] in
             guard let self else { return }
             // Switching videos reuses this renderer (a fresh layer would not
@@ -218,10 +223,19 @@ final class VideoRenderer: @unchecked Sendable {
             ptsOffset = .zero
             maxSampleEnd = .zero
             firstFrameHandler = onFirstFrame
+            failureHandler = onFailure
+            failureReported = false
+            requestGeneration &+= 1
+            let generation = requestGeneration
+            desiredRate = initialRate
             didSignalFirstFrame = false
             sourceURL = url
             isDeepPaused = false
             openReader(url: url)
+            queue.asyncAfter(deadline: .now() + 5) { [weak self] in
+                guard let self, requestGeneration == generation, !didSignalFirstFrame, failureHandler != nil else { return }
+                reportFailure("video.firstFrameTimeout")
+            }
         }
     }
 
@@ -229,7 +243,7 @@ final class VideoRenderer: @unchecked Sendable {
         let asset = AVURLAsset(url: url)
         self.asset = asset
         guard let track = loadFirstVideoTrack(asset) else {
-            wpxLog.error("no video track in \(url.lastPathComponent, privacy: .private)")
+            reportFailure("video.trackUnavailable")
             return
         }
         do {
@@ -245,17 +259,17 @@ final class VideoRenderer: @unchecked Sendable {
             // nil outputSettings passes compressed samples straight through.
             let output = AVAssetReaderTrackOutput(track: track, outputSettings: nil)
             output.alwaysCopiesSampleData = false
-            guard reader.canAdd(output) else { return }
+            guard reader.canAdd(output) else { reportFailure("video.unsupportedTrack"); return }
             reader.add(output)
             guard reader.startReading() else {
-                wpxLog.error("reader failed: \(WPXLogPrivacy.summary(reader.error), privacy: .public)")
+                reportFailure("video.readerFailed")
                 return
             }
             self.reader = reader
             self.output = output
             requestMedia()
         } catch {
-            wpxLog.error("reader init failed: \(WPXLogPrivacy.summary(error), privacy: .public)")
+            reportFailure("video.readerUnavailable")
         }
     }
 
@@ -288,8 +302,14 @@ final class VideoRenderer: @unchecked Sendable {
                 }
                 if let shifted = self.shift(sample) {
                     self.renderer.enqueue(shifted)
+                    if renderer.status == .failed {
+                        reportFailure("video.decoderFailed")
+                        return
+                    }
+                    if CMSampleBufferGetNumSamples(shifted) > 0 {
+                        signalFirstFrameIfNeeded()
+                    }
                 }
-                self.signalFirstFrameIfNeeded()
             }
         }
     }
@@ -330,11 +350,25 @@ final class VideoRenderer: @unchecked Sendable {
     }
 
     private func loopIfFinished() {
-        guard let reader, reader.status == .completed, let url = asset?.url else { return }
+        guard let reader else { return }
+        if reader.status == .failed {
+            reportFailure("video.readFailed"); return
+        }
+        guard reader.status == .completed, let url = asset?.url else { return }
+        guard didSignalFirstFrame else { reportFailure("video.noFrames"); return }
         ptsOffset = maxSampleEnd
         self.reader = nil
         self.output = nil
         openReader(url: url)
+    }
+
+    private func reportFailure(_ code: String) {
+        guard !failureReported else { return }
+        failureReported = true
+        renderer.stopRequestingMediaData()
+        firstFrameHandler = nil
+        wpxLog.error("playback failed: \(code, privacy: .public)")
+        failureHandler?(code)
     }
 
     private func signalFirstFrameIfNeeded() {
@@ -473,6 +507,9 @@ final class VideoRenderer: @unchecked Sendable {
     }
 
     private func stopOnQueue() {
+        requestGeneration &+= 1
+        failureHandler = nil
+        firstFrameHandler = nil
         cancelRamp()
         cancelDeepPauseTimer()
         renderer.stopRequestingMediaData()

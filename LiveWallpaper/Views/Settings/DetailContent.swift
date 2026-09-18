@@ -13,6 +13,10 @@ struct SettingsDetailContent: View {
                 GeneralSettingsView(page: .general)
             case .displayDefaults:
                 DisplayDefaultsView(pendingSearchAnchor: $pendingSearchAnchor)
+            case .systemWallpaper:
+                if #available(macOS 26.0, *) {
+                    SystemWallpaperSettingsView()
+                }
             case .performancePower:
                 GeneralSettingsView(page: .performancePower)
             case .audioResponse:

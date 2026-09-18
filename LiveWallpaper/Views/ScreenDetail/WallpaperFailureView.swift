@@ -10,7 +10,9 @@ struct WallpaperFailureView: View {
     var onChooseSource: (() -> Void)?
     /// Non-nil when this display has a configuration worth clearing.
     var onClearDisplay: (() -> Void)?
-    @State private var showsDetails = false
+    /// Presented by the caller: in the overlay path this view sits inside a clipped card,
+    /// so a nested overlay would be cut off at the card's edge.
+    var onShowDetails: (() -> Void)?
 
     private var failureClass: WallpaperFailureClass {
         failure.cause.failureClass
@@ -46,11 +48,6 @@ struct WallpaperFailureView: View {
             .padding(DesignTokens.Spacing.xl)
             .frame(maxWidth: 560, alignment: .leading)
             .frame(maxWidth: .infinity)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(DesignTokens.Colors.pageBackground)
-        .sheet(isPresented: $showsDetails) {
-            WallpaperFailureDetails(failure: failure)
         }
     }
 
@@ -96,8 +93,10 @@ struct WallpaperFailureView: View {
                 onChooseSource: onChooseSource,
                 isCompact: false
             )
-            Button("View Details") { showsDetails = true }
-                .buttonStyle(.bordered)
+            if let onShowDetails {
+                Button("View Details", action: onShowDetails)
+                    .buttonStyle(.bordered)
+            }
         }
     }
 
@@ -145,14 +144,18 @@ struct WallpaperFailureView: View {
     }
 }
 
-private struct WallpaperFailureDetails: View {
+struct WallpaperFailureDetails: View {
     let failure: WallpaperFailureSnapshot
-    @Environment(\.dismiss) private var dismiss
+    let onDismiss: () -> Void
     @State private var report: BugReport?
 
     var body: some View {
         VStack(spacing: DesignTokens.Spacing.lg) {
-            SteamSheetHeader(icon: "doc.text.magnifyingglass", title: "Failure Details")
+            SteamSheetHeader(
+                icon: "doc.text.magnifyingglass",
+                title: "Failure Details",
+                iconTint: failure.cause.failureClass.tint
+            )
             Text(verbatim: failure.title).font(DesignTokens.Typography.sectionTitle)
             ScrollView {
                 Text(verbatim: failure.diagnosticText)
@@ -160,7 +163,7 @@ private struct WallpaperFailureDetails: View {
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            SheetFooterBar(primaryTitle: "Done", primaryAction: { dismiss() }, leading: {
+            SheetFooterBar(primaryTitle: "Done", primaryAction: onDismiss, leading: {
                 Button {
                     report = BugReporter.makeReport(activeWallpapers: [], failureContext: failure)
                 } label: { Label("Report this Problem…", systemImage: "ladybug") }
@@ -178,6 +181,7 @@ struct WallpaperAttemptPreview: View {
     let attempt: WallpaperLoadAttempt
     @Environment(ScreenManager.self) private var screenManager
     @State private var pendingDestructive: PendingDestructive?
+    @State private var detailsFor: WallpaperFailureSnapshot?
 
     var body: some View {
         if let failure = attempt.failure {
@@ -186,10 +190,17 @@ struct WallpaperAttemptPreview: View {
                 onRetry: { screenManager.retryWallpaperAttempt(for: screen) },
                 onViewDesktop: { screenManager.inspectWallpaperAttempt(false, for: screen) },
                 onChooseSource: chooseSourceAction,
-                onClearDisplay: clearDisplayAction
+                onClearDisplay: clearDisplayAction,
+                onShowDetails: { detailsFor = failure }
             )
+            // Whole-page use fills its column; the overlay card sizes to the content instead.
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(DesignTokens.Colors.pageBackground)
             .id(attempt.id)
             .confirmDestructive($pendingDestructive)
+            .infoOverlay(item: $detailsFor) { snapshot, dismiss in
+                WallpaperFailureDetails(failure: snapshot, onDismiss: dismiss)
+            }
         } else {
             VStack(spacing: DesignTokens.Spacing.lg) {
                 ProgressView().accessibilityLabel(Text("Preparing wallpaper…"))

@@ -8,6 +8,8 @@ final class WallpaperSurface {
     let renderer = VideoRenderer()
     var contextId: UInt32 = 0
     var choiceID: String?
+    var playbackGeneration: UInt64 = 0
+    var playbackFailure: String?
     var isPreview = false
     var teardownWorkItem: DispatchWorkItem?
     /// Last system state seen in an update for this surface — kept so a
@@ -25,7 +27,8 @@ final class WallpaperSurface {
 /// surfaces plus the lock screen alive at once and a context can only be
 /// hosted once, so sharing one contextId makes all but one go black
 /// (contract §9 坑 2).
-final class SurfaceRegistry {
+/// All mutable state is confined to WallpaperXPCHandler's serial lifecycle queue.
+final class SurfaceRegistry: @unchecked Sendable {
     /// Each surface owns a remote CAContext and a decoder pipeline, and the
     /// appex lives under the system wallpaper process budget — an unbounded
     /// registry turns a retry storm of fresh WallpaperIDs into an OOM kill.

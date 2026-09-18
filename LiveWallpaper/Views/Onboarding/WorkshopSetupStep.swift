@@ -88,9 +88,9 @@ struct OnboardingWorkshopSetupView: View {
                 }
             }
         }
-        .sheet(isPresented: $showingPrivacy) {
+        .infoOverlay(isPresented: $showingPrivacy) { dismiss in
             AppLanguageScope(defaults: .appScoped()) {
-                WorkshopPrivacySheet()
+                WorkshopPrivacySheet(onDismiss: dismiss)
             }
         }
         .task {

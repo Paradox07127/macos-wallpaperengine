@@ -190,9 +190,14 @@ struct SceneDetailView: View {
                 infoBar
             }
         }
-        .sheet(isPresented: $showLogSheet) {
+        .infoOverlay(isPresented: $showLogSheet) { dismiss in
             AppLanguageScope(defaults: .appScoped()) {
-                DiagnosticLogSheet(title: origin.title, log: fullDiagnosticText, tint: currentSeverityTint)
+                DiagnosticLogSheet(
+                    title: origin.title,
+                    log: fullDiagnosticText,
+                    tint: currentSeverityTint,
+                    onDismiss: dismiss
+                )
             }
         }
         .accessibilityElement(children: .contain)
@@ -760,8 +765,8 @@ private struct DiagnosticLogSheet: View {
     let title: String
     let log: String
     let tint: Color
+    let onDismiss: () -> Void
 
-    @Environment(\.dismiss) private var dismiss
     @State private var didCopy = false
     @State private var rendered: AttributedString?
 
@@ -772,9 +777,6 @@ private struct DiagnosticLogSheet: View {
             terminal
         }
         .frame(minWidth: 540, idealWidth: 680, minHeight: 380, idealHeight: 540)
-        // Registered exception: content-layer wash on a system-presented sheet,
-        // which AdaptiveGlass has no API for.
-        .background(.ultraThinMaterial)
         // Keyed on the log: without the id the sheet keeps the first colourised
         // text forever, so a log that grows while the sheet is open stops updating.
         .task(id: log) { rendered = Self.colourise(log) }
@@ -804,7 +806,7 @@ private struct DiagnosticLogSheet: View {
             .buttonStyle(.bordered)
             .controlSize(.small)
             .tint(didCopy ? DesignTokens.Colors.Status.active : tint)
-            Button("Done") { dismiss() }
+            Button("Done", action: onDismiss)
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
                 .keyboardShortcut(.defaultAction)

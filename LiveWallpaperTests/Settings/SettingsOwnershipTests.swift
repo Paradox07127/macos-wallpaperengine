@@ -152,9 +152,15 @@ struct GeneralSettingsOwnershipCharacterizationTests {
     func settingsNavigationVisibilityMatchesCapabilities() {
         // `.audioResponse` is Pro-only: the capture pipeline is compiled out of
         // Lite, so Lite (and fail-closed unconfigured) must not list the page.
+        let systemWallpaper: [SettingsNavigation] = if #available(macOS 26.0, *) {
+            [.systemWallpaper]
+        } else {
+            []
+        }
         let common: [SettingsNavigation] = [
             .general,
             .displayDefaults,
+        ] + systemWallpaper + [
             .performancePower,
             .weather,
             .shortcuts,
@@ -175,6 +181,7 @@ struct GeneralSettingsOwnershipCharacterizationTests {
         #expect(shippingPro == [
             .general,
             .displayDefaults,
+        ] + systemWallpaper + [
             .performancePower,
             .audioResponse,
             .weather,
@@ -187,6 +194,7 @@ struct GeneralSettingsOwnershipCharacterizationTests {
         #expect(directPro == [
             .general,
             .displayDefaults,
+        ] + systemWallpaper + [
             .performancePower,
             .audioResponse,
             .weather,
