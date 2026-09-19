@@ -116,6 +116,25 @@ SUITES=(
   WallpaperExportServiceTests
   SystemWallpaperMaintenanceTests
   WPEStorageInventoryTests
+  # Edit Desk (2026-09-18): the stage ↔ SwiftUI contract and the pure geometry
+  # that SCREENS.md S1–S3 pins numerically; both are hardware-free.
+  EditDeskStageModelTests
+  StageGeometryTests
+  EditDeskWindowHostTests
+  EditDeskRouterTests
+  ShelfThumbnailCacheTests
+  LibraryMetadataSidecarTests
+  ScreenPresentationTests
+  EditDeskPreferencesTests
+  SavedLibraryModelTests
+  StageSpringTests
+  ShelfGestureControllerTests
+  EditDeskStageViewTests
+  ApplyRouterTests
+  EditDeskApplyQueueTests
+  EditDeskToastCenterTests
+  StatusCapsuleTests
+  EditDeskChromeSourceTests
   SettingsSearchLocalizationTests
   # Carbon hotkeys: dispatcher target + C trampoline. An inline MainActor
   # closure on GetApplicationEventTarget() registered but never fired.

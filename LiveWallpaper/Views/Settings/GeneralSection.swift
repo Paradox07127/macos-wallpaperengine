@@ -27,6 +27,8 @@ extension GeneralSettingsView {
             ) {
                 libraryTileSizePicker
             }
+
+            ShelfSettingsRows()
         } header: {
             SettingsSearchSectionHeader("General", anchor: .generalAppearance)
         }

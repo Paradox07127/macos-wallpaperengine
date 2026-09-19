@@ -358,7 +358,12 @@ struct SettingsNavigationItem: Identifiable, Equatable {
                 SettingsNavigationSearchTarget(
                     label: "General",
                     anchor: .generalAppearance,
-                    keywords: ["language", "appearance", "theme", "dark", "light", "tile size", "library"]
+                    keywords: [
+                        "language", "appearance", "theme", "dark", "light", "tile size", "library",
+                        "shelf style", "crate", "cover flow", "cards rendered", "shelf capacity",
+                        "autoplay preview", "hover", "status capsule", "system health", "home default",
+                        "架子样式", "木箱", "封面流", "状态胶囊", "主界面默认态",
+                    ]
                 ),
                 SettingsNavigationSearchTarget(
                     label: "Startup",

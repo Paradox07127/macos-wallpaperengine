@@ -1,3 +1,4 @@
+import AppKit
 import Testing
 import Foundation
 import LiveWallpaperCore
@@ -78,6 +79,43 @@ struct BookmarkStoreTests {
         #expect(store.bookmarks.first?.id == added.id)
         #expect(persistence.stored.count == 1)
         #expect(persistence.saveCount == 1)
+    }
+
+    @Test("Applying stamps dispatched content but not an unresolvable video", arguments: [true, false])
+    func applyBookmarkRecordsUsage(dispatched: Bool) throws {
+        let nsScreen = try #require(NSScreen.screens.first)
+        let screen = Screen(nsScreen: nsScreen)
+        let manager = ScreenManager(startupOptions: ScreenManagerStartupOptions(
+            restoreSavedWallpapers: false,
+            startAutomation: false,
+            powerMonitor: FakePowerMonitor(),
+            fullScreenDetector: FakeFullScreenDetector(),
+            playableVideoLoader: FakePlayableVideoLoader(),
+            displayRegistry: FakeDisplayRegistry(screens: [screen]),
+            featureCatalog: FeatureCatalog(capabilities: .lite),
+            originReconciler: PreservingOriginReconciler()
+        ))
+        let store = BookmarkStore.shared
+        let content: WallpaperContent = dispatched
+            ? .html(source: .inline("<p>Bookmark</p>"), config: .default)
+            : sampleVideoContent()
+        let bookmark = store.add(label: "Apply", content: content)
+        defer {
+            manager.tearDownForTermination()
+            store.remove(bookmark.id)
+        }
+        let before = Date()
+
+        manager.applyBookmark(bookmark, to: screen)
+
+        let updated = try #require(store.bookmarks.first(where: { $0.id == bookmark.id }))
+        if dispatched {
+            let lastUsedAt = try #require(updated.lastUsedAt)
+            #expect(lastUsedAt >= before)
+            #expect(lastUsedAt <= Date())
+        } else {
+            #expect(updated.lastUsedAt == nil)
+        }
     }
 
     @Test("add with empty/whitespace label falls back to defaultLabel")

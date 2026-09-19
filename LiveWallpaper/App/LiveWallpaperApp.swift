@@ -37,7 +37,7 @@ struct AppStartupPlan: Equatable {
     let showOnboarding: Bool
     let showSettingsOnLaunch: Bool
 
-    init(runtimeOptions: AppRuntimeOptions, onboardingCompleted: Bool) {
+    init(runtimeOptions: AppRuntimeOptions, onboardingCompleted: Bool, editDeskEnabled: Bool = false) {
         #if LITE_BUILD
         screenManagerOptions = ScreenManagerStartupOptions(
             restoreSavedWallpapers: runtimeOptions.shouldRestoreSavedWallpapers,
@@ -55,7 +55,7 @@ struct AppStartupPlan: Equatable {
             featureCatalog: FeatureCatalog(capabilities: proCapabilities)
         )
         #endif
-        showOnboarding = runtimeOptions.shouldShowOnboarding && !onboardingCompleted
+        showOnboarding = runtimeOptions.shouldShowOnboarding && !onboardingCompleted && !editDeskEnabled
         showSettingsOnLaunch = runtimeOptions.shouldOpenSettingsOnLaunch
     }
 }
@@ -64,8 +64,92 @@ enum SettingsWindowMetrics {
     static let sidebarColumnWidth = DesignTokens.Sidebar.width
     static let sidebarColumnMaxWidth = DesignTokens.Sidebar.maxWidth
     static let defaultContentSize = CGSize(width: 1180, height: 720)
+    static let editDeskDefaultContentSize = CGSize(width: 1280, height: 820)
+    static let editDeskMinimumContentSize = CGSize(width: 1040, height: 700)
     // Floor must fit the sidebar plus the shared library-page floor.
     static let minimumContentSize = CGSize(width: 1160, height: DesignTokens.LibraryPage.minHeight)
+}
+
+@MainActor
+struct SettingsWindowHost {
+    let manager: ScreenManager
+    let wallpaperExportService: WallpaperExportService
+    #if !LITE_BUILD
+    let workshopDoctorService: SteamCMDDoctorService
+    let workshopServices: WorkshopServices
+    let workshopSetupController: WorkshopSetupController
+    #endif
+
+    func makeWindowController(
+        editDeskEnabled: Bool,
+        initialNavigation: Navigation?,
+        initialAddWallpaperPromptKind: String?,
+        delegate: any NSWindowDelegate
+    ) -> NSWindowController {
+        let contentSize = editDeskEnabled
+            ? SettingsWindowMetrics.editDeskDefaultContentSize : SettingsWindowMetrics.defaultContentSize
+        let window = NSWindow(
+            contentRect: NSRect(origin: .zero, size: contentSize),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentMinSize = editDeskEnabled
+            ? SettingsWindowMetrics.editDeskMinimumContentSize : SettingsWindowMetrics.minimumContentSize
+        window.title = L10n.Window.settingsTitle
+        window.setAccessibilityTitle(L10n.Window.settingsTitle)
+        window.setAccessibilityIdentifier("LiveWallpaperSettingsWindow")
+        window.sharingType = .readOnly
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.backgroundColor = editDeskEnabled ? .clear : .windowBackgroundColor
+        // Non-opaque unconditionally: the Edit Desk decides per preference whether to paint a flat
+        // canvas or let `.behindWindow` blur through, and flipping this on a live window is fiddly.
+        window.isOpaque = !editDeskEnabled
+        window.isMovableByWindowBackground = false
+        // ARC owns the window through the controller; windowWillClose drops both so closing destroys the whole hierarchy instead of AppKit double-releasing it.
+        window.isReleasedWhenClosed = false
+        window.delegate = delegate
+        // The saved frame has to land BEFORE the hosting view goes in.
+        // center() is only the first-run fallback — a successful restore replaces it.
+        let frameName = editDeskEnabled ? "LiveWallpaperEditDeskWindow" : "LiveWallpaperSettingsWindow"
+        window.setFrameAutosaveName(frameName)
+        if !window.setFrameUsingName(frameName) {
+            window.center()
+        }
+        if editDeskEnabled {
+            window.contentView = hostingView(EditDeskRoot(
+                initialNavigation: initialNavigation,
+                initialAddWallpaperPromptKind: initialAddWallpaperPromptKind
+            ))
+        } else {
+            window.contentView = hostingView(ContentView(
+                initialNavigation: initialNavigation,
+                initialAddWallpaperPromptKind: initialAddWallpaperPromptKind
+            ))
+        }
+
+        return NSWindowController(window: window)
+    }
+
+    private func hostingView(_ root: some View) -> NSView {
+        let baseContentView = root
+            .environment(manager)
+            .environment(\.featureCatalog, manager.featureCatalog)
+            .environment(wallpaperExportService)
+
+        #if !LITE_BUILD
+        let contentView = baseContentView
+            .environment(workshopDoctorService)
+            .environment(workshopServices)
+            .environment(workshopSetupController)
+            .appLanguageScoped(defaults: .appScoped())
+        #else
+        let contentView = baseContentView
+            .appLanguageScoped(defaults: .appScoped())
+        #endif
+        return NSHostingView(rootView: contentView)
+    }
 }
 
 @MainActor
@@ -98,7 +182,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let startupPlan = AppStartupPlan(
             runtimeOptions: runtimeOptions,
-            onboardingCompleted: UserDefaults.standard.bool(forKey: "Onboarding.Completed")
+            onboardingCompleted: UserDefaults.standard.bool(forKey: "Onboarding.Completed"),
+            editDeskEnabled: EditDeskFlag.isEnabled
         )
 
         if !runtimeOptions.isTesting {
@@ -379,52 +464,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         initialNavigation: Navigation?,
         initialAddWallpaperPromptKind: String?
     ) -> NSWindowController {
-        let baseContentView = ContentView(
-            initialNavigation: initialNavigation,
-            initialAddWallpaperPromptKind: initialAddWallpaperPromptKind
-        )
-            .environment(manager)
-            .environment(\.featureCatalog, manager.featureCatalog)
-            .environment(wallpaperExportService)
-
         #if !LITE_BUILD
-        let contentView = baseContentView
-            .environment(workshopDoctorService)
-            .environment(workshopServices)
-            .environment(workshopSetupController)
-            .appLanguageScoped(defaults: .appScoped())
-        #else
-        let contentView = baseContentView
-            .appLanguageScoped(defaults: .appScoped())
-        #endif
-
-        let window = NSWindow(
-            contentRect: NSRect(origin: .zero, size: SettingsWindowMetrics.defaultContentSize),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
-            backing: .buffered,
-            defer: false
+        let host = SettingsWindowHost(
+            manager: manager,
+            wallpaperExportService: wallpaperExportService,
+            workshopDoctorService: workshopDoctorService,
+            workshopServices: workshopServices,
+            workshopSetupController: workshopSetupController
         )
-        window.contentMinSize = SettingsWindowMetrics.minimumContentSize
-        window.title = L10n.Window.settingsTitle
-        window.setAccessibilityTitle(L10n.Window.settingsTitle)
-        window.setAccessibilityIdentifier("LiveWallpaperSettingsWindow")
-        window.sharingType = .readOnly
-        window.titlebarAppearsTransparent = true
-        window.titleVisibility = .hidden
-        window.backgroundColor = .windowBackgroundColor
-        window.isMovableByWindowBackground = false
-        // ARC owns the window through the controller; windowWillClose drops both so closing destroys the whole hierarchy instead of AppKit double-releasing it.
-        window.isReleasedWhenClosed = false
-        window.delegate = self
-        // The saved frame has to land BEFORE the hosting view goes in.
-        // center() is only the first-run fallback — a successful restore replaces it.
-        window.setFrameAutosaveName("LiveWallpaperSettingsWindow")
-        if !window.setFrameUsingName("LiveWallpaperSettingsWindow") {
-            window.center()
-        }
-        window.contentView = NSHostingView(rootView: contentView)
-
-        return NSWindowController(window: window)
+        #else
+        let host = SettingsWindowHost(manager: manager, wallpaperExportService: wallpaperExportService)
+        #endif
+        return host.makeWindowController(
+            editDeskEnabled: EditDeskFlag.isEnabled,
+            initialNavigation: initialNavigation,
+            initialAddWallpaperPromptKind: initialAddWallpaperPromptKind,
+            delegate: self
+        )
     }
 
     private func presentSettingsWindow(_ controller: NSWindowController) {
