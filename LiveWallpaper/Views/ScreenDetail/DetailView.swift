@@ -234,65 +234,6 @@ struct DetailView: View {
     private var showsInspector: Bool { inspectorApplicable && inspectorUserVisible }
     private var showsHeaderWallpaperActions: Bool { derivedState.showsHeaderWallpaperActions }
 
-    private enum DropFailure: Identifiable {
-        case unrecognizedDrop
-        case sceneLibraryDrop
-        case sceneUnsupportedInBuild
-        case videoFormatUnsupported
-        case videoBookmarkFailed
-        /// The file read fine and the copy into app storage failed — not permissions.
-        case videoCopyFailed
-        case htmlBookmarkFailed
-        case htmlPickerWrongType
-
-        var id: String {
-            switch self {
-            case .unrecognizedDrop: "unrecognizedDrop"
-            case .sceneLibraryDrop: "sceneLibraryDrop"
-            case .sceneUnsupportedInBuild: "sceneUnsupportedInBuild"
-            case .videoFormatUnsupported: "videoFormatUnsupported"
-            case .videoBookmarkFailed: "videoBookmarkFailed"
-            case .videoCopyFailed: "videoCopyFailed"
-            case .htmlBookmarkFailed: "htmlBookmarkFailed"
-            case .htmlPickerWrongType: "htmlPickerWrongType"
-            }
-        }
-
-        var title: LocalizedStringKey {
-            switch self {
-            case .unrecognizedDrop: "Unsupported file type"
-            case .sceneLibraryDrop: "That folder is a scene library"
-            case .sceneUnsupportedInBuild: "This version doesn't play scenes"
-            case .videoFormatUnsupported: "Video format not supported"
-            case .videoBookmarkFailed: "Couldn't open video"
-            case .videoCopyFailed: "Couldn't copy that video"
-            case .htmlBookmarkFailed: "Couldn't open web resource"
-            case .htmlPickerWrongType: "Pick a web file or folder"
-            }
-        }
-
-        var message: LocalizedStringKey {
-            switch self {
-            case .unrecognizedDrop:
-                "Drop a video file, web file, or folder to use it as a wallpaper."
-            case .sceneLibraryDrop:
-                "It holds many wallpapers rather than one. Import it from the Workshop library instead."
-            case .sceneUnsupportedInBuild:
-                "This copy of Loomscreen plays video and web wallpapers. Drop one of those instead."
-            case .videoFormatUnsupported:
-                "Choose an .mp4, .mov, .m4v, or similar video file."
-            case .videoBookmarkFailed:
-                "macOS couldn't grant the app secure access to that file. Try a different video, or move the file to a folder you own."
-            case .videoCopyFailed:
-                "Loomscreen couldn't copy it into its own storage. Check free space and try again."
-            case .htmlBookmarkFailed:
-                "macOS couldn't grant the app secure access to that resource. Try moving it to a folder you own."
-            case .htmlPickerWrongType:
-                "The selection isn't a web file or a folder containing an index page."
-            }
-        }
-    }
-
     @State private var dropFailure: DropFailure?
     @State private var pendingDestructive: PendingDestructive?
     @State private var previewController = InspectorPreviewController()
@@ -526,6 +467,10 @@ struct DetailView: View {
 
         case .sceneLibraryDrop:
             Button("Cancel", role: .cancel) {}
+        #if !LITE_BUILD
+        case .sceneProjectUnsupported, .sceneImportRejected:
+            Button("Cancel", role: .cancel) {}
+        #endif
 
         case .videoFormatUnsupported, .videoBookmarkFailed, .videoCopyFailed:
             Button("Choose Different Video") { showFilePicker() }

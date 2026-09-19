@@ -62,6 +62,12 @@ public final class BookmarkStore {
         persist()
     }
 
+    public func touch(_ id: UUID, at date: Date = Date()) {
+        guard let index = bookmarks.firstIndex(where: { $0.id == id }) else { return }
+        bookmarks[index].lastUsedAt = date
+        persist()
+    }
+
     public func remove(_ id: UUID) {
         let removedType = bookmarks.first(where: { $0.id == id })?.wallpaperType.rawValue ?? "Unknown"
         bookmarks.removeAll { $0.id == id }

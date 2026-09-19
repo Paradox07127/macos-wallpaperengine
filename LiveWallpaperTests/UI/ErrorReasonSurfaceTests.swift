@@ -55,8 +55,9 @@ struct ErrorReasonSurfaceTests {
     @Test("Recognized-but-unusable drops get their own verdicts")
     func dropFailuresSeparateRecognizedCases() throws {
         let source = try RepositoryRoot.source("LiveWallpaper/Views/ScreenDetail/DetailView.swift")
-        #expect(source.contains("case sceneLibraryDrop"))
-        #expect(source.contains("case sceneUnsupportedInBuild"))
+        let failures = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Support/DropFailure.swift")
+        #expect(failures.contains("case sceneLibraryDrop"))
+        #expect(failures.contains("case sceneUnsupportedInBuild"))
         // The routing, not just the enum.
         #expect(source.contains("dropFailure = .sceneLibraryDrop"))
         #expect(source.contains("dropFailure = .sceneUnsupportedInBuild"))

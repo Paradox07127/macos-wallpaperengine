@@ -14,6 +14,7 @@ public struct WallpaperBookmark: Identifiable, Codable, Equatable, Sendable {
     /// File name of the still captured when this was saved, in the app's cover directory.
     /// Nil for older entries and for captures that did not come back in time.
     public var coverFileName: String?
+    public var lastUsedAt: Date?
 
     public init(
         label: String,
@@ -23,7 +24,8 @@ public struct WallpaperBookmark: Identifiable, Codable, Equatable, Sendable {
         sourceDisplayName: String? = nil,
         playbackSettings: BookmarkPlaybackSettings? = nil,
         wpeOrigin: WPEOrigin? = nil,
-        coverFileName: String? = nil
+        coverFileName: String? = nil,
+        lastUsedAt: Date? = nil
     ) {
         self.id = id
         self.label = label
@@ -33,6 +35,7 @@ public struct WallpaperBookmark: Identifiable, Codable, Equatable, Sendable {
         self.playbackSettings = playbackSettings
         self.wpeOrigin = wpeOrigin
         self.coverFileName = coverFileName
+        self.lastUsedAt = lastUsedAt
     }
 
     public var wallpaperType: WallpaperType { content.wallpaperType }

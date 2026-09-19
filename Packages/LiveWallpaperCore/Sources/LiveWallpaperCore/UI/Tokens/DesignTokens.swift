@@ -128,6 +128,10 @@ public enum DesignTokens {
         public static let code = Font.system(.body, design: .monospaced)
 
         public static let codeCaption = Font.system(.caption, design: .monospaced)
+
+        /// Fixed-size, not text-style based: Edit Desk metadata is laid out at
+        /// literal design px, not Dynamic Type (SCREENS.md tokens).
+        public static let microMono = Font.system(size: 10, design: .monospaced)
     }
 
     public enum LibraryGrid {
@@ -345,5 +349,182 @@ public enum DesignTokens {
     /// nil when Reduce Motion is on, so the change applies instantly.
     public static func motion(_ reduceMotion: Bool, _ animation: Animation) -> Animation? {
         reduceMotion ? nil : animation
+    }
+
+    /// Edit Desk is forced dark, so these are fixed values; only the three Increase Contrast
+    /// overrides (GAP_ANALYSIS.md §6) resolve through `NSColor(name:)` like `Colors.surfaceRaised`.
+    public enum EditDesk {
+        // MARK: Colors
+
+        public enum Colors {
+            /// Every Edit Desk chrome colour resolves per appearance, so the whole surface follows
+            /// General → Appearance. Anything drawn *over* a wallpaper thumbnail is fixed instead
+            /// (see `StageLayerStyle`) — the media underneath does not change with the theme.
+            static func adaptive(
+                _ name: String,
+                light: NSColor, dark: NSColor,
+                lightContrast: NSColor? = nil, darkContrast: NSColor? = nil
+            ) -> Color {
+                Color(nsColor: NSColor(name: NSColor.Name("editDesk" + name)) { appearance in
+                    let match = appearance.bestMatch(from: [
+                        .aqua, .darkAqua, .accessibilityHighContrastAqua, .accessibilityHighContrastDarkAqua,
+                    ])
+                    switch match {
+                    case .accessibilityHighContrastAqua: return lightContrast ?? light
+                    case .accessibilityHighContrastDarkAqua: return darkContrast ?? dark
+                    case .darkAqua: return dark
+                    default: return light
+                    }
+                })
+            }
+
+            private static func ink(_ name: String, _ alpha: CGFloat, contrast: CGFloat? = nil) -> Color {
+                adaptive(
+                    name,
+                    light: .black.withAlphaComponent(alpha * 1.1), dark: .white.withAlphaComponent(alpha),
+                    lightContrast: .black.withAlphaComponent((contrast ?? alpha) * 1.1),
+                    darkContrast: .white.withAlphaComponent(contrast ?? alpha)
+                )
+            }
+
+            private static func grey(_ value: CGFloat) -> NSColor {
+                NSColor(red: value / 255, green: value / 255, blue: value / 255, alpha: 1)
+            }
+
+            public static let background = adaptive(
+                "Background",
+                light: NSColor(red: 244 / 255, green: 244 / 255, blue: 247 / 255, alpha: 1),
+                dark: NSColor(red: 18 / 255, green: 18 / 255, blue: 21 / 255, alpha: 1)
+            )
+            public static let panel = adaptive(
+                "Panel",
+                light: NSColor(red: 1, green: 1, blue: 1, alpha: 0.95),
+                dark: NSColor(red: 28 / 255, green: 28 / 255, blue: 34 / 255, alpha: 0.95)
+            )
+            public static let console = adaptive(
+                "Console",
+                light: NSColor(red: 250 / 255, green: 250 / 255, blue: 252 / 255, alpha: 0.92),
+                dark: NSColor(red: 18 / 255, green: 18 / 255, blue: 22 / 255, alpha: 0.92)
+            )
+
+            public static let textPrimary = adaptive("TextPrimary", light: grey(28), dark: grey(232))
+            /// Increase Contrast resolves to the same value as `textCapsule` (GAP_ANALYSIS.md §6).
+            public static let textSecondary = adaptive(
+                "TextSecondary", light: grey(99), dark: grey(154),
+                lightContrast: grey(60), darkContrast: grey(200)
+            )
+            public static let textTertiary = adaptive("TextTertiary", light: grey(122), dark: grey(138))
+            public static let textCapsule = adaptive("TextCapsule", light: grey(60), dark: grey(200))
+
+            public static let success = adaptive(
+                "Success",
+                light: NSColor(red: 30 / 255, green: 160 / 255, blue: 78 / 255, alpha: 1),
+                dark: NSColor(red: 74 / 255, green: 222 / 255, blue: 128 / 255, alpha: 1)
+            )
+            public static let warning = adaptive(
+                "Warning",
+                light: NSColor(red: 176 / 255, green: 118 / 255, blue: 12 / 255, alpha: 1),
+                dark: NSColor(red: 245 / 255, green: 181 / 255, blue: 68 / 255, alpha: 1)
+            )
+            public static let danger = adaptive(
+                "Danger",
+                light: NSColor(red: 200 / 255, green: 54 / 255, blue: 54 / 255, alpha: 1),
+                dark: NSColor(red: 1, green: 128 / 255, blue: 128 / 255, alpha: 1)
+            )
+            public static let link = adaptive(
+                "Link",
+                light: NSColor(red: 36 / 255, green: 84 / 255, blue: 214 / 255, alpha: 1),
+                dark: NSColor(red: 154 / 255, green: 180 / 255, blue: 1, alpha: 1)
+            )
+
+            /// Increase Contrast raises this to .35 (GAP_ANALYSIS.md §6).
+            public static let strokeRegular = ink("StrokeRegular", 0.10, contrast: 0.35)
+            /// Increase Contrast raises this to .65 (GAP_ANALYSIS.md §6).
+            public static let strokeShell = ink("StrokeShell", 0.32, contrast: 0.65)
+            public static let strokePanel = ink("StrokePanel", 0.14)
+            public static let strokeBadge = ink("StrokeBadge", 0.25)
+            public static let strokeSelectedChip = ink("StrokeSelectedChip", 0.40)
+            public static let strokeHotShell = ink("StrokeHotShell", 0.80)
+            /// Pairs with `Shadow.shelfCard`'s 1px ring (SCREENS.md S2).
+            public static let strokeShelfCardRing = ink("StrokeShelfCardRing", 0.12)
+
+            public static let fillShell = ink("FillShell", 0.02)
+            public static let fillNavPill = ink("FillNavPill", 0.06)
+            public static let fillSelectedChip = ink("FillSelectedChip", 0.14)
+            public static let fillSelectedNavItem = ink("FillSelectedNavItem", 0.16)
+
+            public static let dropHighlight = success.opacity(0.22)
+            public static let dropHighlightGlow = success.opacity(0.45)
+            /// Over a wallpaper thumbnail, so it stays a dark scrim in both appearances.
+            public static let playbackControlFill = Color.black.opacity(0.55)
+            public static let gradientStageBottom = Color.black.opacity(0.7)
+            public static let gradientCardBottom = Color.black.opacity(0.5)
+            /// Separates the shelf from the stage; a hard black band is too heavy on a light canvas.
+            public static let shelfScrim = adaptive(
+                "ShelfScrim",
+                light: .black.withAlphaComponent(0.10), dark: .black.withAlphaComponent(0.35)
+            )
+            public static let dotGrid = ink("DotGrid", 0.06)
+        }
+
+        // MARK: Corner
+
+        public enum Corner {
+            public static let content: CGFloat = 3
+            public static let badge: CGFloat = 3
+            public static let shelfCard: CGFloat = 6
+            public static let playbackControl: CGFloat = 6
+            public static let gridCard: CGFloat = 8
+            public static let shell: CGFloat = 8
+            /// MacBook shell only: top corners; `shellBuiltinBottom` for the bottom pair
+            /// (`radius 9 9 3 3` in SCREENS.md S1).
+            public static let shellBuiltinTop: CGFloat = 9
+            public static let shellBuiltinBottom: CGFloat = 3
+            /// MacBook notch: bottom corners only (`radius 0 0 5 5` in SCREENS.md S1).
+            public static let notch: CGFloat = 5
+            public static let panel: CGFloat = 10
+            public static let panelLarge: CGFloat = 12
+            public static let statusExpanded: CGFloat = 14
+            public static let modal: CGFloat = 18
+            public static let capsule: CGFloat = 99
+        }
+
+        // MARK: Shadow
+
+        public struct Shadow: Sendable {
+            public let color: Color
+            public let radius: CGFloat
+            public let y: CGFloat
+
+            public static let shell = Shadow(color: .black.opacity(0.22), radius: 14, y: 5)
+            public static let modal = Shadow(color: .black.opacity(0.7), radius: 140, y: 60)
+            public static let hoverCard = Shadow(color: .black.opacity(0.4), radius: 28, y: 14)
+            public static let shelfCard = Shadow(color: .black.opacity(0.3), radius: 14, y: 6)
+        }
+
+        // MARK: Spacing
+
+        public enum Spacing {
+            public static let s8: CGFloat = 8
+            public static let s12: CGFloat = 12
+            public static let s14: CGFloat = 14
+            public static let gridGap: CGFloat = 12
+            public static let workshopGridGap: CGFloat = 14
+            public static let gutter: CGFloat = 24
+            public static let topBar: CGFloat = 56
+        }
+
+        // MARK: Typography
+
+        public enum Typography {
+            public static let badgeMono = Font.system(size: 9, design: .monospaced)
+            public static let metaMono = Font.system(size: 10, design: .monospaced)
+            public static let chip = Font.system(size: 11)
+            public static let body = Font.system(size: 12)
+            public static let cardTitle = Font.system(size: 11, weight: .semibold)
+            public static let stageTitle = Font.system(size: 13, weight: .semibold)
+            public static let modalTitle = Font.system(size: 22, weight: .bold)
+            public static let navItem = Font.system(size: 12)
+        }
     }
 }

@@ -33,5 +33,6 @@ extension ScreenManager {
         case .scene(let descriptor):
             setSceneWallpaper(descriptor: descriptor, origin: bookmark.wpeOrigin, for: screen)
         }
+        BookmarkStore.shared.touch(bookmark.id)
     }
 }

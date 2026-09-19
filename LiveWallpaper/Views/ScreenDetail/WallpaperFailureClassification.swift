@@ -43,6 +43,16 @@ enum WallpaperFailureClass: Equatable {
         case .degraded: "Some layers were skipped"
         }
     }
+
+    /// Same copy as `kicker`, resolved for CALayer text that cannot take a `LocalizedStringKey`.
+    var kickerText: String {
+        switch self {
+        case .fatal: String(localized: "Can't run on this Mac", bundle: .appLanguage)
+        case .blocked: String(localized: "This wallpaper didn't load", bundle: .appLanguage)
+        case .needsParts: String(localized: "Something is missing", bundle: .appLanguage)
+        case .degraded: String(localized: "Some layers were skipped", bundle: .appLanguage)
+        }
+    }
 }
 
 enum WallpaperFailureRecovery: Equatable, Hashable {

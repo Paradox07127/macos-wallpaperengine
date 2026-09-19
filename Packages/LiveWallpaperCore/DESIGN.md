@@ -68,6 +68,76 @@ Strokes: `quietStroke` .28 · `strongStroke` .55 · `alertStroke` .75 ·
 literal. Decorative one-off opacities (shadows, gradient stops, scrims) stay
 literal by design; see the W2-B5 ledger for the adjudication.
 
+## Edit Desk (`DesignTokens.EditDesk`)
+
+Fixed-dark tokens for the Edit Desk rebuild (`.notes/design_handoff_loomscreen_redesign`). Values are literal design px/hex, not the adaptive scale above — the window forces dark and never runs Dynamic Type. Three color tokens carry an Increase Contrast branch (see GAP_ANALYSIS.md §6); everything else is a fixed value.
+
+| Token | Value | Source |
+| --- | --- | --- |
+| `Colors.background` | `#121215` | README Tokens #1 |
+| `Colors.panel` | `rgba(28,28,34,.95)` | README Tokens #1 |
+| `Colors.console` | `rgba(18,18,22,.92)` | README Tokens #1 |
+| `Colors.textPrimary` | `#e8e8ec` | README Tokens #2 |
+| `Colors.textSecondary` | `#9a9aa3`; Increase Contrast → `#c8c8cf` | README Tokens #2; GAP_ANALYSIS §6 |
+| `Colors.textTertiary` | `#8a8a93` | README Tokens #2 |
+| `Colors.textCapsule` | `#c8c8cf` | SCREENS S1 (方案胶囊 / status text) |
+| `Colors.success` | `#4ade80` | README Tokens #3 |
+| `Colors.warning` | `#f5b544` | README Tokens #3 |
+| `Colors.danger` | `#ff8080` | README Tokens #3 |
+| `Colors.link` | `#9ab4ff` | README Tokens #3 |
+| `Colors.strokeRegular` | white `.10`; Increase Contrast → `.35` | README Tokens #4; GAP_ANALYSIS §6 |
+| `Colors.strokeShell` | white `.32`; Increase Contrast → `.65` | README Tokens #4; GAP_ANALYSIS §6 |
+| `Colors.strokePanel` | white `.14` | README Tokens #4 |
+| `Colors.strokeBadge` | white `.25` | SCREENS S1 (type badge border) |
+| `Colors.strokeSelectedChip` | white `.40` | SCREENS S6 (selected console chip border) |
+| `Colors.strokeHotShell` | white `.80` | SCREENS S2 / MOTION (hovered shelf card outline) |
+| `Colors.strokeShelfCardRing` | white `.12` | SCREENS S2 (shelf card shadow ring) |
+| `Colors.fillShell` | white `.02` | SCREENS S1 (display shell background) |
+| `Colors.fillNavPill` | white `.06` | SCREENS S1 (nav pill / import capsule) |
+| `Colors.fillSelectedChip` | white `.14` | SCREENS S6 (selected console chip fill) |
+| `Colors.fillSelectedNavItem` | white `.16` | SCREENS S1 (selected nav item) |
+| `Colors.dropHighlight` | `rgba(74,222,128,.22)` | SCREENS S1/S5 (drop target overlay) |
+| `Colors.dropHighlightGlow` | `rgba(74,222,128,.45)` | SCREENS S5 (drop target glow) |
+| `Colors.playbackControlFill` | `rgba(0,0,0,.55)` | SCREENS S1 (hover playback controls) |
+| `Colors.gradientStageBottom` | black `.7` | SCREENS S1 (screen content bottom gradient) |
+| `Colors.gradientCardBottom` | black `.5` | SCREENS S2 (shelf card bottom gradient) |
+| `Colors.dotGrid` | `rgba(255,255,255,.06)` | README Tokens; SCREENS S1 (stage dot grid) |
+| `Corner.content` | 3 | README Tokens #5 |
+| `Corner.badge` | 3 | SCREENS S1 (type badge) |
+| `Corner.shelfCard` | 6 | README Tokens #5 |
+| `Corner.playbackControl` | 6 | SCREENS S1 (playback buttons) |
+| `Corner.gridCard` | 8 | README Tokens #5 |
+| `Corner.shell` | 8 | README Tokens #5 |
+| `Corner.shellBuiltinTop` | 9 | SCREENS S1 (MacBook shell top) |
+| `Corner.shellBuiltinBottom` | 3 | SCREENS S1 (MacBook shell bottom) |
+| `Corner.notch` | 5 | SCREENS S1 (MacBook notch bottom corners) |
+| `Corner.panel` | 10 | README Tokens #5 |
+| `Corner.panelLarge` | 12 | README Tokens #5 |
+| `Corner.statusExpanded` | 14 | SCREENS S1 (status capsule, expanded) |
+| `Corner.modal` | 18 | README Tokens #5 |
+| `Corner.capsule` | 99 | README Tokens #5 |
+| `Shadow.shell` | `0 30px 80px rgba(0,0,0,.6)` | README Tokens #6 |
+| `Shadow.modal` | `0 60px 140px rgba(0,0,0,.7)` | README Tokens #6 |
+| `Shadow.hoverCard` | `0 30px 60px rgba(0,0,0,.7)` | README Tokens #6 |
+| `Shadow.shelfCard` | `0 14px 30px rgba(0,0,0,.6)` (+ `strokeShelfCardRing`) | SCREENS S2 |
+| `Spacing.s8` | 8 | README Tokens #7 |
+| `Spacing.s12` | 12 | README Tokens #7 |
+| `Spacing.s14` | 14 | README Tokens #7 |
+| `Spacing.gutter` | 24 | README Tokens #7 |
+| `Spacing.topBar` | 56 | README Tokens #7 |
+| `Spacing.gridGap` | 12 | SCREENS S3 (library grid gap) |
+| `Spacing.workshopGridGap` | 14 | SCREENS S8 (Workshop grid gap) |
+| `Typography.badgeMono` | 9pt monospaced | README Tokens #2/#8 |
+| `Typography.metaMono` / `DesignTokens.Typography.microMono` | 10pt monospaced | README Tokens #2/#8 |
+| `Typography.chip` | 11pt | README Tokens #8 |
+| `Typography.body` | 12pt | README Tokens #8 |
+| `Typography.cardTitle` | 11pt semibold | README Tokens #8 |
+| `Typography.stageTitle` | 13pt semibold | README Tokens #8 |
+| `Typography.modalTitle` | 22pt bold | README Tokens #8 |
+| `Typography.navItem` | 12pt | SCREENS S1 (nav pill item) |
+
+Not tokenized: blur radii (6/30/70/80), the modal scrim `rgba(8,8,10,.62)`, glow radii, and one-off component geometry (capsule widths/heights, panel paddings) — these are single-use layout/effect parameters for views this work package does not implement, not reusable design-system steps.
+
 ## Hard rules
 
 1. **No inline fonts** for text. Never `.font(.system(size:))` / `.font(.custom())` on `Text`/`Label` — use `DesignTokens.Typography`. (SF Symbol glyph sizing is exempt: a standalone `Image(systemName:)` may use `.font(.system(size:))` for precise sizing, or adopt a Typography token when it sits inline with text so the two scale together.)
@@ -81,3 +151,4 @@ literal by design; see the W2-B5 ledger for the adjudication.
 9. **Expensive sliders coalesce.** A `Slider` whose binding persists config, rebuilds filters/overlays, or touches a render session must be `CoalescedSlider` (or an explicit release-only commit). `step:` detents stay under 1000 (`PropertyValueLogic`). Wide ranges pair the slider with an editable value field.
 10. **Pages use a skeleton template** (contracts §3.1): settings form → `Form` + `.settingsFormChrome()`; library/detail column → `DetailPageScaffold`; sheets → shared header + `SheetFooterBar` (hero-type sheets → `HeroScaffold`); popovers → `.settingsPopoverChrome`; empty states → `IllustratedEmptyState`. New pages that fit none: ask before inventing a skeleton.
 11. **Glass placement is version-tiered by position** (contracts §4): chrome/badges/toasts go through `AdaptiveGlass`; Form content areas and inspectors never take glass (HIG: no Liquid Glass in the content layer); the appex (deploys at 26.0) writes the 26+ path unconditionally. Enforced by `glass_outside_wrapper` / `material_outside_wrapper` / `appex_tautological_availability` lint rules.
+12. **One component per role — with one named exemption.** `ShelfCard` (Edit Desk stage/shelf) is a deliberate second card implementation beside `GalleryTileChrome`: the shelf animates 14 tilted cards in a CALayer tree, where SwiftUI views can't hit the frame budget. It must build its colors from `DesignTokens.EditDesk` values converted to `CGColor`, never a fresh literal. No other CALayer card may be added without extending this exemption (GAP_ANALYSIS.md D7).
