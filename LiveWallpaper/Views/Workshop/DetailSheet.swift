@@ -54,6 +54,7 @@ struct WorkshopInspectorContent: View {
         GroupBox {
             VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
                 actionsColumn
+                bookmarkButton
                 downloadStatusNote
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -187,6 +188,19 @@ struct WorkshopInspectorContent: View {
             secondaryActionButton("Copy ID", systemImage: "doc.on.doc") { copy(String(item.id)) }
             secondaryActionButton("Open in Steam", systemImage: "safari") { openURL(item.steamCommunityURL) }
         }
+    }
+
+    private var bookmarkButton: some View {
+        let isBookmarked = WorkshopBookmarkActions.contains(item.id)
+        return Button {
+            WorkshopBookmarkActions.toggle(item)
+        } label: {
+            Label(isBookmarked ? "Remove Bookmark" : "Add Bookmark",
+                  systemImage: isBookmarked ? "bookmark.fill" : "bookmark")
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.bordered)
+        .disabled(item.isBanned && !isBookmarked)
     }
 
     private func secondaryActionButton(

@@ -14,6 +14,7 @@ struct BrowseCard: View, Equatable {
             && lhs.cardPreferences == rhs.cardPreferences
             && lhs.reduceMotion == rhs.reduceMotion
             && lhs.canDownload == rhs.canDownload
+            && lhs.isBookmarked == rhs.isBookmarked
     }
 
     let item: WorkshopQueryItem
@@ -28,6 +29,8 @@ struct BrowseCard: View, Equatable {
     /// not a read of `WorkshopDownloadCoordinator`: observing it here would tie every
     /// visible card to the progress ticks of whichever download is running.
     var canDownload: Bool = false
+    var isBookmarked: Bool = false
+    var onBookmark: () -> Void = {}
     var onSelect: () -> Void = {}
     var onDownload: () -> Void = {}
 
@@ -56,6 +59,22 @@ struct BrowseCard: View, Equatable {
         }
         .buttonStyle(.plain)
         .galleryTileChrome(isHovering: isHovered, isSelected: isSelected, cornerRadius: DesignTokens.Corner.lg, reduceMotion: reduceMotion)
+        .overlay(alignment: .bottomTrailing) {
+            if !shouldBlur {
+                Button(action: onBookmark) {
+                    Image(systemName: isBookmarked ? "bookmark.fill" : "bookmark")
+                        .foregroundStyle(isBookmarked ? DesignTokens.Colors.rating : Color.primary)
+                        .padding(DesignTokens.Spacing.sm)
+                        .adaptiveGlassOverMedia(.circle)
+                }
+                .buttonStyle(.plain)
+                .disabled(item.isBanned && !isBookmarked)
+                .help(Text(isBookmarked ? "Remove Bookmark" : "Add Bookmark"))
+                .accessibilityLabel(Text(isBookmarked ? "Remove Bookmark" : "Add Bookmark"))
+                .padding(.trailing, DesignTokens.Spacing.sm)
+                .padding(.bottom, 36)
+            }
+        }
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .settledHover { isHovered = $0 }
         .settledHelp(Text(verbatim: item.title), isHovering: isHovered)
@@ -65,6 +84,10 @@ struct BrowseCard: View, Equatable {
         .accessibilityHint(shouldBlur
             ? Text("Mature content hidden. Activate to reveal.")
             : Text("Show details"))
+        .accessibilityAction(named: Text(isBookmarked ? "Remove Bookmark" : "Add Bookmark")) {
+            guard isBookmarked || !item.isBanned else { return }
+            onBookmark()
+        }
         .accessibilityAction(named: Text("Download")) {
             guard canDownload, !item.isBanned else { return }
             onDownload()
@@ -186,6 +209,14 @@ struct BrowseCard: View, Equatable {
 
     @ViewBuilder
     private var contextMenuItems: some View {
+        Button(action: onBookmark) {
+            Label(isBookmarked ? "Remove Bookmark" : "Add Bookmark",
+                  systemImage: isBookmarked ? "bookmark.fill" : "bookmark")
+        }
+        .disabled(item.isBanned && !isBookmarked)
+
+        Divider()
+
         Button(action: onDownload) {
             Label("Download", systemImage: "arrow.down.circle")
         }
@@ -300,6 +331,9 @@ struct BrowseCard: View, Equatable {
         }
         if let size = formattedSize {
             parts.append(size)
+        }
+        if isBookmarked {
+            parts.append(String(localized: "Bookmarked", bundle: .appLanguage, comment: "Workshop item is saved locally."))
         }
         if isInLibrary {
             parts.append(String(localized: "In Library", bundle: .appLanguage, comment: "Workshop card VoiceOver: item is already downloaded to the local library."))

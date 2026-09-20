@@ -128,3 +128,7 @@ preset keeps your changes.
 - Revisit **Settings → Performance**: pause rules (full-screen, battery, Low Power Mode, occlusion), per-app exceptions — including **never pause** for apps that should always keep the wallpaper alive — and the video RAM preload budget.
 - Export a `.lwconfig` backup from **Settings → Backup & Restore**. It saves settings and references, not the media files or secrets. Lite cannot run scene entries from a Pro backup.
 - Hit an edge case? **Settings → About → Report a Bug…** pre-fills diagnostics.
+
+## Save Workshop wallpapers for later
+
+Use the bookmark button on a Workshop catalog card, its context menu, or the detail view to save a wallpaper before downloading it. Saved → Bookmarks includes a Workshop Bookmarks section where you can open details and download later. Saving is local and does not download, subscribe to, or apply the item. Existing local bookmarks and the Schemes tab remain available. Workshop bookmark metadata is currently not included in .lwconfig exports.

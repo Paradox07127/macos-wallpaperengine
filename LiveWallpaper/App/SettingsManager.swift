@@ -553,6 +553,10 @@ final class SettingsManager {
         defaults.removeObject(forKey: "monitor.source.claude.bookmark")      // SourceAuthorization
         defaults.removeObject(forKey: "monitor.source.codex.bookmark")       // SourceAuthorization
 
+        defaults.removeObject(forKey: WorkshopBookmarkStore.preferencesKey)
+        #if !LITE_BUILD
+        WorkshopBookmarkStore.shared.resetAfterSettingsCleared()
+        #endif
         BookmarkStore.shared.resetAfterSettingsCleared()
         SchemeStore.shared.resetAfterSettingsCleared()
         // The archives are gone, so every cover file they named is orphaned.
