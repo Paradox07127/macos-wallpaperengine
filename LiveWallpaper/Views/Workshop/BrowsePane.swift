@@ -56,6 +56,7 @@ struct BrowsePane: View {
             inspector: { width in inspectorColumn(width: width) }
         )
         .background(DesignTokens.Colors.pageBackground)
+        .modifier(WorkshopBookmarkErrorModifier())
         .toolbar {
             if selectedID != nil {
                 ToolbarItem(placement: .primaryAction) {
@@ -328,6 +329,8 @@ struct BrowsePane: View {
             cardPreferences: cardPreferences,
             reduceMotion: reduceMotion,
             canDownload: doctor.isDownloadReady,
+            isBookmarked: WorkshopBookmarkActions.contains(item.id),
+            onBookmark: { WorkshopBookmarkActions.toggle(item) },
             onSelect: {
                 if selectedID == item.id {
                     selectedID = nil
