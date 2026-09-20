@@ -36,7 +36,8 @@ final class DragGhostLayer {
         layer.isHidden = true
     }
 
-    func begin(card: StageCard, at point: CGPoint) {
+    func begin(card: StageCard, at point: CGPoint, reduceMotion: Bool) {
+        layer.removeAnimation(forKey: "opacity")
         source = card.id
         image.contents = card.thumbnail
         x.jump(to: point.x)
@@ -46,10 +47,13 @@ final class DragGhostLayer {
         destination = nil
         layer.opacity = 1
         layer.isHidden = false
-        render()
+        render(reduceMotion: reduceMotion)
+        if reduceMotion {
+            StageLayerStyle.fadeOpacity(layer, from: 0)
+        }
     }
 
-    func render() {
+    func render(reduceMotion: Bool) {
         guard source != nil else { return }
         var rect = CGRect(
             x: x.value - Self.size.width / 2, y: y.value - Self.size.height / 2,
@@ -68,7 +72,7 @@ final class DragGhostLayer {
         layer.transform = CATransform3DIdentity
         layer.frame = rect
         image.frame = layer.bounds
-        let rotation = -5 * .pi / 180 * (1 - flight.value)
+        let rotation = reduceMotion ? 0 : -5 * .pi / 180 * (1 - flight.value)
         layer.transform = CATransform3DScale(CATransform3DMakeRotation(rotation, 0, 0, 1), scale.value, scale.value, 1)
         layer.shadowPath = CGPath(
             roundedRect: layer.bounds, cornerWidth: DesignTokens.EditDesk.Corner.shelfCard,
@@ -76,9 +80,19 @@ final class DragGhostLayer {
         )
     }
 
-    func finish() {
+    func finish(reduceMotion: Bool = false) {
         source = nil
         destination = nil
-        layer.isHidden = true
+        x.jump(to: x.target)
+        y.jump(to: y.target)
+        scale.jump(to: 1)
+        flight.jump(to: flight.target)
+        if reduceMotion {
+            let opacity = layer.opacity
+            layer.opacity = 0
+            StageLayerStyle.fadeOpacity(layer, resumingFrom: opacity)
+        } else {
+            layer.isHidden = true
+        }
     }
 }

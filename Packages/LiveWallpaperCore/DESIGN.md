@@ -83,6 +83,7 @@ Fixed-dark tokens for the Edit Desk rebuild (`.notes/design_handoff_loomscreen_r
 | `Colors.textCapsule` | `#c8c8cf` | SCREENS S1 (方案胶囊 / status text) |
 | `Colors.success` | `#4ade80` | README Tokens #3 |
 | `Colors.warning` | `#f5b544` | README Tokens #3 |
+| `Colors.sceneGroupLayers/Effects/Colors` | `#60a5fa` / `#c084fc` / `#f5b544` | S6 scene sections; adaptive light `#2563eb` / `#9333ea` / `#b0760c` |
 | `Colors.danger` | `#ff8080` | README Tokens #3 |
 | `Colors.link` | `#9ab4ff` | README Tokens #3 |
 | `Colors.strokeRegular` | white `.10`; Increase Contrast → `.35` | README Tokens #4; GAP_ANALYSIS §6 |
@@ -102,6 +103,14 @@ Fixed-dark tokens for the Edit Desk rebuild (`.notes/design_handoff_loomscreen_r
 | `Colors.gradientStageBottom` | black `.7` | SCREENS S1 (screen content bottom gradient) |
 | `Colors.gradientCardBottom` | black `.5` | SCREENS S2 (shelf card bottom gradient) |
 | `Colors.dotGrid` | `rgba(255,255,255,.06)` | README Tokens; SCREENS S1 (stage dot grid) |
+| `Colors.modalScrim` | `rgba(8,8,10,.62)`; light `.32` black | SCREENS S4 (modal scrim) |
+| `Colors.modalPanel` | `rgba(22,22,26,.98)` | SCREENS S4 (modal background) |
+| `Colors.mediaChipFill` | black `.6` (fixed) | SCREENS S4/S5 (preview chips, ⌘n badges) |
+| `Colors.tagChipFill` | `rgba(0,0,0,.55)` (fixed) | SCREENS S4 (tag chips) |
+| `Colors.fillSecondaryButton` | white `.10` | SCREENS S4 (secondary apply button) |
+| `Colors.fillTertiaryButton` | white `.06` | SCREENS S4 (＋ / … buttons) |
+| `Colors.fillFloatButton` | white `.08` | SCREENS S5 (⧉ all displays) |
+| `Colors.primaryButtonFill` / `primaryButtonText` | white / black (inverted in light) | SCREENS S4 (primary apply button) |
 | `Corner.content` | 3 | README Tokens #5 |
 | `Corner.badge` | 3 | SCREENS S1 (type badge) |
 | `Corner.shelfCard` | 6 | README Tokens #5 |
@@ -116,10 +125,14 @@ Fixed-dark tokens for the Edit Desk rebuild (`.notes/design_handoff_loomscreen_r
 | `Corner.statusExpanded` | 14 | SCREENS S1 (status capsule, expanded) |
 | `Corner.modal` | 18 | README Tokens #5 |
 | `Corner.capsule` | 99 | README Tokens #5 |
+| `Corner.floatPanel` | 16 | SCREENS S5 |
+| `Corner.button` | 9 | SCREENS S4 (bottom-bar buttons) |
+| `Corner.chip` | 5 | SCREENS S4/S5 (preview chips, float thumbnails) |
 | `Shadow.shell` | `0 30px 80px rgba(0,0,0,.6)` | README Tokens #6 |
 | `Shadow.modal` | `0 60px 140px rgba(0,0,0,.7)` | README Tokens #6 |
 | `Shadow.hoverCard` | `0 30px 60px rgba(0,0,0,.7)` | README Tokens #6 |
 | `Shadow.shelfCard` | `0 14px 30px rgba(0,0,0,.6)` (+ `strokeShelfCardRing`) | SCREENS S2 |
+| `Shadow.floatPanel` | `0 20px 50px rgba(0,0,0,.5)` | SCREENS S5 |
 | `Spacing.s8` | 8 | README Tokens #7 |
 | `Spacing.s12` | 12 | README Tokens #7 |
 | `Spacing.s14` | 14 | README Tokens #7 |
@@ -135,8 +148,12 @@ Fixed-dark tokens for the Edit Desk rebuild (`.notes/design_handoff_loomscreen_r
 | `Typography.stageTitle` | 13pt semibold | README Tokens #8 |
 | `Typography.modalTitle` | 22pt bold | README Tokens #8 |
 | `Typography.navItem` | 12pt | SCREENS S1 (nav pill item) |
+| `Typography.libraryModalTitle` | 20pt bold | SCREENS S4 (library modal title) |
+| `Typography.button` | 13pt bold | SCREENS S4 (bottom-bar buttons) |
+| `Typography.floatName` | 10pt semibold | SCREENS S5 (thumbnail name) |
+| `Typography.dropLabel` | 11pt bold | SCREENS S5 (「松手替换」) |
 
-Not tokenized: blur radii (6/30/70/80), the modal scrim `rgba(8,8,10,.62)`, glow radii, and one-off component geometry (capsule widths/heights, panel paddings) — these are single-use layout/effect parameters for views this work package does not implement, not reusable design-system steps.
+Not tokenized: blur radii (6/30/70/80), glow radii, and one-off component geometry (capsule widths/heights, panel paddings) — these are single-use layout/effect parameters for views this work package does not implement, not reusable design-system steps.
 
 ## Hard rules
 

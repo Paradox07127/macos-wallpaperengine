@@ -290,6 +290,16 @@ struct ShelfGestureControllerTests {
         #expect(ShelfGestureController.keyTarget(up: true, progress: 2) == 2)
     }
 
+    @Test("Shelf arrows select adjacent cards and stop at the library boundaries")
+    func cardKeys() {
+        #expect(ShelfGestureController.nextCardIndex(right: true, focusedIndex: nil, count: 4) == 0)
+        #expect(ShelfGestureController.nextCardIndex(right: true, focusedIndex: 1, count: 4) == 2)
+        #expect(ShelfGestureController.nextCardIndex(right: false, focusedIndex: 1, count: 4) == 0)
+        #expect(ShelfGestureController.nextCardIndex(right: false, focusedIndex: 0, count: 4) == 0)
+        #expect(ShelfGestureController.nextCardIndex(right: true, focusedIndex: 3, count: 4) == 3)
+        #expect(ShelfGestureController.nextCardIndex(right: true, focusedIndex: nil, count: 0) == nil)
+    }
+
     @Test("Dragging starts at six points, never five")
     func dragThreshold() {
         let gesture = ShelfGestureController(clock: { 0 })

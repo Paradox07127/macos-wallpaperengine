@@ -175,7 +175,9 @@ struct SettingsWindowLayoutTests {
         let previewArea = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/PreviewArea.swift")
         let sceneDetail = try Self.readSourceFile("LiveWallpaper/Views/ScreenDetail/SceneDetailView.swift")
 
-        #expect(previewArea.contains("values: VideoFitMode.videoModes"))
+        // The shared picker takes the list; video's three modes are its default, so the old page's
+        // call site cannot pick up Center without saying so.
+        #expect(previewArea.contains("var modes: [VideoFitMode] = VideoFitMode.videoModes"))
         #expect(!previewArea.contains("VideoFitMode.sceneModes"))
         #expect(sceneDetail.contains("values: VideoFitMode.sceneModes"))
 

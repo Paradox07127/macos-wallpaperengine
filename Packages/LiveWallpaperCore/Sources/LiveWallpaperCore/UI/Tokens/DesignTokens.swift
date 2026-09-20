@@ -168,6 +168,19 @@ public enum DesignTokens {
         public static let horizontalPadding: CGFloat = LibraryFilterBar.horizontalPadding
         public static let verticalPadding: CGFloat = Spacing.cardInset
 
+        public static func tileFrame(
+            index: Int, size: LibraryTileSize, aspect: Aspect, fitting width: CGFloat, tileAspectRatio: CGFloat
+        ) -> CGRect {
+            let count = columns(for: size, aspect: aspect, fitting: width).count
+            let tileWidth = columnWidth(for: size, aspect: aspect)
+            let tileHeight = tileWidth / tileAspectRatio
+            return CGRect(
+                x: CGFloat(index % count) * (tileWidth + spacing),
+                y: CGFloat(index / count) * (tileHeight + spacing),
+                width: tileWidth, height: tileHeight
+            )
+        }
+
         /// As many fixed columns as `width` holds, never fewer than one.
         public static func columns(for size: LibraryTileSize, aspect: Aspect, fitting width: CGFloat) -> [GridItem] {
             let column = columnWidth(for: size, aspect: aspect)
@@ -426,6 +439,21 @@ public enum DesignTokens {
                 light: NSColor(red: 176 / 255, green: 118 / 255, blue: 12 / 255, alpha: 1),
                 dark: NSColor(red: 245 / 255, green: 181 / 255, blue: 68 / 255, alpha: 1)
             )
+            public static let sceneGroupLayers = adaptive(
+                "SceneGroupLayers",
+                light: NSColor(red: 37 / 255, green: 99 / 255, blue: 235 / 255, alpha: 1),
+                dark: NSColor(red: 96 / 255, green: 165 / 255, blue: 250 / 255, alpha: 1)
+            )
+            public static let sceneGroupEffects = adaptive(
+                "SceneGroupEffects",
+                light: NSColor(red: 147 / 255, green: 51 / 255, blue: 234 / 255, alpha: 1),
+                dark: NSColor(red: 192 / 255, green: 132 / 255, blue: 252 / 255, alpha: 1)
+            )
+            public static let sceneGroupColors = adaptive(
+                "SceneGroupColors",
+                light: NSColor(red: 176 / 255, green: 118 / 255, blue: 12 / 255, alpha: 1),
+                dark: NSColor(red: 245 / 255, green: 181 / 255, blue: 68 / 255, alpha: 1)
+            )
             public static let danger = adaptive(
                 "Danger",
                 light: NSColor(red: 200 / 255, green: 54 / 255, blue: 54 / 255, alpha: 1),
@@ -465,6 +493,28 @@ public enum DesignTokens {
                 light: .black.withAlphaComponent(0.10), dark: .black.withAlphaComponent(0.35)
             )
             public static let dotGrid = ink("DotGrid", 0.06)
+
+            /// S4 scrim: the design's near-black `.62` blacks out a light canvas, so light halves it.
+            public static let modalScrim = adaptive(
+                "ModalScrim",
+                light: .black.withAlphaComponent(0.32),
+                dark: NSColor(red: 8 / 255, green: 8 / 255, blue: 10 / 255, alpha: 0.62)
+            )
+            public static let modalPanel = adaptive(
+                "ModalPanel",
+                light: NSColor(red: 1, green: 1, blue: 1, alpha: 0.98),
+                dark: NSColor(red: 22 / 255, green: 22 / 255, blue: 26 / 255, alpha: 0.98)
+            )
+            /// Chips over the modal preview and float thumbnails (`bg .6`); fixed like every on-media colour.
+            public static let mediaChipFill = Color.black.opacity(0.6)
+            /// Tag chips over the modal preview (`rgba(0,0,0,.55)`).
+            public static let tagChipFill = Color.black.opacity(0.55)
+            public static let fillSecondaryButton = ink("FillSecondaryButton", 0.10)
+            public static let fillTertiaryButton = ink("FillTertiaryButton", 0.06)
+            public static let fillFloatButton = ink("FillFloatButton", 0.08)
+            /// S4 primary button: white on black in dark, inverted in light.
+            public static let primaryButtonFill = adaptive("PrimaryButtonFill", light: .black, dark: .white)
+            public static let primaryButtonText = adaptive("PrimaryButtonText", light: .white, dark: .black)
         }
 
         // MARK: Corner
@@ -486,6 +536,9 @@ public enum DesignTokens {
             public static let panelLarge: CGFloat = 12
             public static let statusExpanded: CGFloat = 14
             public static let modal: CGFloat = 18
+            public static let floatPanel: CGFloat = 16
+            public static let button: CGFloat = 9
+            public static let chip: CGFloat = 5
             public static let capsule: CGFloat = 99
         }
 
@@ -497,9 +550,10 @@ public enum DesignTokens {
             public let y: CGFloat
 
             public static let shell = Shadow(color: .black.opacity(0.22), radius: 14, y: 5)
-            public static let modal = Shadow(color: .black.opacity(0.7), radius: 140, y: 60)
+            public static let modal = Shadow(color: .black.opacity(0.7), radius: 70, y: 30)
             public static let hoverCard = Shadow(color: .black.opacity(0.4), radius: 28, y: 14)
             public static let shelfCard = Shadow(color: .black.opacity(0.3), radius: 14, y: 6)
+            public static let floatPanel = Shadow(color: .black.opacity(0.5), radius: 50, y: 20)
         }
 
         // MARK: Spacing
@@ -525,6 +579,10 @@ public enum DesignTokens {
             public static let stageTitle = Font.system(size: 13, weight: .semibold)
             public static let modalTitle = Font.system(size: 22, weight: .bold)
             public static let navItem = Font.system(size: 12)
+            public static let libraryModalTitle = Font.system(size: 20, weight: .bold)
+            public static let button = Font.system(size: 13, weight: .bold)
+            public static let floatName = Font.system(size: 10, weight: .semibold)
+            public static let dropLabel = Font.system(size: 11, weight: .bold)
         }
     }
 }

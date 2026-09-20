@@ -17,8 +17,16 @@ struct EditDeskStageModelTests {
             log.append("fly \(display) → \(Int(rectInWindow.minX)),\(Int(rectInWindow.minY))")
         }
 
+        func updateFlightDestination(display: StageDisplay.ID, to rectInWindow: CGRect) {
+            log.append("retarget \(display) → \(Int(rectInWindow.minX)),\(Int(rectInWindow.minY))")
+        }
+
         func returnTile(display: StageDisplay.ID) async {
             log.append("return \(display)")
+        }
+
+        func setTileConcealed(display: StageDisplay.ID, _ concealed: Bool) {
+            log.append("conceal \(display) \(concealed)")
         }
 
         func crossfadeCover(display: StageDisplay.ID, to image: CGImage, duration: TimeInterval) {
@@ -65,6 +73,8 @@ struct EditDeskStageModelTests {
         model.setProgress(0.5, animated: true)
         #expect(model.progress == 0, "The engine owns the animated value; the model waits for its report")
         await model.flyTile(display: 7, to: CGRect(x: 230, y: 76, width: 820, height: 461))
+        model.setTileConcealed(display: 7, true)
+        model.setTileConcealed(display: 7, false)
         await model.returnTile(display: 7)
         try model.crossfadeCover(display: 7, to: Self.makeImage(), duration: 0.45)
         model.shake(card: "card-a")
@@ -72,6 +82,8 @@ struct EditDeskStageModelTests {
         #expect(engine.log == [
             "progress 0.5 animated=true",
             "fly 7 → 230,76",
+            "conceal 7 true",
+            "conceal 7 false",
             "return 7",
             "crossfade 7 2×1 0.45",
             "shake card-a",

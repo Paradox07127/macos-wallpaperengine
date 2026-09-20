@@ -7,7 +7,7 @@ import Testing
 @Suite("Edit Desk apply routing", .serialized)
 @MainActor
 struct ApplyRouterTests {
-    private let manager = RecordingWallpaperApplying()
+    private let manager = ConfirmingWallpaperApplying()
     private let bookmarks = BookmarkStore(persistence: ApplyBookmarkPersistence())
 
     private func router(sceneCapable: Bool = true) -> ApplyRouter {
@@ -81,10 +81,6 @@ struct ApplyRouterTests {
         #expect(entry == nil)
         #expect(bookmark.content == .video(bookmarkData: data))
         #expect(manager.calls.count == 2)
-        #expect(manager.covers.isEmpty)
-        await waitUntil { manager.lookupCount > 0 }
-        manager.commit(bookmark.content)
-        await waitUntil { !manager.covers.isEmpty }
         #expect(manager.covers == [bookmark.id])
     }
 
@@ -103,9 +99,6 @@ struct ApplyRouterTests {
         }
         let bookmark = try #require(bookmarks.bookmarks.first)
         #expect(bookmark.content == .html(source: source, config: config))
-        await waitUntil { manager.lookupCount > 0 }
-        manager.commit(bookmark.content)
-        await waitUntil { !manager.covers.isEmpty }
         #expect(manager.covers == [bookmark.id])
     }
 
@@ -225,19 +218,80 @@ struct ApplyRouterTests {
     }
 
     @Test func newerContentPreventsCoverCapture() async throws {
+        let manager = NeverConfirmingWallpaperApplying()
+        let router = ApplyRouter(manager: manager, bookmarks: bookmarks, sceneCapable: true)
         let folder = try fixtureFolder()
         defer { try? FileManager.default.removeItem(at: folder) }
         let url = folder.appendingPathComponent("video.mp4")
         try Data([0]).write(to: url)
-        let router = router()
-        _ = await router.apply(.droppedFile(url), to: manager.screen)
-        let bookmark = try #require(bookmarks.bookmarks.first)
-        let task = Task { await router.awaitApplied(matching: bookmark.content, on: manager.screen.id, timeout: .seconds(1)) }
-        await waitUntil { manager.lookupCount >= 2 }
+        let task = Task { await router.apply(.droppedFile(url), to: manager.screen) }
+        await waitUntil { !manager.calls.isEmpty }
+        #expect(bookmarks.bookmarks.isEmpty)
         manager.commit(.html(source: .inline("replacement"), config: .default))
-        #expect(await task.value == false)
+        #expect(await task.value == ApplyReport(outcome: .failed(.applyNotConfirmed), exitedSpanMode: false))
         #expect(manager.covers.isEmpty)
+        #expect(bookmarks.bookmarks.isEmpty)
+    }
+
+    @Test func unconfirmedDropRestoresSpanWithoutSaving() async throws {
+        let manager = NeverConfirmingWallpaperApplying()
+        manager.configuration.videoDisplayMode = .spanAllDisplays
+        let router = ApplyRouter(
+            manager: manager, bookmarks: bookmarks, sceneCapable: true, confirmationTimeout: .milliseconds(200)
+        )
+        let folder = try fixtureFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let url = folder.appendingPathComponent("video.mp4")
+        try Data([0]).write(to: url)
+
+        let report = await router.apply(.droppedFile(url), to: manager.screen)
+
+        #expect(report == ApplyReport(outcome: .failed(.applyNotConfirmed), exitedSpanMode: false))
+        #expect(bookmarks.bookmarks.isEmpty)
+        #expect(manager.covers.isEmpty)
+        #expect(manager.configuration.videoDisplayMode == .spanAllDisplays)
+        #expect(manager.calls.first == .mode(.perDisplay))
+        #expect(manager.calls.last == .mode(.spanAllDisplays))
+    }
+
+    @Test func confirmedDropExitsSpanAndSaves() async throws {
+        manager.configuration.videoDisplayMode = .spanAllDisplays
+        let folder = try fixtureFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let url = folder.appendingPathComponent("video.mp4")
+        try Data([0]).write(to: url)
+
+        let report = await router().apply(.droppedFile(url), to: manager.screen)
+
+        #expect(report == ApplyReport(outcome: .applied, exitedSpanMode: true))
         #expect(bookmarks.bookmarks.count == 1)
+        #expect(manager.configuration.videoDisplayMode == .perDisplay)
+        #expect(manager.covers == bookmarks.bookmarks.map(\.id))
+    }
+
+    @Test func slowConfirmationDoesNotBlockAnotherDisplay() async {
+        let manager = NeverConfirmingWallpaperApplying()
+        let router = ApplyRouter(manager: manager, bookmarks: bookmarks, sceneCapable: true)
+        let slowContent = WallpaperContent.html(source: .inline("slow"), config: .default)
+        let fastContent = WallpaperContent.html(source: .inline("fast"), config: .default)
+        var slowReport: ApplyReport?
+        var fastReport: ApplyReport?
+        let slow = Task {
+            slowReport = await router.apply(.html(.inline("slow")), to: manager.screen)
+        }
+        await waitUntil { manager.calls.count == 1 }
+        let fast = Task {
+            fastReport = await router.apply(.html(.inline("fast")), to: manager.secondScreen)
+        }
+        await waitUntil { manager.calls.count == 2 }
+        manager.commit(fastContent, on: manager.secondScreen)
+        await waitUntil { fastReport != nil }
+        #expect(fastReport?.outcome == .applied)
+        #expect(slowReport == nil)
+        manager.commit(slowContent)
+        await slow.value
+        await fast.value
+        #expect(slowReport?.outcome == .applied)
     }
 
     private func fixtureFolder() throws -> URL {
@@ -265,12 +319,14 @@ private final class ApplyBookmarkPersistence: BookmarkPersisting {
 }
 
 private final class ApplyTestNSScreen: NSScreen {
+    var displayID: UInt32 = 1
+
     override var frame: NSRect {
         NSRect(x: 0, y: 0, width: 800, height: 600)
     }
 
     override var deviceDescription: [NSDeviceDescriptionKey: Any] {
-        [:]
+        [NSDeviceDescriptionKey("NSScreenNumber"): displayID]
     }
 
     override var localizedName: String {
@@ -279,7 +335,7 @@ private final class ApplyTestNSScreen: NSScreen {
 }
 
 @MainActor
-private final class RecordingWallpaperApplying: WallpaperApplying {
+private class RecordingWallpaperApplying: WallpaperApplying {
     enum Call: Equatable {
         case bookmark(WallpaperBookmark)
         case video(URL, Data, String?)
@@ -294,41 +350,63 @@ private final class RecordingWallpaperApplying: WallpaperApplying {
     }
 
     let screen = Screen(nsScreen: ApplyTestNSScreen())
-    lazy var configuration = ScreenConfiguration(screenID: screen.id, wallpaper: .video(bookmarkData: Data([0])))
+    let secondScreen: Screen = {
+        let nsScreen = ApplyTestNSScreen()
+        nsScreen.displayID = 2
+        return Screen(nsScreen: nsScreen)
+    }()
+
+    private lazy var configurations = [
+        screen.id: ScreenConfiguration(screenID: screen.id, wallpaper: .video(bookmarkData: Data([0]))),
+        secondScreen.id: ScreenConfiguration(screenID: secondScreen.id, wallpaper: .video(bookmarkData: Data([0]))),
+    ]
+    var configuration: ScreenConfiguration {
+        get { configurations[screen.id]! }
+        set { configurations[screen.id] = newValue }
+    }
+
     var calls: [Call] = []
     var covers: [UUID] = []
     var screenAvailable = true
     var lookupCount = 0
 
+    var screens: [Screen] {
+        screenAvailable ? [screen, secondScreen] : []
+    }
+
     func screen(withID id: CGDirectDisplayID) -> Screen? {
         lookupCount += 1
-        return screenAvailable && id == screen.id ? screen : nil
+        guard screenAvailable else { return nil }
+        return [screen, secondScreen].first { $0.id == id }
     }
 
     func getConfiguration(for screen: Screen) -> ScreenConfiguration? {
-        #expect(screen === self.screen)
-        return configuration
+        configurations[screen.id]
     }
 
     func applyBookmark(_ bookmark: WallpaperBookmark, to screen: Screen) {
         record(.bookmark(bookmark), for: screen)
+        didDispatch(bookmark.content, origin: bookmark.wpeOrigin, for: screen)
     }
 
     func setVideo(url: URL, bookmarkData: Data, packageEntryName: String?, for screen: Screen) {
         record(.video(url, bookmarkData, packageEntryName), for: screen)
+        didDispatch(.video(bookmarkData: bookmarkData, packageEntryName: packageEntryName), for: screen)
     }
 
     func setHTMLWallpaperPreservingConfig(source: HTMLSource, for screen: Screen) {
         record(.html(source), for: screen)
+        didDispatch(.html(source: source, config: configurations[screen.id]?.htmlConfig ?? .default), for: screen)
     }
 
     func applyScheme(_ scheme: ScreenScheme, to screen: Screen) {
         record(.scheme(scheme), for: screen)
+        didDispatch(scheme.configuration.activeWallpaper, origin: scheme.configuration.wpeOrigin, for: screen)
     }
 
     func updateVideoDisplayMode(_ mode: VideoDisplayMode, for screen: Screen) {
         record(.mode(mode), for: screen)
-        configuration.videoDisplayMode = mode
+        configurations[screen.id]?.videoDisplayMode = mode
     }
 
     func captureCover(forBookmark id: UUID, from screen: Screen) {
@@ -339,24 +417,37 @@ private final class RecordingWallpaperApplying: WallpaperApplying {
     #if !LITE_BUILD
     let origin = WPEOrigin(workshopID: "42", title: "Scene", originalType: .scene, sourceFolderBookmark: Data(), cacheRelativePath: nil, previewFileName: nil)
     var projectOutcome: ScreenManager.WPEProjectApplyOutcome?
+    let projectContent = WallpaperContent.scene(SceneDescriptor(
+        workshopID: "42", cacheRelativePath: "42", entryFile: "scene.json", capabilityTier: .imageOnly
+    ))
 
     func setSceneWallpaper(descriptor: SceneDescriptor, origin: WPEOrigin?, for screen: Screen) {
         record(.scene(descriptor, origin), for: screen)
+        didDispatch(.scene(descriptor), origin: origin, for: screen)
     }
 
     func importWallpaperEngineProject(at url: URL, for screen: Screen) async -> ScreenManager.WPEProjectApplyOutcome {
         record(.project(url), for: screen)
-        return projectOutcome ?? .applied(origin: origin)
+        let outcome = projectOutcome ?? .applied(origin: origin)
+        if case let .applied(origin) = outcome {
+            didDispatch(projectContent, origin: origin, for: screen)
+        }
+        return outcome
     }
 
     func activateWPEHistoryEntry(_ entry: WPEHistoryEntry, for screen: Screen) async {
         record(.workshop(entry), for: screen)
+        didDispatch(projectContent, origin: entry.origin, for: screen)
     }
     #endif
 
-    func commit(_ content: WallpaperContent) {
-        configuration.activeWallpaper = content
-        notify(screenID: screen.id)
+    func didDispatch(_: WallpaperContent, origin _: WPEOrigin? = nil, for _: Screen) {}
+
+    func commit(_ content: WallpaperContent, origin: WPEOrigin? = nil, on target: Screen? = nil) {
+        let target = target ?? screen
+        configurations[target.id]?.activeWallpaper = content
+        configurations[target.id]?.wpeOrigin = origin
+        notify(screenID: target.id)
     }
 
     func notify(screenID: CGDirectDisplayID) {
@@ -364,8 +455,21 @@ private final class RecordingWallpaperApplying: WallpaperApplying {
     }
 
     private func record(_ call: Call, for screen: Screen) {
-        #expect(screen === self.screen)
+        #expect(screen === self.screen || screen === secondScreen)
         calls.append(call)
+    }
+}
+
+@MainActor
+private final class NeverConfirmingWallpaperApplying: RecordingWallpaperApplying {}
+
+@MainActor
+private final class ConfirmingWallpaperApplying: RecordingWallpaperApplying {
+    override func didDispatch(_ content: WallpaperContent, origin: WPEOrigin? = nil, for screen: Screen) {
+        Task {
+            await Task.yield()
+            commit(content, origin: origin, on: screen)
+        }
     }
 }
 

@@ -15,9 +15,13 @@ final class ShelfCardLayer {
     private let tab = CALayer()
     private var regularRing: CGColor?
     private var gridRing: CGColor?
-    private var restShadow: CGColor?
-    private var hotShadow: CGColor?
+    /// The shadow tokens' shared hue at full alpha; their two alphas ride `shadowOpacity` instead,
+    /// which is what lets the hover darken the shadow continuously.
+    private var shadowTint: CGColor?
+    private var restShadowAlpha: CGFloat = 0
+    private var hotShadowAlpha: CGFloat = 0
     private(set) var card: StageCard?
+    private(set) var hitRect = CGRect.zero
     var lift = StageSpring(value: 0, target: 0, parameters: StageSpring.hover)
     var hover = StageSpring(value: 0, target: 0, parameters: StageSpring.hover)
     var gridProgress = StageSpring(value: 0, target: 0, parameters: StageSpring.snap)
@@ -68,6 +72,10 @@ final class ShelfCardLayer {
     }
 
     func update(card: StageCard?) {
+        if self.card?.id != card?.id {
+            layer.removeAnimation(forKey: "opacity")
+            outline.removeAnimation(forKey: "opacity")
+        }
         self.card = card
         thumbnail.contents = card?.thumbnail
         badgeWidth = StageLayerStyle.width(card?.onBadge ?? "", size: 9, mono: true) + 10
@@ -85,12 +93,15 @@ final class ShelfCardLayer {
         tab.backgroundColor = NSColor(colors.strokeHotShell).withAlphaComponent(0.2).cgColor
         regularRing = NSColor(colors.strokeShelfCardRing).cgColor
         gridRing = NSColor(colors.strokeRegular).cgColor
-        restShadow = NSColor(DesignTokens.EditDesk.Shadow.shelfCard.color).cgColor
-        hotShadow = NSColor(DesignTokens.EditDesk.Shadow.hoverCard.color).cgColor
+        let restShadow = NSColor(DesignTokens.EditDesk.Shadow.shelfCard.color).cgColor
+        let hotShadow = NSColor(DesignTokens.EditDesk.Shadow.hoverCard.color).cgColor
+        shadowTint = restShadow.copy(alpha: 1)
+        restShadowAlpha = restShadow.alpha
+        hotShadowAlpha = hotShadow.alpha
         gradient.colors = [StageLayerStyle.clear, NSColor(colors.gradientCardBottom).cgColor]
     }
 
-    func place(_ placement: StageGeometry.CardPlacement, style: ShelfStyle, gridMix: CGFloat, dragged: Bool) {
+    func place(_ placement: StageGeometry.CardPlacement, style: ShelfStyle, gridMix: CGFloat, dragged: Bool, reduceMotion: Bool) {
         layer.frame = placement.frame
         // The perspective has to sit on `face`'s direct parent: a plain CALayer flattens its
         // sublayers before applying anything from further up, which renders the tilt orthographic.
@@ -102,21 +113,20 @@ final class ShelfCardLayer {
         let size = placement.frame.size
         let corner = DesignTokens.EditDesk.Corner.shelfCard
             + (DesignTokens.EditDesk.Corner.gridCard - DesignTokens.EditDesk.Corner.shelfCard) * gridMix
-        let metrics = StageGeometry.metrics(for: style)
         let tilted = 1 - gridMix
-        let lifted = CGFloat(hover.value)
+        let lifted = reduceMotion ? 0 : CGFloat(hover.value)
         face.anchorPoint = CGPoint(x: placement.anchorX, y: 0.5)
         face.bounds = CGRect(origin: .zero, size: size)
         face.position = CGPoint(x: size.width * placement.anchorX, y: size.height / 2)
-        var transform = CATransform3DMakeTranslation(0, 0, placement.translateZ + metrics.hoverDepth * lifted * tilted)
-        let angle = placement.rotationYDegrees + metrics.hoverTiltDegrees * lifted * tilted
-        transform = CATransform3DRotate(transform, angle * .pi / 180, 0, 1, 0)
-        let scale = placement.scale * (1 + 0.04 * lifted * gridMix)
+        let posed = StageGeometry.applyingHover(placement, style: style, hover: lifted, gridMix: gridMix)
+        var transform = CATransform3DMakeTranslation(0, 0, posed.translateZ)
+        transform = CATransform3DRotate(transform, posed.rotationYDegrees * .pi / 180, 0, 1, 0)
+        let scale = posed.scale
         face.transform = CATransform3DScale(transform, scale, scale, 1)
+        hitRect = StageGeometry.hitRect(posed, style: style)
         shade.frame = face.bounds
         shade.cornerRadius = corner
         shade.opacity = Float(max(0, placement.dim * (1 - lifted)))
-        // The lit edge is the near one, which with the left card in front is the card's own left.
         spine.frame = CGRect(x: 0, y: 0, width: 3, height: size.height)
         spine.opacity = Float(tilted)
         tab.frame = CGRect(x: 10, y: -9, width: 56, height: 10)
@@ -131,28 +141,34 @@ final class ShelfCardLayer {
         badge.frame = CGRect(x: 8, y: 8, width: badgeWidth, height: 15)
         outline.frame = face.bounds
         outline.cornerRadius = corner
+        let outlineOpacity = outline.opacity
         outline.opacity = Float(hover.value)
+        if reduceMotion, outlineOpacity != outline.opacity {
+            StageLayerStyle.fadeOpacity(outline, resumingFrom: outlineOpacity)
+        }
         layer.opacity = Float(placement.opacity) * (dragged ? 0.3 : 1)
         let rest = DesignTokens.EditDesk.Shadow.shelfCard
         let hot = DesignTokens.EditDesk.Shadow.hoverCard
-        face.shadowColor = hover.value > 0 ? hotShadow : restShadow
-        face.shadowOpacity = Float(max(0.3, 1 - placement.dim))
+        face.shadowColor = shadowTint
+        face.shadowOpacity = Float(
+            max(0.3, 1 - placement.dim) * (restShadowAlpha + (hotShadowAlpha - restShadowAlpha) * lifted)
+        )
         // Each card throws a tight shadow onto the one it has fallen across, to its left: with the
         // whole row on one plane that contact edge is the only thing left that reads as depth. The
         // design's wide float shadow only comes back once the cards flatten into the grid.
-        let contactMix = tilted * (1 - CGFloat(hover.value))
-        face.shadowRadius = rest.radius + (hot.radius - rest.radius) * hover.value
+        let contactMix = tilted * (1 - lifted)
+        face.shadowRadius = rest.radius + (hot.radius - rest.radius) * lifted
             - (rest.radius - Self.contactShadowRadius) * contactMix
         face.shadowOffset = CGSize(
             width: -Self.contactShadowOffset * contactMix,
-            height: rest.y + (hot.y - rest.y) * hover.value - (rest.y - Self.contactShadowDrop) * contactMix
+            height: rest.y + (hot.y - rest.y) * lifted - (rest.y - Self.contactShadowDrop) * contactMix
         )
-        // Paths are rebuilt only at the two rest sizes; mid-flight frames reuse the last one.
-        if size == StageGeometry.cardSize {
-            face.shadowPath = Self.rowShadowPath
-            shadowSize = size
-        } else if gridMix == 1, size != shadowSize {
-            face.shadowPath = CGPath(roundedRect: face.bounds, cornerWidth: corner, cornerHeight: corner, transform: nil)
+        // The path is a pure function of the size, so `shadowSize` is a cache key and nothing more:
+        // missing the hit costs one extra `CGPath`, never a shadow of the wrong size.
+        if size != shadowSize {
+            face.shadowPath = size == StageGeometry.cardSize
+                ? Self.rowShadowPath
+                : CGPath(roundedRect: face.bounds, cornerWidth: corner, cornerHeight: corner, transform: nil)
             shadowSize = size
         }
     }
@@ -172,6 +188,31 @@ enum StageLayerStyle {
 
     static var clear: CGColor {
         NSColor.black.withAlphaComponent(0).cgColor
+    }
+
+    static func fadeOpacity(_ layer: CALayer, from: Float) {
+        let animation = CABasicAnimation(keyPath: "opacity")
+        animation.fromValue = from
+        animation.toValue = layer.opacity
+        animation.duration = 0.15
+        layer.add(animation, forKey: "opacity")
+    }
+
+    /// `previous` is the model value to use off-screen, where there is no presentation layer. On
+    /// screen the model layer already holds the running animation's end value, so a reversal read
+    /// from it would cut to that end before fading back.
+    static func fadeOpacity(_ layer: CALayer, resumingFrom previous: Float) {
+        fadeOpacity(layer, from: layer.presentation()?.opacity ?? previous)
+    }
+
+    /// Reduce Motion's stand-in for a shake: the dip-and-return `ModalDragGhost` uses, within the
+    /// same 0.15s budget as a fade.
+    static func pulseOpacity(_ layer: CALayer) {
+        let animation = CAKeyframeAnimation(keyPath: "opacity")
+        animation.values = [layer.opacity, Float(DesignTokens.Opacity.dimmedContent), layer.opacity]
+        animation.keyTimes = [0, 0.5, 1]
+        animation.duration = 0.15
+        layer.add(animation, forKey: "opacity")
     }
 
     static func text(_ layer: CATextLayer, size: CGFloat, weight: NSFont.Weight = .regular, mono: Bool = false) {

@@ -32,6 +32,26 @@ struct LibraryGridMetricsTests {
         #expect(DesignTokens.LibraryGrid.horizontalPadding == DesignTokens.LibraryFilterBar.horizontalPadding)
     }
 
+    @Test("Tile frames use the fixed columns and the tile's actual aspect ratio")
+    func tileFrames() {
+        for (width, columns) in [(CGFloat(1040), 2), (1280, 3), (1600, 3)] {
+            for index in [0, 1, 2, 3, 7, 11] {
+                let frame = DesignTokens.LibraryGrid.tileFrame(
+                    index: index, size: .medium, aspect: .wide,
+                    fitting: width - 2 * DesignTokens.LibraryGrid.horizontalPadding, tileAspectRatio: 16 / 9
+                )
+                #expect(frame == CGRect(
+                    x: CGFloat(index % columns) * 398, y: CGFloat(index / columns) * 230,
+                    width: 384, height: 216
+                ))
+            }
+        }
+        let taller = DesignTokens.LibraryGrid.tileFrame(
+            index: 3, size: .medium, aspect: .wide, fitting: 1232, tileAspectRatio: 4 / 3
+        )
+        #expect(taller == CGRect(x: 0, y: 302, width: 384, height: 288))
+    }
+
     @Test("Columns are fixed at the ladder's width and pack as many as the width holds")
     func columnsPackFixedTilesIntoTheWidth() {
         let spacing = DesignTokens.LibraryGrid.spacing

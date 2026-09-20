@@ -6,16 +6,18 @@ public struct LibraryGalleryGrid<Content: View>: View {
     private let size: LibraryTileSize
     private let aspect: DesignTokens.LibraryGrid.Aspect
     private let content: Content
-    @State private var availableWidth: CGFloat = 0
+    @State private var availableWidth: CGFloat
 
     public init(
         size: LibraryTileSize,
         aspect: DesignTokens.LibraryGrid.Aspect,
+        initialWidth: CGFloat = 0,
         @ViewBuilder content: () -> Content
     ) {
         self.size = size
         self.aspect = aspect
         self.content = content()
+        _availableWidth = State(initialValue: initialWidth)
     }
 
     public var body: some View {

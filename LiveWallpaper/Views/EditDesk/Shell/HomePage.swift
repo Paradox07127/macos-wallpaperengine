@@ -23,6 +23,10 @@ struct HomePage: View {
     /// Read by the library grid so a thumbnail landing in the cache re-renders the tiles.
     @State private var thumbnailRevision = 0
     @State private var applies = ApplyQueue()
+    /// The library item the S4 modal shows; nil when closed.
+    @State private var presentedItemID: String?
+    /// The detail host reports its tile flights so the stage stays locked while a tile returns.
+    @State private var detailBusy = false
     @AppStorage(EditDeskPreferences.shelfStyle, store: .appScoped())
     private var shelfStyleRaw = EditDeskPreferences.shelfStyleDefault.rawValue
     @AppStorage(EditDeskPreferences.background, store: .appScoped())
@@ -67,13 +71,15 @@ struct HomePage: View {
                 .onChange(of: page.reduceMotion) { page.stage.reduceMotion = page.reduceMotion }
                 .onChange(of: page.screenManager.screens.map(\.id)) { page.syncDisplays() }
                 .onChange(of: page.screenManager.suspendReasonsByScreen) { page.refreshAllStates() }
+                .onChange(of: page.screenManager.screens.map { page.screenManager.wallpaperLoads.attempt(for: $0)?.failure }) {
+                    page.refreshAllStates()
+                }
+                .onChange(of: page.screenManager.wallpaperSessionStateVersion) { page.refreshAllStates() }
                 .onChange(of: page.shelfStyleRaw) { page.stage.shelfStyle = page.shelfStyle }
                 .onChange(of: page.backgroundRaw) {
                     page.stage.opaqueBackground = page.backgroundRaw != EditDeskBackground.frosted.rawValue
                 }
-                // M3 owns the detail page. Until it exists nothing is presented over the stage, so
-                // locking on the router field alone froze the stage after one display click.
-                .onChange(of: page.router.detailDisplayID) { page.stage.interactionBlocked = false }
+                .onChange(of: page.interactionLock, initial: true) { page.stage.interactionBlocked = page.interactionLock }
                 .onChange(of: page.router.page) { page.syncProgress(to: page.router.page, animated: true) }
                 .onChange(of: page.router.libraryFocus, initial: true) {
                     page.applyLibraryFocus(page.router.libraryFocus)
@@ -92,11 +98,17 @@ struct HomePage: View {
                 .onChange(of: page.chipID, initial: true) { page.applyChip() }
                 .onChange(of: page.library?.items.count) { page.applyChip() }
                 .onChange(of: page.stage.visibleShelfRange) { page.loadShelfThumbnails() }
+                .onChange(of: page.stage.visibleGridRange) { page.loadShelfThumbnails() }
         }
     }
 
     private var shelfStyle: ShelfStyle {
         ShelfStyle(rawValue: shelfStyleRaw) ?? EditDeskPreferences.shelfStyleDefault
+    }
+
+    /// The stage ignores wheel and clicks while anything is presented over it.
+    fileprivate var interactionLock: Bool {
+        presentedItemID != nil || router.detailDisplayID != nil || detailBusy
     }
 
     /// Shelf thumbnails are requested at the row card size on a 2× screen; the grid reuses them.
@@ -121,6 +133,17 @@ struct HomePage: View {
                 showsSearch: router.page == .library,
                 status: statusCapsule
             )
+            DisplayDetailHost(
+                router: router, stage: stage, library: library, modalPresented: presentedItemID != nil,
+                refreshCover: { refreshCover(for: $0, crossfade: false) },
+                busy: $detailBusy
+            )
+            if let library {
+                LibraryModalHost(
+                    library: library, stage: stage, thumbnails: thumbnails,
+                    presentedItemID: $presentedItemID, apply: applyFromModal
+                )
+            }
             EditDeskToastHost(center: toasts)
                 .frame(maxHeight: .infinity, alignment: .bottom)
         }
@@ -177,7 +200,7 @@ struct HomePage: View {
     /// Deliberately not `progress == 2`: the first pixel of a return swipe would tear the grid
     /// down and lose the scroll position, and a cancelled swipe would rebuild it.
     private var isLibraryOpen: Bool {
-        router.page == .library && stage.snappedIndex == 2 && stage.progress > 1.8
+        router.page == .library && stage.snappedIndex == 2 && stage.progress > StageGeometry.libraryHandoffProgress
     }
 
     private var statusCapsule: StatusCapsule {
@@ -327,15 +350,21 @@ struct HomePage: View {
             if let library, library.visibleItems.isEmpty {
                 IllustratedEmptyState(symbol: "square.grid.2x2", title: "No wallpapers yet")
             } else if let library {
-                LibraryGalleryGrid(size: .medium, aspect: .wide) {
+                LibraryGalleryGrid(
+                    size: .medium, aspect: .wide,
+                    initialWidth: stage.stageSize.width - 2 * DesignTokens.LibraryGrid.horizontalPadding
+                ) {
                     ForEach(library.visibleItems) { item in
                         LibraryGridTile(item: item, image: gridImage(for: item, revision: thumbnailRevision))
+                            .onTapGesture { presentedItemID = item.id }
                             .task(id: item.id) { await library.probeMetadata(for: [item.id]) }
                     }
                 }
                 .libraryGridPadding()
             }
         }
+        .scrollBounceBehavior(.basedOnSize)
+        .modifier(GridTopReporter { stage.gridAtTop = $0 })
         .background(DesignTokens.EditDesk.Colors.background)
     }
 
@@ -408,16 +437,20 @@ struct HomePage: View {
     }
 
     private func state(for screen: Screen) -> StageDisplay.State {
-        guard screenManager.getConfiguration(for: screen) != nil else { return .empty }
-        if let failure = screenManager.wallpaperLoads.attempt(for: screen)?.failure {
-            let failureClass = failure.cause.failureClass
+        if let cause = screenManager.wallpaperLoads.attempt(for: screen)?.failure?.cause
+            ?? screenManager.runtimeError(for: screen).map(WallpaperFailureCause.runtime) {
+            let failureClass = cause.failureClass
             return .failed(StageFailureChip(
                 symbol: failureClass.symbol, text: failureClass.kickerText, tint: NSColor(failureClass.tint).cgColor
             ))
         }
+        guard screenManager.getConfiguration(for: screen) != nil else { return .empty }
         if let reasons = screenManager.suspendReasonsByScreen[screen.id],
            let text = SuspendReasonText.localized(for: reasons) {
             return .paused(reasonText: text)
+        }
+        if screen.playbackController?.userIntendsToPlay == false {
+            return .paused(reasonText: String(localized: "Paused", bundle: .appLanguage))
         }
         return .ok
     }
@@ -486,8 +519,10 @@ struct HomePage: View {
         let scale = NSScreen.main?.backingScaleFactor ?? 2
         // Exactly what the band draws: a ceiling of `max(capacity, drawn)` would float up to
         // whatever the row laid out and never bind.
-        let window = stage.visibleShelfRange.clamped(to: 0 ..< visible.count)
-        for index in window {
+        // Two runs, not the span between them: the grid's slice starts at the top of the library
+        // while the row can be scrolled hundreds of cards away.
+        let windows = [stage.visibleShelfRange, stage.visibleGridRange].map { $0.clamped(to: 0 ..< visible.count) }
+        for index in Set(windows.joined()) {
             let item = visible[index]
             guard let request = item.thumbnail,
                   thumbnails.cached(request, pixelSize: Self.thumbnailPixelSize, scale: scale) == nil else { continue }
@@ -501,14 +536,14 @@ struct HomePage: View {
                 stage.shelfItems[slot].thumbnail = image
             }
         }
-        dropThumbnailsOutside(window, of: visible)
+        dropThumbnailsOutside(windows, of: visible)
     }
 
     /// `StageCard` holds its preview strongly, so without this every card ever scrolled past stays
     /// resident and the cache's own cost limit never gets a say.
-    private func dropThumbnailsOutside(_ window: Range<Int>, of visible: [LibraryItem]) {
+    private func dropThumbnailsOutside(_ windows: [Range<Int>], of visible: [LibraryItem]) {
         guard stage.shelfItems.count == visible.count else { return }
-        let keep = Set(visible[window].map(\.id))
+        let keep = Set(windows.flatMap { visible[$0].map(\.id) })
         for index in stage.shelfItems.indices where stage.shelfItems[index].thumbnail != nil {
             if !keep.contains(stage.shelfItems[index].id) {
                 stage.shelfItems[index].thumbnail = nil
@@ -574,6 +609,7 @@ struct HomePage: View {
                     } else {
                         controller.play()
                     }
+                    screenManager.markWallpaperSessionStateChanged()
                 case .next:
                     screenManager.advancePlaylist(for: screen)
                 case .previous:
@@ -581,7 +617,14 @@ struct HomePage: View {
                 }
             case let .dropped(cardID, displayID):
                 applies.run(for: displayID) { await applyCard(cardID, to: displayID) }
-            case .cardTapped, .displayContextMenu, .dropCancelled:
+            case let .cardTapped(cardID):
+                presentedItemID = cardID
+            case let .cardApplyRequested(cardID):
+                // VoiceOver's "Apply" is the keyboard equivalent of a drop: it lands on the main display.
+                guard let screen = screenManager.screens.first(where: { CGDisplayIsMain($0.id) != 0 })
+                    ?? screenManager.screens.first else { continue }
+                applies.run(for: screen.id) { await applyCard(cardID, to: screen.id) }
+            case .displayContextMenu, .dropCancelled:
                 continue
             }
         }
@@ -590,7 +633,7 @@ struct HomePage: View {
     private func applyCard(_ cardID: StageCard.ID, to displayID: CGDirectDisplayID) async {
         guard let item = library?.items.first(where: { $0.id == cardID }),
               let screen = screenManager.screens.first(where: { $0.id == displayID }),
-              let intent = intent(for: item) else {
+              let intent = ModalActions.intent(for: item) else {
             stage.shake(card: cardID)
             return
         }
@@ -619,18 +662,10 @@ struct HomePage: View {
         }
     }
 
-    private func intent(for item: LibraryItem) -> ApplyIntent? {
-        guard item.isSupported else { return nil }
-        switch item.source {
-        case let .bookmark(bookmark):
-            return .bookmark(bookmark)
-        case let .aerial(asset):
-            return .video(url: asset.url, bookmarkData: asset.bookmarkData, packageEntryName: nil)
-        #if !LITE_BUILD
-        case let .workshop(entry):
-            return .installedWorkshop(entry)
-        #endif
-        }
+    /// The modal's apply path: the same queue and toasts as a drop, minus the card to shake.
+    private func applyFromModal(_ intent: ApplyIntent, to displayID: CGDirectDisplayID) {
+        guard let screen = screenManager.screens.first(where: { $0.id == displayID }) else { return }
+        applies.run(for: displayID) { await apply(intent, to: screen, card: nil) }
     }
 
     /// The "+ 导入" capsule: one picker, routed like a Finder drop onto the main display.
@@ -645,6 +680,27 @@ struct HomePage: View {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         SettingsManager.shared.saveLastUsedDirectory(url.deletingLastPathComponent())
         Task { await apply(.droppedFile(url), to: screen, card: nil) }
+    }
+}
+
+/// Tells the stage whether the grid sits at its top, which is what lets a pull-down hand the
+/// gesture back to it. Below macOS 15 there is no scroll geometry, so the handoff stays off.
+private struct GridTopReporter: ViewModifier {
+    let report: (Bool) -> Void
+
+    func body(content: Content) -> some View {
+        if #available(macOS 15, *) {
+            content
+                .onScrollGeometryChange(for: Bool.self) { geometry in
+                    geometry.contentOffset.y <= geometry.contentInsets.top + 0.5
+                } action: { _, atTop in
+                    report(atTop)
+                }
+                .onAppear { report(true) }
+                .onDisappear { report(false) }
+        } else {
+            content.onAppear { report(false) }
+        }
     }
 }
 

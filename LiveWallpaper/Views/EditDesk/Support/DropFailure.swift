@@ -2,6 +2,7 @@ import LiveWallpaperCore
 import SwiftUI
 
 enum DropFailure: Identifiable, Equatable {
+    case applyNotConfirmed
     case unrecognizedDrop
     case sceneLibraryDrop
     case sceneUnsupportedInBuild
@@ -17,6 +18,7 @@ enum DropFailure: Identifiable, Equatable {
 
     var id: String {
         switch self {
+        case .applyNotConfirmed: "applyNotConfirmed"
         case .unrecognizedDrop: "unrecognizedDrop"
         case .sceneLibraryDrop: "sceneLibraryDrop"
         case .sceneUnsupportedInBuild: "sceneUnsupportedInBuild"
@@ -34,6 +36,7 @@ enum DropFailure: Identifiable, Equatable {
 
     var title: LocalizedStringKey {
         switch self {
+        case .applyNotConfirmed: "Couldn't confirm this wallpaper was applied. Try again."
         case .unrecognizedDrop: "Unsupported file type"
         case .sceneLibraryDrop: "That folder is a scene library"
         case .sceneUnsupportedInBuild: "This version doesn't play scenes"
@@ -51,6 +54,8 @@ enum DropFailure: Identifiable, Equatable {
 
     var message: LocalizedStringKey {
         switch self {
+        case .applyNotConfirmed:
+            "Couldn't confirm this wallpaper was applied. Try again."
         case .unrecognizedDrop:
             "Drop a video file, web file, or folder to use it as a wallpaper."
         case .sceneLibraryDrop:
@@ -78,6 +83,8 @@ enum DropFailure: Identifiable, Equatable {
 
     var toastText: String {
         switch self {
+        case .applyNotConfirmed:
+            String(localized: "Couldn't confirm this wallpaper was applied. Try again.", bundle: .appLanguage)
         case .unrecognizedDrop:
             String(localized: "Choose a video, web file, or wallpaper folder.", bundle: .appLanguage)
         case .sceneLibraryDrop:

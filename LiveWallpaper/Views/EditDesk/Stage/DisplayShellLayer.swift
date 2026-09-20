@@ -59,6 +59,7 @@ final class DisplayShellLayer {
         }
         content.masksToBounds = true
         content.cornerRadius = DesignTokens.EditDesk.Corner.content
+        content.cornerCurve = .continuous
         for child in [cover, gradient, title, meta, playback, veil, stateGroup] {
             content.addSublayer(child)
         }
@@ -245,26 +246,50 @@ final class DisplayShellLayer {
     func restoreContent() {
         content.removeFromSuperlayer()
         layer.insertSublayer(content, below: notch)
+        content.removeAnimation(forKey: "opacity")
+        content.opacity = 1
         content.cornerRadius = DesignTokens.EditDesk.Corner.content
+        let rect = layoutRect
         layoutRect = nil
+        if let rect, let isBuiltin = layoutBuiltin {
+            place(content: rect, isBuiltin: isBuiltin)
+        }
     }
 
-    func setHovered(_ hovered: Bool) {
+    func setHovered(_ hovered: Bool, reduceMotion: Bool = false) {
         let target: Float = hovered ? 1 : 0
-        guard target != playbackTarget else { return }
+        guard target != playbackTarget || (reduceMotion && (playback.opacity != target || hoverMix != CGFloat(target))) else { return }
         playbackFrom = playback.opacity
         playbackTarget = target
         playbackElapsed = hovered ? 0 : -0.3
         hoverFrom = hoverMix
         hoverElapsed = 0
+        if reduceMotion {
+            playback.opacity = target
+            StageLayerStyle.fadeOpacity(playback, resumingFrom: playbackFrom)
+            playbackFrom = target
+            playbackElapsed = 0.2
+            hoverMix = CGFloat(target)
+            hoverFrom = hoverMix
+            hoverElapsed = 0.22
+            layer.transform = CATransform3DIdentity
+            shell.strokeColor = dropTarget > 0 || hoverMix > 0.5 ? hotStroke : normalStroke
+        }
     }
 
-    func setDropTarget(_ targeted: Bool) {
+    func setDropTarget(_ targeted: Bool, reduceMotion: Bool = false) {
         let target: Float = targeted ? 1 : 0
-        guard target != dropTarget else { return }
+        guard target != dropTarget || (reduceMotion && highlight.opacity != target) else { return }
         dropFrom = highlight.opacity
         dropTarget = target
         dropElapsed = 0
+        if reduceMotion {
+            highlight.opacity = target
+            StageLayerStyle.fadeOpacity(highlight, resumingFrom: dropFrom)
+            dropFrom = target
+            dropElapsed = 0.18
+            shell.strokeColor = dropTarget > 0 || hoverMix > 0.5 ? hotStroke : normalStroke
+        }
     }
 
     func playbackAction(at point: CGPoint) -> StagePlaybackAction? {
@@ -274,10 +299,16 @@ final class DisplayShellLayer {
         return [StagePlaybackAction.previous, .toggle, .next][index]
     }
 
-    func crossfade(to image: CGImage, duration: TimeInterval) {
+    func crossfade(to image: CGImage, duration: TimeInterval, reduceMotion: Bool = false) {
         if let fade = coverFade {
             cover.contents = fade.layer.contents
             fade.layer.removeFromSuperlayer()
+        }
+        if reduceMotion {
+            cover.contents = image
+            coverFade = nil
+            StageLayerStyle.fadeOpacity(cover, from: 0)
+            return
         }
         guard duration > 0 else {
             cover.contents = image
@@ -294,10 +325,22 @@ final class DisplayShellLayer {
     }
 
     func step(dt: TimeInterval, reduceMotion: Bool) {
+        if reduceMotion {
+            setHovered(playbackTarget > 0, reduceMotion: true)
+            setDropTarget(dropTarget > 0, reduceMotion: true)
+            if let fade = coverFade {
+                cover.contents = fade.layer.contents
+                fade.layer.removeFromSuperlayer()
+                coverFade = nil
+                StageLayerStyle.fadeOpacity(cover, from: 0)
+            }
+            return
+        }
         playbackElapsed += dt
         let playbackDuration = reduceMotion ? 0.15 : 0.2
         let playbackMix = Float(min(1, max(0, playbackElapsed / playbackDuration)))
-        playback.opacity = playbackFrom + (playbackTarget - playbackFrom) * playbackMix
+        // `hasAnimation` compares for equality, so the last step lands on the target exactly.
+        playback.opacity = playbackMix >= 1 ? playbackTarget : playbackFrom + (playbackTarget - playbackFrom) * playbackMix
         hoverElapsed += dt
         let hoverStep = CGFloat(min(1, max(0, hoverElapsed / (reduceMotion ? 0.15 : 0.22))))
         hoverMix = hoverStep >= 1 ? CGFloat(playbackTarget) : hoverFrom + (CGFloat(playbackTarget) - hoverFrom) * hoverStep
@@ -306,7 +349,7 @@ final class DisplayShellLayer {
         dropElapsed += dt
         let dropMix = min(1, dropElapsed / (reduceMotion ? 0.15 : 0.18))
         let eased = Float(reduceMotion ? dropMix : 1 - pow(1 - dropMix, 3))
-        highlight.opacity = dropFrom + (dropTarget - dropFrom) * eased
+        highlight.opacity = dropMix >= 1 ? dropTarget : dropFrom + (dropTarget - dropFrom) * eased
         shell.strokeColor = highlight.opacity > 0 || hoverMix > 0.5 ? hotStroke : normalStroke
         if var fade = coverFade {
             fade.elapsed += dt
