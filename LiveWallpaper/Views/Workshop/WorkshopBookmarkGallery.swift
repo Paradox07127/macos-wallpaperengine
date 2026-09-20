@@ -86,7 +86,7 @@ private struct WorkshopBookmarkDetail: View {
                 Text("Live details are unavailable. Showing the saved wallpaper.")
                     .font(DesignTokens.Typography.caption)
                     .foregroundStyle(.secondary)
-                    .padding(.horizontal)
+                    .padding(.horizontal, DesignTokens.Spacing.lg)
             }
             WorkshopInspectorContent(item: currentItem ?? bookmark.queryItem, doctor: doctor)
             SheetFooterBar(primaryTitle: "Done", primaryAction: { dismiss() })

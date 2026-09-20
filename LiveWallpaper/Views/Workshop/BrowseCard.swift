@@ -67,12 +67,12 @@ struct BrowseCard: View, Equatable {
                         .padding(DesignTokens.Spacing.sm)
                         .adaptiveGlassOverMedia(.circle)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.borderless)
                 .disabled(item.isBanned && !isBookmarked)
                 .help(Text(isBookmarked ? "Remove Bookmark" : "Add Bookmark"))
                 .accessibilityLabel(Text(isBookmarked ? "Remove Bookmark" : "Add Bookmark"))
                 .padding(.trailing, DesignTokens.Spacing.sm)
-                .padding(.bottom, 36)
+                .padding(.bottom, DesignTokens.Spacing.xl + DesignTokens.Spacing.md)
             }
         }
         .accessibilityAddTraits(isSelected ? .isSelected : [])
