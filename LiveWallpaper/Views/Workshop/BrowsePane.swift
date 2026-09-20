@@ -61,6 +61,7 @@ struct BrowsePane: View {
         .onAppear {
             rateLimitRemaining = currentRateLimitRemaining
             reloadInstalledIDs()
+            session.reconcileSelection(in: viewModel.items)
             viewModel.hidesDownloadedInBrowse = hidesDownloadedPref
             Task {
                 await services.refreshAPIKeyStatus()
@@ -93,10 +94,7 @@ struct BrowsePane: View {
             Task { await viewModel.reload() }
         }
         .onChange(of: viewModel.items) { _, items in
-            guard !BrowseSelection.keepsSelection(
-                id: session.selectedID, in: items, detached: session.detachedItem, pending: session.pendingOpen?.id
-            ) else { return }
-            session.selectedID = nil
+            session.reconcileSelection(in: items)
         }
     }
 

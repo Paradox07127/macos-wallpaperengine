@@ -22,5 +22,12 @@ final class WorkshopBrowseSession {
     /// settle the second.
     var openGeneration = 0
     var inspectorHidden = false
+
+    func reconcileSelection(in items: [WorkshopQueryItem]) {
+        guard !BrowseSelection.keepsSelection(
+            id: selectedID, in: items, detached: detachedItem, pending: pendingOpen?.id
+        ) else { return }
+        selectedID = nil
+    }
 }
 #endif
