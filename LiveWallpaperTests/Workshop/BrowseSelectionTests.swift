@@ -68,6 +68,26 @@ struct BrowseSelectionTests {
         #expect(first == BrowseSelection.PendingOpen(id: 42, generation: 1, previousSelectedID: 3, previousDetached: nil))
     }
 
+    @Test("Returning after an offscreen page change clears stale selection")
+    @MainActor
+    func sessionReconcilesOnReturn() {
+        let session = WorkshopBrowseSession()
+        session.selectedID = 1
+        session.reconcileSelection(in: [Self.item(id: 2, author: nil)])
+        #expect(session.selectedID == nil)
+
+        session.selectedID = 2
+        session.reconcileSelection(in: [Self.item(id: 2, author: "updated")])
+        #expect(session.selectedID == 2)
+
+        session.selectedID = 42
+        session.pendingOpen = BrowseSelection.PendingOpen(
+            id: 42, generation: 1, previousSelectedID: 2, previousDetached: nil
+        )
+        session.reconcileSelection(in: [])
+        #expect(session.selectedID == 42)
+    }
+
     private static func item(id: UInt64, author: String?) -> WorkshopQueryItem {
         WorkshopQueryItem(
             id: id, rawTitle: "t\(id)", shortDescription: "", creatorID: "c", creatorPersonaName: author,

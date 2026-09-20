@@ -35,6 +35,24 @@ struct BrowsePaginationMetadataTests {
         #expect(model.lastFetchedRawItemCount == 50, "Steam sent a full page")
         #expect(model.totalPages == nil, "no total in the response")
         #expect(model.canGoNextPage)
+
+        // Returning from another sidebar page must keep the active page and
+        // inspector state instead of issuing the initial query again.
+        let browseSession = WorkshopBrowseSession()
+        browseSession.viewModel = model
+        await model.goToPage(2)
+        try #require(model.pageIndex == 2)
+        browseSession.selectedID = model.items.first?.id
+        browseSession.scrollID = model.items.last?.id
+        let previousItems = model.items
+        model.onAppear()
+        await Task.yield()
+        #expect(model.pageIndex == 2)
+        #expect(model.items == previousItems)
+        #expect(!model.isLoading)
+        #expect(browseSession.viewModel === model)
+        #expect(browseSession.selectedID == model.items.first?.id)
+        #expect(browseSession.scrollID == model.items.last?.id)
     }
 
     @Test("Keyless: the SSR page count drives the pager")
