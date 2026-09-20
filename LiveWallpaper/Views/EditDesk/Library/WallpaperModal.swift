@@ -30,28 +30,19 @@ struct WallpaperModal: View {
     private static let barPadding: CGFloat = 20
 
     var body: some View {
-        let panel = ModalGeometry.panelFrame(in: windowSize)
-        ZStack(alignment: .topLeading) {
-            DesignTokens.EditDesk.Colors.modalScrim
-                .allowsHitTesting(false)
-                .transition(.opacity.animation(openAnimation))
-            Color.clear
-                .contentShape(Rectangle())
-                .onTapGesture(perform: onDismiss)
-                .padding(.top, titlebarInset)
+        EditDeskModalChrome(
+            windowSize: windowSize,
+            titlebarInset: titlebarInset,
+            backdrop: content.preview,
+            onDismiss: onDismiss,
+            onEscape: cancelDragForEscape,
+            onTargetShortcut: applyToShortcut
+        ) { panel in
             panelBody(panel)
-                .offset(x: panel.minX, y: panel.minY)
-                .transition(panelTransition)
-            shortcuts
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     // MARK: Panel
-
-    private var panelShape: RoundedRectangle {
-        RoundedRectangle(cornerRadius: DesignTokens.EditDesk.Corner.modal, style: .continuous)
-    }
 
     private func panelBody(_ panel: CGRect) -> some View {
         VStack(spacing: 0) {
@@ -60,22 +51,7 @@ struct WallpaperModal: View {
                 .padding(.top, ModalGeometry.previewMargin)
             bottomBar
         }
-        .frame(width: panel.width, height: panel.height)
-        .background {
-            ZStack {
-                DesignTokens.EditDesk.Colors.modalPanel
-                ModalBackdrop(preview: content.preview)
-            }
-            .clipShape(panelShape)
-        }
-        .overlay(panelShape.strokeBorder(DesignTokens.EditDesk.Colors.strokePanel, lineWidth: 1))
-        .shadow(
-            color: DesignTokens.EditDesk.Shadow.modal.color,
-            radius: DesignTokens.EditDesk.Shadow.modal.radius,
-            y: DesignTokens.EditDesk.Shadow.modal.y
-        )
-        .accessibilityElement(children: .contain)
-        .accessibilityAddTraits(.isModal)
+        .overlay { shortcuts }
         .confirmationDialog(
             Text("Delete this wallpaper?"),
             isPresented: $confirmingDelete,
@@ -308,18 +284,11 @@ struct WallpaperModal: View {
 
     // MARK: Keyboard
 
-    /// Key equivalents ride zero-sized buttons rather than `onKeyPress`: the stage's `NSView` is
-    /// usually first responder and swallows `keyDown` while the modal blocks it.
+    /// ESC and ⌘n belong to the chrome; these are the keys only the library modal answers. They
+    /// ride zero-sized buttons rather than `onKeyPress`: the stage's `NSView` is usually first
+    /// responder and swallows `keyDown` while the modal blocks it.
     private var shortcuts: some View {
         ZStack {
-            Button(action: escape) { EmptyView() }
-                .keyboardShortcut(.cancelAction)
-            ForEach(1 ... 9, id: \.self) { index in
-                if let target = ModalKeyMap.target(forShortcut: index, in: targets) {
-                    Button { actions.applyTo(target.id) } label: { EmptyView() }
-                        .keyboardShortcut(KeyEquivalent(Character("\(index)")), modifiers: .command)
-                }
-            }
             if navigation.canGoPrevious {
                 Button { navigate(forward: false) } label: { EmptyView() }
                     .keyboardShortcut(.leftArrow, modifiers: [])
@@ -338,13 +307,17 @@ struct WallpaperModal: View {
         .accessibilityHidden(true)
     }
 
-    private func escape() {
-        if dragState == .active {
-            dragState = .cancelled
-            onDrag(.cancelled)
-            return
-        }
-        onDismiss()
+    private func applyToShortcut(_ index: Int) {
+        guard let target = ModalKeyMap.target(forShortcut: index, in: targets) else { return }
+        actions.applyTo(target.id)
+    }
+
+    /// True when ESC went to the drag instead of the modal.
+    private func cancelDragForEscape() -> Bool {
+        guard dragState == .active else { return false }
+        dragState = .cancelled
+        onDrag(.cancelled)
+        return true
     }
 
     private func navigate(forward: Bool) {
@@ -381,19 +354,8 @@ struct WallpaperModal: View {
 
     // MARK: Motion
 
-    private var openAnimation: Animation {
-        reduceMotion ? .linear(duration: 0.15) : .spring(response: 0.45, dampingFraction: 0.82)
-    }
-
     private var navigationAnimation: Animation {
         reduceMotion ? .linear(duration: 0.15) : .easeOut(duration: 0.25)
-    }
-
-    private var panelTransition: AnyTransition {
-        if reduceMotion {
-            return .opacity.animation(openAnimation)
-        }
-        return .scale(scale: 0.92).combined(with: .opacity).animation(openAnimation)
     }
 
     /// MOTION 6: the incoming preview enters from the side the navigation is heading.

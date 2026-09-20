@@ -292,56 +292,6 @@ final class HostView: NSView {
     }
 }
 
-struct MonitorBoardRootContainer: View {
-    @ObservedObject var model: InteractionModel
-    @ObservedObject var data: DataModel
-    let reduceMotion: Bool
-    var suspended: Bool = false
-    var preview: MonitorBoardPreview?
-    var weatherService: WeatherReactiveService?
-    var logicalSize: CGSize?
-    /// Forces painted (non-glass) cards: offscreen capture of a `glassEffect` subtree would come back as holes.
-    var forcesOpaquePanels: Bool = false
-
-    var body: some View {
-        scaled.appLanguageScoped(defaults: .appScoped())
-            .environment(\.monitorForcesOpaquePanels, forcesOpaquePanels)
-    }
-
-    @ViewBuilder
-    private var scaled: some View {
-        if let logicalSize, logicalSize.width > 0, logicalSize.height > 0 {
-            GeometryReader { proxy in
-                let scale = Self.previewScale(available: proxy.size, logical: logicalSize)
-                board
-                    .frame(width: logicalSize.width, height: logicalSize.height)
-                    // The one place the board is shrunk. SwiftUI applies the
-                    // inverse to its own hit testing, which an AppKit-side
-                    // scale on the host would not reach.
-                    .scaleEffect(scale, anchor: .topLeading)
-                    .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
-                    .environment(\.monitorRenderScale, scale)
-            }
-        } else {
-            board
-        }
-    }
-
-    private var board: some View {
-        RootView(model: model, data: data, preview: preview)
-            .environment(\.monitorReduceMotion, reduceMotion)
-            .environment(\.monitorSuspended, suspended)
-            .environment(\.monitorWeather, weatherService)
-    }
-
-    /// How far a `logical`-sized board is shrunk to fit `available`. 1 whenever
-    /// there is nothing to shrink, so a desktop board is never scaled.
-    static func previewScale(available: CGSize, logical: CGSize?) -> CGFloat {
-        guard let logical, logical.width > 0, available.width > 0 else { return 1 }
-        return available.width / logical.width
-    }
-}
-
 // MARK: - Menu-bar / Dock safe area
 
 extension MonitorSafeAreaInsets {

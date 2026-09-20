@@ -262,7 +262,10 @@ enum LayoutEngine {
         footprint: CGSize,
         geometry: MonitorBoardGeometry,
         items: [MonitorBoardItem],
-        ignoring ignoredID: UUID?
+        ignoring ignoredID: UUID?,
+        threshold: CGFloat = snapThreshold,
+        neighborhood: CGFloat = snapNeighborhood,
+        externalCandidates: [MonitorBoardItem] = []
     ) -> MonitorSnapResult {
         let area = geometry.safeRect
         let dw = footprint.width
@@ -272,8 +275,8 @@ enum LayoutEngine {
         var snapY: CGFloat?
         var guideX: MonitorSnapGuide?
         var guideY: MonitorSnapGuide?
-        var bestDX = snapThreshold + 0.001
-        var bestDY = snapThreshold + 0.001
+        var bestDX = threshold + 0.001
+        var bestDY = threshold + 0.001
 
         func considerX(target: CGFloat, guidePos: CGFloat?, partner: CGRect?) {
             let d = abs(free.x - target)
@@ -306,12 +309,12 @@ enum LayoutEngine {
         considerY(target: area.maxY - dh, guidePos: area.maxY, partner: nil)
         considerY(target: area.midY - dh / 2, guidePos: area.midY, partner: nil)
 
-        for item in items where item.id != ignoredID {
+        for item in items + externalCandidates where item.id != ignoredID {
             let r = item.rect
-            let near = !(free.x > r.maxX + snapNeighborhood
-                || free.x + dw < r.minX - snapNeighborhood
-                || free.y > r.maxY + snapNeighborhood
-                || free.y + dh < r.minY - snapNeighborhood)
+            let near = !(free.x > r.maxX + neighborhood
+                || free.x + dw < r.minX - neighborhood
+                || free.y > r.maxY + neighborhood
+                || free.y + dh < r.minY - neighborhood)
             if !near { continue }
             considerX(target: r.minX, guidePos: r.minX, partner: r)                 // L-L
             considerX(target: r.maxX - dw, guidePos: r.maxX, partner: r)            // R-R

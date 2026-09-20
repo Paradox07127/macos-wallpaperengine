@@ -34,7 +34,14 @@ enum MonitorBoardPlacementDirection {
 final class InteractionModel: ObservableObject {
     @Published private(set) var placements: [MonitorWidgetPlacement]
     @Published var isEditing: Bool = false
-    @Published var selectedID: UUID?
+    @Published var selectedID: UUID? {
+        didSet {
+            if selectedID != oldValue {
+                onSelectionChanged?(selectedID)
+            }
+        }
+    }
+
     @Published private(set) var drag: MonitorBoardDragState?
     @Published var isCatalogOpen: Bool = false
     @Published var settingsOpenID: UUID?
@@ -42,6 +49,9 @@ final class InteractionModel: ObservableObject {
     @Published var boardSize: CGSize = .zero
 
     var safeArea: MonitorSafeAreaInsets = .none
+    var renderScale: CGFloat = 1
+    var snapEnabled = true
+    var onSelectionChanged: ((UUID?) -> Void)?
 
     /// Committing edits only (drag-end, add, remove, resize) — never per mouse-move.
     var onConfigurationEdited: ((MonitorBoardConfiguration) -> Void)?
@@ -66,6 +76,10 @@ final class InteractionModel: ObservableObject {
             boardSize: boardSize,
             safeArea: safeArea
         )
+    }
+
+    private var effectiveRenderScale: CGFloat {
+        renderScale.isFinite && renderScale > 0 ? renderScale : 1
     }
 
     // MARK: - External config application
@@ -158,7 +172,7 @@ final class InteractionModel: ObservableObject {
         }
         current.freeOrigin = free
 
-        if bypassSnap {
+        if bypassSnap || !snapEnabled {
             current.snappedOrigin = nil
             current.guideX = nil
             current.guideY = nil
@@ -168,7 +182,9 @@ final class InteractionModel: ObservableObject {
                 footprint: current.footprint,
                 geometry: geometry,
                 items: items(excluding: current.widgetID),
-                ignoring: current.widgetID
+                ignoring: current.widgetID,
+                threshold: LayoutEngine.snapThreshold / effectiveRenderScale,
+                neighborhood: LayoutEngine.snapNeighborhood / effectiveRenderScale
             )
             current.snappedOrigin = result.snapped ? result.origin : nil
             current.guideX = result.guideX
@@ -182,7 +198,7 @@ final class InteractionModel: ObservableObject {
         drag = nil
         guard current.didMove else { return }
 
-        let target = bypassSnap ? current.freeOrigin : current.snappedOrigin ?? current.freeOrigin
+        let target = (bypassSnap || !snapEnabled) ? current.freeOrigin : current.snappedOrigin ?? current.freeOrigin
         perform(.move(id: current.widgetID, pixelOrigin: target))
     }
 

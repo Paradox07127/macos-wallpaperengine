@@ -10,10 +10,12 @@ struct HomePage: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.featureCatalog) private var featureCatalog
     let router: EditDeskRouter
+    /// Owned by `EditDeskRoot`: a page switch unmounts this view, and a centre rebuilt here would
+    /// drop whatever the other pages queued.
+    let toasts: EditDeskToastCenter
     @State private var stage = EditDeskStageModel()
     @State private var library: SavedLibraryModel?
     @State private var thumbnails = ShelfThumbnailCache()
-    @State private var toasts = EditDeskToastCenter()
     @State private var segment: LibrarySegment = .wallpapers
     @State private var chipID = Self.chipID(.all)
     /// Set before a stage snap changes `router.page`, so that change is not echoed back as a command.
@@ -136,7 +138,7 @@ struct HomePage: View {
             DisplayDetailHost(
                 router: router, stage: stage, library: library, modalPresented: presentedItemID != nil,
                 refreshCover: { refreshCover(for: $0, crossfade: false) },
-                busy: $detailBusy
+                busy: $detailBusy, toasts: toasts
             )
             if let library {
                 LibraryModalHost(

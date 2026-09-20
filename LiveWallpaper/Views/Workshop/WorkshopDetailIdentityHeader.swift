@@ -5,8 +5,17 @@ import SwiftUI
 /// Layout budget: `Inspector.minWidth` less `Spacing.lg` on each side = 236pt per row.
 /// `WorkshopInspectorHeaderFitTests` checks all five languages against it.
 struct WorkshopDetailIdentityHeader: View {
+    /// Which column the header is drawn in. The two differ only in emphasis; both read the same fields.
+    enum Style: Equatable {
+        /// The Workshop window's 236pt inspector column.
+        case inspector
+        /// SCREENS.md S8b's modal column: a 22pt title, one star with the score, both dates visible.
+        case modal
+    }
+
     let item: WorkshopQueryItem
     let isKeyless: Bool
+    var style: Style = .inspector
     /// nil disables the author link (plain author text).
     var onBrowseCreator: ((String, String?) -> Void)?
 
@@ -16,7 +25,7 @@ struct WorkshopDetailIdentityHeader: View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
             VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
                 Text(item.title)
-                    .font(.title3.weight(.semibold))
+                    .font(titleFont)
                     .fixedSize(horizontal: false, vertical: true)
                 authorLine
             }
@@ -30,6 +39,13 @@ struct WorkshopDetailIdentityHeader: View {
             statusBadge
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var titleFont: Font {
+        switch style {
+        case .inspector: .title3.weight(.semibold)
+        case .modal: DesignTokens.EditDesk.Typography.modalTitle
+        }
     }
 
     // MARK: - Author
@@ -81,16 +97,9 @@ struct WorkshopDetailIdentityHeader: View {
 
     private var ratingRow: some View {
         HStack(spacing: DesignTokens.Spacing.sm) {
-            if let stars = item.rating?.starsOutOfFive, stars > 0 {
-                HStack(spacing: 1) {
-                    ForEach(0 ..< 5, id: \.self) { index in
-                        Image(systemName: Self.starSymbol(for: index, rating: stars))
-                            .foregroundStyle(DesignTokens.Colors.rating)
-                            .font(.system(size: 12))
-                    }
-                }
-                .accessibilityLabel(Text("\(stars.formatted(.number.precision(.fractionLength(1)))) stars"))
-                Text(verbatim: stars.formatted(.number.precision(.fractionLength(1))))
+            if let score = item.rating?.starsOutOfFive, score > 0 {
+                stars(outOfFive: score)
+                Text(verbatim: score.formatted(.number.precision(.fractionLength(1))))
                     .font(DesignTokens.Typography.body)
                     .foregroundStyle(.secondary)
             }
@@ -103,6 +112,29 @@ struct WorkshopDetailIdentityHeader: View {
                     ?? Text(verbatim: ratingCountText))
         }
         .modifier(OptionalHelp(text: voteSplitText))
+    }
+
+    /// The modal column already carries a 22pt title and two date lines; five glyphs there read as
+    /// a second heading, so it spends one star and lets the number do the work.
+    @ViewBuilder
+    private func stars(outOfFive: Double) -> some View {
+        let spoken = Text("\(outOfFive.formatted(.number.precision(.fractionLength(1)))) stars")
+        switch style {
+        case .inspector:
+            HStack(spacing: 1) {
+                ForEach(0 ..< 5, id: \.self) { index in
+                    Image(systemName: Self.starSymbol(for: index, rating: outOfFive))
+                        .foregroundStyle(DesignTokens.Colors.rating)
+                        .font(.system(size: 12))
+                }
+            }
+            .accessibilityLabel(spoken)
+        case .modal:
+            Image(systemName: "star.fill")
+                .foregroundStyle(DesignTokens.Colors.rating)
+                .font(.system(size: 12))
+                .accessibilityLabel(spoken)
+        }
     }
 
     private var voteSplitText: Text? {
@@ -129,7 +161,10 @@ struct WorkshopDetailIdentityHeader: View {
         case .none:
             String(localized: "No ratings yet", bundle: .appLanguage, comment: "Workshop detail rating line when the item has no votes.")
         case let .count(votes):
-            String(localized: "\(votes.formatted()) ratings", bundle: .appLanguage, comment: "Workshop detail rating count. Placeholder is a formatted number such as 3,094.")
+            // S8b writes the modal column's count as `★ 4.9 (n)` — the star beside it is the noun.
+            style == .modal
+                ? "(\(votes.formatted()))"
+                : String(localized: "\(votes.formatted()) ratings", bundle: .appLanguage, comment: "Workshop detail rating count. Placeholder is a formatted number such as 3,094.")
         }
     }
 
@@ -210,13 +245,31 @@ struct WorkshopDetailIdentityHeader: View {
 
     @ViewBuilder
     private var dateLine: some View {
-        if let updated = item.timeUpdated {
-            Text("Updated \(Self.dateFormatter.string(from: updated)) (\(WorkshopRelativeDateFormatter.string(updated)))")
-                .lineLimit(1)
-                .modifier(OptionalHelp(text: postedText))
-        } else if let posted = postedText {
-            posted.lineLimit(1)
+        switch style {
+        case .inspector:
+            // One line wide enough for one date: the other rides its tooltip.
+            if let updatedText {
+                updatedText
+                    .lineLimit(1)
+                    .modifier(OptionalHelp(text: postedText))
+            } else if let postedText {
+                postedText.lineLimit(1)
+            }
+        case .modal:
+            VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
+                if let postedText {
+                    postedText.lineLimit(1)
+                }
+                if let updatedText {
+                    updatedText.lineLimit(1)
+                }
+            }
         }
+    }
+
+    private var updatedText: Text? {
+        guard let updated = item.timeUpdated else { return nil }
+        return Text("Updated \(Self.dateFormatter.string(from: updated)) (\(WorkshopRelativeDateFormatter.string(updated)))")
     }
 
     private var postedText: Text? {

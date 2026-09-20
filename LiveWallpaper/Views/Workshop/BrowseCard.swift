@@ -14,6 +14,8 @@ struct BrowseCard: View, Equatable {
             && lhs.cardPreferences == rhs.cardPreferences
             && lhs.reduceMotion == rhs.reduceMotion
             && lhs.canDownload == rhs.canDownload
+            && lhs.presentation == rhs.presentation
+            && lhs.isRevealed == rhs.isRevealed
     }
 
     let item: WorkshopQueryItem
@@ -28,6 +30,11 @@ struct BrowseCard: View, Equatable {
     /// not a read of `WorkshopDownloadCoordinator`: observing it here would tie every
     /// visible card to the progress ticks of whichever download is running.
     var canDownload: Bool = false
+    var presentation: BrowsePresentation = .legacy
+    /// Whether the host's `MatureRevealState` has uncovered this item.
+    var isRevealed: Bool = false
+    /// nil keeps the reveal in this card's own `@State`.
+    var onReveal: (() -> Void)?
     var onSelect: () -> Void = {}
     var onDownload: () -> Void = {}
 
@@ -38,7 +45,7 @@ struct BrowseCard: View, Equatable {
     @Environment(\.openURL) private var openURL
 
     private var shouldBlur: Bool {
-        cardPreferences.blursMatureThumbnails && item.isMatureRated && !matureRevealed
+        cardPreferences.blursMatureThumbnails && item.isMatureRated && !matureRevealed && !isRevealed
     }
 
     private var showsTypePill: Bool {
@@ -55,7 +62,9 @@ struct BrowseCard: View, Equatable {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .buttonStyle(.plain)
-        .galleryTileChrome(isHovering: isHovered, isSelected: isSelected, cornerRadius: DesignTokens.Corner.lg, reduceMotion: reduceMotion)
+        .galleryTileChrome(isHovering: isHovered, isSelected: isSelected, cornerRadius: cardCornerRadius, reduceMotion: reduceMotion)
+        .overlay { editDeskBorder }
+        .shadow(color: editDeskShadow?.color ?? .clear, radius: editDeskShadow?.radius ?? 0, y: editDeskShadow?.y ?? 0)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .settledHover { isHovered = $0 }
         .settledHelp(Text(verbatim: item.title), isHovering: isHovered)
@@ -79,7 +88,7 @@ struct BrowseCard: View, Equatable {
             Button(role: .cancel) {} label: { Text("Cancel") }
             Button(role: .destructive) {
                 MatureContentSettings.confirm()
-                matureRevealed = true
+                markRevealed()
             } label: {
                 Text("I am 18 or older")
             }
@@ -90,10 +99,38 @@ struct BrowseCard: View, Equatable {
 
     private func requestReveal() {
         if MatureContentSettings.isConfirmed {
-            matureRevealed = true
+            markRevealed()
         } else {
             showingAgeConfirm = true
         }
+    }
+
+    private func markRevealed() {
+        if let onReveal {
+            onReveal()
+        } else {
+            matureRevealed = true
+        }
+    }
+
+    // MARK: - S8 chrome
+
+    private var cardCornerRadius: CGFloat {
+        presentation == .editDesk ? DesignTokens.EditDesk.Corner.panel : DesignTokens.Corner.lg
+    }
+
+    @ViewBuilder
+    private var editDeskBorder: some View {
+        if presentation == .editDesk {
+            RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
+                .strokeBorder(DesignTokens.EditDesk.Colors.strokePanel, lineWidth: 1)
+                .allowsHitTesting(false)
+        }
+    }
+
+    private var editDeskShadow: DesignTokens.EditDesk.Shadow? {
+        guard presentation == .editDesk, isHovered else { return nil }
+        return .hoverCard
     }
 
     // MARK: - Thumbnail
@@ -112,7 +149,12 @@ struct BrowseCard: View, Equatable {
         // Gated on the pills, not just the blur: inside the `if`s every card would still
         // build the glass container, its `HStack` and the padding around an empty stack.
         .overlay(alignment: .topLeading) {
-            if !shouldBlur, showsTypePill || showsRatingPill {
+            if presentation == .editDesk {
+                if isHovered, !shouldBlur {
+                    ThumbnailBadge(verbatim: "GIF", systemImage: "play.fill")
+                        .padding(DesignTokens.Spacing.sm)
+                }
+            } else if !shouldBlur, showsTypePill || showsRatingPill {
                 AdaptiveGlassContainer(spacing: DesignTokens.Spacing.xs) {
                     HStack(spacing: DesignTokens.Spacing.xs) {
                         if let contentType, showsTypePill {
@@ -127,14 +169,23 @@ struct BrowseCard: View, Equatable {
             }
         }
         .overlay(alignment: .topTrailing) {
-            if let resolutionLabel, !shouldBlur, cardPreferences.showsResolution {
+            if presentation == .editDesk {
+                if isInLibrary, !shouldBlur {
+                    ThumbnailPresenceCheck(tint: DesignTokens.EditDesk.Colors.success)
+                        .padding(DesignTokens.Spacing.sm)
+                }
+            } else if let resolutionLabel, !shouldBlur, cardPreferences.showsResolution {
                 ThumbnailBadge(verbatim: resolutionLabel)
                     .padding(DesignTokens.Spacing.sm)
             }
         }
         .overlay(alignment: .bottom) {
             if !shouldBlur {
-                titleBand
+                if presentation == .editDesk {
+                    editDeskInfoBand
+                } else {
+                    titleBand
+                }
             }
         }
         .aspectRatio(1, contentMode: .fit)
@@ -172,6 +223,50 @@ struct BrowseCard: View, Equatable {
                 ThumbnailPresenceCheck(tint: Self.inLibraryGreen)
             }
         }
+    }
+
+    /// SCREENS S8: title over one monospaced meta line, on a gradient that fades into the picture.
+    private var editDeskInfoBand: some View {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
+            Text(verbatim: item.title)
+                .font(DesignTokens.EditDesk.Typography.cardTitle)
+                .foregroundStyle(DesignTokens.Colors.overlayForeground)
+                .lineLimit(1)
+            if let editDeskMetaLine {
+                Text(verbatim: editDeskMetaLine)
+                    .font(DesignTokens.EditDesk.Typography.badgeMono)
+                    .foregroundStyle(DesignTokens.Colors.overlayForeground.opacity(DesignTokens.Opacity.dimmedIcon))
+                    .lineLimit(1)
+            }
+        }
+        .padding(.horizontal, DesignTokens.EditDesk.Spacing.s8)
+        .padding(.bottom, DesignTokens.EditDesk.Spacing.s8)
+        .padding(.top, DesignTokens.EditDesk.Spacing.s12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(alignment: .bottom) {
+            LinearGradient(
+                colors: [.clear, DesignTokens.EditDesk.Colors.gradientCardBottom],
+                startPoint: .top, endPoint: .bottom
+            )
+        }
+        .allowsHitTesting(false)
+    }
+
+    private var editDeskMetaLine: String? {
+        var parts: [String] = []
+        if let rating = ratingValue {
+            parts.append("★ " + rating.formatted(.number.precision(.fractionLength(1))))
+        }
+        if let resolutionLabel {
+            parts.append(resolutionLabel)
+        }
+        if let subscribers = subscriberText {
+            parts.append(subscribers)
+        }
+        if let formattedSize {
+            parts.append(formattedSize)
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
     private static func typeSymbol(for type: WorkshopContentTypeFilter) -> String {
@@ -261,6 +356,11 @@ struct BrowseCard: View, Equatable {
         )
     }
 
+    private var subscriberText: String? {
+        guard let subs = item.subscriptionCount, subs > 0 else { return nil }
+        return String(localized: "\(WorkshopCountFormatter.compact(subs)) subscribers", bundle: .appLanguage, comment: "Workshop card VoiceOver subscriber count.")
+    }
+
     private var formattedSize: String? {
         guard let bytes = item.fileSizeBytes else { return nil }
         // `fileSizeBytes` is `UInt64`; clamp before the `Int64` formatter to
@@ -295,8 +395,8 @@ struct BrowseCard: View, Equatable {
         if let resolutionLabel {
             parts.append(resolutionLabel)
         }
-        if let subs = item.subscriptionCount, subs > 0 {
-            parts.append(String(localized: "\(WorkshopCountFormatter.compact(subs)) subscribers", bundle: .appLanguage, comment: "Workshop card VoiceOver subscriber count."))
+        if let subscriberText {
+            parts.append(subscriberText)
         }
         if let size = formattedSize {
             parts.append(size)

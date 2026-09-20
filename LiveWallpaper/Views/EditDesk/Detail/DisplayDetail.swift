@@ -5,7 +5,7 @@ import SwiftUI
 /// MOTION 10: the chrome follows the hero in rather than arriving with it.
 private let detailChromeDelay: TimeInterval = 0.25
 
-/// The top bar's segment: `.overlay` keeps the same shell and swaps the inspector's contents (M4).
+/// The top bar's segment selects the wallpaper preview or overlay editing surface.
 enum DetailSection: Hashable {
     case wallpaper
     case overlay
@@ -22,13 +22,15 @@ struct DetailActions {
     var playback: (StagePlaybackAction) -> Void
     var recapture: () -> Void
     var openSettings: () -> Void
+    var copyOverlays: () -> Void
+    var snapEnabled: Binding<Bool>
 }
 
 /// GAP_ANALYSIS.md §8.2 layout B: backdrop, top bar, the still hero with its HUD on the left and a
 /// resident inspector column on the right. Both the HUD's controls and the inspector arrive from
 /// the host, which owns the draft they write through.
 @MainActor
-struct DisplayDetail<HUD: View, Inspector: View>: View {
+struct DisplayDetail<HUD: View, Inspector: View, Overlay: View>: View {
     let displayName: String
     let tags: [DetailDisplayTag]
     let hero: DetailHeroStatus
@@ -42,6 +44,8 @@ struct DisplayDetail<HUD: View, Inspector: View>: View {
     let actions: DetailActions
     @ViewBuilder let hud: () -> HUD
     @ViewBuilder let inspector: () -> Inspector
+    let overlayLogicalSize: CGSize
+    @ViewBuilder let overlayCanvas: (CGSize) -> Overlay
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var chromeVisible = false
@@ -49,7 +53,11 @@ struct DisplayDetail<HUD: View, Inspector: View>: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             backdrop
-            heroLayer(DetailGeometry.heroFrame(in: windowSize))
+            if section == .overlay {
+                canvasLayer
+            } else {
+                heroLayer(DetailGeometry.heroFrame(in: windowSize))
+            }
             inspectorLayer
             topBarLayer
         }
@@ -81,6 +89,18 @@ struct DisplayDetail<HUD: View, Inspector: View>: View {
         .opacity(heroVisible ? 1 : 0)
         // The stage hides its tile in the same transaction; an animated fade shows both or neither.
         .animation(nil, value: heroVisible)
+    }
+
+    private var canvasLayer: some View {
+        let box = OverlayGeometry.aspectFit(logicalSize: overlayLogicalSize, in: DetailGeometry.heroFrame(in: windowSize))
+        return overlayCanvas(box.size)
+            .frame(width: box.width, height: box.height)
+            .padding(.leading, box.minX)
+            .padding(.top, box.minY)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .opacity(heroVisible ? 1 : 0)
+            .allowsHitTesting(heroVisible)
+            .animation(nil, value: heroVisible)
     }
 
     private var stillFrameNote: some View {

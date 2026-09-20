@@ -87,4 +87,11 @@ struct GalleryCardPreferencesTests {
         let source = try RepositoryRoot.source("LiveWallpaper/Views/ContentView.swift")
         #expect(source.contains(".providesGalleryCardPreferences()"))
     }
+
+    @Test("The Edit Desk root publishes the same preferences as the old root")
+    func editDeskRootPublishesPreferences() throws {
+        let source = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/EditDeskRoot.swift")
+        #expect(source.contains(".providesGalleryCardPreferences()"))
+        #expect(source.contains("\\.libraryTileSize"))
+    }
 }

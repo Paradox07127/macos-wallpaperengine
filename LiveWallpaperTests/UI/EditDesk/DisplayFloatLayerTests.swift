@@ -59,4 +59,27 @@ struct DisplayFloatLayerTests {
     func ghostSize() {
         #expect(ModalDragGhost.size == CGSize(width: 140, height: 79))
     }
+
+    @Test("Only the drop strip offers All Displays; picking one target hides it and its divider")
+    func applyAllIsDropOnly() {
+        #expect(FloatLayerGeometry.showsApplyAll(for: .dropTarget))
+        #expect(FloatLayerGeometry.showsApplyAll(for: .selectTarget) == false)
+    }
+
+    @Test("Thumbnails read as drop targets when dropping and as a choice when selecting")
+    func thumbnailAccessibilityLabelPerMode() {
+        let drop = FloatLayerGeometry.thumbnailAccessibilityLabel(for: .dropTarget, displayName: "MacBook")
+        let select = FloatLayerGeometry.thumbnailAccessibilityLabel(for: .selectTarget, displayName: "MacBook")
+        #expect(drop.contains("MacBook"))
+        #expect(select.contains("MacBook"))
+        #expect(drop != select, Comment(rawValue: "Both modes read out \(drop)"))
+        #expect(select.lowercased().contains("drop") == false, Comment(rawValue: select))
+    }
+
+    @Test("The view asks the geometry for both mode-dependent affordances instead of branching inline")
+    func viewRoutesThroughTheGeometry() throws {
+        let source = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Library/DisplayFloatLayer.swift")
+        #expect(source.contains("FloatLayerGeometry.showsApplyAll(for: mode)"))
+        #expect(source.contains("FloatLayerGeometry.thumbnailAccessibilityLabel(for: mode"))
+    }
 }
