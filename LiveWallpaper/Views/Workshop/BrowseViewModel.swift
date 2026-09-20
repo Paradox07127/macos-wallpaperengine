@@ -368,7 +368,7 @@ final class BrowseViewModel {
     }
 
     func onAppear() {
-        if applySettingsDefaults() || (items.isEmpty && lastError == nil) {
+        if applySettingsDefaults() || (!hasLoadedPage && !isLoading && lastError == nil) {
             Task { await reload() }
         }
     }

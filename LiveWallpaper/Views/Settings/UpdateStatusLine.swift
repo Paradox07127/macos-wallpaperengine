@@ -6,6 +6,11 @@ struct UpdateStatusLine: View {
     @State private var updater = SparkleUpdaterController.shared
 
     var body: some View {
+        #if LOCAL_BUILD
+        Text("Local build: automatic updates are unavailable.")
+            .font(DesignTokens.Typography.caption)
+            .foregroundStyle(.secondary)
+        #else
         HStack(spacing: 5) {
             statusGlyph
             Text(statusTitle)
@@ -18,6 +23,7 @@ struct UpdateStatusLine: View {
         }
         .font(.caption)
         .foregroundStyle(.secondary)
+        #endif
     }
 
     // MARK: - Status rendering

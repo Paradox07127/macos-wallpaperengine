@@ -5,6 +5,7 @@ import SwiftUI
 
 struct BrowsePane: View {
     @Environment(\.libraryTileSize) private var tileSize
+    @Bindable var session: WorkshopBrowseSession
     let viewModel: BrowseViewModel
     let doctor: SteamCMDDoctorService
     let onRequestKeyEntry: () -> Void
@@ -12,19 +13,6 @@ struct BrowsePane: View {
     var onDownloadByLink: (() -> Void)?
 
     @Environment(WorkshopServices.self) private var services
-    /// An id, not a value copy: the inspector follows the grid when a page
-    /// turn or the persona pass replaces `viewModel.items`.
-    @State private var selectedID: UInt64?
-    /// An item opened from a Required items row, which need not be on the
-    /// current page; resolved once through `services.itemDetails`.
-    @State private var detachedItem: WorkshopQueryItem?
-    /// The off-page open in flight, if any; `onChange(of: items)` must not
-    /// clear its id while the fetch runs.
-    @State private var pendingOpen: BrowseSelection.PendingOpen?
-    /// Tells two opens of the same id apart, so the first fetch landing cannot
-    /// settle the second.
-    @State private var openGeneration = 0
-    @State private var inspectorHidden = false
     @State private var rateLimitRemaining: TimeInterval = 0
     /// Read here, once, and handed to every tile: the cards are `EquatableView`s
     /// and cannot observe the environment from inside their own `body`.
@@ -51,20 +39,21 @@ struct BrowsePane: View {
             liveWidth: $liveInspectorWidth,
             minWidth: DesignTokens.Inspector.minWidth,
             maxWidth: DesignTokens.Inspector.maxWidth,
-            onClose: { inspectorHidden = true },
+            onClose: { session.inspectorHidden = true },
             main: { mainColumn },
             inspector: { width in inspectorColumn(width: width) }
         )
         .background(DesignTokens.Colors.pageBackground)
+        .modifier(WorkshopBookmarkErrorModifier())
         .toolbar {
-            if selectedID != nil {
+            if session.selectedID != nil {
                 ToolbarItem(placement: .primaryAction) {
                     Button {
-                        inspectorHidden.toggle()
+                        session.inspectorHidden.toggle()
                     } label: {
                         Image(systemName: "sidebar.right")
                     }
-                    .help(Text(inspectorHidden ? "Show details" : "Hide details"))
+                    .help(Text(session.inspectorHidden ? "Show details" : "Hide details"))
                     .accessibilityLabel(Text("Toggle details panel"))
                 }
             }
@@ -105,43 +94,43 @@ struct BrowsePane: View {
         }
         .onChange(of: viewModel.items) { _, items in
             guard !BrowseSelection.keepsSelection(
-                id: selectedID, in: items, detached: detachedItem, pending: pendingOpen?.id
+                id: session.selectedID, in: items, detached: session.detachedItem, pending: session.pendingOpen?.id
             ) else { return }
-            selectedID = nil
+            session.selectedID = nil
         }
     }
 
     private var selectedItem: WorkshopQueryItem? {
-        BrowseSelection.resolve(id: selectedID, in: viewModel.items, detached: detachedItem)
+        BrowseSelection.resolve(id: session.selectedID, in: viewModel.items, detached: session.detachedItem)
     }
 
     private var isInspectorVisible: Bool {
-        selectedID != nil && !inspectorHidden
+        session.selectedID != nil && !session.inspectorHidden
     }
 
     /// Opens an item by id, which may not be on this page. Off-page ids are fetched
     /// once; an id Steam will not describe leaves the previous selection in place.
     private func openItem(_ id: UInt64) {
-        inspectorHidden = false
-        guard !viewModel.items.contains(where: { $0.id == id }), detachedItem?.id != id else {
-            selectedID = id
+        session.inspectorHidden = false
+        guard !viewModel.items.contains(where: { $0.id == id }), session.detachedItem?.id != id else {
+            session.selectedID = id
             return
         }
-        openGeneration += 1
+        session.openGeneration += 1
         let open = BrowseSelection.PendingOpen(
-            id: id, generation: openGeneration, previousSelectedID: selectedID, previousDetached: detachedItem
+            id: id, generation: session.openGeneration, previousSelectedID: session.selectedID, previousDetached: session.detachedItem
         )
-        pendingOpen = open
-        selectedID = id
-        detachedItem = nil
+        session.pendingOpen = open
+        session.selectedID = id
+        session.detachedItem = nil
         Task {
             let outcome = await services.itemDetails.load(ids: [id])
-            guard pendingOpen?.generation == open.generation else { return }
-            pendingOpen = nil
-            guard selectedID == id else { return }
+            guard session.pendingOpen?.generation == open.generation else { return }
+            session.pendingOpen = nil
+            guard session.selectedID == id else { return }
             let settled = open.settle(with: outcome.items.first, in: viewModel.items)
-            selectedID = settled.selectedID
-            detachedItem = settled.detached
+            session.selectedID = settled.selectedID
+            session.detachedItem = settled.detached
         }
     }
 
@@ -229,16 +218,16 @@ struct BrowsePane: View {
                     item: selectedItem,
                     doctor: doctor,
                     onBrowseCreator: { steamID, name in
-                        selectedID = nil
+                        session.selectedID = nil
                         Task { await viewModel.browseCreator(steamID: steamID, name: name) }
                     },
                     onSelectTag: { tag in
-                        selectedID = nil
+                        session.selectedID = nil
                         Task { await viewModel.browseTag(tag) }
                     },
                     onOpenItem: { openItem($0) }
                 )
-            } else if selectedID != nil {
+            } else if session.selectedID != nil {
                 // Off-page id still being resolved.
                 ProgressView()
                     .controlSize(.small)
@@ -291,6 +280,7 @@ struct BrowsePane: View {
                                     .id(item.id)
                             }
                         }
+                        .scrollTargetLayout()
                         .padding(.horizontal, DesignTokens.Settings.formHorizontalMargin)
                         .padding(.vertical, DesignTokens.Settings.formVerticalMargin)
                     }
@@ -301,11 +291,12 @@ struct BrowsePane: View {
                 .background(
                     Color.clear
                         .contentShape(Rectangle())
-                        .onTapGesture { selectedID = nil }
+                        .onTapGesture { session.selectedID = nil }
                 )
             }
+            .scrollPosition(id: $session.scrollID, anchor: .top)
             // Opening the inspector reflows rows and can push the selected tile off-screen — re-center it.
-            .onChange(of: selectedID) { _, id in
+            .onChange(of: session.selectedID) { _, id in
                 guard let id else { return }
                 Task { @MainActor in
                     try? await Task.sleep(nanoseconds: 60_000_000)
@@ -315,6 +306,7 @@ struct BrowsePane: View {
                 }
             }
             .onChange(of: viewModel.pageIndex) { _, _ in
+                session.scrollID = nil
                 proxy.scrollTo(Self.gridTopAnchor, anchor: .top)
             }
         }
@@ -324,17 +316,19 @@ struct BrowsePane: View {
         BrowseCard(
             item: item,
             isInLibrary: installedWorkshopIDs.contains(String(item.id)),
-            isSelected: selectedID == item.id,
+            isSelected: session.selectedID == item.id,
             cardPreferences: cardPreferences,
             reduceMotion: reduceMotion,
             canDownload: doctor.isDownloadReady,
+            isBookmarked: WorkshopBookmarkActions.contains(item.id),
+            onBookmark: { WorkshopBookmarkActions.toggle(item) },
             onSelect: {
-                if selectedID == item.id {
-                    selectedID = nil
+                if session.selectedID == item.id {
+                    session.selectedID = nil
                 } else {
-                    selectedID = item.id
-                    detachedItem = nil
-                    inspectorHidden = false
+                    session.selectedID = item.id
+                    session.detachedItem = nil
+                    session.inspectorHidden = false
                 }
             },
             onDownload: {

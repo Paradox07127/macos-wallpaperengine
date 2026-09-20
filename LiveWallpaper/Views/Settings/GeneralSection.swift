@@ -74,6 +74,9 @@ extension GeneralSettingsView {
                     .onChange(of: checksUpdatesAtLaunch) { _, enabled in
                         SparkleUpdaterController.shared.automaticallyChecksForUpdates = enabled
                     }
+                    #if LOCAL_BUILD
+                    .disabled(true)
+                    #endif
                     .accessibilityLabel(Text("Check for updates automatically"))
                     .accessibilityHint(Text("Checks at launch and periodically while the app is running."))
             }

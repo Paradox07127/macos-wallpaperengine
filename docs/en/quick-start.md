@@ -58,6 +58,13 @@ playlist and schedule. Applying a scheme replaces that display's setup after
 confirmation. Schemes reference local files; moving them to another Mac may
 require selecting those files again.
 
+On Pro, the Workshop browser's bookmark button (also in the card's context menu
+and detail inspector) saves an item without downloading or applying it. Find it
+under **Saved → Bookmarks → Workshop Bookmarks** and open it when you want to
+download or apply it. These local Workshop references do not subscribe to or
+favorite items on Steam. They are stored separately from playable bookmarks and
+are not included in `.lwconfig` exports.
+
 ## 7) Global shortcuts
 
 **Settings → Shortcuts** — a master switch plus eight bindable actions:
@@ -128,3 +135,9 @@ preset keeps your changes.
 - Revisit **Settings → Performance**: pause rules (full-screen, battery, Low Power Mode, occlusion), per-app exceptions — including **never pause** for apps that should always keep the wallpaper alive — and the video RAM preload budget.
 - Export a `.lwconfig` backup from **Settings → Backup & Restore**. It saves settings and references, not the media files or secrets. Lite cannot run scene entries from a Pro backup.
 - Hit an edge case? **Settings → About → Report a Bug…** pre-fills diagnostics.
+
+The Workshop browser keeps its current query, filters, page, selection, and scroll target while switching between the management window's pages (including Settings and Installed). This session lasts until the management window is destroyed; it is not a browsing-history archive across app restarts.
+
+The customized Saved page shows Local Wallpapers above Workshop Bookmarks, including empty sections. The original local bookmark list is no longer used in the Pro Saved page. The former Schemes tab is hidden on this page; existing bookmark and scheme data is retained.
+
+The Local Wallpapers section now scans the configured SteamCMD download directory directly and checks authorized external project folders from import records. It reads project manifests and existing content, without consulting the old bookmark list or applying its history cap to downloads. Presets and non-wallpaper projects are excluded. Refresh rescans disk; applying a tile uses the existing Wallpaper Engine importer. Workshop Bookmarks continues to use the separate saved-for-later store.

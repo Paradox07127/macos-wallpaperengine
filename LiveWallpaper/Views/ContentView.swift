@@ -7,6 +7,9 @@ struct ContentView: View {
     @Environment(ScreenManager.self) private var screenManager
     @Environment(\.featureCatalog) private var featureCatalog
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    #if !LITE_BUILD
+    @State private var workshopBrowseSession = WorkshopBrowseSession()
+    #endif
     @State private var selectedNavigation: Navigation?
     @State private var isSettingsMode: Bool
     @State private var selectedSettingsNavigation: SettingsNavigation?
@@ -44,6 +47,9 @@ struct ContentView: View {
                 DetailContent(selection: $selectedNavigation)
             }
         }
+        #if !LITE_BUILD
+        .environment(workshopBrowseSession)
+        #endif
         .navigationSplitViewStyle(.balanced)
         #if !LITE_BUILD
         .overlay(alignment: .bottomTrailing) {

@@ -19,22 +19,21 @@ struct LibraryView: View {
     var body: some View {
         DetailPageScaffold { content }
             .confirmDestructive($pendingDestructive)
+            #if !LITE_BUILD
+            .modifier(WorkshopBookmarkErrorModifier())
+            #endif
     }
 
     // MARK: - Content
 
     @ViewBuilder
     private var content: some View {
-        if store.bookmarks.isEmpty {
-            emptyState
-        } else {
-            let visible = filteredBookmarks
-            VStack(spacing: 0) {
-                filterBar
-                Divider()
-                gallery(visible)
-                LibraryStatusBar(summary: statusSummary(shown: visible.count))
-            }
+        let visible = filteredBookmarks
+        VStack(spacing: 0) {
+            filterBar
+            Divider()
+            gallery(visible)
+            LibraryStatusBar(summary: statusSummary(shown: visible.count + visibleWorkshopBookmarkCount))
         }
     }
 
@@ -52,7 +51,7 @@ struct LibraryView: View {
     }
 
     private func statusSummary(shown: Int) -> Text {
-        let total = store.bookmarks.count
+        let total = store.bookmarks.count + workshopBookmarkCount
         return shown == total
             ? Text("\(total) bookmarks")
             : Text("\(shown) of \(total) shown")
@@ -60,13 +59,15 @@ struct LibraryView: View {
 
     @ViewBuilder
     private func gallery(_ visible: [WallpaperBookmark]) -> some View {
-        if visible.isEmpty {
-            IllustratedEmptyState(
-                symbol: "magnifyingglass",
-                title: "No bookmarks match your search"
-            )
-        } else {
-            ScrollView {
+        ScrollView {
+            VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
+                Text("Local Wallpapers")
+                    .font(DesignTokens.Typography.sectionTitle)
+                if visible.isEmpty {
+                    Text(store.bookmarks.isEmpty ? "No local wallpaper bookmarks yet." : "No bookmarks match your search")
+                        .font(DesignTokens.Typography.caption)
+                        .foregroundStyle(.secondary)
+                }
                 LibraryGalleryGrid(size: tileSize, aspect: .wide) {
                     ForEach(visible) { bookmark in
                         BookmarkTile(
@@ -88,7 +89,7 @@ struct LibraryView: View {
                             onDelete: {
                                 pendingDestructive = PendingDestructive(
                                     .deleteBookmark(bookmarkName: bookmark.label)
-                                ) { store.remove(bookmark.id) }
+                                ) { removeBookmark(bookmark) }
                             }
                         )
                         .onDrag {
@@ -98,15 +99,19 @@ struct LibraryView: View {
                         }
                     }
                 }
-                .libraryGridPadding()
             }
-            .overlay(alignment: .top) {
-                if dragSession.isDragging, !screenManager.screens.isEmpty {
-                    dropBar
-                }
-            }
-            .animation(.easeInOut(duration: 0.2), value: dragSession.isDragging)
+            .libraryGridPadding()
+            #if !LITE_BUILD
+            Divider()
+            WorkshopBookmarkGallery(bookmarks: visibleWorkshopBookmarks)
+            #endif
         }
+        .overlay(alignment: .top) {
+            if dragSession.isDragging, !screenManager.screens.isEmpty {
+                dropBar
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: dragSession.isDragging)
     }
 
     @State private var dropTickets = LibraryDropTickets()
@@ -162,15 +167,6 @@ struct LibraryView: View {
         }
     }
 
-    private var emptyState: some View {
-        LibraryGuideCard(
-            icon: "bookmark",
-            tint: DesignTokens.Colors.LibraryTint.bookmarks,
-            title: "No bookmarks yet",
-            message: "Use the bookmark button on a display to save its wallpaper. Applying one swaps the wallpaper and leaves that display's settings alone."
-        )
-    }
-
     // MARK: - Filtering
 
     private var showsTypeChips: Bool {
@@ -178,8 +174,56 @@ struct LibraryView: View {
     }
 
     private var availableTypes: Set<WallpaperType> {
-        Set(store.bookmarks.map(\.wallpaperType))
+        var types = Set(store.bookmarks.map(\.wallpaperType))
+        #if !LITE_BUILD
+        types.formUnion(workshopBookmarks.compactMap(\.wallpaperType))
+        #endif
+        return types
     }
+
+    private var workshopBookmarkCount: Int {
+        #if !LITE_BUILD
+        workshopBookmarks.count
+        #else
+        0
+        #endif
+    }
+
+    private var visibleWorkshopBookmarkCount: Int {
+        #if !LITE_BUILD
+        visibleWorkshopBookmarks.count
+        #else
+        0
+        #endif
+    }
+
+    #if !LITE_BUILD
+    private var workshopBookmarks: [WorkshopBookmark] {
+        WorkshopBookmarkStore.shared.bookmarks.filter {
+            !store.containsWPEBookmark(workshopID: String($0.id))
+        }
+    }
+
+    private var visibleWorkshopBookmarks: [WorkshopBookmark] {
+        var result = workshopBookmarks
+        if showsTypeChips, case let .type(type) = typeFilter, availableTypes.contains(type) {
+            result = result.filter { $0.wallpaperType == type }
+        }
+        let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty {
+            result = result.filter { $0.title.localizedCaseInsensitiveContains(trimmed) }
+        }
+        return result.sorted { lhs, rhs in
+            if sortOrder == .recent {
+                return lhs.createdAt > rhs.createdAt
+            }
+            if sortOrder == .type, lhs.wallpaperType != rhs.wallpaperType {
+                return (lhs.wallpaperType?.rawValue ?? "") < (rhs.wallpaperType?.rawValue ?? "")
+            }
+            return lhs.title.localizedStandardCompare(rhs.title) == .orderedAscending
+        }
+    }
+    #endif
 
     private var filteredBookmarks: [WallpaperBookmark] {
         var result = store.bookmarks
@@ -196,6 +240,17 @@ struct LibraryView: View {
             date: \.createdAt,
             type: \.wallpaperType
         )
+    }
+
+    private func removeBookmark(_ bookmark: WallpaperBookmark) {
+        #if !LITE_BUILD
+        if let workshopID = bookmark.wpeOrigin?.workshopID ?? bookmark.content.sceneDescriptor?.workshopID,
+           let id = UInt64(workshopID), WorkshopBookmarkStore.shared.contains(id) {
+            WorkshopBookmarkStore.shared.remove(id)
+            guard !WorkshopBookmarkStore.shared.hasStorageError else { return }
+        }
+        #endif
+        store.remove(bookmark.id)
     }
 
     // MARK: - Apply

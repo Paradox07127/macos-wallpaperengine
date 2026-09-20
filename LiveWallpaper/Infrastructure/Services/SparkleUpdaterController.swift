@@ -1,3 +1,32 @@
+#if LOCAL_BUILD
+import Foundation
+import LiveWallpaperCore
+
+/// Local ad-hoc builds cannot load Sparkle under hardened library validation.
+/// Keep update controls unavailable without changing the user's saved preference.
+@MainActor
+@Observable
+final class SparkleUpdaterController {
+    static let shared = SparkleUpdaterController()
+    private(set) var availableVersion: String?
+
+    var canCheckForUpdates: Bool {
+        false
+    }
+
+    var lastUpdateCheckDate: Date? {
+        nil
+    }
+
+    var automaticallyChecksForUpdates: Bool {
+        get { false }
+        set { _ = newValue }
+    }
+
+    func start() {}
+    func checkForUpdates() {}
+}
+#else
 import Foundation
 import LiveWallpaperCore
 import Sparkle
@@ -188,3 +217,5 @@ final class GentleReminderDelegate: NSObject, SPUStandardUserDriverDelegate {
         onMain { [weak self] in self?.onSessionFinished?() }
     }
 }
+
+#endif

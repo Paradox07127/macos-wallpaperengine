@@ -26,7 +26,7 @@ struct HistoryRow: View {
     var onApply: (Screen) -> Void = { _ in }
     var onApplyToAll: () -> Void = {}
     var onTap: () -> Void = {}
-    let onRemove: () -> Void
+    var onRemove: (() -> Void)?
     var isBookmarked: Bool = false
     var onBookmark: (() -> Void)?
     var hasUpdate: Bool = false
@@ -73,7 +73,9 @@ struct HistoryRow: View {
                     Divider()
                 }
                 Button("Show in Finder") { showInFinder() }
-                Button("Remove", role: .destructive, action: onRemove)
+                if let onRemove {
+                    Button("Remove", role: .destructive, action: onRemove)
+                }
             }
     }
 
@@ -172,9 +174,11 @@ struct HistoryRow: View {
                 showingFileActions = false
                 showInFinder()
             }
-            Button("Remove", role: .destructive) {
-                showingFileActions = false
-                onRemove()
+            if let onRemove {
+                Button("Remove", role: .destructive) {
+                    showingFileActions = false
+                    onRemove()
+                }
             }
         }
         .buttonStyle(.borderless)
