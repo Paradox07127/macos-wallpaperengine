@@ -28,10 +28,17 @@ struct DetailTopBar: View {
         HStack(spacing: 0) {
             Color.clear.frame(width: Self.trafficLightReserve)
             backButton
+            if section == .overlay {
+                tagRow.padding(.leading, DesignTokens.EditDesk.Spacing.s12)
+            }
             Spacer(minLength: DesignTokens.EditDesk.Spacing.s12)
             trailingControls
         }
-        .overlay(alignment: .center) { tagRow }
+        .overlay(alignment: .center) {
+            if section == .wallpaper {
+                tagRow
+            }
+        }
         .padding(.horizontal, DesignTokens.Spacing.lg)
         .frame(height: DesignTokens.EditDesk.Spacing.topBar)
     }
@@ -133,15 +140,29 @@ struct DetailTopBar: View {
             }
             .fixedSize()
             schemeMenu
-            GlassIconButton("square.on.square", action: actions.applyToAll)
-                .accessibilityLabel(Text("Apply to All Displays"))
-            GlassIconButton(
-                "trash",
-                tint: DesignTokens.EditDesk.Colors.danger,
-                role: .destructive,
-                action: actions.clearWallpaper
-            )
-            .accessibilityLabel(Text("Clear Wallpaper"))
+            if section == .overlay {
+                DetailPill(action: actions.copyOverlays) {
+                    Text(verbatim: "⧉")
+                    Text("Copy to Other Displays")
+                }
+                Toggle(isOn: actions.snapEnabled) {
+                    Text(verbatim: "▦")
+                    Text("Alignment Snapping")
+                }
+                .toggleStyle(.button)
+                .font(DesignTokens.EditDesk.Typography.chip)
+                .tint(DesignTokens.EditDesk.Colors.fillSelectedChip)
+            } else {
+                GlassIconButton("square.on.square", action: actions.applyToAll)
+                    .accessibilityLabel(Text("Apply to All Displays"))
+                GlassIconButton(
+                    "trash",
+                    tint: DesignTokens.EditDesk.Colors.danger,
+                    role: .destructive,
+                    action: actions.clearWallpaper
+                )
+                .accessibilityLabel(Text("Clear Wallpaper"))
+            }
         }
     }
 

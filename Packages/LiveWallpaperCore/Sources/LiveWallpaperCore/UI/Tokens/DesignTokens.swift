@@ -160,6 +160,11 @@ public enum DesignTokens {
             }
         }
 
+        /// The Edit Desk Workshop grid's column, kept out of the `LibraryTileSize` ladder because
+        /// that ladder is a persisted global preference while this page is fixed at six columns
+        /// (1280 − 2×18 inset fits 6×194 + 5×14; 1040 fits four).
+        public static let workshopBrowseColumnWidth: CGFloat = 194
+
         /// Off the spacing scale on purpose: the tiles read as a mosaic, where `lg`
         /// opened the rows wider than the columns look.
         public static let spacing: CGFloat = 14
@@ -182,8 +187,11 @@ public enum DesignTokens {
         }
 
         /// As many fixed columns as `width` holds, never fewer than one.
-        public static func columns(for size: LibraryTileSize, aspect: Aspect, fitting width: CGFloat) -> [GridItem] {
-            let column = columnWidth(for: size, aspect: aspect)
+        /// `columnWidth` overrides the `size`/`aspect` ladder for pages pinned to one preset.
+        public static func columns(
+            for size: LibraryTileSize, aspect: Aspect, fitting width: CGFloat, columnWidth: CGFloat? = nil
+        ) -> [GridItem] {
+            let column = columnWidth ?? self.columnWidth(for: size, aspect: aspect)
             let count = max(1, Int(((width + spacing) / (column + spacing)).rounded(.down)))
             return Array(repeating: GridItem(.fixed(column), spacing: spacing), count: count)
         }

@@ -14,6 +14,8 @@ struct DisplayDetailHost: View {
     let refreshCover: (CGDirectDisplayID) -> Void
     /// Held while a tile is in flight either way, so the stage stays locked through the return.
     @Binding var busy: Bool
+    /// The page's own toast stack, so overlay copies and wallpaper applies queue in one place.
+    let toasts: EditDeskToastCenter
 
     @Environment(ScreenManager.self) private var screenManager
     @Environment(\.featureCatalog) private var featureCatalog
@@ -22,6 +24,8 @@ struct DisplayDetailHost: View {
     @State private var section: DetailSection = .wallpaper
     /// The same optimistic-write draft the old inspector uses; the HUD and the panel both write it.
     @State private var draft = DraftState.default
+    @State private var overlaySessions: [String: OverlayEditorSession] = [:]
+    @State private var overlaySession: OverlayEditorSession?
     @State private var schemeNameDraft = ""
     @State private var showSchemeCapture = false
     @State private var pendingAction: PendingAction?
@@ -30,7 +34,7 @@ struct DisplayDetailHost: View {
     @AppStorage("Inspector.ColorExpanded") private var isColorExpanded = false
 
     private enum PendingAction: Identifiable {
-        case clearWallpaper, applyToAll
+        case clearWallpaper, applyToAll, copyOverlays
 
         var id: Self {
             self
@@ -48,16 +52,29 @@ struct DisplayDetailHost: View {
                     heroImage: cover(id),
                     backdropImage: cover(id),
                     windowSize: stage.stageSize,
-                    section: $section,
+                    section: sectionBinding,
                     heroVisible: coordinator?.heroVisible ?? false,
                     actions: actions(for: screen),
                     hud: { hud(for: screen, isPlaying: status.isPlaying) },
-                    inspector: { inspector(for: screen) }
+                    inspector: {
+                        if section == .overlay, let overlaySession {
+                            OverlayInspectorColumn(session: overlaySession, backdropAvailable: cover(id) != nil)
+                        } else {
+                            inspector(for: screen)
+                        }
+                    },
+                    overlayLogicalSize: screen.frame.size,
+                    overlayCanvas: { size in
+                        if let overlaySession {
+                            OverlayCanvas(session: overlaySession, cover: cover(id), size: size)
+                        }
+                    }
                 )
                 .transition(.opacity)
                 .onChange(of: screenManager.inspectedWallpaperAttempt(for: screen)?.id) { reloadDraft(for: screen) }
                 .onChange(of: screenManager.inspectedWallpaperAttempt(for: screen)?.configuration) { reloadDraft(for: screen) }
                 .onChange(of: screenManager.wallpaperSessionStateVersion) { reloadDraft(for: screen) }
+                .onChange(of: screenManager.monitorOverlay(for: screen)) { overlaySession?.refreshAppliedConfiguration() }
                 .onReceive(NotificationCenter.default.publisher(for: .wallpaperConfigurationDidChange)) { notification in
                     guard notification.userInfo?["screenID"] as? CGDirectDisplayID == screen.id else { return }
                     reloadDraft(for: screen)
@@ -93,12 +110,26 @@ struct DisplayDetailHost: View {
             busy = value
         }
         .onChange(of: stage.stageSize) { coordinator?.windowDidResize() }
+        .onChange(of: screenManager.screens.map(\.id)) {
+            if let id = overlaySession?.identity?.displayID, !screenManager.screens.contains(where: { $0.id == id }) {
+                overlaySession?.detach()
+                overlaySession = nil
+                pendingAction = nil
+            }
+        }
+        .onDisappear { overlaySession?.detach() }
     }
 
     // MARK: Handshake
 
     /// The hooks are reassigned here rather than at init so they capture the installed view.
     private func request(_ id: CGDirectDisplayID?) {
+        if id != coordinator?.shownDisplayID {
+            overlaySession?.detach()
+            pendingAction = nil
+        } else if let session = overlaySession, section == .overlay, !session.isActive {
+            session.transition(to: session.identity, store: OverlayEditorScreenStore(manager: screenManager), editing: true)
+        }
         let coordinator = coordinator ?? DetailTransitionCoordinator(stage: stage) { [stage] in
             DetailGeometry.heroFrame(in: stage.stageSize)
         }
@@ -109,12 +140,22 @@ struct DisplayDetailHost: View {
             // Synchronous: a deferred load would paint the previous display's draft for a frame.
             if let screen = screenManager.screens.first(where: { $0.id == target }) {
                 reloadDraft(for: screen)
+                let session = overlaySessions[screen.displayFingerprint] ?? OverlayEditorSession()
+                overlaySessions[screen.displayFingerprint] = session
+                overlaySession = session
+                session.transition(
+                    to: OverlayEditorIdentity(displayID: screen.id, fingerprint: screen.displayFingerprint),
+                    store: OverlayEditorScreenStore(manager: screenManager), editing: section == .overlay
+                )
+                session.capturePreview()
             }
         }
+        coordinator.onRelease = { overlaySession = nil }
         coordinator.request(id)
     }
 
     private func reloadDraft(for screen: Screen) {
+        overlaySession?.refreshAppliedConfiguration()
         let config = screenManager.inspectedWallpaperAttempt(for: screen)?.configuration
             ?? screenManager.getConfiguration(for: screen)
         let next = DraftState.from(config: config, fallbackHasPreviewSource: screen.videoPlayer?.videoURL != nil)
@@ -122,6 +163,19 @@ struct DisplayDetailHost: View {
         if draft != next {
             draft = next
         }
+    }
+
+    private var sectionBinding: Binding<DetailSection> {
+        Binding(get: { section }, set: { next in
+            guard section != next else { return }
+            if let session = overlaySession {
+                session.transition(to: session.identity, store: OverlayEditorScreenStore(manager: screenManager), editing: next == .overlay)
+                if next == .overlay {
+                    session.capturePreview()
+                }
+            }
+            section = next
+        })
     }
 
     // MARK: HUD
@@ -294,7 +348,14 @@ struct DisplayDetailHost: View {
                 }
             },
             recapture: { refreshCover(screen.id) },
-            openSettings: { router.openSettings(.general) }
+            openSettings: { router.openSettings(.general) },
+            copyOverlays: {
+                if let session = overlaySession {
+                    session.transition(to: session.identity, store: OverlayEditorScreenStore(manager: screenManager), editing: true)
+                }
+                pendingAction = .copyOverlays
+            },
+            snapEnabled: Binding(get: { overlaySession?.snapEnabled ?? true }, set: { overlaySession?.snapEnabled = $0 })
         )
     }
 
@@ -313,6 +374,7 @@ struct DisplayDetailHost: View {
         switch pendingAction {
         case .clearWallpaper: Text("Clear this display's wallpaper?")
         case .applyToAll: Text("Apply this display's wallpaper to all displays?")
+        case .copyOverlays: Text("Copy overlays to other displays?")
         case nil: Text(verbatim: "")
         }
     }
@@ -321,6 +383,7 @@ struct DisplayDetailHost: View {
         switch action {
         case .clearWallpaper: "Clear Wallpaper"
         case .applyToAll: "Apply to All Displays"
+        case .copyOverlays: "Copy to Other Displays"
         }
     }
 
@@ -328,6 +391,7 @@ struct DisplayDetailHost: View {
         switch action {
         case .clearWallpaper: "The desktop goes back to the system wallpaper; saved wallpapers are kept."
         case .applyToAll: "Every other connected display gets this wallpaper and its settings."
+        case .copyOverlays: "This replaces overlays on every other connected display. Effects are skipped on displays without a wallpaper."
         }
     }
 
@@ -337,6 +401,13 @@ struct DisplayDetailHost: View {
             screenManager.clearWallpaperForScreen(screen)
         case .applyToAll:
             screenManager.applyConfigurationToAllDisplays(from: screen)
+        case .copyOverlays:
+            guard let result = overlaySession?.copyToOtherDisplays() else { return }
+            toasts.post(
+                String(format: String(localized: "Copied to %lld / %lld displays", bundle: .appLanguage),
+                       Int64(result.copied), Int64(result.total)),
+                style: result.copied == result.total ? .success : .info
+            )
         }
         // Clearing only bumps the session version; the draft would keep the old wallpaper's panel.
         reloadDraft(for: screen)

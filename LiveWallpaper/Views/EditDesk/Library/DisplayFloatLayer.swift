@@ -35,6 +35,21 @@ enum FloatLayerGeometry {
         case .selectTarget: String(localized: "Selected · \(displayName)", bundle: .appLanguage)
         }
     }
+
+    /// "All Displays" is a drop-strip affordance; picking one target to apply to later excludes it.
+    static func showsApplyAll(for mode: FloatLayerMode) -> Bool {
+        switch mode {
+        case .dropTarget: true
+        case .selectTarget: false
+        }
+    }
+
+    static func thumbnailAccessibilityLabel(for mode: FloatLayerMode, displayName: String) -> String {
+        switch mode {
+        case .dropTarget: String(localized: "Drop target: \(displayName)", bundle: .appLanguage)
+        case .selectTarget: String(localized: "Apply to \(displayName)", bundle: .appLanguage)
+        }
+    }
 }
 
 /// SCREENS S5: the drop strip that rides above the modal. It reports where each thumbnail landed
@@ -60,10 +75,12 @@ struct DisplayFloatLayer: View {
         HStack(spacing: DesignTokens.EditDesk.Spacing.s12) {
             caption
             thumbnailRun
-            Rectangle()
-                .fill(DesignTokens.EditDesk.Colors.strokePanel)
-                .frame(width: 1, height: 60)
-            applyAllButton
+            if FloatLayerGeometry.showsApplyAll(for: mode) {
+                Rectangle()
+                    .fill(DesignTokens.EditDesk.Colors.strokePanel)
+                    .frame(width: 1, height: 60)
+                applyAllButton
+            }
         }
         .padding(.horizontal, DesignTokens.EditDesk.Spacing.s14)
         .frame(height: FloatLayerGeometry.panelHeight)
@@ -193,7 +210,7 @@ private struct FloatDisplayThumbnail: View {
                 onTargetFrame(FloatTargetFrame(id: target.id, rect: $0))
             }
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(Text("Drop target: \(target.name)"))
+            .accessibilityLabel(Text(verbatim: FloatLayerGeometry.thumbnailAccessibilityLabel(for: mode, displayName: target.name)))
     }
 
     @ViewBuilder

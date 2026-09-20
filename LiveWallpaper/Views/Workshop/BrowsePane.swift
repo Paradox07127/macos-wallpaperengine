@@ -3,6 +3,15 @@ import Combine
 import LiveWallpaperCore
 import SwiftUI
 
+/// Which shell hosts the grid. It decides layout only: the pager, banners, filters, skeleton and
+/// query behaviour are the same either way.
+enum BrowsePresentation {
+    /// The old Workshop window: grid plus a resizable inspector column.
+    case legacy
+    /// SCREENS S8: grid alone, at a fixed six-column preset, items open through `onOpenItem`.
+    case editDesk
+}
+
 struct BrowsePane: View {
     @Environment(\.libraryTileSize) private var tileSize
     let viewModel: BrowseViewModel
@@ -10,6 +19,11 @@ struct BrowsePane: View {
     let onRequestKeyEntry: () -> Void
     /// Downloading a pasted id needs SteamCMD but no Web API key.
     var onDownloadByLink: (() -> Void)?
+    var presentation: BrowsePresentation = .legacy
+    /// Where an opened item goes when there is no inspector to put it in.
+    var onOpenItem: ((WorkshopQueryItem) -> Void)?
+    /// nil keeps each card's reveal in its own `@State`; a state makes reveals outlive the tiles.
+    var matureReveal: MatureRevealState?
 
     @Environment(WorkshopServices.self) private var services
     /// An id, not a value copy: the inspector follows the grid when a page
@@ -42,33 +56,7 @@ struct BrowsePane: View {
     private static let gridTopAnchor = "workshop.browse.grid.top"
 
     var body: some View {
-        InspectorSplit(
-            isMounted: true,
-            isVisible: isInspectorVisible,
-            animationTrigger: AnyHashable(isInspectorVisible),
-            reduceMotion: reduceMotion,
-            storedWidth: $inspectorWidth,
-            liveWidth: $liveInspectorWidth,
-            minWidth: DesignTokens.Inspector.minWidth,
-            maxWidth: DesignTokens.Inspector.maxWidth,
-            onClose: { inspectorHidden = true },
-            main: { mainColumn },
-            inspector: { width in inspectorColumn(width: width) }
-        )
-        .background(DesignTokens.Colors.pageBackground)
-        .toolbar {
-            if selectedID != nil {
-                ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        inspectorHidden.toggle()
-                    } label: {
-                        Image(systemName: "sidebar.right")
-                    }
-                    .help(Text(inspectorHidden ? "Show details" : "Hide details"))
-                    .accessibilityLabel(Text("Toggle details panel"))
-                }
-            }
-        }
+        layout
         .onAppear {
             rateLimitRemaining = currentRateLimitRemaining
             reloadInstalledIDs()
@@ -111,6 +99,44 @@ struct BrowsePane: View {
         }
     }
 
+    /// The only place the two presentations differ: whether the grid is wrapped in a split with an
+    /// inspector column, and which page background it sits on.
+    @ViewBuilder
+    private var layout: some View {
+        if presentation == .editDesk {
+            mainColumn
+                .background(DesignTokens.EditDesk.Colors.background)
+        } else {
+            InspectorSplit(
+                isMounted: true,
+                isVisible: isInspectorVisible,
+                animationTrigger: AnyHashable(isInspectorVisible),
+                reduceMotion: reduceMotion,
+                storedWidth: $inspectorWidth,
+                liveWidth: $liveInspectorWidth,
+                minWidth: DesignTokens.Inspector.minWidth,
+                maxWidth: DesignTokens.Inspector.maxWidth,
+                onClose: { inspectorHidden = true },
+                main: { mainColumn },
+                inspector: { width in inspectorColumn(width: width) }
+            )
+            .background(DesignTokens.Colors.pageBackground)
+            .toolbar {
+                if selectedID != nil {
+                    ToolbarItem(placement: .primaryAction) {
+                        Button {
+                            inspectorHidden.toggle()
+                        } label: {
+                            Image(systemName: "sidebar.right")
+                        }
+                        .help(Text(inspectorHidden ? "Show details" : "Hide details"))
+                        .accessibilityLabel(Text("Toggle details panel"))
+                    }
+                }
+            }
+        }
+    }
+
     private var selectedItem: WorkshopQueryItem? {
         BrowseSelection.resolve(id: selectedID, in: viewModel.items, detached: detachedItem)
     }
@@ -122,6 +148,13 @@ struct BrowsePane: View {
     /// Opens an item by id, which may not be on this page. Off-page ids are fetched
     /// once; an id Steam will not describe leaves the previous selection in place.
     private func openItem(_ id: UInt64) {
+        // With no inspector the resolved item leaves through the callback; the chain below still
+        // runs for ids that are not on this page.
+        if presentation == .editDesk,
+           let item = BrowseSelection.resolve(id: id, in: viewModel.items, detached: detachedItem) {
+            onOpenItem?(item)
+            return
+        }
         inspectorHidden = false
         guard !viewModel.items.contains(where: { $0.id == id }), detachedItem?.id != id else {
             selectedID = id
@@ -142,6 +175,12 @@ struct BrowsePane: View {
             let settled = open.settle(with: outcome.items.first, in: viewModel.items)
             selectedID = settled.selectedID
             detachedItem = settled.detached
+            if presentation == .editDesk,
+               let item = BrowseSelection.resolve(
+                   id: settled.selectedID, in: viewModel.items, detached: settled.detached
+               ) {
+                onOpenItem?(item)
+            }
         }
     }
 
@@ -284,7 +323,7 @@ struct BrowsePane: View {
                     } else if viewModel.displayedItems.isEmpty {
                         scopeEmptyNote
                     } else {
-                        LibraryGalleryGrid(size: tileSize, aspect: .square) {
+                        LibraryGalleryGrid(size: tileSize, aspect: .square, columnWidth: gridColumnWidth) {
                             ForEach(viewModel.displayedItems) { item in
                                 browseCard(for: item)
                                     .equatable()
@@ -328,7 +367,14 @@ struct BrowsePane: View {
             cardPreferences: cardPreferences,
             reduceMotion: reduceMotion,
             canDownload: doctor.isDownloadReady,
+            presentation: presentation,
+            isRevealed: matureReveal?.isRevealed(item.id) ?? false,
+            onReveal: matureReveal.map { state in { state.reveal(item.id) } },
             onSelect: {
+                guard presentation != .editDesk else {
+                    openItem(item.id)
+                    return
+                }
                 if selectedID == item.id {
                     selectedID = nil
                 } else {
@@ -460,9 +506,14 @@ struct BrowsePane: View {
         }
     }
 
+    /// nil follows the user's tile-size preference; S8 pins the Edit Desk page to six columns.
+    private var gridColumnWidth: CGFloat? {
+        presentation == .editDesk ? DesignTokens.LibraryGrid.workshopBrowseColumnWidth : nil
+    }
+
     private var loadingSkeleton: some View {
         ScrollView {
-            LibraryGalleryGrid(size: tileSize, aspect: .square) {
+            LibraryGalleryGrid(size: tileSize, aspect: .square, columnWidth: gridColumnWidth) {
                 ForEach(0..<6, id: \.self) { _ in
                     WorkshopSkeletonCard()
                 }

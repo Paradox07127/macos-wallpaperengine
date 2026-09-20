@@ -128,6 +128,22 @@ SUITES=(
   EditDeskPreferencesTests
   SavedLibraryModelTests
   StageSpringTests
+  # Edit Desk M4/M5 (2026-09-20): overlay canvas session/geometry, modal chrome,
+  # workshop session/page and deferred apply. Pure-value and source-probe suites.
+  OverlayEditorSessionTests
+  OverlayGeometryTests
+  OverlayLayerListTests
+  OverlayRuntimeContractTests
+  EditDeskModalChromeTests
+  MatureRevealStateTests
+  DeferredApplyCoordinatorTests
+  CollapsibleDescriptionTests
+  WorkshopSessionTests
+  BrowseCardEqualityTests
+  WorkshopPageSourceTests
+  GalleryCardPreferencesTests
+  WorkshopModalTests
+  WorkshopModalHostTests
   ShelfGestureControllerTests
   EditDeskStageViewTests
   DisplayStateResolverTests

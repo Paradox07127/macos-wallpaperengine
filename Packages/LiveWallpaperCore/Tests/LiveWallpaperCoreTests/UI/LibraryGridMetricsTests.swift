@@ -52,6 +52,27 @@ struct LibraryGridMetricsTests {
         #expect(taller == CGRect(x: 0, y: 302, width: 384, height: 288))
     }
 
+    @Test("The Edit Desk Workshop preset gives six columns at 1280 and four at 1040")
+    func workshopPresetPacksSixColumns() {
+        let preset = DesignTokens.LibraryGrid.workshopBrowseColumnWidth
+        #expect(preset == 194)
+        let inset = 2 * DesignTokens.Settings.formHorizontalMargin
+        for (window, expected) in [(CGFloat(1280), 6), (1040, 4)] {
+            let columns = DesignTokens.LibraryGrid.columns(
+                for: .medium, aspect: .square, fitting: window - inset, columnWidth: preset
+            )
+            #expect(columns.count == expected, Comment(rawValue: "\(window) wide packed \(columns.count) columns"))
+            for item in columns {
+                guard case let .fixed(width) = item.size else {
+                    Issue.record("the preset did not produce fixed columns")
+                    continue
+                }
+                #expect(width == preset)
+                #expect(item.spacing == DesignTokens.LibraryGrid.spacing)
+            }
+        }
+    }
+
     @Test("Columns are fixed at the ladder's width and pack as many as the width holds")
     func columnsPackFixedTilesIntoTheWidth() {
         let spacing = DesignTokens.LibraryGrid.spacing

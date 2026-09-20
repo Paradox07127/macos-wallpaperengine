@@ -20,6 +20,22 @@ struct MonitorBoardClock: TimelineSchedule {
     }
 }
 
+enum MonitorBoardChrome {
+    case desktop
+    case editDesk(OverlayEditorSession)
+
+    var editor: OverlayEditorSession? {
+        if case let .editDesk(session) = self {
+            return session
+        }
+        return nil
+    }
+}
+
+extension EnvironmentValues {
+    @Entry var monitorBoardChrome: MonitorBoardChrome = .desktop
+}
+
 struct RootView: View {
     @ObservedObject var model: InteractionModel
     let data: DataModel
@@ -28,7 +44,16 @@ struct RootView: View {
     /// How far the board is being shrunk into the inspector canvas. Only the
     /// edit chrome reads it — a widget tile shrinks with the board on purpose.
     @Environment(\.monitorRenderScale) private var renderScale
+    @Environment(\.monitorBoardChrome) private var chrome
     @FocusState private var boardFocused: Bool
+
+    private var editor: OverlayEditorSession? {
+        chrome.editor
+    }
+
+    private var decorationWidth: CGFloat {
+        editor == nil ? 1 : OverlayGeometry.decorationLineWidth(forRenderScale: renderScale)
+    }
 
     @State private var addButtonFrame: CGRect = .zero
     @State private var toolbarFrame: CGRect = .zero
@@ -55,7 +80,11 @@ struct RootView: View {
         .focusEffectDisabled()
         .onMoveCommand(perform: handleMoveCommand)
         .onDeleteCommand {
-            model.deleteSelectedWidget()
+                if let editor {
+                    editor.deleteSelection()
+                } else {
+                    model.deleteSelectedWidget()
+                }
         }
         .onAppear { boardFocused = model.isEditing }
         .onChange(of: model.isEditing) { _, editing in
@@ -79,11 +108,11 @@ struct RootView: View {
                 // desktop clicks everywhere else.
                 Color.clear
                     .contentShape(Rectangle())
-                    .modifier(EmptyTapModifier(model: model))
+                    .modifier(EmptyTapModifier(model: model, editor: editor))
                     .allowsHitTesting(model.isEditing || model.acceptsBoardWidePointer)
 
                 if !geometry.isDegenerate {
-                    if isInspectorPreview, model.placements.isEmpty {
+                    if editor == nil, isInspectorPreview, model.placements.isEmpty {
                         emptyBoardHint(boardSize: boardSize)
                     }
 
@@ -92,11 +121,11 @@ struct RootView: View {
                         ghostFrame(drag: drag, geometry: geometry)
                     }
 
-                    ForEach(model.placements) { placement in
+                    ForEach(editor?.overlay.enabled == false ? [] : model.placements) { placement in
                         widgetTile(placement, geometry: geometry)
                     }
 
-                    if model.isEditing {
+                    if model.isEditing, editor == nil {
                         editControls(geometry: geometry, boardSize: boardSize)
                     }
                 }
@@ -150,7 +179,9 @@ struct RootView: View {
                 isEditing: model.isEditing,
                 isSelected: model.selectedID == placement.id,
                 isDragging: isDragging,
-                cornerRadius: geometry.cornerRadius
+                cornerRadius: geometry.cornerRadius,
+                editDesk: editor != nil,
+                renderScale: renderScale
             ))
             .offset(x: liveRenderRect.minX, y: liveRenderRect.minY)
             .zIndex(isDragging ? 40 : 3)
@@ -168,6 +199,16 @@ struct RootView: View {
     }
 
     private func handleMoveCommand(_ direction: MoveCommandDirection) {
+        if let editor {
+            switch direction {
+            case .left: editor.moveSelection(.left)
+            case .right: editor.moveSelection(.right)
+            case .up: editor.moveSelection(.up)
+            case .down: editor.moveSelection(.down)
+            @unknown default: break
+            }
+            return
+        }
         switch direction {
         case .left:
             model.moveSelectedWidget(.left)
@@ -249,7 +290,7 @@ struct RootView: View {
                 .fill(DesignTokens.Colors.boardEditAccent.opacity(0.05))
                 .overlay(
                     RoundedRectangle(cornerRadius: geometry.cornerRadius, style: .continuous)
-                        .strokeBorder(DesignTokens.Colors.boardEditAccent.opacity(0.5), lineWidth: 1)
+                        .strokeBorder(DesignTokens.Colors.boardEditAccent.opacity(0.5), lineWidth: decorationWidth)
                 )
                 .frame(width: rect.width, height: rect.height)
                 .offset(x: rect.minX, y: rect.minY)
@@ -284,7 +325,8 @@ struct RootView: View {
             path.move(to: seg.start)
             path.addLine(to: seg.end)
         }
-        .stroke(DesignTokens.Colors.boardEditAccent.opacity(0.55), lineWidth: 1)
+        .stroke(editor == nil ? DesignTokens.Colors.boardEditAccent.opacity(0.55) : DesignTokens.EditDesk.Colors.success,
+                lineWidth: decorationWidth)
     }
 
     // MARK: Edit controls (floating per-widget + catalog)
@@ -365,18 +407,23 @@ struct RootView: View {
 
 private struct EmptyTapModifier: ViewModifier {
     @ObservedObject var model: InteractionModel
+    var editor: OverlayEditorSession?
 
     func body(content: Content) -> some View {
-        content
-            .onTapGesture(count: 2) {
-                model.setEditing(!model.isEditing)
-            }
-            .onTapGesture {
-                guard model.isEditing else { return }
-                model.select(nil)
-                model.isCatalogOpen = false
-                model.settingsOpenID = nil
-            }
+        if let editor {
+            content.onTapGesture { editor.select(nil) }
+        } else {
+            content
+                .onTapGesture(count: 2) {
+                    model.setEditing(!model.isEditing)
+                }
+                .onTapGesture {
+                    guard model.isEditing else { return }
+                    model.select(nil)
+                    model.isCatalogOpen = false
+                    model.settingsOpenID = nil
+                }
+        }
     }
 }
 
@@ -387,16 +434,26 @@ private struct SelectionChrome: ViewModifier {
     let isSelected: Bool
     let isDragging: Bool
     let cornerRadius: CGFloat
+    var editDesk = false
+    var renderScale: CGFloat = 1
     @State private var hovering = false
 
     func body(content: Content) -> some View {
-        content
-            .overlay(borderOverlay)
-            .shadow(
-                color: Color.black.opacity(isDragging ? 0.55 : 0),
-                radius: isDragging ? 28 : 0, x: 0, y: isDragging ? 16 : 0
-            )
-            .onHover { if isEditing { hovering = $0 } }
+        if editDesk {
+            content.modifier(OverlayObjectChrome(selected: isSelected, dragging: isDragging, renderScale: renderScale))
+        } else {
+            content
+                .overlay(borderOverlay)
+                .shadow(
+                    color: Color.black.opacity(isDragging ? 0.55 : 0),
+                    radius: isDragging ? 28 : 0, x: 0, y: isDragging ? 16 : 0
+                )
+                .onHover {
+                    if isEditing {
+                        hovering = $0
+                    }
+                }
+        }
     }
 
     @ViewBuilder

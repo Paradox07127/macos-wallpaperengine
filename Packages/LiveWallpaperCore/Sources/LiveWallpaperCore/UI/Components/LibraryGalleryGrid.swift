@@ -5,6 +5,8 @@ import SwiftUI
 public struct LibraryGalleryGrid<Content: View>: View {
     private let size: LibraryTileSize
     private let aspect: DesignTokens.LibraryGrid.Aspect
+    /// nil follows the `size`/`aspect` ladder; a value pins the page to one column preset.
+    private let columnWidth: CGFloat?
     private let content: Content
     @State private var availableWidth: CGFloat
 
@@ -12,17 +14,21 @@ public struct LibraryGalleryGrid<Content: View>: View {
         size: LibraryTileSize,
         aspect: DesignTokens.LibraryGrid.Aspect,
         initialWidth: CGFloat = 0,
+        columnWidth: CGFloat? = nil,
         @ViewBuilder content: () -> Content
     ) {
         self.size = size
         self.aspect = aspect
+        self.columnWidth = columnWidth
         self.content = content()
         _availableWidth = State(initialValue: initialWidth)
     }
 
     public var body: some View {
         LazyVGrid(
-            columns: DesignTokens.LibraryGrid.columns(for: size, aspect: aspect, fitting: availableWidth),
+            columns: DesignTokens.LibraryGrid.columns(
+                for: size, aspect: aspect, fitting: availableWidth, columnWidth: columnWidth
+            ),
             alignment: .leading,
             spacing: DesignTokens.LibraryGrid.spacing
         ) {

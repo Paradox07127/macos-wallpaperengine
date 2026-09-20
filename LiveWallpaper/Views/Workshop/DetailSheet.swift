@@ -15,7 +15,6 @@ struct WorkshopInspectorContent: View {
 
     @Environment(\.openURL) private var openURL
     @Environment(ScreenManager.self) private var screenManager
-    @Environment(WorkshopServices.self) private var services
     @State private var installedEntry: WPEHistoryEntry?
 
     /// Named constants, not literals: the grid card reads the same two keys through
@@ -25,7 +24,6 @@ struct WorkshopInspectorContent: View {
     @State private var matureRevealed = false
     @State private var showingAgeConfirm = false
     @State private var showingApplyPopover = false
-    @State private var descriptionExpanded = false
 
     private var shouldBlurHero: Bool {
         blurMatureThumbnails && item.isMatureRated && !matureRevealed
@@ -42,14 +40,6 @@ struct WorkshopInspectorContent: View {
         downloadCoordinator.progressBytes[item.id]
     }
 
-    private var identityBlock: some View {
-        WorkshopDetailIdentityHeader(
-            item: item,
-            isKeyless: services.isKeyless,
-            onBrowseCreator: onBrowseCreator
-        )
-    }
-
     private var actionsGroup: some View {
         GroupBox {
             VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
@@ -61,65 +51,27 @@ struct WorkshopInspectorContent: View {
         .groupBoxStyle(ContainerGroupBoxStyle())
     }
 
-    private var presetsGroup: some View {
-        GroupBox {
-            DetailPresetsSection(
-                wallpaperID: item.id,
-                communityURL: item.steamCommunityURL,
-                doctor: doctor
-            )
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .groupBoxStyle(ContainerGroupBoxStyle())
-    }
-
-    @ViewBuilder
-    private var requiredItemsGroup: some View {
-        if !item.requiredItemIDs.isEmpty, let onOpenItem {
-            GroupBox {
-                DetailRequiredItemsSection(itemIDs: item.requiredItemIDs, onOpenItem: onOpenItem)
-            }
-            .groupBoxStyle(ContainerGroupBoxStyle())
-        }
-    }
-
-    private var aboutGroup: some View {
-        GroupBox {
-            VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
-                if !item.tags.isEmpty {
-                    tagsSection
-                }
-                descriptionSection
-                communityLinksRow
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .groupBoxStyle(ContainerGroupBoxStyle())
-    }
-
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: DesignTokens.Spacing.lg) {
                 hero
 
-                VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
-                    identityBlock
+                WorkshopDetailsContent(
+                    item: item,
+                    doctor: doctor,
+                    onBrowseCreator: onBrowseCreator,
+                    onSelectTag: onSelectTag,
+                    onOpenItem: onOpenItem
+                ) {
                     actionsGroup
-                    requiredItemsGroup
-                    presetsGroup
-                    aboutGroup
                 }
                 .padding(.horizontal, DesignTokens.Spacing.lg)
                 .padding(.bottom, DesignTokens.Spacing.lg)
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .background(DesignTokens.Colors.pageBackground)
         .onAppear { refreshInstalledEntry() }
-        .onChange(of: item.id) { _, _ in
-            refreshInstalledEntry()
-            descriptionExpanded = false
-        }
+        .onChange(of: item.id) { _, _ in refreshInstalledEntry() }
         .onReceive(NotificationCenter.default.publisher(for: .wpeHistoryDidChange)) { _ in
             refreshInstalledEntry()
         }
@@ -400,82 +352,6 @@ struct WorkshopInspectorContent: View {
         }
         return nil
     }
-    private var tagsSection: some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
-            ForEach(WorkshopTagTaxonomy.grouped(tags: item.tags), id: \.group) { grouped in
-                // Wrapping, not a horizontal scroll: at the inspector's width a scroll leaves
-                // most of a group's tags off-screen with nothing to say they are there.
-                HStack(alignment: .top, spacing: DesignTokens.Spacing.xs) {
-                    Text(verbatim: grouped.group.displayName)
-                        .font(DesignTokens.Typography.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize()
-                    WorkshopChipFlow(spacing: 6, lineSpacing: 4) {
-                        ForEach(grouped.tags, id: \.self) { tag in
-                            tagChip(tag)
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private var communityLinksRow: some View {
-        // Wrapping, not an HStack: three labelled links do not fit the narrow
-        // inspector, and squeezed they hyphenate mid-word ("Com-ments").
-        WorkshopChipFlow(spacing: DesignTokens.Spacing.md, lineSpacing: DesignTokens.Spacing.xs) {
-            communityLink(commentsTitle, systemImage: "bubble.left", url: WorkshopCommunityURL.comments(itemID: item.id))
-            communityLink(Text("Change Notes"), systemImage: "clock.arrow.circlepath", url: WorkshopCommunityURL.changeNotes(itemID: item.id))
-            communityLink(Text("Collections"), systemImage: "square.stack", url: WorkshopCommunityURL.collections(itemID: item.id))
-        }
-        .font(DesignTokens.Typography.caption)
-    }
-
-    private var commentsTitle: Text {
-        if let count = item.commentCount, count > 0 {
-            return Text("\(count.formatted()) comments", comment: "Workshop detail link to the item's comment thread. Placeholder is a formatted count.")
-        }
-        return Text("Comments")
-    }
-
-    private func communityLink(_ title: Text, systemImage: String, url: URL) -> some View {
-        Button {
-            openURL(url)
-        } label: {
-            Label { title } icon: { Image(systemName: systemImage) }
-        }
-        .buttonStyle(.link)
-        .fixedSize()
-    }
-
-    @ViewBuilder
-    private func tagChip(_ tag: String) -> some View {
-        // Raw tag on the wire — Steam matches the English form.
-        let label = WorkshopTagLocalization.displayName(tag)
-        if let onSelectTag {
-            Button { onSelectTag(tag) } label: {
-                StatusChip(verbatim: label, tint: .accentColor)
-            }
-            .buttonStyle(.plain)
-            .help(Text("Browse items tagged \(label)"))
-        } else {
-            StatusChip(verbatim: label, tint: .secondary)
-        }
-    }
-
-    private var descriptionSection: some View {
-        let text = item.shortDescription
-        let placeholder = String(localized: "No description provided.", bundle: .appLanguage, comment: "Placeholder when a Workshop item has no description.")
-        return VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
-            Text("Description")
-                .font(.headline)
-            CollapsibleDescription(
-                text: text.isEmpty ? placeholder : text,
-                isExpanded: $descriptionExpanded
-            )
-        }
-    }
-
     // MARK: - Helpers
 
     private func copy(_ value: String) {
@@ -529,38 +405,48 @@ struct WorkshopApplyTargetPicker: View {
 struct CollapsibleDescription: View {
     let text: String
     @Binding var isExpanded: Bool
+    /// nil crops the collapsed text to `collapsedHeight` and fades the cut; a value truncates it to
+    /// that many lines instead, for columns too narrow to spend 116pt on a description.
+    var collapsedLineLimit: Int?
+    /// nil lets the expanded text take whatever height it needs; a value scrolls it inside that box.
+    var expandedMaxHeight: CGFloat?
 
     /// ~6 lines of body copy before we crop + fade.
     private let collapsedHeight: CGFloat = 116
 
-    /// Measured live; `max()` keeps it stable even while the visible frame is cropped
-    /// (the crop never shrinks the intrinsic height).
+    /// The text's height with no crop of any kind.
     @State private var fullHeight: CGFloat = 0
+    /// The height `collapsedLineLimit` leaves; equal to `fullHeight` when there is no limit.
+    @State private var limitedHeight: CGFloat = 0
 
-    private var isExpandable: Bool { fullHeight > collapsedHeight + 1 }
+    /// A height crop can only be told from the box it fills; a line crop shows up as the two
+    /// measurements disagreeing, which holds whether or not the text is expanded right now.
+    static func isExpandable(
+        fullHeight: CGFloat, limitedHeight: CGFloat, collapsedHeight: CGFloat, lineLimit: Int?
+    ) -> Bool {
+        guard lineLimit != nil else { return fullHeight > collapsedHeight + 1 }
+        return fullHeight > limitedHeight + 1
+    }
+
+    /// nil means the text keeps its intrinsic height: expanded, or cropped by lines rather than points.
+    static func cropHeight(
+        fullHeight: CGFloat, collapsedHeight: CGFloat, collapsed: Bool, lineLimit: Int?
+    ) -> CGFloat? {
+        guard fullHeight > 0, lineLimit == nil else { return nil }
+        return collapsed ? collapsedHeight : fullHeight
+    }
+
+    private var isExpandable: Bool {
+        Self.isExpandable(
+            fullHeight: fullHeight, limitedHeight: limitedHeight,
+            collapsedHeight: collapsedHeight, lineLimit: collapsedLineLimit
+        )
+    }
 
     var body: some View {
         let collapsed = isExpandable && !isExpanded
         VStack(alignment: .leading, spacing: 4) {
-            Text(verbatim: text)
-                .font(.body)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(
-                    GeometryReader { geo in
-                        Color.clear
-                            .onAppear { fullHeight = max(fullHeight, geo.size.height) }
-                            .onChange(of: geo.size.height) { _, height in
-                                fullHeight = max(fullHeight, height)
-                            }
-                    }
-                )
-                .frame(height: fullHeight == 0 ? nil : (collapsed ? collapsedHeight : fullHeight),
-                       alignment: .top)
-                .clipped()
-                .mask(collapsed ? AnyView(fadeMask) : AnyView(Rectangle()))
-
+            description(collapsed: collapsed)
             if isExpandable {
                 Button {
                     withAnimation(.easeInOut(duration: 0.28)) { isExpanded.toggle() }
@@ -575,8 +461,58 @@ struct CollapsibleDescription: View {
         }
         .onChange(of: text) { _, _ in
             fullHeight = 0
+            limitedHeight = 0
             isExpanded = false
         }
+    }
+
+    @ViewBuilder
+    private func description(collapsed: Bool) -> some View {
+        let cropped = Text(verbatim: text)
+            .font(.body)
+            .foregroundStyle(.secondary)
+            .lineLimit(collapsed ? collapsedLineLimit : nil)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(alignment: .topLeading) { rulers }
+            .frame(
+                height: Self.cropHeight(
+                    fullHeight: fullHeight, collapsedHeight: collapsedHeight,
+                    collapsed: collapsed, lineLimit: collapsedLineLimit
+                ),
+                alignment: .top
+            )
+            .clipped()
+            .mask(collapsed && collapsedLineLimit == nil ? AnyView(fadeMask) : AnyView(Rectangle()))
+
+        if let expandedMaxHeight, isExpanded {
+            ScrollView { cropped }
+                .frame(maxHeight: expandedMaxHeight)
+        } else {
+            cropped
+        }
+    }
+
+    /// Hidden copies rather than a reader on the visible text: `lineLimit` shortens what the
+    /// visible text reports, which is the very difference the toggle is looking for.
+    private var rulers: some View {
+        ZStack(alignment: .topLeading) {
+            ruler(lineLimit: nil) { fullHeight = $0 }
+            if collapsedLineLimit != nil {
+                ruler(lineLimit: collapsedLineLimit) { limitedHeight = $0 }
+            }
+        }
+        .hidden()
+        .accessibilityHidden(true)
+    }
+
+    private func ruler(lineLimit: Int?, report: @escaping (CGFloat) -> Void) -> some View {
+        Text(verbatim: text)
+            .font(.body)
+            .lineLimit(lineLimit)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { report($0) }
     }
 
     private var fadeMask: some View {
