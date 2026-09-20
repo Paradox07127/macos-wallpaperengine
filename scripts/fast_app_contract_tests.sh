@@ -130,11 +130,19 @@ SUITES=(
   StageSpringTests
   ShelfGestureControllerTests
   EditDeskStageViewTests
+  DisplayStateResolverTests
   ApplyRouterTests
   EditDeskApplyQueueTests
   EditDeskToastCenterTests
   StatusCapsuleTests
   EditDeskChromeSourceTests
+  DisplayFloatLayerTests
+  WallpaperModalTests
+  ModalActionsTests
+  DisplayDetailTests
+  DisplayDetailHostTests
+  SceneSettingsOwnerTests
+  DetailTransitionTests
   SettingsSearchLocalizationTests
   # Carbon hotkeys: dispatcher target + C trampoline. An inline MainActor
   # closure on GetApplicationEventTarget() registered but never fired.

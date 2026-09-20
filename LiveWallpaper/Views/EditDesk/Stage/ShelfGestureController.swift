@@ -238,6 +238,12 @@ final class ShelfGestureController {
         Int(StageGeometry.clampProgress(up ? floor(progress) + 1 : ceil(progress) - 1))
     }
 
+    static func nextCardIndex(right: Bool, focusedIndex: Int?, count: Int) -> Int? {
+        guard count > 0 else { return nil }
+        guard let focusedIndex else { return 0 }
+        return min(max(focusedIndex + (right ? 1 : -1), 0), count - 1)
+    }
+
     func mouseDown(at point: CGPoint) {
         downPoint = point
     }

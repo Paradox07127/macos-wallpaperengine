@@ -221,19 +221,11 @@ struct PreviewArea: View {
     }
 
     private var playbackControls: some View {
-        PlaybackControls(
+        WallpaperPlaybackControls(
             screen: screen,
-            wallpaperType: draft.selectedWallpaperType,
-            muted: $draft.videoMuted,
-            videoVolume: $draft.videoVolume,
-            frameRateLimit: $draft.selectedFrameRateLimit,
-            syncToLockScreen: $draft.setAsLockScreen,
-            sceneMouseInteractionEnabled: $draft.sceneMouseInteractionEnabled,
-            sceneClickCaptureEnabled: $draft.sceneClickCaptureEnabled,
-            htmlConfig: draft.selectedWallpaperType == .html ? $draft.htmlConfig : nil,
-            playbackSpeed: draft.selectedWallpaperType == .video ? speedBinding : nil,
-            videoColorSpace: draft.videoColorSpace,
-            showsResetPlayback: screenManager.displayPlaybackDiffersFromDefaults(for: screen),
+            draft: $draft,
+            screenManager: screenManager,
+            onPlaybackSpeedChange: onPlaybackSpeedChange,
             onResetPlayback: onResetPlayback
         )
     }
@@ -251,43 +243,8 @@ struct PreviewArea: View {
     }
 
     private var fitModeGroup: some View {
-        GlassSegmentedPicker(
-            selection: Binding(
-                get: { draft.selectedFitMode },
-                set: { mode in
-                    guard draft.selectedFitMode != mode else { return }
-                    draft.selectedFitMode = mode
-                    onFitModeChange(mode)
-                }
-            ),
-            values: VideoFitMode.videoModes,
-            shell: .flat
-        ) { mode, isSelected in
-            PreviewControlLabel(
-                systemImage: mode.iconName,
-                title: mode.titleKey,
-                isActive: isSelected
-            )
-            .help(Text(mode.tooltipKey))
-            .accessibilityLabel(Text(mode.titleKey))
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(Text("Video fit mode"))
+        WallpaperFitModePicker(selection: $draft.selectedFitMode, onChange: onFitModeChange)
     }
-
-
-    private var speedBinding: Binding<Double> {
-        Binding(
-            get: { draft.playbackSpeed },
-            set: { newValue in
-                guard abs(draft.playbackSpeed - newValue) > 0.001 else { return }
-                draft.playbackSpeed = newValue
-                onPlaybackSpeedChange(newValue)
-            }
-        )
-    }
-
-
 
     @ViewBuilder
     private var dragHintOverlay: some View {
@@ -332,6 +289,79 @@ struct PreviewArea: View {
         case .html:         return "Web file or folder"
         case .scene:        return "Switch to Video or Web to drop"
         }
+    }
+}
+
+/// The HUD's fill-mode segment. The Edit Desk detail hero floats the same control over its still,
+/// so the two pages cannot drift apart on labels, icons or the no-op guard.
+struct WallpaperFitModePicker: View {
+    @Binding var selection: VideoFitMode
+    /// Scenes offer one mode video does not, so the list cannot be baked into the control.
+    var modes: [VideoFitMode] = VideoFitMode.videoModes
+    let onChange: (VideoFitMode) -> Void
+
+    var body: some View {
+        GlassSegmentedPicker(
+            selection: Binding(
+                get: { selection },
+                set: { mode in
+                    guard selection != mode else { return }
+                    selection = mode
+                    onChange(mode)
+                }
+            ),
+            values: modes,
+            shell: .flat
+        ) { mode, isSelected in
+            PreviewControlLabel(
+                systemImage: mode.iconName,
+                title: mode.titleKey,
+                isActive: isSelected
+            )
+            .help(Text(mode.tooltipKey))
+            .accessibilityLabel(Text(mode.titleKey))
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(Text("Video fit mode"))
+    }
+}
+
+/// `PlaybackControls` built from the draft both detail pages write through; the Edit Desk hero's
+/// HUD reuses it rather than deriving a second set of bindings.
+struct WallpaperPlaybackControls: View {
+    let screen: Screen
+    @Binding var draft: DraftState
+    let screenManager: ScreenManager
+    let onPlaybackSpeedChange: (Double) -> Void
+    let onResetPlayback: () -> Void
+
+    var body: some View {
+        PlaybackControls(
+            screen: screen,
+            wallpaperType: draft.selectedWallpaperType,
+            muted: $draft.videoMuted,
+            videoVolume: $draft.videoVolume,
+            frameRateLimit: $draft.selectedFrameRateLimit,
+            syncToLockScreen: $draft.setAsLockScreen,
+            sceneMouseInteractionEnabled: $draft.sceneMouseInteractionEnabled,
+            sceneClickCaptureEnabled: $draft.sceneClickCaptureEnabled,
+            htmlConfig: draft.selectedWallpaperType == .html ? $draft.htmlConfig : nil,
+            playbackSpeed: draft.selectedWallpaperType == .video ? speedBinding : nil,
+            videoColorSpace: draft.videoColorSpace,
+            showsResetPlayback: screenManager.displayPlaybackDiffersFromDefaults(for: screen),
+            onResetPlayback: onResetPlayback
+        )
+    }
+
+    private var speedBinding: Binding<Double> {
+        Binding(
+            get: { draft.playbackSpeed },
+            set: { newValue in
+                guard abs(draft.playbackSpeed - newValue) > 0.001 else { return }
+                draft.playbackSpeed = newValue
+                onPlaybackSpeedChange(newValue)
+            }
+        )
     }
 }
 

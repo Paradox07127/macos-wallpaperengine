@@ -1,6 +1,7 @@
 import CoreGraphics
 import Foundation
 @testable import LiveWallpaper
+import LiveWallpaperCore
 import Testing
 
 /// Pins SCREENS.md S1–S3, MOTION_SPEC 1–4 and GAP_ANALYSIS §6 numerically.
@@ -165,6 +166,16 @@ struct StageGeometryTests {
                 (CGRect(x: 1920, y: 0, width: 1920, height: 1080), false),
                 (CGRect(x: 1920, y: -1080, width: 1920, height: 1080), true),
             ]),
+            // Corner to corner is the one shape that straddles no boundary on either axis, so it is
+            // the only one where neither separation pass opens a gap.
+            ("corner touch", [
+                (CGRect(x: 0, y: 0, width: 1920, height: 1080), false),
+                (CGRect(x: 1920, y: -1080, width: 1920, height: 1080), false),
+            ]),
+            ("laptop at the corner", [
+                (CGRect(x: 0, y: 0, width: 1920, height: 1080), false),
+                (CGRect(x: 1920, y: -1117, width: 1728, height: 1117), true),
+            ]),
         ]
         for (name, layout) in layouts {
             let a = StageGeometry.arrangement(frames: layout.map(\.0), in: Self.designStage)
@@ -221,15 +232,29 @@ struct StageGeometryTests {
 
     @Test("Wave lift peaks under the hovered card and dies out three cards away")
     func waveLift() {
-        #expect(StageGeometry.waveLift(style: .folders, index: 3, hovered: nil) == 0)
+        #expect(StageGeometry.waveLift(style: .folders, index: 3, centre: nil) == 0)
         #expect(near(StageGeometry.waveLift(style: .folders, index: 3, hovered: 3), -48, 0.01))
-        #expect(near(StageGeometry.waveLift(style: .folders, index: 4, hovered: 3), -29.54, 0.05))
-        #expect(near(StageGeometry.waveLift(style: .folders, index: 1, hovered: 3), -11.08, 0.05))
+        #expect(near(StageGeometry.waveLift(style: .folders, index: 4, hovered: 3), -32.51, 0.05))
+        #expect(near(StageGeometry.waveLift(style: .folders, index: 1, hovered: 3), -6.04, 0.05))
         #expect(StageGeometry.waveLift(style: .folders, index: 0, hovered: 3) == 0)
         #expect(StageGeometry.waveLift(style: .folders, index: 6, hovered: 3) == 0)
         #expect(near(StageGeometry.waveLift(style: .crate, index: 3, hovered: 3), -54, 0.01))
         #expect(near(StageGeometry.waveLift(style: .coverFlow, index: 3, hovered: 3), -16, 0.01))
         #expect(StageGeometry.waveLift(style: .coverFlow, index: 4, hovered: 3) == 0)
+
+        // The whole point of the rewrite: the crest moves inside a slot, and it is smooth across
+        // the boundary — a spring can hide a step, but it cannot invent the motion that is missing.
+        // Lifts are negative, so "falling off" means rising toward zero.
+        let inSlot = (0 ... 4).map { StageGeometry.waveLift(style: .crate, index: 3, centre: 3 + CGFloat($0) * 0.25) }
+        #expect(inSlot == inSlot.sorted(), Comment(rawValue: "\(inSlot)"))
+        #expect(inSlot[0] < inSlot[inSlot.count - 1], "the crest has to fall off as the pointer leaves the card")
+        #expect(inSlot[0] != inSlot[1], "a quarter-slot of pointer travel has to change the wave")
+        let step = CGFloat(0.02)
+        for centre in stride(from: CGFloat(2), through: 4, by: step) {
+            let here = StageGeometry.waveLift(style: .crate, index: 3, centre: centre)
+            let next = StageGeometry.waveLift(style: .crate, index: 3, centre: centre + step)
+            #expect(abs(next - here) < 2, Comment(rawValue: "jump of \(abs(next - here))pt at centre \(centre)"))
+        }
     }
 
     // MARK: Grid
@@ -263,31 +288,55 @@ struct StageGeometryTests {
         #expect(flow.contains(40) && flow.count <= 2 * StageGeometry.coverFlowReach + 1, Comment(rawValue: "\(flow)"))
     }
 
-    @Test("Grid ladder: 4 / 5 / 7 columns at 1040 / 1280 / 1600, cells never below 200")
+    @Test("Grid ladder follows the library's fixed medium-wide columns")
     func gridLadder() {
-        #expect(StageGeometry.gridColumns(windowWidth: 1040) == 4)
-        #expect(StageGeometry.gridColumns(windowWidth: 1280) == 5)
-        #expect(StageGeometry.gridColumns(windowWidth: 1600) == 7)
-        let design = StageGeometry.gridCellSize(windowWidth: 1280)
-        #expect(near(design.width, 236.8, 0.05) && near(design.height, 133.2, 0.05), Comment(rawValue: "\(design)"))
-        #expect(near(StageGeometry.gridCellSize(windowWidth: 1040).width, 239, 0.05))
-        #expect(near(StageGeometry.gridCellSize(windowWidth: 1600).width, 211.43, 0.05))
-        for width in stride(from: 1040, through: 2400, by: 20) {
-            let w = CGFloat(width)
-            #expect(StageGeometry.gridCellSize(windowWidth: w).width >= 200, Comment(rawValue: "cell at \(width)"))
-            #expect(StageGeometry.gridColumns(windowWidth: w) >= 3, Comment(rawValue: "columns at \(width)"))
+        #expect(StageGeometry.gridColumns(windowWidth: 1040) == 2)
+        #expect(StageGeometry.gridColumns(windowWidth: 1280) == 3)
+        #expect(StageGeometry.gridColumns(windowWidth: 1600) == 3)
+        for width in [CGFloat(1040), 1280, 1600] {
+            #expect(StageGeometry.gridCellSize(windowWidth: width) == CGSize(width: 384, height: 216))
         }
     }
 
-    @Test("Grid frames start at (24,110) and step by cell + 12")
+    @Test("Flight endpoints match the library tile frames including both paddings")
     func gridFrames() {
-        let g0 = StageGeometry.gridFrame(index: 0, windowWidth: 1280)
-        #expect(near(g0, CGRect(x: 24, y: 110, width: 236.8, height: 133.2), 0.05), Comment(rawValue: "\(g0)"))
-        #expect(near(StageGeometry.gridFrame(index: 1, windowWidth: 1280).minX, 272.8, 0.05))
-        let g5 = StageGeometry.gridFrame(index: 5, windowWidth: 1280)
-        #expect(near(g5.minX, 24, 0.05) && near(g5.minY, 255.2, 0.05), Comment(rawValue: "\(g5)"))
-        let g13 = StageGeometry.gridFrame(index: 13, windowWidth: 1280)
-        #expect(near(g13.minX, 770.4, 0.05) && near(g13.minY, 400.4, 0.05), Comment(rawValue: "\(g13)"))
+        for width in [CGFloat(1040), 1280, 1600] {
+            for index in [0, 1, 2, 3, 7, 11] {
+                let expected = DesignTokens.LibraryGrid.tileFrame(
+                    index: index, size: .medium, aspect: .wide,
+                    fitting: width - 2 * DesignTokens.LibraryGrid.horizontalPadding, tileAspectRatio: 16 / 9
+                ).offsetBy(
+                    dx: DesignTokens.LibraryGrid.horizontalPadding,
+                    dy: StageGeometry.gridTop + DesignTokens.LibraryGrid.verticalPadding
+                )
+                #expect(near(StageGeometry.gridFrame(index: index, windowWidth: width), expected, 0.001))
+                let wrongAspect = DesignTokens.LibraryGrid.tileFrame(
+                    index: index, size: .medium, aspect: .wide,
+                    fitting: width - 2 * DesignTokens.LibraryGrid.horizontalPadding, tileAspectRatio: 4 / 3
+                ).offsetBy(
+                    dx: DesignTokens.LibraryGrid.horizontalPadding,
+                    dy: StageGeometry.gridTop + DesignTokens.LibraryGrid.verticalPadding
+                )
+                #expect(!near(StageGeometry.gridFrame(index: index, windowWidth: width), wrongAspect, 1))
+            }
+        }
+    }
+
+    @Test("The grid window covers intersecting rows and is bounded by viewport height")
+    func visibleGridCards() {
+        for width in [CGFloat(1040), 1280, 1600] {
+            let size = CGSize(width: width, height: 820)
+            for offset in [CGFloat(0), 230, CGFloat(400 * 230), 100_000] {
+                let visible = StageGeometry.visibleGridCards(count: 1000, windowSize: size, scrollOffset: offset)
+                let viewport = CGRect(x: 0, y: StageGeometry.gridTop, width: width, height: size.height - StageGeometry.gridTop)
+                for index in 0 ..< 1000 {
+                    let frame = StageGeometry.gridFrame(index: index, windowWidth: width).offsetBy(dx: 0, dy: -offset)
+                    #expect(visible.contains(index) == frame.intersects(viewport))
+                }
+                #expect(visible.count <= 5 * StageGeometry.gridColumns(windowWidth: width))
+            }
+        }
+        #expect(StageGeometry.visibleGridCards(count: 0, windowSize: Self.designWindow, scrollOffset: 0).isEmpty)
     }
 
     @Test("Card placement rises over the first leg, then interpolates row → grid and untilts")
@@ -410,7 +459,7 @@ struct StageGeometryTests {
                 style: style, index: 5, count: 14, progress: 1, focus: 0, windowSize: StageGeometry.designWindow
             )
             let rest = StageGeometry.hitRect(placement, style: style)
-            let hovered = StageGeometry.hitRect(placement, style: style, hovered: true)
+            let hovered = StageGeometry.hitRect(placement, style: style, hover: 1)
             // Face-on, the only thing left is the perspective bump from pulling it toward the viewer.
             let expected = StageGeometry.cardSize.width
                 * StageGeometry.shelfPerspective / (StageGeometry.shelfPerspective - m.hoverDepth)

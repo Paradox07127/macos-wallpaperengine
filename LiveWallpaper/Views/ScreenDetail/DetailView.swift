@@ -465,7 +465,7 @@ struct DetailView: View {
             Button("Choose Web") { showHTMLSourcePicker() }
             Button("Cancel", role: .cancel) { }
 
-        case .sceneLibraryDrop:
+        case .sceneLibraryDrop, .applyNotConfirmed:
             Button("Cancel", role: .cancel) {}
         #if !LITE_BUILD
         case .sceneProjectUnsupported, .sceneImportRejected:

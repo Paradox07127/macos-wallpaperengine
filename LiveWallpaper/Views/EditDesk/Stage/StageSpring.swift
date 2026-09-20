@@ -8,6 +8,9 @@ struct StageSpring {
     static let row = StageGeometry.rowSpring
     static let ghost = StageGeometry.SpringParameters(response: 0.25)
     static let fly = StageGeometry.SpringParameters(response: 0.5)
+    /// Longest frame the stage integrates. Past this the app was away rather than late, and
+    /// catching up in one step would teleport every spring to its target.
+    static let maximumStep: TimeInterval = 0.1
 
     var value: Double
     var target: Double
@@ -37,8 +40,9 @@ struct StageSpring {
             return
         }
         // Substeps keep semi-implicit Euler stable after a missed display-link callback.
-        let steps = max(1, Int(ceil(min(dt, 0.1) * 240)))
-        let h = min(dt, 0.1) / Double(steps)
+        let span = min(dt, Self.maximumStep)
+        let steps = max(1, Int(ceil(span * 240)))
+        let h = span / Double(steps)
         for _ in 0 ..< steps {
             let acceleration = (parameters.stiffness * (target - value) - parameters.damping * velocity) / parameters.mass
             velocity += acceleration * h

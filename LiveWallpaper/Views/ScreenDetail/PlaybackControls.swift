@@ -324,7 +324,7 @@ struct PlaybackControls: View {
     }
 
     /// Mute dead zone on the volume slider (avoids leaking 1–2% from a stray drag).
-    private static let audioDeadZone: Double = 0.04
+    static let audioDeadZone: Double = 0.04
 
     private func audioLevelLabel(isMuted: Bool, percent: Int) -> some View {
         if isMuted {

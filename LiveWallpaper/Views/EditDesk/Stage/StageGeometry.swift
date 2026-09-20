@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import LiveWallpaperCore
 
 /// Pure geometry for the stage and shelf. Every rect is in window points with a top-left
 /// origin, matching SCREENS.md; only `arrangement(frames:in:)` takes `NSScreen.frame` (y-up).
@@ -66,14 +67,12 @@ enum StageGeometry {
     static let chipRowGap: CGFloat = 52
     static let chipRowTopFull: CGFloat = 70
     static let chipRowSwitchProgress: Double = 1.5
+    /// Past this the SwiftUI library grid is mounted over the stage and owns the library.
+    static let libraryHandoffProgress: Double = 1.8
 
     // MARK: Grid (S3)
 
     static let gridTop: CGFloat = 110
-    static let gridInset: CGFloat = 24
-    static let gridGap: CGFloat = 12
-    static let gridMinCell: CGFloat = 200
-    static let gridMinColumns = 3
     static let cardAspectRatio: CGFloat = 16 / 9
 
     // MARK: Gesture and motion (MOTION 1–4, 7)
@@ -100,8 +99,10 @@ enum StageGeometry {
     static let rowStretch: CGFloat = 120
     static let rowStretchStiffness: CGFloat = 220
     static let dragThreshold: CGFloat = 6
-    static let waveAmplitude: CGFloat = 44
     static let waveFalloff: CGFloat = 2.6
+    /// How far off the half-open state the wave still runs. Wide enough to cover a settle tail and
+    /// a gesture frozen just short of the state, narrow enough that it is gone by the grid.
+    static let waveProgressBand = 0.08
     /// How far past the band's end a card takes to fade out; one crate slot.
     static let bandFade: CGFloat = 48
     /// Cards accept clicks only this close to the half-open rest state.
@@ -218,7 +219,8 @@ enum StageGeometry {
         let columnOffsets = separations(
             starts: frames.map(\.minX),
             spans: frames.map { ($0.minY, $0.maxY) },
-            gap: displayColumnGap
+            gap: displayColumnGap,
+            alsoSeparate: { touchAtACorner(frames[$0], frames[$1]) }
         )
         // Rows run top-first, and `NSScreen.frame` is y-up, so the key is the negated top edge.
         let rowOffsets = separations(
@@ -255,16 +257,28 @@ enum StageGeometry {
         return Arrangement(scale: scale, contentRects: rects)
     }
 
+    /// Two displays that meet only at a corner straddle no boundary on either axis, so neither pass
+    /// opens a gap for them and their shells, badges and name rows run into each other.
+    private static func touchAtACorner(_ a: CGRect, _ b: CGRect) -> Bool {
+        (a.maxX == b.minX || b.maxX == a.minX) && (a.maxY == b.minY || b.maxY == a.minY)
+    }
+
     /// Per-display offset along one axis. A gap opens at a boundary only when some pair straddling
     /// it also overlaps on the other axis, so a display parked diagonally is not pushed sideways.
-    private static func separations(starts: [CGFloat], spans: [(CGFloat, CGFloat)], gap: CGFloat) -> [CGFloat] {
+    /// `alsoSeparate` adds pairs that need one anyway; widening the overlap test itself to include
+    /// touching edges would instead push apart displays that already have a gap on the other axis.
+    private static func separations(
+        starts: [CGFloat], spans: [(CGFloat, CGFloat)], gap: CGFloat,
+        alsoSeparate: (Int, Int) -> Bool = { _, _ in false }
+    ) -> [CGFloat] {
         let ordered = Set(starts).sorted()
         let rank = Dictionary(uniqueKeysWithValues: ordered.enumerated().map { ($1, $0) })
         var gapAt = [CGFloat](repeating: 0, count: ordered.count)
         for a in starts.indices {
             for b in starts.indices {
                 guard let first = rank[starts[a]], let second = rank[starts[b]], first < second else { continue }
-                guard spans[a].0 < spans[b].1, spans[b].0 < spans[a].1 else { continue }
+                let overlaps = spans[a].0 < spans[b].1 && spans[b].0 < spans[a].1
+                guard overlaps || alsoSeparate(a, b) else { continue }
                 for boundary in (first + 1) ... second {
                     gapAt[boundary] = gap
                 }
@@ -409,25 +423,36 @@ enum StageGeometry {
     }
 
     static func gridColumns(windowWidth: CGFloat) -> Int {
-        let usable = windowWidth - 2 * gridInset + gridGap
-        return max(gridMinColumns, Int((usable / (gridMinCell + gridGap)).rounded(.down)))
+        DesignTokens.LibraryGrid.columns(
+            for: .medium, aspect: .wide,
+            fitting: windowWidth - 2 * DesignTokens.LibraryGrid.horizontalPadding
+        ).count
     }
 
     static func gridCellSize(windowWidth: CGFloat) -> CGSize {
-        let columns = CGFloat(gridColumns(windowWidth: windowWidth))
-        let width = (windowWidth - 2 * gridInset - (columns - 1) * gridGap) / columns
-        return CGSize(width: width, height: width / cardAspectRatio)
+        gridFrame(index: 0, windowWidth: windowWidth).size
     }
 
     static func gridFrame(index: Int, windowWidth: CGFloat) -> CGRect {
-        let columns = gridColumns(windowWidth: windowWidth)
-        let cell = gridCellSize(windowWidth: windowWidth)
-        return CGRect(
-            x: gridInset + CGFloat(index % columns) * (cell.width + gridGap),
-            y: gridTop + CGFloat(index / columns) * (cell.height + gridGap),
-            width: cell.width,
-            height: cell.height
+        DesignTokens.LibraryGrid.tileFrame(
+            index: index, size: .medium, aspect: .wide,
+            fitting: windowWidth - 2 * DesignTokens.LibraryGrid.horizontalPadding,
+            tileAspectRatio: cardAspectRatio
+        ).offsetBy(
+            dx: DesignTokens.LibraryGrid.horizontalPadding,
+            dy: gridTop + DesignTokens.LibraryGrid.verticalPadding
         )
+    }
+
+    static func visibleGridCards(count: Int, windowSize: CGSize, scrollOffset: CGFloat) -> Range<Int> {
+        guard count > 0, windowSize.height > gridTop else { return 0 ..< 0 }
+        let columns = gridColumns(windowWidth: windowSize.width)
+        let cell = gridCellSize(windowWidth: windowSize.width)
+        let pitch = cell.height + DesignTokens.LibraryGrid.spacing
+        let top = scrollOffset - DesignTokens.LibraryGrid.verticalPadding
+        let firstRow = max(0, Int(floor((top - cell.height) / pitch)) + 1)
+        let endRow = max(firstRow, Int(ceil((top + windowSize.height - gridTop) / pitch)))
+        return min(count, firstRow * columns) ..< min(count, endRow * columns)
     }
 
     static func cardPlacement(
@@ -485,13 +510,25 @@ enum StageGeometry {
     /// Edges of the card as the hover it is settling into leaves them — never the interpolated
     /// frame, which would move the target under the pointer and re-trigger the hover that started
     /// it. `hovered` applies what `ShelfCardLayer` draws at `hover == 1`.
-    static func hitRect(_ placement: CardPlacement, style: ShelfStyle, hovered: Bool = false) -> CGRect {
+    /// The pose a card has at `hover` ∈ 0…1. `ShelfCardLayer` draws this and `hitRect` measures it,
+    /// so the hover lean exists once: a second copy drifts apart at p > 1, where `gridMix` cancels
+    /// the lean but leaves the hit rect claiming the full turn.
+    static func applyingHover(
+        _ placement: CardPlacement, style: ShelfStyle, hover: CGFloat, gridMix: CGFloat
+    ) -> CardPlacement {
         var placement = placement
-        if hovered {
-            let m = metrics(for: style)
-            placement.translateZ += m.hoverDepth
-            placement.rotationYDegrees += m.hoverTiltDegrees
-        }
+        let m = metrics(for: style)
+        let leaned = hover * (1 - gridMix)
+        placement.translateZ += m.hoverDepth * leaned
+        placement.rotationYDegrees += m.hoverTiltDegrees * leaned
+        placement.scale *= 1 + 0.04 * hover * gridMix
+        return placement
+    }
+
+    static func hitRect(
+        _ placement: CardPlacement, style: ShelfStyle, hover: CGFloat = 0, gridMix: CGFloat = 0
+    ) -> CGRect {
+        let placement = applyingHover(placement, style: style, hover: hover, gridMix: gridMix)
         let size = placement.frame.size
         let pivot = metrics(for: style).anchorX * size.width
         let radians = placement.rotationYDegrees * .pi / 180
@@ -511,14 +548,21 @@ enum StageGeometry {
         )
     }
 
-    /// Negative lift for card `index` while `hovered` is under the pointer; 0 when nothing is.
-    /// Cover Flow lifts only the hovered card: its neighbours are already turned away.
-    static func waveLift(style: ShelfStyle, index: Int, hovered: Int?) -> CGFloat {
-        guard let hovered else { return 0 }
+    /// Negative lift for card `index` when the pointer sits at `centre`, measured in slots — 3.5
+    /// means halfway between cards 3 and 4. Continuous in `centre`, and with a zero derivative at
+    /// both ends, so the crest tracks the pointer inside a slot instead of stepping at its edges.
+    /// Cover Flow lifts only the focused card: its neighbours are already turned away.
+    static func waveLift(style: ShelfStyle, index: Int, centre: CGFloat?) -> CGFloat {
+        guard let centre else { return 0 }
         let peak = -metrics(for: style).hoverLift
-        guard style != .coverFlow else { return index == hovered ? -peak : 0 }
-        let distance = CGFloat(abs(index - hovered))
-        return -max(0, peak - distance * peak / waveFalloff)
+        guard style != .coverFlow else { return abs(CGFloat(index) - centre) < 0.5 ? -peak : 0 }
+        let u = abs(CGFloat(index) - centre) / waveFalloff
+        guard u < 1 else { return 0 }
+        return -peak * (1 + cos(.pi * u)) / 2
+    }
+
+    static func waveLift(style: ShelfStyle, index: Int, hovered: Int?) -> CGFloat {
+        waveLift(style: style, index: index, centre: hovered.map(CGFloat.init))
     }
 
     private static func lerp(_ from: CGFloat, _ to: CGFloat, _ mix: CGFloat) -> CGFloat {

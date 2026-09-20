@@ -88,6 +88,7 @@ enum StagePlaybackAction: Equatable, Sendable {
 
 enum StageEvent: Equatable, Sendable {
     case cardTapped(StageCard.ID)
+    case cardApplyRequested(StageCard.ID)
     case displayTapped(StageDisplay.ID)
     case displayContextMenu(StageDisplay.ID, screenPoint: CGPoint)
     case dropped(card: StageCard.ID, onto: StageDisplay.ID)
@@ -101,6 +102,9 @@ enum StageEvent: Equatable, Sendable {
 protocol EditDeskStageEngine: AnyObject {
     func setProgress(_ progress: Double, animated: Bool)
     func flyTile(display: StageDisplay.ID, to rectInWindow: CGRect) async
+    /// Retargets a flight already in the air; the hero it is flying to moves with the window.
+    func updateFlightDestination(display: StageDisplay.ID, to rectInWindow: CGRect)
+    func setTileConcealed(display: StageDisplay.ID, _ concealed: Bool)
     func returnTile(display: StageDisplay.ID) async
     func crossfadeCover(display: StageDisplay.ID, to image: CGImage, duration: TimeInterval)
     func shake(card: StageCard.ID)
@@ -118,6 +122,8 @@ final class EditDeskStageModel {
     var reduceMotion = false
     /// True while a modal or the detail page is open: the stage ignores wheel and clicks.
     var interactionBlocked = false
+    /// Only the wallpaper grid reports this; other library pages do not hand scrolls to the stage.
+    var gridAtTop = false
     /// Localized "drop to replace" label drawn over a display while a card hovers it.
     var dropHintText = ""
     /// How many cards' thumbnails to keep decoded around the visible run.
@@ -144,6 +150,9 @@ final class EditDeskStageModel {
     private(set) var dropTarget: StageDisplay.ID?
     /// Slice of `shelfItems` the stage has layers for; the owner loads thumbnails for these.
     private(set) var visibleShelfRange = 0 ..< 0
+    /// The grid's own slice while the shelf flies to p = 2. Disjoint from `visibleShelfRange` once
+    /// the row is scrolled, so the owner needs both rather than the span between them.
+    private(set) var visibleGridRange = 0 ..< 0
     /// The stage view's own bounds. SwiftUI's geometry reader sees the safe-area-reduced height,
     /// which put the chrome 28pt off the shelf it is supposed to ride on.
     private(set) var stageSize = StageGeometry.designWindow
@@ -186,8 +195,16 @@ final class EditDeskStageModel {
         await engine?.flyTile(display: display, to: rectInWindow)
     }
 
+    func updateFlightDestination(display: StageDisplay.ID, to rectInWindow: CGRect) {
+        engine?.updateFlightDestination(display: display, to: rectInWindow)
+    }
+
     func returnTile(display: StageDisplay.ID) async {
         await engine?.returnTile(display: display)
+    }
+
+    func setTileConcealed(display: StageDisplay.ID, _ concealed: Bool) {
+        engine?.setTileConcealed(display: display, concealed)
     }
 
     func crossfadeCover(display: StageDisplay.ID, to image: CGImage, duration: TimeInterval) {
@@ -239,6 +256,12 @@ final class EditDeskStageModel {
     func report(visibleShelfRange: Range<Int>) {
         if self.visibleShelfRange != visibleShelfRange {
             self.visibleShelfRange = visibleShelfRange
+        }
+    }
+
+    func report(visibleGridRange: Range<Int>) {
+        if self.visibleGridRange != visibleGridRange {
+            self.visibleGridRange = visibleGridRange
         }
     }
 

@@ -11,12 +11,23 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     private(set) var cardLayers: [StageCard.ID: ShelfCardLayer] = [:]
     private let arrangementLayer = CALayer()
     private let shelfLayer = CALayer()
+    private let cardFocusRing = CALayer()
+    private var focusedCardIndex: Int?
+    /// Reduce Motion draws the nearest rest state instead of the finger's fraction; this is the
+    /// state last drawn, so crossing into another one fades.
+    private var reducedMotionState: Int?
+    /// Set when the row was cut to a new offset rather than slid there; the next `render` spends it.
+    private var cutRow = false
     private let flightLayer = CALayer()
     private let ghost = DragGhostLayer()
     private var displays: [StageDisplay] = []
     private var cards: [StageCard] = []
-    /// Slice of `cards` that currently has layers; the row is as long as the whole library.
+    /// Slice of `cards` the row draws; the row is as long as the whole library.
     private var cardWindow = 0 ..< 0
+    /// Slice the grid draws while the shelf flies to p = 2, empty otherwise. Kept apart from
+    /// `cardWindow`: a scrolled row puts the two runs hundreds of cards apart, and one span
+    /// covering both is the whole library.
+    private var gridWindow = 0 ..< 0
     private var reserve: [ShelfCardLayer] = []
     private static let reserveLimit = 8
     private var shelfStyle = ShelfStyle.crate
@@ -26,7 +37,23 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     private var row = StageSpring(value: 0, target: 0, parameters: StageSpring.row)
     private let gesture = ShelfGestureController(clock: CACurrentMediaTime)
     private var attached = true
+    /// Fades the whole wave in and out. The crest's *position* must never go through a spring —
+    /// a spring tracking a moving target lags it by `damping/stiffness` (99ms here, a full slot at
+    /// 480pt/s), which is exactly the "not following my mouse" feel. Only entering and leaving the
+    /// shelf is animated; where the crest sits is read straight off the pointer.
+    private var waveStrength = StageSpring(value: 0, target: 0, parameters: StageSpring.hover)
+    /// Pointer position in slots, frozen at its last value while the wave fades out.
+    private var waveCentre: CGFloat?
+    /// Row offset and progress the current hover was resolved against. A scroll — sprung, flicked
+    /// or jumped by a keyboard reveal — slides cards under a still pointer, and hover is a property
+    /// of the point, not of the card it last landed on.
+    private var hoverResolvedAt: CGPoint?
+    /// Last pointer position in stage space, or nil when the pointer is outside the view.
+    private var pointer: CGPoint?
     private var screenObserver: (any NSObjectProtocol)?
+    private var gridScrollMonitor: Any?
+    private var ownsGridScroll = false
+    private var lastGridWheelTime: TimeInterval?
     private var snapInFlight = false
     private var staggerToGrid = false
     private var snapTask: Task<Void, Never>?
@@ -37,6 +64,11 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     private var pressedCard: StageCard.ID?
     private var dragging = false
     private var accessibilityItems: [StageAccessibilityElement] = []
+    private var cardAccessibility: [StageCard.ID: StageAccessibilityElement] = [:]
+    private var displayAccessibility: [StageDisplay.ID: StageAccessibilityElement] = [:]
+    /// What the last `rebuildAccessibility` was told to expose. Progress alone changes it, and
+    /// neither of the other two triggers fires on progress.
+    private var accessibilityExposure = (displays: false, cards: false)
     /// `arrangement` allocates while it works out the gaps; it only changes with the displays or
     /// the window, never per frame.
     private var arrangementCache: (size: CGSize, value: StageGeometry.Arrangement)?
@@ -67,8 +99,15 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         for child in [arrangementLayer, shelfLayer, flightLayer, ghost.layer] {
             layer?.addSublayer(child)
         }
-        applyPalette()
-        arrangementLayer.anchorPoint = CGPoint(x: 0.5, y: 0)
+        focusRingType = .none
+        withoutActions {
+            shelfLayer.addSublayer(cardFocusRing)
+            cardFocusRing.borderWidth = 3
+            cardFocusRing.cornerRadius = DesignTokens.EditDesk.Corner.shelfCard
+            cardFocusRing.isHidden = true
+            applyPalette()
+            arrangementLayer.anchorPoint = CGPoint(x: 0.5, y: 0)
+        }
         progress.jump(to: model.progress)
         model.engine = self
         setAccessibilityElement(false)
@@ -84,6 +123,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     /// CALayer keeps resolved CGColors, so every dynamic colour has to be re-read by hand when the
     /// window's appearance flips between light and dark.
     private func applyPalette() {
+        cardFocusRing.borderColor = NSColor.keyboardFocusIndicatorColor.cgColor
         ghost.refreshPalette()
         for display in displays {
             displayLayers[display.id]?.update(display: display, dropHint: dropHint)
@@ -101,6 +141,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
                 render()
             }
         }
+        startDisplayLinkIfNeeded()
     }
 
     // MARK: Model and layout
@@ -137,7 +178,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         }
         for id in Array(displayLayers.keys) where !nextDisplays.contains(where: { $0.id == id }) {
             flights.removeValue(forKey: id)?.continuation?.resume()
-            displayLayers[id]?.content.removeFromSuperlayer()
+            displayLayers[id]?.restoreContent()
             displayLayers.removeValue(forKey: id)?.layer.removeFromSuperlayer()
         }
         for display in nextDisplays {
@@ -171,7 +212,10 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         if cards.map(\.id) != nextCards.map(\.id) {
             // Identity, not count: swapping ten cards for ten others left the window equal, so the
             // reconcile bailed out after the old layers were already gone and the shelf went blank.
+            let focusedID = focusedCardIndex.map { cards[$0].id }
+            focusedCardIndex = nextCards.firstIndex { $0.id == focusedID }
             cardWindow = 0 ..< 0
+            gridWindow = 0 ..< 0
         }
         displays = nextDisplays
         cards = nextCards
@@ -184,21 +228,12 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
             // The row offset means points in one style and focused slots in another.
             shelfStyle = model.shelfStyle
             gesture.reset()
-            row.jump(to: 0)
+            jumpRow(to: 0)
         }
         if changed {
             rebuildAccessibility()
-            // A shrinking library can leave the row scrolled past its new end.
-            let count = cards.count
-            if count > 0, bounds.width > 0 {
-                let limits = rowLimits(count: count, style: model.shelfStyle)
-                let clamped = min(max(row.value, limits.lowerBound), limits.upperBound)
-                if clamped != row.value {
-                    row.jump(to: clamped)
-                    gesture.reset()
-                }
-            }
         }
+        clampRowIntoLimits()
         if model.interactionBlocked {
             clearHover()
             pressedCard = nil
@@ -207,9 +242,22 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
             if dragging {
                 endDrag(cancelled: true)
             }
+            // A modal stands in for the release the shelf will never get: the real `.ended` cannot
+            // reach the controller while the lock is up, and the snap that would have landed the
+            // row was just cancelled.
+            gesture.reset()
+            if cards.count > 0, bounds.width > 0 {
+                gesture.rowLimits = rowLimits(count: cards.count, style: model.shelfStyle)
+                gesture.adopt(rowOffset: CGFloat(row.value))
+                let settled = gesture.settleRow(quantum: StageGeometry.metrics(for: model.shelfStyle).pitch)
+                if model.reduceMotion {
+                    jumpRow(to: settled)
+                } else {
+                    row.target = settled
+                }
+            }
             // A flick interrupted by a modal must not leave the shelf between rest states.
             if progress.target != progress.target.rounded() || (!snapInFlight && progress.value != progress.value.rounded()) {
-                gesture.reset()
                 setProgress(Double(StageGeometry.snapTarget(for: progress.value)), animated: !model.reduceMotion)
             }
         }
@@ -222,24 +270,51 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
             NSCursor.arrow.set()
         }
         if model.reduceMotion {
-            progress.jump(to: progress.target)
-            row.jump(to: row.target)
+            settleReducedMotion()
             staggerToGrid = false
-            for id in flights.keys {
-                if let target = flights[id]?.spring.target {
-                    flights[id]?.spring.jump(to: target)
-                }
-            }
-            completeFlights()
-            for tile in cardLayers.values {
-                tile.lift.jump(to: tile.lift.target)
-                tile.hover.jump(to: tile.hover.target)
-                tile.shakeElapsed = nil
-            }
             if snapInFlight {
                 finishSnap()
             }
             reportProgress()
+        }
+    }
+
+    /// The row's end moves with the window and the shelf budget as well as with the library, so
+    /// this cannot hang off "the cards changed". Both ends of the spring are checked: a flight
+    /// whose value is still inside the new limits would otherwise carry on to a target outside them.
+    private func clampRowIntoLimits() {
+        guard cards.count > 0, bounds.width > 0 else { return }
+        let limits = rowLimits(count: cards.count, style: model.shelfStyle)
+        let clamped = min(max(row.value, limits.lowerBound), limits.upperBound)
+        guard clamped != row.value || min(max(row.target, limits.lowerBound), limits.upperBound) != row.target else { return }
+        jumpRow(to: clamped)
+        // `adopt`, not `reset`: a wheel has no `.began` to re-base on, so a zeroed offset sends the
+        // next notch back to the first card.
+        gesture.adopt(rowOffset: clamped)
+    }
+
+    private func settleReducedMotion() {
+        progress.jump(to: progress.target)
+        jumpRow(to: row.target)
+        for id in flights.keys {
+            if let target = flights[id]?.spring.target {
+                flights[id]?.spring.jump(to: target)
+            }
+        }
+        completeFlights()
+        for tile in Array(cardLayers.values) + reserve {
+            tile.lift.jump(to: 0)
+            tile.hover.jump(to: tile.hover.target)
+            tile.gridProgress.jump(to: progress.value)
+            tile.staggerRemaining = 0
+            tile.shakeElapsed = nil
+        }
+        ghost.x.jump(to: ghost.x.target)
+        ghost.y.jump(to: ghost.y.target)
+        ghost.scale.jump(to: 1)
+        ghost.flight.jump(to: ghost.flight.target)
+        if ghost.destination != nil {
+            ghost.finish(reduceMotion: true)
         }
     }
 
@@ -249,6 +324,9 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
             synchronizeInputs()
             render()
         }
+        // `render` writes spring targets, so every entry point that is not the frame driver itself
+        // has to ask for frames; the driver's own `advance` must not, or it invalidates mid-callback.
+        startDisplayLinkIfNeeded()
     }
 
     private func render() {
@@ -257,7 +335,13 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         arrangementLayer.position = CGPoint(x: bounds.midX, y: 0)
         shelfLayer.frame = bounds
         flightLayer.frame = bounds
-        let p = progress.value
+        let p = renderProgress
+        // Both fades are built at the end of this function: `fadeOpacity` reads the layer's own
+        // opacity as its destination, so one built here would animate towards the value about to
+        // be replaced — the arrangement would fade *in* on its way out.
+        let crossedState = model.reduceMotion && reducedMotionState != nil && reducedMotionState != Int(p)
+        let arrangementWas = arrangementLayer.opacity
+        reducedMotionState = model.reduceMotion ? Int(p) : nil
         let arrangement: StageGeometry.Arrangement
         if let cached = arrangementCache, cached.size == bounds.size {
             arrangement = cached.value
@@ -267,7 +351,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
             )
             arrangementCache = (bounds.size, arrangement)
         }
-        let transform = StageGeometry.stageTransform(progress: dragging ? min(progress.value, 1) : progress.value)
+        let transform = StageGeometry.stageTransform(progress: dragging ? min(p, 1) : p)
         arrangementLayer.transform = CATransform3DScale(
             CATransform3DMakeTranslation(0, transform.translationY, 0), transform.scale, transform.scale, 1
         )
@@ -276,8 +360,8 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         for (index, display) in displays.enumerated() {
             guard let shell = displayLayers[display.id] else { continue }
             shell.place(content: arrangement.contentRects[index], isBuiltin: display.isBuiltin)
-            shell.setHovered(!model.interactionBlocked && model.hoveredDisplay == display.id)
-            shell.setDropTarget(model.dropTarget == display.id)
+            shell.setHovered(!model.interactionBlocked && flights.isEmpty && model.hoveredDisplay == display.id, reduceMotion: model.reduceMotion)
+            shell.setDropTarget(model.dropTarget == display.id, reduceMotion: model.reduceMotion)
             shell.layer.opacity = Float(1 - min(1, fade))
         }
         let count = cards.count
@@ -286,32 +370,83 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
             gesture.rowLimits = rowLimits(count: count, style: style)
         }
         syncCardWindow(count: count, style: style)
+        // Only when it flips: rebuilding the list every frame would bounce VoiceOver's cursor back
+        // to the container, and neither of the other triggers watches progress.
+        if accessibilityExposure != accessibilityExposureNow {
+            rebuildAccessibility()
+        }
+        if hoverResolvedAt != CGPoint(x: row.value, y: progress.value) {
+            hoverResolvedAt = CGPoint(x: row.value, y: progress.value)
+            resolveHover()
+        }
         let hovered = hoveredIndex
-        let wave = model.snappedIndex == 1 && !snapInFlight && progress.value == 1
-        for index in cardWindow {
+        // Was `progress.value == 1`: the settle tail and a gesture frozen a hair off the state
+        // both read as "not the shelf" and dropped the wave mid-motion.
+        let wave = !model.interactionBlocked && flights.isEmpty
+            && !model.reduceMotion && abs(progress.value - 1) < StageGeometry.waveProgressBand
+        if wave, let hovered {
+            // The pointer is the real input; the hovered index is the fallback for the paths that
+            // set a hover without one, so the wave can never silently vanish.
+            waveCentre = slotPosition(atX: pointer?.x) ?? CGFloat(hovered)
+        }
+        // Asymmetric on purpose: arriving is instant, because every millisecond here is the lag the
+        // pointer feels; leaving fades, because nothing is chasing the pointer any more.
+        if wave, hovered != nil {
+            waveStrength.jump(to: 1)
+        } else {
+            waveStrength.target = 0
+            if model.reduceMotion {
+                waveStrength.jump(to: 0)
+            }
+        }
+        for index in visibleCardIndices {
             let card = cards[index]
             guard let tile = cardLayers[card.id] else { continue }
-            tile.lift.target = wave ? Double(StageGeometry.waveLift(style: style, index: index, hovered: hovered)) : 0
+            tile.lift.jump(to: waveStrength.value
+                * Double(StageGeometry.waveLift(style: style, index: index, centre: waveCentre)))
             tile.hover.target = model.hoveredCard == card.id ? 1 : 0
             if model.reduceMotion {
                 tile.lift.jump(to: tile.lift.target)
                 tile.hover.jump(to: tile.hover.target)
             }
-            let p = staggerToGrid ? tile.gridProgress.value : progress.value
+            let p = staggerToGrid ? tile.gridProgress.value : renderProgress
             var placement = cardPlacement(style: style, index: index, count: count, progress: p)
             let mix = CGFloat(StageGeometry.progressSplit(p).t2)
             placement.frame.origin.y += tile.lift.value
             if let elapsed = tile.shakeElapsed {
                 placement.frame.origin.x += 6 * sin(elapsed / 0.3 * 6 * .pi)
             }
-            tile.place(placement, style: style, gridMix: mix, dragged: dragging && ghost.source == card.id)
+            let opacity = tile.layer.opacity
+            tile.place(placement, style: style, gridMix: mix, dragged: dragging && ghost.source == card.id, reduceMotion: model.reduceMotion)
+            if model.reduceMotion, opacity != tile.layer.opacity {
+                StageLayerStyle.fadeOpacity(tile.layer, resumingFrom: opacity)
+            }
             // Continuous in the hover spring: a hover change never re-sorts the cards behind it.
-            tile.layer.zPosition = placement.depthOrder + CGFloat(tile.hover.value) * 400
+            // Reduce Motion has no hover pose to lift clear of the row, and hit-testing already
+            // reads that state, so the bump would only cut the occlusion order out from under it.
+            let lifted = model.reduceMotion ? 0 : CGFloat(tile.hover.value)
+            tile.layer.zPosition = placement.depthOrder + lifted * 400
         }
         reportHoveredCardRect(style: style, count: count)
         renderFlights()
-        ghost.render()
+        ghost.render(reduceMotion: model.reduceMotion)
+        updateCardFocusRing()
         updateAccessibilityFrames()
+        if crossedState {
+            StageLayerStyle.fadeOpacity(arrangementLayer, from: arrangementLayer.opacity > 0 ? 0 : arrangementWas)
+        }
+        if model.reduceMotion, crossedState || cutRow {
+            StageLayerStyle.fadeOpacity(shelfLayer, from: 0)
+        }
+        cutRow = false
+    }
+
+    /// Reduce Motion turns a row slide into a cut, and the cut takes the fade the slide would have
+    /// had. The tracked gesture is direct manipulation and stays continuous, so it does not come
+    /// through here.
+    private func jumpRow(to value: Double) {
+        cutRow = cutRow || (model.reduceMotion && row.value != value)
+        row.jump(to: value)
     }
 
     private func reportHoveredCardRect(style: ShelfStyle, count: Int) {
@@ -321,7 +456,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         }
         var placement = cardPlacement(style: style, index: index, count: count, progress: progress.value)
         placement.frame.origin.y += cardLayers[cards[index].id]?.lift.value ?? 0
-        model.report(hoveredCardRect: StageGeometry.hitRect(placement, style: style, hovered: true))
+        model.report(hoveredCardRect: StageGeometry.hitRect(placement, style: style, hover: model.reduceMotion ? 0 : 1))
     }
 
     /// Builds and drops card layers as the row scrolls, so the shelf can be as long as the
@@ -331,9 +466,14 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
             style: style, count: count, rowOffset: row.value, focus: focus, windowSize: bounds.size,
             capacity: model.shelfRenderBudget
         )
-        guard window != cardWindow else { return }
+        var grid = 0 ..< 0
+        if staggerToGrid || progress.value > 1 {
+            grid = StageGeometry.visibleGridCards(count: count, windowSize: bounds.size, scrollOffset: 0)
+        }
+        guard window != cardWindow || grid != gridWindow else { return }
         cardWindow = window
-        let wanted = Set(cards[window].map(\.id))
+        gridWindow = grid
+        let wanted = Set(cards[window].map(\.id)).union(cards[grid].map(\.id))
         for (id, tile) in cardLayers where !wanted.contains(id) {
             cardLayers[id] = nil
             // Recycled, not rebuilt: a fast flick crosses a slot boundary every few frames and
@@ -345,7 +485,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
                 tile.layer.removeFromSuperlayer()
             }
         }
-        for index in window where cardLayers[cards[index].id] == nil {
+        for index in visibleCardIndices where cardLayers[cards[index].id] == nil {
             let tile: ShelfCardLayer
             if let spare = reserve.popLast() {
                 tile = spare
@@ -359,10 +499,24 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
             tile.hover.jump(to: 0)
             tile.shakeElapsed = nil
             tile.gridProgress.jump(to: progress.value)
+            if staggerToGrid {
+                // Born mid-flight: a card left on the value it was created with sits the animation
+                // out, then gets dragged to the end state when the stagger stops.
+                tile.gridProgress.target = progress.target
+                tile.staggerRemaining = 0
+            }
             cardLayers[cards[index].id] = tile
         }
         model.report(visibleShelfRange: window)
+        model.report(visibleGridRange: grid)
         rebuildAccessibility()
+    }
+
+    /// Both runs, each index once and in ascending order — the grid window always starts at the top
+    /// of the library. Layers are coordinated by card identity, so an index in both must not be
+    /// built, ranked or exposed twice.
+    private var visibleCardIndices: [Int] {
+        Array(gridWindow) + cardWindow.filter { !gridWindow.contains($0) }
     }
 
     /// Cover Flow only: which slot faces the viewer. Driven by the row offset, never by hover —
@@ -415,14 +569,25 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         snapTask?.cancel()
         let target = StageGeometry.clampProgress(value)
         withoutActions {
+            // A stagger already under way keeps running whatever the new target is: its cards are
+            // spread across the transition, and both re-seeding them from the global progress and
+            // switching the render source back to it collapse that spread in one frame.
+            let continuing = staggerToGrid && animated && !model.reduceMotion
+            staggerToGrid = continuing || (animated && !model.reduceMotion && target == 2)
             if animated, !model.reduceMotion {
                 progress.launch(to: target, velocity: velocity)
                 snapInFlight = true
-                staggerToGrid = target == 2
-                for (index, card) in cards.enumerated() {
-                    cardLayers[card.id]?.gridProgress.jump(to: progress.value)
-                    cardLayers[card.id]?.gridProgress.target = target
-                    cardLayers[card.id]?.staggerRemaining = Double(index) * 0.025
+                // Build the destination window before any flight frame or stagger is seeded.
+                syncCardWindow(count: cards.count, style: model.shelfStyle)
+                let visible = visibleCardIndices
+                let step = min(0.025, 0.35 / Double(max(1, visible.count - 1)))
+                for (rank, index) in visible.enumerated() {
+                    let tile = cardLayers[cards[index].id]
+                    if !continuing {
+                        tile?.gridProgress.jump(to: progress.value)
+                        tile?.staggerRemaining = Double(rank) * step
+                    }
+                    tile?.gridProgress.target = target
                 }
                 if progress.isSettled {
                     progress.jump(to: target)
@@ -430,7 +595,9 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
                 }
             } else {
                 progress.jump(to: target)
-                staggerToGrid = false
+                if model.reduceMotion {
+                    settleReducedMotion()
+                }
                 snapInFlight = false
                 finishSnap()
             }
@@ -438,6 +605,11 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
             render()
         }
         startDisplayLinkIfNeeded()
+    }
+
+    /// Reduce Motion: the stage shows whole states only, so a tracked gesture switches instead of sliding.
+    private var renderProgress: Double {
+        model.reduceMotion ? progress.value.rounded() : progress.value
     }
 
     private func reportProgress() {
@@ -460,7 +632,10 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         guard let shell = displayLayers[display], let root = layer else { return }
         await withCheckedContinuation { continuation in
             withoutActions {
-                flights.removeValue(forKey: display)?.continuation?.resume()
+                if let superseded = flights.removeValue(forKey: display) {
+                    shell.restoreContent()
+                    superseded.continuation?.resume()
+                }
                 let home = shell.content.convert(shell.content.bounds, to: root)
                 shell.content.removeFromSuperlayer()
                 flightLayer.addSublayer(shell.content)
@@ -471,9 +646,22 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
                     flights[display]?.continuation = nil
                 }
                 render()
+                if model.reduceMotion {
+                    StageLayerStyle.fadeOpacity(shell.content, from: 0)
+                    StageLayerStyle.fadeOpacity(shell.layer, from: 1)
+                }
             }
             startDisplayLinkIfNeeded()
             settleFlightsWithoutDisplayLink()
+        }
+    }
+
+    /// Only the endpoint moves: the tile keeps flying from where it took off, at the speed it had.
+    func updateFlightDestination(display: StageDisplay.ID, to rectInWindow: CGRect) {
+        guard flights[display] != nil else { return }
+        withoutActions {
+            flights[display]?.destination = rectInWindow
+            render()
         }
     }
 
@@ -493,6 +681,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
 
     func returnTile(display: StageDisplay.ID) async {
         guard flights[display] != nil else { return }
+        setTileConcealed(display: display, false)
         await withCheckedContinuation { continuation in
             withoutActions {
                 flights[display]?.continuation?.resume()
@@ -503,6 +692,9 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
                 }
                 completeFlights()
                 render()
+                if model.reduceMotion, let shell = displayLayers[display] {
+                    StageLayerStyle.fadeOpacity(shell.layer, from: 0)
+                }
             }
             startDisplayLinkIfNeeded()
             settleFlightsWithoutDisplayLink()
@@ -510,13 +702,26 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     }
 
     func crossfadeCover(display: StageDisplay.ID, to image: CGImage, duration: TimeInterval) {
-        withoutActions { displayLayers[display]?.crossfade(to: image, duration: model.reduceMotion ? 0.15 : duration) }
+        withoutActions { displayLayers[display]?.crossfade(to: image, duration: duration, reduceMotion: model.reduceMotion) }
         startDisplayLinkIfNeeded()
     }
 
+    func setTileConcealed(display: StageDisplay.ID, _ concealed: Bool) {
+        guard flights[display] != nil else { return }
+        withoutActions {
+            // A reduced-motion fade must not override the hero's immediate handoff.
+            displayLayers[display]?.content.removeAnimation(forKey: "opacity")
+            displayLayers[display]?.content.opacity = concealed ? 0 : 1
+        }
+    }
+
     func shake(card: StageCard.ID) {
-        guard !model.reduceMotion else { return }
-        cardLayers[card]?.shakeElapsed = 0
+        guard let tile = cardLayers[card] else { return }
+        guard !model.reduceMotion else {
+            StageLayerStyle.pulseOpacity(tile.layer)
+            return
+        }
+        tile.shakeElapsed = 0
         startDisplayLinkIfNeeded()
     }
 
@@ -551,7 +756,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     // MARK: Frame driver
 
     private var isAnimating: Bool {
-        !progress.isSettled || !row.isSettled || dragging
+        !progress.isSettled || !row.isSettled || !waveStrength.isSettled || (dragging && !model.reduceMotion)
             || ghost.destination != nil
             || displayLayers.values.contains(where: \.hasAnimation)
             || flights.values.contains { !$0.spring.isSettled }
@@ -562,7 +767,14 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     }
 
     private func startDisplayLinkIfNeeded() {
-        guard isAnimating, displayLink == nil, let screen = window?.screen else { return }
+        guard isAnimating else {
+            stopDisplayLink()
+            return
+        }
+        #if DEBUG
+        debugFrameDriverRequests += 1
+        #endif
+        guard displayLink == nil, let screen = window?.screen else { return }
         let target = DisplayLinkTarget(view: self)
         let link = screen.displayLink(target: target, selector: #selector(DisplayLinkTarget.step(_:)))
         linkTarget = target
@@ -585,12 +797,17 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     }
 
     func advance(dt: TimeInterval) {
+        // One clock for the whole frame: the springs clamp a hitch, so the stagger and shake timers
+        // have to as well, or a single stutter spends the entire stagger schedule while the
+        // transition it staggers has barely moved.
+        let dt = min(dt, StageSpring.maximumStep)
         withoutActions {
+            if model.reduceMotion {
+                settleReducedMotion()
+            }
             progress.step(dt: dt)
             row.step(dt: dt)
-            if snapInFlight, progress.isSettled {
-                finishSnap()
-            }
+            waveStrength.step(dt: dt)
             reportProgress()
             for tile in cardLayers.values {
                 tile.lift.step(dt: dt)
@@ -607,6 +824,10 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
             }
             if staggerToGrid, cardLayers.values.allSatisfy(\.gridProgress.isSettled) {
                 staggerToGrid = false
+            }
+            // SwiftUI takes over on the snap event, after the last staggered card lands.
+            if snapInFlight, progress.isSettled, !staggerToGrid {
+                finishSnap()
             }
             for shell in displayLayers.values {
                 shell.step(dt: dt, reduceMotion: model.reduceMotion)
@@ -643,7 +864,12 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         stopDisplayLink()
         screenObserver.map(NotificationCenter.default.removeObserver)
         screenObserver = nil
+        removeGridScrollMonitor()
         if let window {
+            gridScrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+                guard let self else { return event }
+                return forwardGridScroll(event)
+            }
             // The link is bound to one screen's refresh rate; dragged from a 60Hz panel onto
             // ProMotion it would keep stepping the springs at 60Hz.
             screenObserver = NotificationCenter.default.addObserver(
@@ -657,30 +883,34 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
             }
             startDisplayLinkIfNeeded()
         } else {
-            for flight in flights.values {
-                flight.continuation?.resume()
-            }
-            for id in flights.keys {
-                flights[id]?.continuation = nil
+            withoutActions {
+                for (id, flight) in flights {
+                    displayLayers[id]?.restoreContent()
+                    flight.continuation?.resume()
+                }
+                flights.removeAll()
+                render()
             }
         }
     }
 
     func detach() {
         attached = false
+        removeGridScrollMonitor()
         withoutActions {
             if dragging {
                 endDrag(cancelled: true)
             }
             ghost.finish()
             clearHover()
+            for (id, flight) in flights {
+                displayLayers[id]?.restoreContent()
+                flight.continuation?.resume()
+            }
+            flights.removeAll()
         }
         stopDisplayLink()
         snapTask?.cancel()
-        for flight in flights.values {
-            flight.continuation?.resume()
-        }
-        flights.removeAll()
         if model.engine === self {
             model.engine = nil
         }
@@ -698,9 +928,46 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         addTrackingArea(area)
     }
 
-    override func scrollWheel(with event: NSEvent) {
-        guard !model.interactionBlocked, !dragging else { return }
-        let phase: ShelfGestureController.Phase = if event.momentumPhase.contains(.ended) {
+    static func shouldOwnGridScroll(
+        phase: ShelfGestureController.Phase, gridAtTop: Bool, deltaY: CGFloat, wheelBurstBegan: Bool = false
+    ) -> Bool {
+        gridAtTop && deltaY > 0 && (phase == .began || (phase == .changed && wheelBurstBegan))
+    }
+
+    private func removeGridScrollMonitor() {
+        if let gridScrollMonitor {
+            NSEvent.removeMonitor(gridScrollMonitor)
+            self.gridScrollMonitor = nil
+        }
+        ownsGridScroll = false
+        lastGridWheelTime = nil
+    }
+
+    private func forwardGridScroll(_ event: NSEvent) -> NSEvent? {
+        guard let window, event.window === window else { return event }
+        guard !model.interactionBlocked, !dragging else {
+            ownsGridScroll = false
+            return event
+        }
+        let phase = Self.scrollPhase(event)
+        let wheel = !event.hasPreciseScrollingDeltas && event.phase.isEmpty && event.momentumPhase.isEmpty
+        let wheelBurstBegan = wheel && lastGridWheelTime.map { event.timestamp - $0 > StageGeometry.snapDelay } != false
+        lastGridWheelTime = wheel ? event.timestamp : nil
+        if phase == .began || wheelBurstBegan {
+            ownsGridScroll = model.snappedIndex == 2 && model.progress > StageGeometry.libraryHandoffProgress && Self.shouldOwnGridScroll(
+                phase: phase, gridAtTop: model.gridAtTop, deltaY: event.scrollingDeltaY, wheelBurstBegan: wheelBurstBegan
+            )
+        }
+        guard ownsGridScroll else { return event }
+        handleScroll(event, phase: phase)
+        if phase == .ended || phase == .momentumEnded {
+            ownsGridScroll = false
+        }
+        return nil
+    }
+
+    private static func scrollPhase(_ event: NSEvent) -> ShelfGestureController.Phase {
+        if event.momentumPhase.contains(.ended) {
             .momentumEnded
         } else if event.phase.contains(.ended) || event.phase.contains(.cancelled) {
             .ended
@@ -711,15 +978,19 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         } else {
             .changed
         }
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        guard !model.interactionBlocked, !dragging else { return }
+        handleScroll(event, phase: Self.scrollPhase(event))
+    }
+
+    private func handleScroll(_ event: NSEvent, phase: ShelfGestureController.Phase) {
         if phase == .began {
             // Fingers coming down catch a snap in flight: stop it where it is so the gesture tracks
             // from what is on screen, instead of a baseline the spring keeps moving underneath it.
-            snapTask?.cancel()
-            snapInFlight = false
-            staggerToGrid = false
             withoutActions {
-                progress.jump(to: progress.value)
-                row.jump(to: row.value)
+                freezeSprings()
             }
             gesture.adopt(rowOffset: CGFloat(row.value))
         }
@@ -733,7 +1004,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
             ) {
                 progress.jump(to: value)
                 snapInFlight = false
-                staggerToGrid = false
+                redirectStagger(to: value)
                 reportProgress()
             }
             row.jump(to: gesture.rowOffset)
@@ -760,6 +1031,34 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         }
     }
 
+    private func freezeSprings() {
+        snapTask?.cancel()
+        snapInFlight = false
+        progress.jump(to: progress.value)
+        row.jump(to: row.value)
+        // Not `staggerToGrid = false`: the cards are spread across the transition, and the render
+        // source may not change under one that is off the pace. `advance` drops the flag once they
+        // have all reached the finger.
+        redirectStagger(to: progress.value)
+        for tile in cardLayers.values {
+            if !staggerToGrid {
+                tile.gridProgress.jump(to: tile.gridProgress.value)
+            }
+            tile.lift.jump(to: tile.lift.value)
+            tile.hover.jump(to: tile.hover.value)
+        }
+    }
+
+    /// Hands a running stagger to the finger: every card springs to `value` from wherever it is,
+    /// instead of the render source switching back to the global progress in one frame.
+    private func redirectStagger(to value: Double) {
+        guard staggerToGrid else { return }
+        for tile in cardLayers.values {
+            tile.gridProgress.target = value
+            tile.staggerRemaining = 0
+        }
+    }
+
     override func keyDown(with event: NSEvent) {
         guard !model.interactionBlocked else { return }
         if event.keyCode == 53 {
@@ -770,7 +1069,25 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
             return
         }
         // Changing state mid-drag would move the drop targets out from under the ghost.
-        guard !dragging, event.keyCode == 126 || event.keyCode == 125 else {
+        guard !dragging else { return }
+        if event.keyCode == 123 || event.keyCode == 124 {
+            guard progress.value >= StageGeometry.cardTapMinimumProgress, progress.value < 2,
+                  let index = ShelfGestureController.nextCardIndex(
+                      right: event.keyCode == 124, focusedIndex: focusedCardIndex, count: cards.count
+                  ) else { return }
+            focusCard(at: index)
+            return
+        }
+        // Return, keypad Enter and Space open the focused card — the same event `tap(at:)` and the
+        // "Preview" action send, under the arrows' conditions. Applying is destructive and stays on
+        // the accessibility action, which asks first.
+        if event.keyCode == 36 || event.keyCode == 76 || event.keyCode == 49 {
+            guard progress.value >= StageGeometry.cardTapMinimumProgress, progress.value < 2,
+                  let index = focusedCardIndex, cards.indices.contains(index) else { return }
+            model.emit(.cardTapped(cards[index].id))
+            return
+        }
+        guard event.keyCode == 126 || event.keyCode == 125 else {
             super.keyDown(with: event)
             return
         }
@@ -798,30 +1115,51 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         return hit.map { cardWindow.lowerBound + $0 }
     }
 
-    /// The region the hovered card keeps the pointer inside: its rest shape plus the shape it has
-    /// once lifted and turned. Strictly larger than the region that acquires a hover, which is
-    /// what makes the two-state rule stable rather than a flip-flop.
-    private func hoverRetentionRect(for index: Int) -> CGRect? {
+    /// The shape the hovered card occupies once it has lifted and turned to face the viewer. It is
+    /// consulted only where the rest layout owns nothing, so it cannot capture a neighbour's slot.
+    private func hoverLiftedRect(for index: Int) -> CGRect? {
         guard cardWindow.contains(index), progress.value >= StageGeometry.cardTapMinimumProgress else { return nil }
         let style = model.shelfStyle
         var placement = cardPlacement(style: style, index: index, count: cards.count, progress: progress.value)
         guard placement.opacity >= 0.05 else { return nil }
         let rest = StageGeometry.hitRect(placement, style: style)
+        guard !model.reduceMotion else { return rest }
         placement.frame.origin.y += StageGeometry.waveLift(style: style, index: index, hovered: index)
-        return rest.union(StageGeometry.hitRect(placement, style: style, hovered: true))
+        let lifted = StageGeometry.hitRect(placement, style: style, hover: 1)
+        return rest.union(lifted)
     }
 
     private var hoveredIndex: Int? {
         model.hoveredCard.flatMap { id in cards.firstIndex { $0.id == id } }
     }
 
-    /// Who the pointer belongs to, including the card that already owns the hover: clicking the
-    /// part of a lifted card that sticks out past its rest slot has to reach that card.
+    /// The rest layout decides first, always. The wave has to hand the pointer from slot to slot as
+    /// it travels, so a shape the hover itself produced must never win the pointer back — that is
+    /// what turns a continuous wave into a card that sticks for four slots and then jumps.
+    /// The hovered card only claims what the rest layout leaves empty: the strip its lift uncovered.
     func cardIndex(at point: CGPoint) -> Int? {
-        if let index = hoveredIndex, let retention = hoverRetentionRect(for: index), retention.contains(point) {
+        if let index = restCardIndex(at: point) {
             return index
         }
-        return restCardIndex(at: point)
+        // The lift uncovers a band above the row that belongs to no card at rest. Resolve it by
+        // slot, not by "whoever is hovered": handing the whole band to one card stops the wave
+        // dead the moment the pointer strays above the row.
+        guard hoveredIndex != nil, let index = slotIndex(atX: point.x),
+              let band = hoverLiftedRect(for: index), band.contains(point) else { return nil }
+        return index
+    }
+
+    /// Where the x sits in slot units — the inverse of `rowFrame`, so it stays true while the row
+    /// scrolls. Fractional: 3.5 is halfway between cards 3 and 4.
+    private func slotPosition(atX x: CGFloat?) -> CGFloat? {
+        guard let x, model.shelfStyle != .coverFlow, !cards.isEmpty else { return nil }
+        let first = cardPlacement(style: model.shelfStyle, index: 0, count: cards.count, progress: progress.value)
+        return (x - first.frame.minX) / StageGeometry.metrics(for: model.shelfStyle).pitch
+    }
+
+    private func slotIndex(atX x: CGFloat) -> Int? {
+        guard let slot = slotPosition(atX: x).map({ Int($0.rounded(.down)) }) else { return nil }
+        return cardWindow.contains(slot) ? slot : nil
     }
 
     private func displayID(at point: CGPoint) -> StageDisplay.ID? {
@@ -847,12 +1185,31 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     }
 
     override func mouseMoved(with event: NSEvent) {
-        guard !model.interactionBlocked else { return }
-        let point = convert(event.locationInWindow, from: nil)
-        model.report(hoveredCard: cardIndex(at: point).map { cards[$0].id })
-        model.report(hoveredDisplay: displayID(at: point))
+        guard !model.interactionBlocked, flights.isEmpty else { return }
+        pointer = convert(event.locationInWindow, from: nil)
+        resolveHover()
         withoutActions { render() }
         startDisplayLinkIfNeeded()
+    }
+
+    /// Parks the pointer without an `NSEvent`, so a test can move the row under a still pointer.
+    func setPointerForTesting(_ point: CGPoint) {
+        pointer = point
+        resolveHover()
+        withoutActions { render() }
+    }
+
+    var cardWindowForTesting: Range<Int> {
+        cardWindow
+    }
+
+    /// Hover belongs to a point on screen, not to a card id. The row scrolls and springs under a
+    /// still pointer, so re-resolving only on `mouseMoved` leaves the wave on a card that has
+    /// already slid away.
+    private func resolveHover() {
+        guard let pointer, !model.interactionBlocked, flights.isEmpty else { return }
+        model.report(hoveredCard: cardIndex(at: pointer).map { cards[$0].id })
+        model.report(hoveredDisplay: displayID(at: pointer))
     }
 
     override func mouseExited(with _: NSEvent) {
@@ -862,6 +1219,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     }
 
     private func clearHover() {
+        pointer = nil
         model.report(hoveredCard: nil)
         model.report(hoveredDisplay: nil)
         model.report(dropTarget: nil)
@@ -890,7 +1248,12 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         window?.makeFirstResponder(self)
         let point = convert(event.locationInWindow, from: nil)
         gesture.mouseDown(at: point)
-        pressedCard = cardIndex(at: point).map { cards[$0].id }
+        if let index = cardIndex(at: point) {
+            focusCard(at: index, reveal: false)
+            pressedCard = cards[index].id
+        } else {
+            pressedCard = nil
+        }
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -898,10 +1261,16 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         let point = convert(event.locationInWindow, from: nil)
         withoutActions {
             if !dragging, gesture.shouldStartDrag(at: point), let card = cards.first(where: { $0.id == pressedCard }), card.isDraggable {
+                // A snap still flying to the grid hands the page to SwiftUI when it lands, which
+                // would cover the drag; the press becomes a cancelled click instead.
+                guard progress.target != 2 || progress.isSettled else {
+                    pressedCard = nil
+                    return
+                }
                 dragging = true
                 snapTask?.cancel()
                 clearHover()
-                ghost.begin(card: card, at: point)
+                ghost.begin(card: card, at: point, reduceMotion: model.reduceMotion)
                 NSCursor.closedHand.set()
                 render()
             }
@@ -911,6 +1280,11 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
             let target = displayID(at: point)
             model.report(dropTarget: target)
             ghost.scale.target = target == nil ? 1 : 0.8
+            if model.reduceMotion {
+                ghost.x.jump(to: point.x)
+                ghost.y.jump(to: point.y)
+                ghost.scale.jump(to: 1)
+            }
             render()
         }
         startDisplayLinkIfNeeded()
@@ -956,7 +1330,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         model.report(dropTarget: nil)
         NSCursor.arrow.set()
         if model.reduceMotion {
-            ghost.finish()
+            ghost.finish(reduceMotion: true)
         }
         render()
     }
@@ -970,25 +1344,116 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
 
     // MARK: Accessibility and backing
 
+    private func focusCard(at index: Int, reveal: Bool = true) {
+        focusedCardIndex = index
+        window?.makeFirstResponder(self)
+        withoutActions {
+            let style = model.shelfStyle
+            if reveal, style == .coverFlow {
+                jumpRow(to: -Double(index) * StageGeometry.metrics(for: style).pitch)
+            } else if reveal {
+                let placement = cardPlacement(style: style, index: index, count: cards.count, progress: 1)
+                let band = StageGeometry.shelfBand(style: style, capacity: model.shelfRenderBudget, windowSize: bounds.size)
+                let x = placement.frame.minX
+                jumpRow(to: row.value + min(max(x, band.lowerBound), band.upperBound) - x)
+            }
+            gesture.adopt(rowOffset: row.value)
+            render()
+        }
+        startDisplayLinkIfNeeded()
+        for element in cardAccessibility.values {
+            element.setAccessibilityFocused(element.cardID == cards[index].id)
+        }
+        if let element = cardAccessibility[cards[index].id] {
+            NSAccessibility.post(element: element, notification: .focusedUIElementChanged)
+        }
+    }
+
+    private func updateCardFocusRing() {
+        guard let index = focusedCardIndex, cardWindow.contains(index),
+              progress.value >= StageGeometry.cardTapMinimumProgress, progress.value < 2,
+              !dragging, !model.interactionBlocked, window == nil || window?.firstResponder === self else {
+            cardFocusRing.isHidden = true
+            return
+        }
+        guard let tile = cardLayers[cards[index].id] else { return }
+        cardFocusRing.frame = tile.hitRect
+        cardFocusRing.cornerRadius = tile.face.cornerRadius
+        cardFocusRing.zPosition = (cardLayers.values.map(\.layer.zPosition).max() ?? 0) + 1
+        cardFocusRing.isHidden = false
+    }
+
+    override func becomeFirstResponder() -> Bool {
+        let accepted = super.becomeFirstResponder()
+        withoutActions { updateCardFocusRing() }
+        return accepted
+    }
+
+    override func resignFirstResponder() -> Bool {
+        let accepted = super.resignFirstResponder()
+        if accepted {
+            withoutActions { cardFocusRing.isHidden = true }
+        }
+        return accepted
+    }
+
+    /// Which halves the stage may list, read off the same quantities the mouse uses: the
+    /// arrangement's own opacity, and the progress past which the library grid is mounted on top
+    /// and lists every tile itself.
+    private var accessibilityExposureNow: (displays: Bool, cards: Bool) {
+        let handedOver = progress.value >= StageGeometry.libraryHandoffProgress
+        return (displays: !handedOver && arrangementLayer.opacity > 0, cards: !handedOver)
+    }
+
     private func rebuildAccessibility() {
-        accessibilityItems = displays.map { display in
+        let liveCards = Set(cards.map(\.id))
+        let liveDisplays = Set(displays.map(\.id))
+        cardAccessibility = cardAccessibility.filter { liveCards.contains($0.key) }
+        displayAccessibility = displayAccessibility.filter { liveDisplays.contains($0.key) }
+        accessibilityExposure = accessibilityExposureNow
+        accessibilityItems = (accessibilityExposure.displays ? displays : []).map { display in
             let id = display.id
-            let element = StageAccessibilityElement { [weak self] in
-                guard let self, !model.interactionBlocked else { return false }
-                model.emit(.displayTapped(id))
-                return true
+            let element: StageAccessibilityElement
+            if let existing = displayAccessibility[id] {
+                element = existing
+            } else {
+                element = StageAccessibilityElement { [weak self] in
+                    // The same gate `displayID(at:)` reads, so a press cannot open a display that
+                    // has faded out from under VoiceOver's cursor.
+                    guard let self, !model.interactionBlocked, arrangementLayer.opacity > 0 else { return false }
+                    model.emit(.displayTapped(id))
+                    return true
+                }
+                displayAccessibility[id] = element
             }
             element.setAccessibilityRole(.button)
             element.setAccessibilityLabel(display.name + " " + display.statusText)
             element.setAccessibilityParent(self)
             element.displayID = id
             return element
-        } + cardWindow.map { cards[$0] }.map { card in
+        } + (accessibilityExposure.cards ? visibleCardIndices.map { cards[$0] } : []).map { card in
             let id = card.id
-            let element = StageAccessibilityElement { [weak self] in
-                guard let self, !model.interactionBlocked, progress.value >= StageGeometry.cardTapMinimumProgress else { return false }
+            let preview: @MainActor @Sendable () -> Bool = { [weak self] in
+                guard let self, !model.interactionBlocked, progress.value >= StageGeometry.cardTapMinimumProgress,
+                      cards.contains(where: { $0.id == id }) else { return false }
                 model.emit(.cardTapped(id))
                 return true
+            }
+            let element: StageAccessibilityElement
+            if let existing = cardAccessibility[id] {
+                element = existing
+            } else {
+                element = StageAccessibilityElement(press: preview)
+                element.setAccessibilityCustomActions([
+                    StageAccessibilityElement.customAction(name: String(localized: "Apply", bundle: .appLanguage)) { [weak self] in
+                        guard let self, !model.interactionBlocked, progress.value >= StageGeometry.cardTapMinimumProgress,
+                              cards.contains(where: { $0.id == id }) else { return false }
+                        model.emit(.cardApplyRequested(id))
+                        return true
+                    },
+                    StageAccessibilityElement.customAction(name: String(localized: "Preview", bundle: .appLanguage), action: preview),
+                ])
+                cardAccessibility[id] = element
             }
             element.setAccessibilityRole(.button)
             element.setAccessibilityLabel(card.title + " " + card.metaLine)
@@ -1001,18 +1466,70 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
 
     private func updateAccessibilityFrames() {
         for element in accessibilityItems {
-            let item: CALayer? = if let id = element.displayID {
-                displayLayers[id]?.layer
+            // The card's own layer is the upright container; `hitRect` is the turned shape it
+            // draws, and the one the focus ring already sits on.
+            let local: CGRect? = if let id = element.displayID {
+                displayLayers[id].map { $0.layer.convert($0.layer.bounds, to: layer) }
             } else if let id = element.cardID {
-                cardLayers[id]?.layer
+                cardLayers[id]?.hitRect
             } else {
                 nil
             }
-            guard let item else { continue }
-            let rect = convert(item.convert(item.bounds, to: layer), to: nil)
+            guard let local else { continue }
+            let rect = convert(local, to: nil)
             element.setAccessibilityFrame(window?.convertToScreen(rect) ?? rect)
         }
     }
+
+    #if DEBUG
+    /// Counts the calls made while something was still animating; off-screen there is no link to
+    /// observe, so this is the only way a test can see a render asking for frames.
+    private(set) var debugFrameDriverRequests = 0
+
+    var debugFlightHomes: [StageDisplay.ID: CGRect] {
+        flights.mapValues(\.home)
+    }
+
+    var debugFocusedCardIndex: Int? {
+        focusedCardIndex
+    }
+
+    var debugFocusRingFrame: CGRect? {
+        cardFocusRing.isHidden ? nil : cardFocusRing.frame
+    }
+
+    var debugStaggerToGrid: Bool {
+        staggerToGrid
+    }
+
+    var debugDragging: Bool {
+        dragging
+    }
+
+    /// Where the row is heading, which is not where it is while the spring is still flying.
+    var debugRowTarget: Double {
+        row.target
+    }
+
+    var debugArrangementLayer: CALayer {
+        arrangementLayer
+    }
+
+    var debugShelfLayer: CALayer {
+        shelfLayer
+    }
+
+    var debugNeedsDisplayLink: Bool {
+        isAnimating
+    }
+
+    var debugSpringsSettled: Bool {
+        progress.isSettled && row.isSettled
+            && ghost.x.isSettled && ghost.y.isSettled && ghost.scale.isSettled && ghost.flight.isSettled
+            && flights.values.allSatisfy(\.spring.isSettled)
+            && (Array(cardLayers.values) + reserve).allSatisfy { $0.lift.isSettled && $0.hover.isSettled && $0.gridProgress.isSettled }
+    }
+    #endif
 
     private func withoutActions(_ body: () -> Void) {
         CATransaction.begin()
@@ -1053,6 +1570,12 @@ private final class StageAccessibilityElement: NSAccessibilityElement {
     init(press: @escaping @MainActor @Sendable () -> Bool) {
         self.press = press
         super.init()
+    }
+
+    nonisolated static func customAction(name: String, action: @escaping @MainActor @Sendable () -> Bool) -> NSAccessibilityCustomAction {
+        NSAccessibilityCustomAction(name: name) {
+            MainActor.assumeIsolated { action() }
+        }
     }
 
     override nonisolated func accessibilityPerformPress() -> Bool {
