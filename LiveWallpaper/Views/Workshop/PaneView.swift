@@ -11,7 +11,7 @@ struct PaneView: View {
     @AppStorage("loomscreen.workshop.privateSessionNotice.shown.v1", store: .appScoped()) private var privateSessionNoticeShown = false
 
     @State private var folderImport = WorkshopFolderImportCoordinator.shared
-    @State private var browseViewModel: BrowseViewModel?
+    @Environment(WorkshopBrowseSession.self) private var browseSession
     @State private var isShowingPasteSheet = false
     @State private var isShowingOnboarding = false
     @State private var isShowingKeyEntry = false
@@ -138,8 +138,9 @@ struct PaneView: View {
 
     @ViewBuilder
     private var browseTab: some View {
-        if let viewModel = browseViewModel {
+        if let viewModel = browseSession.viewModel {
             BrowsePane(
+                session: browseSession,
                 viewModel: viewModel,
                 doctor: doctor,
                 onRequestKeyEntry: { isShowingKeyEntry = true },
@@ -148,14 +149,16 @@ struct PaneView: View {
         } else {
             Color.clear
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .onAppear { browseViewModel = BrowseViewModel(services: services) }
+                .onAppear { browseSession.viewModel = BrowseViewModel(services: services) }
         }
     }
 
     private func resolveBrowseViewModel() -> BrowseViewModel {
-        if let existing = browseViewModel { return existing }
+        if let existing = browseSession.viewModel {
+            return existing
+        }
         let created = BrowseViewModel(services: services)
-        browseViewModel = created
+        browseSession.viewModel = created
         return created
     }
 
