@@ -392,6 +392,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .environment(workshopDoctorService)
             .environment(workshopServices)
             .environment(workshopSetupController)
+            // Built here, not stored: the modifier holds it and the hosting view holds the
+            // modifier, so the browse session lives and dies with this one window.
+            .environment(WorkshopBrowseSession())
             .appLanguageScoped(defaults: .appScoped())
         #else
         let contentView = baseContentView
