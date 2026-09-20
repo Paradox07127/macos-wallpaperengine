@@ -128,3 +128,5 @@ preset keeps your changes.
 - Revisit **Settings → Performance**: pause rules (full-screen, battery, Low Power Mode, occlusion), per-app exceptions — including **never pause** for apps that should always keep the wallpaper alive — and the video RAM preload budget.
 - Export a `.lwconfig` backup from **Settings → Backup & Restore**. It saves settings and references, not the media files or secrets. Lite cannot run scene entries from a Pro backup.
 - Hit an edge case? **Settings → About → Report a Bug…** pre-fills diagnostics.
+
+The Workshop browser retains its query, filters, page, selected item, and scroll target when switching between pages in the management window, including Settings and Installed. This browsing session ends when the management window is destroyed; it is not persisted across app restarts.
