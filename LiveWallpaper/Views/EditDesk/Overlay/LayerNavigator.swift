@@ -6,10 +6,13 @@ struct LayerNavigator: View {
     let session: OverlayEditorSession
     let rows: [OverlayLayerRow]
     let height: CGFloat
+    var showsHeader = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            header
+            if showsHeader {
+                header
+            }
             ScrollView {
                 LazyVStack(spacing: 0) {
                     ForEach(rows) { row in
@@ -76,12 +79,14 @@ private struct OverlayLayerRowView: View {
                     session.removeWidget(id: id)
                 }
             } label: {
-                Text("Remove")
-                    .font(DesignTokens.EditDesk.Typography.badgeMono)
+                Image(systemName: "minus.circle")
+                    .font(DesignTokens.EditDesk.Typography.body)
                     .foregroundStyle(DesignTokens.EditDesk.Colors.danger)
             }
             .buttonStyle(.borderless)
-            .accessibilityLabel(Text(verbatim: name))
+            .help(Text("Remove"))
+            .accessibilityLabel(Text("Remove"))
+            .accessibilityValue(Text(verbatim: name))
         case let .toggle(isOn):
             Toggle("", isOn: Binding(get: { isOn }, set: setEnabled))
                 .labelsHidden()

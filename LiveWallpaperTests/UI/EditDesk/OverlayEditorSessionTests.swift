@@ -297,6 +297,68 @@ struct OverlayEditorSessionTests {
         session.detach()
     }
 
+    @Test("Persisted object hooks follow successful clock and music writes, never selection or disable")
+    func objectPersistedSwitches() {
+        let store = FakeOverlayStore()
+        let session = opened(store)
+        var calls = 0
+        session.onObjectPersisted = { calls += 1 }
+        session.setClockEnabled(false)
+        session.select(.clock)
+        #expect(calls == 0)
+        session.setClockEnabled(true)
+        #expect(calls == 1)
+        session.setClockEnabled(true)
+        #expect(calls == 1)
+        session.setMusicEnabled(false)
+        #expect(calls == 1)
+        session.setMusicEnabled(true)
+        #expect(calls == 2)
+        session.detach()
+    }
+
+    @Test("Added widgets signal only after flush confirms their persisted identity")
+    func objectPersistedAfterFlush() throws {
+        let store = FakeOverlayStore()
+        let session = opened(store)
+        var calls = 0
+        session.onObjectPersisted = {
+            #expect(store.snapshots[store.displays[0]]?.overlay.board.widgets.count == 2)
+            calls += 1
+        }
+        #expect(session.addWidget(kind: .gpu))
+        #expect(calls == 0)
+        session.flushPendingEdits()
+        #expect(calls == 1)
+        session.flushPendingEdits()
+        let id = try #require(session.interaction.placements.last?.id)
+        session.select(.widget(id))
+        session.moveSelection(.right)
+        session.flushPendingEdits()
+        #expect(calls == 1)
+        session.detach()
+    }
+
+    @Test("An addition removed before flush and a rejected write do not signal success")
+    func objectPersistedRequiresReadback() throws {
+        let store = FakeOverlayStore()
+        let session = opened(store)
+        var calls = 0
+        session.onObjectPersisted = { calls += 1 }
+        #expect(session.addWidget(kind: .gpu))
+        try session.removeWidget(id: #require(session.interaction.placements.last?.id))
+        session.flushPendingEdits()
+        #expect(calls == 0)
+        #expect(session.addWidget(kind: .gpu))
+        store.rejectWrites = true
+        session.flushPendingEdits()
+        #expect(calls == 0)
+        store.snapshots[store.displays[0]]?.overlay.clock.enabled = false
+        session.setClockEnabled(true)
+        #expect(calls == 0)
+        session.detach()
+    }
+
     private func opened(_ store: FakeOverlayStore) -> OverlayEditorSession {
         let session = OverlayEditorSession()
         session.transition(to: store.displays[0], store: store, editing: true)
@@ -310,6 +372,7 @@ private final class FakeOverlayStore: OverlayEditorStore {
     var snapshots: [OverlayEditorIdentity: OverlayEditorSnapshot] = [:]
     var events: [String] = []
     var copiedKinds: [OverlayKind] = []
+    var rejectWrites = false
 
     init() {
         for identity in displays {
@@ -339,7 +402,9 @@ private final class FakeOverlayStore: OverlayEditorStore {
 
     func writeBoard(_ board: MonitorBoardConfiguration, for identity: OverlayEditorIdentity) {
         events.append("board \(identity.displayID)")
-        snapshots[identity]?.overlay.board = board
+        if !rejectWrites {
+            snapshots[identity]?.overlay.board = board
+        }
     }
 
     func writeOverlayEnabled(_ enabled: Bool, for identity: OverlayEditorIdentity) {
@@ -354,7 +419,9 @@ private final class FakeOverlayStore: OverlayEditorStore {
 
     func writeClock(_ clock: ClockOverlayConfiguration, for identity: OverlayEditorIdentity) {
         events.append("clock \(identity.displayID)")
-        snapshots[identity]?.overlay.clock = clock
+        if !rejectWrites {
+            snapshots[identity]?.overlay.clock = clock
+        }
     }
 
     func writeEffect(_ effect: ParticleEffect, for identity: OverlayEditorIdentity) {

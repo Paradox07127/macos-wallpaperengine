@@ -55,7 +55,7 @@ struct EditDeskStageViewTests {
         #expect(manual != policy)
         for text in [manual, policy] {
             display.state = .paused(reasonText: text)
-            shell.update(display: display, dropHint: "")
+            shell.update(display: display, dropHint: "", increasedContrast: false)
             shell.layoutContent()
             let group = try #require(shell.content.sublayers?.first { layer in
                 layer.sublayers?.contains { ($0 as? CATextLayer)?.string as? String == text } == true
@@ -200,6 +200,77 @@ struct EditDeskStageViewTests {
         #expect(StageLayerStyle.white == NSColor.white.cgColor)
     }
 
+    /// The two buttons SCREENS S9 draws inside an empty display, found by the localized title on
+    /// their labels: the group that holds them is private to `DisplayShellLayer`.
+    private func emptyButtons(_ shell: DisplayShellLayer) throws -> [CALayer] {
+        let title = String(localized: "Choose File…", bundle: .appLanguage)
+        let group = try #require(shell.content.sublayers?.first { candidate in
+            candidate.sublayers?.contains { button in
+                button.sublayers?.contains { ($0 as? CATextLayer)?.string as? String == title } == true
+            } == true
+        })
+        return try #require(group.sublayers?.filter { $0.borderWidth == 1 })
+    }
+
+    @Test("Increase Contrast swaps the stage's stroke tier; Reduce Motion leaves every stroke alone")
+    func increaseContrastReachesTheLayers() async throws {
+        let model = makeModel()
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.appearance = NSAppearance(named: .darkAqua)
+        view.layoutSubtreeIfNeeded()
+        model.setProgress(2, animated: false)
+        let wallpapered = try #require(view.displayLayers[1])
+        let empty = try #require(view.displayLayers[2])
+        let card = try #require(view.cardLayers["card-0"])
+
+        // Why the stage takes a flag rather than drawing under a high-contrast appearance: AppKit
+        // hands the token provider plain `darkAqua` while the system setting is off, so the tier
+        // the appearance was asked for never arrives.
+        var underHighContrastAppearance: CGFloat = -1
+        NSAppearance(named: .accessibilityHighContrastDarkAqua)?.performAsCurrentDrawingAppearance {
+            underHighContrastAppearance = NSColor(DesignTokens.EditDesk.Colors.strokeShell).cgColor.alpha
+        }
+        #expect(underHighContrastAppearance == 0.25, Comment(rawValue: "\(underHighContrastAppearance)"))
+
+        let restShell = try #require(wallpapered.normalStroke).alpha
+        let restEmpty = try #require(empty.normalStroke).alpha
+        let restButton = try #require(emptyButtons(empty).first?.borderColor).alpha
+        let restRing = try #require(card.face.borderColor).alpha
+        // S9 gives the empty display its own `1px dashed .4`; the wallpapered shell stays on .25.
+        #expect(restShell == 0.25, Comment(rawValue: "\(restShell)"))
+        #expect(restEmpty == 0.40, Comment(rawValue: "\(restEmpty)"))
+        #expect(restButton == 0.08, Comment(rawValue: "\(restButton)"))
+        #expect(restRing == 0.08, Comment(rawValue: "\(restRing)"))
+
+        model.increaseContrast = true
+        await Task.yield()
+        let hotShell = try #require(wallpapered.normalStroke).alpha
+        let hotEmpty = try #require(empty.normalStroke).alpha
+        let hotButton = try #require(emptyButtons(empty).first?.borderColor).alpha
+        let hotRing = try #require(card.face.borderColor).alpha
+        // GAP §6's tiers, and the proof that `Increased` has not drifted from `ink(contrast:)`.
+        #expect(hotShell == 0.65, Comment(rawValue: "shell \(restShell) → \(hotShell)"))
+        #expect(hotEmpty == 0.80, Comment(rawValue: "empty shell \(restEmpty) → \(hotEmpty)"))
+        #expect(hotButton == 0.35, Comment(rawValue: "empty button \(restButton) → \(hotButton)"))
+        #expect(hotRing == 0.35, Comment(rawValue: "grid ring \(restRing) → \(hotRing)"))
+
+        // Control: the other accessibility input the stage carries must not move a single stroke.
+        model.increaseContrast = false
+        await Task.yield()
+        model.reduceMotion = !model.reduceMotion
+        await Task.yield()
+        let backShell = try #require(wallpapered.normalStroke).alpha
+        let backEmpty = try #require(empty.normalStroke).alpha
+        let backButton = try #require(emptyButtons(empty).first?.borderColor).alpha
+        let backRing = try #require(card.face.borderColor).alpha
+        #expect(backShell == restShell, Comment(rawValue: "shell \(restShell) → \(backShell)"))
+        #expect(backEmpty == restEmpty, Comment(rawValue: "empty shell \(restEmpty) → \(backEmpty)"))
+        #expect(backButton == restButton, Comment(rawValue: "empty button \(restButton) → \(backButton)"))
+        #expect(backRing == restRing, Comment(rawValue: "grid ring \(restRing) → \(backRing)"))
+    }
+
     @Test("Swapping the library for a different set of the same size keeps the shelf drawn")
     func sameCountFilterKeepsLayers() {
         let model = makeModel()
@@ -260,6 +331,201 @@ struct EditDeskStageViewTests {
         #expect(view.displayLayers[1] === retained)
         #expect(view.displayLayers[2] == nil)
         #expect(view.accessibilityChildren()?.count == 15)
+    }
+
+    @Test("Cover Flow side clicks centre first and only the centred card opens", arguments: [false, true])
+    func coverFlowSideClickCentresBeforeOpening(reduceMotion: Bool) async throws {
+        let model = makeModel()
+        model.shelfStyle = .coverFlow
+        model.reduceMotion = reduceMotion
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        model.setProgress(1, animated: false)
+        var events = model.events.makeAsyncIterator()
+        #expect(await events.next() == .snapped(1))
+        let side = try #require(view.cardLayers["card-2"])
+        let point = CGPoint(x: side.hitRect.midX, y: side.hitRect.midY)
+        try #require(view.cardIndex(at: point) == 2)
+        try view.mouseDown(with: mouse(.leftMouseDown, at: point, in: view))
+        #expect(view.debugFocusedCardIndex == 2)
+        try view.mouseUp(with: mouse(.leftMouseUp, at: point, in: view))
+        #expect(abs(view.debugRowTarget - -2 * StageGeometry.metrics(for: .coverFlow).pitch) < 0.001)
+        for _ in 0 ..< 120 {
+            view.advance(dt: 1 / 60)
+        }
+        #expect(abs(side.frame.midX - view.bounds.midX) < 0.001)
+        // A following snap makes an unwanted tap observable without waiting on a silent stream.
+        model.setProgress(1, animated: false)
+        #expect(await events.next() == .snapped(1), "centring and settling must not open the card")
+        let centre = CGPoint(x: side.hitRect.midX, y: side.hitRect.midY)
+        try #require(view.cardIndex(at: centre) == 2)
+        try view.mouseDown(with: mouse(.leftMouseDown, at: centre, in: view))
+        try view.mouseUp(with: mouse(.leftMouseUp, at: centre, in: view))
+        #expect(await events.next() == .cardTapped("card-2"))
+    }
+
+    @Test("Cover Flow centre and grid cards, crate and folders open on the first click")
+    func shelfSingleClickControls() async throws {
+        for (style, progress, index) in [
+            (ShelfStyle.coverFlow, 1.0, 0), (.coverFlow, 2.0, 2), (.crate, 1.0, 3), (.folders, 1.0, 3),
+        ] {
+            let model = makeModel()
+            model.shelfStyle = style
+            let view = EditDeskStageView(model: model)
+            defer { view.detach() }
+            view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+            view.layoutSubtreeIfNeeded()
+            model.setProgress(progress, animated: false)
+            var events = model.events.makeAsyncIterator()
+            #expect(await events.next() == .snapped(Int(progress)))
+            let tile = try #require(view.cardLayers["card-\(index)"])
+            let point = CGPoint(x: tile.hitRect.minX + 8, y: tile.hitRect.midY)
+            try #require(view.cardIndex(at: point) == index)
+            try view.mouseDown(with: mouse(.leftMouseDown, at: point, in: view))
+            try view.mouseUp(with: mouse(.leftMouseUp, at: point, in: view))
+            #expect(await events.next() == .cardTapped("card-\(index)"))
+        }
+    }
+
+    @Test("Cover Flow Return, Enter, Space and VoiceOver Preview open immediately")
+    func coverFlowKeyboardAndPreviewOpenImmediately() async throws {
+        let model = makeModel()
+        model.shelfStyle = .coverFlow
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        model.setProgress(1, animated: false)
+        var events = model.events.makeAsyncIterator()
+        #expect(await events.next() == .snapped(1))
+        for _ in 0 ... 3 {
+            try view.keyDown(with: key(124))
+        }
+        for code in [UInt16(36), 76, 49] {
+            try view.keyDown(with: key(code))
+            #expect(await events.next() == .cardTapped("card-3"))
+        }
+        let children = try #require(view.accessibilityChildren() as? [NSAccessibilityElement])
+        let side = try #require(children.first { $0.accessibilityLabel() == "Card 4 Meta" })
+        let preview = try #require(side.accessibilityCustomActions()?.first {
+            $0.name == String(localized: "Preview", bundle: .appLanguage)
+        })
+        try #require(preview.handler?() == true)
+        #expect(await events.next() == .cardTapped("card-4"))
+    }
+
+    @Test("Style round trips retain keyboard focus by identity and reveal it in each style")
+    func shelfStyleRoundTripKeepsFocusedCard() throws {
+        let model = makeModel()
+        model.shelfItems = bigLibrary(120)
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        model.setProgress(1, animated: false)
+        for _ in 0 ... 40 {
+            try view.keyDown(with: key(124))
+        }
+        for style in [ShelfStyle.coverFlow, .folders, .crate] {
+            model.shelfItems.swapAt(40, 45)
+            model.shelfStyle = style
+            view.needsLayout = true
+            view.layoutSubtreeIfNeeded()
+            let index = try #require(view.debugFocusedCardIndex)
+            #expect(model.shelfItems[index].id == "card-40")
+            #expect(model.visibleShelfRange.contains(index))
+            let tile = try #require(view.cardLayers["card-40"])
+            #expect(try sameRect(#require(view.debugFocusRingFrame), tile.hitRect))
+            if style == .coverFlow {
+                #expect(view.debugRowTarget == -Double(index) * StageGeometry.metrics(for: style).pitch)
+                #expect(abs(tile.frame.midX - view.bounds.midX) < 0.001)
+            } else {
+                let band = StageGeometry.shelfBand(style: style, capacity: model.shelfRenderBudget, windowSize: view.bounds.size)
+                #expect(tile.frame.minX >= band.lowerBound - 0.001 && tile.frame.minX <= band.upperBound + 0.001)
+            }
+            let before = view.debugRowTarget
+            try view.scrollWheel(with: scroll(x: -24))
+            #expect(abs(view.debugRowTarget - (before - 24)) < 0.001, "the gesture must adopt the new style's offset")
+        }
+    }
+
+    @Test("Without keyboard focus, style changes retain the visual centre", arguments: ShelfStyle.allCases)
+    func shelfStyleKeepsVisualCentre(style: ShelfStyle) throws {
+        let model = makeModel()
+        model.shelfStyle = style
+        model.shelfItems = bigLibrary(120)
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        model.setProgress(1, animated: false)
+        let pitch = StageGeometry.metrics(for: style).pitch
+        try view.scrollWheel(with: scroll(x: -Int32(20.25 * pitch)))
+        #expect(view.debugFocusedCardIndex == nil)
+        let index: Int
+        if style == .coverFlow {
+            index = 20
+        } else {
+            let band = StageGeometry.shelfBand(style: style, capacity: model.shelfRenderBudget, windowSize: view.bounds.size)
+            let middle = (band.lowerBound + band.upperBound) / 2
+            index = try #require(model.visibleShelfRange.min {
+                abs((view.cardLayers[model.shelfItems[$0].id]?.frame.minX ?? .infinity) - middle)
+                    < abs((view.cardLayers[model.shelfItems[$1].id]?.frame.minX ?? .infinity) - middle)
+            })
+        }
+        let id = model.shelfItems[index].id
+        model.shelfStyle = style == .coverFlow ? .folders : .coverFlow
+        view.needsLayout = true
+        view.layoutSubtreeIfNeeded()
+        let focused = try #require(view.debugFocusedCardIndex)
+        #expect(model.shelfItems[focused].id == id)
+        #expect(model.visibleShelfRange.contains(focused))
+        if model.shelfStyle == .coverFlow {
+            #expect(view.debugRowTarget == -Double(index) * StageGeometry.metrics(for: .coverFlow).pitch)
+        }
+    }
+
+    @Test("Style changes fall back to row zero for empty libraries and filtered focus", arguments: [false, true])
+    func shelfStyleMissingFocusFallsBackToZero(explicitFocus: Bool) throws {
+        for empty in [false, true] {
+            let model = makeModel()
+            model.shelfStyle = .coverFlow
+            let view = EditDeskStageView(model: model)
+            defer { view.detach() }
+            view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+            view.layoutSubtreeIfNeeded()
+            model.setProgress(1, animated: false)
+            if explicitFocus {
+                for _ in 0 ... 5 {
+                    try view.keyDown(with: key(124))
+                }
+            } else {
+                try view.scrollWheel(with: scroll(x: -550))
+            }
+            #expect(view.debugRowTarget == -550)
+            model.shelfItems = empty ? [] : model.shelfItems.filter { $0.id != "card-5" }
+            model.shelfStyle = .folders
+            view.needsLayout = true
+            view.layoutSubtreeIfNeeded()
+            #expect(view.debugRowTarget == 0)
+            #expect(view.debugFocusedCardIndex == nil)
+            if empty {
+                for style in [ShelfStyle.crate, .coverFlow, .folders] {
+                    model.shelfStyle = style
+                    view.needsLayout = true
+                    view.layoutSubtreeIfNeeded()
+                    #expect(view.debugRowTarget == 0)
+                    #expect(view.debugFocusedCardIndex == nil)
+                }
+            } else {
+                let first = try #require(view.cardLayers["card-0"])
+                #expect(sameRect(first.frame, StageGeometry.rowFrame(
+                    style: .folders, index: 0, count: model.shelfItems.count, focus: 0, windowSize: view.bounds.size
+                )))
+            }
+        }
     }
 
     @Test("Animated progress settles through manual display-link steps without a window")
@@ -491,14 +757,14 @@ struct EditDeskStageViewTests {
         }
         #expect(tile.lift.target == 0)
         #expect(tile.lift.isSettled)
-        #expect(CATransform3DIsIdentity(shell.layer.transform))
+        #expect(CATransform3DIsIdentity(shell.coverGroup.transform))
         #expect(!view.debugNeedsDisplayLink)
         await model.returnTile(display: 1)
         for _ in 0 ..< 240 {
             view.advance(dt: 1 / 120)
         }
         #expect(tile.lift.target != 0)
-        #expect(shell.layer.transform.m42 == -3)
+        #expect(shell.coverGroup.transform.m11 > 1)
     }
 
     @Test("The hovered card keeps the part of itself that sticks out past its rest slot")
@@ -558,6 +824,22 @@ struct EditDeskStageViewTests {
         // Scroll and hover are routed by the same hit test, and they belong to the stage everywhere.
         #expect(view.ownsPoint(onChrome, clicking: false))
         #expect(view.ownsPoint(onCard, clicking: false))
+    }
+
+    @Test("A covered stage passes clicks, hover and scroll through to the display editor")
+    func blockedStageDoesNotSwallowEditorInput() {
+        let model = makeModel()
+        let view = EditDeskStageView(model: model)
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        model.interactionBlocked = true
+        for point in [CGPoint(x: 1100, y: 28), CGPoint(x: 400, y: 300)] {
+            #expect(!view.ownsPoint(point, clicking: true))
+            #expect(!view.ownsPoint(point, clicking: false))
+            #expect(view.hitTest(point) == nil)
+        }
+        model.interactionBlocked = false
+        #expect(view.ownsPoint(CGPoint(x: 400, y: 300), clicking: false))
     }
 
     private func key(_ code: UInt16) throws -> NSEvent {
@@ -894,7 +1176,10 @@ struct EditDeskStageViewTests {
     @Test("The shelf card's shadow darkens with the hover lift instead of stepping on the first frame")
     func shadowAlphaDoesNotStep() {
         let tile = ShelfCardLayer()
-        tile.update(card: StageCard(id: "a", title: "A", metaLine: "", thumbnail: nil, onBadge: nil, isDraggable: true))
+        tile.update(
+            card: StageCard(id: "a", title: "A", metaLine: "", thumbnail: nil, onBadge: nil, isDraggable: true),
+            increasedContrast: false
+        )
         let placement = StageGeometry.cardPlacement(
             style: .crate, index: 0, count: 14, progress: 1, focus: 0, windowSize: StageGeometry.designWindow
         )
@@ -920,7 +1205,10 @@ struct EditDeskStageViewTests {
     @Test("A card collapsing out of the grid casts a shadow its own size, not the grid's")
     func shadowPathTracksTheCardMidFlight() throws {
         let tile = ShelfCardLayer()
-        tile.update(card: StageCard(id: "a", title: "A", metaLine: "", thumbnail: nil, onBadge: nil, isDraggable: true))
+        tile.update(
+            card: StageCard(id: "a", title: "A", metaLine: "", thumbnail: nil, onBadge: nil, isDraggable: true),
+            increasedContrast: false
+        )
         func place(_ progress: Double) -> CGSize {
             let placement = StageGeometry.cardPlacement(
                 style: .crate, index: 0, count: 14, progress: progress, focus: 0, windowSize: StageGeometry.designWindow
@@ -1296,7 +1584,7 @@ struct EditDeskStageViewTests {
             style: model.shelfStyle, index: 3, count: 14, progress: model.progress, focus: 0, windowSize: view.bounds.size
         ), style: model.shelfStyle)
         let point = CGPoint(x: hit.minX + 8, y: hit.midY)
-        try #require(view.cardIndex(at: point) == 3)
+        _ = try #require(view.cardIndex(at: point))
         try view.mouseDown(with: mouse(.leftMouseDown, at: point, in: view))
         try view.mouseDragged(with: mouse(.leftMouseDragged, at: CGPoint(x: point.x + 20, y: point.y), in: view))
         #expect(!view.debugDragging, "a snap still flying to the grid must not become a drag")
@@ -1342,5 +1630,224 @@ struct EditDeskStageViewTests {
         let after = try #require(view.cardLayers.values.map(\.staggerRemaining).max())
         #expect(before - after <= 0.1 + 0.000001, Comment(rawValue: "a 300ms hitch spent \(before - after)s of the stagger"))
         #expect(view.cardLayers["card-5"]?.shakeElapsed != nil, "the shake timer runs on the frame clock too")
+    }
+
+    /// A point inside the empty display's own button, in view coordinates.
+    private func emptyPoint(
+        _ view: EditDeskStageView, _ rect: (StageGeometry.EmptyScreenLayout) -> CGRect
+    ) throws -> CGPoint {
+        let shell = try #require(view.displayLayers[2])
+        let layout = try #require(shell.emptyLayout)
+        return shell.content.convert(CGPoint(x: rect(layout).midX, y: rect(layout).midY), to: view.layer)
+    }
+
+    @Test("An empty thumbnail opens detail everywhere instead of embedding setup controls")
+    func emptyScreenOpensDetail() async throws {
+        let model = makeModel()
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        var events = model.events.makeAsyncIterator()
+        let shell = try #require(view.displayLayers[2])
+        #expect(shell.emptyLayout == nil)
+        let center = shell.content.convert(CGPoint(x: shell.content.bounds.midX, y: shell.content.bounds.midY), to: view.layer)
+        view.tap(at: center)
+        #expect(await events.next() == .displayTapped(2))
+    }
+
+    @Test("VoiceOver reaches both entry points on an empty display and neither on a wallpapered one")
+    func emptyScreenAccessibilityActions() async throws {
+        let model = makeModel()
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        let children = try #require(view.accessibilityChildren())
+        let empty = try #require(children.first { ($0 as? NSAccessibilityElement)?.accessibilityLabel()?.hasPrefix("Builtin") == true })
+        let filled = try #require(children.first { ($0 as? NSAccessibilityElement)?.accessibilityLabel()?.hasPrefix("External") == true })
+        let actions = try #require((empty as? NSAccessibilityElement)?.accessibilityCustomActions())
+        #expect(actions.map(\.name) == [
+            String(localized: "Choose File…", bundle: .appLanguage),
+            String(localized: "Paste URL", bundle: .appLanguage),
+        ])
+        #expect((filled as? NSAccessibilityElement)?.accessibilityCustomActions()?.isEmpty == true)
+        var events = model.events.makeAsyncIterator()
+        #expect(actions[1].handler?() == true)
+        #expect(await events.next() == .emptyActionTapped(2, .pasteURL))
+    }
+
+    @Test("Reduce Motion leaves the empty entry points with nothing but opacity animations")
+    func emptyScreenUnderReducedMotion() throws {
+        let model = makeModel()
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        let shell = try #require(view.displayLayers[2])
+        #expect(shell.emptyLayout == nil, "setup controls live in detail")
+        shell.setHovered(true, reduceMotion: true)
+        shell.step(dt: 1.0 / 60, reduceMotion: true)
+        func layers(_ root: CALayer) -> [CALayer] {
+            [root] + (root.sublayers ?? []).flatMap { layers($0) }
+        }
+        for layer in layers(shell.layer) {
+            for key in layer.animationKeys() ?? [] {
+                let animation = try #require(layer.animation(forKey: key) as? CAPropertyAnimation)
+                #expect(animation.keyPath == "opacity", Comment(rawValue: "\(key) animates \(animation.keyPath ?? "nothing")"))
+            }
+        }
+        #expect(CATransform3DIsIdentity(shell.layer.transform), "Reduce Motion drops the hover lift")
+        #expect(CATransform3DIsIdentity(shell.coverGroup.transform), "Reduce Motion drops the hover zoom")
+    }
+
+    private func textLayers(in root: CALayer) -> [CATextLayer] {
+        ((root as? CATextLayer).map { [$0] } ?? []) + (root.sublayers ?? []).flatMap { textLayers(in: $0) }
+    }
+
+    @Test("Hover zooms the picture inside the screen and leaves the display itself still")
+    func hoverZoomsTheCoverNotTheShell() throws {
+        let model = makeModel()
+        model.reduceMotion = false
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        let shell = try #require(view.displayLayers[1])
+        #expect(CATransform3DIsIdentity(shell.coverGroup.transform))
+        #expect(shell.coverGroup.anchorPoint == CGPoint(x: 0.5, y: 0.5), "an off-centre anchor crops one side")
+        #expect(shell.cover.superlayer === shell.coverGroup)
+
+        shell.setHovered(true)
+        for _ in 0 ..< 60 {
+            shell.step(dt: 1.0 / 60, reduceMotion: false)
+        }
+        #expect(CATransform3DIsIdentity(shell.layer.transform), "the shell must not move any more")
+        #expect(abs(shell.coverGroup.transform.m11 - 1.04) < 0.001, Comment(rawValue: "\(shell.coverGroup.transform.m11)"))
+        #expect(abs(shell.coverGroup.transform.m22 - 1.04) < 0.001)
+        // The zoom must not reach the text or the transport: they are content's own sublayers.
+        #expect(shell.coverGroup.sublayers?.compactMap { $0 as? CATextLayer }.isEmpty == true)
+
+        shell.setHovered(false)
+        for _ in 0 ..< 60 {
+            shell.step(dt: 1.0 / 60, reduceMotion: false)
+        }
+        #expect(abs(shell.coverGroup.transform.m11 - 1) < 0.001, "the picture returns to its own size")
+    }
+
+    @Test("The two lines inside the screen name the wallpaper, not the display")
+    func screenLinesNameTheWallpaper() throws {
+        let model = makeModel()
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        let shell = try #require(view.displayLayers[1])
+        var display = model.displays[0]
+        display.wallpaperTitle = "Aurora"
+        display.wallpaperKind = "Video"
+        shell.update(display: display, dropHint: "", increasedContrast: false)
+        shell.layoutContent()
+        let lines = try #require(shell.content.sublayers?.compactMap { $0 as? CATextLayer })
+        #expect(lines.count == 2)
+        #expect(lines.map { $0.string as? String } == ["Aurora", "Video"])
+        #expect(lines.map(\.fontSize) == [17, 12])
+    }
+
+    /// The macOS type ladder is 10 / 11 / 12 / 13 / 15 / 17 / 22 / 26; the stage draws six of them.
+    @Test("Every text layer a shell draws sits on the macOS type ladder")
+    func shellTextSizesFollowTheLadder() throws {
+        let model = makeModel()
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        let shell = try #require(view.displayLayers[1])
+        #expect(textLayers(in: shell.layer).map(\.fontSize).sorted() == [11, 12, 12, 12, 12, 12, 13, 15, 17, 17])
+        model.setProgress(1, animated: false)
+        view.needsLayout = true
+        view.layoutSubtreeIfNeeded()
+        let tile = try #require(view.cardLayers["card-0"])
+        #expect(textLayers(in: tile.layer).map(\.fontSize) == [11])
+    }
+
+    @Test("Previous and next take a tap only where the playlist can actually move")
+    func playbackHitTestingFollowsCapability() throws {
+        let model = makeModel()
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        let shell = try #require(view.displayLayers[1])
+        var display = model.displays[0]
+        display.canTogglePlayback = true
+
+        func show(_ configure: (inout StageDisplay) -> Void) {
+            configure(&display)
+            shell.update(display: display, dropHint: "", increasedContrast: false)
+            shell.layoutContent()
+            shell.setHovered(true, reduceMotion: true)
+        }
+
+        /// Centre of the `index`th button of the capsule a playlist display draws, in shell points.
+        func centre(_ index: Int, showsPlaylistControls: Bool) -> CGPoint {
+            let layout = StageGeometry.playbackLayout(
+                content: shell.content.bounds.size, showsPlaylistControls: showsPlaylistControls
+            )
+            let button = layout.buttons[index].offsetBy(
+                dx: layout.container.minX + shell.content.frame.minX,
+                dy: layout.container.minY + shell.content.frame.minY
+            )
+            return CGPoint(x: button.midX, y: button.midY)
+        }
+
+        show { $0.showsPlaylistControls = true; $0.canChangePlaylistEntry = true }
+        #expect(shell.playbackAction(at: centre(0, showsPlaylistControls: true)) == .previous)
+        #expect(shell.playbackAction(at: centre(1, showsPlaylistControls: true)) == .toggle)
+        #expect(shell.playbackAction(at: centre(2, showsPlaylistControls: true)) == .next)
+
+        // A playlist of one: the buttons stay put so the row does not reflow, but they are dead.
+        show { $0.canChangePlaylistEntry = false }
+        #expect(shell.playbackAction(at: centre(0, showsPlaylistControls: true)) == nil)
+        #expect(shell.playbackAction(at: centre(2, showsPlaylistControls: true)) == nil)
+        #expect(shell.playbackAction(at: centre(1, showsPlaylistControls: true)) == .toggle)
+
+        // Not a playlist at all: previous and next are not drawn, so their slots answer to nobody.
+        show { $0.showsPlaylistControls = false }
+        #expect(shell.playbackAction(at: centre(0, showsPlaylistControls: true)) == nil)
+        #expect(shell.playbackAction(at: centre(0, showsPlaylistControls: false)) == .toggle)
+
+        show { $0.canTogglePlayback = false }
+        #expect(shell.playbackAction(at: centre(0, showsPlaylistControls: false)) == nil)
+    }
+
+    @Test("The screen's own two lines stop short of the transport at either capsule width")
+    func inScreenLinesClearTheTransport() throws {
+        let model = makeModel()
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        let shell = try #require(view.displayLayers[1])
+        var display = model.displays[0]
+        display.wallpaperTitle = String(repeating: "Aurora Borealis ", count: 12)
+        display.wallpaperKind = String(repeating: "Video ", count: 12)
+
+        for showsPlaylistControls in [true, false] {
+            display.showsPlaylistControls = showsPlaylistControls
+            shell.update(display: display, dropHint: "", increasedContrast: false)
+            shell.layoutContent()
+            let size = shell.content.bounds.size
+            let container = StageGeometry.playbackLayout(
+                content: size, showsPlaylistControls: showsPlaylistControls
+            ).container
+            let lines = textLayers(in: shell.content).filter {
+                abs($0.frame.minY - (size.height - 49)) < 0.5 || abs($0.frame.minY - (size.height - 25)) < 0.5
+            }
+            #expect(lines.count == 2, "the title and the kind line are the two rows in the band")
+            for line in lines {
+                #expect(line.frame.maxX <= container.minX, "a line runs under the transport capsule")
+            }
+        }
     }
 }

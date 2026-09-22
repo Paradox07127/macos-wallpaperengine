@@ -31,10 +31,13 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     private var reserve: [ShelfCardLayer] = []
     private static let reserveLimit = 8
     private var shelfStyle = ShelfStyle.crate
+    private var highContrast = false
     private var paintsCanvas = true
     private var dropHint = ""
     private var progress = StageSpring(value: 0, target: 0, parameters: StageSpring.snap)
     private var row = StageSpring(value: 0, target: 0, parameters: StageSpring.row)
+    /// The onboarding card's band; the arrangement re-centres in what is left (R-27).
+    private var arrangementInset = StageSpring(value: 0, target: 0, parameters: StageSpring.snap)
     private let gesture = ShelfGestureController(clock: CACurrentMediaTime)
     private var attached = true
     /// Fades the whole wave in and out. The crest's *position* must never go through a spring —
@@ -71,7 +74,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     private var accessibilityExposure = (displays: false, cards: false)
     /// `arrangement` allocates while it works out the gaps; it only changes with the displays or
     /// the window, never per frame.
-    private var arrangementCache: (size: CGSize, value: StageGeometry.Arrangement)?
+    private var arrangementCache: (size: CGSize, topInset: CGFloat, value: StageGeometry.Arrangement)?
     private var flights: [StageDisplay.ID: TileFlight] = [:]
 
     @MainActor
@@ -121,15 +124,19 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     // MARK: Appearance
 
     /// CALayer keeps resolved CGColors, so every dynamic colour has to be re-read by hand when the
-    /// window's appearance flips between light and dark.
+    /// window's appearance flips between light and dark, or when Increase Contrast changes tier.
     private func applyPalette() {
-        cardFocusRing.borderColor = NSColor.keyboardFocusIndicatorColor.cgColor
-        ghost.refreshPalette()
-        for display in displays {
-            displayLayers[display.id]?.update(display: display, dropHint: dropHint)
-        }
-        for card in cards {
-            cardLayers[card.id]?.update(card: card)
+        // Not every caller is a drawing callback: a contrast flip arrives on a plain observation
+        // task, where the current appearance is the app's rather than this view's.
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            cardFocusRing.borderColor = NSColor.keyboardFocusIndicatorColor.cgColor
+            ghost.refreshPalette()
+            for display in displays {
+                displayLayers[display.id]?.update(display: display, dropHint: dropHint, increasedContrast: highContrast)
+            }
+            for card in cards {
+                cardLayers[card.id]?.update(card: card, increasedContrast: highContrast)
+            }
         }
     }
 
@@ -153,10 +160,13 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
             _ = model.shelfItems
             _ = model.shelfStyle
             _ = model.reduceMotion
+            _ = model.increaseContrast
+            _ = model.gridTileSize
             _ = model.interactionBlocked
             _ = model.dropHintText
             _ = model.shelfRenderBudget
             _ = model.opaqueBackground
+            _ = model.arrangementTopInset
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in
                 self?.observeInputs()
@@ -172,6 +182,24 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     private func synchronizeInputs() {
         let nextDisplays = model.displays
         let nextCards = model.shelfItems
+        var styleFocusID: StageCard.ID?
+        if shelfStyle != model.shelfStyle, !cards.isEmpty {
+            let index: Int
+            if let focusedCardIndex {
+                index = focusedCardIndex
+            } else if shelfStyle == .coverFlow {
+                index = Int((-row.value / StageGeometry.metrics(for: shelfStyle).pitch).rounded())
+            } else {
+                let band = StageGeometry.shelfBand(style: shelfStyle, capacity: model.shelfRenderBudget, windowSize: bounds.size)
+                let first = StageGeometry.rowFrame(
+                    style: shelfStyle, index: 0, count: cards.count, focus: 0, windowSize: bounds.size,
+                    capacity: model.shelfRenderBudget
+                )
+                index = Int((((band.lowerBound + band.upperBound) / 2 - first.minX - row.value)
+                        / StageGeometry.metrics(for: shelfStyle).pitch).rounded())
+            }
+            styleFocusID = cards[min(max(index, 0), cards.count - 1)].id
+        }
         let changed = displays != nextDisplays || cards != nextCards
         if displays.map(\.frame) != nextDisplays.map(\.frame) {
             arrangementCache = nil
@@ -191,7 +219,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
                 arrangementLayer.addSublayer(shell.layer)
             }
             if displays.first(where: { $0.id == display.id }) != display || dropHint != model.dropHintText {
-                shell.update(display: display, dropHint: model.dropHintText)
+                shell.update(display: display, dropHint: model.dropHintText, increasedContrast: highContrast)
             }
         }
         let live = Set(nextCards.map(\.id))
@@ -206,7 +234,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         }
         for card in nextCards where cardLayers[card.id] != nil {
             if cards.first(where: { $0.id == card.id }) != card {
-                cardLayers[card.id]?.update(card: card)
+                cardLayers[card.id]?.update(card: card, increasedContrast: highContrast)
             }
         }
         if cards.map(\.id) != nextCards.map(\.id) {
@@ -220,8 +248,20 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         displays = nextDisplays
         cards = nextCards
         dropHint = model.dropHintText
+        if arrangementInset.target != Double(model.arrangementTopInset) {
+            let inset = Double(model.arrangementTopInset)
+            if model.reduceMotion {
+                arrangementInset.jump(to: inset)
+            } else {
+                arrangementInset.target = inset
+            }
+        }
         if paintsCanvas != model.opaqueBackground {
             paintsCanvas = model.opaqueBackground
+            applyPalette()
+        }
+        if highContrast != model.increaseContrast {
+            highContrast = model.increaseContrast
             applyPalette()
         }
         if shelfStyle != model.shelfStyle {
@@ -229,6 +269,21 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
             shelfStyle = model.shelfStyle
             gesture.reset()
             jumpRow(to: 0)
+            if let index = cards.firstIndex(where: { $0.id == styleFocusID }) {
+                focusedCardIndex = index
+                if shelfStyle == .coverFlow {
+                    jumpRow(to: -Double(index) * StageGeometry.metrics(for: shelfStyle).pitch)
+                } else {
+                    let frame = StageGeometry.rowFrame(
+                        style: shelfStyle, index: index, count: cards.count, focus: 0, windowSize: bounds.size,
+                        capacity: model.shelfRenderBudget
+                    )
+                    let band = StageGeometry.shelfBand(style: shelfStyle, capacity: model.shelfRenderBudget, windowSize: bounds.size)
+                    jumpRow(to: min(max(frame.minX, band.lowerBound), band.upperBound) - frame.minX)
+                }
+            }
+            clampRowIntoLimits()
+            gesture.adopt(rowOffset: row.value)
         }
         if changed {
             rebuildAccessibility()
@@ -296,6 +351,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     private func settleReducedMotion() {
         progress.jump(to: progress.target)
         jumpRow(to: row.target)
+        arrangementInset.jump(to: arrangementInset.target)
         for id in flights.keys {
             if let target = flights[id]?.spring.target {
                 flights[id]?.spring.jump(to: target)
@@ -342,14 +398,16 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         let crossedState = model.reduceMotion && reducedMotionState != nil && reducedMotionState != Int(p)
         let arrangementWas = arrangementLayer.opacity
         reducedMotionState = model.reduceMotion ? Int(p) : nil
+        let topInset = CGFloat(arrangementInset.value)
         let arrangement: StageGeometry.Arrangement
-        if let cached = arrangementCache, cached.size == bounds.size {
+        if let cached = arrangementCache, cached.size == bounds.size, cached.topInset == topInset {
             arrangement = cached.value
         } else {
             arrangement = StageGeometry.arrangement(
-                frames: displays.map(\.frame), in: StageGeometry.stageRect(windowSize: bounds.size)
+                frames: displays.map(\.frame),
+                in: StageGeometry.stageRect(windowSize: bounds.size, topInset: topInset)
             )
-            arrangementCache = (bounds.size, arrangement)
+            arrangementCache = (bounds.size, topInset, arrangement)
         }
         let transform = StageGeometry.stageTransform(progress: dragging ? min(p, 1) : p)
         arrangementLayer.transform = CATransform3DScale(
@@ -468,7 +526,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         )
         var grid = 0 ..< 0
         if staggerToGrid || progress.value > 1 {
-            grid = StageGeometry.visibleGridCards(count: count, windowSize: bounds.size, scrollOffset: 0)
+            grid = StageGeometry.visibleGridCards(count: count, windowSize: bounds.size, scrollOffset: 0, size: model.gridTileSize)
         }
         guard window != cardWindow || grid != gridWindow else { return }
         cardWindow = window
@@ -494,7 +552,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
                 tile = ShelfCardLayer()
                 shelfLayer.addSublayer(tile.layer)
             }
-            tile.update(card: cards[index])
+            tile.update(card: cards[index], increasedContrast: highContrast)
             tile.lift.jump(to: 0)
             tile.hover.jump(to: 0)
             tile.shakeElapsed = nil
@@ -531,7 +589,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     private func cardPlacement(style: ShelfStyle, index: Int, count: Int, progress p: Double) -> StageGeometry.CardPlacement {
         var placement = StageGeometry.cardPlacement(
             style: style, index: index, count: count, progress: p, focus: focus, windowSize: bounds.size,
-            capacity: model.shelfRenderBudget
+            capacity: model.shelfRenderBudget, gridSize: model.gridTileSize
         )
         guard style != .coverFlow else { return placement }
         let flat = CGFloat(1 - StageGeometry.progressSplit(p).t2)
@@ -756,7 +814,8 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     // MARK: Frame driver
 
     private var isAnimating: Bool {
-        !progress.isSettled || !row.isSettled || !waveStrength.isSettled || (dragging && !model.reduceMotion)
+        !progress.isSettled || !row.isSettled || !waveStrength.isSettled || !arrangementInset.isSettled
+            || (dragging && !model.reduceMotion)
             || ghost.destination != nil
             || displayLayers.values.contains(where: \.hasAnimation)
             || flights.values.contains { !$0.spring.isSettled }
@@ -808,6 +867,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
             progress.step(dt: dt)
             row.step(dt: dt)
             waveStrength.step(dt: dt)
+            arrangementInset.step(dt: dt)
             reportProgress()
             for tile in cardLayers.values {
                 tile.lift.step(dt: dt)
@@ -1060,7 +1120,10 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     }
 
     override func keyDown(with event: NSEvent) {
-        guard !model.interactionBlocked else { return }
+        guard !model.interactionBlocked else {
+            super.keyDown(with: event)
+            return
+        }
         if event.keyCode == 53 {
             if dragging {
                 withoutActions { endDrag(cancelled: true) }
@@ -1173,11 +1236,18 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     func tap(at point: CGPoint) {
         guard !model.interactionBlocked else { return }
         if let index = cardIndex(at: point) {
+            if model.shelfStyle == .coverFlow, progress.value < StageGeometry.libraryHandoffProgress,
+               index != Int(focus.rounded()) {
+                focusCard(at: index)
+                return
+            }
             model.emit(.cardTapped(cards[index].id))
         } else if let id = displayID(at: point), let shell = displayLayers[id] {
             let local = shell.layer.convert(point, from: layer)
             if let action = shell.playbackAction(at: local) {
                 model.emit(.playbackTapped(id, action))
+            } else if let action = shell.emptyAction(at: local) {
+                model.emit(.emptyActionTapped(id, action))
             } else {
                 model.emit(.displayTapped(id))
             }
@@ -1239,7 +1309,9 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     }
 
     func ownsPoint(_ point: CGPoint, clicking: Bool) -> Bool {
-        guard clicking, !dragging, !model.interactionBlocked else { return true }
+        // A SwiftUI page can cover this AppKit view while it remains mounted for the return animation.
+        guard !model.interactionBlocked else { return false }
+        guard clicking, !dragging else { return true }
         return cardIndex(at: point) != nil || displayID(at: point) != nil
     }
 
@@ -1405,6 +1477,16 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
         return (displays: !handedOver && arrangementLayer.opacity > 0, cards: !handedOver)
     }
 
+    private func emptyScreenAction(
+        _ name: String, on id: StageDisplay.ID, _ action: EmptyScreenAction
+    ) -> NSAccessibilityCustomAction {
+        StageAccessibilityElement.customAction(name: name) { [weak self] in
+            guard let self, !model.interactionBlocked, arrangementLayer.opacity > 0 else { return false }
+            model.emit(.emptyActionTapped(id, action))
+            return true
+        }
+    }
+
     private func rebuildAccessibility() {
         let liveCards = Set(cards.map(\.id))
         let liveDisplays = Set(displays.map(\.id))
@@ -1427,9 +1509,15 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
                 displayAccessibility[id] = element
             }
             element.setAccessibilityRole(.button)
+            element.setAccessibilityEnabled(!model.interactionBlocked)
             element.setAccessibilityLabel(display.name + " " + display.statusText)
             element.setAccessibilityParent(self)
             element.displayID = id
+            // The keyboard equivalent of the two buttons drawn inside an empty display.
+            element.setAccessibilityCustomActions(display.state == .empty ? [
+                emptyScreenAction(String(localized: "Choose File…", bundle: .appLanguage), on: id, .chooseFile),
+                emptyScreenAction(String(localized: "Paste URL", bundle: .appLanguage), on: id, .pasteURL),
+            ] : [])
             return element
         } + (accessibilityExposure.cards ? visibleCardIndices.map { cards[$0] } : []).map { card in
             let id = card.id
@@ -1456,6 +1544,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
                 cardAccessibility[id] = element
             }
             element.setAccessibilityRole(.button)
+            element.setAccessibilityEnabled(!model.interactionBlocked)
             element.setAccessibilityLabel(card.title + " " + card.metaLine)
             element.setAccessibilityParent(self)
             element.cardID = id
@@ -1466,6 +1555,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
 
     private func updateAccessibilityFrames() {
         for element in accessibilityItems {
+            element.setAccessibilityEnabled(!model.interactionBlocked)
             // The card's own layer is the upright container; `hitRect` is the turned shape it
             // draws, and the one the focus ring already sits on.
             let local: CGRect? = if let id = element.displayID {
@@ -1524,7 +1614,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     }
 
     var debugSpringsSettled: Bool {
-        progress.isSettled && row.isSettled
+        progress.isSettled && row.isSettled && arrangementInset.isSettled
             && ghost.x.isSettled && ghost.y.isSettled && ghost.scale.isSettled && ghost.flight.isSettled
             && flights.values.allSatisfy(\.spring.isSettled)
             && (Array(cardLayers.values) + reserve).allSatisfy { $0.lift.isSettled && $0.hover.isSettled && $0.gridProgress.isSettled }

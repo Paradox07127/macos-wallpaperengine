@@ -1,4 +1,5 @@
 import AppKit
+import LiveWallpaperCore
 import Observation
 
 /// One display on the stage. `frame` is `NSScreen.frame` (global, y-up); every other
@@ -24,6 +25,26 @@ struct StageDisplay: Identifiable, Equatable {
     var statusText: String
     var cover: CGImage?
     var state: State
+    /// What is playing on the screen, drawn inside the content layer. Empty only while `state` is
+    /// `.empty`, where the two lines are hidden.
+    var wallpaperTitle: String = ""
+    /// Localized kind word for the same wallpaper, e.g. `Video`.
+    var wallpaperKind: String = ""
+    /// The display is in playlist mode, so previous / next exist at all.
+    var showsPlaylistControls = false
+    /// `WallpaperAutomationOrchestrator.advancePlaylist`'s own guards; false draws the two buttons
+    /// disabled rather than hiding them.
+    var canChangePlaylistEntry = false
+    var canTogglePlayback = false
+
+    /// The transport's middle button offers the opposite of what the display is doing now.
+    var playbackGlyph: String {
+        if case .paused = state {
+            "play.fill"
+        } else {
+            "pause.fill"
+        }
+    }
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.id == rhs.id
@@ -35,6 +56,29 @@ struct StageDisplay: Identifiable, Equatable {
             && lhs.statusText == rhs.statusText
             && lhs.cover === rhs.cover
             && lhs.state == rhs.state
+            && lhs.wallpaperTitle == rhs.wallpaperTitle
+            && lhs.wallpaperKind == rhs.wallpaperKind
+            && lhs.showsPlaylistControls == rhs.showsPlaylistControls
+            && lhs.canChangePlaylistEntry == rhs.canChangePlaylistEntry
+            && lhs.canTogglePlayback == rhs.canTogglePlayback
+    }
+}
+
+/// Names the wallpaper a display is showing. Every candidate is a value the app already holds, so
+/// naming a display never reads a file it did not open or asks the network; the kind word is the
+/// last resort, which is why the line is never blank.
+enum StageWallpaperName {
+    static func resolve(
+        libraryTitle: String?, originTitle: String?, fileURL: URL?, host: String?, kind: String
+    ) -> String {
+        let candidates = [libraryTitle, originTitle, fileURL.map { FileManager.default.displayName(atPath: $0.path) }, host]
+        for candidate in candidates {
+            let trimmed = candidate?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if !trimmed.isEmpty {
+                return trimmed
+            }
+        }
+        return kind
     }
 }
 
@@ -86,10 +130,17 @@ enum StagePlaybackAction: Equatable, Sendable {
     case next
 }
 
+/// The two entry points drawn inside an empty display; dropping onto the shell is the third.
+enum EmptyScreenAction: Equatable, Sendable {
+    case chooseFile
+    case pasteURL
+}
+
 enum StageEvent: Equatable, Sendable {
     case cardTapped(StageCard.ID)
     case cardApplyRequested(StageCard.ID)
     case displayTapped(StageDisplay.ID)
+    case emptyActionTapped(StageDisplay.ID, EmptyScreenAction)
     case displayContextMenu(StageDisplay.ID, screenPoint: CGPoint)
     case dropped(card: StageCard.ID, onto: StageDisplay.ID)
     case dropCancelled(card: StageCard.ID)
@@ -119,7 +170,11 @@ final class EditDeskStageModel {
     var displays: [StageDisplay] = []
     var shelfItems: [StageCard] = []
     var shelfStyle: ShelfStyle = .crate
+    var gridTileSize: LibraryTileSize = .medium
     var reduceMotion = false
+    /// Increase Contrast. The stage keeps resolved CGColors, so it cannot read the setting off an
+    /// appearance the way SwiftUI does; this picks the tokens' contrast tier instead.
+    var increaseContrast = false
     /// True while a modal or the detail page is open: the stage ignores wheel and clicks.
     var interactionBlocked = false
     /// Only the wallpaper grid reports this; other library pages do not hand scrolls to the stage.
@@ -130,6 +185,9 @@ final class EditDeskStageModel {
     var shelfRenderBudget = StageGeometry.shelfCapacity
     /// False lets the frosted window show through: the stage stops painting its own canvas.
     var opaqueBackground = true
+    /// Band at the top of the stage the display arrangement must keep clear, so the overview
+    /// onboarding card does not sit on the displays (R-27). Springs to its new value.
+    var arrangementTopInset: CGFloat = 0
 
     // MARK: Stage → SwiftUI
 

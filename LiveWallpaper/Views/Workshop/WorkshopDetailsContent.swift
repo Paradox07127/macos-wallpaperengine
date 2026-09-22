@@ -19,6 +19,8 @@ struct WorkshopDetailsContent<Actions: View>: View {
     var onSelectTag: ((String) -> Void)?
     /// Opens another item (Required items rows); nil hides the section.
     var onOpenItem: ((UInt64) -> Void)?
+    /// The page's reveal set for the rows below; nil leaves each section on its own `@State`.
+    var matureReveal: MatureRevealState?
     /// Drawn between the identity header and the required items — the inspector's download row.
     @ViewBuilder var actions: () -> Actions
 
@@ -55,7 +57,9 @@ struct WorkshopDetailsContent<Actions: View>: View {
     private var requiredItemsGroup: some View {
         if !item.requiredItemIDs.isEmpty, let onOpenItem {
             GroupBox {
-                DetailRequiredItemsSection(itemIDs: item.requiredItemIDs, onOpenItem: onOpenItem)
+                DetailRequiredItemsSection(
+                    itemIDs: item.requiredItemIDs, onOpenItem: onOpenItem, matureReveal: matureReveal
+                )
             }
             .groupBoxStyle(ContainerGroupBoxStyle())
         }
@@ -66,7 +70,8 @@ struct WorkshopDetailsContent<Actions: View>: View {
             DetailPresetsSection(
                 wallpaperID: item.id,
                 communityURL: item.steamCommunityURL,
-                doctor: doctor
+                doctor: doctor,
+                matureReveal: matureReveal
             )
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -181,7 +186,8 @@ extension WorkshopDetailsContent where Actions == EmptyView {
         descriptionExpandedMaxHeight: CGFloat? = nil,
         onBrowseCreator: ((String, String?) -> Void)? = nil,
         onSelectTag: ((String) -> Void)? = nil,
-        onOpenItem: ((UInt64) -> Void)? = nil
+        onOpenItem: ((UInt64) -> Void)? = nil,
+        matureReveal: MatureRevealState? = nil
     ) {
         self.init(
             item: item,
@@ -192,6 +198,7 @@ extension WorkshopDetailsContent where Actions == EmptyView {
             onBrowseCreator: onBrowseCreator,
             onSelectTag: onSelectTag,
             onOpenItem: onOpenItem,
+            matureReveal: matureReveal,
             actions: { EmptyView() }
         )
     }

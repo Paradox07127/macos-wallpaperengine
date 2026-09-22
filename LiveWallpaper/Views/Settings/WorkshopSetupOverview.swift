@@ -11,10 +11,13 @@ struct WorkshopSetupFacet: Identifiable {
     /// Optional steps are excluded from the readiness total.
     var isOptional = false
 
-    var id: String { key }
+    var id: String {
+        key
+    }
 }
 
 struct WorkshopSetupOverview: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let facets: [WorkshopSetupFacet]
     let onSelect: (SettingsSearchAnchor) -> Void
 
@@ -50,14 +53,14 @@ struct WorkshopSetupOverview: View {
 
     private var track: some View {
         HStack(spacing: 2) {
-            ForEach(facets) { facet in
+            ForEach(facets.filter { !$0.isOptional }) { facet in
                 RoundedRectangle(cornerRadius: DesignTokens.StatusBar.corner, style: .continuous)
                     .fill(segmentTint(facet))
                     .frame(maxWidth: .infinity)
             }
         }
         .frame(height: DesignTokens.StatusBar.height)
-        .animation(.easeInOut(duration: 0.2), value: facets.map(\.state))
+        .animation(DesignTokens.motion(reduceMotion, .easeInOut(duration: 0.2)), value: facets.map(\.state))
         .accessibilityHidden(true)
     }
 
@@ -98,14 +101,13 @@ struct WorkshopSetupOverview: View {
     private var summary: String {
         let required = facets.filter { !$0.isOptional }
         let ready = required.filter { $0.state == .ready }.count
-        let base: String
-        if ready == required.count {
-            base = String(
+        let base = if ready == required.count {
+            String(
                 localized: "All set",
                 bundle: .appLanguage, comment: "Workshop setup status bar summary when every required setup step is done."
             )
         } else {
-            base = String(
+            String(
                 localized: "\(ready) of \(required.count) ready",
                 bundle: .appLanguage, comment: "Workshop setup status bar summary; first number is how many steps are done, second is the total."
             )

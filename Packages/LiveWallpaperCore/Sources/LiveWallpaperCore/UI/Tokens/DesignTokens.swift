@@ -1,17 +1,26 @@
-import SwiftUI
 import AppKit
+import SwiftUI
 
 public enum DesignTokens {
+    private static let colorRegistrationLock = NSLock()
+
+    /// Named dynamic colors share an AppKit registry even when distinct Swift tokens initialize concurrently.
+    private static func dynamicColor(name: NSColor.Name, provider: @escaping (NSAppearance) -> NSColor) -> Color {
+        colorRegistrationLock.lock()
+        defer { colorRegistrationLock.unlock() }
+        return Color(nsColor: NSColor(name: name, dynamicProvider: provider))
+    }
+
     public enum Colors {
         public static let pageBackground = Color(nsColor: .windowBackgroundColor)
 
         /// One step off the page in both appearances. Not `controlBackgroundColor`: it resolves
         /// to exactly `windowBackgroundColor`, so cards would match the page behind them.
-        public static let surfaceRaised = Color(nsColor: NSColor(name: "surfaceRaised") { appearance in
+        public static let surfaceRaised = DesignTokens.dynamicColor(name: "surfaceRaised") { appearance in
             let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
             let base = NSColor.windowBackgroundColor
             return base.blended(withFraction: isDark ? 0.06 : 0.04, of: isDark ? .white : .black) ?? base
-        })
+        }
 
         public static let surfaceSunken = Color(nsColor: .underPageBackgroundColor)
 
@@ -141,8 +150,7 @@ public enum DesignTokens {
             case wide
         }
 
-        /// Fixed on purpose: tiles never stretch with the window, so a card keeps its place
-        /// while the page widens and the slack stays on the trailing edge.
+        /// Preferred width selects the number of columns. Wide cards share the remaining space.
         public static func columnWidth(for size: LibraryTileSize, aspect: Aspect) -> CGFloat {
             switch aspect {
             case .square:
@@ -153,9 +161,9 @@ public enum DesignTokens {
                 }
             case .wide:
                 switch size {
-                case .small: 288
-                case .medium: 384
-                case .large: 520
+                case .small: 224
+                case .medium: 280
+                case .large: 312
                 }
             }
         }
@@ -177,7 +185,7 @@ public enum DesignTokens {
             index: Int, size: LibraryTileSize, aspect: Aspect, fitting width: CGFloat, tileAspectRatio: CGFloat
         ) -> CGRect {
             let count = columns(for: size, aspect: aspect, fitting: width).count
-            let tileWidth = columnWidth(for: size, aspect: aspect)
+            let tileWidth = resolvedColumnWidth(for: size, aspect: aspect, fitting: width)
             let tileHeight = tileWidth / tileAspectRatio
             return CGRect(
                 x: CGFloat(index % count) * (tileWidth + spacing),
@@ -193,7 +201,15 @@ public enum DesignTokens {
         ) -> [GridItem] {
             let column = columnWidth ?? self.columnWidth(for: size, aspect: aspect)
             let count = max(1, Int(((width + spacing) / (column + spacing)).rounded(.down)))
-            return Array(repeating: GridItem(.fixed(column), spacing: spacing), count: count)
+            let resolved = columnWidth == nil ? resolvedColumnWidth(for: size, aspect: aspect, fitting: width) : column
+            return Array(repeating: GridItem(.fixed(resolved), spacing: spacing), count: count)
+        }
+
+        public static func resolvedColumnWidth(for size: LibraryTileSize, aspect: Aspect, fitting width: CGFloat) -> CGFloat {
+            let preferred = columnWidth(for: size, aspect: aspect)
+            guard case .wide = aspect, width > 0 else { return preferred }
+            let count = max(1, Int(((width + spacing) / (preferred + spacing)).rounded(.down)))
+            return max(1, (width - CGFloat(count - 1) * spacing) / CGFloat(count))
         }
     }
 
@@ -386,7 +402,7 @@ public enum DesignTokens {
                 light: NSColor, dark: NSColor,
                 lightContrast: NSColor? = nil, darkContrast: NSColor? = nil
             ) -> Color {
-                Color(nsColor: NSColor(name: NSColor.Name("editDesk" + name)) { appearance in
+                DesignTokens.dynamicColor(name: NSColor.Name("editDesk" + name)) { appearance in
                     let match = appearance.bestMatch(from: [
                         .aqua, .darkAqua, .accessibilityHighContrastAqua, .accessibilityHighContrastDarkAqua,
                     ])
@@ -396,7 +412,7 @@ public enum DesignTokens {
                     case .darkAqua: return dark
                     default: return light
                     }
-                })
+                }
             }
 
             private static func ink(_ name: String, _ alpha: CGFloat, contrast: CGFloat? = nil) -> Color {
@@ -412,11 +428,7 @@ public enum DesignTokens {
                 NSColor(red: value / 255, green: value / 255, blue: value / 255, alpha: 1)
             }
 
-            public static let background = adaptive(
-                "Background",
-                light: NSColor(red: 244 / 255, green: 244 / 255, blue: 247 / 255, alpha: 1),
-                dark: NSColor(red: 18 / 255, green: 18 / 255, blue: 21 / 255, alpha: 1)
-            )
+            public static let background = DesignTokens.Colors.pageBackground
             public static let panel = adaptive(
                 "Panel",
                 light: NSColor(red: 1, green: 1, blue: 1, alpha: 0.95),
@@ -428,13 +440,23 @@ public enum DesignTokens {
                 dark: NSColor(red: 18 / 255, green: 18 / 255, blue: 22 / 255, alpha: 0.92)
             )
 
-            public static let textPrimary = adaptive("TextPrimary", light: grey(28), dark: grey(232))
+            public static let textPrimary = adaptive(
+                "TextPrimary",
+                light: grey(28),
+                dark: NSColor(red: 232 / 255, green: 232 / 255, blue: 236 / 255, alpha: 1)
+            )
             /// Increase Contrast resolves to the same value as `textCapsule` (GAP_ANALYSIS.md §6).
             public static let textSecondary = adaptive(
-                "TextSecondary", light: grey(99), dark: grey(154),
+                "TextSecondary",
+                light: grey(99),
+                dark: NSColor(red: 154 / 255, green: 154 / 255, blue: 163 / 255, alpha: 1),
                 lightContrast: grey(60), darkContrast: grey(200)
             )
-            public static let textTertiary = adaptive("TextTertiary", light: grey(122), dark: grey(138))
+            public static let textTertiary = adaptive(
+                "TextTertiary",
+                light: grey(122),
+                dark: NSColor(red: 138 / 255, green: 138 / 255, blue: 147 / 255, alpha: 1)
+            )
             public static let textCapsule = adaptive("TextCapsule", light: grey(60), dark: grey(200))
 
             public static let success = adaptive(
@@ -467,25 +489,52 @@ public enum DesignTokens {
                 light: NSColor(red: 200 / 255, green: 54 / 255, blue: 54 / 255, alpha: 1),
                 dark: NSColor(red: 1, green: 128 / 255, blue: 128 / 255, alpha: 1)
             )
+            /// Behind a `danger` glyph, never under a white one (SCREENS.md S6 🗑 `rgba(255,80,80,.15)`).
+            public static let dangerButtonFill = adaptive(
+                "DangerButtonFill",
+                light: NSColor(red: 200 / 255, green: 54 / 255, blue: 54 / 255, alpha: 0.15),
+                dark: NSColor(red: 1, green: 80 / 255, blue: 80 / 255, alpha: 0.15)
+            )
             public static let link = adaptive(
                 "Link",
                 light: NSColor(red: 36 / 255, green: 84 / 255, blue: 214 / 255, alpha: 1),
                 dark: NSColor(red: 154 / 255, green: 180 / 255, blue: 1, alpha: 1)
             )
 
+            /// `increased` is the same tier `ink`'s `contrast:` hands SwiftUI, as a colour a CALayer
+            /// can pick by hand: AppKit resolves `NSAppearance(named: .accessibilityHighContrast*)`
+            /// down to its base appearance while the system setting is off, so a layer that only
+            /// draws under one never reaches the tier.
+            private static func inkTier(
+                _ name: String, _ alpha: CGFloat, increased: CGFloat
+            ) -> (regular: Color, increased: Color) {
+                (ink(name, alpha, contrast: increased), ink(name + "Increased", increased))
+            }
+
             /// Increase Contrast raises this to .35 (GAP_ANALYSIS.md §6).
-            public static let strokeRegular = ink("StrokeRegular", 0.10, contrast: 0.35)
+            private static let strokeRegularTier = inkTier("StrokeRegular", 0.08, increased: 0.35)
+            public static let strokeRegular = strokeRegularTier.regular
+            public static let strokeRegularIncreased = strokeRegularTier.increased
             /// Increase Contrast raises this to .65 (GAP_ANALYSIS.md §6).
-            public static let strokeShell = ink("StrokeShell", 0.32, contrast: 0.65)
-            public static let strokePanel = ink("StrokePanel", 0.14)
+            private static let strokeShellTier = inkTier("StrokeShell", 0.25, increased: 0.65)
+            public static let strokeShell = strokeShellTier.regular
+            public static let strokeShellIncreased = strokeShellTier.increased
+            /// SCREENS S9's empty display (`1px dashed .4`). Its Increase Contrast tier adds the
+            /// same .40 as `strokeShell`; that tier's ×2.6 ratio would overflow alpha here.
+            private static let strokeEmptyShellTier = inkTier("StrokeEmptyShell", 0.40, increased: 0.80)
+            public static let strokeEmptyShell = strokeEmptyShellTier.regular
+            public static let strokeEmptyShellIncreased = strokeEmptyShellTier.increased
+            public static let strokePanel = ink("StrokePanel", 0.12)
             public static let strokeBadge = ink("StrokeBadge", 0.25)
+            /// SCREENS S9's dashed onboarding card (`1px dashed .3`).
+            public static let strokeDashedCard = ink("StrokeDashedCard", 0.30)
             public static let strokeSelectedChip = ink("StrokeSelectedChip", 0.40)
             public static let strokeHotShell = ink("StrokeHotShell", 0.80)
             /// Pairs with `Shadow.shelfCard`'s 1px ring (SCREENS.md S2).
             public static let strokeShelfCardRing = ink("StrokeShelfCardRing", 0.12)
 
             public static let fillShell = ink("FillShell", 0.02)
-            public static let fillNavPill = ink("FillNavPill", 0.06)
+            public static let fillNavPill = ink("FillNavPill", 0.05)
             public static let fillSelectedChip = ink("FillSelectedChip", 0.14)
             public static let fillSelectedNavItem = ink("FillSelectedNavItem", 0.16)
 
@@ -493,6 +542,9 @@ public enum DesignTokens {
             public static let dropHighlightGlow = success.opacity(0.45)
             /// Over a wallpaper thumbnail, so it stays a dark scrim in both appearances.
             public static let playbackControlFill = Color.black.opacity(0.55)
+            /// SCREENS.md S6's HUD transport primary, `❚❚(白圆 32)`; fixed like every on-media colour.
+            public static let hudPrimaryFill = Color.white
+            public static let hudPrimaryGlyph = Color.black
             public static let gradientStageBottom = Color.black.opacity(0.7)
             public static let gradientCardBottom = Color.black.opacity(0.5)
             /// Separates the shelf from the stage; a hard black band is too heavy on a light canvas.
@@ -523,6 +575,17 @@ public enum DesignTokens {
             /// S4 primary button: white on black in dark, inverted in light.
             public static let primaryButtonFill = adaptive("PrimaryButtonFill", light: .black, dark: .white)
             public static let primaryButtonText = adaptive("PrimaryButtonText", light: .white, dark: .black)
+            /// S8a's grid card band (`.85`); heavier than `gradientCardBottom` because the band
+            /// carries two lines of text over the artwork instead of one.
+            public static let gradientWorkshopCardBottom = Color.black.opacity(0.85)
+            /// S8a's in-library check: an opaque disc over the thumbnail, so both halves are fixed.
+            public static let inLibraryBadgeFill = Color(nsColor: NSColor(red: 74 / 255, green: 222 / 255, blue: 128 / 255, alpha: 0.9))
+            public static let inLibraryBadgeGlyph = Color.black
+            /// Content layer of a display with no wallpaper (SCREENS.md S9 `bg .03`).
+            public static let fillEmptyScreen = ink("FillEmptyScreen", 0.03)
+            /// Placeholder glyph filling an empty display: a background mark, so it stays under the
+            /// two entry buttons in contrast as well as in z-order.
+            public static let emptyScreenPlaceholder = ink("EmptyScreenPlaceholder", 0.10)
         }
 
         // MARK: Corner
@@ -531,7 +594,6 @@ public enum DesignTokens {
             public static let content: CGFloat = 3
             public static let badge: CGFloat = 3
             public static let shelfCard: CGFloat = 6
-            public static let playbackControl: CGFloat = 6
             public static let gridCard: CGFloat = 8
             public static let shell: CGFloat = 8
             /// MacBook shell only: top corners; `shellBuiltinBottom` for the bottom pair
@@ -557,11 +619,17 @@ public enum DesignTokens {
             public let radius: CGFloat
             public let y: CGFloat
 
+            private static func shadowColor(_ name: String, light: CGFloat, dark: CGFloat) -> Color {
+                Colors.adaptive("Shadow" + name, light: .black.withAlphaComponent(light), dark: .black.withAlphaComponent(dark))
+            }
+
             public static let shell = Shadow(color: .black.opacity(0.22), radius: 14, y: 5)
-            public static let modal = Shadow(color: .black.opacity(0.7), radius: 70, y: 30)
-            public static let hoverCard = Shadow(color: .black.opacity(0.4), radius: 28, y: 14)
+            public static let modal = Shadow(color: shadowColor("Modal", light: 0.16, dark: 0.38), radius: 24, y: 10)
+            public static let hoverCard = Shadow(color: shadowColor("Hover", light: 0.16, dark: 0.32), radius: 12, y: 6)
             public static let shelfCard = Shadow(color: .black.opacity(0.3), radius: 14, y: 6)
-            public static let floatPanel = Shadow(color: .black.opacity(0.5), radius: 50, y: 20)
+            public static let floatPanel = Shadow(color: shadowColor("Float", light: 0.14, dark: 0.32), radius: 18, y: 8)
+            public static let workshopCard = Shadow(color: shadowColor("Card", light: 0.10, dark: 0.24), radius: 8, y: 3)
+            public static let workshopCardRing = Shadow(color: shadowColor("Ring", light: 0.06, dark: 0.12), radius: 1, y: 0)
         }
 
         // MARK: Spacing
@@ -574,23 +642,35 @@ public enum DesignTokens {
             public static let workshopGridGap: CGFloat = 14
             public static let gutter: CGFloat = 24
             public static let topBar: CGFloat = 56
+            /// S8a's info band is `padding 24 10 10`: the top inset is the gradient's run-up, not
+            /// text spacing, so it is far larger than the other three.
+            public static let workshopCardBandTop: CGFloat = 24
+            public static let workshopCardBandInset: CGFloat = 10
         }
 
         // MARK: Typography
 
         public enum Typography {
-            public static let badgeMono = Font.system(size: 9, design: .monospaced)
-            public static let metaMono = Font.system(size: 10, design: .monospaced)
-            public static let chip = Font.system(size: 11)
-            public static let body = Font.system(size: 12)
-            public static let cardTitle = Font.system(size: 11, weight: .semibold)
-            public static let stageTitle = Font.system(size: 13, weight: .semibold)
+            public static let badgeMono = Font.system(size: 11, design: .monospaced)
+            public static let metaMono = Font.system(size: 11, design: .monospaced)
+            public static let chip = Font.system(size: 12)
+            public static let body = Font.system(size: 13)
+            public static let cardTitle = Font.system(size: 12, weight: .semibold)
+            public static let stageTitle = Font.system(size: 15, weight: .semibold)
             public static let modalTitle = Font.system(size: 22, weight: .bold)
-            public static let navItem = Font.system(size: 12)
-            public static let libraryModalTitle = Font.system(size: 20, weight: .bold)
-            public static let button = Font.system(size: 13, weight: .bold)
-            public static let floatName = Font.system(size: 10, weight: .semibold)
-            public static let dropLabel = Font.system(size: 11, weight: .bold)
+            public static let navItem = Font.system(size: 13)
+            public static let libraryModalTitle = Font.system(size: 22, weight: .bold)
+            public static let button = Font.system(size: 15, weight: .bold)
+            public static let floatName = Font.system(size: 11, weight: .semibold)
+            public static let dropLabel = Font.system(size: 12, weight: .bold)
+            public static let footnote = Font.system(size: 11)
+            /// SCREENS S9: page title over an onboarding card, and the Steam wizard's own title.
+            public static let onboardingTitle = Font.system(size: 17, weight: .bold)
+            public static let wizardTitle = Font.system(size: 22, weight: .bold)
+            public static let onboardingIcon = Font.system(size: 22)
+            public static let onboardingButton = Font.system(size: 12, weight: .bold)
+            /// S8a's grid card title; one step above `cardTitle`, which the library tiles keep.
+            public static let workshopCardTitle = Font.system(size: 13, weight: .semibold)
         }
     }
 }

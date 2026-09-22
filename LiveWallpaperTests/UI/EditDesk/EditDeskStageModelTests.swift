@@ -107,10 +107,14 @@ struct EditDeskStageModelTests {
         model.emit(.cardTapped("card-b"))
         model.emit(.dropped(card: "card-b", onto: 3))
         model.emit(.playbackTapped(3, .toggle))
+        model.emit(.emptyActionTapped(3, .chooseFile))
+        model.emit(.emptyActionTapped(3, .pasteURL))
         var iterator = model.events.makeAsyncIterator()
         #expect(await iterator.next() == .cardTapped("card-b"))
         #expect(await iterator.next() == .dropped(card: "card-b", onto: 3))
         #expect(await iterator.next() == .playbackTapped(3, .toggle))
+        #expect(await iterator.next() == .emptyActionTapped(3, .chooseFile))
+        #expect(await iterator.next() == .emptyActionTapped(3, .pasteURL))
     }
 
     @Test("Display and card equality ignore image identity only when the image is the same object")
@@ -127,11 +131,58 @@ struct EditDeskStageModelTests {
         other.cover = try Self.makeImage()
         #expect(other != base)
 
+        // Everything the stage draws has to reach it: a field left out of `==` is a silent freeze.
+        for mutate in [
+            { (display: inout StageDisplay) in display.wallpaperTitle = "Aurora" },
+            { display in display.wallpaperKind = "Video" },
+            { display in display.showsPlaylistControls = true },
+            { display in display.canChangePlaylistEntry = true },
+            { display in display.canTogglePlayback = true },
+        ] {
+            var changed = base
+            mutate(&changed)
+            #expect(changed != base)
+        }
+
         let chip = StageFailureChip(symbol: "xmark.octagon.fill", text: "Can't run on this Mac", tint: CGColor(gray: 0.5, alpha: 1))
         var failed = base
         failed.state = .failed(chip)
         var failedAgain = base
         failedAgain.state = .failed(StageFailureChip(symbol: chip.symbol, text: chip.text, tint: CGColor(gray: 0.5, alpha: 1)))
         #expect(failed == failedAgain, "Equal chips compare by value, not by CGColor identity")
+    }
+
+    @Test("The transport glyph offers the opposite of what the display is doing")
+    func playbackGlyphFollowsTheState() {
+        var display = StageDisplay(
+            id: 1, fingerprint: "fp", frame: .zero, isBuiltin: false, name: "MPG",
+            badgeText: "", statusText: "", cover: nil, state: .ok
+        )
+        #expect(display.playbackGlyph == "pause.fill")
+        display.state = .paused(reasonText: "Paused")
+        #expect(display.playbackGlyph == "play.fill")
+    }
+
+    /// The name drawn on the screen itself. Each step only fires when the one before it is blank,
+    /// and the last one is the kind word, so a display with a wallpaper always says something.
+    @Test("The on-screen wallpaper name walks library → source → file → host → kind")
+    func wallpaperNameFallsBackStepByStep() {
+        let file = URL(fileURLWithPath: "/private/tmp/loomscreen-stage/Aurora")
+        #expect(StageWallpaperName.resolve(
+            libraryTitle: "Saved aurora", originTitle: "Aurora Borealis", fileURL: file, host: "example.com", kind: "Video"
+        ) == "Saved aurora")
+        // Blank is not a hit: a bookmark saved with an empty label must not blank the row.
+        #expect(StageWallpaperName.resolve(
+            libraryTitle: "   ", originTitle: "Aurora Borealis", fileURL: file, host: "example.com", kind: "Video"
+        ) == "Aurora Borealis")
+        #expect(StageWallpaperName.resolve(
+            libraryTitle: nil, originTitle: nil, fileURL: file, host: "example.com", kind: "Video"
+        ) == "Aurora")
+        #expect(StageWallpaperName.resolve(
+            libraryTitle: nil, originTitle: nil, fileURL: nil, host: "example.com", kind: "Web"
+        ) == "example.com")
+        #expect(StageWallpaperName.resolve(
+            libraryTitle: nil, originTitle: "", fileURL: nil, host: nil, kind: "Scene"
+        ) == "Scene")
     }
 }

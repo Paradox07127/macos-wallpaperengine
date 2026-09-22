@@ -127,8 +127,10 @@ final class OverlayEditorSession {
 
     private(set) var preview = MonitorBoardPreview(mode: .snapshot)
     @ObservationIgnored var onLifecycleStep: ((LifecycleStep) -> Void)?
+    @ObservationIgnored var onObjectPersisted: (@MainActor () -> Void)?
     @ObservationIgnored private var store: (any OverlayEditorStore)?
     @ObservationIgnored private var pendingBoard: MonitorBoardConfiguration?
+    @ObservationIgnored private var pendingAddedWidgetIDs: Set<UUID> = []
     @ObservationIgnored private var persistTask: Task<Void, Never>?
     @ObservationIgnored private let defaults: UserDefaults
     private static let persistDebounce: Duration = .milliseconds(250)
@@ -236,6 +238,9 @@ final class OverlayEditorSession {
         next.enabled = enabled
         overlay.music = next
         store.writeMusic(next, for: identity)
+        if enabled, store.read(identity)?.overlay.music == next {
+            onObjectPersisted?()
+        }
     }
 
     func setClockEnabled(_ enabled: Bool) {
@@ -245,6 +250,9 @@ final class OverlayEditorSession {
         next.enabled = enabled
         overlay.clock = next
         store.writeClock(next, for: identity)
+        if enabled, store.read(identity)?.overlay.clock == next {
+            onObjectPersisted?()
+        }
     }
 
     /// `overlay.enabled` gates the whole board, so adding into a switched-off board would write a
@@ -255,7 +263,11 @@ final class OverlayEditorSession {
             overlay.enabled = true
             store.writeOverlayEnabled(true, for: identity)
         }
-        return interaction.addWidget(kind: kind)
+        let added = interaction.addWidget(kind: kind)
+        if added, let id = interaction.selectedID {
+            pendingAddedWidgetIDs.insert(id)
+        }
+        return added
     }
 
     func removeWidget(id: UUID) {
@@ -296,6 +308,15 @@ final class OverlayEditorSession {
         guard let board = pendingBoard, let identity, let store else { return }
         pendingBoard = nil
         store.writeBoard(board, for: identity)
+        if !pendingAddedWidgetIDs.isEmpty {
+            let addedIDs = pendingAddedWidgetIDs
+            pendingAddedWidgetIDs.removeAll()
+            if let persisted = store.read(identity)?.overlay, persisted.enabled {
+                for widget in persisted.board.widgets where addedIDs.contains(widget.id) {
+                    onObjectPersisted?()
+                }
+            }
+        }
     }
 
     func rect(for selection: OverlaySelection) -> CGRect {

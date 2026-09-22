@@ -11,6 +11,7 @@ final class WorkshopSetupController {
     @ObservationIgnored let installer = SteamCMDManagedInstallCoordinator.shared
     @ObservationIgnored let engineAssets = WPEEngineAssetsLibrary.shared
     @ObservationIgnored let engineInstaller = WPEEngineAssetsInstaller.shared
+    @ObservationIgnored var onSignedIn: (@MainActor () -> Void)?
 
     /// Failures from the three Steam connection steps; scene-resources failures
     /// belong in `engineAssetsError`, not here.
@@ -339,6 +340,7 @@ final class WorkshopSetupController {
             return
         }
         doctor.noteSuccessfulSteamOperation(generation: doctor.accountGeneration)
+        onSignedIn?()
         Task { await loadAccounts() }
     }
 

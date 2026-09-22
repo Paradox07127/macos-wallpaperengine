@@ -66,7 +66,7 @@ struct ModalActionsTests {
         ]
     }
 
-    @Test func targetsUseSpatialOrderAndFirstUnusedDisplay() throws {
+    @Test func targetsKeepSpatialOrderAfterApplying() throws {
         let fixture = Fixture()
         fixture.displays = displays()
         var item = item(video())
@@ -76,10 +76,15 @@ struct ModalActionsTests {
         let targets = modal.targets(for: item, covers: [2: cover])
         #expect(targets.map(\.id) == [1, 2, 3])
         #expect(targets.map(\.shortcutIndex) == [1, 2, 3])
-        #expect(targets.filter(\.isPrimary).map(\.id) == [2])
+        #expect(targets.filter(\.isPrimary).map(\.id) == [1])
+        #expect(targets.filter(\.isApplied).map(\.id) == [1])
         #expect(targets.map(\.aspectRatio) == [1920.0 / 1080, 1.6, 1200.0 / 900])
         #expect(targets[1].thumbnail === cover)
         #expect(targets[0].thumbnail == nil)
+        item.onDisplays = [2]
+        let reapplied = modal.targets(for: item)
+        #expect(ModalGeometry.applyButtons(targets: reapplied).primary?.id == 1)
+        #expect(reapplied.filter(\.isApplied).map(\.id) == [2])
         item.onDisplays = [1, 2, 3]
         #expect(modal.targets(for: item).filter(\.isPrimary).map(\.id) == [1])
     }

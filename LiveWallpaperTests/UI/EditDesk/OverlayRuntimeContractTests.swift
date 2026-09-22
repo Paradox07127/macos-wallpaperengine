@@ -36,12 +36,9 @@ struct OverlayRuntimeContractTests {
         #expect(root.contains("editor.deleteSelection()"))
         #expect(root.contains("editor.moveSelection(.left)"))
         #expect(root.contains("if model.isEditing, editor == nil"))
-        let detail = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Detail/DisplayDetail.swift")
-        let start = try #require(detail.range(of: "private var canvasLayer:"))
-        let end = try #require(detail.range(of: "private var stillFrameNote:", range: start.upperBound ..< detail.endIndex))
-        let canvas = detail[start.lowerBound ..< end.lowerBound]
+        let canvas = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Overlay/OverlayWorkspace.swift")
         #expect(canvas.contains("OverlayGeometry.aspectFit"))
-        #expect(canvas.contains(".padding(.leading, box.minX)"))
+        #expect(canvas.contains(".frame(width: box.width, height: box.height)"))
         #expect(!canvas.contains(".offset("))
     }
 

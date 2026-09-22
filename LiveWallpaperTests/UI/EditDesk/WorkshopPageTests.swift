@@ -19,8 +19,8 @@ struct WorkshopPageSourceTests {
     @Test("Lite keeps the Workshop page empty")
     func liteKeepsTheWorkshopPageEmpty() throws {
         let source = try RepositoryRoot.source(Self.root)
-        #expect(source.contains("case .workshop:\n                    #if !LITE_BUILD"))
-        #expect(source.contains("\n                    #else\n                    Color.clear\n                    #endif"))
+        #expect(source.contains("case .workshop:\n                        #if !LITE_BUILD"))
+        #expect(source.contains("\n                        #else\n                        Color.clear\n                        #endif"))
     }
 
     @Test("The session and the toast centre are owned by the root, not by a page")
@@ -44,6 +44,21 @@ struct WorkshopPageSourceTests {
         }
         let root = try RepositoryRoot.source(Self.root)
         #expect(!root.contains("EditDeskToastHost("), "a root host would double up with the page's own")
+    }
+
+    @Test("The root observes every deferred ticket and announces each settled ID once")
+    func rootAnnouncesDeferredApplyOutcomes() throws {
+        let root = try RepositoryRoot.source(Self.root)
+        #expect(root.contains(".onChange(of: deferredApplyTicketStates, initial: true)"))
+        #expect(root.contains("workshopSession?.deferredApply.tickets.values"))
+        #expect(root.contains("($0.id, $0.state)"))
+        #expect(root.contains("announcedTickets.insert(ticket.id).inserted"))
+        #expect(root.contains("DeferredApplyToasts.messages(for: ticket.state, screenName: screenName)"))
+        #expect(root.contains("toasts.post(message.text, style: message.style)"))
+        let host = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Workshop/WorkshopModalHost.swift")
+        #expect(!host.contains("announceSettledTicket"))
+        #expect(!host.contains("announcedTickets"))
+        #expect(!host.contains("ticketSignature"))
     }
 
     @Test("The page reuses the shell top bar and asks Browse for the Edit Desk layout")

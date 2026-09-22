@@ -30,6 +30,7 @@ public struct IllustratedEmptyState<Extra: View>: View {
     let secondary: EmptyStateButtonAction?
     let variant: EmptyStateVariant
     let extra: Extra
+    let accessibilityChildren: AccessibilityChildBehavior
 
     public init(
         symbol: String,
@@ -39,6 +40,7 @@ public struct IllustratedEmptyState<Extra: View>: View {
         primary: EmptyStateButtonAction? = nil,
         secondary: EmptyStateButtonAction? = nil,
         variant: EmptyStateVariant = .standard,
+        accessibilityChildren: AccessibilityChildBehavior = .combine,
         @ViewBuilder extra: () -> Extra
     ) {
         self.symbol = symbol
@@ -49,6 +51,7 @@ public struct IllustratedEmptyState<Extra: View>: View {
         self.secondary = secondary
         self.variant = variant
         self.extra = extra()
+        self.accessibilityChildren = accessibilityChildren
     }
 
     /// For already-resolved runtime strings that must not be re-looked-up in the
@@ -61,6 +64,7 @@ public struct IllustratedEmptyState<Extra: View>: View {
         primary: EmptyStateButtonAction? = nil,
         secondary: EmptyStateButtonAction? = nil,
         variant: EmptyStateVariant = .standard,
+        accessibilityChildren: AccessibilityChildBehavior = .combine,
         @ViewBuilder extra: () -> Extra
     ) {
         self.symbol = symbol
@@ -71,6 +75,7 @@ public struct IllustratedEmptyState<Extra: View>: View {
         self.secondary = secondary
         self.variant = variant
         self.extra = extra()
+        self.accessibilityChildren = accessibilityChildren
     }
 
     public var body: some View {
@@ -127,7 +132,7 @@ public struct IllustratedEmptyState<Extra: View>: View {
                 }
             }
         }
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: accessibilityChildren)
     }
 
     private var iconSize: CGFloat {

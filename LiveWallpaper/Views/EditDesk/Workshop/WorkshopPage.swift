@@ -14,13 +14,13 @@ struct WorkshopPage: View {
     @Environment(SteamCMDDoctorService.self) private var doctor
     @Environment(WorkshopSetupController.self) private var setupController
     @Environment(\.featureCatalog) private var featureCatalog
+    @Environment(OnboardingProgress.self) private var progress: OnboardingProgress?
 
-    @AppStorage("loomscreen.workshop.onboarding.shown.v1", store: .appScoped()) private var onboardingShown = false
     /// Shared with the old Workshop window's banner, so a dismissal in either place counts.
     @AppStorage("loomscreen.workshop.privateSessionNotice.shown.v1", store: .appScoped())
     private var privateSessionNoticeShown = false
 
-    @State private var isShowingOnboarding = false
+    @State private var isShowingWizard = false
     @State private var isShowingPasteSheet = false
     @State private var isShowingKeyEntry = false
     @State private var isShowingInstallConsent = false
@@ -34,6 +34,7 @@ struct WorkshopPage: View {
 
     var body: some View {
         ZStack(alignment: .top) {
+            onboardingCard
             BrowsePane(
                 viewModel: session.browse,
                 doctor: doctor,
@@ -43,12 +44,13 @@ struct WorkshopPage: View {
                 onOpenItem: { presentedItemID = $0.id },
                 matureReveal: session.matureReveal
             )
-            .padding(.top, DesignTokens.EditDesk.Spacing.topBar)
+            .padding(.top, showsOnboardingCard ? OnboardingCardMetrics.blockHeight : DesignTokens.EditDesk.Spacing.topBar)
             TopBar(
                 page: pageBinding,
                 workshopAvailable: featureCatalog.isEnabled(.wpeImport),
                 searchText: .constant(""),
                 showsSearch: false,
+                windowWidth: stageSize.width,
                 status: nil
             ) {
                 steamMenu
@@ -68,11 +70,33 @@ struct WorkshopPage: View {
         .onGeometryChange(for: CGSize.self) { $0.size } action: { stageSize = $0 }
         .task { await session.prepareDownloads() }
         .task { await setupController.loadAccounts() }
-        .onAppear { presentOnboardingIfNeeded() }
         .modifier(WorkshopPageSheets(page: self))
     }
 
     // MARK: Chrome
+
+    /// R-27: browsing stays available while the card is up, so the pane is pushed below it
+    /// instead of being covered by it.
+    private var showsOnboardingCard: Bool {
+        progress?.handled.contains(.workshop) == false
+    }
+
+    @ViewBuilder
+    private var onboardingCard: some View {
+        if showsOnboardingCard {
+            OnboardingCard(page: .workshop) { action in
+                switch action {
+                case .connectSteam:
+                    isShowingWizard = true
+                case .importLocalLibrary:
+                    SteamWizard.importLocalFolder()
+                case .chooseFile, .tryAerials, .importMore, .addClock:
+                    break
+                }
+            }
+            .frame(height: OnboardingCardMetrics.blockHeight)
+        }
+    }
 
     /// Writing `router.page` straight from the pill skips `select`, which records the page to come
     /// back to and turns Workshop away when the SKU does not have it.
@@ -106,16 +130,9 @@ struct WorkshopPage: View {
 
         func body(content: Content) -> some View {
             content
-                .sheet(isPresented: page.$isShowingOnboarding) {
+                .sheet(isPresented: page.$isShowingWizard) {
                     AppLanguageScope(defaults: .appScoped()) {
-                        OnboardingSheet(
-                            onConfigureOnline: {
-                                if !page.services.hasWebAPIKey {
-                                    page.isShowingKeyEntry = true
-                                }
-                            },
-                            onDownloadByLink: { page.isShowingPasteSheet = true }
-                        )
+                        SteamWizard(progress: page.progress)
                     }
                 }
                 .sheet(isPresented: page.$isShowingPasteSheet) {
@@ -180,17 +197,8 @@ struct WorkshopPage: View {
 
     // MARK: Actions
 
-    private func presentOnboardingIfNeeded() {
-        guard !onboardingShown else { return }
-        isShowingOnboarding = true
-    }
-
     private func presentPasteFlow() {
-        if onboardingShown {
-            isShowingPasteSheet = true
-        } else {
-            isShowingOnboarding = true
-        }
+        isShowingPasteSheet = true
     }
 
     /// `anchor` defaults to the API-key section; a setup failure passes `.workshopConnection`.

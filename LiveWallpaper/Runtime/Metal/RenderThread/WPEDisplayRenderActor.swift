@@ -469,8 +469,22 @@ actor WPEDisplayRenderActor {
     }
 
     func captureLivePoster() async -> NSImage? {
-        guard let renderer else { return nil }
-        return await renderer.captureLivePosterFromNextFrame(on: self)
+        let id = UUID()
+        // Keep the suspension and its continuation on the owning actor. Nesting these
+        // closures in the renderer's isolated-parameter method lost executor inheritance
+        // on the cooperative pool, racing the render loop's dictionary drain.
+        return await withTaskCancellationHandler(operation: {
+            await withCheckedContinuation(isolation: self) { continuation in
+                self.preconditionIsolated()
+                guard !Task.isCancelled, let renderer = self.renderer else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                renderer.enqueueLivePosterCapture(id: id, continuation: continuation)
+            }
+        }, onCancel: {
+            Task { await self.finishLivePosterCapture(id: id, image: nil) }
+        }, isolation: self)
     }
 
     func loadDiagnostics() -> SceneLoadDiagnostic? {

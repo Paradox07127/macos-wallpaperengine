@@ -7,7 +7,7 @@ struct StageSpring {
     static let drop = StageGeometry.SpringParameters(response: 0.45)
     static let row = StageGeometry.rowSpring
     static let ghost = StageGeometry.SpringParameters(response: 0.25)
-    static let fly = StageGeometry.SpringParameters(response: 0.5)
+    static let fly = StageGeometry.SpringParameters(response: 0.32)
     /// Longest frame the stage integrates. Past this the app was away rather than late, and
     /// catching up in one step would teleport every spring to its target.
     static let maximumStep: TimeInterval = 0.1

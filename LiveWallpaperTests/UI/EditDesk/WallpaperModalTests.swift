@@ -31,13 +31,12 @@ struct WallpaperModalTests {
         )
     }
 
-    @Test("A window too short for top 150 centres the panel instead of clipping it")
-    func panelCentresInAShortWindow() {
+    @Test("A window too short for top 150 stops under the float strip and gives up height")
+    func panelStopsUnderTheStripInAShortWindow() {
         let small = ModalGeometry.panelFrame(in: CGSize(width: 1040, height: 700))
-        #expect(small == CGRect(x: 80, y: 70, width: 880, height: 560), Comment(rawValue: "\(small)"))
-        // 16pt is the floor: below it the panel gives up height, not margin.
+        #expect(small == CGRect(x: 80, y: 130, width: 880, height: 554), Comment(rawValue: "\(small)"))
         let short = ModalGeometry.panelFrame(in: CGSize(width: 1280, height: 500))
-        #expect(short == CGRect(x: 200, y: 16, width: 880, height: 468), Comment(rawValue: "\(short)"))
+        #expect(short == CGRect(x: 200, y: 130, width: 880, height: 354), Comment(rawValue: "\(short)"))
     }
 
     @Test("A narrow window keeps 24pt of air on each side")
@@ -50,9 +49,9 @@ struct WallpaperModalTests {
     @Test("The preview is the panel less a 12pt margin and the 152pt bottom bar")
     func previewSize() {
         let design = ModalGeometry.previewSize(inPanel: CGRect(x: 0, y: 0, width: 880, height: 560))
-        #expect(design == CGSize(width: 856, height: 396), Comment(rawValue: "\(design)"))
-        let short = ModalGeometry.previewSize(inPanel: CGRect(x: 0, y: 0, width: 880, height: 468))
-        #expect(short == CGSize(width: 856, height: 304), Comment(rawValue: "\(short)"))
+        #expect(design == CGSize(width: 856, height: 360), Comment(rawValue: "\(design)"))
+        let short = ModalGeometry.previewSize(inPanel: CGRect(x: 0, y: 0, width: 880, height: 554))
+        #expect(short == CGSize(width: 856, height: 354), Comment(rawValue: "\(short)"))
     }
 
     // MARK: ⌘n

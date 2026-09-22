@@ -26,6 +26,27 @@ struct StageGeometryTests {
             && near(actual.height, expected.height, tolerance)
     }
 
+    @Test("Every tile size lands on the same fixed columns as the visible library")
+    func gridSizeHandoff() {
+        for size in LibraryTileSize.allCases {
+            for width in [CGFloat(1040), 1280, 1600] {
+                for index in 0 ..< 12 {
+                    let drawn = StageGeometry.cardPlacement(
+                        style: .crate, index: index, count: 12, progress: 2, focus: 0,
+                        windowSize: CGSize(width: width, height: 820), gridSize: size
+                    ).frame
+                    let expected = DesignTokens.LibraryGrid.tileFrame(
+                        index: index, size: size, aspect: .wide,
+                        fitting: width - 2 * DesignTokens.LibraryGrid.horizontalPadding,
+                        tileAspectRatio: StageGeometry.cardAspectRatio
+                    ).offsetBy(dx: DesignTokens.LibraryGrid.horizontalPadding,
+                               dy: StageGeometry.gridTop + DesignTokens.LibraryGrid.verticalPadding)
+                    #expect(near(drawn, expected))
+                }
+            }
+        }
+    }
+
     // MARK: Progress
 
     @Test("Progress splits into the two legs of the gesture")
@@ -65,11 +86,26 @@ struct StageGeometryTests {
         }
     }
 
-    @Test("Chip row rides above the card row until the grid takes over at p ≥ 1.5, then sits at 70")
+    @Test("The card row's top follows the shelf up over the first leg and rests there")
+    func shelfRowTop() {
+        let expectations: [(p: Double, top: CGFloat)] = [(0, 864), (0.5, 774), (1, 684), (2, 684)]
+        for e in expectations {
+            let top = StageGeometry.shelfRowTop(progress: e.p, windowSize: Self.designWindow)
+            #expect(near(top, e.top), Comment(rawValue: "p=\(e.p) → \(top)"))
+        }
+        let row = StageGeometry.rowFrame(style: .crate, index: 0, count: 8, focus: 0, windowSize: Self.designWindow)
+        #expect(
+            StageGeometry.shelfRowTop(progress: 1, windowSize: Self.designWindow) == row.minY,
+            "the open shelf's row top is the row's own frame"
+        )
+    }
+
+    @Test("Chip row rides the card row, then crosses to 70 across the second leg instead of switching")
     func chipRowTop() {
+        #expect(StageGeometry.chipRowTop(progress: 0, windowSize: Self.designWindow) == 812)
         #expect(StageGeometry.chipRowTop(progress: 1, windowSize: Self.designWindow) == 632)
-        #expect(StageGeometry.chipRowTop(progress: 1.49, windowSize: Self.designWindow) == 632)
-        #expect(StageGeometry.chipRowTop(progress: 1.5, windowSize: Self.designWindow) == 70)
+        #expect(near(StageGeometry.chipRowTop(progress: 1.49, windowSize: Self.designWindow), 356.6))
+        #expect(StageGeometry.chipRowTop(progress: 1.5, windowSize: Self.designWindow) == 351)
         #expect(StageGeometry.chipRowTop(progress: 2, windowSize: Self.designWindow) == 70)
         // The row rides with the shelf: a short window must not drop it into the cards.
         for height in stride(from: CGFloat(700), through: 1400, by: 20) {
@@ -94,6 +130,30 @@ struct StageGeometryTests {
     func stageRect() {
         #expect(StageGeometry.stageRect(windowSize: Self.designWindow) == Self.designStage)
         #expect(StageGeometry.stageRect(windowSize: Self.smallWindow) == CGRect(x: 0, y: 56, width: 1040, height: 644))
+    }
+
+    @Test("The onboarding card's top inset is taken off the stage area, and given back at 0")
+    func stageRectTopInset() {
+        #expect(StageGeometry.stageRect(windowSize: Self.designWindow, topInset: 0) == Self.designStage)
+        #expect(
+            StageGeometry.stageRect(windowSize: Self.designWindow, topInset: 304)
+                == CGRect(x: 0, y: 360, width: 1280, height: 460)
+        )
+    }
+
+    @Test("A display re-centres in the shortened stage while the overview card is up")
+    func arrangementWithTopInset() {
+        let frames = [CGRect(x: 0, y: 0, width: 1920, height: 1080)]
+        let open = StageGeometry.arrangement(
+            frames: frames, in: StageGeometry.stageRect(windowSize: Self.designWindow, topInset: 304)
+        )
+        #expect(near(open.scale, 0.25, 0.0001), "460pt of stage still holds a 1:4 display")
+        let rect = open.contentRects.first ?? .zero
+        #expect(near(rect, CGRect(x: 400, y: 435, width: 480, height: 270)), Comment(rawValue: "\(rect)"))
+        let rest = StageGeometry.arrangement(frames: frames, in: Self.designStage)
+        let restRect = rest.contentRects.first ?? .zero
+        #expect(rect.minY > restRect.minY, "the card pushes the arrangement down, it does not lift it")
+        #expect(rect.minY - restRect.minY == 152, "half the inset, because the band is centred")
     }
 
     @Test("One display scales 1:4 and centers in the stage, biased up for its name row")
@@ -200,6 +260,70 @@ struct StageGeometryTests {
         #expect(StageGeometry.shellRect(content: content, isBuiltin: true) == CGRect(x: 93, y: 93, width: 398, height: 232))
     }
 
+    // MARK: Name row
+
+    /// The shell a display gets in the named window with a second one beside it.
+    private func shellWidth(window: CGSize) -> CGFloat {
+        let content = StageGeometry.arrangement(
+            frames: [
+                CGRect(x: 0, y: 0, width: 1920, height: 1080),
+                CGRect(x: 1920, y: 0, width: 1920, height: 1080),
+            ],
+            in: StageGeometry.stageRect(windowSize: window)
+        ).contentRects[0]
+        return StageGeometry.shellRect(content: content, isBuiltin: false).width
+    }
+
+    @Test("Dot, name and status ride as one group centred on the shell", arguments: [
+        StageGeometry.designWindow, StageGeometry.minimumWindow,
+    ])
+    func nameRowCentresItsGroup(window: CGSize) {
+        let width = shellWidth(window: window)
+        let row = StageGeometry.nameRowLayout(shellWidth: width, top: 40, nameWidth: 96, statusWidth: 42)
+        #expect(row.dot.width == StageGeometry.nameRowDotSize)
+        #expect(row.name.width == 96)
+        #expect(row.status.width == 42)
+        #expect(row.name.minX - row.dot.maxX == StageGeometry.nameRowItemGap)
+        #expect(row.status.minX - row.name.maxX == StageGeometry.nameRowItemGap)
+        #expect(near((row.dot.minX + row.status.maxX) / 2, width / 2, 0.001))
+        // One row: name and status share a baseline box, the dot is centred in it.
+        #expect(row.name.minY == 40 && row.status.minY == 40)
+        #expect(row.name.height == StageGeometry.nameRowHeight && row.status.height == StageGeometry.nameRowHeight)
+        #expect(near(row.dot.midY, row.name.midY, 0.001))
+    }
+
+    /// Displays sit side by side with `displayColumnGap` between them, so a name row that kept
+    /// growing past its own shell would be drawn over the neighbouring display.
+    @Test("A name wider than the shell is clamped instead of reaching into the next display")
+    func nameRowClampsALongName() {
+        let width: CGFloat = 320
+        let row = StageGeometry.nameRowLayout(shellWidth: width, top: 0, nameWidth: 900, statusWidth: 42)
+        #expect(row.dot.minX >= StageGeometry.nameRowSideMargin)
+        #expect(row.status.maxX <= width - StageGeometry.nameRowSideMargin)
+        // The status keeps its own width; the name is what gives.
+        #expect(row.status.width == 42)
+        #expect(row.name.width == width - 2 * StageGeometry.nameRowSideMargin
+            - StageGeometry.nameRowDotSize - 2 * StageGeometry.nameRowItemGap - 42)
+    }
+
+    // MARK: Playback controls
+
+    @Test("The playback capsule holds three buttons in playlist mode and one otherwise", arguments: [true, false])
+    func playbackCapsuleSizesToItsButtons(showsPlaylistControls: Bool) {
+        let size = CGSize(width: 480, height: 270)
+        let layout = StageGeometry.playbackLayout(content: size, showsPlaylistControls: showsPlaylistControls)
+        #expect(layout.buttons.count == (showsPlaylistControls ? 3 : 1))
+        let container = CGRect(origin: .zero, size: layout.container.size)
+        for button in layout.buttons {
+            #expect(button.width == StageGeometry.playbackButtonSide)
+            #expect(container.contains(button))
+        }
+        #expect(near(size.width - layout.container.maxX, StageGeometry.playbackTrailingMargin, 0.001))
+        #expect(near(size.height - layout.container.maxY, StageGeometry.playbackBottomMargin, 0.001))
+        let inset = StageGeometry.playbackInset
+        #expect(near(layout.container.width - (layout.buttons.last?.maxX ?? 0), inset.width, 0.001))
+    }
+
     // MARK: Shelf row
 
     @Test("Folder row: 84pt pitch, 200×112 cards, 136pt above the window bottom, leading ≥ 48")
@@ -288,13 +412,15 @@ struct StageGeometryTests {
         #expect(flow.contains(40) && flow.count <= 2 * StageGeometry.coverFlowReach + 1, Comment(rawValue: "\(flow)"))
     }
 
-    @Test("Grid ladder follows the library's fixed medium-wide columns")
+    @Test("Grid ladder shares the responsive three-column minimum")
     func gridLadder() {
-        #expect(StageGeometry.gridColumns(windowWidth: 1040) == 2)
-        #expect(StageGeometry.gridColumns(windowWidth: 1280) == 3)
-        #expect(StageGeometry.gridColumns(windowWidth: 1600) == 3)
+        #expect(StageGeometry.gridColumns(windowWidth: 1040) == 3)
+        #expect(StageGeometry.gridColumns(windowWidth: 1280) == 4)
+        #expect(StageGeometry.gridColumns(windowWidth: 1600) == 5)
         for width in [CGFloat(1040), 1280, 1600] {
-            #expect(StageGeometry.gridCellSize(windowWidth: width) == CGSize(width: 384, height: 216))
+            let cell = StageGeometry.gridCellSize(windowWidth: width)
+            #expect(abs(cell.width / cell.height - 16 / 9) < 0.001)
+            #expect(cell.width < 340)
         }
     }
 
@@ -511,5 +637,38 @@ struct StageGeometryTests {
         #expect(abs(half - 0.5) < 0.01, Comment(rawValue: "\(half)"))
         // Cover Flow has its own parking curve and no band.
         #expect(StageGeometry.bandOpacity(cardMinX: -9999, style: .coverFlow, capacity: 14, windowSize: size) == 1)
+    }
+
+    @Test("Cover Flow preserves its tuned tilt, depth, dim and scale and flattens at the grid")
+    func coverFlowTunedPlacement() {
+        let depths: [CGFloat] = [0, -100, -120, -140, -155]
+        let dims: [CGFloat] = [0, 0.18, 0.36, 0.54, 0.6]
+        let scales: [CGFloat] = [1, 0.92, 0.84, 0.76, 0.76]
+        for distance in -4 ... 4 {
+            let placement = StageGeometry.cardPlacement(
+                style: .coverFlow, index: 6 + distance, count: 13, progress: 1, focus: 6, windowSize: Self.designWindow
+            )
+            let tilt: CGFloat = distance == 0 ? 0 : (abs(distance) == 1 ? 62 : 65) * (distance < 0 ? -1 : 1)
+            #expect(near(placement.rotationYDegrees, tilt, 0.001))
+            #expect(near(placement.translateZ, depths[abs(distance)], 0.001))
+            #expect(near(placement.dim, dims[abs(distance)], 0.001))
+            #expect(near(placement.scale, scales[abs(distance)], 0.001))
+        }
+        for index in 0 ..< 13 {
+            let shelf = StageGeometry.cardPlacement(
+                style: .coverFlow, index: index, count: 13, progress: 1, focus: 6, windowSize: Self.designWindow
+            )
+            #expect(shelf.dim <= 0.6)
+            if abs(index - 6) >= 4 {
+                #expect(shelf.dim == 0.6)
+            }
+            let grid = StageGeometry.cardPlacement(
+                style: .coverFlow, index: index, count: 13, progress: 2, focus: 6, windowSize: Self.designWindow
+            )
+            #expect(grid.rotationYDegrees == 0 && grid.translateZ == 0 && grid.dim == 0 && grid.scale == 1)
+        }
+        #expect(StageGeometry.metrics(for: .coverFlow).pitch == 110)
+        #expect(StageGeometry.coverFlowReach == 6)
+        #expect(StageGeometry.shelfPerspective == 500)
     }
 }

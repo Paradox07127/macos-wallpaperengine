@@ -27,10 +27,10 @@ final class WallpaperAutomationCoordinator {
         switch configuration.wallpaperMode {
         case .playlist:
             return (configuration.playlistRotationMinutes ?? 0) > 0
-                && configuration.combinedPlaylist.count > 1
+                && configuration.effectiveWallpaperQueue.count > 1
         case .schedule:
             return configuration.scheduleSlots?.contains {
-                $0.videoBookmarkData?.isEmpty == false
+                $0.wallpaper != nil || $0.videoBookmarkData?.isEmpty == false
             } == true
         }
     }
@@ -100,7 +100,7 @@ final class WallpaperAutomationCoordinator {
                     guard let configuration = configurations[screen.id],
                           let rotationMinutes = configuration.playlistRotationMinutes,
                           rotationMinutes > 0,
-                          configuration.combinedPlaylist.count > 1 else {
+                          configuration.effectiveWallpaperQueue.count > 1 else {
                         continue
                     }
 

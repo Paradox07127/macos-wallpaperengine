@@ -3,7 +3,6 @@ import LiveWallpaperCore
 import SwiftUI
 
 extension GeneralSettingsView {
-    @ViewBuilder
     var aboutTab: some View {
         ViewThatFits(in: .vertical) {
             aboutContent(.roomy)
@@ -12,7 +11,7 @@ extension GeneralSettingsView {
             aboutContent(.minimal)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(DesignTokens.Colors.pageBackground)
+        .settingsPageBackground()
     }
 
     private func aboutContent(_ layout: AboutLayout) -> some View {
@@ -118,7 +117,7 @@ extension GeneralSettingsView {
                 systemImage: "sparkles",
                 accent: .purple,
                 action: { NotificationCenter.default.post(name: .showOnboarding, object: nil) }
-            )
+            ),
         ]
     }
 

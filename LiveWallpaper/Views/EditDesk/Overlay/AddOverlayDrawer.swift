@@ -7,6 +7,7 @@ struct AddOverlayDrawer: View {
     let session: OverlayEditorSession
     @Binding var isExpanded: Bool
     let height: CGFloat
+    var horizontal = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var category: OverlayAddCategory = .all
@@ -23,7 +24,17 @@ struct AddOverlayDrawer: View {
             toggleRow
             if isExpanded {
                 chips
-                grid
+                if horizontal {
+                    ScrollView(.horizontal) {
+                        HStack(spacing: 8) {
+                            ForEach(OverlayLayerList.addItems(in: category)) { item in
+                                cell(item).frame(width: 100)
+                            }
+                        }.padding(.bottom, 8)
+                    }
+                } else {
+                    grid
+                }
             }
         }
         .padding(.horizontal, DesignTokens.EditDesk.Spacing.s12)

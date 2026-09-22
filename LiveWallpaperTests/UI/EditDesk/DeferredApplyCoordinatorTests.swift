@@ -3,6 +3,7 @@ import AppKit
 import Foundation
 @testable import LiveWallpaper
 import LiveWallpaperCore
+import Observation
 import Testing
 
 @Suite("Workshop deferred apply", .serialized)
@@ -70,6 +71,27 @@ struct DeferredApplyCoordinatorTests {
         await waitUntil { ticket.state != .waiting }
         #expect(ticket.state == .downloadOnly(.failed(reason: "Missing dependency 99")))
         #expect(manager.appliedEntries.isEmpty)
+    }
+
+    @Test func ticketCollectionObservesSettlementAndKeepsTheTicket() async {
+        let owner = owner()
+        let attempt = WorkshopDownloadAttempt(itemID: 42)
+        let ticket = owner.submit(attempt: attempt, target: target(manager.first))
+        #expect(owner.tickets[42] === ticket)
+        #expect(owner.tickets[42]?.state == .waiting)
+
+        await confirmation("ticket state observed through the collection") { changed in
+            withObservationTracking {
+                _ = owner.tickets.values.map(\.state)
+            } onChange: { @Sendable in
+                changed()
+            }
+            attempt.finish(.failed(reason: "Offline"))
+            await waitUntil { ticket.state.isSettled }
+        }
+        #expect(owner.tickets[42] === ticket)
+        #expect(owner.tickets[42]?.state == .downloadOnly(.failed(reason: "Offline")))
+        #expect(owner.ticket(for: 42) === ticket)
     }
 
     @Test func presetCompletionIsObservableWithoutApplying() async {

@@ -1,6 +1,6 @@
-import SwiftUI
 import AppKit
 import LiveWallpaperCore
+import SwiftUI
 
 struct UpdateStatusLine: View {
     @State private var updater = SparkleUpdaterController.shared
@@ -23,7 +23,9 @@ struct UpdateStatusLine: View {
     // MARK: - Status rendering
 
     /// Missing check history must not be presented as "Up to date".
-    private var hasCheckedBefore: Bool { updater.lastUpdateCheckDate != nil }
+    private var hasCheckedBefore: Bool {
+        updater.lastUpdateCheckDate != nil
+    }
 
     @ViewBuilder
     private var statusGlyph: some View {
@@ -90,9 +92,10 @@ struct UpdateStatusLine: View {
         }
     }
 
-    private static let relativeFormatter: RelativeDateTimeFormatter = {
+    private static var relativeFormatter: RelativeDateTimeFormatter {
         let formatter = RelativeDateTimeFormatter()
+        formatter.locale = AppLanguagePreference.current.locale
         formatter.unitsStyle = .full
         return formatter
-    }()
+    }
 }

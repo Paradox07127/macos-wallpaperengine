@@ -191,11 +191,6 @@ final class CodexAgentSource: MonitorDataSource {
                 return nil
             }
             state.livenessEvidence = liveProcessDirectories.complete && model.cwd != nil ? "workingDirectory" : "recentLog"
-            state.waitSince = waitTracker.waitSince(
-                sessionID: state.id,
-                status: state.status,
-                eventTime: state.lastEventAt
-            )
 
             if state.status == .ended,
                now.timeIntervalSince(Date(timeIntervalSince1970: state.lastEventAt)) > endedRetention {
@@ -209,8 +204,14 @@ final class CodexAgentSource: MonitorDataSource {
             }
             return lhs.id < rhs.id
         }
-        waitTracker.retainOnly(Set(states.map(\.id)))
-        return states
+        var seen: Set<String> = []
+        let unique = states.filter { seen.insert($0.id).inserted }
+        waitTracker.retainOnly(seen)
+        return unique.map { state in
+            var state = state
+            state.waitSince = waitTracker.waitSince(sessionID: state.id, status: state.status, eventTime: state.lastEventAt)
+            return state
+        }
     }
 
     /// Scanner mtime is wrong both ways; a cwd match overrides it only when the probe is `complete`. A refused lookup falls back to the scanner, not "not running".

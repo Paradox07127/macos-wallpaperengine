@@ -52,25 +52,18 @@ extension WPEMetalSceneRenderer {
     // MARK: - Capture requests
 
     /// Reuses the next frame already going to present; do not force a fresh synchronous `renderCurrentFrame()` on the display render actor.
-    func captureLivePosterFromNextFrame(on actor: isolated WPEDisplayRenderActor) async -> NSImage? {
+    func enqueueLivePosterCapture(id: UUID, continuation: CheckedContinuation<NSImage?, Never>) {
+        displayActor?.preconditionIsolated()
         guard didLoad, hasPresentedFrame, renderPipeline != nil, currentProfile == .quality else {
             Logger.info(
                 "[live-poster] skipped: didLoad=\(didLoad) presented=\(hasPresentedFrame) pipeline=\(renderPipeline != nil) profile=\(String(describing: currentProfile))",
                 category: .wpeRender
             )
-            return nil
+            continuation.resume(returning: nil)
+            return
         }
-        let id = UUID()
-        return await withTaskCancellationHandler(operation: {
-            await withCheckedContinuation { continuation in
-                pendingLivePosterCaptures[id] = continuation
-                requestLivePosterCaptureFrame()
-            }
-        }, onCancel: {
-            Task { [actor] in
-                await actor.finishLivePosterCapture(id: id, image: nil)
-            }
-        }, isolation: actor)
+        pendingLivePosterCaptures[id] = continuation
+        requestLivePosterCaptureFrame()
     }
 
     private func requestLivePosterCaptureFrame() {

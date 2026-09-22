@@ -1,11 +1,16 @@
 import LiveWallpaperCore
 import SwiftUI
 
+extension EnvironmentValues {
+    @Entry var compactPreviewControls = false
+}
+
 struct PreviewControlLabel: View {
     let systemImage: String
     let title: LocalizedStringKey
     var isActive = false
     var tint: Color?
+    @Environment(\.compactPreviewControls) private var compact
 
     /// Wide enough for the longest caption at this size in every shipped
     /// language; past that the caption truncates rather than the row reflowing.
@@ -16,13 +21,15 @@ struct PreviewControlLabel: View {
             Image(systemName: systemImage)
                 .font(.system(size: 15, weight: .medium))
                 .frame(height: 18)
-            Text(title)
-                .font(DesignTokens.Typography.caption)
-                .lineLimit(1)
-                .truncationMode(.tail)
+            if !compact {
+                Text(title)
+                    .font(DesignTokens.Typography.caption)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
         }
         .foregroundStyle(resolvedTint)
-        .frame(width: Self.width)
+        .frame(width: compact ? 32 : Self.width, height: 32)
         .contentShape(Rectangle())
     }
 

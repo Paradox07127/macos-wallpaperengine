@@ -20,12 +20,19 @@ struct MusicOverlaySection: View {
     }
 
     var backdropAvailable: Bool = false
+    var showsVisibilityControl = true
 
-    private var music: MusicOverlayConfiguration { overlay.music }
+    private var music: MusicOverlayConfiguration {
+        overlay.music
+    }
 
-    private var isOn: Bool { music.enabled }
+    private var isOn: Bool {
+        music.enabled
+    }
 
-    private var isEditable: Bool { isOn }
+    private var isEditable: Bool {
+        isOn
+    }
 
     private var options: NowPlayingOptions {
         NowPlayingOptions(music.options)
@@ -68,8 +75,10 @@ struct MusicOverlaySection: View {
     private var controlCard: some View {
         GroupBox {
             VStack(alignment: .leading, spacing: 8) {
-                showOnThisDisplayRow
-                Divider()
+                if showsVisibilityControl {
+                    showOnThisDisplayRow
+                    Divider()
+                }
                 layerRow
                 Divider()
                 styleRow
@@ -630,7 +639,6 @@ struct MusicOverlaySection: View {
     private static func multiplier(_ value: Double) -> String {
         String(format: "%.2f×", value)
     }
-
 }
 
 // MARK: - Option slider
@@ -657,7 +665,9 @@ private struct MusicOptionSlider: View {
                     in: range,
                     onEditingChanged: { editing in
                         guard !editing else { return }
-                        if let draft { commit(draft) }
+                        if let draft {
+                            commit(draft)
+                        }
                         draft = nil
                     }
                 )
@@ -771,10 +781,10 @@ struct MusicStatusBadge: View {
 
     private var icon: String {
         switch state.phase {
-        case .playing: return "music.note"
-        case .paused: return "pause.circle"
-        case .awaitingFirstEvent: return "hourglass"
-        case .noPlayer: return "music.note.list"
+        case .playing: "music.note"
+        case .paused: "pause.circle"
+        case .awaitingFirstEvent: "hourglass"
+        case .noPlayer: "music.note.list"
         }
     }
 

@@ -68,7 +68,7 @@ final class DeferredApplyCoordinator {
     private let manager: any DeferredApplyScreenResolving
     private let router: ApplyRouter
     /// One ticket per item, kept after it settles so a view that comes back still finds the result.
-    private var tickets: [UInt64: Ticket] = [:]
+    private(set) var tickets: [UInt64: Ticket] = [:]
     @ObservationIgnored private var tasks: [UUID: Task<Void, Never>] = [:]
 
     /// The host retains this owner beyond the modal's lifetime; tickets expose observable results.

@@ -24,6 +24,11 @@ struct WallpaperModalContent: Equatable {
     var isDraggable: Bool
     /// Present only for installed Workshop items.
     var installed: InstalledItemExtras?
+    var descriptionText: String?
+    var contentRating: String?
+    var importedAt: Date?
+    var workshopID: UInt64?
+    var dependencyIDs: [String] = []
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.itemID == rhs.itemID
@@ -35,6 +40,11 @@ struct WallpaperModalContent: Equatable {
             && lhs.preview === rhs.preview
             && lhs.isDraggable == rhs.isDraggable
             && lhs.installed == rhs.installed
+            && lhs.descriptionText == rhs.descriptionText
+            && lhs.contentRating == rhs.contentRating
+            && lhs.importedAt == rhs.importedAt
+            && lhs.workshopID == rhs.workshopID
+            && lhs.dependencyIDs == rhs.dependencyIDs
     }
 }
 
@@ -68,8 +78,9 @@ struct ModalDisplayTarget: Identifiable, Equatable {
     /// Width / height in points; the float layer sizes thumbnails from it (16:9 → 150×84).
     var aspectRatio: CGFloat
     var thumbnail: CGImage?
-    /// The primary button's target: the display whose wallpaper changed least recently.
+    /// Stable first display; applying content must not move another target under the pointer.
     var isPrimary: Bool
+    var isApplied = false
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.id == rhs.id
@@ -78,6 +89,7 @@ struct ModalDisplayTarget: Identifiable, Equatable {
             && lhs.aspectRatio == rhs.aspectRatio
             && lhs.thumbnail === rhs.thumbnail
             && lhs.isPrimary == rhs.isPrimary
+            && lhs.isApplied == rhs.isApplied
     }
 }
 

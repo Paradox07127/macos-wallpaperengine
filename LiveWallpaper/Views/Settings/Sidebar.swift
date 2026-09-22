@@ -6,6 +6,7 @@ struct SettingsSidebar: View {
     @Binding var searchText: String
     @Binding var pendingSearchAnchor: SettingsSearchAnchor?
     let onBack: () -> Void
+    var showsBackButton = true
 
     @Environment(\.featureCatalog) private var featureCatalog
 
@@ -36,7 +37,9 @@ struct SettingsSidebar: View {
     var body: some View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
-                backButton
+                if showsBackButton {
+                    backButton
+                }
                 SettingsSidebarSearchField(text: $searchText)
             }
             .padding(.horizontal, DesignTokens.Spacing.md)
@@ -69,7 +72,9 @@ struct SettingsSidebar: View {
                 }
             }
             .listStyle(.sidebar)
+            .scrollContentBackground(.hidden)
         }
+        .settingsPageBackground()
         .navigationSplitViewColumnWidth(
             min: SettingsWindowMetrics.sidebarColumnWidth,
             ideal: SettingsWindowMetrics.sidebarColumnWidth,

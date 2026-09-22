@@ -24,7 +24,7 @@ private final class FakeRegistry: @unchecked Sendable { // Every read/write of s
         if executable == "/usr/bin/pkill" {
             return .init(code: agentAbsent ? 1 : 0, output: "")
         }
-        if arguments == ["-dump"] {
+        if arguments == ["-dump", "Bundle"] {
             var output = "--------\npath: \(current) (0x123)\nidentifier: com.loomscreen.pro\n"
             if !removed {
                 output += "--------\npath: /private/tmp/Old.app (0x124)\nidentifier: com.loomscreen.pro\n"

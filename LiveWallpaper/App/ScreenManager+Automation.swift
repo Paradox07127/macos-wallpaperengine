@@ -113,6 +113,22 @@ extension ScreenManager {
         automationOrchestrator.updatePlaylistBookmarks(bookmarks, for: screen)
     }
 
+    func updateWallpaperAutomation(
+        queue: [WallpaperQueueEntry], slots: [ScheduleSlot], mode: WallpaperMode,
+        rotationMinutes: Int?, shuffle: Bool, for screen: Screen
+    ) {
+        guard !isTerminating else { return }
+        automationOrchestrator.updateAutomation(
+            queue: queue, slots: slots, mode: mode, rotationMinutes: rotationMinutes,
+            shuffle: shuffle, for: screen
+        )
+    }
+
+    func replaceWallpaperQueue(_ entries: [WallpaperQueueEntry], for screen: Screen) {
+        guard !isTerminating else { return }
+        automationOrchestrator.replaceWallpaperQueue(entries, for: screen)
+    }
+
     func setPrimaryVideo(bookmark: Data, for screen: Screen) {
         guard !isTerminating else { return }
         beginExplicitWallpaperSelection(for: screen)

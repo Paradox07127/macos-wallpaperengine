@@ -1,9 +1,12 @@
+import AppKit
 import CoreGraphics
 import LiveWallpaperCore
 import SwiftUI
 
 /// Pure float-layer geometry and per-mode wording — kept static so tests drive it without a window.
 enum FloatLayerGeometry {
+    /// SCREENS S5: the strip rides at top 14. `ModalGeometry` reads it to keep the panel clear of it.
+    static let panelTop: CGFloat = 14
     static let panelHeight: CGFloat = 104
     static let thumbnailHeight: CGFloat = 84
 
@@ -13,9 +16,27 @@ enum FloatLayerGeometry {
         min(max((thumbnailHeight * aspect).rounded(), 60), 150)
     }
 
-    /// 160pt of strip per display over a 120pt run-in, never wider than the window less its gutters.
-    static func stripWidth(count: Int, windowWidth: CGFloat) -> CGFloat {
-        min(windowWidth - 48, CGFloat(count) * 160 + 120)
+    /// 160pt of strip per display over the caption and the chrome around it (2×14 padding + the
+    /// 12pt gap after the caption), never wider than the window less its gutters.
+    static func stripWidth(count: Int, windowWidth: CGFloat, captionWidth: CGFloat) -> CGFloat {
+        min(windowWidth - 48, CGFloat(count) * 160 + captionWidth + 40)
+    }
+
+    /// The caption box's floor; SCREENS S5 draws it at 70, and zh/ja fit inside that.
+    static let captionMinWidth: CGFloat = 70
+
+    static func captionWidth(for mode: FloatLayerMode) -> CGFloat {
+        captionWidth(ofCaption: String(localized: String.LocalizationValue(captionKey(for: mode)), bundle: .appLanguage))
+    }
+
+    /// en needs 106pt and es 130 for the same two lines, so the run-in is measured, not assumed.
+    static func captionWidth(ofCaption caption: String) -> CGFloat {
+        // Mirrors `Typography.metaMono`: 11pt monospaced.
+        let font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+        let widest = caption.components(separatedBy: "\n")
+            .map { ($0 as NSString).size(withAttributes: [.font: font]).width }
+            .max() ?? 0
+        return max(captionMinWidth, widest.rounded(.up))
     }
 
     static func needsScroll(count: Int) -> Bool {
@@ -86,7 +107,12 @@ struct DisplayFloatLayer: View {
         .frame(height: FloatLayerGeometry.panelHeight)
         // Only the scrolling run can give width back, so the strip budget is what bounds the
         // panel there; below the threshold the thumbnails are rigid and the panel is their size.
-        .frame(width: isScrolling ? FloatLayerGeometry.stripWidth(count: targets.count, windowWidth: windowWidth) : nil)
+        .frame(width: isScrolling
+            ? FloatLayerGeometry.stripWidth(
+                count: targets.count, windowWidth: windowWidth,
+                captionWidth: FloatLayerGeometry.captionWidth(for: mode)
+            )
+            : nil)
         .background(
             RoundedRectangle(cornerRadius: DesignTokens.EditDesk.Corner.floatPanel)
                 .fill(DesignTokens.EditDesk.Colors.panel)
@@ -106,7 +132,8 @@ struct DisplayFloatLayer: View {
         Text(LocalizedStringKey(FloatLayerGeometry.captionKey(for: mode)))
             .font(DesignTokens.EditDesk.Typography.metaMono)
             .foregroundStyle(DesignTokens.EditDesk.Colors.textTertiary)
-            .frame(width: 70, alignment: .leading)
+            .lineLimit(3)
+            .frame(minWidth: FloatLayerGeometry.captionMinWidth, alignment: .leading)
     }
 
     private var thumbnailRun: some View {

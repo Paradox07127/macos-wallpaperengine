@@ -7,19 +7,20 @@ import Testing
 @Suite("Edit Desk window host", .serialized)
 @MainActor
 struct EditDeskWindowHostTests {
-    @Test("Edit Desk suppresses startup onboarding", arguments: [false, true], [false, true])
+    @Test("Edit Desk opens the main window for an unhandled tour", arguments: [false, true], [false, true])
     func startupOnboarding(editDeskEnabled: Bool, onboardingCompleted: Bool) {
         let options = AppRuntimeOptions(arguments: [], environment: [:], isXCTestLoaded: false)
         let plan = AppStartupPlan(
             runtimeOptions: options,
             onboardingCompleted: onboardingCompleted,
+            onboardingHandled: onboardingCompleted,
             editDeskEnabled: editDeskEnabled
         )
 
         #expect(plan.showOnboarding == (!editDeskEnabled && !onboardingCompleted))
         #expect(plan.screenManagerOptions.restoreSavedWallpapers)
         #expect(plan.screenManagerOptions.startAutomation)
-        #expect(!plan.showSettingsOnLaunch)
+        #expect(plan.showSettingsOnLaunch == (editDeskEnabled && !onboardingCompleted))
     }
 
     @Test("Testing still suppresses onboarding", arguments: [false, true])
@@ -28,10 +29,58 @@ struct EditDeskWindowHostTests {
         let plan = AppStartupPlan(
             runtimeOptions: options,
             onboardingCompleted: false,
+            onboardingHandled: false,
             editDeskEnabled: editDeskEnabled
         )
 
         #expect(!plan.showOnboarding)
+        #expect(!plan.showSettingsOnLaunch)
+    }
+
+    @Test("New progress decides startup independently of the legacy flag", arguments: [false, true])
+    func newProgressOverridesLegacy(onboardingHandled: Bool) {
+        let plan = AppStartupPlan(
+            runtimeOptions: AppRuntimeOptions(arguments: [], environment: [:], isXCTestLoaded: false),
+            onboardingCompleted: !onboardingHandled,
+            onboardingHandled: onboardingHandled,
+            editDeskEnabled: true
+        )
+        #expect(!plan.showOnboarding)
+        #expect(plan.showSettingsOnLaunch == !onboardingHandled)
+    }
+
+    @Test("The root consumes cold and warm tour requests once", arguments: [false, true])
+    func consumesTourOnce(cold: Bool) throws {
+        let suite = "EditDeskWindowHostTests.tour.\(UUID())"
+        let legacySuite = "EditDeskWindowHostTests.legacy.\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        let legacy = try #require(UserDefaults(suiteName: legacySuite))
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            legacy.removePersistentDomain(forName: legacySuite)
+        }
+        legacy.set(true, forKey: OnboardingProgress.legacyKey)
+        let progress = OnboardingProgress(defaults: defaults, legacyDefaults: legacy, workshopAvailable: true)
+        let wallpaper: WallpaperContent = .html(source: .inline("before"), config: .default)
+        var inputs = OnboardingSignals.Inputs()
+        inputs.wallpapers = { [wallpaper] in [1: wallpaper] }
+        let signals = OnboardingSignals(progress: progress, inputs: inputs, notificationCenter: NotificationCenter())
+        let router = EditDeskRouter(
+            initialNavigation: .general, initialAddWallpaperRequest: nil,
+            initialOnboardingRequested: cold, isWorkshopAvailable: { true }
+        )
+        router.detailDisplayID = 1
+        if !cold {
+            router.handle(Notification(name: EditDeskRoot.restartOnboardingNotification))
+        }
+        EditDeskRoot.consumeOnboardingRequest(router: router, progress: progress, signals: signals)
+        #expect(progress.handled.isEmpty)
+        #expect(router.page == .home)
+        #expect(router.detailDisplayID == nil)
+        #expect(!router.onboardingRequested)
+        progress.record(.home)
+        EditDeskRoot.consumeOnboardingRequest(router: router, progress: progress, signals: signals)
+        #expect(progress.completed == [.home])
     }
 
     @Test("Edit Desk flag defaults off and reads app-scoped defaults")
@@ -83,7 +132,7 @@ struct EditDeskWindowHostTests {
         let controller = host.makeWindowController(
             editDeskEnabled: editDeskEnabled,
             initialNavigation: nil,
-            initialAddWallpaperPromptKind: nil,
+            initialAddWallpaperRequest: nil,
             delegate: delegate
         )
         let window = try #require(controller.window)

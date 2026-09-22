@@ -25,7 +25,8 @@ struct HTMLEmptyState: View {
             title: "Set a Web Wallpaper",
             message: "Enter a web address, or drop a folder containing index.html here.",
             symbolColor: .accentColor,
-            variant: .dropTarget
+            variant: .dropTarget,
+            accessibilityChildren: .contain
         ) {
             VStack(spacing: DesignTokens.Spacing.md) {
                 addressBar

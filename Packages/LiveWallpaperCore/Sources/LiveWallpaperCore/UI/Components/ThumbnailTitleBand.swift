@@ -94,21 +94,41 @@ public extension ThumbnailTitleBand where Leading == EmptyView {
     }
 }
 
-/// The green glass check a tile wears when its wallpaper is already local.
+/// The green check a tile wears when its wallpaper is already local.
 public struct ThumbnailPresenceCheck: View {
-    private let tint: Color
+    /// `solid` fills the disc with `tint` as given and draws the glyph in `glyph`; the glass
+    /// appearance tints the material behind a white one instead.
+    public enum Appearance: Sendable {
+        case glass
+        case solid(glyph: Color)
+    }
 
-    public init(tint: Color = DesignTokens.Colors.badgeActive) {
+    private let tint: Color
+    private let appearance: Appearance
+
+    public init(tint: Color = DesignTokens.Colors.badgeActive, appearance: Appearance = .glass) {
         self.tint = tint
+        self.appearance = appearance
     }
 
     public var body: some View {
+        switch appearance {
+        case .glass:
+            check(DesignTokens.Colors.overlayForeground)
+                .thumbnailBadgeGlass(tint: tint, opacity: 0.55, in: .circle)
+                .accessibilityHidden(true)
+        case let .solid(glyph):
+            check(glyph)
+                .background(Circle().fill(tint))
+                .accessibilityHidden(true)
+        }
+    }
+
+    private func check(_ color: Color) -> some View {
         Image(systemName: "checkmark")
             .font(.system(size: 9, weight: .bold))
-            .foregroundStyle(DesignTokens.Colors.overlayForeground)
+            .foregroundStyle(color)
             .frame(width: 18, height: 18)
-            .thumbnailBadgeGlass(tint: tint, opacity: 0.55, in: .circle)
-            .accessibilityHidden(true)
     }
 }
 

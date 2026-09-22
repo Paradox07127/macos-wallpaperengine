@@ -2,30 +2,6 @@ import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
-enum OnboardingImportCopy {
-    enum UnsupportedFileTypeVariant: Equatable {
-        case videoAndWeb
-        case videoWebAndScene
-    }
-
-    static func unsupportedFileTypeVariant(sceneCapable: Bool) -> UnsupportedFileTypeVariant {
-        sceneCapable ? .videoWebAndScene : .videoAndWeb
-    }
-
-    static func sceneCapable(in catalog: FeatureCatalog) -> Bool {
-        catalog.isEnabled(.scene)
-    }
-
-    static func unsupportedFileTypeMessage(sceneCapable: Bool) -> LocalizedStringResource {
-        switch unsupportedFileTypeVariant(sceneCapable: sceneCapable) {
-        case .videoAndWeb:
-            return "That file type isn't supported. Pick a video or web page."
-        case .videoWebAndScene:
-            return "That file type isn't supported. Pick a video, web page, or scene."
-        }
-    }
-}
-
 struct PickerView: View {
     @Environment(ScreenManager.self) private var screenManager
     @Environment(\.featureCatalog) private var featureCatalog

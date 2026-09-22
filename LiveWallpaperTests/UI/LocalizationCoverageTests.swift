@@ -313,17 +313,19 @@ struct LocalizationCoverageTests {
             }
         }
 
+        let copy = try Self.projectFile("LiveWallpaper/Views/EditDesk/Support/WallpaperImportCopy.swift")
+        #expect(copy.contains("unsupportedFileTypeMessage(sceneCapable: Bool) -> LocalizedStringResource"))
+        #expect(copy.contains("case .videoAndWeb:\n            \"That file type isn't supported. Pick a video or web page.\""))
+        #expect(copy.contains("case .videoWebAndScene:\n            \"That file type isn't supported. Pick a video, web page, or scene.\""))
+        #expect(
+            Self.hasDirectOnboardingSceneCapabilityPolicy(copy),
+            "The onboarding scene policy must directly query FeatureCatalog's .scene capability"
+        )
+
         let source = try Self.projectFile("LiveWallpaper/Views/Onboarding/PickerView.swift")
-        #expect(source.contains("unsupportedFileTypeMessage(sceneCapable: Bool) -> LocalizedStringResource"))
-        #expect(source.contains("return \"That file type isn't supported. Pick a video or web page.\""))
-        #expect(source.contains("return \"That file type isn't supported. Pick a video, web page, or scene.\""))
         #expect(
             Self.hasDirectOnboardingSceneCapabilityWiring(source),
             "PickerView.sceneCapable must directly use the tested .scene catalog policy"
-        )
-        #expect(
-            Self.hasDirectOnboardingSceneCapabilityPolicy(source),
-            "The onboarding scene policy must directly query FeatureCatalog's .scene capability"
         )
         #expect(source.contains(
             "return fail(OnboardingImportCopy.unsupportedFileTypeMessage(sceneCapable: sceneCapable))"

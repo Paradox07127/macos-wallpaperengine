@@ -6,6 +6,9 @@ import QuartzCore
 final class DisplayShellLayer {
     let layer = CALayer()
     let content = CALayer()
+    /// Holds the cover and whatever `crossfade` puts on top of it, and nothing else: the hover
+    /// zoom is written here, so the two images stay framed alike while text and controls hold still.
+    let coverGroup = CALayer()
     let cover = CALayer()
     private let shell = CAShapeLayer()
     private let stand = CALayer()
@@ -27,9 +30,18 @@ final class DisplayShellLayer {
     private let buttons = [CALayer(), CALayer(), CALayer()]
     private let highlight = CALayer()
     private let hint = CATextLayer()
+    private let empty = CALayer()
+    private let emptySymbol = CALayer()
+    private let emptyHint = CATextLayer()
+    private let emptyButtons = [CALayer(), CALayer()]
+    private let emptyLabels = [CATextLayer(), CATextLayer()]
+    /// Measured in `update`, where the localized strings are set; `layoutContent` sizes the buttons from it.
+    private var emptyTextWidths: [CGFloat] = [0, 0]
     /// Read by the palette test: the stage keeps resolved CGColors, so an appearance flip that
     /// does not reach this one leaves the whole layer tree painted for the old appearance.
     private(set) var normalStroke: CGColor?
+    /// Also the empty-screen hit target: `nil` means the display is drawn too small for entry points.
+    private(set) var emptyLayout: StageGeometry.EmptyScreenLayout?
     private var hotStroke: CGColor?
     private(set) var display: StageDisplay?
     private var layoutRect: CGRect?
@@ -60,8 +72,18 @@ final class DisplayShellLayer {
         content.masksToBounds = true
         content.cornerRadius = DesignTokens.EditDesk.Corner.content
         content.cornerCurve = .continuous
-        for child in [cover, gradient, title, meta, playback, veil, stateGroup] {
+        for child in [coverGroup, gradient, title, meta, playback, veil, stateGroup, empty] {
             content.addSublayer(child)
+        }
+        coverGroup.addSublayer(cover)
+        empty.addSublayer(emptySymbol)
+        empty.addSublayer(emptyHint)
+        emptySymbol.contentsGravity = .resizeAspect
+        for (index, button) in emptyButtons.enumerated() {
+            empty.addSublayer(button)
+            button.addSublayer(emptyLabels[index])
+            button.cornerRadius = DesignTokens.EditDesk.Corner.chip
+            button.borderWidth = 1
         }
         stateGroup.addSublayer(stateLabel)
         stateGroup.addSublayer(stateSymbol)
@@ -70,24 +92,33 @@ final class DisplayShellLayer {
         cover.masksToBounds = true
         gradient.startPoint = CGPoint(x: 0.5, y: 0)
         gradient.endPoint = CGPoint(x: 0.5, y: 1)
-        for (index, button) in buttons.enumerated() {
+        for button in buttons {
             playback.addSublayer(button)
-            button.cornerRadius = DesignTokens.EditDesk.Corner.playbackControl
-            button.borderWidth = 1
             button.contentsGravity = .center
-            button.frame = CGRect(x: index * 30, y: 0, width: 26, height: 26)
         }
+        playback.cornerRadius = DesignTokens.EditDesk.Corner.capsule
+        playback.borderWidth = 1
+        buttons[1].cornerRadius = DesignTokens.EditDesk.Corner.capsule
         playback.opacity = 0
         highlight.opacity = 0
         highlight.borderWidth = 2
         highlight.addSublayer(hint)
-        StageLayerStyle.text(badge, size: 11, mono: true)
-        StageLayerStyle.text(title, size: 15, weight: .semibold)
-        StageLayerStyle.text(meta, size: 11, mono: true)
-        StageLayerStyle.text(name, size: 14, weight: .semibold)
-        StageLayerStyle.text(status, size: 12, mono: true)
-        StageLayerStyle.text(stateLabel, size: 11, mono: true)
-        StageLayerStyle.text(hint, size: 15, weight: .bold)
+        StageLayerStyle.text(badge, size: 12, mono: true)
+        StageLayerStyle.text(title, size: 17, weight: .semibold)
+        StageLayerStyle.text(meta, size: 12, mono: true)
+        StageLayerStyle.text(name, size: 15, weight: .semibold)
+        StageLayerStyle.text(status, size: 13, mono: true)
+        StageLayerStyle.text(stateLabel, size: 12, mono: true)
+        StageLayerStyle.text(hint, size: 17, weight: .bold)
+        StageLayerStyle.text(emptyHint, size: 11)
+        for label in emptyLabels {
+            StageLayerStyle.text(label, size: 12, weight: .semibold)
+            label.alignmentMode = .center
+        }
+        // The name is the one line that may not shrink, so it loses its middle rather than its end.
+        name.truncationMode = .middle
+        title.truncationMode = .end
+        emptyHint.alignmentMode = .center
         hint.alignmentMode = .center
         badge.alignmentMode = .center
         badge.cornerRadius = DesignTokens.EditDesk.Corner.badge
@@ -96,14 +127,20 @@ final class DisplayShellLayer {
         shell.lineWidth = 1
     }
 
-    func update(display: StageDisplay, dropHint: String) {
+    func update(display: StageDisplay, dropHint: String, increasedContrast: Bool) {
         if self.display?.cover !== display.cover, coverFade == nil {
             cover.contents = display.cover
         }
         self.display = display
         layoutRect = nil
         let colors = DesignTokens.EditDesk.Colors.self
-        normalStroke = NSColor(colors.strokeShell).cgColor
+        let shellStroke = if display.state == .empty {
+            increasedContrast ? colors.strokeEmptyShellIncreased : colors.strokeEmptyShell
+        } else {
+            increasedContrast ? colors.strokeShellIncreased : colors.strokeShell
+        }
+        let regularStroke = increasedContrast ? colors.strokeRegularIncreased : colors.strokeRegular
+        normalStroke = NSColor(shellStroke).cgColor
         hotStroke = NSColor(colors.strokeHotShell).cgColor
         shell.strokeColor = normalStroke
         shell.fillColor = NSColor(colors.fillShell).cgColor
@@ -119,14 +156,14 @@ final class DisplayShellLayer {
         badge.backgroundColor = NSColor(colors.background).cgColor
         badge.borderColor = NSColor(colors.strokeBadge).cgColor
         badge.foregroundColor = NSColor(colors.textCapsule).cgColor
-        title.string = display.name
+        title.string = display.wallpaperTitle
         title.foregroundColor = StageLayerStyle.white
-        meta.string = display.statusText
+        meta.string = display.wallpaperKind
         meta.foregroundColor = NSColor(cgColor: StageLayerStyle.white)?.withAlphaComponent(0.7).cgColor
         name.string = display.name
         name.foregroundColor = NSColor(colors.textPrimary).cgColor
         status.string = display.statusText
-        status.foregroundColor = NSColor(colors.textSecondary).cgColor
+        status.foregroundColor = NSColor(increasedContrast ? colors.textCapsule : colors.textSecondary).cgColor
         dot.fillColor = NSColor(colors.success).cgColor
         gradient.colors = [StageLayerStyle.clear, NSColor(colors.gradientStageBottom).cgColor]
         veil.backgroundColor = NSColor(colors.gradientCardBottom).cgColor
@@ -137,12 +174,37 @@ final class DisplayShellLayer {
         highlight.shadowOpacity = 1
         hint.string = dropHint
         hint.foregroundColor = StageLayerStyle.white
-        for (index, symbol) in ["backward.fill", "pause.fill", "forward.fill"].enumerated() {
+        playback.backgroundColor = NSColor(colors.playbackControlFill).cgColor
+        playback.borderColor = NSColor(colors.strokeBadge).withAlphaComponent(0.2).cgColor
+        for (index, glyph) in ["backward.fill", display.playbackGlyph, "forward.fill"].enumerated() {
             let button = buttons[index]
-            button.backgroundColor = index == 1 ? StageLayerStyle.white : NSColor(colors.playbackControlFill).cgColor
-            button.borderColor = NSColor(colors.strokeBadge).withAlphaComponent(0.2).cgColor
+            button.backgroundColor = index == 1 ? StageLayerStyle.white : nil
             let tint = NSColor(cgColor: index == 1 ? StageLayerStyle.black : StageLayerStyle.white) ?? NSColor(colors.textPrimary)
-            button.contents = StageLayerStyle.symbol(symbol, tint: tint)
+            button.contents = StageLayerStyle.symbol(glyph, tint: tint)
+            button.isHidden = true
+        }
+        for item in transport {
+            item.layer.isHidden = false
+            item.layer.opacity = item.enabled ? 1 : Float(DesignTokens.Opacity.dimmedContent)
+        }
+        empty.backgroundColor = NSColor(colors.fillEmptyScreen).cgColor
+        emptySymbol.contents = StageLayerStyle.symbol(
+            "photo", tint: NSColor(colors.emptyScreenPlaceholder),
+            pointSize: StageGeometry.emptyScreenSymbolMaxSide
+        )
+        // One line so `LocalizationCoverageTests`' `String(localized:` scan still sees this key.
+        emptyHint.string = String(localized: "Types are detected automatically · mp4 / mov / html / folder / Wallpaper Engine project", bundle: .appLanguage)
+        emptyHint.foregroundColor = NSColor(colors.textTertiary).cgColor
+        let entries = [
+            (String(localized: "Choose File…", bundle: .appLanguage), colors.fillSecondaryButton, colors.textPrimary),
+            (String(localized: "Paste URL", bundle: .appLanguage), colors.fillTertiaryButton, colors.textSecondary),
+        ]
+        for (index, entry) in entries.enumerated() {
+            emptyLabels[index].string = entry.0
+            emptyLabels[index].foregroundColor = NSColor(entry.2).cgColor
+            emptyButtons[index].backgroundColor = NSColor(entry.1).cgColor
+            emptyButtons[index].borderColor = NSColor(regularStroke).cgColor
+            emptyTextWidths[index] = StageLayerStyle.width(entry.0, size: 12, weight: .semibold)
         }
         veil.isHidden = true
         stateGroup.backgroundColor = NSColor(colors.background).cgColor
@@ -174,7 +236,7 @@ final class DisplayShellLayer {
         case .ok, .empty:
             break
         }
-        stateWidth = StageLayerStyle.width(stateLabel.string as? String ?? "", size: 11, mono: true) + 36
+        stateWidth = StageLayerStyle.width(stateLabel.string as? String ?? "", size: 12, mono: true) + 36
     }
 
     func place(content rect: CGRect, isBuiltin: Bool) {
@@ -203,20 +265,21 @@ final class DisplayShellLayer {
         notch.path = StageLayerStyle.roundedPath(notch.bounds, top: 0, bottom: DesignTokens.EditDesk.Corner.notch)
         badge.frame = CGRect(
             x: 10, y: -StageGeometry.badgeOverhang,
-            width: StageLayerStyle.width(display?.badgeText ?? "", size: 11, mono: true) + 14,
+            width: StageLayerStyle.width(display?.badgeText ?? "", size: 12, mono: true) + 14,
             height: StageGeometry.badgeHeight
         )
         // SCREENS S1: the name row sits 8pt under the stand + base (external) or the keyboard line (MacBook).
         let nameY = layer.bounds.height
             + (isBuiltin ? StageGeometry.builtinStandDrop : StageGeometry.externalStandDrop)
             + StageGeometry.nameRowGap
-        dot.path = CGPath(ellipseIn: CGRect(x: 0, y: nameY + 6, width: 7, height: 7), transform: nil)
-        let nameWidth = StageLayerStyle.width(display?.name ?? "", size: 14)
-        name.frame = CGRect(x: 15, y: nameY, width: nameWidth + 8, height: StageGeometry.nameRowHeight)
-        status.frame = CGRect(
-            x: name.frame.maxX + 8, y: nameY + 2,
-            width: max(0, local.width - name.frame.maxX - 8), height: 16
+        let nameRow = StageGeometry.nameRowLayout(
+            shellWidth: layer.bounds.width, top: nameY,
+            nameWidth: StageLayerStyle.width(display?.name ?? "", size: 15, weight: .semibold),
+            statusWidth: StageLayerStyle.width(display?.statusText ?? "", size: 13, mono: true)
         )
+        dot.path = CGPath(ellipseIn: nameRow.dot, transform: nil)
+        name.frame = nameRow.name
+        status.frame = nameRow.status
         highlight.frame = layer.bounds
         highlight.cornerRadius = top
         highlight.shadowPath = shell.path
@@ -225,12 +288,25 @@ final class DisplayShellLayer {
 
     func layoutContent() {
         let size = content.bounds.size
-        cover.frame = content.bounds
-        coverFade?.layer.frame = content.bounds
+        // `bounds` + `position`, never `frame`: `frame` is derived, so assigning it while the hover
+        // zoom is on the transform would back out the scale.
+        coverGroup.bounds = CGRect(origin: .zero, size: size)
+        coverGroup.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        cover.frame = coverGroup.bounds
+        coverFade?.layer.frame = coverGroup.bounds
         gradient.frame = CGRect(x: 0, y: size.height - 78, width: size.width, height: 78)
-        title.frame = CGRect(x: 10, y: size.height - 44, width: size.width - 20, height: 19)
-        meta.frame = CGRect(x: 10, y: size.height - 23, width: size.width - 110, height: 15)
-        playback.frame = CGRect(x: size.width - 96, y: size.height - 35, width: 86, height: 26)
+        let controls = StageGeometry.playbackLayout(
+            content: size, showsPlaylistControls: display?.showsPlaylistControls ?? false
+        )
+        // Both lines stop short of the transport rather than running under it: it fades in over
+        // them on hover, and its width changes with the playlist controls.
+        let lineWidth = max(0, controls.container.minX - 18)
+        title.frame = CGRect(x: 10, y: size.height - 49, width: lineWidth, height: 22)
+        meta.frame = CGRect(x: 10, y: size.height - 25, width: lineWidth, height: 17)
+        playback.frame = controls.container
+        for (index, item) in transport.enumerated() {
+            item.layer.frame = controls.buttons[index]
+        }
         veil.frame = content.bounds
         let width = min(stateWidth, max(0, size.width - 20))
         let paused = if case .paused = display?.state {
@@ -238,9 +314,18 @@ final class DisplayShellLayer {
         } else {
             false
         }
-        stateGroup.frame = CGRect(x: paused ? size.width - width - 10 : 10, y: 8, width: width, height: 22)
-        stateLabel.frame = CGRect(x: 27, y: 3, width: max(0, width - 34), height: 16)
-        stateSymbol.frame = CGRect(x: 8, y: 5, width: 13, height: 13)
+        stateGroup.frame = CGRect(x: paused ? size.width - width - 10 : 10, y: 8, width: width, height: 24)
+        stateLabel.frame = CGRect(x: 27, y: 4, width: max(0, width - 34), height: 17)
+        stateSymbol.frame = CGRect(x: 8, y: 6, width: 13, height: 13)
+        // Retired thumbnail actions remain in the model for compatibility; setup now opens in detail.
+        emptyLayout = nil
+        empty.frame = content.bounds
+        empty.isHidden = display?.state != .empty
+        let symbolSide = min(44, min(size.width, size.height) * 0.25)
+        emptySymbol.frame = CGRect(x: (size.width - symbolSide) / 2, y: (size.height - symbolSide) / 2,
+                                   width: symbolSide, height: symbolSide)
+        emptyHint.isHidden = true
+        emptyButtons.forEach { $0.isHidden = true }
     }
 
     func restoreContent() {
@@ -272,7 +357,7 @@ final class DisplayShellLayer {
             hoverMix = CGFloat(target)
             hoverFrom = hoverMix
             hoverElapsed = 0.22
-            layer.transform = CATransform3DIdentity
+            coverGroup.transform = CATransform3DIdentity
             shell.strokeColor = dropTarget > 0 || hoverMix > 0.5 ? hotStroke : normalStroke
         }
     }
@@ -292,11 +377,29 @@ final class DisplayShellLayer {
         }
     }
 
+    /// The transport as drawn: one entry per visible button, in drawing order. Layout, the hit test
+    /// and the dimmed state all read this, so a button that is not drawn keeps no hot spot and a
+    /// button the orchestrator would refuse cannot be pressed.
+    private var transport: [(layer: CALayer, action: StagePlaybackAction, enabled: Bool)] {
+        let toggle = (buttons[1], StagePlaybackAction.toggle, display?.canTogglePlayback == true)
+        guard display?.showsPlaylistControls == true else { return [toggle] }
+        let canChange = display?.canChangePlaylistEntry == true
+        return [(buttons[0], .previous, canChange), toggle, (buttons[2], .next, canChange)]
+    }
+
     func playbackAction(at point: CGPoint) -> StagePlaybackAction? {
         guard !playback.isHidden, playback.opacity > 0 else { return nil }
         let local = CGPoint(x: point.x - content.frame.minX - playback.frame.minX, y: point.y - content.frame.minY - playback.frame.minY)
-        guard let index = buttons.firstIndex(where: { $0.frame.contains(local) }) else { return nil }
-        return [StagePlaybackAction.previous, .toggle, .next][index]
+        return transport.first { $0.enabled && $0.layer.frame.contains(local) }?.action
+    }
+
+    func emptyAction(at point: CGPoint) -> EmptyScreenAction? {
+        guard let emptyLayout else { return nil }
+        let local = CGPoint(x: point.x - content.frame.minX, y: point.y - content.frame.minY)
+        guard let index = [emptyLayout.chooseFile, emptyLayout.pasteURL].firstIndex(where: { $0.contains(local) }) else {
+            return nil
+        }
+        return [EmptyScreenAction.chooseFile, .pasteURL][index]
     }
 
     func crossfade(to image: CGImage, duration: TimeInterval, reduceMotion: Bool = false) {
@@ -318,9 +421,9 @@ final class DisplayShellLayer {
         let next = CALayer()
         next.contents = image
         next.contentsGravity = .resizeAspectFill
-        next.frame = content.bounds
+        next.frame = coverGroup.bounds
         next.opacity = 0
-        content.insertSublayer(next, above: cover)
+        coverGroup.insertSublayer(next, above: cover)
         coverFade = (next, 0, duration)
     }
 
@@ -344,8 +447,9 @@ final class DisplayShellLayer {
         hoverElapsed += dt
         let hoverStep = CGFloat(min(1, max(0, hoverElapsed / (reduceMotion ? 0.15 : 0.22))))
         hoverMix = hoverStep >= 1 ? CGFloat(playbackTarget) : hoverFrom + (CGFloat(playbackTarget) - hoverFrom) * hoverStep
-        // Hover reads as a lift, not a zoom: scaling a display would distort the wallpaper in it.
-        layer.transform = CATransform3DMakeTranslation(0, reduceMotion ? 0 : -3 * hoverMix, 0)
+        // Clamped: a mix below 0 would shrink the cover and uncover the content layer's corners.
+        let zoom = 1 + 0.04 * min(max(hoverMix, 0), 1)
+        coverGroup.transform = CATransform3DMakeScale(zoom, zoom, 1)
         dropElapsed += dt
         let dropMix = min(1, dropElapsed / (reduceMotion ? 0.15 : 0.18))
         let eased = Float(reduceMotion ? dropMix : 1 - pow(1 - dropMix, 3))

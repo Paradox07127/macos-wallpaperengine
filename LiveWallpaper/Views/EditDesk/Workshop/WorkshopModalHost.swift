@@ -100,11 +100,8 @@ struct WorkshopModalHost: View {
     @State private var installedEntry: WPEHistoryEntry?
     @State private var covers: [CGDirectDisplayID: CGImage] = [:]
     @State private var rateMeter = WorkshopDownloadRateMeter()
-    /// Ticket outcomes already announced, so an observation tick cannot post the same toast twice.
-    @State private var announcedTickets: Set<UUID> = []
 
-    /// SCREENS S5: the strip rides at top 14 and enters from −130.
-    private static let floatTop: CGFloat = 14
+    /// SCREENS S5: the strip enters from −130 above its resting top.
     private static let floatHiddenTop: CGFloat = -130
 
     private var downloads: WorkshopDownloadCoordinator {
@@ -128,6 +125,7 @@ struct WorkshopModalHost: View {
                     primaryTitle: primaryTitle(for: item, targets: targets),
                     isPrimaryEnabled: isPrimaryEnabled(for: item, targets: targets),
                     isRevealed: session.matureReveal.isRevealed(item.id),
+                    matureReveal: session.matureReveal,
                     windowSize: windowSize,
                     // The whole top bar stays clickable: traffic lights and the window drag region live there.
                     titlebarInset: DesignTokens.EditDesk.Spacing.topBar,
@@ -144,8 +142,8 @@ struct WorkshopModalHost: View {
                     onTargetFrame: { _ in },
                     onRunFrame: { _ in }
                 )
-                .padding(.top, Self.floatTop)
-                .transition(.offset(y: Self.floatHiddenTop - Self.floatTop).combined(with: .opacity))
+                .padding(.top, FloatLayerGeometry.panelTop)
+                .transition(.offset(y: Self.floatHiddenTop - FloatLayerGeometry.panelTop).combined(with: .opacity))
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -156,7 +154,6 @@ struct WorkshopModalHost: View {
         // modal must not wait on the strip's thumbnails to draw.
         .task(id: presentedItemID) { await loadCovers() }
         .onChange(of: downloadSample) { _, _ in recordRate() }
-        .onChange(of: ticketSignature, initial: true) { _, _ in announceSettledTicket() }
         .onReceive(NotificationCenter.default.publisher(for: .wpeHistoryDidChange)) { _ in
             refreshInstalledEntry()
         }
@@ -270,7 +267,7 @@ struct WorkshopModalHost: View {
             presentation.status = WorkshopModalContent.applyingText
             return presentation
         case let .finished(report):
-            presentation.status = appliedText(report, screenName: settledScreenName(for: item))
+            presentation.status = DeferredApplyToasts.appliedText(report, screenName: settledScreenName(for: item))
             presentation.isFailure = report.outcome != .applied
             return presentation
         case let .downloadOnly(.failed(reason)):
@@ -312,20 +309,6 @@ struct WorkshopModalHost: View {
     private func settledScreenName(for item: WorkshopQueryItem) -> String {
         guard let ticket = wiring.ticket(for: item.id) else { return "" }
         return screenManager.screens.first { $0.id == ticket.target.screenID }?.name ?? ""
-    }
-
-    private func appliedText(_ report: ApplyReport, screenName: String) -> String {
-        switch report.outcome {
-        case .applied:
-            String(
-                localized: "Applied to \(screenName)", bundle: .appLanguage,
-                comment: "Toast after a wallpaper reached a display. Placeholder is a display name."
-            )
-        case let .registeredPreset(name):
-            name
-        case let .failed(failure):
-            failure.toastText
-        }
     }
 
     /// One value so `onChange` fires on every published byte count, including a stall at the same
@@ -411,71 +394,10 @@ struct WorkshopModalHost: View {
         )
         Task { @MainActor in
             let report = await router.apply(.installedWorkshop(entry), to: screen)
-            post(report, screenName: screen.name)
+            for message in DeferredApplyToasts.messages(for: .finished(report), screenName: screen.name) ?? [] {
+                toasts.post(message.text, style: message.style)
+            }
         }
-    }
-
-    // MARK: Toasts
-
-    /// Changes whenever a ticket this host owns settles; the value itself is not read.
-    private var ticketSignature: String {
-        guard let presentedItemID, let ticket = wiring.ticket(for: presentedItemID) else { return "" }
-        return "\(ticket.id) \(ticket.state)"
-    }
-
-    private func announceSettledTicket() {
-        guard let presentedItemID, let ticket = wiring.ticket(for: presentedItemID),
-              ticket.state.isSettled, !announcedTickets.contains(ticket.id) else { return }
-        let screenName = screenManager.screens.first { $0.id == ticket.target.screenID }?.name ?? ""
-        switch ticket.state {
-        case let .finished(report):
-            announcedTickets.insert(ticket.id)
-            post(report, screenName: screenName)
-        case .downloadOnly(.failed):
-            announcedTickets.insert(ticket.id)
-            // The download's own failure toast comes from `DownloadToastHost`; this one is about the
-            // apply that will now never happen.
-            toasts.post(
-                String(
-                    localized: "The download failed, so nothing was applied to \(screenName).",
-                    bundle: .appLanguage,
-                    comment: "Workshop deferred apply dropped because the download failed. Placeholder is a display name."
-                ),
-                style: .failure
-            )
-        case .invalidated(.newerSelection):
-            announcedTickets.insert(ticket.id)
-            toasts.post(
-                String(
-                    localized: "\(screenName) changed in the meantime, so the download wasn’t applied.",
-                    bundle: .appLanguage,
-                    comment: "Workshop deferred apply dropped because the user applied something else there. Placeholder is a display name."
-                ),
-                style: .info
-            )
-        case .invalidated(.screenUnavailable):
-            announcedTickets.insert(ticket.id)
-            toasts.post(
-                String(
-                    localized: "\(screenName) is no longer connected, so the download wasn’t applied.",
-                    bundle: .appLanguage,
-                    comment: "Workshop deferred apply dropped because the target display went away. Placeholder is a display name."
-                ),
-                style: .info
-            )
-        case .downloadOnly, .invalidated, .waiting, .applying:
-            break
-        }
-    }
-
-    private func post(_ report: ApplyReport, screenName: String) {
-        if report.exitedSpanMode {
-            toasts.post(String(localized: "Left span mode", bundle: .appLanguage), style: .info)
-        }
-        toasts.post(
-            appliedText(report, screenName: screenName),
-            style: report.outcome == .applied ? .success : .failure
-        )
     }
 }
 #endif

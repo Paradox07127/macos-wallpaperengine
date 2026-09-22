@@ -15,6 +15,8 @@ struct WorkshopModal: View {
     let isPrimaryEnabled: Bool
     /// The mature reveal lives in the page's `MatureRevealState`, so it survives closing this modal.
     let isRevealed: Bool
+    /// The same state, for the dependency and preset rows: R-24 ④ shares one reveal set.
+    let matureReveal: MatureRevealState?
     /// The stage's own `bounds.size`. A `GeometryReader` here would measure one title bar short.
     let windowSize: CGSize
     /// Height the scrim leaves untouched so the traffic lights and window drag still work.
@@ -142,7 +144,8 @@ struct WorkshopModal: View {
                 descriptionExpandedMaxHeight: 120,
                 onBrowseCreator: actions.browseCreator,
                 onSelectTag: actions.selectTag,
-                onOpenItem: actions.openItem
+                onOpenItem: actions.openItem,
+                matureReveal: matureReveal
             )
             .padding(.trailing, DesignTokens.EditDesk.Spacing.s8)
             .padding(.bottom, DesignTokens.EditDesk.Spacing.s12)

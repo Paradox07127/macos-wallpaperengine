@@ -1,21 +1,6 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// False while an inspector subtree is mounted but collapsed to zero width.
-/// `isMounted` deliberately keeps that subtree built, so `onDisappear` never
-/// fires for anything inside it — media that decodes on its own (GIF previews)
-/// has no other way to learn it stopped being on screen.
-private struct InspectorContentIsVisibleKey: EnvironmentKey {
-    static let defaultValue = true
-}
-
-extension EnvironmentValues {
-    var inspectorContentIsVisible: Bool {
-        get { self[InspectorContentIsVisibleKey.self] }
-        set { self[InspectorContentIsVisibleKey.self] = newValue }
-    }
-}
-
 struct InspectorSplit<Main: View, Inspector: View>: View {
     let isMounted: Bool
     let isVisible: Bool
@@ -42,7 +27,7 @@ struct InspectorSplit<Main: View, Inspector: View>: View {
 
     @ViewBuilder
     private func layout(available: CGFloat) -> some View {
-        let fullWidth = resolvedWidth()
+        let fullWidth = resolvedWidth(available: available)
         let shownWidth = isVisible ? fullWidth : 0
         HStack(spacing: 0) {
             main()
@@ -106,10 +91,10 @@ struct InspectorSplit<Main: View, Inspector: View>: View {
         min(max(candidate, minWidth), maxWidthCap(available: available))
     }
 
-    private func resolvedWidth() -> CGFloat {
+    private func resolvedWidth(available: CGFloat) -> CGFloat {
         if let liveWidth {
-            return min(max(CGFloat(liveWidth), minWidth), maxWidth)
+            return min(max(CGFloat(liveWidth), minWidth), maxWidthCap(available: available))
         }
-        return min(max(CGFloat(storedWidth), minWidth), maxWidth)
+        return min(max(CGFloat(storedWidth), minWidth), maxWidthCap(available: available))
     }
 }

@@ -11,11 +11,14 @@ struct MenuBarContent: View {
 
     let openSettings: () -> Void
     let openSettingsForScreen: (CGDirectDisplayID) -> Void
+    /// The panorama with nothing selected — `openSettings` lands on General instead.
+    let openHome: () -> Void
     /// `nil` targets whichever display the settings window lands on; a display ID
     /// aims the prompt at that display's row.
     let openSettingsAndAddWallpaper: (CGDirectDisplayID?) -> Void
 
     @Environment(ScreenManager.self) private var screenManager
+    @Environment(\.featureCatalog) private var featureCatalog
     @Environment(\.dismiss) private var dismiss
 
     @State private var ownsSystemMonitorLease = false
@@ -398,14 +401,7 @@ struct MenuBarContent: View {
     }
 
     private func canStepPlaylist(for screen: Screen) -> Bool {
-        guard let config = screenManager.getConfiguration(for: screen),
-              config.wallpaperMode == .playlist,
-              config.savedVideoBookmarkData != nil
-        else {
-            return false
-        }
-
-        return 1 + (config.playlistBookmarks ?? []).count > 1
+        featureCatalog.isEnabled(.playlists) && screenManager.getConfiguration(for: screen)?.canNavigatePlaylist == true
     }
 
     private func audioVolumeBinding(for screen: Screen) -> Binding<Double>? {
@@ -475,7 +471,9 @@ struct MenuBarContent: View {
 
     private func invokeManageWindow() {
         dismiss()
-        if let screen = screenManager.screens.first {
+        if EditDeskFlag.isEnabled {
+            openHome()
+        } else if let screen = screenManager.screens.first {
             openSettingsForScreen(screen.id)
         } else {
             openSettings()

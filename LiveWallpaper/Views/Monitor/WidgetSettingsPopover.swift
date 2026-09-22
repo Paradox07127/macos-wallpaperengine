@@ -8,10 +8,13 @@ struct WidgetSettingsPopover: View {
     let placement: MonitorWidgetPlacement
     let onUpdate: (MonitorWidgetPlacement) -> Void
     let onRemove: () -> Void
+    var embedded = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
-            header
+            if !embedded {
+                header
+            }
 
             if placement.kind.allowedSizes.count > 1 {
                 sizePicker
@@ -24,7 +27,7 @@ struct WidgetSettingsPopover: View {
             Divider()
             removeButton
         }
-        .settingsPopoverChrome(width: Self.preferredWidth)
+        .modifier(WidgetSettingsPresentation(embedded: embedded))
     }
 
     private var header: some View {
@@ -566,5 +569,16 @@ enum MonitorWidgetDraft {
             next.options[key] = .bool(value)
         }
         return next
+    }
+}
+
+private struct WidgetSettingsPresentation: ViewModifier {
+    let embedded: Bool
+    func body(content: Content) -> some View {
+        if embedded {
+            content.padding(.vertical, 12).frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            content.settingsPopoverChrome(width: WidgetSettingsPopover.preferredWidth)
+        }
     }
 }

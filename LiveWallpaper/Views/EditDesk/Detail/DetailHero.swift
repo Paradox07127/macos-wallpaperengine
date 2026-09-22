@@ -13,6 +13,10 @@ struct DetailHero<HUD: View>: View {
     let image: CGImage?
     let size: CGSize
     @ViewBuilder let hud: () -> HUD
+    var playback: (StagePlaybackAction) -> Void = { _ in }
+    @State private var hovered = false
+    @FocusState private var transportFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var shape: RoundedRectangle {
         RoundedRectangle(cornerRadius: DesignTokens.EditDesk.Corner.panelLarge, style: .continuous)
@@ -23,20 +27,31 @@ struct DetailHero<HUD: View>: View {
             .frame(width: size.width, height: size.height)
             .clipShape(shape)
             .overlay(alignment: .topLeading) {
-                titleChip.padding(DesignTokens.EditDesk.Spacing.s12)
+                titleChip
+                    .frame(maxWidth: max(1, size.width - 76), alignment: .leading)
+                    .padding(DesignTokens.EditDesk.Spacing.s12)
             }
             .overlay(alignment: .topTrailing) {
                 performanceChip.padding(DesignTokens.EditDesk.Spacing.s12)
             }
             .overlay(alignment: .bottom) { bottomBar }
-            .overlay(shape.strokeBorder(DesignTokens.EditDesk.Colors.strokeShell, lineWidth: 1))
+            .overlay { transport }
+            .overlay(shape.strokeBorder(DesignTokens.EditDesk.Colors.strokeShell, lineWidth: 1).allowsHitTesting(false))
             .shadow(
-                color: DesignTokens.EditDesk.Shadow.floatPanel.color,
-                radius: DesignTokens.EditDesk.Shadow.floatPanel.radius,
-                y: DesignTokens.EditDesk.Shadow.floatPanel.y
+                color: DesignTokens.EditDesk.Shadow.workshopCard.color,
+                radius: DesignTokens.EditDesk.Shadow.workshopCard.radius,
+                y: DesignTokens.EditDesk.Shadow.workshopCard.y
             )
             .accessibilityElement(children: .contain)
             .accessibilityLabel(Text(verbatim: "\(status.title), \(status.kindLine)"))
+            .contentShape(shape)
+            .onContinuousHover { phase in
+                switch phase {
+                case .active: hovered = true
+                case .ended: hovered = false
+                }
+            }
+            .simultaneousGesture(TapGesture().onEnded { hovered = true })
     }
 
     // MARK: Still
@@ -98,6 +113,32 @@ struct DetailHero<HUD: View>: View {
     }
 
     // MARK: HUD
+
+    private var transport: some View {
+        HStack(spacing: 12) {
+            if status.canNavigatePlaylist {
+                GlassIconButton("backward.end.fill") { playback(.previous) }
+                    .focused($transportFocused)
+                    .help(Text("Previous Wallpaper"))
+                    .accessibilityLabel(Text("Previous Wallpaper"))
+            }
+            GlassIconButton(status.isPlaying ? "pause.fill" : "play.fill") { playback(.toggle) }
+                .focused($transportFocused)
+                .help(Text(status.isPlaying ? "Pause" : "Play"))
+                .accessibilityLabel(Text(status.isPlaying ? "Pause" : "Play"))
+            if status.canNavigatePlaylist {
+                GlassIconButton("forward.end.fill") { playback(.next) }
+                    .focused($transportFocused)
+                    .help(Text("Next Wallpaper"))
+                    .accessibilityLabel(Text("Next Wallpaper"))
+            }
+        }
+        // Keep the buttons in keyboard/VoiceOver navigation even while their paint is hidden.
+        .opacity(hovered || transportFocused ? 1 : 0.001)
+        .allowsHitTesting(hovered || transportFocused)
+        .animation(.easeOut(duration: reduceMotion ? 0 : 0.16), value: hovered || transportFocused)
+        .accessibilityElement(children: .contain)
+    }
 
     private var bottomBar: some View {
         hud()

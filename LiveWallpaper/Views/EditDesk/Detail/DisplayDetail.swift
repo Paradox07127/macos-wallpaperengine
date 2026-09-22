@@ -2,8 +2,16 @@ import CoreGraphics
 import LiveWallpaperCore
 import SwiftUI
 
-/// MOTION 10: the chrome follows the hero in rather than arriving with it.
-private let detailChromeDelay: TimeInterval = 0.25
+enum DetailPreviewSpace {
+    static let name = "display-detail-window"
+}
+
+struct DetailPreviewFrameKey: PreferenceKey {
+    static let defaultValue: [CGDirectDisplayID: CGRect] = [:]
+    static func reduce(value: inout [CGDirectDisplayID: CGRect], nextValue: () -> [CGDirectDisplayID: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, latest in latest })
+    }
+}
 
 /// The top bar's segment selects the wallpaper preview or overlay editing surface.
 enum DetailSection: Hashable {
@@ -21,14 +29,12 @@ struct DetailActions {
     /// The transport drives the desktop session, not the still hero.
     var playback: (StagePlaybackAction) -> Void
     var recapture: () -> Void
-    var openSettings: () -> Void
     var copyOverlays: () -> Void
     var snapEnabled: Binding<Bool>
+    var openAutomation: (() -> Void)?
 }
 
-/// GAP_ANALYSIS.md §8.2 layout B: backdrop, top bar, the still hero with its HUD on the left and a
-/// resident inspector column on the right. Both the HUD's controls and the inspector arrive from
-/// the host, which owns the draft they write through.
+/// One toolbar and one background shared by the wallpaper and overlay workspaces.
 @MainActor
 struct DisplayDetail<HUD: View, Inspector: View, Overlay: View>: View {
     let displayName: String
@@ -36,116 +42,118 @@ struct DisplayDetail<HUD: View, Inspector: View, Overlay: View>: View {
     let hero: DetailHeroStatus
     let heroImage: CGImage?
     let backdropImage: CGImage?
-    /// The stage's own `bounds.size`. A `GeometryReader` here would measure one title bar short.
     let windowSize: CGSize
     @Binding var section: DetailSection
-    /// The host flips this once the stage's tile has flown into the hero's box (MOTION 10).
     let heroVisible: Bool
+    var returning = false
     let actions: DetailActions
     @ViewBuilder let hud: () -> HUD
-    @ViewBuilder let inspector: () -> Inspector
+    @ViewBuilder let inspector: (CGFloat) -> Inspector
     let overlayLogicalSize: CGSize
     @ViewBuilder let overlayCanvas: (CGSize) -> Overlay
+    var overlayTopInset: CGFloat = 0
+    var isEmpty = false
+    var emptyScreen: Screen?
+    var chooseFile: () -> Void = {}
+    var pasteURL: () -> Void = {}
+    @Binding var inspectorVisible: Bool
+    @Binding var layersVisible: Bool
+    @Binding var inspectorWidth: Double
+    @Binding var liveInspectorWidth: Double?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var chromeVisible = false
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            backdrop
-            if section == .overlay {
-                canvasLayer
-            } else {
-                heroLayer(DetailGeometry.heroFrame(in: windowSize))
-            }
-            inspectorLayer
-            topBarLayer
+        VStack(spacing: 0) {
+            DetailTopBar(tags: tags, section: $section, actions: actions,
+                         inspectorVisible: $inspectorVisible, layersVisible: $layersVisible,
+                         hasWallpaper: !isEmpty)
+                .opacity(chromeVisible ? 1 : 0)
+                .offset(y: chromeVisible || reduceMotion ? 0 : -8)
+                .background(DesignTokens.EditDesk.Colors.background.opacity(chromeVisible ? 1 : 0))
+                .allowsHitTesting(heroVisible && chromeVisible)
+            workspace
+                .allowsHitTesting(heroVisible)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .task(id: heroVisible) { await revealChrome() }
+        .background {
+            // All columns share this neutral surface. Cover tint no longer changes only one half.
+            DesignTokens.EditDesk.Colors.background.opacity(heroVisible ? 1 : 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .animation(.easeInOut(duration: reduceMotion ? 0.12 : 0.22), value: section)
+        .onAppear { setChromeVisible(!returning) }
+        .onChange(of: returning) { _, returning in setChromeVisible(!returning) }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Text(verbatim: displayName))
     }
 
-    // MARK: Layers
-
-    private var backdrop: some View {
-        ZStack {
-            DesignTokens.EditDesk.Colors.background
-            DetailBackdrop(cover: backdropImage)
-        }
-        // The stage's flight layer sits under this view: an opaque backdrop would hide the tile in flight.
-        .opacity(heroVisible ? 1 : 0)
-        .animation(DesignTokens.motion(reduceMotion, .easeOut(duration: 0.25)), value: heroVisible)
-    }
-
-    private func heroLayer(_ box: CGRect) -> some View {
-        VStack(spacing: DetailGeometry.heroNoteGap) {
-            DetailHero(status: hero, image: heroImage, size: box.size, hud: hud)
-            stillFrameNote
-                .frame(width: box.width, height: DetailGeometry.heroNoteHeight)
-        }
-        .offset(x: box.minX, y: box.minY)
-        .opacity(heroVisible ? 1 : 0)
-        // The stage hides its tile in the same transaction; an animated fade shows both or neither.
-        .animation(nil, value: heroVisible)
-    }
-
-    private var canvasLayer: some View {
-        let box = OverlayGeometry.aspectFit(logicalSize: overlayLogicalSize, in: DetailGeometry.heroFrame(in: windowSize))
-        return overlayCanvas(box.size)
-            .frame(width: box.width, height: box.height)
-            .padding(.leading, box.minX)
-            .padding(.top, box.minY)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .opacity(heroVisible ? 1 : 0)
-            .allowsHitTesting(heroVisible)
-            .animation(nil, value: heroVisible)
-    }
-
-    private var stillFrameNote: some View {
-        HStack(spacing: DesignTokens.EditDesk.Spacing.s8) {
-            Text("Preview is a still frame · changes are already live on your desktop")
-                .foregroundStyle(DesignTokens.EditDesk.Colors.textTertiary)
-            Button("Recapture preview", action: actions.recapture)
-                .buttonStyle(.borderless)
-        }
-        .font(DesignTokens.EditDesk.Typography.metaMono)
-        .lineLimit(1)
-    }
-
-    private var inspectorLayer: some View {
-        inspector()
-            .frame(
-                width: DetailGeometry.inspectorWidth,
-                height: windowSize.height - DetailGeometry.topBarHeight,
-                alignment: .top
+    @ViewBuilder
+    private var workspace: some View {
+        if section == .overlay {
+            overlayCanvas(CGSize(width: windowSize.width, height: max(1, windowSize.height - DetailGeometry.topBarHeight)))
+                .opacity(heroVisible ? 1 : 0)
+        } else {
+            InspectorSplit(
+                isMounted: !isEmpty, isVisible: inspectorVisible && !isEmpty,
+                animationTrigger: inspectorVisible, reduceMotion: reduceMotion,
+                storedWidth: $inspectorWidth, liveWidth: $liveInspectorWidth,
+                minWidth: 300, maxWidth: 520, mainFloor: 460,
+                onClose: { inspectorVisible = false },
+                main: { wallpaperPreview }, inspector: { width in
+                    inspector(width)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                        .overlay(alignment: .leading) { Divider() }
+                        .background(DesignTokens.EditDesk.Colors.background)
+                        .opacity(chromeVisible ? 1 : 0)
+                        .offset(x: chromeVisible || reduceMotion ? 0 : 16)
+                }
             )
-            .background(DesignTokens.EditDesk.Colors.panel)
-            .overlay(alignment: .leading) {
-                DesignTokens.EditDesk.Colors.strokePanel.frame(width: 1)
+        }
+    }
+
+    private var wallpaperPreview: some View {
+        GeometryReader { proxy in
+            Group {
+                if isEmpty {
+                    if let emptyScreen {
+                        EmptyDisplaySetup(screen: emptyScreen, chooseFile: chooseFile)
+                            .background(previewMeasurement)
+                    }
+                } else {
+                    let box = OverlayGeometry.aspectFit(
+                        logicalSize: CGSize(width: 16, height: 9),
+                        in: CGRect(origin: .zero, size: proxy.size).insetBy(dx: 24, dy: 24)
+                    )
+                    DetailHero(status: hero, image: heroImage, size: box.size, hud: hud, playback: actions.playback)
+                        .background(previewMeasurement)
+                        .overlay(alignment: .topTrailing) {
+                            GlassIconButton("arrow.clockwise", action: actions.recapture)
+                                .help(Text("Recapture preview"))
+                                .accessibilityLabel(Text("Recapture preview"))
+                                .padding(12)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
             }
-            .offset(x: windowSize.width - DetailGeometry.inspectorWidth, y: DetailGeometry.topBarHeight)
-            .opacity(chromeVisible ? 1 : 0)
+            .opacity(heroVisible ? 1 : 0)
+            .background(DetailBackSwipe(enabled: heroVisible, action: actions.back))
+            .id(tags.first(where: \.isCurrent)?.id)
+            .transition(.opacity.combined(with: .offset(x: reduceMotion ? 0 : 16)))
+            .animation(.easeInOut(duration: reduceMotion ? 0.12 : 0.22), value: tags.first(where: \.isCurrent)?.id)
+        }
     }
 
-    private var topBarLayer: some View {
-        DetailTopBar(tags: tags, section: $section, actions: actions)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .opacity(chromeVisible ? 1 : 0)
+    private var previewMeasurement: some View {
+        GeometryReader { proxy in
+            if let id = tags.first(where: \.isCurrent)?.id {
+                Color.clear.preference(key: DetailPreviewFrameKey.self,
+                                       value: [id: proxy.frame(in: .named(DetailPreviewSpace.name))])
+            }
+        }
     }
 
-    // MARK: Motion
-
-    private func revealChrome() async {
-        guard heroVisible else {
-            chromeVisible = false
-            return
-        }
-        try? await Task.sleep(for: .seconds(detailChromeDelay))
-        guard !Task.isCancelled else { return }
-        withAnimation(DesignTokens.motion(reduceMotion, .easeOut(duration: 0.25))) {
-            chromeVisible = true
-        }
+    private func setChromeVisible(_ visible: Bool) {
+        withAnimation(.easeOut(duration: reduceMotion ? 0.12 : 0.24)) { chromeVisible = visible }
     }
 }

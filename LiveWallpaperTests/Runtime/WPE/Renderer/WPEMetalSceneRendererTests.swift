@@ -1945,7 +1945,7 @@ private final class RecordingSystemAudioCaptureDemand: SystemAudioCaptureDemandC
     }
 }
 
-private struct MetalSceneFixture {
+struct MetalSceneFixture {
     let root: URL
     let descriptor: SceneDescriptor
     var dependencyRoot: URL?

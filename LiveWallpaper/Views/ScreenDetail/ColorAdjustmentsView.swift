@@ -1,5 +1,5 @@
-import SwiftUI
 import LiveWallpaperCore
+import SwiftUI
 
 struct ColorAdjustmentsView: View {
     @Binding var effectConfig: VideoEffectConfig
@@ -14,11 +14,11 @@ struct ColorAdjustmentsView: View {
 
                 Divider()
 
-                effectSlider(title: "Blur", value: effectBinding(\.blurRadius), in: 0...30, format: "%.0f")
-                effectSlider(title: "Brightness", value: effectBinding(\.brightness), in: -0.5...0.5, format: "%.2f")
-                effectSlider(title: "Saturation", value: effectBinding(\.saturation), in: 0...2, format: "%.1f")
-                effectSlider(title: "Warmth", value: effectBinding(\.warmth), in: 2500...8000, format: "%.0f")
-                effectSlider(title: "Vignette", value: effectBinding(\.vignetteIntensity), in: 0...5, format: "%.1f")
+                effectSlider(title: "Blur", value: effectBinding(\.blurRadius), in: 0 ... 30, format: "%.0f")
+                effectSlider(title: "Brightness", value: effectBinding(\.brightness), in: -0.5 ... 0.5, format: "%.2f")
+                effectSlider(title: "Saturation", value: effectBinding(\.saturation), in: 0 ... 2, format: "%.1f")
+                effectSlider(title: "Warmth", value: effectBinding(\.warmth), in: 2500 ... 8000, format: "%.0f")
+                effectSlider(title: "Vignette", value: effectBinding(\.vignetteIntensity), in: 0 ... 5, format: "%.1f")
 
                 Divider()
 
@@ -70,8 +70,10 @@ struct ColorAdjustmentsView: View {
                     Text(LocalizedStringKey(space.titleKey)).tag(space)
                 }
             }
+            .pickerStyle(.menu)
             .labelsHidden()
-            .frame(maxWidth: 160)
+            .fixedSize()
+            .layoutPriority(1)
             .accessibilityLabel(Text("Color management"))
         }
     }

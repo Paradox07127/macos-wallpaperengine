@@ -8,13 +8,17 @@ struct DetailPresetsSection: View {
     let wallpaperID: UInt64
     let communityURL: URL
     let doctor: SteamCMDDoctorService
+    /// The page's reveal set, so an item uncovered in the grid stays uncovered here. nil keeps the
+    /// reveal in this section's own `@State`.
+    var matureReveal: MatureRevealState?
 
     @Environment(WorkshopServices.self) private var services
     @AppStorage(MatureContentSettings.blursThumbnails, store: .appScoped()) private var blurMatureThumbnails = true
     @State private var model = DetailPresetsModel()
     @State private var searchText = ""
     @State private var isExpanded = false
-    /// Ephemeral, like the grid card's: a new detail page blurs again.
+    /// Ephemeral, like the grid card's: a new detail page blurs again. Unused once the host hands
+    /// this section a `matureReveal`.
     @State private var revealedIDs: Set<UInt64> = []
     @State private var pendingRevealID: UInt64?
     @State private var showingAgeConfirm = false
@@ -72,7 +76,7 @@ struct DetailPresetsSection: View {
             Button(role: .destructive) {
                 MatureContentSettings.confirm()
                 if let id = pendingRevealID {
-                    revealedIDs.insert(id)
+                    reveal(id)
                 }
             } label: {
                 Text("I am 18 or older")
@@ -87,12 +91,24 @@ struct DetailPresetsSection: View {
     }
 
     private func isBlurred(_ item: WorkshopQueryItem) -> Bool {
-        Self.blursThumbnail(for: item, blursMature: blurMatureThumbnails) && !revealedIDs.contains(item.id)
+        Self.blursThumbnail(for: item, blursMature: blurMatureThumbnails) && !isRevealed(item.id)
+    }
+
+    private func isRevealed(_ id: UInt64) -> Bool {
+        matureReveal?.isRevealed(id) ?? revealedIDs.contains(id)
+    }
+
+    private func reveal(_ id: UInt64) {
+        if let matureReveal {
+            matureReveal.reveal(id)
+        } else {
+            revealedIDs.insert(id)
+        }
     }
 
     private func requestReveal(_ id: UInt64) {
         if MatureContentSettings.isConfirmed {
-            revealedIDs.insert(id)
+            reveal(id)
         } else {
             pendingRevealID = id
             showingAgeConfirm = true

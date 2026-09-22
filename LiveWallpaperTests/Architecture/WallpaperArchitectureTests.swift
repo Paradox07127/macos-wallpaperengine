@@ -179,7 +179,7 @@ struct AppRuntimeOptionsTests {
             environment: [:],
             isXCTestLoaded: false
         )
-        let plan = AppStartupPlan(runtimeOptions: options, onboardingCompleted: true)
+        let plan = AppStartupPlan(runtimeOptions: options, onboardingCompleted: true, onboardingHandled: true)
 
         #expect(plan.screenManagerOptions.restoreSavedWallpapers == false)
         #expect(plan.screenManagerOptions.startAutomation == false)
@@ -194,7 +194,7 @@ struct AppRuntimeOptionsTests {
             environment: ["LIVEWALLPAPER_OPEN_SETTINGS": "1"],
             isXCTestLoaded: false
         )
-        let plan = AppStartupPlan(runtimeOptions: options, onboardingCompleted: true)
+        let plan = AppStartupPlan(runtimeOptions: options, onboardingCompleted: true, onboardingHandled: true)
 
         #expect(plan.showSettingsOnLaunch == true)
     }
@@ -246,7 +246,7 @@ struct AppRuntimeOptionsTests {
             isXCTestLoaded: false
         )
 
-        let plan = AppStartupPlan(runtimeOptions: runtime, onboardingCompleted: true)
+        let plan = AppStartupPlan(runtimeOptions: runtime, onboardingCompleted: true, onboardingHandled: true)
 
         #expect(plan.screenManagerOptions.restoreSavedWallpapers)
         #expect(plan.screenManagerOptions.startAutomation)
@@ -888,6 +888,42 @@ private final class CapturingURLSchemeTask: NSObject, WKURLSchemeTask, @unchecke
 @Suite("WallpaperAutomationCoordinator")
 @MainActor
 struct WallpaperAutomationCoordinatorTests {
+    @Test("Universal queue navigation reaches the product restore path for every wallpaper type")
+    func universalQueueRoutesAllTypes() throws {
+        let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
+        let entries = [
+            WallpaperQueueEntry(title: "Video", content: .video(bookmarkData: Data([1]))),
+            WallpaperQueueEntry(title: "Web", content: .html(source: .inline("hello"), config: .default)),
+            WallpaperQueueEntry(title: "Scene", content: .scene(SceneDescriptor(workshopID: "42", cacheRelativePath: "wpe-cache/42", entryFile: "scene.json", capabilityTier: .imageOnly))),
+        ]
+        var initial = ScreenConfiguration(screenID: screen.id, wallpaper: entries[0].content, fitMode: .aspectFit)
+        initial.wallpaperQueue = entries
+        initial.playlistRotationMinutes = 1
+        let persistence = AutomationTestConfigurationPersistence([initial])
+        let store = WallpaperConfigurationStore(persistence: persistence)
+        var restored: [WallpaperContent] = []
+        let orchestrator = WallpaperAutomationOrchestrator(
+            configurationStore: store, automationCoordinator: WallpaperAutomationCoordinator(),
+            playableVideoLoader: FakePlayableVideoLoader(), screensProvider: { [screen] },
+            saveConfiguration: { store.save($0) }, recordBookmarkDisplayName: { _, _ in },
+            setupPreparedVideoPlayback: { _, _, _, _ in Issue.record("Universal entries must use the common product restore path") },
+            restoreProposedConfiguration: { _, config in restored.append(config.activeWallpaper); store.save(config) },
+            bumpTransition: { _ in 0 }, isCurrentTransition: { _, _ in true }
+        )
+        orchestrator.advancePlaylist(for: screen)
+        orchestrator.advancePlaylist(for: screen)
+        orchestrator.advancePlaylist(for: screen)
+        orchestrator.regressPlaylist(for: screen)
+        #expect(restored == [entries[1].content, entries[2].content, entries[0].content, entries[2].content])
+        #expect(store.get(for: screen.id)?.fitMode == .aspectFit)
+        #expect(try WallpaperAutomationCoordinator.hasDemand(#require(store.get(for: screen.id))))
+        orchestrator.replaceWallpaperQueue([entries[2], entries[0], entries[1]], for: screen)
+        #expect(store.get(for: screen.id)?.playlistCursorIndex == 0)
+        orchestrator.suspendForUserAbsence()
+        orchestrator.advancePlaylist(for: screen)
+        #expect(restored.count == 4)
+    }
+
     @Test("Monitoring stays dormant when no screen has automation demand")
     func noDemandDoesNotCreatePeriodicTask() {
         guard let nsScreen = NSScreen.screens.first else {
@@ -1898,6 +1934,26 @@ struct ScreenConfigurationHelpersTests {
 
 @Suite("SchedulePolicy")
 struct SchedulePolicyTests {
+    @Test("Universal schedules cover midnight, restore the fallback and avoid redundant reloads")
+    @MainActor
+    func universalDailyCycle() throws {
+        let web = WallpaperQueueEntry(title: "Web", content: .html(source: .inline("hello"), config: .default))
+        let video = WallpaperQueueEntry(title: "Video", content: .video(bookmarkData: Data([1])))
+        var config = ScreenConfiguration(screenID: 1, wallpaper: video.content)
+        config.wallpaperMode = .schedule
+        config.scheduleFallback = video
+        config.scheduleSlots = [ScheduleSlot(startHour: 22, endHour: 6, label: "Night", wallpaper: web)]
+        #expect(SchedulePolicy.decision(for: config, hour: 23) == .applyWallpaper(web))
+        #expect(SchedulePolicy.decision(for: config, hour: 0) == .applyWallpaper(web))
+        config = config.applyingAutomationEntry(web)
+        #expect(SchedulePolicy.decision(for: config, hour: 3) == .none)
+        #expect(SchedulePolicy.decision(for: config, hour: 6) == .applyWallpaper(video))
+        let allDay = ScheduleSlot(startHour: 0, endHour: 24, label: "All day", wallpaper: web)
+        #expect(SchedulePolicy.hourRanges(for: allDay) == [0 ..< 24])
+        #expect(try !SchedulePolicy.conflicts(slot: allDay, against: #require(config.scheduleSlots)).isEmpty)
+        config.scheduleSlots = [allDay]
+        #expect(WallpaperAutomationCoordinator.hasDemand(config))
+    }
 
     @Test("Schedule policy returns active slot bookmark")
     func schedulePolicyReturnsBookmark() {
