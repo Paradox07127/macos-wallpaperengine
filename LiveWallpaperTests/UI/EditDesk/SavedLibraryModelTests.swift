@@ -308,6 +308,23 @@ struct SavedLibraryModelTests {
     }
     #endif
 
+    @Test("Preparing the library sweeps covers against every saved entry, once")
+    func prepareLibrarySweepsOrphanCovers() {
+        var swept: [Set<String>] = []
+        var source = inputs([bookmark("Saved")])
+        source.savedCoverFileNames = { ["bookmark.png", "scheme.png"] }
+        source.removeOrphanCovers = { swept.append($0) }
+        let model = SavedLibraryModel(inputs: source)
+        #expect(swept.isEmpty, "building the model must not sweep")
+
+        model.prepareLibrary()
+        #expect(swept == [["bookmark.png", "scheme.png"]])
+
+        model.chip = .fourK
+        model.refresh()
+        #expect(swept.count == 1, "a refresh must not sweep again, and never against the filtered view")
+    }
+
     @Test("Tracking the shared stores does not keep the model alive")
     func observationDoesNotRetainTheModel() {
         weak var leaked: SavedLibraryModel?

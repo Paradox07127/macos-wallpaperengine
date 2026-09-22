@@ -316,7 +316,12 @@ final class WPEImportCoordinator {
             screenID: screen.id,
             wallpaper: content
         ).applyingDisplayDefaults(SettingsManager.shared.loadDisplayDefaults())
-        config.activeWallpaper = content
+        config.rememberCurrentSceneCustomization()
+        if case let .scene(descriptor) = content {
+            config.setSceneWallpaper(descriptor, origin: origin)
+        } else {
+            config.activeWallpaper = content
+        }
         if case .html(let source, let htmlConfig) = content {
             config.savedHTMLSource = source
             config.savedHTMLConfig = htmlConfig

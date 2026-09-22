@@ -51,14 +51,31 @@ struct EditDeskRouterTests {
         #expect(router.libraryFocus == .aerials)
     }
 
-    @Test("Add wallpaper notification stores the kind without navigating")
+    @Test("Add wallpaper notification carries the display it targets and is consumed once")
     func promptAddWallpaper() {
         let router = makeRouter(.bookmarks)
-        router.handle(Notification(name: .promptAddWallpaper, userInfo: ["kind": "html-folder"]))
-        #expect(router.pendingAddWallpaperKind == "html-folder")
+        router.handle(Notification(name: .promptAddWallpaper, userInfo: [
+            "kind": "html-folder", "screenID": CGDirectDisplayID(42),
+        ]))
+        #expect(router.pendingAddWallpaper == .init(kind: "html-folder", targetDisplayID: 42))
         #expect(router.page == .library)
+        #expect(router.detailDisplayID == nil)
+
+        router.pendingAddWallpaper = nil
         router.handle(Notification(name: .promptAddWallpaper))
-        #expect(router.pendingAddWallpaperKind == "html-folder")
+        #expect(router.pendingAddWallpaper == nil)
+
+        router.handle(Notification(name: .promptAddWallpaper, userInfo: ["kind": "any"]))
+        #expect(router.pendingAddWallpaper == .init(kind: "any", targetDisplayID: nil))
+
+        // HomePage is not mounted on the Workshop or Settings page, so the request must bring it back.
+        let away = makeRouter(.workshop)
+        away.handle(Notification(name: .promptAddWallpaper, userInfo: ["kind": "any", "screenID": CGDirectDisplayID(7)]))
+        #expect(away.page == .home)
+        #expect(away.pendingAddWallpaper == .init(kind: "any", targetDisplayID: 7))
+        let settings = makeRouter(.general)
+        settings.handle(Notification(name: .promptAddWallpaper, userInfo: ["kind": "any"]))
+        #expect(settings.page == .home)
     }
 
     @Test("Screen selection notification opens detail with an optional failure")
@@ -91,7 +108,9 @@ struct EditDeskRouterTests {
     @Test("No initial navigation opens home and stores the initial prompt")
     func initialHome() {
         let router = EditDeskRouter(
-            initialNavigation: nil, initialAddWallpaperPromptKind: "video", isWorkshopAvailable: { true }
+            initialNavigation: nil,
+            initialAddWallpaperRequest: .init(kind: "any", targetDisplayID: 42),
+            isWorkshopAvailable: { true }
         )
         #expect(router.page == .home)
         #expect(router.detailDisplayID == nil)
@@ -100,7 +119,7 @@ struct EditDeskRouterTests {
         #expect(router.settingsSelection == nil)
         #expect(router.settingsSearchText.isEmpty)
         #expect(router.pendingSettingsSearchAnchor == nil)
-        #expect(router.pendingAddWallpaperKind == "video")
+        #expect(router.pendingAddWallpaper == .init(kind: "any", targetDisplayID: 42))
         #expect(router.pendingFailureID == nil)
         #expect(router.previousPage == nil)
     }
@@ -149,7 +168,7 @@ struct EditDeskRouterTests {
     @Test("Unavailable workshop lands on home for initial navigation, notifications and selection")
     func unavailableWorkshop() {
         let router = EditDeskRouter(
-            initialNavigation: .workshop, initialAddWallpaperPromptKind: nil, isWorkshopAvailable: { false }
+            initialNavigation: .workshop, initialAddWallpaperRequest: nil, isWorkshopAvailable: { false }
         )
         #expect(router.page == .home)
         router.select(.library)
@@ -208,13 +227,13 @@ struct EditDeskRouterTests {
         router.handle(Notification(name: Notification.Name("EditDeskRouterTests.unknown")))
         #expect(router.page == .library)
         #expect(router.previousPage == nil)
-        #expect(router.pendingAddWallpaperKind == nil)
+        #expect(router.pendingAddWallpaper == nil)
         #expect(!router.onboardingRequested)
     }
 
     private func makeRouter(_ navigation: Navigation? = nil) -> EditDeskRouter {
         EditDeskRouter(
-            initialNavigation: navigation, initialAddWallpaperPromptKind: nil, isWorkshopAvailable: { true }
+            initialNavigation: navigation, initialAddWallpaperRequest: nil, isWorkshopAvailable: { true }
         )
     }
 }

@@ -5,7 +5,7 @@ import SwiftUI
 public enum GlassSegmentedShell: Sendable, Equatable {
     case glass
     case flat
-    /// Edit Desk nav pill / library segment control (SCREENS S1): fill `.06`, stroke `.10`,
+    /// Edit Desk nav pill / library segment control (SCREENS S1): native glass shell,
     /// selected fill `.16`, item height 26 with horizontal padding 14, outer padding 3, gap 2.
     case editDesk
 }
@@ -18,6 +18,7 @@ public struct GlassSegmentedPicker<Value: Hashable, SegmentLabel: View>: View {
     private let label: (Value, _ isSelected: Bool) -> SegmentLabel
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Namespace private var selectionNamespace
 
     public init(
         selection: Binding<Value>,
@@ -45,11 +46,7 @@ public struct GlassSegmentedPicker<Value: Hashable, SegmentLabel: View>: View {
         case .flat:
             row.background(Capsule().fill(Color.gray.opacity(0.18)))
         case .editDesk:
-            row.background(
-                Capsule()
-                    .fill(DesignTokens.EditDesk.Colors.fillNavPill)
-                    .overlay(Capsule().strokeBorder(DesignTokens.EditDesk.Colors.strokeRegular, lineWidth: 1))
-            )
+            row.adaptiveGlassSurface(.capsule, interactive: true)
         }
     }
 
@@ -65,14 +62,26 @@ public struct GlassSegmentedPicker<Value: Hashable, SegmentLabel: View>: View {
                 .frame(height: shell == .editDesk ? 26 : nil)
                 .padding(.horizontal, shell == .editDesk ? 14 : 0)
                 .padding(.vertical, shell == .editDesk ? 0 : 3)
-                .background(
-                    Capsule()
-                        .fill(segmentFill(isSelected: isSelected))
-                )
+                .background(selectionBacking(isSelected: isSelected))
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    /// Edit Desk hands one capsule across the segments so the indicator slides rather than
+    /// cross-fading, which also keeps a single layer of glass over the stage behind it.
+    @ViewBuilder
+    private func selectionBacking(isSelected: Bool) -> some View {
+        if shell == .editDesk {
+            if isSelected {
+                Capsule()
+                    .fill(segmentFill(isSelected: true))
+                    .matchedGeometryEffect(id: "selectedSegment", in: selectionNamespace)
+            }
+        } else {
+            Capsule().fill(segmentFill(isSelected: isSelected))
+        }
     }
 
     private func segmentFill(isSelected: Bool) -> Color {

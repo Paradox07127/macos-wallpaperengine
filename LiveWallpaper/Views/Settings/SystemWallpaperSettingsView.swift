@@ -27,7 +27,13 @@ struct SystemWallpaperSettingsView: View {
             Section {
                 status
                 if let provider = service.heartbeat?.provider {
-                    LabeledContent("Loaded extension") {
+                    if let heartbeat = service.heartbeat,
+                       !heartbeat.isFromProvider(matching: SystemWallpaperProviderIdentity.bundledProvider()) {
+                        Text("The last extension connection came from another app copy.")
+                            .font(DesignTokens.Typography.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    DisclosureGroup("Last connected extension") {
                         Text(verbatim: provider.bundlePath).textSelection(.enabled)
                             .font(DesignTokens.Typography.codeCaption)
                     }

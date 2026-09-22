@@ -25,16 +25,36 @@ struct DisplayFloatLayerTests {
         #expect(FloatLayerGeometry.thumbnailWidth(aspect: 32.0 / 9) == 150)
     }
 
-    @Test("Strip width grows 160pt per display over a 120pt fixed run-in")
+    @Test("Strip width grows 160pt per display over the caption and its 40pt of gutters")
     func stripWidthGrowsWithCount() {
-        #expect(FloatLayerGeometry.stripWidth(count: 1, windowWidth: 1280) == 280)
-        #expect(FloatLayerGeometry.stripWidth(count: 2, windowWidth: 1280) == 440)
-        #expect(FloatLayerGeometry.stripWidth(count: 5, windowWidth: 1280) == 920)
+        #expect(FloatLayerGeometry.stripWidth(count: 1, windowWidth: 1280, captionWidth: 70) == 270)
+        #expect(FloatLayerGeometry.stripWidth(count: 2, windowWidth: 1280, captionWidth: 70) == 430)
+        #expect(FloatLayerGeometry.stripWidth(count: 5, windowWidth: 1280, captionWidth: 70) == 910)
+    }
+
+    @Test("A wider caption widens the run-in by exactly its own growth")
+    func stripWidthFollowsTheCaption() {
+        let narrow = FloatLayerGeometry.stripWidth(count: 5, windowWidth: 4000, captionWidth: 70)
+        let wide = FloatLayerGeometry.stripWidth(count: 5, windowWidth: 4000, captionWidth: 130)
+        #expect(wide - narrow == 60, Comment(rawValue: "\(narrow) → \(wide)"))
     }
 
     @Test("A window narrower than the display count demands caps the strip at W − 48")
     func stripWidthCapsOnNarrowWindow() {
-        #expect(FloatLayerGeometry.stripWidth(count: 5, windowWidth: 700) == 652)
+        #expect(FloatLayerGeometry.stripWidth(count: 5, windowWidth: 700, captionWidth: 70) == 652)
+    }
+
+    @Test("The caption box is 70pt at the floor and the text's own width above it")
+    func captionWidthIsAFloor() {
+        #expect(FloatLayerGeometry.captionWidth(ofCaption: "拖到屏幕\n即应用") == 70)
+        let english = FloatLayerGeometry.captionWidth(ofCaption: "Drag to a display\nto apply")
+        #expect(english > 100, Comment(rawValue: "\(english)"))
+        // The widest line sizes the box; the second line is not added to it.
+        #expect(
+            FloatLayerGeometry.captionWidth(ofCaption: "Drag to a display\nto apply")
+                == FloatLayerGeometry.captionWidth(ofCaption: "Drag to a display"),
+            Comment(rawValue: "\(english)")
+        )
     }
 
     @Test("Four displays still fit; the fifth turns the thumbnail run into a scroller")
@@ -81,5 +101,13 @@ struct DisplayFloatLayerTests {
         let source = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Library/DisplayFloatLayer.swift")
         #expect(source.contains("FloatLayerGeometry.showsApplyAll(for: mode)"))
         #expect(source.contains("FloatLayerGeometry.thumbnailAccessibilityLabel(for: mode"))
+    }
+
+    @Test("The caption box is a floor the text can push, not a 70pt cap that clips it")
+    func captionBoxFollowsItsText() throws {
+        let source = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Library/DisplayFloatLayer.swift")
+        #expect(!source.contains(".frame(width: 70"), "the caption is still pinned to a 70pt box")
+        #expect(source.contains("minWidth: FloatLayerGeometry.captionMinWidth"))
+        #expect(source.contains("captionWidth: FloatLayerGeometry.captionWidth(for: mode)"))
     }
 }

@@ -36,8 +36,8 @@ struct DisplayDetailTests {
         let hero = DetailGeometry.heroFrame(in: CGSize(width: 1280, height: 820))
         #expect(near(hero.minX, 24) && near(hero.width, 860), Comment(rawValue: "\(hero)"))
         #expect(near(hero.height, 483.75), Comment(rawValue: "\(hero)"))
-        // Hero + 12 gap + 24 note row, centred in the 764-tall stage area that starts at 56.
-        #expect(near(hero.minY, 56 + (764 - (483.75 + 36)) / 2), Comment(rawValue: "\(hero)"))
+        // Preview alone is centred; no explanatory footer consumes canvas space.
+        #expect(near(hero.minY, 56 + (764 - 483.75) / 2), Comment(rawValue: "\(hero)"))
     }
 
     @Test("The smallest window gives a 620×348.75 hero, still at x 24")
@@ -45,7 +45,7 @@ struct DisplayDetailTests {
         let hero = DetailGeometry.heroFrame(in: CGSize(width: 1040, height: 700))
         #expect(near(hero.minX, 24) && near(hero.width, 620), Comment(rawValue: "\(hero)"))
         #expect(near(hero.height, 348.75), Comment(rawValue: "\(hero)"))
-        #expect(near(hero.minY, 56 + (644 - (348.75 + 36)) / 2), Comment(rawValue: "\(hero)"))
+        #expect(near(hero.minY, 56 + (644 - 348.75) / 2), Comment(rawValue: "\(hero)"))
     }
 
     @Test("A wider window grows the hero at 16:9 and keeps the inspector at 372")
@@ -59,11 +59,60 @@ struct DisplayDetailTests {
 
     @Test("A short window lets the height cap the hero instead of the width")
     func heroHeightCaps() {
-        // 1600 − 372 − 48 = 1180 across, but only 644 − 48 − 36 = 560 of vertical budget.
+        // 1600 − 372 − 48 = 1180 across, but only 644 − 48 = 596 of vertical budget.
         let hero = DetailGeometry.heroFrame(in: CGSize(width: 1600, height: 700))
-        #expect(near(hero.width, 560 * 16 / 9), Comment(rawValue: "\(hero)"))
-        #expect(near(hero.height, 560), Comment(rawValue: "\(hero)"))
+        #expect(near(hero.width, 596 * 16 / 9), Comment(rawValue: "\(hero)"))
+        #expect(near(hero.height, 596), Comment(rawValue: "\(hero)"))
         #expect(hero.maxX <= DetailGeometry.stageRect(in: CGSize(width: 1600, height: 700)).maxX)
+    }
+
+    @Test("Overlay onboarding reserves space at minimum and wide window sizes")
+    func overlayOnboardingDoesNotCoverCanvas() {
+        for window in [CGSize(width: 1040, height: 700), CGSize(width: 1600, height: 1000)] {
+            let cardBottom = OnboardingCardMetrics.blockHeight
+            for logical in [CGSize(width: 1920, height: 1080), CGSize(width: 1080, height: 1920)] {
+                let box = DetailGeometry.overlayFrame(
+                    in: window, logicalSize: logical, topInset: cardBottom - DetailGeometry.topBarHeight
+                )
+                #expect(box.minY >= cardBottom + DetailGeometry.sideMargin)
+                #expect(box.maxY <= window.height - DetailGeometry.sideMargin)
+                #expect(box.maxX <= window.width - DetailGeometry.inspectorWidth - DetailGeometry.sideMargin)
+                #expect(near(box.width / box.height, logical.width / logical.height))
+            }
+        }
+    }
+
+    @Test("Left swipe requires deliberate horizontal travel; vertical and diagonal scrolling stay in place")
+    func backSwipeRejectsScrollNoise() {
+        var left = DetailBackSwipeGesture()
+        let swipeResult1 = left.update(dx: -50, dy: 3)
+        #expect(!swipeResult1)
+        let swipeResult2 = left.update(dx: -50, dy: 1)
+        #expect(swipeResult2)
+        var vertical = DetailBackSwipeGesture()
+        let swipeResult3 = vertical.update(dx: -5, dy: 30)
+        #expect(!swipeResult3)
+        let swipeResult4 = vertical.update(dx: -120, dy: 0)
+        #expect(!swipeResult4)
+        var right = DetailBackSwipeGesture()
+        let swipeResult5 = right.update(dx: 150, dy: 0)
+        #expect(!swipeResult5)
+        var diagonal = DetailBackSwipeGesture()
+        let swipeResult6 = diagonal.update(dx: -110, dy: 90)
+        #expect(!swipeResult6)
+    }
+
+    @Test("Collapsing or resizing the inspector preserves preview centering and aspect ratio")
+    func variableInspectorGeometry() {
+        let window = CGSize(width: 1040, height: 700)
+        for width: CGFloat in [0, 300, 372, 520] {
+            let hero = DetailGeometry.heroFrame(in: window, inspectorWidth: width)
+            #expect(near(hero.midX, (window.width - width) / 2))
+            #expect(near(hero.midY, 56 + (window.height - 56) / 2))
+            #expect(near(hero.width / hero.height, 16.0 / 9))
+            #expect(hero.maxX <= window.width - width - 24)
+            #expect(hero.maxY <= window.height - 24)
+        }
     }
 
     // MARK: Top-bar tags

@@ -35,7 +35,14 @@ struct EditDeskBackdrop: View {
 /// SCREENS S2: the shelf band darkens from transparent to scrim over the bottom 30%. Outside the
 /// stage so the chip row can sit over it and still be under the cards.
 struct EditDeskShelfScrim: View {
-    let visible: Bool
+    /// Read per frame in `body` rather than handed in, so a moving gesture invalidates this view
+    /// instead of the whole page.
+    let stage: EditDeskStageModel
+
+    /// The band's background, so it leads the chrome that sits over it.
+    static func opacity(_ progress: Double) -> Double {
+        HomeHints.ramp(progress, from: 0.05, to: 0.6)
+    }
 
     var body: some View {
         LinearGradient(
@@ -47,7 +54,7 @@ struct EditDeskShelfScrim: View {
         )
         .frame(height: StageGeometry.shelfHeight)
         .frame(maxHeight: .infinity, alignment: .bottom)
-        .opacity(visible ? 1 : 0)
+        .opacity(Self.opacity(stage.progress))
         .allowsHitTesting(false)
         .ignoresSafeArea()
     }

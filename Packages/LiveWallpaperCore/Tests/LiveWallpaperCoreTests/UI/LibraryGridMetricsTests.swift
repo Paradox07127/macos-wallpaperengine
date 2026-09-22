@@ -32,24 +32,24 @@ struct LibraryGridMetricsTests {
         #expect(DesignTokens.LibraryGrid.horizontalPadding == DesignTokens.LibraryFilterBar.horizontalPadding)
     }
 
-    @Test("Tile frames use the fixed columns and the tile's actual aspect ratio")
+    @Test("Wide tiles fill each row evenly while preserving their 16:9 ratio")
     func tileFrames() {
-        for (width, columns) in [(CGFloat(1040), 2), (1280, 3), (1600, 3)] {
-            for index in [0, 1, 2, 3, 7, 11] {
-                let frame = DesignTokens.LibraryGrid.tileFrame(
-                    index: index, size: .medium, aspect: .wide,
-                    fitting: width - 2 * DesignTokens.LibraryGrid.horizontalPadding, tileAspectRatio: 16 / 9
-                )
-                #expect(frame == CGRect(
-                    x: CGFloat(index % columns) * 398, y: CGFloat(index / columns) * 230,
-                    width: 384, height: 216
-                ))
+        for (width, columns) in [(CGFloat(1040), 3), (1280, 4), (1600, 5)] {
+            let available = width - 2 * DesignTokens.LibraryGrid.horizontalPadding
+            let frames = (0 ..< columns).map {
+                DesignTokens.LibraryGrid.tileFrame(index: $0, size: .medium, aspect: .wide, fitting: available, tileAspectRatio: 16 / 9)
             }
+            #expect(abs((frames.last?.maxX ?? 0) - available) < 0.01)
+            #expect(frames.allSatisfy { abs($0.width / $0.height - 16 / 9) < 0.001 })
+            #expect(frames.first?.minX == 0)
         }
-        let taller = DesignTokens.LibraryGrid.tileFrame(
-            index: 3, size: .medium, aspect: .wide, fitting: 1232, tileAspectRatio: 4 / 3
-        )
-        #expect(taller == CGRect(x: 0, y: 302, width: 384, height: 288))
+    }
+
+    @Test("Every wide-card size fits at least three columns in the minimum window")
+    func threeColumnsAtMinimumWidth() {
+        for size in Self.steps {
+            #expect(DesignTokens.LibraryGrid.columns(for: size, aspect: .wide, fitting: 1040 - 2 * DesignTokens.LibraryGrid.horizontalPadding).count >= 3)
+        }
     }
 
     @Test("The Edit Desk Workshop preset gives six columns at 1280 and four at 1040")
@@ -95,7 +95,11 @@ struct LibraryGridMetricsTests {
                             Issue.record("\(aspect) \(size) is not a fixed column")
                             continue
                         }
-                        #expect(width == column)
+                        if case .square = aspect {
+                            #expect(width == column)
+                        } else if expected.width > 0 {
+                            #expect(abs(width * CGFloat(columns.count) + spacing * CGFloat(columns.count - 1) - expected.width) < 0.01)
+                        }
                         #expect(item.spacing == spacing)
                     }
                 }

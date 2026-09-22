@@ -2,9 +2,12 @@ import LiveWallpaperCore
 import SwiftUI
 
 struct EditDeskRoot: View {
+    static let restartOnboardingNotification = Notification.Name("EditDeskRestartOnboarding")
     @Environment(ScreenManager.self) private var screenManager
     @Environment(\.featureCatalog) private var featureCatalog
     @State private var router: EditDeskRouter?
+    @State private var progress: OnboardingProgress?
+    @State private var signals: OnboardingSignals?
     /// One centre for every page: `HomePage` is not on the tree while Workshop is showing.
     @State private var toasts = EditDeskToastCenter()
     @AppStorage(EditDeskPreferences.background, store: .appScoped())
@@ -14,16 +17,24 @@ struct EditDeskRoot: View {
     #if !LITE_BUILD
     @Environment(WorkshopServices.self) private var workshopServices
     @Environment(SteamCMDDoctorService.self) private var steamDoctor
+    @Environment(WorkshopSetupController.self) private var workshopSetup
     @State private var workshopSession: WorkshopSession?
+    @State private var announcedTickets: Set<UUID> = []
     @State private var historicalFailure: WallpaperFailureSnapshot?
     @State private var historicalFailureDetails: WallpaperFailureSnapshot?
     #endif
     private let initialNavigation: Navigation?
-    private let initialAddWallpaperPromptKind: String?
+    private let initialAddWallpaperRequest: EditDeskRouter.AddWallpaperRequest?
+    private let initialOnboardingRequested: Bool
 
-    init(initialNavigation: Navigation? = nil, initialAddWallpaperPromptKind: String? = nil) {
+    init(
+        initialNavigation: Navigation? = nil,
+        initialAddWallpaperRequest: EditDeskRouter.AddWallpaperRequest? = nil,
+        initialOnboardingRequested: Bool = false
+    ) {
         self.initialNavigation = initialNavigation
-        self.initialAddWallpaperPromptKind = initialAddWallpaperPromptKind
+        self.initialAddWallpaperRequest = initialAddWallpaperRequest
+        self.initialOnboardingRequested = initialOnboardingRequested
     }
 
     private var background: EditDeskBackground {
@@ -32,41 +43,57 @@ struct EditDeskRoot: View {
 
     var body: some View {
         Group {
-            if let router {
+            if let router, let progress {
                 @Bindable var router = router
-                switch router.page {
-                case .home, .library:
-                    // One page: the library is the stage's p = 2 state, not a separate view.
-                    HomePage(router: router, toasts: toasts)
-                case .workshop:
-                    #if !LITE_BUILD
-                    if let workshopSession {
-                        WorkshopPage(router: router, session: workshopSession, toasts: toasts)
-                    }
-                    #else
-                    Color.clear
-                    #endif
-                case .settings:
-                    HStack(spacing: 0) {
-                        SettingsSidebar(
-                            selection: $router.settingsSelection,
-                            searchText: $router.settingsSearchText,
-                            pendingSearchAnchor: $router.pendingSettingsSearchAnchor,
-                            onBack: router.backFromSettings
-                        )
-                        .frame(width: SettingsWindowMetrics.sidebarColumnWidth)
-                        Divider()
-                        SettingsDetailContent(
-                            selection: $router.settingsSelection,
-                            pendingSearchAnchor: $router.pendingSettingsSearchAnchor
-                        )
+                Group {
+                    switch router.page {
+                    case .home, .library:
+                        // One page: the library is the stage's p = 2 state, not a separate view.
+                        HomePage(router: router, toasts: toasts)
+                    case .workshop:
+                        #if !LITE_BUILD
+                        if let workshopSession {
+                            WorkshopPage(router: router, session: workshopSession, toasts: toasts)
+                        }
+                        #else
+                        Color.clear
+                        #endif
+                    case .settings:
+                        GeometryReader { geometry in
+                            VStack(spacing: 0) {
+                                TopBar(
+                                    page: Binding(get: { router.page }, set: { router.select($0) }),
+                                    workshopAvailable: featureCatalog.isEnabled(.wpeImport),
+                                    searchText: .constant(""), showsSearch: false,
+                                    windowWidth: geometry.size.width, status: nil
+                                )
+                                HStack(spacing: 0) {
+                                    SettingsSidebar(
+                                        selection: $router.settingsSelection,
+                                        searchText: $router.settingsSearchText,
+                                        pendingSearchAnchor: $router.pendingSettingsSearchAnchor,
+                                        onBack: router.backFromSettings,
+                                        showsBackButton: false
+                                    )
+                                    .frame(width: SettingsWindowMetrics.sidebarColumnWidth)
+                                    Divider()
+                                    SettingsDetailContent(
+                                        selection: $router.settingsSelection,
+                                        pendingSearchAnchor: $router.pendingSettingsSearchAnchor
+                                    )
+                                }
+                            }
+                        }
+                        .ignoresSafeArea()
                     }
                 }
+                .environment(progress)
             } else {
                 Color.clear
             }
         }
         #if !LITE_BUILD
+        .onChange(of: deferredApplyTicketStates, initial: true) { _, _ in announceSettledTickets() }
         .overlay(alignment: .bottomTrailing) {
             DownloadToastHost(
                 visibleDisplayID: router?.page == .home ? router?.detailDisplayID : nil,
@@ -91,15 +118,38 @@ struct EditDeskRoot: View {
         #endif
         .environment(\.libraryTileSize, LibraryTileSize(rawValue: libraryTileSizeRaw) ?? .medium)
         .providesGalleryCardPreferences()
-        .background(EditDeskBackdrop(frosted: background == .frosted))
+        .background {
+            if router?.page == .settings {
+                DesignTokens.Colors.pageBackground.ignoresSafeArea()
+            } else {
+                EditDeskBackdrop(frosted: background == .frosted)
+            }
+        }
         .frame(minWidth: StageGeometry.minimumWindow.width, minHeight: StageGeometry.minimumWindow.height)
         .onAppear {
             guard router == nil else { return }
-            router = EditDeskRouter(
+            let progress = OnboardingProgress(
+                defaults: .appScoped(), legacyDefaults: .standard,
+                workshopAvailable: featureCatalog.isEnabled(.wpeImport)
+            )
+            var inputs = OnboardingSignals.Inputs.live(screenManager: screenManager)
+            #if !LITE_BUILD
+            inputs.installWorkshopHooks = { [workshopSetup] signedIn, imported in
+                workshopSetup.onSignedIn = signedIn
+                WorkshopFolderImportCoordinator.shared.onLocalLibraryImported = imported
+            }
+            #endif
+            let signals = OnboardingSignals(progress: progress, inputs: inputs)
+            self.progress = progress
+            self.signals = signals
+            let router = EditDeskRouter(
                 initialNavigation: initialNavigation,
-                initialAddWallpaperPromptKind: initialAddWallpaperPromptKind,
+                initialAddWallpaperRequest: initialAddWallpaperRequest,
+                initialOnboardingRequested: initialOnboardingRequested,
                 isWorkshopAvailable: { [featureCatalog] in featureCatalog.isEnabled(.wpeImport) }
             )
+            self.router = router
+            Self.consumeOnboardingRequest(router: router, progress: progress, signals: signals)
             #if !LITE_BUILD
             let session = makeWorkshopSession()
             workshopSession = session
@@ -118,13 +168,41 @@ struct EditDeskRoot: View {
         .onReceive(NotificationCenter.default.publisher(for: .openAppleAerials)) { router?.handle($0) }
         .onReceive(NotificationCenter.default.publisher(for: .promptAddWallpaper)) { router?.handle($0) }
         .onReceive(NotificationCenter.default.publisher(for: .selectScreenInSettings)) { router?.handle($0) }
-        .onReceive(NotificationCenter.default.publisher(for: .showOnboarding)) { router?.handle($0) }
+        .onReceive(NotificationCenter.default.publisher(for: Self.restartOnboardingNotification)) { router?.handle($0) }
+        .onChange(of: router?.onboardingRequested) {
+            guard let router, let progress, let signals else { return }
+            Self.consumeOnboardingRequest(router: router, progress: progress, signals: signals)
+        }
         .onReceive(NotificationCenter.default.publisher(for: .screensRefreshed)) { _ in
             router?.screensRefreshed(availableDisplayIDs: screenManager.screens.map(\.id))
         }
     }
 
+    static func consumeOnboardingRequest(router: EditDeskRouter, progress: OnboardingProgress, signals: OnboardingSignals) {
+        guard router.onboardingRequested else { return }
+        progress.reset()
+        signals.rebaseline()
+        router.closeDetail()
+        router.select(.home)
+        router.onboardingRequested = false
+    }
+
     #if !LITE_BUILD
+    private var deferredApplyTicketStates: [UUID: DeferredApplyCoordinator.State] {
+        Dictionary(uniqueKeysWithValues: workshopSession?.deferredApply.tickets.values.map { ($0.id, $0.state) } ?? [])
+    }
+
+    private func announceSettledTickets() {
+        guard let workshopSession else { return }
+        for ticket in workshopSession.deferredApply.tickets.values where ticket.state.isSettled {
+            guard announcedTickets.insert(ticket.id).inserted else { continue }
+            let screenName = screenManager.screens.first { $0.id == ticket.target.screenID }?.name ?? ""
+            for message in DeferredApplyToasts.messages(for: ticket.state, screenName: screenName) ?? [] {
+                toasts.post(message.text, style: message.style)
+            }
+        }
+    }
+
     private func makeWorkshopSession() -> WorkshopSession {
         let doctor = steamDoctor
         return WorkshopSession(

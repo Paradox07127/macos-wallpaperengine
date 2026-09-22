@@ -1,8 +1,9 @@
-import SwiftUI
 import AppKit
 import LiveWallpaperCore
+import SwiftUI
 
 struct AerialsLibraryView: View {
+    var isEmbedded = false
     @Environment(\.libraryTileSize) private var tileSize
     private let library = AppleAerialsLibrary.shared
     @Environment(ScreenManager.self) private var screenManager
@@ -10,42 +11,68 @@ struct AerialsLibraryView: View {
     @State private var pendingDestructive: PendingDestructive?
     @State private var dragSession = LibraryDragSession()
 
-
     var body: some View {
         DetailPageScaffold {
-            if !library.isAuthorized {
-                unauthorizedState
-            } else if let err = library.lastScanError, !err.isEmpty, library.assets.isEmpty {
-                scanErrorView(message: err)
-            } else if library.assets.isEmpty {
-                emptyState
-            } else {
-                galleryWithFilter
+            VStack(spacing: 0) {
+                if isEmbedded {
+                    HStack(spacing: DesignTokens.Spacing.sm) {
+                        Label("Apple Aerials", systemImage: "sparkles.tv")
+                            .font(DesignTokens.Typography.sectionTitle)
+                        Spacer()
+                        if library.isAuthorized {
+                            refreshButton
+                            disconnectButton
+                        }
+                    }
+                    .buttonStyle(.borderless)
+                    .padding(DesignTokens.Spacing.lg)
+                }
+                content
             }
         }
         .confirmDestructive($pendingDestructive)
         .toolbar {
-            LibraryIdentityToolbarItem(systemImage: "sparkles.tv", title: Text("Apple Aerials"))
-            // Separate toolbar items let macOS own grouping and spacing.
-            if library.isAuthorized {
-                if library.isScanning {
-                    ToolbarItem(placement: .primaryAction) {
-                        ProgressView()
-                            .controlSize(.small)
-                            .accessibilityLabel(Text("Scanning the Aerials library", comment: "A11y label for the toolbar spinner shown while the Apple Aerials library is being rescanned."))
-                    }
-                }
-                ToolbarItem(placement: .primaryAction) {
-                    refreshButton
-                }
-                ToolbarItem(placement: .primaryAction) {
-                    disconnectButton
-                }
+            if !isEmbedded {
+                standaloneToolbar
             }
         }
         .task {
-            if library.isAuthorized && library.assets.isEmpty {
+            if library.isAuthorized, library.assets.isEmpty {
                 await library.refresh()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if !library.isAuthorized {
+            unauthorizedState
+        } else if let err = library.lastScanError, !err.isEmpty, library.assets.isEmpty {
+            scanErrorView(message: err)
+        } else if library.assets.isEmpty {
+            emptyState
+        } else {
+            galleryWithFilter
+        }
+    }
+
+    @ToolbarContentBuilder
+    private var standaloneToolbar: some ToolbarContent {
+        LibraryIdentityToolbarItem(systemImage: "sparkles.tv", title: Text("Apple Aerials"))
+        // Separate toolbar items let macOS own grouping and spacing.
+        if library.isAuthorized {
+            if library.isScanning {
+                ToolbarItem(placement: .primaryAction) {
+                    ProgressView()
+                        .controlSize(.small)
+                        .accessibilityLabel(Text("Scanning the Aerials library", comment: "A11y label for the toolbar spinner shown while the Apple Aerials library is being rescanned."))
+                }
+            }
+            ToolbarItem(placement: .primaryAction) {
+                refreshButton
+            }
+            ToolbarItem(placement: .primaryAction) {
+                disconnectButton
             }
         }
     }
@@ -116,7 +143,7 @@ struct AerialsLibraryView: View {
         guard !trimmed.isEmpty else { return library.assets }
         return library.assets.filter {
             $0.displayName.localizedCaseInsensitiveContains(trimmed) ||
-            ($0.category?.localizedCaseInsensitiveContains(trimmed) ?? false)
+                ($0.category?.localizedCaseInsensitiveContains(trimmed) ?? false)
         }
     }
 

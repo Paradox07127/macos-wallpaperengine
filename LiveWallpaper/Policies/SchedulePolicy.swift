@@ -4,6 +4,7 @@ import LiveWallpaperCore
 enum SchedulePolicy {
     enum Decision: Equatable {
         case none
+        case applyWallpaper(WallpaperQueueEntry)
         case applySlot(slot: ScheduleSlot, bookmarkData: Data)
         case restorePrimary(bookmarkData: Data)
     }
@@ -17,6 +18,17 @@ enum SchedulePolicy {
         guard configuration.wallpaperMode == .schedule,
               let slots = configuration.scheduleSlots, !slots.isEmpty else {
             return .none
+        }
+
+        if slots.contains(where: { $0.wallpaper != nil }) || configuration.scheduleFallback != nil {
+            let active = activeSlot(in: slots, hour: hour)
+            let entry = active?.wallpaper ?? active?.videoBookmarkData.map {
+                WallpaperQueueEntry(title: active?.label ?? "", content: .video(bookmarkData: $0))
+            } ?? configuration.scheduleFallback
+            guard let entry else { return .none }
+            let proposed = configuration.applyingAutomationEntry(entry)
+            return proposed.activeWallpaper == configuration.activeWallpaper && proposed.wpeOrigin == configuration.wpeOrigin
+                ? .none : .applyWallpaper(entry)
         }
 
         let activeBookmark = configuration.activeWallpaper.activeVideoBookmarkData
@@ -61,10 +73,14 @@ enum SchedulePolicy {
     /// Decompose a slot into `[start, end)` half-open ranges within 0-24.
     static func hourRanges(for slot: ScheduleSlot) -> [Range<Int>] {
         let s = clampHour(slot.startHour)
-        let e = clampHour(slot.endHour)
-        if s == e { return [] }
-        if s < e { return [s..<e] }
-        return [s..<24, 0..<e]
+        let e = slot.endHour == 24 ? 24 : clampHour(slot.endHour)
+        if s == e {
+            return []
+        }
+        if s < e {
+            return [s ..< e]
+        }
+        return [s ..< 24, 0 ..< e]
     }
 
     /// Finds the longest free range; an end above 24 represents a midnight wrap.

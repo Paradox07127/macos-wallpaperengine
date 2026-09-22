@@ -42,8 +42,10 @@ struct ShelfSettingsRows: View {
             shelfCapacityStepper
         }
 
-        SettingRow(icon: "play.circle", iconColor: .mint, title: "Autoplay preview on hover") {
+        SettingRow(icon: "play.circle", iconColor: .mint, title: "Autoplay preview on hover",
+                   subtitle: "The current wallpaper shelf uses still previews.") {
             Toggle("", isOn: $hoverAutoplayPreview)
+                .disabled(true)
                 .labelsHidden()
                 .toggleStyle(.switch)
                 .accessibilityLabel(Text("Autoplay preview on hover"))
@@ -104,10 +106,14 @@ struct ShelfSettingsRows: View {
     }
 
     private var shelfCapacityStepper: some View {
-        Stepper(value: $shelfCapacity, in: 6 ... 24, step: 2) {
+        HStack(spacing: DesignTokens.Spacing.sm) {
             Text(verbatim: "\(shelfCapacity)")
+                .font(DesignTokens.Typography.metric)
                 .foregroundStyle(.secondary)
-                .monospacedDigit()
+                .frame(minWidth: DesignTokens.Spacing.xl, alignment: .trailing)
+            Stepper("Cards rendered at once", value: $shelfCapacity, in: 6 ... 24, step: 2)
+                .labelsHidden()
+                .fixedSize()
         }
         .accessibilityLabel(Text("Cards rendered at once"))
         .accessibilityValue(Text(verbatim: "\(shelfCapacity)"))

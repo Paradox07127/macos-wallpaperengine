@@ -7,7 +7,7 @@ struct OverlayPreviewCanvas<Content: View>: View {
     var backdrop: MonitorPreviewBackdrop = .none
     @ViewBuilder var content: () -> Content
 
-    @AppStorage(MonitorPreviewBackdrop.showsWallpaperDefaultsKey) private var showsWallpaper = true
+    @AppStorage(OverlayBackdropPreference.showsWallpaperDefaultsKey) private var showsWallpaper = true
     /// One shot per session: `captureLivePosterFromNextFrame` waits for a presented
     /// frame and reads it back, so it is not free.
     @State private var liveFrame: NSImage?

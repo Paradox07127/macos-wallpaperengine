@@ -131,6 +131,34 @@ struct MenuBarBehaviorTests {
         #expect(source.contains("invokeAddWallpaper(screen.id)"))
     }
 
+    @Test("Manage… opens the panorama on the Edit Desk and the first display's detail on the old shell")
+    func manageWindowOpensHomeOnEditDesk() throws {
+        let menuBar = try RepositoryRoot.source("LiveWallpaper/Views/MenuBarContent.swift")
+        let start = try #require(menuBar.range(of: "private func invokeManageWindow"))
+        let body = try #require(String(menuBar[start.lowerBound...]).components(separatedBy: "\n    }").first)
+        #expect(body.contains("if EditDeskFlag.isEnabled {\n            openHome()"))
+        #expect(body.contains("openSettingsForScreen(screen.id)"))
+        #expect(body.contains("openSettings()"))
+
+        let app = try RepositoryRoot.source("LiveWallpaper/App/LiveWallpaperApp.swift")
+        let closure = try #require(app.range(of: "openHome: { [appDelegate] in"))
+        let wiring = String(app[closure.lowerBound...].prefix(120))
+        #expect(wiring.contains("appDelegate.showSettings()"))
+        #expect(!wiring.contains("initialScreenID"), "a screen ID would post .selectScreenInSettings and open a detail")
+        #expect(!wiring.contains("opensGeneralSettings"), "the panorama is not the General settings pane")
+    }
+
+    @Test("The menu bar's + hands the Edit Desk a target display instead of a fixed wallpaper type")
+    func addWallpaperCarriesItsTargetWithoutPinningAType() throws {
+        let app = try RepositoryRoot.source("LiveWallpaper/App/LiveWallpaperApp.swift")
+        let start = try #require(app.range(of: "openSettingsAndAddWallpaper: { [appDelegate] screenID in"))
+        let body = try #require(String(app[start.lowerBound...]).components(separatedBy: "\n                }").first)
+        #expect(body.contains("if EditDeskFlag.isEnabled {"))
+        #expect(body.contains("kind: \"any\", targetDisplayID: screenID"))
+        #expect(body.contains("initialScreenID: screenID"))
+        #expect(body.contains("kind: \"video\", targetDisplayID: nil"))
+    }
+
     @Test("Performance values use the emphasized metric token and keep their combined accessibility label")
     func performanceValuesUseSemanticMetricContract() throws {
         let source = try RepositoryRoot.source("LiveWallpaper/Views/MenuBarContent.swift")

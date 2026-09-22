@@ -453,6 +453,7 @@ extension ScreenManager {
         config.particleEffect = .none
         config.effectConfig = .default
         config.scheduleSlots = nil
+        config.scheduleFallback = nil
         config.shufflePlaylist = false
         config.playlistRotationMinutes = nil
         config.setAsLockScreen = false

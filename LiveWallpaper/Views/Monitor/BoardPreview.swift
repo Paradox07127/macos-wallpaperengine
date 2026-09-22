@@ -8,8 +8,6 @@ enum MonitorPreviewBackdrop: Equatable {
     case still(NSImage)
     case projectPreview(URL, bookmark: Data?)
 
-    static let showsWallpaperDefaultsKey = "Monitor.PreviewShowsWallpaper"
-
     var isAvailable: Bool { self != .none }
 }
 

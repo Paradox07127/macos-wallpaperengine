@@ -5,8 +5,9 @@ import SwiftUI
 /// functions of `progress`, so they cross-fade and drift with the finger instead of popping at a
 /// threshold, and the shelf hint rides on the shelf rather than a fixed y.
 struct HomeHints: View {
-    let progress: Double
-    let windowSize: CGSize
+    /// Read per frame in `body` rather than handed in, so a moving gesture invalidates this view
+    /// instead of the whole page.
+    let stage: EditDeskStageModel
 
     /// Chevrons lean toward the state they take you to as the gesture gets closer to it.
     private static let drift: CGFloat = 10
@@ -31,6 +32,7 @@ struct HomeHints: View {
     }
 
     var body: some View {
+        let progress = stage.progress
         ZStack {
             hint("⌃ Wallpaper Library", opacity: Self.hiddenHintOpacity(progress))
                 .offset(y: -Self.drift * Self.ramp(progress, from: 0, to: 0.18))
@@ -38,9 +40,11 @@ struct HomeHints: View {
                 .padding(.bottom, 14)
 
             hint("⌃ Keep Swiping · Full Wallpaper Library", opacity: Self.shelfHintOpacity(progress))
-                .offset(y: -Self.drift * Self.ramp(progress, from: 1, to: 1.5))
+                .offset(
+                    y: Self.shelfHintTop(progress: progress, windowSize: stage.stageSize)
+                        - Self.drift * Self.ramp(progress, from: 1, to: 1.5)
+                )
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                .padding(.top, shelfHintTop)
 
             hint("⌄ Swipe Down to Return Home", opacity: Self.libraryHintOpacity(progress))
                 .offset(y: Self.drift * (1 - Self.ramp(progress, from: 1.35, to: 1.75)))
@@ -52,11 +56,13 @@ struct HomeHints: View {
         .allowsHitTesting(false)
     }
 
-    /// Sits one line above the card row, so it follows the shelf when the window is resized.
-    private var shelfHintTop: CGFloat {
+    /// Sits one line above the card row's *current* top, so it rises with the shelf instead of
+    /// waiting at the shelf's resting y for the cards to reach it.
+    static func shelfHintTop(progress: Double, windowSize: CGSize) -> CGFloat {
         max(
             StageGeometry.topBarHeight,
-            windowSize.height - StageGeometry.cardRowBottomInset - StageGeometry.chipRowGap - 34
+            StageGeometry.shelfRowTop(progress: progress, windowSize: windowSize)
+                - StageGeometry.chipRowGap - 34
         )
     }
 

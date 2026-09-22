@@ -64,6 +64,8 @@ struct BrowseCard: View, Equatable {
         .buttonStyle(.plain)
         .galleryTileChrome(isHovering: isHovered, isSelected: isSelected, cornerRadius: cardCornerRadius, reduceMotion: reduceMotion)
         .overlay { editDeskBorder }
+        .shadow(color: editDeskRingShadow?.color ?? .clear, radius: editDeskRingShadow?.radius ?? 0, y: editDeskRingShadow?.y ?? 0)
+        .shadow(color: editDeskRestShadow?.color ?? .clear, radius: editDeskRestShadow?.radius ?? 0, y: editDeskRestShadow?.y ?? 0)
         .shadow(color: editDeskShadow?.color ?? .clear, radius: editDeskShadow?.radius ?? 0, y: editDeskShadow?.y ?? 0)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .settledHover { isHovered = $0 }
@@ -123,9 +125,18 @@ struct BrowseCard: View, Equatable {
     private var editDeskBorder: some View {
         if presentation == .editDesk {
             RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
-                .strokeBorder(DesignTokens.EditDesk.Colors.strokePanel, lineWidth: 1)
+                .strokeBorder(DesignTokens.EditDesk.Colors.strokeRegular, lineWidth: 1)
                 .allowsHitTesting(false)
         }
+    }
+
+    /// SCREENS S8's card shadow is two layers: a 1px ring against the page and the drop below it.
+    private var editDeskRingShadow: DesignTokens.EditDesk.Shadow? {
+        presentation == .editDesk ? .workshopCardRing : nil
+    }
+
+    private var editDeskRestShadow: DesignTokens.EditDesk.Shadow? {
+        presentation == .editDesk ? .workshopCard : nil
     }
 
     private var editDeskShadow: DesignTokens.EditDesk.Shadow? {
@@ -171,8 +182,11 @@ struct BrowseCard: View, Equatable {
         .overlay(alignment: .topTrailing) {
             if presentation == .editDesk {
                 if isInLibrary, !shouldBlur {
-                    ThumbnailPresenceCheck(tint: DesignTokens.EditDesk.Colors.success)
-                        .padding(DesignTokens.Spacing.sm)
+                    ThumbnailPresenceCheck(
+                        tint: DesignTokens.EditDesk.Colors.inLibraryBadgeFill,
+                        appearance: .solid(glyph: DesignTokens.EditDesk.Colors.inLibraryBadgeGlyph)
+                    )
+                    .padding(DesignTokens.Spacing.sm)
                 }
             } else if let resolutionLabel, !shouldBlur, cardPreferences.showsResolution {
                 ThumbnailBadge(verbatim: resolutionLabel)
@@ -229,7 +243,7 @@ struct BrowseCard: View, Equatable {
     private var editDeskInfoBand: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
             Text(verbatim: item.title)
-                .font(DesignTokens.EditDesk.Typography.cardTitle)
+                .font(DesignTokens.EditDesk.Typography.workshopCardTitle)
                 .foregroundStyle(DesignTokens.Colors.overlayForeground)
                 .lineLimit(1)
             if let editDeskMetaLine {
@@ -239,13 +253,13 @@ struct BrowseCard: View, Equatable {
                     .lineLimit(1)
             }
         }
-        .padding(.horizontal, DesignTokens.EditDesk.Spacing.s8)
-        .padding(.bottom, DesignTokens.EditDesk.Spacing.s8)
-        .padding(.top, DesignTokens.EditDesk.Spacing.s12)
+        .padding(.horizontal, DesignTokens.EditDesk.Spacing.workshopCardBandInset)
+        .padding(.bottom, DesignTokens.EditDesk.Spacing.workshopCardBandInset)
+        .padding(.top, DesignTokens.EditDesk.Spacing.workshopCardBandTop)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(alignment: .bottom) {
             LinearGradient(
-                colors: [.clear, DesignTokens.EditDesk.Colors.gradientCardBottom],
+                colors: [.clear, DesignTokens.EditDesk.Colors.gradientWorkshopCardBottom],
                 startPoint: .top, endPoint: .bottom
             )
         }

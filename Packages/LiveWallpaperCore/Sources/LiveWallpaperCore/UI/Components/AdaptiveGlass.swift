@@ -44,13 +44,15 @@ public extension View {
         _ shape: AdaptiveGlassShape = .roundedRectangle(12),
         tint: Color? = nil,
         interactive: Bool = false,
-        stroked: Bool = true
+        stroked: Bool = true,
+        preferMaterial: Bool = false
     ) -> some View {
         modifier(AdaptiveGlassSurfaceModifier(
             shape: shape,
             tint: tint,
             interactive: interactive,
-            stroked: stroked
+            stroked: stroked,
+            preferMaterial: preferMaterial
         ))
     }
 
@@ -276,6 +278,9 @@ private struct AdaptiveGlassSurfaceModifier: ViewModifier {
     let tint: Color?
     let interactive: Bool
     var stroked: Bool = true
+    /// Small controls in a frequently relaid-out toolbar keep stable backing layers. The
+    /// material path still honors Reduce Transparency and Increase Contrast on every OS.
+    var preferMaterial = false
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
@@ -305,7 +310,7 @@ private struct AdaptiveGlassSurfaceModifier: ViewModifier {
 
     @ViewBuilder
     func body(content: Content) -> some View {
-        if reduceTransparency {
+        if reduceTransparency || preferMaterial {
             // Honor Reduce Transparency on every OS — fallbackMaterial renders an
             // opaque window-background fill rather than native Liquid Glass.
             fallbackMaterial(content)
@@ -348,6 +353,7 @@ private struct AdaptiveGlassSurfaceModifier: ViewModifier {
                     lineWidth: increaseContrast ? 0.75 : 0.5
                 )
                 .accessibilityHidden(true)
+                .allowsHitTesting(false)
         }
     }
 
@@ -387,6 +393,8 @@ private struct AdaptiveGlassSurfaceModifier: ViewModifier {
             .overlay {
                 if stroked {
                     shape.strokeBorder(strokeColor, lineWidth: strokeWidth)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
                 }
             }
             .contentShape(shape)

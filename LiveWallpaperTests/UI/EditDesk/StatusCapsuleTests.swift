@@ -76,4 +76,50 @@ struct StatusCapsuleTests {
         #expect(StatusCapsuleModel.thermalBarFraction(.serious) == 0.75)
         #expect(StatusCapsuleModel.thermalBarFraction(.critical) == 1)
     }
+
+    // MARK: Dismissal hit testing
+
+    /// WP 7B: the click arrives from AppKit in window coordinates (y up from the content view's
+    /// bottom edge) while the panel is measured from SwiftUI's top, so every case is stated in both.
+    private static let windowHeight: CGFloat = 800
+    /// Top-right, in SwiftUI's y-down space: the panel covers y 60...160, the capsule y 14...42.
+    private static let panel = CGRect(x: 600, y: 60, width: 200, height: 100)
+    private static let trigger = CGRect(x: 682, y: 14, width: 118, height: 28)
+
+    private static func dismisses(_ click: CGPoint) -> Bool {
+        StatusCapsuleDismissal.shouldDismiss(
+            clickInWindow: click,
+            panelFrameFromTop: panel,
+            capsuleFrameFromTop: trigger,
+            windowHeight: windowHeight
+        )
+    }
+
+    @Test("A click inside the panel leaves it open")
+    func clickInsideThePanelKeepsItOpen() {
+        // SwiftUI y 60...160 is AppKit y 640...740.
+        #expect(Self.dismisses(CGPoint(x: 700, y: 690)) == false)
+    }
+
+    @Test("A click on the trigger capsule is left to the button's own toggle")
+    func clickOnTheTriggerIsNotADismissal() {
+        // SwiftUI y 14...42 is AppKit y 758...786. Dismissing here would close the panel a
+        // moment before the button reopens it.
+        #expect(Self.dismisses(CGPoint(x: 740, y: 772)) == false)
+    }
+
+    @Test("A click anywhere else dismisses")
+    func clickElsewhereDismisses() {
+        #expect(Self.dismisses(CGPoint(x: 200, y: 400)))
+        #expect(Self.dismisses(CGPoint(x: 700, y: 500)), "below the panel")
+        #expect(Self.dismisses(CGPoint(x: 700, y: 790)), "above the panel, beside the trigger")
+    }
+
+    @Test("The y flip runs the right way round")
+    func theFlipIsNotAnIdentity() {
+        // Read without the flip the panel would sit at AppKit y 60...160 and the trigger at
+        // 14...42; clicks there have to read as outside, or the conversion is a no-op.
+        #expect(Self.dismisses(CGPoint(x: 700, y: 110)))
+        #expect(Self.dismisses(CGPoint(x: 740, y: 28)))
+    }
 }

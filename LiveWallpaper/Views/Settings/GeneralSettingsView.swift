@@ -1,8 +1,8 @@
+import AppKit
+import CoreLocation
 import LiveWallpaperCore
 import ServiceManagement
 import SwiftUI
-import AppKit
-import CoreLocation
 import UniformTypeIdentifiers
 
 enum GeneralSettingsPage: Equatable {
@@ -106,115 +106,127 @@ struct GeneralSettingsView: View {
 
     var body: some View {
         contentForPage
-        .frame(minWidth: 500, minHeight: 400)
-        .background(DesignTokens.Colors.pageBackground)
-        .onAppear { refreshSystemStatusIndicators() }
-        .alert(
-            "Import Configuration?",
-            isPresented: Binding(
-                get: { pendingImportBundle != nil },
-                set: { if !$0 { pendingImportBundle = nil; pendingImportSource = nil } }
-            )
-        ) {
-            Button("Cancel", role: .cancel) {
-                pendingImportBundle = nil
-                pendingImportSource = nil
-            }
-            Button("Import", role: .destructive) { applyPendingImport() }
-        } message: {
-            Text(importConfirmationMessage)
-        }
-        .alert(
-            "Configuration Imported",
-            isPresented: Binding(
-                get: { importFeedback != nil },
-                set: { if !$0 { importFeedback = nil } }
-            )
-        ) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(verbatim: importFeedback ?? "")
-        }
-        .errorAlert("Import Failed", message: $importErrorMessage)
-        .errorAlert("Export Failed", message: $exportErrorMessage)
-        .errorAlert("Diagnostics Export Failed", message: $diagnosticsExportErrorMessage)
-        .alert(
-            "Login Item",
-            isPresented: Binding(
-                get: { loginItemAlert != nil },
-                set: { if !$0 { loginItemAlert = nil } }
-            )
-        ) {
-            if case .requiresApproval = loginItemAlert {
-                Button("Open System Settings") {
-                    SMAppService.openSystemSettingsLoginItems()
-                    loginItemAlert = nil
+            .frame(minWidth: 500, minHeight: 400)
+            .settingsPageBackground()
+            .onAppear { refreshSystemStatusIndicators() }
+            .alert(
+                "Import Configuration?",
+                isPresented: Binding(
+                    get: { pendingImportBundle != nil },
+                    set: {
+                        if !$0 {
+                            pendingImportBundle = nil; pendingImportSource = nil
+                        }
+                    }
+                )
+            ) {
+                Button("Cancel", role: .cancel) {
+                    pendingImportBundle = nil
+                    pendingImportSource = nil
                 }
-                Button("OK", role: .cancel) { loginItemAlert = nil }
-            } else {
-                Button("OK", role: .cancel) { loginItemAlert = nil }
+                Button("Import", role: .destructive) { applyPendingImport() }
+            } message: {
+                Text(importConfirmationMessage)
             }
-        } message: {
-            Text(verbatim: loginItemAlert?.userFacingMessage ?? "")
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .loginItemRegistrationDidFail)) { note in
-            guard page == .general else { return }
-            if let reason = note.userInfo?["reason"] as? LoginItemFailure {
-                loginItemAlert = reason
-                loginItemStatusRefreshPending = false
-                loginItemStatus = SMAppService.mainApp.status
-                if startOnLogin {
-                    startOnLogin = false
+            .alert(
+                "Configuration Imported",
+                isPresented: Binding(
+                    get: { importFeedback != nil },
+                    set: {
+                        if !$0 {
+                            importFeedback = nil
+                        }
+                    }
+                )
+            ) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(verbatim: importFeedback ?? "")
+            }
+            .errorAlert("Import Failed", message: $importErrorMessage)
+            .errorAlert("Export Failed", message: $exportErrorMessage)
+            .errorAlert("Diagnostics Export Failed", message: $diagnosticsExportErrorMessage)
+            .alert(
+                "Login Item",
+                isPresented: Binding(
+                    get: { loginItemAlert != nil },
+                    set: {
+                        if !$0 {
+                            loginItemAlert = nil
+                        }
+                    }
+                )
+            ) {
+                if case .requiresApproval = loginItemAlert {
+                    Button("Open System Settings") {
+                        SMAppService.openSystemSettingsLoginItems()
+                        loginItemAlert = nil
+                    }
+                    Button("OK", role: .cancel) { loginItemAlert = nil }
+                } else {
+                    Button("OK", role: .cancel) { loginItemAlert = nil }
                 }
+            } message: {
+                Text(verbatim: loginItemAlert?.userFacingMessage ?? "")
             }
-        }
-        .fileExporter(
-            isPresented: $isPresentingExporter,
-            document: exportDocument,
-            contentType: ConfigurationBundle.contentType,
-            defaultFilename: ConfigurationPorter.suggestedExportFileName()
-        ) { result in
-            exportDocument = nil
-            switch result {
-            case .success:
-                Logger.info("Configuration export completed", category: .settings)
-            case .failure(let error):
-                exportErrorMessage = error.localizedDescription
-            }
-        }
-        .fileImporter(
-            isPresented: $isPresentingImporter,
-            allowedContentTypes: [ConfigurationBundle.contentType],
-            allowsMultipleSelection: false
-        ) { result in
-            handleImportResult(result)
-        }
-        .fileExporter(
-            isPresented: $isPresentingDiagnosticsExporter,
-            document: diagnosticsDocument,
-            contentType: .plainText,
-            defaultFilename: "\(BundleIdentity.productDisplayName) Diagnostics.txt"
-        ) { result in
-            diagnosticsDocument = nil
-            switch result {
-            case .success:
-                Logger.info("Diagnostics export completed", category: .settings)
-            case .failure(let error):
-                diagnosticsExportErrorMessage = error.localizedDescription
-            }
-        }
-        .sheet(item: $pendingBugReport) { report in
-            AppLanguageScope(defaults: .appScoped()) {
-                ReportBugSheet(report: report) {
-                    pendingBugReport = nil
+            .onReceive(NotificationCenter.default.publisher(for: .loginItemRegistrationDidFail)) { note in
+                guard page == .general else { return }
+                if let reason = note.userInfo?["reason"] as? LoginItemFailure {
+                    loginItemAlert = reason
+                    loginItemStatusRefreshPending = false
+                    loginItemStatus = SMAppService.mainApp.status
+                    if startOnLogin {
+                        startOnLogin = false
+                    }
                 }
             }
-        }
-        .sheet(isPresented: $showAppExceptions) {
-            AppLanguageScope(defaults: .appScoped()) {
-                AppExceptionsSheet(rules: $applicationRules, onChange: updateGlobalSettings)
+            .fileExporter(
+                isPresented: $isPresentingExporter,
+                document: exportDocument,
+                contentType: ConfigurationBundle.contentType,
+                defaultFilename: ConfigurationPorter.suggestedExportFileName()
+            ) { result in
+                exportDocument = nil
+                switch result {
+                case .success:
+                    Logger.info("Configuration export completed", category: .settings)
+                case let .failure(error):
+                    exportErrorMessage = error.localizedDescription
+                }
             }
-        }
+            .fileImporter(
+                isPresented: $isPresentingImporter,
+                allowedContentTypes: [ConfigurationBundle.contentType],
+                allowsMultipleSelection: false
+            ) { result in
+                handleImportResult(result)
+            }
+            .fileExporter(
+                isPresented: $isPresentingDiagnosticsExporter,
+                document: diagnosticsDocument,
+                contentType: .plainText,
+                defaultFilename: "\(BundleIdentity.productDisplayName) Diagnostics.txt"
+            ) { result in
+                diagnosticsDocument = nil
+                switch result {
+                case .success:
+                    Logger.info("Diagnostics export completed", category: .settings)
+                case let .failure(error):
+                    diagnosticsExportErrorMessage = error.localizedDescription
+                }
+            }
+            .sheet(item: $pendingBugReport) { report in
+                AppLanguageScope(defaults: .appScoped()) {
+                    ReportBugSheet(report: report) {
+                        pendingBugReport = nil
+                    }
+                }
+            }
+            .sheet(isPresented: $showAppExceptions) {
+                AppLanguageScope(defaults: .appScoped()) {
+                    AppExceptionsSheet(rules: $applicationRules, onChange: updateGlobalSettings)
+                }
+            }
     }
 
     // MARK: - Settings Pages
@@ -249,7 +261,7 @@ struct GeneralSettingsView: View {
         }
     }
 
-    private func settingsForm<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+    private func settingsForm(@ViewBuilder content: () -> some View) -> some View {
         Form {
             content()
         }
@@ -409,5 +421,4 @@ struct GeneralSettingsView: View {
             NotificationCenter.default.post(name: name, object: nil)
         }
     }
-
 }

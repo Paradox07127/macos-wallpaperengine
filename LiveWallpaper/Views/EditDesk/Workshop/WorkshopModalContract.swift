@@ -136,23 +136,13 @@ struct WorkshopDownloadRateMeter {
 /// The displays the float layer offers, in the order `ModalActions.targets` gives the library
 /// modal so ⌘1…⌘9 mean the same panel in both.
 enum WorkshopModalTargets {
+    @MainActor
     static func make(
         displays: [ModalActions.Display],
         activeOn: Set<CGDirectDisplayID>,
         covers: [CGDirectDisplayID: CGImage]
     ) -> [ModalDisplayTarget] {
-        let ordered = displays.sorted { $0.frame.minX < $1.frame.minX }
-        let primary = ordered.first { !activeOn.contains($0.id) } ?? ordered.first
-        return ordered.enumerated().map { index, display in
-            ModalDisplayTarget(
-                id: display.id,
-                name: display.name,
-                shortcutIndex: index + 1,
-                aspectRatio: display.frame.width / display.frame.height,
-                thumbnail: covers[display.id],
-                isPrimary: display.id == primary?.id
-            )
-        }
+        ModalActions.targets(displays: displays, activeOn: activeOn, covers: covers)
     }
 }
 

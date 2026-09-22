@@ -14,7 +14,9 @@ struct WallpaperMaintenanceEngine: Sendable {
     func inspect() throws -> Report {
         guard SystemWallpaperRegistrationPolicy.hostIDs.contains(hostID),
               Bundle(path: hostPath)?.bundleIdentifier == hostID else { throw Failure.refused }
-        let dump = try run(Self.lsregister, ["-dump"])
+        // Only bundle records contain app registrations. A full database dump can exceed
+        // the bounded output budget on development machines.
+        let dump = try run(Self.lsregister, ["-dump", "Bundle"])
         guard dump.code == 0 else { throw Failure.command }
         let records = SystemWallpaperRegistrationPolicy.registrations(in: dump.output)
         var report = Report(outcome: .inspected, currentAppPath: hostPath)

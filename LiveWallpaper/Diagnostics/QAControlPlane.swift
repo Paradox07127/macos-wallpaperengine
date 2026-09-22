@@ -269,10 +269,12 @@ final class QAControlPlane {
         case "defaults.set": return try defaultsSet(arguments)
         case "wallpaper.list": return try wallpaperList()
         case "wallpaper.apply": return try wallpaperApply(arguments)
+        case "wallpaper.clear": return try wallpaperClear(arguments)
         case "wallpaper.togglePlayback": return try wallpaperTogglePlayback(arguments)
         case "screen.get": return try screenGet(arguments)
         case "screen.patch": return try screenPatch(arguments)
         case "runtime.state": return try runtimeState(arguments)
+        case "ui.hitTest": return try uiHitTest(arguments)
         default: throw QAError.message("Unknown tool: \(tool)")
         }
     }
@@ -287,6 +289,10 @@ final class QAControlPlane {
             "pid": ProcessInfo.processInfo.processIdentifier,
             "executablePath": Bundle.main.executablePath ?? "unknown",
             "tools": [
+                ["name": "wallpaper.clear", "arguments": ["screenID": "Int"],
+                 "description": "Clear one display through the product clear action. Wallpaper source files are preserved."],
+                ["name": "ui.hitTest", "arguments": ["x": "Number", "y": "Number"],
+                 "description": "Read-only AppKit hit test in main-window points, top-left origin."],
                 ["name": "meta.describe", "arguments": [:] as [String: Any],
                  "description": "Tool catalog, writable setting keys and this instance's identity."],
                 ["name": "settings.get", "arguments": [:] as [String: Any],

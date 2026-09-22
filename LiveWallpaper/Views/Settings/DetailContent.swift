@@ -70,6 +70,6 @@ struct SettingsDetailContent: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(DesignTokens.Colors.pageBackground)
+        .settingsPageBackground()
     }
 }

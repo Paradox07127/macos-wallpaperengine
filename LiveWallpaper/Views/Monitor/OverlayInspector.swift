@@ -104,7 +104,7 @@ struct OverlayBackdropRow: View {
     /// Whether this display's wallpaper has a still frame to show at all.
     let available: Bool
 
-    @AppStorage(MonitorPreviewBackdrop.showsWallpaperDefaultsKey) private var showsWallpaper = true
+    @AppStorage(OverlayBackdropPreference.showsWallpaperDefaultsKey) private var showsWallpaper = true
 
     var body: some View {
         SettingRow(

@@ -18,6 +18,7 @@ final class ModalActions {
         var displays: @MainActor () -> [Display] = { [] }
         var togglePlayback: @MainActor (CGDirectDisplayID) -> Void = { _ in }
         var appendToPlaylist: @MainActor (Data, CGDirectDisplayID) -> Void = { _, _ in }
+        var appendWallpaper: (@MainActor (WallpaperQueueEntry, CGDirectDisplayID) -> Void)?
         var presets: @MainActor () -> [String: ScenePreset] = { [:] }
         #if !LITE_BUILD
         var installedLibrary = InstalledLibraryModel()
@@ -49,6 +50,11 @@ final class ModalActions {
                 guard let screen = screenManager.screens.first(where: { $0.id == id }),
                       let configuration = screenManager.getConfiguration(for: screen) else { return }
                 screenManager.updatePlaylistBookmarks((configuration.playlistBookmarks ?? []) + [data], for: screen)
+            }
+            inputs.appendWallpaper = { entry, id in
+                guard let screen = screenManager.screens.first(where: { $0.id == id }),
+                      let config = screenManager.getConfiguration(for: screen) else { return }
+                screenManager.replaceWallpaperQueue(config.effectiveWallpaperQueue + [entry], for: screen)
             }
             inputs.presets = { SettingsManager.shared.loadGlobalSettings().scenePresets }
             return inputs
@@ -156,7 +162,12 @@ final class ModalActions {
         #if !LITE_BUILD
         if let entry = localInfoEntry(for: item) {
             let info = await inputs.localInfo(entry)
-            content.tags = info?.tags ?? []
+            content.tags = Array(Set(info?.tags ?? [])).sorted()
+            content.descriptionText = info?.cleanedDescription
+            content.contentRating = info?.contentRating
+            content.importedAt = entry.importedAt
+            content.workshopID = UInt64(entry.origin.workshopID)
+            content.dependencyIDs = entry.origin.dependencyWorkshopIDs
             if case .workshop = item.source {
                 content.installed = InstalledItemExtras(
                     updateState: updateState(for: entry), isWindowsOnly: entry.origin.requiresWindowsPlugin,
@@ -178,13 +189,20 @@ final class ModalActions {
     }
 
     func targets(for item: LibraryItem, covers: [CGDirectDisplayID: CGImage] = [:]) -> [ModalDisplayTarget] {
-        let displays = inputs.displays().sorted { $0.frame.minX < $1.frame.minX }
-        let primary = displays.first { !item.onDisplays.contains($0.id) } ?? displays.first
+        Self.targets(displays: inputs.displays(), activeOn: Set(item.onDisplays), covers: covers)
+    }
+
+    static func targets(
+        displays: [Display], activeOn: Set<CGDirectDisplayID>, covers: [CGDirectDisplayID: CGImage]
+    ) -> [ModalDisplayTarget] {
+        let displays = displays.sorted { $0.frame.minX < $1.frame.minX }
+        let primary = displays.first
         return displays.enumerated().map { index, display in
             ModalDisplayTarget(
                 id: display.id, name: display.name, shortcutIndex: index + 1,
                 aspectRatio: display.frame.width / display.frame.height,
-                thumbnail: covers[display.id], isPrimary: display.id == primary?.id
+                thumbnail: covers[display.id], isPrimary: display.id == primary?.id,
+                isApplied: activeOn.contains(display.id)
             )
         }
     }
@@ -216,7 +234,12 @@ final class ModalActions {
                 }
             }
         }
-        if Self.playlistBookmarkData(for: item) != nil {
+        if let appendWallpaper = inputs.appendWallpaper, item.isSupported {
+            actions.addToPlaylist = { [self] displayID in
+                guard let current = inputs.item(id), let entry = WallpaperQueueEntry.libraryItem(current) else { return }
+                appendWallpaper(entry, displayID)
+            }
+        } else if Self.playlistBookmarkData(for: item) != nil {
             actions.addToPlaylist = { [self] displayID in
                 guard let current = inputs.item(id), let data = Self.playlistBookmarkData(for: current) else { return }
                 inputs.appendToPlaylist(data, displayID)
@@ -297,7 +320,10 @@ final class ModalActions {
         if let lastUsed = item.lastUsedAt {
             let formatter = RelativeDateTimeFormatter()
             formatter.locale = AppLanguagePreference.current.locale
-            let relative = formatter.localizedString(for: lastUsed, relativeTo: Date())
+            let now = Date()
+            let relative = now.timeIntervalSince(lastUsed) < 60
+                ? String(localized: "Just now", bundle: .appLanguage)
+                : formatter.localizedString(for: lastUsed, relativeTo: now)
             parts.append(String(localized: "Last used \(relative)", bundle: .appLanguage))
         }
         return parts

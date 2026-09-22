@@ -134,7 +134,7 @@ struct WorkshopSettingsView: View {
                 .workshopContent,
                 .workshopDiagnostics,
                 .workshopLegal,
-                .workshopBadges
+                .workshopBadges,
             ]
         )
         .overlay(alignment: .bottom) {
@@ -165,7 +165,7 @@ struct WorkshopSettingsView: View {
             WorkshopSetupFacet(
                 key: "steamSignIn",
                 anchor: .workshopConnection,
-                title: "Steam sign-in",
+                title: "Steam sign-in check",
                 state: doctorService.steamLibraryAndAccountState
             ),
             WorkshopSetupFacet(
@@ -182,7 +182,7 @@ struct WorkshopSettingsView: View {
                     ? (workshopServices.apiKeyRejected ? .attention : .ready)
                     : .notStarted,
                 isOptional: true
-            )
+            ),
         ]
     }
 

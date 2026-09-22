@@ -11,6 +11,8 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
     public var savedHTMLConfig: HTMLConfig?
     /// Restored on same-scene re-pick after a type switch (keeps propertyOverrides).
     public var savedSceneDescriptor: SceneDescriptor?
+    /// Per-display, per-scene preset and edits. The legacy single slot remains for compatibility.
+    public var savedSceneCustomizations: [SceneDescriptor] = []
     public var playbackSpeed: Double
     public var fitMode: VideoFitMode
     public var videoDisplayMode: VideoDisplayMode = .perDisplay
@@ -20,6 +22,8 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
     public var effectConfig: VideoEffectConfig
     public var scheduleSlots: [ScheduleSlot]?
     public var playlistBookmarks: [Data]?
+    public var wallpaperQueue: [WallpaperQueueEntry]?
+    public var scheduleFallback: WallpaperQueueEntry?
     public var shufflePlaylist: Bool
     public var playlistRotationMinutes: Int?
     public var playlistCursorIndex: Int?
@@ -47,6 +51,7 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
         case savedHTMLSource
         case savedHTMLConfig
         case savedSceneDescriptor
+        case savedSceneCustomizations
         case playbackSpeed
         case fitMode
         case videoDisplayMode
@@ -55,6 +60,8 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
         case effectConfig
         case scheduleSlots
         case playlistBookmarks
+        case wallpaperQueue
+        case scheduleFallback
         case shufflePlaylist
         case playlistRotationMinutes
         case playlistCursorIndex
@@ -174,6 +181,12 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
         return false
     }
 
+    /// Explicit universal queues work across types; dormant legacy video lists retain their scope.
+    public var canNavigatePlaylist: Bool {
+        (wallpaperQueue != nil || wallpaperType == .video)
+            && wallpaperMode == .playlist && effectiveWallpaperQueue.count > 1
+    }
+
     public var htmlSource: HTMLSource? {
         activeWallpaper.htmlSource
     }
@@ -202,6 +215,8 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
         effectConfig = try c.decodeIfPresent(VideoEffectConfig.self, forKey: .effectConfig) ?? .default
         scheduleSlots = try c.decodeIfPresent([ScheduleSlot].self, forKey: .scheduleSlots)
         playlistBookmarks = try c.decodeIfPresent([Data].self, forKey: .playlistBookmarks)
+        wallpaperQueue = try c.decodeIfPresent([WallpaperQueueEntry].self, forKey: .wallpaperQueue)
+        scheduleFallback = try c.decodeIfPresent(WallpaperQueueEntry.self, forKey: .scheduleFallback)
         shufflePlaylist = try c.decodeIfPresent(Bool.self, forKey: .shufflePlaylist) ?? false
         playlistRotationMinutes = try c.decodeIfPresent(Int.self, forKey: .playlistRotationMinutes)
         playlistCursorIndex = try c.decodeIfPresent(Int.self, forKey: .playlistCursorIndex)
@@ -220,6 +235,7 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
         savedHTMLSource = try c.decodeIfPresent(HTMLSource.self, forKey: .savedHTMLSource)
         savedHTMLConfig = try c.decodeIfPresent(HTMLConfig.self, forKey: .savedHTMLConfig)
         savedSceneDescriptor = try c.decodeIfPresent(SceneDescriptor.self, forKey: .savedSceneDescriptor)
+        savedSceneCustomizations = try c.decodeIfPresent([SceneDescriptor].self, forKey: .savedSceneCustomizations) ?? []
         wpeOrigin = (try? c.decodeIfPresent(WPEOrigin.self, forKey: .wpeOrigin)) ?? nil
         displayFingerprint = try c.decodeIfPresent(String.self, forKey: .displayFingerprint)
         // Loose video → nil; refined below when active is packaged.
@@ -255,6 +271,9 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
         try c.encodeIfPresent(savedHTMLSource, forKey: .savedHTMLSource)
         try c.encodeIfPresent(savedHTMLConfig, forKey: .savedHTMLConfig)
         try c.encodeIfPresent(savedSceneDescriptor, forKey: .savedSceneDescriptor)
+        if !savedSceneCustomizations.isEmpty {
+            try c.encode(savedSceneCustomizations, forKey: .savedSceneCustomizations)
+        }
         try c.encode(playbackSpeed, forKey: .playbackSpeed)
         try c.encode(fitMode, forKey: .fitMode)
         try c.encode(videoDisplayMode, forKey: .videoDisplayMode)
@@ -263,6 +282,8 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
         try c.encode(effectConfig, forKey: .effectConfig)
         try c.encodeIfPresent(scheduleSlots, forKey: .scheduleSlots)
         try c.encodeIfPresent(playlistBookmarks, forKey: .playlistBookmarks)
+        try c.encodeIfPresent(wallpaperQueue, forKey: .wallpaperQueue)
+        try c.encodeIfPresent(scheduleFallback, forKey: .scheduleFallback)
         try c.encode(shufflePlaylist, forKey: .shufflePlaylist)
         try c.encodeIfPresent(playlistRotationMinutes, forKey: .playlistRotationMinutes)
         try c.encodeIfPresent(playlistCursorIndex, forKey: .playlistCursorIndex)
@@ -300,10 +321,19 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
         if let saved = savedSceneDescriptor {
             refreshed.savedSceneDescriptor = saved.refreshingPresetSnapshot(in: library)
         }
+        refreshed.savedSceneCustomizations = savedSceneCustomizations.map { $0.refreshingPresetSnapshot(in: library) }
+        refreshed.wallpaperQueue = wallpaperQueue?.map { $0.refreshingScenePresets(in: library) }
+        refreshed.scheduleFallback = scheduleFallback?.refreshingScenePresets(in: library)
+        refreshed.scheduleSlots = scheduleSlots?.map { slot in
+            var slot = slot
+            slot.wallpaper = slot.wallpaper?.refreshingScenePresets(in: library)
+            return slot
+        }
         return refreshed
     }
 
     public mutating func setSceneWallpaper(_ descriptor: SceneDescriptor, origin: WPEOrigin?) {
+        rememberCurrentSceneCustomization()
         preserveCurrentVideoBookmarkIfNeeded()
         preserveCurrentHTMLIfNeeded()
         // Both layers travel together: restoring the increment without the preset it was
@@ -311,8 +341,7 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
         var resolved = descriptor
         if descriptor.propertyOverrides.isEmpty,
            descriptor.presetID == nil,
-           let saved = savedSceneDescriptor,
-           saved.isSameScene(as: descriptor),
+           let saved = savedSceneCustomizations.last(where: { $0.isSameScene(as: descriptor) }),
            !saved.propertyOverrides.isEmpty || saved.presetID != nil {
             resolved = descriptor
                 .withPresetLayer(id: saved.presetID, snapshot: saved.presetSnapshot)
@@ -321,6 +350,21 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
         activeWallpaper = .scene(resolved)
         wpeOrigin = origin
         savedSceneDescriptor = resolved
+    }
+
+    public mutating func rememberCurrentSceneCustomization() {
+        // Migrate the old slot before recording the active scene; the active descriptor wins.
+        if let savedSceneDescriptor {
+            rememberSceneCustomization(savedSceneDescriptor)
+        }
+        if case let .scene(current) = activeWallpaper {
+            rememberSceneCustomization(current)
+        }
+    }
+
+    private mutating func rememberSceneCustomization(_ descriptor: SceneDescriptor) {
+        savedSceneCustomizations.removeAll { $0.isSameScene(as: descriptor) }
+        savedSceneCustomizations.append(descriptor)
     }
 
     @discardableResult
@@ -392,6 +436,13 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
         }
 
         guard let oldActive else { return copy }
+        copy.wallpaperQueue = copy.wallpaperQueue?.map { $0.replacingVideoBookmark(oldActive, with: bookmarkData) }
+        copy.scheduleFallback = copy.scheduleFallback?.replacingVideoBookmark(oldActive, with: bookmarkData)
+        copy.scheduleSlots = copy.scheduleSlots?.map { slot in
+            var slot = slot
+            slot.wallpaper = slot.wallpaper?.replacingVideoBookmark(oldActive, with: bookmarkData)
+            return slot
+        }
 
         if oldActive == copy.savedVideoBookmarkData {
             copy.savedVideoBookmarkData = bookmarkData

@@ -8,6 +8,9 @@ struct DetailRequiredItemsSection: View {
     let itemIDs: [UInt64]
     /// The target may not be on the current page.
     let onOpenItem: (UInt64) -> Void
+    /// The page's reveal set, so an item uncovered in the grid stays uncovered here. nil keeps the
+    /// reveal in this section's own `@State`.
+    var matureReveal: MatureRevealState?
 
     @Environment(WorkshopServices.self) private var services
     @Environment(\.openURL) private var openURL
@@ -18,7 +21,8 @@ struct DetailRequiredItemsSection: View {
     @State private var loadedFor: [UInt64] = []
     /// Bumped by Retry so `.task(id:)` runs again for the same ids.
     @State private var attempt = 0
-    /// Ephemeral, like the grid card's: a new detail page blurs again.
+    /// Ephemeral, like the grid card's: a new detail page blurs again. Unused once the host hands
+    /// this section a `matureReveal`.
     @State private var revealedIDs: Set<UInt64> = []
     @State private var pendingRevealID: UInt64?
     @State private var showingAgeConfirm = false
@@ -70,7 +74,7 @@ struct DetailRequiredItemsSection: View {
             Button(role: .destructive) {
                 MatureContentSettings.confirm()
                 if let id = pendingRevealID {
-                    revealedIDs.insert(id)
+                    reveal(id)
                 }
             } label: {
                 Text("I am 18 or older")
@@ -93,12 +97,24 @@ struct DetailRequiredItemsSection: View {
     }
 
     private func isBlurred(_ item: WorkshopQueryItem) -> Bool {
-        Self.blursThumbnail(tags: item.tags, blursMature: blurMatureThumbnails) && !revealedIDs.contains(item.id)
+        Self.blursThumbnail(tags: item.tags, blursMature: blurMatureThumbnails) && !isRevealed(item.id)
+    }
+
+    private func isRevealed(_ id: UInt64) -> Bool {
+        matureReveal?.isRevealed(id) ?? revealedIDs.contains(id)
+    }
+
+    private func reveal(_ id: UInt64) {
+        if let matureReveal {
+            matureReveal.reveal(id)
+        } else {
+            revealedIDs.insert(id)
+        }
     }
 
     private func requestReveal(_ id: UInt64) {
         if MatureContentSettings.isConfirmed {
-            revealedIDs.insert(id)
+            reveal(id)
         } else {
             pendingRevealID = id
             showingAgeConfirm = true

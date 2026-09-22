@@ -13,6 +13,13 @@ final class EditDeskRouter {
         case wallpapers, schemes, systemWallpaper, aerials
     }
 
+    /// What to import and which display it lands on, in one value: as two notifications the target
+    /// could arrive after the prompt had already picked a display.
+    struct AddWallpaperRequest: Hashable {
+        let kind: String
+        let targetDisplayID: CGDirectDisplayID?
+    }
+
     var page: Page = .home
     var detailDisplayID: CGDirectDisplayID?
     var overlayEditorDisplayID: CGDirectDisplayID?
@@ -20,7 +27,7 @@ final class EditDeskRouter {
     var settingsSelection: SettingsNavigation?
     var settingsSearchText = ""
     var pendingSettingsSearchAnchor: SettingsSearchAnchor?
-    var pendingAddWallpaperKind: String?
+    var pendingAddWallpaper: AddWallpaperRequest?
     var pendingFailureID: UUID?
     var onboardingRequested = false
     private(set) var previousPage: Page?
@@ -28,11 +35,13 @@ final class EditDeskRouter {
 
     init(
         initialNavigation: Navigation?,
-        initialAddWallpaperPromptKind: String?,
+        initialAddWallpaperRequest: AddWallpaperRequest?,
+        initialOnboardingRequested: Bool = false,
         isWorkshopAvailable: @escaping () -> Bool
     ) {
         self.isWorkshopAvailable = isWorkshopAvailable
-        pendingAddWallpaperKind = initialAddWallpaperPromptKind
+        pendingAddWallpaper = initialAddWallpaperRequest
+        onboardingRequested = initialOnboardingRequested
         switch initialNavigation {
         case .general:
             page = .settings
@@ -71,12 +80,18 @@ final class EditDeskRouter {
             libraryFocus = .aerials
         case .promptAddWallpaper:
             guard let kind = notification.userInfo?["kind"] as? String else { return }
-            pendingAddWallpaperKind = kind
+            pendingAddWallpaper = AddWallpaperRequest(
+                kind: kind, targetDisplayID: notification.userInfo?["screenID"] as? CGDirectDisplayID
+            )
+            // Only HomePage consumes it, and HomePage is off the tree on these two pages.
+            if page == .workshop || page == .settings {
+                select(.home)
+            }
         case .selectScreenInSettings:
             guard let screenID = notification.userInfo?["screenID"] as? CGDirectDisplayID else { return }
             showDetail(screenID)
             pendingFailureID = notification.userInfo?["failureID"] as? UUID
-        case .showOnboarding:
+        case .showOnboarding, EditDeskRoot.restartOnboardingNotification:
             onboardingRequested = true
         default:
             break

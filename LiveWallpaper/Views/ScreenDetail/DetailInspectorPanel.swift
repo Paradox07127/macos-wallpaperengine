@@ -13,6 +13,7 @@ struct DetailInspectorPanel: View {
     let onWallpaperModeChange: (WallpaperMode) -> Void
     let showsResetDisplaySettings: Bool
     let onResetDisplaySettings: () -> Void
+    var onOpenAutomation: (() -> Void)?
     #if !LITE_BUILD
     @State private var wpeProjectCustomSettingsSchema: WallpaperEngineProjectPropertySchema?
     @State private var wpeSceneCustomSettingsSchema: WallpaperEngineProjectPropertySchema?
@@ -32,7 +33,8 @@ struct DetailInspectorPanel: View {
         isColorExpanded: Binding<Bool>,
         onWallpaperModeChange: @escaping (WallpaperMode) -> Void,
         showsResetDisplaySettings: Bool,
-        onResetDisplaySettings: @escaping () -> Void
+        onResetDisplaySettings: @escaping () -> Void,
+        onOpenAutomation: (() -> Void)? = nil
     ) {
         self.screen = screen
         _draft = draft
@@ -44,6 +46,7 @@ struct DetailInspectorPanel: View {
         self.onWallpaperModeChange = onWallpaperModeChange
         self.showsResetDisplaySettings = showsResetDisplaySettings
         self.onResetDisplaySettings = onResetDisplaySettings
+        self.onOpenAutomation = onOpenAutomation
         // A memoized answer renders on the panel's first frame instead of behind the loading placeholder.
         let current = draft.wrappedValue
         if current.selectedWallpaperType == .scene,
@@ -58,8 +61,19 @@ struct DetailInspectorPanel: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 12) {
-                if draft.selectedWallpaperType == .video,
-                   featureCatalog.capabilities.selectableWallpaperModes.count > 1 {
+                if let onOpenAutomation, featureCatalog.isEnabled(.playlists) {
+                    Button(action: onOpenAutomation) {
+                        HStack {
+                            Label("Queue & Schedule", systemImage: "list.bullet")
+                            Spacer()
+                            Image(systemName: "arrow.up.right.square")
+                        }
+                        .padding(12)
+                        .background(DesignTokens.Colors.surfaceRaised, in: RoundedRectangle(cornerRadius: DesignTokens.Corner.md))
+                    }
+                    .buttonStyle(.plain)
+                } else if draft.selectedWallpaperType == .video,
+                          featureCatalog.capabilities.selectableWallpaperModes.count > 1 {
                     wallpaperModeCard
                 }
 
@@ -135,7 +149,6 @@ struct DetailInspectorPanel: View {
         }
         .frame(width: inspectorPanelWidth)
         .fixedSize(horizontal: true, vertical: false)
-        .background(Color(NSColor.windowBackgroundColor))
         .clipped()
         .accessibilityLabel(Text("Wallpaper Properties"))
         #if !LITE_BUILD

@@ -28,7 +28,7 @@ enum StageGeometry {
     static let builtinShellPadding = NSEdgeInsets(top: 7, left: 7, bottom: 9, right: 7)
     /// How far the type badge rises above the shell's top edge.
     static let badgeOverhang: CGFloat = 10
-    static let badgeHeight: CGFloat = 18
+    static let badgeHeight: CGFloat = 20
     /// Gap between the shell's bottom edge and the name row: stand + base for an external display,
     /// the keyboard line for a MacBook.
     static let externalStandDrop: CGFloat = 23
@@ -202,15 +202,32 @@ enum StageGeometry {
         )
     }
 
+    /// Top edge of the card row *right now*: the shelf slides up from under the window over the
+    /// first leg, so chrome that rides on it has to read this rather than the resting y.
+    static func shelfRowTop(progress: Double, windowSize: CGSize) -> CGFloat {
+        let (t1, _) = progressSplit(progress)
+        return windowSize.height - cardRowBottomInset + shelfHiddenOffset * CGFloat(1 - t1)
+    }
+
     static func chipRowTop(progress: Double, windowSize: CGSize) -> CGFloat {
-        guard progress < chipRowSwitchProgress else { return chipRowTopFull }
-        return max(topBarHeight + 8, windowSize.height - cardRowBottomInset - chipRowGap)
+        let p = clampProgress(progress)
+        let riding = max(topBarHeight + 8, shelfRowTop(progress: p, windowSize: windowSize) - chipRowGap)
+        // `chipRowSwitchProgress` is the midpoint of the crossing, not a step: a step there would
+        // throw the row the height of the window in one frame. Linear, so the row crosses on the
+        // cards' own `t2` schedule and never outruns the shelf it comes off.
+        let crossing = min(max(p - chipRowSwitchProgress + 0.5, 0), 1)
+        return lerp(riding, chipRowTopFull, CGFloat(crossing))
     }
 
     // MARK: Arrangement
 
-    static func stageRect(windowSize: CGSize) -> CGRect {
-        CGRect(x: 0, y: topBarHeight, width: windowSize.width, height: windowSize.height - topBarHeight)
+    /// `topInset` is the band the overview onboarding card occupies (R-27); the arrangement gets
+    /// what is left and re-centres in it.
+    static func stageRect(windowSize: CGSize, topInset: CGFloat = 0) -> CGRect {
+        CGRect(
+            x: 0, y: topBarHeight + topInset,
+            width: windowSize.width, height: windowSize.height - topBarHeight - topInset
+        )
     }
 
     static func arrangement(frames: [CGRect], in stageRect: CGRect) -> Arrangement {
@@ -311,6 +328,132 @@ enum StageGeometry {
             y: content.minY - pad.top,
             width: content.width + pad.left + pad.right,
             height: content.height + pad.top + pad.bottom
+        )
+    }
+
+    // MARK: Name row (S1)
+
+    /// The dot, the display name and the status, centred as one group under the shell. All three
+    /// rects are in the shell layer's own coordinates.
+    struct NameRowLayout: Equatable {
+        var dot: CGRect
+        var name: CGRect
+        var status: CGRect
+    }
+
+    static let nameRowDotSize: CGFloat = 7
+    static let nameRowItemGap: CGFloat = 8
+    static let nameRowSideMargin: CGFloat = 8
+
+    /// `statusWidth` is the status text's own width: it gives up room before the name does, and the
+    /// name truncates in the middle once even that is not enough.
+    static func nameRowLayout(
+        shellWidth: CGFloat, top: CGFloat, nameWidth: CGFloat, statusWidth: CGFloat
+    ) -> NameRowLayout {
+        let available = max(0, shellWidth - 2 * nameRowSideMargin)
+        let lead = nameRowDotSize + nameRowItemGap
+        let status = min(statusWidth, max(0, available - lead))
+        let trailing = status > 0 ? nameRowItemGap + status : 0
+        let name = min(nameWidth, max(0, available - lead - trailing))
+        let left = (shellWidth - (lead + name + trailing)) / 2
+        return NameRowLayout(
+            dot: CGRect(
+                x: left, y: top + (nameRowHeight - nameRowDotSize) / 2,
+                width: nameRowDotSize, height: nameRowDotSize
+            ),
+            name: CGRect(x: left + lead, y: top, width: name, height: nameRowHeight),
+            status: CGRect(
+                x: left + lead + name + nameRowItemGap, y: top, width: status, height: nameRowHeight
+            )
+        )
+    }
+
+    // MARK: Playback controls (S1)
+
+    /// One capsule holding the glyph buttons. `buttons` are in the container's own coordinates, in
+    /// drawing order; the layer and its hit test both read this, so a button that is not drawn
+    /// cannot keep a hot spot.
+    struct PlaybackLayout: Equatable {
+        var container: CGRect
+        var buttons: [CGRect]
+    }
+
+    static let playbackButtonSide: CGFloat = 26
+    static let playbackButtonGap: CGFloat = 2
+    static let playbackInset = CGSize(width: 4, height: 2)
+    static let playbackTrailingMargin: CGFloat = 10
+    static let playbackBottomMargin: CGFloat = 9
+
+    static func playbackLayout(content size: CGSize, showsPlaylistControls: Bool) -> PlaybackLayout {
+        let count = showsPlaylistControls ? 3 : 1
+        let width = CGFloat(count) * playbackButtonSide
+            + CGFloat(count - 1) * playbackButtonGap + 2 * playbackInset.width
+        let height = playbackButtonSide + 2 * playbackInset.height
+        return PlaybackLayout(
+            container: CGRect(
+                x: size.width - width - playbackTrailingMargin, y: size.height - height - playbackBottomMargin,
+                width: width, height: height
+            ),
+            buttons: (0 ..< count).map { index in
+                CGRect(
+                    x: playbackInset.width + CGFloat(index) * (playbackButtonSide + playbackButtonGap),
+                    y: playbackInset.height, width: playbackButtonSide, height: playbackButtonSide
+                )
+            }
+        )
+    }
+
+    // MARK: Empty screen (S9)
+
+    /// Where the empty-screen entry points sit inside a display's content layer, in that layer's
+    /// own coordinates.
+    struct EmptyScreenLayout: Equatable {
+        var symbol: CGRect
+        var chooseFile: CGRect
+        var pasteURL: CGRect
+        var hint: CGRect
+    }
+
+    static let emptyScreenMargin: CGFloat = 10
+    static let emptyScreenRowGap: CGFloat = 8
+    static let emptyScreenButtonHeight: CGFloat = 26
+    static let emptyScreenButtonGap: CGFloat = 8
+    static let emptyScreenButtonPadding: CGFloat = 12
+    static let emptyScreenHintHeight: CGFloat = 15
+    /// Side of the placeholder glyph, as a share of the content layer's height so it tracks the
+    /// arrangement's scale, capped where it would stop reading as a background mark.
+    static let emptyScreenSymbolFraction: CGFloat = 0.22
+    static let emptyScreenSymbolMaxSide: CGFloat = 64
+
+    /// `nil` once the arrangement draws the display too small to hold the stack: the dashed shell
+    /// is still a drop target, and a tap on it still opens the detail page.
+    static func emptyScreenLayout(
+        content size: CGSize, chooseFileTextWidth: CGFloat, pasteURLTextWidth: CGFloat
+    ) -> EmptyScreenLayout? {
+        let choose = chooseFileTextWidth + 2 * emptyScreenButtonPadding
+        let paste = pasteURLTextWidth + 2 * emptyScreenButtonPadding
+        let row = choose + emptyScreenButtonGap + paste
+        let symbolSide = min(emptyScreenSymbolMaxSide, size.height * emptyScreenSymbolFraction)
+        let column = symbolSide + emptyScreenButtonHeight + emptyScreenHintHeight + 2 * emptyScreenRowGap
+        guard size.width >= row + 2 * emptyScreenMargin, size.height >= column + 2 * emptyScreenMargin else {
+            return nil
+        }
+        let top = (size.height - column) / 2
+        let buttonTop = top + symbolSide + emptyScreenRowGap
+        let left = (size.width - row) / 2
+        return EmptyScreenLayout(
+            symbol: CGRect(
+                x: (size.width - symbolSide) / 2, y: top, width: symbolSide, height: symbolSide
+            ),
+            chooseFile: CGRect(x: left, y: buttonTop, width: choose, height: emptyScreenButtonHeight),
+            pasteURL: CGRect(
+                x: left + choose + emptyScreenButtonGap, y: buttonTop,
+                width: paste, height: emptyScreenButtonHeight
+            ),
+            hint: CGRect(
+                x: emptyScreenMargin, y: buttonTop + emptyScreenButtonHeight + emptyScreenRowGap,
+                width: size.width - 2 * emptyScreenMargin, height: emptyScreenHintHeight
+            )
         )
     }
 
@@ -422,20 +565,20 @@ enum StageGeometry {
         return CGRect(x: x, y: y, width: cardSize.width, height: cardSize.height)
     }
 
-    static func gridColumns(windowWidth: CGFloat) -> Int {
+    static func gridColumns(windowWidth: CGFloat, size: LibraryTileSize = .medium) -> Int {
         DesignTokens.LibraryGrid.columns(
-            for: .medium, aspect: .wide,
+            for: size, aspect: .wide,
             fitting: windowWidth - 2 * DesignTokens.LibraryGrid.horizontalPadding
         ).count
     }
 
-    static func gridCellSize(windowWidth: CGFloat) -> CGSize {
-        gridFrame(index: 0, windowWidth: windowWidth).size
+    static func gridCellSize(windowWidth: CGFloat, size: LibraryTileSize = .medium) -> CGSize {
+        gridFrame(index: 0, windowWidth: windowWidth, size: size).size
     }
 
-    static func gridFrame(index: Int, windowWidth: CGFloat) -> CGRect {
+    static func gridFrame(index: Int, windowWidth: CGFloat, size: LibraryTileSize = .medium) -> CGRect {
         DesignTokens.LibraryGrid.tileFrame(
-            index: index, size: .medium, aspect: .wide,
+            index: index, size: size, aspect: .wide,
             fitting: windowWidth - 2 * DesignTokens.LibraryGrid.horizontalPadding,
             tileAspectRatio: cardAspectRatio
         ).offsetBy(
@@ -444,10 +587,10 @@ enum StageGeometry {
         )
     }
 
-    static func visibleGridCards(count: Int, windowSize: CGSize, scrollOffset: CGFloat) -> Range<Int> {
+    static func visibleGridCards(count: Int, windowSize: CGSize, scrollOffset: CGFloat, size: LibraryTileSize = .medium) -> Range<Int> {
         guard count > 0, windowSize.height > gridTop else { return 0 ..< 0 }
-        let columns = gridColumns(windowWidth: windowSize.width)
-        let cell = gridCellSize(windowWidth: windowSize.width)
+        let columns = gridColumns(windowWidth: windowSize.width, size: size)
+        let cell = gridCellSize(windowWidth: windowSize.width, size: size)
         let pitch = cell.height + DesignTokens.LibraryGrid.spacing
         let top = scrollOffset - DesignTokens.LibraryGrid.verticalPadding
         let firstRow = max(0, Int(floor((top - cell.height) / pitch)) + 1)
@@ -457,7 +600,7 @@ enum StageGeometry {
 
     static func cardPlacement(
         style: ShelfStyle, index: Int, count: Int, progress: Double, focus: Double, windowSize: CGSize,
-        capacity: Int = shelfCapacity
+        capacity: Int = shelfCapacity, gridSize: LibraryTileSize = .medium
     ) -> CardPlacement {
         let p = clampProgress(progress)
         let (t1, t2) = progressSplit(p)
@@ -465,10 +608,10 @@ enum StageGeometry {
         let row = rowFrame(
             style: style, index: index, count: count, focus: focus, windowSize: windowSize, capacity: capacity
         )
-        let grid = gridFrame(index: index, windowWidth: windowSize.width)
+        let grid = gridFrame(index: index, windowWidth: windowSize.width, size: gridSize)
         let mix = CGFloat(t2)
         let flat = 1 - mix
-        let hidden = shelfHiddenOffset * CGFloat(1 - t1)
+        let hidden = shelfRowTop(progress: p, windowSize: windowSize) - row.minY
         let frame = CGRect(
             x: lerp(row.minX, grid.minX, mix),
             y: lerp(row.minY, grid.minY, mix) + hidden,

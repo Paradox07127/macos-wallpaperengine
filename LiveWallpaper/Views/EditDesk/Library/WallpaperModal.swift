@@ -26,6 +26,9 @@ struct WallpaperModal: View {
     @State private var dragState: DragState = .idle
     @State private var isNavigatingForward = true
     @State private var confirmingDelete = false
+    #if !LITE_BUILD
+    @Environment(SteamCMDDoctorService.self) private var doctor: SteamCMDDoctorService?
+    #endif
 
     private static let barPadding: CGFloat = 20
 
@@ -33,24 +36,90 @@ struct WallpaperModal: View {
         EditDeskModalChrome(
             windowSize: windowSize,
             titlebarInset: titlebarInset,
-            backdrop: content.preview,
+            backdrop: nil,
+            panelFrameOverride: LibraryDetailGeometry.panelFrame(in: windowSize),
             onDismiss: onDismiss,
             onEscape: cancelDragForEscape,
             onTargetShortcut: applyToShortcut
         ) { panel in
             panelBody(panel)
+                .id(content.itemID)
         }
     }
 
     // MARK: Panel
 
     private func panelBody(_ panel: CGRect) -> some View {
-        VStack(spacing: 0) {
-            previewArea(size: ModalGeometry.previewSize(inPanel: panel))
-                .padding(.horizontal, ModalGeometry.previewMargin)
-                .padding(.top, ModalGeometry.previewMargin)
-            bottomBar
+        VStack(alignment: .leading, spacing: 18) {
+            Text(verbatim: content.title)
+                .font(.title2.weight(.semibold))
+                .lineLimit(2)
+                .textSelection(.enabled)
+            HStack(alignment: .top, spacing: 24) {
+                VStack(alignment: .leading, spacing: 16) {
+                    previewArea(size: LibraryDetailGeometry.previewSize(in: panel))
+                    metadata
+                    HStack(spacing: 12) {
+                        if let reveal = actions.showInFinder {
+                            GlassIconButton("folder", size: .regular, action: reveal)
+                                .help(Text("Show in Finder")).accessibilityLabel(Text("Show in Finder"))
+                        }
+                        if let open = actions.openInSteam {
+                            GlassIconButton("arrow.up.forward.app", size: .regular, action: open)
+                                .help(Text("Open in Steam")).accessibilityLabel(Text("Open in Steam"))
+                        }
+                        if actions.addToPlaylist != nil || actions.schedule != nil {
+                            addMenu
+                        }
+                        moreMenu
+                    }
+                }
+                .frame(width: LibraryDetailGeometry.previewSize(in: panel).width)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 18) {
+                        if let description = content.descriptionText, !description.isEmpty {
+                            Text("About this wallpaper").font(.headline)
+                            Text(verbatim: description).font(.body).textSelection(.enabled)
+                        }
+                        if !content.tags.isEmpty {
+                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 90))], alignment: .leading, spacing: 8) {
+                                ForEach(content.tags, id: \.self) { tag in
+                                    Text(verbatim: tag).font(.caption).lineLimit(1)
+                                        .padding(.horizontal, 10).padding(.vertical, 6)
+                                        .frame(maxWidth: .infinity)
+                                        .background(.quaternary, in: Capsule())
+                                }
+                            }
+                        }
+                        communityPresets
+                        if !content.dependencyIDs.isEmpty {
+                            Text("Dependencies").font(.headline)
+                            ForEach(content.dependencyIDs, id: \.self) { id in
+                                if let url = URL(string: "https://steamcommunity.com/sharedfiles/filedetails/?id=\(id)") {
+                                    Link(destination: url) { Label(id, systemImage: "shippingbox") }
+                                }
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .frame(maxHeight: .infinity, alignment: .top)
+            Divider()
+            HStack(spacing: 12) {
+                GlassIconButton("chevron.left", size: .regular) { navigate(forward: false) }
+                    .disabled(!navigation.canGoPrevious)
+                    .help(Text("Previous Wallpaper")).accessibilityLabel(Text("Previous Wallpaper"))
+                GlassIconButton("chevron.right", size: .regular) { navigate(forward: true) }
+                    .disabled(!navigation.canGoNext)
+                    .help(Text("Next Wallpaper")).accessibilityLabel(Text("Next Wallpaper"))
+                Spacer(minLength: 16)
+                applyControls
+            }
         }
+        .padding(.horizontal, 24)
+        .padding(.bottom, 20)
         .overlay { shortcuts }
         .confirmationDialog(
             Text("Delete this wallpaper?"),
@@ -81,21 +150,7 @@ struct WallpaperModal: View {
         .animation(navigationAnimation, value: content.itemID)
         .overlay(previewShape.strokeBorder(DesignTokens.EditDesk.Colors.strokeBadge, lineWidth: 1))
         .overlay(alignment: .topLeading) {
-            mediaChip(Text("▶ Preview · \(Self.kindName(content.kind)) (auto-detected)"))
-                .padding(DesignTokens.EditDesk.Spacing.s8)
-        }
-        .overlay(alignment: .topTrailing) {
-            if content.isDraggable {
-                mediaChip(Text("Drag this preview to a display above ↑"))
-                    .padding(DesignTokens.EditDesk.Spacing.s8)
-            }
-        }
-        .overlay(alignment: .bottomLeading) {
-            ModalTagChips(tags: content.tags)
-                .padding(DesignTokens.EditDesk.Spacing.s8)
-        }
-        .overlay(alignment: .bottomTrailing) {
-            presetCapsule
+            mediaChip(Text("Still preview · \(Self.kindName(content.kind))"))
                 .padding(DesignTokens.EditDesk.Spacing.s8)
         }
         // MOTION 7 asks for .3 under the ghost; `quietStroke` is the nearest step in the scale.
@@ -155,12 +210,13 @@ struct WallpaperModal: View {
                 ModalMetaLine(title: content.title, metaParts: content.metaParts, installed: content.installed)
                     .id(content.itemID)
                     .transition(.opacity)
-                Spacer(minLength: DesignTokens.EditDesk.Spacing.s12)
-                applyControls
+                Spacer(minLength: 0)
             }
             .animation(navigationAnimation, value: content.itemID)
             .frame(maxHeight: .infinity)
-            ModalShortcutHint()
+            applyControls
+                .padding(.bottom, DesignTokens.EditDesk.Spacing.s12)
+            ModalShortcutHint(showsPlayback: actions.togglePlayback != nil)
                 .padding(.bottom, DesignTokens.EditDesk.Spacing.s12)
         }
         .padding(.horizontal, Self.barPadding)
@@ -169,47 +225,62 @@ struct WallpaperModal: View {
 
     private var applyControls: some View {
         let split = ModalGeometry.applyButtons(targets: targets)
-        return HStack(spacing: DesignTokens.EditDesk.Spacing.s12) {
-            if let primary = split.primary {
-                applyButton(primary, isPrimary: true)
+        return HStack(spacing: 10) {
+            ForEach(([split.primary].compactMap(\.self)) + split.secondary) { target in
+                Button { actions.applyTo(target.id) } label: {
+                    Label(target.name, systemImage: target.isApplied ? "checkmark" : "display")
+                        .lineLimit(1).truncationMode(.middle)
+                }
+                .buttonStyle(.bordered).controlSize(.large)
+                .tint(target.isPrimary ? .accentColor : nil)
+                .help(Text("Apply to \(target.name)"))
+                .accessibilityLabel(Text("Apply to \(target.name)"))
+                .accessibilityValue(target.isApplied ? Text("Applied") : Text(""))
             }
-            ForEach(split.secondary) { target in
-                applyButton(target, isPrimary: false)
-            }
-            if actions.addToPlaylist != nil || actions.schedule != nil {
-                addMenu
-            }
-            moreMenu
         }
     }
 
-    private func applyButton(_ target: ModalDisplayTarget, isPrimary: Bool) -> some View {
-        ModalBarButton(
-            fill: isPrimary
-                ? DesignTokens.EditDesk.Colors.primaryButtonFill
-                : DesignTokens.EditDesk.Colors.fillSecondaryButton
-        ) {
-            actions.applyTo(target.id)
-        } label: {
-            HStack(spacing: 6) {
-                Text("Apply to \(target.name)")
-                    .font(DesignTokens.EditDesk.Typography.button)
-                    .foregroundStyle(
-                        isPrimary
-                            ? DesignTokens.EditDesk.Colors.primaryButtonText
-                            : DesignTokens.EditDesk.Colors.textPrimary
-                    )
-                Text(verbatim: "⌘\(target.shortcutIndex)")
-                    .font(DesignTokens.EditDesk.Typography.badgeMono)
-                    .foregroundStyle(
-                        isPrimary
-                            ? DesignTokens.EditDesk.Colors.primaryButtonText.opacity(DesignTokens.Opacity.dimmedIcon)
-                            : DesignTokens.EditDesk.Colors.textSecondary
-                    )
+    private var metadata: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label(Self.kindName(content.kind), systemImage: Self.placeholderSymbol(content.kind))
+                .font(.subheadline.weight(.medium))
+            ForEach(Array(content.metaParts.filter { !$0.isEmpty }.enumerated()), id: \.offset) { _, part in
+                Text(verbatim: part).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
             }
-            .lineLimit(1)
-            .padding(.horizontal, DesignTokens.EditDesk.Spacing.s14)
+            if let rating = content.contentRating {
+                Text(verbatim: rating).font(.caption).foregroundStyle(.secondary)
+            }
+            if let date = content.importedAt {
+                LabeledContent("Imported") { Text(date, style: .date) }.font(.caption)
+            }
+            if let installed = content.installed {
+                if installed.isWindowsOnly {
+                    Label("Windows Only", systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
+                }
+                if !installed.inUseOnDisplayNames.isEmpty {
+                    Label(installed.inUseOnDisplayNames.joined(separator: ", "), systemImage: "display").font(.caption).foregroundStyle(.secondary)
+                }
+                if case .checking = installed.updateState {
+                    ProgressView().controlSize(.small)
+                }
+                if case let .failed(message) = installed.updateState {
+                    Text(verbatim: message).font(.caption).foregroundStyle(.red)
+                }
+                if case .available = installed.updateState {
+                    Label("Needs Update", systemImage: "arrow.down.circle").font(.caption)
+                }
+            }
         }
+    }
+
+    @ViewBuilder
+    private var communityPresets: some View {
+        #if !LITE_BUILD
+        if let id = content.workshopID, let doctor,
+           let url = URL(string: "https://steamcommunity.com/sharedfiles/filedetails/?id=\(id)") {
+            DetailPresetsSection(wallpaperID: id, communityURL: url, doctor: doctor)
+        }
+        #endif
     }
 
     private var addMenu: some View {

@@ -37,7 +37,7 @@ struct AppStartupPlan: Equatable {
     let showOnboarding: Bool
     let showSettingsOnLaunch: Bool
 
-    init(runtimeOptions: AppRuntimeOptions, onboardingCompleted: Bool, editDeskEnabled: Bool = false) {
+    init(runtimeOptions: AppRuntimeOptions, onboardingCompleted: Bool, onboardingHandled: Bool = true, editDeskEnabled: Bool = false) {
         #if LITE_BUILD
         screenManagerOptions = ScreenManagerStartupOptions(
             restoreSavedWallpapers: runtimeOptions.shouldRestoreSavedWallpapers,
@@ -57,6 +57,7 @@ struct AppStartupPlan: Equatable {
         #endif
         showOnboarding = runtimeOptions.shouldShowOnboarding && !onboardingCompleted && !editDeskEnabled
         showSettingsOnLaunch = runtimeOptions.shouldOpenSettingsOnLaunch
+            || (editDeskEnabled && runtimeOptions.shouldShowOnboarding && !onboardingHandled)
     }
 }
 
@@ -83,7 +84,8 @@ struct SettingsWindowHost {
     func makeWindowController(
         editDeskEnabled: Bool,
         initialNavigation: Navigation?,
-        initialAddWallpaperPromptKind: String?,
+        initialAddWallpaperRequest: EditDeskRouter.AddWallpaperRequest?,
+        initialOnboardingRequested: Bool = false,
         delegate: any NSWindowDelegate
     ) -> NSWindowController {
         let contentSize = editDeskEnabled
@@ -107,6 +109,12 @@ struct SettingsWindowHost {
         // canvas or let `.behindWindow` blur through, and flipping this on a live window is fiddly.
         window.isOpaque = !editDeskEnabled
         window.isMovableByWindowBackground = false
+        if editDeskEnabled {
+            let toolbar = NSToolbar(identifier: "LoomscreenEditDeskToolbar")
+            toolbar.showsBaselineSeparator = false
+            window.toolbar = toolbar
+            window.toolbarStyle = .unified
+        }
         // ARC owns the window through the controller; windowWillClose drops both so closing destroys the whole hierarchy instead of AppKit double-releasing it.
         window.isReleasedWhenClosed = false
         window.delegate = delegate
@@ -120,12 +128,13 @@ struct SettingsWindowHost {
         if editDeskEnabled {
             window.contentView = hostingView(EditDeskRoot(
                 initialNavigation: initialNavigation,
-                initialAddWallpaperPromptKind: initialAddWallpaperPromptKind
+                initialAddWallpaperRequest: initialAddWallpaperRequest,
+                initialOnboardingRequested: initialOnboardingRequested
             ))
         } else {
             window.contentView = hostingView(ContentView(
                 initialNavigation: initialNavigation,
-                initialAddWallpaperPromptKind: initialAddWallpaperPromptKind
+                initialAddWallpaperPromptKind: initialAddWallpaperRequest?.kind
             ))
         }
 
@@ -180,9 +189,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Logger.notice("Tail the runtime log → \(hint)", category: .startup)
         }
 
+        #if LITE_BUILD
+        let startupCatalog = FeatureCatalog(capabilities: .lite)
+        #else
+        let startupCatalog = FeatureCatalog(capabilities: ProductCapabilities.pro.withWorkshopOnline())
+        #endif
         let startupPlan = AppStartupPlan(
             runtimeOptions: runtimeOptions,
             onboardingCompleted: UserDefaults.standard.bool(forKey: "Onboarding.Completed"),
+            onboardingHandled: OnboardingProgress.isHandled(
+                defaults: .appScoped(), legacyDefaults: .standard,
+                workshopAvailable: startupCatalog.isEnabled(.wpeImport)
+            ),
             editDeskEnabled: EditDeskFlag.isEnabled
         )
 
@@ -344,7 +362,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, self.lifecycle.allowsWork else { return }
-                self.showOnboarding()
+                if EditDeskFlag.isEnabled {
+                    self.showSettings(restartsOnboarding: true)
+                } else {
+                    self.showOnboarding()
+                }
             }
         }
     }
@@ -431,8 +453,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func showSettings(
         initialScreenID: CGDirectDisplayID? = nil,
-        initialAddWallpaperPromptKind: String? = nil,
-        opensGeneralSettings: Bool = false
+        initialAddWallpaperRequest: EditDeskRouter.AddWallpaperRequest? = nil,
+        opensGeneralSettings: Bool = false,
+        restartsOnboarding: Bool = false
     ) {
         guard lifecycle.allowsWork, let manager = screenManager else { return }
         Logger.info("Settings window requested", category: .ui)
@@ -442,8 +465,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Logger.info("Settings window reused", category: .ui)
             postSettingsWindowRequest(
                 initialScreenID: initialScreenID,
-                initialAddWallpaperPromptKind: initialAddWallpaperPromptKind,
-                opensGeneralSettings: opensGeneralSettings
+                initialAddWallpaperRequest: initialAddWallpaperRequest,
+                opensGeneralSettings: opensGeneralSettings,
+                restartsOnboarding: restartsOnboarding
             )
             return
         }
@@ -452,7 +476,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let controller = makeSettingsWindowController(
             manager: manager,
             initialNavigation: initialNavigation,
-            initialAddWallpaperPromptKind: initialAddWallpaperPromptKind
+            initialAddWallpaperRequest: initialAddWallpaperRequest,
+            initialOnboardingRequested: restartsOnboarding
         )
         settingsWindowController = controller
         presentSettingsWindow(controller)
@@ -462,7 +487,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func makeSettingsWindowController(
         manager: ScreenManager,
         initialNavigation: Navigation?,
-        initialAddWallpaperPromptKind: String?
+        initialAddWallpaperRequest: EditDeskRouter.AddWallpaperRequest?,
+        initialOnboardingRequested: Bool
     ) -> NSWindowController {
         #if !LITE_BUILD
         let host = SettingsWindowHost(
@@ -478,7 +504,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return host.makeWindowController(
             editDeskEnabled: EditDeskFlag.isEnabled,
             initialNavigation: initialNavigation,
-            initialAddWallpaperPromptKind: initialAddWallpaperPromptKind,
+            initialAddWallpaperRequest: initialAddWallpaperRequest,
+            initialOnboardingRequested: initialOnboardingRequested,
             delegate: self
         )
     }
@@ -509,11 +536,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func postSettingsWindowRequest(
         initialScreenID: CGDirectDisplayID?,
-        initialAddWallpaperPromptKind: String?,
-        opensGeneralSettings: Bool
+        initialAddWallpaperRequest: EditDeskRouter.AddWallpaperRequest?,
+        opensGeneralSettings: Bool,
+        restartsOnboarding: Bool
     ) {
         lifecycle.schedule { [weak self] in
             guard let self, self.lifecycle.allowsWork else { return }
+            if restartsOnboarding {
+                NotificationCenter.default.post(name: EditDeskRoot.restartOnboardingNotification, object: nil)
+            }
             if opensGeneralSettings {
                 NotificationCenter.default.post(name: .openGeneralSettings, object: nil)
             }
@@ -524,12 +555,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     userInfo: ["screenID": id]
                 )
             }
-            if let kind = initialAddWallpaperPromptKind {
-                NotificationCenter.default.post(
-                    name: .promptAddWallpaper,
-                    object: nil,
-                    userInfo: ["kind": kind]
-                )
+            if let request = initialAddWallpaperRequest {
+                var userInfo: [String: Any] = ["kind": request.kind]
+                if let targetDisplayID = request.targetDisplayID {
+                    userInfo["screenID"] = targetDisplayID
+                }
+                NotificationCenter.default.post(name: .promptAddWallpaper, object: nil, userInfo: userInfo)
             }
         }
     }
@@ -691,11 +722,22 @@ struct LiveWallpaperApp: App {
                 openSettingsForScreen: { [appDelegate] id in
                     appDelegate.showSettings(initialScreenID: id)
                 },
+                openHome: { [appDelegate] in
+                    appDelegate.showSettings()
+                },
                 openSettingsAndAddWallpaper: { [appDelegate] screenID in
-                    appDelegate.showSettings(
-                        initialScreenID: screenID,
-                        initialAddWallpaperPromptKind: "video"
-                    )
+                    if EditDeskFlag.isEnabled {
+                        // The Edit Desk reads the type off the file it is handed; the target rides in
+                        // the same request so it cannot land after the picker has already opened.
+                        appDelegate.showSettings(
+                            initialAddWallpaperRequest: .init(kind: "any", targetDisplayID: screenID)
+                        )
+                    } else {
+                        appDelegate.showSettings(
+                            initialScreenID: screenID,
+                            initialAddWallpaperRequest: .init(kind: "video", targetDisplayID: nil)
+                        )
+                    }
                 }
             )
             .environment(screenManager)

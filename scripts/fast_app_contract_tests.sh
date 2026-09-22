@@ -120,6 +120,8 @@ SUITES=(
   # that SCREENS.md S1–S3 pins numerically; both are hardware-free.
   EditDeskStageModelTests
   StageGeometryTests
+  EmptyScreenGeometryTests
+  EditDeskShelfContinuityTests
   EditDeskWindowHostTests
   EditDeskRouterTests
   ShelfThumbnailCacheTests
@@ -144,7 +146,21 @@ SUITES=(
   GalleryCardPreferencesTests
   WorkshopModalTests
   WorkshopModalHostTests
+  DeferredApplyToastsTests
+  OnboardingProgressTests
+  OnboardingSignalsTests
+  DetailIconButtonSourceTests
+  OnboardingUITests
+  MenuBarBehaviorTests
+  OnboardingMultiScreenTests
+  ModalGeometryTests
+  BrowseCardEditDeskSkinTests
+  TopBarBudgetTests
+  EditDeskAccessibilityTests
   ShelfGestureControllerTests
+  CodexAgentSourceTests
+  SchedulePolicyTests
+  WallpaperAutomationCoordinatorTests
   EditDeskStageViewTests
   DisplayStateResolverTests
   ApplyRouterTests

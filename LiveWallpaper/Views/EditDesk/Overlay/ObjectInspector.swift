@@ -10,6 +10,7 @@ struct ObjectInspector: View {
     let placements: [MonitorWidgetPlacement]
     let backdropAvailable: Bool
     let height: CGFloat
+    var width: CGFloat = DetailGeometry.inspectorWidth
 
     /// `OverlaysInspectorPanel` edits a draft in place; the session's copy is read-only here, so
     /// the panel gets a local mirror that is reseeded whenever the applied configuration changes.
@@ -21,7 +22,9 @@ struct ObjectInspector: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            header
+            if content != .empty {
+                header
+            }
             editor(for: content)
         }
         .frame(height: height, alignment: .top)
@@ -46,7 +49,9 @@ struct ObjectInspector: View {
             }
             .lineLimit(1)
             Spacer(minLength: 0)
-            headerToggle
+            if content == .effect {
+                headerToggle
+            }
         }
         .padding(.horizontal, DesignTokens.EditDesk.Spacing.s12)
         .padding(.vertical, DesignTokens.EditDesk.Spacing.s8)
@@ -110,7 +115,8 @@ struct ObjectInspector: View {
                     WidgetSettingsPopover(
                         placement: placement,
                         onUpdate: { session.interaction.updateWidget($0) },
-                        onRemove: { session.removeWidget(id: id) }
+                        onRemove: { session.removeWidget(id: id) },
+                        embedded: true
                     )
                 }
             } else {
@@ -119,13 +125,13 @@ struct ObjectInspector: View {
         case .music:
             if let screen {
                 scrolling {
-                    MusicOverlaySection(screen: screen, screenManager: screenManager, backdropAvailable: backdropAvailable)
+                    MusicOverlaySection(screen: screen, screenManager: screenManager, backdropAvailable: backdropAvailable, showsVisibilityControl: false)
                 }
             }
         case .clock:
             if let screen {
                 scrolling {
-                    ClockOverlaySection(screen: screen, screenManager: screenManager, backdropAvailable: backdropAvailable)
+                    ClockOverlaySection(screen: screen, screenManager: screenManager, backdropAvailable: backdropAvailable, showsVisibilityControl: false)
                 }
             }
         case .effect:
@@ -152,7 +158,7 @@ struct ObjectInspector: View {
             draft: $draft,
             screenManager: screenManager,
             kind: .weather,
-            inspectorPanelWidth: DetailGeometry.inspectorWidth,
+            inspectorPanelWidth: width,
             backdropAvailable: backdropAvailable,
             onParticleEffectChange: { effect in write { screenManager.updateParticleEffect(effect, for: screen) } },
             onParticleDensityChange: { density in write { screenManager.updateParticleDensity(density, for: screen) } },

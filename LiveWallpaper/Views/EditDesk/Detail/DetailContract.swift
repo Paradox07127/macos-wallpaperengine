@@ -18,7 +18,7 @@ enum DetailGeometry {
     static let heroAspect: CGFloat = 16 / 9
 
     /// Everything left of the inspector and below the top bar.
-    static func stageRect(in windowSize: CGSize) -> CGRect {
+    static func stageRect(in windowSize: CGSize, inspectorWidth: CGFloat = Self.inspectorWidth) -> CGRect {
         CGRect(
             x: 0, y: topBarHeight,
             width: windowSize.width - inspectorWidth,
@@ -26,13 +26,26 @@ enum DetailGeometry {
         )
     }
 
-    /// The hero alone; the note row sits `heroNoteGap` below it and the pair is centred as one block.
-    static func heroFrame(in windowSize: CGSize) -> CGRect {
+    static func overlayFrame(in windowSize: CGSize, logicalSize: CGSize, topInset: CGFloat = 0) -> CGRect {
+        guard topInset > 0 else {
+            return OverlayGeometry.aspectFit(logicalSize: logicalSize, in: heroFrame(in: windowSize))
+        }
         let stage = stageRect(in: windowSize)
-        let verticalBudget = stage.height - 2 * sideMargin - (heroNoteGap + heroNoteHeight)
-        let width = min(stage.width - 2 * sideMargin, verticalBudget * heroAspect)
+        let available = CGRect(
+            x: stage.minX + sideMargin, y: stage.minY + topInset + sideMargin,
+            width: max(1, stage.width - 2 * sideMargin),
+            height: max(1, stage.height - topInset - 2 * sideMargin)
+        )
+        return OverlayGeometry.aspectFit(logicalSize: logicalSize, in: available)
+    }
+
+    /// The hero alone; the note row sits `heroNoteGap` below it and the pair is centred as one block.
+    static func heroFrame(in windowSize: CGSize, inspectorWidth: CGFloat = Self.inspectorWidth) -> CGRect {
+        let stage = stageRect(in: windowSize, inspectorWidth: inspectorWidth)
+        let verticalBudget = max(1, stage.height - 2 * sideMargin)
+        let width = max(1, min(stage.width - 2 * sideMargin, verticalBudget * heroAspect))
         let height = width / heroAspect
-        let blockHeight = height + heroNoteGap + heroNoteHeight
+        let blockHeight = height
         return CGRect(
             x: stage.minX + (stage.width - width) / 2,
             y: stage.minY + (stage.height - blockHeight) / 2,
@@ -61,14 +74,5 @@ struct DetailHeroStatus: Equatable {
     var isPlaying: Bool
     /// nil hides the `▶ {fps} FPS · GPU {x}%` chip.
     var performanceLine: String?
-}
-
-/// The shared-element handshake between the CALayer stage and the SwiftUI hero. The host runs it:
-/// `await stage.flyTile(...)` → hero becomes visible → `stage.setTileConcealed(display, true)`;
-/// on the way back `setTileConcealed(display, false)` → hero hides → `await stage.returnTile(...)`.
-enum DetailTransitionPhase: Equatable {
-    case idle
-    case flyingIn
-    case presented
-    case flyingOut
+    var canNavigatePlaylist = false
 }

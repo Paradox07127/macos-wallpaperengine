@@ -13,6 +13,7 @@ struct EditDeskModalChrome<Panel: View>: View {
     var titlebarInset: CGFloat = DesignTokens.EditDesk.Spacing.topBar
     /// Source image for the wash behind the panel fill; nil draws the fill alone.
     var backdrop: CGImage?
+    var panelFrameOverride: CGRect?
     let onDismiss: () -> Void
     /// True when the panel consumed ESC itself, which keeps the modal open.
     var onEscape: () -> Bool = { false }
@@ -27,7 +28,7 @@ struct EditDeskModalChrome<Panel: View>: View {
     }
 
     var panelFrame: CGRect {
-        ModalGeometry.panelFrame(in: windowSize)
+        panelFrameOverride ?? ModalGeometry.panelFrame(in: windowSize)
     }
 
     var body: some View {
@@ -60,23 +61,34 @@ struct EditDeskModalChrome<Panel: View>: View {
     }
 
     private func panelBox(_ frame: CGRect) -> some View {
-        panel(frame)
-            .frame(width: frame.width, height: frame.height)
-            .background {
-                ZStack {
-                    DesignTokens.EditDesk.Colors.modalPanel
-                    ModalBackdrop(preview: backdrop)
-                }
-                .clipShape(panelShape)
+        VStack(spacing: 0) {
+            HStack {
+                Spacer()
+                GlassIconButton("xmark", action: escape)
+                    .accessibilityLabel(Text("Close"))
+                    .help(Text("Close"))
             }
-            .overlay(panelShape.strokeBorder(DesignTokens.EditDesk.Colors.strokePanel, lineWidth: 1))
-            .shadow(
-                color: DesignTokens.EditDesk.Shadow.modal.color,
-                radius: DesignTokens.EditDesk.Shadow.modal.radius,
-                y: DesignTokens.EditDesk.Shadow.modal.y
-            )
-            .accessibilityElement(children: .contain)
-            .accessibilityAddTraits(.isModal)
+            .padding(.horizontal, DesignTokens.Spacing.md)
+            .frame(height: ModalGeometry.headerHeight)
+            panel(frame)
+                .frame(height: frame.height - ModalGeometry.headerHeight)
+        }
+        .frame(width: frame.width, height: frame.height)
+        .background {
+            ZStack {
+                DesignTokens.Colors.pageBackground
+            }
+            .clipShape(panelShape)
+        }
+        .overlay(panelShape.strokeBorder(DesignTokens.EditDesk.Colors.strokePanel, lineWidth: 1))
+        .compositingGroup()
+        .shadow(
+            color: DesignTokens.EditDesk.Shadow.modal.color,
+            radius: DesignTokens.EditDesk.Shadow.modal.radius,
+            y: DesignTokens.EditDesk.Shadow.modal.y
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(.isModal)
     }
 
     // MARK: Keyboard

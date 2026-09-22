@@ -9,6 +9,7 @@ final class WorkshopFolderImportCoordinator {
     static let shared = WorkshopFolderImportCoordinator()
 
     private(set) var isImporting = false
+    @ObservationIgnored var onLocalLibraryImported: (@MainActor (Int) -> Void)?
 
     @ObservationIgnored private var isIngesting = false
     @ObservationIgnored private let importService: WallpaperEngineImportService
@@ -62,8 +63,9 @@ final class WorkshopFolderImportCoordinator {
         var imported = 0
         var rejected = 0
         var unreadable = 0
+        var wallpaperEntries = 0
         for projectFolder in projectFolders {
-            switch await importOne(projectFolder, deliberate: true) {
+            switch await importOne(projectFolder, deliberate: true, onWallpaperImported: { wallpaperEntries += 1 }) {
             case .imported: imported += 1
             case .rejected: rejected += 1
             case .unreadable: unreadable += 1
@@ -71,6 +73,7 @@ final class WorkshopFolderImportCoordinator {
         }
 
         emitSummary(folder: folder, imported: imported, rejected: rejected, unreadable: unreadable)
+        onLocalLibraryImported?(wallpaperEntries)
     }
 
     func ingestExistingDownloads(using doctor: SteamCMDDoctorService) async {
@@ -158,7 +161,8 @@ final class WorkshopFolderImportCoordinator {
     private func importOne(
         _ projectFolder: URL,
         deliberate: Bool,
-        preservesHistory: Bool = false
+        preservesHistory: Bool = false,
+        onWallpaperImported: (@MainActor () -> Void)? = nil
     ) async -> ProjectImportOutcome {
         do {
             switch try await importService.importProject(folder: projectFolder) {
@@ -168,6 +172,7 @@ final class WorkshopFolderImportCoordinator {
                     clearsDeleteTombstone: deliberate,
                     preservesHistory: preservesHistory
                 )
+                onWallpaperImported?()
                 return .imported
             case let .workshopPreset(preset):
                 await SettingsManager.shared.registerScenePreset(

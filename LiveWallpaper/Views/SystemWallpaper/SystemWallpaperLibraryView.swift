@@ -7,15 +7,32 @@ import SwiftUI
 /// system-side state it can't observe.
 @available(macOS 26.0, *)
 struct SystemWallpaperLibraryView: View {
+    var isEmbedded = false
     @Environment(\.libraryTileSize) private var tileSize
     @Environment(WallpaperExportService.self) private var service
     @State private var pendingDestructive: PendingDestructive?
     @State private var searchText = ""
 
     var body: some View {
-        DetailPageScaffold { content }
-            .confirmDestructive($pendingDestructive)
-            .toolbar {
+        DetailPageScaffold {
+            VStack(spacing: 0) {
+                if isEmbedded, isFunctional {
+                    HStack(spacing: DesignTokens.Spacing.sm) {
+                        Label("System Wallpaper", systemImage: "macwindow.on.rectangle")
+                            .font(DesignTokens.Typography.sectionTitle)
+                        Spacer()
+                        SystemWallpaperAddMenu()
+                        Button("Open Wallpaper Settings") { service.openWallpaperSettings() }
+                    }
+                    .buttonStyle(.bordered)
+                    .padding(DesignTokens.Spacing.lg)
+                }
+                content
+            }
+        }
+        .confirmDestructive($pendingDestructive)
+        .toolbar {
+            if !isEmbedded {
                 LibraryIdentityToolbarItem(
                     systemImage: "macwindow.on.rectangle",
                     title: Text("System Wallpaper")
@@ -35,8 +52,9 @@ struct SystemWallpaperLibraryView: View {
                     }
                 }
             }
-            .onAppear { service.refresh() }
-            .task { service.startObservingSharedRoot() }
+        }
+        .onAppear { service.refresh() }
+        .task { service.startObservingSharedRoot() }
     }
 
     // MARK: - Content

@@ -12,6 +12,9 @@ struct DisplayDetailHost: View {
     /// ESC belongs to the modal while it is open; the detail takes it back afterwards.
     let modalPresented: Bool
     let refreshCover: (CGDirectDisplayID) -> Void
+    let chooseFile: (Screen) -> Void
+    let pasteURL: (CGDirectDisplayID) -> Void
+    let dropFiles: ([URL], Screen) -> Bool
     /// Held while a tile is in flight either way, so the stage stays locked through the return.
     @Binding var busy: Bool
     /// The page's own toast stack, so overlay copies and wallpaper applies queue in one place.
@@ -20,14 +23,20 @@ struct DisplayDetailHost: View {
     @Environment(ScreenManager.self) private var screenManager
     @Environment(\.featureCatalog) private var featureCatalog
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(OnboardingProgress.self) private var progress: OnboardingProgress?
     @State private var coordinator: DetailTransitionCoordinator?
     @State private var section: DetailSection = .wallpaper
+    @AppStorage("loomscreen.editDesk.inspectorWidth", store: .appScoped()) private var inspectorWidth = 372.0
+    @AppStorage("loomscreen.editDesk.inspectorVisible", store: .appScoped()) private var inspectorVisible = true
+    @AppStorage("loomscreen.editDesk.layersVisible", store: .appScoped()) private var layersVisible = true
+    @State private var liveInspectorWidth: Double?
     /// The same optimistic-write draft the old inspector uses; the HUD and the panel both write it.
     @State private var draft = DraftState.default
     @State private var overlaySessions: [String: OverlayEditorSession] = [:]
     @State private var overlaySession: OverlayEditorSession?
     @State private var schemeNameDraft = ""
     @State private var showSchemeCapture = false
+    @State private var showAutomation = false
     @State private var pendingAction: PendingAction?
     @State private var pendingDestructive: PendingDestructive?
     /// Shared with the old detail page so the colour group's disclosure survives switching pages.
@@ -54,23 +63,31 @@ struct DisplayDetailHost: View {
                     windowSize: stage.stageSize,
                     section: sectionBinding,
                     heroVisible: coordinator?.heroVisible ?? false,
+                    returning: coordinator?.phase == .returning,
                     actions: actions(for: screen),
-                    hud: { hud(for: screen, isPlaying: status.isPlaying) },
-                    inspector: {
-                        if section == .overlay, let overlaySession {
-                            OverlayInspectorColumn(session: overlaySession, backdropAvailable: cover(id) != nil)
-                        } else {
-                            inspector(for: screen)
-                        }
-                    },
+                    hud: { hud(for: screen) },
+                    inspector: { width in inspector(for: screen, width: width) },
                     overlayLogicalSize: screen.frame.size,
                     overlayCanvas: { size in
                         if let overlaySession {
-                            OverlayCanvas(session: overlaySession, cover: cover(id), size: size)
+                            OverlayWorkspace(session: overlaySession, cover: cover(id), screen: screen,
+                                             size: size, layersVisible: $layersVisible,
+                                             inspectorVisible: $inspectorVisible,
+                                             inspectorWidth: $inspectorWidth, liveInspectorWidth: $liveInspectorWidth,
+                                             topInset: showsOverlayOnboarding ? OnboardingCardMetrics.blockHeight - DetailGeometry.topBarHeight : 0,
+                                             recapture: { refreshCover(id); overlaySession.capturePreview() },
+                                             back: router.closeDetail)
                         }
-                    }
+                    },
+                    overlayTopInset: 0,
+                    isEmpty: screenManager.getConfiguration(for: screen) == nil && screenManager.inspectedWallpaperAttempt(for: screen) == nil,
+                    emptyScreen: screen, chooseFile: { chooseFile(screen) }, pasteURL: { pasteURL(id) },
+                    inspectorVisible: $inspectorVisible, layersVisible: $layersVisible,
+                    inspectorWidth: $inspectorWidth, liveInspectorWidth: $liveInspectorWidth
                 )
-                .transition(.opacity)
+                .dropDestination(for: URL.self) { urls, _ in
+                    section == .wallpaper && dropFiles(urls, screen)
+                }
                 .onChange(of: screenManager.inspectedWallpaperAttempt(for: screen)?.id) { reloadDraft(for: screen) }
                 .onChange(of: screenManager.inspectedWallpaperAttempt(for: screen)?.configuration) { reloadDraft(for: screen) }
                 .onChange(of: screenManager.wallpaperSessionStateVersion) { reloadDraft(for: screen) }
@@ -85,12 +102,34 @@ struct DisplayDetailHost: View {
                             .environment(screenManager)
                     }
                 }
+                .sheet(isPresented: $showAutomation) {
+                    if let library {
+                        AppLanguageScope(defaults: .appScoped()) {
+                            WallpaperAutomationSheet(screen: screen, library: library)
+                                .environment(screenManager)
+                        }
+                    }
+                }
                 .confirmDestructive($pendingDestructive)
                 .confirmationDialog(pendingTitle, isPresented: pendingBinding, titleVisibility: .visible, presenting: pendingAction) { action in
                     Button(pendingConfirmTitle(action)) { perform(action, on: screen) }
                     Button("Cancel", role: .cancel) {}
                 } message: { action in
                     Text(pendingMessage(action))
+                }
+                if section == .overlay, let overlaySession {
+                    // R-27/R-28: the card stays in the canvas column and carries its own STEP line,
+                    // because the detail top bar has no room for the capsule.
+                    OnboardingCard(page: .overlay, trailingInset: DetailGeometry.inspectorWidth) { action in
+                        switch action {
+                        case .addClock:
+                            overlaySession.setClockEnabled(true)
+                        case .chooseFile, .tryAerials, .importMore, .connectSteam, .importLocalLibrary:
+                            break
+                        }
+                    }
+                    .frame(height: OnboardingCardMetrics.blockHeight)
+                    .frame(maxHeight: .infinity, alignment: .top)
                 }
                 if !modalPresented {
                     Button(action: router.closeDetail) { EmptyView() }
@@ -102,7 +141,12 @@ struct DisplayDetailHost: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .animation(DesignTokens.motion(reduceMotion, .easeOut(duration: 0.25)), value: coordinator?.shownDisplayID != nil)
+        .coordinateSpace(name: DetailPreviewSpace.name)
+        .onPreferenceChange(DetailPreviewFrameKey.self) { frames in
+            for (display, frame) in frames {
+                coordinator?.heroDidLayout(display: display, frame: frame)
+            }
+        }
         .onChange(of: router.detailDisplayID, initial: true) { _, id in
             request(id)
         }
@@ -110,6 +154,8 @@ struct DisplayDetailHost: View {
             busy = value
         }
         .onChange(of: stage.stageSize) { coordinator?.windowDidResize() }
+        .onChange(of: inspectorWidth) { coordinator?.windowDidResize() }
+        .onChange(of: inspectorVisible) { coordinator?.windowDidResize() }
         .onChange(of: screenManager.screens.map(\.id)) {
             if let id = overlaySession?.identity?.displayID, !screenManager.screens.contains(where: { $0.id == id }) {
                 overlaySession?.detach()
@@ -118,6 +164,10 @@ struct DisplayDetailHost: View {
             }
         }
         .onDisappear { overlaySession?.detach() }
+    }
+
+    private var showsOverlayOnboarding: Bool {
+        section == .overlay && progress?.handled.contains(.overlay) == false
     }
 
     // MARK: Handshake
@@ -130,9 +180,7 @@ struct DisplayDetailHost: View {
         } else if let session = overlaySession, section == .overlay, !session.isActive {
             session.transition(to: session.identity, store: OverlayEditorScreenStore(manager: screenManager), editing: true)
         }
-        let coordinator = coordinator ?? DetailTransitionCoordinator(stage: stage) { [stage] in
-            DetailGeometry.heroFrame(in: stage.stageSize)
-        }
+        let coordinator = coordinator ?? DetailTransitionCoordinator(stage: stage, usesMeasuredFrame: true) { .zero }
         if self.coordinator == nil {
             self.coordinator = coordinator
         }
@@ -140,8 +188,12 @@ struct DisplayDetailHost: View {
             // Synchronous: a deferred load would paint the previous display's draft for a frame.
             if let screen = screenManager.screens.first(where: { $0.id == target }) {
                 reloadDraft(for: screen)
+                if cover(target) == nil {
+                    refreshCover(target)
+                }
                 let session = overlaySessions[screen.displayFingerprint] ?? OverlayEditorSession()
                 overlaySessions[screen.displayFingerprint] = session
+                session.onObjectPersisted = { progress?.record(.overlay) }
                 overlaySession = session
                 session.transition(
                     to: OverlayEditorIdentity(displayID: screen.id, fingerprint: screen.displayFingerprint),
@@ -180,12 +232,9 @@ struct DisplayDetailHost: View {
 
     // MARK: HUD
 
-    private func hud(for screen: Screen, isPlaying: Bool) -> some View {
-        WallpaperPreviewHUD {
-            HStack(spacing: DesignTokens.Spacing.sm) {
-                transport(for: screen, isPlaying: isPlaying)
-                fitModePicker(for: screen)
-            }
+    private func hud(for screen: Screen) -> some View {
+        WallpaperPreviewHUD(showsViewport: draft.selectedWallpaperType != .html) {
+            fitModePicker(for: screen)
         } playback: {
             WallpaperPlaybackControls(
                 screen: screen,
@@ -196,21 +245,6 @@ struct DisplayDetailHost: View {
             )
         } actions: {
             EmptyView()
-        }
-    }
-
-    /// Drives the desktop session; the hero is a still and never reacts to these.
-    private func transport(for screen: Screen, isPlaying: Bool) -> some View {
-        let actions = actions(for: screen)
-        return HStack(spacing: DesignTokens.EditDesk.Spacing.s8) {
-            GlassIconButton("backward.end.fill") { actions.playback(.previous) }
-                .accessibilityLabel(Text("Previous Wallpaper"))
-            GlassIconButton(isPlaying ? "pause.fill" : "play.fill", prominence: .prominent) {
-                actions.playback(.toggle)
-            }
-            .accessibilityLabel(Text(isPlaying ? "Pause" : "Play"))
-            GlassIconButton("forward.end.fill") { actions.playback(.next) }
-                .accessibilityLabel(Text("Next Wallpaper"))
         }
     }
 
@@ -255,32 +289,33 @@ struct DisplayDetailHost: View {
     /// Same branch as the old page: while a load attempt is being inspected its own properties take
     /// the column, because the draft still describes the wallpaper that attempt is replacing.
     @ViewBuilder
-    private func inspector(for screen: Screen) -> some View {
+    private func inspector(for screen: Screen, width: CGFloat) -> some View {
         #if !LITE_BUILD
         if let attempt = screenManager.inspectedWallpaperAttempt(for: screen) {
             AttemptSceneProperties(screen: screen, attempt: attempt)
                 .id(attempt.id)
-                .frame(width: DetailGeometry.inspectorWidth)
+                .frame(width: width)
         } else {
-            wallpaperInspector(for: screen)
+            wallpaperInspector(for: screen, width: width)
         }
         #else
-        wallpaperInspector(for: screen)
+        wallpaperInspector(for: screen, width: width)
         #endif
     }
 
-    private func wallpaperInspector(for screen: Screen) -> some View {
+    private func wallpaperInspector(for screen: Screen, width: CGFloat) -> some View {
         DetailInspectorPanel(
             screen: screen,
             draft: $draft,
             screenManager: screenManager,
             featureCatalog: featureCatalog,
             reduceMotion: reduceMotion,
-            inspectorPanelWidth: DetailGeometry.inspectorWidth,
+            inspectorPanelWidth: width,
             isColorExpanded: $isColorExpanded,
             onWallpaperModeChange: { screenManager.updateWallpaperMode($0, for: screen) },
             showsResetDisplaySettings: screenManager.displaySettingsDifferFromDefaults(for: screen),
-            onResetDisplaySettings: { requestResetDisplaySettings(for: screen) }
+            onResetDisplaySettings: { requestResetDisplaySettings(for: screen) },
+            onOpenAutomation: { showAutomation = true }
         )
     }
 
@@ -309,11 +344,13 @@ struct DisplayDetailHost: View {
             title: item?.title ?? screen.name,
             kindLine: Self.kindLine(configuration?.activeWallpaper),
             isPlaying: screen.playbackController?.isPlaying ?? false,
-            performanceLine: nil
+            performanceLine: nil,
+            canNavigatePlaylist: featureCatalog.isEnabled(.playlists) && configuration?.canNavigatePlaylist == true
         )
     }
 
-    private static func kindLine(_ content: WallpaperContent?) -> String {
+    /// Also the stage's on-screen type line, so both pages name a wallpaper's kind the same way.
+    static func kindLine(_ content: WallpaperContent?) -> String {
         switch content {
         case .video: String(localized: "Video", bundle: .appLanguage)
         case .html: String(localized: "Web", bundle: .appLanguage)
@@ -348,14 +385,14 @@ struct DisplayDetailHost: View {
                 }
             },
             recapture: { refreshCover(screen.id) },
-            openSettings: { router.openSettings(.general) },
             copyOverlays: {
                 if let session = overlaySession {
                     session.transition(to: session.identity, store: OverlayEditorScreenStore(manager: screenManager), editing: true)
                 }
                 pendingAction = .copyOverlays
             },
-            snapEnabled: Binding(get: { overlaySession?.snapEnabled ?? true }, set: { overlaySession?.snapEnabled = $0 })
+            snapEnabled: Binding(get: { overlaySession?.snapEnabled ?? true }, set: { overlaySession?.snapEnabled = $0 }),
+            openAutomation: featureCatalog.isEnabled(.playlists) ? { showAutomation = true } : nil
         )
     }
 

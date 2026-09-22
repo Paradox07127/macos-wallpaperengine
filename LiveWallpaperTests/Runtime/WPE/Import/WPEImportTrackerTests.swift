@@ -1,17 +1,47 @@
-import Testing
 import AppKit
+import CoreGraphics
 import Foundation
+@testable import LiveWallpaper
 import LiveWallpaperCore
 import Observation
-import CoreGraphics
 import os
-@testable import LiveWallpaper
+import Testing
 
 @Suite("WPEImportTracker")
 @MainActor
 struct WPEImportTrackerTests {
     private let screenA: CGDirectDisplayID = 1
     private let screenB: CGDirectDisplayID = 2
+
+    @Test("Reimport commits the remembered scene preset and overrides to the restored session")
+    func reimportRestoresSceneCustomization() async throws {
+        let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
+        let bare = SceneDescriptor(workshopID: "memory-test", cacheRelativePath: "wpe-cache/memory-test",
+                                   entryFile: "scene.pkg", capabilityTier: .imageOnly)
+        let styled = bare.withPresetLayer(id: "last-preset", snapshot: ["fog": .bool(false)])
+            .withPropertyOverrides(["speed": .number(0.3)])
+        var prior = ScreenConfiguration(screenID: screen.id, wallpaper: .scene(styled))
+        prior.displayFingerprint = screen.displayFingerprint
+        let persistence = ImportCustomizationPersistence(configuration: prior)
+        let store = WallpaperConfigurationStore(persistence: persistence)
+        let origin = WPEOrigin(workshopID: "memory-test", title: "Memory test", originalType: .scene,
+                               sourceFolderBookmark: Data(), cacheRelativePath: "wpe-cache/memory-test", previewFileName: nil)
+        var restored: ScreenConfiguration?
+        let coordinator = WPEImportCoordinator(
+            tracker: WPEImportTracker(), configurationStore: store,
+            saveConfiguration: { store.save($0) },
+            restoreWallpaperSession: { _, config, _, commit in
+                if commit() {
+                    restored = config
+                }
+            },
+            importOperation: { _ in .ready(.scene(bare), origin: origin) },
+            recordImport: { _ in }, notifyImportCompleted: { _, _, _ in }
+        )
+        _ = await coordinator.importProject(at: FileManager.default.temporaryDirectory, for: screen)
+        #expect(restored?.activeWallpaper == .scene(styled))
+        #expect(store.get(for: screen.id)?.activeWallpaper == .scene(styled))
+    }
 
     @Test("Records, reads, and clears errors per screen")
     func errorRoundtrip() {
@@ -230,7 +260,7 @@ struct WPEImportTrackerTests {
     }
 
     @Test("WPE import generation remains guarded through transaction commit")
-    func importGenerationGuardsTransactionCommit() async throws {
+    func importGenerationGuardsTransactionCommit() async {
         guard let screen = NSScreen.screens.first.map(Screen.init(nsScreen:)) else {
             Issue.record("No NSScreen available for WPE commit-guard test")
             return
@@ -287,6 +317,7 @@ private final class ChangeCounter: @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         return _value
     }
+
     func increment() {
         lock.lock(); defer { lock.unlock() }
         _value += 1
@@ -296,7 +327,9 @@ private final class ChangeCounter: @unchecked Sendable {
 @MainActor
 private final class WPECommitCapture {
     private var action: (@MainActor () -> Bool)?
-    var hasCommit: Bool { action != nil }
+    var hasCommit: Bool {
+        action != nil
+    }
 
     func capture(_ action: @MainActor @escaping () -> Bool) {
         self.action = action
@@ -312,7 +345,9 @@ private final class DelayedWPEImportOperation {
     typealias Result = WallpaperEngineImportService.ImportResult
 
     private var continuation: CheckedContinuation<Result, Never>?
-    var isWaiting: Bool { continuation != nil }
+    var isWaiting: Bool {
+        continuation != nil
+    }
 
     func call() async -> Result {
         await withCheckedContinuation { continuation in
@@ -324,5 +359,33 @@ private final class DelayedWPEImportOperation {
         let pending = continuation
         continuation = nil
         pending?.resume(returning: result)
+    }
+}
+
+@MainActor
+private final class ImportCustomizationPersistence: ScreenConfigurationPersisting {
+    var configuration: ScreenConfiguration?
+    init(configuration: ScreenConfiguration) {
+        self.configuration = configuration
+    }
+
+    func getConfiguration(for _: CGDirectDisplayID) -> ScreenConfiguration? {
+        configuration
+    }
+
+    func saveConfiguration(_ value: ScreenConfiguration) {
+        configuration = value
+    }
+
+    func cleanSettingsForScreen(_: CGDirectDisplayID) {
+        configuration = nil
+    }
+
+    func loadConfigurations() -> [ScreenConfiguration] {
+        configuration.map { [$0] } ?? []
+    }
+
+    func replaceAllConfigurations(_ values: [ScreenConfiguration]) {
+        configuration = values.first
     }
 }

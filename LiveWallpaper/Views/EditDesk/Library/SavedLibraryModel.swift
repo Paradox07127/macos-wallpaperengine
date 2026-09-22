@@ -32,6 +32,10 @@ final class SavedLibraryModel {
         #endif
         var metadata: @MainActor (WallpaperBookmark) -> LibraryMetadata? = { _ in nil }
         var probeMetadata: @MainActor (WallpaperBookmark) async -> LibraryMetadata? = { _ in nil }
+        /// Every cover a bookmark or scheme still points at — not the filtered view, whose misses
+        /// would read as orphans.
+        var savedCoverFileNames: @MainActor () -> Set<String> = { [] }
+        var removeOrphanCovers: @MainActor (Set<String>) -> Void = { _ in }
 
         @MainActor
         static func live(screenManager: ScreenManager) -> Inputs {
@@ -66,6 +70,13 @@ final class SavedLibraryModel {
             #endif
             inputs.metadata = { sidecar.cached(for: $0) }
             inputs.probeMetadata = { await sidecar.metadata(for: $0) }
+            inputs.savedCoverFileNames = {
+                Set(
+                    BookmarkStore.shared.bookmarks.compactMap(\.coverFileName)
+                        + SchemeStore.shared.schemes.compactMap(\.coverFileName)
+                )
+            }
+            inputs.removeOrphanCovers = { WallpaperCoverStore.shared.removeOrphans(keeping: $0) }
             return inputs
         }
     }
@@ -141,6 +152,12 @@ final class SavedLibraryModel {
             }
         }
         return sorted.filter { query.isEmpty || $0.title.range(of: query, options: .caseInsensitive) != nil }
+    }
+
+    /// Deliberately not part of `refresh()`: that runs on every store change, and this reads the
+    /// whole covers directory.
+    func prepareLibrary() {
+        inputs.removeOrphanCovers(inputs.savedCoverFileNames())
     }
 
     func refresh() {

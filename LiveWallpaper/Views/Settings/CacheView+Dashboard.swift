@@ -58,7 +58,7 @@ extension WPECacheManagementView {
                 color: DesignTokens.Colors.Gauge.medium,
                 bytes: totalBytes,
                 valueText: byteFormatter.string(fromByteCount: Int64(totalBytes))
-            )
+            ),
         ].filter { $0.bytes > 0 }
     }
 
@@ -168,7 +168,7 @@ extension WPECacheManagementView {
                     title: "Scene Video Texture Cache",
                     systemImage: "film",
                     accent: DesignTokens.Colors.Gauge.high,
-                    subtitle: videoCacheSubtitle
+                    subtitle: Text("Included in Caches") + Text(verbatim: " · ") + videoCacheSubtitle
                 ) {
                     storageValue(
                         bytes: videoStats?.totalBytes,
@@ -228,7 +228,11 @@ extension WPECacheManagementView {
         guard let url else { return }
         let root = scopeRoot ?? url
         let didStart = root.startAccessingSecurityScopedResource()
-        defer { if didStart { root.stopAccessingSecurityScopedResource() } }
+        defer {
+            if didStart {
+                root.stopAccessingSecurityScopedResource()
+            }
+        }
         NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 

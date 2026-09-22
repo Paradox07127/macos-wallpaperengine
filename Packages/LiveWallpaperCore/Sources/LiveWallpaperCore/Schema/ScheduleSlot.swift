@@ -6,19 +6,22 @@ public struct ScheduleSlot: Codable, Equatable, Identifiable, Sendable {
     public var endHour: Int
     public var videoBookmarkData: Data?
     public var label: String
+    public var wallpaper: WallpaperQueueEntry?
 
     public init(
         id: UUID = UUID(),
         startHour: Int,
         endHour: Int,
         videoBookmarkData: Data? = nil,
-        label: String
+        label: String,
+        wallpaper: WallpaperQueueEntry? = nil
     ) {
         self.id = id
         self.startHour = startHour
         self.endHour = endHour
         self.videoBookmarkData = videoBookmarkData
         self.label = label
+        self.wallpaper = wallpaper
     }
 
     /// Must stay computed: a `static let` would freeze the four UUIDs, so two displays

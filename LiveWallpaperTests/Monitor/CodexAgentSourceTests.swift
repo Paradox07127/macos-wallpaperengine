@@ -295,6 +295,28 @@ struct CodexAgentSourceTests {
         #expect(states.map(\.status) == [.running, .ended])
     }
 
+    @Test("Duplicate transcript paths publish only the newest state of each session")
+    func duplicateSessionIdentity() {
+        let now = Date(timeIntervalSince1970: 20000)
+        let first = URL(fileURLWithPath: "/tmp/old-rollout.jsonl")
+        let second = URL(fileURLWithPath: "/tmp/new-rollout.jsonl")
+        var tracker = MonitorAgentWaitTracker()
+        let states = CodexAgentSource.sessionStates(
+            modelsByURL: [
+                first: Self.model(id: "same", eventTime: now.addingTimeInterval(-30), eventType: "task_complete"),
+                second: Self.model(id: "same", eventTime: now, eventType: "task_started"),
+            ],
+            files: [
+                .init(url: first, modificationDate: now, processAlive: true),
+                .init(url: second, modificationDate: now, processAlive: true),
+            ], now: now, waitTracker: &tracker, liveProcessDirectories: (directories: [], complete: false)
+        )
+        #expect(states.count == 1)
+        #expect(states.first?.id == "codex:same")
+        #expect(states.first?.lastEventAt == now.timeIntervalSince1970)
+        #expect(states.first?.effectivePhase == .responding)
+    }
+
     @Test("Executable basename matching agrees with URL.lastPathComponent")
     func codexBasenameMatching() {
         let paths = [

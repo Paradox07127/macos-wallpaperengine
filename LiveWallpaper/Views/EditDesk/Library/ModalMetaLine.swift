@@ -131,8 +131,11 @@ struct ModalTagChips: View {
 
 /// SCREENS.md S4's bottom-centred keyboard legend.
 struct ModalShortcutHint: View {
+    var showsPlayback = false
     var body: some View {
-        Text("ESC Close · ← → Adjacent wallpapers · Space Play/Pause")
+        Text(showsPlayback
+            ? "ESC Close · ← → Adjacent wallpapers · Space Play/Pause on desktop"
+            : "ESC Close · ← → Adjacent wallpapers")
             .font(DesignTokens.EditDesk.Typography.badgeMono)
             .foregroundStyle(DesignTokens.EditDesk.Colors.textTertiary)
     }

@@ -29,8 +29,7 @@ struct LibraryModalHost: View {
     /// The thumbnail run's visible box; a thumbnail scrolled out of it is not a drop target.
     @State private var runFrame: CGRect?
 
-    /// SCREENS.md S5: the strip rides at top 14 and enters from −130.
-    private static let floatTop: CGFloat = 14
+    /// SCREENS.md S5: the strip enters from −130 above its resting top.
     private static let floatHiddenTop: CGFloat = -130
 
     /// The shelf's order, so ← → walk the same run the user came from.
@@ -83,18 +82,20 @@ struct LibraryModalHost: View {
                     onDismiss: dismiss,
                     onDrag: handleDrag
                 )
-                DisplayFloatLayer(
-                    targets: targets,
-                    mode: .dropTarget,
-                    highlighted: dropTarget,
-                    windowWidth: stage.stageSize.width,
-                    onSelect: { _ in },
-                    onApplyAll: modalActions.applyToAllDisplays,
-                    onTargetFrame: { targetFrames[$0.id] = $0.rect },
-                    onRunFrame: { runFrame = $0 }
-                )
-                .padding(.top, Self.floatTop)
-                .transition(.offset(y: Self.floatHiddenTop - Self.floatTop).combined(with: .opacity))
+                if dragPoint != nil {
+                    DisplayFloatLayer(
+                        targets: targets,
+                        mode: .dropTarget,
+                        highlighted: dropTarget,
+                        windowWidth: stage.stageSize.width,
+                        onSelect: { _ in },
+                        onApplyAll: modalActions.applyToAllDisplays,
+                        onTargetFrame: { targetFrames[$0.id] = $0.rect },
+                        onRunFrame: { runFrame = $0 }
+                    )
+                    .padding(.top, FloatLayerGeometry.panelTop)
+                    .transition(.offset(y: Self.floatHiddenTop - FloatLayerGeometry.panelTop).combined(with: .opacity))
+                }
                 if let dragPoint {
                     ModalDragGhost(image: content.preview, isOverTarget: dropTarget != nil, shakeTrigger: shakeTrigger)
                         .position(dragPoint)
@@ -159,8 +160,8 @@ struct LibraryModalHost: View {
         let actions = actions ?? makeActions()
         self.actions = actions
         var loaded = await actions.content(for: item)
-        let panel = ModalGeometry.panelFrame(in: stage.stageSize)
-        let preview = ModalGeometry.previewSize(inPanel: panel)
+        let panel = LibraryDetailGeometry.panelFrame(in: stage.stageSize)
+        let preview = LibraryDetailGeometry.previewSize(in: panel)
         let scale = NSScreen.main?.backingScaleFactor ?? 2
         loaded.preview = await actions.preview(
             for: item, pixelSize: CGSize(width: preview.width * scale, height: preview.height * scale), scale: scale
@@ -171,22 +172,21 @@ struct LibraryModalHost: View {
     }
 
     private func navigation(for item: LibraryItem) -> ModalNavigation {
-        let run = items
-        let index = run.firstIndex { $0.id == item.id }
+        let run = items.map(\.id)
+        let index = run.firstIndex(of: presentedItemID ?? item.id)
         return ModalNavigation(
             canGoPrevious: index.map { $0 > 0 } ?? false,
             canGoNext: index.map { $0 + 1 < run.count } ?? false,
-            previous: {
-                if let index, index > 0 {
-                    presentedItemID = run[index - 1].id
-                }
-            },
-            next: {
-                if let index, index + 1 < run.count {
-                    presentedItemID = run[index + 1].id
-                }
-            }
+            previous: { navigate(by: -1) },
+            next: { navigate(by: 1) }
         )
+    }
+
+    private func navigate(by offset: Int) {
+        let run = items.map(\.id)
+        guard let id = presentedItemID, let index = run.firstIndex(of: id),
+              run.indices.contains(index + offset) else { return }
+        presentedItemID = run[index + offset]
     }
 
     private func dismiss() {

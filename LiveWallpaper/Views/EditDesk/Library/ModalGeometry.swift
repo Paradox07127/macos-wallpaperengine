@@ -11,13 +11,19 @@ enum ModalGeometry {
     static let edgeMargin: CGFloat = 16
     static let previewMargin: CGFloat = 12
     static let bottomBarHeight: CGFloat = 152
+    static let headerHeight: CGFloat = 36
+    /// R-24 ⑤: both hosts hang the float strip over this panel, so a window too short for `designTop`
+    /// stops 12pt under the strip instead of centring into it.
+    static var floatClearance: CGFloat {
+        FloatLayerGeometry.panelTop + FloatLayerGeometry.panelHeight + 12
+    }
 
     static func panelFrame(in windowSize: CGSize) -> CGRect {
         let width = min(designSize.width, windowSize.width - 2 * sideMargin)
         let fitsAtDesignTop = designTop + designSize.height <= windowSize.height
         let top = fitsAtDesignTop
             ? designTop
-            : max(edgeMargin, (windowSize.height - designSize.height) / 2)
+            : max(floatClearance, (windowSize.height - designSize.height) / 2)
         let height = min(designSize.height, windowSize.height - top - edgeMargin)
         return CGRect(x: (windowSize.width - width) / 2, y: top, width: width, height: height)
     }
@@ -25,7 +31,7 @@ enum ModalGeometry {
     static func previewSize(inPanel panel: CGRect) -> CGSize {
         CGSize(
             width: panel.width - 2 * previewMargin,
-            height: panel.height - previewMargin - bottomBarHeight
+            height: panel.height - headerHeight - previewMargin - bottomBarHeight
         )
     }
 
@@ -54,5 +60,18 @@ enum ModalGeometry {
 enum ModalKeyMap {
     static func target(forShortcut index: Int, in targets: [ModalDisplayTarget]) -> ModalDisplayTarget? {
         targets.first { $0.shortcutIndex == index }
+    }
+}
+
+/// Compact preview leaves room for description, metadata and presets at the minimum window size.
+enum LibraryDetailGeometry {
+    static func panelFrame(in window: CGSize) -> CGRect {
+        let size = CGSize(width: min(920, max(1, window.width - 48)), height: min(620, max(1, window.height - 100)))
+        return CGRect(x: (window.width - size.width) / 2, y: max(72, (window.height - size.height) / 2), width: size.width, height: size.height)
+    }
+
+    static func previewSize(in panel: CGRect) -> CGSize {
+        let width = min(360, (panel.width - 72) * 0.44)
+        return CGSize(width: width, height: width * 9 / 16)
     }
 }

@@ -7,8 +7,11 @@ import SwiftUI
 /// is the stage's p = 2 state, so this one view serves both the home and library pages.
 struct HomePage: View {
     @Environment(ScreenManager.self) private var screenManager
+    @Environment(\.libraryTileSize) private var tileSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.featureCatalog) private var featureCatalog
+    @Environment(OnboardingProgress.self) private var progress: OnboardingProgress?
     let router: EditDeskRouter
     /// Owned by `EditDeskRoot`: a page switch unmounts this view, and a centre rebuilt here would
     /// drop whatever the other pages queued.
@@ -29,6 +32,9 @@ struct HomePage: View {
     @State private var presentedItemID: String?
     /// The detail host reports its tile flights so the stage stays locked while a tile returns.
     @State private var detailBusy = false
+    /// The empty display the paste-URL alert is open for; nil closes it.
+    @State private var pasteURLTarget: CGDirectDisplayID?
+    @State private var pastedAddress = ""
     @AppStorage(EditDeskPreferences.shelfStyle, store: .appScoped())
     private var shelfStyleRaw = EditDeskPreferences.shelfStyleDefault.rawValue
     @AppStorage(EditDeskPreferences.background, store: .appScoped())
@@ -70,7 +76,9 @@ struct HomePage: View {
         func body(content: Content) -> some View {
             content
                 .modifier(LibraryHooks(page: page))
+                .onChange(of: page.tileSize) { page.stage.gridTileSize = page.tileSize }
                 .onChange(of: page.reduceMotion) { page.stage.reduceMotion = page.reduceMotion }
+                .onChange(of: page.contrast, initial: true) { page.stage.increaseContrast = page.contrast == .increased }
                 .onChange(of: page.screenManager.screens.map(\.id)) { page.syncDisplays() }
                 .onChange(of: page.screenManager.suspendReasonsByScreen) { page.refreshAllStates() }
                 .onChange(of: page.screenManager.screens.map { page.screenManager.wallpaperLoads.attempt(for: $0)?.failure }) {
@@ -82,6 +90,9 @@ struct HomePage: View {
                     page.stage.opaqueBackground = page.backgroundRaw != EditDeskBackground.frosted.rawValue
                 }
                 .onChange(of: page.interactionLock, initial: true) { page.stage.interactionBlocked = page.interactionLock }
+                .onChange(of: page.homeCardClaimsStage, initial: true) {
+                    page.stage.arrangementTopInset = page.homeCardClaimsStage ? OnboardingCardMetrics.stageTopInset : 0
+                }
                 .onChange(of: page.router.page) { page.syncProgress(to: page.router.page, animated: true) }
                 .onChange(of: page.router.libraryFocus, initial: true) {
                     page.applyLibraryFocus(page.router.libraryFocus)
@@ -96,6 +107,9 @@ struct HomePage: View {
         func body(content: Content) -> some View {
             content
                 .onChange(of: page.library?.visibleItems) { page.syncShelf() }
+                // The rename path: a display's drawn name comes out of these rows. Watched on the
+                // whole library rather than the filtered rows, which also change on every keystroke.
+                .onChange(of: page.library?.items) { page.refreshAllStates() }
                 .onChange(of: page.shelfCapacity) { page.syncShelf() }
                 .onChange(of: page.chipID, initial: true) { page.applyChip() }
                 .onChange(of: page.library?.items.count) { page.applyChip() }
@@ -122,22 +136,33 @@ struct HomePage: View {
         ZStack(alignment: .top) {
             // Order matters: the shelf's scrim and the filter chips belong *under* the cards, so
             // a card leaning or lifting over them is never clipped by a piece of chrome.
-            EditDeskShelfScrim(visible: stage.showsShelf)
+            EditDeskShelfScrim(stage: stage)
             shelfChrome
             EditDeskStageRepresentable(model: stage)
-            HomeHints(progress: stage.progress, windowSize: stage.stageSize)
+            HomeHints(stage: stage)
             hoverName
             libraryLayer
-            TopBar(
-                page: pageBinding,
-                workshopAvailable: featureCatalog.isEnabled(.wpeImport),
-                searchText: queryBinding,
-                showsSearch: router.page == .library,
-                status: statusCapsule
-            )
+            homeOnboardingCard
+            if router.detailDisplayID == nil, !detailBusy {
+                TopBar(
+                    page: pageBinding,
+                    workshopAvailable: featureCatalog.isEnabled(.wpeImport),
+                    searchText: queryBinding,
+                    showsSearch: router.page == .library && segment == .wallpapers && library?.chip != .aerials,
+                    windowWidth: stage.stageSize.width,
+                    status: statusCapsule
+                )
+            }
             DisplayDetailHost(
                 router: router, stage: stage, library: library, modalPresented: presentedItemID != nil,
                 refreshCover: { refreshCover(for: $0, crossfade: false) },
+                chooseFile: { promptImport(onto: $0) },
+                pasteURL: { pastedAddress = ""; pasteURLTarget = $0 },
+                dropFiles: { urls, screen in
+                    guard let url = urls.first else { return false }
+                    applies.run(for: screen.id) { await apply(.droppedFile(url), to: screen, card: nil) }
+                    return true
+                },
                 busy: $detailBusy, toasts: toasts
             )
             if let library {
@@ -154,8 +179,11 @@ struct HomePage: View {
         .animation(DesignTokens.motion(reduceMotion, .easeOut(duration: DesignTokens.Motion.exitDuration)), value: isLibraryOpen)
         .onAppear {
             if library == nil {
-                library = SavedLibraryModel(screenManager: screenManager)
+                let model = SavedLibraryModel(screenManager: screenManager)
+                model.prepareLibrary()
+                library = model
             }
+            stage.gridTileSize = tileSize
             stage.reduceMotion = reduceMotion
             stage.shelfStyle = shelfStyle
             stage.opaqueBackground = backgroundRaw != EditDeskBackground.frosted.rawValue
@@ -164,29 +192,89 @@ struct HomePage: View {
             syncShelf()
             if router.page == .library {
                 stage.setProgress(2, animated: false)
-            } else if HomeDefaultState(rawValue: homeDefaultRaw) == .halfOpen, stage.progress == 0 {
+            } else if HomeDefaultState(rawValue: homeDefaultRaw) == .halfOpen, stage.progress == 0, progress?.handled.contains(.home) != false {
                 stage.setProgress(1, animated: false)
             }
         }
         .task { await consumeEvents() }
         .modifier(SyncHooks(page: self))
+        .onChange(of: progress?.handled) {
+            if router.page == .home, progress?.handled.isEmpty == true {
+                stage.setProgress(0, animated: !reduceMotion)
+            }
+        }
+        .onChange(of: router.pendingAddWallpaper, initial: true) { consumeAddWallpaperRequest() }
         .onReceive(NotificationCenter.default.publisher(for: .screensRefreshed)) { _ in syncDisplays() }
         .onReceive(NotificationCenter.default.publisher(for: .wallpaperConfigurationDidChange)) { notification in
             guard let id = notification.userInfo?["screenID"] as? CGDirectDisplayID else { return }
             refreshState(for: id)
             refreshCover(for: id, crossfade: true)
         }
+        // `presenting:` hands the action the display it was opened for: dismissal clears the state.
+        .alert("Paste URL", isPresented: pasteURLPresented, presenting: pasteURLTarget) { id in
+            TextField("example.com", text: $pastedAddress)
+            Button("Cancel", role: .cancel) {}
+            Button("Use") { applyPastedAddress(to: id) }
+                .disabled(pastedWebsiteURL == nil)
+        } message: { _ in
+            Text("Enter a website address, such as https://example.com.")
+        }
+    }
+
+    private var pastedWebsiteURL: URL? {
+        guard case let .url(url)? = HTMLSource(userInput: pastedAddress) else { return nil }
+        return url
+    }
+
+    private var pasteURLPresented: Binding<Bool> {
+        Binding(get: { pasteURLTarget != nil }, set: { presented in
+            if !presented {
+                pasteURLTarget = nil
+            }
+        })
     }
 
     // MARK: Chrome
 
-    @ViewBuilder
     private var shelfChrome: some View {
-        if stage.showsShelf {
-            chipsRow
-                .padding(.horizontal, DesignTokens.EditDesk.Spacing.gutter)
-                .padding(.top, StageGeometry.chipRowTop(progress: stage.progress, windowSize: stage.stageSize))
-                .transition(.opacity)
+        chipsRow.modifier(ShelfChromeRide(stage: stage))
+    }
+
+    /// R-27: the overview card belongs to the resting stage, so a half-open shelf, the detail page
+    /// or any modal takes it off screen rather than layering it over them.
+    private var showsHomeCard: Bool {
+        router.page == .home && stage.progress == 0 && !interactionLock
+    }
+
+    /// The gate above says *where* the card may hang; this one says whether it is actually drawn,
+    /// which is what the arrangement gives up its top band for.
+    fileprivate var homeCardClaimsStage: Bool {
+        showsHomeCard && progress?.handled.contains(.home) == false
+    }
+
+    @ViewBuilder
+    private var homeOnboardingCard: some View {
+        if showsHomeCard {
+            OnboardingCard(page: .home) { action in
+                switch action {
+                case .chooseFile:
+                    promptImport()
+                case .tryAerials:
+                    router.select(.library)
+                    router.libraryFocus = .aerials
+                case .importMore, .connectSteam, .importLocalLibrary, .addClock:
+                    break
+                }
+            }
+        }
+    }
+
+    private func performLibraryCardAction(_ action: OnboardingCardAction) {
+        switch action {
+        case .importMore:
+            promptImport()
+        case .chooseFile, .tryAerials, .connectSteam, .importLocalLibrary, .addClock:
+            break
         }
     }
 
@@ -194,6 +282,9 @@ struct HomePage: View {
     private var libraryLayer: some View {
         if isLibraryOpen {
             librarySurface
+                .id(segment)
+                .transition(.opacity)
+                .animation(.easeInOut(duration: reduceMotion ? 0 : 0.18), value: segment)
                 .padding(.top, StageGeometry.gridTop)
                 .transition(.opacity)
         }
@@ -202,15 +293,14 @@ struct HomePage: View {
     /// Deliberately not `progress == 2`: the first pixel of a return swipe would tear the grid
     /// down and lose the scroll position, and a cancelled swipe would rebuild it.
     private var isLibraryOpen: Bool {
-        router.page == .library && stage.snappedIndex == 2 && stage.progress > StageGeometry.libraryHandoffProgress
+        stage.progress > StageGeometry.libraryHandoffProgress
     }
 
     private var statusCapsule: StatusCapsule {
         StatusCapsule(
             content: StatusCapsuleContent(rawValue: statusCapsuleRaw) ?? EditDeskPreferences.statusCapsuleContentDefault,
             renderingScreenCount: screenManager.screens.filter { screenManager.getConfiguration(for: $0) != nil }.count,
-            batterySaverOn: SettingsManager.shared.loadGlobalSettings().globalPauseOnBattery,
-            onOpenPerformanceSettings: { router.openSettings(.performancePower, anchor: .performancePause) }
+            batterySaverOn: SettingsManager.shared.loadGlobalSettings().globalPauseOnBattery
         )
     }
 
@@ -229,17 +319,22 @@ struct HomePage: View {
             if router.page == .library {
                 LibrarySegmentPicker(selection: $segment)
             }
-            LibraryChipsRow(
-                chips: SavedLibraryModel.Chip.allCases.map { LibraryChip(id: Self.chipID($0), title: Self.chipTitle($0)) },
-                selection: $chipID,
-                sortTitle: Self.sortTitle(library?.sort ?? .recentlyUsed),
-                sortMenu: {
-                    Button("Recently Used") { library?.sort = .recentlyUsed }
-                    Button("Name") { library?.sort = .name }
-                    Button("Type") { library?.sort = .type }
-                },
-                onImport: promptImport
-            )
+            if segment == .wallpapers || router.page == .home {
+                LibraryChipsRow(
+                    chips: SavedLibraryModel.Chip.allCases.map { LibraryChip(id: Self.chipID($0), title: Self.chipTitle($0)) },
+                    selection: $chipID,
+                    sortTitle: Self.sortTitle(library?.sort ?? .recentlyUsed),
+                    sortMenu: {
+                        Button("Recently Used") { library?.sort = .recentlyUsed }
+                        Button("Name") { library?.sort = .name }
+                        Button("Type") { library?.sort = .type }
+                    },
+                    onImport: promptImport,
+                    showsActions: library?.chip != .aerials
+                )
+            } else {
+                Spacer(minLength: 0)
+            }
         }
     }
 
@@ -267,7 +362,8 @@ struct HomePage: View {
     /// covers all but the near edge, so a title drawn there is unreadable.
     @ViewBuilder
     private var hoverName: some View {
-        if let caption = hoverCaption, let rect = stage.hoveredCardRect, stage.showsShelf {
+        if router.page == .home, !interactionLock, stage.progress < 1.5,
+           let caption = hoverCaption, let rect = stage.hoveredCardRect, stage.showsShelf {
             Text(verbatim: caption)
                 .font(DesignTokens.Typography.captionEmphasized)
                 .foregroundStyle(DesignTokens.EditDesk.Colors.textPrimary)
@@ -334,7 +430,7 @@ struct HomePage: View {
         switch segment {
         case .wallpapers:
             if library?.chip == .aerials {
-                AerialsLibraryView()
+                AerialsLibraryView(isEmbedded: true)
             } else {
                 wallpaperGrid
             }
@@ -342,24 +438,36 @@ struct HomePage: View {
             SchemeLibraryView()
         case .systemWallpaper:
             if #available(macOS 26.0, *) {
-                SystemWallpaperLibraryView()
+                SystemWallpaperLibraryView(isEmbedded: true)
             }
         }
     }
 
     private var wallpaperGrid: some View {
         ScrollView {
+            // R-27: eligibility is the page, not what the filter left behind, so the card rides
+            // above an empty result set just as it does above real tiles.
+            if progress?.handled.contains(.library) == false {
+                OnboardingCard(page: .library, perform: performLibraryCardAction)
+                    .frame(height: OnboardingCardMetrics.blockHeight)
+            }
             if let library, library.visibleItems.isEmpty {
-                IllustratedEmptyState(symbol: "square.grid.2x2", title: "No wallpapers yet")
+                IllustratedEmptyState(
+                    symbol: library.items.isEmpty ? "square.grid.2x2" : "magnifyingglass",
+                    title: library.items.isEmpty ? "No wallpapers yet" : "No Results"
+                )
             } else if let library {
                 LibraryGalleryGrid(
-                    size: .medium, aspect: .wide,
+                    size: tileSize, aspect: .wide,
                     initialWidth: stage.stageSize.width - 2 * DesignTokens.LibraryGrid.horizontalPadding
                 ) {
                     ForEach(library.visibleItems) { item in
-                        LibraryGridTile(item: item, image: gridImage(for: item, revision: thumbnailRevision))
-                            .onTapGesture { presentedItemID = item.id }
-                            .task(id: item.id) { await library.probeMetadata(for: [item.id]) }
+                        Button { presentedItemID = item.id } label: {
+                            LibraryGridTile(item: item, image: gridImage(for: item, revision: thumbnailRevision))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(Text(verbatim: item.title))
+                        .task(id: item.id) { await library.probeMetadata(for: [item.id]) }
                     }
                 }
                 .libraryGridPadding()
@@ -421,7 +529,7 @@ struct HomePage: View {
             let presentation = ScreenPresentation.presentation(
                 for: screen, refreshRate: screenManager.getScreenRefreshRate(for: screen.id)
             )
-            return StageDisplay(
+            var display = StageDisplay(
                 id: screen.id,
                 fingerprint: screen.displayFingerprint,
                 frame: screen.frame,
@@ -432,6 +540,8 @@ struct HomePage: View {
                 cover: stage.displays.first { $0.id == screen.id }?.cover,
                 state: state(for: screen)
             )
+            describeWallpaper(for: screen, in: &display)
+            return display
         }
         for display in stage.displays where display.cover == nil && display.state != .empty {
             refreshCover(for: display.id, crossfade: false)
@@ -460,6 +570,10 @@ struct HomePage: View {
     private func refreshAllStates() {
         for display in stage.displays {
             refreshState(for: display.id)
+            // Startup can mount the page before a restored session has produced its first frame.
+            if display.cover == nil, display.state != .empty {
+                refreshCover(for: display.id, crossfade: true)
+            }
         }
     }
 
@@ -467,6 +581,53 @@ struct HomePage: View {
         guard let screen = screenManager.screens.first(where: { $0.id == id }),
               let index = stage.displays.firstIndex(where: { $0.id == id }) else { return }
         stage.displays[index].state = state(for: screen)
+        describeWallpaper(for: screen, in: &stage.displays[index])
+    }
+
+    /// What the display draws on its own screen and which transport buttons it offers. Recomputed
+    /// wherever the state is, so a playlist step, a schedule switch or a rename lands on the stage.
+    private func describeWallpaper(for screen: Screen, in display: inout StageDisplay) {
+        guard let configuration = screenManager.getConfiguration(for: screen) else {
+            display.wallpaperTitle = ""
+            display.wallpaperKind = ""
+            display.showsPlaylistControls = false
+            display.canChangePlaylistEntry = false
+            display.canTogglePlayback = false
+            return
+        }
+        let host: String? = if case let .url(url)? = configuration.htmlSource {
+            url.host()
+        } else {
+            nil
+        }
+        display.wallpaperKind = DisplayDetailHost.kindLine(configuration.activeWallpaper)
+        display.wallpaperTitle = StageWallpaperName.resolve(
+            libraryTitle: libraryTitle(for: configuration),
+            originTitle: configuration.wpeOrigin?.title,
+            fileURL: configuration.wallpaperType == .video ? screen.videoPlayer?.videoURL : nil,
+            host: host,
+            kind: display.wallpaperKind
+        )
+        // The same guards `WallpaperAutomationOrchestrator.advancePlaylist` runs: a button the
+        // orchestrator would refuse is drawn dimmed rather than looking live.
+        display.showsPlaylistControls = featureCatalog.isEnabled(.playlists) && configuration.canNavigatePlaylist
+        display.canChangePlaylistEntry = display.showsPlaylistControls
+        display.canTogglePlayback = screen.playbackController != nil
+    }
+
+    /// The library row for exactly the wallpaper this display is running. Matched on the content
+    /// itself rather than through `onDisplays`, whose reverse links a variant or the Workshop
+    /// original can share.
+    private func libraryTitle(for configuration: ScreenConfiguration) -> String? {
+        library?.items.first { item in
+            switch item.source {
+            case let .bookmark(bookmark): bookmark.content == configuration.activeWallpaper
+            case let .aerial(asset): configuration.activeWallpaper == .video(bookmarkData: asset.bookmarkData)
+            #if !LITE_BUILD
+            case let .workshop(entry): configuration.wpeOrigin?.workshopID == entry.origin.workshopID
+            #endif
+            }
+        }?.title
     }
 
     /// Covers are stills of the app's own rendering (`WallpaperCoverCapture`), re-taken after
@@ -617,6 +778,15 @@ struct HomePage: View {
                 case .previous:
                     screenManager.regressPlaylist(for: screen)
                 }
+            case let .emptyActionTapped(id, action):
+                guard let screen = screenManager.screens.first(where: { $0.id == id }) else { continue }
+                switch action {
+                case .chooseFile:
+                    promptImport(onto: screen)
+                case .pasteURL:
+                    pastedAddress = ""
+                    pasteURLTarget = id
+                }
             case let .dropped(cardID, displayID):
                 applies.run(for: displayID) { await applyCard(cardID, to: displayID) }
             case let .cardTapped(cardID):
@@ -670,9 +840,44 @@ struct HomePage: View {
         applies.run(for: displayID) { await apply(intent, to: screen, card: nil) }
     }
 
+    /// The menu bar's "+" names the display it was pressed for, so a picker that fell back to the
+    /// main one would import onto a display the user never pointed at.
+    private func consumeAddWallpaperRequest() {
+        guard let request = router.pendingAddWallpaper else { return }
+        router.pendingAddWallpaper = nil
+        presentedItemID = nil
+        router.closeDetail()
+        guard let id = request.targetDisplayID else {
+            promptImport()
+            return
+        }
+        guard let screen = screenManager.screens.first(where: { $0.id == id }) else {
+            toasts.post(
+                String(localized: "The selected display is no longer available.", bundle: .appLanguage),
+                style: .failure
+            )
+            return
+        }
+        promptImport(onto: screen)
+    }
+
     /// The "+ 导入" capsule: one picker, routed like a Finder drop onto the main display.
     private func promptImport() {
         guard let screen = screenManager.screens.first(where: { CGDisplayIsMain($0.id) != 0 }) ?? screenManager.screens.first else { return }
+        promptImport(onto: screen)
+    }
+
+    /// This address-only prompt accepts remote URLs; the general HTML parser also supports inline content.
+    private func applyPastedAddress(to displayID: CGDirectDisplayID) {
+        guard let url = pastedWebsiteURL else {
+            toasts.post(String(localized: "Enter a valid HTTP or HTTPS address.", bundle: .appLanguage), style: .failure)
+            return
+        }
+        guard let screen = screenManager.screens.first(where: { $0.id == displayID }) else { return }
+        applies.run(for: displayID) { await apply(.html(.url(url)), to: screen, card: nil) }
+    }
+
+    private func promptImport(onto screen: Screen) {
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
         panel.canChooseDirectories = true
@@ -682,6 +887,31 @@ struct HomePage: View {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         SettingsManager.shared.saveLastUsedDirectory(url.deletingLastPathComponent())
         Task { await apply(.droppedFile(url), to: screen, card: nil) }
+    }
+}
+
+/// Rides the filter row on the shelf. `progress` is read here rather than in `HomePage.body` so a
+/// frame of the gesture invalidates this layer alone, and the ride runs on `.offset`/`.opacity`
+/// because a per-frame `.padding` would re-run the page's layout.
+struct ShelfChromeRide: ViewModifier {
+    let stage: EditDeskStageModel
+    /// Below this the row is too faint to aim at, so it is neither clickable nor a tab stop.
+    private static let interactiveOpacity = 0.5
+
+    /// Lags the shelf's own rise: the row belongs to cards that are not on screen yet.
+    static func opacity(_ progress: Double) -> Double {
+        HomeHints.ramp(progress, from: 0.45, to: 0.95)
+    }
+
+    func body(content: Content) -> some View {
+        let opacity = Self.opacity(stage.progress)
+        return content
+            .padding(.horizontal, DesignTokens.EditDesk.Spacing.gutter)
+            .frame(maxHeight: .infinity, alignment: .top)
+            .offset(y: StageGeometry.chipRowTop(progress: stage.progress, windowSize: stage.stageSize))
+            .opacity(opacity)
+            .allowsHitTesting(opacity > Self.interactiveOpacity)
+            .accessibilityHidden(opacity <= Self.interactiveOpacity)
     }
 }
 
@@ -711,6 +941,7 @@ private struct LibraryGridTile: View {
     let item: LibraryItem
     let image: CGImage?
     @State private var isHovering = false
+    @Environment(\.libraryTileSize) private var tileSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {

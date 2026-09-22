@@ -72,7 +72,7 @@ struct WorkshopModalTests {
 
     // MARK: Targets
 
-    @Test("Targets run left to right with 1-based shortcuts; the primary is a display this item is not on")
+    @Test("Targets and the default stay spatially stable when applied state changes")
     func targetsShareTheLibraryModalsOrdering() {
         let left = ModalActions.Display(id: 1, name: "Left", frame: CGRect(x: -1440, y: 0, width: 1440, height: 900))
         let right = ModalActions.Display(id: 2, name: "Right", frame: CGRect(x: 0, y: 0, width: 1920, height: 1080))
@@ -80,7 +80,9 @@ struct WorkshopModalTests {
         let targets = WorkshopModalTargets.make(displays: [right, left], activeOn: [1], covers: [:])
         #expect(targets.map(\.id) == [1, 2])
         #expect(targets.map(\.shortcutIndex) == [1, 2])
-        #expect(targets.first(where: \.isPrimary)?.id == 2, "the display already running this item is not the default")
+        #expect(targets.first(where: \.isPrimary)?.id == 1)
+        #expect(targets.first?.isApplied == true)
+        #expect(targets.last?.isApplied == false)
         // The aspect ratio exists so the float strip can size the thumbnail: 16:9 → 149×84, 16:10 → 134×84.
         #expect(FloatLayerGeometry.thumbnailWidth(aspect: targets.last?.aspectRatio ?? 0) == 149)
         #expect(FloatLayerGeometry.thumbnailWidth(aspect: targets.first?.aspectRatio ?? 0) == 134)
@@ -107,6 +109,29 @@ struct WorkshopModalTests {
         #expect(has("DetailRequiredItemsSection(", in: source))
         #expect(has("DetailPresetsSection(", in: source))
         #expect(has("CollapsibleDescription(", in: source))
+    }
+
+    /// R-24 ④: one reveal set for the card, the hero, the dependency rows and the preset rows.
+    @Test("Dependencies and presets read the page's reveal state when the host hands them one")
+    func theWholeColumnSharesOneRevealSet() throws {
+        let details = try RepositoryRoot.source(Self.detailsPath)
+        #expect(has("var matureReveal: MatureRevealState?", in: details))
+        #expect(details.components(separatedBy: "matureReveal: matureReveal").count - 1 >= 2,
+                "both the dependencies and the presets section must get the page's reveal state")
+        for path in [
+            "LiveWallpaper/Views/Workshop/DetailRequiredItemsSection.swift",
+            "LiveWallpaper/Views/Workshop/DetailPresetsSection.swift",
+        ] {
+            let source = try RepositoryRoot.source(path)
+            #expect(has("var matureReveal: MatureRevealState?", in: source), Comment(rawValue: path))
+            #expect(has("matureReveal?.isRevealed(", in: source), Comment(rawValue: path))
+            // nil keeps the old inspector on its own ephemeral set.
+            #expect(has("@State private var revealedIDs", in: source), Comment(rawValue: path))
+        }
+        let modal = try RepositoryRoot.source(Self.modalPath)
+        #expect(has("matureReveal: matureReveal", in: modal))
+        let host = try RepositoryRoot.source(Self.hostPath)
+        #expect(has("matureReveal: session.matureReveal", in: host))
     }
 
     @Test("The Workshop inspector draws the shared column rather than a second copy of it")

@@ -64,21 +64,21 @@ final class ShelfCardLayer {
         tab.cornerRadius = DesignTokens.EditDesk.Corner.badge
         gradient.startPoint = CGPoint(x: 0.5, y: 0)
         gradient.endPoint = CGPoint(x: 0.5, y: 1)
-        StageLayerStyle.text(badge, size: 9, mono: true)
+        StageLayerStyle.text(badge, size: 11, mono: true)
         badge.cornerRadius = DesignTokens.EditDesk.Corner.badge
         badge.masksToBounds = true
         badge.alignmentMode = .center
-        update(card: nil)
+        update(card: nil, increasedContrast: false)
     }
 
-    func update(card: StageCard?) {
+    func update(card: StageCard?, increasedContrast: Bool) {
         if self.card?.id != card?.id {
             layer.removeAnimation(forKey: "opacity")
             outline.removeAnimation(forKey: "opacity")
         }
         self.card = card
         thumbnail.contents = card?.thumbnail
-        badgeWidth = StageLayerStyle.width(card?.onBadge ?? "", size: 9, mono: true) + 10
+        badgeWidth = StageLayerStyle.width(card?.onBadge ?? "", size: 11, mono: true) + 12
         badge.string = card?.onBadge
         badge.isHidden = card?.onBadge == nil
         let colors = DesignTokens.EditDesk.Colors.self
@@ -92,7 +92,7 @@ final class ShelfCardLayer {
         ]
         tab.backgroundColor = NSColor(colors.strokeHotShell).withAlphaComponent(0.2).cgColor
         regularRing = NSColor(colors.strokeShelfCardRing).cgColor
-        gridRing = NSColor(colors.strokeRegular).cgColor
+        gridRing = NSColor(increasedContrast ? colors.strokeRegularIncreased : colors.strokeRegular).cgColor
         let restShadow = NSColor(DesignTokens.EditDesk.Shadow.shelfCard.color).cgColor
         let hotShadow = NSColor(DesignTokens.EditDesk.Shadow.hoverCard.color).cgColor
         shadowTint = restShadow.copy(alpha: 1)
@@ -138,7 +138,7 @@ final class ShelfCardLayer {
         face.borderWidth = 1
         face.borderColor = gridMix == 1 ? gridRing : regularRing
         gradient.frame = CGRect(x: 0, y: size.height / 2, width: size.width, height: size.height / 2)
-        badge.frame = CGRect(x: 8, y: 8, width: badgeWidth, height: 15)
+        badge.frame = CGRect(x: 8, y: 8, width: badgeWidth, height: 18)
         outline.frame = face.bounds
         outline.cornerRadius = corner
         let outlineOpacity = outline.opacity
@@ -222,14 +222,16 @@ enum StageLayerStyle {
         layer.contentsScale = 2
     }
 
-    static func width(_ text: String, size: CGFloat, mono: Bool = false) -> CGFloat {
-        let font = mono ? NSFont.monospacedSystemFont(ofSize: size, weight: .regular) : NSFont.systemFont(ofSize: size, weight: .regular)
+    /// `weight` has to match what `text(_:size:weight:mono:)` set on the layer being measured:
+    /// measuring semibold as regular is what puts a centred row off centre.
+    static func width(_ text: String, size: CGFloat, weight: NSFont.Weight = .regular, mono: Bool = false) -> CGFloat {
+        let font = mono ? NSFont.monospacedSystemFont(ofSize: size, weight: weight) : NSFont.systemFont(ofSize: size, weight: weight)
         return ceil((text as NSString).size(withAttributes: [.font: font]).width)
     }
 
-    static func symbol(_ name: String, tint: NSColor) -> CGImage? {
+    static func symbol(_ name: String, tint: NSColor, pointSize: CGFloat = 11) -> CGImage? {
         guard let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
-            .withSymbolConfiguration(.init(pointSize: 11, weight: .semibold))?
+            .withSymbolConfiguration(.init(pointSize: pointSize, weight: .semibold))?
             .withSymbolConfiguration(.init(paletteColors: [tint])) else { return nil }
         return image.cgImage(forProposedRect: nil, context: nil, hints: nil)
     }

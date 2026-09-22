@@ -78,7 +78,7 @@ struct EditDeskModalChromeTests {
         let source = try RepositoryRoot.source(Self.chromePath)
         #expect(source.contains("ModalGeometry.panelFrame(in: windowSize)"))
         #expect(source.contains("DesignTokens.EditDesk.Colors.modalScrim"))
-        #expect(source.contains("ModalBackdrop(preview: backdrop)"))
+        #expect(source.contains("DesignTokens.Colors.pageBackground"))
         #expect(source.contains("accessibilityElement(children: .contain)"))
         #expect(source.contains("accessibilityAddTraits(.isModal)"))
         #expect(source.contains("DesignTokens.EditDesk.Shadow.modal"))

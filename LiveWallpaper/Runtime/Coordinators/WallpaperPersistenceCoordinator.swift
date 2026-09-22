@@ -77,7 +77,12 @@ final class WallpaperPersistenceCoordinator {
         }
         append(configuration.savedVideoBookmarkData)
         configuration.playlistBookmarks?.forEach { append($0) }
-        configuration.scheduleSlots?.forEach { append($0.videoBookmarkData) }
+        configuration.wallpaperQueue?.forEach { append($0.content.activeVideoBookmarkData) }
+        append(configuration.scheduleFallback?.content.activeVideoBookmarkData)
+        configuration.scheduleSlots?.forEach {
+            append($0.videoBookmarkData)
+            append($0.wallpaper?.content.activeVideoBookmarkData)
+        }
 
         return result
     }

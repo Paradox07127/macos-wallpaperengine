@@ -3,19 +3,32 @@ import SwiftUI
 
 /// Fixed-width labels keep control positions stable across languages.
 struct WallpaperPreviewHUD<Viewport: View, Playback: View, Actions: View>: View {
+    var showsViewport = true
     @ViewBuilder var viewport: Viewport
     @ViewBuilder var playback: Playback
     @ViewBuilder var actions: Actions
 
     var body: some View {
-        HStack(spacing: DesignTokens.Spacing.sm) {
-            leadingZone { viewport }
-            zone { playback }
-            zone { actions }
+        ViewThatFits(in: .horizontal) {
+            row
+            row.environment(\.compactPreviewControls, true)
         }
         .padding(.horizontal, DesignTokens.Spacing.cardInset)
         .padding(.vertical, 6)
         .adaptiveGlassOverMedia(.capsule)
+    }
+
+    private var row: some View {
+        HStack(spacing: DesignTokens.Spacing.sm) {
+            if showsViewport {
+                leadingZone { viewport }
+                zone { playback }
+            } else {
+                leadingZone { playback }
+            }
+            zone { actions }
+        }
+        .fixedSize(horizontal: true, vertical: false)
     }
 
     /// The first zone with content carries no leading hairline; the rest do. A

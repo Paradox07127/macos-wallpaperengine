@@ -46,7 +46,7 @@ struct ShortcutsView: View {
             pendingSearchAnchor: $pendingSearchAnchor,
             anchors: [
                 .shortcutsMaster,
-                .shortcutsGlobal
+                .shortcutsGlobal,
             ]
         )
         .onReceive(NotificationCenter.default.publisher(for: .globalShortcutsDidChange)) { _ in
@@ -60,7 +60,9 @@ struct ShortcutsView: View {
                 bindings = latest.globalShortcuts
                 didResync = true
             }
-            if didResync { rejectionMessage = nil }
+            if didResync {
+                rejectionMessage = nil
+            }
         }
     }
 
@@ -116,7 +118,7 @@ struct ShortcutsView: View {
                 )
                 NSSound.beep()
                 return
-            case .duplicate(let other):
+            case let .duplicate(other):
                 rejectionMessage = String(
                     localized: "\(newBinding.displayString) is already used by \(other.displayName).",
                     bundle: .appLanguage
@@ -149,7 +151,9 @@ struct ShortcutsView: View {
     private func validate(_ binding: GlobalShortcutBinding, for action: GlobalShortcutAction) -> ValidationResult {
         guard !binding.modifiers.isEmpty else { return .missingModifier }
         for other in GlobalShortcutAction.allCases where other != action {
-            if bindingFor(other) == binding { return .duplicate(other) }
+            if bindingFor(other) == binding {
+                return .duplicate(other)
+            }
         }
         return .valid
     }
@@ -195,7 +199,9 @@ private struct ShortcutRow: View {
                 .disabled(!isEnabled)
                 .opacity(isEnabled ? 1 : DesignTokens.Opacity.disabledContent)
                 .onChange(of: isEnabled) { _, enabled in
-                    if !enabled { isCapturing = false }
+                    if !enabled {
+                        isCapturing = false
+                    }
                 }
 
                 Menu {
@@ -237,7 +243,7 @@ private struct ShortcutCaptureField: View {
         Button(action: { isCapturing.toggle() }) {
             HStack {
                 if isCapturing {
-                    Text("Press keys…")
+                    Text("Press keys… Esc to cancel")
                         .foregroundStyle(.secondary)
                         .italic()
                 } else if let binding {
@@ -292,11 +298,11 @@ private struct KeyCaptureMonitor: NSViewRepresentable {
         Coordinator(onCapture: onCapture)
     }
 
-    func makeNSView(context: Context) -> NSView {
+    func makeNSView(context _: Context) -> NSView {
         NSView(frame: .zero)
     }
 
-    func updateNSView(_ nsView: NSView, context: Context) {
+    func updateNSView(_: NSView, context: Context) {
         if isActive {
             context.coordinator.startMonitoring(deactivate: { isActive = false })
         } else {
@@ -304,11 +310,15 @@ private struct KeyCaptureMonitor: NSViewRepresentable {
         }
     }
 
+    static func dismantleNSView(_: NSView, coordinator: Coordinator) {
+        coordinator.stopMonitoring()
+    }
+
     @MainActor
     final class Coordinator {
         let onCapture: (GlobalShortcutBinding) -> Void
-        // deinit runs nonisolated even on a @MainActor class, and must remove the monitor synchronously there.
-        nonisolated(unsafe) private var localMonitor: Any?
+        /// deinit runs nonisolated even on a @MainActor class, and must remove the monitor synchronously there.
+        private nonisolated(unsafe) var localMonitor: Any?
 
         init(onCapture: @escaping (GlobalShortcutBinding) -> Void) {
             self.onCapture = onCapture
@@ -324,10 +334,16 @@ private struct KeyCaptureMonitor: NSViewRepresentable {
             stopMonitoring()
             localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
                 guard let self else { return event }
+                if event.keyCode == 53 {
+                    stopMonitoring()
+                    deactivate()
+                    return nil
+                }
                 let keyCode = UInt32(event.keyCode)
-                let modifiers = self.modifierSet(from: event.modifierFlags)
+                let modifiers = modifierSet(from: event.modifierFlags)
                 let binding = GlobalShortcutBinding(keyCode: keyCode, modifiers: modifiers)
-                self.onCapture(binding)
+                stopMonitoring()
+                onCapture(binding)
                 deactivate()
                 return nil
             }
@@ -342,10 +358,18 @@ private struct KeyCaptureMonitor: NSViewRepresentable {
 
         private func modifierSet(from flags: NSEvent.ModifierFlags) -> GlobalShortcutBinding.ModifierSet {
             var set: GlobalShortcutBinding.ModifierSet = []
-            if flags.contains(.command)  { set.insert(.command) }
-            if flags.contains(.option)   { set.insert(.option) }
-            if flags.contains(.control)  { set.insert(.control) }
-            if flags.contains(.shift)    { set.insert(.shift) }
+            if flags.contains(.command) {
+                set.insert(.command)
+            }
+            if flags.contains(.option) {
+                set.insert(.option)
+            }
+            if flags.contains(.control) {
+                set.insert(.control)
+            }
+            if flags.contains(.shift) {
+                set.insert(.shift)
+            }
             return set
         }
     }

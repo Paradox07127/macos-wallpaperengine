@@ -119,9 +119,9 @@ enum OverlayColumnLayout {
         var drawer: CGFloat
     }
 
-    static func heights(total: CGFloat, rowCount: Int, drawerExpanded: Bool) -> Heights {
+    static func heights(total: CGFloat, rowCount: Int, drawerExpanded: Bool, hasSelection: Bool = true) -> Heights {
         let drawer = drawerExpanded ? drawerExpandedHeight : drawerCollapsedHeight
-        let visibleRows = min(max(rowCount, 0), maxVisibleRows)
+        let visibleRows = min(max(rowCount, 0), hasSelection ? maxVisibleRows : max(rowCount, 0))
         let wanted = headerHeight + CGFloat(visibleRows) * rowHeight
         let budget = max(total - drawer, 0)
         // Short windows shrink the layer list, not the inspector: the inspector holds the

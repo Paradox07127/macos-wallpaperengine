@@ -18,7 +18,7 @@ extension EditDeskStageModel: DetailStageFlying {}
 @Observable
 final class DetailTransitionCoordinator {
     enum Phase: Equatable {
-        case idle, flyingIn, shown, returning
+        case idle, flyingIn, shown, switching, returning
     }
 
     private(set) var shownDisplayID: CGDirectDisplayID?
@@ -33,18 +33,45 @@ final class DetailTransitionCoordinator {
 
     private let stage: any DetailStageFlying
     private let heroFrame: () -> CGRect
+    private let usesMeasuredFrame: Bool
+    private var measuredFrame: (display: CGDirectDisplayID, rect: CGRect)?
+    private var layoutWaiter: (display: CGDirectDisplayID, continuation: CheckedContinuation<CGRect?, Never>)?
     private var transition: Task<Void, Never>?
     private var generation = 0
 
-    init(stage: any DetailStageFlying, heroFrame: @escaping () -> CGRect) {
+    init(stage: any DetailStageFlying, usesMeasuredFrame: Bool = false, heroFrame: @escaping () -> CGRect) {
         self.stage = stage
+        self.usesMeasuredFrame = usesMeasuredFrame
         self.heroFrame = heroFrame
+    }
+
+    /// SwiftUI reports the actual laid-out preview, including the live inspector width. Both
+    /// ends of the shared element now use window coordinates instead of duplicating layout math.
+    func heroDidLayout(display: CGDirectDisplayID, frame: CGRect) {
+        guard display == shownDisplayID, frame.width > 0, frame.height > 0,
+              !frame.isInfinite, !frame.isNull else { return }
+        measuredFrame = (display, frame)
+        if let waiter = layoutWaiter, waiter.display == display {
+            layoutWaiter = nil
+            waiter.continuation.resume(returning: frame)
+        }
+        if phase == .flyingIn || phase == .shown || phase == .switching {
+            stage.updateFlightDestination(display: display, to: frame)
+        }
+    }
+
+    private func destination(for display: CGDirectDisplayID) async -> CGRect? {
+        guard usesMeasuredFrame else { return heroFrame() }
+        if let measuredFrame, measuredFrame.display == display {
+            return measuredFrame.rect
+        }
+        return await withCheckedContinuation { layoutWaiter = (display, $0) }
     }
 
     /// The hero is laid out from the window, the flight's destination was a rectangle handed over
     /// once; a resize between the two is what makes the tile arrive somewhere the hero is not.
     func windowDidResize() {
-        guard let shownDisplayID, phase == .flyingIn || phase == .shown else { return }
+        guard !usesMeasuredFrame, let shownDisplayID, phase == .flyingIn || phase == .shown else { return }
         stage.updateFlightDestination(display: shownDisplayID, to: heroFrame())
     }
 
@@ -55,14 +82,38 @@ final class DetailTransitionCoordinator {
             return
         }
         transition?.cancel()
+        layoutWaiter?.continuation.resume(returning: nil)
+        layoutWaiter = nil
+        if target != shownDisplayID {
+            measuredFrame = nil
+        }
         generation += 1
         let generation = generation
         busy = true
+        let directSwitch = target != nil && heroVisible
+        let previous = shownDisplayID
+        if directSwitch, let target {
+            shownDisplayID = target
+            phase = .switching
+            onShow(target)
+        }
         transition = Task { @MainActor in
             defer {
                 if self.generation == generation {
                     busy = false
                 }
+            }
+            if directSwitch, let target {
+                if let previous {
+                    await stage.returnTile(display: previous)
+                }
+                guard !Task.isCancelled else { return }
+                guard let destination = await destination(for: target), !Task.isCancelled else { return }
+                await stage.flyTile(display: target, to: destination)
+                guard !Task.isCancelled else { return }
+                stage.setTileConcealed(display: target, true)
+                phase = .shown
+                return
             }
             if let current = shownDisplayID {
                 phase = .returning
@@ -81,7 +132,8 @@ final class DetailTransitionCoordinator {
             phase = .flyingIn
             heroVisible = false
             onShow(target)
-            await stage.flyTile(display: target, to: heroFrame())
+            guard let destination = await destination(for: target), !Task.isCancelled else { return }
+            await stage.flyTile(display: target, to: destination)
             guard !Task.isCancelled else { return }
             // Same turn, no animation: the hero appears as the tile disappears.
             heroVisible = true

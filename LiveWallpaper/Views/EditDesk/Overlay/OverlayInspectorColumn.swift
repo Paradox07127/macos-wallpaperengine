@@ -1,6 +1,7 @@
 import LiveWallpaperCore
 import SwiftUI
 
+/// Legacy layout retained for comparison; Edit Desk now uses OverlayWorkspace.
 /// The 372pt overlay column: layers on top, the selected object's controls in the middle, the
 /// add drawer resident at the bottom. Alignment snapping and copy-to-other-displays live in the
 /// detail top bar, not here.
@@ -26,7 +27,8 @@ struct OverlayInspectorColumn: View {
                 effectVisible: session.effectVisible
             )
             let heights = OverlayColumnLayout.heights(
-                total: proxy.size.height, rowCount: rows.count, drawerExpanded: drawerExpanded
+                total: proxy.size.height, rowCount: rows.count, drawerExpanded: drawerExpanded,
+                hasSelection: OverlayLayerList.inspectorContent(for: session.selection) != .empty
             )
             VStack(spacing: 0) {
                 LayerNavigator(session: session, rows: rows, height: heights.layers)

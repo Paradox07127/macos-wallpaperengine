@@ -1,9 +1,31 @@
+import AppKit
 import Foundation
 import LiveWallpaperCore
 import SwiftUI
 
 enum StatusCapsuleHealth: Equatable {
     case normal, elevated, hot
+}
+
+/// AppKit reports a click in window coordinates — y up from the content view's bottom edge —
+/// while SwiftUI measures the panel down from its own top. The flip lives here so it is testable.
+enum StatusCapsuleDismissal {
+    static func windowRect(fromTop frame: CGRect, windowHeight: CGFloat) -> CGRect {
+        CGRect(x: frame.minX, y: windowHeight - frame.maxY, width: frame.width, height: frame.height)
+    }
+
+    /// The trigger is excluded alongside the panel: dismissing on it would race the button's own
+    /// toggle and reopen the panel the user meant to close.
+    static func shouldDismiss(
+        clickInWindow: CGPoint,
+        panelFrameFromTop: CGRect,
+        capsuleFrameFromTop: CGRect,
+        windowHeight: CGFloat
+    ) -> Bool {
+        ![panelFrameFromTop, capsuleFrameFromTop].contains {
+            windowRect(fromTop: $0, windowHeight: windowHeight).contains(clickInWindow)
+        }
+    }
 }
 
 /// Pure headline/dot/thermal mapping — kept static so tests drive it without `SystemMonitor`.
@@ -61,13 +83,15 @@ struct StatusCapsule: View {
     let content: StatusCapsuleContent
     let renderingScreenCount: Int
     let batterySaverOn: Bool
-    let onOpenPerformanceSettings: () -> Void
 
     private static let dialSize: CGFloat = 52
     /// Four dials plus their gaps and the panel padding; right-anchored, so it stays in the window.
     private static let panelWidth: CGFloat = 4 * dialSize + 3 * 8 + 20
 
     @State private var isExpanded = false
+    @State private var panelFrame: CGRect = .zero
+    @State private var capsuleFrame: CGRect = .zero
+    @FocusState private var panelFocused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var monitor: SystemMonitor {
@@ -99,21 +123,43 @@ struct StatusCapsule: View {
             // The capsule keeps its slot in the top bar and the panel hangs off it as an overlay:
             // swapping them in place shoves the search field and pushes the panel off a small window.
             collapsedCapsule
+                .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }, action: { capsuleFrame = $0 })
                 .overlay(alignment: .topTrailing) {
                     if isExpanded {
                         expandedPanel
                             .fixedSize()
                             .alignmentGuide(.top) { $0[.top] }
                             .offset(y: 0)
+                            .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }, action: { panelFrame = $0 })
+                            // Focused so Escape reaches it at all: a click does not move macOS
+                            // keyboard focus, and `onKeyPress` only fires for the focused subtree.
+                            .focusable()
+                            .focusEffectDisabled()
+                            .focused($panelFocused)
+                            .onKeyPress(.escape) {
+                                collapse()
+                                return .handled
+                            }
+                            .onAppear { panelFocused = true }
                             .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .topTrailing)))
                     }
                 }
-                .onTapGesture {
-                    withAnimation(reduceMotion ? .linear(duration: 0.15) : .spring(response: 0.45, dampingFraction: 0.82)) {
-                        isExpanded.toggle()
-                    }
-                }
+                .background(StatusPanelDismissMonitor(
+                    isExpanded: isExpanded,
+                    panelFrame: panelFrame,
+                    capsuleFrame: capsuleFrame,
+                    dismiss: { collapse() }
+                ))
         }
+    }
+
+    private var expansionAnimation: Animation {
+        reduceMotion ? .linear(duration: 0.15) : .spring(response: 0.45, dampingFraction: 0.82)
+    }
+
+    private func collapse() {
+        guard isExpanded else { return }
+        withAnimation(expansionAnimation) { isExpanded = false }
     }
 
     private var wallpapersOnlyPanel: some View {
@@ -130,17 +176,27 @@ struct StatusCapsule: View {
     }
 
     private var collapsedCapsule: some View {
-        headlineRow(showsChevron: true)
-            .padding(.horizontal, 10)
-            .frame(width: 118, height: 28)
-            .background(Capsule().fill(DesignTokens.EditDesk.Colors.panel))
-            .overlay(Capsule().strokeBorder(DesignTokens.EditDesk.Colors.strokePanel, lineWidth: 1))
-            .contentShape(Capsule())
+        Button {
+            withAnimation(expansionAnimation) { isExpanded.toggle() }
+        } label: {
+            headlineRow(showsChevron: true)
+                .padding(.horizontal, 10)
+                .frame(width: 118, height: 28)
+                .background(Capsule().fill(DesignTokens.EditDesk.Colors.panel))
+                .overlay(Capsule().strokeBorder(DesignTokens.EditDesk.Colors.strokePanel, lineWidth: 1))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
     }
 
     private var expandedPanel: some View {
         VStack(alignment: .leading, spacing: DesignTokens.EditDesk.Spacing.s8) {
-            headlineRow(showsChevron: true)
+            // The panel covers the trigger, so its own headline carries the way back: the chevron
+            // is the only affordance still on screen once the dials are up.
+            Button(action: collapse) {
+                headlineRow(showsChevron: true)
+            }
+            .buttonStyle(.plain)
             HStack(alignment: .top, spacing: DesignTokens.EditDesk.Spacing.s8) {
                 dial("CPU", fraction: monitor.systemCpuUsage / 100) {
                     Text(verbatim: percentText(monitor.systemCpuUsage))
@@ -220,22 +276,14 @@ struct StatusCapsule: View {
         return fraction >= Design.Load.elevated ? DesignTokens.Colors.Gauge.medium : DesignTokens.Colors.Gauge.low
     }
 
-    /// Two lines, not one: the summary alone is wider than the four dials above it, so a single
-    /// row clipped its own text inside the panel.
     private var footerRow: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 4) {
-                Text("\(renderingScreenCount) Displays Rendering")
-                Text(verbatim: "·")
-                Text(batterySaverOn ? "Power Saver" : "Performance")
-            }
-            .lineLimit(1)
-            .minimumScaleFactor(0.8)
-            Button(action: onOpenPerformanceSettings) {
-                Text("Performance Settings →")
-            }
-            .buttonStyle(.plain)
+        HStack(spacing: 4) {
+            Text("\(renderingScreenCount) Displays Rendering")
+            Text(verbatim: "·")
+            Text(batterySaverOn ? "Power Saver" : "Performance")
         }
+        .lineLimit(1)
+        .minimumScaleFactor(0.8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .font(DesignTokens.EditDesk.Typography.metaMono)
         .foregroundStyle(DesignTokens.EditDesk.Colors.textTertiary)
@@ -243,5 +291,87 @@ struct StatusCapsule: View {
 
     private func percentText(_ value: Double) -> String {
         "\(Int(value.rounded()))%"
+    }
+}
+
+/// Follows `ShortcutsView`'s `KeyCaptureMonitor`: the coordinator owns the token so `deinit`
+/// can drop it from a nonisolated context, and SwiftUI's teardown drops it too.
+private struct StatusPanelDismissMonitor: NSViewRepresentable {
+    let isExpanded: Bool
+    let panelFrame: CGRect
+    let capsuleFrame: CGRect
+    let dismiss: @MainActor () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeNSView(context _: Context) -> NSView {
+        NSView(frame: .zero)
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        guard isExpanded, let window = nsView.window else {
+            context.coordinator.stop()
+            return
+        }
+        context.coordinator.start(
+            in: window, panelFrame: panelFrame, capsuleFrame: capsuleFrame, dismiss: dismiss
+        )
+    }
+
+    static func dismantleNSView(_: NSView, coordinator: Coordinator) {
+        coordinator.stop()
+    }
+
+    @MainActor
+    final class Coordinator {
+        private var clickMonitor: Any?
+        private var observers: [any NSObjectProtocol] = []
+
+        func start(
+            in window: NSWindow,
+            panelFrame: CGRect,
+            capsuleFrame: CGRect,
+            dismiss: @escaping @MainActor () -> Void
+        ) {
+            stop()
+            clickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { event in
+                let elsewhere = event.window !== window || StatusCapsuleDismissal.shouldDismiss(
+                    clickInWindow: event.locationInWindow,
+                    panelFrameFromTop: panelFrame,
+                    capsuleFrameFromTop: capsuleFrame,
+                    windowHeight: window.contentView?.bounds.height ?? 0
+                )
+                if elsewhere {
+                    dismiss()
+                }
+                // Handed back untouched: swallowing it would cost the user a second click.
+                return event
+            }
+            let center = NotificationCenter.default
+            observers = [
+                center.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { _ in
+                    MainActor.assumeIsolated { dismiss() }
+                },
+                center.addObserver(forName: NSWindow.didResignKeyNotification, object: window, queue: .main) { _ in
+                    MainActor.assumeIsolated {
+                        // Key may only have moved to another of this app's own panels.
+                        if NSApp.keyWindow !== window {
+                            dismiss()
+                        }
+                    }
+                },
+            ]
+        }
+
+        func stop() {
+            if let clickMonitor {
+                NSEvent.removeMonitor(clickMonitor)
+                self.clickMonitor = nil
+            }
+            observers.forEach(NotificationCenter.default.removeObserver)
+            observers = []
+        }
     }
 }

@@ -1106,14 +1106,15 @@ struct NowPlayingWidgetView: View {
                 .foregroundStyle(.white.opacity(0.65))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(
+        .background {
             RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
-                .strokeBorder(
-                    .white.opacity(0.35),
-                    style: StrokeStyle(lineWidth: 1, dash: [5, 4])
-                )
-                .padding(2)
-        )
+                .fill(.black.opacity(0.55))
+                .overlay {
+                    RoundedRectangle(cornerRadius: DesignTokens.Corner.md, style: .continuous)
+                        .strokeBorder(.white.opacity(0.35), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
+                        .padding(2)
+                }
+        }
         .nowPlayingTextShadow()
     }
 }

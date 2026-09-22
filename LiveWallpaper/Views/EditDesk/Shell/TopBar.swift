@@ -8,16 +8,31 @@ struct TopBar<Trailing: View>: View {
     let workshopAvailable: Bool
     @Binding var searchText: String
     let showsSearch: Bool
+    /// The window's own width; the onboarding capsule drops its label when the row gets tight.
+    let windowWidth: CGFloat
     /// nil on pages that carry a control of their own instead (S8's Steam menu).
     let status: StatusCapsule?
     @ViewBuilder let trailing: () -> Trailing
+
+    @Environment(OnboardingProgress.self) private var progress: OnboardingProgress?
+
+    /// The two the budget cannot derive: the pill is sized by its own localized titles and the
+    /// status capsule by its content. Measured, so no number here restates theirs.
+    @State private var pillWidth: CGFloat = 0
+    @State private var statusWidth: CGFloat = 0
 
     private static var trafficLightReserve: CGFloat {
         68
     }
 
-    private static var searchFieldWidth: CGFloat {
-        220
+    private var budget: TopBarBudget.Layout {
+        TopBarBudget.layout(
+            windowWidth: windowWidth, pillWidth: pillWidth, showsSearch: showsSearch,
+            capsuleWidth: OnboardingCapsuleFit.width(
+                progress: progress, windowWidth: windowWidth, showsSearch: showsSearch
+            ),
+            statusWidth: statusWidth
+        )
     }
 
     var body: some View {
@@ -28,9 +43,11 @@ struct TopBar<Trailing: View>: View {
         }
         .overlay(alignment: .center) {
             NavPill(selection: $page, workshopAvailable: workshopAvailable)
+                .onGeometryChange(for: CGFloat.self, of: \.size.width) { pillWidth = $0 }
         }
         .padding(.horizontal, DesignTokens.Spacing.lg)
         .frame(height: DesignTokens.EditDesk.Spacing.topBar)
+        .background(WindowDragRegion())
     }
 
     private var trailingContent: some View {
@@ -39,13 +56,17 @@ struct TopBar<Trailing: View>: View {
                 LibrarySearchField(
                     text: $searchText,
                     prompt: "Search · Tags · Author",
-                    minWidth: Self.searchFieldWidth,
-                    idealWidth: Self.searchFieldWidth,
-                    maxWidth: Self.searchFieldWidth
+                    minWidth: budget.searchWidth,
+                    idealWidth: budget.searchWidth,
+                    maxWidth: budget.searchWidth
                 )
+            }
+            if budget.showsCapsule {
+                OnboardingCapsule(windowWidth: windowWidth, showsSearch: showsSearch)
             }
             trailing()
             status
+                .onGeometryChange(for: CGFloat.self, of: \.size.width) { statusWidth = $0 }
         }
     }
 }
@@ -56,11 +77,12 @@ extension TopBar where Trailing == EmptyView {
         workshopAvailable: Bool,
         searchText: Binding<String>,
         showsSearch: Bool,
+        windowWidth: CGFloat,
         status: StatusCapsule?
     ) {
         self.init(
             page: page, workshopAvailable: workshopAvailable, searchText: searchText,
-            showsSearch: showsSearch, status: status, trailing: { EmptyView() }
+            showsSearch: showsSearch, windowWidth: windowWidth, status: status, trailing: { EmptyView() }
         )
     }
 }

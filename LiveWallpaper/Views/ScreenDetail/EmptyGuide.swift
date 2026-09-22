@@ -1,6 +1,7 @@
 import LiveWallpaperCore
 import SwiftUI
 
+/// Legacy detail-page guide. EditDesk now uses EmptyDisplaySetup; retain this for remaining callers.
 struct EmptyStateGuideView: View {
     let onChooseVideo: () -> Void
     let onChooseHTML: () -> Void

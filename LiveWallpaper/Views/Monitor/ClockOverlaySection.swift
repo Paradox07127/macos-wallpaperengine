@@ -5,6 +5,7 @@ struct ClockOverlaySection: View {
     let screen: Screen
     let screenManager: ScreenManager
     let backdropAvailable: Bool
+    var showsVisibilityControl = true
 
     private var clock: ClockOverlayConfiguration {
         screenManager.monitorOverlay(for: screen).clock
@@ -22,8 +23,10 @@ struct ClockOverlaySection: View {
         VStack(spacing: 12) {
             GroupBox {
                 VStack(spacing: 8) {
-                    toggleRow("Show on This Display", icon: "clock", keyPath: \.enabled)
-                    Divider()
+                    if showsVisibilityControl {
+                        toggleRow("Show on This Display", icon: "clock", keyPath: \.enabled)
+                        Divider()
+                    }
                     SettingRow(icon: "square.stack.3d.up", iconColor: .blue, title: "Layer",
                                info: "Desktop: below windows. On Top: above windows.") {
                         GlassSegmentedPicker(selection: binding(\.level), values: [.desktop, .front], shell: .flat,
