@@ -619,7 +619,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ 人の登録者"
+            "value" : "%@ 人のサブスクライバー"
           }
         },
         "zh-Hans" : {
@@ -897,7 +897,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "La lista de reproducción cambió %@ más tarde. Se omitió."
+            "value" : "La playlist cambió %@ más tarde. Se omitió."
           }
         },
         "ja" : {
@@ -1674,7 +1674,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld 画面をレンダリング中"
+            "value" : "%lld 台のディスプレイで描画中"
           }
         },
         "zh-Hans" : {
@@ -1775,7 +1775,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Workshop アイテム %lld 件を読み取れます。"
+            "value" : "ワークショップアイテム %lld 件を読み取れます。"
           }
         },
         "zh-Hans" : {
@@ -1869,13 +1869,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld Aerials"
+            "value" : "%lld vistas aéreas"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Aerials %lld 件"
+            "value" : "空撮 %lld 件"
           }
         },
         "zh-Hans" : {
@@ -2420,7 +2420,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld en cola"
+            "value" : "%lld pendientes"
           }
         },
         "ja" : {
@@ -2526,7 +2526,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "登録済みの壁紙が %lld 件、この Mac にありません。"
+            "value" : "サブスクライブ済みの壁紙が %lld 件、この Mac にありません。"
           }
         },
         "zh-Hans" : {
@@ -2610,7 +2610,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "將從 macOS 讀取的檔案夾中刪除 %lld 部影片（%@）。Loomscreen 裡的原始檔案不受影響。"
+            "value" : "將從 macOS 讀取的資料夾中刪除 %lld 部影片（%@）。Loomscreen 裡的原始檔案不受影響。"
           }
         }
       }
@@ -2870,13 +2870,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "'%@' se eliminará de tu biblioteca. Las pantallas que usen este marcador pasarán a su fondo de pantalla guardado."
+            "value" : "'%@' se eliminará de la biblioteca de fondos. Las pantallas que usen este marcador pasarán a su fondo de pantalla guardado."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "「%@」はライブラリから削除されます。このブックマークを使うディスプレイは保存済みの壁紙に戻ります。"
+            "value" : "「%@」は壁紙ライブラリから削除されます。このブックマークを使うディスプレイは保存済みの壁紙に戻ります。"
           }
         },
         "zh-Hans" : {
@@ -3315,7 +3315,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Horario recurrente de 24 horas"
+            "value" : "Programación recurrente de 24 horas"
           }
         },
         "ja" : {
@@ -4695,7 +4695,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "自適應影格率、MetalFX、HDR 輸出與多執行緒算繪。"
+            "value" : "自適應影格率、MetalFX、HDR 輸出與多執行緒渲染。"
           }
         }
       }
@@ -5187,7 +5187,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Añadir a la biblioteca"
+            "value" : "Añadir a la biblioteca de fondos"
           }
         },
         "ja" : {
@@ -5216,7 +5216,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Añadir a la lista de reproducción"
+            "value" : "Añadir a la playlist"
           }
         },
         "ja" : {
@@ -5281,13 +5281,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Añadir a la cola"
+            "value" : "Añadir a la cola de descargas"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "キューに追加"
+            "value" : "ダウンロードキューに追加"
           }
         },
         "zh-Hans" : {
@@ -5315,7 +5315,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Añadir vídeos a la lista de reproducción"
+            "value" : "Añadir vídeos a la playlist"
           }
         },
         "ja" : {
@@ -5385,13 +5385,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Añade fondos de la biblioteca para reproducirlos en secuencia."
+            "value" : "Añade fondos desde la biblioteca de fondos para reproducirlos en secuencia."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ライブラリから壁紙を追加して順番に再生します。"
+            "value" : "壁紙ライブラリから壁紙を追加して順番に再生します。"
           }
         },
         "zh-Hans" : {
@@ -5519,13 +5519,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Añadido a tu biblioteca."
+            "value" : "Añadido a la biblioteca de fondos."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ライブラリに追加しました。"
+            "value" : "壁紙ライブラリに追加しました。"
           }
         },
         "zh-Hans" : {
@@ -5795,7 +5795,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Avanzar la lista de reproducción de la pantalla bajo el cursor."
+            "value" : "Avanzar la playlist de la pantalla bajo el cursor."
           }
         },
         "ja" : {
@@ -5860,13 +5860,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Aerial"
+            "value" : "Vista aérea"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Aerial"
+            "value" : "空撮"
           }
         },
         "zh-Hans" : {
@@ -5895,7 +5895,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Aerial: %@"
+            "value" : "Vista aérea: %@"
           }
         },
         "ja" : {
@@ -5930,7 +5930,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Aerial: %@, %@"
+            "value" : "Vista aérea: %@, %@"
           }
         },
         "ja" : {
@@ -5959,13 +5959,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Aerials"
+            "value" : "Vistas aéreas"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Aerials"
+            "value" : "空撮"
           }
         },
         "zh-Hans" : {
@@ -6710,13 +6710,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Permite el control en Ajustes del Sistema → Privacidad y seguridad → Automatización."
+            "value" : "Permite el control en Ajustes del Sistema › Privacidad y seguridad › Automatización."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "「システム設定」→「プライバシーとセキュリティ」→「オートメーション」で操作を許可してください。"
+            "value" : "「システム設定 › プライバシーとセキュリティ › オートメーション」で操作を許可してください。"
           }
         },
         "zh-Hans" : {
@@ -7226,13 +7226,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Apple Aerials"
+            "value" : "Vistas aéreas de Apple"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Apple Aerials"
+            "value" : "Apple の空撮"
           }
         },
         "zh-Hans" : {
@@ -7261,7 +7261,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Los salvapantallas Aerial de Apple TV"
+            "value" : "Los salvapantallas de vistas aéreas del Apple TV"
           }
         },
         "ja" : {
@@ -7568,13 +7568,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Se aplica a capturas, grabaciones y pantalla compartida, incluidos los widgets. Al desactivarlo, se muestra el fondo de macOS."
+            "value" : "Se aplica a capturas, grabaciones y pantalla compartida, incluidos los widgets. Al desactivarlo, se muestra el fondo de pantalla de macOS."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "スクリーンショット、録画、画面共有に適用され、ウィジェットも同じ設定に従います。オフでは macOS のデスクトップ画像を表示します。"
+            "value" : "スクリーンショット、録画、画面共有に適用され、ウィジェットも同じ設定に従います。オフでは macOS の壁紙を表示します。"
           }
         },
         "zh-Hans" : {
@@ -7863,7 +7863,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "把這個疊加層套用到其它所有顯示器？"
+            "value" : "把這個疊加層套用到其他所有顯示器？"
           }
         }
       }
@@ -9218,7 +9218,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "登録を確認する前に Steam ライブラリフォルダを許可してください。"
+            "value" : "サブスクリプションを確認する前に Steam ライブラリフォルダを許可してください。"
           }
         },
         "zh-Hans" : {
@@ -9887,13 +9887,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Volver a la biblioteca"
+            "value" : "Volver a los proyectos recientes"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ライブラリに戻る"
+            "value" : "最近のプロジェクトに戻る"
           }
         },
         "zh-Hans" : {
@@ -10883,13 +10883,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Explorar Apple Aerials"
+            "value" : "Explorar vistas aéreas de Apple"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Apple Aerialsを見る"
+            "value" : "Apple の空撮を見る"
           }
         },
         "zh-Hans" : {
@@ -11122,7 +11122,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Workshop をブラウズ"
+            "value" : "ワークショップをブラウズ"
           }
         },
         "zh-Hans" : {
@@ -12348,13 +12348,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Captura el fotograma actual de este vídeo al bloquear y lo establece como imagen de escritorio de macOS."
+            "value" : "Captura el fotograma actual de este vídeo al bloquear y lo establece como fondo de pantalla de macOS."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ロック時にこの動画の現在のフレームを取り込み、macOS のデスクトップピクチャに設定します。"
+            "value" : "ロック時にこの動画の現在のフレームを取り込み、macOS の壁紙に設定します。"
           }
         },
         "zh-Hans" : {
@@ -12401,7 +12401,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "同屏渲染卡片上限"
+            "value" : "同時渲染的卡片上限"
           }
         }
       }
@@ -13702,7 +13702,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "登録を確認する前に Steam アカウントを選択してください。"
+            "value" : "サブスクリプションを確認する前に Steam アカウントを選択してください。"
           }
         },
         "zh-Hans" : {
@@ -13873,13 +13873,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Elige un fondo en Ajustes del Sistema"
+            "value" : "Elige un fondo de Loomscreen en Ajustes del Sistema › Fondo de pantalla"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "システム設定で壁紙を選択"
+            "value" : "「システム設定 › 壁紙」で Loomscreen の壁紙を選択"
           }
         },
         "zh-Hans" : {
@@ -14066,7 +14066,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Elegir de la biblioteca"
+            "value" : "Elegir de la biblioteca de fondos"
           }
         },
         "ja" : {
@@ -14443,13 +14443,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Elige primero tu cuenta de Steam y SteamCMD en Ajustes → Workshop → Conexión de Steam."
+            "value" : "Elige primero tu cuenta de Steam y SteamCMD en Ajustes › Workshop › Conexión de Steam."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "先に「設定 → ワークショップ → Steam 接続」で Steam アカウントと SteamCMD を選択してください。"
+            "value" : "先に「設定 › ワークショップ › Steam 接続」で Steam アカウントと SteamCMD を選択してください。"
           }
         },
         "zh-Hans" : {
@@ -14675,7 +14675,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Claude 檔案夾"
+            "value" : "Claude 資料夾"
           }
         }
       }
@@ -15080,13 +15080,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Vaciar cola"
+            "value" : "Vaciar la cola de descargas"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "キューをクリア"
+            "value" : "ダウンロードキューをクリア"
           }
         },
         "zh-Hans" : {
@@ -15150,13 +15150,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "¿Borrar la caché de texturas de vídeo de la escena?"
+            "value" : "¿Borrar la caché de vídeo de las escenas?"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "シーン動画テクスチャキャッシュを消去しますか？"
+            "value" : "シーン動画キャッシュを消去しますか？"
           }
         },
         "zh-Hans" : {
@@ -16012,7 +16012,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Codex 檔案夾"
+            "value" : "Codex 資料夾"
           }
         }
       }
@@ -16587,13 +16587,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Conectar Apple Aerials"
+            "value" : "Conectar vistas aéreas de Apple"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Apple Aerials に接続"
+            "value" : "Apple の空撮に接続"
           }
         },
         "zh-Hans" : {
@@ -16621,13 +16621,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Conectar biblioteca"
+            "value" : "Conectar biblioteca de vistas aéreas"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ライブラリに接続"
+            "value" : "空撮ライブラリに接続"
           }
         },
         "zh-Hans" : {
@@ -17171,7 +17171,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "コントロールはポインタをレイヤーに重ねると表示されます。この画面で「マウス操作」をオンにし、初回に一度だけ許可が必要です。"
+            "value" : "コントロールはポインタをレイヤーに重ねると表示されます。このディスプレイで「マウス操作」をオンにし、初回に一度だけ許可が必要です。"
           }
         },
         "zh-Hans" : {
@@ -17492,7 +17492,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "把這個疊加層複製到其它所有已連接的顯示器，不更動它們的桌布"
+            "value" : "把這個疊加層複製到其他所有已連接的顯示器，不更動它們的桌布"
           }
         }
       }
@@ -18985,7 +18985,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No se pudo obtener acceso exclusivo a la biblioteca de fondos de pantalla del sistema."
+            "value" : "No se pudo obtener acceso exclusivo a la biblioteca de fondos del sistema."
           }
         },
         "ja" : {
@@ -19684,13 +19684,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No se pudieron explorar los Aerials"
+            "value" : "No se pudieron analizar las vistas aéreas"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Aerials をスキャンできませんでした"
+            "value" : "空撮をスキャンできませんでした"
           }
         },
         "zh-Hans" : {
@@ -20074,7 +20074,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Se creó en %2$@ una lista de reproducción con %1$lld vídeos"
+            "value" : "Se creó en %2$@ una playlist con %1$lld vídeos"
           }
         },
         "ja" : {
@@ -20603,7 +20603,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Horario diario"
+            "value" : "Programación diaria"
           }
         },
         "ja" : {
@@ -21460,13 +21460,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Elimina %@ de archivos de vídeo extraídos de las escenas. Las escenas volverán a extraer las texturas de vídeo la próxima vez que se rendericen."
+            "value" : "Elimina %@ de archivos de vídeo extraídos de las escenas. Las escenas volverán a extraer los vídeos la próxima vez que se rendericen."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "展開済みのシーン動画 %@ を削除します。次回描画時にテクスチャが再展開されます。"
+            "value" : "展開済みのシーン動画 %@ を削除します。次回描画時に動画が再展開されます。"
           }
         },
         "zh-Hans" : {
@@ -21478,7 +21478,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "將刪除 %@ 已擷取的場景影片檔案。場景下次算繪時會重新擷取影片。"
+            "value" : "將刪除 %@ 已擷取的場景影片檔案。場景下次渲染時會重新擷取影片。"
           }
         }
       }
@@ -22032,7 +22032,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "裝置與算繪器差值；非運算使用率"
+            "value" : "裝置與渲染器差值；非運算使用率"
           }
         }
       }
@@ -22410,7 +22410,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Force SDR 有効中は無効"
+            "value" : "「SDR を強制」がオンのときは使用できません"
           }
         },
         "zh-Hans" : {
@@ -22439,13 +22439,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Desactivado — Forzar SDR está activo"
+            "value" : "Desactivado: Forzar SDR está activo"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "無効 — Force SDR が有効"
+            "value" : "使用不可：「SDR を強制」がオン"
           }
         },
         "zh-Hans" : {
@@ -22581,13 +22581,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Desconectar biblioteca de Aerials"
+            "value" : "Desconectar la biblioteca de vistas aéreas"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Aerials ライブラリを切断"
+            "value" : "空撮ライブラリを切断"
           }
         },
         "zh-Hans" : {
@@ -22616,13 +22616,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "¿Desconectar la biblioteca de Apple Aerials?"
+            "value" : "¿Desconectar la biblioteca de vistas aéreas de Apple?"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Apple Aerials ライブラリを切断しますか？"
+            "value" : "Apple の空撮ライブラリを切断しますか？"
           }
         },
         "zh-Hans" : {
@@ -22652,13 +22652,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Desconectar la carpeta de la biblioteca de Apple Aerials"
+            "value" : "Desconectar la carpeta de la biblioteca de vistas aéreas de Apple"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Apple Aerials のライブラリフォルダの接続を解除します"
+            "value" : "Apple の空撮ライブラリフォルダの接続を解除します"
           }
         },
         "zh-Hans" : {
@@ -23200,7 +23200,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "自分の Steam アカウントで Workshop の壁紙をダウンロード"
+            "value" : "自分の Steam アカウントでワークショップの壁紙をダウンロード"
           }
         },
         "zh-Hans" : {
@@ -23228,7 +23228,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "自分の Steam アカウントと Wallpaper Engine のライセンスで Workshop の壁紙をダウンロードします。第三者のサーバーは経由しません"
+            "value" : "自分の Steam アカウントと Wallpaper Engine のライセンスでワークショップの壁紙をダウンロードします。第三者のサーバーは経由しません"
           }
         },
         "zh-Hans" : {
@@ -23595,7 +23595,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "この Mac にない登録済みの壁紙をダウンロード"
+            "value" : "この Mac にないサブスクライブ済みの壁紙をダウンロード"
           }
         },
         "zh-Hans" : {
@@ -24192,7 +24192,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "正在下載 Wallpaper Engine；僅保留並連結 assets 檔案夾。"
+            "value" : "正在下載 Wallpaper Engine；僅保留並連結 assets 資料夾。"
           }
         }
       }
@@ -24345,7 +24345,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "購読中の未ダウンロードの壁紙を取得します。ファイルの削除や Steam の購読変更は行いません。"
+            "value" : "サブスクライブ済みでまだダウンロードされていない壁紙を取得します。ファイルの削除や Steam のサブスクリプションの変更は行いません。"
           }
         },
         "zh-Hans" : {
@@ -24648,7 +24648,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "画面にドラッグ\nして適用"
+            "value" : "ディスプレイに\nドラッグして適用"
           }
         },
         "zh-Hans" : {
@@ -25230,7 +25230,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ESC 關閉 · ← → 相鄰桌布 · 空格 播放/暫停桌面桌布"
+            "value" : "ESC 關閉 · ← → 相鄰桌布 · 空白鍵 播放/暫停桌面桌布"
           }
         }
       }
@@ -26166,7 +26166,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "輸入網址，或將含有 index.html 的檔案夾拖到這裡。"
+            "value" : "輸入網址，或將含有 index.html 的資料夾拖到這裡。"
           }
         }
       }
@@ -26340,7 +26340,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "裝置使用率減去算繪器使用率的估算差值，並非實測運算使用率"
+            "value" : "裝置使用率減去渲染器使用率的估算差值，並非實測運算使用率"
           }
         }
       }
@@ -26623,13 +26623,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Todos los elementos de esta página ya están en tu biblioteca."
+            "value" : "Todos los elementos de esta página ya están en la biblioteca de fondos."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "このページのすべてのアイテムはすでにライブラリにあります。"
+            "value" : "このページのすべてのアイテムはすでに壁紙ライブラリにあります。"
           }
         },
         "zh-Hans" : {
@@ -26730,7 +26730,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "登録済みのアイテムはすべてこの Mac にあります。"
+            "value" : "サブスクライブ中のアイテムはすべてこの Mac にあります。"
           }
         },
         "zh-Hans" : {
@@ -27729,7 +27729,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "読み込んだファイルやダウンロードした Workshop 項目はここに並びます。ディスプレイにドラッグすれば適用されます"
+            "value" : "読み込んだファイルやダウンロードしたワークショップ項目はここに並びます。ディスプレイにドラッグすれば適用されます"
           }
         },
         "zh-Hans" : {
@@ -28125,7 +28125,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Workshop を初めて開いたとき"
+            "value" : "ワークショップを初めて開いたとき"
           }
         },
         "zh-Hans" : {
@@ -28433,7 +28433,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "檔案夾"
+            "value" : "資料夾"
           }
         }
       }
@@ -29055,7 +29055,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "暫停時釋放圖形資源，部分網頁恢復後可能黑屏。"
+            "value" : "暫停時釋放圖形資源，部分網頁恢復後可能出現黑畫面。"
           }
         }
       }
@@ -29138,7 +29138,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "De la lista de reproducción"
+            "value" : "De la playlist"
           }
         },
         "ja" : {
@@ -30608,13 +30608,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ocultar los elementos que ya están en mi biblioteca"
+            "value" : "Ocultar los elementos que ya están en la biblioteca de fondos"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ライブラリにある項目を隠す"
+            "value" : "壁紙ライブラリにある項目を隠す"
           }
         },
         "zh-Hans" : {
@@ -30636,13 +30636,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ocultar al explorar los elementos que ya están en mi biblioteca"
+            "value" : "Ocultar al explorar los elementos que ya están en la biblioteca de fondos"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "閲覧時にライブラリ内のアイテムを隠す"
+            "value" : "閲覧時に壁紙ライブラリ内のアイテムを隠す"
           }
         },
         "zh-Hans" : {
@@ -30969,13 +30969,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Con qué frecuencia muestrean los instrumentos"
+            "value" : "Con qué frecuencia muestrean los widgets"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "計器がサンプリングする頻度"
+            "value" : "ウィジェットがサンプリングする頻度"
           }
         },
         "zh-Hans" : {
@@ -31814,13 +31814,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Importa esta carpeta desde la biblioteca de Workshop."
+            "value" : "Importa esta carpeta desde «Workshop»."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "このフォルダはWorkshopライブラリから読み込んでください。"
+            "value" : "このフォルダは「ワークショップ」で読み込んでください。"
           }
         },
         "zh-Hans" : {
@@ -32034,13 +32034,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "En la biblioteca"
+            "value" : "En la biblioteca de fondos"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ライブラリ内"
+            "value" : "壁紙ライブラリ内"
           }
         },
         "zh-Hans" : {
@@ -32786,13 +32786,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Instrumentos"
+            "value" : "Widgets"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "計器"
+            "value" : "ウィジェット"
           }
         },
         "zh-Hans" : {
@@ -33100,13 +33100,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Contiene muchos fondos de pantalla, no uno solo. Impórtalo desde la biblioteca del Workshop."
+            "value" : "Contiene muchos fondos de pantalla, no uno solo. Impórtalo desde «Steam Workshop»."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "1 つではなく多数の壁紙が入っています。ワークショップライブラリから読み込んでください。"
+            "value" : "1 つではなく多数の壁紙が入っています。「Steam ワークショップ」で読み込んでください。"
           }
         },
         "zh-Hans" : {
@@ -33869,13 +33869,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Último uso %@"
+            "value" : "Último uso: %@"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "前回の使用 %@"
+            "value" : "前回の使用：%@"
           }
         },
         "zh-Hans" : {
@@ -34329,13 +34329,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Biblioteca"
+            "value" : "Biblioteca de fondos"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ライブラリ"
+            "value" : "壁紙ライブラリ"
           }
         },
         "zh-Hans" : {
@@ -34358,13 +34358,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Biblioteca sincronizada"
+            "value" : "Biblioteca de fondos sincronizada"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ライブラリを同期しました"
+            "value" : "壁紙ライブラリを同期しました"
           }
         },
         "zh-Hans" : {
@@ -34707,13 +34707,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Se vincularon %lld carpetas de proyecto a tu biblioteca."
+            "value" : "Se vincularon %lld carpetas de proyecto a la biblioteca de fondos."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld 件のプロジェクトフォルダをライブラリにリンクしました。"
+            "value" : "%lld 件のプロジェクトフォルダを壁紙ライブラリにリンクしました。"
           }
         },
         "zh-Hans" : {
@@ -35119,13 +35119,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loomscreen liberará el acceso de lectura a la carpeta local de Apple Aerials. Los fondos de Apple Aerials ya aplicados se mantienen; tendrás que volver a conectar para explorar la biblioteca de nuevo."
+            "value" : "Loomscreen liberará el acceso de lectura a la carpeta local de vistas aéreas de Apple. Los fondos de vistas aéreas ya aplicados se mantienen; tendrás que volver a conectar para explorar la biblioteca de vistas aéreas de nuevo."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loomscreen はローカルの Apple Aerials フォルダへの読み取りアクセスを解除します。適用中の空撮壁紙はそのまま維持されます。ライブラリを再度表示するには再接続が必要です。"
+            "value" : "Loomscreen は Apple の空撮のローカルフォルダへの読み取りアクセスを解除します。適用中の空撮壁紙はそのまま維持されます。空撮ライブラリを再度表示するには再接続が必要です。"
           }
         },
         "zh-Hans" : {
@@ -36368,13 +36368,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loomscreen nunca pide Acceso total al disco. El acceso a la biblioteca proviene de una carpeta que eliges, guardada como marcador con ámbito de seguridad."
+            "value" : "Loomscreen nunca pide «Acceso total al disco». El acceso a la biblioteca de Steam proviene de una carpeta que eliges, guardada como marcador con ámbito de seguridad."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loomscreen はフルディスクアクセスを要求しません。ライブラリへのアクセスは、選択した 1 つのフォルダに対するセキュリティスコープ付きブックマークに基づきます。"
+            "value" : "Loomscreen はフルディスクアクセスを要求しません。Steam ライブラリへのアクセスは、選択した 1 つのフォルダに対するセキュリティスコープ付きブックマークに基づきます。"
           }
         },
         "zh-Hans" : {
@@ -36386,7 +36386,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loomscreen 從不要求完全磁碟取用權限。對 Steam 收藏庫的存取僅來自你選擇的那一個資料夾，以安全範圍書籤的形式保存。"
+            "value" : "Loomscreen 從不要求「完全取用磁碟」權限。對 Steam 收藏庫的存取僅來自你選擇的那一個資料夾，以安全範圍書籤的形式保存。"
           }
         }
       }
@@ -36673,13 +36673,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "La sesión de descarga de Steam de Loomscreen no está conectada. Conecta tu cuenta en Ajustes → Workshop y vuelve a intentarlo."
+            "value" : "La sesión de descarga de Steam de Loomscreen no está conectada. Conecta tu cuenta en Ajustes › Workshop y vuelve a intentarlo."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loomscreen の Steam ダウンロードセッションが接続されていません。「設定 → ワークショップ」でアカウントを接続してから、もう一度お試しください。"
+            "value" : "Loomscreen の Steam ダウンロードセッションが接続されていません。「設定 › ワークショップ」でアカウントを接続してから、もう一度お試しください。"
           }
         },
         "zh-Hans" : {
@@ -36989,7 +36989,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "MP4 / MOV, listas de reproducción y programaciones."
+            "value" : "MP4 / MOV, playlists y programaciones."
           }
         },
         "ja" : {
@@ -37233,13 +37233,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Dale tu estilo a esta pantalla."
+            "value" : "Elige un fondo para esta pantalla."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "このディスプレイを、あなたらしく。"
+            "value" : "このディスプレイの壁紙を選んでください。"
           }
         },
         "zh-Hans" : {
@@ -39376,7 +39376,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "多執行緒算繪"
+            "value" : "多執行緒渲染"
           }
         }
       }
@@ -40880,7 +40880,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Wallpaper Engine の Workshop フォルダはまだありません。最初のアイテムをダウンロードすると作成されます。"
+            "value" : "Wallpaper Engine のワークショップフォルダはまだありません。最初のアイテムをダウンロードすると作成されます。"
           }
         },
         "zh-Hans" : {
@@ -41008,13 +41008,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Aún no hay Aerials descargados"
+            "value" : "Aún no hay vistas aéreas descargadas"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Aerials はまだダウンロードされていません"
+            "value" : "空撮はまだダウンロードされていません"
           }
         },
         "zh-Hans" : {
@@ -41043,13 +41043,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ningún Aerial coincide con tu búsqueda"
+            "value" : "Ninguna vista aérea coincide con tu búsqueda"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "検索に一致する Aerials はありません"
+            "value" : "検索に一致する空撮はありません"
           }
         },
         "zh-Hans" : {
@@ -43094,7 +43094,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "未連結。場景照常算繪，但用到 Wallpaper Engine 共用資源的圖層會被略過。"
+            "value" : "未連結。場景照常渲染，但用到 Wallpaper Engine 共用資源的圖層會被略過。"
           }
         }
       }
@@ -43558,13 +43558,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Biblioteca oficial conectada — las descargas de SteamCMD esperan al conector en segundo plano"
+            "value" : "Biblioteca oficial de Steam conectada — las descargas de SteamCMD esperan al conector en segundo plano"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "公式ライブラリ接続済み — SteamCMD ダウンロードはバックグラウンドコネクタ待ちです"
+            "value" : "公式 Steam ライブラリに接続済み — SteamCMD ダウンロードはバックグラウンドコネクタ待ちです"
           }
         },
         "zh-Hans" : {
@@ -43664,7 +43664,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "En %@, esto:\n• Restablece los ajustes de reproducción, los ajustes del fondo web y el desenfoque, el brillo, la saturación, la calidez, la viñeta y el tinte cálido automático\n• Desactiva la capa de efectos y devuelve sus opciones “Densidad”, “Seguir el tiempo local”, “Ajustar la densidad al tiempo” y “Seguir la dirección del viento” a sus valores predeterminados\n• Desactiva “Al bloquear”, la reproducción aleatoria y la rotación\n• Borra la programación y vuelve a la lista de reproducción\nSe conservan el fondo de pantalla y los elementos de la lista de reproducción."
+            "value" : "En %@, esto:\n• Restablece los ajustes de reproducción, los ajustes del fondo web y el desenfoque, el brillo, la saturación, la calidez, la viñeta y el tinte cálido automático\n• Desactiva la capa de efectos y devuelve sus opciones “Densidad”, “Seguir el tiempo local”, “Ajustar la densidad al tiempo” y “Seguir la dirección del viento” a sus valores predeterminados\n• Desactiva “Al bloquear”, la reproducción aleatoria y la rotación\n• Borra la programación y vuelve a la playlist\nSe conservan el fondo de pantalla y los elementos de la playlist."
           }
         },
         "ja" : {
@@ -43700,7 +43700,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "En %@, esto:\n• Restablece los ajustes de reproducción, los ajustes del fondo web y el desenfoque, el brillo, la saturación, la calidez, la viñeta y el tinte cálido automático\n• Desactiva la capa de efectos y devuelve sus opciones “Densidad”, “Seguir el tiempo local”, “Ajustar la densidad al tiempo” y “Seguir la dirección del viento” a sus valores predeterminados\n• Desactiva “Al bloquear”, la reproducción aleatoria y la rotación\n• Borra la programación y vuelve a la lista de reproducción\nSe conservan el fondo de pantalla, los elementos de la lista de reproducción y los ajustes personalizados de la escena."
+            "value" : "En %@, esto:\n• Restablece los ajustes de reproducción, los ajustes del fondo web y el desenfoque, el brillo, la saturación, la calidez, la viñeta y el tinte cálido automático\n• Desactiva la capa de efectos y devuelve sus opciones “Densidad”, “Seguir el tiempo local”, “Ajustar la densidad al tiempo” y “Seguir la dirección del viento” a sus valores predeterminados\n• Desactiva “Al bloquear”, la reproducción aleatoria y la rotación\n• Borra la programación y vuelve a la playlist\nSe conservan el fondo de pantalla, los elementos de la playlist y los ajustes personalizados de la escena."
           }
         },
         "ja" : {
@@ -43802,13 +43802,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Al bloquear, usa los fotogramas de vídeo de las pantallas activadas como fondos. Se conservan al desbloquear."
+            "value" : "Al bloquear, usa los fotogramas de vídeo de las pantallas activadas como fondo de pantalla de macOS. Se conservan al desbloquear."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ロック時に有効なディスプレイの動画フレームをデスクトップ画像に設定し、解除後も保持します。"
+            "value" : "ロック時に有効なディスプレイの動画フレームを macOS の壁紙に設定し、ロック解除後も保持します。"
           }
         },
         "zh-Hans" : {
@@ -44508,13 +44508,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Abrir Ajustes del Sistema → Privacidad y seguridad → Servicios de ubicación"
+            "value" : "Abrir Ajustes del Sistema › Privacidad y seguridad › Servicios de ubicación"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "システム設定 → プライバシーとセキュリティ → 位置情報サービスを開く"
+            "value" : "「システム設定 › プライバシーとセキュリティ › 位置情報サービス」を開く"
           }
         },
         "zh-Hans" : {
@@ -44579,13 +44579,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Abrir ajustes de fondo de pantalla"
+            "value" : "Abrir los ajustes de Fondo de pantalla"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "壁紙設定を開く"
+            "value" : "「壁紙」設定を開く"
           }
         },
         "zh-Hans" : {
@@ -45025,13 +45025,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Abre la pestaña Steam Workshop para explorar y gestionar toda tu biblioteca"
+            "value" : "Abre la pestaña Steam Workshop para explorar y gestionar todos tus fondos de Workshop"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Steam ワークショップ タブを開いてライブラリ全体を閲覧・管理します"
+            "value" : "Steam ワークショップタブを開き、すべてのワークショップ壁紙を閲覧・管理します"
           }
         },
         "zh-Hans" : {
@@ -45231,7 +45231,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "任意。評価や作者情報を表示し、検索を高速化します。キーはこのMacにのみ保存され、リクエストはSteamに直接送信されます。"
+            "value" : "任意。評価や作者情報を表示し、検索を高速化します。キーはこの Mac にのみ保存され、リクエストは Steam に直接送信されます。"
           }
         },
         "zh-Hans" : {
@@ -45384,7 +45384,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "原始桌布檔案必須可用；所選檔案和檔案夾需在這台 Mac 上重新授權。"
+            "value" : "原始桌布檔案必須可用；所選檔案和資料夾需在這台 Mac 上重新授權。"
           }
         }
       }
@@ -45741,13 +45741,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Superposiciones · Pon algo encima de tu fondo"
+            "value" : "Superposiciones · Añade widgets a tu fondo"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "オーバーレイ · 壁紙の上に何か置いてみる"
+            "value" : "オーバーレイ · 壁紙にウィジェットを追加"
           }
         },
         "zh-Hans" : {
@@ -47169,7 +47169,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "画面が約 %@ 覆われると一時停止し、デスクトップが見えると再開します。"
+            "value" : "ウインドウがディスプレイの約 %@ を覆うと一時停止し、デスクトップが見えると再開します。"
           }
         },
         "zh-Hans" : {
@@ -47544,7 +47544,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Steam 自身のフォルダ（config/config.vdf を含むもの）を一度だけ選びます。Loomscreen はそのフォルダへのセキュリティスコープ付きブックマークを保持し、2 つ目の Workshop リポジトリを作ることはありません。macOS はこのブックマークをユーザーが確認したパネル経由でしか付与しないため、検出済みのフォルダでも 1 回のクリックが必要です。"
+            "value" : "Steam 自身のフォルダ（config/config.vdf を含むもの）を一度だけ選びます。Loomscreen はそのフォルダへのセキュリティスコープ付きブックマークを保持し、2 つ目のワークショップリポジトリを作ることはありません。macOS はこのブックマークをユーザーが確認したパネル経由でしか付与しないため、検出済みのフォルダでも 1 回のクリックが必要です。"
           }
         },
         "zh-Hans" : {
@@ -48226,13 +48226,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Acceso al control de reproducción denegado. Actívalo en Ajustes del Sistema → Privacidad y seguridad → Automatización."
+            "value" : "Acceso al control de reproducción denegado. Actívalo en Ajustes del Sistema › Privacidad y seguridad › Automatización."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "再生操作の権限が拒否されています。「システム設定 → プライバシーとセキュリティ → オートメーション」で許可してください。"
+            "value" : "再生操作の権限が拒否されています。「システム設定 › プライバシーとセキュリティ › オートメーション」で許可してください。"
           }
         },
         "zh-Hans" : {
@@ -48367,7 +48367,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lista de reproducción"
+            "value" : "Playlist"
           }
         },
         "ja" : {
@@ -48396,7 +48396,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lista de reproducción y programación"
+            "value" : "Playlist y programación"
           }
         },
         "ja" : {
@@ -48432,7 +48432,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Modo de lista de reproducción"
+            "value" : "Modo de playlist"
           }
         },
         "ja" : {
@@ -49521,13 +49521,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Previsualiza el tablero sobre el fondo de esta pantalla en lugar de un lienzo vacío"
+            "value" : "Previsualiza los widgets sobre el fondo de esta pantalla en lugar de un lienzo vacío"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "空のキャンバスではなく、このディスプレイの壁紙の上でボードをプレビューします"
+            "value" : "空のキャンバスではなく、このディスプレイの壁紙の上でウィジェットをプレビューします"
           }
         },
         "zh-Hans" : {
@@ -50341,13 +50341,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Acciones de la cola"
+            "value" : "Acciones de la cola de descargas"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "キューの操作"
+            "value" : "ダウンロードキューの操作"
           }
         },
         "zh-Hans" : {
@@ -51136,7 +51136,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Steam の登録情報を読み込み中…"
+            "value" : "Steam のサブスクリプションを読み込み中…"
           }
         },
         "zh-Hans" : {
@@ -51166,7 +51166,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "登録情報の読み込みに時間がかかりすぎたため中止しました。"
+            "value" : "サブスクリプションの読み込みに時間がかかりすぎたため中止しました。"
           }
         },
         "zh-Hans" : {
@@ -51687,7 +51687,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "降低場景算繪解析度；輕量場景可能更耗電，變更後重新載入桌布。"
+            "value" : "降低場景渲染解析度；輕量場景可能更耗電，變更後重新載入桌布。"
           }
         }
       }
@@ -51811,13 +51811,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Actualizar biblioteca de Aerials"
+            "value" : "Actualizar la biblioteca de vistas aéreas"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Aerials ライブラリを更新"
+            "value" : "空撮ライブラリを更新"
           }
         },
         "zh-Hans" : {
@@ -52989,13 +52989,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Eliminar de la biblioteca"
+            "value" : "Eliminar de la biblioteca de fondos"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ライブラリから削除"
+            "value" : "壁紙ライブラリから削除"
           }
         },
         "zh-Hans" : {
@@ -53018,13 +53018,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Quitar solo de la biblioteca"
+            "value" : "Quitar solo de la biblioteca de fondos"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ライブラリからのみ削除"
+            "value" : "壁紙ライブラリからのみ削除"
           }
         },
         "zh-Hans" : {
@@ -53115,13 +53115,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Eliminar de la cola"
+            "value" : "Eliminar de la cola de descargas"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "キューから削除"
+            "value" : "ダウンロードキューから削除"
           }
         },
         "zh-Hans" : {
@@ -53254,7 +53254,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "¿Eliminar el último elemento de la lista de reproducción?"
+            "value" : "¿Eliminar el último elemento de la playlist?"
           }
         },
         "ja" : {
@@ -53318,7 +53318,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "¿Eliminar este elemento de la lista de reproducción?"
+            "value" : "¿Eliminar este elemento de la playlist?"
           }
         },
         "ja" : {
@@ -53489,13 +53489,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Se ha eliminado %@ de la biblioteca, pero no se han podido borrar sus archivos."
+            "value" : "Se ha eliminado %@ de la biblioteca de fondos, pero no se han podido borrar sus archivos."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ をライブラリから削除しましたが、そのファイルを削除できませんでした。"
+            "value" : "%@ を壁紙ライブラリから削除しましたが、そのファイルを削除できませんでした。"
           }
         },
         "zh-Hans" : {
@@ -53629,7 +53629,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Elimina todo lo guardado para %@: el fondo de pantalla, la lista de reproducción, la programación, la capa de efectos y el resto de ajustes de esta pantalla. Se conservan la biblioteca de fondos, los archivos de origen y las superposiciones de widgets, música y reloj."
+            "value" : "Elimina todo lo guardado para %@: el fondo de pantalla, la playlist, la programación, la capa de efectos y el resto de ajustes de esta pantalla. Se conservan la biblioteca de fondos, los archivos de origen y las superposiciones de widgets, música y reloj."
           }
         },
         "ja" : {
@@ -53990,7 +53990,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "算繪器"
+            "value" : "渲染器"
           }
         }
       }
@@ -54060,7 +54060,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "算繪"
+            "value" : "渲染"
           }
         }
       }
@@ -54131,7 +54131,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "以較低解析度算繪場景，可能使文字模糊或增加耗電。更改後會重新載入桌布。"
+            "value" : "以較低解析度渲染場景，可能使文字模糊或增加耗電。更改後會重新載入桌布。"
           }
         }
       }
@@ -55756,7 +55756,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Restablece la reproducción, los efectos, las opciones web y la programación. Conserva el fondo, la lista de reproducción y los marcadores."
+            "value" : "Restablece la reproducción, los efectos, las opciones web y la programación. Conserva el fondo, la playlist y los marcadores."
           }
         },
         "ja" : {
@@ -57605,7 +57605,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "サンプルデータ（このMacの値ではありません）"
+            "value" : "サンプルデータ（この Mac の値ではありません）"
           }
         },
         "zh-Hans" : {
@@ -57802,7 +57802,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Guardar y usar el horario diario"
+            "value" : "Guardar y usar la programación diaria"
           }
         },
         "ja" : {
@@ -57836,7 +57836,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Guardar y usar la lista de reproducción"
+            "value" : "Guardar y usar la playlist"
           }
         },
         "ja" : {
@@ -58244,13 +58244,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pestaña Guardados de la biblioteca"
+            "value" : "Pestañas de la página «Guardado»"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "保存済みライブラリのタブ"
+            "value" : "「保存済み」ページのタブ切り替え"
           }
         },
         "zh-Hans" : {
@@ -58560,13 +58560,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Analizando la biblioteca…"
+            "value" : "Analizando la biblioteca de vistas aéreas…"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ライブラリをスキャン中…"
+            "value" : "空撮ライブラリをスキャン中…"
           }
         },
         "zh-Hans" : {
@@ -58595,13 +58595,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Analizando la biblioteca de Aerials"
+            "value" : "Analizando la biblioteca de vistas aéreas"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Aerials ライブラリをスキャン中"
+            "value" : "空撮ライブラリをスキャン中"
           }
         },
         "zh-Hans" : {
@@ -58761,13 +58761,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Caché de texturas de vídeo de escena"
+            "value" : "Caché de vídeo de escenas"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "シーン動画テクスチャキャッシュ"
+            "value" : "シーン動画キャッシュ"
           }
         },
         "zh-Hans" : {
@@ -60004,13 +60004,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Buscar Aerials"
+            "value" : "Buscar vistas aéreas"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Aerials を検索"
+            "value" : "空撮を検索"
           }
         },
         "zh-Hans" : {
@@ -60142,13 +60142,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Buscar en la biblioteca"
+            "value" : "Buscar fondos instalados"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ライブラリを検索"
+            "value" : "インストール済みの壁紙を検索"
           }
         },
         "zh-Hans" : {
@@ -61738,13 +61738,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Materiales, modelos y sombreadores compartidos. Son necesarios para las escenas que los utilizan."
+            "value" : "Archivos de recursos de escena compartidos de Wallpaper Engine. Son necesarios para las escenas que los utilizan."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "シーンで共有するマテリアル、モデル、シェーダーです。これらのファイルを参照するシーンに必要です。"
+            "value" : "Wallpaper Engine のシーンで共有されるリソースファイルです。これらのファイルを参照するシーンに必要です。"
           }
         },
         "zh-Hans" : {
@@ -63606,7 +63606,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "登録情報を読み取るには Steam にサインインしてください。"
+            "value" : "サブスクリプションを読み取るには Steam にサインインしてください。"
           }
         },
         "zh-Hans" : {
@@ -64639,13 +64639,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ordenar la biblioteca"
+            "value" : "Ordenar por"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ライブラリを並べ替える"
+            "value" : "並べ替え"
           }
         },
         "zh-Hans" : {
@@ -66306,13 +66306,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Las descargas de Steam ahora inician sesión por separado"
+            "value" : "Las descargas de Workshop ahora usan un inicio de sesión de Steam aparte"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Steam のダウンロードは別途サインインするようになりました"
+            "value" : "ワークショップのダウンロードに別の Steam サインインを使うようになりました"
           }
         },
         "zh-Hans" : {
@@ -68081,7 +68081,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "SteamCMD が検証済みの Valve ビルドではないため、ダウンロードをブロックしました。「設定 → ワークショップ → Steam 接続」で公式 SteamCMD を再選択してください。"
+            "value" : "SteamCMD が検証済みの Valve ビルドではないため、ダウンロードをブロックしました。「設定 › ワークショップ › Steam 接続」で公式 SteamCMD を再選択してください。"
           }
         },
         "zh-Hans" : {
@@ -68357,7 +68357,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Retroceder un elemento de la lista de reproducción en la pantalla bajo el cursor."
+            "value" : "Retroceder un elemento de la playlist en la pantalla bajo el cursor."
           }
         },
         "ja" : {
@@ -68807,7 +68807,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "登録済みの壁紙"
+            "value" : "サブスクライブ済みの壁紙"
           }
         },
         "zh-Hans" : {
@@ -69936,7 +69936,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Afecta a la lista de reproducción de la pantalla donde está el puntero."
+            "value" : "Afecta a la playlist de la pantalla donde está el puntero."
           }
         },
         "ja" : {
@@ -70629,13 +70629,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Esa carpeta es una biblioteca de escenas"
+            "value" : "Esa carpeta es una biblioteca de Wallpaper Engine"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "そのフォルダはシーンライブラリです"
+            "value" : "そのフォルダは Wallpaper Engine ライブラリです"
           }
         },
         "zh-Hans" : {
@@ -70913,7 +70913,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "El índice de la biblioteca de Fondo del sistema está dañado, así que no se ha modificado."
+            "value" : "El índice de la biblioteca de fondos del sistema está dañado, así que no se ha modificado."
           }
         },
         "ja" : {
@@ -71015,7 +71015,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Workshop コンテンツフォルダを読み取れません。"
+            "value" : "ワークショップコンテンツフォルダを読み取れません。"
           }
         },
         "zh-Hans" : {
@@ -71652,7 +71652,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "El elemento se eliminará de la lista de reproducción. Las demás pantallas que usen este vídeo conservan su copia."
+            "value" : "El elemento se eliminará de la playlist. Las demás pantallas que usen este vídeo conservan su copia."
           }
         },
         "ja" : {
@@ -73192,7 +73192,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ビデオ“%@”が Workshop パッケージ内に見つかりません。"
+            "value" : "ビデオ「%@」がワークショップパッケージ内に見つかりません。"
           }
         },
         "zh-Hans" : {
@@ -73327,7 +73327,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "El fondo de pantalla, la lista de reproducción, la programación, la capa de efectos y el resto de ajustes de otras %lld pantallas se sustituyen por los de esta. Sus superposiciones de widgets, música y reloj no cambian."
+            "value" : "El fondo de pantalla, la playlist, la programación, la capa de efectos y el resto de ajustes de otras %lld pantallas se sustituyen por los de esta. Sus superposiciones de widgets, música y reloj no cambian."
           }
         },
         "ja" : {
@@ -73901,13 +73901,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Se borra lo siguiente:\n• El fondo de pantalla, la lista de reproducción, la programación, las superposiciones y el nombre personalizado de cada pantalla\n• La biblioteca de fondos y los esquemas\n• Todas las preferencias, los atajos y los valores predeterminados de pantalla\n• Los orígenes de confianza y el acceso a las carpetas de Apple Aerials y del historial de sesiones de IA\nLos archivos de fondo de pantalla del disco no se eliminan."
+            "value" : "Se borra lo siguiente:\n• El fondo de pantalla, la playlist, la programación, las superposiciones y el nombre personalizado de cada pantalla\n• La biblioteca de fondos y los esquemas\n• Todas las preferencias, los atajos y los valores predeterminados de pantalla\n• Los orígenes de confianza y el acceso a las carpetas de las vistas aéreas de Apple y del historial de sesiones de IA\nLos archivos de fondo de pantalla del disco no se eliminan."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "次の内容を消去します：\n• 各ディスプレイの壁紙、プレイリスト、スケジュール、オーバーレイ、カスタム名\n• 壁紙ライブラリ、構成\n• すべての環境設定、ショートカット、ディスプレイのデフォルト\n• 信頼済みのオリジン、および Apple Aerials、AI セッション履歴のフォルダへのアクセス\nディスク上の壁紙ファイルは削除されません。"
+            "value" : "次の内容を消去します：\n• 各ディスプレイの壁紙、プレイリスト、スケジュール、オーバーレイ、カスタム名\n• 壁紙ライブラリ、構成\n• すべての環境設定、ショートカット、ディスプレイのデフォルト\n• 信頼済みのオリジン、および Apple の空撮、AI セッション履歴のフォルダへのアクセス\nディスク上の壁紙ファイルは削除されません。"
           }
         },
         "zh-Hans" : {
@@ -73937,13 +73937,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Se borra lo siguiente:\n• El fondo de pantalla, la lista de reproducción, la programación, los ajustes personalizados de la escena, las superposiciones y el nombre personalizado de cada pantalla\n• La biblioteca de fondos, los preajustes y los esquemas\n• Todas las preferencias, los atajos y los valores predeterminados de pantalla\n• Los orígenes de confianza y el acceso a las carpetas de Apple Aerials, los recursos de Wallpaper Engine y el historial de sesiones de IA\nLos archivos de fondo de pantalla del disco no se eliminan."
+            "value" : "Se borra lo siguiente:\n• El fondo de pantalla, la playlist, la programación, los ajustes personalizados de la escena, las superposiciones y el nombre personalizado de cada pantalla\n• La biblioteca de fondos, los preajustes y los esquemas\n• Todas las preferencias, los atajos y los valores predeterminados de pantalla\n• Los orígenes de confianza y el acceso a las carpetas de las vistas aéreas de Apple, los recursos de Wallpaper Engine y el historial de sesiones de IA\nLos archivos de fondo de pantalla del disco no se eliminan."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "次の内容を消去します：\n• 各ディスプレイの壁紙、プレイリスト、スケジュール、シーンのカスタム設定、オーバーレイ、カスタム名\n• 壁紙ライブラリ、プリセット、構成\n• すべての環境設定、ショートカット、ディスプレイのデフォルト\n• 信頼済みのオリジン、および Apple Aerials、Wallpaper Engine アセット、AI セッション履歴のフォルダへのアクセス\nディスク上の壁紙ファイルは削除されません。"
+            "value" : "次の内容を消去します：\n• 各ディスプレイの壁紙、プレイリスト、スケジュール、シーンのカスタム設定、オーバーレイ、カスタム名\n• 壁紙ライブラリ、プリセット、構成\n• すべての環境設定、ショートカット、ディスプレイのデフォルト\n• 信頼済みのオリジン、および Apple の空撮、Wallpaper Engine アセット、AI セッション履歴のフォルダへのアクセス\nディスク上の壁紙ファイルは削除されません。"
           }
         },
         "zh-Hans" : {
@@ -74173,7 +74173,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Este es el único fondo de pantalla de la lista de reproducción. Al eliminarlo, se quitará el fondo de pantalla de %@."
+            "value" : "Este es el único fondo de pantalla de la playlist. Al eliminarlo, se quitará el fondo de pantalla de %@."
           }
         },
         "ja" : {
@@ -74325,7 +74325,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "尚不支援此專案的桌布類型或算繪功能。"
+            "value" : "尚不支援此專案的桌布類型或渲染功能。"
           }
         }
       }
@@ -74535,7 +74535,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "此場景需要 Loomscreen 不支援的算繪功能。其他桌布的播放不受影響。"
+            "value" : "此場景需要 Loomscreen 不支援的渲染功能。其他桌布的播放不受影響。"
           }
         }
       }
@@ -74742,13 +74742,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Este fondo no está disponible. Vuelve a importarlo desde la biblioteca."
+            "value" : "Este fondo no está disponible. Vuelve a importarlo desde la biblioteca de fondos."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "この壁紙は使用できません。ライブラリから再読み込みしてください。"
+            "value" : "この壁紙は使用できません。壁紙ライブラリから再読み込みしてください。"
           }
         },
         "zh-Hans" : {
@@ -76449,13 +76449,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Prueba a añadir un reloj"
+            "value" : "Añadir un reloj"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "時計を追加してみる"
+            "value" : "時計を追加"
           }
         },
         "zh-Hans" : {
@@ -76757,7 +76757,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "種類は自動で判別されるので選ぶ必要はありません。同じディスプレイの壁紙はいつでも入れ替えられます。"
+            "value" : "種類は自動で判別されるので選ぶ必要はありません。各ディスプレイの壁紙はいつでも変更できます。"
           }
         },
         "zh-Hans" : {
@@ -78458,7 +78458,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ウインドウが画面の半分を覆う場合やバッテリー使用時に、シーンのフレームレートを約半分にします。"
+            "value" : "ウインドウがディスプレイの半分を覆う場合やバッテリー使用時に、シーンのフレームレートを約半分にします。"
           }
         },
         "zh-Hans" : {
@@ -78566,7 +78566,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "高解像度ディスプレイに対応していないページを画面の実ピクセルで表示します。"
+            "value" : "高解像度ディスプレイに対応していないページをディスプレイの実ピクセルで表示します。"
           }
         },
         "zh-Hans" : {
@@ -80396,13 +80396,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Biblioteca de fondos · Aquí se guarda todo lo que has usado"
+            "value" : "Biblioteca de fondos · Aquí se guardan todos los fondos que has usado"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "壁紙ライブラリ · 使ったものはすべてここに残ります"
+            "value" : "壁紙ライブラリ · 使用した壁紙はすべてここに保存されます"
           }
         },
         "zh-Hans" : {
@@ -80500,13 +80500,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Fondo añadido a la biblioteca"
+            "value" : "Fondo añadido a la biblioteca de fondos"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "壁紙をライブラリに追加しました"
+            "value" : "壁紙ライブラリに追加しました"
           }
         },
         "zh-Hans" : {
@@ -80764,7 +80764,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "桌布算繪已關閉"
+            "value" : "桌布渲染已關閉"
           }
         }
       }
@@ -82605,13 +82605,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Plugin Win"
+            "value" : "Complemento de Windows"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Win プラグイン"
+            "value" : "Windows プラグイン"
           }
         },
         "zh-Hans" : {
@@ -83035,7 +83035,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Workshop コンテンツフォルダ"
+            "value" : "ワークショップコンテンツフォルダ"
           }
         },
         "zh-Hans" : {
@@ -83205,7 +83205,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Workshop へのリクエストは HTTPS で Valve に直接送られます。Loomscreen には何も送信されず、Loomscreen 自身のサーバーは存在しません。"
+            "value" : "ワークショップへのリクエストは HTTPS で Valve に直接送られます。Loomscreen には何も送信されず、Loomscreen 自身のサーバーは存在しません。"
           }
         },
         "zh-Hans" : {
@@ -83335,7 +83335,7 @@
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Workshop · Steam アカウントを接続"
+            "value" : "ワークショップ · Steam アカウントを接続"
           }
         },
         "zh-Hans" : {
@@ -83750,7 +83750,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "La lista de reproducción está vacía"
+            "value" : "La playlist está vacía"
           }
         },
         "ja" : {
@@ -84806,7 +84806,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "WPE Metal 算繪目標「%1$@」為 %2$lldx%3$lld，超過此裝置的 %4$lldx%5$lld 2D 紋理限制。"
+            "value" : "WPE Metal 渲染目標「%1$@」為 %2$lldx%3$lld，超過此裝置的 %4$lldx%5$lld 2D 紋理限制。"
           }
         }
       }
@@ -85628,7 +85628,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "「%1$@」需要的算繪特性暫不支援：%2$@。"
+            "value" : "「%1$@」需要的渲染特性暫不支援：%2$@。"
           }
         }
       }
@@ -86523,7 +86523,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "general.orthogonalprojection 為 null——使用透視相機與 1920×1080 算繪尺寸"
+            "value" : "general.orthogonalprojection 為 null——使用透視相機與 1920×1080 渲染尺寸"
           }
         }
       }
@@ -89154,13 +89154,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "“%@” está en pantalla ahora mismo. Deja de reproducirse y su archivo se elimina de inmediato; el escritorio conserva el último fotograma hasta que elijas otro fondo de pantalla en Ajustes del Sistema."
+            "value" : "“%@” está en pantalla ahora mismo. Deja de reproducirse y su archivo se elimina de inmediato; el escritorio conserva el último fotograma hasta que elijas otro fondo de pantalla en Ajustes del Sistema › Fondo de pantalla."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "「%@」は現在画面に表示されています。再生を停止してファイルを直ちに削除しますが、システム設定で別の壁紙を選ぶまでデスクトップには最後のフレームが残ります。"
+            "value" : "「%@」は現在画面に表示されています。再生を停止してファイルを直ちに削除しますが、「システム設定 › 壁紙」で別の壁紙を選ぶまでデスクトップには最後のフレームが残ります。"
           }
         },
         "zh-Hans" : {
@@ -89190,13 +89190,13 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "“%@” está en pantalla ahora mismo. Su archivo se elimina de inmediato, pero macOS sigue mostrándolo hasta que elijas otro fondo de pantalla en Ajustes del Sistema."
+            "value" : "“%@” está en pantalla ahora mismo. Su archivo se elimina de inmediato, pero macOS sigue mostrándolo hasta que elijas otro fondo de pantalla en Ajustes del Sistema › Fondo de pantalla."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "「%@」は現在表示中です。ファイルはすぐに削除されますが、システム設定で別の壁紙を選ぶまで macOS は表示を続けます。"
+            "value" : "「%@」は現在表示中です。ファイルはすぐに削除されますが、「システム設定 › 壁紙」で別の壁紙を選ぶまで macOS は表示を続けます。"
           }
         },
         "zh-Hans" : {
@@ -89366,7 +89366,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "• La configuración completa de cada pantalla, incluidos el fondo de pantalla, la lista de reproducción y la programación (%lld pantallas en el archivo)"
+            "value" : "• La configuración completa de cada pantalla, incluidos el fondo de pantalla, la playlist y la programación (%lld pantallas en el archivo)"
           }
         },
         "ja" : {
@@ -89499,7 +89499,7 @@
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "⌃ Sigue deslizando · Biblioteca completa"
+            "value" : "⌃ Sigue deslizando · Biblioteca de fondos completa"
           }
         },
         "ja" : {
