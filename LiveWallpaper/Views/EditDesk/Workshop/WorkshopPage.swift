@@ -50,8 +50,6 @@ struct WorkshopPage: View {
             TopBar(
                 page: pageBinding,
                 workshopAvailable: featureCatalog.isEnabled(.wpeImport),
-                searchText: .constant(""),
-                showsSearch: false,
                 windowWidth: stageSize.width,
                 status: nil
             ) {

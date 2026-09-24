@@ -24,13 +24,11 @@ struct HomePage: View {
     /// Owned by `EditDeskRoot`: a page switch unmounts this view, and a centre rebuilt here would
     /// drop whatever the other pages queued.
     let toasts: EditDeskToastCenter
+    let library: SavedLibraryModel?
     @State private var stage = EditDeskStageModel()
-    @State private var library: SavedLibraryModel?
     /// The modal's actions, which the grid's and the shelf's context menus offer too.
     @State private var modalActions: ModalActions?
     @State private var thumbnails = ShelfThumbnailCache()
-    @State private var segment: LibrarySegment = .wallpapers
-    @State private var chipID = Self.chipID(.all)
     /// Set before a stage snap changes `router.page`, so that change is not echoed back as a command.
     @State private var pageChangeFromStage = false
     /// Bumped per display before each capture; a capture that finishes after a newer one started is dropped.
@@ -148,8 +146,6 @@ struct HomePage: View {
                 // whole library rather than the filtered rows, which also change on every keystroke.
                 .onChange(of: page.library?.items) { page.refreshAllStates() }
                 .onChange(of: page.shelfCapacity) { page.syncShelf() }
-                .onChange(of: page.chipID, initial: true) { page.applyChip() }
-                .onChange(of: page.library?.items.count) { page.applyChip() }
                 .onChange(of: page.stage.visibleShelfRange) { page.loadShelfThumbnails() }
                 .onChange(of: page.stage.visibleGridRange) { page.loadShelfThumbnails() }
         }
@@ -179,12 +175,16 @@ struct HomePage: View {
             content
                 .onChange(of: page.stage.snappedIndex) { page.syncBrowsing() }
                 .onChange(of: page.presentedItemID) { page.syncBrowsing() }
-                .onChange(of: page.router.page) {
+                // The model outlives this view: a browse left open would keep ranking by its old snapshot.
+                .onDisappear { page.library?.endBrowsing() }
+                // Initial too: the model outlives this view, so a query can arrive with a mount on the overview.
+                .onChange(of: page.router.page, initial: true) {
                     if page.router.page != .library {
                         page.library?.query = ""
                     }
                 }
-                .onChange(of: page.library?.query) { Task { await page.library?.loadSearchTags() } }
+                // Initial too: rows added while another page showed have no tags read for the kept query.
+                .onChange(of: page.library?.query, initial: true) { Task { await page.library?.loadSearchTags() } }
         }
     }
 
@@ -250,8 +250,7 @@ struct HomePage: View {
         func body(content: Content) -> some View {
             content.onChange(of: page.router.libraryTarget) { _, target in
                 if target != nil {
-                    page.applyLibraryFocus(.wallpapers)
-                    page.chipID = HomePage.chipID(.all)
+                    page.library?.chip = .all
                 }
             }
         }
@@ -271,9 +270,7 @@ struct HomePage: View {
                 case .home:
                     // The overview card only shows on a stage at rest, not with the shelf half open.
                     page.stage.setProgress(0, animated: !page.reduceMotion)
-                case .library:
-                    page.applyLibraryFocus(.wallpapers)
-                case .workshop, .overlay:
+                case .library, .workshop, .overlay:
                     break
                 }
             }
@@ -314,8 +311,6 @@ struct HomePage: View {
                 TopBar(
                     page: pageBinding,
                     workshopAvailable: featureCatalog.isEnabled(.wpeImport),
-                    searchText: queryBinding,
-                    showsSearch: router.page == .library && segment == .wallpapers,
                     windowWidth: stage.stageSize.width,
                     status: statusCapsule
                 )
@@ -353,12 +348,11 @@ struct HomePage: View {
         // SCREENS.md measures from the window's top edge; the transparent title bar is part of the top bar.
         .ignoresSafeArea()
         .onAppear {
-            if library == nil {
-                let model = SavedLibraryModel(screenManager: screenManager)
-                model.prepareLibrary(alsoKeeping: undo?.retainedCoverFileNames ?? [])
-                library = model
-                modalActions = makeModalActions(library: model)
+            if modalActions == nil, let library {
+                modalActions = makeModalActions(library: library)
             }
+            // Not `.task`: leaving the page cancels that, and a cancelled probe reads as found.
+            Task { await library?.recheckMissingSources() }
             stage.gridTileSize = tileSize
             stage.reduceMotion = reduceMotion
             stage.shelfStyle = shelfStyle
@@ -627,10 +621,7 @@ struct HomePage: View {
     private var libraryLayer: some View {
         ZStack {
             if isLibraryOpen {
-                librarySurface
-                    .id(segment)
-                    .transition(.opacity)
-                    .animation(.easeInOut(duration: reduceMotion ? 0 : 0.18), value: segment)
+                wallpaperGrid
                     .padding(.top, StageGeometry.gridTop)
                     .transition(.opacity)
             }
@@ -673,6 +664,10 @@ struct HomePage: View {
         Binding(get: { library?.query ?? "" }, set: { library?.query = $0 })
     }
 
+    private var chipBinding: Binding<String> {
+        Binding(get: { Self.chipID(library?.chip ?? .all) }, set: { library?.chip = Self.chip(for: $0) })
+    }
+
     /// Writing `router.page` straight from the pill skips `select`, which is what records the page
     /// to come back to and what turns Workshop away when the SKU does not have it.
     private var pageBinding: Binding<EditDeskRouter.Page> {
@@ -682,26 +677,22 @@ struct HomePage: View {
     private var chipsRow: some View {
         VStack(alignment: .leading, spacing: DesignTokens.EditDesk.Spacing.s12) {
             HStack(spacing: DesignTokens.EditDesk.Spacing.s12) {
-                if router.page == .library {
-                    LibrarySegmentPicker(selection: $segment)
-                }
-                if segment == .wallpapers || router.page == .home {
-                    LibraryChipsRow(
-                        chips: SavedLibraryModel.Chip.allCases.map { LibraryChip(id: Self.chipID($0), title: Self.chipTitle($0)) },
-                        selection: $chipID,
-                        sortTitle: Self.sortTitle(library?.sort ?? .recentlyUsed),
-                        sortMenu: {
-                            Button("Recently Used") { library?.sort = .recentlyUsed }
-                            Button("Name") { library?.sort = .name }
-                            Button("Type") { library?.sort = .type }
-                        },
-                        onImport: promptLibraryImport
-                    )
-                    if library?.chip == .aerials, library?.aerialsStatus.isAuthorized == true {
-                        AerialsSourceControls()
-                    }
-                } else {
-                    Spacer(minLength: 0)
+                LibraryChipsRow(
+                    chips: SavedLibraryModel.Chip.allCases.map { LibraryChip(id: Self.chipID($0), title: Self.chipTitle($0)) },
+                    selection: chipBinding,
+                    searchText: queryBinding,
+                    searchPrompt: featureCatalog.isEnabled(.wpeImport) ? "Search by name or tag" : "Search by name",
+                    stage: stage,
+                    sortTitle: Self.sortTitle(library?.sort ?? .recentlyUsed),
+                    sortMenu: {
+                        Button("Recently Used") { library?.sort = .recentlyUsed }
+                        Button("Name") { library?.sort = .name }
+                        Button("Type") { library?.sort = .type }
+                    },
+                    onImport: promptLibraryImport
+                )
+                if library?.chip == .aerials, library?.aerialsStatus.isAuthorized == true {
+                    AerialsSourceControls()
                 }
             }
             shelfEmptyHint
@@ -719,21 +710,6 @@ struct HomePage: View {
                     .foregroundStyle(DesignTokens.EditDesk.Colors.textSecondary)
             }
         }
-    }
-
-    /// Lives outside the (conditionally built) chip row: routing can set the chip while the shelf is
-    /// still hidden, and the row would then appear selected while the model kept the old filter.
-    fileprivate func applyChip() {
-        guard let library else { return }
-        library.chip = Self.chip(for: chipID)
-        guard library.chip == .fourK else { return }
-        // The 4K chip hides unprobed videos, so it has to trigger their probe itself — including
-        // items that arrive while the chip is already selected.
-        let candidates = library.items
-            .filter { ($0.kind == .video || $0.kind == .aerial) && $0.metadata == nil }
-            .map(\.id)
-        guard !candidates.isEmpty else { return }
-        Task { await library.probeMetadata(for: candidates) }
     }
 
     /// A browse lasts while the shelf or the library is snapped open, or the modal is up.
@@ -777,8 +753,6 @@ struct HomePage: View {
         case .steam: "steam"
         case .local: "local"
         case .aerials: "aerials"
-        case .nowPlaying: "nowPlaying"
-        case .fourK: "fourK"
         }
     }
 
@@ -786,15 +760,13 @@ struct HomePage: View {
         SavedLibraryModel.Chip.allCases.first { chipID($0) == id } ?? .all
     }
 
-    private static func chipTitle(_ chip: SavedLibraryModel.Chip) -> LocalizedStringKey {
+    static func chipTitle(_ chip: SavedLibraryModel.Chip) -> LocalizedStringKey {
         switch chip {
         case .all: "All"
         case .recent: "Recent"
         case .steam: "Steam"
         case .local: "Local"
         case .aerials: "Aerials"
-        case .nowPlaying: "Now Playing"
-        case .fourK: "4K"
         }
     }
 
@@ -816,20 +788,6 @@ struct HomePage: View {
     }
 
     // MARK: Library page
-
-    @ViewBuilder
-    private var librarySurface: some View {
-        switch segment {
-        case .wallpapers:
-            wallpaperGrid
-        case .schemes:
-            SchemeLibraryView(apply: { scheme, screen in applyFromModal(.scheme(scheme), to: screen.id) })
-        case .systemWallpaper:
-            if #available(macOS 26.0, *) {
-                SystemWallpaperLibraryView(isEmbedded: true)
-            }
-        }
-    }
 
     private var wallpaperGrid: some View {
         ScrollView {
@@ -940,15 +898,8 @@ struct HomePage: View {
 
     private func applyLibraryFocus(_ focus: EditDeskRouter.LibraryFocus) {
         switch focus {
-        case .wallpapers:
-            segment = .wallpapers
-        case .schemes:
-            segment = .schemes
-        case .systemWallpaper:
-            segment = .systemWallpaper
         case .aerials:
-            segment = .wallpapers
-            chipID = Self.chipID(.aerials)
+            library?.chip = .aerials
         }
     }
 

@@ -215,7 +215,8 @@ struct DisplayStateResolverTests {
                 manager.markWallpaperSessionStateChanged()
             }
             let router = EditDeskRouter(initialNavigation: nil, initialAddWallpaperRequest: nil, isWorkshopAvailable: { false })
-            host = NSHostingView(rootView: AnyView(HomePage(router: router, toasts: toasts).environment(manager)))
+            let library = SavedLibraryModel(screenManager: manager)
+            host = NSHostingView(rootView: AnyView(HomePage(router: router, toasts: toasts, library: library).environment(manager)))
             host.sizingOptions = []
             window = NSWindow(
                 contentRect: CGRect(origin: .zero, size: StageGeometry.designWindow),

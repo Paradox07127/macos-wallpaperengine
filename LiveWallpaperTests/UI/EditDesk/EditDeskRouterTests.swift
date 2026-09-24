@@ -78,7 +78,7 @@ struct EditDeskRouterTests {
         router.handle(Notification(name: .promptAddWallpaper, userInfo: ["kind": "any"]))
         #expect(router.pendingAddWallpaper == .init(kind: "any", targetDisplayID: nil))
 
-        // HomePage is not mounted on the Workshop or Settings page, so the request must bring it back.
+        // HomePage is mounted on the overview and the library only, so the request must bring it back.
         let away = makeRouter(.workshop)
         away.handle(Notification(name: .promptAddWallpaper, userInfo: ["kind": "any", "screenID": CGDirectDisplayID(7)]))
         #expect(away.page == .home)
@@ -86,6 +86,12 @@ struct EditDeskRouterTests {
         let settings = makeRouter(.general)
         settings.handle(Notification(name: .promptAddWallpaper, userInfo: ["kind": "any"]))
         #expect(settings.page == .home)
+        for page in [EditDeskRouter.Page.schemes, .systemWallpaper] {
+            let router = makeRouter()
+            router.select(page)
+            router.handle(Notification(name: .promptAddWallpaper, userInfo: ["kind": "any"]))
+            #expect(router.page == .home, Comment(rawValue: "the request waits on the \(page) page"))
+        }
     }
 
     @Test("Screen selection notification opens detail with an optional failure")
@@ -162,11 +168,39 @@ struct EditDeskRouterTests {
         #expect(router.libraryFocus == nil)
     }
 
-    @Test("Initial system wallpaper navigation opens its library segment")
+    @Test("Initial system wallpaper navigation opens its own page, and the wallpaper library before macOS 26")
     func initialSystemWallpaper() {
         let router = makeRouter(.systemWallpaper)
-        #expect(router.page == .library)
-        #expect(router.libraryFocus == .systemWallpaper)
+        #expect(router.page == .systemWallpaper)
+        #expect(router.libraryFocus == nil)
+        let older = makeRouter(.systemWallpaper, systemWallpaperAvailable: false)
+        #expect(older.page == .library)
+        #expect(older.libraryFocus == nil, "the library would open on a focus it has nothing to show for")
+    }
+
+    @Test("Schemes and System Wallpaper are pages of their own, and before macOS 26 System Wallpaper falls back to the library")
+    func schemesAndSystemWallpaperArePages() {
+        let router = makeRouter()
+        router.select(.schemes)
+        #expect(router.page == .schemes)
+        router.select(.systemWallpaper)
+        #expect(router.page == .systemWallpaper)
+        #expect(router.previousPage == .schemes)
+
+        let older = makeRouter(systemWallpaperAvailable: false)
+        older.select(.systemWallpaper)
+        #expect(older.page == .library)
+    }
+
+    @Test("The library focus only picks a chip, and Manage Schemes opens the Schemes page")
+    func libraryFocusNoLongerNamesPages() throws {
+        let router = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/EditDeskRouter.swift")
+        let start = try #require(router.range(of: "enum LibraryFocus"))
+        let focus = try #require(router[start.upperBound...].components(separatedBy: "}").first)
+        #expect(!focus.contains("schemes"), "Schemes is still a focus of the library page")
+        #expect(!focus.contains("systemWallpaper"), "System Wallpaper is still a focus of the library page")
+        let host = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Detail/DisplayDetailHost.swift")
+        #expect(host.contains("router.select(.schemes)"), "Manage Schemes still goes through the wallpaper library")
     }
 
     @Test("Initial workshop navigation opens the available workshop")
@@ -284,9 +318,10 @@ struct EditDeskRouterTests {
         #expect(!router.onboardingRequested)
     }
 
-    private func makeRouter(_ navigation: Navigation? = nil) -> EditDeskRouter {
+    private func makeRouter(_ navigation: Navigation? = nil, systemWallpaperAvailable: Bool = true) -> EditDeskRouter {
         EditDeskRouter(
-            initialNavigation: navigation, initialAddWallpaperRequest: nil, isWorkshopAvailable: { true }
+            initialNavigation: navigation, initialAddWallpaperRequest: nil, isWorkshopAvailable: { true },
+            systemWallpaperAvailable: systemWallpaperAvailable
         )
     }
 }

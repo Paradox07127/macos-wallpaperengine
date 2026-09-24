@@ -172,5 +172,45 @@ struct EditDeskAccessibilityTests {
         #expect(card.contains("accessibilityLabel(Text(accessibilityLabelText))"))
         #expect(card.contains("stars"), "the card's label drops the rating")
     }
+
+    /// The filter row's search field stays mounted on the shelf, faded out, so the edit a return
+    /// swipe leaves behind has to end there rather than keep the keys typed over the shelf.
+    @Test("The library's search field gives up the keyboard once it is too faint to click", arguments: [1.0, 1.4])
+    func fadedSearchFieldEndsItsEdit(progress: Double) async throws {
+        // 1.4: still drawn, but under the row's click threshold.
+        #expect(LibrarySearchReveal.opacity(progress) <= ShelfChromeRide.interactiveOpacity)
+        let stage = EditDeskStageModel()
+        stage.setProgress(2, animated: false)
+        let host = NSHostingView(rootView: LibrarySearchField(text: .constant(""), prompt: "Search by name")
+            .modifier(LibrarySearchReveal(stage: stage)))
+        let window = NSWindow(
+            contentRect: CGRect(x: -30000, y: -30000, width: 320, height: 60), styleMask: [.titled],
+            backing: .buffered, defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        defer {
+            window.contentView = nil
+            window.close()
+        }
+        host.layoutSubtreeIfNeeded()
+        func editableField(in view: NSView) -> NSTextField? {
+            if let field = view as? NSTextField, field.isEditable {
+                return field
+            }
+            return view.subviews.lazy.compactMap(editableField).first
+        }
+        let field = try #require(editableField(in: host))
+        #expect(window.makeFirstResponder(field))
+        try #require(field.currentEditor() != nil, "control: the field never took the keyboard")
+
+        stage.setProgress(progress, animated: false)
+        let deadline = ContinuousClock.now + .seconds(1)
+        while field.currentEditor() != nil, ContinuousClock.now < deadline {
+            host.layoutSubtreeIfNeeded()
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(field.currentEditor() == nil, "the faded field still takes the keys typed over the shelf")
+    }
 }
 #endif
