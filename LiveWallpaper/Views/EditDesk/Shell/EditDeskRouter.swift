@@ -6,11 +6,11 @@ import Observation
 @MainActor @Observable
 final class EditDeskRouter {
     enum Page: Hashable {
-        case home, library, workshop, settings
+        case home, library, schemes, systemWallpaper, workshop, settings
     }
 
     enum LibraryFocus: Equatable {
-        case wallpapers, schemes, systemWallpaper, aerials
+        case aerials
     }
 
     /// What to import and which display it lands on, in one value: as two notifications the target
@@ -37,14 +37,26 @@ final class EditDeskRouter {
     var onboardingRequested = false
     private(set) var previousPage: Page?
     private let isWorkshopAvailable: () -> Bool
+    private let systemWallpaperAvailable: Bool
+
+    /// The System Wallpaper page publishes through the macOS 26 wallpaper extension.
+    nonisolated static var systemWallpaperSupported: Bool {
+        if #available(macOS 26.0, *) {
+            true
+        } else {
+            false
+        }
+    }
 
     init(
         initialNavigation: Navigation?,
         initialAddWallpaperRequest: AddWallpaperRequest?,
         initialOnboardingRequested: Bool = false,
-        isWorkshopAvailable: @escaping () -> Bool
+        isWorkshopAvailable: @escaping () -> Bool,
+        systemWallpaperAvailable: Bool = EditDeskRouter.systemWallpaperSupported
     ) {
         self.isWorkshopAvailable = isWorkshopAvailable
+        self.systemWallpaperAvailable = systemWallpaperAvailable
         pendingAddWallpaper = initialAddWallpaperRequest
         onboardingRequested = initialOnboardingRequested
         switch initialNavigation {
@@ -59,8 +71,7 @@ final class EditDeskRouter {
         case .bookmarks:
             page = .library
         case .systemWallpaper:
-            page = .library
-            libraryFocus = .systemWallpaper
+            page = systemWallpaperAvailable ? .systemWallpaper : .library
         case .workshop:
             page = isWorkshopAvailable() ? .workshop : .home
         case nil:
@@ -88,8 +99,8 @@ final class EditDeskRouter {
             pendingAddWallpaper = AddWallpaperRequest(
                 kind: kind, targetDisplayID: notification.userInfo?["screenID"] as? CGDirectDisplayID
             )
-            // Only HomePage consumes it, and HomePage is off the tree on these two pages.
-            if page == .workshop || page == .settings {
+            // Only HomePage consumes it, and HomePage is on the tree for the overview and the library alone.
+            if page != .home, page != .library {
                 select(.home)
             }
         case .selectScreenInSettings:
@@ -115,7 +126,11 @@ final class EditDeskRouter {
     }
 
     func select(_ page: Page) {
-        let destination = page == .workshop && !isWorkshopAvailable() ? .home : page
+        let destination: Page = switch page {
+        case .workshop where !isWorkshopAvailable(): .home
+        case .systemWallpaper where !systemWallpaperAvailable: .library
+        default: page
+        }
         if destination != .library {
             libraryTarget = nil
         }

@@ -82,16 +82,6 @@ struct OnboardingUITests {
         #expect(OnboardingCapsuleModel.dots(visible: lite, handled: [.home]) == [true, false, false])
     }
 
-    /// 1040 library page: 16pt page padding, a 220pt search field, the 118pt status capsule and
-    /// 12pt gaps leave the centred nav pill no room for the capsule's label.
-    @Test("The label is dropped on the search-bearing page below the design width")
-    func capsuleFit() {
-        #expect(!OnboardingCapsuleFit.showsLabel(windowWidth: 1040, showsSearch: true))
-        #expect(OnboardingCapsuleFit.showsLabel(windowWidth: 1280, showsSearch: true))
-        #expect(OnboardingCapsuleFit.showsLabel(windowWidth: 1040, showsSearch: false))
-        #expect(OnboardingCapsuleFit.labelMinimumWidth == StageGeometry.designWindow.width)
-    }
-
     @Test("The detail top bar stays out of it — the overlay card carries its own step line")
     func detailTopBarHasNoCapsule() throws {
         let source = try RepositoryRoot.source(Self.detailTopBar)

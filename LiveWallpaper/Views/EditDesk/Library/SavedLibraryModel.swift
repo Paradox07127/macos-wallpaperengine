@@ -6,7 +6,7 @@ import Observation
 
 @MainActor @Observable
 final class SavedLibraryModel {
-    enum Chip: CaseIterable { case all, recent, steam, local, aerials, nowPlaying, fourK }
+    enum Chip: CaseIterable { case all, recent, steam, local, aerials }
     enum Sort { case recentlyUsed, name, type }
 
     struct AerialsState {
@@ -185,8 +185,6 @@ final class SavedLibraryModel {
         case .steam: items.filter(\.isSteam)
         case .local: items.filter { !$0.isSteam && $0.kind != .aerial }
         case .aerials: items.filter { $0.kind == .aerial }
-        case .nowPlaying: items.filter { !$0.onDisplays.isEmpty }
-        case .fourK: items.filter { $0.metadata?.is4K == true }
         }
         let sorted = filtered.sorted { lhs, rhs in
             switch sort {
@@ -349,6 +347,11 @@ final class SavedLibraryModel {
     /// Probes again the rows `intent` was built from: applying is where a stale mark shows.
     func recheck(_ intent: ApplyIntent) async {
         await probe(items.filter { item($0, madeBy: intent) })
+    }
+
+    /// Probes again the rows marked missing: `probeSources()` never returns to a row it has answered.
+    func recheckMissingSources() async {
+        await probe(items.filter(\.isSourceMissing))
     }
 
     /// A row being probed is still unanswered, not available: until its own round answers, it keeps

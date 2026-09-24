@@ -13,6 +13,9 @@ struct EditDeskRoot: View {
     @State private var toasts = EditDeskToastCenter()
     /// The window's undo history; it goes with the window, so closing it empties the history.
     @State private var undo: EditDeskUndoStack?
+    /// Held by the window rather than `HomePage`, which other pages unmount: the library's chip, search
+    /// and sort are still set when it comes back.
+    @State private var library: SavedLibraryModel?
     @AppStorage(EditDeskPreferences.background, store: .appScoped())
     private var backgroundRaw = EditDeskPreferences.backgroundDefault.rawValue
     @AppStorage(LibraryTileSize.preferencesKey, store: .appScoped())
@@ -51,7 +54,14 @@ struct EditDeskRoot: View {
                     switch router.page {
                     case .home, .library:
                         // One page: the library is the stage's p = 2 state, not a separate view.
-                        HomePage(router: router, toasts: toasts)
+                        HomePage(router: router, toasts: toasts, library: library)
+                    case .schemes:
+                        SchemesPage(router: router, toasts: toasts)
+                    case .systemWallpaper:
+                        // The router turns this page away before macOS 26.
+                        if #available(macOS 26.0, *) {
+                            SystemWallpaperPage(router: router)
+                        }
                     case .workshop:
                         #if !LITE_BUILD
                         if let workshopSession {
@@ -66,7 +76,6 @@ struct EditDeskRoot: View {
                                 TopBar(
                                     page: Binding(get: { router.page }, set: { router.select($0) }),
                                     workshopAvailable: featureCatalog.isEnabled(.wpeImport),
-                                    searchText: .constant(""), showsSearch: false,
                                     windowWidth: geometry.size.width, status: nil
                                 )
                                 // Above the columns, whose scroll view reaches up into this strip and would cover it.
@@ -161,6 +170,9 @@ struct EditDeskRoot: View {
             )
             undo.onRecord = { [toasts] text, stepID in toasts.post(text, style: .success, undoStepID: stepID) }
             self.undo = undo
+            let library = SavedLibraryModel(screenManager: screenManager)
+            library.prepareLibrary(alsoKeeping: undo.retainedCoverFileNames)
+            self.library = library
             let router = EditDeskRouter(
                 initialNavigation: initialNavigation,
                 initialAddWallpaperRequest: initialAddWallpaperRequest,

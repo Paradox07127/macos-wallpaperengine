@@ -19,6 +19,10 @@ struct LibraryChip: Identifiable, Hashable {
 struct LibraryChipsRow<SortMenu: View>: View {
     let chips: [LibraryChip]
     @Binding var selection: String
+    @Binding var searchText: String
+    let searchPrompt: LocalizedStringKey
+    /// Drives the search field's reveal; the rest of the row rides the shelf in `ShelfChromeRide`.
+    let stage: EditDeskStageModel
     let sortTitle: LocalizedStringKey
     @ViewBuilder let sortMenu: () -> SortMenu
     let onImport: () -> Void
@@ -31,6 +35,8 @@ struct LibraryChipsRow<SortMenu: View>: View {
                 }
             }
             Spacer(minLength: DesignTokens.EditDesk.Spacing.s12)
+            LibrarySearchField(text: $searchText, prompt: searchPrompt)
+                .modifier(LibrarySearchReveal(stage: stage))
             sortControl
             importButton
         }
@@ -62,5 +68,26 @@ struct LibraryChipsRow<SortMenu: View>: View {
                 .background(Capsule().fill(DesignTokens.EditDesk.Colors.fillNavPill))
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// Fades the search field in over the rise to the library, whose grid it filters. `progress` is read
+/// here for the reason `ShelfChromeRide` gives.
+struct LibrarySearchReveal: ViewModifier {
+    let stage: EditDeskStageModel
+
+    static func opacity(_ progress: Double) -> Double {
+        HomeHints.ramp(progress, from: 1, to: 2)
+    }
+
+    func body(content: Content) -> some View {
+        let opacity = Self.opacity(stage.progress)
+        return content
+            .opacity(opacity)
+            .allowsHitTesting(opacity > ShelfChromeRide.interactiveOpacity)
+            .accessibilityHidden(opacity <= ShelfChromeRide.interactiveOpacity)
+            // Still mounted on the shelf: a field left focused there would take the keys typed over the
+            // shelf, and disabling it ends the edit.
+            .disabled(opacity <= ShelfChromeRide.interactiveOpacity)
     }
 }

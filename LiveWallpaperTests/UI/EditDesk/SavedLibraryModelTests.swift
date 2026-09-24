@@ -111,35 +111,13 @@ struct SavedLibraryModelTests {
         source.nowPlaying = { content in displays.filter { $0.value == content }.map(\.key).sorted() }
         #endif
         let model = SavedLibraryModel(inputs: source)
-        model.chip = .nowPlaying
-        #expect(model.visibleItems.map(\.title) == ["Playing"])
-        #expect(model.visibleItems.first?.onDisplays == [7, 42])
+        #expect(model.items.first { $0.title == "Playing" }?.onDisplays == [7, 42])
+        #expect(model.items.first { $0.title == "Idle" }?.onDisplays == [])
     }
 
-    @Test func fourKExcludesUnknownAndNonVideoMetadata() {
-        let known = bookmark("Known")
-        let unknown = bookmark("4K in the title")
-        let other = bookmark("Other")
-        let small = bookmark("1080p")
-        var source = inputs([known, unknown, other, small])
-        source.metadata = {
-            if $0.id == known.id {
-                return fourK
-            }
-            if $0.id == other.id {
-                return .notApplicable
-            }
-            if $0.id == small.id {
-                return .video(.init(
-                    resolution: CGSize(width: 1920, height: 1080), isHDR: false,
-                    duration: nil, fileSize: nil, probedAt: .distantPast
-                ))
-            }
-            return nil
-        }
-        let model = SavedLibraryModel(inputs: source)
-        model.chip = .fourK
-        #expect(model.visibleItems.map(\.title) == ["Known"])
+    @Test("The filter chips are All, Recent, Steam, Local and Aerials")
+    func chipsAreTheFiveFilters() {
+        #expect(SavedLibraryModel.Chip.allCases == [.all, .recent, .steam, .local, .aerials])
     }
 
     @Test func recentlyUsedSortPutsNilLastAndBreaksTiesByCreation() {
@@ -182,15 +160,9 @@ struct SavedLibraryModelTests {
         web.content = .html(source: .url(URL(fileURLWithPath: "/web")), config: .init())
         var scene = bookmark("A scene", used: 1)
         scene.content = .scene(descriptor())
-        var source = inputs([scene, bookmark("Z video", used: 1), web, bookmark("B video", used: 1)], aerials: [aerial()])
-        #if !LITE_BUILD
-        source.nowPlaying = { _, _ in [1] }
-        #else
-        source.nowPlaying = { _ in [1] }
-        #endif
-        source.activeWallpapers = { [(1, .video(bookmarkData: aerial().bookmarkData))] }
+        let source = inputs([scene, bookmark("Z video", used: 1), web, bookmark("B video", used: 1)], aerials: [aerial()])
         let model = SavedLibraryModel(inputs: source)
-        model.chip = .nowPlaying
+        model.chip = .all
         model.sort = .type
         #expect(model.visibleItems.map(\.kind) == [.video, .video, .web, .scene, .aerial])
         #expect(model.visibleItems.prefix(2).map(\.title) == ["B video", "Z video"])
@@ -555,7 +527,7 @@ struct SavedLibraryModelTests {
         model.prepareLibrary(alsoKeeping: [])
         #expect(swept == [["bookmark.png", "scheme.png"]])
 
-        model.chip = .fourK
+        model.chip = .steam
         model.refresh()
         #expect(swept.count == 1, "a refresh must not sweep again, and never against the filtered view")
     }

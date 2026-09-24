@@ -6,9 +6,7 @@ import SwiftUI
 struct TopBar<Trailing: View>: View {
     @Binding var page: EditDeskRouter.Page
     let workshopAvailable: Bool
-    @Binding var searchText: String
-    let showsSearch: Bool
-    /// The window's own width; the onboarding capsule drops its label when the row gets tight.
+    /// The window's own width, which `TopBarBudget` splits between the pill and the trailing cluster.
     let windowWidth: CGFloat
     /// nil on pages that carry a control of their own instead (S8's Steam menu).
     let status: StatusCapsule?
@@ -27,10 +25,8 @@ struct TopBar<Trailing: View>: View {
 
     private var budget: TopBarBudget.Layout {
         TopBarBudget.layout(
-            windowWidth: windowWidth, pillWidth: pillWidth, showsSearch: showsSearch,
-            capsuleWidth: OnboardingCapsuleFit.width(
-                progress: progress, windowWidth: windowWidth, showsSearch: showsSearch
-            ),
+            windowWidth: windowWidth, pillWidth: pillWidth,
+            capsuleWidth: OnboardingCapsuleFit.width(progress: progress),
             statusWidth: statusWidth
         )
     }
@@ -52,17 +48,8 @@ struct TopBar<Trailing: View>: View {
 
     private var trailingContent: some View {
         HStack(spacing: DesignTokens.EditDesk.Spacing.s12) {
-            if showsSearch {
-                LibrarySearchField(
-                    text: $searchText,
-                    prompt: workshopAvailable ? "Search by name or tag" : "Search by name",
-                    minWidth: budget.searchWidth,
-                    idealWidth: budget.searchWidth,
-                    maxWidth: budget.searchWidth
-                )
-            }
             if budget.showsCapsule {
-                OnboardingCapsule(windowWidth: windowWidth, showsSearch: showsSearch)
+                OnboardingCapsule()
             }
             trailing()
             status
@@ -75,14 +62,12 @@ extension TopBar where Trailing == EmptyView {
     init(
         page: Binding<EditDeskRouter.Page>,
         workshopAvailable: Bool,
-        searchText: Binding<String>,
-        showsSearch: Bool,
         windowWidth: CGFloat,
         status: StatusCapsule?
     ) {
         self.init(
-            page: page, workshopAvailable: workshopAvailable, searchText: searchText,
-            showsSearch: showsSearch, windowWidth: windowWidth, status: status, trailing: { EmptyView() }
+            page: page, workshopAvailable: workshopAvailable, windowWidth: windowWidth, status: status,
+            trailing: { EmptyView() }
         )
     }
 }

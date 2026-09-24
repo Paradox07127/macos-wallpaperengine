@@ -50,7 +50,7 @@ struct DisplayDetailHost: View {
     @State private var showAutomation = false
     @State private var confirmsOverlayCopy = false
     @State private var pendingDestructive: PendingDestructive?
-    /// Set by Manage Schemes and Choose from Library: the library opens once the tile is home, not under
+    /// Set by Manage Schemes and Choose from Library: their page opens once the tile is home, not under
     /// the return flight.
     @State private var libraryHandoff: LibraryHandoff?
     /// "Adjust on the Preview" for a web wallpaper; off again whenever another display is shown.
@@ -207,11 +207,11 @@ struct DisplayDetailHost: View {
         guard coordinator?.shownDisplayID == nil else { return }
         switch handoff {
         case .schemes:
-            router.libraryFocus = .schemes
+            router.select(.schemes)
         case let .wallpapers(displayID):
             router.libraryTarget = displayID
+            router.select(.library)
         }
-        router.select(.library)
     }
 
     private var sectionInspectorVisible: Binding<Bool> {

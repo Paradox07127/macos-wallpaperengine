@@ -10,19 +10,30 @@ struct EditDeskChromeSourceTests {
         "LiveWallpaper/Views/EditDesk/Shell/EditDeskToastCenter.swift",
         "LiveWallpaper/Views/EditDesk/Shell/HomeHints.swift",
         "LiveWallpaper/Views/EditDesk/Library/LibraryChipsRow.swift",
-        "LiveWallpaper/Views/EditDesk/Library/LibrarySegmentPicker.swift",
+        "LiveWallpaper/Views/EditDesk/Shell/SchemesPage.swift",
+        "LiveWallpaper/Views/EditDesk/Shell/SystemWallpaperPage.swift",
     ]
 
-    @Test("NavPill and LibrarySegmentPicker build on GlassSegmentedPicker's editDesk shell")
-    func navPillAndSegmentPickerUseEditDeskShell() throws {
-        for path in [
-            "LiveWallpaper/Views/EditDesk/Shell/NavPill.swift",
-            "LiveWallpaper/Views/EditDesk/Library/LibrarySegmentPicker.swift",
-        ] {
-            let source = try RepositoryRoot.source(path)
-            #expect(source.contains("GlassSegmentedPicker("), "\(path) does not build on GlassSegmentedPicker")
-            #expect(source.contains("shell: .editDesk"), "\(path) does not request the editDesk shell")
+    @Test("NavPill builds on GlassSegmentedPicker's editDesk shell, and the library carries no second pill")
+    func navPillUsesEditDeskShellAlone() throws {
+        let path = "LiveWallpaper/Views/EditDesk/Shell/NavPill.swift"
+        let source = try RepositoryRoot.source(path)
+        #expect(source.contains("GlassSegmentedPicker("), "\(path) does not build on GlassSegmentedPicker")
+        #expect(source.contains("shell: .editDesk"), "\(path) does not request the editDesk shell")
+        let pickers = try RepositoryRoot.swiftFiles(under: "LiveWallpaper/Views").filter { file in
+            try String(contentsOf: file, encoding: .utf8).contains("LibrarySegmentPicker")
         }
+        #expect(pickers.isEmpty, "the library still opens a second pill: \(pickers.map { RepositoryRoot.relativePath(of: $0) })")
+    }
+
+    @Test("The library page is the wallpaper grid alone; Schemes and System Wallpaper mount as pages of their own")
+    func schemesAndSystemWallpaperArePages() throws {
+        let home = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/HomePage.swift")
+        #expect(!home.contains("SchemeLibraryView("), "HomePage still embeds the scheme library")
+        #expect(!home.contains("SystemWallpaperLibraryView("), "HomePage still embeds the System Wallpaper library")
+        let root = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/EditDeskRoot.swift")
+        #expect(root.contains("SchemesPage(router: router, toasts: toasts)"))
+        #expect(root.contains("SystemWallpaperPage(router: router)"))
     }
 
     @Test("The status panel closes on an outside click, on Escape and when the app deactivates")
@@ -58,10 +69,15 @@ struct EditDeskChromeSourceTests {
         #expect(source.contains("FilterChip("))
     }
 
-    @Test("The top bar's search field is LibrarySearchField")
-    func topBarUsesLibrarySearchField() throws {
-        let source = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/TopBar.swift")
-        #expect(source.contains("LibrarySearchField("))
+    @Test("The library's search field is LibrarySearchField in the filter row, ahead of sort and import, and the top bar has none")
+    func filterRowCarriesTheSearchField() throws {
+        let row = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Library/LibraryChipsRow.swift")
+        let search = try #require(row.range(of: "LibrarySearchField("), "the filter row has no search field")
+        let sort = try #require(row.range(of: "\n            sortControl\n"))
+        #expect(search.upperBound <= sort.lowerBound, "the search field sits after sort and import")
+        #expect(row.contains(".modifier(LibrarySearchReveal(stage: stage))"), "the field does not ride the rise to the library")
+        let bar = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/TopBar.swift")
+        #expect(!bar.contains("LibrarySearchField("), "the top bar still carries a search field")
     }
 
     @Test("No token-bypass literals in the files this package owns")
@@ -136,15 +152,17 @@ struct EditDeskChromeSourceTests {
         }
     }
 
-    @Test("Orphan covers are swept once, when the library model is first built, sparing those undo can bring back")
+    @Test("Orphan covers are swept once, when the window builds the library model, sparing those undo can bring back")
     func libraryModelSweepsCoversOnce() throws {
-        let source = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/HomePage.swift")
-        #expect(source.contains("let model = SavedLibraryModel(screenManager: screenManager)"))
-        #expect(source.contains("model.prepareLibrary(alsoKeeping: undo?.retainedCoverFileNames ?? [])"))
+        let source = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/EditDeskRoot.swift")
+        #expect(source.contains("let library = SavedLibraryModel(screenManager: screenManager)"))
+        #expect(source.contains("library.prepareLibrary(alsoKeeping: undo.retainedCoverFileNames)"))
         #expect(
             source.components(separatedBy: "prepareLibrary(").count - 1 == 1,
             "the cover sweep must not run again on every library rebuild"
         )
+        let homeSweeps = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/HomePage.swift").contains("prepareLibrary(")
+        #expect(!homeSweeps, "the sweep would run again each time a page switch remounts HomePage")
     }
 
     @Test("The modal's … menu and the grid's and shelf's context menus draw the same rows")
@@ -270,6 +288,17 @@ struct EditDeskChromeSourceTests {
         let settings = try #require(root.range(of: "case .settings:"))
         let columns = try #require(root.range(of: "HStack(spacing: 0) {", range: settings.upperBound ..< root.endIndex))
         #expect(root[settings.upperBound ..< columns.lowerBound].contains(".zIndex(1)"), "the settings column would cover the page tabs")
+
+        // The two library pages stack their bar after the content, as home and Workshop do.
+        for (path, content) in [
+            ("LiveWallpaper/Views/EditDesk/Shell/SchemesPage.swift", "SchemeLibraryView("),
+            ("LiveWallpaper/Views/EditDesk/Shell/SystemWallpaperPage.swift", "SystemWallpaperLibraryView("),
+        ] {
+            let page = try RepositoryRoot.source(path)
+            let library = try #require(page.range(of: content))
+            let bar = try #require(page.range(of: "TopBar("))
+            #expect(library.upperBound <= bar.lowerBound, "\(path): the library's scroll view would take the top bar's clicks")
+        }
     }
 
     @Test("Aerials are matched by the file their bookmark resolves to, never by the bookmark's bytes")
