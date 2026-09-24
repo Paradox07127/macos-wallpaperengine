@@ -48,17 +48,10 @@ struct AppLanguageRuntimeProbeTests {
     func appLanguageBundleRoutes() {
         // Pick the language here rather than assume it: the host reads the
         // app's real preference, which is whatever this Mac happens to be set to.
-        let previous = UserDefaults.standard.string(forKey: AppLanguagePreference.storageKey)
-        defer {
-            if let previous {
-                UserDefaults.standard.set(previous, forKey: AppLanguagePreference.storageKey)
-            } else {
-                UserDefaults.standard.removeObject(forKey: AppLanguagePreference.storageKey)
-            }
+        AppLanguageOverride.with(.simplifiedChinese) {
+            let value = String(localized: String.LocalizationValue(Self.key), bundle: .appLanguage)
+            #expect(value == Self.zhHans, "Bundle.appLanguage returned \(value)")
         }
-        AppLanguagePreference.save(.simplifiedChinese)
-        let value = String(localized: String.LocalizationValue(Self.key), bundle: .appLanguage)
-        #expect(value == Self.zhHans, "Bundle.appLanguage returned \(value)")
     }
 
     @Test("Candidate C — LocalizedStringResource with an explicit locale")
@@ -75,16 +68,8 @@ struct AppLanguageRuntimeProbeTests {
     /// the app target's compiled `Localizable.xcstrings`, so routing is only observable here.
     @Test("Inline HTML source display name follows the app language preference")
     func inlineHTMLSourceDisplayNameFollowsAppLanguage() {
-        let previous = UserDefaults.standard.string(forKey: AppLanguagePreference.storageKey)
-        defer {
-            if let previous {
-                UserDefaults.standard.set(previous, forKey: AppLanguagePreference.storageKey)
-            } else {
-                UserDefaults.standard.removeObject(forKey: AppLanguagePreference.storageKey)
-            }
+        AppLanguageOverride.with(.simplifiedChinese) {
+            #expect(HTMLSource.inline("<html></html>").displayName == "内嵌网页内容")
         }
-
-        AppLanguagePreference.save(.simplifiedChinese)
-        #expect(HTMLSource.inline("<html></html>").displayName == "内嵌网页内容")
     }
 }

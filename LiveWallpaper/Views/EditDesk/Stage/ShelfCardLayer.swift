@@ -98,7 +98,7 @@ final class ShelfCardLayer {
         regularRing = NSColor(colors.strokeShelfCardRing).cgColor
         gridRing = NSColor(increasedContrast ? colors.strokeRegularIncreased : colors.strokeRegular).cgColor
         let restShadow = NSColor(DesignTokens.EditDesk.Shadow.shelfCard.color).cgColor
-        let hotShadow = NSColor(DesignTokens.EditDesk.Shadow.hoverCard.color).cgColor
+        let hotShadow = NSColor(DesignTokens.EditDesk.Shadow.shelfCardHover.color).cgColor
         shadowTint = restShadow.copy(alpha: 1)
         restShadowAlpha = restShadow.alpha
         hotShadowAlpha = hotShadow.alpha
@@ -161,7 +161,7 @@ final class ShelfCardLayer {
         }
         layer.opacity = Float(placement.opacity) * (dragged ? 0.3 : 1)
         let rest = DesignTokens.EditDesk.Shadow.shelfCard
-        let hot = DesignTokens.EditDesk.Shadow.hoverCard
+        let hot = DesignTokens.EditDesk.Shadow.shelfCardHover
         face.shadowColor = shadowTint
         face.shadowOpacity = Float(
             max(0.3, 1 - placement.dim) * (restShadowAlpha + (hotShadowAlpha - restShadowAlpha) * lifted)

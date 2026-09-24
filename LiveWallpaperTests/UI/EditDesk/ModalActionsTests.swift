@@ -171,7 +171,7 @@ struct ModalActionsTests {
         )
     }
 
-    @Test("Remove from Saved records one step at the index the entry had, which undo puts back", .timeLimit(.minutes(1)))
+    @Test("Remove from Wallpaper Library records one step at the index the entry had, which undo puts back", .timeLimit(.minutes(1)))
     func removeFromSavedRecordsItsIndex() async throws {
         let fixture = Fixture()
         let before = fixture.bookmarks.add(label: "Before", content: .video(bookmarkData: Data([1])))
@@ -188,7 +188,7 @@ struct ModalActionsTests {
 
         #expect(fixture.bookmarks.bookmarks.map(\.id) == [before.id, after.id])
         guard case let .bookmark(recorded, index)? = undo.undoSteps.last?.change else {
-            Issue.record("Remove from Saved recorded no step")
+            Issue.record("Remove from Wallpaper Library recorded no step")
             return
         }
         #expect(recorded == saved)
@@ -285,7 +285,7 @@ struct ModalActionsTests {
         #expect(fixture.appliedToAll.count == 1)
     }
 
-    @Test("All Displays goes to the group closure once, with every display, when one is given")
+    @Test("All Displays goes to the group closure once, with every display")
     func applyAllGoesToTheGroupOnce() {
         let fixture = Fixture()
         let item = item(video())

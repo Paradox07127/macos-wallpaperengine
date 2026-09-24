@@ -627,6 +627,7 @@ public enum DesignTokens {
             public static let modal = Shadow(color: shadowColor("Modal", light: 0.16, dark: 0.38), radius: 24, y: 10)
             public static let hoverCard = Shadow(color: shadowColor("Hover", light: 0.16, dark: 0.32), radius: 12, y: 6)
             public static let shelfCard = Shadow(color: .black.opacity(0.3), radius: 14, y: 6)
+            public static let shelfCardHover = Shadow(color: shadowColor("ShelfHover", light: 0.36, dark: 0.32), radius: 12, y: 6)
             public static let floatPanel = Shadow(color: shadowColor("Float", light: 0.14, dark: 0.32), radius: 18, y: 8)
             public static let workshopCard = Shadow(color: shadowColor("Card", light: 0.10, dark: 0.24), radius: 8, y: 3)
             public static let workshopCardRing = Shadow(color: shadowColor("Ring", light: 0.06, dark: 0.12), radius: 1, y: 0)
