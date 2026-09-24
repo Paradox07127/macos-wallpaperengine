@@ -915,7 +915,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%@ 之後已被播放清單切換，已略過。"
+            "value" : "%@ 之後已被播放列表切換，已略過。"
           }
         }
       }
@@ -1686,7 +1686,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld 螢幕轉譯中"
+            "value" : "%lld 台顯示器正在渲染"
           }
         }
       }
@@ -1787,7 +1787,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "可讀取 %lld 個 Workshop 項目。"
+            "value" : "可讀取 %lld 個工作坊項目。"
           }
         }
       }
@@ -1887,7 +1887,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%lld 個空拍"
+            "value" : "%lld 個空照圖"
           }
         }
       }
@@ -2888,7 +2888,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "「%@」將從你的媒體庫移除。使用該書籤的顯示器會回到各自已儲存的桌布。"
+            "value" : "「%@」將從桌布庫中移除。使用該書籤的顯示器會回到各自已儲存的桌布。"
           }
         }
       }
@@ -5007,7 +5007,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "使用 URL 或 ID 新增 Steam 創意工坊項目"
+            "value" : "使用 URL 或 ID 新增 Steam 工作坊項目"
           }
         }
       }
@@ -5108,7 +5108,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "從 Steam 創意工坊 加入"
+            "value" : "從 Steam 工作坊加入"
           }
         }
       }
@@ -5136,7 +5136,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "透過創意工坊網址或 ID 加入"
+            "value" : "透過工作坊網址或 ID 加入"
           }
         }
       }
@@ -5234,7 +5234,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "加入播放清單"
+            "value" : "加入播放列表"
           }
         }
       }
@@ -5299,7 +5299,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "加入佇列"
+            "value" : "加入下載佇列"
           }
         }
       }
@@ -5333,7 +5333,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "將影片加入播放清單"
+            "value" : "將影片加入播放列表"
           }
         }
       }
@@ -5369,7 +5369,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "為這個顯示器加入桌布"
+            "value" : "為這台顯示器加入桌布"
           }
         }
       }
@@ -5403,7 +5403,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "從壁紙庫加入桌布，依序循環播放。"
+            "value" : "從桌布庫加入桌布，依序循環播放。"
           }
         }
       }
@@ -5537,7 +5537,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已加入你的資料庫。"
+            "value" : "已加入桌布庫。"
           }
         }
       }
@@ -5813,7 +5813,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "將游標所在顯示器的播放清單切換至下一項。"
+            "value" : "將游標所在顯示器的播放列表切換至下一項。"
           }
         }
       }
@@ -5878,7 +5878,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Aerial"
+            "value" : "空照圖"
           }
         }
       }
@@ -5913,7 +5913,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "空拍：%@"
+            "value" : "空照圖：%@"
           }
         }
       }
@@ -5948,7 +5948,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "空拍：%@，%@"
+            "value" : "空照圖：%@，%@"
           }
         }
       }
@@ -5977,7 +5977,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Aerials"
+            "value" : "空照圖"
           }
         }
       }
@@ -6728,7 +6728,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請在「系統設定」→「隱私權與安全性」→「自動化」中允許控制。"
+            "value" : "請在「系統設定 › 隱私權與安全性 › 自動化」中允許控制。"
           }
         }
       }
@@ -7244,7 +7244,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Apple Aerials"
+            "value" : "Apple 空照圖"
           }
         }
       }
@@ -7279,7 +7279,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Apple TV 同款空拍螢幕保護程式"
+            "value" : "Apple TV 同款空照圖螢幕保護程式"
           }
         }
       }
@@ -7586,7 +7586,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "適用於截圖、錄製和共享，小工具也遵循此設定。關閉後顯示 macOS 桌面圖片。"
+            "value" : "適用於截圖、錄製和共享，小工具也遵循此設定。關閉後顯示 macOS 背景圖片。"
           }
         }
       }
@@ -9098,7 +9098,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "授權讀取已下載的航拍資源，不修改原始檔案。"
+            "value" : "授權讀取已下載的空照圖資源，不修改原始檔案。"
           }
         }
       }
@@ -9134,7 +9134,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "授權讀取 Steam 收藏庫中已安裝的創意工坊桌布。"
+            "value" : "授權讀取 Steam 收藏庫中已安裝的工作坊桌布。"
           }
         }
       }
@@ -9905,7 +9905,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "返回庫"
+            "value" : "返回最近項目"
           }
         }
       }
@@ -10623,7 +10623,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已加入書籤 — 點擊重新命名或移除"
+            "value" : "已加入書籤——點擊重新命名或移除"
           }
         }
       }
@@ -10901,7 +10901,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "瀏覽 Apple Aerials"
+            "value" : "瀏覽 Apple 空照圖"
           }
         }
       }
@@ -10936,7 +10936,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "瀏覽創意工坊"
+            "value" : "瀏覽工作坊"
           }
         }
       }
@@ -10972,7 +10972,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "瀏覽 Steam 創意工坊"
+            "value" : "瀏覽 Steam 工作坊"
           }
         }
       }
@@ -11032,7 +11032,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在 創意工坊 中瀏覽全部"
+            "value" : "在工作坊中瀏覽全部"
           }
         }
       }
@@ -11062,7 +11062,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "瀏覽已安裝和線上 創意工坊 桌布"
+            "value" : "瀏覽已安裝和線上的工作坊桌布"
           }
         }
       }
@@ -11134,7 +11134,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "瀏覽 Workshop"
+            "value" : "瀏覽工作坊"
           }
         }
       }
@@ -11382,7 +11382,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "平台官方嵌入網域的內建信任 — 無法撤銷。"
+            "value" : "平台官方嵌入網域的內建信任——無法撤銷。"
           }
         }
       }
@@ -11910,7 +11910,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "本機無法執行：%@"
+            "value" : "無法在這台 Mac 上執行：%@"
           }
         }
       }
@@ -12366,7 +12366,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "鎖定時擷取這個影片的當前影格,並設為 macOS 的桌面圖片。"
+            "value" : "鎖定時擷取這個影片的當前影格，並設為 macOS 背景圖片。"
           }
         }
       }
@@ -13891,7 +13891,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在系統設定中選擇桌布"
+            "value" : "在「系統設定 › 背景圖片」中選擇 Loomscreen 的桌布"
           }
         }
       }
@@ -14461,7 +14461,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請先在「設定 → 創意工坊 → Steam 連線」中選擇 Steam 帳戶和 SteamCMD。"
+            "value" : "請先在「設定 › 工作坊 › Steam 連線」中選擇 Steam 帳戶和 SteamCMD。"
           }
         }
       }
@@ -14781,7 +14781,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "清除場景 — 移除此顯示器目前的場景"
+            "value" : "清除場景——移除此顯示器目前的場景"
           }
         }
       }
@@ -14887,7 +14887,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "清除影片 — 移除此顯示器已儲存的影片"
+            "value" : "清除影片——移除此顯示器已儲存的影片"
           }
         }
       }
@@ -14959,7 +14959,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "清除網頁 — 移除此顯示器已儲存的網頁"
+            "value" : "清除網頁——移除此顯示器已儲存的網頁"
           }
         }
       }
@@ -15098,7 +15098,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "清除佇列"
+            "value" : "清除下載佇列"
           }
         }
       }
@@ -15168,7 +15168,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "清除場景影片紋理快取？"
+            "value" : "清除場景影片快取？"
           }
         }
       }
@@ -16605,7 +16605,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "連接 Apple Aerials"
+            "value" : "連接 Apple 空照圖"
           }
         }
       }
@@ -16639,7 +16639,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "連接空拍影片資料庫"
+            "value" : "連接空照圖庫"
           }
         }
       }
@@ -16768,7 +16768,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "連結帳號以下載創意工坊內容，不影響 Steam 應用程式的登入狀態。"
+            "value" : "連結帳號以下載工作坊內容，不影響 Steam 應用程式的登入狀態。"
           }
         }
       }
@@ -17183,7 +17183,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "指標移到圖層上時控制按鈕會淡入顯示。需要為此顯示器開啟「滑鼠互動」,並在首次使用時授權一次。"
+            "value" : "指標移到圖層上時控制按鈕會淡入顯示。需要為此顯示器開啟「滑鼠互動」，並在首次使用時授權一次。"
           }
         }
       }
@@ -17283,7 +17283,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已複製該影片,但 macOS 未授予持久存取權限。"
+            "value" : "已複製該影片，但 macOS 未授予持久存取權限。"
           }
         }
       }
@@ -17317,7 +17317,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已複製到 %1$lld / %2$lld 部螢幕"
+            "value" : "已複製到 %1$lld / %2$lld 台顯示器"
           }
         }
       }
@@ -17351,7 +17351,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "將所有缺少的創意工坊 ID 複製到剪貼簿，方便你在 Steam 中訂閱"
+            "value" : "將所有缺少的工作坊 ID 複製到剪貼簿，方便你在 Steam 中訂閱"
           }
         }
       }
@@ -17862,7 +17862,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "要將疊加層複製到其他螢幕嗎？"
+            "value" : "要將疊加層複製到其他顯示器嗎？"
           }
         }
       }
@@ -18004,7 +18004,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "複製到其他螢幕"
+            "value" : "複製到其他顯示器"
           }
         }
       }
@@ -18107,7 +18107,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "複製創意工坊 ID %@"
+            "value" : "複製工作坊 ID %@"
           }
         }
       }
@@ -18141,7 +18141,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "將創意工坊 ID 複製到剪貼簿"
+            "value" : "將工作坊 ID 複製到剪貼簿"
           }
         }
       }
@@ -18562,7 +18562,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "無法加入該影片:複製過程中它已從系統桌布中移除。"
+            "value" : "無法加入該影片：複製過程中它已從系統桌布中移除。"
           }
         }
       }
@@ -18669,7 +18669,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "無法套用 %1$@ — %2$@"
+            "value" : "無法套用 %1$@——%2$@"
           }
         }
       }
@@ -19003,7 +19003,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "無法取得系統桌布資料庫的獨佔存取權限。"
+            "value" : "無法取得系統桌布庫的獨佔存取權限。"
           }
         }
       }
@@ -19702,7 +19702,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "無法掃描 Aerials"
+            "value" : "無法掃描空照圖庫"
           }
         }
       }
@@ -19738,7 +19738,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "無法設定該 Wallpaper Engine 專案 — %@"
+            "value" : "無法設定該 Wallpaper Engine 專案——%@"
           }
         }
       }
@@ -19773,7 +19773,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "無法設定該 Wallpaper Engine 專案。請換一個資料夾試試。"
+            "value" : "無法設定該 Wallpaper Engine 專案。請換一個資料夾再試。"
           }
         }
       }
@@ -19987,7 +19987,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "無法從 Steam 創意工坊頁面載入結果。"
+            "value" : "無法從 Steam 工作坊頁面載入結果。"
           }
         }
       }
@@ -20092,7 +20092,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已在 %2$@ 建立包含 %1$lld 部影片的播放清單"
+            "value" : "已在 %2$@ 建立包含 %1$lld 部影片的播放列表"
           }
         }
       }
@@ -21443,7 +21443,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "從此 Mac 的 Steam 收藏庫和 Loomscreen 刪除「%@」以釋放空間。此操作無法復原，可重新下載；Steam 訂閱不變。"
+            "value" : "從這台 Mac 的 Steam 收藏庫和 Loomscreen 刪除「%@」以釋放空間。此操作無法復原，可重新下載；Steam 訂閱不變。"
           }
         }
       }
@@ -21478,7 +21478,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "將刪除 %@ 已擷取的場景影片檔案。場景下次算繪時會重新擷取影片紋理。"
+            "value" : "將刪除 %@ 已擷取的場景影片檔案。場景下次算繪時會重新擷取影片。"
           }
         }
       }
@@ -21584,7 +21584,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "刪除此 Mac 上下載的資源，之後可重新下載。"
+            "value" : "刪除這台 Mac 上下載的資源，之後可重新下載。"
           }
         }
       }
@@ -21854,7 +21854,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "桌面保留了先前的背景圖片：%@"
+            "value" : "桌面保留了先前的桌布：%@"
           }
         }
       }
@@ -22422,7 +22422,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Force SDR 啟用時不可用"
+            "value" : "開啟「強制 SDR」時無法使用"
           }
         }
       }
@@ -22457,7 +22457,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已停用 — Force SDR 已啟用"
+            "value" : "無法使用：已開啟「強制 SDR」"
           }
         }
       }
@@ -22493,7 +22493,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已停用 — 連接另一台顯示器以啟用"
+            "value" : "已停用——連接另一台顯示器以啟用"
           }
         }
       }
@@ -22599,7 +22599,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "中斷空拍影片資料庫"
+            "value" : "中斷空照圖庫"
           }
         }
       }
@@ -22634,7 +22634,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "中斷 Apple Aerials 圖庫？"
+            "value" : "中斷 Apple 空照圖庫？"
           }
         }
       }
@@ -22670,7 +22670,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "中斷 Apple Aerials 素材庫資料夾的連結"
+            "value" : "中斷 Apple 空照圖庫資料夾的連結"
           }
         }
       }
@@ -23212,7 +23212,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "用你自己的 Steam 帳號下載 Workshop 桌布"
+            "value" : "用你自己的 Steam 帳號下載工作坊桌布"
           }
         }
       }
@@ -23240,7 +23240,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "用你自己的 Steam 帳號與 Wallpaper Engine 授權下載 Workshop 桌布；不經第三方伺服器"
+            "value" : "用你自己的 Steam 帳號與 Wallpaper Engine 授權下載工作坊桌布；不經第三方伺服器"
           }
         }
       }
@@ -23312,7 +23312,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在系統設定中下載航拍桌布，下載完成後重新整理。"
+            "value" : "在「系統設定 › 背景圖片」中下載空照圖，下載完成後重新整理。"
           }
         }
       }
@@ -23713,7 +23713,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "需要先下載桌布 %@ 才能使用 —— 預設只改變它所屬那張桌布的外觀。"
+            "value" : "需要先下載桌布 %@ 才能使用——預設只改變它所屬那張桌布的外觀。"
           }
         }
       }
@@ -23807,7 +23807,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已下載 Wallpaper Engine,但裁剪至 assets 資料夾時失敗。"
+            "value" : "已下載 Wallpaper Engine，但裁剪至 assets 資料夾時失敗。"
           }
         }
       }
@@ -23944,7 +23944,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Steam 收藏庫中的已下載檔案。如需釋出空間，請在桌布庫中打開不再需要的創意工坊桌布，在「…」選單中選擇「刪除」。"
+            "value" : "Steam 收藏庫中的已下載檔案。如需釋出空間，請在桌布庫中打開不再需要的工作坊桌布，在「…」選單中選擇「刪除」。"
           }
         }
       }
@@ -24015,7 +24015,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已下載此桌布所需的其他創意工坊項目。"
+            "value" : "已下載此桌布所需的其他工作坊項目。"
           }
         }
       }
@@ -24050,7 +24050,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已下載,但仍無法讀取此桌布。請重新下載一次。"
+            "value" : "已下載，但仍無法讀取此桌布。請重新下載一次。"
           }
         }
       }
@@ -24085,7 +24085,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已下載，但本機無法執行"
+            "value" : "已下載，但無法在這台 Mac 上執行"
           }
         }
       }
@@ -24120,7 +24120,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已下載，但本機無法執行（%1$@），未套用到 %2$@。"
+            "value" : "已下載，但無法在這台 Mac 上執行（%1$@），未套用到 %2$@。"
           }
         }
       }
@@ -24393,7 +24393,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "下載此 Mac 缺少的已訂閱 Wallpaper Engine 項目，不刪除檔案或取消訂閱。"
+            "value" : "下載這台 Mac 缺少的已訂閱 Wallpaper Engine 項目，不刪除檔案或取消訂閱。"
           }
         }
       }
@@ -24463,7 +24463,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "將影片或網頁資料夾拖到顯示器上，或設定空拍"
+            "value" : "將影片或網頁資料夾拖到顯示器上，或設定空照圖"
           }
         }
       }
@@ -24497,7 +24497,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "將影片、網頁資料夾或 Wallpaper Engine 專案拖到顯示器上，或設定空拍"
+            "value" : "將影片、網頁資料夾或 Wallpaper Engine 專案拖到顯示器上，或設定空照圖"
           }
         }
       }
@@ -24631,7 +24631,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "拖曳此預覽到上方螢幕 ↑"
+            "value" : "拖曳此預覽到上方的顯示器 ↑"
           }
         }
       }
@@ -24660,7 +24660,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "拖到螢幕\n即套用"
+            "value" : "拖到顯示器\n即套用"
           }
         }
       }
@@ -25096,7 +25096,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "雙螢幕"
+            "value" : "雙顯示器"
           }
         }
       }
@@ -26641,7 +26641,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "此頁面上的每個項目都已在你的資料庫中。"
+            "value" : "此頁面上的每個項目都已在桌布庫中。"
           }
         }
       }
@@ -27741,7 +27741,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "匯入的檔案、下載的 Workshop 項目都會出現在這裡；拖到螢幕上即可套用"
+            "value" : "匯入的檔案、下載的工作坊項目都會出現在這裡；拖到顯示器上即可套用"
           }
         }
       }
@@ -27981,7 +27981,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在創意工坊中找到這一項"
+            "value" : "在工作坊中找到這一項"
           }
         }
       }
@@ -28017,7 +28017,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在創意工坊中尋找此項目，或開啟其 Steam 頁面"
+            "value" : "在工作坊中尋找此項目，或開啟其 Steam 頁面"
           }
         }
       }
@@ -28137,7 +28137,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "首次開啟創意工坊"
+            "value" : "首次開啟工作坊"
           }
         }
       }
@@ -28705,7 +28705,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "為了安全起見，Loomscreen 不會執行可執行的創意工坊專案。"
+            "value" : "為了安全起見，Loomscreen 不會執行可執行的工作坊專案。"
           }
         }
       }
@@ -29156,7 +29156,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "從播放清單選擇"
+            "value" : "從播放列表選擇"
           }
         }
       }
@@ -30626,7 +30626,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "隱藏已在我的資料庫中的項目"
+            "value" : "隱藏已在桌布庫中的項目"
           }
         }
       }
@@ -30654,7 +30654,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "瀏覽時隱藏已在我資料庫中的項目"
+            "value" : "瀏覽時隱藏已在桌布庫中的項目"
           }
         }
       }
@@ -30987,7 +30987,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "儀表取樣的頻率"
+            "value" : "小工具取樣的頻率"
           }
         }
       }
@@ -31802,6 +31802,7 @@
       }
     },
     "Import this folder from the Workshop library." : {
+      "comment" : "Drop failure: the folder dropped on a display is a whole Wallpaper Engine library, which is imported from the Workshop page instead.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -31831,7 +31832,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請從工作坊資料庫匯入此資料夾。"
+            "value" : "請在「工作坊」中匯入此資料夾。"
           }
         }
       }
@@ -32051,7 +32052,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在資料庫中"
+            "value" : "已在桌布庫中"
           }
         }
       }
@@ -32395,7 +32396,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "HTTP 不安全 — 內容無法驗證。"
+            "value" : "HTTP 不安全——內容無法驗證。"
           }
         }
       }
@@ -32803,7 +32804,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "儀表"
+            "value" : "小工具"
           }
         }
       }
@@ -33117,7 +33118,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "它包含多個桌布而不是一個。請改從創意工坊庫匯入。"
+            "value" : "它包含多個桌布，而不是一個。請改在「Steam 工作坊」中匯入。"
           }
         }
       }
@@ -33886,7 +33887,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "上次 %@"
+            "value" : "上次使用：%@"
           }
         }
       }
@@ -33921,7 +33922,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "上次背景圖片套用失敗"
+            "value" : "上次套用桌布失敗"
           }
         }
       }
@@ -34247,7 +34248,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已退出跨螢幕拼接"
+            "value" : "已退出跨顯示器拼接"
           }
         }
       }
@@ -34346,7 +34347,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "資料庫"
+            "value" : "桌布庫"
           }
         }
       }
@@ -34375,7 +34376,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "資料庫已同步"
+            "value" : "桌布庫已同步"
           }
         }
       }
@@ -34724,7 +34725,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已將 %lld 個專案資料夾連結到你的資料庫。"
+            "value" : "已將 %lld 個專案資料夾連結到桌布庫。"
           }
         }
       }
@@ -34760,7 +34761,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已連結 %lld 個,%lld 個無法讀取。"
+            "value" : "已連結 %lld 個，%lld 個無法讀取。"
           }
         }
       }
@@ -34796,7 +34797,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已連結 %lld 個,略過 %lld 個,%lld 個無法讀取。"
+            "value" : "已連結 %lld 個，略過 %lld 個，%lld 個無法讀取。"
           }
         }
       }
@@ -34832,7 +34833,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已連結 %lld 個,略過 %lld 個。"
+            "value" : "已連結 %lld 個，略過 %lld 個。"
           }
         }
       }
@@ -35136,7 +35137,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loomscreen 將釋放對本機 Apple Aerials 資料夾的讀取權限。已套用的空拍桌布維持；再次瀏覽圖庫需重新連線。"
+            "value" : "Loomscreen 將釋放對本機 Apple 空照圖資料夾的讀取權限。已套用的空照圖桌布保持不變；如需再次瀏覽空照圖庫，請重新連線。"
           }
         }
       }
@@ -35304,7 +35305,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "正在載入 創意工坊 結果"
+            "value" : "正在載入工作坊結果"
           }
         }
       }
@@ -35688,7 +35689,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "本機開發伺服器 —— 已允許 JavaScript。"
+            "value" : "本機開發伺服器——已允許 JavaScript。"
           }
         }
       }
@@ -35934,7 +35935,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "此 Mac 上定位服務受限"
+            "value" : "這台 Mac 的定位服務受限"
           }
         }
       }
@@ -36385,7 +36386,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loomscreen 從不要求完全磁碟取用權限。資料庫存取僅來自你選擇的那一個資料夾，以安全範圍書籤的形式保存。"
+            "value" : "Loomscreen 從不要求完全磁碟取用權限。對 Steam 收藏庫的存取僅來自你選擇的那一個資料夾，以安全範圍書籤的形式保存。"
           }
         }
       }
@@ -36414,7 +36415,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loomscreen 絕不會讀取你的 Steam 密碼 — 只讀取此金鑰，並且只儲存在此 Mac 本機。"
+            "value" : "Loomscreen 絕不會讀取你的 Steam 密碼——只讀取此金鑰，並且只儲存在這台 Mac 上。"
           }
         }
       }
@@ -36449,7 +36450,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "授權資料夾一次後，Loomscreen 會直接從官方 Steam 收藏庫讀取已安裝的創意工坊項目。經過身分驗證的 SteamCMD 下載是獨立功能，需要 Loomscreen 的背景 Steam 連線器。"
+            "value" : "授權資料夾一次後，Loomscreen 會直接從官方 Steam 收藏庫讀取已安裝的工作坊項目。經過身分驗證的 SteamCMD 下載是獨立功能，需要 Loomscreen 的背景 Steam 連線器。"
           }
         }
       }
@@ -36690,7 +36691,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loomscreen 的 Steam 下載工作階段尚未連線。請在「設定 → 創意工坊」中連結你的帳戶，然後再試一次。"
+            "value" : "Loomscreen 的 Steam 下載工作階段尚未連線。請在「設定 › 工作坊」中連結你的帳戶，然後再試一次。"
           }
         }
       }
@@ -36720,7 +36721,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Loomscreen 的背景 Steam 輔助程式沒有回應。在它回應之前無法下載 —— 結束並重新開啟 Loomscreen 通常就能啟動它。"
+            "value" : "Loomscreen 的背景 Steam 輔助程式沒有回應。在它回應之前無法下載——結束並重新開啟 Loomscreen 通常就能啟動它。"
           }
         }
       }
@@ -37006,7 +37007,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "MP4 / MOV、播放清單與排程。"
+            "value" : "MP4 / MOV、播放列表與排程。"
           }
         }
       }
@@ -37077,7 +37078,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "主螢幕"
+            "value" : "主顯示器"
           }
         }
       }
@@ -37250,7 +37251,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "讓這部顯示器展現你的風格。"
+            "value" : "為這台顯示器選擇桌布。"
           }
         }
       }
@@ -38541,7 +38542,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "缺少 %lld 個創意工坊相依項目"
+            "value" : "缺少 %lld 個工作坊相依項目"
           }
         }
       }
@@ -38576,7 +38577,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "缺少 1 個創意工坊相依項目"
+            "value" : "缺少 1 個工作坊相依項目"
           }
         }
       }
@@ -38886,7 +38887,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "監控浮層"
+            "value" : "監控疊加層"
           }
         }
       }
@@ -40757,7 +40758,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "本機未找到 Steam 登入記錄"
+            "value" : "這台 Mac 上未找到 Steam 登入記錄"
           }
         }
       }
@@ -40891,7 +40892,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "還沒有 Wallpaper Engine 的 Workshop 資料夾。下載第一個項目後就會出現。"
+            "value" : "還沒有 Wallpaper Engine 的工作坊資料夾。下載第一個項目後就會出現。"
           }
         }
       }
@@ -41025,7 +41026,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "尚未下載任何 Aerials"
+            "value" : "尚未下載任何空照圖"
           }
         }
       }
@@ -41060,7 +41061,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "沒有空拍影片符合你的搜尋"
+            "value" : "沒有空照圖符合你的搜尋"
           }
         }
       }
@@ -42522,7 +42523,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "未能將背景圖片套用至此顯示器。"
+            "value" : "未能將桌布套用至此顯示器。"
           }
         }
       }
@@ -42921,7 +42922,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "不是有效的 Steam 創意工坊連結。"
+            "value" : "不是有效的 Steam 工作坊連結。"
           }
         }
       }
@@ -43329,7 +43330,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "本機不支援"
+            "value" : "這台 Mac 不支援"
           }
         }
       }
@@ -43575,7 +43576,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "官方收藏庫已連線 — SteamCMD 下載等待背景連線器"
+            "value" : "官方收藏庫已連線——SteamCMD 下載等待背景連線器"
           }
         }
       }
@@ -43681,7 +43682,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "將對 %@ 執行以下操作：\n• 恢復播放設定、網頁桌布設定，以及模糊、亮度、飽和度、色溫、暈影和自動暖色調的預設值\n• 關閉效果層，並將其「密度」「跟隨當地天氣」「隨天氣調整粒子密度」「跟隨風向」恢復為預設值\n• 關閉「鎖定時」、隨機播放和輪播\n• 清除排程，改回依播放清單播放\n桌布和播放清單中的項目會保留。"
+            "value" : "將對 %@ 執行以下操作：\n• 恢復播放設定、網頁桌布設定，以及模糊、亮度、飽和度、色溫、暈影和自動暖色調的預設值\n• 關閉效果層，並將其「密度」「跟隨當地天氣」「隨天氣調整粒子密度」「跟隨風向」恢復為預設值\n• 關閉「鎖定時」、隨機播放和輪播\n• 清除排程，改回依播放列表播放\n桌布和播放列表中的項目會保留。"
           }
         }
       }
@@ -43717,7 +43718,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "將對 %@ 執行以下操作：\n• 恢復播放設定、網頁桌布設定，以及模糊、亮度、飽和度、色溫、暈影和自動暖色調的預設值\n• 關閉效果層，並將其「密度」「跟隨當地天氣」「隨天氣調整粒子密度」「跟隨風向」恢復為預設值\n• 關閉「鎖定時」、隨機播放和輪播\n• 清除排程，改回依播放清單播放\n桌布、播放清單中的項目和場景自訂設定會保留。"
+            "value" : "將對 %@ 執行以下操作：\n• 恢復播放設定、網頁桌布設定，以及模糊、亮度、飽和度、色溫、暈影和自動暖色調的預設值\n• 關閉效果層，並將其「密度」「跟隨當地天氣」「隨天氣調整粒子密度」「跟隨風向」恢復為預設值\n• 關閉「鎖定時」、隨機播放和輪播\n• 清除排程，改回依播放列表播放\n桌布、播放列表中的項目和場景自訂設定會保留。"
           }
         }
       }
@@ -43819,7 +43820,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "鎖定時將已啟用顯示器的影片畫面設為桌面圖片，解鎖後保留。"
+            "value" : "鎖定時將已啟用顯示器的影片畫面設為 macOS 背景圖片，解鎖後仍會保留。"
           }
         }
       }
@@ -44525,7 +44526,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "開啟「系統設定」→「隱私權與安全性」→「定位服務」"
+            "value" : "開啟「系統設定 › 隱私權與安全性 › 定位服務」"
           }
         }
       }
@@ -44596,7 +44597,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "打開桌布設定"
+            "value" : "打開「背景圖片」設定"
           }
         }
       }
@@ -44630,7 +44631,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在「系統設定」中打開桌布設定"
+            "value" : "在「系統設定」中打開「背景圖片」設定"
           }
         }
       }
@@ -44666,7 +44667,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請先開啟一個顯示器，再套用"
+            "value" : "請先開啟一台顯示器，再套用"
           }
         }
       }
@@ -44942,7 +44943,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "開啟此項的 Steam 創意工坊頁面"
+            "value" : "開啟此項的 Steam 工作坊頁面"
           }
         }
       }
@@ -44978,7 +44979,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在瀏覽器中開啟創意工坊 %@"
+            "value" : "在瀏覽器中開啟工作坊 %@"
           }
         }
       }
@@ -45042,7 +45043,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "開啟 Steam 創意工坊 標籤頁以瀏覽和管理你的完整資料庫"
+            "value" : "開啟 Steam 工作坊標籤頁，瀏覽和管理你的全部工作坊桌布"
           }
         }
       }
@@ -45077,7 +45078,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "開啟創意工坊設定頁，下載或連結 Wallpaper Engine 素材"
+            "value" : "開啟工作坊設定頁，下載或連結 Wallpaper Engine 素材"
           }
         }
       }
@@ -45140,7 +45141,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在瀏覽器中開啟此桌布的 Steam 創意工坊頁面"
+            "value" : "在瀏覽器中開啟此桌布的 Steam 工作坊頁面"
           }
         }
       }
@@ -45242,7 +45243,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "選用。提供評分、作者資訊並加快搜尋。金鑰僅儲存於此 Mac，請求直接傳送至 Steam。"
+            "value" : "選用。提供評分、作者資訊並加快搜尋。金鑰僅儲存於這台 Mac，請求直接傳送至 Steam。"
           }
         }
       }
@@ -45758,7 +45759,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "疊加層 · 在桌布上放點東西"
+            "value" : "疊加層 · 在桌布上加入小工具"
           }
         }
       }
@@ -45821,7 +45822,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "全景 · 給第一塊螢幕一張桌布"
+            "value" : "全景 · 為第一台顯示器設定桌布"
           }
         }
       }
@@ -46397,7 +46398,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "貼上創意工坊連結可直接安裝，無需搜尋。"
+            "value" : "貼上工作坊連結可直接安裝，無需搜尋。"
           }
         }
       }
@@ -46427,7 +46428,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "貼上到 GitHub issue — 敏感資訊已遮蔽。"
+            "value" : "貼上到 GitHub issue——敏感資訊已遮蔽。"
           }
         }
       }
@@ -47217,7 +47218,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "每個顯示器"
+            "value" : "每台顯示器"
           }
         }
       }
@@ -47253,7 +47254,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "每螢幕 RAM 預算"
+            "value" : "每台顯示器的 RAM 預算"
           }
         }
       }
@@ -47555,7 +47556,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "只需選一次 Steam 自己的資料夾——含 config/config.vdf 的那個。Loomscreen 會為它保留一個安全範圍書籤，絕不另建第二個 Workshop 儲存庫。macOS 只在你確認的面板裡發放這個書籤，所以即使已經找到了資料夾，也仍需點一次。"
+            "value" : "只需選一次 Steam 自己的資料夾——含 config/config.vdf 的那個。Loomscreen 會為它保留一個安全範圍書籤，絕不另建第二個工作坊儲存庫。macOS 只在你確認的面板裡發放這個書籤，所以即使已經找到了資料夾，也仍需點一次。"
           }
         }
       }
@@ -47661,7 +47662,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "選一個位置，或在預覽中拖曳浮層"
+            "value" : "選一個位置，或在預覽中拖曳圖層"
           }
         }
       }
@@ -48243,7 +48244,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "播放控制權限遭拒。可在「系統設定 → 隱私權與安全性 → 自動化」中啟用。"
+            "value" : "播放控制權限遭拒。可在「系統設定 › 隱私權與安全性 › 自動化」中啟用。"
           }
         }
       }
@@ -48384,7 +48385,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "播放清單"
+            "value" : "播放列表"
           }
         }
       }
@@ -48413,7 +48414,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "播放清單與排程"
+            "value" : "播放列表與排程"
           }
         }
       }
@@ -48449,7 +48450,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "播放清單模式"
+            "value" : "播放列表模式"
           }
         }
       }
@@ -48901,7 +48902,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "正在準備背景圖片…"
+            "value" : "正在準備桌布…"
           }
         }
       }
@@ -49538,7 +49539,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在這台顯示器的桌布上預覽儀表板，而不是空白畫布"
+            "value" : "在這台顯示器的桌布上預覽小工具，而不是空白畫布"
           }
         }
       }
@@ -50358,7 +50359,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "佇列操作"
+            "value" : "下載佇列操作"
           }
         }
       }
@@ -51828,7 +51829,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "重新整理 Aerials 資料庫"
+            "value" : "重新整理空照圖庫"
           }
         }
       }
@@ -52562,7 +52563,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "重新載入此螢幕的桌布內容"
+            "value" : "重新載入此顯示器的桌布內容"
           }
         }
       }
@@ -53006,7 +53007,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "從資料庫中移除"
+            "value" : "從桌布庫移除"
           }
         }
       }
@@ -53035,7 +53036,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "僅從資料庫移除"
+            "value" : "僅從桌布庫移除"
           }
         }
       }
@@ -53104,7 +53105,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "從資料庫移除"
+            "value" : "從桌布庫移除"
           }
         }
       }
@@ -53132,7 +53133,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "從佇列中移除"
+            "value" : "從下載佇列中移除"
           }
         }
       }
@@ -53271,7 +53272,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "要移除播放清單中的最後一個項目嗎？"
+            "value" : "要移除播放列表中的最後一個項目嗎？"
           }
         }
       }
@@ -53335,7 +53336,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "要移除此播放清單項目嗎？"
+            "value" : "要移除此播放列表項目嗎？"
           }
         }
       }
@@ -53506,7 +53507,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已將 %@ 從資料庫中移除，但無法刪除其檔案。"
+            "value" : "已將 %@ 從桌布庫中移除，但無法刪除其檔案。"
           }
         }
       }
@@ -53646,7 +53647,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "將移除為 %@ 儲存的全部內容：桌布、播放清單、排程、效果層，以及這台顯示器的其他所有設定。桌布庫、來源檔案，以及小工具、音樂和時鐘疊加層會保留。"
+            "value" : "將移除為 %@ 儲存的全部內容：桌布、播放列表、排程、效果層，以及這台顯示器的其他所有設定。桌布庫、來源檔案，以及小工具、音樂和時鐘疊加層會保留。"
           }
         }
       }
@@ -53675,7 +53676,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "從此 Mac 移除已儲存的金鑰。在你前往 steamcommunity.com/dev/apikey 撤銷之前，該金鑰仍會在你的 Steam 帳戶下保持有效。"
+            "value" : "從這台 Mac 移除已儲存的金鑰。在你前往 steamcommunity.com/dev/apikey 撤銷之前，該金鑰仍會在你的 Steam 帳戶下保持有效。"
           }
         }
       }
@@ -54684,7 +54685,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "缺少必要的創意工坊專案。"
+            "value" : "缺少必要的工作坊專案。"
           }
         }
       }
@@ -54826,7 +54827,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "下載創意工坊桌布所需的工具。可安裝 SteamCMD 或使用現有版本。"
+            "value" : "下載工作坊桌布所需的工具。可安裝 SteamCMD 或使用現有版本。"
           }
         }
       }
@@ -55773,7 +55774,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "重置播放、效果、網頁選項和排程設定；保留桌布、播放清單和書籤。"
+            "value" : "重置播放、效果、網頁選項和排程設定；保留桌布、播放列表和書籤。"
           }
         }
       }
@@ -56154,7 +56155,7 @@
       }
     },
     "Restored %lld display configurations." : {
-      "comment" : "Import success line: how many displays were restored. xcstrings provides a pluralized variant.",
+      "comment" : "Import success line: how many displays were restored.",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -56183,7 +56184,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已還原 %lld 個顯示器配置。"
+            "value" : "已還原 %lld 台顯示器的配置。"
           }
         }
       }
@@ -57616,7 +57617,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "範例資料，非本機讀數"
+            "value" : "範例資料，非這台 Mac 的讀數"
           }
         }
       }
@@ -57853,7 +57854,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "儲存並使用播放清單"
+            "value" : "儲存並使用播放列表"
           }
         }
       }
@@ -58261,7 +58262,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "已儲存資料庫標籤"
+            "value" : "「已儲存」頁面的標籤切換"
           }
         }
       }
@@ -58577,7 +58578,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "正在掃描資料庫…"
+            "value" : "正在掃描空照圖庫…"
           }
         }
       }
@@ -58612,7 +58613,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "正在掃描 Aerials 資料庫"
+            "value" : "正在掃描空照圖庫"
           }
         }
       }
@@ -58778,7 +58779,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "場景影片紋理快取"
+            "value" : "場景影片快取"
           }
         }
       }
@@ -60021,7 +60022,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "搜尋空拍"
+            "value" : "搜尋空照圖"
           }
         }
       }
@@ -60159,7 +60160,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "搜尋資料庫"
+            "value" : "搜尋已安裝的桌布"
           }
         }
       }
@@ -60260,7 +60261,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "搜尋創意工坊"
+            "value" : "搜尋工作坊"
           }
         }
       }
@@ -60903,7 +60904,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "設定空拍"
+            "value" : "設定空照圖"
           }
         }
       }
@@ -60973,7 +60974,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "設定 Steam 創意工坊"
+            "value" : "設定 Steam 工作坊"
           }
         }
       }
@@ -61199,7 +61200,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請先設定 SteamCMD —— Steam 下載要透過它進行。"
+            "value" : "請先設定 SteamCMD——Steam 下載要透過它進行。"
           }
         }
       }
@@ -61755,7 +61756,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "共用的場景材質、模型和著色器。引用這些檔案的場景需要它們。"
+            "value" : "Wallpaper Engine 共用的場景資源檔案，引用它們的場景需要這些檔案。"
           }
         }
       }
@@ -63387,7 +63388,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "隨機播放播放清單"
+            "value" : "隨機播放播放列表"
           }
         }
       }
@@ -63587,7 +63588,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "請先登入 Steam —— 下載會以你自己的帳戶執行。"
+            "value" : "請先登入 Steam——下載會以你自己的帳戶執行。"
           }
         }
       }
@@ -64656,7 +64657,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "對資料庫排序"
+            "value" : "排序方式"
           }
         }
       }
@@ -65808,7 +65809,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Steam 權杖 (2FA)"
+            "value" : "Steam 權杖（2FA）"
           }
         }
       }
@@ -65925,7 +65926,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Steam 創意工坊"
+            "value" : "Steam 工作坊"
           }
         }
       }
@@ -66259,7 +66260,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Steam 不公開剩餘額度；這裡僅統計此 Mac 今天發出的要求。"
+            "value" : "Steam 不公開剩餘額度；這裡僅統計這台 Mac 今天發出的要求。"
           }
         }
       }
@@ -66323,7 +66324,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Steam 下載現在會單獨登入"
+            "value" : "工作坊下載現使用單獨的 Steam 登入"
           }
         }
       }
@@ -66494,7 +66495,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Steam 正在限流 — %@ 後重試"
+            "value" : "Steam 正在限流——%@ 後重試"
           }
         }
       }
@@ -66807,7 +66808,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Steam 拒絕了登入:%@"
+            "value" : "Steam 拒絕了登入：%@"
           }
         }
       }
@@ -67020,7 +67021,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Steam 拒絕了這個金鑰,請貼上一個新的"
+            "value" : "Steam 拒絕了這個金鑰，請貼上一個新的"
           }
         }
       }
@@ -67049,7 +67050,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "下載此項目時 Steam 回傳了 \"No Connection\"。請檢查網路後再試一次；當帳戶未擁有 Wallpaper Engine 時，Steam 也會這樣回應。"
+            "value" : "下載此項目時 Steam 回傳了「No Connection」。請檢查網路後再試一次；當帳戶未擁有 Wallpaper Engine 時，Steam 也會這樣回應。"
           }
         }
       }
@@ -67085,7 +67086,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Steam 回報無法連線。如果你在用 VPN 或代理:SteamCMD 是直接連線 Steam 的,不經過系統代理,可以試試 TUN(增強)模式或直連。"
+            "value" : "Steam 回報無法連線。如果你在使用 VPN 或代理：SteamCMD 會直接連線 Steam，不經過系統代理，可以嘗試 TUN（增強）模式或直連。"
           }
         }
       }
@@ -67678,7 +67679,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "SteamCMD 將使用此帳號下載創意工坊項目。"
+            "value" : "SteamCMD 將使用此帳號下載工作坊項目。"
           }
         }
       }
@@ -68092,7 +68093,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "SteamCMD 不是經過驗證的 Valve 版本，因此已封鎖下載。請在「設定 → 創意工坊 → Steam 連線」中重新選擇官方 SteamCMD。"
+            "value" : "SteamCMD 不是經過驗證的 Valve 版本，因此已封鎖下載。請在「設定 › 工作坊 › Steam 連線」中重新選擇官方 SteamCMD。"
           }
         }
       }
@@ -68374,7 +68375,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "切換至游標所在顯示器播放清單的上一項。"
+            "value" : "切換至游標所在顯示器播放列表的上一項。"
           }
         }
       }
@@ -69372,7 +69373,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "系統桌布資料庫"
+            "value" : "系統桌布庫"
           }
         }
       }
@@ -69610,7 +69611,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "系統健康(CPU · GPU · 記憶體 · 溫度)"
+            "value" : "系統健康（CPU · GPU · 記憶體 · 溫度）"
           }
         }
       }
@@ -69953,7 +69954,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "作用於游標所在顯示器的播放清單。"
+            "value" : "作用於游標所在顯示器的播放列表。"
           }
         }
       }
@@ -70646,7 +70647,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "該資料夾是場景庫"
+            "value" : "該資料夾是 Wallpaper Engine 庫"
           }
         }
       }
@@ -70789,7 +70790,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "將移除 %@ 時段。此時段外的桌布仍保留各自時間表。"
+            "value" : "將移除 %@ 時段。此時段外的桌布仍保留各自的排程。"
           }
         }
       }
@@ -70930,7 +70931,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "系統桌布資料庫的索引已損毀，因此未做變更。"
+            "value" : "系統桌布庫的索引已損毀，因此未做變更。"
           }
         }
       }
@@ -70996,7 +70997,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Web API 金鑰僅保存在本機，不會同步。在這裡忘記它並不會撤銷它——請到 steamcommunity.com/dev/apikey 撤銷。"
+            "value" : "Web API 金鑰僅保存在這台 Mac 上，不會同步。在這裡忘記它並不會撤銷它——請到 steamcommunity.com/dev/apikey 撤銷。"
           }
         }
       }
@@ -71026,7 +71027,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "無法讀取 Workshop 內容資料夾。"
+            "value" : "無法讀取工作坊內容資料夾。"
           }
         }
       }
@@ -71055,7 +71056,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "由於下載管理物件已釋放，創意工坊 下載已停止。"
+            "value" : "由於下載管理物件已釋放，工作坊下載已停止。"
           }
         }
       }
@@ -71369,7 +71370,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "下載沒有落在你已授權的 Steam 庫中，因此未匯入。"
+            "value" : "下載沒有落在你已授權的 Steam 收藏庫中，因此未匯入。"
           }
         }
       }
@@ -71669,7 +71670,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "該項目將從播放清單移除。其他使用此影片的顯示器會保留各自副本。"
+            "value" : "該項目將從播放列表移除。其他使用此影片的顯示器會保留各自副本。"
           }
         }
       }
@@ -72289,7 +72290,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "向 Steam 的請求失敗(錯誤 %lld)。"
+            "value" : "向 Steam 的請求失敗（錯誤 %lld）。"
           }
         }
       }
@@ -73203,7 +73204,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "影片「%@」在其創意工坊包中遺失。"
+            "value" : "影片「%@」在其工作坊包中遺失。"
           }
         }
       }
@@ -73344,7 +73345,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "另外 %lld 台顯示器上的桌布、播放清單、排程、效果層和其他所有設定，都將取代為與這台顯示器相同的內容。它們的小工具、音樂和時鐘疊加層維持不變。"
+            "value" : "另外 %lld 台顯示器上的桌布、播放列表、排程、效果層和其他所有設定，都將取代為與這台顯示器相同的內容。它們的小工具、音樂和時鐘疊加層維持不變。"
           }
         }
       }
@@ -73714,7 +73715,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "此 Steam 帳號未擁有 Wallpaper Engine,無法下載其資源。"
+            "value" : "此 Steam 帳號未擁有 Wallpaper Engine，無法下載其資源。"
           }
         }
       }
@@ -73778,7 +73779,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "此 創意工坊 項目正在更新。"
+            "value" : "此工作坊項目正在更新。"
           }
         }
       }
@@ -73918,7 +73919,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "將清除以下內容：\n• 每台顯示器的桌布、播放清單、排程、疊加層和自訂名稱\n• 桌布庫和方案\n• 所有偏好設定、快速鍵和顯示器預設值\n• 已信任的來源，以及 Apple Aerials 和 AI 工作階段記錄的資料夾存取權限\n磁碟上的桌布檔案不會被刪除。"
+            "value" : "將清除以下內容：\n• 每台顯示器的桌布、播放列表、排程、疊加層和自訂名稱\n• 桌布庫和方案\n• 所有偏好設定、快速鍵和顯示器預設值\n• 已信任的來源，以及 Apple 空照圖和 AI 工作階段記錄的資料夾存取權限\n磁碟上的桌布檔案不會被刪除。"
           }
         }
       }
@@ -73954,7 +73955,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "將清除以下內容：\n• 每台顯示器的桌布、播放清單、排程、場景自訂設定、疊加層和自訂名稱\n• 桌布庫、預設集和方案\n• 所有偏好設定、快速鍵和顯示器預設值\n• 已信任的來源，以及 Apple Aerials、Wallpaper Engine 資源和 AI 工作階段記錄的資料夾存取權限\n磁碟上的桌布檔案不會被刪除。"
+            "value" : "將清除以下內容：\n• 每台顯示器的桌布、播放列表、排程、場景自訂設定、疊加層和自訂名稱\n• 桌布庫、預設集和方案\n• 所有偏好設定、快速鍵和顯示器預設值\n• 已信任的來源，以及 Apple 空照圖、Wallpaper Engine 資源和 AI 工作階段記錄的資料夾存取權限\n磁碟上的桌布檔案不會被刪除。"
           }
         }
       }
@@ -74062,7 +74063,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "這份副本將從這台 Mac 上刪除。如果 Loomscreen 正在使用它，會改用在這台 Mac 上找到的其他 SteamCMD；如果找不到，需要重新設定 SteamCMD 才能從創意工坊下載。Steam 登入和已下載的桌布會保留。"
+            "value" : "這份副本將從這台 Mac 上刪除。如果 Loomscreen 正在使用它，會改用在這台 Mac 上找到的其他 SteamCMD；如果找不到，需要重新設定 SteamCMD 才能從工作坊下載。Steam 登入和已下載的桌布會保留。"
           }
         }
       }
@@ -74190,7 +74191,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "這是播放清單中唯一的桌布。移除後將清除 %@ 上的桌布。"
+            "value" : "這是播放列表中唯一的桌布。移除後將清除 %@ 上的桌布。"
           }
         }
       }
@@ -74324,7 +74325,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "尚不支援此專案的背景圖片類型或算繪功能。"
+            "value" : "尚不支援此專案的桌布類型或算繪功能。"
           }
         }
       }
@@ -74358,7 +74359,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "這會覆寫其他所有已連接螢幕的疊加層；沒有桌布的螢幕將略過效果層。"
+            "value" : "這會覆寫其他所有已連接顯示器的疊加層；沒有桌布的顯示器將略過效果層。"
           }
         }
       }
@@ -74725,7 +74726,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "此桌布標記為成人內容，可能包含明確的成人內容。顯示它即表示你確認自己已年滿 18 歲，或已達所在地區的法定年齡。"
+            "value" : "此桌布被標記為成人內容，可能含有露骨畫面。顯示即表示你確認已年滿 18 歲，或已達到你所在地區的法定成年年齡。"
           }
         }
       }
@@ -74929,7 +74930,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "此壁紙的檔案已遺失"
+            "value" : "此桌布的檔案已遺失"
           }
         }
       }
@@ -76262,7 +76263,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "三螢幕"
+            "value" : "三顯示器"
           }
         }
       }
@@ -76466,7 +76467,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "新增時鐘試試"
+            "value" : "新增時鐘"
           }
         }
       }
@@ -76768,7 +76769,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "類型自動辨識，不用選。同一螢幕可以隨時再換。"
+            "value" : "類型會自動辨識，無需選擇。每台顯示器的桌布可隨時更換。"
           }
         }
       }
@@ -77005,7 +77006,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "無法使用 — 已在 Steam 上移除或隱藏"
+            "value" : "無法使用——已在 Steam 上移除或隱藏"
           }
         }
       }
@@ -78577,7 +78578,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "讓未適配高解析度顯示器的網頁按螢幕實際像素排版。"
+            "value" : "讓未適配高解析度顯示器的網頁按顯示器實際像素排版。"
           }
         }
       }
@@ -79447,7 +79448,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "查看目前背景圖片"
+            "value" : "查看目前桌布"
           }
         }
       }
@@ -80413,7 +80414,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "桌布庫 · 這裡會收好你用過的一切"
+            "value" : "桌布庫 · 集中保存你用過的所有桌布"
           }
         }
       }
@@ -80517,7 +80518,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "桌布已加入資料庫"
+            "value" : "桌布已加入桌布庫"
           }
         }
       }
@@ -80657,7 +80658,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "此錯誤導致背景圖片播放停止。"
+            "value" : "此錯誤導致桌布播放停止。"
           }
         }
       }
@@ -82622,7 +82623,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Win 外掛"
+            "value" : "Windows 外掛程式"
           }
         }
       }
@@ -82815,7 +82816,7 @@
       }
     },
     "Workshop" : {
-      "comment" : "Workshop pane tab for the online Steam Workshop catalog (zh: 创意工坊).",
+      "comment" : "Workshop pane tab for the online Steam Workshop catalog; each language uses Steam's own name for the Workshop.",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -82838,7 +82839,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "創意工坊"
+            "value" : "工作坊"
           }
         }
       }
@@ -82874,7 +82875,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "創意工坊 %@"
+            "value" : "工作坊 %@"
           }
         }
       }
@@ -82910,7 +82911,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "創意工坊 ID"
+            "value" : "工作坊 ID"
           }
         }
       }
@@ -82945,7 +82946,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "創意工坊 ID %1$@ · %2$@ 類型"
+            "value" : "工作坊 ID %1$@ · %2$@ 類型"
           }
         }
       }
@@ -82980,7 +82981,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "創意工坊 ID %@。在創意工坊中尋找。"
+            "value" : "工作坊 ID %@。在工作坊中尋找。"
           }
         }
       }
@@ -83016,7 +83017,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "創意工坊連結或項目 ID"
+            "value" : "工作坊連結或項目 ID"
           }
         }
       }
@@ -83046,7 +83047,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Workshop 內容資料夾"
+            "value" : "工作坊內容資料夾"
           }
         }
       }
@@ -83116,7 +83117,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "創意工坊項目 %@"
+            "value" : "工作坊項目 %@"
           }
         }
       }
@@ -83151,7 +83152,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "創意工坊項目 %llu"
+            "value" : "工作坊項目 %llu"
           }
         }
       }
@@ -83186,7 +83187,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "找不到創意工坊項目。它可能已被移除。"
+            "value" : "找不到工作坊項目。它可能已被移除。"
           }
         }
       }
@@ -83216,7 +83217,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Workshop 請求透過 HTTPS 直接發給 Valve。沒有任何內容發往 Loomscreen，Loomscreen 也不執行自己的伺服器。"
+            "value" : "工作坊請求透過 HTTPS 直接發給 Valve。沒有任何內容發往 Loomscreen，Loomscreen 也不執行自己的伺服器。"
           }
         }
       }
@@ -83252,7 +83253,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "創意工坊請求透過 HTTPS 直連 Valve，不會向 Loomscreen 傳送任何內容。"
+            "value" : "工作坊請求透過 HTTPS 直連 Valve，不會向 Loomscreen 傳送任何內容。"
           }
         }
       }
@@ -83288,7 +83289,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "創意工坊設定"
+            "value" : "工作坊設定"
           }
         }
       }
@@ -83318,7 +83319,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "創意工坊 標籤頁"
+            "value" : "工作坊標籤頁"
           }
         }
       }
@@ -83346,7 +83347,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "創意工坊 · 連接 Steam 帳號"
+            "value" : "工作坊 · 連接 Steam 帳號"
           }
         }
       }
@@ -83767,7 +83768,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "播放清單為空"
+            "value" : "播放列表為空"
           }
         }
       }
@@ -84453,7 +84454,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "重新選取創意工坊資料夾後再試一次"
+            "value" : "重新選取工作坊資料夾後再試一次"
           }
         }
       }
@@ -84525,7 +84526,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "嘗試從 Steam 創意工坊重新下載"
+            "value" : "嘗試從 Steam 工作坊重新下載"
           }
         }
       }
@@ -85483,7 +85484,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "圖層「%1$@」需要外部套件中的檔案,暫不支援:%2$@。"
+            "value" : "圖層「%1$@」需要外部套件中的檔案，暫不支援：%2$@。"
           }
         }
       }
@@ -85627,7 +85628,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "「%1$@」需要的算繪特性暫不支援:%2$@。"
+            "value" : "「%1$@」需要的算繪特性暫不支援：%2$@。"
           }
         }
       }
@@ -85699,7 +85700,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "無法載入「%1$@」的影像:%2$@。"
+            "value" : "無法載入「%1$@」的影像：%2$@。"
           }
         }
       }
@@ -85951,7 +85952,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "此 Mac 不支援 Metal，無法解碼 %@。"
+            "value" : "這台 Mac 不支援 Metal，無法解碼 %@。"
           }
         }
       }
@@ -86522,7 +86523,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "general.orthogonalprojection 為 null — 使用透視相機與 1920×1080 算繪尺寸"
+            "value" : "general.orthogonalprojection 為 null——使用透視相機與 1920×1080 算繪尺寸"
           }
         }
       }
@@ -87035,7 +87036,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "macOS 沒有授予該檔案的存取權限。換一個放在你自己資料夾裡的檔案試試。"
+            "value" : "macOS 沒有授予該檔案的存取權限。請改用你自己資料夾中的檔案。"
           }
         }
       }
@@ -87282,7 +87283,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "macOS 未能取出已儲存的 API key —— 彈出詢問時請允許存取,或在設定裡重新設定一次。"
+            "value" : "macOS 未能取出已儲存的 API key——彈出詢問時請允許存取，或在設定裡重新設定一次。"
           }
         }
       }
@@ -87353,7 +87354,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "具名 FBO「%@」在 Metal 通道中未能解析 —— 可能是跨通道別名遺漏"
+            "value" : "具名 FBO「%@」在 Metal 通道中未能解析——可能是跨通道別名遺漏"
           }
         }
       }
@@ -87563,7 +87564,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "無取樣 — 使用率來源不可用"
+            "value" : "無取樣——使用率來源不可用"
           }
         }
       }
@@ -88016,7 +88017,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "該通道所需的上一幀紋理不可用 —— 其目標從未渲染過上一幀"
+            "value" : "該通道所需的上一幀紋理不可用——其目標從未渲染過上一幀"
           }
         }
       }
@@ -89100,7 +89101,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "將刪除《%@》以及它在 Loomscreen 共用目錄中的副本。你的原始影片不受影響。"
+            "value" : "將刪除「%@」以及它在 Loomscreen 共用目錄中的副本。你的原始影片不受影響。"
           }
         }
       }
@@ -89171,7 +89172,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "「%@」正顯示在螢幕上。它會停止播放，檔案立即刪除；在你於系統設定裡選擇另一張桌布之前，桌面會保留最後一幀。"
+            "value" : "「%@」正顯示在螢幕上。它會停止播放，檔案立即刪除；在你到「系統設定 › 背景圖片」中更換之前，桌面會保留最後一幀。"
           }
         }
       }
@@ -89207,7 +89208,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "《%@》正在螢幕上顯示。檔案會立即刪除，但在你到系統設定改用其他桌布之前，macOS 仍會繼續顯示它。"
+            "value" : "「%@」正在螢幕上顯示。檔案會立即刪除，但在你到「系統設定 › 背景圖片」中更換之前，macOS 仍會繼續顯示它。"
           }
         }
       }
@@ -89243,7 +89244,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "「%@」將從本機的 Steam 收藏庫中刪除，並從 Loomscreen 中移除。這會釋放磁碟空間且無法復原——你隨時可以重新下載。你的 Steam 訂閱不受影響。"
+            "value" : "「%@」將從這台 Mac 的 Steam 收藏庫中刪除，並從 Loomscreen 中移除。這會釋放磁碟空間且無法復原——你隨時可以重新下載。你的 Steam 訂閱不受影響。"
           }
         }
       }
@@ -89383,7 +89384,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "• 每台顯示器的完整設定，包括桌布、播放清單和排程（檔案中含 %lld 台顯示器）"
+            "value" : "• 每台顯示器的完整設定，包括桌布、播放列表和排程（檔案中含 %lld 台顯示器）"
           }
         }
       }
@@ -89453,7 +89454,7 @@
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "• 預設集，以及桌布庫中的創意工坊項目"
+            "value" : "• 預設集，以及桌布庫中的工作坊項目"
           }
         }
       }

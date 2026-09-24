@@ -131,7 +131,7 @@ extension GeneralSettingsView {
         if let count = summary.displayCount {
             lines.append(String(
                 localized: "Restored \(count) display configurations.",
-                bundle: .appLanguage, comment: "Import success line: how many displays were restored. xcstrings provides a pluralized variant."
+                bundle: .appLanguage, comment: "Import success line: how many displays were restored."
             ))
         }
         if summary.didRestoreGlobalSettings {
