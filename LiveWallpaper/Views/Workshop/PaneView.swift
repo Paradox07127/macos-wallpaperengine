@@ -259,9 +259,9 @@ enum WorkshopPaneTab: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .installed:
-            return String(localized: "Installed", bundle: .appLanguage, comment: "Workshop pane tab for the locally installed library.")
+            String(localized: "Installed", bundle: .appLanguage, comment: "Workshop pane tab for the locally installed library.")
         case .browseOnline:
-            return String(localized: "Workshop", bundle: .appLanguage, comment: "Workshop pane tab for the online Steam Workshop catalog (zh: 创意工坊).")
+            String(localized: "Workshop", bundle: .appLanguage, comment: "Workshop pane tab for the online Steam Workshop catalog; each language uses Steam's own name for the Workshop.")
         }
     }
 
