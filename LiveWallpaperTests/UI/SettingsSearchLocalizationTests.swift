@@ -137,23 +137,16 @@ struct SettingsSearchLocalizationTests {
     /// The one test here that flips the app language: the hint reads `Bundle.appLanguage`, which no bundle argument reaches.
     @Test("A hint that matches neither a name nor a keyword shows the localized section label")
     func fallbackHintIsLocalized() {
-        let previous = UserDefaults.standard.string(forKey: AppLanguagePreference.storageKey)
-        defer {
-            if let previous {
-                UserDefaults.standard.set(previous, forKey: AppLanguagePreference.storageKey)
-            } else {
-                UserDefaults.standard.removeObject(forKey: AppLanguagePreference.storageKey)
-            }
-        }
-        AppLanguagePreference.save(.simplifiedChinese)
-        let expected = "Video".localized(in: .appLanguage)
-        #expect(expected != "Video", "zh-Hans did not translate Video, so the check below proves nothing")
+        AppLanguageOverride.with(.simplifiedChinese) {
+            let expected = "Video".localized(in: .appLanguage)
+            #expect(expected != "Video", "zh-Hans did not translate Video, so the check below proves nothing")
 
-        // "video" is the section's label and "fps" one of its keywords; no single name or keyword holds both.
-        let result = SettingsNavigation.filteredResults(matching: "video fps", capabilities: .pro)
-            .first { $0.destination == .displayDefaults }
-        #expect(result?.anchor == .displayDefaultsVideo)
-        #expect(result?.matchHint == expected)
+            // "video" is the section's label and "fps" one of its keywords; no single name or keyword holds both.
+            let result = SettingsNavigation.filteredResults(matching: "video fps", capabilities: .pro)
+                .first { $0.destination == .displayDefaults }
+            #expect(result?.anchor == .displayDefaultsVideo)
+            #expect(result?.matchHint == expected)
+        }
     }
 
     private static let literal = #""((?:[^"\\\n]|\\.)*)""#

@@ -379,17 +379,15 @@ struct S4ModalFidelityTests {
         )
     }
 
-    /// The red preview is the anchor: the panel is that box grown by the 12pt inset on three sides
-    /// plus the 152pt bar underneath. A 1pt inner stroke eats the outermost pixel, hence ±3.
-    private func panel(from preview: CGRect) -> CGRect {
-        CGRect(
-            x: preview.minX - ModalGeometry.previewMargin, y: preview.minY - ModalGeometry.previewMargin - ModalGeometry.headerHeight,
-            width: preview.width + 2 * ModalGeometry.previewMargin,
-            height: preview.height + ModalGeometry.previewMargin + ModalGeometry.bottomBarHeight + ModalGeometry.headerHeight
-        )
+    /// The red preview is the anchor: it opens the leading column 24pt inside the panel, under the
+    /// 36pt header, one `.title2` line and an 18pt gap. The line is read off the font, hence ±3.
+    static func panelOrigin(from preview: CGRect) -> CGPoint {
+        let title = NSFont.preferredFont(forTextStyle: .title2)
+        let titleLine = title.ascender - title.descender
+        return CGPoint(x: preview.minX - 24, y: preview.minY - 18 - titleLine - ModalGeometry.headerHeight)
     }
 
-    /// SCREENS S4: 880×560 @ top 150, preview inset 12, bottom bar 152.
+    /// `LibraryDetailGeometry`: 920×620 centred, never above 72; a 360pt 16:9 preview.
     @Test("S4 panel and preview at 1280×820")
     func panelAt1280() async throws {
         let size = CGSize(width: 1280, height: 820)
@@ -398,38 +396,36 @@ struct S4ModalFidelityTests {
         }
         let preview = try #require(image.boundingBox { $0.isRed }, "the modal preview did not render")
         ProbeRenderer.report("S4.1280.previewRect", preview)
-        let box = panel(from: preview)
-        ProbeRenderer.report("S4.1280.panelRect", box)
-        expectClose(box.width, 880, "S4.1280.panel.w", tolerance: 3)
-        expectClose(box.height, 560, "S4.1280.panel.h", tolerance: 3)
-        expectClose(box.minY, 150, "S4.1280.panel.top", tolerance: 3)
-        expectClose(box.minX, 200, "S4.1280.panel.x", tolerance: 3)
-        expectClose(preview.height, 360, "S4.1280.preview.h", tolerance: 3)
-        expectClose(preview.width, 856, "S4.1280.preview.w", tolerance: 3)
+        let origin = Self.panelOrigin(from: preview)
+        ProbeRenderer.report("S4.1280.panelOrigin", origin)
+        expectClose(origin.y, 100, "S4.1280.panel.top", tolerance: 3)
+        expectClose(origin.x, 180, "S4.1280.panel.x", tolerance: 3)
+        expectClose(preview.height, 202.5, "S4.1280.preview.h", tolerance: 3)
+        expectClose(preview.width, 360, "S4.1280.preview.w", tolerance: 3)
         // The contract the render is measured against.
-        let contract = ModalGeometry.panelFrame(in: size)
+        let contract = LibraryDetailGeometry.panelFrame(in: size)
         ProbeRenderer.report("S4.contract.1280", contract)
-        expectClose(contract.width, 880, "S4.contract.1280.w", tolerance: 0)
-        expectClose(contract.height, 560, "S4.contract.1280.h", tolerance: 0)
-        expectClose(contract.minY, 150, "S4.contract.1280.top", tolerance: 0)
+        expectClose(contract.width, 920, "S4.contract.1280.w", tolerance: 0)
+        expectClose(contract.height, 620, "S4.contract.1280.h", tolerance: 0)
+        expectClose(contract.minY, 100, "S4.contract.1280.top", tolerance: 0)
     }
 
-    /// 1040×700 cannot hang the panel at 150; it stops 12pt under the float strip instead.
-    @Test("S4 panel at 1040×700 drops to the float strip's clearance rather than hanging at 150")
+    /// Centred, the 600pt panel would start at 50, so it stops at the 72pt floor.
+    @Test("S4 panel at 1040×700 stops at the 72pt floor and keeps the 360pt preview")
     func panelAt1040() async throws {
         let size = CGSize(width: 1040, height: 700)
         let image = await ProbeRenderer.render("S4-1040-dark", size: size) {
             ZStack { Color(white: 0.5); modal(windowSize: size) }
         }
         let preview = try #require(image.boundingBox { $0.isRed })
-        let box = panel(from: preview)
-        ProbeRenderer.report("S4.1040.panelRect", box)
-        expectClose(box.width, 880, "S4.1040.panel.w", tolerance: 3)
-        expectClose(box.minY, 130, "S4.1040.panel.top", tolerance: 3)
-        expectClose(box.minX, 80, "S4.1040.panel.x", tolerance: 3)
-        let contract = ModalGeometry.panelFrame(in: size)
+        let origin = Self.panelOrigin(from: preview)
+        ProbeRenderer.report("S4.1040.panelOrigin", origin)
+        expectClose(preview.width, 360, "S4.1040.preview.w", tolerance: 3)
+        expectClose(origin.y, 72, "S4.1040.panel.top", tolerance: 3)
+        expectClose(origin.x, 60, "S4.1040.panel.x", tolerance: 3)
+        let contract = LibraryDetailGeometry.panelFrame(in: size)
         ProbeRenderer.report("S4.contract.1040", contract)
-        expectClose(contract.height, 554, "S4.contract.1040.h", tolerance: 0)
+        expectClose(contract.height, 600, "S4.contract.1040.h", tolerance: 0)
     }
 
     @Test("S4 light appearance renders for reference")
@@ -439,7 +435,7 @@ struct S4ModalFidelityTests {
             ZStack { Color(white: 0.5); modal(windowSize: size) }
         }
         let preview = try #require(image.boundingBox { $0.isRed })
-        expectClose(panel(from: preview).width, 880, "S4.light.panel.w", tolerance: 3)
+        expectClose(preview.width, 360, "S4.light.preview.w", tolerance: 3)
     }
 }
 
@@ -527,12 +523,13 @@ struct S5FloatLayerFidelityTests {
     }
 }
 
-@Suite("Fidelity S4+S5 clearance at 700 high", .serialized)
+@Suite("Fidelity S4+S5 overlap at 700 high", .serialized)
 @MainActor
 struct S4S5OverlapTests {
-    /// R-24 ⑤: at 700pt the panel can no longer hang at 150, so it stops under the strip.
-    @Test("The float strip and the modal panel clear each other at 1040×700")
-    func stripClearsPanel() async throws {
+    /// The library draws the strip only while its preview is dragged, so the panel keeps its own
+    /// 72pt floor and the strip covers the panel's top band; the preview stays clear of it.
+    @Test("The drag-time float strip covers the top band of the library panel at 1040×700")
+    func stripCoversPanelTop() async throws {
         let size = CGSize(width: 1040, height: 700)
         let image = await ProbeRenderer.render("S4-S5-1040x700-overlap-dark", size: size) {
             ZStack(alignment: .top) {
@@ -554,16 +551,17 @@ struct S4S5OverlapTests {
             }
         }
         let preview = try #require(image.boundingBox { $0.isRed })
-        let panelTop = preview.minY - ModalGeometry.previewMargin - ModalGeometry.headerHeight
+        let panelTop = S4ModalFidelityTests.panelOrigin(from: preview).y
         let stripBottom = FloatLayerGeometry.panelTop + FloatLayerGeometry.panelHeight
         ProbeRenderer.report("S4S5.panelTop", panelTop)
         ProbeRenderer.report("S4S5.stripBottom", stripBottom)
-        expectClose(panelTop, 130, "S4S5.panelTop", tolerance: 3)
-        expectClose(panelTop - stripBottom, 12, "S4S5.verticalClearance", tolerance: 3)
-        // At 1280×820 the panel hangs at 150 and the two clear each other by 32pt.
+        ProbeRenderer.report("S4S5.previewClearance", preview.minY - stripBottom)
+        expectClose(panelTop, 72, "S4S5.panelTop", tolerance: 3)
+        expectClose(panelTop - stripBottom, -46, "S4S5.verticalClearance", tolerance: 3)
+        // At 1280×820 the panel hangs at 100 and the strip covers its top 18pt.
         expectClose(
-            ModalGeometry.panelFrame(in: CGSize(width: 1280, height: 820)).minY - stripBottom,
-            32, "S4S5.clearance1280", tolerance: 0
+            LibraryDetailGeometry.panelFrame(in: CGSize(width: 1280, height: 820)).minY - stripBottom,
+            -18, "S4S5.clearance1280", tolerance: 0
         )
     }
 }
@@ -950,7 +948,7 @@ struct S8bModalFidelityTests {
         expectClose(boxes.panelOrigin.y, 150, "S8b.1280.panel.top", tolerance: 3)
         expectClose(boxes.gif.width, 340, "S8b.1280.gif.w", tolerance: 3)
         expectClose(boxes.gif.height, 340, "S8b.1280.gif.h", tolerance: 3)
-        // The chrome's own box, already proved by the S4 render of the same container.
+        // The chrome's own box; the render above proves only its origin.
         expectClose(contract.width, 880, "S8b.1280.chrome.w", tolerance: 0)
         expectClose(contract.height, 560, "S8b.1280.chrome.h", tolerance: 0)
 

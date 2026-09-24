@@ -131,7 +131,7 @@ struct MenuBarBehaviorTests {
         #expect(source.contains("invokeAddWallpaper(screen.id)"))
     }
 
-    @Test("Manage… opens the panorama on the Edit Desk and the first display's detail on the old shell")
+    @Test("Manage opens the panorama on the Edit Desk and the first display's detail on the old shell")
     func manageWindowOpensHomeOnEditDesk() throws {
         let menuBar = try RepositoryRoot.source("LiveWallpaper/Views/MenuBarContent.swift")
         let start = try #require(menuBar.range(of: "private func invokeManageWindow"))

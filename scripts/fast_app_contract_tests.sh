@@ -40,6 +40,8 @@ SUITES=(
   # than collapsing every cause into one sentence.
   ErrorReasonSurfaceTests
   SceneFailureFlowTests
+  SceneFailurePresentationTests
+  WPESceneSectionStateTests
   # `WallpaperFailureCause.code` is an open namespace, so the table that turns a
   # code into a severity tier and a set of recovery buttons has to be gated, or
   # a newly minted code lands in the wrong tier without anything going red.
@@ -206,6 +208,10 @@ SUITES=(
   # Source probes over the widget headers: which tiles carry an icon, where it
   # comes from, and that the gauge column cannot strand width beside the ring.
   MonitorWidgetChromeTests
+  # Old-shell inspector rules held in statics: Reset Color & Filters keeps the
+  # weather and particle fields, and the particle picker offers no "none".
+  ColorAdjustmentsViewResetTests
+  OverlaysInspectorPanelPickerTests
 )
 
 action="test"

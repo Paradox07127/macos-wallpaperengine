@@ -1504,31 +1504,43 @@ struct EditDeskStageViewTests {
 
     @Test("The shelf card's shadow darkens with the hover lift instead of stepping on the first frame")
     func shadowAlphaDoesNotStep() {
-        let tile = ShelfCardLayer()
-        tile.update(
-            card: StageCard(id: "a", title: "A", metaLine: "", thumbnail: nil, onBadge: nil, isDraggable: true),
-            increasedContrast: false
-        )
         let placement = StageGeometry.cardPlacement(
             style: .crate, index: 0, count: 14, progress: 1, focus: 0, windowSize: StageGeometry.designWindow
         )
-        func alpha(_ hover: Double) -> CGFloat {
-            tile.hover.jump(to: hover)
-            tile.place(placement, style: .crate, gridMix: 0, dragged: false, reduceMotion: false)
-            return (tile.face.shadowColor?.alpha ?? 0) * CGFloat(tile.face.shadowOpacity)
+        for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+            let tile = ShelfCardLayer()
+            var restColor: NSColor?
+            var hotColor: NSColor?
+            NSAppearance(named: appearance)?.performAsCurrentDrawingAppearance {
+                tile.update(
+                    card: StageCard(id: "a", title: "A", metaLine: "", thumbnail: nil, onBadge: nil, isDraggable: true),
+                    increasedContrast: false
+                )
+                restColor = NSColor(DesignTokens.EditDesk.Shadow.shelfCard.color).usingColorSpace(.sRGB)
+                hotColor = NSColor(DesignTokens.EditDesk.Shadow.shelfCardHover.color).usingColorSpace(.sRGB)
+            }
+            func alpha(_ hover: Double) -> CGFloat {
+                tile.hover.jump(to: hover)
+                tile.place(placement, style: .crate, gridMix: 0, dragged: false, reduceMotion: false)
+                return (tile.face.shadowColor?.alpha ?? 0) * CGFloat(tile.face.shadowOpacity)
+            }
+            let rest = alpha(0)
+            let first = alpha(0.001)
+            #expect(
+                abs(first - rest) < 0.005,
+                Comment(rawValue: "\(appearance.rawValue): one hover frame moved the shadow from \(rest) to \(first)")
+            )
+            let half = alpha(0.5)
+            let hot = alpha(1)
+            #expect(
+                half > rest && half < hot,
+                Comment(rawValue: "\(appearance.rawValue): \(rest) → \(half) → \(hot) is not a travelled alpha")
+            )
+            // Folding the two tokens' alphas into one opacity only holds while they are the same colour.
+            #expect(restColor?.redComponent == hotColor?.redComponent)
+            #expect(restColor?.greenComponent == hotColor?.greenComponent)
+            #expect(restColor?.blueComponent == hotColor?.blueComponent)
         }
-        let rest = alpha(0)
-        let first = alpha(0.001)
-        #expect(abs(first - rest) < 0.005, Comment(rawValue: "one hover frame moved the shadow from \(rest) to \(first)"))
-        let half = alpha(0.5)
-        let hot = alpha(1)
-        #expect(half > rest && half < hot, Comment(rawValue: "\(rest) → \(half) → \(hot) is not a travelled alpha"))
-        // Folding the two tokens' alphas into one opacity only holds while they are the same colour.
-        let restColor = NSColor(DesignTokens.EditDesk.Shadow.shelfCard.color).usingColorSpace(.sRGB)
-        let hotColor = NSColor(DesignTokens.EditDesk.Shadow.hoverCard.color).usingColorSpace(.sRGB)
-        #expect(restColor?.redComponent == hotColor?.redComponent)
-        #expect(restColor?.greenComponent == hotColor?.greenComponent)
-        #expect(restColor?.blueComponent == hotColor?.blueComponent)
     }
 
     @Test("Facing In draws the spine and contact shadow on each card's outer edge, and none on the face-on middle card")

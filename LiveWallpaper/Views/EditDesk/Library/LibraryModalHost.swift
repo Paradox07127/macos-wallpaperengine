@@ -116,7 +116,7 @@ struct LibraryModalHost: View {
         }
         .task(id: presentedItemID) { await load() }
         .onChange(of: library.items) {
-            // The shown item can be removed from under the modal (Remove from Saved, delete): the
+            // The shown item can be removed from under the modal (Remove from Wallpaper Library, delete): the
             // modal has nothing left to show and the stage must not stay blocked behind it.
             if presentedItemID != nil, presentedItem == nil {
                 presentedItemID = nil
