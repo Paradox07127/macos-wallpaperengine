@@ -70,11 +70,14 @@ struct HomePage: View {
     @MainActor
     @Observable
     final class ApplyQueue {
-        /// Displays whose newest apply is still running.
-        private(set) var inFlight: Set<CGDirectDisplayID> = []
         @ObservationIgnored private var tasks: [CGDirectDisplayID: Task<Void, Never>] = [:]
-        @ObservationIgnored private var cancellations: [CGDirectDisplayID: ApplyCancellation] = [:]
+        private var cancellations: [CGDirectDisplayID: ApplyCancellation] = [:]
         @ObservationIgnored private var running = 0
+
+        /// Displays whose newest apply is still running.
+        var inFlight: Set<CGDirectDisplayID> {
+            Set(cancellations.keys)
+        }
 
         var isIdle: Bool {
             running == 0
@@ -87,7 +90,6 @@ struct HomePage: View {
             running += 1
             let cancellation = ApplyCancellation()
             cancellations[displayID] = cancellation
-            inFlight.insert(displayID)
             tasks[displayID] = Task { @MainActor [weak self] in
                 await work(cancellation)
                 guard let self else { return }
@@ -95,7 +97,6 @@ struct HomePage: View {
                 // A superseded apply finishes after the newer one has started; only the newest clears the display.
                 if cancellations[displayID] === cancellation {
                     cancellations[displayID] = nil
-                    inFlight.remove(displayID)
                 }
             }
         }

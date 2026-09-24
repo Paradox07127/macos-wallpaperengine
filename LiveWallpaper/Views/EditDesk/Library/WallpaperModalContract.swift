@@ -21,7 +21,6 @@ struct WallpaperModalContent: Equatable {
     /// Decoded at the preview's pixel size; nil shows the placeholder. The shell derives its
     /// blurred backdrop from this image itself.
     var preview: CGImage?
-    var isDraggable: Bool
     /// Present only for installed Workshop items.
     var installed: InstalledItemExtras?
     var descriptionText: String?
@@ -44,7 +43,6 @@ struct WallpaperModalContent: Equatable {
             && lhs.metaParts == rhs.metaParts
             && lhs.presetName == rhs.presetName
             && lhs.preview === rhs.preview
-            && lhs.isDraggable == rhs.isDraggable
             && lhs.installed == rhs.installed
             && lhs.descriptionText == rhs.descriptionText
             && lhs.contentRating == rhs.contentRating
@@ -71,9 +69,6 @@ struct InstalledItemExtras: Equatable {
     var isWindowsOnly: Bool
     /// Display names the item is running on; empty when idle.
     var inUseOnDisplayNames: [String]
-    /// True when deleting reclaims disk (a Steam item in the shared repository): the delete row then
-    /// reads "删除并释放空间"; false reads "仅从库移除". One action either way, as in `InstalledLibrary`.
-    var deletesFiles: Bool
     /// `project.json` description for folder imports.
     var localDescription: String?
 }

@@ -185,7 +185,7 @@ struct SceneDetailView: View {
             previewCard
         } controls: {
             VStack(spacing: stackSpacing) {
-                errorBanner
+                SceneRenderFailureBanner(state: state, origin: origin, onRetry: { reloadScene() })
                 infoBar
             }
         }
@@ -318,16 +318,6 @@ struct SceneDetailView: View {
         }
     }
 
-    // MARK: - Error banner
-
-    private var errorBanner: some View {
-        SceneRenderFailureBanner(state: state, origin: origin, onRetry: { reloadScene() })
-    }
-
-    private var degradedChip: some View {
-        SceneSkippedChip(state: state, origin: origin) { showLogSheet = true }
-    }
-
     /// Keeps the current poster as the backdrop and swaps in the next frame the renderer presents.
     private func recaptureLivePoster() {
         guard canRecapturePoster else { return }
@@ -430,7 +420,7 @@ struct SceneDetailView: View {
             playbackControls
         } actions: {
             HStack(spacing: DesignTokens.Spacing.xs) {
-                degradedChip
+                SceneSkippedChip(state: state, origin: origin) { showLogSheet = true }
                 workshopLinkButton
                 if hasDiagnosticFindings {
                     SceneDiagnosticsButton { showLogSheet = true }

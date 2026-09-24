@@ -226,14 +226,8 @@ struct SteamCMDDoctorLifecycleTests {
         }
 
         #expect(SteamCMDDoctorService.bindRefusal(for: nil) == .connectorUnavailable)
-        #expect(SteamCMDDoctorService.bindRefusal(for: .missing) == .binaryResolution(.notExecutable))
+        #expect(SteamCMDDoctorService.bindRefusal(for: .missing) == .binaryResolution)
         #expect(SteamCMDDoctorService.bindRefusal(for: Self.inspection(sha: "identity-1")) == nil)
-    }
-
-    @Test("A refused SteamCMD file is described without the raw error case")
-    func binaryResolutionNamesNoRawCase() {
-        let message = SteamCMDDoctorError.binaryResolution(.notExecutable).errorDescription ?? ""
-        #expect(!message.contains("notExecutable"), "got \(message)")
     }
 
     @Test("codesign output parses, and a timed-out verify never reads as signed")

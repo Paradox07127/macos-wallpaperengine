@@ -33,11 +33,6 @@ struct LibraryModalHost: View {
     /// SCREENS.md S5: the strip enters from −130 above its resting top.
     private static let floatHiddenTop: CGFloat = -130
 
-    /// The shelf's order, so ← → walk the same run the user came from.
-    private var items: [LibraryItem] {
-        library.visibleItems
-    }
-
     /// What the modal is showing right now: the loaded content's item, so a navigation whose
     /// content is still decoding keeps title, preview and actions on the same wallpaper.
     private var presentedItem: LibraryItem? {
@@ -162,7 +157,8 @@ struct LibraryModalHost: View {
     }
 
     private func navigation(for item: LibraryItem) -> ModalNavigation {
-        let run = items.map(\.id)
+        // The shelf's order, so ← → walk the same run the user came from.
+        let run = library.visibleItems.map(\.id)
         let index = run.firstIndex(of: presentedItemID ?? item.id)
         return ModalNavigation(
             canGoPrevious: index.map { $0 > 0 } ?? false,
@@ -173,7 +169,7 @@ struct LibraryModalHost: View {
     }
 
     private func navigate(by offset: Int) {
-        let run = items.map(\.id)
+        let run = library.visibleItems.map(\.id)
         guard let id = presentedItemID, let index = run.firstIndex(of: id),
               run.indices.contains(index + offset) else { return }
         presentedItemID = run[index + offset]

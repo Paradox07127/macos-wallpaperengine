@@ -299,7 +299,6 @@ enum ProbeFixtures {
             metaParts: ["Workshop", "kaze", "214 MB", "3840×2160"],
             presetName: "Night",
             preview: preview,
-            isDraggable: true,
             installed: nil
         )
     }

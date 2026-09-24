@@ -1730,8 +1730,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     private func updateAccessibilityFrames() {
         for element in accessibilityItems {
             element.setAccessibilityEnabled(!model.interactionBlocked)
-            // The card's own layer is the upright container; `hitRect` is the turned shape it
-            // draws, and the one the focus ring already sits on.
+            // An AX frame can only be an axis-aligned rect, so take the bounding box of the turned shape.
             let local: CGRect? = if let id = element.displayID {
                 displayLayers[id].map { $0.layer.convert($0.layer.bounds, to: layer) }
             } else if let id = element.cardID {

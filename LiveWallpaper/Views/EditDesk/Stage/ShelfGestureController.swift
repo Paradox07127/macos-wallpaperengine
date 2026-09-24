@@ -234,16 +234,12 @@ final class ShelfGestureController {
     }
 
     func reset() {
-        travel = .zero
-        axis = .undecided
+        endGesture()
         rawRowOffset = 0
         rowOffset = 0
         snapDeadline = nil
-        anchor = nil
-        startState = nil
         touching = false
         releasedVertically = false
-        wheelTravel = 0
         pendingRelease = nil
         lastEventTime = nil
         smoothedVelocity = 0

@@ -154,13 +154,6 @@ enum ShelfStyle: String, CaseIterable, Codable, Sendable {
     case fan
     case focusRow
 
-    init?(rawValue: String) {
-        // Still in the defaults of anyone who picked the style the fan replaced; without it they fall back to the default.
-        let raw = rawValue == "coverFlow" ? Self.fan.rawValue : rawValue
-        guard let style = Self.allCases.first(where: { $0.rawValue == raw }) else { return nil }
-        self = style
-    }
-
     /// The middle card is the focus and the row offset counts whole cards from it; the other
     /// styles scroll a band of cards past fixed slots.
     var isCentred: Bool {

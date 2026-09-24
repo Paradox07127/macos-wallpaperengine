@@ -305,7 +305,7 @@ struct ContentView: View {
         case .sceneLibrary(let folderURL):
             #if !LITE_BUILD
             // A library root has no single wallpaper to apply — it populates the Workshop library.
-            WorkshopFolderImportCoordinator.shared.importProjects(from: folderURL)
+            WorkshopFolderImportCoordinator.shared.importProjects(from: [folderURL])
             selectAppNavigation(.workshop)
             #endif
         case .unsupported:

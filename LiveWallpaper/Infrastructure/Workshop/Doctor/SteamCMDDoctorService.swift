@@ -67,7 +67,7 @@ enum DoctorState: Sendable, Equatable {
 }
 
 enum SteamCMDDoctorError: Error, Equatable, Sendable, LocalizedError {
-    case binaryResolution(SteamCMDBinaryError)
+    case binaryResolution
     case bookmarkCreation(String)
     case missingBinaryBinding
     case missingWorkdirBinding
@@ -312,7 +312,7 @@ final class SteamCMDDoctorService {
             return .connectorBusy
         }
         guard inspection.exists, inspection.sha256 != nil else {
-            return .binaryResolution(.notExecutable)
+            return .binaryResolution
         }
         return nil
     }

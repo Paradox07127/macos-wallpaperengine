@@ -10,20 +10,6 @@
     @Suite("Settings window destroy-on-close", .serialized)
     @MainActor
     struct SettingsWindowLifecycleTests {
-        private func makeDelegate() -> AppDelegate {
-            let delegate = AppDelegate()
-            delegate.screenManager = ScreenManager(startupOptions: ScreenManagerStartupOptions(
-                restoreSavedWallpapers: false,
-                startAutomation: false,
-                powerMonitor: FakePowerMonitor(),
-                fullScreenDetector: FakeFullScreenDetector(),
-                playableVideoLoader: FakePlayableVideoLoader(),
-                displayRegistry: FakeDisplayRegistry(),
-                featureCatalog: .unconfigured
-            ))
-            return delegate
-        }
-
         /// AppKit autoreleases window bookkeeping and SwiftUI tears its tree
         /// down on the next runloop turns, so releases are polled rather than
         /// asserted synchronously after `close()`.
@@ -135,6 +121,12 @@ extension SettingsWindowLifecycleTests {
         delegate.consumePendingReopen(showSettingsOnLaunch: false, showOnboarding: true)
 
         #expect(delegate.settingsWindowControllerForTesting == nil)
+    }
+
+    private func makeDelegate() -> AppDelegate {
+        let delegate = AppDelegate()
+        delegate.screenManager = makeScreenManager()
+        return delegate
     }
 
     private func makeScreenManager() -> ScreenManager {

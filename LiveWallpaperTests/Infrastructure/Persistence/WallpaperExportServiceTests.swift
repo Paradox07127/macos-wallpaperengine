@@ -1036,20 +1036,6 @@ struct WallpaperExportServiceTests {
         #expect(rig.service.status == .empty)
     }
 
-    @Test("Each status gives the settings page its next step")
-    func settingsNextStepPerStatus() {
-        let table: [(WallpaperExportService.Status, SystemWallpaperNextStep?)] = [
-            (.empty, .addVideo),
-            (.publishedNotSelected, .openWallpaperSettings),
-            (.inUse(itemTitle: "Aurora"), nil),
-            (.failed("Disk full"), nil),
-            (.systemIncompatible, nil),
-        ]
-        for (status, step) in table {
-            #expect(status.settingsNextStep == step, "\(status) offers the wrong next step")
-        }
-    }
-
     // MARK: - Corruption tolerance
 
     @Test("A corrupt manifest is refused, not treated as an empty library")

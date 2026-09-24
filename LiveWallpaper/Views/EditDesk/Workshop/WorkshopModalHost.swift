@@ -221,7 +221,6 @@ struct WorkshopModalHost: View {
             isWindowsOnly: entry.origin.requiresWindowsPlugin
                 || entry.origin.originalType == .application || entry.origin.originalType == .unknown,
             inUseOnDisplayNames: runningOn.map(\.name),
-            deletesFiles: false,
             localDescription: nil
         )
     }
