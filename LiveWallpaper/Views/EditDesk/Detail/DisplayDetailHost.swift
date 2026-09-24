@@ -48,7 +48,7 @@ struct DisplayDetailHost: View {
     @State private var schemeNameDraft = ""
     @State private var showSchemeCapture = false
     @State private var showAutomation = false
-    @State private var pendingAction: PendingAction?
+    @State private var confirmsOverlayCopy = false
     @State private var pendingDestructive: PendingDestructive?
     /// Set by Manage Schemes and Choose from Library: the library opens once the tile is home, not under
     /// the return flight.
@@ -60,14 +60,6 @@ struct DisplayDetailHost: View {
     #endif
     /// Shared with the old detail page so the colour group's disclosure survives switching pages.
     @AppStorage("Inspector.ColorExpanded") private var isColorExpanded = false
-
-    private enum PendingAction: Identifiable {
-        case copyOverlays
-
-        var id: Self {
-            self
-        }
-    }
 
     private enum LibraryHandoff {
         case schemes
@@ -140,11 +132,11 @@ struct DisplayDetailHost: View {
                     }
                 }
                 .confirmDestructive($pendingDestructive)
-                .confirmationDialog(pendingTitle, isPresented: pendingBinding, titleVisibility: .visible, presenting: pendingAction) { action in
-                    Button(pendingConfirmTitle(action)) { perform(action, on: screen) }
+                .confirmationDialog("Copy overlays to other displays?", isPresented: $confirmsOverlayCopy, titleVisibility: .visible) {
+                    Button("Copy to Other Displays") { copyOverlays(on: screen) }
                     Button("Cancel", role: .cancel) {}
-                } message: { action in
-                    Text(pendingMessage(action))
+                } message: {
+                    Text("This replaces overlays on every other connected display. Effects are skipped on displays without a wallpaper.")
                 }
                 #if !LITE_BUILD
                 .infoOverlay(isPresented: $showsSceneLog) { dismiss in
@@ -201,7 +193,7 @@ struct DisplayDetailHost: View {
             if let id = overlaySession?.identity?.displayID, !screenManager.screens.contains(where: { $0.id == id }) {
                 overlaySession?.detach()
                 overlaySession = nil
-                pendingAction = nil
+                confirmsOverlayCopy = false
             }
         }
         .onDisappear {
@@ -236,7 +228,7 @@ struct DisplayDetailHost: View {
     private func request(_ id: CGDirectDisplayID?) {
         if id != coordinator?.shownDisplayID {
             overlaySession?.detach()
-            pendingAction = nil
+            confirmsOverlayCopy = false
             webTransformArmed = false
             closeShownFailure()
         } else if let session = overlaySession, section == .overlay, !session.isActive {
@@ -640,7 +632,7 @@ struct DisplayDetailHost: View {
                 if let session = overlaySession {
                     session.transition(to: session.identity, store: OverlayEditorScreenStore(manager: screenManager), editing: true)
                 }
-                pendingAction = .copyOverlays
+                confirmsOverlayCopy = true
             },
             snapEnabled: Binding(get: { overlaySession?.snapEnabled ?? true }, set: { overlaySession?.snapEnabled = $0 }),
             openAutomation: featureCatalog.isEnabled(.playlists) ? { showAutomation = true } : nil,
@@ -710,46 +702,13 @@ struct DisplayDetailHost: View {
         }
     }
 
-    private var pendingBinding: Binding<Bool> {
-        Binding(
-            get: { pendingAction != nil },
-            set: { presented in
-                if !presented {
-                    pendingAction = nil
-                }
-            }
+    private func copyOverlays(on screen: Screen) {
+        guard let result = overlaySession?.copyToOtherDisplays() else { return }
+        toasts.post(
+            String(format: String(localized: "Copied to %lld / %lld displays", bundle: .appLanguage),
+                   Int64(result.copied), Int64(result.total)),
+            style: result.copied == result.total ? .success : .info
         )
-    }
-
-    private var pendingTitle: Text {
-        switch pendingAction {
-        case .copyOverlays: Text("Copy overlays to other displays?")
-        case nil: Text(verbatim: "")
-        }
-    }
-
-    private func pendingConfirmTitle(_ action: PendingAction) -> LocalizedStringKey {
-        switch action {
-        case .copyOverlays: "Copy to Other Displays"
-        }
-    }
-
-    private func pendingMessage(_ action: PendingAction) -> LocalizedStringKey {
-        switch action {
-        case .copyOverlays: "This replaces overlays on every other connected display. Effects are skipped on displays without a wallpaper."
-        }
-    }
-
-    private func perform(_ action: PendingAction, on screen: Screen) {
-        switch action {
-        case .copyOverlays:
-            guard let result = overlaySession?.copyToOtherDisplays() else { return }
-            toasts.post(
-                String(format: String(localized: "Copied to %lld / %lld displays", bundle: .appLanguage),
-                       Int64(result.copied), Int64(result.total)),
-                style: result.copied == result.total ? .success : .info
-            )
-        }
         reloadDraft(for: screen)
     }
 }

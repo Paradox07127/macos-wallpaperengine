@@ -11,6 +11,7 @@ struct ModalActionsTests {
         var items: [LiveWallpaper.LibraryItem] = []
         var displays: [ModalActions.Display] = []
         var applied: [(ApplyIntent, CGDirectDisplayID)] = []
+        var appliedToAll: [[CGDirectDisplayID]] = []
         let bookmarks = BookmarkStore(persistence: MemoryBookmarks())
 
         func inputs() -> ModalActions.Inputs {
@@ -24,9 +25,10 @@ struct ModalActionsTests {
         }
 
         func modal(inputs: ModalActions.Inputs? = nil, cache: ShelfThumbnailCache = ShelfThumbnailCache()) -> ModalActions {
-            ModalActions(inputs: inputs ?? self.inputs(), bookmarks: bookmarks, thumbnails: cache) {
-                self.applied.append(($0, $1))
-            }
+            ModalActions(
+                inputs: inputs ?? self.inputs(), bookmarks: bookmarks, thumbnails: cache,
+                apply: { self.applied.append(($0, $1)) }, applyToAll: { self.appliedToAll.append($1) }
+            )
         }
     }
 
@@ -178,8 +180,9 @@ struct ModalActionsTests {
         fixture.items = [item(saved)]
         let undo = undoStack(fixture)
         let modal = ModalActions(
-            inputs: fixture.inputs(), bookmarks: fixture.bookmarks, thumbnails: ShelfThumbnailCache(), undo: undo
-        ) { _, _ in }
+            inputs: fixture.inputs(), bookmarks: fixture.bookmarks, thumbnails: ShelfThumbnailCache(), undo: undo,
+            apply: { _, _ in }, applyToAll: { _, _ in }
+        )
 
         modal.actions(for: item(saved)).removeFromSaved?()
 
@@ -201,8 +204,9 @@ struct ModalActionsTests {
         fixture.items = [item(saved)]
         let undo = undoStack(fixture)
         let modal = ModalActions(
-            inputs: fixture.inputs(), bookmarks: fixture.bookmarks, thumbnails: ShelfThumbnailCache(), undo: undo
-        ) { _, _ in }
+            inputs: fixture.inputs(), bookmarks: fixture.bookmarks, thumbnails: ShelfThumbnailCache(), undo: undo,
+            apply: { _, _ in }, applyToAll: { _, _ in }
+        )
 
         let rename = try #require(modal.actions(for: item(saved)).rename)
         rename("  Renamed  ")
@@ -275,10 +279,10 @@ struct ModalActionsTests {
         let actions = fixture.modal().actions(for: item)
         fixture.displays.removeFirst()
         actions.applyToAllDisplays()
-        #expect(fixture.applied.map(\.1) == [1, 2])
+        #expect(fixture.appliedToAll == [[1, 2]])
         fixture.items = []
         actions.applyToAllDisplays()
-        #expect(fixture.applied.count == 2)
+        #expect(fixture.appliedToAll.count == 1)
     }
 
     @Test("All Displays goes to the group closure once, with every display, when one is given")
@@ -517,13 +521,13 @@ struct ModalActionsTests {
         ])
         let installed = try #require(content.installed)
         #expect(installed.isWindowsOnly)
-        #expect(installed.deletesFiles)
+        #expect(modal.deletesFiles(item))
         #expect(installed.inUseOnDisplayNames == ["Center"])
         #expect(installed.localDescription == "Description")
         #expect(installed.updateState == .checking(progress: 0.25))
         phase = .failed("Offline")
         #expect(await modal.content(for: item).installed?.updateState == .failed(message: "Offline"))
-        #expect(await modal.content(for: workshop("local-folder")).installed?.deletesFiles == false)
+        #expect(!modal.deletesFiles(workshop("local-folder")))
         var saved = video()
         if case let .workshop(entry) = item.source {
             saved.wpeOrigin = entry.origin

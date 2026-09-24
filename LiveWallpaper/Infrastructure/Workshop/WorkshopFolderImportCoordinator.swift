@@ -36,10 +36,6 @@ final class WorkshopFolderImportCoordinator {
         self.fileManager = fileManager
     }
 
-    func importProjects(from folder: URL) {
-        importProjects(from: [folder])
-    }
-
     /// One pass for every folder: a request made while another import runs waits for it.
     func importProjects(from folders: [URL]) {
         guard !isImporting else {

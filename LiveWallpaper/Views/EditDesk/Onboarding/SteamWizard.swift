@@ -262,7 +262,6 @@ struct SteamWizard: View {
         }
     }
 
-    /// Also the Workshop card's "Import a Local Folder" button, so the picker exists once.
     @discardableResult
     static func importLocalFolder() -> Bool {
         let panel = NSOpenPanel()
@@ -278,7 +277,7 @@ struct SteamWizard: View {
             bundle: .appLanguage, comment: "Open-panel confirm button for importing an existing Wallpaper Engine library."
         )
         guard panel.runModal() == .OK, let url = panel.url else { return false }
-        WorkshopFolderImportCoordinator.shared.importProjects(from: url)
+        WorkshopFolderImportCoordinator.shared.importProjects(from: [url])
         return true
     }
 }

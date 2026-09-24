@@ -51,15 +51,15 @@ final class ModalActions {
     private let bookmarks: BookmarkStore
     private let thumbnails: ShelfThumbnailCache
     private let apply: @MainActor (ApplyIntent, CGDirectDisplayID) -> Void
-    /// Takes "All Displays" as one change; nil applies to each display in turn.
-    private let applyToAll: (@MainActor (ApplyIntent, [CGDirectDisplayID]) -> Void)?
+    /// Takes "All Displays" as one change.
+    private let applyToAll: @MainActor (ApplyIntent, [CGDirectDisplayID]) -> Void
     /// Where removing and renaming a saved entry are recorded; nil records nothing.
     private let undo: EditDeskUndoStack?
 
     init(
         inputs: Inputs, bookmarks: BookmarkStore, thumbnails: ShelfThumbnailCache, undo: EditDeskUndoStack? = nil,
         apply: @escaping @MainActor (ApplyIntent, CGDirectDisplayID) -> Void,
-        applyToAll: (@MainActor (ApplyIntent, [CGDirectDisplayID]) -> Void)? = nil
+        applyToAll: @escaping @MainActor (ApplyIntent, [CGDirectDisplayID]) -> Void
     ) {
         self.inputs = inputs
         self.bookmarks = bookmarks
@@ -74,7 +74,7 @@ final class ModalActions {
         library: SavedLibraryModel, screenManager: ScreenManager, thumbnails: ShelfThumbnailCache,
         undo: EditDeskUndoStack?,
         apply: @escaping @MainActor (ApplyIntent, CGDirectDisplayID) -> Void,
-        applyToAll: (@MainActor (ApplyIntent, [CGDirectDisplayID]) -> Void)? = nil
+        applyToAll: @escaping @MainActor (ApplyIntent, [CGDirectDisplayID]) -> Void
     ) {
         self.init(
             inputs: .live(library: library, screenManager: screenManager),
@@ -86,7 +86,7 @@ final class ModalActions {
         library: SavedLibraryModel, screenManager: ScreenManager, thumbnails: ShelfThumbnailCache,
         doctor: SteamCMDDoctorService, installedLibrary: InstalledLibraryModel, undo: EditDeskUndoStack?,
         apply: @escaping @MainActor (ApplyIntent, CGDirectDisplayID) -> Void,
-        applyToAll: (@MainActor (ApplyIntent, [CGDirectDisplayID]) -> Void)? = nil
+        applyToAll: @escaping @MainActor (ApplyIntent, [CGDirectDisplayID]) -> Void
     ) {
         var inputs = Inputs.live(library: library, screenManager: screenManager)
         inputs.installedLibrary = installedLibrary
@@ -139,8 +139,7 @@ final class ModalActions {
     func content(for item: LibraryItem) async -> WallpaperModalContent {
         var content = WallpaperModalContent(
             itemID: item.id, title: item.title, kind: item.kind, tags: [],
-            metaParts: metaParts(for: item), presetName: nil, preview: nil,
-            isDraggable: item.isSupported, installed: nil
+            metaParts: metaParts(for: item), presetName: nil, preview: nil, installed: nil
         )
         content.canApply = item.isSupported
         #if !LITE_BUILD
@@ -172,7 +171,7 @@ final class ModalActions {
                 content.installed = InstalledItemExtras(
                     updateState: updateState(for: entry), isWindowsOnly: entry.origin.requiresWindowsPlugin,
                     inUseOnDisplayNames: inputs.displays().filter { item.onDisplays.contains($0.id) }.map(\.name),
-                    deletesFiles: inputs.installedLibrary.deletesFiles(entry), localDescription: info?.cleanedDescription
+                    localDescription: info?.cleanedDescription
                 )
             }
         }
@@ -255,13 +254,7 @@ final class ModalActions {
             },
             applyToAllDisplays: { [self] in
                 guard let current = inputs.item(id), let intent = Self.intent(for: current) else { return }
-                if let applyToAll {
-                    applyToAll(intent, inputs.displays().map(\.id))
-                    return
-                }
-                for display in inputs.displays() {
-                    apply(intent, display.id)
-                }
+                applyToAll(intent, inputs.displays().map(\.id))
             }
         )
         if let appendWallpaper = inputs.appendWallpaper, item.isSupported {

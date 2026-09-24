@@ -21,16 +21,6 @@ struct EditDeskPreferencesTests {
         #expect(EditDeskPreferences.homeDefaultStateDefault == .hidden)
     }
 
-    @Test("A value saved for the retired fourth style opens the fan, and anything unknown falls back to the default")
-    func retiredShelfStyleOpensTheFan() {
-        #expect(ShelfStyle(rawValue: "coverFlow") == .fan)
-        for style in ShelfStyle.allCases {
-            #expect(ShelfStyle(rawValue: style.rawValue) == style)
-        }
-        #expect(ShelfStyle(rawValue: "carousel") == nil)
-        #expect((ShelfStyle(rawValue: "carousel") ?? EditDeskPreferences.shelfStyleDefault) == .facingIn)
-    }
-
     @Test("Every reader of the library tile-size preference falls back to the one shared default")
     func tileSizeReadersShareOneDefault() throws {
         var offenders: [String] = []

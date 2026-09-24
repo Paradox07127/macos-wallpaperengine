@@ -809,8 +809,8 @@ struct StageGeometryTests {
         #expect(row(0)[2].rotationZDegrees > 0 && row(3)[2].rotationZDegrees < 0)
     }
 
-    @Test("Fan and Focus Row build exactly the cards that show, at most (capacity − 1) / 2 a side", arguments: [
-        ShelfStyle.fan, .focusRow,
+    @Test("The centred styles build exactly the cards that show, at most (capacity − 1) / 2 a side", arguments: [
+        ShelfStyle.facingIn, .fan, .focusRow,
     ], [6, 20])
     func centredSliceIsWhatShows(style: ShelfStyle, capacity: Int) {
         let side = (capacity - 1) / 2
@@ -995,31 +995,5 @@ struct StageGeometryTests {
         let end = row(3)[2]
         #expect(start.rotationYDegrees < 0 && start.anchorX == 1, Comment(rawValue: "card 2 at focus 0: \(start)"))
         #expect(end.rotationYDegrees > 0 && end.anchorX == 0, Comment(rawValue: "card 2 at focus 3: \(end)"))
-    }
-
-    @Test("Facing In builds every card that still shows, and no more than (capacity − 1) / 2 a side", arguments: [6, 20])
-    func facingInSliceCoversWhatShows(capacity: Int) {
-        let side = (capacity - 1) / 2
-        for width in [CGFloat(1040), 1280, 1920] {
-            let size = CGSize(width: width, height: 820)
-            for step in 0 ... 200 {
-                let focus = Double(step) / 10
-                let slice = StageGeometry.visibleCards(
-                    style: .facingIn, count: 40, rowOffset: 0, focus: focus, windowSize: size, capacity: capacity
-                )
-                let centre = Int(focus.rounded())
-                #expect(
-                    slice.contains(centre) && centre - slice.lowerBound <= side && slice.upperBound - 1 - centre <= side,
-                    Comment(rawValue: "\(width)pt, focus \(focus): \(slice)")
-                )
-                for index in 0 ..< 40 where !slice.contains(index) {
-                    let alpha = StageGeometry.cardPlacement(
-                        style: .facingIn, index: index, count: 40, progress: 1, focus: focus,
-                        windowSize: size, capacity: capacity
-                    ).opacity
-                    #expect(alpha == 0, Comment(rawValue: "\(width)pt, focus \(focus): card \(index) shows at \(alpha) outside \(slice)"))
-                }
-            }
-        }
     }
 }

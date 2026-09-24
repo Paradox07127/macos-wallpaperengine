@@ -95,29 +95,21 @@ struct SystemWallpaperSettingsView: View {
             case .inUse:
                 Label("Selected by macOS", systemImage: "checkmark.circle.fill")
             case .empty:
-                nextStepRow(Text("No videos yet"))
-            case .publishedNotSelected:
-                nextStepRow(Text("Choose a wallpaper in System Settings"))
-            }
-        }
-    }
-
-    private func nextStepRow(_ message: Text) -> some View {
-        HStack {
-            message
-            Spacer(minLength: 0)
-            switch service.status.settingsNextStep {
-            case .addVideo:
-                Button {
-                    showingAddSheet = true
-                } label: {
-                    Label("Add Video", systemImage: "plus")
+                HStack {
+                    Text("No videos yet")
+                    Spacer(minLength: 0)
+                    Button {
+                        showingAddSheet = true
+                    } label: {
+                        Label("Add Video", systemImage: "plus")
+                    }
                 }
-                .accessibilityLabel(Text("Add Video"))
-            case .openWallpaperSettings:
-                Button("Open Wallpaper Settings") { service.openWallpaperSettings() }
-            case nil:
-                EmptyView()
+            case .publishedNotSelected:
+                HStack {
+                    Text("Choose a wallpaper in System Settings")
+                    Spacer(minLength: 0)
+                    Button("Open Wallpaper Settings") { service.openWallpaperSettings() }
+                }
             }
         }
     }
@@ -221,22 +213,6 @@ private struct SystemWallpaperMaintenanceSection: View {
             if let code = maintenance.errorCode {
                 ErrorCodeChip(code: code, tint: DesignTokens.Colors.Status.warning)
             }
-        }
-    }
-}
-
-enum SystemWallpaperNextStep {
-    case addVideo
-    case openWallpaperSettings
-}
-
-extension WallpaperExportService.Status {
-    /// nil = the settings page has nothing to offer for this status.
-    var settingsNextStep: SystemWallpaperNextStep? {
-        switch self {
-        case .empty: .addVideo
-        case .publishedNotSelected: .openWallpaperSettings
-        case .systemIncompatible, .failed, .inUse: nil
         }
     }
 }

@@ -155,8 +155,8 @@ struct WallpaperModal: View {
         // MOTION 7 asks for .3 under the ghost; `quietStroke` is the nearest step in the scale.
         .opacity(dragState == .active ? DesignTokens.Opacity.quietStroke : 1)
         .accessibilityLabel(Text(verbatim: "\(content.title), \(Self.kindName(content.kind))"))
-        .gesture(dragGesture, including: content.isDraggable ? .all : .subviews)
-        .grabCursor(content.isDraggable)
+        .gesture(dragGesture, including: content.canApply ? .all : .subviews)
+        .grabCursor(content.canApply)
     }
 
     @ViewBuilder
