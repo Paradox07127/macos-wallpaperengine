@@ -32,6 +32,12 @@ struct WorkshopModalContent: Equatable {
         if ticketState == .applying {
             return applyingText
         }
+        if ticketState == .waiting {
+            return String(
+                localized: "Will apply to \(screenName) when done", bundle: .appLanguage,
+                comment: "Workshop modal primary button, disabled while a download is queued to apply to this display. Placeholder is the display name."
+            )
+        }
         if installed {
             return String(
                 localized: "Apply to \(screenName)", bundle: .appLanguage,
@@ -42,6 +48,40 @@ struct WorkshopModalContent: Equatable {
             localized: "Apply to \(screenName) when done", bundle: .appLanguage,
             comment: "Workshop modal primary button: download now, apply to this display once it lands. Placeholder is the display name."
         )
+    }
+
+    /// The button beside the primary one; both titles keep the download and drop any queued apply.
+    static func secondaryActionTitle(ticketState: DeferredApplyCoordinator.State?) -> String {
+        if ticketState == .waiting {
+            return String(
+                localized: "Cancel Auto-Apply", bundle: .appLanguage,
+                comment: "Workshop modal button while a download is queued to apply to a display: drops the apply, keeps the download."
+            )
+        }
+        return String(localized: "Save only", bundle: .appLanguage)
+    }
+
+    /// The one gate for both download buttons of an item that is not in the library yet.
+    static func canDownload(isBanned: Bool, isDownloadReady: Bool) -> Bool {
+        !isBanned && isDownloadReady
+    }
+
+    /// A library entry stays installed through a later download of the item, such as an update. Only
+    /// this attempt's dependency stage hides it: the root is in the library before its parts are.
+    static func isInstalled(hasLibraryEntry: Bool, isDownloading: Bool, isFetchingDependencies: Bool) -> Bool {
+        hasLibraryEntry && !(isDownloading && isFetchingDependencies)
+    }
+
+    /// Cancelling a queued apply needs no download gate: the download is already under way. A running
+    /// apply has nothing left to save, and pressing it would cancel the apply halfway.
+    static func isSecondaryEnabled(
+        ticketState: DeferredApplyCoordinator.State?, isBanned: Bool, isDownloadReady: Bool
+    ) -> Bool {
+        switch ticketState {
+        case .waiting: true
+        case .applying: false
+        default: canDownload(isBanned: isBanned, isDownloadReady: isDownloadReady)
+        }
     }
 }
 
@@ -96,6 +136,96 @@ struct WorkshopDownloadPresentation: Equatable {
         }
         return parts.joined(separator: " · ")
     }
+
+    /// `wallpapersOn` is the master switch; `unsupportedOrigin` is the installed entry when this Mac can't
+    /// run it; `blocker` is the doctor's missing-step sentence, nil when ready.
+    @MainActor
+    static func make(
+        ticketState: DeferredApplyCoordinator.State?,
+        settledScreenName: String,
+        wallpapersOn: Bool,
+        phase: WorkshopDownloadCoordinator.DownloadPhase,
+        isFetchingDependencies: Bool,
+        fraction: Double?,
+        downloadedBytes: UInt64?,
+        totalBytes: UInt64?,
+        bytesPerSecond: Double?,
+        isInstalled: Bool,
+        unsupportedOrigin: WPEOrigin?,
+        blocker: String?
+    ) -> WorkshopDownloadPresentation {
+        var presentation = WorkshopDownloadPresentation()
+        // A settled ticket is the outcome of record while nothing of the item is in flight. It stays
+        // until the next queued apply, so a later transfer of the item reports its own progress.
+        let isTransferring = isFetchingDependencies || phase == .downloading || phase == .importing
+        switch ticketState {
+        case .applying:
+            presentation.progress = .indeterminate
+            presentation.status = WorkshopModalContent.applyingText
+            return presentation
+        case let .finished(report) where !isTransferring:
+            presentation.status = DeferredApplyToasts.appliedText(
+                report, screenName: settledScreenName, wallpapersOn: wallpapersOn
+            )
+            presentation.isFailure = report.outcome != .applied
+            return presentation
+        case let .downloadOnly(.failed(reason)) where !isTransferring:
+            presentation.status = reason
+            presentation.isFailure = true
+            return presentation
+        case let .downloadOnly(.unsupported(entry)) where !isTransferring:
+            presentation.status = cannotRunText(entry.origin)
+            presentation.isFailure = true
+            return presentation
+        case .finished, .downloadOnly, .invalidated, .waiting, nil:
+            break
+        }
+        if isFetchingDependencies {
+            presentation.progress = .indeterminate
+            presentation.status = String(
+                localized: "Downloading required items…", bundle: .appLanguage,
+                comment: "Workshop modal status while the other Workshop items a wallpaper needs are downloading."
+            )
+            return presentation
+        }
+        switch phase {
+        case .downloading:
+            presentation.progress = fraction.map { .fraction($0) } ?? .indeterminate
+            presentation.status = String(
+                localized: "Downloading…", bundle: .appLanguage,
+                comment: "Workshop download in progress."
+            )
+            presentation.detail = detailText(
+                downloaded: downloadedBytes, total: totalBytes, bytesPerSecond: bytesPerSecond, fraction: fraction
+            )
+        case .importing:
+            presentation.progress = .indeterminate
+            presentation.status = String(
+                localized: "Importing…", bundle: .appLanguage,
+                comment: "Workshop item is being imported after download."
+            )
+        case let .failed(message):
+            presentation.status = message
+            presentation.isFailure = true
+        case .idle, .succeeded, .succeededAsPreset:
+            if let unsupportedOrigin {
+                presentation.status = cannotRunText(unsupportedOrigin)
+                presentation.isFailure = true
+            } else if !isInstalled, ticketState != .waiting, let blocker {
+                presentation.status = blocker
+            }
+        }
+        return presentation
+    }
+
+    @MainActor
+    private static func cannotRunText(_ origin: WPEOrigin) -> String {
+        let reason = FallbackCard.cannotRunSummary(for: origin)
+        return String(
+            localized: "Can't run on this Mac: \(reason)", bundle: .appLanguage,
+            comment: "Workshop modal status line for an item this Mac cannot run. Placeholder is the reason, such as Windows plugin required."
+        )
+    }
 }
 
 /// Turns the coordinator's running byte totals into a speed. Resetting on a new attempt is the
@@ -144,6 +274,31 @@ enum WorkshopModalTargets {
     ) -> [ModalDisplayTarget] {
         ModalActions.targets(displays: displays, activeOn: activeOn, covers: covers)
     }
+
+    /// `queued` is the target of a waiting or running apply, which outranks this session's choice.
+    /// Once that display is unplugged nothing is highlighted: the ticket still points there.
+    static func resolvedTarget(
+        selected: CGDirectDisplayID?, queued: CGDirectDisplayID?, in targets: [ModalDisplayTarget]
+    ) -> CGDirectDisplayID? {
+        if let queued {
+            return targets.contains { $0.id == queued } ? queued : nil
+        }
+        if let selected, targets.contains(where: { $0.id == selected }) {
+            return selected
+        }
+        return targets.first(where: \.isPrimary)?.id ?? targets.first?.id
+    }
+
+    /// The display the primary button names; an unplugged queued display by its name when queued.
+    @MainActor
+    static func targetName(
+        queued: DeferredApplyCoordinator.Target?, resolved: CGDirectDisplayID?, in targets: [ModalDisplayTarget]
+    ) -> String {
+        guard let queued else {
+            return targets.first { $0.id == resolved }?.name ?? ""
+        }
+        return targets.first { $0.id == queued.screenID }?.name ?? queued.screenName
+    }
 }
 
 /// Everything the Workshop modal can trigger; the host fills them. A nil closure hides its control.
@@ -153,6 +308,8 @@ struct WorkshopModalActions {
     var saveOnly: @MainActor () -> Void
     /// Present only while a download of this item is in flight.
     var cancelDownload: (@MainActor () -> Void)?
+    /// Present only while a missing setup step keeps this not-yet-installed item from downloading.
+    var connectSteam: (@MainActor () -> Void)?
     var openInSteam: @MainActor () -> Void
     var reveal: @MainActor () -> Void
     var openItem: @MainActor (UInt64) -> Void

@@ -56,13 +56,15 @@ final class DisplayShellLayer {
     private var dropElapsed: TimeInterval = 0
     private var dropFrom: Float = 0
     private var dropTarget: Float = 0
+    /// Seconds into a rejected drop's shake; nil while the display is still.
+    private var shakeElapsed: TimeInterval?
     var frame: CGRect {
         layer.frame
     }
 
     var hasAnimation: Bool {
         coverFade != nil || playback.opacity != playbackTarget || highlight.opacity != dropTarget
-            || abs(hoverMix - CGFloat(playbackTarget)) > 0.001
+            || abs(hoverMix - CGFloat(playbackTarget)) > 0.001 || shakeElapsed != nil
     }
 
     init() {
@@ -164,7 +166,7 @@ final class DisplayShellLayer {
         name.foregroundColor = NSColor(colors.textPrimary).cgColor
         status.string = display.statusText
         status.foregroundColor = NSColor(increasedContrast ? colors.textCapsule : colors.textSecondary).cgColor
-        dot.fillColor = NSColor(colors.success).cgColor
+        dot.fillColor = Self.statusDotColor(for: display.state)
         gradient.colors = [StageLayerStyle.clear, NSColor(colors.gradientStageBottom).cgColor]
         veil.backgroundColor = NSColor(colors.gradientCardBottom).cgColor
         highlight.backgroundColor = NSColor(colors.dropHighlight).cgColor
@@ -196,7 +198,7 @@ final class DisplayShellLayer {
         emptyHint.string = String(localized: "Types are detected automatically · mp4 / mov / html / folder / Wallpaper Engine project", bundle: .appLanguage)
         emptyHint.foregroundColor = NSColor(colors.textTertiary).cgColor
         let entries = [
-            (String(localized: "Choose File…", bundle: .appLanguage), colors.fillSecondaryButton, colors.textPrimary),
+            (String(localized: "Choose File", bundle: .appLanguage), colors.fillSecondaryButton, colors.textPrimary),
             (String(localized: "Paste URL", bundle: .appLanguage), colors.fillTertiaryButton, colors.textSecondary),
         ]
         for (index, entry) in entries.enumerated() {
@@ -225,18 +227,35 @@ final class DisplayShellLayer {
             stateLabel.string = chip.text
             stateLabel.foregroundColor = chip.tint
             stateSymbol.contents = StageLayerStyle.symbol(chip.symbol, tint: NSColor(cgColor: chip.tint) ?? NSColor(colors.danger))
-        case let .paused(reasonText):
+        case let .paused(text), let .preparing(text), let .off(text):
             veil.isHidden = false
             stateGroup.isHidden = false
             stateLabel.isHidden = false
             stateSymbol.isHidden = false
-            stateLabel.string = reasonText
+            stateLabel.string = text
             stateLabel.foregroundColor = NSColor(colors.textCapsule).cgColor
-            stateSymbol.contents = StageLayerStyle.symbol("pause.fill", tint: NSColor(colors.textCapsule))
+            let glyph = switch display.state {
+            case .preparing: "hourglass"
+            case .off: "power"
+            default: "pause.fill"
+            }
+            stateSymbol.contents = StageLayerStyle.symbol(glyph, tint: NSColor(colors.textCapsule))
         case .ok, .empty:
             break
         }
         stateWidth = StageLayerStyle.width(stateLabel.string as? String ?? "", size: 12, mono: true) + 36
+    }
+
+    /// The name row's dot: green only while the wallpaper runs.
+    static func statusDotColor(for state: StageDisplay.State) -> CGColor {
+        let colors = DesignTokens.EditDesk.Colors.self
+        return switch state {
+        case .ok: NSColor(colors.success).cgColor
+        case .paused: NSColor(colors.warning).cgColor
+        case let .failed(chip): chip.tint
+        case .preparing: NSColor(colors.textSecondary).cgColor
+        case .off, .empty: NSColor(colors.textTertiary).cgColor
+        }
     }
 
     func place(content rect: CGRect, isBuiltin: Bool) {
@@ -309,12 +328,11 @@ final class DisplayShellLayer {
         }
         veil.frame = content.bounds
         let width = min(stateWidth, max(0, size.width - 20))
-        let paused = if case .paused = display?.state {
-            true
-        } else {
-            false
+        let trailing = switch display?.state {
+        case .paused?, .preparing?, .off?: true
+        default: false
         }
-        stateGroup.frame = CGRect(x: paused ? size.width - width - 10 : 10, y: 8, width: width, height: 24)
+        stateGroup.frame = CGRect(x: trailing ? size.width - width - 10 : 10, y: 8, width: width, height: 24)
         stateLabel.frame = CGRect(x: 27, y: 4, width: max(0, width - 34), height: 17)
         stateSymbol.frame = CGRect(x: 8, y: 6, width: 13, height: 13)
         // Retired thumbnail actions remain in the model for compatibility; setup now opens in detail.
@@ -377,6 +395,21 @@ final class DisplayShellLayer {
         }
     }
 
+    /// Moves `sublayerTransform`, never the frame, so layout and hit testing keep the rest position.
+    func shake(reduceMotion: Bool) {
+        guard !reduceMotion else {
+            stopShake()
+            StageLayerStyle.pulseOpacity(layer)
+            return
+        }
+        shakeElapsed = 0
+    }
+
+    private func stopShake() {
+        shakeElapsed = nil
+        layer.sublayerTransform = CATransform3DIdentity
+    }
+
     /// The transport as drawn: one entry per visible button, in drawing order. Layout, the hit test
     /// and the dimmed state all read this, so a button that is not drawn keeps no hot spot and a
     /// button the orchestrator would refuse cannot be pressed.
@@ -437,7 +470,20 @@ final class DisplayShellLayer {
                 coverFade = nil
                 StageLayerStyle.fadeOpacity(cover, from: 0)
             }
+            // A shake caught by Reduce Motion stops here; left running, `hasAnimation` never clears.
+            if shakeElapsed != nil {
+                stopShake()
+            }
             return
+        }
+        if let elapsed = shakeElapsed {
+            if elapsed + dt >= 0.3 {
+                stopShake()
+            } else {
+                shakeElapsed = elapsed + dt
+                // The rejected card's curve: 6pt, three cycles in 0.3s.
+                layer.sublayerTransform = CATransform3DMakeTranslation(6 * sin((elapsed + dt) / 0.3 * 6 * .pi), 0, 0)
+            }
         }
         playbackElapsed += dt
         let playbackDuration = reduceMotion ? 0.15 : 0.2

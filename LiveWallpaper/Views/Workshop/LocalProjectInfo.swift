@@ -63,6 +63,27 @@ func loadWPELocalProjectInfo(for entry: WPEHistoryEntry) async -> LocalProjectIn
     return outcome.info
 }
 
+/// Only the `tags` of the project's `project.json`: unlike `loadWPELocalProjectInfo`, no folder size and no settings write.
+func loadWPEProjectTags(for origin: WPEOrigin) async -> [String] {
+    let bookmark = origin.sourceFolderBookmark
+    return await Task.detached(priority: .userInitiated) { () -> [String] in
+        guard let folder = try? SecurityScopedBookmarkResolver.shared
+            .resolve(bookmark, target: .transient).get().url
+        else { return [] }
+        let didStart = folder.startAccessingSecurityScopedResource()
+        defer {
+            if didStart {
+                folder.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        guard let data = try? Data(contentsOf: folder.appendingPathComponent("project.json")),
+              let manifest = try? JSONDecoder().decode(WPEProjectDisplayManifest.self, from: data)
+        else { return [] }
+        return manifest.tags ?? []
+    }.value
+}
+
 /// Reads only file metadata (no content), so it's cheap even for large scenes.
 func directorySize(of folder: URL) -> Int64 {
     let keys: Set<URLResourceKey> = [.isRegularFileKey, .totalFileAllocatedSizeKey, .fileSizeKey]

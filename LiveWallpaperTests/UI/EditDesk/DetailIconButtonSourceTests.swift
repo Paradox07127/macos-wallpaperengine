@@ -13,7 +13,7 @@ struct DetailIconButtonSourceTests {
     @Test("Transport uses the shared system glass button without a second capsule")
     func hudPrimaryUsesSystemGlass() throws {
         let source = try RepositoryRoot.source(Self.hudPath)
-        #expect(source.contains("GlassIconButton(status.isPlaying"))
+        #expect(source.contains("GlassIconButton(status.intendsToPlay"))
         #expect(!source.contains("flatFill:"))
         #expect(!source.contains("adaptiveGlassSurface(.capsule"))
     }

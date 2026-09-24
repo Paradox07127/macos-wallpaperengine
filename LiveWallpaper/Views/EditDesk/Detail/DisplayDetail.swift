@@ -32,11 +32,22 @@ struct DetailActions {
     var copyOverlays: () -> Void
     var snapEnabled: Binding<Bool>
     var openAutomation: (() -> Void)?
+    var resumeSchedule: (() -> Void)?
+    var applyScheme: (ScreenScheme) -> Void = { _ in }
+    var manageSchemes: () -> Void = {}
+    /// nil while the wallpaper library is empty.
+    var chooseFromLibrary: (() -> Void)?
+    var importFile: () -> Void = {}
+    var enterWebAddress: () -> Void = {}
+    /// Present only while this display keeps a saved video (web page) it is not showing.
+    var switchBackToVideo: (() -> Void)?
+    var switchBackToWebPage: (() -> Void)?
+    var applyWebSource: (HTMLSource) -> Void = { _ in }
 }
 
 /// One toolbar and one background shared by the wallpaper and overlay workspaces.
 @MainActor
-struct DisplayDetail<HUD: View, Inspector: View, Overlay: View>: View {
+struct DisplayDetail<HUD: View, Inspector: View, Overlay: View, Status: View>: View {
     let displayName: String
     let tags: [DetailDisplayTag]
     let hero: DetailHeroStatus
@@ -53,9 +64,12 @@ struct DisplayDetail<HUD: View, Inspector: View, Overlay: View>: View {
     @ViewBuilder let overlayCanvas: (CGSize) -> Overlay
     var overlayTopInset: CGFloat = 0
     var isEmpty = false
+    var preview: DetailPreviewState = .hero
+    /// The attempt's page while `preview` shows one, otherwise the notices above the setup or hero.
+    @ViewBuilder let wallpaperStatus: () -> Status
     var emptyScreen: Screen?
-    var chooseFile: () -> Void = {}
-    var pasteURL: () -> Void = {}
+    var webTransform: DetailWebTransform?
+    var schedulePausedUntil: Date?
     @Binding var inspectorVisible: Bool
     @Binding var layersVisible: Bool
     @Binding var inspectorWidth: Double
@@ -68,11 +82,14 @@ struct DisplayDetail<HUD: View, Inspector: View, Overlay: View>: View {
         VStack(spacing: 0) {
             DetailTopBar(tags: tags, section: $section, actions: actions,
                          inspectorVisible: $inspectorVisible, layersVisible: $layersVisible,
-                         hasWallpaper: !isEmpty)
+                         hasWallpaper: !isEmpty, schedulePausedUntil: schedulePausedUntil,
+                         attemptShown: section == .wallpaper && preview.showsAttempt)
                 .opacity(chromeVisible ? 1 : 0)
                 .offset(y: chromeVisible || reduceMotion ? 0 : -8)
                 .background(DesignTokens.EditDesk.Colors.background.opacity(chromeVisible ? 1 : 0))
                 .allowsHitTesting(heroVisible && chromeVisible)
+                // Above the workspace, whose content can reach up into this strip and take its clicks.
+                .zIndex(1)
             workspace
                 .allowsHitTesting(heroVisible)
         }
@@ -113,27 +130,41 @@ struct DisplayDetail<HUD: View, Inspector: View, Overlay: View>: View {
     }
 
     private var wallpaperPreview: some View {
-        GeometryReader { proxy in
+        GeometryReader { _ in
             Group {
-                if isEmpty {
-                    if let emptyScreen {
-                        EmptyDisplaySetup(screen: emptyScreen, chooseFile: chooseFile)
-                            .background(previewMeasurement)
-                    }
-                } else {
-                    let box = OverlayGeometry.aspectFit(
-                        logicalSize: CGSize(width: 16, height: 9),
-                        in: CGRect(origin: .zero, size: proxy.size).insetBy(dx: 24, dy: 24)
-                    )
-                    DetailHero(status: hero, image: heroImage, size: box.size, hud: hud, playback: actions.playback)
+                if preview.showsAttempt {
+                    wallpaperStatus()
                         .background(previewMeasurement)
-                        .overlay(alignment: .topTrailing) {
-                            GlassIconButton("arrow.clockwise", action: actions.recapture)
-                                .help(Text("Recapture preview"))
-                                .accessibilityLabel(Text("Recapture preview"))
-                                .padding(12)
+                } else {
+                    VStack(spacing: 0) {
+                        wallpaperStatus()
+                        if isEmpty {
+                            if let emptyScreen {
+                                EmptyDisplaySetup(screen: emptyScreen, chooseFile: actions.importFile,
+                                                  applyWebSource: actions.applyWebSource,
+                                                  chooseFromLibrary: actions.chooseFromLibrary)
+                                    .background(previewMeasurement)
+                            }
+                        } else {
+                            // Measured below the notices, so a banner shrinks the hero instead of covering it.
+                            GeometryReader { proxy in
+                                let box = OverlayGeometry.aspectFit(
+                                    logicalSize: CGSize(width: 16, height: 9),
+                                    in: CGRect(origin: .zero, size: proxy.size).insetBy(dx: 24, dy: 24)
+                                )
+                                DetailHero(status: hero, image: heroImage, size: box.size, hud: hud,
+                                           playback: actions.playback, webTransform: webTransform)
+                                    .background(previewMeasurement)
+                                    .overlay(alignment: .topTrailing) {
+                                        GlassIconButton("arrow.clockwise", action: actions.recapture)
+                                            .help(Text("Recapture preview"))
+                                            .accessibilityLabel(Text("Recapture preview"))
+                                            .padding(12)
+                                    }
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            }
                         }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
                 }
             }
             .opacity(heroVisible ? 1 : 0)

@@ -101,19 +101,23 @@ struct WorkshopSessionTests {
 @MainActor
 @Suite("Workshop browse card equality")
 struct BrowseCardEqualityTests {
-    private static func item(id: UInt64 = 7) -> WorkshopQueryItem {
+    private static func item(id: UInt64 = 7, tags: [String] = []) -> WorkshopQueryItem {
         WorkshopQueryItem(
             id: id, rawTitle: "Fixture", shortDescription: "", creatorID: nil, previewImageURL: nil,
-            fileSizeBytes: nil, timeUpdated: nil, subscriptionCount: nil, rating: nil, tags: [],
+            fileSizeBytes: nil, timeUpdated: nil, subscriptionCount: nil, rating: nil, tags: tags,
             visibility: .public, isBanned: false,
             steamCommunityURL: URL(string: "https://steamcommunity.com/sharedfiles/filedetails/?id=\(id)")!
         )
     }
 
-    private static func card(presentation: BrowsePresentation = .legacy, isRevealed: Bool = false) -> BrowseCard {
+    private static func card(
+        presentation: BrowsePresentation = .legacy, isRevealed: Bool = false, isInLibrary: Bool = false,
+        hasUpdate: Bool = false, inUseBadge: String? = nil,
+        preferences: GalleryCardPreferences = GalleryCardPreferences(), tags: [String] = []
+    ) -> BrowseCard {
         BrowseCard(
-            item: item(), cardPreferences: GalleryCardPreferences(), reduceMotion: false,
-            presentation: presentation, isRevealed: isRevealed
+            item: item(tags: tags), isInLibrary: isInLibrary, hasUpdate: hasUpdate, inUseBadge: inUseBadge,
+            cardPreferences: preferences, reduceMotion: false, presentation: presentation, isRevealed: isRevealed
         )
     }
 
@@ -130,6 +134,39 @@ struct BrowseCardEqualityTests {
     @Test("A reveal is part of equality, or EquatableView would swallow the refresh")
     func revealEntersEquality() {
         #expect(Self.card(isRevealed: false) != Self.card(isRevealed: true))
+    }
+
+    @Test("The update and in-use badges are part of equality, or EquatableView would swallow the refresh")
+    func badgesEnterEquality() {
+        #expect(Self.card(hasUpdate: false) != Self.card(hasUpdate: true))
+        #expect(Self.card(inUseBadge: nil) != Self.card(inUseBadge: "ON Studio"))
+    }
+
+    @Test("An Edit Desk browse card reads out only the marks it draws")
+    func editDeskCardReadsOnlyDrawnMarks() {
+        let inLibrary = String(localized: "In Library", bundle: .appLanguage)
+        let inUse = String(localized: "Currently in use", bundle: .appLanguage)
+        let update = String(localized: "Update available", bundle: .appLanguage)
+
+        let drawn = Self.card(presentation: .editDesk, isInLibrary: true, hasUpdate: true, inUseBadge: "ON Studio")
+            .accessibilityLabelText
+        #expect(drawn.contains(update) && drawn.contains(inUse), "a drawn badge is not read: \(drawn)")
+        #expect(!drawn.contains(inLibrary), "the check that Needs Update replaced is still read: \(drawn)")
+
+        let checked = Self.card(presentation: .editDesk, isInLibrary: true).accessibilityLabelText
+        let switchedOff = Self.card(
+            presentation: .editDesk, isInLibrary: true, preferences: GalleryCardPreferences(showsInLibrary: false)
+        ).accessibilityLabelText
+        #expect(checked.contains(inLibrary), "the drawn check is not read: \(checked)")
+        #expect(!switchedOff.contains(inLibrary), "the check is read with its switch off: \(switchedOff)")
+
+        let blurred = Self.card(
+            presentation: .editDesk, isInLibrary: true, hasUpdate: true, inUseBadge: "ON Studio", tags: ["Mature"]
+        ).accessibilityLabelText
+        #expect(![inLibrary, inUse, update].contains { blurred.contains($0) }, "a blurred card draws no marks but reads: \(blurred)")
+
+        let legacy = Self.card(isInLibrary: true).accessibilityLabelText
+        #expect(legacy.contains(inLibrary), "the legacy card no longer reads In Library: \(legacy)")
     }
 }
 #endif

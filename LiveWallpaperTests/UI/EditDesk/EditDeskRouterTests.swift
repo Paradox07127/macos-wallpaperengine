@@ -51,6 +51,16 @@ struct EditDeskRouterTests {
         #expect(router.libraryFocus == .aerials)
     }
 
+    @Test("A library focus request is taken once, and a repeated request is taken again")
+    func libraryFocusIsConsumedOnce() {
+        let router = makeRouter()
+        router.handle(Notification(name: .openAppleAerials))
+        #expect(router.takeLibraryFocus() == .aerials)
+        #expect(router.takeLibraryFocus() == nil)
+        router.handle(Notification(name: .openAppleAerials))
+        #expect(router.takeLibraryFocus() == .aerials)
+    }
+
     @Test("Add wallpaper notification carries the display it targets and is consumed once")
     func promptAddWallpaper() {
         let router = makeRouter(.bookmarks)
@@ -115,7 +125,7 @@ struct EditDeskRouterTests {
         #expect(router.page == .home)
         #expect(router.detailDisplayID == nil)
         #expect(router.overlayEditorDisplayID == nil)
-        #expect(router.libraryFocus == .wallpapers)
+        #expect(router.libraryFocus == nil)
         #expect(router.settingsSelection == nil)
         #expect(router.settingsSearchText.isEmpty)
         #expect(router.pendingSettingsSearchAnchor == nil)
@@ -149,7 +159,7 @@ struct EditDeskRouterTests {
     func initialBookmarks() {
         let router = makeRouter(.bookmarks)
         #expect(router.page == .library)
-        #expect(router.libraryFocus == .wallpapers)
+        #expect(router.libraryFocus == nil)
     }
 
     @Test("Initial system wallpaper navigation opens its library segment")
@@ -219,6 +229,49 @@ struct EditDeskRouterTests {
         #expect(router.detailDisplayID == 42)
         router.closeDetail()
         #expect(router.detailDisplayID == nil)
+    }
+
+    @Test("An onboarding step opens the page its card is on and leaves that page a request, from Settings with a detail open")
+    func onboardingStepOpensTheCardsPage() {
+        let cases: [(OnboardingProgress.Page, EditDeskRouter.Page, CGDirectDisplayID?, OnboardingProgress.Page?, DetailSection?)] = [
+            (.home, .home, nil, .home, nil),
+            (.library, .library, nil, .library, nil),
+            (.workshop, .workshop, nil, .workshop, nil),
+            (.overlay, .home, 7, .overlay, .overlay),
+        ]
+        for (step, page, detailDisplayID, pendingStep, pendingSection) in cases {
+            let router = makeRouter(.screen(42))
+            router.openSettings(.general)
+            router.showOnboardingStep(step, displayID: 7)
+            let label = Comment(rawValue: "\(step)")
+            #expect(router.page == page, label)
+            #expect(router.detailDisplayID == detailDisplayID, label)
+            #expect(router.pendingOnboardingStep == pendingStep, label)
+            #expect(router.pendingDetailSection == pendingSection, label)
+        }
+    }
+
+    @Test("A library target lasts while the library page shows and drops a display that disconnects")
+    func libraryTargetLifetime() {
+        let router = makeRouter()
+        router.libraryTarget = 7
+        router.select(.library)
+        router.select(.library)
+        #expect(router.libraryTarget == 7)
+        router.select(.home)
+        #expect(router.libraryTarget == nil)
+
+        router.libraryTarget = 7
+        router.select(.library)
+        router.showDetail(7)
+        #expect(router.libraryTarget == nil)
+
+        router.libraryTarget = 7
+        router.select(.library)
+        router.screensRefreshed(availableDisplayIDs: [7])
+        #expect(router.libraryTarget == 7)
+        router.screensRefreshed(availableDisplayIDs: [])
+        #expect(router.libraryTarget == nil)
     }
 
     @Test("Unknown notifications leave navigation unchanged")

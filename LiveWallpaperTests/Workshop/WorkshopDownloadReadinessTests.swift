@@ -63,6 +63,31 @@ struct WorkshopDownloadReadinessTests {
         #expect(service.isDownloadReady)
     }
 
+    @Test("The blocker names the first setup step a download still lacks")
+    func blockerNamesTheFirstMissingStep() throws {
+        let service = try makeService()
+        #expect(service.downloadBlocker == .steamCMD)
+        service.binaryPath = "/tmp/steamcmd"
+        #expect(service.downloadBlocker == .library)
+        service.workdirBookmarkData = try resolvableBookmark()
+        #expect(service.downloadBlocker == .account)
+        service.username = "someone"
+        #expect(service.downloadBlocker == nil)
+        service.noteOperationReportedLoginRequired(generation: service.accountGeneration)
+        #expect(service.downloadBlocker == .session)
+    }
+
+    @Test("Confirmation needs a session proven this launch, not one nobody has refuted yet")
+    func confirmationNeedsAGreenSession() throws {
+        let service = try makeService()
+        try configureAllGreen(service, bookmark: resolvableBookmark())
+        service.setProbe(.cachedLogin, status: .notRun)
+        #expect(service.isDownloadReady)
+        #expect(!service.isDownloadConfirmed)
+        service.noteSuccessfulSteamOperation(generation: service.accountGeneration)
+        #expect(service.isDownloadConfirmed)
+    }
+
     @Test("An untested session after relaunch can attempt a cached download")
     func unknownSessionDoesNotMeanLoggedOut() throws {
         let service = try makeService()

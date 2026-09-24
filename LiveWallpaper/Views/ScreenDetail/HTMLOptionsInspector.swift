@@ -7,7 +7,7 @@ struct HTMLOptionsInspector: View {
     @Binding var config: HTMLConfig
 
     @Environment(ScreenManager.self) private var screenManager
-    @AppStorage("Inspector.HTMLOptionsExpanded") private var isExpanded = true
+    @AppStorage("Inspector.HTMLOptionsExpanded") private var isExpanded = false
     @State private var customCSSPresented: Bool = false
     @State private var draftCustomCSS: String = ""
 
@@ -84,10 +84,8 @@ struct HTMLOptionsInspector: View {
                 Text("Edit")
             }
             .fixedSize()
-            .popover(isPresented: $customCSSPresented, arrowEdge: .leading) {
-                AppLanguageScope(defaults: .appScoped()) {
-                    customCSSEditor
-                }
+            .appLanguagePopover(isPresented: $customCSSPresented, arrowEdge: .leading) {
+                customCSSEditor
             }
         }
         .onAppear { scheduleCustomCSSDraftSync(config.customCSS) }

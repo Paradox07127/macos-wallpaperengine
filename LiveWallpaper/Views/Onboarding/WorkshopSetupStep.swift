@@ -176,7 +176,7 @@ struct OnboardingWorkshopSetupView: View {
                 Task { await controller.authorizeSteamLibrary(startingAtScannedPath: true) }
             }
         }
-        return WorkshopSetupRoute(id: "library.choose", title: "Choose folder…") {
+        return WorkshopSetupRoute(id: "library.choose", title: "Choose folder") {
             Task { await controller.authorizeSteamLibrary(startingAtScannedPath: false) }
         }
     }
@@ -186,7 +186,7 @@ struct OnboardingWorkshopSetupView: View {
     private var librarySecondaryRoutes: [WorkshopSetupRoute] {
         guard !doctor.isLibraryReady, controller.hasScannedLibrary else { return [] }
         return [
-            WorkshopSetupRoute(id: "library.other", title: "Choose another folder…") {
+            WorkshopSetupRoute(id: "library.other", title: "Choose another folder") {
                 Task { await controller.authorizeSteamLibrary(startingAtScannedPath: false) }
             }
         ]

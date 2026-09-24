@@ -136,32 +136,30 @@ struct SlotRow: View {
             .help(Text("Edit Time Range"))
             .accessibilityLabel(Text("Time range"))
             .accessibilityValue(Text(verbatim: ScheduleTimeFormatter.rangeLabel(startHour: slot.startHour, endHour: slot.endHour)))
-            .popover(isPresented: $timePopoverShown, arrowEdge: .bottom) {
-                AppLanguageScope(defaults: .appScoped()) {
-                    TimeEditorPopover(
-                        slotID: slot.id,
-                        initialStart: slot.startHour,
-                        initialEnd: slot.endHour,
-                        draftStart: Binding(
-                            get: { draftStart ?? slot.startHour },
-                            set: { draftStart = $0 }
-                        ),
-                        draftEnd: Binding(
-                            get: { draftEnd ?? slot.endHour },
-                            set: { draftEnd = $0 }
-                        ),
-                        otherSlots: otherSlots,
-                        onCommit: { start, end in
-                            clearTimeDraft()
-                            timePopoverShown = false
-                            onCommitTimeChange(start, end)
-                        },
-                        onCancel: {
-                            clearTimeDraft()
-                            timePopoverShown = false
-                        }
-                    )
-                }
+            .appLanguagePopover(isPresented: $timePopoverShown, arrowEdge: .bottom) {
+                TimeEditorPopover(
+                    slotID: slot.id,
+                    initialStart: slot.startHour,
+                    initialEnd: slot.endHour,
+                    draftStart: Binding(
+                        get: { draftStart ?? slot.startHour },
+                        set: { draftStart = $0 }
+                    ),
+                    draftEnd: Binding(
+                        get: { draftEnd ?? slot.endHour },
+                        set: { draftEnd = $0 }
+                    ),
+                    otherSlots: otherSlots,
+                    onCommit: { start, end in
+                        clearTimeDraft()
+                        timePopoverShown = false
+                        onCommitTimeChange(start, end)
+                    },
+                    onCancel: {
+                        clearTimeDraft()
+                        timePopoverShown = false
+                    }
+                )
             }
         }
     }
@@ -267,8 +265,8 @@ struct SlotRow: View {
             return
         }
         videoName = videoNameProvider(data) ?? String(
-            localized: "Invalid bookmark",
-            defaultValue: "Invalid bookmark",
+            localized: "File unavailable",
+            defaultValue: "File unavailable",
             bundle: .appLanguage, comment: "Subtitle shown on a schedule slot whose stored bookmark can no longer be resolved."
         )
     }

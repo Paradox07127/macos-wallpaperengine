@@ -118,11 +118,11 @@ struct WorkshopSettingsView: View {
                 SettingsSearchSectionHeader("Content", anchor: .workshopContent)
             }
 
+            WorkshopBadgeSection()
+
             WorkshopDiagnosticsSection(showingExportToast: $showingExportToast)
 
             WorkshopLegalSection()
-
-            WorkshopBadgeSection()
         }
         .settingsFormChrome()
         .settingsSearchAnchorScroller(

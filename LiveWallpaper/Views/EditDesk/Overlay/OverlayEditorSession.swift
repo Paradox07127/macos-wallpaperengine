@@ -4,7 +4,7 @@ import LiveWallpaperCore
 import Observation
 
 enum OverlaySelection: Hashable {
-    case widget(UUID), music, clock, effect
+    case board, widget(UUID), music, clock, effect
 }
 
 struct OverlayEditorIdentity: Hashable {
@@ -128,6 +128,8 @@ final class OverlayEditorSession {
     private(set) var preview = MonitorBoardPreview(mode: .snapshot)
     @ObservationIgnored var onLifecycleStep: ((LifecycleStep) -> Void)?
     @ObservationIgnored var onObjectPersisted: (@MainActor () -> Void)?
+    /// Widgets an edit took off the board, each with its index there; called before the debounced write.
+    @ObservationIgnored var onWidgetsRemoved: (@MainActor ([(placement: MonitorWidgetPlacement, index: Int)]) -> Void)?
     @ObservationIgnored private var store: (any OverlayEditorStore)?
     @ObservationIgnored private var pendingBoard: MonitorBoardConfiguration?
     @ObservationIgnored private var pendingAddedWidgetIDs: Set<UUID> = []
@@ -231,6 +233,18 @@ final class OverlayEditorSession {
         interaction.perform(.delete(id: id))
     }
 
+    var boardEnabled: Bool {
+        overlay.enabled
+    }
+
+    func setBoardEnabled(_ enabled: Bool) {
+        guard let identity, let store, let persisted = store.read(identity)?.overlay.enabled, persisted != enabled else {
+            return
+        }
+        overlay.enabled = enabled
+        store.writeOverlayEnabled(enabled, for: identity)
+    }
+
     func setMusicEnabled(_ enabled: Bool) {
         guard let identity, let store, var next = store.read(identity)?.overlay.music, next.enabled != enabled else {
             return
@@ -292,6 +306,10 @@ final class OverlayEditorSession {
     }
 
     private func scheduleBoard(_ board: MonitorBoardConfiguration) {
+        let kept = Set(board.widgets.map(\.id))
+        let removed = overlay.board.widgets.enumerated()
+            .filter { !kept.contains($0.element.id) }
+            .map { (placement: $0.element, index: $0.offset) }
         overlay.board = board
         pendingBoard = board
         persistTask?.cancel()
@@ -299,6 +317,9 @@ final class OverlayEditorSession {
             do { try await Task.sleep(for: Self.persistDebounce) } catch { return }
             guard !Task.isCancelled else { return }
             self?.flushPendingEdits()
+        }
+        if !removed.isEmpty {
+            onWidgetsRemoved?(removed)
         }
     }
 
@@ -319,6 +340,15 @@ final class OverlayEditorSession {
         }
     }
 
+    /// Flushes first: the debounced canvas write carries the whole board and would revert this edit.
+    func editBoard(_ edit: (inout MonitorBoardConfiguration) -> Void) {
+        flushPendingEdits()
+        guard let identity, let store, var board = store.read(identity)?.overlay.board else { return }
+        edit(&board)
+        store.writeBoard(board, for: identity)
+        refreshAppliedConfiguration()
+    }
+
     func rect(for selection: OverlaySelection) -> CGRect {
         if let drag, drag.selection == selection {
             return drag.rect
@@ -326,7 +356,7 @@ final class OverlayEditorSession {
         switch selection {
         case .music: return OverlayGeometry.musicRect(overlay.music, logicalSize: logicalSize, safeArea: safeArea)
         case .clock: return OverlayGeometry.clockRect(overlay.clock, logicalSize: logicalSize, safeArea: safeArea)
-        case .widget, .effect: return .zero
+        case .board, .widget, .effect: return .zero
         }
     }
 
@@ -390,7 +420,7 @@ final class OverlayEditorSession {
             if next != latest.clock {
                 store.writeClock(next, for: identity)
             }
-        case .widget, .effect: break
+        case .board, .widget, .effect: break
         }
     }
 

@@ -61,4 +61,13 @@ public extension WallpaperQueueEntry {
         }
         return copy
     }
+
+    func replacingHTMLBookmark(_ original: Data, with replacement: Data) -> Self {
+        var copy = self
+        if case let .html(source, config) = content,
+           let updated = source.replacingLocalBookmark(matching: original, with: replacement) {
+            copy.content = .html(source: updated, config: config)
+        }
+        return copy
+    }
 }

@@ -6,6 +6,7 @@ struct ClockOverlaySection: View {
     let screenManager: ScreenManager
     let backdropAvailable: Bool
     var showsVisibilityControl = true
+    var showsBackdropControl = true
 
     private var clock: ClockOverlayConfiguration {
         screenManager.monitorOverlay(for: screen).clock
@@ -37,12 +38,14 @@ struct ClockOverlaySection: View {
                     }
                     Divider()
                     widthRow
-                    Text("Drag the clock to move it. Drag its corner to resize.")
+                    Text("Drag the clock in the preview to move it.")
                         .font(DesignTokens.Typography.caption)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    Divider()
-                    OverlayBackdropRow(available: backdropAvailable)
+                    if showsBackdropControl {
+                        Divider()
+                        OverlayBackdropRow(available: backdropAvailable)
+                    }
                 }
             }
             .groupBoxStyle(ContainerGroupBoxStyle())

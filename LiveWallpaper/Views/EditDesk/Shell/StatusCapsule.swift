@@ -4,7 +4,7 @@ import LiveWallpaperCore
 import SwiftUI
 
 enum StatusCapsuleHealth: Equatable {
-    case normal, elevated, hot
+    case normal, elevatedLoad, highLoad, thermalFair, thermalSerious, thermalCritical
 }
 
 /// AppKit reports a click in window coordinates — y up from the content view's bottom edge —
@@ -31,29 +31,37 @@ enum StatusCapsuleDismissal {
 /// Pure headline/dot/thermal mapping — kept static so tests drive it without `SystemMonitor`.
 enum StatusCapsuleModel {
     static func health(cpuPercent: Double, memoryFraction: Double, thermal: ProcessInfo.ThermalState) -> StatusCapsuleHealth {
-        let cpuFraction = cpuPercent / 100
-        let isHot = cpuFraction >= Design.Load.hot || memoryFraction >= Design.Load.hot
-            || thermal == .serious || thermal == .critical
-        if isHot {
-            return .hot
+        let load = max(cpuPercent / 100, memoryFraction)
+        switch thermal {
+        case .critical: return .thermalCritical
+        case .serious: return .thermalSerious
+        default: break
         }
-        let isElevated = cpuFraction >= Design.Load.elevated || memoryFraction >= Design.Load.elevated || thermal == .fair
-        return isElevated ? .elevated : .normal
+        if load >= Design.Load.hot {
+            return .highLoad
+        }
+        if thermal == .fair {
+            return .thermalFair
+        }
+        return load >= Design.Load.elevated ? .elevatedLoad : .normal
     }
 
     static func headlineKey(for health: StatusCapsuleHealth) -> String {
         switch health {
         case .normal: "System Normal"
-        case .elevated: "System Elevated"
-        case .hot: "System Overheating"
+        case .elevatedLoad: "Elevated Load"
+        case .highLoad: "High Load"
+        case .thermalFair: "Running Warm"
+        case .thermalSerious: "Running Hot"
+        case .thermalCritical: "Critical Heat"
         }
     }
 
     static func dotColor(for health: StatusCapsuleHealth) -> Color {
         switch health {
         case .normal: DesignTokens.EditDesk.Colors.success
-        case .elevated: DesignTokens.EditDesk.Colors.warning
-        case .hot: DesignTokens.EditDesk.Colors.danger
+        case .elevatedLoad, .thermalFair: DesignTokens.EditDesk.Colors.warning
+        case .highLoad, .thermalSerious, .thermalCritical: DesignTokens.EditDesk.Colors.danger
         }
     }
 
@@ -65,6 +73,11 @@ enum StatusCapsuleModel {
         case .critical: return "Thermal Critical"
         @unknown default: return "Thermal Nominal"
         }
+    }
+
+    /// Displays that keep a wallpaper render it only while the master switch is on.
+    static func renderingCount(configured: Int, wallpapersEnabled: Bool) -> Int {
+        wallpapersEnabled ? configured : 0
     }
 
     /// SCREENS S1: TEMP bar fills in four fixed steps, one per thermal state.

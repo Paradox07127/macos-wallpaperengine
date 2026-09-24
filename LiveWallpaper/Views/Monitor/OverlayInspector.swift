@@ -5,6 +5,10 @@ struct MonitorOverlaySection: View {
     let screen: Screen
     let screenManager: ScreenManager
     let backdropAvailable: Bool
+    var showsVisibilityControl = true
+    /// Edit Desk's canvas always draws the cover, so the backdrop preference does nothing there.
+    var showsBackdropControl = true
+    var editBoard: (@MainActor ((inout MonitorBoardConfiguration) -> Void) -> Void)?
 
 
     private var overlay: MonitorOverlayConfiguration {
@@ -14,18 +18,22 @@ struct MonitorOverlaySection: View {
     var body: some View {
         VStack(spacing: 12) {
             displayCard
-            BoardSettingsView(screen: screen, screenManager: screenManager)
+            BoardSettingsView(screen: screen, screenManager: screenManager, editBoard: editBoard)
         }
     }
 
     private var displayCard: some View {
         GroupBox {
             VStack(alignment: .leading, spacing: 8) {
-                showOnThisDisplayRow
-                Divider()
+                if showsVisibilityControl {
+                    showOnThisDisplayRow
+                    Divider()
+                }
                 layerRow
                 Divider()
-                OverlayBackdropRow(available: backdropAvailable)
+                if showsBackdropControl {
+                    OverlayBackdropRow(available: backdropAvailable)
+                }
                 MonitorPreviewModeRow()
             }
         }

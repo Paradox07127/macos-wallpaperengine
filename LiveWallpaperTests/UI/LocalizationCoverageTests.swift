@@ -280,6 +280,50 @@ struct LocalizationCoverageTests {
         )
     }
 
+    @Test("Every popover in the app's views opens through the in-app language scope")
+    func popoversCarryTheLanguageScope() throws {
+        let modifier = "LiveWallpaper/Views/Shared/AppLanguagePopover.swift"
+        var offenders: [String] = []
+        var scoped = 0
+        for file in RepositoryRoot.swiftFiles(under: "LiveWallpaper/Views") {
+            let path = RepositoryRoot.relativePath(of: file)
+            let source = try String(contentsOf: file, encoding: .utf8)
+            scoped += source.components(separatedBy: ".appLanguagePopover(").count - 1
+            if path != modifier, source.contains(".popover(") {
+                offenders.append(path)
+            }
+        }
+
+        #expect(scoped > 20, "Only \(scoped) scoped popovers matched — the scan stopped working")
+        #expect(offenders.isEmpty, ".popover( without the language scope: \(offenders.joined(separator: "; "))")
+        #expect(try Self.projectFile(modifier).contains("AppLanguageScope(defaults: .appScoped())"))
+    }
+
+    @Test("Every popover and sheet wraps its content in AppLanguageScope")
+    func presentationsWrapContentInTheLanguageScope() throws {
+        var offenders: [String] = []
+        var presentations = 0
+        for file in RepositoryRoot.swiftFiles(under: "LiveWallpaper") {
+            let lines = try String(contentsOf: file, encoding: .utf8).components(separatedBy: "\n")
+            for (index, line) in lines.enumerated() {
+                let code = line.trimmingCharacters(in: .whitespaces)
+                guard !code.hasPrefix("//"), code.contains(".popover(") || code.contains(".sheet(") else { continue }
+                presentations += 1
+                let limit = min(index + 8, lines.count)
+                let end = lines[(index + 1) ..< limit].firstIndex { next in
+                    let nextCode = next.trimmingCharacters(in: .whitespaces)
+                    return !nextCode.hasPrefix("//") && (nextCode.contains(".popover(") || nextCode.contains(".sheet("))
+                } ?? limit
+                if !lines[index ..< end].contains(where: { $0.contains("AppLanguageScope") }) {
+                    offenders.append("\(RepositoryRoot.relativePath(of: file)):\(index + 1)")
+                }
+            }
+        }
+
+        #expect(presentations > 25, "Only \(presentations) popovers and sheets matched — the scan stopped working")
+        #expect(offenders.isEmpty, "\(offenders.count) without AppLanguageScope: \(offenders.joined(separator: "; "))")
+    }
+
     @Test("Shortcut action copy remains localizable at render time")
     func shortcutActionCopyRemainsLocalizableAtRenderTime() throws {
         let shortcutView = try Self.projectFile("LiveWallpaper/Views/Settings/ShortcutsView.swift")

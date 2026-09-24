@@ -8,6 +8,7 @@ enum DropFailure: Identifiable, Equatable {
     case sceneUnsupportedInBuild
     case videoFormatUnsupported
     case videoBookmarkFailed
+    case sourceMissing
     case videoCopyFailed
     case htmlBookmarkFailed
     case htmlPickerWrongType
@@ -24,6 +25,7 @@ enum DropFailure: Identifiable, Equatable {
         case .sceneUnsupportedInBuild: "sceneUnsupportedInBuild"
         case .videoFormatUnsupported: "videoFormatUnsupported"
         case .videoBookmarkFailed: "videoBookmarkFailed"
+        case .sourceMissing: "sourceMissing"
         case .videoCopyFailed: "videoCopyFailed"
         case .htmlBookmarkFailed: "htmlBookmarkFailed"
         case .htmlPickerWrongType: "htmlPickerWrongType"
@@ -39,15 +41,16 @@ enum DropFailure: Identifiable, Equatable {
         case .applyNotConfirmed: "Couldn't confirm this wallpaper was applied. Try again."
         case .unrecognizedDrop: "Unsupported file type"
         case .sceneLibraryDrop: "That folder is a scene library"
-        case .sceneUnsupportedInBuild: "This version doesn't play scenes"
+        case .sceneUnsupportedInBuild: "Can't use Wallpaper Engine projects"
         case .videoFormatUnsupported: "Video format not supported"
         case .videoBookmarkFailed: "Couldn't open video"
+        case .sourceMissing: "This wallpaper's file is missing"
         case .videoCopyFailed: "Couldn't copy that video"
         case .htmlBookmarkFailed: "Couldn't open web resource"
         case .htmlPickerWrongType: "Pick a web file or folder"
         #if !LITE_BUILD
         case .sceneProjectUnsupported: "This Wallpaper Engine project type isn't supported."
-        case let .sceneImportRejected(reason): "Couldn't import this scene: \(reason)"
+        case let .sceneImportRejected(reason): "Couldn't import this project: \(reason)"
         #endif
         }
     }
@@ -61,11 +64,13 @@ enum DropFailure: Identifiable, Equatable {
         case .sceneLibraryDrop:
             "It holds many wallpapers rather than one. Import it from the Workshop library instead."
         case .sceneUnsupportedInBuild:
-            "This copy of Loomscreen plays video and web wallpapers. Drop one of those instead."
+            "Wallpaper Engine projects need Loomscreen Pro, a separate free download."
         case .videoFormatUnsupported:
             "Choose an .mp4, .mov, .m4v, or similar video file."
         case .videoBookmarkFailed:
             "macOS couldn't grant the app secure access to that file. Try a different video, or move the file to a folder you own."
+        case .sourceMissing:
+            "Can't find the file. It may have been deleted, or its disk isn't connected."
         case .videoCopyFailed:
             "Loomscreen couldn't copy it into its own storage. Check free space and try again."
         case .htmlBookmarkFailed:
@@ -76,7 +81,7 @@ enum DropFailure: Identifiable, Equatable {
         case .sceneProjectUnsupported:
             "This Wallpaper Engine project type isn't supported."
         case let .sceneImportRejected(reason):
-            "Couldn't import this scene: \(reason)"
+            "Couldn't import this project: \(reason)"
         #endif
         }
     }
@@ -90,11 +95,19 @@ enum DropFailure: Identifiable, Equatable {
         case .sceneLibraryDrop:
             String(localized: "Import this folder from the Workshop library.", bundle: .appLanguage)
         case .sceneUnsupportedInBuild:
-            String(localized: "This version supports video and web wallpapers only.", bundle: .appLanguage)
+            String(
+                localized: "Wallpaper Engine projects need Loomscreen Pro, a separate free download.", bundle: .appLanguage,
+                comment: "Shown in Lite when a Wallpaper Engine project folder is dropped or chosen. Both editions are free; Pro is a separate build, not a paid tier."
+            )
         case .videoFormatUnsupported:
             String(localized: "Choose a supported video format.", bundle: .appLanguage)
         case .videoBookmarkFailed:
             String(localized: "Couldn't get secure access to this video.", bundle: .appLanguage)
+        case .sourceMissing:
+            String(
+                localized: "Can't find the file. It may have been deleted, or its disk isn't connected.", bundle: .appLanguage,
+                comment: "A saved or chosen wallpaper file no longer exists where it was."
+            )
         case .videoCopyFailed:
             String(localized: "Couldn't copy this video; check free space.", bundle: .appLanguage)
         case .htmlBookmarkFailed:
@@ -105,7 +118,7 @@ enum DropFailure: Identifiable, Equatable {
         case .sceneProjectUnsupported:
             String(localized: "This Wallpaper Engine project type isn't supported.", bundle: .appLanguage)
         case let .sceneImportRejected(reason):
-            String(localized: "Couldn't import this scene: \(reason)", bundle: .appLanguage)
+            String(localized: "Couldn't import this project: \(reason)", bundle: .appLanguage)
         #endif
         }
     }

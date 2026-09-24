@@ -8,22 +8,23 @@ import SwiftUI
 struct LibraryModalHost: View {
     let library: SavedLibraryModel
     let stage: EditDeskStageModel
-    let thumbnails: ShelfThumbnailCache
+    /// Shared with the home page's context menus, which offer the same rows as the modal's "…" menu.
+    let actions: ModalActions
+    /// Open the home page's rename alert and delete confirmation for an item, the ones its context menus open.
+    let requestRename: @MainActor (LibraryItem) -> Void
+    let requestDelete: @MainActor (LibraryItem) -> Void
     @Binding var presentedItemID: String?
-    let apply: @MainActor (ApplyIntent, CGDirectDisplayID) -> Void
+    /// The display the modal's first apply button targets; nil keeps the leftmost display there.
+    var preferredTarget: CGDirectDisplayID?
+    /// Displays with an apply still preparing.
+    var applying: Set<CGDirectDisplayID> = []
 
-    @Environment(ScreenManager.self) private var screenManager
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    #if !LITE_BUILD
-    /// Optional: a host mounted without the Workshop services (tests) still opens the modal, minus
-    /// update and delete.
-    @Environment(SteamCMDDoctorService.self) private var doctor: SteamCMDDoctorService?
-    #endif
-    @State private var actions: ModalActions?
     @State private var content: WallpaperModalContent?
     @State private var dragPoint: CGPoint?
-    @State private var dropTarget: CGDirectDisplayID?
+    @State private var dropTarget: ModalDropTarget?
     @State private var targetFrames: [CGDirectDisplayID: CGRect] = [:]
+    @State private var applyAllFrame: CGRect?
     @State private var shakeTrigger = 0
     @State private var dragEndTask: Task<Void, Never>?
     /// The thumbnail run's visible box; a thumbnail scrolled out of it is not a drop target.
@@ -34,7 +35,7 @@ struct LibraryModalHost: View {
 
     /// The shelf's order, so ← → walk the same run the user came from.
     private var items: [LibraryItem] {
-        library.visibleItems.filter { $0.kind != .aerial }
+        library.visibleItems
     }
 
     /// What the modal is showing right now: the loaded content's item, so a navigation whose
@@ -68,13 +69,19 @@ struct LibraryModalHost: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            if let item = presentedItem, let content, let actions {
-                let targets = actions.targets(for: item, covers: covers)
+            if let item = presentedItem, let content {
+                let targets = actions.targets(for: item, covers: covers, preferred: preferredTarget).map { target in
+                    var target = target
+                    target.isPreparing = applying.contains(target.id)
+                    return target
+                }
                 let modalActions = actions.actions(for: item)
                 WallpaperModal(
                     content: content,
                     targets: targets,
                     actions: modalActions,
+                    requestRename: { requestRename(item) },
+                    requestDelete: { requestDelete(item) },
                     navigation: navigation(for: item),
                     windowSize: stage.stageSize,
                     // The whole top bar stays clickable: traffic lights and the window drag region live there.
@@ -86,12 +93,13 @@ struct LibraryModalHost: View {
                     DisplayFloatLayer(
                         targets: targets,
                         mode: .dropTarget,
-                        highlighted: dropTarget,
+                        highlighted: highlightedDisplay,
                         windowWidth: stage.stageSize.width,
                         onSelect: { _ in },
-                        onApplyAll: modalActions.applyToAllDisplays,
                         onTargetFrame: { targetFrames[$0.id] = $0.rect },
-                        onRunFrame: { runFrame = $0 }
+                        onRunFrame: { runFrame = $0 },
+                        applyAllHighlighted: dropTarget == .allDisplays,
+                        onApplyAllFrame: { applyAllFrame = $0 }
                     )
                     .padding(.top, FloatLayerGeometry.panelTop)
                     .transition(.offset(y: Self.floatHiddenTop - FloatLayerGeometry.panelTop).combined(with: .opacity))
@@ -134,22 +142,6 @@ struct LibraryModalHost: View {
         })
     }
 
-    private func makeActions() -> ModalActions {
-        #if LITE_BUILD
-        ModalActions(library: library, screenManager: screenManager, thumbnails: thumbnails, apply: apply)
-        #else
-        if let doctor {
-            return ModalActions(
-                library: library, screenManager: screenManager, thumbnails: thumbnails, doctor: doctor, apply: apply
-            )
-        }
-        return ModalActions(
-            inputs: .live(library: library, screenManager: screenManager), bookmarks: .shared,
-            thumbnails: thumbnails, apply: apply
-        )
-        #endif
-    }
-
     private func load() async {
         guard let item = requestedItem else {
             if presentedItemID != nil {
@@ -157,8 +149,6 @@ struct LibraryModalHost: View {
             }
             return
         }
-        let actions = actions ?? makeActions()
-        self.actions = actions
         var loaded = await actions.content(for: item)
         let panel = LibraryDetailGeometry.panelFrame(in: stage.stageSize)
         let preview = LibraryDetailGeometry.previewSize(in: panel)
@@ -207,8 +197,14 @@ struct LibraryModalHost: View {
             dragPoint = point
             dropTarget = target(at: point)
         case let .ended(point):
-            if let target = target(at: point), let item = presentedItem, let actions {
-                actions.actions(for: item).applyTo(target)
+            if let target = target(at: point), let item = presentedItem {
+                let modalActions = actions.actions(for: item)
+                switch target {
+                case let .display(id):
+                    modalActions.applyTo(id)
+                case .allDisplays:
+                    modalActions.applyToAllDisplays()
+                }
                 clearDrag()
             } else {
                 // MOTION 9: a miss shakes the ghost before it goes.
@@ -224,11 +220,29 @@ struct LibraryModalHost: View {
         }
     }
 
-    private func target(at point: CGPoint) -> CGDirectDisplayID? {
-        targetFrames.first { _, rect in
-            let visible = runFrame.map { rect.intersection($0) } ?? rect
+    private func target(at point: CGPoint) -> ModalDropTarget? {
+        Self.dropTarget(at: point, thumbnails: targetFrames, run: runFrame, applyAll: applyAllFrame)
+    }
+
+    private var highlightedDisplay: CGDirectDisplayID? {
+        switch dropTarget {
+        case let .display(id)?: id
+        default: nil
+        }
+    }
+
+    /// `run` is the thumbnail run's visible box: a thumbnail scrolled out of it takes no drop.
+    static func dropTarget(
+        at point: CGPoint, thumbnails: [CGDirectDisplayID: CGRect], run: CGRect?, applyAll: CGRect?
+    ) -> ModalDropTarget? {
+        let display = thumbnails.first { _, rect in
+            let visible = run.map { rect.intersection($0) } ?? rect
             return visible.contains(point)
-        }?.key
+        }
+        if let display {
+            return .display(display.key)
+        }
+        return applyAll?.contains(point) == true ? .allDisplays : nil
     }
 
     private func clearDrag() {

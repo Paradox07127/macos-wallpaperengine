@@ -75,6 +75,15 @@ public final class BookmarkStore {
         Logger.info("Bookmark removed: type \(removedType), total \(bookmarks.count)", category: .ui)
     }
 
+    /// Puts a removed entry back at `index` as it was, ID, cover and dates included; past the end it goes last.
+    /// An ID already in the store is left as it is.
+    public func insert(_ bookmark: WallpaperBookmark, at index: Int) {
+        guard !bookmarks.contains(where: { $0.id == bookmark.id }) else { return }
+        bookmarks.insert(bookmark, at: min(max(index, 0), bookmarks.count))
+        persist()
+        Logger.info("Bookmark restored: type \(bookmark.wallpaperType.rawValue), total \(bookmarks.count)", category: .ui)
+    }
+
     public func resetAfterSettingsCleared() {
         bookmarks.removeAll()
     }

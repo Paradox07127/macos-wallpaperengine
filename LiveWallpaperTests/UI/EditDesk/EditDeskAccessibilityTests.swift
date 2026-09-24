@@ -101,13 +101,16 @@ struct EditDeskAccessibilityTests {
         // Both action buttons and Skip are real `Button`s with a spoken label.
         #expect(card.contains("accessibilityLabel(Text(title))"))
         #expect(card.contains(#"accessibilityLabel(Text("Skip this step"))"#), "\"Skip\" alone does not say what it skips")
+        #expect(
+            card.contains(#"accessibilityLabel(Text("Step \(progress.stepNumber(of: page)) of \(progress.visiblePages.count)"))"#),
+            "VoiceOver would read the design's English STEP n / m"
+        )
 
         let capsule = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Onboarding/OnboardingCapsule.swift")
         #expect(capsule.contains("accessibilityElement(children: .ignore)"), "each dot would become its own element")
         #expect(capsule.contains(#"accessibilityLabel(Text("Get Started"))"#))
-        #expect(capsule.contains("accessibilityValue(Text(verbatim: OnboardingCardContent.stepText("))
         // The value is the progress itself, so the pill answers "how far in am I".
-        #expect(OnboardingCardContent.stepText(step: 2, total: 4) == "STEP 2 / 4")
+        #expect(capsule.contains(#"accessibilityValue(Text("Step \(dots.filter(\.self).count) of \(dots.count)"))"#))
     }
 
     /// 6.1c's two entry points are drawn into a CALayer, so the display element carries them as
@@ -132,10 +135,10 @@ struct EditDeskAccessibilityTests {
         view.layoutSubtreeIfNeeded()
         var events = model.events.makeAsyncIterator()
         let children = try #require(view.accessibilityChildren() as? [NSAccessibilityElement])
-        let empty = try #require(children.first { $0.accessibilityLabel() == "External Main" })
-        let filled = try #require(children.first { $0.accessibilityLabel() == "Second " })
+        let empty = try #require(children.first { $0.accessibilityLabel() == "External, Main" })
+        let filled = try #require(children.first { $0.accessibilityLabel() == "Second" })
         let actions = try #require(empty.accessibilityCustomActions())
-        #expect(actions.map(\.name) == [label("Choose File…"), label("Paste URL")])
+        #expect(actions.map(\.name) == [label("Choose File"), label("Paste URL")])
         // A display that already has a wallpaper must not offer them.
         #expect(filled.accessibilityCustomActions()?.isEmpty == true)
         try #require(actions[0].handler?() == true)
@@ -155,6 +158,10 @@ struct EditDeskAccessibilityTests {
         #expect(
             wizard.contains("accessibilityElement(children: .combine)"),
             "each status row must read as one element, not a title, a glyph and a detail"
+        )
+        #expect(
+            wizard.contains(#"accessibilityLabel(Text("Step \(progress.stepNumber(of: .workshop)) of \(dots.count)"))"#),
+            "VoiceOver would read the design's English STEP n / m"
         )
         let modal = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Workshop/WorkshopModal.swift")
         let arrow = try #require(modal.range(of: #"Text(verbatim: "↗")"#))

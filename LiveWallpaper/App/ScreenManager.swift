@@ -239,8 +239,13 @@ final class ScreenManager {
         },
         isCurrentTransition: { [weak self] generation, screenID in
             self?.isCurrentTransition(generation, for: screenID) ?? false
+        },
+        noteAutomaticSwitch: { [weak self] screen, source in
+            self?.noteAutomaticSwitch(on: screen, source: source)
         }
     )
+    /// Keyed by `displayFingerprint`; read by the Edit Desk's undo to spot a switch it did not make.
+    @ObservationIgnored var automaticSwitchMarks: [String: AutomaticSwitchMark] = [:]
     @ObservationIgnored lazy var htmlCoordinator = HTMLWallpaperCoordinator(
         configurationStore: configurationStore,
         screensProvider: { [weak self] in

@@ -178,7 +178,7 @@ struct SystemWallpaperLibraryView: View {
             tint: DesignTokens.Colors.LibraryTint.systemWallpaper,
             title: "Let macOS play your wallpaper",
             message: "macOS keeps a copy for the desktop and lock screen, and can play it with Loomscreen closed.",
-            actionTitle: "Choose Video…",
+            actionTitle: "Choose Video",
             actionSystemImage: "video.badge.plus",
             action: {
                 SystemWallpaperVideoImport.present(publishingInto: service)

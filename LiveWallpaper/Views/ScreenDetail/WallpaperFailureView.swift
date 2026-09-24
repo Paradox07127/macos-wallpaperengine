@@ -166,19 +166,44 @@ struct WallpaperFailureDetails: View {
             SheetFooterBar(primaryTitle: "Done", primaryAction: onDismiss, leading: {
                 Button {
                     report = BugReporter.makeReport(activeWallpapers: [], failureContext: failure)
-                } label: { Label("Report this Problem…", systemImage: "ladybug") }
+                } label: { Label("Report this Problem", systemImage: "ladybug") }
                     .buttonStyle(.borderless)
             })
         }
         .padding(DesignTokens.Spacing.xl)
         .frame(width: 560, height: 480)
-        .sheet(item: $report) { value in ReportBugSheet(report: value, onDismiss: { report = nil }) }
+        .sheet(item: $report) { value in
+            AppLanguageScope(defaults: .appScoped()) {
+                ReportBugSheet(report: value, onDismiss: { report = nil })
+            }
+        }
+    }
+}
+
+struct WallpaperPreparingView: View {
+    let title: String
+    let cancel: () -> Void
+
+    var body: some View {
+        VStack(spacing: DesignTokens.Spacing.lg) {
+            ProgressView().accessibilityLabel(Text("Preparing wallpaper…"))
+            Text(verbatim: title).font(DesignTokens.Typography.pageTitle)
+            Text("Preparing wallpaper…").font(DesignTokens.Typography.body).foregroundStyle(.secondary)
+            Button("Cancel", action: cancel).buttonStyle(.bordered)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
 struct WallpaperAttemptPreview: View {
     let screen: Screen
     let attempt: WallpaperLoadAttempt
+    /// Also run by Cancel, for an apply still waiting on this preparation.
+    var onCancel: (() -> Void)?
+    /// The Edit Desk's apply path, which records a change for undo; nil imports straight into the display.
+    var apply: ((ApplyIntent) -> Void)?
+    /// The Edit Desk's clear path, which records it for undo; nil clears straight away.
+    var clearWallpaper: (() -> Void)?
     @Environment(ScreenManager.self) private var screenManager
     @State private var pendingDestructive: PendingDestructive?
     @State private var detailsFor: WallpaperFailureSnapshot?
@@ -202,16 +227,11 @@ struct WallpaperAttemptPreview: View {
                 WallpaperFailureDetails(failure: snapshot, onDismiss: dismiss)
             }
         } else {
-            VStack(spacing: DesignTokens.Spacing.lg) {
-                ProgressView().accessibilityLabel(Text("Preparing wallpaper…"))
-                Text(verbatim: LogPrivacyRedactor.scrub(attempt.title)).font(DesignTokens.Typography.pageTitle)
-                Text("Preparing wallpaper…").font(DesignTokens.Typography.body).foregroundStyle(.secondary)
-                Button("Cancel") {
-                    guard screenManager.wallpaperLoads.attempt(for: screen)?.id == attempt.id else { return }
-                    screenManager.beginExplicitWallpaperSelection(for: screen)
-                }.buttonStyle(.bordered)
+            WallpaperPreparingView(title: LogPrivacyRedactor.scrub(attempt.title)) {
+                guard screenManager.wallpaperLoads.attempt(for: screen)?.id == attempt.id else { return }
+                screenManager.beginExplicitWallpaperSelection(for: screen)
+                onCancel?()
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
@@ -223,6 +243,10 @@ struct WallpaperAttemptPreview: View {
         #else
         return {
             guard let url = WPEFolderPicker.chooseImportFolder() else { return }
+            if let apply {
+                apply(.wpeProjectFolder(url))
+                return
+            }
             Task { @MainActor in await screenManager.importWallpaperEngineProject(at: url, for: screen) }
         }
         #endif
@@ -236,7 +260,11 @@ struct WallpaperAttemptPreview: View {
             pendingDestructive = PendingDestructive(
                 .clearCurrentWallpaper(displayName: screen.name)
             ) {
-                screenManager.clearWallpaperForScreen(screen)
+                if let clearWallpaper {
+                    clearWallpaper()
+                } else {
+                    screenManager.clearWallpaperForScreen(screen)
+                }
                 // Drops the failed attempt too, otherwise the page the user just
                 // escaped from stays on screen describing a wallpaper that is
                 // no longer assigned to anything.

@@ -54,17 +54,7 @@ extension GeneralSettingsView {
                         .monospacedDigit()
                         .textSelection(.enabled)
 
-                    Button {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(versionString, forType: .string)
-                    } label: {
-                        Image(systemName: "doc.on.doc")
-                            .font(.caption)
-                    }
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(.secondary)
-                    .help(Text("Copy version to clipboard"))
-                    .accessibilityLabel(Text("Copy version"))
+                    CopyVersionButton(version: versionString)
                 }
 
                 UpdateStatusLine()
@@ -140,6 +130,32 @@ extension GeneralSettingsView {
         let version = info?["CFBundleShortVersionString"] as? String ?? "–"
         let build = info?["CFBundleVersion"] as? String ?? "–"
         return String(localized: "Version \(version) (\(build))", bundle: .appLanguage, comment: "About tab version line. Placeholders are marketing version and build number.")
+    }
+}
+
+private struct CopyVersionButton: View {
+    let version: String
+    @State private var didCopy = false
+
+    var body: some View {
+        Button {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(version, forType: .string)
+            didCopy = true
+        } label: {
+            Image(systemName: didCopy ? "checkmark" : "doc.on.doc")
+                .font(.caption)
+        }
+        .buttonStyle(.borderless)
+        .foregroundStyle(.secondary)
+        .help(Text("Copy version to clipboard"))
+        .accessibilityLabel(Text("Copy version"))
+        .animation(.snappy, value: didCopy)
+        .task(id: didCopy) {
+            guard didCopy else { return }
+            try? await Task.sleep(for: .seconds(2))
+            didCopy = false
+        }
     }
 }
 

@@ -36,6 +36,15 @@ struct EditDeskStageModelTests {
         func shake(card: StageCard.ID) {
             log.append("shake \(card)")
         }
+
+        func shake(display: StageDisplay.ID) {
+            log.append("shake display \(display)")
+        }
+
+        func escape() -> Bool {
+            log.append("escape")
+            return false
+        }
     }
 
     private static func makeImage() throws -> CGImage {
@@ -138,6 +147,7 @@ struct EditDeskStageModelTests {
             { display in display.showsPlaylistControls = true },
             { display in display.canChangePlaylistEntry = true },
             { display in display.canTogglePlayback = true },
+            { display in display.intendsToPlay = true },
         ] {
             var changed = base
             mutate(&changed)
@@ -152,15 +162,34 @@ struct EditDeskStageModelTests {
         #expect(failed == failedAgain, "Equal chips compare by value, not by CGColor identity")
     }
 
-    @Test("The transport glyph offers the opposite of what the display is doing")
-    func playbackGlyphFollowsTheState() {
+    @Test("The transport glyph offers the opposite of what the user asked for, a policy pause included")
+    func playbackGlyphFollowsTheIntent() {
         var display = StageDisplay(
             id: 1, fingerprint: "fp", frame: .zero, isBuiltin: false, name: "MPG",
             badgeText: "", statusText: "", cover: nil, state: .ok
         )
+        display.intendsToPlay = true
         #expect(display.playbackGlyph == "pause.fill")
-        display.state = .paused(reasonText: "Paused")
+        // A policy pause stops the picture but keeps the intent to play, so the button still pauses.
+        display.state = .paused(reasonText: "On battery")
+        #expect(display.playbackGlyph == "pause.fill")
+        display.intendsToPlay = false
         #expect(display.playbackGlyph == "play.fill")
+    }
+
+    @Test("The ON badge names the leftmost display it runs on and counts the rest")
+    func onBadgeNamesTheLeftmostDisplay() {
+        func display(_ id: StageDisplay.ID, _ name: String, x: CGFloat) -> StageDisplay {
+            StageDisplay(
+                id: id, fingerprint: name, frame: CGRect(x: x, y: 0, width: 1920, height: 1080), isBuiltin: false,
+                name: name, badgeText: "", statusText: "", cover: nil, state: .ok
+            )
+        }
+        let displays = [display(1, "Studio", x: 1920), display(2, "MPG", x: 0), display(3, "Built-in", x: -1728)]
+        #expect(StageCard.onBadge(on: [], among: displays) == nil)
+        #expect(StageCard.onBadge(on: [1], among: displays) == "ON Studio")
+        #expect(StageCard.onBadge(on: [1, 2], among: displays) == "ON MPG +1")
+        #expect(StageCard.onBadge(on: [2, 1, 3], among: displays) == "ON Built-in +2")
     }
 
     /// The name drawn on the screen itself. Each step only fires when the one before it is blank,
@@ -184,5 +213,100 @@ struct EditDeskStageModelTests {
         #expect(StageWallpaperName.resolve(
             libraryTitle: nil, originTitle: "", fileURL: nil, host: nil, kind: "Scene"
         ) == "Scene")
+    }
+
+    private static func shelf(_ count: Int) -> [StageCard] {
+        (0 ..< count).map {
+            StageCard(id: "card-\($0)", title: "Card \($0)", metaLine: "", thumbnail: nil, onBadge: nil, isDraggable: true)
+        }
+    }
+
+    private static func cardsWithThumbnail(_ model: EditDeskStageModel) -> [Int] {
+        model.shelfItems.indices.filter { model.shelfItems[$0].thumbnail != nil }
+    }
+
+    @Test("A card scrolled out and back in gets its cached thumbnail back")
+    func shelfThumbnailReturnsAfterScrollingBack() throws {
+        let model = EditDeskStageModel()
+        model.shelfItems = Self.shelf(30)
+        var cache: [Int: CGImage] = [:]
+        for index in 0 ..< 30 {
+            cache[index] = try Self.makeImage()
+        }
+
+        model.report(visibleShelfRange: 0 ..< 10)
+        _ = model.refreshShelfThumbnails { cache[$0] }
+        #expect(Self.cardsWithThumbnail(model) == Array(0 ..< 14))
+
+        model.report(visibleShelfRange: 20 ..< 30)
+        _ = model.refreshShelfThumbnails { cache[$0] }
+        #expect(Self.cardsWithThumbnail(model) == Array(16 ..< 30))
+
+        model.report(visibleShelfRange: 0 ..< 10)
+        _ = model.refreshShelfThumbnails { cache[$0] }
+        #expect(Self.cardsWithThumbnail(model) == Array(0 ..< 14), "Cards scrolled back into view stay blank although the cache still has their images")
+        #expect((0 ..< 14).allSatisfy { model.shelfItems[$0].thumbnail === cache[$0] })
+    }
+
+    @Test("Cards within the lead keep their thumbnails when the row moves a little")
+    func shelfThumbnailsSurviveInsideTheLead() throws {
+        let model = EditDeskStageModel()
+        model.shelfItems = Self.shelf(30)
+        var cache: [Int: CGImage] = [:]
+        for index in 0 ..< 30 {
+            cache[index] = try Self.makeImage()
+        }
+        model.report(visibleShelfRange: 0 ..< 10)
+        _ = model.refreshShelfThumbnails { cache[$0] }
+
+        model.report(visibleShelfRange: 2 ..< 12)
+        _ = model.refreshShelfThumbnails { cache[$0] }
+        #expect(model.shelfItems[0].thumbnail != nil && model.shelfItems[1].thumbnail != nil)
+        #expect(model.shelfItems[14].thumbnail === cache[14] && model.shelfItems[15].thumbnail === cache[15])
+        #expect(model.shelfItems[16].thumbnail == nil)
+    }
+
+    @Test("A card still holding a thumbnail the cache has evicted is neither cleared nor decoded again")
+    func heldThumbnailIsNotDecodedAgain() throws {
+        let model = EditDeskStageModel()
+        model.shelfItems = Self.shelf(10)
+        let held = try Self.makeImage()
+        model.shelfItems[3].thumbnail = held
+        model.report(visibleShelfRange: 0 ..< 10)
+
+        let missing = model.refreshShelfThumbnails { _ in nil }
+        #expect(!missing.contains(3))
+        #expect(model.shelfItems[3].thumbnail === held)
+    }
+
+    @Test("Refresh returns, in order, the kept cards with no thumbnail and none in the cache")
+    func refreshReturnsTheKeptCardsTheCacheCannotFill() throws {
+        let model = EditDeskStageModel()
+        model.shelfItems = Self.shelf(60)
+        model.shelfItems[33].thumbnail = try Self.makeImage()
+        let uncached: Set = [2, 5, 10, 25, 26, 33, 36, 43, 44, 50]
+        var cache: [Int: CGImage] = [:]
+        for index in 0 ..< 60 where !uncached.contains(index) {
+            cache[index] = try Self.makeImage()
+        }
+        // Kept: the grid's 0..<6 and the row's 30..<40 widened to 26..<44.
+        model.report(visibleShelfRange: 30 ..< 40)
+        model.report(visibleGridRange: 0 ..< 6)
+
+        let missing = model.refreshShelfThumbnails { cache[$0] }
+        #expect(missing == [2, 5, 26, 36, 43])
+    }
+
+    @Test("A decode that finishes after its card left the kept band does not pin the image to it")
+    func lateDecodeOutsideTheBandIsDropped() throws {
+        let model = EditDeskStageModel()
+        model.shelfItems = Self.shelf(40)
+        model.report(visibleShelfRange: 0 ..< 10)
+        let image = try Self.makeImage()
+
+        model.landThumbnail(image, for: "card-5")
+        model.landThumbnail(image, for: "card-30")
+        #expect(model.shelfItems[5].thumbnail === image)
+        #expect(model.shelfItems[30].thumbnail == nil, "A late decode keeps its image alive on a card nobody is looking at")
     }
 }

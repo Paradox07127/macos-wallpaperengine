@@ -11,7 +11,6 @@ final class WorkshopSetupController {
     @ObservationIgnored let installer = SteamCMDManagedInstallCoordinator.shared
     @ObservationIgnored let engineAssets = WPEEngineAssetsLibrary.shared
     @ObservationIgnored let engineInstaller = WPEEngineAssetsInstaller.shared
-    @ObservationIgnored var onSignedIn: (@MainActor () -> Void)?
 
     /// Failures from the three Steam connection steps; scene-resources failures
     /// belong in `engineAssetsError`, not here.
@@ -292,7 +291,13 @@ final class WorkshopSetupController {
         } else {
             panel.directoryURL = applicationSupport
         }
-        panel.message = String(localized: "Choose the Steam library folder for wallpaper files. Download sign-in is stored separately.", bundle: .appLanguage, comment: "Open-panel message for the content library; credentials use a private profile.")
+        // Without a Steam client the standard folder does not exist; `bindSteamLibrary` accepts a new empty one there.
+        panel.message = scannedLibraryPath == nil
+            ? String(
+                localized: "Choose the Steam folder here. If there isn't one yet, create a folder named “Steam” in this location, then choose it.",
+                bundle: .appLanguage, comment: "Open-panel message for the content library when no Steam folder exists in the standard location."
+            )
+            : String(localized: "Choose the Steam library folder for wallpaper files. Download sign-in is stored separately.", bundle: .appLanguage, comment: "Open-panel message for the content library; credentials use a private profile.")
         panel.prompt = String(localized: "Use Steam Library", bundle: .appLanguage, comment: "Open-panel confirm button when authorizing the official Steam Library.")
         guard panel.runModal() == .OK, let url = panel.url else { return }
         beginSetupAction()
@@ -340,7 +345,6 @@ final class WorkshopSetupController {
             return
         }
         doctor.noteSuccessfulSteamOperation(generation: doctor.accountGeneration)
-        onSignedIn?()
         Task { await loadAccounts() }
     }
 

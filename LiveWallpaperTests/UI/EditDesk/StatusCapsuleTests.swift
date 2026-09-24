@@ -11,54 +11,72 @@ struct StatusCapsuleTests {
         #expect(health == .normal)
     }
 
-    @Test("CPU at the elevated threshold reads as elevated")
+    @Test("CPU at the elevated threshold reads as elevated load")
     func elevatedByCPU() {
         let health = StatusCapsuleModel.health(cpuPercent: 60, memoryFraction: 0.1, thermal: .nominal)
-        #expect(health == .elevated)
+        #expect(health == .elevatedLoad)
     }
 
-    @Test("Memory at the elevated threshold reads as elevated")
+    @Test("Memory at the elevated threshold reads as elevated load")
     func elevatedByMemory() {
         let health = StatusCapsuleModel.health(cpuPercent: 10, memoryFraction: 0.60, thermal: .nominal)
-        #expect(health == .elevated)
+        #expect(health == .elevatedLoad)
     }
 
-    @Test("A fair thermal state reads as elevated even with idle CPU/memory")
+    @Test("A fair thermal state reads as thermal fair even with idle CPU/memory")
     func elevatedByThermalFair() {
         let health = StatusCapsuleModel.health(cpuPercent: 10, memoryFraction: 0.1, thermal: .fair)
-        #expect(health == .elevated)
+        #expect(health == .thermalFair)
     }
 
-    @Test("CPU at the hot threshold reads as hot")
+    @Test("CPU at the hot threshold reads as high load")
     func hotByCPU() {
         let health = StatusCapsuleModel.health(cpuPercent: 85, memoryFraction: 0.1, thermal: .nominal)
-        #expect(health == .hot)
+        #expect(health == .highLoad)
     }
 
-    @Test("A serious thermal state reads as hot even with idle CPU/memory")
+    @Test("A serious thermal state reads as thermal serious even with idle CPU/memory")
     func hotByThermalSerious() {
         let health = StatusCapsuleModel.health(cpuPercent: 10, memoryFraction: 0.1, thermal: .serious)
-        #expect(health == .hot)
+        #expect(health == .thermalSerious)
     }
 
-    @Test("A critical thermal state reads as hot")
+    @Test("A critical thermal state reads as thermal critical")
     func hotByThermalCritical() {
         let health = StatusCapsuleModel.health(cpuPercent: 10, memoryFraction: 0.1, thermal: .critical)
-        #expect(health == .hot)
+        #expect(health == .thermalCritical)
+    }
+
+    @Test("Memory past the hot threshold with a nominal thermal state reads as high load, not overheating")
+    func highMemoryIsLoadNotHeat() {
+        let health = StatusCapsuleModel.health(cpuPercent: 10, memoryFraction: 0.9, thermal: .nominal)
+        #expect(StatusCapsuleModel.headlineKey(for: health) == "High Load")
+    }
+
+    @Test("Nothing counts as rendering while wallpapers are off")
+    func nothingRendersWhileWallpapersAreOff() {
+        #expect(StatusCapsuleModel.renderingCount(configured: 2, wallpapersEnabled: false) == 0)
+        #expect(StatusCapsuleModel.renderingCount(configured: 2, wallpapersEnabled: true) == 2)
     }
 
     @Test("Headline keys map one-to-one to health bands")
     func headlineKeys() {
         #expect(StatusCapsuleModel.headlineKey(for: .normal) == "System Normal")
-        #expect(StatusCapsuleModel.headlineKey(for: .elevated) == "System Elevated")
-        #expect(StatusCapsuleModel.headlineKey(for: .hot) == "System Overheating")
+        #expect(StatusCapsuleModel.headlineKey(for: .elevatedLoad) == "Elevated Load")
+        #expect(StatusCapsuleModel.headlineKey(for: .highLoad) == "High Load")
+        #expect(StatusCapsuleModel.headlineKey(for: .thermalFair) == "Running Warm")
+        #expect(StatusCapsuleModel.headlineKey(for: .thermalSerious) == "Running Hot")
+        #expect(StatusCapsuleModel.headlineKey(for: .thermalCritical) == "Critical Heat")
     }
 
     @Test("Dot color follows success/warning/danger by band")
     func dotColors() {
         #expect(StatusCapsuleModel.dotColor(for: .normal) == DesignTokens.EditDesk.Colors.success)
-        #expect(StatusCapsuleModel.dotColor(for: .elevated) == DesignTokens.EditDesk.Colors.warning)
-        #expect(StatusCapsuleModel.dotColor(for: .hot) == DesignTokens.EditDesk.Colors.danger)
+        #expect(StatusCapsuleModel.dotColor(for: .elevatedLoad) == DesignTokens.EditDesk.Colors.warning)
+        #expect(StatusCapsuleModel.dotColor(for: .thermalFair) == DesignTokens.EditDesk.Colors.warning)
+        #expect(StatusCapsuleModel.dotColor(for: .highLoad) == DesignTokens.EditDesk.Colors.danger)
+        #expect(StatusCapsuleModel.dotColor(for: .thermalSerious) == DesignTokens.EditDesk.Colors.danger)
+        #expect(StatusCapsuleModel.dotColor(for: .thermalCritical) == DesignTokens.EditDesk.Colors.danger)
     }
 
     @Test("Thermal labels cover all four ProcessInfo states")

@@ -101,7 +101,7 @@ struct ScenePresetBar: View {
 
             Divider()
 
-            Button("Save as New Preset…") {
+            Button("Save as New Preset") {
                 beginEditing(.saveAsNew)
             }
 
@@ -128,7 +128,7 @@ struct ScenePresetBar: View {
         .truncationMode(.tail)
         .accessibilityLabel(Text("Preset"))
         .accessibilityValue(changedHelp)
-        .popover(isPresented: naming(matching: .isRename), arrowEdge: .bottom) {
+        .appLanguagePopover(isPresented: naming(matching: .isRename), arrowEdge: .bottom) {
             namingPopover
         }
 
@@ -178,7 +178,7 @@ struct ScenePresetBar: View {
         }
         .help(Text("Save the scene's current values as a new preset"))
         .accessibilityLabel(Text("Save as new preset"))
-        .popover(isPresented: naming(matching: .isSaveAsNew), arrowEdge: .bottom) {
+        .appLanguagePopover(isPresented: naming(matching: .isSaveAsNew), arrowEdge: .bottom) {
             namingPopover
         }
     }

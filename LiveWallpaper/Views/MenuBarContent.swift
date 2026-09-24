@@ -119,7 +119,7 @@ struct MenuBarContent: View {
                 updater.checkForUpdates()
                 dismiss()
             } label: {
-                Label("Update…", systemImage: "arrow.down.circle.fill")
+                Label("Update", systemImage: "arrow.down.circle.fill")
                     .font(.caption.weight(.semibold))
             }
             .adaptiveGlassButton(.regular, size: .small)
@@ -260,7 +260,7 @@ struct MenuBarContent: View {
                 HStack(spacing: 7) {
                     Image(systemName: "slider.horizontal.3")
                         .font(DesignTokens.Typography.bodyEmphasized)
-                    Text("Manage…")
+                    Text("Manage")
                         .font(DesignTokens.Typography.bodyEmphasized)
                         .lineLimit(1)
                 }

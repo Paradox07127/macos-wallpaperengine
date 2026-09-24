@@ -1,8 +1,5 @@
 import AppKit
 import LiveWallpaperCore
-#if !LITE_BUILD
-import Combine
-#endif
 
 @MainActor
 final class ModalActions {
@@ -16,7 +13,6 @@ final class ModalActions {
     struct Inputs {
         var item: @MainActor (String) -> LibraryItem? = { _ in nil }
         var displays: @MainActor () -> [Display] = { [] }
-        var togglePlayback: @MainActor (CGDirectDisplayID) -> Void = { _ in }
         var appendToPlaylist: @MainActor (Data, CGDirectDisplayID) -> Void = { _, _ in }
         var appendWallpaper: (@MainActor (WallpaperQueueEntry, CGDirectDisplayID) -> Void)?
         var presets: @MainActor () -> [String: ScenePreset] = { [:] }
@@ -35,16 +31,6 @@ final class ModalActions {
             inputs.item = { id in library.items.first { $0.id == id } }
             inputs.displays = {
                 screenManager.screens.map { Display(id: $0.id, name: $0.name, frame: $0.frame) }
-            }
-            inputs.togglePlayback = { id in
-                guard let screen = screenManager.screens.first(where: { $0.id == id }),
-                      let controller = screen.playbackController else { return }
-                if controller.isPlaying {
-                    controller.pause()
-                } else {
-                    controller.play()
-                }
-                screenManager.markWallpaperSessionStateChanged()
             }
             inputs.appendToPlaylist = { data, id in
                 guard let screen = screenManager.screens.first(where: { $0.id == id }),
@@ -65,37 +51,45 @@ final class ModalActions {
     private let bookmarks: BookmarkStore
     private let thumbnails: ShelfThumbnailCache
     private let apply: @MainActor (ApplyIntent, CGDirectDisplayID) -> Void
-    #if !LITE_BUILD
-    private var historySubscription: AnyCancellable?
-    #endif
+    /// Takes "All Displays" as one change; nil applies to each display in turn.
+    private let applyToAll: (@MainActor (ApplyIntent, [CGDirectDisplayID]) -> Void)?
+    /// Where removing and renaming a saved entry are recorded; nil records nothing.
+    private let undo: EditDeskUndoStack?
 
     init(
-        inputs: Inputs, bookmarks: BookmarkStore, thumbnails: ShelfThumbnailCache,
-        apply: @escaping @MainActor (ApplyIntent, CGDirectDisplayID) -> Void
+        inputs: Inputs, bookmarks: BookmarkStore, thumbnails: ShelfThumbnailCache, undo: EditDeskUndoStack? = nil,
+        apply: @escaping @MainActor (ApplyIntent, CGDirectDisplayID) -> Void,
+        applyToAll: (@MainActor (ApplyIntent, [CGDirectDisplayID]) -> Void)? = nil
     ) {
         self.inputs = inputs
         self.bookmarks = bookmarks
         self.thumbnails = thumbnails
+        self.undo = undo
         self.apply = apply
+        self.applyToAll = applyToAll
     }
 
     #if LITE_BUILD
     convenience init(
         library: SavedLibraryModel, screenManager: ScreenManager, thumbnails: ShelfThumbnailCache,
-        apply: @escaping @MainActor (ApplyIntent, CGDirectDisplayID) -> Void
+        undo: EditDeskUndoStack?,
+        apply: @escaping @MainActor (ApplyIntent, CGDirectDisplayID) -> Void,
+        applyToAll: (@MainActor (ApplyIntent, [CGDirectDisplayID]) -> Void)? = nil
     ) {
         self.init(
             inputs: .live(library: library, screenManager: screenManager),
-            bookmarks: .shared, thumbnails: thumbnails, apply: apply
+            bookmarks: .shared, thumbnails: thumbnails, undo: undo, apply: apply, applyToAll: applyToAll
         )
     }
     #else
     convenience init(
         library: SavedLibraryModel, screenManager: ScreenManager, thumbnails: ShelfThumbnailCache,
-        doctor: SteamCMDDoctorService,
-        apply: @escaping @MainActor (ApplyIntent, CGDirectDisplayID) -> Void
+        doctor: SteamCMDDoctorService, installedLibrary: InstalledLibraryModel, undo: EditDeskUndoStack?,
+        apply: @escaping @MainActor (ApplyIntent, CGDirectDisplayID) -> Void,
+        applyToAll: (@MainActor (ApplyIntent, [CGDirectDisplayID]) -> Void)? = nil
     ) {
         var inputs = Inputs.live(library: library, screenManager: screenManager)
+        inputs.installedLibrary = installedLibrary
         let store = BookmarkStore.shared
         let coordinator = WorkshopDownloadCoordinator.shared
         inputs.phase = { coordinator.phase(for: $0) }
@@ -123,16 +117,7 @@ final class ModalActions {
                 }
             ))
         }
-        self.init(inputs: inputs, bookmarks: store, thumbnails: thumbnails, apply: apply)
-        inputs.installedLibrary.onAppear()
-        historySubscription = NotificationCenter.default.publisher(for: .wpeHistoryDidChange)
-            .sink { [weak self] _ in
-                Task { @MainActor [weak self] in self?.inputs.installedLibrary.historyDidChange() }
-            }
-    }
-
-    isolated deinit {
-        inputs.installedLibrary.onDisappear()
+        self.init(inputs: inputs, bookmarks: store, thumbnails: thumbnails, undo: undo, apply: apply, applyToAll: applyToAll)
     }
     #endif
 
@@ -142,7 +127,8 @@ final class ModalActions {
         case let .bookmark(bookmark):
             return .bookmark(bookmark)
         case let .aerial(asset):
-            return .video(url: asset.url, bookmarkData: asset.bookmarkData, packageEntryName: nil)
+            // Not `asset.url`: the folder's scope closed when the scan ended; the file's own bookmark still resolves with one.
+            return .bookmark(WallpaperBookmark(label: asset.displayName, content: .video(bookmarkData: asset.bookmarkData)))
         #if !LITE_BUILD
         case let .workshop(entry):
             return .installedWorkshop(entry)
@@ -156,6 +142,20 @@ final class ModalActions {
             metaParts: metaParts(for: item), presetName: nil, preview: nil,
             isDraggable: item.isSupported, installed: nil
         )
+        content.canApply = item.isSupported
+        #if !LITE_BUILD
+        if case let .workshop(entry) = item.source, entry.origin.resourceLocation == .unsupported {
+            content.unsupportedOrigin = entry.origin
+        }
+        #endif
+        if !item.isSupported {
+            // The unsupported-project banner already says why; this line would only repeat it.
+            if content.unsupportedOrigin == nil {
+                content.notice = String(localized: "Can't run on this Mac", bundle: .appLanguage)
+            }
+        } else if item.isSourceMissing {
+            content.notice = DropFailure.sourceMissing.toastText
+        }
         if case let .bookmark(bookmark) = item.source {
             content.presetName = bookmark.content.sceneDescriptor?.resolvedPreset(in: inputs.presets())?.name
         }
@@ -188,15 +188,18 @@ final class ModalActions {
         return content
     }
 
-    func targets(for item: LibraryItem, covers: [CGDirectDisplayID: CGImage] = [:]) -> [ModalDisplayTarget] {
-        Self.targets(displays: inputs.displays(), activeOn: Set(item.onDisplays), covers: covers)
+    func targets(
+        for item: LibraryItem, covers: [CGDirectDisplayID: CGImage] = [:], preferred: CGDirectDisplayID? = nil
+    ) -> [ModalDisplayTarget] {
+        Self.targets(displays: inputs.displays(), activeOn: Set(item.onDisplays), covers: covers, preferred: preferred)
     }
 
     static func targets(
-        displays: [Display], activeOn: Set<CGDirectDisplayID>, covers: [CGDirectDisplayID: CGImage]
+        displays: [Display], activeOn: Set<CGDirectDisplayID>, covers: [CGDirectDisplayID: CGImage],
+        preferred: CGDirectDisplayID? = nil
     ) -> [ModalDisplayTarget] {
         let displays = displays.sorted { $0.frame.minX < $1.frame.minX }
-        let primary = displays.first
+        let primary = displays.first { $0.id == preferred } ?? displays.first
         return displays.enumerated().map { index, display in
             ModalDisplayTarget(
                 id: display.id, name: display.name, shortcutIndex: index + 1,
@@ -212,6 +215,37 @@ final class ModalActions {
         return await thumbnails.image(request, pixelSize: pixelSize, scale: scale)
     }
 
+    /// The modal's "…" rows for `item`, as its context menus show them.
+    func menuItems(
+        for item: LibraryItem, requestRename: @escaping @MainActor () -> Void,
+        requestDelete: @escaping @MainActor () -> Void
+    ) -> [StageMenuItem] {
+        actions(for: item).menuItems(
+            targets: targets(for: item), canApply: item.isSupported, isUpdating: isUpdating(item),
+            requestRename: requestRename, requestDelete: requestDelete
+        )
+    }
+
+    /// What the delete confirmation says for `item`: whether deleting it frees disk space.
+    func deletesFiles(_ item: LibraryItem) -> Bool {
+        #if !LITE_BUILD
+        if case let .workshop(entry) = item.source {
+            return inputs.installedLibrary.deletesFiles(entry)
+        }
+        #endif
+        return false
+    }
+
+    /// The "…" menu offers Cancel Update while this is true, as the modal does while its content reads `.checking`.
+    private func isUpdating(_ item: LibraryItem) -> Bool {
+        #if !LITE_BUILD
+        if case let .workshop(entry) = item.source, case .checking = updateState(for: entry) {
+            return true
+        }
+        #endif
+        return false
+    }
+
     func actions(for item: LibraryItem) -> WallpaperModalActions {
         let id = item.id
         var actions = WallpaperModalActions(
@@ -221,19 +255,15 @@ final class ModalActions {
             },
             applyToAllDisplays: { [self] in
                 guard let current = inputs.item(id), let intent = Self.intent(for: current) else { return }
+                if let applyToAll {
+                    applyToAll(intent, inputs.displays().map(\.id))
+                    return
+                }
                 for display in inputs.displays() {
                     apply(intent, display.id)
                 }
             }
         )
-        if !item.onDisplays.isEmpty {
-            actions.togglePlayback = { [self] in
-                guard let current = inputs.item(id) else { return }
-                for displayID in current.onDisplays {
-                    inputs.togglePlayback(displayID)
-                }
-            }
-        }
         if let appendWallpaper = inputs.appendWallpaper, item.isSupported {
             actions.addToPlaylist = { [self] displayID in
                 guard let current = inputs.item(id), let entry = WallpaperQueueEntry.libraryItem(current) else { return }
@@ -247,17 +277,27 @@ final class ModalActions {
         }
         if case .bookmark = item.source {
             actions.removeFromSaved = { [self] in
-                guard let current = inputs.item(id), case let .bookmark(bookmark) = current.source else { return }
-                bookmarks.remove(bookmark.id)
+                guard let current = inputs.item(id), case let .bookmark(bookmark) = current.source,
+                      let index = bookmarks.bookmarks.firstIndex(where: { $0.id == bookmark.id }) else { return }
+                let removed = bookmarks.bookmarks[index]
+                bookmarks.remove(removed.id)
+                undo?.recordRemoval(of: removed, at: index)
             }
-            if Self.revealBookmark(for: item) != nil {
-                actions.showInFinder = { [self] in
-                    guard let current = inputs.item(id), let data = Self.revealBookmark(for: current),
-                          let resolved = try? SecurityScopedBookmarkResolver.shared.resolve(data, target: .transient).get()
-                    else { return }
-                    SecurityScopedBookmarkResolver.withScopedAccess(resolved.url) { _ in
-                        NSWorkspace.shared.activateFileViewerSelecting([resolved.url])
-                    }
+            actions.rename = { [self] name in
+                guard let current = inputs.item(id), case let .bookmark(bookmark) = current.source,
+                      let before = bookmarks.bookmarks.first(where: { $0.id == bookmark.id }) else { return }
+                bookmarks.rename(before.id, to: name)
+                guard bookmarks.bookmarks.first(where: { $0.id == before.id })?.label != before.label else { return }
+                undo?.recordRename(of: before)
+            }
+        }
+        if Self.revealBookmark(for: item) != nil {
+            actions.showInFinder = { [self] in
+                guard let current = inputs.item(id), let data = Self.revealBookmark(for: current),
+                      let resolved = try? SecurityScopedBookmarkResolver.shared.resolve(data, target: .transient).get()
+                else { return }
+                SecurityScopedBookmarkResolver.withScopedAccess(resolved.url) { _ in
+                    NSWorkspace.shared.activateFileViewerSelecting([resolved.url])
                 }
             }
         }
@@ -345,6 +385,9 @@ final class ModalActions {
     }
 
     private static func revealBookmark(for item: LibraryItem) -> Data? {
+        if case let .aerial(asset) = item.source {
+            return asset.bookmarkData
+        }
         guard case let .bookmark(bookmark) = item.source else { return nil }
         switch bookmark.content {
         case let .video(data, _): return data

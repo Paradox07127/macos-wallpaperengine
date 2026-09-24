@@ -64,7 +64,7 @@ struct DetailInspectorPanel: View {
                 if let onOpenAutomation, featureCatalog.isEnabled(.playlists) {
                     Button(action: onOpenAutomation) {
                         HStack {
-                            Label("Queue & Schedule", systemImage: "list.bullet")
+                            Label("Playlist & Schedule", systemImage: "list.bullet")
                             Spacer()
                             Image(systemName: "arrow.up.right.square")
                         }

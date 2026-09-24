@@ -18,12 +18,15 @@ final class DeferredApplyCoordinator {
     struct Target: Equatable {
         let screenID: CGDirectDisplayID
         let displayFingerprint: String
+        /// The display's name when the apply was queued or moved there; it outlives an unplugged display.
+        let screenName: String
         /// The generation returned by the host's explicit selection; this coordinator never advances it.
         let selectionGeneration: Int
 
         init(screen: Screen, selectionGeneration: Int) {
             screenID = screen.id
             displayFingerprint = screen.displayFingerprint
+            screenName = screen.name
             self.selectionGeneration = selectionGeneration
         }
     }
@@ -67,14 +70,17 @@ final class DeferredApplyCoordinator {
 
     private let manager: any DeferredApplyScreenResolving
     private let router: ApplyRouter
+    /// Records each apply that lands; nil records nothing.
+    private let undo: EditDeskUndoStack?
     /// One ticket per item, kept after it settles so a view that comes back still finds the result.
     private(set) var tickets: [UInt64: Ticket] = [:]
     @ObservationIgnored private var tasks: [UUID: Task<Void, Never>] = [:]
 
     /// The host retains this owner beyond the modal's lifetime; tickets expose observable results.
-    init(manager: any DeferredApplyScreenResolving, router: ApplyRouter) {
+    init(manager: any DeferredApplyScreenResolving, router: ApplyRouter, undo: EditDeskUndoStack? = nil) {
         self.manager = manager
         self.router = router
+        self.undo = undo
     }
 
     isolated deinit {
@@ -142,7 +148,9 @@ final class DeferredApplyCoordinator {
             return
         }
         ticket.state = .applying
-        let report = await router.apply(.installedWorkshop(entry), to: screen)
+        let recording = undo?.begin(.applyWallpaper, displays: [screen])
+        var report = await router.apply(.installedWorkshop(entry), to: screen)
+        report.undoStepID = recording?.settle(screen.id, applied: report.outcome == .applied)
         guard !Task.isCancelled, tickets[ticket.attempt.itemID] === ticket else { return }
         ticket.state = .finished(report)
     }

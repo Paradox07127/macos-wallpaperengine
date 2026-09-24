@@ -21,6 +21,7 @@ struct MusicOverlaySection: View {
 
     var backdropAvailable: Bool = false
     var showsVisibilityControl = true
+    var showsBackdropControl = true
 
     private var music: MusicOverlayConfiguration {
         overlay.music
@@ -84,8 +85,10 @@ struct MusicOverlaySection: View {
                 styleRow
                 Divider()
                 sizeRow
-                Divider()
-                OverlayBackdropRow(available: backdropAvailable)
+                if showsBackdropControl {
+                    Divider()
+                    OverlayBackdropRow(available: backdropAvailable)
+                }
                 #if !LITE_BUILD
                 // Keyed to the switch, not the live tap: demand-driven capture is legitimately
                 // idle while music is paused.

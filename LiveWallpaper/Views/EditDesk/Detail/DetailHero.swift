@@ -6,6 +6,14 @@ import SwiftUI
 /// The HUD floats inside the hero's bottom edge.
 private let detailHeroHUDHeight: CGFloat = 44
 
+/// A web wallpaper's page transform as the hero edits it by dragging, pinching and twisting.
+struct DetailWebTransform {
+    let screen: Screen
+    let config: Binding<HTMLConfig>
+    /// The gestures attach only while "Adjust on the Preview" is on.
+    let isArmed: Bool
+}
+
 /// The detail's preview: a still captured from the running wallpaper, so the HUD's controls reach
 /// the desktop session and never this image.
 struct DetailHero<HUD: View>: View {
@@ -14,6 +22,8 @@ struct DetailHero<HUD: View>: View {
     let size: CGSize
     @ViewBuilder let hud: () -> HUD
     var playback: (StagePlaybackAction) -> Void = { _ in }
+    /// nil unless the hero shows a web wallpaper.
+    var webTransform: DetailWebTransform?
     @State private var hovered = false
     @FocusState private var transportFocused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -23,13 +33,16 @@ struct DetailHero<HUD: View>: View {
     }
 
     var body: some View {
-        still
+        manipulableStill
             .frame(width: size.width, height: size.height)
             .clipShape(shape)
             .overlay(alignment: .topLeading) {
-                titleChip
-                    .frame(maxWidth: max(1, size.width - 76), alignment: .leading)
-                    .padding(DesignTokens.EditDesk.Spacing.s12)
+                VStack(alignment: .leading, spacing: DesignTokens.EditDesk.Spacing.s8) {
+                    titleChip
+                    pauseReasonChip
+                }
+                .frame(maxWidth: max(1, size.width - 76), alignment: .leading)
+                .padding(DesignTokens.EditDesk.Spacing.s12)
             }
             .overlay(alignment: .topTrailing) {
                 performanceChip.padding(DesignTokens.EditDesk.Spacing.s12)
@@ -55,6 +68,23 @@ struct DetailHero<HUD: View>: View {
     }
 
     // MARK: Still
+
+    @ViewBuilder
+    private var manipulableStill: some View {
+        if let webTransform {
+            // The still is a capture of the running page with its transform already applied; false
+            // would draw the transform a second time.
+            WebTransformCanvas(
+                screen: webTransform.screen, config: webTransform.config,
+                isArmed: webTransform.isArmed, baseIncludesTransform: true,
+                baseVersion: image.map { AnyHashable(ObjectIdentifier($0)) }
+            ) {
+                still
+            }
+        } else {
+            still
+        }
+    }
 
     /// `scaledToFill` + `clipped` matches the stage tile's `.resizeAspectFill`, so the shared-element
     /// handover does not jump.
@@ -85,6 +115,18 @@ struct DetailHero<HUD: View>: View {
             Text(verbatim: status.kindLine)
                 .font(DesignTokens.EditDesk.Typography.metaMono)
                 .foregroundStyle(DesignTokens.Colors.overlayForeground.opacity(DesignTokens.Opacity.dimmedIcon))
+        }
+    }
+
+    /// `verbatim`: the reason arrives localized, and a second lookup would take the translation as a key.
+    @ViewBuilder
+    private var pauseReasonChip: some View {
+        if let reason = status.pauseReason {
+            chip {
+                Image(systemName: "pause.fill")
+                Text(verbatim: reason)
+            }
+            .font(DesignTokens.EditDesk.Typography.metaMono)
         }
     }
 
@@ -122,10 +164,11 @@ struct DetailHero<HUD: View>: View {
                     .help(Text("Previous Wallpaper"))
                     .accessibilityLabel(Text("Previous Wallpaper"))
             }
-            GlassIconButton(status.isPlaying ? "pause.fill" : "play.fill") { playback(.toggle) }
+            GlassIconButton(status.intendsToPlay == true ? "pause.fill" : "play.fill") { playback(.toggle) }
                 .focused($transportFocused)
-                .help(Text(status.isPlaying ? "Pause" : "Play"))
-                .accessibilityLabel(Text(status.isPlaying ? "Pause" : "Play"))
+                .disabled(status.intendsToPlay == nil)
+                .help(Text(status.intendsToPlay == true ? "Pause" : "Play"))
+                .accessibilityLabel(Text(status.intendsToPlay == true ? "Pause" : "Play"))
             if status.canNavigatePlaylist {
                 GlassIconButton("forward.end.fill") { playback(.next) }
                     .focused($transportFocused)

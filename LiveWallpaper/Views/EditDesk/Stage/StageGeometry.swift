@@ -57,8 +57,15 @@ enum StageGeometry {
     static let shelfPerspective: CGFloat = 500
     /// Cards the shelf shows at once; the band is this many slots wide. Also the settings default.
     static let shelfCapacity = 20
-    /// Cover Flow parks anything further out than this; past it the cards are fully transparent.
-    static let coverFlowReach = 6
+    /// The fan: cards 2.3° apart round a 1500pt circle, its top 18pt above the row's middle so the
+    /// sinking ends stay in the window. A card is whole to 13° off the middle and gone by 16°.
+    static let fanStepDegrees: CGFloat = 2.3
+    static let fanRadius: CGFloat = 1500
+    static let fanRise: CGFloat = 18
+    static let fanFadeDegrees: ClosedRange<CGFloat> = 13 ... 16
+    /// Focus Row: 176pt cards (0.88) whose middle one grows by a quarter, to 220pt, within one slot.
+    static let focusRowRestScale: CGFloat = 0.88
+    static let focusRowGrowth: CGFloat = 0.25
     static let shelfHeight: CGFloat = 262
     /// Extra downward offset at p = 0 so the row starts below the window bottom.
     static let shelfHiddenOffset: CGFloat = 180
@@ -103,6 +110,9 @@ enum StageGeometry {
     /// How far off the half-open state the wave still runs. Wide enough to cover a settle tail and
     /// a gesture frozen just short of the state, narrow enough that it is gone by the grid.
     static let waveProgressBand = 0.08
+    /// The wave eases in over this far above or below the card row: short of `chipRowGap`, so
+    /// pointing at the filter row lifts nothing.
+    static let waveApproach: CGFloat = 30
     /// How far past the band's end a card takes to fade out; one crate slot.
     static let bandFade: CGFloat = 48
     /// Cards accept clicks only this close to the half-open rest state.
@@ -144,6 +154,8 @@ enum StageGeometry {
     struct CardPlacement: Equatable, Sendable {
         var frame: CGRect
         var rotationYDegrees: CGFloat
+        /// Turn in the screen's plane about the card's centre, clockwise on screen; only the fan has one.
+        var rotationZDegrees: CGFloat = 0
         var opacity: CGFloat
         /// Container-space depth; negative recedes from the viewer.
         var translateZ: CGFloat = 0
@@ -153,22 +165,81 @@ enum StageGeometry {
         /// Base `zPosition` before the hover spring adds its bump; monotonic in `index`.
         var depthOrder: CGFloat = 0
         var anchorX: CGFloat = 0
+
+        /// Moves the card `lift` points along its own vertical (negative is up), which the fan turns with the card.
+        mutating func lift(by lift: CGFloat) {
+            let turn = rotationZDegrees * .pi / 180
+            frame.origin.x -= lift * sin(turn)
+            frame.origin.y += lift * cos(turn)
+        }
     }
 
-    /// Per-style constants for the three shelf forms (Settings → Appearance → Shelf style).
+    /// Per-style constants for the shelf forms (Settings → Appearance → Shelf style).
     struct ShelfMetrics: Equatable, Sendable {
         var pitch: CGFloat
         var tiltDegrees: CGFloat
         var depthStep: CGFloat
         var dimStep: CGFloat
         var maxDim: CGFloat
-        /// 0 pivots the card on its left edge, 0.5 on its centre.
+        /// 0 pivots the card on its left edge, 0.5 on its centre. Facing In picks each card's outer edge.
         var anchorX: CGFloat
         var hoverLift: CGFloat
         var hoverDepth: CGFloat
         /// Added to the card's turn while hovered. `-tiltDegrees` brings the preview square to the
-        /// viewer; Cover Flow leaves it at 0 because its focused card already faces front.
+        /// viewer. Facing In ignores it: its turn differs card to card, so the hover scales the turn
+        /// away instead.
         var hoverTiltDegrees: CGFloat
+    }
+
+    /// A card as drawn: `rect` turned `rotationZDegrees` about `pivot`, clockwise on screen.
+    struct CardShape: Equatable, Sendable {
+        var rect: CGRect
+        var rotationZDegrees: CGFloat = 0
+        var pivot = CGPoint.zero
+
+        /// `rect`'s corners at unit points (0,0), (1,0), (0,1), (1,1), turned.
+        var corners: [CGPoint] {
+            [
+                CGPoint(x: rect.minX, y: rect.minY), CGPoint(x: rect.maxX, y: rect.minY),
+                CGPoint(x: rect.minX, y: rect.maxY), CGPoint(x: rect.maxX, y: rect.maxY),
+            ].map { turned($0, by: rotationZDegrees) }
+        }
+
+        var boundingBox: CGRect {
+            guard rotationZDegrees != 0 else { return rect }
+            let xs = corners.map(\.x)
+            let ys = corners.map(\.y)
+            let minX = xs.min() ?? rect.minX
+            let minY = ys.min() ?? rect.minY
+            return CGRect(x: minX, y: minY, width: (xs.max() ?? minX) - minX, height: (ys.max() ?? minY) - minY)
+        }
+
+        func contains(_ point: CGPoint) -> Bool {
+            guard rotationZDegrees != 0 else { return rect.contains(point) }
+            return rect.contains(turned(point, by: -rotationZDegrees))
+        }
+
+        /// Both shapes turned alike: `other` is taken into this one's unturned frame first, so the
+        /// union is the one the cards cover rather than the box round two turned outlines.
+        func union(_ other: CardShape) -> CardShape {
+            var result = self
+            guard rotationZDegrees != 0 else {
+                result.rect = rect.union(other.rect)
+                return result
+            }
+            let moved = turned(other.pivot, by: -rotationZDegrees)
+            result.rect = rect.union(other.rect.offsetBy(dx: moved.x - other.pivot.x, dy: moved.y - other.pivot.y))
+            return result
+        }
+
+        private func turned(_ point: CGPoint, by degrees: CGFloat) -> CGPoint {
+            let radians = degrees * .pi / 180
+            let dx = point.x - pivot.x
+            let dy = point.y - pivot.y
+            return CGPoint(
+                x: pivot.x + dx * cos(radians) - dy * sin(radians), y: pivot.y + dx * sin(radians) + dy * cos(radians)
+            )
+        }
     }
 
     /// `contentRects` are the screen-content rects, one per input frame in input order.
@@ -473,10 +544,21 @@ enum StageGeometry {
                 pitch: 48, tiltDegrees: 28, depthStep: 0, dimStep: 0, maxDim: 0,
                 anchorX: 0, hoverLift: -54, hoverDepth: 36, hoverTiltDegrees: -28
             )
-        case .coverFlow:
+        case .fan:
             ShelfMetrics(
-                pitch: 110, tiltDegrees: 62, depthStep: 0, dimStep: 0.18, maxDim: 0.6,
-                anchorX: 0.5, hoverLift: -16, hoverDepth: 20, hoverTiltDegrees: 0
+                pitch: 60, tiltDegrees: 0, depthStep: 0, dimStep: 0, maxDim: 0,
+                anchorX: 0.5, hoverLift: -30, hoverDepth: 0, hoverTiltDegrees: 0
+            )
+        case .focusRow:
+            // A 176pt card and an 18pt gap per slot.
+            ShelfMetrics(
+                pitch: 194, tiltDegrees: 0, depthStep: 0, dimStep: 0.3, maxDim: 0.3,
+                anchorX: 0.5, hoverLift: -8, hoverDepth: 0, hoverTiltDegrees: 0
+            )
+        case .facingIn:
+            ShelfMetrics(
+                pitch: 56, tiltDegrees: 28, depthStep: 0, dimStep: 0, maxDim: 0,
+                anchorX: 1, hoverLift: -32, hoverDepth: 20, hoverTiltDegrees: 0
             )
         }
     }
@@ -487,18 +569,84 @@ enum StageGeometry {
         cardSize.width * cos(metrics(for: style).tiltDegrees * .pi / 180)
     }
 
-    /// Signed x offset from the focused slot. Continuous at the focus so a spring-driven focus
-    /// index never makes the run jump.
-    static func coverFlowOffset(index: Int, focus: Double) -> CGFloat {
+    /// Facing In's signed x offset from the middle slot (shelf-lab `vee`): 156pt out to the first
+    /// neighbour, 56pt per card past it. Continuous at the middle, so a spring-driven focus never
+    /// makes the run jump.
+    static func facingInOffset(index: Int, focus: Double) -> CGFloat {
         let u = CGFloat(index) - CGFloat(focus)
-        let near = min(abs(u), 1)
-        let mid = min(max(abs(u) - 1, 0), 2)
-        let far = max(abs(u) - 3, 0)
-        return (u < 0 ? -1 : 1) * (110 * near + 48 * mid + 14 * far)
+        return (u < 0 ? -1 : 1) * (156 * min(abs(u), 1) + 56 * max(abs(u) - 1, 0))
     }
 
-    static func coverFlowDepth(_ distance: CGFloat) -> CGFloat {
-        -(100 * min(distance, 1) + 20 * min(max(distance - 1, 0), 2) + 15 * max(distance - 3, 0))
+    /// Face-on at the middle, easing to the full turn one slot out, outer edge near on both sides.
+    private static func facingInTilt(_ signed: CGFloat) -> CGFloat {
+        let rest = 1 - min(abs(signed), 1)
+        return -(signed < 0 ? -1 : 1) * metrics(for: .facingIn).tiltDegrees * (1 - rest * rest)
+    }
+
+    /// Focus Row's signed x offset from the middle slot: a pitch per card, plus half of what the
+    /// middle card grows by, taken in over its one slot — which keeps every gap at 18pt.
+    static func focusRowOffset(index: Int, focus: Double) -> CGFloat {
+        let u = CGFloat(index) - CGFloat(focus)
+        let growth = cardSize.width * focusRowRestScale * focusRowGrowth / 2
+        return u * metrics(for: .focusRow).pitch + (u < 0 ? -1 : 1) * growth * min(abs(u), 1)
+    }
+
+    static func focusRowScale(_ signed: CGFloat) -> CGFloat {
+        focusRowRestScale * (1 + focusRowGrowth * max(0, 1 - abs(signed)))
+    }
+
+    /// Clockwise on screen to the right of the middle, which points each card's up away from the hub.
+    static func fanTurn(index: Int, focus: Double) -> CGFloat {
+        fanStepDegrees * (CGFloat(index) - CGFloat(focus))
+    }
+
+    private static func fanFrame(turnDegrees: CGFloat, windowSize: CGSize) -> CGRect {
+        let radians = turnDegrees * .pi / 180
+        let top = windowSize.height - cardRowBottomInset + cardSize.height / 2 - fanRise
+        let centre = CGPoint(
+            x: windowSize.width / 2 + fanRadius * sin(radians), y: top + fanRadius * (1 - cos(radians))
+        )
+        return CGRect(
+            x: centre.x - cardSize.width / 2, y: centre.y - cardSize.height / 2,
+            width: cardSize.width, height: cardSize.height
+        )
+    }
+
+    /// 1 while an outer edge at `edge` is inside the window's side margins, 0 once it reaches the
+    /// window's edge.
+    private static func marginFade(edge: CGFloat, windowWidth: CGFloat) -> CGFloat {
+        let overshoot = max(cardRowMinLeading - edge, edge - (windowWidth - cardRowMinLeading))
+        return max(0, 1 - max(0, overshoot) / bandFade)
+    }
+
+    /// A centred card's own fade: its outer edge against the window's margins, or the fan card's turn.
+    private static func centredFade(style: ShelfStyle, index: Int, focus: Double, windowSize: CGSize) -> CGFloat {
+        let u = CGFloat(index) - CGFloat(focus)
+        switch style {
+        case .facingIn:
+            let minX = (windowSize.width - cardSize.width) / 2 + facingInOffset(index: index, focus: focus)
+            return marginFade(edge: u < 0 ? minX : minX + cardSize.width, windowWidth: windowSize.width)
+        case .focusRow:
+            let centre = windowSize.width / 2 + focusRowOffset(index: index, focus: focus)
+            let half = cardSize.width * focusRowScale(u) / 2
+            return marginFade(edge: u < 0 ? centre - half : centre + half, windowWidth: windowSize.width)
+        case .fan:
+            let turn = abs(fanTurn(index: index, focus: focus))
+            let fade = fanFadeDegrees
+            return min(max((fade.upperBound - turn) / (fade.upperBound - fade.lowerBound), 0), 1)
+        case .crate, .folders:
+            return 1
+        }
+    }
+
+    /// The card's own fade, times a fade over the last half slot before `(capacity − 1) / 2` cards
+    /// a side: `visibleCards` drops a card half a slot past that, so it has to be clear by then.
+    private static func centredOpacity(
+        style: ShelfStyle, index: Int, focus: Double, windowSize: CGSize, capacity: Int
+    ) -> CGFloat {
+        let side = CGFloat(max(capacity - 1, 0) / 2)
+        let capped = min(max(2 * (side + 0.5 - abs(CGFloat(index) - CGFloat(focus))), 0), 1)
+        return centredFade(style: style, index: index, focus: focus, windowSize: windowSize) * capped
     }
 
     /// Indices the shelf builds layers for: the ones inside the band plus the ones still crossing
@@ -508,9 +656,23 @@ enum StageGeometry {
         capacity: Int = shelfCapacity
     ) -> Range<Int> {
         guard count > 0 else { return 0 ..< 0 }
-        guard style != .coverFlow else {
+        guard !style.isCentred else {
+            // Out from the middle card while the next one still shows, at most `(capacity − 1) / 2`
+            // cards a side.
             let centre = Int(focus.rounded())
-            return max(0, centre - coverFlowReach) ..< min(count, centre + coverFlowReach + 1)
+            let side = max(capacity - 1, 0) / 2
+            let shows = { (index: Int) in
+                centredOpacity(style: style, index: index, focus: focus, windowSize: windowSize, capacity: capacity) > 0
+            }
+            var first = centre
+            var last = centre
+            while centre - first < side, shows(first - 1) {
+                first -= 1
+            }
+            while last - centre < side, shows(last + 1) {
+                last += 1
+            }
+            return (first ..< last + 1).clamped(to: 0 ..< count)
         }
         let pitch = metrics(for: style).pitch
         let band = shelfBand(style: style, capacity: capacity, windowSize: windowSize)
@@ -535,7 +697,7 @@ enum StageGeometry {
     /// Alpha for a card whose near edge sits at `cardMinX`: cards do not pop in and out at the
     /// band's ends, they cross a `bandFade`-wide ramp.
     static func bandOpacity(cardMinX: CGFloat, style: ShelfStyle, capacity: Int, windowSize: CGSize) -> CGFloat {
-        guard style != .coverFlow else { return 1 }
+        guard !style.isCentred else { return 1 }
         let band = shelfBand(style: style, capacity: capacity, windowSize: windowSize)
         let overshoot = max(band.lowerBound - cardMinX, cardMinX - band.upperBound)
         return max(0, 1 - max(0, overshoot) / bandFade)
@@ -554,9 +716,14 @@ enum StageGeometry {
         capacity: Int = shelfCapacity
     ) -> CGRect {
         let y = windowSize.height - cardRowBottomInset
-        guard style != .coverFlow else {
+        if style == .fan {
+            return fanFrame(turnDegrees: fanTurn(index: index, focus: focus), windowSize: windowSize)
+        }
+        guard !style.isCentred else {
+            let offset = style == .focusRow
+                ? focusRowOffset(index: index, focus: focus) : facingInOffset(index: index, focus: focus)
             return CGRect(
-                x: (windowSize.width - cardSize.width) / 2 + coverFlowOffset(index: index, focus: focus),
+                x: (windowSize.width - cardSize.width) / 2 + offset,
                 y: y, width: cardSize.width, height: cardSize.height
             )
         }
@@ -565,18 +732,18 @@ enum StageGeometry {
         return CGRect(x: x, y: y, width: cardSize.width, height: cardSize.height)
     }
 
-    static func gridColumns(windowWidth: CGFloat, size: LibraryTileSize = .medium) -> Int {
+    static func gridColumns(windowWidth: CGFloat, size: LibraryTileSize = .defaultSize) -> Int {
         DesignTokens.LibraryGrid.columns(
             for: size, aspect: .wide,
             fitting: windowWidth - 2 * DesignTokens.LibraryGrid.horizontalPadding
         ).count
     }
 
-    static func gridCellSize(windowWidth: CGFloat, size: LibraryTileSize = .medium) -> CGSize {
+    static func gridCellSize(windowWidth: CGFloat, size: LibraryTileSize = .defaultSize) -> CGSize {
         gridFrame(index: 0, windowWidth: windowWidth, size: size).size
     }
 
-    static func gridFrame(index: Int, windowWidth: CGFloat, size: LibraryTileSize = .medium) -> CGRect {
+    static func gridFrame(index: Int, windowWidth: CGFloat, size: LibraryTileSize = .defaultSize) -> CGRect {
         DesignTokens.LibraryGrid.tileFrame(
             index: index, size: size, aspect: .wide,
             fitting: windowWidth - 2 * DesignTokens.LibraryGrid.horizontalPadding,
@@ -587,7 +754,7 @@ enum StageGeometry {
         )
     }
 
-    static func visibleGridCards(count: Int, windowSize: CGSize, scrollOffset: CGFloat, size: LibraryTileSize = .medium) -> Range<Int> {
+    static func visibleGridCards(count: Int, windowSize: CGSize, scrollOffset: CGFloat, size: LibraryTileSize = .defaultSize) -> Range<Int> {
         guard count > 0, windowSize.height > gridTop else { return 0 ..< 0 }
         let columns = gridColumns(windowWidth: windowSize.width, size: size)
         let cell = gridCellSize(windowWidth: windowSize.width, size: size)
@@ -600,7 +767,7 @@ enum StageGeometry {
 
     static func cardPlacement(
         style: ShelfStyle, index: Int, count: Int, progress: Double, focus: Double, windowSize: CGSize,
-        capacity: Int = shelfCapacity, gridSize: LibraryTileSize = .medium
+        capacity: Int = shelfCapacity, gridSize: LibraryTileSize = .defaultSize
     ) -> CardPlacement {
         let p = clampProgress(progress)
         let (t1, t2) = progressSplit(p)
@@ -611,7 +778,8 @@ enum StageGeometry {
         let grid = gridFrame(index: index, windowWidth: windowSize.width, size: gridSize)
         let mix = CGFloat(t2)
         let flat = 1 - mix
-        let hidden = shelfRowTop(progress: p, windowSize: windowSize) - row.minY
+        // From the resting row top, not the card's own: measured from the card, the fan's arc flattens.
+        let hidden = shelfRowTop(progress: p, windowSize: windowSize) - (windowSize.height - cardRowBottomInset)
         let frame = CGRect(
             x: lerp(row.minX, grid.minX, mix),
             y: lerp(row.minY, grid.minY, mix) + hidden,
@@ -620,31 +788,32 @@ enum StageGeometry {
         )
         let signed = CGFloat(index) - CGFloat(focus)
         let distance = abs(signed)
-        let isFlow = style == .coverFlow
-        // Cover Flow turns each side card inward, so its near edge is the one facing the focus.
-        let tilt = isFlow ? min(65, max(-65, signed * 62)) : m.tiltDegrees
+        let isFacingIn = style == .facingIn
+        let tilt = isFacingIn ? facingInTilt(signed) : m.tiltDegrees
         // Fallen dominoes: the row is one plane at z = 0, so every card is the same size and
         // brightness and only the tilt plus the overlap carry the depth. Each card is still a
         // trapezoid — rotating about its own edge sinks its far side below the plane.
         let alongRow = CGFloat(index)
-        let depth = isFlow ? coverFlowDepth(distance) : m.depthStep * alongRow
-        let shelfScale = isFlow ? 1 - min(0.24, distance * 0.08) : 1
-        let dim = min(m.maxDim, m.dimStep * (isFlow ? distance : alongRow))
+        let depth = m.depthStep * alongRow
+        let shelfScale = style == .focusRow ? focusRowScale(signed) : 1
+        let dim = min(m.maxDim, m.dimStep * (style.isCentred ? distance : alongRow))
         // Dominoes: each card leans away to the right and the next one lies on top of it, so the
-        // part left showing is its own near edge.
-        let order = isFlow ? 100 - distance * 10 : CGFloat(index) * 10
-        // Cards more than three slots out are parked; past six they stop drawing entirely.
-        let parked: CGFloat = isFlow ? max(0, 1 - max(0, distance - 3) * 0.35) : 1
+        // part left showing is its own near edge. The fan overlaps the same way.
+        let order = style.isCentred && style != .fan ? 100 - distance * 10 : CGFloat(index) * 10
+        let parked = style.isCentred
+            ? centredOpacity(style: style, index: index, focus: focus, windowSize: windowSize, capacity: capacity) : 1
         let reveal: CGFloat = p < 0.02 ? 0 : min(1, CGFloat(t1) * 1.2)
         return CardPlacement(
             frame: frame,
             rotationYDegrees: tilt * flat,
+            rotationZDegrees: (style == .fan ? fanTurn(index: index, focus: focus) : 0) * flat,
             opacity: reveal * lerp(parked, 1, mix),
             translateZ: depth * flat,
             scale: lerp(shelfScale, 1, mix),
             dim: dim * flat,
             depthOrder: lerp(order, CGFloat(index), mix),
-            anchorX: m.anchorX
+            // The pivot flips sides where the turn is exactly 0, so the switch never shows.
+            anchorX: isFacingIn ? (signed < 0 ? 0 : 1) : m.anchorX
         )
     }
 
@@ -663,17 +832,21 @@ enum StageGeometry {
         let m = metrics(for: style)
         let leaned = hover * (1 - gridMix)
         placement.translateZ += m.hoverDepth * leaned
-        placement.rotationYDegrees += m.hoverTiltDegrees * leaned
+        if style == .facingIn {
+            placement.rotationYDegrees *= 1 - hover
+        } else {
+            placement.rotationYDegrees += m.hoverTiltDegrees * leaned
+        }
         placement.scale *= 1 + 0.04 * hover * gridMix
         return placement
     }
 
-    static func hitRect(
+    static func hitShape(
         _ placement: CardPlacement, style: ShelfStyle, hover: CGFloat = 0, gridMix: CGFloat = 0
-    ) -> CGRect {
+    ) -> CardShape {
         let placement = applyingHover(placement, style: style, hover: hover, gridMix: gridMix)
         let size = placement.frame.size
-        let pivot = metrics(for: style).anchorX * size.width
+        let pivot = placement.anchorX * size.width
         let radians = placement.rotationYDegrees * .pi / 180
         func project(_ u: CGFloat) -> (x: CGFloat, shrink: CGFloat) {
             let offset = (u - pivot) * placement.scale
@@ -684,21 +857,34 @@ enum StageGeometry {
         let near = project(0)
         let far = project(size.width)
         let height = size.height * placement.scale * max(near.shrink, far.shrink)
-        return CGRect(
+        let rect = CGRect(
             x: placement.frame.minX + min(near.x, far.x),
             y: placement.frame.midY - height / 2,
             width: abs(far.x - near.x), height: height
         )
+        // Turning the box after the lean and the divide is exact only for a card that neither leans
+        // nor leaves the plane, pivoting on its centre: the fan, the one style turned in the plane.
+        return CardShape(
+            rect: rect, rotationZDegrees: placement.rotationZDegrees,
+            pivot: CGPoint(x: placement.frame.minX + pivot, y: placement.frame.midY)
+        )
+    }
+
+    /// The box round `hitShape`: the shape itself for every card that is not turned in the plane.
+    static func hitRect(
+        _ placement: CardPlacement, style: ShelfStyle, hover: CGFloat = 0, gridMix: CGFloat = 0
+    ) -> CGRect {
+        hitShape(placement, style: style, hover: hover, gridMix: gridMix).boundingBox
     }
 
     /// Negative lift for card `index` when the pointer sits at `centre`, measured in slots — 3.5
     /// means halfway between cards 3 and 4. Continuous in `centre`, and with a zero derivative at
     /// both ends, so the crest tracks the pointer inside a slot instead of stepping at its edges.
-    /// Cover Flow lifts only the focused card: its neighbours are already turned away.
+    /// The centred styles lift only the card itself.
     static func waveLift(style: ShelfStyle, index: Int, centre: CGFloat?) -> CGFloat {
         guard let centre else { return 0 }
         let peak = -metrics(for: style).hoverLift
-        guard style != .coverFlow else { return abs(CGFloat(index) - centre) < 0.5 ? -peak : 0 }
+        guard !style.isCentred else { return abs(CGFloat(index) - centre) < 0.5 ? -peak : 0 }
         let u = abs(CGFloat(index) - centre) / waveFalloff
         guard u < 1 else { return 0 }
         return -peak * (1 + cos(.pi * u)) / 2

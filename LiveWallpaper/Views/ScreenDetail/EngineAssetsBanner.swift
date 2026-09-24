@@ -3,6 +3,10 @@ import LiveWallpaperCore
 import SwiftUI
 
 struct EngineAssetsBanner: View {
+    /// Applied only while the banner shows, so a hidden banner takes no room.
+    var margins = EdgeInsets(
+        top: DesignTokens.Spacing.lg, leading: DesignTokens.Spacing.xl, bottom: 0, trailing: DesignTokens.Spacing.xl
+    )
     @Environment(\.featureCatalog) private var featureCatalog
     @State private var engineAssets = WPEEngineAssetsLibrary.shared
     @State private var engineInstaller = WPEEngineAssetsInstaller.shared
@@ -47,8 +51,7 @@ struct EngineAssetsBanner: View {
                 .accessibilityHint(Text("Opens the Workshop settings page to download or link Wallpaper Engine assets"))
             }
             .transition(.opacity)
-            .padding(.horizontal, DesignTokens.Spacing.xl)
-            .padding(.top, DesignTokens.Spacing.lg)
+            .padding(margins)
             .task {
                 engineInstaller.refreshManagedInstallState()
             }

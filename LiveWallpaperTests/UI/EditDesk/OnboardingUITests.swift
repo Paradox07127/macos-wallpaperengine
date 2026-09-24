@@ -33,19 +33,36 @@ struct OnboardingUITests {
         )
     }
 
-    @Test("Every page's card carries a timing, a title, a message, at least one button and a footnote")
-    func cardContent() {
+    @Test(
+        "Every page's card carries a timing, a title, a message, at least one button and a footnote",
+        arguments: [true, false]
+    )
+    func cardContent(sceneCapable: Bool) {
         for page in OnboardingProgress.Page.allCases {
-            let content = OnboardingCardContent.of(page)
+            let content = OnboardingCardContent.of(page, sceneCapable: sceneCapable)
             #expect(!content.buttons.isEmpty, Comment(rawValue: "\(page) has no action"))
             #expect(content.buttons.count <= 2, Comment(rawValue: "\(page) has more than the two S9 buttons"))
             #expect(content.buttons.first?.isPrimary == true, Comment(rawValue: "\(page) leads with a secondary button"))
             #expect(content.buttons.dropFirst().allSatisfy { !$0.isPrimary })
         }
-        #expect(OnboardingCardContent.of(.home).buttons.count == 2)
-        #expect(OnboardingCardContent.of(.library).buttons.count == 1)
-        #expect(OnboardingCardContent.of(.workshop).buttons.count == 2)
-        #expect(OnboardingCardContent.of(.overlay).buttons.count == 1)
+        #expect(OnboardingCardContent.of(.home, sceneCapable: sceneCapable).buttons.count == 2)
+        #expect(OnboardingCardContent.of(.library, sceneCapable: sceneCapable).buttons.count == 1)
+        #expect(OnboardingCardContent.of(.workshop, sceneCapable: sceneCapable).buttons.count == 2)
+        #expect(OnboardingCardContent.of(.overlay, sceneCapable: sceneCapable).buttons.count == 1)
+    }
+
+    @Test("Lite's cards do not point at Wallpaper Engine projects or the Workshop")
+    func liteCardsLeaveOutWallpaperEngine() {
+        let lite: [OnboardingProgress.Page] = [.home, .library, .overlay]
+        for page in lite {
+            let content = OnboardingCardContent.of(page, sceneCapable: false)
+            for key in [content.message.probeKey] + content.buttons.map(\.title.probeKey) {
+                #expect(!key.contains("Wallpaper Engine"), Comment(rawValue: "\(page): \(key)"))
+                #expect(!key.contains("Workshop"), Comment(rawValue: "\(page): \(key)"))
+            }
+        }
+        // Control: `probeKey` falls back to "" when the mirror misses, which would pass every check above.
+        #expect(OnboardingCardContent.of(.home, sceneCapable: true).message.probeKey.contains("Wallpaper Engine"))
     }
 
     @Test("The step line counts within the visible pages, so Lite reads n / 3")
@@ -163,11 +180,33 @@ struct OnboardingUITests {
         #expect(source.contains("adoptSignedInAccount"))
         #expect(source.contains("WorkshopSetupController"))
         #expect(source.contains("WorkshopFolderImportCoordinator.shared.importProjects(from:"))
+        // The library grant and the standard-location scan go through the Settings row's own entry points.
+        #expect(source.contains("authorizeSteamLibrary(startingAtScannedPath: true)"))
+        #expect(source.contains("setupController.prepare()"))
         #expect(!source.contains("SteamConnectorClient.signInSteamAccount"), "that call belongs to SteamSignInSheet")
         #expect(!source.contains("SecureField"), "the wizard must not grow its own password field")
         // GAP §3.6: the Web API key and the engine assets stay in Settings.
         #expect(!source.contains("SteamWebAPIKeyEntrySheet"))
         #expect(!source.contains("engineAssets"))
+    }
+
+    @Test("The wizard's primary step is the first thing a download still lacks")
+    @MainActor
+    func wizardStepFollowsTheFirstBlocker() {
+        let table: [(SteamCMDDoctorService.DownloadBlocker?, Bool, SteamWizardStep)] = [
+            (.steamCMD, false, .installSteamCMD),
+            (.library, false, .chooseLibrary),
+            (.account, false, .signIn),
+            (.session, false, .signIn),
+            (nil, false, .signIn),
+            (nil, true, .done),
+        ]
+        for (blocker, isConfirmed, expected) in table {
+            #expect(
+                SteamWizardStep.make(blocker: blocker, isConfirmed: isConfirmed) == expected,
+                Comment(rawValue: "\(String(describing: blocker)), confirmed \(isConfirmed)")
+            )
+        }
     }
 
     @Test("The workshop page presents the wizard and no longer keeps the old onboarding sheet")

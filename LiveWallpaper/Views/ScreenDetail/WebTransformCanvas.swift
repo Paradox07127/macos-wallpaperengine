@@ -15,6 +15,8 @@ struct WebTransformCanvas<Content: View>: View {
     /// The base image already has the committed transform baked in (a capture of
     /// the running wallpaper), so only the gesture's own delta may be drawn.
     let baseIncludesTransform: Bool
+    /// Identity of that base image; a committed change stays drawn until it changes. nil keeps nothing.
+    var baseVersion: AnyHashable?
     @ViewBuilder let content: () -> Content
 
     @Environment(ScreenManager.self) private var screenManager
@@ -30,6 +32,7 @@ struct WebTransformCanvas<Content: View>: View {
     @State private var activeGestures: Set<GestureKind> = []
     @GestureState private var isRecognizing = false
     @State private var gestureInterrupted = false
+    @State private var lag: WebTransformLag?
 
     /// One preview point is this many CSS pixels on the display.
     /// `min`, not the width ratio: `scaledToFill` crops one axis, so the *other* sets the scale.
@@ -100,19 +103,23 @@ struct WebTransformCanvas<Content: View>: View {
     /// What to draw on top of the base image: the whole transform when the base
     /// is untransformed, and only the gesture's own delta when it is not.
     private var drawnScale: Double {
-        baseIncludesTransform ? magnification : liveScale
+        baseIncludesTransform ? pending.scale * magnification : liveScale
     }
 
     private var drawnRotation: Double {
-        baseIncludesTransform ? rotationDelta.degrees : liveRotation
+        baseIncludesTransform ? pending.rotation + rotationDelta.degrees : liveRotation
     }
 
     private var drawnTranslateX: Double {
-        baseIncludesTransform ? dragTranslation.width * pointsToCSS : liveTranslateX
+        baseIncludesTransform ? pending.translateX + dragTranslation.width * pointsToCSS : liveTranslateX
     }
 
     private var drawnTranslateY: Double {
-        baseIncludesTransform ? dragTranslation.height * pointsToCSS : liveTranslateY
+        baseIncludesTransform ? pending.translateY + dragTranslation.height * pointsToCSS : liveTranslateY
+    }
+
+    private var pending: WebTransformLag.Delta {
+        lag?.pending(to: config, over: baseVersion) ?? .none
     }
 
     // MARK: - Committed values
@@ -224,6 +231,7 @@ struct WebTransformCanvas<Content: View>: View {
         next.transformTranslateY = liveTranslateY
         resetGestureState()
         guard next != config else { return }
+        holdUntilBaseChanges()
         config = next
         screenManager.updateHTMLConfig(next, for: screen)
     }
@@ -236,8 +244,15 @@ struct WebTransformCanvas<Content: View>: View {
         next.transformTranslateX = 0
         next.transformTranslateY = 0
         guard next != config else { return }
+        holdUntilBaseChanges()
         config = next
         screenManager.updateHTMLConfig(next, for: screen)
+    }
+
+    /// Keeps the config the shown base was captured with, so the change stays drawn over it.
+    private func holdUntilBaseChanges() {
+        guard baseIncludesTransform, let baseVersion, lag?.baseVersion != baseVersion else { return }
+        lag = WebTransformLag(base: config, baseVersion: baseVersion)
     }
 
     private func resetGestureState() {
@@ -293,5 +308,34 @@ struct WebTransformCanvas<Content: View>: View {
         .padding(DesignTokens.Spacing.md)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+    }
+}
+
+/// A committed web transform that the canvas's base image, captured before the commit, does not show yet.
+struct WebTransformLag: Equatable {
+    /// Scale factor, degrees and CSS pixels, applied in the canvas's own order.
+    struct Delta: Equatable {
+        var scale = 1.0
+        var rotation = 0.0
+        var translateX = 0.0
+        var translateY = 0.0
+
+        static let none = Self()
+    }
+
+    /// The config the base image was captured with.
+    let base: HTMLConfig
+    /// The base image the change was committed over.
+    let baseVersion: AnyHashable
+
+    /// What `config` still adds over the base `version` names; nothing once a newer base shows.
+    func pending(to config: HTMLConfig, over version: AnyHashable?) -> Delta {
+        guard version == baseVersion else { return .none }
+        return Delta(
+            scale: config.transformScale / base.transformScale,
+            rotation: config.transformRotationDegrees - base.transformRotationDegrees,
+            translateX: config.transformTranslateX - base.transformTranslateX,
+            translateY: config.transformTranslateY - base.transformTranslateY
+        )
     }
 }

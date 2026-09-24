@@ -23,12 +23,17 @@ final class EditDeskRouter {
     var page: Page = .home
     var detailDisplayID: CGDirectDisplayID?
     var overlayEditorDisplayID: CGDirectDisplayID?
-    var libraryFocus: LibraryFocus = .wallpapers
+    /// A request the library page applies once, through `takeLibraryFocus()`; nil when none is pending.
+    var libraryFocus: LibraryFocus?
+    /// The display the library page is choosing a wallpaper for; nil when none is preselected.
+    var libraryTarget: CGDirectDisplayID?
     var settingsSelection: SettingsNavigation?
     var settingsSearchText = ""
     var pendingSettingsSearchAnchor: SettingsSearchAnchor?
     var pendingAddWallpaper: AddWallpaperRequest?
     var pendingFailureID: UUID?
+    var pendingDetailSection: DetailSection?
+    var pendingOnboardingStep: OnboardingProgress.Page?
     var onboardingRequested = false
     private(set) var previousPage: Page?
     private let isWorkshopAvailable: () -> Bool
@@ -89,8 +94,7 @@ final class EditDeskRouter {
             }
         case .selectScreenInSettings:
             guard let screenID = notification.userInfo?["screenID"] as? CGDirectDisplayID else { return }
-            showDetail(screenID)
-            pendingFailureID = notification.userInfo?["failureID"] as? UUID
+            showDetail(screenID, failureID: notification.userInfo?["failureID"] as? UUID)
         case .showOnboarding, EditDeskRoot.restartOnboardingNotification:
             onboardingRequested = true
         default:
@@ -105,10 +109,16 @@ final class EditDeskRouter {
         if let overlayEditorDisplayID, !availableDisplayIDs.contains(overlayEditorDisplayID) {
             self.overlayEditorDisplayID = nil
         }
+        if let libraryTarget, !availableDisplayIDs.contains(libraryTarget) {
+            self.libraryTarget = nil
+        }
     }
 
     func select(_ page: Page) {
         let destination = page == .workshop && !isWorkshopAvailable() ? .home : page
+        if destination != .library {
+            libraryTarget = nil
+        }
         guard destination != self.page else { return }
         previousPage = self.page
         self.page = destination
@@ -125,12 +135,40 @@ final class EditDeskRouter {
         select(previousPage ?? .home)
     }
 
-    func showDetail(_ id: CGDirectDisplayID) {
+    /// `failureID` names the failed load attempt the detail should open on; nil opens the display as it is.
+    /// `section` is the section it opens on; nil keeps the one showing.
+    func showDetail(_ id: CGDirectDisplayID, failureID: UUID? = nil, section: DetailSection? = nil) {
         select(.home)
         detailDisplayID = id
+        pendingFailureID = failureID
+        pendingDetailSection = section
     }
 
     func closeDetail() {
         detailDisplayID = nil
+    }
+
+    /// `displayID` is the display whose detail opens for the overlay step.
+    func showOnboardingStep(_ step: OnboardingProgress.Page, displayID: CGDirectDisplayID) {
+        switch step {
+        case .home:
+            closeDetail()
+            select(.home)
+        case .library:
+            closeDetail()
+            select(.library)
+        case .workshop:
+            closeDetail()
+            select(.workshop)
+        case .overlay:
+            showDetail(displayID, section: .overlay)
+        }
+        pendingOnboardingStep = step
+    }
+
+    func takeLibraryFocus() -> LibraryFocus? {
+        let focus = libraryFocus
+        libraryFocus = nil
+        return focus
     }
 }

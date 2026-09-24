@@ -99,20 +99,35 @@ struct EditDeskShelfContinuityTests {
         }
     }
 
-    @Test("The filter row and the scrim fade in and then stay")
-    func shelfFadesNeverReverse() {
-        for (name, curve) in shelfFades {
-            for (index, p) in Self.samples.enumerated() where index > 0 {
-                #expect(curve(p) >= curve(Self.samples[index - 1]), Comment(rawValue: "\(name) dips at \(p)"))
-            }
-            #expect(curve(0) == 0, Comment(rawValue: "\(name) shows at rest"))
-            #expect(curve(2) == 1, Comment(rawValue: "\(name) is short of the library"))
+    @Test("The filter row fades in and then stays")
+    func filterRowNeverFadesBack() {
+        let row = ShelfChromeRide.opacity
+        for (index, p) in Self.samples.enumerated() where index > 0 {
+            #expect(row(p) >= row(Self.samples[index - 1]), Comment(rawValue: "the filter row dips at \(p)"))
         }
+        #expect(row(0) == 0, "the filter row shows at rest")
+        #expect(row(2) == 1, "the filter row is short of the library")
     }
 
-    @Test("The scrim leads the filter row it sits under")
+    @Test("The scrim fades in with the shelf and back out as its cards leave for the grid")
+    func scrimFadesOutWithTheCards() {
+        let scrim = EditDeskShelfScrim.opacity
+        for (index, p) in Self.samples.enumerated() where index > 0 {
+            let previous = scrim(Self.samples[index - 1])
+            if p <= 1 {
+                #expect(scrim(p) >= previous, Comment(rawValue: "the scrim dips at \(p) on the way to the shelf"))
+            } else {
+                #expect(scrim(p) <= previous, Comment(rawValue: "the scrim comes back at \(p) on the way to the grid"))
+            }
+        }
+        #expect(scrim(0) == 0, "the scrim shows at rest")
+        #expect(scrim(1) == 1, "the open shelf sits on a partial scrim")
+        #expect(scrim(2) == 0, "the grid takes over from a scrim that is still showing")
+    }
+
+    @Test("The scrim leads the filter row it sits under on the way to the shelf")
     func scrimArrivesFirst() {
-        for p in Self.samples {
+        for p in Self.samples where p <= 1 {
             #expect(
                 EditDeskShelfScrim.opacity(p) >= ShelfChromeRide.opacity(p),
                 Comment(rawValue: "the filter row outruns its own backdrop at \(p)")

@@ -8,6 +8,8 @@ import SwiftUI
 struct HTMLEmptyState: View {
     var screen: Screen
     var config: HTMLConfig
+    /// Hands the chosen source to the caller's apply path; nil sets it on `screen` directly.
+    var apply: ((HTMLSource) -> Void)?
 
     @Environment(ScreenManager.self) private var screenManager
 
@@ -124,10 +126,10 @@ struct HTMLEmptyState: View {
     private var chooseLocalButton: some View {
         Button {
             HTMLLocalSourcePicker.pick { source in
-                screenManager.setHTMLWallpaper(source: source, config: config, for: screen)
+                use(source)
             }
         } label: {
-            Label("Choose Local File…", systemImage: "folder")
+            Label("Choose Local File", systemImage: "folder")
                 .font(DesignTokens.Typography.body)
         }
         .buttonStyle(.borderless)
@@ -137,7 +139,15 @@ struct HTMLEmptyState: View {
 
     private func commitURL() {
         guard let parsed = parsedURL else { return }
-        screenManager.setHTMLWallpaper(source: parsed, config: config, for: screen)
+        use(parsed)
+    }
+
+    private func use(_ source: HTMLSource) {
+        if let apply {
+            apply(source)
+        } else {
+            screenManager.setHTMLWallpaper(source: source, config: config, for: screen)
+        }
     }
 
     private func pasteFromClipboard() {

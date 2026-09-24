@@ -216,6 +216,7 @@ final class HTMLWallpaperCoordinator {
               case .html(let source, let previousConfig) = existing.activeWallpaper else { return }
         guard previousConfig != config else { return }
         existing.activeWallpaper = .html(source: source, config: config)
+        existing = SchedulePolicy.writingBack(existing.activeWallpaper, into: existing, now: Date(), calendar: .current)
 
         let runtimeConfigValue = runtimeConfig(source: source, config: config, for: screen)
         if !Self.requiresSessionRebuild(previous: previousConfig, current: config),

@@ -10,6 +10,10 @@ struct WallpaperModal: View {
     let content: WallpaperModalContent
     let targets: [ModalDisplayTarget]
     let actions: WallpaperModalActions
+    /// Open the home page's rename alert and delete confirmation for the shown item. Not presented here:
+    /// ← → keep paging under a dialog, so one owned by the modal would act on whatever it shows by then.
+    let requestRename: @MainActor () -> Void
+    let requestDelete: @MainActor () -> Void
     let navigation: ModalNavigation
     /// The stage's own `bounds.size`. A `GeometryReader` here would measure one title bar short.
     let windowSize: CGSize
@@ -25,7 +29,6 @@ struct WallpaperModal: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var dragState: DragState = .idle
     @State private var isNavigatingForward = true
-    @State private var confirmingDelete = false
     #if !LITE_BUILD
     @Environment(SteamCMDDoctorService.self) private var doctor: SteamCMDDoctorService?
     #endif
@@ -59,6 +62,7 @@ struct WallpaperModal: View {
                 VStack(alignment: .leading, spacing: 16) {
                     previewArea(size: LibraryDetailGeometry.previewSize(in: panel))
                     metadata
+                    notice
                     HStack(spacing: 12) {
                         if let reveal = actions.showInFinder {
                             GlassIconButton("folder", size: .regular, action: reveal)
@@ -68,7 +72,7 @@ struct WallpaperModal: View {
                             GlassIconButton("arrow.up.forward.app", size: .regular, action: open)
                                 .help(Text("Open in Steam")).accessibilityLabel(Text("Open in Steam"))
                         }
-                        if actions.addToPlaylist != nil || actions.schedule != nil {
+                        if actions.addToPlaylist != nil {
                             addMenu
                         }
                         moreMenu
@@ -77,6 +81,11 @@ struct WallpaperModal: View {
                 .frame(width: LibraryDetailGeometry.previewSize(in: panel).width)
                 ScrollView {
                     VStack(alignment: .leading, spacing: 18) {
+                        #if !LITE_BUILD
+                        if let origin = content.unsupportedOrigin {
+                            UnsupportedProjectNotice(origin: origin, showsIdentity: true)
+                        }
+                        #endif
                         if let description = content.descriptionText, !description.isEmpty {
                             Text("About this wallpaper").font(.headline)
                             Text(verbatim: description).font(.body).textSelection(.enabled)
@@ -110,10 +119,10 @@ struct WallpaperModal: View {
             HStack(spacing: 12) {
                 GlassIconButton("chevron.left", size: .regular) { navigate(forward: false) }
                     .disabled(!navigation.canGoPrevious)
-                    .help(Text("Previous Wallpaper")).accessibilityLabel(Text("Previous Wallpaper"))
+                    .help(Text("Show Previous Wallpaper (←)", comment: "Wallpaper modal tooltip; the arrow is the key that does the same.")).accessibilityLabel(Text("Show Previous Wallpaper"))
                 GlassIconButton("chevron.right", size: .regular) { navigate(forward: true) }
                     .disabled(!navigation.canGoNext)
-                    .help(Text("Next Wallpaper")).accessibilityLabel(Text("Next Wallpaper"))
+                    .help(Text("Show Next Wallpaper (→)", comment: "Wallpaper modal tooltip; the arrow is the key that does the same.")).accessibilityLabel(Text("Show Next Wallpaper"))
                 Spacer(minLength: 16)
                 applyControls
             }
@@ -121,16 +130,6 @@ struct WallpaperModal: View {
         .padding(.horizontal, 24)
         .padding(.bottom, 20)
         .overlay { shortcuts }
-        .confirmationDialog(
-            Text("Delete this wallpaper?"),
-            isPresented: $confirmingDelete,
-            titleVisibility: .visible
-        ) {
-            deleteConfirmButton
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            deleteMessage
-        }
     }
 
     // MARK: Preview
@@ -216,7 +215,7 @@ struct WallpaperModal: View {
             .frame(maxHeight: .infinity)
             applyControls
                 .padding(.bottom, DesignTokens.EditDesk.Spacing.s12)
-            ModalShortcutHint(showsPlayback: actions.togglePlayback != nil)
+            ModalShortcutHint()
                 .padding(.bottom, DesignTokens.EditDesk.Spacing.s12)
         }
         .padding(.horizontal, Self.barPadding)
@@ -228,16 +227,27 @@ struct WallpaperModal: View {
         return HStack(spacing: 10) {
             ForEach(([split.primary].compactMap(\.self)) + split.secondary) { target in
                 Button { actions.applyTo(target.id) } label: {
-                    Label(target.name, systemImage: target.isApplied ? "checkmark" : "display")
+                    Label { Text(verbatim: target.name) } icon: { targetIcon(target) }
                         .lineLimit(1).truncationMode(.middle)
                 }
                 .buttonStyle(.bordered).controlSize(.large)
                 .tint(target.isPrimary ? .accentColor : nil)
-                .help(Text("Apply to \(target.name)"))
+                .disabled(!content.canApply)
+                .help(applyHelp(target))
                 .accessibilityLabel(Text("Apply to \(target.name)"))
-                .accessibilityValue(target.isApplied ? Text("Applied") : Text(""))
+                .accessibilityValue(targetValue(target))
             }
         }
+    }
+
+    /// ⌘1…⌘9 are the only display shortcuts; a tenth display's button names none.
+    private func applyHelp(_ target: ModalDisplayTarget) -> Text {
+        target.shortcutIndex <= 9
+            ? Text(
+                "Apply to \(target.name) (⌘\(target.shortcutIndex))",
+                comment: "Wallpaper modal apply button tooltip. Placeholders are a display name and its ⌘ shortcut number."
+            )
+            : Text("Apply to \(target.name)")
     }
 
     private var metadata: some View {
@@ -274,6 +284,42 @@ struct WallpaperModal: View {
     }
 
     @ViewBuilder
+    private var notice: some View {
+        if let notice = content.notice {
+            InlineNoticeBanner(
+                tint: content.canApply ? DesignTokens.Colors.Status.warning : DesignTokens.Colors.Status.danger,
+                symbol: "exclamationmark.triangle",
+                title: Text(verbatim: notice)
+            ) {
+                if content.canApply, let removeFromSaved = actions.removeFromSaved {
+                    Button("Remove from Wallpaper Library", role: .destructive, action: removeFromSaved)
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func targetIcon(_ target: ModalDisplayTarget) -> some View {
+        if target.isPreparing {
+            ProgressView().controlSize(.small)
+        } else {
+            Image(systemName: target.isApplied ? "checkmark" : "display")
+        }
+    }
+
+    private func targetValue(_ target: ModalDisplayTarget) -> Text {
+        if target.isPreparing {
+            Text("Preparing wallpaper…")
+        } else if target.isApplied {
+            Text("Applied")
+        } else {
+            Text("")
+        }
+    }
+
+    @ViewBuilder
     private var communityPresets: some View {
         #if !LITE_BUILD
         if let id = content.workshopID, let doctor,
@@ -292,65 +338,23 @@ struct WallpaperModal: View {
                     }
                 }
             }
-            if let schedule = actions.schedule {
-                Button("Add to Schedule", action: schedule)
-            }
         }
     }
 
     private var moreMenu: some View {
         ModalGlyphMenu(glyph: "…", label: Text("More actions")) {
-            Menu("Apply to") {
-                ForEach(targets) { target in
-                    Button(target.name) { actions.applyTo(target.id) }
-                }
-            }
-            Button("All Displays", action: actions.applyToAllDisplays)
-            if let showInFinder = actions.showInFinder {
-                Button("Show in Finder", action: showInFinder)
-            }
-            if let openInSteam = actions.openInSteam {
-                Button("Open in Steam", action: openInSteam)
-            }
-            if let removeFromSaved = actions.removeFromSaved {
-                Button("Remove from Saved", role: .destructive, action: removeFromSaved)
-            }
-            updateRow
-            if actions.deleteInstalled != nil {
-                Button("Delete…", role: .destructive) { confirmingDelete = true }
-            }
+            WallpaperMenuRows(items: actions.menuItems(
+                targets: targets, canApply: content.canApply, isUpdating: isUpdating,
+                requestRename: requestRename, requestDelete: requestDelete
+            ))
         }
     }
 
-    @ViewBuilder
-    private var updateRow: some View {
-        if case .checking = content.installed?.updateState, let cancelUpdate = actions.cancelUpdate {
-            Button("Cancel update", action: cancelUpdate)
-        } else if let checkForUpdate = actions.checkForUpdate {
-            Button("Check for updates", action: checkForUpdate)
+    private var isUpdating: Bool {
+        if case .checking = content.installed?.updateState {
+            return true
         }
-    }
-
-    // MARK: Delete confirmation
-
-    @ViewBuilder
-    private var deleteConfirmButton: some View {
-        if content.installed?.deletesFiles == true {
-            Button("Delete & Free Up Space", role: .destructive) { actions.deleteInstalled?() }
-        } else {
-            Button("Remove from Library Only", role: .destructive) { actions.deleteInstalled?() }
-        }
-    }
-
-    @ViewBuilder
-    private var deleteMessage: some View {
-        if content.installed?.deletesFiles == true {
-            Text(
-                "Delete “\(content.title)” from this Mac’s Steam library and Loomscreen to free space. This cannot be undone; the wallpaper can be downloaded again. Steam subscriptions are unchanged."
-            )
-        } else {
-            Text("Remove “\(content.title)” from Loomscreen. Original files are kept.")
-        }
+        return false
     }
 
     // MARK: Keyboard
@@ -368,10 +372,6 @@ struct WallpaperModal: View {
                 Button { navigate(forward: true) } label: { EmptyView() }
                     .keyboardShortcut(.rightArrow, modifiers: [])
             }
-            if let togglePlayback = actions.togglePlayback {
-                Button(action: togglePlayback) { EmptyView() }
-                    .keyboardShortcut(.space, modifiers: [])
-            }
         }
         .opacity(0)
         .frame(width: 0, height: 0)
@@ -379,7 +379,7 @@ struct WallpaperModal: View {
     }
 
     private func applyToShortcut(_ index: Int) {
-        guard let target = ModalKeyMap.target(forShortcut: index, in: targets) else { return }
+        guard content.canApply, let target = ModalKeyMap.target(forShortcut: index, in: targets) else { return }
         actions.applyTo(target.id)
     }
 
@@ -521,6 +521,7 @@ private struct ModalGlyphMenu<Content: View>: View {
         .foregroundStyle(DesignTokens.EditDesk.Colors.textPrimary)
         .frame(width: modalButtonHeight, height: modalButtonHeight)
         .onHover { isHovering = $0 }
+        .help(label)
         .accessibilityLabel(label)
     }
 
@@ -545,5 +546,80 @@ private extension View {
         } else {
             self
         }
+    }
+}
+
+/// Draws `StageMenuItem` rows as SwiftUI menu content: the modal's "…" menu and the grid's context menu.
+struct WallpaperMenuRows: View {
+    let items: [StageMenuItem]
+
+    var body: some View {
+        ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+            if item.submenu.isEmpty {
+                Button(item.title, role: item.isDestructive ? .destructive : nil, action: item.action)
+                    .disabled(!item.isEnabled)
+            } else {
+                Menu(item.title) {
+                    WallpaperMenuRows(items: item.submenu)
+                }
+                .disabled(!item.isEnabled)
+            }
+        }
+    }
+}
+
+extension View {
+    /// Confirms deleting an installed Workshop wallpaper; `itemID` is the entry it is open for, nil closes it.
+    func wallpaperDeleteConfirmation(
+        itemID: Binding<String?>, title: String, deletesFiles: Bool, delete: @escaping @MainActor (String) -> Void
+    ) -> some View {
+        confirmationDialog(
+            Text("Delete this wallpaper?"),
+            isPresented: Self.isPresented(itemID),
+            titleVisibility: .visible,
+            presenting: itemID.wrappedValue
+        ) { id in
+            if deletesFiles {
+                Button("Delete & Free Up Space", role: .destructive) { delete(id) }
+            } else {
+                Button("Remove from Library Only", role: .destructive) { delete(id) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            if deletesFiles {
+                Text(
+                    "Delete “\(title)” from this Mac’s Steam library and Loomscreen to free space. This cannot be undone; the wallpaper can be downloaded again. Steam subscriptions are unchanged."
+                )
+            } else {
+                Text("Remove “\(title)” from Loomscreen. Original files are kept.")
+            }
+        }
+    }
+
+    /// Renames a saved Wallpaper Library entry; `itemID` is the entry it is open for, nil closes it.
+    func wallpaperRenameAlert(
+        itemID: Binding<String?>, name: Binding<String>, rename: @escaping @MainActor (String) -> Void
+    ) -> some View {
+        alert(
+            Text("Rename Wallpaper"),
+            isPresented: Self.isPresented(itemID),
+            presenting: itemID.wrappedValue
+        ) { id in
+            TextField("Wallpaper name", text: name)
+            Button("Cancel", role: .cancel) {}
+            Button("Rename") { rename(id) }
+        }
+    }
+
+    /// True while `itemID` holds an entry; dismissing clears it.
+    private static func isPresented(_ itemID: Binding<String?>) -> Binding<Bool> {
+        Binding(
+            get: { itemID.wrappedValue != nil },
+            set: { presented in
+                if !presented {
+                    itemID.wrappedValue = nil
+                }
+            }
+        )
     }
 }

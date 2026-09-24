@@ -12,9 +12,7 @@ extension GeneralSettingsView {
                 title: "Copy Diagnostic Summary",
                 info: "Copy a sanitized system and runtime summary."
             ) {
-                Button("Copy") { copyDiagnosticsSummary() }
-                    .fixedSize()
-                    .accessibilityLabel(Text("Copy diagnostic summary"))
+                CopyDiagnosticSummaryButton(copy: copyDiagnosticsSummary)
             }
 
             SettingRow(
@@ -66,7 +64,11 @@ extension GeneralSettingsView {
     // MARK: - Reset
 
     private func confirmResetAllSettings() {
-        pendingDestructive = PendingDestructive(.resetAllSettings) { performResetAllSettings() }
+        pendingDestructive = PendingDestructive(
+            .resetAllSettings(sceneCapable: screenManager.featureCatalog.isEnabled(.scene)),
+            alternative: { beginExportFromAlert() },
+            perform: { performResetAllSettings() }
+        )
     }
 
     private func performResetAllSettings() {
@@ -78,6 +80,7 @@ extension GeneralSettingsView {
         postSettingsNotificationAsync(.workshopPresetVisibilityDidChange)
         screenManager.handleGlobalSettingsChanged()
         screenManager.resetAllWallpaperSessions()
+        undo?.removeAll()
         screenManager.refreshScreens(preserveRuntimeSessions: false)
 
         let settings = SettingsManager.shared.loadGlobalSettings()
@@ -139,5 +142,31 @@ extension GeneralSettingsView {
             .appendingPathComponent("Library/Logs/LiveWallpaper", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         NSWorkspace.shared.open(dir)
+    }
+}
+
+private struct CopyDiagnosticSummaryButton: View {
+    let copy: () -> Void
+    @State private var didCopy = false
+
+    var body: some View {
+        Button {
+            copy()
+            didCopy = true
+        } label: {
+            if didCopy {
+                Text("Copied")
+            } else {
+                Text("Copy")
+            }
+        }
+        .fixedSize()
+        .accessibilityLabel(Text("Copy diagnostic summary"))
+        .animation(.snappy, value: didCopy)
+        .task(id: didCopy) {
+            guard didCopy else { return }
+            try? await Task.sleep(for: .seconds(2))
+            didCopy = false
+        }
     }
 }

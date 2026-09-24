@@ -8,7 +8,8 @@ enum WorkshopDownloadOutcome: Equatable, Sendable {
     case succeededAsPreset(baseWorkshopID: String)
     case failed(reason: String)
     case cancelled
-    case unsupported
+    /// In the library, but this Mac can't run it.
+    case unsupported(WPEHistoryEntry)
 }
 
 @MainActor

@@ -10,6 +10,10 @@ enum SettingsSearchAnchor: String, Hashable, Identifiable, Sendable {
     case displayDefaultsVideo
     case displayDefaultsWeb
     case displayDefaultsScene
+    case systemWallpaperPlayback
+    case systemWallpaperStatus
+    case systemWallpaperMaintenance
+    case systemWallpaperLibrary
     case integrationsAudio
     case integrationsWeather
     case overlaysAppearance
@@ -132,8 +136,12 @@ enum SettingsNavigation: String, CaseIterable, Hashable, Identifiable {
             }
         }
 
+        let wholeQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         return items.compactMap { item in
-            if let target = item.searchTargets(capabilities: capabilities).first(where: { $0.matches(terms: terms) }) {
+            let targets = item.searchTargets(capabilities: capabilities)
+            // Exact name first: "Global Shortcuts" also sits inside the earlier "Enable Global Shortcuts" section.
+            if let target = targets.first(where: { $0.hasName(equalTo: wholeQuery) })
+                ?? targets.first(where: { $0.matches(terms: terms) }) {
                 return SettingsNavigationSearchResult(
                     item: item,
                     anchor: target.anchor,
@@ -251,21 +259,27 @@ enum SettingsNavigation: String, CaseIterable, Hashable, Identifiable {
             group: .data,
             title: "Backup & Restore",
             systemImage: "arrow.triangle.2.circlepath",
-            keywords: ["import", "export", "configuration", "display defaults", "bookmarks"]
+            keywords: ["import", "export", "configuration", "display defaults", "bookmarks"],
+            rows: ["Export Configuration", "Import Configuration"]
         ),
         SettingsNavigationItem(
             destination: .advanced,
             group: .support,
             title: "Advanced",
             systemImage: "slider.horizontal.3",
-            keywords: ["logs", "diagnostics"]
+            keywords: ["logs", "diagnostics"],
+            rows: [
+                "Copy Diagnostic Summary", "Export Diagnostics", "Report a Bug", "Log Files",
+                "Reset All Settings",
+            ]
         ),
         SettingsNavigationItem(
             destination: .about,
             group: .support,
             title: "About",
             systemImage: "info.circle",
-            keywords: ["version", "github", "report bug", "welcome tour"]
+            keywords: ["version", "github", "report bug", "welcome tour"],
+            rows: ["View on GitHub", "Discussions", "Report a Bug", "Welcome Tour"]
         ),
     ]
 }
@@ -276,6 +290,8 @@ struct SettingsNavigationItem: Identifiable, Equatable {
     let title: String
     let systemImage: String
     let keywords: [String]
+    /// Catalog keys of the rows on a page that has no section targets.
+    var rows: [String] = []
 
     var id: SettingsNavigation { destination }
 
@@ -284,7 +300,7 @@ struct SettingsNavigationItem: Identifiable, Equatable {
     }
 
     private func buildSearchableText() -> String {
-        (title.localizedInEveryLanguage + keywords).joined(separator: " ")
+        (title.localizedInEveryLanguage + keywords + rows.flatMap(\.localizedInEveryLanguage)).joined(separator: " ")
     }
 
     /// Built once: `allItems` is a `static let`, and the index no longer depends on the
@@ -293,15 +309,23 @@ struct SettingsNavigationItem: Identifiable, Equatable {
         uniqueKeysWithValues: SettingsNavigation.allItems.map { ($0.destination, $0.buildSearchableText()) }
     )
 
-    fileprivate func searchTargets(capabilities: ProductCapabilities) -> [SettingsNavigationSearchTarget] {
+    func searchTargets(capabilities: ProductCapabilities) -> [SettingsNavigationSearchTarget] {
         switch destination {
         case .displayDefaults:
-            var targets: [SettingsNavigationSearchTarget] = []
+            var targets: [SettingsNavigationSearchTarget] = [
+                SettingsNavigationSearchTarget(
+                    label: "Displays",
+                    anchor: .displayDefaultsArrangement,
+                    rows: [],
+                    keywords: []
+                ),
+            ]
             if capabilities.canRender(.video) {
                 targets.append(
                     SettingsNavigationSearchTarget(
                         label: "Video",
                         anchor: .displayDefaultsVideo,
+                        rows: ["Mute", "Volume", "Frame Rate", "Scaling", "Color Space"],
                         keywords: [
                             "video", "frame rate", "fps", "volume", "mute", "scaling",
                             "span displays", "color space", "帧率", "影格率", "フレームレート",
@@ -314,6 +338,7 @@ struct SettingsNavigationItem: Identifiable, Equatable {
                     SettingsNavigationSearchTarget(
                         label: "Web",
                         anchor: .displayDefaultsWeb,
+                        rows: ["Mute audio", "Volume", "Frame Rate", "Interaction"],
                         keywords: [
                             "web", "html", "interaction", "pointer", "click", "mute audio",
                             "web audio",
@@ -326,6 +351,7 @@ struct SettingsNavigationItem: Identifiable, Equatable {
                     SettingsNavigationSearchTarget(
                         label: "Scene",
                         anchor: .displayDefaultsScene,
+                        rows: ["Mute", "Volume", "Frame Rate", "Scaling", "Follow Cursor", "Interaction"],
                         keywords: [
                             "scene", "wallpaper engine", "frame rate", "fps", "scaling",
                             "interaction", "follow cursor",
@@ -339,8 +365,9 @@ struct SettingsNavigationItem: Identifiable, Equatable {
             if capabilities.sku == .pro {
                 targets.append(
                     SettingsNavigationSearchTarget(
-                        label: "Audio Response",
+                        label: "Audio",
                         anchor: .integrationsAudio,
+                        rows: ["Audio Response"],
                         keywords: ["audio", "music", "sound", "reactive", "frequency spectrum"]
                     )
                 )
@@ -349,6 +376,7 @@ struct SettingsNavigationItem: Identifiable, Equatable {
                 SettingsNavigationSearchTarget(
                     label: "Weather",
                     anchor: .integrationsWeather,
+                    rows: ["Weather Location"],
                     keywords: ["weather", "location", "rain", "snow", "fog", "conditions"]
                 )
             )
@@ -358,6 +386,11 @@ struct SettingsNavigationItem: Identifiable, Equatable {
                 SettingsNavigationSearchTarget(
                     label: "General",
                     anchor: .generalAppearance,
+                    rows: [
+                        "Language", "Appearance", "Light", "Dark", "Library tile size", "Shelf style",
+                        "Main window background", "Cards rendered at once", "Autoplay preview on hover",
+                        "Status capsule shows", "Home opens as",
+                    ],
                     keywords: [
                         "language", "appearance", "theme", "dark", "light", "tile size", "library",
                         "shelf style", "crate", "cover flow", "cards rendered", "shelf capacity",
@@ -368,11 +401,13 @@ struct SettingsNavigationItem: Identifiable, Equatable {
                 SettingsNavigationSearchTarget(
                     label: "Startup",
                     anchor: .generalStartup,
+                    rows: ["Start at login", "Check for updates automatically", "Show in Dock"],
                     keywords: ["login", "start", "launch", "update", "dock", "menu bar"]
                 ),
                 SettingsNavigationSearchTarget(
                     label: "Wallpaper",
                     anchor: .generalWallpaper,
+                    rows: ["Capture video frame when locking", "Show wallpaper in screen captures"],
                     keywords: [
                         "lock", "lock screen", "capture", "screenshot", "screen capture",
                         "recording", "sharing", "desktop picture",
@@ -384,6 +419,10 @@ struct SettingsNavigationItem: Identifiable, Equatable {
                 SettingsNavigationSearchTarget(
                     label: "Performance & Battery",
                     anchor: .performancePause,
+                    rows: [
+                        "Pause on full-screen apps", "Pause in Low Power Mode",
+                        "Pause when windows cover the desktop", "Pause on battery", "Application Pause Rules",
+                    ],
                     keywords: [
                         "pause", "full-screen", "fullscreen", "battery", "low power",
                         "cover", "occlusion", "application", "rules", "exceptions",
@@ -395,6 +434,7 @@ struct SettingsNavigationItem: Identifiable, Equatable {
                     SettingsNavigationSearchTarget(
                         label: "Rendering",
                         anchor: .performanceRendering,
+                        rows: ["Adaptive frame rate", "MetalFX upscaling", "HDR output", "Multithreaded rendering"],
                         keywords: [
                             "frame rate", "fps", "adaptive", "metalfx", "upscaling",
                             "hdr", "multithreaded", "rendering",
@@ -406,6 +446,7 @@ struct SettingsNavigationItem: Identifiable, Equatable {
                 SettingsNavigationSearchTarget(
                     label: "Memory",
                     anchor: .performanceMemory,
+                    rows: ["Video preload (RAM)"],
                     keywords: ["memory", "ram", "video preload", "preload", "cache"]
                 )
             )
@@ -415,11 +456,13 @@ struct SettingsNavigationItem: Identifiable, Equatable {
                 SettingsNavigationSearchTarget(
                     label: "Widgets",
                     anchor: .overlaysAppearance,
+                    rows: ["Widget tint", "Widget opacity", "Liquid Glass"],
                     keywords: ["widget", "tint", "opacity", "liquid glass", "panel", "appearance"]
                 ),
                 SettingsNavigationSearchTarget(
                     label: "Units",
                     anchor: .overlaysUnits,
+                    rows: ["Temperature"],
                     keywords: ["temperature", "celsius", "fahrenheit", "unit"]
                 ),
             ]
@@ -428,11 +471,17 @@ struct SettingsNavigationItem: Identifiable, Equatable {
                 SettingsNavigationSearchTarget(
                     label: "Shortcuts",
                     anchor: .shortcutsMaster,
+                    rows: ["Enable Global Shortcuts"],
                     keywords: ["enable global shortcuts", "master switch", "shortcuts"]
                 ),
                 SettingsNavigationSearchTarget(
                     label: "Global Shortcuts",
                     anchor: .shortcutsGlobal,
+                    rows: [
+                        "Play / Pause All Wallpapers", "Next Wallpaper (Active Display)",
+                        "Previous Wallpaper (Active Display)", "Toggle Mute", "Toggle Interaction",
+                        "Show / Hide All Wallpapers", "Reload All Wallpapers", "Open Settings Window",
+                    ],
                     keywords: ["global shortcuts", "hotkeys", "keyboard", "bindings"]
                 )
             ]
@@ -441,6 +490,7 @@ struct SettingsNavigationItem: Identifiable, Equatable {
                 SettingsNavigationSearchTarget(
                     label: "Storage",
                     anchor: .storageDashboard,
+                    rows: ["Wallpapers", "Engine Assets", "System Wallpaper"],
                     keywords: [
                         "storage", "downloaded projects", "engine assets", "projects",
                         "archives", "download archives", "reclaim",
@@ -449,6 +499,7 @@ struct SettingsNavigationItem: Identifiable, Equatable {
                 SettingsNavigationSearchTarget(
                     label: "Caches",
                     anchor: .storageCaches,
+                    rows: ["Scene Video Texture Cache"],
                     keywords: [
                         "cache", "caches", "video cache", "scene video texture cache",
                         "clear all caches", "wallpaper engine cache"
@@ -458,21 +509,24 @@ struct SettingsNavigationItem: Identifiable, Equatable {
         case .workshopSetup:
             return [
                 SettingsNavigationSearchTarget(
-                    label: "Steam Web API key",
+                    label: "Steam Web API key (optional)",
                     anchor: .workshopSetup,
+                    rows: ["Steam Web API key"],
                     keywords: ["api key", "steam web api key", "web api", "key"]
                 ),
                 SettingsNavigationSearchTarget(
                     label: "Steam connection",
                     anchor: .workshopConnection,
+                    rows: ["Steam library", "SteamCMD", "Steam account", "Subscribed wallpapers"],
                     keywords: [
                         "steam", "steamcmd", "doctor", "diagnostics",
                         "steam library", "steam account", "sign in",
                     ]
                 ),
                 SettingsNavigationSearchTarget(
-                    label: "Wallpaper Engine assets",
+                    label: "Scene resources",
                     anchor: .workshopAssets,
+                    rows: ["Wallpaper Engine assets", "Check for asset updates at launch"],
                     keywords: [
                         "wallpaper engine assets", "engine assets",
                         "download from steam", "link folder",
@@ -481,16 +535,70 @@ struct SettingsNavigationItem: Identifiable, Equatable {
                 SettingsNavigationSearchTarget(
                     label: "Content",
                     anchor: .workshopContent,
+                    rows: [
+                        "Blur mature thumbnails", "Hide items already in my library", "Show presets as wallpapers",
+                        "Default sort", "Default time frame",
+                    ],
                     keywords: ["mature", "blur mature thumbnails", "hide downloaded", "library"]
+                ),
+                SettingsNavigationSearchTarget(
+                    label: "Diagnostics",
+                    anchor: .workshopDiagnostics,
+                    rows: [
+                        "SteamCMD binary identity", "Code signature", "Gatekeeper / quarantine",
+                        "Steam Library access", "Steam sign-in", "Workshop content folder", "Scene resources",
+                        "Background Steam connector",
+                    ],
+                    keywords: []
+                ),
+                SettingsNavigationSearchTarget(
+                    label: "Privacy & terms",
+                    anchor: .workshopLegal,
+                    rows: ["File access", "Steam sign-in", "Web API key", "Where requests go", "Wallpaper Engine assets"],
+                    keywords: []
                 ),
                 SettingsNavigationSearchTarget(
                     label: "Thumbnail badges",
                     anchor: .workshopBadges,
+                    rows: [
+                        "Wallpaper type", "Type badge style", "Rating", "Resolution", "Already installed",
+                        "Update available", "Currently in use",
+                    ],
                     keywords: [
                         "badge", "thumbnail badges", "rating", "resolution",
                         "wallpaper type", "in use", "update available"
                     ]
                 )
+            ]
+        case .systemWallpaper:
+            return [
+                SettingsNavigationSearchTarget(
+                    label: "Playback",
+                    anchor: .systemWallpaperPlayback,
+                    rows: ["Video playback"],
+                    keywords: []
+                ),
+                SettingsNavigationSearchTarget(
+                    label: "Extension status",
+                    anchor: .systemWallpaperStatus,
+                    rows: ["Another app copy provides the system wallpaper"],
+                    keywords: []
+                ),
+                SettingsNavigationSearchTarget(
+                    label: "Maintenance",
+                    anchor: .systemWallpaperMaintenance,
+                    rows: [
+                        "Inspect Registrations", "Restart Wallpaper Service",
+                        "Automatically recover stalled connections",
+                    ],
+                    keywords: []
+                ),
+                SettingsNavigationSearchTarget(
+                    label: "System Wallpaper Library",
+                    anchor: .systemWallpaperLibrary,
+                    rows: ["Remove All from System Wallpaper"],
+                    keywords: []
+                ),
             ]
         default:
             return []
@@ -500,6 +608,12 @@ struct SettingsNavigationItem: Identifiable, Equatable {
     func searchMatchHint(matching query: String) -> String? {
         let terms = query.localizedStandardTokens.filter { !$0.isEmpty }
         guard !terms.isEmpty else { return nil }
+
+        if let row = rows.first(where: { row in
+            row.localizedInEveryLanguage.contains { text in terms.allSatisfy { text.localizedCaseInsensitiveContains($0) } }
+        }) {
+            return row.localized(in: .appLanguage)
+        }
 
         let candidates = [title, title.localized(in: .appLanguage)] + keywords
         let exactCandidate = candidates.first { candidate in
@@ -522,32 +636,62 @@ struct SettingsNavigationItem: Identifiable, Equatable {
     }
 }
 
-private struct SettingsNavigationSearchTarget: Equatable {
+struct SettingsNavigationSearchTarget: Equatable {
     let label: String
     let anchor: SettingsSearchAnchor
+    /// Catalog keys of the section's rows, searched in every shipped language like `label`.
+    let rows: [String]
     let keywords: [String]
 
-    private var searchableText: String {
-        (label.localizedInEveryLanguage + keywords).joined(separator: " ")
+    /// Built once over the Pro superset; valid because capabilities decide only which
+    /// sections are offered, never what a section's names are.
+    private static let indexes: [SettingsSearchAnchor: SearchIndex] = Dictionary(
+        uniqueKeysWithValues: SettingsNavigation.allItems
+            .flatMap { $0.searchTargets(capabilities: ProductCapabilities.pro.withWorkshopOnline()) }
+            .map { ($0.anchor, SearchIndex($0)) }
+    )
+
+    private var index: SearchIndex {
+        Self.indexes[anchor] ?? SearchIndex(self)
     }
 
     func matches(terms: [String]) -> Bool {
-        terms.allSatisfy { searchableText.localizedCaseInsensitiveContains($0) }
+        let text = index.text
+        return terms.allSatisfy { text.localizedCaseInsensitiveContains($0) }
+    }
+
+    func hasName(equalTo query: String) -> Bool {
+        index.names.contains { name in
+            name.texts.contains { $0.localizedCaseInsensitiveCompare(query) == .orderedSame }
+        }
     }
 
     func matchHint(matching terms: [String]) -> String {
-        let candidates = [label] + keywords
-        guard let candidate = candidates.first(where: { candidate in
-            terms.allSatisfy { candidate.localizedCaseInsensitiveContains($0) }
+        let name = index.names.first { name in
+            name.texts.contains { text in terms.allSatisfy { text.localizedCaseInsensitiveContains($0) } }
+        }
+        if let name {
+            return name.key.localized(in: .appLanguage)
+        }
+
+        guard let keyword = keywords.first(where: { keyword in
+            terms.allSatisfy { keyword.localizedCaseInsensitiveContains($0) }
         }) else {
-            return label
+            return label.localized(in: .appLanguage)
         }
 
-        if candidate.localizedCaseInsensitiveCompare(label) == .orderedSame {
-            return label
-        }
+        return String(localized: "\(label.localized(in: .appLanguage)): \(keyword.formattedSearchHint)", bundle: .appLanguage)
+    }
 
-        return "\(label): \(candidate.formattedSearchHint)"
+    private struct SearchIndex {
+        /// `label`, then `rows`; `texts` is the key plus every shipped translation of it.
+        let names: [(key: String, texts: [String])]
+        let text: String
+
+        init(_ target: SettingsNavigationSearchTarget) {
+            names = ([target.label] + target.rows).map { ($0, $0.localizedInEveryLanguage) }
+            text = (names.flatMap(\.texts) + target.keywords).joined(separator: " ")
+        }
     }
 }
 

@@ -305,7 +305,7 @@ extension ScreenManager {
             )
             candidate = session
             if case .url = effectiveSource {
-                timeout = .seconds(12)
+                timeout = Self.longPreparationTimeout
             } else {
                 timeout = .seconds(5)
             }
@@ -383,7 +383,7 @@ extension ScreenManager {
                 audio.setAudioVolume(configuration.videoVolume)
             }
             candidate = sceneSession
-            timeout = .seconds(12)
+            timeout = Self.longPreparationTimeout
             afterCommit = {
                 sceneSession.setClickCaptureEnabled(configuration.sceneClickCaptureEnabled)
                 if let audio = sceneSession.audioController {

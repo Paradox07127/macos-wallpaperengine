@@ -102,4 +102,27 @@ struct SceneFailurePresentationTests {
         #expect(!linked.isEmpty)
         #expect(!unlinked.isEmpty)
     }
+
+    @Test("The technical line holds only file names and raw values")
+    func detailHoldsOnlyIdentifiersAndRawValues() {
+        let origin = WPEOrigin(
+            workshopID: "1234",
+            title: "Night Sky",
+            originalType: .scene,
+            sourceFolderBookmark: Data([1]),
+            cacheRelativePath: "1234",
+            previewFileName: nil,
+            entryFile: "scene.json"
+        )
+        func detail(_ reason: FallbackReason) -> String? {
+            reason.presentation(origin: origin, engineAssetsAuthorized: false).detail
+        }
+        let parserDetail = "unexpected token in /Users/alice/scene.json"
+        #expect(detail(.sceneParseFailed(parserDetail)) == "scene.json · \(LogPrivacyRedactor.scrub(parserDetail))")
+        #expect(detail(.sceneParseFailed(parserDetail))?.contains("alice") == false)
+        #expect(detail(.texContainerUnsupported(magic: "TEXV0009")) == ".tex · TEXV0009")
+        #expect(detail(.requiresWindowsPlugin) == ".dll")
+        // Control: a reason whose title and message already say everything has no technical line.
+        #expect(detail(.sceneResourceMissing) == nil)
+    }
 }

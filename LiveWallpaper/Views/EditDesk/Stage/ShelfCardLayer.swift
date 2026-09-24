@@ -21,7 +21,11 @@ final class ShelfCardLayer {
     private var restShadowAlpha: CGFloat = 0
     private var hotShadowAlpha: CGFloat = 0
     private(set) var card: StageCard?
-    private(set) var hitRect = CGRect.zero
+    private(set) var hitShape = StageGeometry.CardShape(rect: .zero)
+    var hitRect: CGRect {
+        hitShape.boundingBox
+    }
+
     var lift = StageSpring(value: 0, target: 0, parameters: StageSpring.hover)
     var hover = StageSpring(value: 0, target: 0, parameters: StageSpring.hover)
     var gridProgress = StageSpring(value: 0, target: 0, parameters: StageSpring.snap)
@@ -59,8 +63,6 @@ final class ShelfCardLayer {
         outline.borderWidth = 1.5
         shade.backgroundColor = StageLayerStyle.black
         shade.opacity = 0
-        spine.startPoint = CGPoint(x: 0, y: 0.5)
-        spine.endPoint = CGPoint(x: 1, y: 0.5)
         tab.cornerRadius = DesignTokens.EditDesk.Corner.badge
         gradient.startPoint = CGPoint(x: 0.5, y: 0)
         gradient.endPoint = CGPoint(x: 0.5, y: 1)
@@ -78,12 +80,14 @@ final class ShelfCardLayer {
         }
         self.card = card
         thumbnail.contents = card?.thumbnail
-        badgeWidth = StageLayerStyle.width(card?.onBadge ?? "", size: 11, mono: true) + 12
-        badge.string = card?.onBadge
-        badge.isHidden = card?.onBadge == nil
+        let badgeText = card?.statusBadge ?? card?.onBadge
+        // A long display name truncates inside the card instead of running off its edge.
+        badgeWidth = min(StageLayerStyle.width(badgeText ?? "", size: 11, mono: true) + 12, StageGeometry.cardSize.width - 16)
+        badge.string = badgeText
+        badge.isHidden = badgeText == nil
         let colors = DesignTokens.EditDesk.Colors.self
         badge.foregroundColor = StageLayerStyle.black
-        badge.backgroundColor = NSColor(colors.success).cgColor
+        badge.backgroundColor = NSColor(card?.statusBadge == nil ? colors.success : colors.warning).cgColor
         thumbnail.backgroundColor = NSColor(colors.background).cgColor
         outline.borderColor = StageLayerStyle.white
         spine.colors = [
@@ -114,21 +118,30 @@ final class ShelfCardLayer {
         let corner = DesignTokens.EditDesk.Corner.shelfCard
             + (DesignTokens.EditDesk.Corner.gridCard - DesignTokens.EditDesk.Corner.shelfCard) * gridMix
         let tilted = 1 - gridMix
+        // Facing In's middle card faces front, so its spine and contact shadow grow with its turn
+        // instead of jumping sides as the card crosses the middle.
+        let edged = style == .facingIn
+            ? min(1, abs(placement.rotationYDegrees) / StageGeometry.metrics(for: style).tiltDegrees) : tilted
+        // Both go on the near edge, which is the pivot: the right one only for a right-edge pivot.
+        let outward: CGFloat = placement.anchorX > 0.5 ? 1 : -1
         let lifted = reduceMotion ? 0 : CGFloat(hover.value)
         face.anchorPoint = CGPoint(x: placement.anchorX, y: 0.5)
         face.bounds = CGRect(origin: .zero, size: size)
         face.position = CGPoint(x: size.width * placement.anchorX, y: size.height / 2)
         let posed = StageGeometry.applyingHover(placement, style: style, hover: lifted, gridMix: gridMix)
         var transform = CATransform3DMakeTranslation(0, 0, posed.translateZ)
+        transform = CATransform3DRotate(transform, posed.rotationZDegrees * .pi / 180, 0, 0, 1)
         transform = CATransform3DRotate(transform, posed.rotationYDegrees * .pi / 180, 0, 1, 0)
         let scale = posed.scale
         face.transform = CATransform3DScale(transform, scale, scale, 1)
-        hitRect = StageGeometry.hitRect(posed, style: style)
+        hitShape = StageGeometry.hitShape(posed, style: style)
         shade.frame = face.bounds
         shade.cornerRadius = corner
         shade.opacity = Float(max(0, placement.dim * (1 - lifted)))
-        spine.frame = CGRect(x: 0, y: 0, width: 3, height: size.height)
-        spine.opacity = Float(tilted)
+        spine.frame = CGRect(x: outward > 0 ? size.width - 3 : 0, y: 0, width: 3, height: size.height)
+        spine.startPoint = CGPoint(x: outward > 0 ? 1 : 0, y: 0.5)
+        spine.endPoint = CGPoint(x: outward > 0 ? 0 : 1, y: 0.5)
+        spine.opacity = Float(edged)
         tab.frame = CGRect(x: 10, y: -9, width: 56, height: 10)
         tab.isHidden = style != .folders
         tab.opacity = Float(tilted)
@@ -153,14 +166,14 @@ final class ShelfCardLayer {
         face.shadowOpacity = Float(
             max(0.3, 1 - placement.dim) * (restShadowAlpha + (hotShadowAlpha - restShadowAlpha) * lifted)
         )
-        // Each card throws a tight shadow onto the one it has fallen across, to its left: with the
-        // whole row on one plane that contact edge is the only thing left that reads as depth. The
+        // Each card throws a tight shadow onto the one it has fallen across, past its near edge: with
+        // the whole row on one plane that contact edge is the only thing left that reads as depth. The
         // design's wide float shadow only comes back once the cards flatten into the grid.
-        let contactMix = tilted * (1 - lifted)
+        let contactMix = edged * (1 - lifted)
         face.shadowRadius = rest.radius + (hot.radius - rest.radius) * lifted
             - (rest.radius - Self.contactShadowRadius) * contactMix
         face.shadowOffset = CGSize(
-            width: -Self.contactShadowOffset * contactMix,
+            width: outward * Self.contactShadowOffset * contactMix,
             height: rest.y + (hot.y - rest.y) * lifted - (rest.y - Self.contactShadowDrop) * contactMix
         )
         // The path is a pure function of the size, so `shadowSize` is a cache key and nothing more:

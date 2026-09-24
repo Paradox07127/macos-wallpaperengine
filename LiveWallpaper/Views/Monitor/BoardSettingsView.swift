@@ -6,15 +6,12 @@ import UniformTypeIdentifiers
 struct BoardSettingsView: View {
     let screen: Screen
     let screenManager: ScreenManager
+    /// Applies an edit to the latest persisted board through the Edit Desk session; nil writes the draft directly.
+    var editBoard: (@MainActor ((inout MonitorBoardConfiguration) -> Void) -> Void)?
 
     @AppStorage("Monitor.SettingsExpanded") private var isExpanded = true
-    @AppStorage("Monitor.AuthorizationExpanded") private var isAuthorizationExpanded = true
 
     @State private var draft: MonitorBoardConfiguration = .default
-
-    @State private var claudeAuthorized = false
-    @State private var codexAuthorized = false
-    @State private var showsAgentActivity = false
 
     /// Display-only temperature unit for every sensor readout (app-wide, not per-board).
 
@@ -22,19 +19,18 @@ struct BoardSettingsView: View {
     var body: some View {
         VStack(spacing: 12) {
             boardSection
-            authorizationSection
+            AgentFolderAccessSection()
         }
         .onAppear(perform: reload)
         .onChange(of: screen.id) { _, _ in reload() }
         // Board edits made on the preview or the live overlay bypass this panel.
         .onChange(of: persistedBoard) { _, _ in reload() }
-        .sheet(isPresented: $showsAgentActivity) { AgentActivityPanel() }
     }
 
     private var boardSection: some View {
         GroupBox {
             CollapsibleSection(
-                title: "Monitor",
+                title: "Widget Options",
                 systemImage: "gauge.with.dots.needle.67percent",
                 isExpanded: $isExpanded
             ) {
@@ -46,21 +42,6 @@ struct BoardSettingsView: View {
                     reduceMotionRow
                     Divider()
                     layoutManagementRow
-                }
-            }
-        }
-        .groupBoxStyle(ContainerGroupBoxStyle())
-    }
-
-    private var authorizationSection: some View {
-        GroupBox {
-            CollapsibleSection(
-                title: "AI Session History Access",
-                systemImage: "folder.badge.person.crop",
-                isExpanded: $isAuthorizationExpanded
-            ) {
-                VStack(alignment: .leading, spacing: 8) {
-                    authorizationRows
                 }
             }
         }
@@ -91,7 +72,9 @@ struct BoardSettingsView: View {
                 in: 0...Double(MonitorBoardConfiguration.refreshIntervalSteps.count - 1),
                 step: 1,
                 onEditingChanged: { editing in
-                    if !editing { commit(draft) }
+                    if !editing {
+                        commit { $0.refreshIntervalSeconds = draft.refreshIntervalSeconds }
+                    }
                 }
             )
             .controlSize(.small)
@@ -152,7 +135,7 @@ struct BoardSettingsView: View {
                 icon: "square.grid.2x2",
                 iconColor: .purple,
                 title: "Layout",
-                subtitle: "Reset replaces widgets. Import replaces widgets and board settings."
+                subtitle: "Reset restores the default widgets. Import replaces all widgets and widget options."
             ) {
                 EmptyView()
             }
@@ -186,114 +169,20 @@ struct BoardSettingsView: View {
         return Set(current.map(key)) == Set(defaults.map(key))
     }
 
-    // MARK: - AI-agent surfaces
-
-    @ViewBuilder
-    private var authorizationRows: some View {
-        Button("Open Agent Activity") { showsAgentActivity = true }
-            .buttonStyle(.bordered)
-        authorizationRow(
-            title: "Claude Folder",
-            subtitle: "Read-only access to ~/.claude",
-            info: "Used by Agent Session and Agent Activity to display session metadata. Prompt text, replies and tool arguments are excluded.",
-            isAuthorized: claudeAuthorized,
-            authorize: {
-                SourceAuthorization.shared.requestAccess(for: .claude, from: hostWindow()) {
-                    refreshAuthorizationState()
-                    Task { await Runtime.shared.refreshSources() }
-                }
-            },
-            revoke: { revoke(.claude) }
-        )
-
-        Divider()
-
-        authorizationRow(
-            title: "Codex Folder",
-            subtitle: "Read-only access to ~/.codex",
-            info: "Used by Agent Session and Agent Activity to display session metadata. Prompt text, replies and tool arguments are excluded.",
-            isAuthorized: codexAuthorized,
-            authorize: {
-                SourceAuthorization.shared.requestAccess(for: .codex, from: hostWindow()) {
-                    refreshAuthorizationState()
-                    Task { await Runtime.shared.refreshSources() }
-                }
-            },
-            revoke: { revoke(.codex) }
-        )
-    }
-
-    @ViewBuilder
-    private func authorizationRow(
-        title: LocalizedStringKey,
-        subtitle: LocalizedStringKey,
-        info: String.LocalizationValue,
-        isAuthorized: Bool,
-        authorize: @escaping () -> Void,
-        revoke: @escaping () -> Void
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            SettingRow(
-                icon: "folder.badge.person.crop",
-                iconColor: .indigo,
-                title: title,
-                titleBadge: isAuthorized
-                    ? SettingRowTitleBadge(
-                        systemImage: "checkmark.circle.fill",
-                        tint: DesignTokens.Colors.Status.active,
-                        accessibilityLabel: Text("Authorized")
-                    )
-                    : nil,
-                subtitle: subtitle,
-                info: info
-            ) {
-                if !isAuthorized {
-                    Button("Authorize", action: authorize)
-                        .fixedSize()
-                }
-            }
-            if isAuthorized {
-                HStack(spacing: 6) {
-                    Button("Revoke", action: revoke)
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .fixedSize()
-                    Button("Re-authorize", action: authorize)
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .fixedSize()
-                }
-                .frame(maxWidth: .infinity, alignment: .trailing)
-            }
-        }
-    }
-
-    private func revoke(_ provider: SourceAuthorization.Provider) {
-        SourceAuthorization.shared.revokeAccess(provider)
-        refreshAuthorizationState()
-        Task { await Runtime.shared.refreshSources() }
-    }
-
     // MARK: - Draft mutations (persist through ScreenManager)
 
     private func setMouseInteraction(_ enabled: Bool) {
-        var next = draft
-        next.mouseInteractionEnabled = enabled
-        commit(next)
+        commit { $0.mouseInteractionEnabled = enabled }
     }
 
     private func setReduceMotion(_ choice: ReduceMotionChoice) {
-        var next = draft
-        next.reduceMotionOverride = choice.override
-        commit(next)
+        commit { $0.reduceMotionOverride = choice.override }
     }
 
     // MARK: - Layout reset / import / export
 
     private func resetLayout() {
-        var next = draft
-        next.widgets = MonitorBoardConfiguration.defaultSystemPlacements()
-        commit(next)
+        commit { $0.widgets = MonitorBoardConfiguration.defaultSystemPlacements() }
     }
 
     private func exportLayout() {
@@ -327,7 +216,7 @@ struct BoardSettingsView: View {
                 MonitorWidgetPlacement(kind: w.kind, size: w.size, x: w.x, y: w.y, options: w.options)
             }
             next.schemaVersion = MonitorBoardConfiguration.currentSchemaVersion
-            commit(next)
+            commit { $0 = next }
         } catch {
             presentLayoutError(error, isImport: true)
         }
@@ -348,9 +237,15 @@ struct BoardSettingsView: View {
         }
     }
 
-    private func commit(_ config: MonitorBoardConfiguration) {
-        draft = config
-        screenManager.setMonitorOverlayBoard(config, for: screen)
+    private func commit(_ edit: (inout MonitorBoardConfiguration) -> Void) {
+        if let editBoard {
+            editBoard(edit)
+            return
+        }
+        var next = draft
+        edit(&next)
+        draft = next
+        screenManager.setMonitorOverlayBoard(next, for: screen)
     }
 
     // MARK: - Loading
@@ -361,12 +256,6 @@ struct BoardSettingsView: View {
 
     private func reload() {
         draft = persistedBoard
-        refreshAuthorizationState()
-    }
-
-    private func refreshAuthorizationState() {
-        claudeAuthorized = SourceAuthorization.shared.isAuthorized(.claude)
-        codexAuthorized = SourceAuthorization.shared.isAuthorized(.codex)
     }
 
     private func hostWindow() -> NSWindow? {

@@ -41,7 +41,7 @@ final class WallpaperEngineImportService {
             return .workshopPreset(preset)
         }
         guard let sourceBookmark = makeBookmark(folderURL) else {
-            return .rejected(reason: String(localized: "Cannot create source folder bookmark", bundle: .appLanguage, comment: "Wallpaper Engine import rejection reason; appears inside the invalid-package alert."))
+            return .rejected(reason: String(localized: "macOS didn't grant access to this item. Choose it again, or move it into a folder you own.", bundle: .appLanguage, comment: "Wallpaper Engine import rejection reason; appears inside the invalid-package alert."))
         }
 
         switch project.type {
@@ -94,7 +94,7 @@ final class WallpaperEngineImportService {
 
 
         guard let videoBookmark = makeBookmark(pkgURL) else {
-            return .rejected(reason: String(localized: "Cannot create video package bookmark", bundle: .appLanguage, comment: "Wallpaper Engine import rejection reason; appears inside the invalid-package alert."))
+            return .rejected(reason: String(localized: "macOS didn't grant access to this item. Choose it again, or move it into a folder you own.", bundle: .appLanguage, comment: "Wallpaper Engine import rejection reason; appears inside the invalid-package alert."))
         }
 
         let origin = makeOrigin(
@@ -126,7 +126,7 @@ final class WallpaperEngineImportService {
         }
 
         guard let videoBookmark = makeBookmark(videoURL) else {
-            return .rejected(reason: String(localized: "Cannot create video bookmark", bundle: .appLanguage, comment: "Wallpaper Engine import rejection reason; appears inside the invalid-package alert."))
+            return .rejected(reason: String(localized: "macOS didn't grant access to this item. Choose it again, or move it into a folder you own.", bundle: .appLanguage, comment: "Wallpaper Engine import rejection reason; appears inside the invalid-package alert."))
         }
 
         let origin = makeOrigin(
@@ -159,7 +159,7 @@ final class WallpaperEngineImportService {
         }
 
         guard let folderBookmark = makeBookmark(folderURL) else {
-            return .rejected(reason: String(localized: "Cannot create web folder bookmark", bundle: .appLanguage, comment: "Wallpaper Engine import rejection reason; appears inside the invalid-package alert."))
+            return .rejected(reason: String(localized: "macOS didn't grant access to this item. Choose it again, or move it into a folder you own.", bundle: .appLanguage, comment: "Wallpaper Engine import rejection reason; appears inside the invalid-package alert."))
         }
 
         let originKind = WallpaperEngineImportService.originKind(forSourceFolder: folderURL)
@@ -192,7 +192,7 @@ final class WallpaperEngineImportService {
         if let provider = try? await WPEPackageSceneAssetProvider.open(packageURL: pkgURL),
            provider.exists(atRelativePath: project.entryFile) {
             guard let folderBookmark = makeBookmark(folderURL) else {
-                return .rejected(reason: String(localized: "Cannot create web folder bookmark", bundle: .appLanguage, comment: "Wallpaper Engine import rejection reason; appears inside the invalid-package alert."))
+                return .rejected(reason: String(localized: "macOS didn't grant access to this item. Choose it again, or move it into a folder you own.", bundle: .appLanguage, comment: "Wallpaper Engine import rejection reason; appears inside the invalid-package alert."))
             }
             let originKind = WallpaperEngineImportService.originKind(forSourceFolder: folderURL)
             let origin = makeOrigin(

@@ -77,7 +77,7 @@ struct ThumbnailCard: View {
                 guard !screens.isEmpty else { return }
                 isHovering = hovering
             }
-            .popover(isPresented: $showingTargets, arrowEdge: .bottom) {
+            .appLanguagePopover(isPresented: $showingTargets, arrowEdge: .bottom) {
                 LibraryApplyTargetList(
                     screens: screens,
                     onApply: onApply,

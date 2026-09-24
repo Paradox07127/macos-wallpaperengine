@@ -300,7 +300,8 @@ extension ScreenManager {
     func saveConfiguration(_ configuration: ScreenConfiguration) {
         guard !isTerminating else { return }
         advanceScenePropertyMutationIntent(for: configuration.screenID)
-        persistence.save(configuration)
+        let previous = configurationStore.get(for: configuration.screenID)
+        persistence.save(SchedulePolicy.holdingManualChange(configuration, previous: previous, now: Date(), calendar: .current))
     }
 
     func updatePlaybackSpeed(_ speed: Double, for screen: Screen) {
@@ -458,15 +459,22 @@ extension ScreenManager {
         config.playlistRotationMinutes = nil
         config.setAsLockScreen = false
         config.wallpaperMode = .playlist
-        config.savedHTMLConfig = .default
+        config.savedHTMLConfig = Self.resetHTMLConfig(keepingOriginOf: config.savedHTMLConfig)
         config.resetSavedHTMLPlayback(to: displayDefaults, createIfMissing: true)
-        if case .html(let source, _) = config.activeWallpaper {
-            config.activeWallpaper = .html(source: source, config: .default)
+        if case .html(let source, let current) = config.activeWallpaper {
+            config.activeWallpaper = .html(source: source, config: Self.resetHTMLConfig(keepingOriginOf: current))
             config.resetPlayback(to: displayDefaults)
         }
 
         restoreProposedWallpaperSession(for: screen, configuration: config)
         Logger.info("Reset display settings for screen \(screen.id)", category: .screenManager)
+    }
+
+    /// `originKind` is provenance, not a setting: resetting a Workshop page to `.userLocal` drops its forced network isolation.
+    private static func resetHTMLConfig(keepingOriginOf config: HTMLConfig?) -> HTMLConfig {
+        var reset = HTMLConfig.default
+        reset.originKind = config?.originKind ?? reset.originKind
+        return reset
     }
 
     func applyConfigurationToAllDisplays(from source: Screen) {

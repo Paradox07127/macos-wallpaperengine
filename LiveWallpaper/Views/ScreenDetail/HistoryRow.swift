@@ -139,7 +139,7 @@ struct HistoryRow: View {
                     .buttonStyle(.plain)
                     .opacity(isHovering ? 1 : 0)
                     .accessibilityLabel(Text("More actions"))
-                    .popover(isPresented: $showingFileActions, arrowEdge: .bottom) {
+                    .appLanguagePopover(isPresented: $showingFileActions, arrowEdge: .bottom) {
                         fileActionsPopover
                     }
                 }

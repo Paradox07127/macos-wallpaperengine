@@ -87,16 +87,14 @@ struct Header: View {
                             ? "Bookmarked — click to rename or remove"
                             : "Bookmark this wallpaper"))
                         .accessibilityLabel(Text(isCurrentBookmarked ? "Bookmarked" : "Bookmark"))
-                        .popover(isPresented: $showBookmarks, arrowEdge: .bottom) {
-                            AppLanguageScope(defaults: .appScoped()) {
-                                Popover(
-                                    screen: screen,
-                                    candidateContent: inspectorContent,
-                                    nameDraft: $bookmarkNameDraft,
-                                    draftBaseline: $bookmarkDraftBaseline
-                                )
-                                .environment(screenManager)
-                            }
+                        .appLanguagePopover(isPresented: $showBookmarks, arrowEdge: .bottom) {
+                            Popover(
+                                screen: screen,
+                                candidateContent: inspectorContent,
+                                nameDraft: $bookmarkNameDraft,
+                                draftBaseline: $bookmarkDraftBaseline
+                            )
+                            .environment(screenManager)
                         }
                     }
 
@@ -143,11 +141,9 @@ struct Header: View {
             }
             .help(Text("Save this display's wallpaper, overlays, and settings as a scheme."))
             .accessibilityLabel(Text("Save as Scheme"))
-            .popover(isPresented: $showSchemeCapture, arrowEdge: .bottom) {
-                AppLanguageScope(defaults: .appScoped()) {
-                    SchemeCapturePopover(screen: screen, nameDraft: $schemeNameDraft)
-                        .environment(screenManager)
-                }
+            .appLanguagePopover(isPresented: $showSchemeCapture, arrowEdge: .bottom) {
+                SchemeCapturePopover(screen: screen, nameDraft: $schemeNameDraft)
+                    .environment(screenManager)
             }
         }
     }

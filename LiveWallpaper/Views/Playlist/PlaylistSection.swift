@@ -170,10 +170,8 @@ struct PlaylistSection: View {
         .help(Text("Rotate"))
         .accessibilityLabel(Text("Rotation interval"))
         .accessibilityValue(rotateAccessibilityValue)
-        .popover(isPresented: $rotatePopoverShown, arrowEdge: .top) {
-            AppLanguageScope(defaults: .appScoped()) {
-                rotatePopoverContent
-            }
+        .appLanguagePopover(isPresented: $rotatePopoverShown, arrowEdge: .top) {
+            rotatePopoverContent
         }
     }
 

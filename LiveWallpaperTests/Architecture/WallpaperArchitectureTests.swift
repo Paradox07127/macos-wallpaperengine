@@ -179,7 +179,7 @@ struct AppRuntimeOptionsTests {
             environment: [:],
             isXCTestLoaded: false
         )
-        let plan = AppStartupPlan(runtimeOptions: options, onboardingCompleted: true, onboardingHandled: true)
+        let plan = AppStartupPlan(runtimeOptions: options, onboardingCompleted: true)
 
         #expect(plan.screenManagerOptions.restoreSavedWallpapers == false)
         #expect(plan.screenManagerOptions.startAutomation == false)
@@ -194,7 +194,7 @@ struct AppRuntimeOptionsTests {
             environment: ["LIVEWALLPAPER_OPEN_SETTINGS": "1"],
             isXCTestLoaded: false
         )
-        let plan = AppStartupPlan(runtimeOptions: options, onboardingCompleted: true, onboardingHandled: true)
+        let plan = AppStartupPlan(runtimeOptions: options, onboardingCompleted: true)
 
         #expect(plan.showSettingsOnLaunch == true)
     }
@@ -246,7 +246,7 @@ struct AppRuntimeOptionsTests {
             isXCTestLoaded: false
         )
 
-        let plan = AppStartupPlan(runtimeOptions: runtime, onboardingCompleted: true, onboardingHandled: true)
+        let plan = AppStartupPlan(runtimeOptions: runtime, onboardingCompleted: true)
 
         #expect(plan.screenManagerOptions.restoreSavedWallpapers)
         #expect(plan.screenManagerOptions.startAutomation)
@@ -1053,6 +1053,387 @@ struct WallpaperAutomationCoordinatorTests {
 
         #expect(calls == 1)
     }
+
+    private static let dayPage = WallpaperQueueEntry(title: "Day", content: .html(source: .inline("day"), config: .default))
+    private static let eveningPage = WallpaperQueueEntry(title: "Evening", content: .html(source: .inline("evening"), config: .default))
+    private static let fallbackVideo = WallpaperQueueEntry(title: "Fallback", content: .video(bookmarkData: Data([9])))
+
+    private static func plannedConfiguration(for screen: Screen) -> ScreenConfiguration {
+        var config = ScreenConfiguration(screenID: screen.id, wallpaper: fallbackVideo.content)
+        config.wallpaperMode = .schedule
+        config.scheduleFallback = fallbackVideo
+        config.scheduleSlots = [
+            ScheduleSlot(startHour: 12, endHour: 18, label: "Day", wallpaper: dayPage),
+            ScheduleSlot(startHour: 18, endHour: 22, label: "Evening", wallpaper: eveningPage),
+        ]
+        return config
+    }
+
+    private static func scheduleOrchestrator(
+        store: WallpaperConfigurationStore,
+        screen: Screen,
+        clock: @escaping @MainActor () -> Date,
+        setup: @escaping @MainActor (URL, Screen, ScreenConfiguration, @MainActor @escaping () -> Bool) -> Void = { _, _, _, _ in },
+        bump: @escaping @MainActor (CGDirectDisplayID) -> Int = { _ in 0 },
+        note: @escaping @MainActor (Screen, AutomaticSwitchMark.Source) -> Void = { _, _ in },
+        restore: @escaping @MainActor (Screen, ScreenConfiguration) -> Void
+    ) -> WallpaperAutomationOrchestrator {
+        WallpaperAutomationOrchestrator(
+            configurationStore: store, automationCoordinator: WallpaperAutomationCoordinator(),
+            playableVideoLoader: FakePlayableVideoLoader(), screensProvider: { [screen] },
+            saveConfiguration: { store.save($0) }, recordBookmarkDisplayName: { _, _ in },
+            setupPreparedVideoPlayback: setup, restoreProposedConfiguration: restore,
+            bumpTransition: bump, isCurrentTransition: { _, _ in true }, noteAutomaticSwitch: note, now: clock
+        )
+    }
+
+    @Test("A schedule switch and a playlist step mark the display; a schedule check that changes nothing does not")
+    func automaticSwitchesMarkTheDisplay() throws {
+        let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
+        let store = WallpaperConfigurationStore(persistence: AutomationTestConfigurationPersistence([Self.plannedConfiguration(for: screen)]))
+        var marks: [AutomaticSwitchMark.Source] = []
+        let orchestrator = Self.scheduleOrchestrator(
+            store: store, screen: screen, clock: { automationTime(12, 0, 30) },
+            note: { _, source in marks.append(source) },
+            restore: { _, config in store.save(config) }
+        )
+        orchestrator.checkAndApplySchedule(for: screen)
+        #expect(marks == [.schedule])
+        orchestrator.checkAndApplySchedule(for: screen, force: true)
+        #expect(marks == [.schedule], "a check that left the display alone marked it")
+
+        var queued = try #require(store.get(for: screen.id))
+        queued.wallpaperMode = .playlist
+        queued.wallpaperQueue = [Self.dayPage, Self.eveningPage]
+        store.save(queued)
+        orchestrator.advancePlaylist(for: screen)
+        #expect(marks == [.schedule, .playlist])
+    }
+
+    private static func pickByHand(on screen: Screen, in store: WallpaperConfigurationStore) throws {
+        var picked = try #require(store.get(for: screen.id))
+        picked.activeWallpaper = .html(source: .inline("picked"), config: .default)
+        store.save(picked)
+    }
+
+    @Test("A hand-picked wallpaper holds until the next slot starts, and a failed apply is not retried within its slot")
+    func manualPickHoldsUntilNextSlot() throws {
+        let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
+        let store = WallpaperConfigurationStore(persistence: AutomationTestConfigurationPersistence([Self.plannedConfiguration(for: screen)]))
+        var clock = automationTime(12, 0, 30)
+        var restored: [WallpaperContent] = []
+        let orchestrator = Self.scheduleOrchestrator(store: store, screen: screen, clock: { clock }, restore: { _, config in
+            restored.append(config.activeWallpaper)
+            store.save(config)
+        })
+
+        orchestrator.checkAndApplySchedule(for: screen)
+        #expect(restored == [Self.dayPage.content])
+        try Self.pickByHand(on: screen, in: store)
+        clock = automationTime(13, 5)
+        orchestrator.checkAndApplySchedule(for: screen)
+        #expect(restored.count == 1)
+        #expect(try SchedulePolicy.pausedUntil(for: #require(store.get(for: screen.id)), now: clock, calendar: .current) == automationTime(18))
+
+        clock = automationTime(18, 0, 30)
+        orchestrator.checkAndApplySchedule(for: screen)
+        #expect(restored.last == Self.eveningPage.content)
+        #expect(try SchedulePolicy.pausedUntil(for: #require(store.get(for: screen.id)), now: clock, calendar: .current) == nil)
+
+        let failing = Self.scheduleOrchestrator(store: store, screen: screen, clock: { clock }, restore: { _, config in
+            restored.append(config.activeWallpaper)
+        })
+        clock = automationTime(22, 0, 30)
+        failing.checkAndApplySchedule(for: screen)
+        clock = automationTime(22, 1, 30)
+        failing.checkAndApplySchedule(for: screen)
+        #expect(restored.count == 3)
+    }
+
+    @Test("A hold survives a relaunch, and a check while the user is away leaves the slot unsettled")
+    func pauseSurvivesRelaunchAndAbsence() throws {
+        let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
+        let store = WallpaperConfigurationStore(persistence: AutomationTestConfigurationPersistence([Self.plannedConfiguration(for: screen)]))
+        var clock = automationTime(12, 0, 30)
+        let first = Self.scheduleOrchestrator(store: store, screen: screen, clock: { clock }, restore: { _, config in store.save(config) })
+        first.checkAndApplySchedule(for: screen)
+        try Self.pickByHand(on: screen, in: store)
+
+        clock = automationTime(14)
+        var restored: [WallpaperContent] = []
+        let relaunched = Self.scheduleOrchestrator(store: store, screen: screen, clock: { clock }, restore: { _, config in
+            restored.append(config.activeWallpaper)
+            store.save(config)
+        })
+        relaunched.startMonitoring()
+        #expect(restored.isEmpty)
+
+        relaunched.suspendForUserAbsence()
+        clock = automationTime(18, 0, 30)
+        let settled = store.get(for: screen.id)?.scheduleSettledUntil
+        relaunched.checkAndApplySchedule(for: screen)
+        #expect(store.get(for: screen.id)?.scheduleSettledUntil == settled)
+        relaunched.resumeAfterUserAbsence()
+        relaunched.stopMonitoring()
+        #expect(restored == [Self.eveningPage.content])
+    }
+
+    @Test("Resuming and editing the plan apply the current slot at once")
+    func resumeAndPlanEditsApplyNow() throws {
+        let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
+        let store = WallpaperConfigurationStore(persistence: AutomationTestConfigurationPersistence([Self.plannedConfiguration(for: screen)]))
+        var clock = automationTime(12, 0, 30)
+        var restored: [WallpaperContent] = []
+        let orchestrator = Self.scheduleOrchestrator(store: store, screen: screen, clock: { clock }, restore: { _, config in
+            restored.append(config.activeWallpaper)
+            store.save(config)
+        })
+        orchestrator.checkAndApplySchedule(for: screen)
+
+        try Self.pickByHand(on: screen, in: store)
+        clock = automationTime(13, 10)
+        orchestrator.checkAndApplySchedule(for: screen, force: true)
+        #expect(restored == [Self.dayPage.content, Self.dayPage.content])
+
+        try Self.pickByHand(on: screen, in: store)
+        let slots = try #require(store.get(for: screen.id)?.scheduleSlots)
+        orchestrator.updateAutomation(queue: [], slots: slots, mode: .schedule, rotationMinutes: nil, shuffle: false, for: screen)
+        #expect(restored.count == 3)
+    }
+
+    @Test("A hand-picked page holds through an old video-only slot", .timeLimit(.minutes(1)))
+    func legacyVideoSlotKeepsManualWeb() async throws {
+        let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("schedule-legacy-\(UUID().uuidString).mp4")
+        try Data([0x00, 0x01]).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let bookmark = try url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
+        var config = ScreenConfiguration(screenID: screen.id, videoBookmarkData: Data([0x01]))
+        config.wallpaperMode = .schedule
+        config.scheduleSlots = [ScheduleSlot(startHour: 6, endHour: 12, videoBookmarkData: bookmark, label: "Morning")]
+        let store = WallpaperConfigurationStore(persistence: AutomationTestConfigurationPersistence([config]))
+        var clock = automationTime(6, 0, 30)
+        var transitions = 0
+        var commits = 0
+        let orchestrator = Self.scheduleOrchestrator(
+            store: store, screen: screen, clock: { clock },
+            setup: { _, _, proposed, beforeCommit in
+                if beforeCommit() {
+                    store.save(proposed)
+                    commits += 1
+                }
+            },
+            bump: { _ in
+                transitions += 1
+                return transitions
+            },
+            restore: { _, _ in Issue.record("An old video-only slot switches through prepared video playback") }
+        )
+
+        orchestrator.checkAndApplySchedule(for: screen)
+        for _ in 0 ..< 50 where commits == 0 {
+            await Task.yield()
+        }
+        #expect(commits == 1)
+        try Self.pickByHand(on: screen, in: store)
+        clock = automationTime(8)
+        orchestrator.checkAndApplySchedule(for: screen)
+        #expect(transitions == 1)
+    }
+
+    @Test("A web settings edit is written back to the current slot's entry")
+    func htmlEditWritesBackToCurrentEntry() throws {
+        let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
+        let page = WallpaperQueueEntry(title: "Page", content: .html(source: .inline("page"), config: .default))
+        var config = ScreenConfiguration(screenID: screen.id, wallpaper: page.content)
+        config.wallpaperMode = .schedule
+        config.scheduleSlots = [ScheduleSlot(startHour: 0, endHour: 24, label: "All day", wallpaper: page)]
+        let store = WallpaperConfigurationStore(persistence: AutomationTestConfigurationPersistence([config]))
+        let coordinator = HTMLWallpaperCoordinator(
+            configurationStore: store, screensProvider: { [screen] }, saveConfiguration: { store.save($0) },
+            restoreWallpaperSession: { _, _, _, beforeCommit in _ = beforeCommit() },
+            notifyWallpaperSessionChanged: {}, originReconciler: PreservingOriginReconciler()
+        )
+        var louder = HTMLConfig.default
+        louder.audioVolume = 0.3
+
+        coordinator.updateConfig(louder, for: screen)
+
+        #expect(store.get(for: screen.id)?.scheduleSlots?.first?.wallpaper?.content == .html(source: .inline("page"), config: louder))
+    }
+
+    @Test("A scene edit is written back to the current slot's entry")
+    func sceneEditWritesBackToCurrentEntry() {
+        let scene = SceneDescriptor(workshopID: "42", cacheRelativePath: "wpe-cache/42", entryFile: "scene.json", capabilityTier: .imageOnly)
+        let entry = WallpaperQueueEntry(title: "Scene", content: .scene(scene))
+        var config = ScreenConfiguration(screenID: 1, wallpaper: entry.content)
+        config.wallpaperMode = .schedule
+        config.scheduleSlots = [ScheduleSlot(startHour: 0, endHour: 24, label: "All day", wallpaper: entry)]
+        let edited = scene.withPropertyOverrides(["gain": .number(0.5)])
+
+        let written = SchedulePolicy.writingBack(.scene(edited), into: config, now: automationTime(13), calendar: .current)
+
+        #expect(written.scheduleSlots?.first?.wallpaper?.content == .scene(edited))
+        #expect(written.scheduleSlots?.first?.wallpaper?.id == entry.id)
+    }
+
+    @Test("Both save paths claim an unsettled slot for a hand-picked wallpaper")
+    func bothSaveFunnelsClaimUnsettledSlot() throws {
+        let screen = Screen(nsScreen: AutomationTestNSScreen(displayID: 0xA170_0001))
+        let manager = ScreenManager(startupOptions: ScreenManagerStartupOptions(
+            restoreSavedWallpapers: false, startAutomation: false,
+            powerMonitor: FakePowerMonitor(), fullScreenDetector: FakeFullScreenDetector(),
+            playableVideoLoader: FakePlayableVideoLoader(), displayRegistry: FakeDisplayRegistry(screens: [screen]),
+            featureCatalog: FeatureCatalog(capabilities: .lite), originReconciler: PreservingOriginReconciler()
+        ))
+        defer { manager.clearWallpaperForScreen(screen) }
+        let planned = WallpaperQueueEntry(title: "Planned", content: .html(source: .inline("planned"), config: .default))
+        var unsettled = ScreenConfiguration(screenID: screen.id, wallpaper: planned.content)
+        unsettled.wallpaperMode = .schedule
+        unsettled.scheduleSlots = [ScheduleSlot(startHour: 0, endHour: 24, label: "All day", wallpaper: planned)]
+        unsettled.scheduleSettledUntil = Date(timeIntervalSinceNow: -3600)
+        var picked = unsettled
+
+        picked.activeWallpaper = .html(source: .inline("picked"), config: .default)
+        manager.configurationStore.save(unsettled)
+        manager.saveConfiguration(picked)
+        let viaManager = try #require(manager.configurationStore.get(for: screen.id)?.scheduleSettledUntil)
+
+        picked.activeWallpaper = .video(bookmarkData: Data([7]))
+        manager.configurationStore.save(unsettled)
+        manager.playbackCoordinator.save(picked)
+        let viaPlayback = try #require(manager.configurationStore.get(for: screen.id)?.scheduleSettledUntil)
+
+        for settled in [viaManager, viaPlayback] {
+            #expect(settled > Date() && settled <= Date(timeIntervalSinceNow: 86400))
+        }
+    }
+
+    @Test("A preview shows an entry without saving the list or moving the cursor")
+    func previewShowsAnEntryWithoutSavingTheList() throws {
+        let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
+        let saved = [Self.dayPage, Self.eveningPage]
+        var config = ScreenConfiguration(screenID: screen.id, wallpaper: saved[1].content)
+        config.wallpaperQueue = saved
+        config.playlistCursorIndex = 1
+        let store = WallpaperConfigurationStore(persistence: AutomationTestConfigurationPersistence([config]))
+        var restored: [WallpaperContent] = []
+        let orchestrator = Self.scheduleOrchestrator(store: store, screen: screen, clock: { automationTime(12) }, restore: { _, proposed in
+            restored.append(proposed.activeWallpaper)
+            store.save(proposed)
+        })
+        let draft = WallpaperQueueEntry(title: "Draft", content: .html(source: .inline("draft"), config: .default))
+
+        orchestrator.previewEntry(draft, for: screen)
+        #expect(restored == [draft.content])
+        #expect(store.get(for: screen.id)?.wallpaperQueue == saved)
+        #expect(store.get(for: screen.id)?.playlistCursorIndex == 1)
+
+        orchestrator.previewEntry(saved[0], for: screen)
+        #expect(restored == [draft.content, saved[0].content])
+        #expect(store.get(for: screen.id)?.playlistCursorIndex == 1)
+    }
+
+    @Test("Cancelling a trial puts back the remembered page as well as what was on screen")
+    func cancelledTrialKeepsRememberedPage() throws {
+        let screen = Screen(nsScreen: AutomationTestNSScreen(displayID: 0xA170_0002))
+        let manager = ScreenManager(startupOptions: ScreenManagerStartupOptions(
+            restoreSavedWallpapers: false, startAutomation: false,
+            powerMonitor: FakePowerMonitor(), fullScreenDetector: FakeFullScreenDetector(),
+            playableVideoLoader: FakePlayableVideoLoader(), displayRegistry: FakeDisplayRegistry(screens: [screen]),
+            featureCatalog: FeatureCatalog(capabilities: .lite), originReconciler: PreservingOriginReconciler()
+        ))
+        manager.wallpapersGloballyEnabled = false
+        defer { manager.clearWallpaperForScreen(screen) }
+        var showing = ScreenConfiguration(screenID: screen.id, wallpaper: .video(bookmarkData: Data([7])))
+        showing.savedHTMLSource = .inline("P")
+        manager.configurationStore.save(showing)
+        let trial = WallpaperQueueEntry(title: "Q", content: .html(source: .inline("Q"), config: .default))
+        var shownBeforeTrial: ScreenConfiguration?
+
+        WallpaperAutomationSheet.startTrial(trial, shownBeforeTrial: &shownBeforeTrial, manager: manager, screen: screen)
+        #expect(manager.getConfiguration(for: screen)?.activeWallpaper == trial.content)
+        WallpaperAutomationSheet.cancelTrial(restoring: shownBeforeTrial, manager: manager, screen: screen)
+
+        let restored = try #require(manager.getConfiguration(for: screen))
+        #expect(restored.activeWallpaper == showing.activeWallpaper)
+        #expect(restored.savedHTMLSource == .inline("P"))
+    }
+
+    @Test("Picking a library item again takes back only the entry that pick added")
+    func pickerTogglesOnlyItsOwnAdditions() {
+        func item(_ label: String) -> LiveWallpaper.LibraryItem {
+            let bookmark = WallpaperBookmark(label: label, content: .html(source: .inline(label), config: .default))
+            return LiveWallpaper.LibraryItem(
+                id: "bookmark:\(bookmark.id)", title: label, kind: .web, source: .bookmark(bookmark),
+                isSteam: false, createdAt: bookmark.createdAt, lastUsedAt: nil, onDisplays: [],
+                thumbnail: nil, metadata: nil, isVariant: false, parentID: nil, isSupported: true
+            )
+        }
+        let (first, second) = (item("A"), item("B"))
+        var queue = [WallpaperQueueEntry(title: "X", content: .video(bookmarkData: Data([1])))]
+        var added: [LiveWallpaper.LibraryItem.ID: WallpaperQueueEntry.ID] = [:]
+
+        for picked in [first, second, first] {
+            #expect(WallpaperAutomationSheet.togglePick(picked, queue: &queue, added: &added))
+        }
+
+        #expect(queue.map(\.title) == ["X", "B"])
+        #expect(Array(added.keys) == [second.id])
+        #expect(added[second.id] == queue.last?.id)
+    }
+
+    @Test("Chosen video files become entries in panel order; a file without a bookmark is counted, not added")
+    func chosenVideoFilesBecomeEntriesInOrder() {
+        let urls = ["a.mp4", "broken.mp4", "b.mov"].map { URL(fileURLWithPath: "/tmp/\($0)") }
+
+        let chosen = WallpaperQueueEntry.videoFiles(urls) { url in
+            url.lastPathComponent == "broken.mp4" ? nil : Data(url.lastPathComponent.utf8)
+        }
+
+        #expect(chosen.entries.map(\.title) == ["a.mp4", "b.mov"])
+        #expect(chosen.entries.map(\.content) == [.video(bookmarkData: Data("a.mp4".utf8)), .video(bookmarkData: Data("b.mov".utf8))])
+        #expect(chosen.failed == 1)
+    }
+
+    @Test("A fallback picked in the panel is saved and fills the unscheduled hours at once")
+    func pickedFallbackFillsUnscheduledHours() throws {
+        let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
+        let planned = Self.plannedConfiguration(for: screen)
+        let slots = try #require(planned.scheduleSlots)
+        let store = WallpaperConfigurationStore(persistence: AutomationTestConfigurationPersistence([planned]))
+        var restored: [WallpaperContent] = []
+        let orchestrator = Self.scheduleOrchestrator(store: store, screen: screen, clock: { automationTime(10) }, restore: { _, proposed in
+            restored.append(proposed.activeWallpaper)
+            store.save(proposed)
+        })
+        let other = WallpaperQueueEntry(title: "Other", content: .html(source: .inline("other"), config: .default))
+
+        orchestrator.updateAutomation(queue: [], slots: slots, fallback: other, mode: .schedule, rotationMinutes: nil, shuffle: false, for: screen)
+
+        #expect(store.get(for: screen.id)?.scheduleFallback == other)
+        #expect(restored == [other.content])
+    }
+
+    @Test("Without a picked fallback, an old video-only plan still falls back to its primary video")
+    func legacyPlanFallsBackToPrimaryVideo() throws {
+        let screen = try Screen(nsScreen: #require(NSScreen.screens.first))
+        let primary = Data([0x01])
+        let slotVideo = Data([0x02])
+        var config = ScreenConfiguration(screenID: screen.id, videoBookmarkData: primary)
+        config.wallpaperMode = .schedule
+        config.scheduleSlots = [ScheduleSlot(startHour: 6, endHour: 12, videoBookmarkData: slotVideo, label: "Morning")]
+        config.activeWallpaper = .video(bookmarkData: slotVideo)
+        let slots = try #require(config.scheduleSlots)
+        let store = WallpaperConfigurationStore(persistence: AutomationTestConfigurationPersistence([config]))
+        let orchestrator = Self.scheduleOrchestrator(store: store, screen: screen, clock: { automationTime(10) }, restore: { _, proposed in
+            store.save(proposed)
+        })
+
+        orchestrator.updateAutomation(queue: [], slots: slots, mode: .schedule, rotationMinutes: nil, shuffle: false, for: screen)
+
+        #expect(store.get(for: screen.id)?.scheduleFallback?.content == .video(bookmarkData: primary))
+    }
 }
 
 @Suite("Wallpaper automation absence")
@@ -1130,6 +1511,35 @@ struct WallpaperAutomationAbsenceTests {
         #expect(preparationCount == 0)
         #expect(commitCount == 0)
         #expect(transitionGeneration == 2)
+    }
+}
+
+private func automationTime(day: Int = 15, _ hour: Int, _ minute: Int = 0, _ second: Int = 0) -> Date {
+    Calendar.current.date(from: DateComponents(year: 2026, month: 6, day: day, hour: hour, minute: minute, second: second))!
+}
+
+private final class AutomationTestNSScreen: NSScreen {
+    let displayID: UInt32
+
+    init(displayID: UInt32) {
+        self.displayID = displayID
+        super.init()
+    }
+
+    required init?(coder _: NSCoder) {
+        nil
+    }
+
+    override var frame: NSRect {
+        NSRect(x: 0, y: 0, width: 800, height: 600)
+    }
+
+    override var deviceDescription: [NSDeviceDescriptionKey: Any] {
+        [NSDeviceDescriptionKey("NSScreenNumber"): displayID]
+    }
+
+    override var localizedName: String {
+        "Automation test"
     }
 }
 
@@ -1989,13 +2399,14 @@ struct SchedulePolicyTests {
         #expect(result == .none)
     }
 
-    @Test("Schedule policy applies a primary slot when current wallpaper is not video")
-    func schedulePolicyAppliesPrimarySlotOverHTML() {
+    @Test("At a slot's start its video replaces a web wallpaper")
+    func slotStartReplacesWebWallpaper() throws {
         let primary = Data([0x01])
         let slot = ScheduleSlot(startHour: 6, endHour: 12, videoBookmarkData: primary, label: "Morning")
+        let page = try #require(URL(string: "https://example.com"))
         var configuration = ScreenConfiguration(
             screenID: 43,
-            wallpaper: .html(source: .url(URL(string: "https://example.com")!), config: .default),
+            wallpaper: .html(source: .url(page), config: .default),
             scheduleSlots: [slot],
             savedVideoBookmarkData: primary
         )
@@ -2004,6 +2415,51 @@ struct SchedulePolicyTests {
         let result = SchedulePolicy.decision(for: configuration, hour: 8)
 
         #expect(result == .applySlot(slot: slot, bookmarkData: primary))
+    }
+
+    @Test("A hold lasts until the next slot edge, across midnight, and until midnight when no slot has a length")
+    func nextBoundaryFollowsSlotEdges() {
+        let night = [ScheduleSlot(startHour: 22, endHour: 6, label: "Night")]
+        #expect(SchedulePolicy.nextBoundary(after: automationTime(23, 30), slots: night, calendar: .current) == automationTime(day: 16, 6))
+        #expect(SchedulePolicy.nextBoundary(after: automationTime(3), slots: night, calendar: .current) == automationTime(6))
+        let day = [ScheduleSlot(startHour: 6, endHour: 12, label: "A"), ScheduleSlot(startHour: 12, endHour: 18, label: "B")]
+        #expect(SchedulePolicy.nextBoundary(after: automationTime(13), slots: day, calendar: .current) == automationTime(18))
+        let allDay = [ScheduleSlot(startHour: 0, endHour: 24, label: "All day")]
+        #expect(SchedulePolicy.nextBoundary(after: automationTime(13), slots: allDay, calendar: .current) == automationTime(day: 16, 0))
+        let empty = [ScheduleSlot(startHour: 8, endHour: 8, label: "Empty")]
+        #expect(SchedulePolicy.nextBoundary(after: automationTime(13), slots: empty, calendar: .current) == automationTime(day: 16, 0))
+    }
+
+    @Test("A content change claims an unsettled slot; a stale copy of the same content cannot reopen a settled one")
+    func manualChangeClaimsUnsettledSlot() {
+        let now = automationTime(13)
+        let planned = WallpaperQueueEntry(title: "A", content: .html(source: .inline("a"), config: .default))
+        var stored = ScreenConfiguration(screenID: 1, wallpaper: planned.content)
+        stored.wallpaperMode = .schedule
+        stored.scheduleSlots = [ScheduleSlot(startHour: 12, endHour: 18, label: "Day", wallpaper: planned)]
+        stored.scheduleSettledUntil = automationTime(12)
+        var picked = stored
+        picked.activeWallpaper = .html(source: .inline("c"), config: .default)
+        var louder = HTMLConfig.default
+        louder.audioVolume = 0.3
+        var edited = stored
+        edited.activeWallpaper = .html(source: .inline("a"), config: louder)
+        var settled = stored
+        settled.scheduleSettledUntil = automationTime(18)
+        var fresh = picked
+        fresh.scheduleSettledUntil = automationTime(14)
+        var playlist = picked
+        playlist.wallpaperMode = .playlist
+
+        func held(_ configuration: ScreenConfiguration, over previous: ScreenConfiguration?) -> Date? {
+            SchedulePolicy.holdingManualChange(configuration, previous: previous, now: now, calendar: .current).scheduleSettledUntil
+        }
+        #expect(held(picked, over: stored) == automationTime(18))
+        #expect(held(picked, over: nil) == automationTime(18))
+        #expect(held(edited, over: settled) == automationTime(18))
+        #expect(held(edited, over: stored) == automationTime(12))
+        #expect(held(fresh, over: stored) == automationTime(14))
+        #expect(held(playlist, over: stored) == automationTime(12))
     }
 
     // MARK: - decision mode-gate
@@ -2074,6 +2530,20 @@ struct SchedulePolicyTests {
         let empty = ScheduleSlot(startHour: 8, endHour: 8, label: "Empty")
         let other = ScheduleSlot(startHour: 0, endHour: 24, label: "Wrap-disguise")
         #expect(SchedulePolicy.conflicts(slot: empty, against: [other]).isEmpty)
+    }
+
+    @Test("The first slot problem names its slots: an overlap names both, a zero-length slot names itself")
+    func firstProblemNamesTheSlots() {
+        let morning = ScheduleSlot(startHour: 6, endHour: 12, label: "A")
+        let lateMorning = ScheduleSlot(startHour: 10, endHour: 14, label: "B")
+        let empty = ScheduleSlot(startHour: 20, endHour: 20, label: "C")
+        let afternoon = ScheduleSlot(startHour: 12, endHour: 18, label: "D")
+        let allDay = ScheduleSlot(startHour: 0, endHour: 24, label: "E")
+
+        #expect(SchedulePolicy.firstProblem(in: [morning, lateMorning]) == .overlap(morning.id, lateMorning.id))
+        #expect(SchedulePolicy.firstProblem(in: [empty, morning]) == .noLength(empty.id))
+        #expect(SchedulePolicy.firstProblem(in: [morning, afternoon]) == nil)
+        #expect(SchedulePolicy.firstProblem(in: [allDay]) == nil)
     }
 
     // MARK: - findFreeRange

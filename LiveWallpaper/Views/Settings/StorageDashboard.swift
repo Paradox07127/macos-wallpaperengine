@@ -205,10 +205,8 @@ struct StorageInfoButton<Content: View>: View {
         .foregroundStyle(.secondary)
         .help(Text("Details"))
         .accessibilityLabel(Text("Details"))
-        .popover(isPresented: $isPresented, arrowEdge: .bottom) {
-            AppLanguageScope(defaults: .appScoped()) {
-                content().padding(DesignTokens.Spacing.cardInset)
-            }
+        .appLanguagePopover(isPresented: $isPresented, arrowEdge: .bottom) {
+            content().padding(DesignTokens.Spacing.cardInset)
         }
     }
 }

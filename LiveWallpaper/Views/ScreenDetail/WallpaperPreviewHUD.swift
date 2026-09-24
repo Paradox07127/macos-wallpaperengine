@@ -3,7 +3,6 @@ import SwiftUI
 
 /// Fixed-width labels keep control positions stable across languages.
 struct WallpaperPreviewHUD<Viewport: View, Playback: View, Actions: View>: View {
-    var showsViewport = true
     @ViewBuilder var viewport: Viewport
     @ViewBuilder var playback: Playback
     @ViewBuilder var actions: Actions
@@ -20,19 +19,14 @@ struct WallpaperPreviewHUD<Viewport: View, Playback: View, Actions: View>: View 
 
     private var row: some View {
         HStack(spacing: DesignTokens.Spacing.sm) {
-            if showsViewport {
-                leadingZone { viewport }
-                zone { playback }
-            } else {
-                leadingZone { playback }
-            }
+            leadingZone { viewport }
+            zone { playback }
             zone { actions }
         }
         .fixedSize(horizontal: true, vertical: false)
     }
 
-    /// The first zone with content carries no leading hairline; the rest do. A
-    /// type that skips one (web has no scale) gets no stray divider either way.
+    /// The viewport zone carries no leading hairline; the zones after it do.
     @ViewBuilder
     private func leadingZone(@ViewBuilder _ content: () -> some View) -> some View {
         let built = content()

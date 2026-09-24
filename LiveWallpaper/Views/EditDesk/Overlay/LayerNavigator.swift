@@ -27,7 +27,7 @@ struct LayerNavigator: View {
     }
 
     private var header: some View {
-        Text(verbatim: "\(String(localized: "Layers", bundle: .appLanguage)) · \(rows.count)")
+        Text(verbatim: "\(String(localized: "Layers", bundle: .appLanguage)) · \(OverlayLayerList.layerCount(rows))")
             .font(DesignTokens.EditDesk.Typography.metaMono)
             .foregroundStyle(DesignTokens.EditDesk.Colors.textSecondary)
             .lineLimit(1)
@@ -61,6 +61,7 @@ private struct OverlayLayerRowView: View {
             .buttonStyle(.plain)
             action
         }
+        .padding(.leading, indent)
         .padding(.horizontal, DesignTokens.EditDesk.Spacing.s8)
         .frame(height: OverlayColumnLayout.rowHeight)
         .background(
@@ -104,6 +105,7 @@ private struct OverlayLayerRowView: View {
 
     private func setEnabled(_ isOn: Bool) {
         switch row.kind {
+        case .board: session.setBoardEnabled(isOn)
         case .clock: session.setClockEnabled(isOn)
         case .music: session.setMusicEnabled(isOn)
         case .effect: session.setEffectVisible(isOn)
@@ -121,8 +123,17 @@ private struct OverlayLayerRowView: View {
         }
     }
 
+    private var indent: CGFloat {
+        if case .widget = row.kind {
+            DesignTokens.EditDesk.Spacing.s12
+        } else {
+            0
+        }
+    }
+
     private var name: String {
         switch row.kind {
+        case .board: String(localized: "Widgets", bundle: .appLanguage)
         case let .widget(kind): WidgetFactory.displayName(kind)
         case .clock: String(localized: "Clock", bundle: .appLanguage)
         case .music: String(localized: "Music", bundle: .appLanguage)
@@ -132,7 +143,7 @@ private struct OverlayLayerRowView: View {
 
     private var dotColor: Color {
         switch row.kind {
-        case .widget: DesignTokens.EditDesk.Colors.sceneGroupLayers
+        case .board, .widget: DesignTokens.EditDesk.Colors.sceneGroupLayers
         case .clock: DesignTokens.EditDesk.Colors.sceneGroupColors
         case .music: DesignTokens.EditDesk.Colors.success
         case .effect: DesignTokens.EditDesk.Colors.sceneGroupEffects

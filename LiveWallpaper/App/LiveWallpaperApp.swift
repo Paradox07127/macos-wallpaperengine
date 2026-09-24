@@ -33,11 +33,21 @@ struct AppRuntimeOptions: Equatable {
 }
 
 struct AppStartupPlan: Equatable {
+    /// CFBundleVersion of the last launch that opened a window on its own; absent until the first launch.
+    static let startupWindowBuildKey = "loomscreen.startupWindowBuild.v1"
+
     let screenManagerOptions: ScreenManagerStartupOptions
     let showOnboarding: Bool
     let showSettingsOnLaunch: Bool
+    let startupWindowBuildToRecord: String?
 
-    init(runtimeOptions: AppRuntimeOptions, onboardingCompleted: Bool, onboardingHandled: Bool = true, editDeskEnabled: Bool = false) {
+    init(
+        runtimeOptions: AppRuntimeOptions,
+        onboardingCompleted: Bool,
+        startupWindowBuild: String? = nil,
+        currentBuild: String? = nil,
+        editDeskEnabled: Bool = false
+    ) {
         #if LITE_BUILD
         screenManagerOptions = ScreenManagerStartupOptions(
             restoreSavedWallpapers: runtimeOptions.shouldRestoreSavedWallpapers,
@@ -55,9 +65,11 @@ struct AppStartupPlan: Equatable {
             featureCatalog: FeatureCatalog(capabilities: proCapabilities)
         )
         #endif
-        showOnboarding = runtimeOptions.shouldShowOnboarding && !onboardingCompleted && !editDeskEnabled
+        let opensStartupWindow = runtimeOptions.shouldShowOnboarding && startupWindowBuild != currentBuild
+        showOnboarding = opensStartupWindow && !onboardingCompleted && !editDeskEnabled
         showSettingsOnLaunch = runtimeOptions.shouldOpenSettingsOnLaunch
-            || (editDeskEnabled && runtimeOptions.shouldShowOnboarding && !onboardingHandled)
+            || (opensStartupWindow && (editDeskEnabled || onboardingCompleted))
+        startupWindowBuildToRecord = opensStartupWindow ? currentBuild : nil
     }
 }
 
@@ -171,6 +183,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var settingsWindowControllerForTesting: NSWindowController? { settingsWindowController }
     @ObservationIgnored private var settingsOwnsSystemMonitorLease = false
     @ObservationIgnored private var onboardingWindowController: NSWindowController?
+    @ObservationIgnored private var hasPendingReopen = false
     @ObservationIgnored nonisolated(unsafe) private var dockVisibilityObserver: NSObjectProtocol?
     @ObservationIgnored nonisolated(unsafe) private var showOnboardingObserver: NSObjectProtocol?
     @ObservationIgnored private var globalShortcutManager: GlobalShortcutManager?
@@ -189,18 +202,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Logger.notice("Tail the runtime log → \(hint)", category: .startup)
         }
 
-        #if LITE_BUILD
-        let startupCatalog = FeatureCatalog(capabilities: .lite)
-        #else
-        let startupCatalog = FeatureCatalog(capabilities: ProductCapabilities.pro.withWorkshopOnline())
-        #endif
         let startupPlan = AppStartupPlan(
             runtimeOptions: runtimeOptions,
             onboardingCompleted: UserDefaults.standard.bool(forKey: "Onboarding.Completed"),
-            onboardingHandled: OnboardingProgress.isHandled(
-                defaults: .appScoped(), legacyDefaults: .standard,
-                workshopAvailable: startupCatalog.isEnabled(.wpeImport)
-            ),
+            startupWindowBuild: UserDefaults.appScoped().string(forKey: AppStartupPlan.startupWindowBuildKey),
+            currentBuild: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String,
             editDeskEnabled: EditDeskFlag.isEnabled
         )
 
@@ -278,6 +284,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         Logger.notice("Application startup complete", category: .startup)
 
+        if let build = startupPlan.startupWindowBuildToRecord {
+            UserDefaults.appScoped().set(build, forKey: AppStartupPlan.startupWindowBuildKey)
+        }
         if startupPlan.showSettingsOnLaunch {
             Logger.info("Scheduling settings window on launch", category: .startup)
             lifecycle.schedule(after: .milliseconds(150)) { [weak self] in
@@ -288,6 +297,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.showOnboarding()
             }
         }
+        consumePendingReopen(showSettingsOnLaunch: startupPlan.showSettingsOnLaunch, showOnboarding: startupPlan.showOnboarding)
 
         #if !LITE_BUILD
         if !runtimeOptions.isTesting {
@@ -394,6 +404,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     nonisolated func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
         true
+    }
+
+    /// Not gated on the visible-windows flag: whether the status item's window counts toward it is undocumented, so gating could swallow every reopen; re-fronting is harmless.
+    func applicationShouldHandleReopen(_: NSApplication, hasVisibleWindows _: Bool) -> Bool {
+        if onboardingWindowController != nil {
+            showOnboarding()
+        } else if screenManager == nil {
+            // showSettings() is a silent no-op until startup assigns screenManager, and AppKit won't resend this reopen.
+            hasPendingReopen = true
+        } else {
+            showSettings()
+        }
+        return false
+    }
+
+    func consumePendingReopen(showSettingsOnLaunch: Bool, showOnboarding: Bool) {
+        guard hasPendingReopen else { return }
+        hasPendingReopen = false
+        guard !showSettingsOnLaunch, !showOnboarding else { return }
+        showSettings()
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {

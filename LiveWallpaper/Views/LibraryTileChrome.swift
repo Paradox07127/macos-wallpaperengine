@@ -50,7 +50,7 @@ struct LibraryTileOverflowButton<Content: View>: View {
         .buttonStyle(.plain)
         .help(Text("More actions"))
         .accessibilityLabel(Text("More actions"))
-        .popover(isPresented: $showingActions, arrowEdge: .bottom) {
+        .appLanguagePopover(isPresented: $showingActions, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
                 content { showingActions = false }
             }

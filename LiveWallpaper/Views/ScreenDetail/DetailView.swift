@@ -39,23 +39,10 @@ struct DetailView: View {
     private var runtimeErrorBannerView: some View {
         if let attempt = screenManager.wallpaperLoads.attempt(for: screen), let failure = attempt.failure {
             if selectedTab != .wallpaper || !attempt.isInspecting {
-                InlineNoticeBanner(
-                    tint: DesignTokens.Colors.Status.warning,
-                    symbol: "exclamationmark.triangle.fill",
-                    title: Text("Last wallpaper application failed"),
-                    message: Text(verbatim: LogPrivacyRedactor.scrub(failure.title)),
-                    code: failure.cause.code,
-                    surface: .content
-                ) {
-                    Button("View Details") {
-                        screenManager.inspectWallpaperAttempt(true, for: screen)
-                        selectedTab = .wallpaper
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
+                LastApplyFailureBanner(failure: failure) {
+                    screenManager.inspectWallpaperAttempt(true, for: screen)
+                    selectedTab = .wallpaper
                 }
-                .padding(.horizontal, DesignTokens.Spacing.md)
-                .padding(.top, DesignTokens.Spacing.sm)
             }
         } else if let runtimeError {
             let activeType = screen.runtimeSession?.wallpaperType ?? draft.selectedWallpaperType
@@ -67,6 +54,35 @@ struct DetailView: View {
                 onRePick: rePickRuntimeSource
             )
             .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
+        }
+    }
+
+    @ViewBuilder
+    private var schedulePauseBanner: some View {
+        if selectedTab == .wallpaper, let until = draft.schedulePausedUntil {
+            InlineNoticeBanner(
+                tint: DesignTokens.Colors.Status.info,
+                symbol: "pause.circle.fill",
+                title: Text(
+                    "Schedule paused until \(until, format: .dateTime.hour().minute())",
+                    comment: "Detail notice: this display's daily schedule is paused until the given time."
+                ),
+                message: Text(
+                    "The wallpaper on screen isn't the scheduled one. The schedule resumes when the next time slot starts.",
+                    comment: "Explains the paused daily schedule notice on the display detail page."
+                ),
+                surface: .content
+            ) {
+                Button {
+                    screenManager.resumeSchedule(for: screen)
+                } label: {
+                    Text("Resume Schedule", comment: "Resumes this display's paused daily schedule.")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+            .padding(.horizontal, DesignTokens.Spacing.md)
+            .padding(.top, DesignTokens.Spacing.sm)
         }
     }
 
@@ -302,6 +318,8 @@ struct DetailView: View {
 
             runtimeErrorBannerView
 
+            schedulePauseBanner
+
             Divider()
 
             if selectedTab == .overlays {
@@ -433,7 +451,7 @@ struct DetailView: View {
             Button("Choose Web") { showHTMLSourcePicker() }
             Button("Cancel", role: .cancel) { }
 
-        case .sceneLibraryDrop, .applyNotConfirmed:
+        case .sceneLibraryDrop, .applyNotConfirmed, .sourceMissing:
             Button("Cancel", role: .cancel) {}
         #if !LITE_BUILD
         case .sceneProjectUnsupported, .sceneImportRejected:
@@ -452,7 +470,7 @@ struct DetailView: View {
 
     private func requestResetDisplaySettings() {
         pendingDestructive = PendingDestructive(
-            .resetDisplaySettings(displayName: screen.name)
+            .resetDisplaySettings(displayName: screen.name, sceneCapable: featureCatalog.isEnabled(.scene))
         ) {
             screenManager.resetDisplaySettings(for: screen)
         }
@@ -729,5 +747,27 @@ struct DetailView: View {
         }
 
         return screen.videoPlayer?.videoURL
+    }
+}
+
+struct LastApplyFailureBanner: View {
+    let failure: WallpaperFailureSnapshot
+    let onViewDetails: () -> Void
+
+    var body: some View {
+        InlineNoticeBanner(
+            tint: DesignTokens.Colors.Status.warning,
+            symbol: "exclamationmark.triangle.fill",
+            title: Text("Last wallpaper application failed"),
+            message: Text(verbatim: LogPrivacyRedactor.scrub(failure.title)),
+            code: failure.cause.code,
+            surface: .content
+        ) {
+            Button("View Details", action: onViewDetails)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+        }
+        .padding(.horizontal, DesignTokens.Spacing.md)
+        .padding(.top, DesignTokens.Spacing.sm)
     }
 }

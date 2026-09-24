@@ -1,6 +1,7 @@
 import CoreGraphics
 import Foundation
 @testable import LiveWallpaper
+import LiveWallpaperCore
 import Testing
 
 /// Pins GAP_ANALYSIS.md §8.2's layout B: 16:9 hero on the left, 372 inspector on the right.
@@ -115,6 +116,59 @@ struct DisplayDetailTests {
         }
     }
 
+    // MARK: Preview state
+
+    private func attempt(_ phase: WallpaperLoadAttempt.Phase, inspecting: Bool) -> WallpaperLoadAttempt {
+        WallpaperLoadAttempt(
+            id: UUID(), screenID: 1, screenIdentity: ObjectIdentifier(DisplayDetailTests.self),
+            displayFingerprint: "", title: "", phase: phase, isInspecting: inspecting
+        )
+    }
+
+    @Test("An inspected attempt takes the column; a failure stepped back from and a runtime error become notices")
+    func previewStateFollowsTheAttempt() {
+        func state(_ configured: Bool, _ attempt: WallpaperLoadAttempt?, runtimeError: Bool = false) -> DetailPreviewState {
+            DetailPreviewState.resolve(hasConfiguration: configured, attempt: attempt, hasRuntimeError: runtimeError)
+        }
+        #expect(state(false, nil) == .empty)
+        #expect(state(true, nil) == .hero)
+        #expect(state(false, attempt(.importing, inspecting: true)) == .preparing)
+        #expect(state(true, attempt(.preparing, inspecting: true), runtimeError: true) == .preparing)
+        #expect(state(true, attempt(.failed, inspecting: true), runtimeError: true) == .prepareFailed)
+        #expect(state(true, attempt(.failed, inspecting: false), runtimeError: true) == .lastAttemptFailed)
+        #expect(state(false, attempt(.failed, inspecting: false)) == .lastAttemptFailed)
+        #expect(state(true, nil, runtimeError: true) == .runtimeError)
+        #expect(state(false, nil, runtimeError: true) == .runtimeError)
+        // Rebuilding the running scene after a property change prepares without taking the page.
+        #expect(state(true, attempt(.preparing, inspecting: false)) == .hero)
+    }
+
+    @Test("An apply still preparing takes the column until an attempt of its own is inspected")
+    func applyingShowsPreparing() {
+        #expect(DetailPreviewState.resolve(hasConfiguration: true, attempt: nil, hasRuntimeError: false, applying: true) == .preparing)
+        #expect(DetailPreviewState.resolve(hasConfiguration: true, attempt: nil, hasRuntimeError: false) == .hero)
+    }
+
+    @Test("A committed web transform stays drawn over the old capture until a new one replaces it")
+    func committedTransformWaitsForTheNextCapture() {
+        let base = HTMLConfig.default
+        var committed = base
+        committed.transformScale = 1.5
+        committed.transformRotationDegrees = 90
+        committed.transformTranslateX = 40
+        let lag = WebTransformLag(base: base, baseVersion: 1)
+        #expect(lag.pending(to: committed, over: 1) == .init(scale: 1.5, rotation: 90, translateX: 40, translateY: 0))
+        #expect(lag.pending(to: committed, over: 2) == .none)
+    }
+
+    @Test("A runtime error keeps its own banner under a failed attempt's notice")
+    func runtimeErrorShowsUnderTheFailedAttempt() {
+        #expect(DetailPreviewState.lastAttemptFailed.showsRuntimeError)
+        #expect(DetailPreviewState.runtimeError.showsRuntimeError)
+        // Control: an attempt's page fills the column, so no banner sits over it.
+        #expect(!DetailPreviewState.prepareFailed.showsRuntimeError)
+    }
+
     // MARK: Top-bar tags
 
     @Test("Three display tags stay unfolded")
@@ -131,5 +185,12 @@ struct DisplayDetailTests {
         #expect(split.overflow == 2)
         // Four is the first count that folds at all.
         #expect(DetailTagRow.split((1 ... 4).map { tag($0) }).overflow == 1)
+    }
+
+    @Test("The current display's tag takes the last visible slot instead of folding")
+    func currentTagStaysVisible() {
+        let split = DetailTagRow.split((1 ... 5).map { tag($0, current: $0 == 5) })
+        #expect(split.visible.map(\.id) == [1, 2, 5])
+        #expect(split.overflow == 2)
     }
 }

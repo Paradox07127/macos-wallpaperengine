@@ -33,6 +33,7 @@ private func richConfiguration(
     config.sceneMouseInteractionEnabled = false
     config.sceneClickCaptureEnabled = true
     config.savedVideoPackageEntryName = "scene.pkg/main.mp4"
+    config.scheduleSettledUntil = Date(timeIntervalSinceReferenceDate: 800_000_000)
     return config
 }
 

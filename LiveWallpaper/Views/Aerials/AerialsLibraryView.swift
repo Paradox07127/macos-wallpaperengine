@@ -1,9 +1,7 @@
-import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
 struct AerialsLibraryView: View {
-    var isEmbedded = false
     @Environment(\.libraryTileSize) private var tileSize
     private let library = AppleAerialsLibrary.shared
     @Environment(ScreenManager.self) private var screenManager
@@ -13,28 +11,11 @@ struct AerialsLibraryView: View {
 
     var body: some View {
         DetailPageScaffold {
-            VStack(spacing: 0) {
-                if isEmbedded {
-                    HStack(spacing: DesignTokens.Spacing.sm) {
-                        Label("Apple Aerials", systemImage: "sparkles.tv")
-                            .font(DesignTokens.Typography.sectionTitle)
-                        Spacer()
-                        if library.isAuthorized {
-                            refreshButton
-                            disconnectButton
-                        }
-                    }
-                    .buttonStyle(.borderless)
-                    .padding(DesignTokens.Spacing.lg)
-                }
-                content
-            }
+            content
         }
         .confirmDestructive($pendingDestructive)
         .toolbar {
-            if !isEmbedded {
-                standaloneToolbar
-            }
+            standaloneToolbar
         }
         .task {
             if library.isAuthorized, library.assets.isEmpty {
@@ -45,14 +26,10 @@ struct AerialsLibraryView: View {
 
     @ViewBuilder
     private var content: some View {
-        if !library.isAuthorized {
-            unauthorizedState
-        } else if let err = library.lastScanError, !err.isEmpty, library.assets.isEmpty {
-            scanErrorView(message: err)
-        } else if library.assets.isEmpty {
-            emptyState
-        } else {
+        if library.isAuthorized, !library.assets.isEmpty {
             galleryWithFilter
+        } else {
+            AerialsSourceStatusCard()
         }
     }
 
@@ -86,26 +63,6 @@ struct AerialsLibraryView: View {
         .help(Text("Refresh Aerials library"))
         .accessibilityLabel(Text("Refresh Aerials library"))
         .disabled(library.isScanning)
-    }
-
-    private func scanErrorView(message: String) -> some View {
-        LibraryGuideCard(
-            icon: "exclamationmark.triangle",
-            tint: DesignTokens.Colors.LibraryTint.aerials,
-            title: "Couldn't scan Aerials",
-            actionTitle: "Reconnect",
-            actionSystemImage: "folder.badge.gearshape",
-            secondaryTitle: "Retry",
-            secondarySystemImage: "arrow.clockwise",
-            errorMessage: message,
-            action: {
-                library.clearAccess()
-            },
-            secondaryAction: {
-                Task { await library.refresh() }
-            }
-        )
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var disconnectButton: some View {
@@ -145,41 +102,6 @@ struct AerialsLibraryView: View {
             $0.displayName.localizedCaseInsensitiveContains(trimmed) ||
                 ($0.category?.localizedCaseInsensitiveContains(trimmed) ?? false)
         }
-    }
-
-    private var unauthorizedState: some View {
-        LibraryGuideCard(
-            icon: "sparkles.tv",
-            tint: DesignTokens.Colors.LibraryTint.aerials,
-            title: "Connect Apple Aerials",
-            message: "Authorize access to downloaded aerials. Original files remain unchanged.",
-            actionTitle: library.isScanning ? "Connecting…" : "Connect Library",
-            actionSystemImage: "folder.badge.plus",
-            isActionInProgress: library.isScanning,
-            errorMessage: library.lastScanError,
-            action: {
-                Task { _ = await library.requestAccess() }
-            }
-        )
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private var emptyState: some View {
-        LibraryGuideCard(
-            icon: "sparkles.tv",
-            tint: DesignTokens.Colors.LibraryTint.aerials,
-            title: "No aerials downloaded yet",
-            message: "Download an aerial in System Settings, then refresh when the download completes.",
-            actionTitle: "Open System Settings",
-            actionSystemImage: "gearshape",
-            secondaryTitle: "Refresh",
-            secondarySystemImage: "arrow.clockwise",
-            action: openWallpaperSettings,
-            secondaryAction: {
-                Task { await library.refresh() }
-            }
-        )
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     @ViewBuilder
@@ -263,12 +185,6 @@ struct AerialsLibraryView: View {
     private func applyToAll(_ asset: AerialAsset) {
         for screen in screenManager.screens {
             apply(asset, to: screen)
-        }
-    }
-
-    private func openWallpaperSettings() {
-        if let url = URL(string: "x-apple.systempreferences:com.apple.Wallpaper-Settings.extension") {
-            NSWorkspace.shared.open(url)
         }
     }
 }

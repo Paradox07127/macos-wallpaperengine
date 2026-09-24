@@ -28,6 +28,8 @@ struct DraftState: Sendable, Equatable {
     var hasPreviewSource: Bool
     /// Live scene mirror for inspector property overrides, not the persisted copy.
     var sceneDescriptor: SceneDescriptor?
+    /// When the daily schedule takes this display back; nil while the display follows it.
+    var schedulePausedUntil: Date?
 
     static let `default` = DraftState(
         playbackSpeed: 1.0,
@@ -90,7 +92,8 @@ struct DraftState: Sendable, Equatable {
             sceneMouseInteractionEnabled: config.sceneMouseInteractionEnabled,
             sceneClickCaptureEnabled: config.sceneClickCaptureEnabled,
             hasPreviewSource: config.wallpaperType == .video && config.hasConfiguredVideoSource,
-            sceneDescriptor: config.activeWallpaper.sceneDescriptor
+            sceneDescriptor: config.activeWallpaper.sceneDescriptor,
+            schedulePausedUntil: SchedulePolicy.pausedUntil(for: config, now: Date(), calendar: .current)
         )
     }
 }

@@ -9,7 +9,7 @@ public enum LoginItemFailure: Sendable {
         switch self {
         case .requiresApproval:
             return String(
-                localized: "Open System Settings → General → Login Items and turn on Loomscreen.",
+                localized: "Open System Settings › General › Login Items & Extensions and turn on Loomscreen.",
                 bundle: .appLanguage, comment: "Login item needs user approval in System Settings."
             )
         case .registrationSilentlyFailed:

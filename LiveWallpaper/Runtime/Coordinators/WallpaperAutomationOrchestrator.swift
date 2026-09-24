@@ -2,6 +2,16 @@ import CoreGraphics
 import Foundation
 import LiveWallpaperCore
 
+/// The latest schedule or playlist switch on a display; `serial` counts them.
+struct AutomaticSwitchMark: Equatable {
+    enum Source: Equatable {
+        case schedule, playlist
+    }
+
+    let serial: Int
+    let source: Source
+}
+
 @MainActor
 final class WallpaperAutomationOrchestrator {
     private let configurationStore: WallpaperConfigurationStore
@@ -22,6 +32,8 @@ final class WallpaperAutomationOrchestrator {
     ) -> Void
     private let bumpTransition: @MainActor (CGDirectDisplayID) -> Int
     private let isCurrentTransition: @MainActor (Int, CGDirectDisplayID) -> Bool
+    private let noteAutomaticSwitch: @MainActor (Screen, AutomaticSwitchMark.Source) -> Void
+    private let now: @MainActor () -> Date
     private var isMonitoring = false
     private var isSuspendedForUserAbsence = false
     private struct PendingValidation {
@@ -48,7 +60,9 @@ final class WallpaperAutomationOrchestrator {
             ScreenConfiguration
         ) -> Void,
         bumpTransition: @MainActor @escaping (CGDirectDisplayID) -> Int,
-        isCurrentTransition: @MainActor @escaping (Int, CGDirectDisplayID) -> Bool
+        isCurrentTransition: @MainActor @escaping (Int, CGDirectDisplayID) -> Bool,
+        noteAutomaticSwitch: @MainActor @escaping (Screen, AutomaticSwitchMark.Source) -> Void = { _, _ in },
+        now: @MainActor @escaping () -> Date = { Date() }
     ) {
         self.configurationStore = configurationStore
         self.automationCoordinator = automationCoordinator
@@ -60,6 +74,8 @@ final class WallpaperAutomationOrchestrator {
         self.restoreProposedConfiguration = restoreProposedConfiguration
         self.bumpTransition = bumpTransition
         self.isCurrentTransition = isCurrentTransition
+        self.noteAutomaticSwitch = noteAutomaticSwitch
+        self.now = now
     }
 
     // MARK: - Playlist
@@ -142,6 +158,10 @@ final class WallpaperAutomationOrchestrator {
         applyCursor(index, combined: combined, screen: screen, label: "jumping")
     }
 
+    func previewEntry(_ entry: WallpaperQueueEntry, for screen: Screen) {
+        applyEntry(entry, cursor: nil, for: screen)
+    }
+
     func updateShufflePlaylist(_ shuffle: Bool, for screen: Screen) {
         guard var config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint),
               config.shufflePlaylist != shuffle else { return }
@@ -152,6 +172,7 @@ final class WallpaperAutomationOrchestrator {
     func advancePlaylist(for screen: Screen) {
         guard let config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint),
               config.canNavigatePlaylist else { return }
+        noteAutomaticSwitch(screen, .playlist)
 
         if let queue = config.wallpaperQueue {
             stepQueue(queue, configuration: config, forward: true, for: screen)
@@ -173,6 +194,7 @@ final class WallpaperAutomationOrchestrator {
     func regressPlaylist(for screen: Screen) {
         guard let config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint),
               config.canNavigatePlaylist else { return }
+        noteAutomaticSwitch(screen, .playlist)
 
         if let queue = config.wallpaperQueue {
             stepQueue(queue, configuration: config, forward: false, for: screen)
@@ -220,7 +242,7 @@ final class WallpaperAutomationOrchestrator {
             let cursor = max(0, min(config.playlistCursorIndex ?? 0, combined.count - 1))
             applyCursor(cursor, combined: combined, screen: screen, label: "entering playlist mode")
         case .schedule:
-            checkAndApplySchedule(for: screen)
+            checkAndApplySchedule(for: screen, force: true)
         }
     }
 
@@ -292,7 +314,7 @@ final class WallpaperAutomationOrchestrator {
     }
 
     func updateAutomation(
-        queue: [WallpaperQueueEntry], slots: [ScheduleSlot], mode: WallpaperMode,
+        queue: [WallpaperQueueEntry], slots: [ScheduleSlot], fallback: WallpaperQueueEntry? = nil, mode: WallpaperMode,
         rotationMinutes: Int?, shuffle: Bool, for screen: Screen
     ) {
         guard var config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint),
@@ -301,12 +323,11 @@ final class WallpaperAutomationOrchestrator {
         let previousQueue = config.effectiveWallpaperQueue
         let cursor = config.playlistCursorIndex ?? 0
         let currentID = previousQueue.indices.contains(cursor) ? previousQueue[cursor].id : nil
-        if mode == .schedule, config.scheduleFallback == nil {
-            let legacyPrimary = previousMode == .schedule && config.wallpaperQueue == nil
-                ? config.savedVideoBookmarkData : nil
-            config.scheduleFallback = WallpaperQueueEntry(
-                title: "", content: legacyPrimary.map { .video(bookmarkData: $0, packageEntryName: config.savedVideoPackageEntryName) } ?? config.activeWallpaper,
-                origin: legacyPrimary == nil ? config.wpeOrigin : nil
+        if let fallback {
+            config.scheduleFallback = fallback
+        } else if mode == .schedule, config.scheduleFallback == nil {
+            config.scheduleFallback = SchedulePolicy.initialFallback(
+                for: config, current: WallpaperQueueEntry(title: "", content: config.activeWallpaper, origin: config.wpeOrigin)
             )
         }
         var seen: Set<String> = []
@@ -318,7 +339,7 @@ final class WallpaperAutomationOrchestrator {
         config.shufflePlaylist = shuffle
         saveConfiguration(config)
         if mode == .schedule {
-            checkAndApplySchedule(for: screen)
+            checkAndApplySchedule(for: screen, force: true)
         } else if previousMode != .playlist, let entries = config.wallpaperQueue, !entries.isEmpty {
             let index = config.playlistCursorIndex ?? 0
             applyEntry(entries[index], cursor: index, for: screen)
@@ -367,16 +388,28 @@ final class WallpaperAutomationOrchestrator {
         saveConfiguration(config)
 
         if slots != nil {
-            checkAndApplySchedule(for: screen)
+            checkAndApplySchedule(for: screen, force: true)
         }
     }
 
-    func checkAndApplySchedule(for screen: Screen) {
-        guard let config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint) else { return }
+    func checkAndApplySchedule(for screen: Screen, force: Bool = false) {
+        guard !isSuspendedForUserAbsence,
+              var config = configurationStore.get(for: screen.id, fingerprint: screen.displayFingerprint),
+              config.wallpaperMode == .schedule,
+              let slots = config.scheduleSlots, !slots.isEmpty else { return }
+        let currentTime = now()
+        if !force, let settled = config.scheduleSettledUntil, currentTime < settled {
+            return
+        }
+        let decision = SchedulePolicy.decision(for: config, hour: Calendar.current.component(.hour, from: currentTime))
+        config.scheduleSettledUntil = SchedulePolicy.nextBoundary(after: currentTime, slots: slots, calendar: .current)
+        // Saved before dispatch: a web or scene candidate gives up when the revision moves while it prepares.
+        saveConfiguration(config)
+        if decision != .none {
+            noteAutomaticSwitch(screen, .schedule)
+        }
 
-        let currentHour = Calendar.current.component(.hour, from: Date())
-
-        switch SchedulePolicy.decision(for: config, hour: currentHour) {
+        switch decision {
         case .none:
             return
 

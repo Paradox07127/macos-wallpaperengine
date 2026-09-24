@@ -29,15 +29,6 @@ struct ApplyRouterTests {
         #expect(manager.calls == [.bookmark(bookmark)])
     }
 
-    @Test func videoRoutesWithPackageEntry() async {
-        let url = URL(fileURLWithPath: "/fixture/scene.pkg")
-        let data = Data([1, 2])
-        let report = await router().apply(.video(url: url, bookmarkData: data, packageEntryName: "clip.mp4"), to: manager.screen)
-        #expect(report.outcome == .applied)
-        #expect(manager.calls == [.video(url, data, "clip.mp4")])
-        #expect(bookmarks.bookmarks.isEmpty)
-    }
-
     @Test func htmlPreservesConfiguration() async {
         let source = HTMLSource.inline("<p>Wallpaper</p>")
         let report = await router().apply(.html(source), to: manager.screen)
@@ -102,14 +93,158 @@ struct ApplyRouterTests {
         #expect(manager.covers == [bookmark.id])
     }
 
+    @Test(.timeLimit(.minutes(1)))
+    func droppedVideosQueueAllAndPlayTheFirst() async throws {
+        let folder = try fixtureFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let first = folder.appendingPathComponent("first.mp4")
+        let second = folder.appendingPathComponent("second.mov")
+        for url in [first, second] {
+            try Data([0]).write(to: url)
+        }
+        let intent = try #require(ApplyIntent.drop([first, second]))
+        let report = await router().apply(intent, to: manager.screen)
+        #expect(report.outcome == .applied)
+        #expect(report.queuedVideos == 2)
+        guard manager.calls.count == 2, case let .video(played, data, nil) = manager.calls[0],
+              case let .queue(entries) = manager.calls[1] else {
+            Issue.record("Expected the first video, then the whole drop as the queue: \(manager.calls)")
+            return
+        }
+        #expect(played == first)
+        #expect(entries.map(\.title) == ["first.mp4", "second.mov"])
+        #expect(entries.first?.content == .video(bookmarkData: data), "the queue starts on the bookmark that is playing")
+        #expect(bookmarks.bookmarks.map(\.content) == [.video(bookmarkData: data)], "only the played video joins the library")
+    }
+
+    @Test func dropIntentKeepsSingleFilesOnTheOldPath() {
+        let video = URL(fileURLWithPath: "/fixture/clip.mp4")
+        let page = URL(fileURLWithPath: "/fixture/index.html")
+        guard case let .droppedFile(single)? = ApplyIntent.drop([video]),
+              case let .droppedFile(mixed)? = ApplyIntent.drop([page, video]) else {
+            Issue.record("One video, or a page with one video, must stay a single-file drop")
+            return
+        }
+        #expect(single == video)
+        #expect(mixed == page)
+        #expect(ApplyIntent.drop([]) == nil)
+    }
+
+    @Test("While wallpapers are off an apply reads as saved, not applied")
+    func appliedWhileOffSaysSaved() {
+        #expect(ApplyOutcome.appliedText(on: "Studio", wallpapersOn: false)
+            == String(localized: "Saved to \("Studio"). Wallpapers are turned off.", bundle: .appLanguage))
+        #expect(ApplyOutcome.appliedText(on: "Studio") == String(localized: "Applied to \("Studio")", bundle: .appLanguage))
+    }
+
     @Test func missingVideoBookmarkFails() async throws {
         let folder = try fixtureFolder()
         defer { try? FileManager.default.removeItem(at: folder) }
         let url = folder.appendingPathComponent("missing/video.mp4")
         let report = await router().apply(.droppedFile(url), to: manager.screen)
-        #expect(report.outcome == .failed(.videoBookmarkFailed))
+        #expect(report.outcome == .failed(.sourceMissing))
         #expect(manager.calls.isEmpty)
         #expect(bookmarks.bookmarks.isEmpty)
+    }
+
+    @Test func deletedLibraryVideoSaysMissing() async throws {
+        let folder = try fixtureFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let url = folder.appendingPathComponent("video.mp4")
+        try Data([0]).write(to: url)
+        let data = try #require(ResourceUtilities.createVideoBookmark(for: url))
+        try FileManager.default.removeItem(at: url)
+        let bookmark = WallpaperBookmark(label: "Deleted", content: .video(bookmarkData: data))
+        let report = await router().apply(.bookmark(bookmark), to: manager.screen)
+        #expect(report.outcome == .failed(.sourceMissing), "resolving the deleted file's bookmark: \(resolutionError(data))")
+        #expect(manager.calls.isEmpty)
+    }
+
+    @Test func appliedWebAddressIsSavedOnce() async throws {
+        let url = try #require(URL(string: "https://example.com/wallpaper"))
+        let router = router()
+        #expect(await router.apply(.html(.url(url)), to: manager.screen).outcome == .applied)
+        #expect(await router.apply(.html(.url(url)), to: manager.screen).outcome == .applied)
+        let bookmark = try #require(bookmarks.bookmarks.first, "the applied web address was not saved to the library")
+        #expect(bookmarks.bookmarks.count == 1)
+        #expect(bookmark.label == "example.com")
+        #expect(manager.covers == [bookmark.id])
+    }
+
+    @Test func confirmationOutlastsPreparation() {
+        #expect(ApplyRouter.defaultConfirmationTimeout > ScreenManager.longPreparationTimeout)
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func preparationFailureEndsTheWaitWithItsReason() async {
+        let manager = NeverConfirmingWallpaperApplying()
+        let router = ApplyRouter(manager: manager, bookmarks: bookmarks, sceneCapable: true, confirmationTimeout: .seconds(2))
+        let task = Task { await router.apply(.html(.inline("slow")), to: manager.screen) }
+        await waitUntil { !manager.calls.isEmpty }
+        manager.failPreparation(reason: "Fixture", on: manager.screen)
+        #expect(await task.value.outcome == .prepareFailed(reason: "Fixture", attemptID: nil))
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func anotherDisplaysFailureKeepsWaiting() async {
+        let manager = NeverConfirmingWallpaperApplying()
+        let router = ApplyRouter(
+            manager: manager, bookmarks: bookmarks, sceneCapable: true, confirmationTimeout: .milliseconds(300)
+        )
+        let task = Task { await router.apply(.html(.inline("slow")), to: manager.screen) }
+        await waitUntil { !manager.calls.isEmpty }
+        manager.failPreparation(reason: "Fixture", on: manager.secondScreen)
+        #expect(await task.value.outcome == .failed(.applyNotConfirmed))
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func earlierPreparationFailureKeepsWaiting() async {
+        let manager = NeverConfirmingWallpaperApplying()
+        let router = ApplyRouter(
+            manager: manager, bookmarks: bookmarks, sceneCapable: true, confirmationTimeout: .milliseconds(300)
+        )
+        let task = Task { await router.apply(.html(.inline("slow")), to: manager.screen) }
+        await waitUntil { !manager.calls.isEmpty }
+        manager.failPreparation(reason: "Earlier", on: manager.screen, generation: manager.generation(of: manager.screen) - 1)
+        #expect(await task.value.outcome == .failed(.applyNotConfirmed))
+    }
+
+    @Test("The screen manager claims a failure only for the preparation it is running now")
+    func screenManagerMatchesOnlyItsCurrentPreparation() {
+        let screen = Screen(nsScreen: ApplyTestNSScreen())
+        let manager = ScreenManager(startupOptions: ScreenManagerStartupOptions(
+            restoreSavedWallpapers: false, startAutomation: false,
+            powerMonitor: FakePowerMonitor(), fullScreenDetector: FakeFullScreenDetector(),
+            playableVideoLoader: FakePlayableVideoLoader(), displayRegistry: FakeDisplayRegistry(screens: [screen]),
+            featureCatalog: FeatureCatalog(capabilities: .lite), originReconciler: PreservingOriginReconciler()
+        ))
+        defer { manager.tearDownForTermination() }
+        let earlier = manager.bumpTransition(for: screen.id)
+        let current = manager.bumpTransition(for: screen.id)
+        let byGeneration = [current, earlier, nil].map {
+            manager.isCurrentPreparation(generation: $0, attemptID: nil, on: screen)
+        }
+        let attempt = manager.wallpaperLoads.begin(for: screen, title: "Scene")
+        let byAttempt = [attempt, UUID()].map {
+            manager.isCurrentPreparation(generation: current, attemptID: $0, on: screen)
+        }
+        // Compared as plain Bools: a failure that describes the manager or screen crashes the test host.
+        #expect(byGeneration == [true, false, false])
+        #expect(byAttempt == [true, false])
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func cancellingDropsTheCandidateAndRestoresSpan() async {
+        let manager = NeverConfirmingWallpaperApplying()
+        manager.configuration.videoDisplayMode = .spanAllDisplays
+        let router = ApplyRouter(manager: manager, bookmarks: bookmarks, sceneCapable: true, confirmationTimeout: .seconds(2))
+        let cancellation = ApplyCancellation()
+        let task = Task { await router.apply(.html(.inline("slow")), to: manager.screen, cancellation: cancellation) }
+        await waitUntil { manager.calls.contains(.html(.inline("slow"))) }
+        cancellation.cancel()
+        #expect(await task.value == ApplyReport(outcome: .failed(.applyNotConfirmed), exitedSpanMode: false, cancelled: true))
+        #expect(manager.cancelledPreparations == [manager.screen.id])
+        #expect(manager.configuration.videoDisplayMode == .spanAllDisplays)
     }
 
     @Test func unsupportedFileFails() async {
@@ -118,15 +253,20 @@ struct ApplyRouterTests {
         #expect(manager.calls.isEmpty)
     }
 
-    @Test func sceneLibraryFails() async throws {
+    @Test func sceneLibraryStartsTheBatchImport() async throws {
         let folder = try fixtureFolder()
         defer { try? FileManager.default.removeItem(at: folder) }
         let project = folder.appendingPathComponent("project", isDirectory: true)
         try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
         try Data("{}".utf8).write(to: project.appendingPathComponent("project.json"))
-        let report = await router().apply(.droppedFile(folder), to: manager.screen)
-        #expect(report.outcome == .failed(.sceneLibraryDrop))
-        #expect(manager.calls.isEmpty)
+        let imports = LibraryImportLog()
+        let router = ApplyRouter(
+            manager: manager, bookmarks: bookmarks, sceneCapable: true, importLibrary: { imports.batches.append($0) }
+        )
+        let report = await router.apply(.droppedFile(folder), to: manager.screen)
+        #expect(report.outcome == .importingLibrary)
+        #expect(imports.batches == [[folder]])
+        #expect(manager.calls.isEmpty, "a library is imported, not applied to the display it was dropped on")
     }
 
     @Test func sceneWithoutCapabilityFails() async throws {
@@ -307,6 +447,21 @@ struct ApplyRouterTests {
         }
         #expect(condition())
     }
+
+    private func resolutionError(_ data: Data) -> String {
+        do {
+            _ = try SecurityScopedBookmarkResolver.shared.resolveData(data)
+            return "resolved"
+        } catch {
+            let error = error as NSError
+            return "\(error.domain) \(error.code)"
+        }
+    }
+}
+
+@MainActor
+private final class LibraryImportLog {
+    var batches: [[URL]] = []
 }
 
 @MainActor
@@ -342,6 +497,7 @@ private class RecordingWallpaperApplying: WallpaperApplying {
         case html(HTMLSource)
         case scheme(ScreenScheme)
         case mode(VideoDisplayMode)
+        case queue([WallpaperQueueEntry])
         #if !LITE_BUILD
         case scene(SceneDescriptor, WPEOrigin?)
         case project(URL)
@@ -367,8 +523,11 @@ private class RecordingWallpaperApplying: WallpaperApplying {
 
     var calls: [Call] = []
     var covers: [UUID] = []
+    var cancelledPreparations: [CGDirectDisplayID] = []
     var screenAvailable = true
     var lookupCount = 0
+    /// Bumped by every call on a display, the way a real selection bumps its transition.
+    private var generations: [CGDirectDisplayID: Int] = [:]
 
     var screens: [Screen] {
         screenAvailable ? [screen, secondScreen] : []
@@ -414,6 +573,22 @@ private class RecordingWallpaperApplying: WallpaperApplying {
         covers.append(id)
     }
 
+    func replaceWallpaperQueue(_ entries: [WallpaperQueueEntry], for screen: Screen) {
+        record(.queue(entries), for: screen)
+    }
+
+    func cancelPreparation(for screen: Screen) {
+        cancelledPreparations.append(screen.id)
+    }
+
+    func isCurrentPreparation(generation: Int?, attemptID _: UUID?, on screen: Screen) -> Bool {
+        generation == generations[screen.id]
+    }
+
+    func generation(of screen: Screen) -> Int {
+        generations[screen.id] ?? 0
+    }
+
     #if !LITE_BUILD
     let origin = WPEOrigin(workshopID: "42", title: "Scene", originalType: .scene, sourceFolderBookmark: Data(), cacheRelativePath: nil, previewFileName: nil)
     var projectOutcome: ScreenManager.WPEProjectApplyOutcome?
@@ -454,9 +629,16 @@ private class RecordingWallpaperApplying: WallpaperApplying {
         NotificationCenter.default.post(name: .wallpaperConfigurationDidChange, object: nil, userInfo: ["screenID": screenID])
     }
 
+    func failPreparation(reason: String, on target: Screen, generation: Int? = nil) {
+        NotificationCenter.default.post(name: .wallpaperPreparationDidFail, object: nil, userInfo: [
+            "screenID": target.id, "reason": reason, "generation": generation ?? self.generation(of: target),
+        ])
+    }
+
     private func record(_ call: Call, for screen: Screen) {
         #expect(screen === self.screen || screen === secondScreen)
         calls.append(call)
+        generations[screen.id, default: 0] += 1
     }
 }
 
@@ -498,6 +680,11 @@ struct EditDeskApplyQueueTests {
         }
     }
 
+    @MainActor
+    private final class TokenBox {
+        var token: ApplyCancellation?
+    }
+
     /// Lets queued work run up to its next suspension without tying the test to wall-clock time.
     private func settle(_ isDone: () -> Bool) async {
         for _ in 0 ..< 200 where !isDone() {
@@ -510,11 +697,11 @@ struct EditDeskApplyQueueTests {
         let queue = HomePage.ApplyQueue()
         let gate = Gate()
         let log = Log()
-        queue.run(for: 1) {
+        queue.run(for: 1) { _ in
             await gate.wait()
             log.entries.append("slow")
         }
-        queue.run(for: 2) { log.entries.append("fast") }
+        queue.run(for: 2) { _ in log.entries.append("fast") }
         await settle { log.entries.contains("fast") }
         #expect(log.entries == ["fast"], "display 2 waited behind the apply still running on display 1")
         gate.open()
@@ -528,11 +715,11 @@ struct EditDeskApplyQueueTests {
         let queue = HomePage.ApplyQueue()
         let gate = Gate()
         let log = Log()
-        queue.run(for: 1) {
+        queue.run(for: 1) { _ in
             await gate.wait()
             log.entries.append(Task.isCancelled ? "superseded" : "first")
         }
-        queue.run(for: 1) { log.entries.append("second") }
+        queue.run(for: 1) { _ in log.entries.append("second") }
         await settle { log.entries.contains("second") }
         #expect(log.entries == ["second"], "the newer request waited behind the one it supersedes")
         gate.open()
@@ -540,5 +727,42 @@ struct EditDeskApplyQueueTests {
         await settle { log.entries.count == 2 }
         #expect(log.entries == ["second", "superseded"])
         #expect(queue.isIdle)
+    }
+
+    @Test("A newer request for a display cancels the older one's token; another display's request does not")
+    func newerRequestCancelsTheOlderToken() async {
+        let queue = HomePage.ApplyQueue()
+        let gate = Gate()
+        let box = TokenBox()
+        queue.run(for: 1) { cancellation in
+            box.token = cancellation
+            await gate.wait()
+        }
+        await settle { box.token != nil }
+        queue.run(for: 2) { _ in }
+        #expect(box.token?.isCancelled == false, "a request for display 2 stopped display 1's preparation")
+        queue.run(for: 1) { _ in }
+        #expect(box.token?.isCancelled == true, "the superseded apply's candidate is left preparing")
+        gate.open()
+        await settle { queue.isIdle }
+        #expect(queue.isIdle)
+    }
+
+    @Test("A display stays in flight until its apply returns, and cancel reaches that apply's token")
+    func inFlightUntilFinishedAndCancelReachesTheWork() async {
+        let queue = HomePage.ApplyQueue()
+        let gate = Gate()
+        let box = TokenBox()
+        queue.run(for: 1) { cancellation in
+            box.token = cancellation
+            await gate.wait()
+        }
+        await settle { box.token != nil }
+        #expect(queue.inFlight == [1])
+        queue.cancel(1)
+        #expect(box.token?.isCancelled == true)
+        gate.open()
+        await settle { queue.inFlight.isEmpty }
+        #expect(queue.inFlight.isEmpty)
     }
 }

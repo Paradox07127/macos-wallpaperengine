@@ -14,6 +14,12 @@ struct SchemeLibraryView: View {
     @State private var dragSession = LibraryDragSession()
     @AppStorage(SavedLibrarySortOrder.preferencesKey, store: .appScoped())
     private var sortOrder: SavedLibrarySortOrder = .recent
+    /// The Edit Desk's apply path, which records the change for undo; nil applies the scheme straight away.
+    private let apply: ((ScreenScheme, Screen) -> Void)?
+
+    init(apply: ((ScreenScheme, Screen) -> Void)? = nil) {
+        self.apply = apply
+    }
 
     var body: some View {
         DetailPageScaffold { content }
@@ -211,7 +217,11 @@ struct SchemeLibraryView: View {
         pendingDestructive = PendingDestructive(
             .applyScheme(schemeName: scheme.name, displayName: screen.name)
         ) {
-            screenManager.applyScheme(scheme, to: screen)
+            if let apply {
+                apply(scheme, screen)
+            } else {
+                screenManager.applyScheme(scheme, to: screen)
+            }
         }
     }
 
@@ -257,7 +267,7 @@ private struct SchemeTile: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .galleryTileChrome(isHovering: isHovering, reduceMotion: reduceMotion)
             .settledHover { isHovering = $0 }
-            .popover(isPresented: $showingTargets, arrowEdge: .bottom) {
+            .appLanguagePopover(isPresented: $showingTargets, arrowEdge: .bottom) {
                 LibraryApplyTargetList(
                     screens: screens,
                     onApply: onApply,

@@ -44,6 +44,11 @@ extension GeneralSettingsView {
         }
     }
 
+    /// An alert is still dismissing while its button runs, so the save panel opens a turn later, as `importFeedback` does.
+    func beginExportFromAlert() {
+        DispatchQueue.main.async { beginExport() }
+    }
+
     private func beginImport() {
         isPresentingImporter = true
     }
@@ -88,6 +93,7 @@ extension GeneralSettingsView {
         postSettingsNotificationAsync(.workshopPresetVisibilityDidChange)
         screenManager.handleGlobalSettingsChanged()
         screenManager.resetAllWallpaperSessions()
+        undo?.removeAll()
         screenManager.refreshScreens(preserveRuntimeSessions: false)
 
         let settings = SettingsManager.shared.loadGlobalSettings()
@@ -149,45 +155,59 @@ extension GeneralSettingsView {
         return lines.joined(separator: "\n")
     }
 
+    /// Mirrors `ConfigurationPorter.apply`: display setups and global settings are replaced wholesale; bookmarks and schemes merge.
     var importConfirmationMessage: String {
         guard let bundle = pendingImportBundle else { return "" }
-        var lines: [String] = []
+        var replaced: [String] = []
         if let count = bundle.screenConfigurations?.count {
-            lines.append(String(
-                localized: "• \(count) display configurations",
-                bundle: .appLanguage, comment: "Import confirmation bullet: how many displays the bundle includes. xcstrings provides a pluralized variant."
+            replaced.append(String(
+                localized: "• Every display's complete setup, including its wallpaper, playlist, and schedule (\(count) displays in the file)",
+                bundle: .appLanguage, comment: "Import confirmation bullet under Replaces: every current display setup is replaced. Placeholder is how many displays the file includes."
             ))
         }
         if bundle.globalSettings != nil {
-            lines.append(String(
-                localized: "• Global settings (preferences, display defaults, schedule, shortcuts)",
-                bundle: .appLanguage, comment: "Import confirmation bullet: presence of global settings."
+            replaced.append(String(
+                localized: "• Preferences, shortcuts, display defaults, display names, and widget, music, and clock overlays",
+                bundle: .appLanguage, comment: "Import confirmation bullet under Replaces: parts of the global settings."
             ))
+            #if !LITE_BUILD
+            replaced.append(String(
+                localized: "• Presets and the Workshop items in the wallpaper library",
+                bundle: .appLanguage, comment: "Import confirmation bullet under Replaces: the preset library and the Workshop entries of the wallpaper library."
+            ))
+            #endif
         }
+        var merged: [String] = []
         if let count = bundle.wallpaperBookmarks?.count {
-            lines.append(String(
+            merged.append(String(
                 localized: "• \(count) saved bookmarks",
                 bundle: .appLanguage, comment: "Import confirmation bullet: how many bookmarks the bundle includes. xcstrings provides a pluralized variant."
             ))
         }
         if let count = bundle.screenSchemes?.count {
-            lines.append(String(
+            merged.append(String(
                 localized: "• \(count) saved schemes",
                 bundle: .appLanguage, comment: "Import confirmation bullet: how many display schemes the bundle includes. xcstrings provides a pluralized variant."
             ))
         }
 
-        let summary = lines.isEmpty
+        var sections: [String] = []
+        if !replaced.isEmpty {
+            let header = String(localized: "Replaces:", bundle: .appLanguage, comment: "Import confirmation header over the parts of the current configuration the file replaces.")
+            sections.append(([header] + replaced).joined(separator: "\n"))
+        }
+        if !merged.isEmpty {
+            let header = String(localized: "Merges (items you already have are kept):", bundle: .appLanguage, comment: "Import confirmation header over the parts of the file that are added next to what exists.")
+            sections.append(([header] + merged).joined(separator: "\n"))
+        }
+        let summary = sections.isEmpty
             ? String(
                 localized: "The file contains no recognizable settings.",
                 bundle: .appLanguage, comment: "Import confirmation when bundle is empty."
             )
-            : lines.joined(separator: "\n")
+            : sections.joined(separator: "\n\n")
 
-        return String(
-            localized: "\(summary)\n\n\(localizedBookmarkPortabilityWarning)\n\nReplace current configuration?",
-            bundle: .appLanguage, comment: "Import confirmation alert message. First placeholder is a bulleted list of restored sections; second is the device-portability warning."
-        )
+        return summary + "\n\n" + localizedBookmarkPortabilityWarning
     }
 
     private var localizedBookmarkPortabilityWarning: String {

@@ -13,6 +13,9 @@ struct WorkshopModal: View {
     let download: WorkshopDownloadPresentation
     let primaryTitle: String
     let isPrimaryEnabled: Bool
+    /// The button beside the primary one, shown until the item is in the library.
+    let secondaryTitle: String
+    let isSecondaryEnabled: Bool
     /// The mature reveal lives in the page's `MatureRevealState`, so it survives closing this modal.
     let isRevealed: Bool
     /// The same state, for the dependency and preset rows: R-24 ④ shares one reveal set.
@@ -219,7 +222,18 @@ struct WorkshopModal: View {
             .opacity(isPrimaryEnabled ? 1 : DesignTokens.Opacity.dimmedIcon)
             if !content.isInstalled {
                 WorkshopBarButton(fill: DesignTokens.EditDesk.Colors.fillSecondaryButton, action: actions.saveOnly) {
-                    Text("Save only")
+                    Text(verbatim: secondaryTitle)
+                        .font(DesignTokens.EditDesk.Typography.button)
+                        .foregroundStyle(DesignTokens.EditDesk.Colors.textPrimary)
+                        .lineLimit(1)
+                        .padding(.horizontal, DesignTokens.EditDesk.Spacing.s14)
+                }
+                .disabled(!isSecondaryEnabled)
+                .opacity(isSecondaryEnabled ? 1 : DesignTokens.Opacity.dimmedIcon)
+            }
+            if let connectSteam = actions.connectSteam {
+                WorkshopBarButton(fill: DesignTokens.EditDesk.Colors.fillSecondaryButton, action: connectSteam) {
+                    Text("Connect Steam")
                         .font(DesignTokens.EditDesk.Typography.button)
                         .foregroundStyle(DesignTokens.EditDesk.Colors.textPrimary)
                         .lineLimit(1)
@@ -241,6 +255,7 @@ struct WorkshopModal: View {
                     .foregroundStyle(DesignTokens.EditDesk.Colors.textPrimary)
                     .frame(width: Self.buttonHeight)
             }
+            .help(Text("Open in Steam"))
             .accessibilityLabel(Text("Open in Steam"))
         }
     }

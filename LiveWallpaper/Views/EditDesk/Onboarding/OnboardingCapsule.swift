@@ -52,18 +52,27 @@ struct OnboardingCapsule: View {
     let showsSearch: Bool
 
     @Environment(OnboardingProgress.self) private var progress: OnboardingProgress?
+    @Environment(EditDeskRouter.self) private var router: EditDeskRouter?
+    @State private var isHovering = false
+    @State private var menuPresented = false
 
     private static let height: CGFloat = 22
 
     var body: some View {
         if let progress, !progress.isFinished {
-            capsule(progress)
+            let dots = OnboardingCapsuleModel.dots(visible: progress.visiblePages, handled: progress.handled)
+            Button { menuPresented.toggle() } label: { capsule(dots) }
+                .buttonStyle(OnboardingPressStyle())
+                .onHover { isHovering = $0 }
+                .help(Text("Welcome Tour"))
+                .accessibilityLabel(Text("Get Started"))
+                .accessibilityValue(Text("Step \(dots.filter(\.self).count) of \(dots.count)"))
+                .appLanguagePopover(isPresented: $menuPresented, arrowEdge: .bottom) { menu(progress) }
         }
     }
 
-    private func capsule(_ progress: OnboardingProgress) -> some View {
-        let dots = OnboardingCapsuleModel.dots(visible: progress.visiblePages, handled: progress.handled)
-        return HStack(spacing: DesignTokens.EditDesk.Spacing.s8) {
+    private func capsule(_ dots: [Bool]) -> some View {
+        HStack(spacing: DesignTokens.EditDesk.Spacing.s8) {
             if OnboardingCapsuleFit.showsLabel(windowWidth: windowWidth, showsSearch: showsSearch) {
                 Text("Get Started")
                     .font(DesignTokens.EditDesk.Typography.badgeMono)
@@ -84,11 +93,48 @@ struct OnboardingCapsule: View {
         .padding(.horizontal, OnboardingCapsuleFit.horizontalPadding)
         .frame(height: Self.height)
         .background(Capsule().fill(DesignTokens.EditDesk.Colors.panel))
-        .overlay(Capsule().strokeBorder(DesignTokens.EditDesk.Colors.strokePanel, lineWidth: 1))
+        .overlay(Capsule().strokeBorder(
+            isHovering ? DesignTokens.EditDesk.Colors.strokeRegular : DesignTokens.EditDesk.Colors.strokePanel,
+            lineWidth: 1
+        ))
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text("Get Started"))
-        .accessibilityValue(Text(verbatim: OnboardingCardContent.stepText(
-            step: dots.filter(\.self).count, total: dots.count
-        )))
+    }
+
+    private func menu(_ progress: OnboardingProgress) -> some View {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+            if let step = progress.currentPage {
+                Button {
+                    menuPresented = false
+                    router?.showOnboardingStep(step, displayID: CGMainDisplayID())
+                } label: {
+                    Text(
+                        "Next Step: \(Text(Self.pageTitle(step)))",
+                        comment: "Get Started capsule menu item that opens the page of the next welcome tour step. Placeholder is that page's name."
+                    )
+                }
+            }
+            Divider()
+            Button {
+                menuPresented = false
+                progress.dismissRemaining()
+            } label: {
+                Text(
+                    "Skip Welcome Tour",
+                    comment: "Get Started capsule menu item that marks every remaining welcome tour step as skipped."
+                )
+            }
+        }
+        .buttonStyle(.borderless)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .settingsPopoverChrome(width: 240)
+    }
+
+    private static func pageTitle(_ page: OnboardingProgress.Page) -> LocalizedStringKey {
+        switch page {
+        case .home: "Overview"
+        case .library: "Wallpaper Library"
+        case .workshop: "Workshop"
+        case .overlay: "Overlays"
+        }
     }
 }

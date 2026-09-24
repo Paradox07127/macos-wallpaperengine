@@ -59,11 +59,11 @@ struct ErrorReasonSurfaceTests {
         #expect(failures.contains("case sceneUnsupportedInBuild"))
         // The routing, not just the enum.
         let router = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Support/ApplyRouter.swift")
-        #expect(router.contains("return .failed(.sceneLibraryDrop)"))
+        #expect(router.contains("return .importingLibrary"), "a library folder goes to the batch import, not to a refusal")
         #expect(router.contains("return .failed(.sceneUnsupportedInBuild)"))
         // And the surface that speaks the verdict to the user.
         let home = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/HomePage.swift")
-        #expect(home.contains("toasts.post(failure.toastText, style: .failure)"))
+        #expect(home.contains("toasts.post(failure.toastText, style: .failure, screenID: screen.id)"))
     }
 
     @Test("A key Valve rejected is not described as stored or ready")

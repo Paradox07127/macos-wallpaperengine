@@ -100,8 +100,8 @@ struct EditDeskModalChromeTests {
         #expect(source.contains("ModalKeyMap.target(forShortcut:"))
         #expect(source.contains("onEscape:"))
         #expect(source.contains("onDrag(.cancelled)"))
-        // Space and ← → are the library's own, not the container's.
-        #expect(source.contains("keyboardShortcut(.space"))
+        // ← → are the library's own, not the container's; Space must not reach the desktop from the modal.
+        #expect(!source.contains("keyboardShortcut(.space"))
         #expect(source.contains("keyboardShortcut(.leftArrow"))
     }
 

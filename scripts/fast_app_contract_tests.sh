@@ -71,6 +71,8 @@ SUITES=(
   # Cached-login verdict wording: a blocked network must not read as an
   # unrecognized response or send the user to re-sign in.
   SteamCachedLoginVerdictTests
+  WorkshopDownloadReadinessTests
+  WorkshopFolderImportCoordinatorTests
   SystemMemoryPressureWatcherTests
   VideoResolutionContractCharacterizationTests
   WPECorpusManifestTests
@@ -164,8 +166,10 @@ SUITES=(
   EditDeskStageViewTests
   DisplayStateResolverTests
   ApplyRouterTests
+  LibraryImporterTests
   EditDeskApplyQueueTests
   EditDeskToastCenterTests
+  EditDeskUndoStackTests
   StatusCapsuleTests
   EditDeskChromeSourceTests
   DisplayFloatLayerTests
@@ -176,6 +180,7 @@ SUITES=(
   SceneSettingsOwnerTests
   DetailTransitionTests
   SettingsSearchLocalizationTests
+  SettingsConfirmationSourceTests
   # Carbon hotkeys: dispatcher target + C trampoline. An inline MainActor
   # closure on GetApplicationEventTarget() registered but never fired.
   GlobalShortcutCarbonWiringTests

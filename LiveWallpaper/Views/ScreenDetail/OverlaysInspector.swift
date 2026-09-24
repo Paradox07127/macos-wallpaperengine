@@ -9,6 +9,7 @@ struct OverlaysInspectorPanel: View {
     let kind: OverlayKind
     let inspectorPanelWidth: CGFloat
     let backdropAvailable: Bool
+    var showsBackdropControl = true
     let onParticleEffectChange: (ParticleEffect) -> Void
     let onParticleDensityChange: (Double) -> Void
     let onWeatherReactiveChange: (Bool) -> Void
@@ -67,9 +68,10 @@ struct OverlaysInspectorPanel: View {
                     )
                 }
 
-                Divider()
-
-                OverlayBackdropRow(available: backdropAvailable)
+                if showsBackdropControl {
+                    Divider()
+                    OverlayBackdropRow(available: backdropAvailable)
+                }
             }
         }
         .groupBoxStyle(ContainerGroupBoxStyle())

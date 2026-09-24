@@ -116,6 +116,7 @@ extension PlaybackCoordinator {
                           self.configurationStore.revision(for: screenID)
                               == expectedConfigurationRevision else { return }
                     self.reportRuntimeError(screenID, runtimeError)
+                    WallpaperPreparationFailure.announce(runtimeError.userMessage, on: screenID, generation: generation)
                     Logger.error("Failed to setup video: \(message)", category: .screenManager)
                 }
             }
@@ -517,6 +518,7 @@ extension PlaybackCoordinator {
             ) {
                 let error = session.runtimeError ?? .mediaNotPlayable(url, code: nil)
                 self.reportRuntimeError(screenID, error)
+                WallpaperPreparationFailure.announce(error.userMessage, on: screenID, generation: transitionGeneration)
                 Logger.warning(
                     "Video candidate was not committed (\(String(describing: result))) for screen \(screenID); keeping prior session",
                     category: .screenManager

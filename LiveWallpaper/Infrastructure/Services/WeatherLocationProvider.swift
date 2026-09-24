@@ -203,12 +203,12 @@ final class WeatherLocationProvider: NSObject, WeatherLocationProviding {
                 && coreLocationClient.lastLocationFailure != nil
                 && !deniedBySystem
                 ? String(
-                    localized: "Couldn't get a location fix. Try again, or pick Manual in Settings → Weather.",
+                    localized: "Couldn't get a location fix. Try again, or choose Manual in Settings › Integrations › Weather.",
                     bundle: .appLanguage, comment: "Weather error when Core Location is authorized but reported a failure rather than a coordinate."
                 )
                 : String(
-                    localized: "Location unavailable. Allow Location Services or pick Manual in Settings → Weather.",
-                    defaultValue: "Location unavailable. Allow Location Services or pick Manual in Settings → Weather.",
+                    localized: "Location unavailable. Allow Location Services, or choose Manual in Settings › Integrations › Weather.",
+                    defaultValue: "Location unavailable. Allow Location Services, or choose Manual in Settings › Integrations › Weather.",
                     bundle: .appLanguage, comment: "Weather error shown when System location is selected but Core Location did not yield a coordinate and no manual city is set."
                 )
             return WeatherLocationResolution(
@@ -226,8 +226,8 @@ final class WeatherLocationProvider: NSObject, WeatherLocationProviding {
                 resolvedSource: .manual,
                 displayName: nil,
                 error: String(
-                    localized: "Manual location not set. Type a city in Settings → Weather.",
-                    defaultValue: "Manual location not set. Type a city in Settings → Weather.",
+                    localized: "Manual location not set. Enter a city in Settings › Integrations › Weather.",
+                    defaultValue: "Manual location not set. Enter a city in Settings › Integrations › Weather.",
                     bundle: .appLanguage, comment: "Weather error shown when Manual source is selected but the user has not typed a city yet."
                 ),
                 failureKind: .unavailable

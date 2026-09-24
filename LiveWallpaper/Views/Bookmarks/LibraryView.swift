@@ -241,7 +241,7 @@ private struct BookmarkTile: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .galleryTileChrome(isHovering: isHovering, reduceMotion: reduceMotion)
             .settledHover { isHovering = $0 }
-            .popover(isPresented: $showingTargets, arrowEdge: .bottom) {
+            .appLanguagePopover(isPresented: $showingTargets, arrowEdge: .bottom) {
                 LibraryApplyTargetList(
                     screens: screens,
                     onApply: onApply,

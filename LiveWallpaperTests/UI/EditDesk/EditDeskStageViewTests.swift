@@ -148,19 +148,23 @@ struct EditDeskStageViewTests {
         #expect(visited == [5], Comment(rawValue: "a still pointer hovered \(visited.sorted())"))
     }
 
-    @Test("Cover Flow cards faded out past the end of the run cannot be grabbed")
-    func fadedCoverFlowCardsAreNotGrabbable() {
+    @Test("A fan card all but faded out at the arc's end cannot be grabbed; the card drawn under it takes the pointer")
+    func fadedFanCardsAreNotGrabbable() throws {
         let model = makeModel()
-        model.shelfStyle = .coverFlow
+        model.shelfStyle = .fan
         let view = EditDeskStageView(model: model)
+        defer { view.detach() }
         view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
         view.layoutSubtreeIfNeeded()
         model.setProgress(1, animated: false)
+        // 64pt of row turns card 8 to 15.9°: nearly gone, but still built.
+        try view.scrollWheel(with: scroll(x: -64))
         let far = StageGeometry.cardPlacement(
-            style: .coverFlow, index: 11, count: 14, progress: 1, focus: 0, windowSize: view.bounds.size
+            style: .fan, index: 8, count: 14, progress: 1, focus: 64.0 / 60, windowSize: view.bounds.size
         )
-        #expect(far.opacity == 0, Comment(rawValue: "slot 11 should already be invisible: \(far.opacity)"))
-        #expect(view.cardIndex(at: CGPoint(x: far.frame.midX, y: far.frame.midY)) == nil)
+        try #require(far.opacity > 0 && far.opacity < 0.05, Comment(rawValue: "card 8 should be all but invisible: \(far.opacity)"))
+        try #require(view.cardWindowForTesting.contains(8))
+        #expect(view.cardIndex(at: CGPoint(x: far.frame.midX, y: far.frame.midY)) == 7)
     }
 
     @Test("A library bigger than the shelf only builds layers for the slice on screen")
@@ -203,7 +207,7 @@ struct EditDeskStageViewTests {
     /// The two buttons SCREENS S9 draws inside an empty display, found by the localized title on
     /// their labels: the group that holds them is private to `DisplayShellLayer`.
     private func emptyButtons(_ shell: DisplayShellLayer) throws -> [CALayer] {
-        let title = String(localized: "Choose File…", bundle: .appLanguage)
+        let title = String(localized: "Choose File", bundle: .appLanguage)
         let group = try #require(shell.content.sublayers?.first { candidate in
             candidate.sublayers?.contains { button in
                 button.sublayers?.contains { ($0 as? CATextLayer)?.string as? String == title } == true
@@ -333,10 +337,10 @@ struct EditDeskStageViewTests {
         #expect(view.accessibilityChildren()?.count == 15)
     }
 
-    @Test("Cover Flow side clicks centre first and only the centred card opens", arguments: [false, true])
-    func coverFlowSideClickCentresBeforeOpening(reduceMotion: Bool) async throws {
+    @Test("Focus Row side clicks centre first and only the centred card opens", arguments: [false, true])
+    func focusRowSideClickCentresBeforeOpening(reduceMotion: Bool) async throws {
         let model = makeModel()
-        model.shelfStyle = .coverFlow
+        model.shelfStyle = .focusRow
         model.reduceMotion = reduceMotion
         let view = EditDeskStageView(model: model)
         defer { view.detach() }
@@ -351,7 +355,7 @@ struct EditDeskStageViewTests {
         try view.mouseDown(with: mouse(.leftMouseDown, at: point, in: view))
         #expect(view.debugFocusedCardIndex == 2)
         try view.mouseUp(with: mouse(.leftMouseUp, at: point, in: view))
-        #expect(abs(view.debugRowTarget - -2 * StageGeometry.metrics(for: .coverFlow).pitch) < 0.001)
+        #expect(abs(view.debugRowTarget - -2 * StageGeometry.metrics(for: .focusRow).pitch) < 0.001)
         for _ in 0 ..< 120 {
             view.advance(dt: 1 / 60)
         }
@@ -366,10 +370,10 @@ struct EditDeskStageViewTests {
         #expect(await events.next() == .cardTapped("card-2"))
     }
 
-    @Test("Cover Flow centre and grid cards, crate and folders open on the first click")
+    @Test("Focus Row centre and grid cards, a fan side card, crate and folders open on the first click")
     func shelfSingleClickControls() async throws {
         for (style, progress, index) in [
-            (ShelfStyle.coverFlow, 1.0, 0), (.coverFlow, 2.0, 2), (.crate, 1.0, 3), (.folders, 1.0, 3),
+            (ShelfStyle.focusRow, 1.0, 0), (.focusRow, 2.0, 2), (.fan, 1.0, 3), (.crate, 1.0, 3), (.folders, 1.0, 3),
         ] {
             let model = makeModel()
             model.shelfStyle = style
@@ -389,10 +393,10 @@ struct EditDeskStageViewTests {
         }
     }
 
-    @Test("Cover Flow Return, Enter, Space and VoiceOver Preview open immediately")
-    func coverFlowKeyboardAndPreviewOpenImmediately() async throws {
+    @Test("Focus Row Return, Enter, Space and VoiceOver Preview open immediately")
+    func focusRowKeyboardAndPreviewOpenImmediately() async throws {
         let model = makeModel()
-        model.shelfStyle = .coverFlow
+        model.shelfStyle = .focusRow
         let view = EditDeskStageView(model: model)
         defer { view.detach() }
         view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
@@ -428,7 +432,7 @@ struct EditDeskStageViewTests {
         for _ in 0 ... 40 {
             try view.keyDown(with: key(124))
         }
-        for style in [ShelfStyle.coverFlow, .folders, .crate] {
+        for style in [ShelfStyle.facingIn, .fan, .focusRow, .folders, .crate] {
             model.shelfItems.swapAt(40, 45)
             model.shelfStyle = style
             view.needsLayout = true
@@ -438,7 +442,7 @@ struct EditDeskStageViewTests {
             #expect(model.visibleShelfRange.contains(index))
             let tile = try #require(view.cardLayers["card-40"])
             #expect(try sameRect(#require(view.debugFocusRingFrame), tile.hitRect))
-            if style == .coverFlow {
+            if style.isCentred {
                 #expect(view.debugRowTarget == -Double(index) * StageGeometry.metrics(for: style).pitch)
                 #expect(abs(tile.frame.midX - view.bounds.midX) < 0.001)
             } else {
@@ -464,8 +468,9 @@ struct EditDeskStageViewTests {
         let pitch = StageGeometry.metrics(for: style).pitch
         try view.scrollWheel(with: scroll(x: -Int32(20.25 * pitch)))
         #expect(view.debugFocusedCardIndex == nil)
+        let centred = style.isCentred
         let index: Int
-        if style == .coverFlow {
+        if centred {
             index = 20
         } else {
             let band = StageGeometry.shelfBand(style: style, capacity: model.shelfRenderBudget, windowSize: view.bounds.size)
@@ -476,22 +481,23 @@ struct EditDeskStageViewTests {
             })
         }
         let id = model.shelfItems[index].id
-        model.shelfStyle = style == .coverFlow ? .folders : .coverFlow
+        model.shelfStyle = centred ? .folders : .fan
         view.needsLayout = true
         view.layoutSubtreeIfNeeded()
         let focused = try #require(view.debugFocusedCardIndex)
         #expect(model.shelfItems[focused].id == id)
         #expect(model.visibleShelfRange.contains(focused))
-        if model.shelfStyle == .coverFlow {
-            #expect(view.debugRowTarget == -Double(index) * StageGeometry.metrics(for: .coverFlow).pitch)
+        if model.shelfStyle == .fan {
+            #expect(view.debugRowTarget == -Double(index) * StageGeometry.metrics(for: .fan).pitch)
         }
     }
 
     @Test("Style changes fall back to row zero for empty libraries and filtered focus", arguments: [false, true])
     func shelfStyleMissingFocusFallsBackToZero(explicitFocus: Bool) throws {
+        let pitch = Double(StageGeometry.metrics(for: .focusRow).pitch)
         for empty in [false, true] {
             let model = makeModel()
-            model.shelfStyle = .coverFlow
+            model.shelfStyle = .focusRow
             let view = EditDeskStageView(model: model)
             defer { view.detach() }
             view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
@@ -502,9 +508,9 @@ struct EditDeskStageViewTests {
                     try view.keyDown(with: key(124))
                 }
             } else {
-                try view.scrollWheel(with: scroll(x: -550))
+                try view.scrollWheel(with: scroll(x: -Int32(5 * pitch)))
             }
-            #expect(view.debugRowTarget == -550)
+            #expect(view.debugRowTarget == -5 * pitch)
             model.shelfItems = empty ? [] : model.shelfItems.filter { $0.id != "card-5" }
             model.shelfStyle = .folders
             view.needsLayout = true
@@ -512,7 +518,7 @@ struct EditDeskStageViewTests {
             #expect(view.debugRowTarget == 0)
             #expect(view.debugFocusedCardIndex == nil)
             if empty {
-                for style in [ShelfStyle.crate, .coverFlow, .folders] {
+                for style in [ShelfStyle.crate, .fan, .focusRow, .folders] {
                     model.shelfStyle = style
                     view.needsLayout = true
                     view.layoutSubtreeIfNeeded()
@@ -559,6 +565,92 @@ struct EditDeskStageViewTests {
         #expect(!EditDeskStageView.shouldOwnGridScroll(phase: .changed, gridAtTop: false, deltaY: 24, wheelBurstBegan: true))
     }
 
+    @Test("A swipe the stage started keeps its end once the grid is under the pointer, so it lands instead of freezing")
+    func stageKeepsTheSwipeItStarted() throws {
+        let model = makeModel()
+        model.reduceMotion = false
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        model.setProgress(1, animated: false)
+        // AppKit hands the start of the swipe to the stage…
+        try view.scrollWheel(with: scroll(phase: .began))
+        for _ in 0 ..< 4 {
+            try view.scrollWheel(with: scroll(y: -80, phase: .changed))
+        }
+        try #require(model.progress > StageGeometry.libraryHandoffProgress, Comment(rawValue: "the swipe only reached \(model.progress)"))
+        // …and the rest to whatever is under the pointer by then, which only the monitor still sees.
+        #expect(try view.forwardGridScroll(scroll(y: -20, phase: .changed)) == nil, "the rest of the swipe left the stage")
+        #expect(try view.forwardGridScroll(scroll(phase: .ended)) == nil, "the release left the stage")
+        for _ in 0 ..< 480 {
+            view.advance(dt: 1 / 120)
+        }
+        #expect(
+            model.progress == 2 && model.snappedIndex == 2,
+            Comment(rawValue: "stuck at \(model.progress), last snapped to \(model.snappedIndex)")
+        )
+    }
+
+    @Test("A swipe that starts on the grid stays the grid's")
+    func gridKeepsItsOwnSwipe() throws {
+        let model = makeModel()
+        model.reduceMotion = false
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        model.setProgress(2, animated: false)
+        model.gridAtTop = false
+        for event in try [scroll(phase: .began), scroll(y: 40, phase: .changed), scroll(phase: .ended)] {
+            #expect(view.forwardGridScroll(event) === event, Comment(rawValue: "the stage took \(event.phase)"))
+        }
+        #expect(model.progress == 2 && model.snappedIndex == 2)
+    }
+
+    @Test("A finished swipe does not claim precise scrolling that arrives without phases from another device")
+    func stageLetsGoOfPhaselessScrolling() throws {
+        let model = makeModel()
+        model.reduceMotion = false
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        model.setProgress(1, animated: false)
+        try view.scrollWheel(with: scroll(phase: .began))
+        #expect(try view.forwardGridScroll(scroll(y: -80, phase: .changed)) == nil)
+        #expect(try view.forwardGridScroll(scroll(phase: .ended)) == nil)
+        // A smooth-scrolling mouse: pixel deltas and no phase, so it never belonged to the swipe.
+        let smooth = try scroll(y: 40)
+        #expect(view.forwardGridScroll(smooth) === smooth, "a swipe with no momentum kept its claim on the next device")
+    }
+
+    @Test("A wheel burst the stage took keeps its later notches; the next burst is routed afresh")
+    func stageKeepsItsWheelBurst() throws {
+        func notch(at seconds: Double) throws -> NSEvent {
+            let event = try #require(CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: -1, wheel2: 0, wheel3: 0))
+            event.timestamp = CGEventTimestamp(seconds * 1_000_000_000)
+            return try #require(NSEvent(cgEvent: event))
+        }
+        let model = makeModel()
+        model.reduceMotion = false
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        model.setProgress(1, animated: false)
+        let first = try notch(at: 100)
+        #expect(view.forwardGridScroll(first) === first, "the burst's first notch is AppKit's to route")
+        view.scrollWheel(with: first)
+        let moved = model.progress
+        try #require(moved > 1)
+        #expect(try view.forwardGridScroll(notch(at: 100)) == nil, "a later notch of the same burst left the stage")
+        #expect(model.progress > moved)
+        let later = try notch(at: 101)
+        try #require(later.timestamp - first.timestamp > StageGeometry.snapDelay)
+        #expect(view.forwardGridScroll(later) === later, "a burst after a pause was kept by the stage")
+    }
+
     @Test("Expanding a scrolled thousand-card shelf prepares the grid before the flight and caps stagger")
     func gridFlightWindowAndStagger() throws {
         let model = makeModel()
@@ -591,9 +683,12 @@ struct EditDeskStageViewTests {
         for _ in 0 ..< 480 {
             view.advance(dt: 1 / 120)
             if model.snappedIndex == 2 {
+                // Handed over once landed: within a point of the tile, not necessarily settled on it.
                 for index in gridWindow {
-                    let tile = try #require(view.cardLayers["card-\(index)"])
-                    #expect(sameRect(tile.frame, StageGeometry.gridFrame(index: index, windowWidth: view.bounds.width)))
+                    let tile = try #require(view.cardLayers["card-\(index)"]).frame
+                    let grid = StageGeometry.gridFrame(index: index, windowWidth: view.bounds.width)
+                    let off = max(abs(tile.minX - grid.minX), abs(tile.minY - grid.minY), abs(tile.width - grid.width))
+                    #expect(off <= 1, Comment(rawValue: "card \(index) is \(off)pt off its tile at the handover"))
                 }
                 break
             }
@@ -851,12 +946,17 @@ struct EditDeskStageViewTests {
 
     /// `phase` rides the CGEvent field `NSEvent.phase` is built from; without one the event is a
     /// mouse wheel, which is what the stage reads as `.changed`.
-    private func scroll(x: Int32 = 0, y: Int32 = 0, phase: CGScrollPhase? = nil) throws -> NSEvent {
+    private func scroll(
+        x: Int32 = 0, y: Int32 = 0, phase: CGScrollPhase? = nil, momentum: CGMomentumScrollPhase? = nil
+    ) throws -> NSEvent {
         let event = try #require(CGEvent(
             scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2, wheel1: y, wheel2: x, wheel3: 0
         ))
         if let phase {
             event.setIntegerValueField(.scrollWheelEventScrollPhase, value: Int64(phase.rawValue))
+        }
+        if let momentum {
+            event.setIntegerValueField(.scrollWheelEventMomentumPhase, value: Int64(momentum.rawValue))
         }
         return try #require(NSEvent(cgEvent: event))
     }
@@ -965,7 +1065,7 @@ struct EditDeskStageViewTests {
     @Test("Reduce Motion cuts the row to a new offset and fades the shelf, but only when the offset moves")
     func reducedMotionRowCutFadesTheShelf() throws {
         let model = makeModel()
-        model.shelfStyle = .coverFlow
+        model.shelfStyle = .fan
         let view = EditDeskStageView(model: model)
         defer { view.detach() }
         view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
@@ -1021,6 +1121,235 @@ struct EditDeskStageViewTests {
         moving.shake(card: "card-5")
         #expect(movingTile.layer.animation(forKey: "opacity") == nil)
         #expect(moving.debugNeedsDisplayLink)
+    }
+
+    @Test(
+        "A Finder file over a display lights it, a drop emits filesDropped, a covered stage neither registers nor targets",
+        .timeLimit(.minutes(1))
+    )
+    func finderFileDropTargetsTheDisplayUnderIt() async throws {
+        let model = makeModel()
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        #expect(view.registeredDraggedTypes.contains(.fileURL))
+        // Display 2 is the empty one: a screen with no wallpaper takes a file as well.
+        let root = try #require(view.layer)
+        let shell = try #require(view.displayLayers[2])
+        let point = shell.layer.convert(CGPoint(x: shell.layer.bounds.midX, y: shell.layer.bounds.midY), to: root)
+        #expect(view.trackFileDrag(at: point) == 2)
+        #expect(model.dropTarget == 2)
+        #expect(view.trackFileDrag(at: CGPoint(x: 4, y: 4)) == nil, "off the displays nothing lights")
+        #expect(model.dropTarget == nil)
+        let file = URL(fileURLWithPath: "/private/tmp/loomscreen-drop/clip.mp4")
+        let accepted = view.acceptFileDrop([file], at: point)
+        #expect(accepted)
+        if accepted {
+            var events = model.events.makeAsyncIterator()
+            #expect(await events.next() == .filesDropped([file], onto: 2))
+        }
+        #expect(model.dropTarget == nil)
+
+        model.interactionBlocked = true
+        view.needsLayout = true
+        view.layoutSubtreeIfNeeded()
+        #expect(view.registeredDraggedTypes.isEmpty, "a covered stage would take the detail page's drops")
+        #expect(view.trackFileDrag(at: point) == nil)
+        #expect(!view.acceptFileDrop([file], at: point))
+    }
+
+    @Test("A rejected Finder drop shakes its display; Reduce Motion pulses it instead")
+    func rejectedFileDropShakesTheDisplay() throws {
+        let model = makeModel()
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        let shell = try #require(view.displayLayers[1])
+        shell.layer.removeAllAnimations()
+        view.shake(display: 1)
+        let pulse = try #require(shell.layer.animation(forKey: "opacity") as? CAKeyframeAnimation)
+        #expect(pulse.duration == 0.15)
+        #expect(pulse.values?.last as? Float == shell.layer.opacity)
+        #expect(!view.debugNeedsDisplayLink, "a Core Animation pulse must not start the frame driver")
+
+        let control = makeModel()
+        control.reduceMotion = false
+        let moving = EditDeskStageView(model: control)
+        defer { moving.detach() }
+        moving.frame = view.frame
+        moving.layoutSubtreeIfNeeded()
+        let movingShell = try #require(moving.displayLayers[1])
+        movingShell.layer.removeAllAnimations()
+        moving.shake(display: 1)
+        #expect(movingShell.layer.animation(forKey: "opacity") == nil)
+        #expect(moving.debugNeedsDisplayLink)
+        // A quarter of the first cycle in, the curve is at its 6pt peak.
+        moving.advance(dt: 0.025)
+        #expect(abs(movingShell.layer.sublayerTransform.m41 - 6) < 0.001)
+        // Reduce Motion arriving mid-shake ends it rather than leaving the frame driver running.
+        control.reduceMotion = true
+        moving.advance(dt: 1.0 / 60)
+        #expect(CATransform3DIsIdentity(movingShell.layer.sublayerTransform))
+        #expect(!moving.debugNeedsDisplayLink)
+    }
+
+    @Test("Right-click on a shelf card opens that card's menu, submenus included")
+    func cardContextMenu() throws {
+        let model = makeModel()
+        var picked: [String] = []
+        model.cardMenu = { id in
+            [[
+                StageMenuItem(
+                    title: "Apply to", isEnabled: true,
+                    submenu: [StageMenuItem(title: "External", isEnabled: true) { picked.append("apply \(id)") }]
+                ) {},
+                StageMenuItem(title: "Remove", isEnabled: false, isDestructive: true) { picked.append("remove") },
+            ]]
+        }
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        model.setProgress(1, animated: false)
+        let rest = StageGeometry.cardPlacement(
+            style: model.shelfStyle, index: 5, count: 14, progress: 1, focus: 0, windowSize: view.bounds.size
+        )
+        let hit = StageGeometry.hitRect(rest, style: model.shelfStyle)
+        let point = CGPoint(x: hit.minX + 8, y: hit.midY)
+        try #require(view.cardIndex(at: point) == 5)
+
+        let menu = try #require(view.menu(for: mouse(.rightMouseDown, at: point, in: view)))
+        #expect(menu.items.map(\.title) == ["Apply to", "Remove"])
+        #expect(menu.items.map(\.isEnabled) == [true, false])
+        let submenu = try #require(menu.items.first?.submenu)
+        #expect(submenu.items.map(\.title) == ["External"])
+        submenu.performActionForItem(at: 0)
+        #expect(picked == ["apply card-5"])
+    }
+
+    @Test("Right-click on a display opens its menu; empty space and a covered stage open none")
+    func displayContextMenu() throws {
+        let model = makeModel()
+        var picked: [String] = []
+        model.displayMenu = { id in
+            [
+                [StageMenuItem(title: "Rename \(id)", isEnabled: true) { picked.append("rename \(id)") }],
+                [StageMenuItem(title: "Clear", isEnabled: false) { picked.append("clear") }],
+            ]
+        }
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        let root = try #require(view.layer)
+        let shell = try #require(view.displayLayers[1])
+        let point = shell.layer.convert(CGPoint(x: shell.layer.bounds.midX, y: shell.layer.bounds.midY), to: root)
+        let menu = try #require(view.menu(for: mouse(.rightMouseDown, at: point, in: view)))
+        #expect(menu.items.map(\.title) == ["Rename 1", "", "Clear"])
+        #expect(menu.items.map(\.isSeparatorItem) == [false, true, false])
+        #expect(menu.items.first?.isEnabled == true)
+        #expect(menu.items.last?.isEnabled == false)
+        menu.performActionForItem(at: 0)
+        #expect(picked == ["rename 1"])
+        #expect(try view.menu(for: mouse(.rightMouseDown, at: CGPoint(x: 4, y: 4), in: view)) == nil, "off the displays there is no menu")
+        model.interactionBlocked = true
+        #expect(try view.menu(for: mouse(.rightMouseDown, at: point, in: view)) == nil, "a covered stage must not open a menu under the detail page")
+    }
+
+    @Test("Esc cancels a drag first, then returns the shelf and the library to the overview", .timeLimit(.minutes(1)))
+    func escapeStepsBackOneLevel() async throws {
+        let model = makeModel()
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        var events = model.events.makeAsyncIterator()
+        #expect(!view.escape(), "at rest there is nothing to leave")
+        model.setProgress(1, animated: false)
+        let placement = StageGeometry.cardPlacement(
+            style: model.shelfStyle, index: 5, count: 14, progress: 1, focus: 0, windowSize: view.bounds.size
+        )
+        let hit = StageGeometry.hitRect(placement, style: model.shelfStyle)
+        let point = CGPoint(x: hit.minX + 8, y: hit.midY)
+        try view.mouseDown(with: mouse(.leftMouseDown, at: point, in: view))
+        try view.mouseDragged(with: mouse(.leftMouseDragged, at: CGPoint(x: point.x + 20, y: point.y - 20), in: view))
+        #expect(view.debugDragging)
+        try view.keyDown(with: key(53))
+        #expect(!view.debugDragging)
+        #expect(model.progress == 1, "the first Esc only drops the card")
+        #expect(view.escape())
+        #expect(model.progress == 0)
+        model.setProgress(2, animated: false)
+        #expect(view.escape())
+        #expect(model.progress == 0)
+        // The host turns the snap back to 0 into the home page; read up to a marker so a missing snap cannot hang.
+        model.emit(.cardTapped("end"))
+        var seen: [StageEvent] = []
+        while let event = await events.next(), event != .cardTapped("end") {
+            seen.append(event)
+        }
+        #expect(seen == [.snapped(1), .dropCancelled(card: "card-5"), .snapped(0), .snapped(2), .snapped(0)])
+    }
+
+    @Test("The name-row dot is green only while the wallpaper runs")
+    func statusDotFollowsTheState() throws {
+        let model = makeModel()
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        let shell = try #require(view.displayLayers[1])
+        // The dot is the one small ellipse among the shell's own sublayers.
+        let dot = try #require(shell.layer.sublayers?.compactMap { $0 as? CAShapeLayer }.first {
+            let width = $0.path?.boundingBox.width ?? 0
+            return width > 0 && width < 12
+        })
+        let colors = DesignTokens.EditDesk.Colors.self
+        let cases: [(StageDisplay.State, () -> CGColor)] = [
+            (.ok, { NSColor(colors.success).cgColor }),
+            (.paused(reasonText: "Paused"), { NSColor(colors.warning).cgColor }),
+            (.preparing(text: "Preparing"), { NSColor(colors.textSecondary).cgColor }),
+            (.off(text: "Off"), { NSColor(colors.textTertiary).cgColor }),
+            (.empty, { NSColor(colors.textTertiary).cgColor }),
+        ]
+        var display = model.displays[0]
+        for (state, token) in cases {
+            display.state = state
+            var drawn: CGColor?
+            var wanted: CGColor?
+            NSAppearance(named: .darkAqua)?.performAsCurrentDrawingAppearance {
+                shell.update(display: display, dropHint: "", increasedContrast: false)
+                drawn = dot.fillColor
+                wanted = token()
+            }
+            #expect(drawn == wanted, Comment(rawValue: "\(state)"))
+        }
+        let chip = StageFailureChip(symbol: "xmark.octagon.fill", text: "Failed", tint: CGColor(red: 1, green: 0.2, blue: 0.2, alpha: 1))
+        display.state = .failed(chip)
+        shell.update(display: display, dropHint: "", increasedContrast: false)
+        #expect(dot.fillColor == chip.tint, "a failure's dot takes its chip's colour")
+    }
+
+    @Test("VoiceOver hears what each display plays and its state")
+    func displayAccessibilityReadsWhatPlays() throws {
+        let model = makeModel()
+        model.displays[0].wallpaperTitle = "Aurora"
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        func display(_ index: Int) throws -> NSAccessibilityElement {
+            try #require(view.accessibilityChildren()?[index] as? NSAccessibilityElement)
+        }
+        #expect(try display(0).accessibilityLabel() == "External, Active")
+        #expect(try display(0).accessibilityValue() as? String == String(localized: "Now playing \("Aurora")", bundle: .appLanguage))
+        #expect(try display(1).accessibilityValue() as? String == String(localized: "No wallpaper configured", bundle: .appLanguage))
+        model.displays[0].state = .paused(reasonText: "On battery")
+        view.needsLayout = true
+        view.layoutSubtreeIfNeeded()
+        #expect(try display(0).accessibilityValue() as? String == "Aurora, On battery")
     }
 
     @Test("A Reduce Motion fade built on the gesture path ends where the layer ends")
@@ -1112,7 +1441,7 @@ struct EditDeskStageViewTests {
         model.setProgress(1, animated: false)
         #expect(view.accessibilityChildren()?.count == 16, "half open draws two displays and fourteen cards")
         let children = try #require(view.accessibilityChildren() as? [NSAccessibilityElement])
-        let display = try #require(children.first { $0.accessibilityLabel() == "External Active" })
+        let display = try #require(children.first { $0.accessibilityLabel() == "External, Active" })
         model.setProgress(2, animated: false)
         #expect(view.accessibilityChildren()?.isEmpty == true)
         // An element VoiceOver is still holding must refuse too, or pressing it opens the detail
@@ -1200,6 +1529,37 @@ struct EditDeskStageViewTests {
         #expect(restColor?.redComponent == hotColor?.redComponent)
         #expect(restColor?.greenComponent == hotColor?.greenComponent)
         #expect(restColor?.blueComponent == hotColor?.blueComponent)
+    }
+
+    @Test("Facing In draws the spine and contact shadow on each card's outer edge, and none on the face-on middle card")
+    func facingInSpineSitsOnTheOuterEdge() throws {
+        let tile = ShelfCardLayer()
+        tile.update(
+            card: StageCard(id: "a", title: "A", metaLine: "", thumbnail: nil, onBadge: nil, isDraggable: true),
+            increasedContrast: false
+        )
+        func place(_ style: ShelfStyle, _ index: Int) throws -> (spine: CALayer, shadow: CGFloat) {
+            let placement = StageGeometry.cardPlacement(
+                style: style, index: index, count: 13, progress: 1, focus: 6, windowSize: StageGeometry.designWindow
+            )
+            tile.place(placement, style: style, gridMix: 0, dragged: false, reduceMotion: false)
+            // The spine is the face's only direct gradient sublayer.
+            let spine = try #require(tile.face.sublayers?.first { $0 is CAGradientLayer })
+            return (spine, tile.face.shadowOffset.width)
+        }
+        let right = try place(.facingIn, 8)
+        #expect(right.spine.frame.maxX == StageGeometry.cardSize.width && right.spine.opacity == 1 && right.shadow > 0,
+                Comment(rawValue: "right card: spine \(right.spine.frame) at \(right.spine.opacity), shadow \(right.shadow)"))
+        let left = try place(.facingIn, 4)
+        #expect(left.spine.frame.minX == 0 && left.spine.opacity == 1 && left.shadow < 0,
+                Comment(rawValue: "left card: spine \(left.spine.frame) at \(left.spine.opacity), shadow \(left.shadow)"))
+        let middle = try place(.facingIn, 6)
+        #expect(middle.spine.opacity == 0 && middle.shadow == 0,
+                Comment(rawValue: "middle card: spine at \(middle.spine.opacity), shadow \(middle.shadow)"))
+        // Control: the crate keeps both on every card's left edge.
+        let crate = try place(.crate, 8)
+        #expect(crate.spine.frame.minX == 0 && crate.spine.opacity == 1 && crate.shadow < 0,
+                Comment(rawValue: "crate card: spine \(crate.spine.frame) at \(crate.spine.opacity), shadow \(crate.shadow)"))
     }
 
     @Test("A card collapsing out of the grid casts a shadow its own size, not the grid's")
@@ -1307,6 +1667,354 @@ struct EditDeskStageViewTests {
         let afterLayout = view.debugFrameDriverRequests
         view.viewDidChangeEffectiveAppearance()
         #expect(view.debugFrameDriverRequests > afterLayout, "an appearance flip re-renders too")
+    }
+
+    private func maxLift(_ view: EditDeskStageView) -> CGFloat {
+        view.cardLayers.values.map { -CGFloat($0.lift.value) }.max() ?? 0
+    }
+
+    @Test("The wave eases in with the pointer's distance to the row instead of jumping onto the first card")
+    func waveEasesInWithDistance() throws {
+        let model = makeModel()
+        model.reduceMotion = false
+        model.shelfStyle = .crate
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        model.setProgress(1, animated: false)
+        let card = StageGeometry.cardPlacement(
+            style: .crate, index: 5, count: 14, progress: 1, focus: 0,
+            windowSize: view.bounds.size, capacity: model.shelfRenderBudget
+        ).frame
+        // Straight down onto card 5's own slot, so the crest sits on one card and full strength is 54pt.
+        var lifts: [CGFloat] = []
+        for y in stride(from: card.minY - 60, through: card.midY, by: 2) {
+            try view.mouseMoved(with: mouse(.mouseMoved, at: CGPoint(x: card.minX, y: y), in: view))
+            view.advance(dt: 1.0 / 60)
+            lifts.append(maxLift(view))
+        }
+        let steps = zip(lifts, lifts.dropFirst()).map { $1 - $0 }
+        print("WAVE approach lifts \(lifts.map { ($0 * 10).rounded() / 10 })")
+        #expect((steps.max() ?? 0) <= 8, Comment(rawValue: "the lift rose \(steps.max() ?? 0)pt in one 2pt step: \(lifts)"))
+        #expect((steps.min() ?? 0) >= -0.001, Comment(rawValue: "the lift fell back on the way in: \(lifts)"))
+        #expect(abs((lifts.last ?? 0) - 54) < 0.01, Comment(rawValue: "full strength should read 54pt, got \(lifts.last ?? 0)"))
+        // Held still, nothing is left for the frame driver to step.
+        for _ in 0 ..< 90 {
+            view.advance(dt: 1.0 / 60)
+        }
+        #expect(!view.debugNeedsDisplayLink)
+    }
+
+    @Test("Pointing at the filter row lifts nothing, while the last stretch above the cards already does")
+    func filterRowLiftsNothing() throws {
+        let model = makeModel()
+        model.reduceMotion = false
+        model.shelfStyle = .crate
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        model.setProgress(1, animated: false)
+        let card = StageGeometry.cardPlacement(
+            style: .crate, index: 5, count: 14, progress: 1, focus: 0,
+            windowSize: view.bounds.size, capacity: model.shelfRenderBudget
+        ).frame
+        // The filter row rides `chipRowGap` (52pt) above the cards; 40pt up is on it.
+        try view.mouseMoved(with: mouse(.mouseMoved, at: CGPoint(x: card.minX, y: card.minY - 40), in: view))
+        for _ in 0 ..< 30 {
+            view.advance(dt: 1.0 / 60)
+        }
+        #expect(maxLift(view) == 0, Comment(rawValue: "the filter row lifted the shelf by \(maxLift(view))pt"))
+        // Control: 10pt above the same card, with nothing hovered yet, the wave is already up.
+        try view.mouseMoved(with: mouse(.mouseMoved, at: CGPoint(x: card.minX, y: card.minY - 10), in: view))
+        view.advance(dt: 1.0 / 60)
+        #expect(model.hoveredCard == nil)
+        #expect(maxLift(view) > 20, Comment(rawValue: "10pt above the row lifted \(maxLift(view))pt"))
+    }
+
+    @Test("A hovered crate card stays up while the pointer climbs onto the part its lift raised")
+    func hoveredCardHoldsItsLift() throws {
+        let model = makeModel()
+        model.reduceMotion = false
+        model.shelfStyle = .crate
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        model.setProgress(1, animated: false)
+        let card = StageGeometry.cardPlacement(
+            style: .crate, index: 5, count: 14, progress: 1, focus: 0,
+            windowSize: view.bounds.size, capacity: model.shelfRenderBudget
+        ).frame
+        try view.mouseMoved(with: mouse(.mouseMoved, at: CGPoint(x: card.minX + 10, y: card.midY), in: view))
+        for _ in 0 ..< 60 {
+            view.advance(dt: 1.0 / 60)
+        }
+        try #require(model.hoveredCard == "card-5")
+        // Up the card's own visible strip to 44pt above the row: still on the card, 10pt below its lifted top.
+        for y in stride(from: card.midY, through: card.minY - 44, by: -4) {
+            try view.mouseMoved(with: mouse(.mouseMoved, at: CGPoint(x: card.minX + 10, y: y), in: view))
+            view.advance(dt: 1.0 / 60)
+        }
+        for _ in 0 ..< 60 {
+            view.advance(dt: 1.0 / 60)
+        }
+        #expect(model.hoveredCard == "card-5")
+        let lift = try -CGFloat(#require(view.cardLayers["card-5"]).lift.value)
+        #expect(lift > 53, Comment(rawValue: "the hovered card sank to \(lift)pt under the pointer"))
+    }
+
+    @Test("A centred style keeps the hover while the pointer climbs into the band its lift raised", arguments: [
+        ShelfStyle.facingIn, .fan, .focusRow,
+    ])
+    func centredCardHoldsItsLiftedBand(style: ShelfStyle) throws {
+        let model = makeModel()
+        model.reduceMotion = false
+        model.shelfStyle = style
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        model.setProgress(1, animated: false)
+        let full = -StageGeometry.metrics(for: style).hoverLift
+        let middle = try #require(view.cardLayers["card-0"]).hitRect
+        // Near the left edge: the fan's next card lies over the rest of the middle one.
+        let x = middle.minX + 30
+        try view.mouseMoved(with: mouse(.mouseMoved, at: CGPoint(x: x, y: middle.midY), in: view))
+        for _ in 0 ..< 60 {
+            view.advance(dt: 1.0 / 60)
+        }
+        try #require(model.hoveredCard == "card-0")
+        // Halfway into the strip the lift uncovered above the resting card.
+        try view.mouseMoved(with: mouse(.mouseMoved, at: CGPoint(x: x, y: middle.minY - full / 2), in: view))
+        for _ in 0 ..< 60 {
+            view.advance(dt: 1.0 / 60)
+        }
+        #expect(model.hoveredCard == "card-0", Comment(rawValue: "\(style): hover moved to \(String(describing: model.hoveredCard))"))
+        let lift = try -CGFloat(#require(view.cardLayers["card-0"]).lift.value)
+        #expect(abs(lift - full) < 0.01, Comment(rawValue: "\(style): the card sank to \(lift)pt of \(full)pt"))
+    }
+
+    @Test("The centred styles hand the lift from card to card instead of jumping it", arguments: [
+        ShelfStyle.facingIn, .fan, .focusRow,
+    ])
+    func centredStylesHandTheLiftOver(style: ShelfStyle) throws {
+        let model = makeModel()
+        model.reduceMotion = false
+        model.shelfStyle = style
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        model.setProgress(1, animated: false)
+        let full = -StageGeometry.metrics(for: style).hoverLift
+        let middle = try #require(view.cardLayers["card-0"]).hitRect
+        let next = try #require(view.cardLayers["card-1"]).hitRect
+        // Where each card shows: a fan card only left of the card lying over it, a Facing In side
+        // card only outside the middle one.
+        let start = style == .fan ? middle.minX + 30 : middle.midX
+        let end = style == .fan ? next.minX + 30 : next.maxX - 8
+        try view.mouseMoved(with: mouse(.mouseMoved, at: CGPoint(x: start, y: middle.midY), in: view))
+        for _ in 0 ..< 60 {
+            view.advance(dt: 1.0 / 60)
+        }
+        try #require(model.hoveredCard == "card-0")
+        func lifts() -> [StageCard.ID: CGFloat] {
+            view.cardLayers.mapValues { -CGFloat($0.lift.value) }
+        }
+        var previous = lifts()
+        var worst: CGFloat = 0
+        func frame() {
+            view.advance(dt: 1.0 / 60)
+            let now = lifts()
+            for (id, lift) in now {
+                worst = max(worst, abs(lift - (previous[id] ?? 0)))
+            }
+            previous = now
+        }
+        // Across onto the visible part of the right neighbour, 4pt a frame, then let it settle.
+        for x in stride(from: start, through: end, by: 4) {
+            try view.mouseMoved(with: mouse(.mouseMoved, at: CGPoint(x: x, y: middle.midY), in: view))
+            frame()
+        }
+        #expect(model.hoveredCard == "card-1")
+        for _ in 0 ..< 60 {
+            frame()
+        }
+        print("HANDOFF \(style) worst frame step \(worst) of \(full)")
+        #expect(worst <= full / 4, Comment(rawValue: "\(style): a lift moved \(worst)pt in one frame, the full lift is \(full)pt"))
+        #expect(
+            abs((previous["card-1"] ?? 0) - full) < 0.01 && (previous["card-0"] ?? 1) < 0.01,
+            Comment(rawValue: "\(style): the lift ended at \(previous)")
+        )
+    }
+
+    /// The face's corners taken through what `ShelfCardLayer` set on its layers — anchor, position,
+    /// face transform and the host's perspective about its own centre — in stage space, at unit
+    /// points (0,0), (1,0), (0,1), (1,1).
+    private func drawnCorners(_ tile: ShelfCardLayer) -> [CGPoint] {
+        let face = tile.face
+        let host = tile.layer
+        let t = face.transform
+        let p = host.sublayerTransform
+        let centre = CGPoint(x: host.bounds.midX, y: host.bounds.midY)
+        let units = [CGPoint(x: 0, y: 0), CGPoint(x: 1, y: 0), CGPoint(x: 0, y: 1), CGPoint(x: 1, y: 1)]
+        return units.map { unit -> CGPoint in
+            // Row vectors, as Core Animation multiplies them.
+            let x = (unit.x - face.anchorPoint.x) * face.bounds.width
+            let y = (unit.y - face.anchorPoint.y) * face.bounds.height
+            let fw = x * t.m14 + y * t.m24 + t.m44
+            let hx = face.position.x + (x * t.m11 + y * t.m21 + t.m41) / fw - centre.x
+            let hy = face.position.y + (x * t.m12 + y * t.m22 + t.m42) / fw - centre.y
+            let hz = (x * t.m13 + y * t.m23 + t.m43) / fw
+            let pw = hx * p.m14 + hy * p.m24 + hz * p.m34 + p.m44
+            return CGPoint(
+                x: host.frame.minX + centre.x + (hx * p.m11 + hy * p.m21 + hz * p.m31 + p.m41) / pw,
+                y: host.frame.minY + centre.y + (hx * p.m12 + hy * p.m22 + hz * p.m32 + p.m42) / pw
+            )
+        }
+    }
+
+    @Test("The centred styles' hit shapes are the corners their layers actually draw", arguments: [
+        ShelfStyle.facingIn, .fan, .focusRow,
+    ])
+    func hitRectsMatchTheDrawnCorners(style: ShelfStyle) {
+        let tile = ShelfCardLayer()
+        tile.update(
+            card: StageCard(id: "a", title: "A", metaLine: "", thumbnail: nil, onBadge: nil, isDraggable: true),
+            increasedContrast: false
+        )
+        for focus in [6.0, 6.4] {
+            for index in [2, 4, 5, 6, 7, 9] {
+                let placement = StageGeometry.cardPlacement(
+                    style: style, index: index, count: 13, progress: 1, focus: focus, windowSize: StageGeometry.designWindow
+                )
+                for hover in [0.0, 0.5, 1] {
+                    tile.hover.jump(to: hover)
+                    tile.place(placement, style: style, gridMix: 0, dragged: false, reduceMotion: false)
+                    let corners = drawnCorners(tile)
+                    let xs = corners.map(\.x)
+                    let ys = corners.map(\.y)
+                    let hit = tile.hitRect
+                    let label = "\(style) card \(index), focus \(focus), hover \(hover): hit \(hit), drawn \(corners)"
+                    #expect(
+                        abs(hit.minX - (xs.min() ?? 0)) < 0.01 && abs(hit.maxX - (xs.max() ?? 0)) < 0.01
+                            && abs(hit.minY - (ys.min() ?? 0)) < 0.01 && abs(hit.maxY - (ys.max() ?? 0)) < 0.01,
+                        Comment(rawValue: label)
+                    )
+                    // Only a card turned in the plane is a rectangle on screen, so only there does the
+                    // shape have to match corner for corner.
+                    if style == .fan {
+                        let turned = zip(tile.hitShape.corners, corners).map { hypot($0.x - $1.x, $0.y - $1.y) }
+                        #expect(turned.allSatisfy { $0 < 0.01 }, Comment(rawValue: "\(label), shape \(tile.hitShape.corners)"))
+                    }
+                }
+            }
+        }
+    }
+
+    /// A point given in fan card `index`'s own unturned frame, relative to its centre, in stage space.
+    private func point(onFanCard index: Int, x: CGFloat, y: CGFloat, focus: Double, in view: EditDeskStageView) -> CGPoint {
+        let card = StageGeometry.cardPlacement(
+            style: .fan, index: index, count: 14, progress: 1, focus: focus, windowSize: view.bounds.size
+        )
+        let turn = card.rotationZDegrees * .pi / 180
+        return CGPoint(
+            x: card.frame.midX + x * cos(turn) - y * sin(turn), y: card.frame.midY + x * sin(turn) + y * cos(turn)
+        )
+    }
+
+    @Test("Fan hits follow each turned card: its exposed strip is its own, and 5pt past a neighbour's edge is not the neighbour's")
+    func fanHitTestingFollowsTheTurnedCards() throws {
+        let model = makeModel()
+        model.shelfStyle = .fan
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        model.setProgress(1, animated: false)
+        // Card 7 in the middle, so both sides of the fan are out.
+        try view.scrollWheel(with: scroll(x: -420))
+        let shown = model.visibleShelfRange
+        try #require(shown == 1 ..< 14, Comment(rawValue: "\(shown)"))
+        let edge = StageGeometry.cardSize.width / 2
+        for index in shown {
+            // 30pt in from the card's own left edge; the card lying over it starts about 60pt in.
+            let strip = point(onFanCard: index, x: -edge + 30, y: 0, focus: 7, in: view)
+            #expect(view.cardIndex(at: strip) == index, Comment(rawValue: "card \(index)'s strip at \(strip)"))
+        }
+        for index in shown.dropLast() {
+            for y: CGFloat in [-40, 0, 40] {
+                // Either side of the edge along which card `index + 1` starts to lie over card `index`.
+                let outside = point(onFanCard: index + 1, x: -edge - 5, y: y, focus: 7, in: view)
+                let inside = point(onFanCard: index + 1, x: -edge + 5, y: y, focus: 7, in: view)
+                #expect(view.cardIndex(at: outside) == index, Comment(rawValue: "5pt outside card \(index + 1) at \(outside)"))
+                #expect(view.cardIndex(at: inside) == index + 1, Comment(rawValue: "5pt inside card \(index + 1) at \(inside)"))
+            }
+        }
+    }
+
+    @Test("A hovered fan card slides 30pt out along its own up without turning upright, and owns the band it slid into")
+    func fanHoverSlidesAlongTheRadius() throws {
+        let model = makeModel()
+        model.reduceMotion = false
+        model.shelfStyle = .fan
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        model.setProgress(1, animated: false)
+        let rest = StageGeometry.cardPlacement(
+            style: .fan, index: 4, count: 14, progress: 1, focus: 0, windowSize: view.bounds.size
+        )
+        let edge = StageGeometry.cardSize.width / 2
+        try view.mouseMoved(with: mouse(.mouseMoved, at: point(onFanCard: 4, x: -edge + 30, y: 0, focus: 0, in: view), in: view))
+        for _ in 0 ..< 90 {
+            view.advance(dt: 1.0 / 60)
+        }
+        try #require(model.hoveredCard == "card-4")
+        let tile = try #require(view.cardLayers["card-4"])
+        let turn = rest.rotationZDegrees * .pi / 180
+        let moved = CGPoint(x: tile.frame.midX - rest.frame.midX, y: tile.frame.midY - rest.frame.midY)
+        #expect(
+            abs(moved.x - 30 * sin(turn)) < 0.01 && abs(moved.y + 30 * cos(turn)) < 0.01,
+            Comment(rawValue: "moved \(moved) for a card turned \(rest.rotationZDegrees)°")
+        )
+        #expect(tile.hitShape.rotationZDegrees == rest.rotationZDegrees, "the hover must not turn the card upright")
+        // 15pt past the resting top edge, in the card's own frame: the slid card covers it, no card at rest does.
+        let band = point(onFanCard: 4, x: -edge + 30, y: -56 - 15, focus: 0, in: view)
+        try view.mouseMoved(with: mouse(.mouseMoved, at: band, in: view))
+        view.advance(dt: 1.0 / 60)
+        #expect(model.hoveredCard == "card-4", Comment(rawValue: "the band at \(band) went to \(String(describing: model.hoveredCard))"))
+        // 5pt past the slid card's left edge at the same height is outside it, however wide its box is.
+        let beside = point(onFanCard: 4, x: -edge - 5, y: -56 - 15, focus: 0, in: view)
+        #expect(view.cardIndex(at: beside) == nil, Comment(rawValue: "\(beside)"))
+    }
+
+    @Test("The keyboard focus ring turns with the fan card it sits on")
+    func focusRingTurnsWithTheFanCard() throws {
+        let model = makeModel()
+        model.shelfStyle = .fan
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        model.setProgress(1, animated: false)
+        // A press focuses the card where it lies; only the arrow keys bring it to the middle.
+        let strip = point(onFanCard: 4, x: -StageGeometry.cardSize.width / 2 + 30, y: 0, focus: 0, in: view)
+        try view.mouseDown(with: mouse(.leftMouseDown, at: strip, in: view))
+        try #require(view.debugFocusedCardIndex == 4)
+        let tile = try #require(view.cardLayers["card-4"])
+        let ring = view.debugFocusRing
+        let turn = atan2(ring.transform.m12, ring.transform.m11) * 180 / .pi
+        #expect(!ring.isHidden)
+        #expect(ring.bounds.size == tile.hitShape.rect.size, Comment(rawValue: "ring \(ring.bounds.size), card \(tile.hitShape.rect.size)"))
+        #expect(
+            abs(turn - tile.hitShape.rotationZDegrees) < 0.000_001,
+            Comment(rawValue: "ring turned \(turn)°, card \(tile.hitShape.rotationZDegrees)°")
+        )
+        #expect(abs(ring.position.x - tile.hitShape.rect.midX) < 0.000_001 && abs(ring.position.y - tile.hitShape.rect.midY) < 0.000_001)
     }
 
     private func bigLibrary(_ count: Int) -> [StageCard] {
@@ -1614,6 +2322,194 @@ struct EditDeskStageViewTests {
         #expect(settled.debugDragging, "a settled shelf still starts drags")
     }
 
+    @Test("A card dragged before a scroll has landed still leaves the stage on a rest state")
+    func dragBeforeTheScrollLandsStillLands() async throws {
+        let model = makeModel()
+        model.reduceMotion = false
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        model.setProgress(1, animated: false)
+        // No phase, so the landing is left to the snap that fires once the scroll goes quiet.
+        try view.scrollWheel(with: scroll(y: -24))
+        try #require(model.progress > 1 && model.progress < 1.5, Comment(rawValue: "the scroll moved the stage to \(model.progress)"))
+        let hit = StageGeometry.hitRect(StageGeometry.cardPlacement(
+            style: model.shelfStyle, index: 3, count: 14, progress: model.progress, focus: 0, windowSize: view.bounds.size
+        ), style: model.shelfStyle)
+        let point = CGPoint(x: hit.minX + 8, y: hit.midY)
+        try view.mouseDown(with: mouse(.leftMouseDown, at: point, in: view))
+        try view.mouseDragged(with: mouse(.leftMouseDragged, at: CGPoint(x: point.x + 20, y: point.y), in: view))
+        try #require(view.debugDragging)
+        try view.mouseUp(with: mouse(.leftMouseUp, at: CGPoint(x: point.x + 20, y: point.y), in: view))
+        // Long enough for any snap the drag left scheduled to fire.
+        try await Task.sleep(for: .milliseconds(200))
+        for _ in 0 ..< 480 {
+            view.advance(dt: 1 / 120)
+        }
+        #expect(model.progress == model.progress.rounded(), Comment(rawValue: "the stage rests at \(model.progress)"))
+        #expect(Double(model.snappedIndex) == model.progress)
+    }
+
+    @Test("The library grid mounts only once the stage has landed on it, and a return swipe takes it down at the handoff")
+    func libraryGridWaitsForTheLanding() {
+        // Mid-swipe past the handoff point the cards are still the stage's.
+        #expect(!HomePage.mountsLibraryGrid(page: .library, snappedIndex: 1, progress: 1.842))
+        #expect(!HomePage.mountsLibraryGrid(page: .home, snappedIndex: 1, progress: 1.842))
+        // Landed, but the page has not taken the snap yet.
+        #expect(!HomePage.mountsLibraryGrid(page: .home, snappedIndex: 2, progress: 2))
+        #expect(HomePage.mountsLibraryGrid(page: .library, snappedIndex: 2, progress: 2))
+        #expect(HomePage.mountsLibraryGrid(page: .library, snappedIndex: 2, progress: 1.9))
+        #expect(!HomePage.mountsLibraryGrid(page: .library, snappedIndex: 2, progress: 1.7))
+    }
+
+    @Test("A re-snap to the grid while cards are still flying waits for them to land before handing over")
+    func snapToTheGridWaitsForTheStagger() throws {
+        let model = makeModel()
+        model.reduceMotion = false
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        model.setProgress(1, animated: false)
+        model.setProgress(2, animated: true)
+        var resnapped = false
+        for _ in 0 ..< 480 {
+            view.advance(dt: 1 / 120)
+            if !resnapped, view.debugProgressSettled, view.debugStaggerToGrid {
+                // What a second Up arrow asks for once the stage itself has arrived.
+                model.setProgress(2, animated: true)
+                resnapped = true
+            }
+            if model.snappedIndex == 2 {
+                break
+            }
+        }
+        try #require(resnapped, "the stage never arrived while cards were still flying, so nothing was tested")
+        #expect(model.snappedIndex == 2)
+        // Landed, not necessarily settled: within a point of the tile the grid can fade in over the card.
+        for (index, card) in model.shelfItems.enumerated() {
+            let tile = try #require(view.cardLayers[card.id]).frame
+            let grid = StageGeometry.gridFrame(index: index, windowWidth: view.bounds.width)
+            let off = max(abs(tile.minX - grid.minX), abs(tile.minY - grid.minY), abs(tile.width - grid.width))
+            #expect(off <= 1, Comment(rawValue: "card \(index) is \(off)pt off its tile at the handover: \(tile)"))
+        }
+    }
+
+    @Test("The grid takes over once every card sits within a point of its tile, not after the springs finish creeping")
+    func gridTakesOverWhenTheCardsHaveLanded() throws {
+        let model = makeModel()
+        model.reduceMotion = false
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        model.setProgress(1, animated: false)
+        model.setProgress(2, animated: true)
+        var elapsed = 0.0
+        while model.snappedIndex != 2, elapsed < 4 {
+            view.advance(dt: 1 / 120)
+            elapsed += 1 / 120
+        }
+        try #require(model.snappedIndex == 2)
+        #expect(elapsed < 0.7, Comment(rawValue: "the grid waited \(elapsed)s after the release"))
+        let atHandover = Dictionary(uniqueKeysWithValues: view.cardLayers.map { ($0.key, $0.value.frame) })
+        for _ in 0 ..< 240 {
+            view.advance(dt: 1 / 120)
+        }
+        for (id, frame) in atHandover {
+            let settled = try #require(view.cardLayers[id]).frame
+            let moved = max(abs(settled.minX - frame.minX), abs(settled.minY - frame.minY), abs(settled.width - frame.width))
+            #expect(moved <= 1, Comment(rawValue: "\(id) moved \(moved)pt under the grid after the handover"))
+        }
+    }
+
+    @Test(
+        "A swipe's momentum end neither restarts the landing its release began nor lands it a second time",
+        .timeLimit(.minutes(1)), arguments: [false, true]
+    )
+    func momentumEndLeavesTheReleaseLanding(landsFirst: Bool) async throws {
+        let model = makeModel()
+        model.reduceMotion = false
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        model.setProgress(1, animated: false)
+        try view.scrollWheel(with: scroll(phase: .began))
+        for _ in 0 ..< 4 {
+            try view.scrollWheel(with: scroll(y: -80, phase: .changed))
+        }
+        // Held still before lifting, so the landing starts from rest instead of from the synthetic events' spacing.
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(try view.forwardGridScroll(scroll(phase: .ended)) == nil, "the release left the stage")
+        for _ in 0 ..< 3 {
+            view.advance(dt: 1 / 120)
+        }
+        try #require(
+            model.progress > StageGeometry.libraryHandoffProgress && model.progress < 2,
+            Comment(rawValue: "the landing is at \(model.progress)")
+        )
+        var before = model.progress
+        view.advance(dt: 1 / 120)
+        let step = model.progress - before
+        let momentumEnd = try scroll(momentum: .end)
+        try #require(momentumEnd.momentumPhase.contains(.ended))
+        #expect(view.forwardGridScroll(momentumEnd) == nil, "the momentum end left the stage")
+        if landsFirst {
+            // Landed without suspending, so a snap the momentum end scheduled can only fire afterwards.
+            var frames = 0
+            while model.snappedIndex != 2, frames < 480 {
+                view.advance(dt: 1 / 120)
+                frames += 1
+            }
+            try #require(model.snappedIndex == 2)
+        }
+        // Past `snapDelay`: a snap the momentum end scheduled has fired by now.
+        try await Task.sleep(for: .milliseconds(200))
+        if !landsFirst {
+            before = model.progress
+            view.advance(dt: 1 / 120)
+            #expect(
+                model.progress - before > step / 2,
+                Comment(rawValue: "the landing restarted from rest: \(model.progress - before) in a frame after \(step)")
+            )
+        }
+        for _ in 0 ..< 480 {
+            view.advance(dt: 1 / 120)
+        }
+        #expect(model.progress == 2 && model.snappedIndex == 2)
+        model.emit(.cardTapped("end"))
+        var landings = 0
+        for await event in model.events {
+            if event == .cardTapped("end") {
+                break
+            }
+            if event == .snapped(2) {
+                landings += 1
+            }
+        }
+        #expect(landings == 1, Comment(rawValue: "the stage reported landing on the grid \(landings) times"))
+    }
+
+    @Test("Cards leave for the grid at most 15ms apart and all within 0.18s", arguments: [14, 1000])
+    func staggerToTheGridIsShort(count: Int) throws {
+        let model = makeModel()
+        model.reduceMotion = false
+        model.shelfItems = bigLibrary(count)
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        model.setProgress(1, animated: false)
+        model.setProgress(2, animated: true)
+        let delays = view.cardLayers.values.map(\.staggerRemaining).sorted()
+        let last = try #require(delays.last)
+        #expect(last <= 0.18 + 1e-9, Comment(rawValue: "the last of \(delays.count) cards leaves after \(last)s"))
+        let gaps = zip(delays.dropFirst(), delays).map { $0 - $1 }
+        #expect(gaps.allSatisfy { $0 <= 0.015 + 1e-9 }, Comment(rawValue: "\(gaps.max() ?? 0)s between two cards"))
+    }
+
     @Test("A long hitch moves the stagger schedule and the springs on the same clock")
     func hitchKeepsEveryTimerOnTheSameClock() throws {
         let model = makeModel()
@@ -1668,7 +2564,7 @@ struct EditDeskStageViewTests {
         let filled = try #require(children.first { ($0 as? NSAccessibilityElement)?.accessibilityLabel()?.hasPrefix("External") == true })
         let actions = try #require((empty as? NSAccessibilityElement)?.accessibilityCustomActions())
         #expect(actions.map(\.name) == [
-            String(localized: "Choose File…", bundle: .appLanguage),
+            String(localized: "Choose File", bundle: .appLanguage),
             String(localized: "Paste URL", bundle: .appLanguage),
         ])
         #expect((filled as? NSAccessibilityElement)?.accessibilityCustomActions()?.isEmpty == true)

@@ -32,6 +32,8 @@ final class ShelfGestureController {
     private var startState: Int?
     /// True between `.began` and `.ended`: while the fingers are down nothing may snap.
     private var touching = false
+    /// Set by a vertical release until its momentum ends: the landing that release launched owns the rest of the swipe.
+    private var releasedVertically = false
     private var lastEventTime: TimeInterval?
     private var smoothedVelocity = 0.0
     /// Signed state-travel of the current wheel burst; trackpad gestures release instead.
@@ -60,6 +62,7 @@ final class ShelfGestureController {
             anchor = nil
             startState = StageGeometry.snapTarget(for: progress)
             touching = true
+            releasedVertically = false
             snapDeadline = nil
             pendingRelease = nil
             lastEventTime = clock()
@@ -74,19 +77,27 @@ final class ShelfGestureController {
                 let velocity = smoothedVelocity * exp(-still / StageGeometry.velocityWindow)
                 pendingRelease = Self.landing(from: progress, base: base, velocity: velocity)
                 snapDeadline = nil
+                // A finger held still before lifting gets no momentum, so no later phase ends this gesture.
+                endGesture()
+                releasedVertically = true
             } else {
                 snapDeadline = clock() + StageGeometry.snapDelay
             }
             return nil
         case .momentumEnded:
             touching = false
-            axis = .undecided
-            snapDeadline = clock() + StageGeometry.snapDelay
+            if releasedVertically {
+                // `.ended` already launched this landing, and a snap would restart it from rest.
+                releasedVertically = false
+            } else {
+                axis = .undecided
+                snapDeadline = clock() + StageGeometry.snapDelay
+            }
             return nil
         case .momentum:
             // The OS momentum curve is built for infinite documents; fed into a state transition it
             // fights the landing spring. The row still wants it, so only the state axis drops it.
-            guard axis != .vertical else { return nil }
+            guard !releasedVertically, axis != .vertical else { return nil }
         case .changed:
             break
         }
@@ -188,16 +199,20 @@ final class ShelfGestureController {
         self.snapDeadline = nil
         let base = anchor
         let moved = wheelTravel
-        travel = .zero
-        axis = .undecided
-        anchor = nil
-        startState = nil
-        wheelTravel = 0
+        endGesture()
         guard let base, abs(moved) >= StageGeometry.wheelCommit else {
             return StageGeometry.snapTarget(for: progress)
         }
         let target = moved > 0 ? base + 1 : base - 1
         return Int(StageGeometry.clampProgress(target).rounded())
+    }
+
+    private func endGesture() {
+        travel = .zero
+        axis = .undecided
+        anchor = nil
+        startState = nil
+        wheelTravel = 0
     }
 
     /// `quantum` > 0 lands the row on a whole slot so the cards come to rest aligned.
@@ -227,6 +242,7 @@ final class ShelfGestureController {
         anchor = nil
         startState = nil
         touching = false
+        releasedVertically = false
         wheelTravel = 0
         pendingRelease = nil
         lastEventTime = nil
@@ -259,9 +275,9 @@ final class ShelfGestureController {
 
     /// Row cards overlap, so the hit is the one drawn on top at that point — the one the user can
     /// actually see there. `order` is each card's `depthOrder`, index breaking ties.
-    static func card(at point: CGPoint, frames: [CGRect], order: [CGFloat]) -> Int? {
-        frames.indices
-            .filter { frames[$0].contains(point) }
+    static func card(at point: CGPoint, shapes: [StageGeometry.CardShape], order: [CGFloat]) -> Int? {
+        shapes.indices
+            .filter { shapes[$0].contains(point) }
             .max { (order[$0], $0) < (order[$1], $1) }
     }
 
