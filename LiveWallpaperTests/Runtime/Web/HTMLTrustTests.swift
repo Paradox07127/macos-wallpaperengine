@@ -34,6 +34,24 @@ struct HTMLTrustVerdictTests {
         #expect(v == .localContent)
     }
 
+    @Test("The HUD shows what an untrusted page runs with, not what its config asks for")
+    @MainActor
+    func hudShowsEffectiveWebValues() throws {
+        let url = try #require(URL(string: "https://shadertoy.com/view/abc"))
+        let origin = try #require(TrustedHTMLOrigin(url: url))
+        var config = HTMLConfig.default
+        config.allowJavaScript = true
+        config.muteAudio = false
+
+        let untrusted = PlaybackControls.webEffective(config, source: .url(url), trustedOrigins: [])
+        #expect(untrusted.limitedBy == origin)
+        #expect(!untrusted.allowsJavaScript)
+        #expect(untrusted.muted)
+        // Control: once the origin is trusted the config's own values apply.
+        let trusted = PlaybackControls.webEffective(config, source: .url(url), trustedOrigins: [origin])
+        #expect(trusted.limitedBy == nil && trusted.allowsJavaScript && !trusted.muted)
+    }
+
     @Test("Untrusted remote URL is flagged")
     func untrustedRemote() throws {
         let expected = try #require(TrustedHTMLOrigin(url: URL(string: "https://shadertoy.com/view/abc")!))

@@ -178,7 +178,7 @@ struct PickerView: View {
         // Scene folders are rejected before routing in Lite so the user gets the
         // "needs Pro" reason instead of the generic unsupported-type message.
         if !sceneCapable, WallpaperImportRouter.isWallpaperEngineProjectFolder(url) {
-            return fail("Wallpaper Engine scenes need Loomscreen Pro, a separate free download.")
+            return fail("Wallpaper Engine projects need Loomscreen Pro, a separate free download.")
         }
 
         switch WallpaperImportRouter.route(url, sceneCapable: sceneCapable) {
@@ -208,7 +208,7 @@ struct PickerView: View {
             applyScene(folderURL, to: targets)
             return true
             #else
-            return fail("Wallpaper Engine scenes need Loomscreen Pro, a separate free download.")
+            return fail("Wallpaper Engine projects need Loomscreen Pro, a separate free download.")
             #endif
 
         case .sceneLibrary:

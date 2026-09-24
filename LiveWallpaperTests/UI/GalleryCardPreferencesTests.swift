@@ -94,4 +94,20 @@ struct GalleryCardPreferencesTests {
         #expect(source.contains(".providesGalleryCardPreferences()"))
         #expect(source.contains("\\.libraryTileSize"))
     }
+
+    #if !LITE_BUILD
+    @Test("The S8 card's meta line obeys the rating and resolution switches")
+    func editDeskMetaLineObeysSwitches() {
+        func line(_ preferences: GalleryCardPreferences) -> String {
+            BrowseCard.editDeskMetaLine(
+                rating: 4.5, resolution: "4K", subscribers: "12 subscribers", size: "300 MB", preferences: preferences
+            ) ?? ""
+        }
+        let rating = "★ " + 4.5.formatted(.number.precision(.fractionLength(1)))
+        let shown = line(GalleryCardPreferences())
+        #expect(shown.contains(rating) && shown.contains("4K"), "with every switch on the line reads \(shown)")
+        #expect(!line(GalleryCardPreferences(showsRating: false)).contains("★"), "the rating shows with its switch off")
+        #expect(!line(GalleryCardPreferences(showsResolution: false)).contains("4K"), "the resolution shows with its switch off")
+    }
+    #endif
 }

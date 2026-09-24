@@ -39,9 +39,10 @@ struct EditDeskShelfScrim: View {
     /// instead of the whole page.
     let stage: EditDeskStageModel
 
-    /// The band's background, so it leads the chrome that sits over it.
+    /// The band's background, so it leads the chrome that sits over it; it leaves with the cards,
+    /// so the grid's opaque page takes over from a clear band.
     static func opacity(_ progress: Double) -> Double {
-        HomeHints.ramp(progress, from: 0.05, to: 0.6)
+        HomeHints.ramp(progress, from: 0.05, to: 0.6) * (1 - HomeHints.ramp(progress, from: 1, to: 2))
     }
 
     var body: some View {

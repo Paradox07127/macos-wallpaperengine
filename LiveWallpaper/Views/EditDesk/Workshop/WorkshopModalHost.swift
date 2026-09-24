@@ -86,6 +86,8 @@ struct WorkshopModalHost: View {
     let session: WorkshopSession
     let toasts: EditDeskToastCenter
     let windowSize: CGSize
+    /// Opens the Steam wizard over the modal when a setup step blocks the download.
+    let onConnectSteam: () -> Void
 
     @Environment(ScreenManager.self) private var screenManager
     @Environment(WorkshopServices.self) private var services
@@ -93,6 +95,7 @@ struct WorkshopModalHost: View {
     @Environment(\.featureCatalog) private var featureCatalog
     @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(EditDeskUndoStack.self) private var undo: EditDeskUndoStack?
 
     /// The opened item when it is not on the current page, fetched once.
     @State private var detachedItem: WorkshopQueryItem?
@@ -124,6 +127,8 @@ struct WorkshopModalHost: View {
                     download: presentation(for: item),
                     primaryTitle: primaryTitle(for: item, targets: targets),
                     isPrimaryEnabled: isPrimaryEnabled(for: item, targets: targets),
+                    secondaryTitle: WorkshopModalContent.secondaryActionTitle(ticketState: wiring.ticket(for: item.id)?.state),
+                    isSecondaryEnabled: isSecondaryEnabled(for: item),
                     isRevealed: session.matureReveal.isRevealed(item.id),
                     matureReveal: session.matureReveal,
                     windowSize: windowSize,
@@ -135,10 +140,9 @@ struct WorkshopModalHost: View {
                 DisplayFloatLayer(
                     targets: targets,
                     mode: .selectTarget,
-                    highlighted: resolvedTargetID(in: targets),
+                    highlighted: resolvedTargetID(for: item, in: targets),
                     windowWidth: windowSize.width,
                     onSelect: { select($0, for: item) },
-                    onApplyAll: {},
                     onTargetFrame: { _ in },
                     onRunFrame: { _ in }
                 )
@@ -204,7 +208,11 @@ struct WorkshopModalHost: View {
     /// Windows-only takes both readings: the origin's own flag, and an import that produced nothing
     /// this renderer can show.
     private func installedExtras(for item: WorkshopQueryItem) -> InstalledItemExtras? {
-        guard let entry = installedEntry, entry.origin.workshopID == String(item.id) else { return nil }
+        let entry = installedEntry.flatMap { $0.origin.workshopID == String(item.id) ? $0 : nil }
+        guard WorkshopModalContent.isInstalled(
+            hasLibraryEntry: entry != nil, isDownloading: downloads.isBusy(item.id),
+            isFetchingDependencies: downloads.fetchingDependencies.contains(item.id)
+        ), let entry else { return nil }
         let runningOn = screenManager.screens.filter {
             screenManager.getConfiguration(for: $0)?.wpeOrigin?.workshopID == entry.origin.workshopID
         }
@@ -228,87 +236,74 @@ struct WorkshopModalHost: View {
         return WorkshopModalTargets.make(displays: displays, activeOn: activeOn, covers: covers)
     }
 
-    /// The chosen display, or the default one when nothing is chosen yet or the choice was unplugged.
-    private func resolvedTargetID(in targets: [ModalDisplayTarget]) -> CGDirectDisplayID? {
-        if let selectedTargetID, targets.contains(where: { $0.id == selectedTargetID }) {
-            return selectedTargetID
-        }
-        return targets.first(where: \.isPrimary)?.id ?? targets.first?.id
+    /// The target of a waiting or running apply; nil once it settles.
+    private func queuedTarget(for item: WorkshopQueryItem) -> DeferredApplyCoordinator.Target? {
+        wiring.ticket(for: item.id).flatMap { $0.state == .waiting || $0.state == .applying ? $0.target : nil }
     }
 
-    private func targetName(in targets: [ModalDisplayTarget]) -> String {
-        targets.first { $0.id == resolvedTargetID(in: targets) }?.name ?? ""
+    private func resolvedTargetID(for item: WorkshopQueryItem, in targets: [ModalDisplayTarget]) -> CGDirectDisplayID? {
+        WorkshopModalTargets.resolvedTarget(selected: selectedTargetID, queued: queuedTarget(for: item)?.screenID, in: targets)
+    }
+
+    private func targetName(for item: WorkshopQueryItem, in targets: [ModalDisplayTarget]) -> String {
+        WorkshopModalTargets.targetName(
+            queued: queuedTarget(for: item), resolved: resolvedTargetID(for: item, in: targets), in: targets
+        )
     }
 
     private func primaryTitle(for item: WorkshopQueryItem, targets: [ModalDisplayTarget]) -> String {
         WorkshopModalContent.primaryActionTitle(
             installed: installedExtras(for: item) != nil,
             ticketState: wiring.ticket(for: item.id)?.state,
-            screenName: targetName(in: targets)
+            screenName: targetName(for: item, in: targets)
         )
     }
 
     private func isPrimaryEnabled(for item: WorkshopQueryItem, targets: [ModalDisplayTarget]) -> Bool {
-        guard resolvedTargetID(in: targets) != nil, !item.isBanned else { return false }
-        if wiring.ticket(for: item.id)?.state == .applying {
+        guard resolvedTargetID(for: item, in: targets) != nil, !item.isBanned else { return false }
+        switch wiring.ticket(for: item.id)?.state {
+        case .waiting, .applying:
             return false
+        default:
+            return installedExtras(for: item) != nil
+                || WorkshopModalContent.canDownload(isBanned: item.isBanned, isDownloadReady: doctor.isDownloadReady)
         }
-        return installedExtras(for: item) != nil || doctor.isDownloadReady
+    }
+
+    private func isSecondaryEnabled(for item: WorkshopQueryItem) -> Bool {
+        WorkshopModalContent.isSecondaryEnabled(
+            ticketState: wiring.ticket(for: item.id)?.state, isBanned: item.isBanned, isDownloadReady: doctor.isDownloadReady
+        )
     }
 
     // MARK: Bottom bar
 
     private func presentation(for item: WorkshopQueryItem) -> WorkshopDownloadPresentation {
-        var presentation = WorkshopDownloadPresentation()
-        // A settled ticket is the outcome of record; the download phase only describes the transfer.
-        switch wiring.ticket(for: item.id)?.state {
-        case .applying:
-            presentation.progress = .indeterminate
-            presentation.status = WorkshopModalContent.applyingText
-            return presentation
-        case let .finished(report):
-            presentation.status = DeferredApplyToasts.appliedText(report, screenName: settledScreenName(for: item))
-            presentation.isFailure = report.outcome != .applied
-            return presentation
-        case let .downloadOnly(.failed(reason)):
-            presentation.status = reason
-            presentation.isFailure = true
-            return presentation
-        case .downloadOnly, .invalidated, .waiting, nil:
-            break
-        }
-        switch downloads.phase(for: item.id) {
-        case .downloading:
-            let fraction = downloads.progress[item.id]
-            presentation.progress = fraction.map { .fraction($0) } ?? .indeterminate
-            presentation.status = String(
-                localized: "Downloading…", bundle: .appLanguage,
-                comment: "Workshop download in progress."
-            )
-            presentation.detail = WorkshopDownloadPresentation.detailText(
-                downloaded: downloads.progressBytes[item.id]?.downloaded,
-                total: downloads.progressBytes[item.id]?.total ?? item.fileSizeBytes,
-                bytesPerSecond: rateMeter.bytesPerSecond,
-                fraction: fraction
-            )
-        case .importing:
-            presentation.progress = .indeterminate
-            presentation.status = String(
-                localized: "Importing…", bundle: .appLanguage,
-                comment: "Workshop item is being imported after download."
-            )
-        case let .failed(message):
-            presentation.status = message
-            presentation.isFailure = true
-        case .idle, .succeeded, .succeededAsPreset:
-            break
-        }
-        return presentation
+        WorkshopDownloadPresentation.make(
+            ticketState: wiring.ticket(for: item.id)?.state,
+            settledScreenName: settledScreenName(for: item),
+            wallpapersOn: screenManager.wallpapersGloballyEnabled,
+            phase: downloads.phase(for: item.id),
+            isFetchingDependencies: downloads.fetchingDependencies.contains(item.id),
+            fraction: downloads.progress[item.id],
+            downloadedBytes: downloads.progressBytes[item.id]?.downloaded,
+            totalBytes: downloads.progressBytes[item.id]?.total ?? item.fileSizeBytes,
+            bytesPerSecond: rateMeter.bytesPerSecond,
+            isInstalled: installedExtras(for: item) != nil,
+            unsupportedOrigin: unsupportedInstalledOrigin(for: item),
+            blocker: doctor.downloadBlockerMessage
+        )
+    }
+
+    private func unsupportedInstalledOrigin(for item: WorkshopQueryItem) -> WPEOrigin? {
+        guard installedExtras(for: item) != nil, let origin = installedEntry?.origin,
+              origin.resourceLocation == .unsupported else { return nil }
+        return origin
     }
 
     private func settledScreenName(for item: WorkshopQueryItem) -> String {
         guard let ticket = wiring.ticket(for: item.id) else { return "" }
-        return screenManager.screens.first { $0.id == ticket.target.screenID }?.name ?? ""
+        return DeferredApplyToasts.screenName(for: ticket.target, in: screenManager.screens)
     }
 
     /// One value so `onChange` fires on every published byte count, including a stall at the same
@@ -350,11 +345,16 @@ struct WorkshopModalHost: View {
         if downloads.isBusy(item.id) {
             cancelDownload = { wiring.cancelDownload(itemID: item.id) }
         }
+        var connectSteam: (@MainActor () -> Void)?
+        if installedExtras(for: item) == nil, doctor.downloadBlocker != nil {
+            connectSteam = { onConnectSteam() }
+        }
         return WorkshopModalActions(
             selectTarget: { select($0, for: item) },
             primary: { runPrimary(for: item) },
             saveOnly: { wiring.saveOnly(itemID: item.id) },
             cancelDownload: cancelDownload,
+            connectSteam: connectSteam,
             openInSteam: { openURL(item.steamCommunityURL) },
             reveal: { session.matureReveal.reveal(item.id) },
             openItem: { presentedItemID = $0 },
@@ -377,8 +377,8 @@ struct WorkshopModalHost: View {
 
     private func runPrimary(for item: WorkshopQueryItem) {
         let targets = targets(for: item)
-        guard let screenID = resolvedTargetID(in: targets) else { return }
-        if let entry = installedEntry, entry.origin.workshopID == String(item.id) {
+        guard let screenID = resolvedTargetID(for: item, in: targets) else { return }
+        if installedExtras(for: item) != nil, let entry = installedEntry {
             applyNow(entry, to: screenID)
             return
         }
@@ -392,10 +392,19 @@ struct WorkshopModalHost: View {
             manager: screenManager, bookmarks: BookmarkStore.shared,
             sceneCapable: featureCatalog.isEnabled(.scene)
         )
+        let recording = undo?.begin(.applyWallpaper, displays: [screen])
         Task { @MainActor in
-            let report = await router.apply(.installedWorkshop(entry), to: screen)
-            for message in DeferredApplyToasts.messages(for: .finished(report), screenName: screen.name) ?? [] {
-                toasts.post(message.text, style: message.style)
+            var report = await router.apply(.installedWorkshop(entry), to: screen)
+            report.undoStepID = recording?.settle(screen.id, applied: report.outcome == .applied)
+            let messages = DeferredApplyToasts.messages(
+                for: .finished(report), screenName: screen.name, screenID: screen.id,
+                wallpapersOn: screenManager.wallpapersGloballyEnabled
+            )
+            for message in messages ?? [] {
+                toasts.post(
+                    message.text, style: message.style, screenID: message.screenID, persistent: message.persists,
+                    undoStepID: message.undoStepID
+                )
             }
         }
     }

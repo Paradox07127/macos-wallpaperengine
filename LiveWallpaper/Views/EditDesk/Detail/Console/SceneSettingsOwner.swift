@@ -3,7 +3,7 @@ import LiveWallpaperCore
 import Observation
 import SwiftUI
 
-/// The host retains one owner per (display, scene) across group/display switches, until detail closes or the scene changes.
+/// Held in the card's `@State`, so rebuilding the panel (switching to Overlays and back) replaces it.
 /// A scheduled commit retains this owner through delivery to its original screen.
 @MainActor
 @Observable
@@ -22,6 +22,21 @@ final class SceneSettingsOwner {
     /// Non-nil: edits go to this load attempt for its retry, not to the applied wallpaper.
     let attemptID: UUID?
     private let onDescriptorChange: (SceneDescriptor) -> Void
+    /// Called once a preset change or a reset has landed on the applied wallpaper, with the descriptors before and
+    /// after it; the closure it gets lands the pending edit of whichever owner edits that display by then.
+    private let onUndoableChange: UndoableChange?
+    /// The owner editing each display's applied scene now, by display fingerprint. A step's flush looks it up when it
+    /// runs: rebuilding the panel releases the owner that recorded the step, and the new one holds the pending edit.
+    private static var appliedSceneOwners: [String: WeakOwner] = [:]
+
+    private struct WeakOwner {
+        weak var owner: SceneSettingsOwner?
+    }
+
+    typealias UndoableChange = @MainActor (
+        EditDeskUndoStack.Action, _ before: SceneDescriptor, _ after: SceneDescriptor,
+        _ flush: @escaping @MainActor () async -> Void
+    ) -> Void
 
     init(
         screen: Screen,
@@ -30,7 +45,8 @@ final class SceneSettingsOwner {
         schema: WallpaperEngineProjectPropertySchema? = nil,
         attemptID: UUID? = nil,
         editor: WPESceneCustomSettingsCard.Editor? = nil,
-        onDescriptorChange: @escaping (SceneDescriptor) -> Void = { _ in }
+        onDescriptorChange: @escaping (SceneDescriptor) -> Void = { _ in },
+        onUndoableChange: UndoableChange? = nil
     ) {
         self.editor = editor ?? WPESceneCustomSettingsCard.Editor()
         expandsSectionsOnLoad = editor == nil
@@ -40,9 +56,13 @@ final class SceneSettingsOwner {
         self.schema = schema
         self.attemptID = attemptID
         self.onDescriptorChange = onDescriptorChange
+        self.onUndoableChange = onUndoableChange
         synchronizeEditor(force: true)
         expandInitialSections()
         reloadPresetLibrary()
+        if attemptID == nil {
+            Self.appliedSceneOwners[screen.displayFingerprint] = WeakOwner(owner: self)
+        }
     }
 
     func loadSchema() async {
@@ -124,7 +144,18 @@ final class SceneSettingsOwner {
     }
 
     func applyPreset(_ preset: ScenePreset?) {
-        Task { @MainActor in await commitDescriptor(descriptor.applyingPreset(preset)) }
+        Task { @MainActor in
+            let before = descriptor
+            let next = descriptor.applyingPreset(preset)
+            await commitDescriptor(next)
+            reportUndoableChange(.changePreset, from: before, to: next)
+        }
+    }
+
+    private func reportUndoableChange(_ action: EditDeskUndoStack.Action, from before: SceneDescriptor, to after: SceneDescriptor) {
+        guard attemptID == nil, before != after else { return }
+        let fingerprint = screen.displayFingerprint
+        onUndoableChange?(action, before, after) { await Self.appliedSceneOwners[fingerprint]?.owner?.commitPendingEditorState() }
     }
 
     /// Drops any coalesced slider commit first (computed against the layer being replaced),
@@ -262,7 +293,11 @@ final class SceneSettingsOwner {
             descriptor: descriptor.withPropertyOverrides([:]),
             excludedKeys: WPESceneCustomSettingsCard.excludedSceneSettingKeys
         )
-        Task { @MainActor in await commitPendingEditorState() }
+        Task { @MainActor in
+            let before = descriptor
+            await commitPendingEditorState()
+            reportUndoableChange(.resetSceneSettings, from: before, to: descriptor)
+        }
     }
 
     /// Awaited: `updateSceneDescriptor` arbitrates by the generation taken when it *starts*,

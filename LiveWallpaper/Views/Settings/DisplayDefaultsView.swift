@@ -65,10 +65,13 @@ struct DisplayDefaultsView: View {
             } header: {
                 SettingsSearchSectionHeader("Displays", anchor: .displayDefaultsArrangement)
             } footer: {
-                Text("Right-click a display to rename it.")
-                    .font(DesignTokens.Typography.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+                    Text("Right-click a display to rename it.")
+                    Text("The defaults below apply when a display gets its first wallpaper. A display that already has one keeps its own settings; when they differ from these defaults, its playback controls show Reset playback (↺).")
+                }
+                .font(DesignTokens.Typography.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             }
         }
     }

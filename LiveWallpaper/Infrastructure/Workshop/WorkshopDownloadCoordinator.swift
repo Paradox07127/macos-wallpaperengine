@@ -27,6 +27,8 @@ final class WorkshopDownloadCoordinator {
     /// Per-item download fraction (0...1); absent = indeterminate.
     private(set) var progress: [UInt64: Double] = [:]
     private(set) var progressBytes: [UInt64: DownloadProgressBytes] = [:]
+    /// Roots whose missing Workshop dependencies are downloading; their phase stays `.importing` meanwhile.
+    private(set) var fetchingDependencies: Set<UInt64> = []
 
     @ObservationIgnored private let importService: WallpaperEngineImportService
     @ObservationIgnored private let repositoryCoordinator: WorkshopRepositoryCoordinator
@@ -81,6 +83,7 @@ final class WorkshopDownloadCoordinator {
         attempts[itemID] = nil
         phases[itemID] = .idle
         clearProgress(itemID)
+        fetchingDependencies.remove(itemID)
         activeDownloads.removeValue(forKey: itemID)?.finish(.cancelled)
         // Task.cancel invalidates the connection, which makes the connector drop a still-queued run; a child already running is signalled here, scoped to this attempt's id so another item or a retry survives.
         if let cancelledAttempt {
@@ -140,12 +143,18 @@ final class WorkshopDownloadCoordinator {
         case .imported(let importResult):
             outcome = await finishImport(importResult, itemID: itemID, title: title)
             if case .unsupported(let origin)? = importResult, !origin.missingDependencyIDs.isEmpty {
+                fetchingDependencies.insert(itemID)
                 outcome = await fetchDependencies(
                     rootItemID: itemID,
                     rootTitle: title,
                     missingIDs: origin.missingDependencyIDs,
                     doctor: doctor
                 )
+                // A cancel, or a retry that started after it, owns the item now.
+                if attempts[itemID] == attemptID {
+                    fetchingDependencies.remove(itemID)
+                    phases[itemID] = .succeeded
+                }
             }
         case .notConfigured(let reason):
             finish(itemID: itemID, title: title, phase: .failed(reason))
@@ -207,18 +216,17 @@ final class WorkshopDownloadCoordinator {
             return .failed(reason: reason)
         }
         switch result {
-        case .ready(_, let origin), .unsupported(let origin):
-            let entry = WPEHistoryEntry(origin: origin, importedAt: Date(), lastUsedAt: nil)
-            SettingsManager.shared.recordWPEImport(
-                entry,
-                clearsDeleteTombstone: true
-            )
-            Logger.info("Imported downloaded Workshop item into the library", category: .workshop)
+        case let .ready(_, origin):
+            let entry = recordImport(origin)
             finish(itemID: itemID, title: title, phase: .succeeded)
-            if case .ready = result {
-                return .succeeded(entry)
+            return .succeeded(entry)
+        case let .unsupported(origin):
+            let entry = recordImport(origin)
+            // With dependencies missing, the fetch that follows posts the result and ends the stage.
+            if origin.missingDependencyIDs.isEmpty {
+                finishUnsupported(entry, itemID: itemID, title: title)
             }
-            return .unsupported
+            return .unsupported(entry)
         case .workshopPreset(let preset):
             await SettingsManager.shared.registerScenePreset(preset, clearsDeleteTombstone: true)
             Logger.info("Registered a downloaded Workshop preset", category: .workshop)
@@ -274,6 +282,31 @@ final class WorkshopDownloadCoordinator {
         default:
             break
         }
+    }
+
+    private func recordImport(_ origin: WPEOrigin) -> WPEHistoryEntry {
+        let entry = WPEHistoryEntry(origin: origin, importedAt: Date(), lastUsedAt: nil)
+        SettingsManager.shared.recordWPEImport(
+            entry,
+            clearsDeleteTombstone: true
+        )
+        Logger.info("Imported downloaded Workshop item into the library", category: .workshop)
+        return entry
+    }
+
+    /// The phase stays a success because the item is in the library; only the card says it can't run.
+    private func finishUnsupported(_ entry: WPEHistoryEntry, itemID: UInt64, title: String) {
+        clearProgress(itemID)
+        phases[itemID] = .succeeded
+        WorkshopToastCenter.shared.post(
+            headline: String(
+                localized: "Downloaded, but it can't run on this Mac", bundle: .appLanguage,
+                comment: "Workshop download card headline: the item reached the library but this Mac cannot run it."
+            ),
+            title: title,
+            message: FallbackCard.cannotRunSummary(for: entry.origin),
+            isSuccess: false
+        )
     }
 
     // MARK: - Dependencies

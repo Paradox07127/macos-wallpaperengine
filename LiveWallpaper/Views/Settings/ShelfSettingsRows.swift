@@ -73,16 +73,22 @@ struct ShelfSettingsRows: View {
             shell: .flat,
             title: { Self.shelfStyleTitle($0) }
         )
-        .frame(width: 240)
+        .frame(width: Self.shelfStylePickerWidth)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Text("Shelf style"))
     }
 
+    /// 2pt of padding round five equal segments, each wide enough for the widest title: Spanish
+    /// "Hacia dentro" in the selected (semibold) weight.
+    static let shelfStylePickerWidth: CGFloat = 409
+
     private static func shelfStyleTitle(_ style: ShelfStyle) -> LocalizedStringKey {
         switch style {
+        case .facingIn: "Facing In"
         case .crate: "Crate"
         case .folders: "Folders"
-        case .coverFlow: "Cover Flow"
+        case .fan: "Fan"
+        case .focusRow: "Focus Row"
         }
     }
 

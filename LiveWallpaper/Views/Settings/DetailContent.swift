@@ -20,6 +20,13 @@ struct SettingsDetailContent: View {
             case .systemWallpaper:
                 if #available(macOS 26.0, *) {
                     SystemWallpaperSettingsView()
+                        .settingsSearchAnchorScroller(
+                            pendingSearchAnchor: $pendingSearchAnchor,
+                            anchors: [
+                                .systemWallpaperPlayback, .systemWallpaperStatus,
+                                .systemWallpaperMaintenance, .systemWallpaperLibrary,
+                            ]
+                        )
                 }
             case .performancePower:
                 GeneralSettingsView(page: .performancePower)

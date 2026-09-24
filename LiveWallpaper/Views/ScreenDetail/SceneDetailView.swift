@@ -148,7 +148,6 @@ struct SceneDetailView: View {
     }
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var engineAssets = WPEEngineAssetsLibrary.shared
     @State private var state: SceneRenderState = .idle
     @State private var livePoster: NSImage?
     @State private var livePosterTask: Task<Void, Never>?
@@ -321,54 +320,12 @@ struct SceneDetailView: View {
 
     // MARK: - Error banner
 
-    /// `.degraded` means one layer was skipped and the wallpaper is still playing,
-    /// so it gets the HUD chip instead of a banner.
-    @ViewBuilder
     private var errorBanner: some View {
-        if case let .error(reason) = state, reason.failureClass != .degraded {
-            let presentation = reason.presentation(
-                origin: origin,
-                engineAssetsAuthorized: engineAssets.isAuthorized
-            )
-            InlineNoticeBanner(
-                tint: presentation.tint,
-                symbol: presentation.symbol,
-                title: presentation.title,
-                message: presentation.message,
-                code: presentation.code,
-                surface: .chrome
-            ) {
-                WallpaperFailureRecoveryActions(
-                    recovery: presentation.recovery,
-                    onRetry: { reloadScene() }
-                )
-            }
-            .transition(.opacity)
-        }
+        SceneRenderFailureBanner(state: state, origin: origin, onRetry: { reloadScene() })
     }
 
-    @ViewBuilder
     private var degradedChip: some View {
-        if case let .error(reason) = state, reason.failureClass == .degraded {
-            let detail = reason.localizedMessage(
-                originalType: origin.originalType,
-                engineAssetsAuthorized: engineAssets.isAuthorized
-            )
-            Button {
-                showLogSheet = true
-            } label: {
-                PreviewControlLabel(
-                    systemImage: reason.symbol,
-                    title: "Skipped",
-                    tint: reason.tint
-                )
-            }
-            .buttonStyle(.borderless)
-            .help(Text(verbatim: detail))
-            .accessibilityLabel(Text(verbatim: reason.localizedTitle(originalType: origin.originalType)))
-            .accessibilityValue(Text(verbatim: detail))
-            .accessibilityHint(Text("Open renderer diagnostics"))
-        }
+        SceneSkippedChip(state: state, origin: origin) { showLogSheet = true }
     }
 
     /// Keeps the current poster as the backdrop and swaps in the next frame the renderer presents.
@@ -476,14 +433,7 @@ struct SceneDetailView: View {
                 degradedChip
                 workshopLinkButton
                 if hasDiagnosticFindings {
-                    Button {
-                        showLogSheet = true
-                    } label: {
-                        PreviewControlLabel(systemImage: "terminal", title: "Diagnostics")
-                    }
-                    .buttonStyle(.borderless)
-                    .help(Text("Open renderer diagnostics"))
-                    .accessibilityLabel(Text("Open renderer diagnostics"))
+                    SceneDiagnosticsButton { showLogSheet = true }
                 }
             }
         }
@@ -693,16 +643,16 @@ struct SceneDetailView: View {
         return .ready
     }
 
-    private static func mapToFallbackReason(_ error: SceneRenderingError) -> FallbackReason {
+    static func mapToFallbackReason(_ error: SceneRenderingError) -> FallbackReason {
         switch error {
         case .cacheRootMissing:
-            return .sceneResourceMissing
+            .sceneResourceMissing
         case .parseFailed(let detail):
-            return .sceneParseFailed(detail)
+            .sceneParseFailed(detail)
         case .resourceFailed(let diagnostic):
-            return Self.fallbackReason(for: diagnostic)
-        case .metalRendererUnsupported(let reason):
-            return .sceneParseFailed(reason)
+            Self.fallbackReason(for: diagnostic)
+        case .metalRendererUnsupported:
+            .sceneShaderUnsupported
         }
     }
 
@@ -758,10 +708,87 @@ struct SceneDetailView: View {
     }
 }
 
+// MARK: - Render failure pieces
+
+/// `.degraded` means one layer was skipped and the wallpaper is still playing,
+/// so it gets the HUD chip instead of a banner.
+struct SceneRenderFailureBanner: View {
+    let state: SceneRenderState
+    let origin: WPEOrigin
+    var surface: NoticeBannerSurface = .chrome
+    let onRetry: () -> Void
+    @State private var engineAssets = WPEEngineAssetsLibrary.shared
+
+    var body: some View {
+        if case let .error(reason) = state, reason.failureClass != .degraded {
+            let presentation = reason.presentation(
+                origin: origin,
+                engineAssetsAuthorized: engineAssets.isAuthorized
+            )
+            InlineNoticeBanner(
+                tint: presentation.tint,
+                symbol: presentation.symbol,
+                title: presentation.title,
+                message: presentation.message,
+                detail: presentation.detail,
+                code: presentation.code,
+                surface: surface
+            ) {
+                WallpaperFailureRecoveryActions(
+                    recovery: presentation.recovery,
+                    onRetry: onRetry
+                )
+            }
+            .transition(.opacity)
+        }
+    }
+}
+
+struct SceneSkippedChip: View {
+    let state: SceneRenderState
+    let origin: WPEOrigin
+    let onShowLog: () -> Void
+    @State private var engineAssets = WPEEngineAssetsLibrary.shared
+
+    var body: some View {
+        if case let .error(reason) = state, reason.failureClass == .degraded {
+            let detail = reason.localizedMessage(
+                originalType: origin.originalType,
+                engineAssetsAuthorized: engineAssets.isAuthorized
+            )
+            Button(action: onShowLog) {
+                PreviewControlLabel(
+                    systemImage: reason.symbol,
+                    title: "Skipped",
+                    tint: reason.tint
+                )
+            }
+            .buttonStyle(.borderless)
+            .help(Text(verbatim: detail))
+            .accessibilityLabel(Text(verbatim: reason.localizedTitle(originalType: origin.originalType)))
+            .accessibilityValue(Text(verbatim: detail))
+            .accessibilityHint(Text("Open renderer diagnostics"))
+        }
+    }
+}
+
+struct SceneDiagnosticsButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            PreviewControlLabel(systemImage: "terminal", title: "Diagnostics")
+        }
+        .buttonStyle(.borderless)
+        .help(Text("Open renderer diagnostics"))
+        .accessibilityLabel(Text("Open renderer diagnostics"))
+    }
+}
+
 // MARK: - Diagnostic log window
 
 @MainActor
-private struct DiagnosticLogSheet: View {
+struct DiagnosticLogSheet: View {
     let title: String
     let log: String
     let tint: Color

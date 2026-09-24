@@ -158,6 +158,9 @@ extension ScreenManager {
                     failWallpaperAttempt(attemptID, for: screen, cause: .runtime(error), stage: "commit")
                 }
                 self.setTransientRuntimeError(error, for: screenID)
+                if attemptID == nil {
+                    WallpaperPreparationFailure.announce(error.userMessage, on: screenID, generation: generation)
+                }
             }
             if let work {
                 self.transitionRegistry.clearRuntimePreparationIfMatch(

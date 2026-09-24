@@ -81,12 +81,15 @@ struct DisplayFloatLayer: View {
     let highlighted: CGDirectDisplayID?
     let windowWidth: CGFloat
     let onSelect: (CGDirectDisplayID) -> Void
-    let onApplyAll: () -> Void
     let onTargetFrame: (FloatTargetFrame) -> Void
     /// The thumbnail run's frame in `EditDeskCoordinateSpace`: with ≥5 displays it clips.
     let onRunFrame: (CGRect) -> Void
+    /// A drag is over the All Displays tile.
+    var applyAllHighlighted = false
+    /// The All Displays tile's frame in `EditDeskCoordinateSpace`, for the host's hit test.
+    var onApplyAllFrame: (CGRect) -> Void = { _ in }
 
-    @State private var isApplyAllHovering = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var isScrolling: Bool {
         FloatLayerGeometry.needsScroll(count: targets.count)
@@ -100,7 +103,7 @@ struct DisplayFloatLayer: View {
                 Rectangle()
                     .fill(DesignTokens.EditDesk.Colors.strokePanel)
                     .frame(width: 1, height: 60)
-                applyAllButton
+                applyAllTile
             }
         }
         .padding(.horizontal, DesignTokens.EditDesk.Spacing.s14)
@@ -166,30 +169,36 @@ struct DisplayFloatLayer: View {
         }
     }
 
-    private var applyAllButton: some View {
-        Button(action: onApplyAll) {
-            HStack(spacing: 4) {
-                Text(verbatim: "⧉")
-                Text("All Displays")
-            }
-            .font(DesignTokens.EditDesk.Typography.chip)
-            .foregroundStyle(DesignTokens.EditDesk.Colors.textPrimary)
-            .lineLimit(1)
-            .padding(.horizontal, 10)
-            .frame(height: 30)
-            .background(
-                RoundedRectangle(cornerRadius: DesignTokens.EditDesk.Corner.gridCard)
-                    .fill(DesignTokens.EditDesk.Colors.fillFloatButton)
-            )
-            .overlay {
-                if isApplyAllHovering {
-                    RoundedRectangle(cornerRadius: DesignTokens.EditDesk.Corner.gridCard)
-                        .fill(DesignTokens.EditDesk.Colors.fillNavPill)
-                }
-            }
+    /// Only shown while a drag is on, so it takes a drop the way a thumbnail does and no click.
+    private var applyAllTile: some View {
+        HStack(spacing: 4) {
+            Text(verbatim: "⧉")
+            Text("All Displays")
         }
-        .buttonStyle(.plain)
-        .onHover { isApplyAllHovering = $0 }
+        .font(DesignTokens.EditDesk.Typography.chip)
+        .foregroundStyle(DesignTokens.EditDesk.Colors.textPrimary)
+        .lineLimit(1)
+        .padding(.horizontal, 10)
+        .frame(height: 30)
+        .background(
+            RoundedRectangle(cornerRadius: DesignTokens.EditDesk.Corner.gridCard)
+                .fill(applyAllHighlighted ? DesignTokens.EditDesk.Colors.dropHighlight : DesignTokens.EditDesk.Colors.fillFloatButton)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: DesignTokens.EditDesk.Corner.gridCard)
+                .strokeBorder(DesignTokens.EditDesk.Colors.success, lineWidth: 2)
+                .opacity(applyAllHighlighted ? 1 : 0)
+        }
+        .shadow(color: applyAllHighlighted ? DesignTokens.EditDesk.Colors.dropHighlightGlow : .clear, radius: 30)
+        .animation(.easeOut(duration: reduceMotion ? 0.15 : 0.18), value: applyAllHighlighted)
+        .allowsHitTesting(false)
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(EditDeskCoordinateSpace.name)) } action: {
+            onApplyAllFrame($0)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(verbatim: FloatLayerGeometry.thumbnailAccessibilityLabel(
+            for: mode, displayName: String(localized: "All Displays", bundle: .appLanguage)
+        )))
     }
 }
 

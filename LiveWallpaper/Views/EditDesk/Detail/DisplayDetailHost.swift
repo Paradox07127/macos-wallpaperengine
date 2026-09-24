@@ -15,6 +15,13 @@ struct DisplayDetailHost: View {
     let chooseFile: (Screen) -> Void
     let pasteURL: (CGDirectDisplayID) -> Void
     let dropFiles: ([URL], Screen) -> Bool
+    let apply: (ApplyIntent, CGDirectDisplayID) -> Void
+    /// The home page's own display commands, which record themselves for undo.
+    let clearWallpaper: (Screen) -> Void
+    let applyToAllDisplays: (Screen) -> Void
+    /// Displays with an apply still preparing; `cancelApply` stops one.
+    let applying: Set<CGDirectDisplayID>
+    let cancelApply: (CGDirectDisplayID) -> Void
     /// Held while a tile is in flight either way, so the stage stays locked through the return.
     @Binding var busy: Bool
     /// The page's own toast stack, so overlay copies and wallpaper applies queue in one place.
@@ -24,10 +31,14 @@ struct DisplayDetailHost: View {
     @Environment(\.featureCatalog) private var featureCatalog
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(OnboardingProgress.self) private var progress: OnboardingProgress?
+    @Environment(EditDeskUndoStack.self) private var undo: EditDeskUndoStack?
     @State private var coordinator: DetailTransitionCoordinator?
     @State private var section: DetailSection = .wallpaper
     @AppStorage("loomscreen.editDesk.inspectorWidth", store: .appScoped()) private var inspectorWidth = 372.0
     @AppStorage("loomscreen.editDesk.inspectorVisible", store: .appScoped()) private var inspectorVisible = true
+    /// The overlay column opens and closes with its selection, so it has its own value: sharing the one
+    /// above would hide the wallpaper column on every display after one visit to the overlays.
+    @State private var overlayInspectorVisible = false
     @AppStorage("loomscreen.editDesk.layersVisible", store: .appScoped()) private var layersVisible = true
     @State private var liveInspectorWidth: Double?
     /// The same optimistic-write draft the old inspector uses; the HUD and the panel both write it.
@@ -39,21 +50,36 @@ struct DisplayDetailHost: View {
     @State private var showAutomation = false
     @State private var pendingAction: PendingAction?
     @State private var pendingDestructive: PendingDestructive?
+    /// Set by Manage Schemes and Choose from Library: the library opens once the tile is home, not under
+    /// the return flight.
+    @State private var libraryHandoff: LibraryHandoff?
+    /// "Adjust on the Preview" for a web wallpaper; off again whenever another display is shown.
+    @State private var webTransformArmed = false
+    #if !LITE_BUILD
+    @State private var showsSceneLog = false
+    #endif
     /// Shared with the old detail page so the colour group's disclosure survives switching pages.
     @AppStorage("Inspector.ColorExpanded") private var isColorExpanded = false
 
     private enum PendingAction: Identifiable {
-        case clearWallpaper, applyToAll, copyOverlays
+        case copyOverlays
 
         var id: Self {
             self
         }
     }
 
+    private enum LibraryHandoff {
+        case schemes
+        /// The wallpaper grid, choosing for this display.
+        case wallpapers(for: CGDirectDisplayID)
+    }
+
     var body: some View {
         ZStack {
             if let id = coordinator?.shownDisplayID, let screen = screenManager.screens.first(where: { $0.id == id }) {
                 let status = heroStatus(screen)
+                let preview = previewState(for: screen)
                 DisplayDetail(
                     displayName: screen.name,
                     tags: tags(current: id),
@@ -72,7 +98,7 @@ struct DisplayDetailHost: View {
                         if let overlaySession {
                             OverlayWorkspace(session: overlaySession, cover: cover(id), screen: screen,
                                              size: size, layersVisible: $layersVisible,
-                                             inspectorVisible: $inspectorVisible,
+                                             inspectorVisible: $overlayInspectorVisible,
                                              inspectorWidth: $inspectorWidth, liveInspectorWidth: $liveInspectorWidth,
                                              topInset: showsOverlayOnboarding ? OnboardingCardMetrics.blockHeight - DetailGeometry.topBarHeight : 0,
                                              recapture: { refreshCover(id); overlaySession.capturePreview() },
@@ -81,8 +107,11 @@ struct DisplayDetailHost: View {
                     },
                     overlayTopInset: 0,
                     isEmpty: screenManager.getConfiguration(for: screen) == nil && screenManager.inspectedWallpaperAttempt(for: screen) == nil,
-                    emptyScreen: screen, chooseFile: { chooseFile(screen) }, pasteURL: { pasteURL(id) },
-                    inspectorVisible: $inspectorVisible, layersVisible: $layersVisible,
+                    preview: preview,
+                    wallpaperStatus: { wallpaperStatus(for: screen, preview: preview) },
+                    emptyScreen: screen, webTransform: webTransform(for: screen),
+                    schedulePausedUntil: draft.schedulePausedUntil,
+                    inspectorVisible: sectionInspectorVisible, layersVisible: $layersVisible,
                     inspectorWidth: $inspectorWidth, liveInspectorWidth: $liveInspectorWidth
                 )
                 .dropDestination(for: URL.self) { urls, _ in
@@ -117,6 +146,12 @@ struct DisplayDetailHost: View {
                 } message: { action in
                     Text(pendingMessage(action))
                 }
+                #if !LITE_BUILD
+                .infoOverlay(isPresented: $showsSceneLog) { dismiss in
+                    DetailSceneStatus(screen: screen, configuration: screenManager.getConfiguration(for: screen))?
+                        .logSheet(onDismiss: dismiss)
+                }
+                #endif
                 if section == .overlay, let overlaySession {
                     // R-27/R-28: the card stays in the canvas column and carries its own STEP line,
                     // because the detail top bar has no room for the capsule.
@@ -137,6 +172,7 @@ struct DisplayDetailHost: View {
                         .opacity(0)
                         .frame(width: 0, height: 0)
                         .accessibilityHidden(true)
+                    shortcuts(for: screen)
                 }
             }
         }
@@ -150,8 +186,13 @@ struct DisplayDetailHost: View {
         .onChange(of: router.detailDisplayID, initial: true) { _, id in
             request(id)
         }
+        .onChange(of: router.pendingFailureID, initial: true) { openPendingFailure() }
+        .onChange(of: router.pendingDetailSection, initial: true) { openPendingSection() }
         .onChange(of: coordinator?.busy ?? false, initial: true) { _, value in
             busy = value
+            if !value, let libraryHandoff {
+                openLibrary(libraryHandoff)
+            }
         }
         .onChange(of: stage.stageSize) { coordinator?.windowDidResize() }
         .onChange(of: inspectorWidth) { coordinator?.windowDidResize() }
@@ -163,7 +204,26 @@ struct DisplayDetailHost: View {
                 pendingAction = nil
             }
         }
-        .onDisappear { overlaySession?.detach() }
+        .onDisappear {
+            overlaySession?.detach()
+            closeShownFailure()
+        }
+    }
+
+    private func openLibrary(_ handoff: LibraryHandoff) {
+        libraryHandoff = nil
+        guard coordinator?.shownDisplayID == nil else { return }
+        switch handoff {
+        case .schemes:
+            router.libraryFocus = .schemes
+        case let .wallpapers(displayID):
+            router.libraryTarget = displayID
+        }
+        router.select(.library)
+    }
+
+    private var sectionInspectorVisible: Binding<Bool> {
+        section == .overlay ? $overlayInspectorVisible : $inspectorVisible
     }
 
     private var showsOverlayOnboarding: Bool {
@@ -177,6 +237,8 @@ struct DisplayDetailHost: View {
         if id != coordinator?.shownDisplayID {
             overlaySession?.detach()
             pendingAction = nil
+            webTransformArmed = false
+            closeShownFailure()
         } else if let session = overlaySession, section == .overlay, !session.isActive {
             session.transition(to: session.identity, store: OverlayEditorScreenStore(manager: screenManager), editing: true)
         }
@@ -194,6 +256,9 @@ struct DisplayDetailHost: View {
                 let session = overlaySessions[screen.displayFingerprint] ?? OverlayEditorSession()
                 overlaySessions[screen.displayFingerprint] = session
                 session.onObjectPersisted = { progress?.record(.overlay) }
+                session.onWidgetsRemoved = { [weak session, undo] removed in
+                    undo?.recordRemoval(of: removed, from: screen) { session?.flushPendingEdits() }
+                }
                 overlaySession = session
                 session.transition(
                     to: OverlayEditorIdentity(displayID: screen.id, fingerprint: screen.displayFingerprint),
@@ -217,6 +282,25 @@ struct DisplayDetailHost: View {
         }
     }
 
+    private func closeShownFailure() {
+        guard let shown = screenManager.screens.first(where: { $0.id == coordinator?.shownDisplayID }) else { return }
+        Self.closeFailure(on: shown, manager: screenManager)
+    }
+
+    private func openPendingFailure() {
+        guard let failureID = router.pendingFailureID else { return }
+        router.pendingFailureID = nil
+        guard let screen = screenManager.screens.first(where: { $0.id == router.detailDisplayID }),
+              Self.openFailure(failureID, on: screen, manager: screenManager) else { return }
+        sectionBinding.wrappedValue = .wallpaper
+    }
+
+    private func openPendingSection() {
+        guard let pending = router.pendingDetailSection else { return }
+        router.pendingDetailSection = nil
+        sectionBinding.wrappedValue = pending
+    }
+
     private var sectionBinding: Binding<DetailSection> {
         Binding(get: { section }, set: { next in
             guard section != next else { return }
@@ -232,9 +316,29 @@ struct DisplayDetailHost: View {
 
     // MARK: HUD
 
+    /// The actions zone draws a leading divider unless it is exactly `EmptyView`, so the whole bar branches.
+    @ViewBuilder
     private func hud(for screen: Screen) -> some View {
-        WallpaperPreviewHUD(showsViewport: draft.selectedWallpaperType != .html) {
-            fitModePicker(for: screen)
+        #if !LITE_BUILD
+        if let scene = DetailSceneStatus(screen: screen, configuration: screenManager.getConfiguration(for: screen)),
+           scene.renderFailure != nil {
+            hudBar(for: screen) {
+                HStack(spacing: DesignTokens.Spacing.xs) {
+                    SceneSkippedChip(state: scene.state, origin: scene.origin) { showsSceneLog = true }
+                    SceneDiagnosticsButton { showsSceneLog = true }
+                }
+            }
+        } else {
+            hudBar(for: screen) { EmptyView() }
+        }
+        #else
+        hudBar(for: screen) { EmptyView() }
+        #endif
+    }
+
+    private func hudBar(for screen: Screen, @ViewBuilder actions: () -> some View) -> some View {
+        WallpaperPreviewHUD {
+            viewportControl(for: screen)
         } playback: {
             WallpaperPlaybackControls(
                 screen: screen,
@@ -244,13 +348,22 @@ struct DisplayDetailHost: View {
                 onResetPlayback: { resetPlaybackSettings(for: screen) }
             )
         } actions: {
-            EmptyView()
+            actions()
         }
+        // Rebuilt per display, so a popover left open cannot go on editing the next display.
+        .id(screen.id)
+    }
+
+    private func webTransform(for screen: Screen) -> DetailWebTransform? {
+        guard draft.selectedWallpaperType == .html else { return nil }
+        return DetailWebTransform(screen: screen, config: $draft.htmlConfig, isArmed: webTransformArmed)
     }
 
     @ViewBuilder
-    private func fitModePicker(for screen: Screen) -> some View {
-        if draft.selectedWallpaperType != .html {
+    private func viewportControl(for screen: Screen) -> some View {
+        if draft.selectedWallpaperType == .html {
+            WebTransformControl(screen: screen, config: $draft.htmlConfig, isArmed: $webTransformArmed)
+        } else {
             WallpaperFitModePicker(selection: $draft.selectedFitMode, modes: Self.fitModes(for: draft.selectedWallpaperType)) { mode in
                 Self.writeFitMode(mode, type: draft.selectedWallpaperType, screen: screen, screenManager: screenManager)
             }
@@ -282,6 +395,93 @@ struct DisplayDetailHost: View {
     private func resetPlaybackSettings(for screen: Screen) {
         screenManager.resetPlaybackSettings(for: screen)
         reloadDraft(for: screen)
+    }
+
+    /// What the web address prompt starts from: the running URL, or nothing for any other source.
+    static func editableWebAddress(_ content: WallpaperContent?) -> String {
+        guard case let .html(.url(url), _)? = content else { return "" }
+        return url.absoluteString
+    }
+
+    /// The saved video or web page this display keeps but is not showing, which the old page's type
+    /// picker switched back to.
+    static func switchBackTypes(_ configuration: ScreenConfiguration?) -> [WallpaperType] {
+        guard let configuration else { return [] }
+        var types: [WallpaperType] = []
+        if configuration.savedVideoBookmarkData != nil, configuration.wallpaperType != .video {
+            types.append(.video)
+        }
+        if configuration.savedHTMLSource != nil, configuration.wallpaperType != .html {
+            types.append(.html)
+        }
+        return types
+    }
+
+    // MARK: Failure inspection
+
+    private func previewState(for screen: Screen) -> DetailPreviewState {
+        .resolve(
+            hasConfiguration: screenManager.getConfiguration(for: screen) != nil,
+            attempt: screenManager.wallpaperLoads.attempt(for: screen),
+            hasRuntimeError: screenManager.runtimeError(for: screen) != nil,
+            applying: applying.contains(screen.id)
+        )
+    }
+
+    @ViewBuilder
+    private func wallpaperStatus(for screen: Screen, preview: DetailPreviewState) -> some View {
+        switch preview {
+        case .preparing, .prepareFailed:
+            if let attempt = screenManager.inspectedWallpaperAttempt(for: screen) {
+                WallpaperAttemptPreview(
+                    screen: screen, attempt: attempt, onCancel: { cancelApply(screen.id) }, apply: { apply($0, screen.id) },
+                    clearWallpaper: { clearWallpaper(screen) }
+                )
+            } else if applying.contains(screen.id) {
+                WallpaperPreparingView(title: screen.name) { cancelApply(screen.id) }
+            }
+        case .lastAttemptFailed:
+            if let failure = screenManager.wallpaperLoads.attempt(for: screen)?.failure {
+                LastApplyFailureBanner(failure: failure) { screenManager.inspectWallpaperAttempt(true, for: screen) }
+            }
+        case .runtimeError, .empty, .hero:
+            EmptyView()
+        }
+        if preview.showsRuntimeError, let error = screenManager.runtimeError(for: screen) {
+            let type = screen.runtimeSession?.wallpaperType ?? draft.selectedWallpaperType
+            RuntimeErrorBanner(
+                error: error, canRePick: type == .video || type == .html,
+                onRetry: { screenManager.retryRuntimeSession(for: screen) },
+                onRePick: { chooseFile(screen) }
+            )
+        }
+        #if !LITE_BUILD
+        if !preview.showsAttempt,
+           let scene = DetailSceneStatus(screen: screen, configuration: screenManager.getConfiguration(for: screen)) {
+            SceneRenderFailureBanner(state: scene.state, origin: scene.origin, surface: .content) {
+                screenManager.retryRuntimeSession(for: screen)
+            }
+            .padding(.horizontal, DesignTokens.Spacing.md)
+            .padding(.top, DesignTokens.Spacing.sm)
+            EngineAssetsBanner(margins: EdgeInsets(
+                top: DesignTokens.Spacing.sm, leading: DesignTokens.Spacing.md,
+                bottom: 0, trailing: DesignTokens.Spacing.md
+            ))
+        }
+        #endif
+    }
+
+    /// A failure route names the attempt it came from, so a stale ID from an older failure opens nothing.
+    static func openFailure(_ failureID: UUID, on screen: Screen, manager: ScreenManager) -> Bool {
+        guard manager.wallpaperLoads.attempt(for: screen)?.id == failureID else { return false }
+        manager.inspectWallpaperAttempt(true, for: screen)
+        return true
+    }
+
+    /// Only a failed attempt steps back; one still preparing keeps its page and its Cancel.
+    static func closeFailure(on screen: Screen, manager: ScreenManager) {
+        guard manager.wallpaperLoads.attempt(for: screen)?.phase == .failed else { return }
+        manager.inspectWallpaperAttempt(false, for: screen)
     }
 
     // MARK: Inspector
@@ -320,9 +520,64 @@ struct DisplayDetailHost: View {
     }
 
     private func requestResetDisplaySettings(for screen: Screen) {
-        pendingDestructive = PendingDestructive(.resetDisplaySettings(displayName: screen.name)) {
-            screenManager.resetDisplaySettings(for: screen)
+        pendingDestructive = PendingDestructive(
+            .resetDisplaySettings(displayName: screen.name, sceneCapable: featureCatalog.isEnabled(.scene))
+        ) {
+            Self.resetDisplaySettings(for: screen, manager: screenManager, undo: undo, toasts: toasts)
         }
+    }
+
+    /// Recorded as one step, so undo puts back the whole configuration the reset replaced.
+    static func resetDisplaySettings(
+        for screen: Screen, manager: ScreenManager, undo: EditDeskUndoStack?, toasts: EditDeskToastCenter
+    ) {
+        let recording = undo?.begin(.resetDisplaySettings, displays: [screen])
+        let content = manager.getConfiguration(for: screen)?.activeWallpaper
+        manager.resetDisplaySettings(for: screen)
+        recording?.announce(
+            String(
+                localized: "Reset the settings of \(screen.name)", bundle: .appLanguage,
+                comment: "Toast after a display's settings went back to the defaults in the Edit Desk; it offers Undo. Placeholder is a display name."
+            ),
+            showing: content, to: toasts
+        )
+    }
+
+    private func requestClearWallpaper(for screen: Screen) {
+        pendingDestructive = PendingDestructive(.clearCurrentWallpaper(displayName: screen.name)) {
+            clearWallpaper(screen)
+            // Clearing only bumps the session version; the draft would keep the old wallpaper's panel.
+            reloadDraft(for: screen)
+        }
+    }
+
+    /// Through the apply path, which records the overlay a scheme replaces, so undo puts both back.
+    private func requestApplyScheme(_ scheme: ScreenScheme, to screen: Screen) {
+        pendingDestructive = PendingDestructive(.applyScheme(schemeName: scheme.name, displayName: screen.name)) {
+            apply(.scheme(scheme), screen.id)
+        }
+    }
+
+    private func requestApplyToAll(from screen: Screen) {
+        pendingDestructive = PendingDestructive(.applyConfigurationToAllDisplays(otherCount: screenManager.screens.count - 1)) {
+            applyToAllDisplays(screen)
+        }
+    }
+
+    private func switchToSaved(_ type: WallpaperType, on screen: Screen) {
+        var switched = screenManager.getConfiguration(for: screen)
+        let recording = undo?.begin(.applyWallpaper, displays: [screen])
+        if type == .video {
+            switched?.activateSavedVideoWallpaper()
+            screenManager.switchToVideoWallpaper(for: screen)
+        } else {
+            switched?.activateSavedHTMLWallpaper()
+            screenManager.switchToHTMLWallpaper(for: screen)
+        }
+        recording?.announce(
+            ApplyOutcome.appliedText(on: screen.name, wallpapersOn: screenManager.wallpapersGloballyEnabled),
+            showing: switched?.activeWallpaper, to: toasts
+        )
     }
 
     // MARK: Content
@@ -343,7 +598,8 @@ struct DisplayDetailHost: View {
         return DetailHeroStatus(
             title: item?.title ?? screen.name,
             kindLine: Self.kindLine(configuration?.activeWallpaper),
-            isPlaying: screen.playbackController?.isPlaying ?? false,
+            intendsToPlay: screen.playbackController?.userIntendsToPlay,
+            pauseReason: SuspendReasonText.localized(for: screenManager.suspendReasonsByScreen[screen.id] ?? []),
             performanceLine: nil,
             canNavigatePlaylist: featureCatalog.isEnabled(.playlists) && configuration?.canNavigatePlaylist == true
         )
@@ -362,22 +618,17 @@ struct DisplayDetailHost: View {
     // MARK: Actions
 
     private func actions(for screen: Screen) -> DetailActions {
-        DetailActions(
+        let switchBack = Self.switchBackTypes(screenManager.getConfiguration(for: screen))
+        return DetailActions(
             back: router.closeDetail,
             selectDisplay: { router.showDetail($0) },
             saveAsScheme: { showSchemeCapture = true },
-            applyToAll: { pendingAction = .applyToAll },
-            clearWallpaper: { pendingAction = .clearWallpaper },
+            applyToAll: { requestApplyToAll(from: screen) },
+            clearWallpaper: { requestClearWallpaper(for: screen) },
             playback: { action in
                 switch action {
                 case .toggle:
-                    guard let controller = screen.playbackController else { return }
-                    if controller.isPlaying {
-                        controller.pause()
-                    } else {
-                        controller.play()
-                    }
-                    screenManager.markWallpaperSessionStateChanged()
+                    togglePlayback(on: screen)
                 case .next:
                     screenManager.advancePlaylist(for: screen)
                 case .previous:
@@ -392,8 +643,71 @@ struct DisplayDetailHost: View {
                 pendingAction = .copyOverlays
             },
             snapEnabled: Binding(get: { overlaySession?.snapEnabled ?? true }, set: { overlaySession?.snapEnabled = $0 }),
-            openAutomation: featureCatalog.isEnabled(.playlists) ? { showAutomation = true } : nil
+            openAutomation: featureCatalog.isEnabled(.playlists) ? { showAutomation = true } : nil,
+            resumeSchedule: { screenManager.resumeSchedule(for: screen) },
+            applyScheme: { requestApplyScheme($0, to: screen) },
+            manageSchemes: {
+                libraryHandoff = .schemes
+                router.closeDetail()
+            },
+            chooseFromLibrary: library?.items.isEmpty == false ? {
+                libraryHandoff = .wallpapers(for: screen.id)
+                router.closeDetail()
+            } : nil,
+            importFile: { chooseFile(screen) },
+            enterWebAddress: { pasteURL(screen.id) },
+            switchBackToVideo: switchBack.contains(.video) ? { switchToSaved(.video, on: screen) } : nil,
+            switchBackToWebPage: switchBack.contains(.html) ? { switchToSaved(.html, on: screen) } : nil,
+            applyWebSource: { apply(.html($0), screen.id) }
         )
+    }
+
+    private func togglePlayback(on screen: Screen) {
+        guard let controller = screen.playbackController else { return }
+        Self.togglePlayback(controller)
+        screenManager.markWallpaperSessionStateChanged()
+    }
+
+    /// Flips what the user asked for, which the button shows: under a policy pause the intent to play
+    /// stays set while nothing plays, and the button reads Pause, so it must pause rather than play.
+    static func togglePlayback(_ playback: any WallpaperPlaybackControllable) {
+        if playback.userIntendsToPlay {
+            playback.pause()
+        } else {
+            playback.play()
+        }
+    }
+
+    /// ⌘n picks the n-th display in the top bar's order.
+    private func shortcuts(for screen: Screen) -> some View {
+        ZStack {
+            Button { pressSpace(on: screen) } label: { EmptyView() }
+                .keyboardShortcut(.space, modifiers: [])
+            ForEach(Array(stage.displays.prefix(9).enumerated()), id: \.element.id) { index, display in
+                Button {
+                    // A sheet holds the key window; switching under it would hand it another display.
+                    guard NSApp.keyWindow === NSApp.mainWindow else { return }
+                    router.showDetail(display.id)
+                } label: { EmptyView() }
+                    .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: .command)
+            }
+        }
+        .opacity(0)
+        .frame(width: 0, height: 0)
+        .accessibilityHidden(true)
+    }
+
+    /// A key equivalent can be offered the key before the focused field, which then gets its Space back;
+    /// while a sheet holds the key window the desktop does not toggle either.
+    private func pressSpace(on screen: Screen) {
+        guard let key = NSApp.keyWindow else { return }
+        if let field = key.firstResponder as? NSText {
+            if let event = NSApp.currentEvent, event.type == .keyDown {
+                field.keyDown(with: event)
+            }
+        } else if key === NSApp.mainWindow {
+            togglePlayback(on: screen)
+        }
     }
 
     private var pendingBinding: Binding<Bool> {
@@ -409,8 +723,6 @@ struct DisplayDetailHost: View {
 
     private var pendingTitle: Text {
         switch pendingAction {
-        case .clearWallpaper: Text("Clear this display's wallpaper?")
-        case .applyToAll: Text("Apply this display's wallpaper to all displays?")
         case .copyOverlays: Text("Copy overlays to other displays?")
         case nil: Text(verbatim: "")
         }
@@ -418,26 +730,18 @@ struct DisplayDetailHost: View {
 
     private func pendingConfirmTitle(_ action: PendingAction) -> LocalizedStringKey {
         switch action {
-        case .clearWallpaper: "Clear Wallpaper"
-        case .applyToAll: "Apply to All Displays"
         case .copyOverlays: "Copy to Other Displays"
         }
     }
 
     private func pendingMessage(_ action: PendingAction) -> LocalizedStringKey {
         switch action {
-        case .clearWallpaper: "The desktop goes back to the system wallpaper; saved wallpapers are kept."
-        case .applyToAll: "Every other connected display gets this wallpaper and its settings."
         case .copyOverlays: "This replaces overlays on every other connected display. Effects are skipped on displays without a wallpaper."
         }
     }
 
     private func perform(_ action: PendingAction, on screen: Screen) {
         switch action {
-        case .clearWallpaper:
-            screenManager.clearWallpaperForScreen(screen)
-        case .applyToAll:
-            screenManager.applyConfigurationToAllDisplays(from: screen)
         case .copyOverlays:
             guard let result = overlaySession?.copyToOtherDisplays() else { return }
             toasts.post(
@@ -446,7 +750,6 @@ struct DisplayDetailHost: View {
                 style: result.copied == result.total ? .success : .info
             )
         }
-        // Clearing only bumps the session version; the draft would keep the old wallpaper's panel.
         reloadDraft(for: screen)
     }
 }

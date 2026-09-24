@@ -26,12 +26,10 @@ struct OnboardingProgressTests {
         if let legacy {
             stores.legacy.set(legacy, forKey: OnboardingProgress.legacyKey)
         }
-        #expect(stores.isHandled() == (legacy == true))
         #expect(stores.defaults.object(forKey: OnboardingProgress.storageKey) == nil)
         let progress = stores.progress()
         #expect(progress.completed == (legacy == true ? Set(OnboardingProgress.Page.allCases) : []))
         #expect(progress.isFinished == (legacy == true))
-        #expect(stores.isHandled() == progress.isFinished)
         let snapshot = try #require(stores.defaults.dictionary(forKey: OnboardingProgress.storageKey))
         #expect(Set(snapshot.keys) == ["completed", "dismissed", "migratedFromLegacy"])
         #expect(snapshot["migratedFromLegacy"] as? Bool == true)
@@ -43,10 +41,8 @@ struct OnboardingProgressTests {
         let stores = try Stores()
         defer { stores.remove() }
         stores.legacy.set(true, forKey: OnboardingProgress.legacyKey)
-        #expect(stores.isHandled())
         let progress = stores.progress()
         progress.reset()
-        #expect(!stores.isHandled())
         let reloaded = stores.progress()
         #expect(reloaded.completed.isEmpty && reloaded.dismissed.isEmpty)
         #expect(reloaded.currentPage == .home)
@@ -60,7 +56,6 @@ struct OnboardingProgressTests {
         defer { stores.remove() }
         _ = stores.progress()
         stores.legacy.set(true, forKey: OnboardingProgress.legacyKey)
-        #expect(!stores.isHandled())
         #expect(stores.progress().completed.isEmpty)
     }
 
@@ -82,16 +77,28 @@ struct OnboardingProgressTests {
         }
         #expect(progress.isFinished)
         #expect(progress.currentPage == nil)
-        #expect(stores.isHandled(workshopAvailable: workshopAvailable))
         let reloaded = stores.progress(workshopAvailable: workshopAvailable)
         #expect(reloaded.completed == progress.completed)
         #expect(reloaded.dismissed == progress.dismissed)
         progress.reset()
         #expect(progress.handled.isEmpty)
-        #expect(!stores.isHandled(workshopAvailable: workshopAvailable))
     }
 
-    @Test("Static startup check uses the visible pages in the saved record")
+    @Test("Skipping the rest dismisses what is left and keeps what was completed", arguments: [false, true])
+    func skippingTheRestFinishesTheTour(workshopAvailable: Bool) throws {
+        let stores = try Stores()
+        defer { stores.remove() }
+        let progress = stores.progress(workshopAvailable: workshopAvailable)
+        progress.record(.home)
+        progress.dismissRemaining()
+        #expect(progress.isFinished)
+        #expect(progress.completed == [.home])
+        let reloaded = stores.progress(workshopAvailable: workshopAvailable)
+        #expect(reloaded.completed == progress.completed)
+        #expect(reloaded.dismissed == progress.dismissed)
+    }
+
+    @Test("Lite and Pro read the same saved record against their own visible pages")
     func liteAndProAgreement() throws {
         let stores = try Stores()
         defer { stores.remove() }
@@ -99,8 +106,8 @@ struct OnboardingProgressTests {
         for page in progress.visiblePages {
             progress.record(page)
         }
-        #expect(stores.isHandled(workshopAvailable: false))
-        #expect(!stores.isHandled(workshopAvailable: true))
+        #expect(progress.isFinished)
+        #expect(!stores.progress(workshopAvailable: true).isFinished)
         #expect(stores.progress(workshopAvailable: true).currentPage == .workshop)
     }
 
@@ -118,10 +125,6 @@ struct OnboardingProgressTests {
 
         func progress(workshopAvailable: Bool = true) -> OnboardingProgress {
             OnboardingProgress(defaults: defaults, legacyDefaults: legacy, workshopAvailable: workshopAvailable)
-        }
-
-        func isHandled(workshopAvailable: Bool = true) -> Bool {
-            OnboardingProgress.isHandled(defaults: defaults, legacyDefaults: legacy, workshopAvailable: workshopAvailable)
         }
 
         func remove() {

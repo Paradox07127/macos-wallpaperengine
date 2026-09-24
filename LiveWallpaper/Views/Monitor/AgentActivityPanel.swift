@@ -141,7 +141,7 @@ struct AgentActivityPanel: View {
             IllustratedEmptyState(
                 symbol: "waveform.path",
                 title: "No matching sessions",
-                message: unauthorized ? "Authorize the agent folders in Widgets settings." : nil
+                message: unauthorized ? "Authorize the Claude or Codex folder in Loomscreen: Overlays › Widgets › AI Session History Access." : nil
             )
         }
     }

@@ -29,6 +29,12 @@ struct WallpaperModalContent: Equatable {
     var importedAt: Date?
     var workshopID: UInt64?
     var dependencyIDs: [String] = []
+    /// False for a type this Mac cannot run: every apply control is disabled.
+    var canApply = true
+    /// Why the item may not play here, already localized; nil when nothing is known to be wrong.
+    var notice: String?
+    /// A Workshop project this Mac can't run; the right column explains why. nil for everything else.
+    var unsupportedOrigin: WPEOrigin?
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.itemID == rhs.itemID
@@ -45,6 +51,9 @@ struct WallpaperModalContent: Equatable {
             && lhs.importedAt == rhs.importedAt
             && lhs.workshopID == rhs.workshopID
             && lhs.dependencyIDs == rhs.dependencyIDs
+            && lhs.canApply == rhs.canApply
+            && lhs.notice == rhs.notice
+            && lhs.unsupportedOrigin == rhs.unsupportedOrigin
     }
 }
 
@@ -81,6 +90,8 @@ struct ModalDisplayTarget: Identifiable, Equatable {
     /// Stable first display; applying content must not move another target under the pointer.
     var isPrimary: Bool
     var isApplied = false
+    /// An apply to this display is still preparing.
+    var isPreparing = false
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.id == rhs.id
@@ -90,6 +101,7 @@ struct ModalDisplayTarget: Identifiable, Equatable {
             && lhs.thumbnail === rhs.thumbnail
             && lhs.isPrimary == rhs.isPrimary
             && lhs.isApplied == rhs.isApplied
+            && lhs.isPreparing == rhs.isPreparing
     }
 }
 
@@ -97,11 +109,8 @@ struct ModalDisplayTarget: Identifiable, Equatable {
 struct WallpaperModalActions {
     var applyTo: @MainActor (CGDirectDisplayID) -> Void
     var applyToAllDisplays: @MainActor () -> Void
-    /// Space bar; nil when the item is not running anywhere.
-    var togglePlayback: (@MainActor () -> Void)?
     /// "＋" button menu.
     var addToPlaylist: (@MainActor (CGDirectDisplayID) -> Void)?
-    var schedule: (@MainActor () -> Void)?
     /// "…" menu — the same rows as the shelf card's context menu.
     var showInFinder: (@MainActor () -> Void)?
     var openInSteam: (@MainActor () -> Void)?
@@ -110,6 +119,72 @@ struct WallpaperModalActions {
     var checkForUpdate: (@MainActor () -> Void)?
     var cancelUpdate: (@MainActor () -> Void)?
     var deleteInstalled: (@MainActor () -> Void)?
+    /// Saved entries only; takes the new name.
+    var rename: (@MainActor (String) -> Void)?
+}
+
+extension WallpaperModalActions {
+    /// The "…" menu's rows, in order: the modal and the library's context menus all draw these.
+    /// `requestRename` and `requestDelete` open the presenter's own rename alert and delete confirmation.
+    func menuItems(
+        targets: [ModalDisplayTarget], canApply: Bool, isUpdating: Bool,
+        requestRename: @escaping @MainActor () -> Void, requestDelete: @escaping @MainActor () -> Void
+    ) -> [StageMenuItem] {
+        var items = [
+            StageMenuItem(
+                title: String(localized: "Apply to", bundle: .appLanguage), isEnabled: canApply,
+                submenu: targets.map { target in
+                    StageMenuItem(title: target.name, isEnabled: true) { applyTo(target.id) }
+                }
+            ) {},
+            StageMenuItem(
+                title: String(localized: "All Displays", bundle: .appLanguage), isEnabled: canApply,
+                action: applyToAllDisplays
+            ),
+        ]
+        if let showInFinder {
+            items.append(StageMenuItem(
+                title: String(localized: "Show in Finder", bundle: .appLanguage), isEnabled: true, action: showInFinder
+            ))
+        }
+        if let openInSteam {
+            items.append(StageMenuItem(
+                title: String(localized: "Open in Steam", bundle: .appLanguage), isEnabled: true, action: openInSteam
+            ))
+        }
+        if rename != nil {
+            items.append(StageMenuItem(
+                title: String(
+                    localized: "Rename", bundle: .appLanguage,
+                    comment: "Context menu item that opens a rename alert, for a display on the Edit Desk stage or for a wallpaper."
+                ),
+                isEnabled: true, action: requestRename
+            ))
+        }
+        if let removeFromSaved {
+            items.append(StageMenuItem(
+                title: String(localized: "Remove from Wallpaper Library", bundle: .appLanguage), isEnabled: true,
+                isDestructive: true, action: removeFromSaved
+            ))
+        }
+        if isUpdating, let cancelUpdate {
+            items.append(StageMenuItem(
+                title: String(localized: "Cancel update", bundle: .appLanguage), isEnabled: true, action: cancelUpdate
+            ))
+        } else if let checkForUpdate {
+            items.append(StageMenuItem(
+                title: String(localized: "Check for updates", bundle: .appLanguage), isEnabled: true,
+                action: checkForUpdate
+            ))
+        }
+        if deleteInstalled != nil {
+            items.append(StageMenuItem(
+                title: String(localized: "Delete", bundle: .appLanguage), isEnabled: true, isDestructive: true,
+                action: requestDelete
+            ))
+        }
+        return items
+    }
 }
 
 /// ← / → over the adjacent library items; the host owns the order.
@@ -126,6 +201,12 @@ enum ModalDragPhase: Equatable {
     case moved(CGPoint)
     case ended(CGPoint)
     case cancelled
+}
+
+/// What a modal drag is over when it is released.
+enum ModalDropTarget: Equatable {
+    case display(CGDirectDisplayID)
+    case allDisplays
 }
 
 /// Where a float-layer thumbnail sits, in `EditDeskCoordinateSpace.name`, reported through

@@ -11,6 +11,7 @@ struct WorkshopConnectionSetup: View {
     @State private var showingSignIn = false
     @State private var showingRemoveSessionConfirm = false
     @State private var showingSubscriptionSync = false
+    @State private var pendingDestructive: PendingDestructive?
 
     var body: some View {
         Section {
@@ -97,7 +98,7 @@ struct WorkshopConnectionSetup: View {
                 Task { await controller.authorizeSteamLibrary(startingAtScannedPath: true) }
             }
         }
-        return WorkshopSetupRoute(id: "library.choose", title: "Choose folder…") {
+        return WorkshopSetupRoute(id: "library.choose", title: "Choose folder") {
             Task { await controller.authorizeSteamLibrary(startingAtScannedPath: false) }
         }
     }
@@ -105,7 +106,7 @@ struct WorkshopConnectionSetup: View {
     private var librarySecondaryRoutes: [WorkshopSetupRoute] {
         guard !service.isLibraryReady, controller.hasScannedLibrary else { return [] }
         return [
-            WorkshopSetupRoute(id: "library.other", title: "Choose another folder…") {
+            WorkshopSetupRoute(id: "library.other", title: "Choose another folder") {
                 Task { await controller.authorizeSteamLibrary(startingAtScannedPath: false) }
             }
         ]
@@ -130,6 +131,7 @@ struct WorkshopConnectionSetup: View {
                 emphasizesPrimary: !service.isBinaryPresumedReady
             )
         }
+        .confirmDestructive($pendingDestructive)
     }
 
     private var binaryPrimaryRoute: WorkshopSetupRoute {
@@ -174,7 +176,9 @@ struct WorkshopConnectionSetup: View {
                 title: "Remove the copy Loomscreen installed",
                 role: .destructive
             ) {
-                controller.removeManagedInstall()
+                pendingDestructive = PendingDestructive(.removeManagedSteamCMD) {
+                    controller.removeManagedInstall()
+                }
             })
         }
         return routes

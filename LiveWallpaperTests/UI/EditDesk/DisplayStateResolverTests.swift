@@ -82,6 +82,105 @@ struct DisplayStateResolverTests {
         await harness.waitUntil { harness.state == .ok }
     }
 
+    @Test("Under a policy pause the stage's middle button offers Pause, and pressing it pauses")
+    func policyPausedButtonPauses() async throws {
+        let harness = Harness(configured: true)
+        defer { harness.close() }
+        await harness.waitUntil { harness.state == .ok }
+        let stage = try #require(harness.stageView?.model)
+        harness.session.applyPerformanceProfile(.suspended)
+        harness.manager.suspendReasonsByScreen[harness.screen.id] = [.battery]
+        let policy = try StageDisplay.State.paused(reasonText: #require(SuspendReasonText.localized(for: [.battery])))
+        await harness.waitUntil { harness.state == policy }
+        #expect(harness.display?.playbackGlyph == "pause.fill", "policy stopped the picture; the user still wants it playing")
+        stage.emit(.playbackTapped(harness.screen.id, .toggle))
+        await harness.waitUntil { !harness.session.userIntendsToPlay }
+        await harness.waitUntil { harness.display?.playbackGlyph == "play.fill" }
+        harness.session.applyPerformanceProfile(.quality)
+        harness.manager.suspendReasonsByScreen.removeValue(forKey: harness.screen.id)
+    }
+
+    @Test("Turning wallpapers off marks a configured display off; an emptied one shows as empty")
+    func wallpapersTurnedOff() async {
+        let harness = Harness(configured: true)
+        let defaults = UserDefaults.appScoped()
+        let key = ScreenManager.globallyEnabledDefaultsKey
+        let saved = defaults.object(forKey: key)
+        defer {
+            // Not through the setter: switching back on would build a real session for the fixture.
+            harness.manager.wallpapersGloballyEnabled = true
+            if let saved {
+                defaults.set(saved, forKey: key)
+            } else {
+                defaults.removeObject(forKey: key)
+            }
+            harness.close()
+        }
+        await harness.waitUntil { harness.state == .ok }
+        harness.manager.setWallpapersEnabled(false)
+        await harness.waitUntil { harness.state == .off(text: String(localized: "Turned Off", bundle: .appLanguage)) }
+        // Control: a display with no wallpaper has nothing to turn off.
+        harness.manager.clearWallpaperForScreen(harness.screen)
+        await harness.waitUntil { harness.state == .empty }
+    }
+
+    @Test("A Finder drop of an unsupported file toasts and shakes that display", .timeLimit(.minutes(1)))
+    func unsupportedFinderDrop() async throws {
+        let harness = Harness(configured: true)
+        defer { harness.close() }
+        await harness.waitUntil { harness.state == .ok }
+        let view = try #require(harness.stageView)
+        view.model.emit(.filesDropped([URL(fileURLWithPath: "/private/tmp/loomscreen-drop/notes.txt")], onto: harness.screen.id))
+        await harness.waitUntil { harness.toasts.toasts.map(\.text) == [DropFailure.unrecognizedDrop.toastText] }
+        #expect(view.debugShakenDisplays == [harness.screen.id])
+    }
+
+    @Test("The display menu offers rename always, and clear and apply-to-all only when they can act")
+    func displayMenuRows() async throws {
+        let harness = Harness(configured: true)
+        defer {
+            harness.manager.setCustomName(nil, for: harness.screen)
+            harness.close()
+        }
+        await harness.waitUntil { harness.state == .ok }
+        let stage = try #require(harness.stageView?.model)
+        let rename = String(localized: "Rename", bundle: .appLanguage)
+        let systemName = String(localized: "Use System Name", bundle: .appLanguage)
+        let applyAll = String(localized: "Apply to All Displays", bundle: .appLanguage)
+        let clear = String(localized: "Clear Wallpaper", bundle: .appLanguage)
+        func rows() -> [[String]] {
+            (stage.displayMenu?(harness.screen.id) ?? []).map { $0.map { "\($0.title)=\($0.isEnabled)" } }
+        }
+        // One display: there is no other display to apply to.
+        #expect(rows() == [["\(rename)=true"], ["\(applyAll)=false", "\(clear)=true"]])
+        harness.manager.setCustomName("Desk", for: harness.screen)
+        #expect(rows() == [["\(rename)=true", "\(systemName)=true"], ["\(applyAll)=false", "\(clear)=true"]])
+        harness.manager.clearWallpaperForScreen(harness.screen)
+        await harness.waitUntil { harness.state == .empty }
+        #expect(rows() == [["\(rename)=true", "\(systemName)=true"], ["\(applyAll)=false", "\(clear)=false"]])
+    }
+
+    @Test("A display rename or rearrangement re-labels the shelf's ON badge at once")
+    func onBadgeFollowsTheDisplayName() async throws {
+        let harness = Harness(configured: true)
+        let store = BookmarkStore.shared
+        let saved = store.add(label: "Badge fixture", content: .html(source: .inline("Test"), config: .default))
+        defer {
+            store.remove(saved.id)
+            harness.manager.setCustomName(nil, for: harness.screen)
+            harness.close()
+        }
+        await harness.waitUntil { harness.state == .ok }
+        let stage = try #require(harness.stageView?.model)
+        func badge() -> String? {
+            stage.shelfItems.first { $0.id == "bookmark:\(saved.id)" }?.onBadge
+        }
+        await harness.waitUntil { badge() == "ON \(harness.screen.systemName)" }
+        harness.manager.setCustomName("Desk", for: harness.screen)
+        NotificationCenter.default.post(name: .screensRefreshed, object: nil)
+        await harness.waitUntil { badge() == "ON Desk" }
+    }
+
     private static func failed(_ cause: WallpaperFailureCause) -> StageDisplay.State {
         let classification = cause.failureClass
         return .failed(StageFailureChip(
@@ -95,6 +194,7 @@ struct DisplayStateResolverTests {
         let manager: ScreenManager
         let session: AmbientWallpaperSession
         let target = RetryTarget()
+        let toasts = EditDeskToastCenter()
         let window: NSWindow
         let host: NSHostingView<AnyView>
 
@@ -115,7 +215,7 @@ struct DisplayStateResolverTests {
                 manager.markWallpaperSessionStateChanged()
             }
             let router = EditDeskRouter(initialNavigation: nil, initialAddWallpaperRequest: nil, isWorkshopAvailable: { false })
-            host = NSHostingView(rootView: AnyView(HomePage(router: router, toasts: EditDeskToastCenter()).environment(manager)))
+            host = NSHostingView(rootView: AnyView(HomePage(router: router, toasts: toasts).environment(manager)))
             host.sizingOptions = []
             window = NSWindow(
                 contentRect: CGRect(origin: .zero, size: StageGeometry.designWindow),
@@ -136,8 +236,12 @@ struct DisplayStateResolverTests {
             return find(host)
         }
 
+        var display: StageDisplay? {
+            stageView?.model.displays.first(where: { $0.id == screen.id })
+        }
+
         var state: StageDisplay.State? {
-            stageView?.model.displays.first(where: { $0.id == screen.id })?.state
+            display?.state
         }
 
         func waitUntil(_ condition: () -> Bool) async {

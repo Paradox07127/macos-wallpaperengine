@@ -87,7 +87,7 @@ struct SystemWallpaperAddSheet: View {
             SystemWallpaperVideoImport.present(publishingInto: service)
             dismiss()
         } label: {
-            Label("Choose Files…", systemImage: "folder.badge.plus")
+            Label("Choose Files", systemImage: "folder.badge.plus")
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
         }

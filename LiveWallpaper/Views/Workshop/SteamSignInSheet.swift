@@ -14,6 +14,8 @@ struct SteamSignInSheet: View {
     @State private var phase: Phase = .form
     @State private var errorText: String?
     @State private var task: Task<Void, Never>?
+    /// Which code Steam last asked for; only picks the code field's placeholder.
+    @State private var codeFromEmail = true
 
     private enum Phase: Equatable {
         case form
@@ -125,14 +127,16 @@ struct SteamSignInSheet: View {
             onSignedIn(accountName)
             dismiss()
         case .guardCodeEmailRequired:
+            codeFromEmail = true
             phase = .guardCode(email: true)
         case .guardCodeTotpRequired:
+            codeFromEmail = false
             phase = .guardCode(email: false)
         case .invalidPassword:
             phase = .form
             errorText = String(localized: "Steam rejected that account name or password.", bundle: .appLanguage, comment: "In-app Steam sign-in failure.")
         case .invalidGuardCode:
-            phase = .guardCode(email: true)
+            phase = .guardCode(email: codeFromEmail)
             errorText = String(localized: "That Steam Guard code wasn't accepted.", bundle: .appLanguage, comment: "In-app Steam sign-in failure.")
         case .rateLimited:
             phase = .form

@@ -10,6 +10,8 @@ struct BrowseCard: View, Equatable {
     nonisolated static func == (lhs: BrowseCard, rhs: BrowseCard) -> Bool {
         lhs.item == rhs.item
             && lhs.isInLibrary == rhs.isInLibrary
+            && lhs.hasUpdate == rhs.hasUpdate
+            && lhs.inUseBadge == rhs.inUseBadge
             && lhs.isSelected == rhs.isSelected
             && lhs.cardPreferences == rhs.cardPreferences
             && lhs.reduceMotion == rhs.reduceMotion
@@ -20,6 +22,10 @@ struct BrowseCard: View, Equatable {
 
     let item: WorkshopQueryItem
     var isInLibrary: Bool = false
+    /// Installed, and Steam's copy changed after it was imported.
+    var hasUpdate: Bool = false
+    /// `ON Studio` while the installed project runs on a display; nil otherwise.
+    var inUseBadge: String?
     var isSelected: Bool = false
     /// Read once per pane and handed down, not six `@AppStorage` per tile — see `GalleryCardPreferences`.
     /// Passed in, not read from the environment: `EquatableView` short-circuits `body`,
@@ -54,6 +60,18 @@ struct BrowseCard: View, Equatable {
 
     private var showsRatingPill: Bool {
         ratingValue != nil && cardPreferences.showsRating
+    }
+
+    private var showsInUseBadge: Bool {
+        presentation == .editDesk && inUseBadge != nil && cardPreferences.showsInUse && !shouldBlur
+    }
+
+    private var showsUpdateBadge: Bool {
+        presentation == .editDesk && hasUpdate && cardPreferences.showsUpdate && !shouldBlur
+    }
+
+    private var showsEditDeskInLibraryCheck: Bool {
+        presentation == .editDesk && isInLibrary && cardPreferences.showsInLibrary && !shouldBlur && !showsUpdateBadge
     }
 
     var body: some View {
@@ -161,9 +179,16 @@ struct BrowseCard: View, Equatable {
         // build the glass container, its `HStack` and the padding around an empty stack.
         .overlay(alignment: .topLeading) {
             if presentation == .editDesk {
-                if isHovered, !shouldBlur {
-                    ThumbnailBadge(verbatim: "GIF", systemImage: "play.fill")
-                        .padding(DesignTokens.Spacing.sm)
+                if !shouldBlur, isHovered || showsInUseBadge {
+                    HStack(spacing: DesignTokens.Spacing.xs) {
+                        if let inUseBadge, showsInUseBadge {
+                            ThumbnailBadge(verbatim: inUseBadge)
+                        }
+                        if isHovered {
+                            ThumbnailBadge(verbatim: "GIF", systemImage: "play.fill")
+                        }
+                    }
+                    .padding(DesignTokens.Spacing.sm)
                 }
             } else if !shouldBlur, showsTypePill || showsRatingPill {
                 AdaptiveGlassContainer(spacing: DesignTokens.Spacing.xs) {
@@ -181,7 +206,10 @@ struct BrowseCard: View, Equatable {
         }
         .overlay(alignment: .topTrailing) {
             if presentation == .editDesk {
-                if isInLibrary, !shouldBlur {
+                if showsUpdateBadge {
+                    ThumbnailBadge("Needs Update", systemImage: "arrow.down.circle", tint: DesignTokens.Colors.Status.warning, opacity: 0.9)
+                        .padding(DesignTokens.Spacing.sm)
+                } else if showsEditDeskInLibraryCheck {
                     ThumbnailPresenceCheck(
                         tint: DesignTokens.EditDesk.Colors.inLibraryBadgeFill,
                         appearance: .solid(glyph: DesignTokens.EditDesk.Colors.inLibraryBadgeGlyph)
@@ -267,18 +295,27 @@ struct BrowseCard: View, Equatable {
     }
 
     private var editDeskMetaLine: String? {
+        Self.editDeskMetaLine(
+            rating: ratingValue, resolution: resolutionLabel, subscribers: subscriberText, size: formattedSize,
+            preferences: cardPreferences
+        )
+    }
+
+    static func editDeskMetaLine(
+        rating: Double?, resolution: String?, subscribers: String?, size: String?, preferences: GalleryCardPreferences
+    ) -> String? {
         var parts: [String] = []
-        if let rating = ratingValue {
+        if let rating, preferences.showsRating {
             parts.append("★ " + rating.formatted(.number.precision(.fractionLength(1))))
         }
-        if let resolutionLabel {
-            parts.append(resolutionLabel)
+        if let resolution, preferences.showsResolution {
+            parts.append(resolution)
         }
-        if let subscribers = subscriberText {
+        if let subscribers {
             parts.append(subscribers)
         }
-        if let formattedSize {
-            parts.append(formattedSize)
+        if let size {
+            parts.append(size)
         }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
@@ -398,7 +435,7 @@ struct BrowseCard: View, Equatable {
         }
     }
 
-    private var accessibilityLabelText: String {
+    var accessibilityLabelText: String {
         var parts: [String] = [item.title]
         if let rating = ratingValue {
             parts.append(String(localized: "\(rating.formatted(.number.precision(.fractionLength(1)))) stars", bundle: .appLanguage, comment: "Workshop card VoiceOver rating. Placeholder is a number 0–5."))
@@ -415,8 +452,14 @@ struct BrowseCard: View, Equatable {
         if let size = formattedSize {
             parts.append(size)
         }
-        if isInLibrary {
+        if presentation == .editDesk ? showsEditDeskInLibraryCheck : isInLibrary {
             parts.append(String(localized: "In Library", bundle: .appLanguage, comment: "Workshop card VoiceOver: item is already downloaded to the local library."))
+        }
+        if showsInUseBadge {
+            parts.append(String(localized: "Currently in use", bundle: .appLanguage, comment: "A11y: this wallpaper is the active one."))
+        }
+        if showsUpdateBadge {
+            parts.append(String(localized: "Update available", bundle: .appLanguage, comment: "A11y: the installed item has a newer version on Steam."))
         }
         if let status = statusInfo {
             parts.append(status.text)

@@ -8,6 +8,7 @@ struct WorkshopAPIKeySection: View {
 
     @State private var model: SteamWebAPIKeyEntryModel
     @State private var isEditing = false
+    @State private var pendingDestructive: PendingDestructive?
 
     init(services: WorkshopServices) {
         self.services = services
@@ -31,6 +32,7 @@ struct WorkshopAPIKeySection: View {
             .onChange(of: services.hasWebAPIKey, initial: true) { _, hasKey in
                 isEditing = !hasKey
             }
+            .confirmDestructive($pendingDestructive)
 
             if isEditing {
                 editor
@@ -61,7 +63,9 @@ struct WorkshopAPIKeySection: View {
             HStack(spacing: DesignTokens.Spacing.xs) {
                 Button("Replace") { isEditing = true }
                 Button("Forget", role: .destructive) {
-                    Task { await model.forget() }
+                    pendingDestructive = PendingDestructive(.forgetSteamWebAPIKey) {
+                        Task { await model.forget() }
+                    }
                 }
                 .tint(DesignTokens.Colors.Status.danger)
                 .help(Text(verbatim: WorkshopAPIKeyOwnershipInfo.forgetTooltip))

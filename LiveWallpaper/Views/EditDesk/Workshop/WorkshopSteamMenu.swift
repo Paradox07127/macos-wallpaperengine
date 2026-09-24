@@ -16,16 +16,24 @@ struct WorkshopSteamMenu: View {
     let onDownloadByLink: () -> Void
     let onEnterAPIKey: () -> Void
     let onInstallSteamCMD: () -> Void
-    /// S8 has no banner strip, so the old private-session notice rides here as a row; choosing it
-    /// is the old banner's Dismiss.
+    let onLocateSteamCMD: () -> Void
+    let onImportLocalFolder: () -> Void
+    let steamCMDReady: Bool
+    /// Installing, removing or locating SteamCMD: a locate that finishes mid-install reports it missing.
+    let steamCMDBusy: Bool
+    /// S8 has no banner strip, so the old private-session notice rides here as a section; its
+    /// Hide This Notice row is the old banner's Dismiss.
     var showsPrivateSessionNotice = false
     var onDismissPrivateSessionNotice: () -> Void = {}
 
     var body: some View {
         Menu {
             if showsPrivateSessionNotice {
-                Button("Steam downloads now sign in separately", action: onDismissPrivateSessionNotice)
-                Divider()
+                Section {
+                    Button("Hide This Notice", action: onDismissPrivateSessionNotice)
+                } header: {
+                    Text("Steam downloads now sign in separately")
+                }
             }
             // An empty list can only offer sign-in; "another account" would name nothing.
             if accounts.isEmpty {
@@ -43,9 +51,15 @@ struct WorkshopSteamMenu: View {
             Divider()
             Button("Sync subscribed wallpapers", action: onSyncSubscriptions)
             Button("Add from Workshop URL or ID", action: onDownloadByLink)
+            Button("Import a Local Folder", action: onImportLocalFolder)
             Button("Set Web API key", action: onEnterAPIKey)
-            Divider()
-            Button("Install SteamCMD", action: onInstallSteamCMD)
+            if !steamCMDReady {
+                Divider()
+                Button("Install SteamCMD", action: onInstallSteamCMD)
+                    .disabled(steamCMDBusy)
+                Button("Locate automatically", action: onLocateSteamCMD)
+                    .disabled(steamCMDBusy)
+            }
         } label: {
             capsuleLabel
         }

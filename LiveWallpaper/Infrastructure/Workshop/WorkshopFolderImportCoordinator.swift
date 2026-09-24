@@ -8,9 +8,22 @@ import Observation
 final class WorkshopFolderImportCoordinator {
     static let shared = WorkshopFolderImportCoordinator()
 
+    struct Progress: Equatable {
+        /// The batch's folder names, joined for display.
+        let title: String
+        /// Projects tried so far, imported or not.
+        var completed: Int
+        let total: Int
+    }
+
+    /// True until the last queued batch ends.
     private(set) var isImporting = false
+    /// The batch being imported, once its projects are counted; nil otherwise.
+    private(set) var progress: Progress?
     @ObservationIgnored var onLocalLibraryImported: (@MainActor (Int) -> Void)?
 
+    /// Requests made while a batch runs, each imported as its own batch in arrival order.
+    @ObservationIgnored private var pendingFolders: [[URL]] = []
     @ObservationIgnored private var isIngesting = false
     @ObservationIgnored private let importService: WallpaperEngineImportService
     @ObservationIgnored private let fileManager: FileManager
@@ -24,27 +37,52 @@ final class WorkshopFolderImportCoordinator {
     }
 
     func importProjects(from folder: URL) {
-        guard !isImporting else { return }
+        importProjects(from: [folder])
+    }
+
+    /// One pass for every folder: a request made while another import runs waits for it.
+    func importProjects(from folders: [URL]) {
+        guard !isImporting else {
+            pendingFolders.append(folders)
+            return
+        }
         isImporting = true
         Task { [weak self] in
-            await self?.importAll(from: folder)
+            await self?.importQueue(startingWith: folders)
         }
     }
 
-    private func importAll(from folder: URL) async {
-        defer { isImporting = false }
+    private func importQueue(startingWith folders: [URL]) async {
+        var next: [URL]? = folders
+        while let batch = next {
+            await importAll(from: batch)
+            next = pendingFolders.isEmpty ? nil : pendingFolders.removeFirst()
+        }
+        isImporting = false
+    }
 
-        let didStart = folder.startAccessingSecurityScopedResource()
+    private func importAll(from folders: [URL]) async {
+        let scoped = folders.filter { $0.startAccessingSecurityScopedResource() }
         defer {
-            if didStart {
+            for folder in scoped {
                 folder.stopAccessingSecurityScopedResource()
             }
         }
 
-        guard let projectFolders = discoverProjectFolders(in: folder) else {
+        let title = ListFormatter.localizedString(byJoining: folders.map(\.lastPathComponent))
+        var projectFolders: [URL] = []
+        var unreadableFolders = 0
+        for folder in folders {
+            if let found = discoverProjectFolders(in: folder) {
+                projectFolders += found
+            } else {
+                unreadableFolders += 1
+            }
+        }
+        if unreadableFolders == folders.count {
             WorkshopToastCenter.shared.post(
                 headline: String(localized: "Import failed", bundle: .appLanguage, comment: "Folder import failure toast headline."),
-                title: folder.lastPathComponent,
+                title: title,
                 message: String(localized: "That folder couldn't be read.", bundle: .appLanguage, comment: "Folder import failure: the chosen folder could not be enumerated."),
                 isSuccess: false
             )
@@ -53,7 +91,7 @@ final class WorkshopFolderImportCoordinator {
         guard !projectFolders.isEmpty else {
             WorkshopToastCenter.shared.post(
                 headline: String(localized: "Import failed", bundle: .appLanguage, comment: "Folder import failure toast headline."),
-                title: folder.lastPathComponent,
+                title: title,
                 message: String(localized: "No Wallpaper Engine projects were found in that folder.", bundle: .appLanguage, comment: "Folder import failure: the chosen folder had no project.json."),
                 isSuccess: false
             )
@@ -62,17 +100,20 @@ final class WorkshopFolderImportCoordinator {
 
         var imported = 0
         var rejected = 0
-        var unreadable = 0
+        var unreadable = unreadableFolders
         var wallpaperEntries = 0
+        progress = Progress(title: title, completed: 0, total: projectFolders.count)
         for projectFolder in projectFolders {
             switch await importOne(projectFolder, deliberate: true, onWallpaperImported: { wallpaperEntries += 1 }) {
             case .imported: imported += 1
             case .rejected: rejected += 1
             case .unreadable: unreadable += 1
             }
+            progress?.completed += 1
         }
 
-        emitSummary(folder: folder, imported: imported, rejected: rejected, unreadable: unreadable)
+        progress = nil
+        emitSummary(title: title, imported: imported, rejected: rejected, unreadable: unreadable)
         onLocalLibraryImported?(wallpaperEntries)
     }
 
@@ -193,7 +234,7 @@ final class WorkshopFolderImportCoordinator {
         }
     }
 
-    private func emitSummary(folder: URL, imported: Int, rejected: Int, unreadable: Int) {
+    private func emitSummary(title: String, imported: Int, rejected: Int, unreadable: Int) {
         guard imported > 0 else {
             // One word here would make a folder of damaged projects read as a folder of the wrong kind of file.
             let message = unreadable > 0 && rejected == 0
@@ -201,7 +242,7 @@ final class WorkshopFolderImportCoordinator {
                 : String(localized: "None of the projects in that folder could be imported.", bundle: .appLanguage, comment: "Folder import failure: every discovered project was rejected.")
             WorkshopToastCenter.shared.post(
                 headline: String(localized: "Import failed", bundle: .appLanguage, comment: "Folder import failure toast headline."),
-                title: folder.lastPathComponent,
+                title: title,
                 message: message,
                 isSuccess: false
             )
@@ -219,7 +260,7 @@ final class WorkshopFolderImportCoordinator {
         }
         WorkshopToastCenter.shared.post(
             headline: String(localized: "Linked", bundle: .appLanguage, comment: "Folder-link success toast headline."),
-            title: folder.lastPathComponent,
+            title: title,
             message: message,
             isSuccess: true
         )

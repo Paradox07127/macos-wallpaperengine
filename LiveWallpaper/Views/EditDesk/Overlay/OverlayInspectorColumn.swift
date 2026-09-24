@@ -22,6 +22,7 @@ struct OverlayInspectorColumn: View {
         GeometryReader { proxy in
             let rows = OverlayLayerList.rows(
                 placements: interaction.placements,
+                boardEnabled: session.boardEnabled,
                 clockEnabled: session.overlay.clock.enabled,
                 musicEnabled: session.overlay.music.enabled,
                 effectVisible: session.effectVisible

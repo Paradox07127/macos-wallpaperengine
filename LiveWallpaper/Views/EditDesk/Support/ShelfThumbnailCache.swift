@@ -10,6 +10,7 @@ import LiveWallpaperProWPE
 final class ShelfThumbnailCache {
     enum Request: Equatable, Sendable {
         case bookmark(WallpaperBookmark)
+        case aerial(AerialPreview)
         #if !LITE_BUILD
         case workshop(WPEHistoryEntry)
         #endif
@@ -17,10 +18,26 @@ final class ShelfThumbnailCache {
         fileprivate var identity: String {
             switch self {
             case let .bookmark(bookmark): "bookmark:\(bookmark.id)"
+            case let .aerial(preview): preview.key.previewKey
             #if !LITE_BUILD
             case let .workshop(entry): "workshop:\(entry.id)"
             #endif
             }
+        }
+    }
+
+    struct AerialPreview: Equatable, Sendable {
+        let key: AerialThumbnailCacheKey
+        let bookmarkData: Data
+
+        init(_ asset: AerialAsset) {
+            key = AerialThumbnailCacheKey(asset: asset)
+            bookmarkData = asset.bookmarkData
+        }
+
+        /// Not the bookmark bytes: every scan bookmarks the same file anew, which would miss the cache after each rescan.
+        static func == (lhs: Self, rhs: Self) -> Bool {
+            lhs.key == rhs.key
         }
     }
 
@@ -125,17 +142,15 @@ final class ShelfThumbnailCache {
         }
     }
 
-    private let cache: NSCache<Key, CGImage> = {
-        let cache = NSCache<Key, CGImage>()
-        cache.totalCostLimit = 32 * 1024 * 1024
-        return cache
-    }()
+    private let cache = NSCache<Key, CGImage>()
 
     private var inFlight: [Key: Task<CGImage?, Never>] = [:]
     private let sources: Sources
 
-    init(sources: Sources = Sources()) {
+    /// `costLimit` is in bytes of decoded pixels.
+    init(sources: Sources = Sources(), costLimit: Int = 32 * 1024 * 1024) {
         self.sources = sources
+        cache.totalCostLimit = costLimit
     }
 
     /// pixelSize is already in backing pixels; scale distinguishes display backing scales without multiplying it again.
@@ -197,6 +212,8 @@ final class ShelfThumbnailCache {
             }
             #endif
             return nil
+        case let .aerial(preview):
+            return await sources.video(preview.bookmarkData, nil, "shelf.\(preview.key.previewKey)")
         #if !LITE_BUILD
         case let .workshop(entry):
             return await sources.scene(entry.origin, pixelSize)

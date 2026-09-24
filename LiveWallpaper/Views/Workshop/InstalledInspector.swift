@@ -336,15 +336,13 @@ struct WPEInstalledInspectorContent: View {
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.regular)
-            .popover(isPresented: $showingApplyPopover, arrowEdge: .bottom) {
-                AppLanguageScope(defaults: .appScoped()) {
-                    WorkshopApplyTargetPicker(
-                        screens: screens,
-                        activeScreenIDs: activeScreenIDs,
-                        onPick: { actions.onApply($0); showingApplyPopover = false },
-                        onAll: { actions.onApplyToAll(); showingApplyPopover = false }
-                    )
-                }
+            .appLanguagePopover(isPresented: $showingApplyPopover, arrowEdge: .bottom) {
+                WorkshopApplyTargetPicker(
+                    screens: screens,
+                    activeScreenIDs: activeScreenIDs,
+                    onPick: { actions.onApply($0); showingApplyPopover = false },
+                    onAll: { actions.onApplyToAll(); showingApplyPopover = false }
+                )
             }
         }
     }

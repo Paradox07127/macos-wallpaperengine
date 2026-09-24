@@ -11,14 +11,12 @@ struct ModalActionsTests {
         var items: [LiveWallpaper.LibraryItem] = []
         var displays: [ModalActions.Display] = []
         var applied: [(ApplyIntent, CGDirectDisplayID)] = []
-        var toggled: [CGDirectDisplayID] = []
         let bookmarks = BookmarkStore(persistence: MemoryBookmarks())
 
         func inputs() -> ModalActions.Inputs {
             var inputs = ModalActions.Inputs()
             inputs.item = { id in self.items.first { $0.id == id } }
             inputs.displays = { self.displays }
-            inputs.togglePlayback = { self.toggled.append($0) }
             #if !LITE_BUILD
             inputs.localInfo = { _ in nil }
             #endif
@@ -89,6 +87,19 @@ struct ModalActionsTests {
         #expect(modal.targets(for: item).filter(\.isPrimary).map(\.id) == [1])
     }
 
+    @Test func preselectedDisplayTakesThePrimaryButton() {
+        let fixture = Fixture()
+        fixture.displays = displays()
+        let modal = fixture.modal()
+        let item = item(video())
+        let preselected = modal.targets(for: item, preferred: 3)
+        #expect(preselected.filter(\.isPrimary).map(\.id) == [3])
+        #expect(preselected.map(\.shortcutIndex) == [1, 2, 3])
+        #expect(ModalGeometry.applyButtons(targets: preselected).primary?.id == 3)
+        // A preselected display that is gone leaves the leftmost one primary.
+        #expect(modal.targets(for: item, preferred: 99).filter(\.isPrimary).map(\.id) == [1])
+    }
+
     @Test func videoMetadataOmitsMissingParts() async throws {
         let modal = Fixture().modal()
         var item = item(video())
@@ -129,8 +140,6 @@ struct ModalActionsTests {
         #expect(actions.checkForUpdate == nil)
         #expect(actions.cancelUpdate == nil)
         #expect(actions.openInSteam == nil)
-        #expect(actions.schedule == nil)
-        #expect(actions.togglePlayback == nil)
         var renamed = saved
         renamed.label = "Renamed"
         current.source = .bookmark(renamed)
@@ -152,29 +161,145 @@ struct ModalActionsTests {
         #expect(fixture.bookmarks.bookmarks.isEmpty)
     }
 
-    @Test func playbackAndApplyAllReadCurrentDisplays() {
+    private func undoStack(_ fixture: Fixture) -> EditDeskUndoStack {
+        let manager = UndoTestManager()
+        return EditDeskUndoStack(
+            manager: manager, router: ApplyRouter(manager: manager, bookmarks: fixture.bookmarks, sceneCapable: true),
+            bookmarks: fixture.bookmarks
+        )
+    }
+
+    @Test("Remove from Saved records one step at the index the entry had, which undo puts back", .timeLimit(.minutes(1)))
+    func removeFromSavedRecordsItsIndex() async throws {
         let fixture = Fixture()
-        var item = item(video())
-        item.onDisplays = [1]
+        let before = fixture.bookmarks.add(label: "Before", content: .video(bookmarkData: Data([1])))
+        let saved = fixture.bookmarks.add(label: "Saved", content: .video(bookmarkData: Data([2])))
+        let after = fixture.bookmarks.add(label: "After", content: .video(bookmarkData: Data([3])))
+        fixture.items = [item(saved)]
+        let undo = undoStack(fixture)
+        let modal = ModalActions(
+            inputs: fixture.inputs(), bookmarks: fixture.bookmarks, thumbnails: ShelfThumbnailCache(), undo: undo
+        ) { _, _ in }
+
+        modal.actions(for: item(saved)).removeFromSaved?()
+
+        #expect(fixture.bookmarks.bookmarks.map(\.id) == [before.id, after.id])
+        guard case let .bookmark(recorded, index)? = undo.undoSteps.last?.change else {
+            Issue.record("Remove from Saved recorded no step")
+            return
+        }
+        #expect(recorded == saved)
+        #expect(index == 1)
+        _ = try #require(await undo.undo())
+        #expect(fixture.bookmarks.bookmarks.map(\.id) == [before.id, saved.id, after.id])
+    }
+
+    @Test("A saved entry renames through the store as one undoable step; other items have no Rename", .timeLimit(.minutes(1)))
+    func savedEntryRenames() async throws {
+        let fixture = Fixture()
+        let saved = fixture.bookmarks.add(label: "Saved", content: .video(bookmarkData: Data([1])))
+        fixture.items = [item(saved)]
+        let undo = undoStack(fixture)
+        let modal = ModalActions(
+            inputs: fixture.inputs(), bookmarks: fixture.bookmarks, thumbnails: ShelfThumbnailCache(), undo: undo
+        ) { _, _ in }
+
+        let rename = try #require(modal.actions(for: item(saved)).rename)
+        rename("  Renamed  ")
+
+        #expect(fixture.bookmarks.bookmarks.map(\.label) == ["Renamed"])
+        #expect(undo.undoSteps.map(\.action) == [.renameWallpaper])
+        _ = try #require(await undo.undo())
+        #expect(fixture.bookmarks.bookmarks.map(\.label) == ["Saved"])
+        #if !LITE_BUILD
+        #expect(modal.actions(for: workshop("123")).rename == nil, "a Workshop item's name comes from Steam")
+        #endif
+    }
+
+    @Test("The … rows every menu draws follow the item, and apply rows grey out for an item this Mac can't run")
+    func menuRowsFollowTheItem() throws {
+        let fixture = Fixture()
+        fixture.displays = displays()
+        let saved = fixture.bookmarks.add(label: "Saved", content: .video(bookmarkData: Data([1])))
+        var current = item(saved)
+        fixture.items = [current]
+        let modal = fixture.modal()
+        var requested: [String] = []
+        let rows = modal.menuItems(
+            for: current, requestRename: { requested.append("rename") }, requestDelete: { requested.append("delete") }
+        )
+
+        #expect(rows.map(\.title) == [
+            String(localized: "Apply to", bundle: .appLanguage),
+            String(localized: "All Displays", bundle: .appLanguage),
+            String(localized: "Show in Finder", bundle: .appLanguage),
+            String(localized: "Rename", bundle: .appLanguage),
+            String(localized: "Remove from Wallpaper Library", bundle: .appLanguage),
+        ])
+        try #require(rows.count == 5)
+        #expect(rows.map(\.isEnabled) == [true, true, true, true, true])
+        #expect(rows.map(\.isDestructive) == [false, false, false, false, true])
+        #expect(rows[0].submenu.map(\.title) == ["Left", "Center", "Right"])
+        try #require(rows[0].submenu.count == 3)
+        rows[0].submenu[1].action()
+        #expect(fixture.applied.map(\.1) == [2])
+        rows[3].action()
+        #expect(requested == ["rename"])
+
+        current.isSupported = false
+        fixture.items = [current]
+        let blocked = modal.menuItems(for: current, requestRename: {}, requestDelete: {})
+        #expect(blocked.prefix(2).map(\.isEnabled) == [false, false], "an item this Mac can't run still offers to apply it")
+        #if !LITE_BUILD
+        let installed = modal.menuItems(
+            for: workshop("123"), requestRename: { requested.append("rename") }, requestDelete: { requested.append("delete") }
+        )
+        #expect(installed.map(\.title) == [
+            String(localized: "Apply to", bundle: .appLanguage),
+            String(localized: "All Displays", bundle: .appLanguage),
+            String(localized: "Show in Finder", bundle: .appLanguage),
+            String(localized: "Open in Steam", bundle: .appLanguage),
+            String(localized: "Check for updates", bundle: .appLanguage),
+            String(localized: "Delete", bundle: .appLanguage),
+        ])
+        installed.last?.action()
+        #expect(requested == ["rename", "delete"])
+        #endif
+    }
+
+    @Test func applyAllReadsCurrentDisplays() {
+        let fixture = Fixture()
+        let item = item(video())
         fixture.items = [item]
         fixture.displays = displays()
         let actions = fixture.modal().actions(for: item)
-        #expect(actions.togglePlayback != nil)
-        item.onDisplays = [2, 3]
-        fixture.items = [item]
-        actions.togglePlayback?()
-        #expect(fixture.toggled == [2, 3])
         fixture.displays.removeFirst()
         actions.applyToAllDisplays()
         #expect(fixture.applied.map(\.1) == [1, 2])
         fixture.items = []
-        actions.togglePlayback?()
         actions.applyToAllDisplays()
-        #expect(fixture.toggled == [2, 3])
         #expect(fixture.applied.count == 2)
     }
 
-    @Test func aerialIntentPreservesURLAndBookmarkData() throws {
+    @Test("All Displays goes to the group closure once, with every display, when one is given")
+    func applyAllGoesToTheGroupOnce() {
+        let fixture = Fixture()
+        let item = item(video())
+        fixture.items = [item]
+        fixture.displays = displays()
+        var groups: [[CGDirectDisplayID]] = []
+        let modal = ModalActions(
+            inputs: fixture.inputs(), bookmarks: fixture.bookmarks, thumbnails: ShelfThumbnailCache(),
+            apply: { fixture.applied.append(($0, $1)) },
+            applyToAll: { _, ids in groups.append(ids) }
+        )
+        modal.actions(for: item).applyToAllDisplays()
+        #expect(groups == [[3, 1, 2]])
+        #expect(fixture.applied.isEmpty, "each display was also applied on its own")
+    }
+
+    @Test("An aerial applies through its own file's bookmark and can show in Finder")
+    func aerialAppliesThroughItsBookmark() throws {
         let fixture = Fixture()
         let asset = AerialAsset(
             id: "sky", url: URL(fileURLWithPath: "/sky.mov"), displayName: "Sky",
@@ -188,13 +313,14 @@ struct ModalActionsTests {
         fixture.items = [item]
         let actions = fixture.modal().actions(for: item)
         actions.applyTo(2)
-        guard case let .video(url, data, entryName) = try #require(fixture.applied.first).0 else {
-            Issue.record("Expected aerial video intent")
+        guard case let .bookmark(bookmark) = try #require(fixture.applied.first).0 else {
+            Issue.record("Expected the aerial's bookmark intent")
             return
         }
-        #expect(url == asset.url)
-        #expect(data == asset.bookmarkData)
-        #expect(entryName == nil)
+        #expect(bookmark.content == .video(bookmarkData: asset.bookmarkData))
+        #expect(bookmark.label == "Sky")
+        #expect(actions.showInFinder != nil)
+        #expect(actions.rename == nil)
         #expect(actions.removeFromSaved == nil)
         #expect(actions.deleteInstalled == nil)
         item.isSupported = false
@@ -262,6 +388,43 @@ struct ModalActionsTests {
             isSteam: UInt64(id) != nil, createdAt: importedAt, lastUsedAt: nil, onDisplays: [],
             thumbnail: .workshop(entry), metadata: nil, isVariant: false, parentID: nil, isSupported: true
         )
+    }
+
+    @Test func unsupportedItemCannotApplyAndSaysWhy() async {
+        let modal = Fixture().modal()
+        var unsupported = workshop("123")
+        unsupported.isSupported = false
+        let blocked = await modal.content(for: unsupported)
+        #expect(!blocked.canApply)
+        #expect(blocked.notice == String(localized: "Can't run on this Mac", bundle: .appLanguage))
+        var missing = item(video())
+        missing.isSourceMissing = true
+        let stale = await modal.content(for: missing)
+        #expect(stale.canApply)
+        #expect(stale.notice == DropFailure.sourceMissing.toastText)
+    }
+
+    @Test func unsupportedWorkshopItemExplainsWhy() async {
+        let modal = Fixture().modal()
+        func unsupported(_ type: WPEType, missing: [String]) -> LiveWallpaper.LibraryItem {
+            let entry = WPEHistoryEntry(origin: WPEOrigin(
+                workshopID: "456", title: "Needs parts", originalType: type, sourceFolderBookmark: Data([3]),
+                cacheRelativePath: nil, previewFileName: nil, resourceLocation: .unsupported, missingDependencyIDs: missing
+            ), importedAt: .distantPast)
+            return LiveWallpaper.LibraryItem(
+                id: "workshop:456", title: entry.origin.title, kind: .scene, source: .workshop(entry),
+                isSteam: true, createdAt: .distantPast, lastUsedAt: nil, onDisplays: [], thumbnail: .workshop(entry),
+                metadata: nil, isVariant: false, parentID: nil, isSupported: type != .application
+            )
+        }
+        #expect(await modal.content(for: unsupported(.scene, missing: ["1", "2"])).unsupportedOrigin?.missingDependencyIDs == ["1", "2"])
+        // The banner says why, so the one-line notice under the preview would only repeat it.
+        let executable = await modal.content(for: unsupported(.application, missing: []))
+        #expect(executable.unsupportedOrigin != nil)
+        #expect(executable.notice == nil)
+        #expect(!executable.canApply)
+        // Control: an installed item this Mac can run has nothing to explain.
+        #expect(await modal.content(for: workshop("123")).unsupportedOrigin == nil)
     }
 
     @Test func installedActionsKeepWorkshopIdentityAndNumericSteamLinks() throws {

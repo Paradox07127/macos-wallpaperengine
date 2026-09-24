@@ -110,9 +110,9 @@ struct DeferredApplyCoordinatorTests {
         let owner = owner()
         let attempt = WorkshopDownloadAttempt(itemID: 42)
         let ticket = owner.submit(attempt: attempt, target: target(manager.first))
-        attempt.finish(.unsupported)
+        attempt.finish(.unsupported(manager.entry))
         await waitUntil { ticket.state != .waiting }
-        #expect(ticket.state == .downloadOnly(.unsupported))
+        #expect(ticket.state == .downloadOnly(.unsupported(manager.entry)))
         #expect(manager.appliedEntries.isEmpty)
     }
 
@@ -270,6 +270,8 @@ struct DeferredApplyCoordinatorTests {
         #expect(run.contains("outcome = await fetchDependencies("))
         #expect(run.contains("if attempts[itemID] == attemptID"))
         #expect(run.contains("attempt?.finish(outcome)"))
+        // The dependency stage is observable, so the modal keeps a progress bar instead of going blank.
+        #expect(run.contains("fetchingDependencies.insert(itemID)"))
         let dependencyFailure = try slice(source, from: "guard report.isFullyResolved else {", to: "// Every dependency arrived")
         #expect(dependencyFailure.contains("return .failed(reason: reason)"))
         #expect(!dependencyFailure.contains("phases["))
@@ -279,9 +281,13 @@ struct DeferredApplyCoordinatorTests {
         #expect(reimportFailure.contains("return .succeeded(entry)"))
         let imports = try slice(source, from: "private func finishImport(", to: "private func finish(itemID:")
         #expect(imports.contains("finish(itemID: itemID, title: title, phase: .succeeded)"))
-        #expect(imports.contains("if case .ready = result"))
         #expect(imports.contains("return .succeeded(entry)"))
-        #expect(imports.contains("return .unsupported"))
+        #expect(imports.contains("return .unsupported(entry)"))
+        #expect(
+            !imports.contains("case .ready(_, let origin), .unsupported(let origin):"),
+            "an item this Mac can't run shares the success card again"
+        )
+        #expect(imports.contains("finishUnsupported(entry, itemID: itemID, title: title)"))
     }
 
     @Test(.timeLimit(.minutes(1)))
@@ -306,9 +312,9 @@ struct DeferredApplyCoordinatorTests {
 
         let unsupported = WorkshopDownloadAttempt(itemID: 43)
         let unsupportedTicket = owner.submit(attempt: unsupported, target: target(manager.second))
-        unsupported.finish(.unsupported)
+        unsupported.finish(.unsupported(manager.entry))
         await waitUntil { unsupportedTicket.state != .waiting }
-        #expect(unsupportedTicket.state == .downloadOnly(.unsupported))
+        #expect(unsupportedTicket.state == .downloadOnly(.unsupported(manager.entry)))
         #expect(owner.ticket(for: 43) === unsupportedTicket)
     }
 
@@ -432,6 +438,14 @@ final class DeferredWallpaperApplying: WallpaperApplying, DeferredApplyScreenRes
 
     func captureCover(forBookmark _: UUID, from _: Screen) {
         Issue.record("Unexpected cover capture")
+    }
+
+    func replaceWallpaperQueue(_: [WallpaperQueueEntry], for _: Screen) {}
+
+    func cancelPreparation(for _: Screen) {}
+
+    func isCurrentPreparation(generation _: Int?, attemptID _: UUID?, on _: Screen) -> Bool {
+        false
     }
 
     func setSceneWallpaper(descriptor _: SceneDescriptor, origin _: WPEOrigin?, for _: Screen) {

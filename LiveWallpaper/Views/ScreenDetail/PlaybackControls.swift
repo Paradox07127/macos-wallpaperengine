@@ -26,7 +26,9 @@ struct PlaybackControls: View {
     @Binding var sceneClickCaptureEnabled: Bool
 
     @AppStorage("Scene.ClickCapture.Acknowledged") private var clickCaptureAcknowledged = false
-    @State private var showClickCaptureConfirm = false
+    @AppStorage("Web.Interaction.Acknowledged") private var webInteractionAcknowledged = false
+    /// The wallpaper type whose Interaction switch waits on first-use confirmation; nil when none does.
+    @State private var pendingInteraction: WallpaperType?
     /// HTML-only: mute path for WKWebView media (`AVPlayer.muted` is a no-op here).
     var htmlConfig: Binding<HTMLConfig>?
     var playbackSpeed: Binding<Double>?
@@ -38,6 +40,14 @@ struct PlaybackControls: View {
     @State private var showingVolume = false
     @State private var showingSpeed = false
     @State private var showingFrameRate = false
+    @State private var trustStore = TrustedHostStore.shared
+    @State private var originLimitShown: OriginLimitAnchor?
+    @State private var pendingTrustOrigin: TrustedHTMLOrigin?
+
+    private enum OriginLimitAnchor {
+        case audio, javaScript
+    }
+
     private var frameRateSymbol: String {
         if frameRateLimit == .matchDisplay {
             return "gauge.with.dots.needle.100percent"
@@ -59,7 +69,11 @@ struct PlaybackControls: View {
 
     var body: some View {
         HStack(spacing: DesignTokens.Spacing.sm) {
-            audioControl
+            if let origin = webEffective?.limitedBy {
+                originLimitedControl(origin, symbol: "speaker.slash", title: "Audio", anchor: .audio)
+            } else {
+                audioControl
+            }
             ForEach(visibleRows, id: \.self) { kind in
                 control(kind)
             }
@@ -68,14 +82,37 @@ struct PlaybackControls: View {
             }
         }
         .buttonStyle(.borderless)
-        .alert("Enable Wallpaper Interaction?", isPresented: $showClickCaptureConfirm) {
+        .htmlOriginTrustDialog(
+            pending: $pendingTrustOrigin, screen: screen, source: webSource, config: htmlConfig?.wrappedValue ?? .default
+        )
+        .alert(
+            "Enable Wallpaper Interaction?",
+            isPresented: Binding(
+                get: { pendingInteraction != nil },
+                set: { presented in
+                    if !presented {
+                        pendingInteraction = nil
+                    }
+                }
+            ),
+            presenting: pendingInteraction
+        ) { kind in
             Button("Cancel", role: .cancel) {}
             Button("Enable") {
-                clickCaptureAcknowledged = true
-                setClickCapture(true)
+                if kind == .scene {
+                    clickCaptureAcknowledged = true
+                    setClickCapture(true)
+                } else if let htmlConfig {
+                    webInteractionAcknowledged = true
+                    htmlConfigBinding(htmlConfig, keyPath: \.allowMouseInteraction).wrappedValue = true
+                }
             }
-        } message: {
-            Text("Clicks go to the scene instead of desktop icons and the desktop context menu on this display. Turn off Interaction to restore desktop clicks.")
+        } message: { kind in
+            if kind == .scene {
+                Text("Clicks go to the scene instead of desktop icons and the desktop context menu on this display. Turn off Interaction to restore desktop clicks.")
+            } else {
+                Text("Clicks and scrolls go to the web page instead of desktop icons and the desktop context menu on this display. Turn off Interaction to restore desktop clicks.")
+            }
         }
     }
 
@@ -118,7 +155,7 @@ struct PlaybackControls: View {
     }
 
     private var audioControl: some View {
-        let isMuted = audioMutedBinding.wrappedValue
+        let isMuted = webEffective?.muted ?? audioMutedBinding.wrappedValue
         return Button {
             showingVolume = true
         } label: {
@@ -134,7 +171,7 @@ struct PlaybackControls: View {
             isMuted: isMuted,
             percent: Self.audioPercent(atSliderValue: unifiedAudioBinding.wrappedValue)
         ))
-        .popover(isPresented: $showingVolume, arrowEdge: .bottom) {
+        .appLanguagePopover(isPresented: $showingVolume, arrowEdge: .bottom) {
             volumePopover
         }
     }
@@ -196,11 +233,13 @@ struct PlaybackControls: View {
         case .syncToLockScreen:
             lockScreenControl
         case .webJavaScript:
-            if let htmlConfig {
+            if let origin = webEffective?.limitedBy {
+                originLimitedControl(origin, symbol: "curlybraces", title: "JavaScript", anchor: .javaScript)
+            } else if let htmlConfig, let web = webEffective {
                 glyphToggle(
                     on: "curlybraces",
                     title: "JavaScript",
-                    isOn: htmlConfig.wrappedValue.allowJavaScript,
+                    isOn: web.allowsJavaScript,
                     binding: htmlConfigBinding(htmlConfig, keyPath: \.allowJavaScript),
                     label: Text("JavaScript"),
                     help: Text("Scripted content may not display when disabled.")
@@ -212,7 +251,7 @@ struct PlaybackControls: View {
                     on: "cursorarrow.click",
                     title: "Interaction",
                     isOn: htmlConfig.wrappedValue.allowMouseInteraction,
-                    binding: htmlConfigBinding(htmlConfig, keyPath: \.allowMouseInteraction),
+                    binding: webInteractionBinding(htmlConfig),
                     label: Text("Interaction"),
                     help: Text("Sends clicks and scrolls to the wallpaper; desktop icons and the Dock cannot receive clicks.")
                 )
@@ -229,7 +268,7 @@ struct PlaybackControls: View {
         .help(Text("Playback speed"))
         .accessibilityLabel(Text("Playback speed"))
         .accessibilityValue(Text(verbatim: Self.speedLabel(speed.wrappedValue)))
-        .popover(isPresented: $showingSpeed, arrowEdge: .bottom) {
+        .appLanguagePopover(isPresented: $showingSpeed, arrowEdge: .bottom) {
             VStack(spacing: DesignTokens.Spacing.sm) {
                 Slider(value: speed, in: 0.5 ... 2.0, step: 0.25)
                     .controlSize(.small)
@@ -253,6 +292,24 @@ struct PlaybackControls: View {
         abs(speed - speed.rounded()) < 0.001 ? "\(Int(speed))×" : String(format: "%.2g×", speed)
     }
 
+    /// What a web page runs with, which is what its controls show. `limitedBy` is the untrusted origin
+    /// overriding the config; nil when the config's own values apply.
+    static func webEffective(
+        _ config: HTMLConfig, source: HTMLSource?, trustedOrigins: Set<TrustedHTMLOrigin>
+    ) -> (limitedBy: TrustedHTMLOrigin?, allowsJavaScript: Bool, muted: Bool) {
+        let trust = source.map { HTMLTrust.evaluate(source: $0, trustedOrigins: trustedOrigins) } ?? .localContent
+        let limitedBy: TrustedHTMLOrigin? = if case let .untrustedRemote(origin) = trust {
+            origin
+        } else {
+            nil
+        }
+        return (
+            limitedBy,
+            trust.effectiveAllowJavaScript(requested: config.allowJavaScript),
+            trust.effectiveMuteAudio(requested: config.muteAudio)
+        )
+    }
+
     /// The saved target stays distinct from Max on every display.
     private var frameRateControl: some View {
         let forceSDRActive = Self.frameRateDisabled(wallpaperType: wallpaperType, videoColorSpace: videoColorSpace)
@@ -269,7 +326,7 @@ struct PlaybackControls: View {
         .accessibilityValue(forceSDRActive
             ? Text("Disabled — Force SDR is active", comment: "Accessibility value when the frame-rate picker is dimmed because Force SDR owns the video composition slot.")
             : Text(verbatim: frameRateTitle(frameRateLimit)))
-        .popover(isPresented: $showingFrameRate, arrowEdge: .bottom) {
+        .appLanguagePopover(isPresented: $showingFrameRate, arrowEdge: .bottom) {
             frameRatePopover
         }
     }
@@ -321,6 +378,70 @@ struct PlaybackControls: View {
         .help(help)
         .accessibilityLabel(label)
         .accessibilityValue(isOn ? Text("On") : Text("Off"))
+    }
+
+    // MARK: - Origin limit
+
+    private var webSource: HTMLSource? {
+        screenManager.getConfiguration(for: screen)?.htmlSource
+    }
+
+    /// nil when this is not a web page.
+    private var webEffective: (limitedBy: TrustedHTMLOrigin?, allowsJavaScript: Bool, muted: Bool)? {
+        htmlConfig.map { Self.webEffective($0.wrappedValue, source: webSource, trustedOrigins: trustStore.originSet) }
+    }
+
+    private func originLimitedControl(
+        _ origin: TrustedHTMLOrigin, symbol: String, title: LocalizedStringKey, anchor: OriginLimitAnchor
+    ) -> some View {
+        Button {
+            originLimitShown = anchor
+        } label: {
+            PreviewControlLabel(systemImage: symbol, title: title, tint: DesignTokens.Colors.Status.warning)
+        }
+        .help(Text("Limited by origin"))
+        .accessibilityLabel(Text(title))
+        .accessibilityValue(Text("Limited by origin"))
+        .appLanguagePopover(
+            isPresented: Binding(
+                get: { originLimitShown == anchor },
+                set: { presented in
+                    if !presented {
+                        originLimitShown = nil
+                    }
+                }
+            ),
+            arrowEdge: .bottom
+        ) {
+            originLimitPopover(origin)
+        }
+    }
+
+    private func originLimitPopover(_ origin: TrustedHTMLOrigin) -> some View {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
+            Label("Limited by origin", systemImage: "exclamationmark.shield")
+                .font(DesignTokens.Typography.bodyEmphasized)
+            Group {
+                if origin.canBeTrusted {
+                    Text("JavaScript stays off and audio stays muted until you trust \(origin.displayName).")
+                } else {
+                    Text("Scripts disabled. Only HTTPS, loopback, and local-network origins can run JavaScript.")
+                }
+            }
+            .font(DesignTokens.Typography.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            if origin.canBeTrusted {
+                Button("Trust This Origin") {
+                    originLimitShown = nil
+                    pendingTrustOrigin = origin
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            }
+        }
+        .frame(width: 240, alignment: .leading)
+        .padding(DesignTokens.Spacing.md)
     }
 
     /// Mute dead zone on the volume slider (avoids leaking 1–2% from a stray drag).
@@ -377,10 +498,24 @@ struct PlaybackControls: View {
             set: { newValue in
                 guard sceneClickCaptureEnabled != newValue else { return }
                 if newValue, !clickCaptureAcknowledged {
-                    showClickCaptureConfirm = true
+                    pendingInteraction = .scene
                     return
                 }
                 setClickCapture(newValue)
+            }
+        )
+    }
+
+    private func webInteractionBinding(_ htmlConfig: Binding<HTMLConfig>) -> Binding<Bool> {
+        let allowsInteraction = htmlConfigBinding(htmlConfig, keyPath: \.allowMouseInteraction)
+        return Binding(
+            get: { allowsInteraction.wrappedValue },
+            set: { newValue in
+                if newValue, !webInteractionAcknowledged {
+                    pendingInteraction = .html
+                    return
+                }
+                allowsInteraction.wrappedValue = newValue
             }
         )
     }

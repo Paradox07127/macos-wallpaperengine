@@ -19,6 +19,7 @@ struct OverlayWorkspace: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var interaction: InteractionModel
     @State private var addExpanded = true
+    @AppStorage(MonitorBoardPreviewMode.defaultsKey) private var previewMode: MonitorBoardPreviewMode = .snapshot
 
     init(session: OverlayEditorSession, cover: CGImage?, screen: Screen, size: CGSize,
          layersVisible: Binding<Bool>, inspectorVisible: Binding<Bool>,
@@ -74,16 +75,19 @@ struct OverlayWorkspace: View {
         .onChange(of: screen.id, initial: true) { _, _ in
             inspectorVisible = session.selection != nil
         }
+        .onChange(of: previewMode) { _, _ in session.capturePreview() }
     }
 
     private var rows: [OverlayLayerRow] {
         OverlayLayerList.rows(placements: interaction.placements,
+                              boardEnabled: session.boardEnabled,
                               clockEnabled: session.overlay.clock.enabled,
                               musicEnabled: session.overlay.music.enabled,
                               effectVisible: session.effectVisible)
             .filter { row in
                 // Disabled singleton layers are available in the add strip, rather than empty rows.
-                if case let .toggle(isOn) = row.action {
+                // The widget group has no add-strip entry, so it always stays.
+                if row.kind != .board, case let .toggle(isOn) = row.action {
                     return isOn || row.selection == session.selection
                 }
                 return true
@@ -126,7 +130,7 @@ struct OverlayWorkspace: View {
                 HStack(spacing: 8) {
                     Image(systemName: "square.3.layers.3d")
                     Text("Layers")
-                    Text(verbatim: "\(rows.count)").foregroundStyle(.secondary)
+                    Text(verbatim: "\(OverlayLayerList.layerCount(rows))").foregroundStyle(.secondary)
                     Spacer(minLength: 8)
                     Image(systemName: "chevron.down")
                         .rotationEffect(.degrees(layersVisible ? 180 : 0))

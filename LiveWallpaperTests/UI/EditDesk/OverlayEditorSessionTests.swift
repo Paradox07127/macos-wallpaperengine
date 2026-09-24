@@ -233,6 +233,39 @@ struct OverlayEditorSessionTests {
         session.detach()
     }
 
+    @Test("The widget group switch writes through the store, and not again for the same value")
+    func boardSwitch() {
+        let store = FakeOverlayStore()
+        let session = opened(store)
+        store.events = []
+        session.setBoardEnabled(false)
+        #expect(store.snapshots[store.displays[0]]?.overlay.enabled == false)
+        #expect(store.events.contains("enabled 1"))
+        #expect(!session.boardEnabled)
+        store.events = []
+        session.setBoardEnabled(false)
+        #expect(!store.events.contains { $0.hasPrefix("enabled") })
+        session.detach()
+    }
+
+    @Test("A board setting lands the pending canvas edit first and survives the next canvas write")
+    func boardEditKeepsPendingCanvasEdit() throws {
+        let store = FakeOverlayStore()
+        let session = opened(store)
+        let id = try #require(session.interaction.placements.first?.id)
+        session.interaction.moveWidget(id: id, direction: .right)
+        let moved = try #require(session.interaction.placements.first)
+        #expect(store.snapshots[store.displays[0]]?.overlay.board.widgets.first != moved)
+        session.editBoard { $0.mouseInteractionEnabled = true }
+        let saved = try #require(store.snapshots[store.displays[0]]?.overlay.board)
+        #expect(saved.widgets.first == moved)
+        #expect(saved.mouseInteractionEnabled)
+        session.interaction.moveWidget(id: id, direction: .right)
+        session.flushPendingEdits()
+        #expect(store.snapshots[store.displays[0]]?.overlay.board.mouseInteractionEnabled == true)
+        session.detach()
+    }
+
     @Test("Adding places a widget by first fit and reports a full board")
     func addWidgetReportsFullBoard() {
         let store = FakeOverlayStore()
@@ -294,6 +327,26 @@ struct OverlayEditorSessionTests {
         session.removeWidget(id: id)
         #expect(session.interaction.placements.isEmpty)
         #expect(session.selection == .music)
+        session.detach()
+    }
+
+    @Test("Removing a widget reports it once with its board index; moving one reports nothing")
+    func removalReportsWidgetAndIndex() throws {
+        let store = FakeOverlayStore()
+        let session = opened(store)
+        #expect(session.addWidget(kind: .gpu))
+        var reports: [[(placement: MonitorWidgetPlacement, index: Int)]] = []
+        session.onWidgetsRemoved = { reports.append($0) }
+        let added = try #require(session.interaction.placements.last)
+        session.interaction.moveWidget(id: added.id, direction: .right)
+        #expect(reports.isEmpty, "a move reported a removal")
+
+        let first = try #require(session.interaction.placements.first)
+        session.removeWidget(id: first.id)
+
+        #expect(reports.count == 1)
+        #expect(reports.first?.map(\.placement) == [first])
+        #expect(reports.first?.map(\.index) == [0])
         session.detach()
     }
 

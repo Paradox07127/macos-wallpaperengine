@@ -2,8 +2,9 @@ import CoreGraphics
 import Foundation
 import LiveWallpaperCore
 
-/// What a layer row stands for. Board widgets carry their kind; the other three are singletons.
+/// What a layer row stands for. Board widgets carry their kind; the others are singletons.
 enum OverlayLayerKind: Equatable {
+    case board
     case widget(MonitorWidgetKind)
     case clock
     case music
@@ -53,6 +54,7 @@ enum OverlayAddCategory: String, CaseIterable, Identifiable {
 
 /// Which editor the selected object gets. `empty` is the "no selection" placeholder.
 enum OverlayInspectorContent: Equatable {
+    case board
     case widget(UUID)
     case music
     case clock
@@ -62,15 +64,19 @@ enum OverlayInspectorContent: Equatable {
 
 enum OverlayLayerList {
     static func rows(
-        placements: [MonitorWidgetPlacement], clockEnabled: Bool, musicEnabled: Bool, effectVisible: Bool
+        placements: [MonitorWidgetPlacement], boardEnabled: Bool, clockEnabled: Bool, musicEnabled: Bool, effectVisible: Bool
     ) -> [OverlayLayerRow] {
-        placements.map {
+        [OverlayLayerRow(selection: .board, kind: .board, action: .toggle(isOn: boardEnabled))] + placements.map {
             OverlayLayerRow(selection: .widget($0.id), kind: .widget($0.kind), action: .remove)
         } + [
             OverlayLayerRow(selection: .clock, kind: .clock, action: .toggle(isOn: clockEnabled)),
             OverlayLayerRow(selection: .music, kind: .music, action: .toggle(isOn: musicEnabled)),
             OverlayLayerRow(selection: .effect, kind: .effect, action: .toggle(isOn: effectVisible)),
         ]
+    }
+
+    static func layerCount(_ rows: [OverlayLayerRow]) -> Int {
+        rows.count { $0.kind != .board }
     }
 
     /// `MonitorWidgetKind.allCases` already drops the decode-only `nixieClock`.
@@ -94,6 +100,7 @@ enum OverlayLayerList {
 
     static func inspectorContent(for selection: OverlaySelection?) -> OverlayInspectorContent {
         switch selection {
+        case .board: .board
         case let .widget(id): .widget(id)
         case .music: .music
         case .clock: .clock

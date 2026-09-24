@@ -35,6 +35,11 @@ struct FallbackCard: View {
         return .unsupportedType
     }
 
+    /// The banner's title as one line, for toasts and status lines that name the reason.
+    static func cannotRunSummary(for origin: WPEOrigin) -> String {
+        reason(for: origin).localizedTitle(originalType: origin.originalType)
+    }
+
     var body: some View {
         let presentation = reason.presentation(
             origin: origin,
@@ -59,20 +64,7 @@ struct FallbackCard: View {
                     .foregroundStyle(.secondary)
             }
 
-            VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
-                InlineNoticeBanner(
-                    tint: presentation.tint,
-                    symbol: presentation.symbol,
-                    title: presentation.title,
-                    message: presentation.message,
-                    code: presentation.code,
-                    surface: .content
-                )
-                if case .missingDependency(let ids) = reason {
-                    dependencyList(ids: ids)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            UnsupportedProjectNotice(origin: origin, reason: reason, showsIdentity: false)
 
             // `onRetry: nil` — this card has no session to reload, so Retry drops out
             // of the shared action list.
@@ -94,6 +86,50 @@ struct FallbackCard: View {
             RoundedRectangle(cornerRadius: DesignTokens.Corner.xl, style: .continuous)
                 .strokeBorder(DesignTokens.Colors.separator.opacity(0.55), lineWidth: 0.5)
         )
+    }
+}
+
+/// Why a Workshop project can't run here: the failure banner, an optional Workshop ID line and the
+/// missing dependencies with open and copy. `FallbackCard` and the library modal both draw it.
+struct UnsupportedProjectNotice: View {
+    let origin: WPEOrigin
+    let reason: FallbackReason
+    /// False where the host already shows the ID and type, as `FallbackCard`'s header does.
+    let showsIdentity: Bool
+    @State private var engineAssets = WPEEngineAssetsLibrary.shared
+
+    /// `reason` nil derives it from the origin.
+    init(origin: WPEOrigin, reason: FallbackReason? = nil, showsIdentity: Bool) {
+        self.origin = origin
+        self.reason = reason ?? FallbackCard.reason(for: origin)
+        self.showsIdentity = showsIdentity
+    }
+
+    var body: some View {
+        let presentation = reason.presentation(
+            origin: origin,
+            engineAssetsAuthorized: engineAssets.isAuthorized
+        )
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
+            if showsIdentity {
+                Text("Workshop ID \(origin.workshopID) · \(origin.localizedDisplayTypeName) type", comment: "Wallpaper Engine metadata line. Placeholders are Workshop ID and project type.")
+                    .font(DesignTokens.Typography.body)
+                    .foregroundStyle(.secondary)
+            }
+            InlineNoticeBanner(
+                tint: presentation.tint,
+                symbol: presentation.symbol,
+                title: presentation.title,
+                message: presentation.message,
+                detail: presentation.detail,
+                code: presentation.code,
+                surface: .content
+            )
+            if case let .missingDependency(ids) = reason {
+                dependencyList(ids: ids)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder

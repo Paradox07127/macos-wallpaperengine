@@ -215,6 +215,27 @@ struct SteamCMDDoctorLifecycleTests {
         #expect(SteamCMDBinaryInspection.missing.unavailableReason == nil)
     }
 
+    @Test("A busy connector refuses the bind as busy, never as a folder to choose again")
+    func busyConnectorRefusesBindAsBusy() {
+        let busy = SteamCMDDoctorService.bindRefusal(
+            for: .unavailable("inspection expired while queued behind another SteamCMD operation")
+        )
+        #expect(busy == .connectorBusy)
+        if case .bookmarkResolution? = busy {
+            Issue.record("a busy connector must not ask the user to choose the folder again")
+        }
+
+        #expect(SteamCMDDoctorService.bindRefusal(for: nil) == .connectorUnavailable)
+        #expect(SteamCMDDoctorService.bindRefusal(for: .missing) == .binaryResolution(.notExecutable))
+        #expect(SteamCMDDoctorService.bindRefusal(for: Self.inspection(sha: "identity-1")) == nil)
+    }
+
+    @Test("A refused SteamCMD file is described without the raw error case")
+    func binaryResolutionNamesNoRawCase() {
+        let message = SteamCMDDoctorError.binaryResolution(.notExecutable).errorDescription ?? ""
+        #expect(!message.contains("notExecutable"), "got \(message)")
+    }
+
     @Test("codesign output parses, and a timed-out verify never reads as signed")
     func codesignVerdictParsing() {
         let display = "TeamIdentifier=MXGJJ98X76\nflags=0x10000(runtime)"

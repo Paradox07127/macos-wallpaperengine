@@ -181,18 +181,18 @@ enum WPEProjectError: LocalizedError, Equatable, Sendable {
         switch self {
         case .manifestNotFound:
             String(
-                localized: "the folder has no project.json",
+                localized: "it isn't a Wallpaper Engine project",
                 bundle: .appLanguage, comment: "Scene import refusal reason, interpolated into a sentence: the project manifest is absent."
             )
         case .manifestUnreadable:
             String(
-                localized: "its project.json could not be read",
+                localized: "its project information can't be read",
                 bundle: .appLanguage, comment: "Scene import refusal reason, interpolated into a sentence: the project manifest could not be read."
             )
-        case let .manifestMalformed(detail):
+        case .manifestMalformed:
             String(
-                localized: "its project.json is malformed (\(detail))",
-                bundle: .appLanguage, comment: "Scene import refusal reason, interpolated into a sentence; the placeholder is the parser's detail."
+                localized: "its project information is damaged",
+                bundle: .appLanguage, comment: "Scene import refusal reason, interpolated into a sentence: the project manifest is malformed."
             )
         }
     }

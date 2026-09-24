@@ -6,6 +6,9 @@ import SwiftUI
 struct EmptyDisplaySetup: View {
     let screen: Screen
     let chooseFile: () -> Void
+    let applyWebSource: (HTMLSource) -> Void
+    /// nil while the wallpaper library is empty.
+    var chooseFromLibrary: (() -> Void)?
     @State private var wallpaper: CGImage?
     @State private var showsWebSetup = false
     @State private var loading = true
@@ -26,7 +29,7 @@ struct EmptyDisplaySetup: View {
                 VStack(spacing: 0) {
                     Spacer(minLength: 24)
                     if showsWebSetup {
-                        HTMLEmptyState(screen: screen, config: .default)
+                        HTMLEmptyState(screen: screen, config: .default, apply: applyWebSource)
                             .frame(width: min(540, proxy.size.width - 64), height: min(380, proxy.size.height - 100))
                             .adaptiveGlassSurface(.roundedRectangle(24))
                             .overlay(alignment: .topLeading) {
@@ -71,11 +74,9 @@ struct EmptyDisplaySetup: View {
                     .font(DesignTokens.Typography.body).foregroundStyle(.secondary)
                     .padding(.top, 4)
             }
-            HStack(spacing: 12) {
-                Button(action: chooseFile) { Label("Choose File…", systemImage: "folder") }
-                    .adaptiveGlassButton(.prominent, size: .large)
-                Button { showsWebSetup = true } label: { Label("Web", systemImage: "globe") }
-                    .adaptiveGlassButton(size: .large)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 12) { setupButtons }
+                VStack(spacing: 8) { setupButtons }
             }
             Text("Or drop a wallpaper here")
                 .font(DesignTokens.Typography.caption).foregroundStyle(.secondary)
@@ -83,6 +84,22 @@ struct EmptyDisplaySetup: View {
         .padding(36)
         .frame(width: 440)
         .adaptiveGlassSurface(.roundedRectangle(24))
+    }
+
+    @ViewBuilder
+    private var setupButtons: some View {
+        Button(action: chooseFile) {
+            Label("Import and Apply to \(screen.name)", systemImage: "folder")
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .adaptiveGlassButton(.prominent, size: .large)
+        if let chooseFromLibrary {
+            Button(action: chooseFromLibrary) { Label("Choose from Library", systemImage: "square.grid.2x2") }
+                .adaptiveGlassButton(size: .large)
+        }
+        Button { showsWebSetup = true } label: { Label("Web", systemImage: "globe") }
+            .adaptiveGlassButton(size: .large)
     }
 
     @ViewBuilder

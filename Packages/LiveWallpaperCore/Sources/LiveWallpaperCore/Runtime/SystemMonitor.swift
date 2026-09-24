@@ -133,13 +133,13 @@ public final class SystemMonitor {
     public var thermalStateDescription: String {
         switch thermalState {
         case .nominal:
-            return String(localized: "Normal", defaultValue: "Normal", bundle: .appLanguage, comment: "Thermal state label.")
+            return String(localized: "Thermal Nominal", defaultValue: "Normal", bundle: .appLanguage, comment: "Thermal state label.")
         case .fair:
-            return String(localized: "Elevated", defaultValue: "Elevated", bundle: .appLanguage, comment: "Thermal state label.")
+            return String(localized: "Thermal Fair", defaultValue: "Warm", bundle: .appLanguage, comment: "Thermal state label.")
         case .serious:
-            return String(localized: "High", defaultValue: "High", bundle: .appLanguage, comment: "Thermal state label.")
+            return String(localized: "Thermal Serious", defaultValue: "Hot", bundle: .appLanguage, comment: "Thermal state label.")
         case .critical:
-            return String(localized: "Critical", defaultValue: "Critical", bundle: .appLanguage, comment: "Thermal state label.")
+            return String(localized: "Thermal Critical", defaultValue: "Critical", bundle: .appLanguage, comment: "Thermal state label.")
         @unknown default:
             return String(localized: "Unknown", defaultValue: "Unknown", bundle: .appLanguage, comment: "Thermal state label.")
         }

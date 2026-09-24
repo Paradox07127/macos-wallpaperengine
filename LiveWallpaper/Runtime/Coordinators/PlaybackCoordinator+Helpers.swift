@@ -9,7 +9,8 @@ extension PlaybackCoordinator {
 
     func save(_ configuration: ScreenConfiguration) {
         advanceSceneMutationIntent(configuration.screenID)
-        configurationStore.save(configuration)
+        let previous = configurationStore.get(for: configuration.screenID)
+        configurationStore.save(SchedulePolicy.holdingManualChange(configuration, previous: previous, now: Date(), calendar: .current))
         notifyConfigurationChanged(configuration.screenID)
     }
 

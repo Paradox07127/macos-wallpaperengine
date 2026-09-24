@@ -26,6 +26,7 @@ struct BrowsePane: View {
     var matureReveal: MatureRevealState?
 
     @Environment(WorkshopServices.self) private var services
+    @Environment(ScreenManager.self) private var screenManager
     /// An id, not a value copy: the inspector follows the grid when a page
     /// turn or the persona pass replaces `viewModel.items`.
     @State private var selectedID: UInt64?
@@ -45,6 +46,9 @@ struct BrowsePane: View {
     @Environment(\.galleryCardPreferences) private var cardPreferences
     @State private var pageJumpText: String = "1"
     @State private var installedWorkshopIDs: Set<String> = []
+    @State private var importedAtByWorkshopID: [String: Date] = [:]
+    /// Workshop ID → the ON badge of the displays running that project.
+    @State private var inUseBadges: [String: String] = [:]
     @AppStorage("loomscreen.workshop.hidesDownloaded.v1", store: .appScoped()) private var hidesDownloadedPref = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -186,6 +190,10 @@ struct BrowsePane: View {
 
     private var mainColumn: some View {
         gridColumn
+            .onAppear { reloadInUseBadges() }
+            .onReceive(NotificationCenter.default.publisher(for: .wallpaperConfigurationDidChange)) { _ in
+                reloadInUseBadges()
+            }
     }
 
     private var gridColumn: some View {
@@ -363,6 +371,8 @@ struct BrowsePane: View {
         BrowseCard(
             item: item,
             isInLibrary: installedWorkshopIDs.contains(String(item.id)),
+            hasUpdate: hasUpdate(item),
+            inUseBadge: inUseBadges[String(item.id)],
             isSelected: selectedID == item.id,
             cardPreferences: cardPreferences,
             reduceMotion: reduceMotion,
@@ -447,7 +457,7 @@ struct BrowsePane: View {
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "chevron.left")
-                    Text("Previous")
+                    Text("Previous Page")
                 }
             }
             .buttonStyle(.bordered)
@@ -483,7 +493,7 @@ struct BrowsePane: View {
                 Task { await viewModel.goToNextPage() }
             } label: {
                 HStack(spacing: 4) {
-                    Text("Next")
+                    Text("Next Page")
                     Image(systemName: "chevron.right")
                 }
             }
@@ -753,10 +763,33 @@ struct BrowsePane: View {
     }
 
     private func reloadInstalledIDs() {
-        installedWorkshopIDs = Set(
-            SettingsManager.shared.loadGlobalSettings().recentWPEImports.map { $0.origin.workshopID }
-        )
+        let imports = SettingsManager.shared.loadGlobalSettings().recentWPEImports
+        installedWorkshopIDs = Set(imports.map(\.origin.workshopID))
+        importedAtByWorkshopID = Dictionary(imports.map { ($0.origin.workshopID, $0.importedAt) }) { newest, _ in newest }
         viewModel.installedWorkshopIDs = installedWorkshopIDs
+    }
+
+    /// `InstalledLibraryModel`'s update rule, judged on the browse result's own update date.
+    private func hasUpdate(_ item: WorkshopQueryItem) -> Bool {
+        guard let importedAt = importedAtByWorkshopID[String(item.id)], let updated = item.timeUpdated else { return false }
+        return updated > importedAt
+    }
+
+    private func reloadInUseBadges() {
+        // `onBadge` reads only each display's id, frame and name.
+        let displays = screenManager.screens.map { screen in
+            StageDisplay(
+                id: screen.id, fingerprint: screen.displayFingerprint, frame: screen.frame, isBuiltin: false,
+                name: screen.name, badgeText: "", statusText: "", cover: nil, state: .ok
+            )
+        }
+        var running: [String: [StageDisplay.ID]] = [:]
+        for screen in screenManager.screens {
+            if let workshopID = screenManager.getConfiguration(for: screen)?.wpeOrigin?.workshopID {
+                running[workshopID, default: []].append(screen.id)
+            }
+        }
+        inUseBadges = running.compactMapValues { StageCard.onBadge(on: $0, among: displays) }
     }
 
     private static func countdown(_ seconds: TimeInterval) -> String {

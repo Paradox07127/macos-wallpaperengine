@@ -31,7 +31,7 @@ struct AttemptSceneProperties: View {
                     Button("Reload Settings") { reload += 1 }.buttonStyle(.bordered)
                     Button {
                         report = BugReporter.makeReport(activeWallpapers: [], failureContext: settingsFailure(cause: failure))
-                    } label: { Label("Report this Problem…", systemImage: "ladybug") }
+                    } label: { Label("Report this Problem", systemImage: "ladybug") }
                         .buttonStyle(.borderless)
                 } else if resolved {
                     IllustratedEmptyState(symbol: "slider.horizontal.3", title: "No scene options", variant: .compact)
@@ -56,7 +56,11 @@ struct AttemptSceneProperties: View {
             resolved = result.schema != nil || result.isExpectedAbsence
             failure = resolved ? nil : result.failure ?? WallpaperFailureCause(code: "schema.read", reason: result.log)
         }
-        .sheet(item: $report) { value in ReportBugSheet(report: value, onDismiss: { report = nil }) }
+        .sheet(item: $report) { value in
+            AppLanguageScope(defaults: .appScoped()) {
+                ReportBugSheet(report: value, onDismiss: { report = nil })
+            }
+        }
     }
 
     private var descriptor: SceneDescriptor? {

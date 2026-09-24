@@ -61,6 +61,12 @@ struct WPESceneSectionStateTests {
         }
     }
 
+    @MainActor
+    @Test("A Metal renderer gap reads as an effect Loomscreen can't render, not a damaged project file")
+    func metalRendererGapMapping() {
+        #expect(SceneDetailView.mapToFallbackReason(.metalRendererUnsupported(reason: "target format")) == .sceneShaderUnsupported)
+    }
+
     @Test("Failure class drives the tint, so a reason cannot carry two colours")
     func tintFollowsFailureClass() {
         let danger = DesignTokens.Colors.Status.danger

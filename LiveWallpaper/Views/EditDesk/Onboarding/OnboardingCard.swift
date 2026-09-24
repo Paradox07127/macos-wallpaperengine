@@ -48,17 +48,19 @@ struct OnboardingCardContent {
         "STEP \(step) / \(total)"
     }
 
-    static func of(_ page: OnboardingProgress.Page) -> OnboardingCardContent {
+    static func of(_ page: OnboardingProgress.Page, sceneCapable: Bool) -> OnboardingCardContent {
         switch page {
         case .home:
             OnboardingCardContent(
                 icon: "arrow.down",
                 timing: "First launch",
                 title: "Overview · Give your first display a wallpaper",
-                message: "Drag a video, a web folder or a Wallpaper Engine project onto a display — or start right away with Apple Aerials",
+                message: sceneCapable
+                    ? "Drag a video, a web folder or a Wallpaper Engine project onto a display, or set up Apple Aerials"
+                    : "Drag a video or a web folder onto a display, or set up Apple Aerials",
                 buttons: [
-                    Choice(title: "Choose File…", action: .chooseFile, isPrimary: true),
-                    Choice(title: "Try Apple Aerials", action: .tryAerials, isPrimary: false),
+                    Choice(title: "Choose File", action: .chooseFile, isPrimary: true),
+                    Choice(title: "Set Up Apple Aerials", action: .tryAerials, isPrimary: false),
                 ],
                 footnote: "Types are detected automatically — no need to choose. You can swap a display's wallpaper any time."
             )
@@ -67,7 +69,9 @@ struct OnboardingCardContent {
                 icon: "square.grid.3x3",
                 timing: "First time in the wallpaper library",
                 title: "Wallpaper Library · Everything you have used is kept here",
-                message: "Files you import and Workshop items you download all show up here; drag one onto a display to apply it",
+                message: sceneCapable
+                    ? "Files you import and Workshop items you download all show up here; drag one onto a display to apply it"
+                    : "Files you import show up here; drag one onto a display to apply it",
                 buttons: [Choice(title: "Import More", action: .importMore, isPrimary: true)],
                 footnote: "Sorted by most recently used; source and type are only filters."
             )
@@ -79,7 +83,7 @@ struct OnboardingCardContent {
                 message: "Download Workshop wallpapers with your own Steam account and Wallpaper Engine licence; nothing goes through a third-party server",
                 buttons: [
                     Choice(title: "Connect Steam", action: .connectSteam, isPrimary: true),
-                    Choice(title: "Import a local WE library", action: .importLocalLibrary, isPrimary: false),
+                    Choice(title: "Import a Local Folder", action: .importLocalLibrary, isPrimary: false),
                 ],
                 footnote: "Needs SteamCMD (installed and managed for you). You can disconnect later in Settings."
             )
@@ -105,10 +109,11 @@ struct OnboardingCard: View {
     let perform: (OnboardingCardAction) -> Void
 
     @Environment(OnboardingProgress.self) private var progress: OnboardingProgress?
+    @Environment(\.featureCatalog) private var featureCatalog
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var content: OnboardingCardContent {
-        OnboardingCardContent.of(page)
+        OnboardingCardContent.of(page, sceneCapable: featureCatalog.isEnabled(.scene))
     }
 
     var body: some View {
@@ -158,6 +163,7 @@ struct OnboardingCard: View {
                 Text(verbatim: OnboardingCardContent.stepText(
                     step: progress.stepNumber(of: page), total: progress.visiblePages.count
                 ))
+                .accessibilityLabel(Text("Step \(progress.stepNumber(of: page)) of \(progress.visiblePages.count)"))
                 Text(verbatim: "·")
                 Text(content.timing)
             }
@@ -278,7 +284,7 @@ private struct OnboardingSkipButton: View {
     }
 }
 
-private struct OnboardingPressStyle: ButtonStyle {
+struct OnboardingPressStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .opacity(configuration.isPressed ? DesignTokens.Opacity.dimmedIcon : 1)

@@ -110,6 +110,7 @@ extension ScreenManager {
         guard current != descriptor else { return }
         let expectedSession = screen.runtimeSession
         let expectedConfigurationRevision = configurationStore.revision(for: screen.id)
+        configuration = SchedulePolicy.writingBack(.scene(descriptor), into: configuration, now: Date(), calendar: .current)
 
         #if !LITE_BUILD
             if let sceneSession = screen.runtimeSession as? SceneWallpaperSession {

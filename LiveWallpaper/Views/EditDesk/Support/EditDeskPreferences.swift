@@ -8,7 +8,7 @@ enum EditDeskPreferences {
     static let statusCapsuleContent = "loomscreen.editDesk.statusCapsuleContent"
     static let homeDefaultState = "loomscreen.editDesk.homeDefaultState"
 
-    static let shelfStyleDefault: ShelfStyle = .crate
+    static let shelfStyleDefault: ShelfStyle = .facingIn
     static let backgroundDefault: EditDeskBackground = .opaque
     static let shelfCapacityDefault = StageGeometry.shelfCapacity
     static let hoverAutoplayPreviewDefault = true

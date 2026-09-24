@@ -15,10 +15,10 @@ struct SavedLibraryModelTests {
         )
     }
 
-    private func aerial(_ id: String = "sky") -> AerialAsset {
+    private func aerial(_ id: String = "sky", in directory: String = "/", bookmark: String? = nil) -> AerialAsset {
         AerialAsset(
-            id: id, url: URL(fileURLWithPath: "/\(id).mov"), displayName: id,
-            category: nil, fileSize: nil, bookmarkData: Data(id.utf8)
+            id: id, url: URL(fileURLWithPath: directory).appendingPathComponent("\(id).mov"), displayName: id,
+            category: nil, fileSize: nil, bookmarkData: Data((bookmark ?? id).utf8)
         )
     }
 
@@ -29,19 +29,19 @@ struct SavedLibraryModelTests {
         ))
     }
 
-    private func inputs(_ bookmarks: [WallpaperBookmark] = []) -> SavedLibraryModel.Inputs {
+    private func inputs(_ bookmarks: [WallpaperBookmark] = [], aerials: [AerialAsset] = []) -> SavedLibraryModel.Inputs {
         var inputs = SavedLibraryModel.Inputs()
         inputs.bookmarks = { bookmarks }
-        inputs.aerials = { .init(assets: [aerial()], isAuthorized: true, lastScanError: nil, isScanning: false) }
+        inputs.aerials = { .init(assets: aerials, isAuthorized: true, lastScanError: nil, isScanning: false) }
         return inputs
     }
 
-    @Test func allExcludesAerials() {
+    @Test func allIncludesAerials() {
         let saved = bookmark("Saved")
-        let model = SavedLibraryModel(inputs: inputs([saved]))
+        let model = SavedLibraryModel(inputs: inputs([saved], aerials: [aerial()]))
         model.chip = .all
         #expect(model.items.count == 2)
-        #expect(model.visibleItems.map(\.id) == ["bookmark:\(saved.id)"])
+        #expect(model.visibleItems.map(\.id) == ["bookmark:\(saved.id)", "aerial:/sky.mov"])
         #expect(model.visibleItems.first?.thumbnail == .bookmark(saved))
     }
 
@@ -74,18 +74,31 @@ struct SavedLibraryModelTests {
     @Test func localExcludesSteamAndAerials() {
         var steam = bookmark("Steam")
         steam.wpeOrigin = origin("123")
-        let model = SavedLibraryModel(inputs: inputs([steam, bookmark("Local")]))
+        let model = SavedLibraryModel(inputs: inputs([steam, bookmark("Local")], aerials: [aerial()]))
         model.chip = .local
         #expect(model.visibleItems.map(\.title) == ["Local"])
     }
 
     @Test func aerialsHaveTheirOwnRows() {
-        let model = SavedLibraryModel(inputs: inputs([bookmark("Saved")]))
+        let model = SavedLibraryModel(inputs: inputs([bookmark("Saved")], aerials: [aerial()]))
         model.chip = .aerials
-        #expect(model.visibleItems.map(\.id) == ["aerial:sky"])
+        #expect(model.visibleItems.map(\.id) == ["aerial:/sky.mov"])
         #expect(model.visibleItems.first?.kind == .aerial)
         #expect(model.visibleItems.first?.createdAt == .distantPast)
-        #expect(model.visibleItems.first?.thumbnail == nil)
+        #expect(model.visibleItems.first?.thumbnail == .aerial(.init(aerial())))
+    }
+
+    @Test("An aerial row is keyed by its file: two files with one name keep two rows, a rescan keeps the ID")
+    func aerialRowsAreKeyedByTheirFile() {
+        let scanned = SavedLibraryModel(inputs: inputs(aerials: [
+            aerial(in: "/4K", bookmark: "4K"), aerial(in: "/HD", bookmark: "HD"),
+        ]))
+        let ids = Set(scanned.visibleItems.map(\.id))
+        #expect(ids.count == 2, "two files named sky.mov share one row ID")
+        let rescanned = SavedLibraryModel(inputs: inputs(aerials: [
+            aerial(in: "/4K", bookmark: "4K again"), aerial(in: "/HD", bookmark: "HD again"),
+        ]))
+        #expect(Set(rescanned.visibleItems.map(\.id)) == ids, "a rescan's new bookmarks changed the rows' IDs")
     }
 
     @Test func nowPlayingPreservesDisplayIDs() {
@@ -139,6 +152,25 @@ struct SavedLibraryModelTests {
         #expect(model.visibleItems.map(\.title) == ["Newest", "New tie", "Old tie", "Nil new", "Nil old"])
     }
 
+    @Test("A browse keeps the order it opened with; the next one sorts by the new use")
+    func browsingKeepsTheOrderItOpenedWith() {
+        var saved = [bookmark("A", used: 3), bookmark("B", used: 2), bookmark("C")]
+        var source = inputs()
+        source.bookmarks = { saved }
+        let model = SavedLibraryModel(inputs: source)
+        model.beginBrowsing()
+        saved[2].lastUsedAt = Date(timeIntervalSince1970: 4)
+        model.refresh()
+        // The modal opening over the open shelf begins again inside the same browse.
+        model.beginBrowsing()
+        #expect(model.visibleItems.map(\.title) == ["A", "B", "C"], "applying C moved it while the browse was open")
+        model.chip = .recent
+        #expect(model.visibleItems.map(\.title) == ["A", "B"])
+        model.chip = .all
+        model.endBrowsing()
+        #expect(model.visibleItems.map(\.title) == ["C", "A", "B"])
+    }
+
     @Test func nameSortIgnoresCase() {
         let model = SavedLibraryModel(inputs: inputs([bookmark("zebra"), bookmark("Beta"), bookmark("alpha")]))
         model.sort = .name
@@ -150,12 +182,13 @@ struct SavedLibraryModelTests {
         web.content = .html(source: .url(URL(fileURLWithPath: "/web")), config: .init())
         var scene = bookmark("A scene", used: 1)
         scene.content = .scene(descriptor())
-        var source = inputs([scene, bookmark("Z video", used: 1), web, bookmark("B video", used: 1)])
+        var source = inputs([scene, bookmark("Z video", used: 1), web, bookmark("B video", used: 1)], aerials: [aerial()])
         #if !LITE_BUILD
         source.nowPlaying = { _, _ in [1] }
         #else
         source.nowPlaying = { _ in [1] }
         #endif
+        source.activeWallpapers = { [(1, .video(bookmarkData: aerial().bookmarkData))] }
         let model = SavedLibraryModel(inputs: source)
         model.chip = .nowPlaying
         model.sort = .type
@@ -201,7 +234,7 @@ struct SavedLibraryModelTests {
         web.content = .html(source: .url(URL(fileURLWithPath: "/web")), config: .init())
         var probed: [UUID] = []
         var cacheIsReady = false
-        var source = inputs([first, second, web])
+        var source = inputs([first, second, web], aerials: [aerial()])
         source.metadata = { _ in cacheIsReady ? fourK : nil }
         source.probeMetadata = {
             probed.append($0.id)
@@ -214,7 +247,168 @@ struct SavedLibraryModelTests {
         #expect(probed == [first.id])
         #expect(model.items.first { $0.id == "bookmark:\(first.id)" }?.metadata == fourK)
         #expect(model.items.first { $0.id == "bookmark:\(second.id)" }?.metadata == nil)
-        #expect(model.items.first { $0.id == "aerial:sky" }?.metadata == nil)
+        #expect(model.items.first { $0.id == "aerial:/sky.mov" }?.metadata == nil)
+    }
+
+    @Test func missingSourcesAreMarkedAndProbedOnce() async {
+        let present = bookmark("Present")
+        let missing = bookmark("Missing")
+        var probes = 0
+        var source = inputs([present, missing])
+        source.sourceAvailable = { item in
+            probes += 1
+            guard case let .bookmark(bookmark) = item else { return true }
+            return bookmark.id != missing.id
+        }
+        let model = SavedLibraryModel(inputs: source)
+        await model.probeSources()
+        #expect(model.items.filter(\.isSourceMissing).map(\.id) == ["bookmark:\(missing.id)"])
+        let probed = probes
+        model.refresh()
+        #expect(probes == probed, "an unchanged row was probed again")
+        #expect(model.items.filter(\.isSourceMissing).map(\.id) == ["bookmark:\(missing.id)"])
+    }
+
+    @Test("Applying an aerial rechecks the aerial's own row")
+    func recheckFindsTheAerialItsIntentCameFrom() async throws {
+        var probes = 0
+        var source = inputs(aerials: [aerial()])
+        // Found by the first probe, gone for every later one.
+        source.sourceAvailable = { _ in
+            probes += 1
+            return probes == 1
+        }
+        let model = SavedLibraryModel(inputs: source)
+        await model.probeSources()
+        let row = try #require(model.items.first)
+        let intent = try #require(ModalActions.intent(for: row))
+        await model.recheck(intent)
+        #expect(model.items.first?.isSourceMissing == true, "the recheck after applying the aerial skipped its row")
+    }
+
+    @Test("A display still holding the bookmark an aerial had before a rescan marks and rechecks that aerial's row")
+    func aerialRowIsMatchedByFileAfterARescan() async {
+        let beforeRescan = Data("sky before the rescan".utf8)
+        let other = Data("another video".utf8)
+        var source = inputs(aerials: [aerial()])
+        source.activeWallpapers = { [(7, .video(bookmarkData: beforeRescan)), (9, .video(bookmarkData: other))] }
+        let paths = [beforeRescan: "/sky.mov", other: "/other.mov"]
+        var resolves = 0
+        source.filePath = { data in
+            resolves += 1
+            return paths[data]
+        }
+        var probes = 0
+        // Found by the first probe, gone for every later one.
+        source.sourceAvailable = { _ in
+            probes += 1
+            return probes == 1
+        }
+        let model = SavedLibraryModel(inputs: source)
+        #expect(model.items.first?.onDisplays == [7], "the rescan's new bookmark hid the display still running this aerial")
+        let resolved = resolves
+        #expect(model.aerial(aerial(), matches: .video(bookmarkData: beforeRescan)))
+        #expect(resolves == resolved, "matching again before the next refresh resolved the same bookmark again")
+        await model.probeSources()
+        await model.recheck(.bookmark(WallpaperBookmark(label: "sky", content: .video(bookmarkData: beforeRescan))))
+        #expect(model.items.first?.isSourceMissing == true, "applying the aerial as it was before the rescan skipped its row")
+    }
+
+    @Test("A refresh resolves the bookmarks the displays run, not one per aerial")
+    func refreshResolvesOnlyTheDisplaysBookmarks() {
+        let films = [Data("film".utf8): "/Movies/film.mov", Data("other film".utf8): "/Movies/other film.mov"]
+        var source = inputs(aerials: (0 ..< 100).map { aerial("sky \($0)") })
+        source.activeWallpapers = { [(7, .video(bookmarkData: Data("film".utf8))), (9, .video(bookmarkData: Data("other film".utf8)))] }
+        var resolves = 0
+        source.filePath = { data in
+            resolves += 1
+            return films[data]
+        }
+        _ = SavedLibraryModel(inputs: source)
+        #expect(resolves <= 2, "the refresh resolved each aerial's bookmark to compare it with the displays")
+    }
+
+    @Test("A bookmark that did not resolve is resolved again by the next refresh")
+    func unresolvedBookmarkIsRetriedOnTheNextRefresh() {
+        let playing = Data("sky from an earlier scan".utf8)
+        var source = inputs(aerials: [aerial()])
+        source.activeWallpapers = { [(7, .video(bookmarkData: playing))] }
+        var resolvable = false
+        source.filePath = { $0 != playing || resolvable ? "/sky.mov" : nil }
+        let model = SavedLibraryModel(inputs: source)
+        #expect(model.items.first?.onDisplays == [])
+        resolvable = true
+        model.refresh()
+        #expect(model.items.first?.onDisplays == [7], "a bookmark that failed to resolve once was never resolved again")
+    }
+
+    @Test("A rescan's new bookmark keeps an aerial's missing mark without probing the same file again")
+    func rescanKeepsTheAerialsProbe() async {
+        let scan = StateBox(.init(assets: [aerial()], isAuthorized: true, lastScanError: nil, isScanning: false))
+        var source = inputs()
+        source.aerials = { scan.value }
+        var probes = 0
+        source.sourceAvailable = { _ in
+            probes += 1
+            return false
+        }
+        let model = SavedLibraryModel(inputs: source)
+        await model.probeSources()
+        let probed = probes
+        scan.value.assets = [aerial(bookmark: "sky after the rescan")]
+        model.refresh()
+        #expect(model.items.first?.isSourceMissing == true, "the rescan's new bookmark cleared the missing mark")
+        await model.probeSources()
+        #expect(probes == probed, "the rescan probed the same file again")
+        let beforeMove = probes
+        scan.value.assets = [aerial(in: "/moved")]
+        model.refresh()
+        await model.probeSources()
+        #expect(probes == beforeMove + 1, "a file at a new path was not probed")
+    }
+
+    /// Holds each availability probe until the test answers it, so the test picks the order they finish in.
+    @MainActor
+    private final class ProbeGate {
+        private var parked: [CheckedContinuation<Bool, Never>] = []
+
+        var pending: Int {
+            parked.count
+        }
+
+        func park() async -> Bool {
+            await withCheckedContinuation { parked.append($0) }
+        }
+
+        func answer(_ index: Int, available: Bool) {
+            parked.remove(at: index).resume(returning: available)
+        }
+    }
+
+    private func settle(_ isDone: () -> Bool) async {
+        for _ in 0 ..< 200 where !isDone() {
+            await Task.yield()
+        }
+    }
+
+    @Test("An older probe that finishes after a recheck does not overwrite the recheck's result", .timeLimit(.minutes(1)))
+    func lateProbeKeepsTheNewerResult() async {
+        let row = bookmark("Row")
+        let gate = ProbeGate()
+        var source = inputs([row])
+        source.aerials = { .init() }
+        source.sourceAvailable = { _ in await gate.park() }
+        let model = SavedLibraryModel(inputs: source)
+        await settle { gate.pending == 1 }
+        let recheck = Task { await model.recheck(.bookmark(row)) }
+        await settle { gate.pending == 2 }
+        gate.answer(1, available: false)
+        await recheck.value
+        #expect(model.items.first?.isSourceMissing == true)
+        gate.answer(0, available: true)
+        // Every chance for the late answer to land.
+        await settle { model.items.first?.isSourceMissing == false }
+        #expect(model.items.first?.isSourceMissing == true, "the older probe overwrote the recheck's newer result")
     }
 
     @MainActor
@@ -294,7 +488,7 @@ struct SavedLibraryModelTests {
     @Test func installedVideoMetadataUsesResolvedContentWithoutASavedBookmark() async {
         let entry = WPEHistoryEntry(origin: origin("123", type: .video), importedAt: .distantPast)
         let content = WallpaperContent.video(bookmarkData: Data([1]))
-        var source = inputs()
+        var source = inputs(aerials: [aerial()])
         source.history = { [entry] }
         source.workshopContent = { $0.id == entry.id ? content : nil }
         var probed: [WallpaperContent] = []
@@ -305,6 +499,47 @@ struct SavedLibraryModelTests {
         #expect(probed == [content])
         #expect(model.visibleItems.first?.metadata == fourK)
         #expect(model.items.first { $0.kind == .aerial }?.metadata == nil)
+    }
+
+    @Test("A search matches a Workshop project's tags once they are read")
+    func searchMatchesWorkshopTagsOnceLoaded() async {
+        let entry = WPEHistoryEntry(origin: origin("123"), importedAt: .distantPast)
+        var source = inputs()
+        source.history = { [entry] }
+        source.projectTags = { $0.workshopID == entry.id ? ["Landscape", "Nature"] : [] }
+        let model = SavedLibraryModel(inputs: source)
+        model.query = "landsc"
+        #expect(model.visibleItems.isEmpty, "the project matched before its tags were read")
+        await model.loadSearchTags()
+        #expect(model.visibleItems.map(\.id) == ["workshop:123"], "the project's tags are not searched")
+    }
+
+    @Test("Library card badges appear only while their switches are on; other rows keep ON and never need an update")
+    func cardBadgesFollowTheWorkshopSwitches() throws {
+        let entry = WPEHistoryEntry(origin: origin("123"), importedAt: .distantPast)
+        var variant = bookmark("Variant")
+        variant.wpeOrigin = entry.origin
+        variant.content = .scene(descriptor(overrides: ["speed": .number(2)]))
+        var source = inputs([variant])
+        source.history = { [entry] }
+        source.nowPlaying = { _, _ in [1] }
+        let model = SavedLibraryModel(inputs: source)
+        let workshop = try #require(model.items.first { $0.id == "workshop:123" })
+        let saved = try #require(model.items.first { $0.id == "bookmark:\(variant.id)" })
+        let displays = [StageDisplay(
+            id: 1, fingerprint: "Studio", frame: CGRect(x: 0, y: 0, width: 1920, height: 1080), isBuiltin: false,
+            name: "Studio", badgeText: "", statusText: "", cover: nil, state: .ok
+        )]
+        let on = try #require(StageCard.onBadge(on: [1], among: displays))
+        let shown = GalleryCardPreferences()
+        let hidden = GalleryCardPreferences(showsUpdate: false, showsInUse: false)
+        func badges(_ item: LibraryItem, _ preferences: GalleryCardPreferences) -> LibraryCardBadges {
+            item.cardBadges(among: displays, updatedWorkshopIDs: ["123"], preferences: preferences)
+        }
+        #expect(badges(workshop, shown) == LibraryCardBadges(onBadge: on, needsUpdate: true))
+        #expect(badges(workshop, hidden) == LibraryCardBadges(), "a switch that is off still shows its badge")
+        #expect(badges(saved, shown) == LibraryCardBadges(onBadge: on), "only an installed project needs an update")
+        #expect(badges(saved, hidden) == LibraryCardBadges(onBadge: on), "the Workshop switches hide a saved row's ON")
     }
     #endif
 
@@ -317,12 +552,39 @@ struct SavedLibraryModelTests {
         let model = SavedLibraryModel(inputs: source)
         #expect(swept.isEmpty, "building the model must not sweep")
 
-        model.prepareLibrary()
+        model.prepareLibrary(alsoKeeping: [])
         #expect(swept == [["bookmark.png", "scheme.png"]])
 
         model.chip = .fourK
         model.refresh()
         #expect(swept.count == 1, "a refresh must not sweep again, and never against the filtered view")
+    }
+
+    @Test("The sweep keeps a cover only the undo history still points at")
+    func prepareLibraryKeepsCoversUndoCanBringBack() {
+        var swept: [Set<String>] = []
+        var source = inputs([bookmark("Saved")])
+        source.savedCoverFileNames = { ["bookmark.png"] }
+        source.removeOrphanCovers = { swept.append($0) }
+        let model = SavedLibraryModel(inputs: source)
+
+        model.prepareLibrary(alsoKeeping: ["removed.png"])
+
+        #expect(swept == [["bookmark.png", "removed.png"]])
+    }
+
+    @Test("Preparing the library asks for one Apple Aerials scan; a refresh asks for none")
+    func preparingTheLibraryAsksForOneAerialsScan() {
+        var scans = 0
+        var source = inputs()
+        source.scanAerials = { scans += 1 }
+        let model = SavedLibraryModel(inputs: source)
+
+        model.prepareLibrary(alsoKeeping: [])
+        #expect(scans == 1)
+
+        model.refresh()
+        #expect(scans == 1, "a refresh asked for another scan")
     }
 
     @Test("Tracking the shared stores does not keep the model alive")

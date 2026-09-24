@@ -24,6 +24,8 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
     public var playlistBookmarks: [Data]?
     public var wallpaperQueue: [WallpaperQueueEntry]?
     public var scheduleFallback: WallpaperQueueEntry?
+    /// Until this instant the daily schedule leaves the content alone; nil = not reconciled yet.
+    public var scheduleSettledUntil: Date?
     public var shufflePlaylist: Bool
     public var playlistRotationMinutes: Int?
     public var playlistCursorIndex: Int?
@@ -62,6 +64,7 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
         case playlistBookmarks
         case wallpaperQueue
         case scheduleFallback
+        case scheduleSettledUntil
         case shufflePlaylist
         case playlistRotationMinutes
         case playlistCursorIndex
@@ -217,6 +220,7 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
         playlistBookmarks = try c.decodeIfPresent([Data].self, forKey: .playlistBookmarks)
         wallpaperQueue = try c.decodeIfPresent([WallpaperQueueEntry].self, forKey: .wallpaperQueue)
         scheduleFallback = try c.decodeIfPresent(WallpaperQueueEntry.self, forKey: .scheduleFallback)
+        scheduleSettledUntil = try c.decodeIfPresent(Date.self, forKey: .scheduleSettledUntil)
         shufflePlaylist = try c.decodeIfPresent(Bool.self, forKey: .shufflePlaylist) ?? false
         playlistRotationMinutes = try c.decodeIfPresent(Int.self, forKey: .playlistRotationMinutes)
         playlistCursorIndex = try c.decodeIfPresent(Int.self, forKey: .playlistCursorIndex)
@@ -284,6 +288,7 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
         try c.encodeIfPresent(playlistBookmarks, forKey: .playlistBookmarks)
         try c.encodeIfPresent(wallpaperQueue, forKey: .wallpaperQueue)
         try c.encodeIfPresent(scheduleFallback, forKey: .scheduleFallback)
+        try c.encodeIfPresent(scheduleSettledUntil, forKey: .scheduleSettledUntil)
         try c.encode(shufflePlaylist, forKey: .shufflePlaylist)
         try c.encodeIfPresent(playlistRotationMinutes, forKey: .playlistRotationMinutes)
         try c.encodeIfPresent(playlistCursorIndex, forKey: .playlistCursorIndex)
@@ -492,6 +497,15 @@ public struct ScreenConfiguration: Codable, Equatable, Sendable {
             copy.activeWallpaper = .html(source: updated, config: config)
             didReplace = true
         }
+        copy.wallpaperQueue = copy.wallpaperQueue?.map { $0.replacingHTMLBookmark(original, with: refreshed) }
+        copy.scheduleFallback = copy.scheduleFallback?.replacingHTMLBookmark(original, with: refreshed)
+        copy.scheduleSlots = copy.scheduleSlots?.map { slot in
+            var slot = slot
+            slot.wallpaper = slot.wallpaper?.replacingHTMLBookmark(original, with: refreshed)
+            return slot
+        }
+        didReplace = didReplace || copy.wallpaperQueue != wallpaperQueue
+            || copy.scheduleFallback != scheduleFallback || copy.scheduleSlots != scheduleSlots
 
         return didReplace ? copy : nil
     }

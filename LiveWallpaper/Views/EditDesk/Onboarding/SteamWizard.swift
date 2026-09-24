@@ -10,6 +10,23 @@ enum SteamWizardMetrics {
     static let fieldRowHeight: CGFloat = 26
 }
 
+/// The wizard's primary action: the first step a download still lacks.
+enum SteamWizardStep: Equatable {
+    case installSteamCMD
+    case chooseLibrary
+    case signIn
+    case done
+
+    static func make(blocker: SteamCMDDoctorService.DownloadBlocker?, isConfirmed: Bool) -> SteamWizardStep {
+        switch blocker {
+        case .steamCMD: .installSteamCMD
+        case .library: .chooseLibrary
+        case .account, .session: .signIn
+        case nil: isConfirmed ? .done : .signIn
+        }
+    }
+}
+
 /// SCREENS S9's Steam wizard. Owns no Steam logic of its own: the status rows read
 /// `WorkshopSetupController`, signing in is `SteamSignInSheet`'s state machine (Steam Guard
 /// included), and the local library goes through `WorkshopFolderImportCoordinator`.
@@ -20,6 +37,8 @@ struct SteamWizard: View {
     @Environment(SteamCMDDoctorService.self) private var doctor
     @Environment(WorkshopSetupController.self) private var setupController
     @State private var isShowingSignIn = false
+    /// The step this wizard last acted on; its `setupError` shows only while that step is current.
+    @State private var lastAction: SteamWizardStep?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -47,7 +66,7 @@ struct SteamWizard: View {
         }
         .frame(width: SteamWizardMetrics.size.width, height: SteamWizardMetrics.size.height)
         .background(DesignTokens.EditDesk.Colors.console)
-        .task { await setupController.loadAccounts() }
+        .task { await setupController.prepare() }
         .sheet(isPresented: $isShowingSignIn) {
             AppLanguageScope(defaults: .appScoped()) {
                 SteamSignInSheet { accountName in
@@ -79,6 +98,7 @@ struct SteamWizard: View {
                 Text(verbatim: OnboardingCardContent.stepText(
                     step: progress.stepNumber(of: .workshop), total: dots.count
                 ))
+                .accessibilityLabel(Text("Step \(progress.stepNumber(of: .workshop)) of \(dots.count)"))
                 Spacer(minLength: 0)
                 Button("Later") {
                     progress.dismiss(.workshop)
@@ -97,8 +117,12 @@ struct SteamWizard: View {
     private var statusCard: some View {
         VStack(spacing: 0) {
             statusRow(title: "SteamCMD", state: setupController.steamCMDState, detail: steamCMDDetail)
+            stepNote(under: .installSteamCMD)
+            statusRow(title: "Steam Library access", state: doctor.libraryStepState, detail: libraryDetail)
+            stepNote(under: .chooseLibrary)
             statusRow(title: "Steam Account", state: accountState, detail: accountDetail)
             statusRow(title: "Steam Token (2FA)", state: doctor.accountStepState, detail: tokenDetail)
+            stepNote(under: .signIn)
         }
         .padding(.horizontal, DesignTokens.Spacing.md)
         .background(
@@ -127,10 +151,45 @@ struct SteamWizard: View {
         .accessibilityElement(children: .combine)
     }
 
+    /// At most one note fits the 526pt sheet: under the current step's row, its own error, else its probe message.
+    @ViewBuilder
+    private func stepNote(under row: SteamWizardStep) -> some View {
+        if row == step, let note {
+            Text(verbatim: note.text)
+                .font(DesignTokens.EditDesk.Typography.footnote)
+                .foregroundStyle(note.isError ? DesignTokens.EditDesk.Colors.danger : DesignTokens.EditDesk.Colors.warning)
+                .lineLimit(2)
+                .help(note.text)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.bottom, DesignTokens.Spacing.sm)
+        }
+    }
+
+    private var note: (text: String, isError: Bool)? {
+        if lastAction == step, let error = setupController.setupError {
+            return (error, true)
+        }
+        let probe: DoctorProbeKind
+        switch step {
+        case .installSteamCMD: probe = .binaryIdentity
+        case .chooseLibrary: probe = .workingDirectory
+        case .signIn: probe = .cachedLogin
+        case .done: return nil
+        }
+        return doctor.attentionMessage(for: probe).map { ($0, false) }
+    }
+
     private var steamCMDDetail: Text {
-        setupController.hasManagedInstall
+        if setupController.installer.status == .installing {
+            return Text("Installing…")
+        }
+        return setupController.hasManagedInstall
             ? Text("Installed (managed)")
             : Text(setupController.steamCMDState.statusText)
+    }
+
+    private var libraryDetail: Text {
+        doctor.workdirDisplayPath.map { Text(verbatim: $0) } ?? Text("Not authorized")
     }
 
     private var accountState: WorkshopStepState {
@@ -162,20 +221,38 @@ struct SteamWizard: View {
             Button(primaryTitle, action: primaryAction)
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
-                .disabled(setupController.isSteamCMDBusy)
+                .disabled(setupController.isSteamCMDBusy || doctor.accountStepState == .working)
         }
         .padding(DesignTokens.Spacing.lg)
     }
 
+    private var step: SteamWizardStep {
+        .make(blocker: doctor.downloadBlocker, isConfirmed: doctor.isDownloadConfirmed)
+    }
+
     private var primaryTitle: LocalizedStringKey {
-        doctor.hasBoundBinary ? "Sign In →" : "Install SteamCMD"
+        switch step {
+        case .installSteamCMD: "Install SteamCMD"
+        case .chooseLibrary: "Choose folder"
+        case .signIn: "Sign In →"
+        case .done: "Done"
+        }
     }
 
     private func primaryAction() {
-        if doctor.hasBoundBinary {
-            isShowingSignIn = true
-        } else {
+        let current = step
+        lastAction = current
+        switch current {
+        case .installSteamCMD:
             setupController.runManagedInstall()
+        case .chooseLibrary:
+            Task { await setupController.authorizeSteamLibrary(startingAtScannedPath: true) }
+        case .signIn:
+            isShowingSignIn = true
+        case .done:
+            // Recorded here too: a replayed tour whose session is already confirmed never sees false → true.
+            progress?.record(.workshop)
+            dismiss()
         }
     }
 
@@ -185,7 +262,7 @@ struct SteamWizard: View {
         }
     }
 
-    /// Also the Workshop card's "Import a local WE library" button, so the picker exists once.
+    /// Also the Workshop card's "Import a Local Folder" button, so the picker exists once.
     @discardableResult
     static func importLocalFolder() -> Bool {
         let panel = NSOpenPanel()

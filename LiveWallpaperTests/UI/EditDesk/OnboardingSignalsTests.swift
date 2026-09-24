@@ -102,20 +102,27 @@ struct OnboardingSignalsTests {
     }
     #endif
 
-    @Test("Workshop only completes from sign-in or a nonempty local wallpaper import")
-    func workshopHooks() throws {
+    @Test(
+        "Workshop completes when downloading becomes confirmed or a local import adds wallpapers",
+        .timeLimit(.minutes(1))
+    )
+    func workshopHooks() async throws {
         let fixture = try Fixture()
         defer { fixture.remove() }
         let signals = fixture.signals()
         defer { withExtendedLifetime(signals) {} }
         fixture.stores.username = "auto-selected"
-        #expect(fixture.progress.completed.isEmpty)
         fixture.stores.onLocalLibraryImported?(0)
+        try await settle()
         #expect(fixture.progress.completed.isEmpty)
-        fixture.stores.onSignedIn?()
+        fixture.stores.downloadConfirmed = true
+        try await settle()
         #expect(fixture.progress.completed == [.workshop])
         fixture.progress.reset()
         signals.rebaseline()
+        // Still confirmed after the replayed tour's rebaseline, so this change is not a false → true edge.
+        fixture.stores.username = "switched"
+        try await settle()
         #expect(fixture.progress.completed.isEmpty)
         fixture.stores.onLocalLibraryImported?(1)
         #expect(fixture.progress.completed == [.workshop])
@@ -173,10 +180,11 @@ struct OnboardingSignalsTests {
             inputs.wallpapers = { [stores] in stores.wallpapers }
             inputs.bookmarks = { [stores] in stores.bookmarks }
             inputs.historyIDs = { [stores] in stores.historyIDs }
-            inputs.installWorkshopHooks = { [stores] signedIn, imported in
-                stores.onSignedIn = signedIn
+            inputs.installWorkshopHooks = { [stores] imported in
                 stores.onLocalLibraryImported = imported
             }
+            // The doctor's confirmation implies a valid account, so it reads both, like the real one.
+            inputs.workshopDownloadConfirmed = { [stores] in stores.username != nil && stores.downloadConfirmed }
             return OnboardingSignals(progress: progress, inputs: inputs, notificationCenter: center)
         }
 
@@ -192,7 +200,7 @@ struct OnboardingSignalsTests {
         var bookmarks: [WallpaperBookmark] = []
         var historyIDs: Set<String> = []
         var username: String?
-        var onSignedIn: (@MainActor () -> Void)?
+        var downloadConfirmed = false
         var onLocalLibraryImported: (@MainActor (Int) -> Void)?
     }
 }

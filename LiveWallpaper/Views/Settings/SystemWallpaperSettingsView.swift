@@ -6,6 +6,7 @@ struct SystemWallpaperSettingsView: View {
     @Environment(WallpaperExportService.self) private var service
     @State private var confirmsRepair = false
     @State private var pendingDestructive: PendingDestructive?
+    @State private var showingAddSheet = false
 
     var body: some View {
         Form {
@@ -19,7 +20,7 @@ struct SystemWallpaperSettingsView: View {
                     .frame(width: 230)
                 }
             } header: {
-                Text("Playback")
+                SettingsSearchSectionHeader("Playback", anchor: .systemWallpaperPlayback)
             } footer: {
                 Text("The lock screen and login window always play the video.")
             }
@@ -40,7 +41,7 @@ struct SystemWallpaperSettingsView: View {
                 }
                 Button("Refresh") { service.refresh() }
             } header: {
-                Text("Extension status")
+                SettingsSearchSectionHeader("Extension status", anchor: .systemWallpaperStatus)
             } footer: {
                 Text("macOS chooses the wallpaper for each display and Space. Importing a video does not apply it to every desktop.")
             }
@@ -56,13 +57,18 @@ struct SystemWallpaperSettingsView: View {
                 }
                 .disabled(service.items.isEmpty)
             } header: {
-                Text("Library")
+                SettingsSearchSectionHeader("System Wallpaper Library", anchor: .systemWallpaperLibrary)
             } footer: {
                 Text("System Wallpaper plays exported videos independently of Loomscreen. App wallpaper effects, overlays and playback controls do not apply here.")
             }
         }
         .settingsFormChrome()
         .confirmDestructive($pendingDestructive)
+        .sheet(isPresented: $showingAddSheet) {
+            AppLanguageScope(defaults: .appScoped()) {
+                SystemWallpaperAddSheet()
+            }
+        }
         .onAppear { service.refresh() }
         .task { service.startObservingSharedRoot() }
     }
@@ -88,8 +94,30 @@ struct SystemWallpaperSettingsView: View {
                 Text("This version of macOS is not compatible with the wallpaper extension.")
             case .inUse:
                 Label("Selected by macOS", systemImage: "checkmark.circle.fill")
-            case .empty, .publishedNotSelected:
-                Text("Choose a wallpaper in System Settings")
+            case .empty:
+                nextStepRow(Text("No videos yet"))
+            case .publishedNotSelected:
+                nextStepRow(Text("Choose a wallpaper in System Settings"))
+            }
+        }
+    }
+
+    private func nextStepRow(_ message: Text) -> some View {
+        HStack {
+            message
+            Spacer(minLength: 0)
+            switch service.status.settingsNextStep {
+            case .addVideo:
+                Button {
+                    showingAddSheet = true
+                } label: {
+                    Label("Add Video", systemImage: "plus")
+                }
+                .accessibilityLabel(Text("Add Video"))
+            case .openWallpaperSettings:
+                Button("Open Wallpaper Settings") { service.openWallpaperSettings() }
+            case nil:
+                EmptyView()
             }
         }
     }
@@ -158,7 +186,7 @@ private struct SystemWallpaperMaintenanceSection: View {
                 }
             }
         } header: {
-            Text("Maintenance")
+            SettingsSearchSectionHeader("Maintenance", anchor: .systemWallpaperMaintenance)
         } footer: {
             Text("Restarting briefly redraws all system wallpapers for your account. Repair removes the reviewed registrations, keeps this app, and preserves app files and videos.")
         }
@@ -186,13 +214,29 @@ private struct SystemWallpaperMaintenanceSection: View {
         case .verifying: Text("Waiting for the extension to reconnect…")
         case .verified: Label("Extension connection verified", systemImage: "checkmark.circle")
         case .awaitingSelection:
-            Text("The service restarted, but no new connection was confirmed. Select a video using the library's top-right button.")
+            Text("The service restarted, but no new connection was confirmed. In System Wallpaper, click Add Video to choose a video.")
         case .failed:
             Text("Maintenance did not complete. Inspect registrations again before retrying.")
                 .foregroundStyle(DesignTokens.Colors.Status.warning)
             if let code = maintenance.errorCode {
                 ErrorCodeChip(code: code, tint: DesignTokens.Colors.Status.warning)
             }
+        }
+    }
+}
+
+enum SystemWallpaperNextStep {
+    case addVideo
+    case openWallpaperSettings
+}
+
+extension WallpaperExportService.Status {
+    /// nil = the settings page has nothing to offer for this status.
+    var settingsNextStep: SystemWallpaperNextStep? {
+        switch self {
+        case .empty: .addVideo
+        case .publishedNotSelected: .openWallpaperSettings
+        case .systemIncompatible, .failed, .inUse: nil
         }
     }
 }

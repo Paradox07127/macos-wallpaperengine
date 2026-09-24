@@ -22,7 +22,6 @@ struct LibraryChipsRow<SortMenu: View>: View {
     let sortTitle: LocalizedStringKey
     @ViewBuilder let sortMenu: () -> SortMenu
     let onImport: () -> Void
-    var showsActions = true
 
     var body: some View {
         HStack(spacing: DesignTokens.EditDesk.Spacing.s8) {
@@ -32,10 +31,8 @@ struct LibraryChipsRow<SortMenu: View>: View {
                 }
             }
             Spacer(minLength: DesignTokens.EditDesk.Spacing.s12)
-            if showsActions {
-                sortControl
-                importButton
-            }
+            sortControl
+            importButton
         }
     }
 

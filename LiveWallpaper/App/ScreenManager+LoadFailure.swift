@@ -1,8 +1,28 @@
+import CoreGraphics
 import Foundation
 import LiveWallpaperCore
 
+extension Notification.Name {
+    /// userInfo: `screenID` (CGDirectDisplayID), `reason` (localized String), and the preparation that failed:
+    /// `attemptID` (UUID) for a Pro scene attempt, otherwise its transition `generation` (Int).
+    static let wallpaperPreparationDidFail = Notification.Name("WallpaperPreparationDidFail")
+}
+
+/// Posted only for a candidate's own failure, never for a session already on screen.
+enum WallpaperPreparationFailure {
+    static func announce(_ reason: String, on screenID: CGDirectDisplayID, generation: Int? = nil, attemptID: UUID? = nil) {
+        var userInfo: [String: Any] = ["screenID": screenID, "reason": reason]
+        userInfo["generation"] = generation
+        userInfo["attemptID"] = attemptID
+        NotificationCenter.default.post(name: .wallpaperPreparationDidFail, object: nil, userInfo: userInfo)
+    }
+}
+
 @MainActor
 extension ScreenManager {
+    /// The first-frame limit for web addresses and scenes, the slowest wallpapers to prepare.
+    nonisolated static let longPreparationTimeout: Duration = .seconds(12)
+
     #if !LITE_BUILD
     func captureActiveSceneFailure(_ session: SceneWallpaperSession) {
         guard let error = session.loadError,
@@ -58,6 +78,10 @@ extension ScreenManager {
         wallpaperLoads.update(id, for: screen) {
             $0.phase = .failed
             $0.failure = failure
+        }
+        // A runtime failure belongs to a session already on screen, not to the preparation an apply waits for.
+        if stage != "runtime" {
+            WallpaperPreparationFailure.announce(cause.reason, on: screen.id, attemptID: id)
         }
         #if !LITE_BUILD
         WorkshopToastCenter.shared.postFailure(failure, screenID: screen.id)

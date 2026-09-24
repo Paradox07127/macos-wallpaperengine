@@ -339,19 +339,20 @@ struct StageGeometryTests {
         #expect(near(small.minY, 564) && near(small.minX, 48), Comment(rawValue: "\(small)"))
     }
 
-    @Test("Crate packs to a 48pt pitch and Cover Flow orbits the focused slot")
+    @Test("Crate packs to a 48pt pitch and Focus Row orbits the focused slot")
     func styledRows() {
         let crate = (0 ..< 5).map { StageGeometry.rowFrame(style: .crate, index: $0, count: 5, focus: 0, windowSize: Self.designWindow) }
         #expect(near(crate[0].minX, 455.7) && near(crate[1].minX - crate[0].minX, 48), Comment(rawValue: "\(crate)"))
 
-        let focused = StageGeometry.rowFrame(style: .coverFlow, index: 2, count: 7, focus: 2, windowSize: Self.designWindow)
+        let focused = StageGeometry.rowFrame(style: .focusRow, index: 2, count: 7, focus: 2, windowSize: Self.designWindow)
         #expect(near(focused.minX, 540), Comment(rawValue: "\(focused)"))
-        let right = StageGeometry.rowFrame(style: .coverFlow, index: 3, count: 7, focus: 2, windowSize: Self.designWindow)
-        let left = StageGeometry.rowFrame(style: .coverFlow, index: 0, count: 7, focus: 2, windowSize: Self.designWindow)
-        #expect(near(right.minX, 650) && near(left.minX, 382), Comment(rawValue: "\(right) \(left)"))
+        // 194pt a slot, and 22pt more on each side of the grown middle card.
+        let right = StageGeometry.rowFrame(style: .focusRow, index: 3, count: 7, focus: 2, windowSize: Self.designWindow)
+        let left = StageGeometry.rowFrame(style: .focusRow, index: 0, count: 7, focus: 2, windowSize: Self.designWindow)
+        #expect(near(right.minX, 756) && near(left.minX, 130), Comment(rawValue: "\(right) \(left)"))
         // A fractional focus must not jump: half a slot out is half the first offset.
-        let gliding = StageGeometry.rowFrame(style: .coverFlow, index: 3, count: 7, focus: 2.5, windowSize: Self.designWindow)
-        #expect(near(gliding.minX, 595), Comment(rawValue: "\(gliding)"))
+        let gliding = StageGeometry.rowFrame(style: .focusRow, index: 3, count: 7, focus: 2.5, windowSize: Self.designWindow)
+        #expect(near(gliding.minX, 648), Comment(rawValue: "\(gliding)"))
     }
 
     @Test("Wave lift peaks under the hovered card and dies out three cards away")
@@ -363,8 +364,9 @@ struct StageGeometryTests {
         #expect(StageGeometry.waveLift(style: .folders, index: 0, hovered: 3) == 0)
         #expect(StageGeometry.waveLift(style: .folders, index: 6, hovered: 3) == 0)
         #expect(near(StageGeometry.waveLift(style: .crate, index: 3, hovered: 3), -54, 0.01))
-        #expect(near(StageGeometry.waveLift(style: .coverFlow, index: 3, hovered: 3), -16, 0.01))
-        #expect(StageGeometry.waveLift(style: .coverFlow, index: 4, hovered: 3) == 0)
+        #expect(near(StageGeometry.waveLift(style: .fan, index: 3, hovered: 3), -30, 0.01))
+        #expect(near(StageGeometry.waveLift(style: .focusRow, index: 3, hovered: 3), -8, 0.01))
+        #expect(StageGeometry.waveLift(style: .fan, index: 4, hovered: 3) == 0)
 
         // The whole point of the rewrite: the crest moves inside a slot, and it is smooth across
         // the boundary — a spring can hide a step, but it cannot invent the motion that is missing.
@@ -408,15 +410,16 @@ struct StageGeometryTests {
             }
         }
         #expect(StageGeometry.visibleCards(style: .crate, count: 0, rowOffset: 0, focus: 0, windowSize: size).isEmpty)
-        let flow = StageGeometry.visibleCards(style: .coverFlow, count: 120, rowOffset: 0, focus: 40, windowSize: size)
-        #expect(flow.contains(40) && flow.count <= 2 * StageGeometry.coverFlowReach + 1, Comment(rawValue: "\(flow)"))
+        // Six slots out is 13.8° and still showing; the seventh is past 16°.
+        let fan = StageGeometry.visibleCards(style: .fan, count: 120, rowOffset: 0, focus: 40, windowSize: size)
+        #expect(fan == 34 ..< 47, Comment(rawValue: "\(fan)"))
     }
 
-    @Test("Grid ladder shares the responsive three-column minimum")
+    @Test("The default grid ladder packs four, five and six columns at 1040, 1280 and 1600")
     func gridLadder() {
-        #expect(StageGeometry.gridColumns(windowWidth: 1040) == 3)
-        #expect(StageGeometry.gridColumns(windowWidth: 1280) == 4)
-        #expect(StageGeometry.gridColumns(windowWidth: 1600) == 5)
+        #expect(StageGeometry.gridColumns(windowWidth: 1040) == 4)
+        #expect(StageGeometry.gridColumns(windowWidth: 1280) == 5)
+        #expect(StageGeometry.gridColumns(windowWidth: 1600) == 6)
         for width in [CGFloat(1040), 1280, 1600] {
             let cell = StageGeometry.gridCellSize(windowWidth: width)
             #expect(abs(cell.width / cell.height - 16 / 9) < 0.001)
@@ -424,12 +427,23 @@ struct StageGeometryTests {
         }
     }
 
+    @MainActor
+    @Test("Until a size is picked the library shows small tiles: five columns of about 235pt at 1280, 1.18× a shelf card")
+    func libraryDefaultsToSmallTiles() {
+        #expect(LibraryTileSize.defaultSize == .small)
+        #expect(EditDeskStageModel().gridTileSize == LibraryTileSize.defaultSize, "the stage would fly the cards to another grid")
+        #expect(StageGeometry.gridColumns(windowWidth: 1280) == 5)
+        let cell = StageGeometry.gridCellSize(windowWidth: 1280)
+        #expect(abs(cell.width - 235.2) < 0.05, Comment(rawValue: "a default tile is \(cell.width)pt wide"))
+        #expect(abs(cell.width / StageGeometry.cardSize.width - 1.18) < 0.005)
+    }
+
     @Test("Flight endpoints match the library tile frames including both paddings")
     func gridFrames() {
         for width in [CGFloat(1040), 1280, 1600] {
             for index in [0, 1, 2, 3, 7, 11] {
                 let expected = DesignTokens.LibraryGrid.tileFrame(
-                    index: index, size: .medium, aspect: .wide,
+                    index: index, size: LibraryTileSize.defaultSize, aspect: .wide,
                     fitting: width - 2 * DesignTokens.LibraryGrid.horizontalPadding, tileAspectRatio: 16 / 9
                 ).offsetBy(
                     dx: DesignTokens.LibraryGrid.horizontalPadding,
@@ -437,7 +451,7 @@ struct StageGeometryTests {
                 )
                 #expect(near(StageGeometry.gridFrame(index: index, windowWidth: width), expected, 0.001))
                 let wrongAspect = DesignTokens.LibraryGrid.tileFrame(
-                    index: index, size: .medium, aspect: .wide,
+                    index: index, size: LibraryTileSize.defaultSize, aspect: .wide,
                     fitting: width - 2 * DesignTokens.LibraryGrid.horizontalPadding, tileAspectRatio: 4 / 3
                 ).offsetBy(
                     dx: DesignTokens.LibraryGrid.horizontalPadding,
@@ -459,7 +473,10 @@ struct StageGeometryTests {
                     let frame = StageGeometry.gridFrame(index: index, windowWidth: width).offsetBy(dx: 0, dy: -offset)
                     #expect(visible.contains(index) == frame.intersects(viewport))
                 }
-                #expect(visible.count <= 5 * StageGeometry.gridColumns(windowWidth: width))
+                // At most every row a viewport-high window can touch, a partial one at each end.
+                let pitch = StageGeometry.gridCellSize(windowWidth: width).height + DesignTokens.LibraryGrid.spacing
+                let rows = Int((viewport.height / pitch).rounded(.up)) + 1
+                #expect(visible.count <= rows * StageGeometry.gridColumns(windowWidth: width))
             }
         }
         #expect(StageGeometry.visibleGridCards(count: 0, windowSize: Self.designWindow, scrollOffset: 0).isEmpty)
@@ -539,11 +556,6 @@ struct StageGeometryTests {
         // once the far edge's own −128.6pt of depth goes through the divide.
         #expect(near(rect.minX, half.frame.minX) && near(rect.width, 142.3, 0.3), Comment(rawValue: "\(rect)"))
         #expect(near(rect.height, 112), Comment(rawValue: "\(rect)"))
-        let flow = StageGeometry.cardPlacement(
-            style: .coverFlow, index: 3, count: 7, progress: 1, focus: 2, windowSize: Self.designWindow
-        )
-        let flowRect = StageGeometry.hitRect(flow, style: .coverFlow)
-        #expect(near(flowRect.width, 73.3, 0.5), Comment(rawValue: "\(flowRect)"))
         let grid = StageGeometry.cardPlacement(
             style: .folders, index: 3, count: 14, progress: 2, focus: 0, windowSize: Self.designWindow
         )
@@ -635,40 +647,379 @@ struct StageGeometryTests {
         #expect(alpha(band.upperBound + StageGeometry.bandFade) == 0)
         let half = alpha(band.lowerBound - StageGeometry.bandFade / 2)
         #expect(abs(half - 0.5) < 0.01, Comment(rawValue: "\(half)"))
-        // Cover Flow has its own parking curve and no band.
-        #expect(StageGeometry.bandOpacity(cardMinX: -9999, style: .coverFlow, capacity: 14, windowSize: size) == 1)
+        // The centred styles fade by their own curves and have no band.
+        for style in [ShelfStyle.facingIn, .fan, .focusRow] {
+            #expect(StageGeometry.bandOpacity(cardMinX: -9999, style: style, capacity: 14, windowSize: size) == 1)
+        }
     }
 
-    @Test("Cover Flow preserves its tuned tilt, depth, dim and scale and flattens at the grid")
-    func coverFlowTunedPlacement() {
-        let depths: [CGFloat] = [0, -100, -120, -140, -155]
-        let dims: [CGFloat] = [0, 0.18, 0.36, 0.54, 0.6]
-        let scales: [CGFloat] = [1, 0.92, 0.84, 0.76, 0.76]
-        for distance in -4 ... 4 {
-            let placement = StageGeometry.cardPlacement(
-                style: .coverFlow, index: 6 + distance, count: 13, progress: 1, focus: 6, windowSize: Self.designWindow
+    @Test("Fan and Focus Row flatten into the grid: no turn, no dim, full size, on the tiles", arguments: [
+        ShelfStyle.fan, .focusRow,
+    ])
+    func centredStylesFlattenAtTheGrid(style: ShelfStyle) throws {
+        func placement(_ index: Int, _ progress: Double) -> StageGeometry.CardPlacement {
+            StageGeometry.cardPlacement(
+                style: style, index: index, count: 13, progress: progress, focus: 6, windowSize: Self.designWindow
             )
-            let tilt: CGFloat = distance == 0 ? 0 : (abs(distance) == 1 ? 62 : 65) * (distance < 0 ? -1 : 1)
-            #expect(near(placement.rotationYDegrees, tilt, 0.001))
-            #expect(near(placement.translateZ, depths[abs(distance)], 0.001))
-            #expect(near(placement.dim, dims[abs(distance)], 0.001))
-            #expect(near(placement.scale, scales[abs(distance)], 0.001))
         }
+        // Only meaningful if the row has something to flatten: a turn on the fan, a size on the row.
+        try #require(placement(9, 1).rotationZDegrees != 0 || placement(6, 1).scale != 1)
         for index in 0 ..< 13 {
-            let shelf = StageGeometry.cardPlacement(
-                style: .coverFlow, index: index, count: 13, progress: 1, focus: 6, windowSize: Self.designWindow
+            let row = placement(index, 1)
+            let half = placement(index, 1.5)
+            let grid = placement(index, 2)
+            #expect(near(half.rotationZDegrees, row.rotationZDegrees / 2, 0.0001), Comment(rawValue: "card \(index): \(half)"))
+            #expect(
+                grid.rotationYDegrees == 0 && grid.rotationZDegrees == 0 && grid.translateZ == 0 && grid.dim == 0
+                    && grid.scale == 1,
+                Comment(rawValue: "card \(index): \(grid)")
             )
-            #expect(shelf.dim <= 0.6)
-            if abs(index - 6) >= 4 {
-                #expect(shelf.dim == 0.6)
-            }
-            let grid = StageGeometry.cardPlacement(
-                style: .coverFlow, index: index, count: 13, progress: 2, focus: 6, windowSize: Self.designWindow
-            )
-            #expect(grid.rotationYDegrees == 0 && grid.translateZ == 0 && grid.dim == 0 && grid.scale == 1)
+            #expect(near(grid.frame, StageGeometry.gridFrame(index: index, windowWidth: Self.designWindow.width), 0.001))
         }
-        #expect(StageGeometry.metrics(for: .coverFlow).pitch == 110)
-        #expect(StageGeometry.coverFlowReach == 6)
         #expect(StageGeometry.shelfPerspective == 500)
+    }
+
+    // MARK: Fan
+
+    private func fan(_ index: Int, focus: Double, count: Int = 13, progress: Double = 1, capacity: Int = 20) -> StageGeometry.CardPlacement {
+        StageGeometry.cardPlacement(
+            style: .fan, index: index, count: count, progress: progress, focus: focus,
+            windowSize: Self.designWindow, capacity: capacity
+        )
+    }
+
+    @Test("Fan mirrors about the window's centre line: positions, and turns of opposite sign", arguments: [6.0, 6.5])
+    func fanIsSymmetric(focus: Double) {
+        let size = Self.designWindow
+        for right in 7 ... 12 {
+            let left = Int(2 * focus) - right
+            let r = fan(right, focus: focus)
+            let l = fan(left, focus: focus)
+            let label = "focus \(focus), cards \(left) ↔ \(right)"
+            #expect(
+                near(r.frame.midX - size.width / 2, size.width / 2 - l.frame.midX, 0.001) && near(r.frame.midY, l.frame.midY, 0.001),
+                Comment(rawValue: "\(label): \(l.frame) vs \(r.frame)")
+            )
+            #expect(
+                r.rotationZDegrees > 0 && near(r.rotationZDegrees, -l.rotationZDegrees, 0.001),
+                Comment(rawValue: "\(label): turns \(l.rotationZDegrees) vs \(r.rotationZDegrees)")
+            )
+            #expect(near(r.opacity, l.opacity, 0.001), Comment(rawValue: "\(label): alpha \(l.opacity) vs \(r.opacity)"))
+            let rh = StageGeometry.hitRect(r, style: .fan)
+            let lh = StageGeometry.hitRect(l, style: .fan)
+            #expect(
+                near(rh.minX - size.width / 2, size.width / 2 - lh.maxX, 0.01) && near(rh.width, lh.width, 0.01)
+                    && near(rh.minY, lh.minY, 0.01) && near(rh.height, lh.height, 0.01),
+                Comment(rawValue: "\(label): hit \(lh) vs \(rh)")
+            )
+        }
+    }
+
+    @Test("Fan: every centre on one 1500pt arc whose top is 18pt above the row's middle, each card turned along its radius")
+    func fanRidesOneArc() {
+        let size = Self.designWindow
+        let rowTop = size.height - StageGeometry.cardRowBottomInset
+        let hub = CGPoint(x: size.width / 2, y: rowTop + 56 - 18 + 1500)
+        for focus in [0.0, 3.3, 6.0] {
+            for index in 0 ..< 13 {
+                let card = fan(index, focus: focus)
+                let u = CGFloat(index) - CGFloat(focus)
+                let label = "focus \(focus), card \(index): \(card)"
+                #expect(near(card.rotationZDegrees, 2.3 * u, 0.0001), Comment(rawValue: label))
+                #expect(near(hypot(card.frame.midX - hub.x, card.frame.midY - hub.y), 1500, 0.001), Comment(rawValue: label))
+                // The card's up runs out along the radius through its centre, away from the hub.
+                let radius = atan2(card.frame.midX - hub.x, hub.y - card.frame.midY) * 180 / .pi
+                #expect(near(card.rotationZDegrees, radius, 0.0001), Comment(rawValue: "\(label): radius at \(radius)°"))
+                #expect(
+                    card.frame.size == StageGeometry.cardSize && card.rotationYDegrees == 0 && card.scale == 1
+                        && card.anchorX == 0.5 && card.translateZ == 0 && card.dim == 0,
+                    Comment(rawValue: label)
+                )
+                if u > 0 {
+                    // Clockwise on screen, y down: the right card's top edge runs downhill to the right.
+                    let corners = StageGeometry.hitShape(card, style: .fan).corners
+                    #expect(corners[1].y > corners[0].y, Comment(rawValue: "\(label): top edge \(corners[0]) → \(corners[1])"))
+                }
+            }
+        }
+        let middle = fan(6, focus: 6)
+        #expect(middle.rotationZDegrees == 0, Comment(rawValue: "\(middle)"))
+        #expect(middle.frame.midX == size.width / 2 && middle.frame.midY == rowTop + 56 - 18, Comment(rawValue: "\(middle)"))
+        // Right lies over left, as in the crate.
+        #expect((0 ..< 12).allSatisfy { fan($0 + 1, focus: 6).depthOrder > fan($0, focus: 6).depthOrder })
+    }
+
+    @Test("Fan: the arc rises with the shelf instead of flattening onto the row top")
+    func fanRisesWithTheShelf() {
+        for index in [2, 6, 11] {
+            let arc = StageGeometry.rowFrame(style: .fan, index: index, count: 13, focus: 6, windowSize: Self.designWindow)
+            for progress in [0.5, 1] {
+                let card = fan(index, focus: 6, progress: progress)
+                let below = StageGeometry.shelfHiddenOffset * CGFloat(1 - progress)
+                #expect(
+                    near(card.frame, arc.offsetBy(dx: 0, dy: below), 0.001),
+                    Comment(rawValue: "card \(index) at p = \(progress): \(card.frame), arc \(arc)")
+                )
+            }
+        }
+    }
+
+    @Test("Fan: a card is whole to 13° off the middle and has faded out by 16°, on either side")
+    func fanFadesBetween13And16Degrees() {
+        /// Card 10 turned `turn` degrees off the middle.
+        func alpha(_ turn: CGFloat, capacity: Int = 20) -> CGFloat {
+            fan(10, focus: Double(10 - turn / 2.3), count: 40, capacity: capacity).opacity
+        }
+        for sign in [CGFloat(1), -1] {
+            #expect(alpha(sign * 12) == 1 && near(alpha(sign * 13), 1, 0.000_001), Comment(rawValue: "\(alpha(sign * 12)) \(alpha(sign * 13))"))
+            #expect(near(alpha(sign * 14.5), 0.5, 0.000_001), Comment(rawValue: "\(alpha(sign * 14.5))"))
+            #expect(near(alpha(sign * 16), 0, 0.000_001) && alpha(sign * 17) == 0, Comment(rawValue: "\(alpha(sign * 16)) \(alpha(sign * 17))"))
+        }
+        // The same half-slot cap as Facing In: six cards leave two a side, the third fading.
+        #expect(near(fan(10, focus: 7.75, count: 40, capacity: 6).opacity, 0.5, 0.000_001))
+    }
+
+    @Test("Fan sweeps without a jump: centres, turns and hit corners move by bounded steps")
+    func fanSweepsWithoutJumps() {
+        func row(_ focus: Double) -> [StageGeometry.CardPlacement] {
+            (0 ..< 8).map { fan($0, focus: focus, count: 8) }
+        }
+        var worst = (centre: CGFloat(0), turn: CGFloat(0), corner: CGFloat(0))
+        var previous = row(0)
+        for step in 1 ... 300 {
+            let current = row(Double(step) / 100)
+            for (before, after) in zip(previous, current) {
+                worst.centre = max(worst.centre, hypot(after.frame.midX - before.frame.midX, after.frame.midY - before.frame.midY))
+                worst.turn = max(worst.turn, abs(after.rotationZDegrees - before.rotationZDegrees))
+                let a = StageGeometry.hitShape(before, style: .fan).corners
+                let b = StageGeometry.hitShape(after, style: .fan).corners
+                for (p, q) in zip(a, b) {
+                    worst.corner = max(worst.corner, hypot(q.x - p.x, q.y - p.y))
+                }
+            }
+            previous = current
+        }
+        print("FAN sweep worst step: centre \(worst.centre) turn \(worst.turn) corner \(worst.corner)")
+        // 0.01 of a slot turns the whole fan 0.023° about its hub: 0.602pt at the 1500pt centres,
+        // 0.626pt at the top corners, 1559pt out.
+        #expect(worst.centre <= 0.61, Comment(rawValue: "a centre moved \(worst.centre)pt in one 0.01 step"))
+        #expect(worst.turn <= 0.0231, Comment(rawValue: "a card turned \(worst.turn)° in one 0.01 step"))
+        #expect(worst.corner <= 0.63, Comment(rawValue: "a hit corner moved \(worst.corner)pt in one 0.01 step"))
+        // The bounds only mean something if the sweep carried cards across the middle.
+        #expect(row(0)[2].rotationZDegrees > 0 && row(3)[2].rotationZDegrees < 0)
+    }
+
+    @Test("Fan and Focus Row build exactly the cards that show, at most (capacity − 1) / 2 a side", arguments: [
+        ShelfStyle.fan, .focusRow,
+    ], [6, 20])
+    func centredSliceIsWhatShows(style: ShelfStyle, capacity: Int) {
+        let side = (capacity - 1) / 2
+        for width in [CGFloat(1040), 1280, 1920] {
+            let size = CGSize(width: width, height: 820)
+            for step in 0 ... 200 {
+                let focus = Double(step) / 10
+                let slice = StageGeometry.visibleCards(
+                    style: style, count: 40, rowOffset: 0, focus: focus, windowSize: size, capacity: capacity
+                )
+                let centre = Int(focus.rounded())
+                #expect(
+                    slice.contains(centre) && centre - slice.lowerBound <= side && slice.upperBound - 1 - centre <= side,
+                    Comment(rawValue: "\(width)pt, focus \(focus): \(slice)")
+                )
+                for index in 0 ..< 40 where index != centre {
+                    let alpha = StageGeometry.cardPlacement(
+                        style: style, index: index, count: 40, progress: 1, focus: focus, windowSize: size, capacity: capacity
+                    ).opacity
+                    #expect(
+                        slice.contains(index) == (alpha > 0),
+                        Comment(rawValue: "\(width)pt, focus \(focus): card \(index) at \(alpha), slice \(slice)")
+                    )
+                }
+            }
+        }
+    }
+
+    // MARK: Focus Row
+
+    @Test("Focus Row: a 220×123 middle card between 176×99 neighbours, 18pt apart wherever the row stands")
+    func focusRowSizesAndGaps() {
+        let size = Self.designWindow
+        func placements(_ focus: Double) -> [StageGeometry.CardPlacement] {
+            (0 ..< 9).map {
+                StageGeometry.cardPlacement(style: .focusRow, index: $0, count: 9, progress: 1, focus: focus, windowSize: size)
+            }
+        }
+        func hits(_ focus: Double) -> [CGRect] {
+            placements(focus).map { StageGeometry.hitRect($0, style: .focusRow) }
+        }
+        let rest = hits(4)
+        #expect(near(rest[4].width, 220, 0.001) && near(rest[4].height, 123.2, 0.001), Comment(rawValue: "\(rest[4])"))
+        #expect(
+            near(rest[4].midX, size.width / 2, 0.001) && near(rest[4].midY, size.height - StageGeometry.cardRowBottomInset + 56, 0.001),
+            Comment(rawValue: "\(rest[4])")
+        )
+        for index in [2, 3, 5, 6] {
+            #expect(
+                near(rest[index].width, 176, 0.001) && near(rest[index].height, 98.56, 0.001) && near(rest[index].midY, rest[4].midY, 0.001),
+                Comment(rawValue: "card \(index): \(rest[index])")
+            )
+        }
+        for step in 0 ... 40 {
+            let focus = 3 + Double(step) / 20
+            let row = hits(focus)
+            for index in 1 ..< row.count {
+                #expect(
+                    near(row[index].minX - row[index - 1].maxX, 18, 0.001),
+                    Comment(rawValue: "focus \(focus): cards \(index - 1) and \(index) are \(row[index].minX - row[index - 1].maxX)pt apart")
+                )
+            }
+        }
+        // Between two cards the growth is shared out: halfway, both are 198pt.
+        let halfway = hits(4.5)
+        #expect(near(halfway[4].width, 198, 0.001) && near(halfway[5].width, 198, 0.001), Comment(rawValue: "\(halfway[4]) \(halfway[5])"))
+        var worst = (width: CGFloat(0), minX: CGFloat(0))
+        var previous = hits(3)
+        for step in 1 ... 200 {
+            let current = hits(3 + Double(step) / 100)
+            for (a, b) in zip(previous, current) {
+                worst.width = max(worst.width, abs(b.width - a.width))
+                worst.minX = max(worst.minX, abs(b.minX - a.minX))
+            }
+            previous = current
+        }
+        print("FOCUSROW sweep worst step: width \(worst.width) minX \(worst.minX)")
+        // 0.01 of a slot grows a card by 0.44pt and moves an edge by at most 216 + 22 = 238pt a slot.
+        #expect(worst.width <= 0.45 && worst.minX <= 2.39, Comment(rawValue: "\(worst)"))
+        // Flat, the middle card on top, the others dimmed by up to 0.3.
+        let row = placements(4.5)
+        #expect(row.allSatisfy { $0.rotationYDegrees == 0 && $0.rotationZDegrees == 0 && $0.anchorX == 0.5 })
+        #expect(near(row[4].dim, 0.15, 0.000_001) && near(row[3].dim, 0.3, 0.000_001) && near(row[7].dim, 0.3, 0.000_001))
+        #expect(placements(4)[4].dim == 0 && placements(4)[4].depthOrder > placements(4)[5].depthOrder)
+    }
+
+    // MARK: Facing In
+
+    @Test("Facing In mirrors about the window's centre line: position, turn and pivot", arguments: [6.0, 6.5])
+    func facingInIsSymmetric(focus: Double) {
+        let size = Self.designWindow
+        func placement(_ index: Int) -> StageGeometry.CardPlacement {
+            StageGeometry.cardPlacement(
+                style: .facingIn, index: index, count: 13, progress: 1, focus: focus, windowSize: size
+            )
+        }
+        for right in 7 ... 12 {
+            let left = Int(2 * focus) - right
+            let r = placement(right)
+            let l = placement(left)
+            let label = "focus \(focus), cards \(left) ↔ \(right)"
+            #expect(
+                near(r.frame.minX - size.width / 2, size.width / 2 - l.frame.maxX, 0.001),
+                Comment(rawValue: "\(label): \(l.frame) vs \(r.frame)")
+            )
+            #expect(
+                near(r.rotationYDegrees, -l.rotationYDegrees, 0.001),
+                Comment(rawValue: "\(label): turns \(l.rotationYDegrees) vs \(r.rotationYDegrees)")
+            )
+            #expect(r.anchorX == 1 - l.anchorX, Comment(rawValue: "\(label): pivots \(l.anchorX) vs \(r.anchorX)"))
+            #expect(near(r.opacity, l.opacity, 0.001), Comment(rawValue: "\(label): alpha \(l.opacity) vs \(r.opacity)"))
+            let rh = StageGeometry.hitRect(r, style: .facingIn)
+            let lh = StageGeometry.hitRect(l, style: .facingIn)
+            #expect(
+                near(rh.minX - size.width / 2, size.width / 2 - lh.maxX, 0.01) && near(rh.width, lh.width, 0.01)
+                    && near(rh.height, lh.height, 0.01),
+                Comment(rawValue: "\(label): hit \(lh) vs \(rh)")
+            )
+        }
+    }
+
+    @Test("Facing In: the middle card faces front on top, and each side turns its outer edge near")
+    func facingInTurnsTowardTheMiddle() {
+        let size = Self.designWindow
+        let row = (0 ..< 13).map {
+            StageGeometry.cardPlacement(style: .facingIn, index: $0, count: 13, progress: 1, focus: 6, windowSize: size)
+        }
+        let middle = row[6]
+        #expect(middle.rotationYDegrees == 0, Comment(rawValue: "the middle card turns \(middle.rotationYDegrees)"))
+        #expect(near(middle.frame.midX, size.width / 2, 0.001), Comment(rawValue: "\(middle.frame)"))
+        for (index, card) in row.enumerated() where index != 6 {
+            let inner = row[index < 6 ? index + 1 : index - 1]
+            #expect(
+                card.depthOrder < inner.depthOrder,
+                Comment(rawValue: "card \(index) at \(card.depthOrder) is not under its inner neighbour at \(inner.depthOrder)")
+            )
+            if index > 6 {
+                #expect(card.rotationYDegrees < 0, Comment(rawValue: "right card \(index) turns \(card.rotationYDegrees)"))
+            } else {
+                #expect(card.rotationYDegrees > 0, Comment(rawValue: "left card \(index) turns \(card.rotationYDegrees)"))
+            }
+        }
+        #expect(near(row[7].rotationYDegrees, -28, 0.001) && near(row[5].rotationYDegrees, 28, 0.001))
+        // Each side pivots on its outer edge, which stays on the frame; past the first neighbour every
+        // card shows a 56pt strip beyond the one inside it.
+        let hits = row.map { StageGeometry.hitRect($0, style: .facingIn) }
+        #expect(near(hits[8].maxX, row[8].frame.maxX, 0.01) && near(hits[4].minX, row[4].frame.minX, 0.01))
+        #expect(
+            near(hits[8].maxX - hits[7].maxX, 56, 0.01) && near(hits[5].minX - hits[4].minX, 56, 0.01),
+            Comment(rawValue: "\(hits[4]) \(hits[5]) \(hits[7]) \(hits[8])")
+        )
+    }
+
+    @Test("Facing In sweeps across the centre line without a jump, pivot switch included")
+    func facingInSweepsWithoutJumps() {
+        let size = Self.designWindow
+        func row(_ focus: Double) -> [StageGeometry.CardPlacement] {
+            (0 ..< 8).map {
+                StageGeometry.cardPlacement(style: .facingIn, index: $0, count: 8, progress: 1, focus: focus, windowSize: size)
+            }
+        }
+        var worst = (x: CGFloat(0), turn: CGFloat(0), hit: CGFloat(0))
+        var previous = row(0)
+        for step in 1 ... 300 {
+            let current = row(Double(step) / 100)
+            for (before, after) in zip(previous, current) {
+                let a = StageGeometry.hitRect(before, style: .facingIn)
+                let b = StageGeometry.hitRect(after, style: .facingIn)
+                worst.x = max(worst.x, abs(after.frame.minX - before.frame.minX))
+                worst.turn = max(worst.turn, abs(after.rotationYDegrees - before.rotationYDegrees))
+                worst.hit = max(worst.hit, abs(b.minX - a.minX), abs(b.maxX - a.maxX), abs(b.height - a.height))
+            }
+            previous = current
+        }
+        print("FACINGIN sweep worst step: minX \(worst.x) turn \(worst.turn) hitRect \(worst.hit)")
+        // At the centre the curves are at their steepest: 156pt and 56° per slot, 0.01 of a slot a step.
+        #expect(worst.x <= 1.6, Comment(rawValue: "a card moved \(worst.x)pt in one 0.01 step"))
+        #expect(worst.turn <= 0.6, Comment(rawValue: "a card turned \(worst.turn)° in one 0.01 step"))
+        #expect(worst.hit <= 2.5, Comment(rawValue: "a hit rect edge moved \(worst.hit)pt in one 0.01 step"))
+        // The bounds only mean something if the sweep carried cards across the centre and flipped their pivot.
+        let start = row(0)[2]
+        let end = row(3)[2]
+        #expect(start.rotationYDegrees < 0 && start.anchorX == 1, Comment(rawValue: "card 2 at focus 0: \(start)"))
+        #expect(end.rotationYDegrees > 0 && end.anchorX == 0, Comment(rawValue: "card 2 at focus 3: \(end)"))
+    }
+
+    @Test("Facing In builds every card that still shows, and no more than (capacity − 1) / 2 a side", arguments: [6, 20])
+    func facingInSliceCoversWhatShows(capacity: Int) {
+        let side = (capacity - 1) / 2
+        for width in [CGFloat(1040), 1280, 1920] {
+            let size = CGSize(width: width, height: 820)
+            for step in 0 ... 200 {
+                let focus = Double(step) / 10
+                let slice = StageGeometry.visibleCards(
+                    style: .facingIn, count: 40, rowOffset: 0, focus: focus, windowSize: size, capacity: capacity
+                )
+                let centre = Int(focus.rounded())
+                #expect(
+                    slice.contains(centre) && centre - slice.lowerBound <= side && slice.upperBound - 1 - centre <= side,
+                    Comment(rawValue: "\(width)pt, focus \(focus): \(slice)")
+                )
+                for index in 0 ..< 40 where !slice.contains(index) {
+                    let alpha = StageGeometry.cardPlacement(
+                        style: .facingIn, index: index, count: 40, progress: 1, focus: focus,
+                        windowSize: size, capacity: capacity
+                    ).opacity
+                    #expect(alpha == 0, Comment(rawValue: "\(width)pt, focus \(focus): card \(index) shows at \(alpha) outside \(slice)"))
+                }
+            }
+        }
     }
 }

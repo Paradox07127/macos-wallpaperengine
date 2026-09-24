@@ -76,20 +76,21 @@ enum SteamCMDDoctorError: Error, Equatable, Sendable, LocalizedError {
     case steamLibraryMissingConfig(URL)
     case steamLibraryInsideContainer(URL)
     case untrustedBinary
+    case connectorBusy
+    case connectorUnavailable
 
     var errorDescription: String? {
         switch self {
-        case .binaryResolution(let error):
-            let detail = String(describing: error)
-            return String(localized: "SteamCMD binary could not be resolved: \(detail)", bundle: .appLanguage, comment: "Workshop diagnostics error; %@ is the underlying binary-resolution failure.")
+        case .binaryResolution:
+            return String(localized: "Loomscreen couldn't use that file as SteamCMD.", bundle: .appLanguage, comment: "Workshop setup error when a manually chosen SteamCMD is refused.")
         case .bookmarkCreation(let reason):
-            return String(localized: "Could not create a security-scoped bookmark: \(reason)", bundle: .appLanguage, comment: "Workshop diagnostics error; %@ is the failure reason.")
+            return String(localized: "Couldn't keep access to the chosen folder: \(reason)", bundle: .appLanguage, comment: "Workshop diagnostics error; %@ is the failure reason.")
         case .missingBinaryBinding:
             return String(localized: "No SteamCMD binary is selected.", bundle: .appLanguage, comment: "Workshop diagnostics error.")
         case .missingWorkdirBinding:
             return String(localized: "No Steam Library is authorized.", bundle: .appLanguage, comment: "Workshop diagnostics error.")
         case .bookmarkResolution(let reason):
-            return String(localized: "Stored security-scoped bookmark could not be resolved: \(reason)", bundle: .appLanguage, comment: "Workshop diagnostics error; %@ is the failure reason.")
+            return String(localized: "Access to the chosen folder has expired. Choose it again: \(reason)", bundle: .appLanguage, comment: "Workshop diagnostics error; %@ is the failure reason.")
         case .invalidUsername:
             return String(localized: "Steam username must match ^[A-Za-z0-9_]{1,32}$.", bundle: .appLanguage, comment: "Workshop diagnostics error for an invalid Steam username.")
         case .steamLibraryMissingConfig(let url):
@@ -100,6 +101,10 @@ enum SteamCMDDoctorError: Error, Equatable, Sendable, LocalizedError {
             return String(localized: "That folder is inside Loomscreen's own sandbox container, not your Steam installation: \(path)", bundle: .appLanguage, comment: "Workshop diagnostics error when the picked Steam Library is the app's private container copy; %@ is the offending path.")
         case .untrustedBinary:
             return String(localized: "SteamCMD is not a verified Valve build.", bundle: .appLanguage, comment: "Workshop diagnostics error when the SteamCMD binary is not trusted.")
+        case .connectorBusy:
+            return String(localized: "Loomscreen's Steam connector is busy with another SteamCMD task. Try again in a moment.", bundle: .appLanguage, comment: "Workshop setup error when binding SteamCMD while the connector is busy with another SteamCMD operation.")
+        case .connectorUnavailable:
+            return String(localized: "Loomscreen's Steam connector did not respond.", bundle: .appLanguage, comment: "Steam sign-in diagnostic when the XPC connector could not be reached.")
         }
     }
 }
@@ -274,19 +279,17 @@ final class SteamCMDDoctorService {
     func bindResolvedBinary(_ path: String) async throws {
         beginProbeRun()
         let inspection = await inspect(path: path)
-        if let reason = inspection?.unavailableReason {
-            // Busy is not "bad binary": refusing the bind with a resolution error
-            // would tell the user to pick a different file for no reason.
-            throw SteamCMDDoctorError.bookmarkResolution(reason)
-        }
-        guard let inspection, inspection.exists, let sha256 = inspection.sha256 else {
-            throw SteamCMDDoctorError.binaryResolution(.notExecutable)
+        if let refusal = Self.bindRefusal(for: inspection) {
+            if let reason = inspection?.unavailableReason {
+                Logger.notice("SteamCMD bind refused, connector busy: \(reason)", category: .workshop)
+            }
+            throw refusal
         }
         binaryPath = path
         // A receipt from before the rebind describes a binary the user just
         // replaced; showing it would undo the rebind on screen.
         lastExecutedBinaryPath = nil
-        lastBinarySHA256 = sha256
+        lastBinarySHA256 = inspection?.sha256
         verifiedBinarySHA256 = nil
         greenFingerprint = nil
         for kind in DoctorProbeKind.allCases where kind != .workingDirectory {
@@ -299,6 +302,19 @@ final class SteamCMDDoctorService {
                 await runProbe(kind)
             }
         }
+    }
+
+    nonisolated static func bindRefusal(for inspection: SteamCMDBinaryInspection?) -> SteamCMDDoctorError? {
+        guard let inspection else { return .connectorUnavailable }
+        if inspection.unavailableReason != nil {
+            // Busy is not "bad binary": refusing the bind with a resolution error
+            // would tell the user to pick a different file for no reason.
+            return .connectorBusy
+        }
+        guard inspection.exists, inspection.sha256 != nil else {
+            return .binaryResolution(.notExecutable)
+        }
+        return nil
     }
 
     func unbindBinary() {
@@ -883,11 +899,11 @@ final class SteamCMDDoctorService {
             setProbe(.cachedLogin, status: .red(
                 message: reason.isEmpty
                     ? String(
-                        localized: "Steam refused the sign-in. Sign in again in Terminal, then check again.",
+                        localized: "Steam refused the sign-in. Sign in to this account again, then check again.",
                         bundle: .appLanguage, comment: "Steam sign-in diagnostic when Steam refused without giving a reason."
                     )
                     : String(
-                        localized: "Steam refused the sign-in (\(reason)). Sign in again in Terminal, then check again.",
+                        localized: "Steam refused the sign-in (\(reason)). Sign in to this account again, then check again.",
                         bundle: .appLanguage, comment: "Steam sign-in diagnostic when Steam answered with a refusal; %@ is Steam's own reason text."
                     ),
                 command: signIn
@@ -926,24 +942,32 @@ final class SteamCMDDoctorService {
 
     var isDownloadReady: Bool { downloadBlocker == nil }
 
-    /// Download block reason, or nil if ready (`setupIncomplete` → open Doctor).
+    /// Stricter than `isDownloadReady`: the session must have been proven this launch, not merely not refuted.
+    var isDownloadConfirmed: Bool {
+        downloadBlocker == nil && isGreen(.cachedLogin)
+    }
+
+    /// The first setup step a download still lacks.
     enum DownloadBlocker: Equatable {
-        case setupIncomplete
+        case steamCMD
+        case library
+        case account
+        case session
     }
 
     var downloadBlocker: DownloadBlocker? {
         // Only an actual red identity verdict blocks; `.notRun` stays allowed
         // because probe results are not persisted across launches.
-        if case .red? = probes[.binaryIdentity]?.status { return .setupIncomplete }
-        guard hasBoundBinary,
-              workdirBookmarkData != nil,
-              !workdirResolutionFailed,
-              username.map(SteamCMDScriptWriter.validateUsername) ?? false
-        else { return .setupIncomplete }
+        if case .red? = probes[.binaryIdentity]?.status {
+            return .steamCMD
+        }
+        guard hasBoundBinary else { return .steamCMD }
+        guard workdirBookmarkData != nil, !workdirResolutionFailed else { return .library }
+        guard username.map(SteamCMDScriptWriter.validateUsername) ?? false else { return .account }
         // Unknown after launch is not logged out, and a network failure is not a missing account. Only a credential verdict blocks.
         switch cachedLoginVerdict {
         case .noCachedSession?, .sessionExpired?, .loginFailed?:
-            return .setupIncomplete
+            return .session
         default:
             return nil
         }
@@ -952,11 +976,26 @@ final class SteamCMDDoctorService {
     var downloadBlockerMessage: String? {
         switch downloadBlocker {
         case .none:
-            return nil
-        case .setupIncomplete:
-            return String(
-                localized: "Finish connecting Steam before downloading.",
-                bundle: .appLanguage, comment: "Reason downloads are unavailable because setup is incomplete."
+            nil
+        case .steamCMD:
+            String(
+                localized: "Set up SteamCMD first — Steam downloads run through it.",
+                bundle: .appLanguage, comment: "Reason the automatic scene-resources download is unavailable: no SteamCMD."
+            )
+        case .library:
+            String(
+                localized: "Authorize your Steam library folder first.",
+                bundle: .appLanguage, comment: "Reason the automatic scene-resources download is unavailable: the Steam library is not authorized."
+            )
+        case .account:
+            String(
+                localized: "Sign in to Steam first — the download runs as your own account.",
+                bundle: .appLanguage, comment: "Reason the automatic scene-resources download is unavailable: no Steam account."
+            )
+        case .session:
+            String(
+                localized: "Loomscreen's download session is unavailable. Reconnect this account; your Steam app sign-in is separate.",
+                bundle: .appLanguage, comment: "SteamCMD download needs renewed private-profile authentication."
             )
         }
     }

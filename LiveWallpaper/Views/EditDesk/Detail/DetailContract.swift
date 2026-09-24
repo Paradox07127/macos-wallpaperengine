@@ -66,12 +66,51 @@ struct DetailDisplayTag: Identifiable, Equatable {
     }
 }
 
+/// What the wallpaper column shows: an inspected attempt takes the whole column, the two failure
+/// notices sit above the empty setup or the hero.
+enum DetailPreviewState: Equatable {
+    case empty, preparing, prepareFailed, lastAttemptFailed, runtimeError, hero
+
+    /// `attempt` is the display's load attempt whether or not it is inspected; `applying` is an apply
+    /// from the Edit Desk still waiting on this display.
+    static func resolve(
+        hasConfiguration: Bool, attempt: WallpaperLoadAttempt?, hasRuntimeError: Bool, applying: Bool = false
+    ) -> Self {
+        if let attempt, attempt.isInspecting {
+            return attempt.phase == .failed ? .prepareFailed : .preparing
+        }
+        if applying {
+            return .preparing
+        }
+        if attempt?.phase == .failed {
+            return .lastAttemptFailed
+        }
+        if hasRuntimeError {
+            return .runtimeError
+        }
+        return hasConfiguration ? .hero : .empty
+    }
+
+    var showsAttempt: Bool {
+        self == .preparing || self == .prepareFailed
+    }
+
+    /// Whether a runtime error, when the display has one, gets its banner. It is independent of a failed
+    /// attempt, so it also stands under that notice; only an attempt's page, which fills the column, hides it.
+    var showsRuntimeError: Bool {
+        !showsAttempt
+    }
+}
+
 /// What the still hero's chips and its HUD transport say; the desktop is the live preview, the
-/// hero a frame grab, so `isPlaying` is the desktop session's state, never the still's.
+/// hero a frame grab, so the transport follows the desktop session, never the still.
 struct DetailHeroStatus: Equatable {
     var title: String
     var kindLine: String
-    var isPlaying: Bool
+    /// The user's play intent, which a policy pause leaves set; nil when no player is running.
+    var intendsToPlay: Bool?
+    /// Why a policy holds the desktop session stopped; nil while none does.
+    var pauseReason: String?
     /// nil hides the `▶ {fps} FPS · GPU {x}%` chip.
     var performanceLine: String?
     var canNavigatePlaylist = false

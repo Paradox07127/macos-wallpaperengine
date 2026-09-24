@@ -11,6 +11,9 @@ struct StageDisplay: Identifiable, Equatable {
         case ok
         case failed(StageFailureChip)
         case paused(reasonText: String)
+        case preparing(text: String)
+        /// The master switch is off: the display keeps its wallpaper but draws none.
+        case off(text: String)
         case empty
     }
 
@@ -36,13 +39,28 @@ struct StageDisplay: Identifiable, Equatable {
     /// disabled rather than hiding them.
     var canChangePlaylistEntry = false
     var canTogglePlayback = false
+    /// The user's play intent, which a policy pause leaves set; false without a player.
+    var intendsToPlay = false
 
-    /// The transport's middle button offers the opposite of what the display is doing now.
+    /// The transport's middle button offers the opposite of what the user asked for.
     var playbackGlyph: String {
-        if case .paused = state {
-            "play.fill"
-        } else {
-            "pause.fill"
+        intendsToPlay ? "pause.fill" : "play.fill"
+    }
+
+    /// What VoiceOver reads after the display's name: the wallpaper, and the state unless it just runs.
+    var accessibilityValue: String {
+        switch state {
+        case .empty:
+            String(localized: "No wallpaper configured", bundle: .appLanguage)
+        case .ok:
+            String(
+                localized: "Now playing \(wallpaperTitle)", bundle: .appLanguage,
+                comment: "VoiceOver value of a display on the Edit Desk stage. Placeholder is the wallpaper's name."
+            )
+        case let .failed(chip):
+            [wallpaperTitle, chip.text].filter { !$0.isEmpty }.joined(separator: ", ")
+        case let .paused(text), let .preparing(text), let .off(text):
+            [wallpaperTitle, text].filter { !$0.isEmpty }.joined(separator: ", ")
         }
     }
 
@@ -61,6 +79,7 @@ struct StageDisplay: Identifiable, Equatable {
             && lhs.showsPlaylistControls == rhs.showsPlaylistControls
             && lhs.canChangePlaylistEntry == rhs.canChangePlaylistEntry
             && lhs.canTogglePlayback == rhs.canTogglePlayback
+            && lhs.intendsToPlay == rhs.intendsToPlay
     }
 }
 
@@ -107,6 +126,8 @@ struct StageCard: Identifiable, Equatable {
     /// `ON MPG` while the card's wallpaper is running on a display; nil otherwise.
     var onBadge: String?
     var isDraggable: Bool
+    /// Why the card's wallpaper cannot play here; drawn in place of `onBadge`.
+    var statusBadge: String?
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.id == rhs.id
@@ -115,13 +136,46 @@ struct StageCard: Identifiable, Equatable {
             && lhs.thumbnail === rhs.thumbnail
             && lhs.onBadge == rhs.onBadge
             && lhs.isDraggable == rhs.isDraggable
+            && lhs.statusBadge == rhs.statusBadge
+    }
+
+    /// Names the leftmost of the displays `ids` run on, the modal's ⌘n order, and counts the rest.
+    static func onBadge(on ids: [StageDisplay.ID], among displays: [StageDisplay]) -> String? {
+        let names = displays.filter { ids.contains($0.id) }.sorted { $0.frame.minX < $1.frame.minX }.map(\.name)
+        guard let first = names.first else { return nil }
+        return names.count == 1 ? "ON \(first)" : "ON \(first) +\(names.count - 1)"
     }
 }
 
 enum ShelfStyle: String, CaseIterable, Codable, Sendable {
+    case facingIn
     case crate
     case folders
-    case coverFlow
+    case fan
+    case focusRow
+
+    init?(rawValue: String) {
+        // Still in the defaults of anyone who picked the style the fan replaced; without it they fall back to the default.
+        let raw = rawValue == "coverFlow" ? Self.fan.rawValue : rawValue
+        guard let style = Self.allCases.first(where: { $0.rawValue == raw }) else { return nil }
+        self = style
+    }
+
+    /// The middle card is the focus and the row offset counts whole cards from it; the other
+    /// styles scroll a band of cards past fixed slots.
+    var isCentred: Bool {
+        self == .facingIn || self == .fan || self == .focusRow
+    }
+}
+
+/// One row of a context menu on the stage or of a wallpaper's "…" menu. The host builds the rows; menus only show them.
+struct StageMenuItem {
+    let title: String
+    let isEnabled: Bool
+    var isDestructive = false
+    /// A submenu's rows; `action` runs only on a row without any.
+    var submenu: [StageMenuItem] = []
+    let action: @MainActor () -> Void
 }
 
 enum StagePlaybackAction: Equatable, Sendable {
@@ -141,8 +195,9 @@ enum StageEvent: Equatable, Sendable {
     case cardApplyRequested(StageCard.ID)
     case displayTapped(StageDisplay.ID)
     case emptyActionTapped(StageDisplay.ID, EmptyScreenAction)
-    case displayContextMenu(StageDisplay.ID, screenPoint: CGPoint)
     case dropped(card: StageCard.ID, onto: StageDisplay.ID)
+    /// Files dragged in from Finder, in drop order; their type is judged only after the drop.
+    case filesDropped([URL], onto: StageDisplay.ID)
     case dropCancelled(card: StageCard.ID)
     case playbackTapped(StageDisplay.ID, StagePlaybackAction)
     case snapped(Int)
@@ -159,6 +214,10 @@ protocol EditDeskStageEngine: AnyObject {
     func returnTile(display: StageDisplay.ID) async
     func crossfadeCover(display: StageDisplay.ID, to image: CGImage, duration: TimeInterval)
     func shake(card: StageCard.ID)
+    /// A rejected Finder drop has no card to shake, so the display it landed on shakes instead.
+    func shake(display: StageDisplay.ID)
+    /// Esc, one level at a time; false when there is nothing to leave.
+    func escape() -> Bool
 }
 
 /// Boundary between the SwiftUI chrome and the CALayer stage. SwiftUI writes the inputs,
@@ -170,7 +229,7 @@ final class EditDeskStageModel {
     var displays: [StageDisplay] = []
     var shelfItems: [StageCard] = []
     var shelfStyle: ShelfStyle = .crate
-    var gridTileSize: LibraryTileSize = .medium
+    var gridTileSize: LibraryTileSize = .defaultSize
     var reduceMotion = false
     /// Increase Contrast. The stage keeps resolved CGColors, so it cannot read the setting off an
     /// appearance the way SwiftUI does; this picks the tokens' contrast tier instead.
@@ -188,6 +247,10 @@ final class EditDeskStageModel {
     /// Band at the top of the stage the display arrangement must keep clear, so the overview
     /// onboarding card does not sit on the displays (R-27). Springs to its new value.
     var arrangementTopInset: CGFloat = 0
+    /// The sections of the menu a right-click or Control-click opens on a display; nil or empty opens none.
+    @ObservationIgnored var displayMenu: (@MainActor (StageDisplay.ID) -> [[StageMenuItem]])?
+    /// The same for a shelf card.
+    @ObservationIgnored var cardMenu: (@MainActor (StageCard.ID) -> [[StageMenuItem]])?
 
     // MARK: Stage → SwiftUI
 
@@ -273,6 +336,14 @@ final class EditDeskStageModel {
         engine?.shake(card: card)
     }
 
+    func shake(display: StageDisplay.ID) {
+        engine?.shake(display: display)
+    }
+
+    func escape() -> Bool {
+        engine?.escape() ?? false
+    }
+
     // MARK: Engine → model (unchanged values do not notify observers; the engine reports every frame)
 
     func report(progress: Double) {
@@ -331,5 +402,45 @@ final class EditDeskStageModel {
 
     func emit(_ event: StageEvent) {
         eventContinuation.yield(event)
+    }
+
+    // MARK: Thumbnails
+
+    /// Cards past each end of the drawn run that keep, or load ahead, their thumbnails.
+    static let thumbnailLead = 4
+
+    /// Clears thumbnails outside the kept band (a card holds its image strongly), fills bare cards inside it from `cached`, and returns those still bare, ascending.
+    func refreshShelfThumbnails(cached: (Int) -> CGImage?) -> [Int] {
+        let kept = keptThumbnailIndices
+        var missing: [Int] = []
+        for index in shelfItems.indices {
+            if !kept.contains(index) {
+                if shelfItems[index].thumbnail != nil {
+                    shelfItems[index].thumbnail = nil
+                }
+            } else if shelfItems[index].thumbnail == nil {
+                if let image = cached(index) {
+                    shelfItems[index].thumbnail = image
+                } else {
+                    missing.append(index)
+                }
+            }
+        }
+        return missing
+    }
+
+    /// Hands a finished decode to its card unless the card has left the kept band meanwhile; the image stays in the cache for the next refresh.
+    func landThumbnail(_ image: CGImage, for id: StageCard.ID) {
+        guard let index = shelfItems.firstIndex(where: { $0.id == id }), keptThumbnailIndices.contains(index) else { return }
+        shelfItems[index].thumbnail = image
+    }
+
+    private var keptThumbnailIndices: Set<Int> {
+        var kept = Set(visibleGridRange.clamped(to: shelfItems.indices))
+        if !visibleShelfRange.isEmpty {
+            let lead = Self.thumbnailLead
+            kept.formUnion((visibleShelfRange.lowerBound - lead ..< visibleShelfRange.upperBound + lead).clamped(to: shelfItems.indices))
+        }
+        return kept
     }
 }

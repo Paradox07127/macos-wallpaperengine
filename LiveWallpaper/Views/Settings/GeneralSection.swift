@@ -23,7 +23,7 @@ extension GeneralSettingsView {
                 icon: "square.grid.2x2",
                 iconColor: .orange,
                 title: "Library tile size",
-                info: "Applies to bookmarks, schemes, Workshop, and every other library page."
+                info: "Applies to every wallpaper grid."
             ) {
                 libraryTileSizePicker
             }
@@ -155,7 +155,7 @@ extension GeneralSettingsView {
 
     private var libraryTileSizeSelection: Binding<LibraryTileSize> {
         Binding(
-            get: { LibraryTileSize(rawValue: libraryTileSizeRaw) ?? .medium },
+            get: { LibraryTileSize(rawValue: libraryTileSizeRaw) ?? .defaultSize },
             set: { libraryTileSizeRaw = $0.rawValue }
         )
     }

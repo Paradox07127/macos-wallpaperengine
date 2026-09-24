@@ -1,3 +1,4 @@
+import AppKit
 import LiveWallpaperCore
 import SwiftUI
 
@@ -10,14 +11,15 @@ struct EditDeskRoot: View {
     @State private var signals: OnboardingSignals?
     /// One centre for every page: `HomePage` is not on the tree while Workshop is showing.
     @State private var toasts = EditDeskToastCenter()
+    /// The window's undo history; it goes with the window, so closing it empties the history.
+    @State private var undo: EditDeskUndoStack?
     @AppStorage(EditDeskPreferences.background, store: .appScoped())
     private var backgroundRaw = EditDeskPreferences.backgroundDefault.rawValue
     @AppStorage(LibraryTileSize.preferencesKey, store: .appScoped())
-    private var libraryTileSizeRaw = LibraryTileSize.medium.rawValue
+    private var libraryTileSizeRaw = LibraryTileSize.defaultSize.rawValue
     #if !LITE_BUILD
     @Environment(WorkshopServices.self) private var workshopServices
     @Environment(SteamCMDDoctorService.self) private var steamDoctor
-    @Environment(WorkshopSetupController.self) private var workshopSetup
     @State private var workshopSession: WorkshopSession?
     @State private var announcedTickets: Set<UUID> = []
     @State private var historicalFailure: WallpaperFailureSnapshot?
@@ -67,6 +69,8 @@ struct EditDeskRoot: View {
                                     searchText: .constant(""), showsSearch: false,
                                     windowWidth: geometry.size.width, status: nil
                                 )
+                                // Above the columns, whose scroll view reaches up into this strip and would cover it.
+                                .zIndex(1)
                                 HStack(spacing: 0) {
                                     SettingsSidebar(
                                         selection: $router.settingsSelection,
@@ -88,15 +92,20 @@ struct EditDeskRoot: View {
                     }
                 }
                 .environment(progress)
+                .environment(router)
             } else {
                 Color.clear
             }
+        }
+        .overlay(alignment: .bottom) {
+            EditDeskToastHost(center: toasts, onOpenDisplay: { router?.showDetail($0) })
         }
         #if !LITE_BUILD
         .onChange(of: deferredApplyTicketStates, initial: true) { _, _ in announceSettledTickets() }
         .overlay(alignment: .bottomTrailing) {
             DownloadToastHost(
                 visibleDisplayID: router?.page == .home ? router?.detailDisplayID : nil,
+                activity: WorkshopFolderImportCoordinator.shared.progress,
                 onOpenFailure: openFailure
             )
             .padding(DesignTokens.Spacing.lg)
@@ -116,7 +125,8 @@ struct EditDeskRoot: View {
             WallpaperFailureDetails(failure: failure, onDismiss: dismiss)
         }
         #endif
-        .environment(\.libraryTileSize, LibraryTileSize(rawValue: libraryTileSizeRaw) ?? .medium)
+        .modifier(UndoCommands(undo: undo, toasts: toasts))
+        .environment(\.libraryTileSize, LibraryTileSize(rawValue: libraryTileSizeRaw) ?? .defaultSize)
         .providesGalleryCardPreferences()
         .background {
             if router?.page == .settings {
@@ -134,14 +144,23 @@ struct EditDeskRoot: View {
             )
             var inputs = OnboardingSignals.Inputs.live(screenManager: screenManager)
             #if !LITE_BUILD
-            inputs.installWorkshopHooks = { [workshopSetup] signedIn, imported in
-                workshopSetup.onSignedIn = signedIn
+            inputs.installWorkshopHooks = { imported in
                 WorkshopFolderImportCoordinator.shared.onLocalLibraryImported = imported
             }
+            inputs.workshopDownloadConfirmed = { [steamDoctor] in steamDoctor.isDownloadConfirmed }
             #endif
             let signals = OnboardingSignals(progress: progress, inputs: inputs)
             self.progress = progress
             self.signals = signals
+            let undo = EditDeskUndoStack(
+                manager: screenManager,
+                router: ApplyRouter(
+                    manager: screenManager, bookmarks: BookmarkStore.shared, sceneCapable: featureCatalog.isEnabled(.scene)
+                ),
+                bookmarks: BookmarkStore.shared
+            )
+            undo.onRecord = { [toasts] text, stepID in toasts.post(text, style: .success, undoStepID: stepID) }
+            self.undo = undo
             let router = EditDeskRouter(
                 initialNavigation: initialNavigation,
                 initialAddWallpaperRequest: initialAddWallpaperRequest,
@@ -151,7 +170,7 @@ struct EditDeskRoot: View {
             self.router = router
             Self.consumeOnboardingRequest(router: router, progress: progress, signals: signals)
             #if !LITE_BUILD
-            let session = makeWorkshopSession()
+            let session = makeWorkshopSession(undo: undo)
             workshopSession = session
             // A launch-time "open Workshop scoped to this item" arrives before any page mounts.
             session.consumePendingDeepLink()
@@ -196,14 +215,21 @@ struct EditDeskRoot: View {
         guard let workshopSession else { return }
         for ticket in workshopSession.deferredApply.tickets.values where ticket.state.isSettled {
             guard announcedTickets.insert(ticket.id).inserted else { continue }
-            let screenName = screenManager.screens.first { $0.id == ticket.target.screenID }?.name ?? ""
-            for message in DeferredApplyToasts.messages(for: ticket.state, screenName: screenName) ?? [] {
-                toasts.post(message.text, style: message.style)
+            let screenName = DeferredApplyToasts.screenName(for: ticket.target, in: screenManager.screens)
+            let messages = DeferredApplyToasts.messages(
+                for: ticket.state, screenName: screenName, screenID: ticket.target.screenID,
+                wallpapersOn: screenManager.wallpapersGloballyEnabled
+            )
+            for message in messages ?? [] {
+                toasts.post(
+                    message.text, style: message.style, screenID: message.screenID, persistent: message.persists,
+                    undoStepID: message.undoStepID
+                )
             }
         }
     }
 
-    private func makeWorkshopSession() -> WorkshopSession {
+    private func makeWorkshopSession(undo: EditDeskUndoStack) -> WorkshopSession {
         let doctor = steamDoctor
         return WorkshopSession(
             browse: BrowseViewModel(services: workshopServices),
@@ -213,7 +239,8 @@ struct EditDeskRoot: View {
                     manager: screenManager,
                     bookmarks: BookmarkStore.shared,
                     sceneCapable: featureCatalog.isEnabled(.scene)
-                )
+                ),
+                undo: undo
             ),
             confirmReadiness: { await doctor.autoConfirmDownloadReadinessIfNeeded() },
             ingestDownloads: { await WorkshopFolderImportCoordinator.shared.ingestExistingDownloads(using: doctor) }
@@ -231,4 +258,50 @@ struct EditDeskRoot: View {
         NotificationCenter.default.post(name: .selectScreenInSettings, object: nil, userInfo: ["screenID": screenID, "failureID": failure.id])
     }
     #endif
+}
+
+/// ⌘Z and ⇧⌘Z for every page, and the undo history in their environment. Off `body`, which is already
+/// slow to type-check.
+private struct UndoCommands: ViewModifier {
+    let undo: EditDeskUndoStack?
+    let toasts: EditDeskToastCenter
+    @Environment(\.appearsActive) private var appearsActive
+
+    func body(content: Content) -> some View {
+        content
+            .background { shortcuts }
+            .environment(undo)
+    }
+
+    /// Off while another window is key: SwiftUI falls back to the main window's shortcut, so ⌘Z in a
+    /// sheet or the menu bar panel would otherwise undo a wallpaper.
+    private var shortcuts: some View {
+        ZStack {
+            Button { run(redo: false) } label: { EmptyView() }
+                .keyboardShortcut("z", modifiers: .command)
+            Button { run(redo: true) } label: { EmptyView() }
+                .keyboardShortcut("z", modifiers: [.command, .shift])
+        }
+        .disabled(!appearsActive)
+        .opacity(0)
+        .frame(width: 0, height: 0)
+        .accessibilityHidden(true)
+    }
+
+    /// These buttons take ⌘Z before the Edit menu does, so a text field being edited gets it back as `undo:`.
+    private func run(redo: Bool) {
+        let key = NSApp.keyWindow
+        switch EditDeskUndoKeyRoute.route(firstResponder: key?.firstResponder, keyWindowIsMain: key != nil && key === NSApp.mainWindow) {
+        case .text:
+            NSApp.sendAction(Selector((redo ? "redo:" : "undo:")), to: nil, from: nil)
+        case .ignore:
+            break
+        case .stack:
+            guard let undo else { return }
+            Task {
+                guard let outcome = redo ? await undo.redo() : await undo.undo() else { return }
+                toasts.post(outcome)
+            }
+        }
+    }
 }

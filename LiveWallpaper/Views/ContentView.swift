@@ -19,7 +19,7 @@ struct ContentView: View {
     @State private var historicalFailure: WallpaperFailureSnapshot?
     @State private var historicalFailureDetails: WallpaperFailureSnapshot?
     @AppStorage(LibraryTileSize.preferencesKey, store: .appScoped())
-    private var libraryTileSizeRaw = LibraryTileSize.medium.rawValue
+    private var libraryTileSizeRaw = LibraryTileSize.defaultSize.rawValue
     private let initialAddWallpaperPromptKind: String?
 
     init(initialNavigation: Navigation? = nil, initialAddWallpaperPromptKind: String? = nil) {
@@ -67,7 +67,7 @@ struct ContentView: View {
             WallpaperFailureDetails(failure: failure, onDismiss: dismiss)
         }
         #endif
-        .environment(\.libraryTileSize, LibraryTileSize(rawValue: libraryTileSizeRaw) ?? .medium)
+        .environment(\.libraryTileSize, LibraryTileSize(rawValue: libraryTileSizeRaw) ?? .defaultSize)
         .providesGalleryCardPreferences()
         .toolbar { toolbarContent }
         .frame(

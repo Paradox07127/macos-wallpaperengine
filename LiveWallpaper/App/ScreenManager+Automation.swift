@@ -114,12 +114,12 @@ extension ScreenManager {
     }
 
     func updateWallpaperAutomation(
-        queue: [WallpaperQueueEntry], slots: [ScheduleSlot], mode: WallpaperMode,
+        queue: [WallpaperQueueEntry], slots: [ScheduleSlot], fallback: WallpaperQueueEntry? = nil, mode: WallpaperMode,
         rotationMinutes: Int?, shuffle: Bool, for screen: Screen
     ) {
         guard !isTerminating else { return }
         automationOrchestrator.updateAutomation(
-            queue: queue, slots: slots, mode: mode, rotationMinutes: rotationMinutes,
+            queue: queue, slots: slots, fallback: fallback, mode: mode, rotationMinutes: rotationMinutes,
             shuffle: shuffle, for: screen
         )
     }
@@ -144,6 +144,12 @@ extension ScreenManager {
         guard !isTerminating else { return }
         beginExplicitWallpaperSelection(for: screen)
         automationOrchestrator.playPlaylistEntry(at: index, for: screen)
+    }
+
+    func previewWallpaperQueueEntry(_ entry: WallpaperQueueEntry, for screen: Screen) {
+        guard !isTerminating else { return }
+        beginExplicitWallpaperSelection(for: screen)
+        automationOrchestrator.previewEntry(entry, for: screen)
     }
 
     func updateShufflePlaylist(_ shuffle: Bool, for screen: Screen) {
@@ -174,6 +180,12 @@ extension ScreenManager {
     func updateScheduleSlots(_ slots: [ScheduleSlot]?, for screen: Screen) {
         guard !isTerminating else { return }
         automationOrchestrator.updateScheduleSlots(slots, for: screen)
+    }
+
+    func resumeSchedule(for screen: Screen) {
+        guard !isTerminating else { return }
+        beginExplicitWallpaperSelection(for: screen)
+        automationOrchestrator.checkAndApplySchedule(for: screen, force: true)
     }
 
     func updatePlaylistRotationMinutes(_ minutes: Int?, for screen: Screen) {

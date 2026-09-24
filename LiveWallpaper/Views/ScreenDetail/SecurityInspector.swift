@@ -10,7 +10,7 @@ struct SecurityInspector: View {
     @Environment(ScreenManager.self) private var screenManager
     @State private var trustStore = TrustedHostStore.shared
     @State private var pendingTrustOrigin: TrustedHTMLOrigin?
-    @AppStorage("Inspector.ContentSecurityExpanded") private var isExpanded = true
+    @AppStorage("Inspector.ContentSecurityExpanded") private var isExpanded = false
 
     var body: some View {
         GroupBox {
@@ -164,35 +164,7 @@ struct SecurityInspector: View {
             }
             .buttonStyle(.borderedProminent)
             .fixedSize()
-            .confirmationDialog(
-                Text("Trust \(origin.displayName) for JavaScript?"),
-                isPresented: Binding(
-                    get: { pendingTrustOrigin == origin },
-                    set: { if !$0 { pendingTrustOrigin = nil } }
-                ),
-                titleVisibility: .visible
-            ) {
-                Button("Trust Origin") {
-                    defer { pendingTrustOrigin = nil }
-                    guard let source, remoteOrigin == origin else { return }
-                    _ = trustStore.trust(origin)
-                    screenManager.setHTMLWallpaper(
-                        source: source,
-                        config: htmlConfig,
-                        forceReload: true,
-                        for: screen
-                    )
-                }
-                Button("Cancel", role: .cancel) {
-                    pendingTrustOrigin = nil
-                }
-            } message: {
-                if origin.isSecure {
-                    Text("This allows the wallpaper to run scripts, use local storage, and access WebGPU. Only trust origins you recognize.")
-                } else {
-                    Text("This allows the wallpaper to run scripts, use local storage, and access WebGPU. This address is plain HTTP on your local network, so anyone else on that network could change what it sends.")
-                }
-            }
+            .htmlOriginTrustDialog(pending: $pendingTrustOrigin, screen: screen, source: source, config: htmlConfig)
         }
     }
 
@@ -209,5 +181,55 @@ struct SecurityInspector: View {
                 screenManager.updateHTMLConfig(next, for: screen)
             }
         )
+    }
+}
+
+extension View {
+    /// The one confirmation for trusting a web page's origin, shared by this row and the preview HUD.
+    func htmlOriginTrustDialog(
+        pending: Binding<TrustedHTMLOrigin?>, screen: Screen, source: HTMLSource?, config: HTMLConfig
+    ) -> some View {
+        modifier(HTMLOriginTrustDialog(pending: pending, screen: screen, source: source, config: config))
+    }
+}
+
+private struct HTMLOriginTrustDialog: ViewModifier {
+    @Binding var pending: TrustedHTMLOrigin?
+    let screen: Screen
+    let source: HTMLSource?
+    let config: HTMLConfig
+
+    @Environment(ScreenManager.self) private var screenManager
+
+    func body(content: Content) -> some View {
+        content.confirmationDialog(
+            Text("Trust \(pending?.displayName ?? "") for JavaScript?"),
+            isPresented: Binding(
+                get: { pending != nil },
+                set: { presented in
+                    if !presented {
+                        pending = nil
+                    }
+                }
+            ),
+            titleVisibility: .visible,
+            presenting: pending
+        ) { origin in
+            Button("Trust Origin") {
+                defer { pending = nil }
+                guard let source, case let .url(url) = source, TrustedHTMLOrigin(url: url) == origin else { return }
+                _ = TrustedHostStore.shared.trust(origin)
+                screenManager.setHTMLWallpaper(source: source, config: config, forceReload: true, for: screen)
+            }
+            Button("Cancel", role: .cancel) {
+                pending = nil
+            }
+        } message: { origin in
+            if origin.isSecure {
+                Text("This allows the wallpaper to run scripts, use local storage, and access WebGPU. Only trust origins you recognize.")
+            } else {
+                Text("This allows the wallpaper to run scripts, use local storage, and access WebGPU. This address is plain HTTP on your local network, so anyone else on that network could change what it sends.")
+            }
+        }
     }
 }

@@ -173,44 +173,44 @@ extension WeatherReactiveService.LocationStatus {
 extension WeatherReactiveService.WeatherDescription {
     var titleKey: LocalizedStringKey {
         switch self {
-        case .clear: return "Clear"
-        case .partlyCloudy: return "Partly Cloudy"
-        case .cloudy: return "Overcast"
-        case .foggy: return "Foggy"
-        case .drizzle: return "Drizzle"
-        case .rain: return "Rain"
-        case .heavyRain: return "Heavy Rain"
-        case .snow: return "Snow"
-        case .heavySnow: return "Heavy Snow"
-        case .thunderstorm: return "Thunderstorm"
-        case .unknown: return "Unknown"
+        case .clear: "Clear Sky"
+        case .partlyCloudy: "Partly Cloudy"
+        case .cloudy: "Overcast"
+        case .foggy: "Foggy"
+        case .drizzle: "Drizzle"
+        case .rain: "Rain"
+        case .heavyRain: "Heavy Rain"
+        case .snow: "Snow"
+        case .heavySnow: "Heavy Snow"
+        case .thunderstorm: "Thunderstorm"
+        case .unknown: "Unknown"
         }
     }
 
     var localizedTitle: String {
         switch self {
         case .clear:
-            return String(localized: "Clear", defaultValue: "Clear", bundle: .appLanguage, comment: "Weather condition.")
+            String(localized: "Clear Sky", defaultValue: "Clear Sky", bundle: .appLanguage, comment: "Weather condition.")
         case .partlyCloudy:
-            return String(localized: "Partly Cloudy", defaultValue: "Partly Cloudy", bundle: .appLanguage, comment: "Weather condition.")
+            String(localized: "Partly Cloudy", defaultValue: "Partly Cloudy", bundle: .appLanguage, comment: "Weather condition.")
         case .cloudy:
-            return String(localized: "Overcast", defaultValue: "Overcast", bundle: .appLanguage, comment: "Weather condition.")
+            String(localized: "Overcast", defaultValue: "Overcast", bundle: .appLanguage, comment: "Weather condition.")
         case .foggy:
-            return String(localized: "Foggy", defaultValue: "Foggy", bundle: .appLanguage, comment: "Weather condition.")
+            String(localized: "Foggy", defaultValue: "Foggy", bundle: .appLanguage, comment: "Weather condition.")
         case .drizzle:
-            return String(localized: "Drizzle", defaultValue: "Drizzle", bundle: .appLanguage, comment: "Weather condition.")
+            String(localized: "Drizzle", defaultValue: "Drizzle", bundle: .appLanguage, comment: "Weather condition.")
         case .rain:
-            return String(localized: "Rain", defaultValue: "Rain", bundle: .appLanguage, comment: "Weather condition.")
+            String(localized: "Rain", defaultValue: "Rain", bundle: .appLanguage, comment: "Weather condition.")
         case .heavyRain:
-            return String(localized: "Heavy Rain", defaultValue: "Heavy Rain", bundle: .appLanguage, comment: "Weather condition.")
+            String(localized: "Heavy Rain", defaultValue: "Heavy Rain", bundle: .appLanguage, comment: "Weather condition.")
         case .snow:
-            return String(localized: "Snow", defaultValue: "Snow", bundle: .appLanguage, comment: "Weather condition.")
+            String(localized: "Snow", defaultValue: "Snow", bundle: .appLanguage, comment: "Weather condition.")
         case .heavySnow:
-            return String(localized: "Heavy Snow", defaultValue: "Heavy Snow", bundle: .appLanguage, comment: "Weather condition.")
+            String(localized: "Heavy Snow", defaultValue: "Heavy Snow", bundle: .appLanguage, comment: "Weather condition.")
         case .thunderstorm:
-            return String(localized: "Thunderstorm", defaultValue: "Thunderstorm", bundle: .appLanguage, comment: "Weather condition.")
+            String(localized: "Thunderstorm", defaultValue: "Thunderstorm", bundle: .appLanguage, comment: "Weather condition.")
         case .unknown:
-            return String(localized: "Unknown", defaultValue: "Unknown", bundle: .appLanguage, comment: "Weather condition.")
+            String(localized: "Unknown", defaultValue: "Unknown", bundle: .appLanguage, comment: "Weather condition.")
         }
     }
 }

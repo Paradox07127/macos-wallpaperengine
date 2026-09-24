@@ -380,7 +380,7 @@ struct WorkshopAccountAction: View {
             }
             .help(Text(verbatim: setupController.setupError ?? doctor.username ?? ""))
             .accessibilityLabel(Text("Steam account"))
-            .popover(isPresented: $showingAccountMenu, arrowEdge: .bottom) {
+            .appLanguagePopover(isPresented: $showingAccountMenu, arrowEdge: .bottom) {
                 accountMenuPopover
             }
         }

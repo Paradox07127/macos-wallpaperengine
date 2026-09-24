@@ -1,5 +1,6 @@
 import Foundation
 @testable import LiveWallpaper
+import LiveWallpaperCore
 import Testing
 
 /// Bundles are resolved explicitly rather than by flipping the process-wide app
@@ -58,5 +59,120 @@ struct SettingsSearchLocalizationTests {
             !translated.isEmpty,
             Comment(rawValue: "\(language) resolved every title back to its English key")
         )
+    }
+
+    /// Several sections can share a row name (Volume, Frame Rate), so any section carrying
+    /// the queried text in this language is a correct landing.
+    @Test("Every indexed row name finds its own section", arguments: languages)
+    func everyRowNameFindsItsSection(language: String) throws {
+        let bundle = try bundle(for: language)
+        let capabilities = ProductCapabilities.pro.withWorkshopOnline()
+
+        // Only pages this OS offers: System Wallpaper needs macOS 26, and search never returns it before that.
+        for item in SettingsNavigation.availableItems(capabilities: capabilities) {
+            let targets = item.searchTargets(capabilities: capabilities)
+            var sections: [(anchor: SettingsSearchAnchor?, names: [String])] = targets.map { ($0.anchor, [$0.label] + $0.rows) }
+            sections.append((nil, item.rows))
+            for section in sections {
+                for name in section.names {
+                    let query = name.localized(in: bundle)
+                    let result = SettingsNavigation.filteredResults(matching: query, capabilities: capabilities)
+                        .first { $0.destination == item.destination }
+                    guard let result else {
+                        Issue.record(Comment(rawValue: "\(language): `\(query)` (\(name)) finds no result on \(item.destination.rawValue)"))
+                        continue
+                    }
+                    let sameName = targets.filter { target in
+                        ([target.label] + target.rows).contains {
+                            $0.localized(in: bundle).localizedCaseInsensitiveCompare(query) == .orderedSame
+                        }
+                    }
+                    let expected: [SettingsSearchAnchor?] = section.anchor == nil ? [nil] : sameName.map(\.anchor)
+                    #expect(
+                        expected.contains(result.anchor),
+                        Comment(rawValue: "\(language): `\(query)` (\(name)) lands on \(result.anchor?.rawValue ?? "the page"), not \(section.anchor?.rawValue ?? "the page")")
+                    )
+                }
+            }
+        }
+    }
+
+    @Test("Every settings row title is indexed and every indexed name is catalogued")
+    func everySettingRowIsIndexed() throws {
+        let capabilities = ProductCapabilities.pro.withWorkshopOnline()
+        let indexed = Set(SettingsNavigation.allItems.flatMap { item in
+            item.rows + item.searchTargets(capabilities: capabilities).flatMap { [$0.label] + $0.rows }
+        })
+
+        var titles: [String] = []
+        for file in RepositoryRoot.swiftFiles(under: "LiveWallpaper/Views/Settings") {
+            let source = try String(contentsOf: file, encoding: .utf8)
+            titles += try Self.captures(Self.settingRowTitle, in: source).flatMap { try Self.captures(Self.literal, in: $0) }
+            titles += try Self.captures(Self.tileTitle, in: source) + Self.captures(Self.sectionHeader, in: source)
+        }
+        #expect(titles.count > 60, Comment(rawValue: "The scan found \(titles.count) titles; its patterns or directory drifted"))
+
+        let missing = Set(titles).subtracting(indexed).sorted()
+        #expect(
+            missing.isEmpty,
+            Comment(rawValue: "\(missing.count) titles are not indexed: \(missing.prefix(8).joined(separator: ", "))")
+        )
+
+        let uncatalogued = try indexed.subtracting(Self.catalogKeys()).sorted()
+        #expect(
+            uncatalogued.isEmpty,
+            Comment(rawValue: "Indexed names missing from Localizable.xcstrings: \(uncatalogued.joined(separator: ", "))")
+        )
+
+        for action in GlobalShortcutAction.allCases {
+            let result = SettingsNavigation.filteredResults(matching: action.displayName, capabilities: capabilities)
+                .first { $0.destination == .shortcuts }
+            #expect(
+                result?.anchor == .shortcutsGlobal,
+                Comment(rawValue: "`\(action.displayName)` does not reach Global Shortcuts")
+            )
+        }
+    }
+
+    /// The one test here that flips the app language: the hint reads `Bundle.appLanguage`, which no bundle argument reaches.
+    @Test("A hint that matches neither a name nor a keyword shows the localized section label")
+    func fallbackHintIsLocalized() {
+        let previous = UserDefaults.standard.string(forKey: AppLanguagePreference.storageKey)
+        defer {
+            if let previous {
+                UserDefaults.standard.set(previous, forKey: AppLanguagePreference.storageKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: AppLanguagePreference.storageKey)
+            }
+        }
+        AppLanguagePreference.save(.simplifiedChinese)
+        let expected = "Video".localized(in: .appLanguage)
+        #expect(expected != "Video", "zh-Hans did not translate Video, so the check below proves nothing")
+
+        // "video" is the section's label and "fps" one of its keywords; no single name or keyword holds both.
+        let result = SettingsNavigation.filteredResults(matching: "video fps", capabilities: .pro)
+            .first { $0.destination == .displayDefaults }
+        #expect(result?.anchor == .displayDefaultsVideo)
+        #expect(result?.matchHint == expected)
+    }
+
+    private static let literal = #""((?:[^"\\\n]|\\.)*)""#
+    /// Group 1 is the whole `title:` argument, so both branches of a ternary are read.
+    private static let settingRowTitle = #"SettingRow\([^{]*?\btitle:\s*((?:"(?:[^"\\\n]|\\.)*"|[^,)"\n])*)"#
+    private static let tileTitle = #"StorageDashboardTile\(\s*title:\s*"# + literal
+    private static let sectionHeader = #"SettingsSearchSectionHeader\(\s*"# + literal
+
+    private static func captures(_ pattern: String, in source: String) throws -> [String] {
+        let regex = try NSRegularExpression(pattern: pattern)
+        return regex.matches(in: source, range: NSRange(source.startIndex..., in: source)).compactMap { match in
+            Range(match.range(at: 1), in: source).map { String(source[$0]) }
+        }
+    }
+
+    private static func catalogKeys() throws -> Set<String> {
+        let data = try RepositoryRoot.data("LiveWallpaper/Resources/Localizable.xcstrings")
+        let catalog = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let strings = try #require(catalog["strings"] as? [String: Any])
+        return Set(strings.keys)
     }
 }

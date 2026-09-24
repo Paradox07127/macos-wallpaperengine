@@ -12,6 +12,8 @@ struct HomeHints: View {
     /// Chevrons lean toward the state they take you to as the gesture gets closer to it.
     private static let drift: CGFloat = 10
 
+    @State private var isLibraryHintHovered = false
+
     static func hiddenHintOpacity(_ progress: Double) -> Double {
         1 - ramp(progress, from: 0, to: 0.18)
     }
@@ -33,27 +35,38 @@ struct HomeHints: View {
 
     var body: some View {
         let progress = stage.progress
+        let libraryHintOpacity = Self.hiddenHintOpacity(progress)
         ZStack {
-            hint("⌃ Wallpaper Library", opacity: Self.hiddenHintOpacity(progress))
-                .offset(y: -Self.drift * Self.ramp(progress, from: 0, to: 0.18))
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                .padding(.bottom, 14)
+            Button { stage.setProgress(1, animated: true) } label: {
+                hint("⌃ Wallpaper Library", opacity: libraryHintOpacity)
+                    .foregroundStyle(isLibraryHintHovered ? DesignTokens.EditDesk.Colors.textPrimary : DesignTokens.EditDesk.Colors.textSecondary)
+            }
+            .buttonStyle(.plain)
+            .onHover { isLibraryHintHovered = $0 }
+            .allowsHitTesting(libraryHintOpacity > ShelfChromeRide.interactiveOpacity)
+            .accessibilityHidden(libraryHintOpacity <= ShelfChromeRide.interactiveOpacity)
+            .accessibilityLabel(Text("Wallpaper Library"))
+            .offset(y: -Self.drift * Self.ramp(progress, from: 0, to: 0.18))
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+            .padding(.bottom, 14)
 
-            hint("⌃ Keep Swiping · Full Wallpaper Library", opacity: Self.shelfHintOpacity(progress))
-                .offset(
-                    y: Self.shelfHintTop(progress: progress, windowSize: stage.stageSize)
-                        - Self.drift * Self.ramp(progress, from: 1, to: 1.5)
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            Group {
+                hint("⌃ Keep Swiping · Full Wallpaper Library", opacity: Self.shelfHintOpacity(progress))
+                    .offset(
+                        y: Self.shelfHintTop(progress: progress, windowSize: stage.stageSize)
+                            - Self.drift * Self.ramp(progress, from: 1, to: 1.5)
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
-            hint("⌄ Swipe Down to Return Home", opacity: Self.libraryHintOpacity(progress))
-                .offset(y: Self.drift * (1 - Self.ramp(progress, from: 1.35, to: 1.75)))
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                .padding(.top, StageGeometry.topBarHeight)
+                hint("⌄ Swipe Down to Return Home", opacity: Self.libraryHintOpacity(progress))
+                    .offset(y: Self.drift * (1 - Self.ramp(progress, from: 1.35, to: 1.75)))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .padding(.top, StageGeometry.topBarHeight)
+            }
+            .allowsHitTesting(false)
         }
         .font(DesignTokens.EditDesk.Typography.chip)
         .foregroundStyle(DesignTokens.EditDesk.Colors.textSecondary)
-        .allowsHitTesting(false)
     }
 
     /// Sits one line above the card row's *current* top, so it rises with the shelf instead of

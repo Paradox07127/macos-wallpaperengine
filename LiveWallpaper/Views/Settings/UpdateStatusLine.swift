@@ -73,7 +73,7 @@ struct UpdateStatusLine: View {
     @ViewBuilder
     private var trailingAction: some View {
         if updater.availableVersion != nil {
-            Button("Open") {
+            Button("Update") {
                 updater.checkForUpdates()
             }
             .buttonStyle(.bordered)

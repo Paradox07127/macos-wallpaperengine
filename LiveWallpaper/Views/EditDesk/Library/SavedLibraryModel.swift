@@ -27,6 +27,8 @@ final class SavedLibraryModel {
         /// Content is nil for installed rows, which match by origin instead.
         var nowPlaying: @MainActor (WallpaperContent?, WPEHistoryEntry?) -> [CGDirectDisplayID] = { _, _ in [] }
         var workshopContent: @MainActor (WPEHistoryEntry) -> WallpaperContent? = { _ in nil }
+        /// The `tags` of a project's `project.json`; empty when the file cannot be read.
+        var projectTags: @MainActor (WPEOrigin) async -> [String] = { _ in [] }
         #else
         var nowPlaying: @MainActor (WallpaperContent) -> [CGDirectDisplayID] = { _ in [] }
         #endif
@@ -36,6 +38,14 @@ final class SavedLibraryModel {
         /// would read as orphans.
         var savedCoverFileNames: @MainActor () -> Set<String> = { [] }
         var removeOrphanCovers: @MainActor (Set<String>) -> Void = { _ in }
+        /// False when the file or folder behind a row is gone or no longer granted.
+        var sourceAvailable: @MainActor (LibraryItem.Source) async -> Bool = { _ in true }
+        /// Starts a scan when Apple Aerials is granted but lists nothing yet.
+        var scanAerials: @MainActor () -> Void = {}
+        /// What each configured display runs.
+        var activeWallpapers: @MainActor () -> [(display: CGDirectDisplayID, content: WallpaperContent)] = { [] }
+        /// The file a video bookmark resolves to; nil when it does not resolve.
+        var filePath: @MainActor (Data) -> String? = { _ in nil }
 
         @MainActor
         static func live(screenManager: ScreenManager) -> Inputs {
@@ -52,6 +62,7 @@ final class SavedLibraryModel {
             #if !LITE_BUILD
             inputs.history = { SettingsManager.shared.loadGlobalSettings().recentWPEImports }
             inputs.workshopContent = { WPECachedContentResolver().content(for: $0.origin) }
+            inputs.projectTags = { await loadWPEProjectTags(for: $0) }
             inputs.nowPlaying = { content, entry in
                 screenManager.screens.compactMap { screen in
                     guard let configuration = screenManager.getConfiguration(for: screen) else { return nil }
@@ -77,6 +88,30 @@ final class SavedLibraryModel {
                 )
             }
             inputs.removeOrphanCovers = { WallpaperCoverStore.shared.removeOrphans(keeping: $0) }
+            inputs.sourceAvailable = { source in
+                switch source {
+                case let .bookmark(bookmark):
+                    await LibraryContentLocator.locate(content: bookmark.content, wpeOrigin: bookmark.wpeOrigin).isAvailable
+                case let .aerial(asset):
+                    await LibraryContentLocator.locate(content: .video(bookmarkData: asset.bookmarkData), wpeOrigin: nil).isAvailable
+                #if !LITE_BUILD
+                case let .workshop(entry):
+                    await LibraryContentLocator.locate(folderBookmark: entry.origin.sourceFolderBookmark).isAvailable
+                #endif
+                }
+            }
+            inputs.scanAerials = {
+                let library = AppleAerialsLibrary.shared
+                if library.isAuthorized, library.assets.isEmpty {
+                    Task { await library.refresh() }
+                }
+            }
+            inputs.activeWallpapers = {
+                screenManager.screens.compactMap { screen in
+                    screenManager.getConfiguration(for: screen).map { (screen.id, $0.activeWallpaper) }
+                }
+            }
+            inputs.filePath = ApplyRouter.resolvedPath
             return inputs
         }
     }
@@ -86,7 +121,21 @@ final class SavedLibraryModel {
     var query = ""
     private(set) var items: [LibraryItem] = []
     private(set) var aerialsStatus = AerialsState()
+    /// Each row's last use when the current browse began; nil while none is open.
+    private var usageSnapshot: [LibraryItem.ID: Date]?
+    #if !LITE_BUILD
+    /// Project tags by workshop ID, from `loadSearchTags()`; empty while a read is in flight or when it failed.
+    private var tagsByWorkshopID: [String: [String]] = [:]
+    #endif
     @ObservationIgnored private let inputs: Inputs
+    /// Each row's source when it was last probed and whether it was found; nothing is resolved in `refresh()`.
+    @ObservationIgnored private var probedSources: [LibraryItem.ID: (source: LibraryItem.Source, available: Bool)] = [:]
+    /// Rows with a probe running and the round of the newest one; only that round records a result.
+    @ObservationIgnored private var probesInFlight: [LibraryItem.ID: (source: LibraryItem.Source, round: Int)] = [:]
+    @ObservationIgnored private var probeRound = 0
+    /// Normalized `inputs.filePath` by bookmark bytes, a nil path included: resolving touches the file system.
+    /// `refresh()` empties it, so a moved file or a bookmark that failed to resolve is read again.
+    @ObservationIgnored private var filePaths: [Data: String?] = [:]
     @ObservationIgnored private var subscriptions: Set<AnyCancellable> = []
 
     init(inputs: Inputs) {
@@ -129,10 +178,10 @@ final class SavedLibraryModel {
 
     var visibleItems: [LibraryItem] {
         let filtered: [LibraryItem] = switch chip {
-        case .all: items.filter { $0.kind != .aerial }
+        case .all: items
         case .recent:
             // The recent shelf is limited to the 14 most recently used items before sorting.
-            Array(items.filter { $0.lastUsedAt != nil }.sorted(by: recentlyUsed).prefix(14))
+            Array(items.filter { usage(of: $0) != nil }.sorted(by: recentlyUsed).prefix(14))
         case .steam: items.filter(\.isSteam)
         case .local: items.filter { !$0.isSteam && $0.kind != .aerial }
         case .aerials: items.filter { $0.kind == .aerial }
@@ -151,16 +200,77 @@ final class SavedLibraryModel {
                 return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
             }
         }
-        return sorted.filter { query.isEmpty || $0.title.range(of: query, options: .caseInsensitive) != nil }
+        return sorted.filter { query.isEmpty || matchesQuery($0) }
     }
 
-    /// Deliberately not part of `refresh()`: that runs on every store change, and this reads the
-    /// whole covers directory.
-    func prepareLibrary() {
-        inputs.removeOrphanCovers(inputs.savedCoverFileNames())
+    private func matchesQuery(_ item: LibraryItem) -> Bool {
+        if item.title.range(of: query, options: .caseInsensitive) != nil {
+            return true
+        }
+        #if !LITE_BUILD
+        let tags = Self.workshopOrigin(of: item).flatMap { tagsByWorkshopID[$0.workshopID] } ?? []
+        return tags.contains { $0.range(of: query, options: .caseInsensitive) != nil }
+        #else
+        return false
+        #endif
+    }
+
+    /// Deliberately not part of `refresh()`: that runs on every store change, this reads the whole
+    /// covers directory, and a scan that comes back empty would start the next one. `kept`: covers
+    /// of entries that are gone but that undo can still bring back.
+    func prepareLibrary(alsoKeeping kept: Set<String>) {
+        inputs.removeOrphanCovers(inputs.savedCoverFileNames().union(kept))
+        inputs.scanAerials()
+    }
+
+    /// Freezes "Recently Used" until `endBrowsing()`: a row used meanwhile keeps its place.
+    func beginBrowsing() {
+        guard usageSnapshot == nil else { return }
+        // Not `uniqueKeysWithValues`, which traps: row IDs are not unique by construction.
+        usageSnapshot = Dictionary(
+            items.compactMap { item in item.lastUsedAt.map { (item.id, $0) } }, uniquingKeysWith: { first, _ in first }
+        )
+    }
+
+    func endBrowsing() {
+        usageSnapshot = nil
+    }
+
+    /// Reads the tags of the Workshop projects not read yet; nothing while the query is empty.
+    func loadSearchTags() async {
+        #if !LITE_BUILD
+        guard !query.isEmpty else { return }
+        var pending: [WPEOrigin] = []
+        // Marked read before the reads finish: every keystroke calls this while they are in flight.
+        for origin in items.compactMap(Self.workshopOrigin) where tagsByWorkshopID[origin.workshopID] == nil {
+            tagsByWorkshopID[origin.workshopID] = []
+            pending.append(origin)
+        }
+        for origin in pending {
+            tagsByWorkshopID[origin.workshopID] = await inputs.projectTags(origin)
+        }
+        #endif
+    }
+
+    #if !LITE_BUILD
+    /// A saved variant carries its project's origin, so it searches by that project's tags.
+    private static func workshopOrigin(of item: LibraryItem) -> WPEOrigin? {
+        switch item.source {
+        case let .workshop(entry): entry.origin
+        case let .bookmark(bookmark): bookmark.wpeOrigin
+        case .aerial: nil
+        }
+    }
+    #endif
+
+    /// When the row was last used as of the browse's start; a row added since reads as unused.
+    private func usage(of item: LibraryItem) -> Date? {
+        guard let usageSnapshot else { return item.lastUsedAt }
+        return usageSnapshot[item.id]
     }
 
     func refresh() {
+        filePaths = [:]
         var merged: [LibraryItem] = []
         #if !LITE_BUILD
         merged = inputs.history().map { entry in
@@ -209,17 +319,79 @@ final class SavedLibraryModel {
             ))
         }
         aerialsStatus = inputs.aerials()
+        let active = inputs.activeWallpapers()
         merged += aerialsStatus.assets.map { asset in
             let source = LibraryItem.Source.aerial(asset)
             return LibraryItem(
-                id: "aerial:\(asset.id)", title: asset.displayName, kind: .aerial, source: source,
+                id: "aerial:\(asset.url.path)", title: asset.displayName, kind: .aerial, source: source,
                 isSteam: false, createdAt: .distantPast, lastUsedAt: nil,
-                onDisplays: displays(for: .video(bookmarkData: asset.bookmarkData)), thumbnail: nil,
+                onDisplays: active.filter { aerial(asset, matches: $0.content) }.map(\.display), thumbnail: .aerial(.init(asset)),
                 metadata: metadataBookmark(for: source).flatMap(inputs.metadata),
                 isVariant: false, parentID: nil, isSupported: true
             )
         }
+        for index in merged.indices {
+            if let probe = probedSources[merged[index].id], Self.sameSource(probe.source, merged[index].source) {
+                merged[index].isSourceMissing = !probe.available
+            }
+        }
         items = merged
+        if items.contains(where: needsProbe) {
+            Task { [weak self] in await self?.probeSources() }
+        }
+    }
+
+    /// Probes the rows never probed or whose source changed since.
+    func probeSources() async {
+        await probe(items.filter(needsProbe))
+    }
+
+    /// Probes again the rows `intent` was built from: applying is where a stale mark shows.
+    func recheck(_ intent: ApplyIntent) async {
+        await probe(items.filter { item($0, madeBy: intent) })
+    }
+
+    /// A row being probed is still unanswered, not available: until its own round answers, it keeps
+    /// its last result, and a probe that a newer one overtook records nothing.
+    private func probe(_ pending: [LibraryItem]) async {
+        probeRound += 1
+        let round = probeRound
+        for item in pending {
+            probesInFlight[item.id] = (item.source, round)
+        }
+        for item in pending {
+            let available = await inputs.sourceAvailable(item.source)
+            guard probesInFlight[item.id]?.round == round else { continue }
+            probesInFlight[item.id] = nil
+            probedSources[item.id] = (item.source, available)
+            if let index = items.firstIndex(where: { $0.id == item.id && Self.sameSource(item.source, $0.source) }),
+               items[index].isSourceMissing == available {
+                items[index].isSourceMissing = !available
+            }
+        }
+    }
+
+    private func needsProbe(_ item: LibraryItem) -> Bool {
+        !Self.sameSource(probedSources[item.id]?.source, item.source) && !Self.sameSource(probesInFlight[item.id]?.source, item.source)
+    }
+
+    /// Every scan bookmarks an aerial's file anew, so a probe of that file still answers for the row.
+    private static func sameSource(_ probed: LibraryItem.Source?, _ source: LibraryItem.Source) -> Bool {
+        if case let .aerial(old)? = probed, case let .aerial(new) = source {
+            return old.url.path == new.url.path
+        }
+        return probed == source
+    }
+
+    private func item(_ item: LibraryItem, madeBy intent: ApplyIntent) -> Bool {
+        switch (item.source, intent) {
+        case let (.bookmark(bookmark), .bookmark(applied)): bookmark.id == applied.id
+        case let (.aerial(asset), .bookmark(applied)): aerial(asset, matches: applied.content)
+        #if !LITE_BUILD
+        case let (.workshop(entry), .installedWorkshop(applied)): entry.id == applied.id
+        #endif
+        default: false
+        }
     }
 
     func probeMetadata(for ids: [LibraryItem.ID]) async {
@@ -251,6 +423,26 @@ final class SavedLibraryModel {
         }
     }
 
+    /// Every scan bookmarks each file anew, so an aerial matches content whose bookmark resolves to the aerial's file.
+    func aerial(_ asset: AerialAsset, matches content: WallpaperContent?) -> Bool {
+        guard let data = content?.activeVideoBookmarkData else { return false }
+        return data == asset.bookmarkData || filePath(of: data) == Self.normalizedPath(asset.url)
+    }
+
+    private func filePath(of bookmarkData: Data) -> String? {
+        if let cached = filePaths[bookmarkData] {
+            return cached
+        }
+        let path = inputs.filePath(bookmarkData).map { Self.normalizedPath(URL(fileURLWithPath: $0)) }
+        filePaths[bookmarkData] = path
+        return path
+    }
+
+    /// A bookmark resolves to the real path (`/private/tmp/…`, symlinks followed) while a scanned URL may be spelled otherwise.
+    private static func normalizedPath(_ url: URL) -> String {
+        url.standardizedFileURL.resolvingSymlinksInPath().path
+    }
+
     private func displays(for content: WallpaperContent) -> [CGDirectDisplayID] {
         #if !LITE_BUILD
         inputs.nowPlaying(content, nil)
@@ -265,7 +457,7 @@ final class SavedLibraryModel {
     }
 
     private func recentlyUsed(_ lhs: LibraryItem, _ rhs: LibraryItem) -> Bool {
-        switch (lhs.lastUsedAt, rhs.lastUsedAt) {
+        switch (usage(of: lhs), usage(of: rhs)) {
         case let (left?, right?) where left != right: left > right
         case (_?, nil): true
         case (nil, _?): false

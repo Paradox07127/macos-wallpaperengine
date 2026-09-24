@@ -20,7 +20,6 @@ struct PreviewArea: View {
     let onPlaybackSpeedChange: (Double) -> Void
     let onResetPlayback: () -> Void
 
-    @State private var showingWebTransform = false
     @State private var webTransformArmed = false
     @State private var webRefreshToken = 0
     /// The preview is showing a capture of the running wallpaper, which already
@@ -76,7 +75,6 @@ struct PreviewArea: View {
         // would otherwise let the first drag on the new one move its wallpaper.
         .onChange(of: screen.id) {
             webTransformArmed = false
-            showingWebTransform = false
         }
     }
 
@@ -199,25 +197,8 @@ struct PreviewArea: View {
     }
 
     private var webTransformControl: some View {
-        Button {
-            showingWebTransform = true
-        } label: {
-            PreviewControlLabel(
-                systemImage: "move.3d",
-                title: "Transform",
-                isActive: webTransformArmed || draft.htmlConfig.hasActiveTransform
-            )
-        }
-        .buttonStyle(.borderless)
-        .help(Text("Scale, move, and rotate the page inside the display"))
-        .accessibilityLabel(Text("Transform"))
-        .popover(isPresented: $showingWebTransform, arrowEdge: .bottom) {
-            HTMLTransformControls(
-                screen: screen,
-                config: $draft.htmlConfig,
-                isDragEnabled: $webTransformArmed
-            )
-        }
+        WebTransformControl(screen: screen, config: $draft.htmlConfig, isArmed: $webTransformArmed)
+            .id(screen.id)
     }
 
     private var playbackControls: some View {
@@ -323,6 +304,32 @@ struct WallpaperFitModePicker: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Text("Video fit mode"))
+    }
+}
+
+/// The HUD's web transform button and its controls; the Edit Desk hero's HUD floats the same pair.
+struct WebTransformControl: View {
+    let screen: Screen
+    @Binding var config: HTMLConfig
+    @Binding var isArmed: Bool
+    @State private var showsControls = false
+
+    var body: some View {
+        Button {
+            showsControls = true
+        } label: {
+            PreviewControlLabel(
+                systemImage: "move.3d",
+                title: "Transform",
+                isActive: isArmed || config.hasActiveTransform
+            )
+        }
+        .buttonStyle(.borderless)
+        .help(Text("Scale, move, and rotate the page inside the display"))
+        .accessibilityLabel(Text("Transform"))
+        .appLanguagePopover(isPresented: $showsControls, arrowEdge: .bottom) {
+            HTMLTransformControls(screen: screen, config: $config, isDragEnabled: $isArmed)
+        }
     }
 }
 

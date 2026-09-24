@@ -215,15 +215,18 @@ struct WorkshopInspectorContent: View {
             Button { showingApplyPopover = true } label: { applyLabel }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.regular)
-                .popover(isPresented: $showingApplyPopover, arrowEdge: .bottom) {
-                    AppLanguageScope(defaults: .appScoped()) {
-                        WorkshopApplyTargetPicker(
-                            screens: screens,
-                            activeScreenIDs: activeScreenIDs,
-                            onPick: { apply(entry, to: $0); showingApplyPopover = false },
-                            onAll: { for screen in screens { apply(entry, to: screen) }; showingApplyPopover = false }
-                        )
-                    }
+                .appLanguagePopover(isPresented: $showingApplyPopover, arrowEdge: .bottom) {
+                    WorkshopApplyTargetPicker(
+                        screens: screens,
+                        activeScreenIDs: activeScreenIDs,
+                        onPick: { apply(entry, to: $0); showingApplyPopover = false },
+                        onAll: {
+                            for screen in screens {
+                                apply(entry, to: screen)
+                            }
+                            showingApplyPopover = false
+                        }
+                    )
                 }
         }
     }

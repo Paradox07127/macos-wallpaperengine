@@ -57,18 +57,15 @@ final class OnboardingProgress {
         persist()
     }
 
+    func dismissRemaining() {
+        dismissed.formUnion(visiblePages.filter { !completed.contains($0) })
+        persist()
+    }
+
     func reset() {
         completed.removeAll()
         dismissed.removeAll()
         persist()
-    }
-
-    static func isHandled(defaults: UserDefaults, legacyDefaults: UserDefaults, workshopAvailable: Bool) -> Bool {
-        guard let snapshot = defaults.dictionary(forKey: storageKey) else {
-            return legacyDefaults.bool(forKey: legacyKey)
-        }
-        let handled = pages(in: snapshot, key: "completed").union(pages(in: snapshot, key: "dismissed"))
-        return pages(workshopAvailable: workshopAvailable).allSatisfy(handled.contains)
     }
 
     private static func pages(workshopAvailable: Bool) -> [Page] {

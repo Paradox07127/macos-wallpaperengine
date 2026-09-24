@@ -67,7 +67,7 @@ struct ObjectInspector: View {
         case .effect:
             toggle(isOn: session.effectVisible, set: session.setEffectVisible)
                 .disabled(!session.canEditEffect)
-        case .widget, .empty:
+        case .board, .widget, .empty:
             EmptyView()
         }
     }
@@ -82,6 +82,7 @@ struct ObjectInspector: View {
 
     private var title: String {
         switch content {
+        case .board: String(localized: "Widgets", bundle: .appLanguage)
         case let .widget(id):
             placements.first { $0.id == id }.map { WidgetFactory.displayName($0.kind) }
                 ?? String(localized: "No Selection", bundle: .appLanguage)
@@ -98,7 +99,7 @@ struct ObjectInspector: View {
         case .music: String(localized: "Music", bundle: .appLanguage)
         case .clock: String(localized: "Clock", bundle: .appLanguage)
         case .effect: String(localized: "Effect", bundle: .appLanguage)
-        case .empty: nil
+        case .board, .empty: nil
         }
         guard let kind else { return nil }
         return "\(String(localized: "Selected", bundle: .appLanguage)) · \(kind)"
@@ -109,15 +110,27 @@ struct ObjectInspector: View {
     @ViewBuilder
     private func editor(for content: OverlayInspectorContent) -> some View {
         switch content {
+        case .board:
+            if let screen {
+                scrolling {
+                    MonitorOverlaySection(screen: screen, screenManager: screenManager, backdropAvailable: backdropAvailable,
+                                          showsVisibilityControl: false, showsBackdropControl: false, editBoard: session.editBoard)
+                }
+            }
         case let .widget(id):
             if let placement = placements.first(where: { $0.id == id }) {
                 scrolling {
-                    WidgetSettingsPopover(
-                        placement: placement,
-                        onUpdate: { session.interaction.updateWidget($0) },
-                        onRemove: { session.removeWidget(id: id) },
-                        embedded: true
-                    )
+                    VStack(spacing: 0) {
+                        if placement.kind == .fleet {
+                            AgentFolderAccessSection()
+                        }
+                        WidgetSettingsPopover(
+                            placement: placement,
+                            onUpdate: { session.interaction.updateWidget($0) },
+                            onRemove: { session.removeWidget(id: id) },
+                            embedded: true
+                        )
+                    }
                 }
             } else {
                 emptyState
@@ -125,13 +138,15 @@ struct ObjectInspector: View {
         case .music:
             if let screen {
                 scrolling {
-                    MusicOverlaySection(screen: screen, screenManager: screenManager, backdropAvailable: backdropAvailable, showsVisibilityControl: false)
+                    MusicOverlaySection(screen: screen, screenManager: screenManager, backdropAvailable: backdropAvailable,
+                                        showsVisibilityControl: false, showsBackdropControl: false)
                 }
             }
         case .clock:
             if let screen {
                 scrolling {
-                    ClockOverlaySection(screen: screen, screenManager: screenManager, backdropAvailable: backdropAvailable, showsVisibilityControl: false)
+                    ClockOverlaySection(screen: screen, screenManager: screenManager, backdropAvailable: backdropAvailable,
+                                        showsVisibilityControl: false, showsBackdropControl: false)
                 }
             }
         case .effect:
@@ -160,6 +175,7 @@ struct ObjectInspector: View {
             kind: .weather,
             inspectorPanelWidth: width,
             backdropAvailable: backdropAvailable,
+            showsBackdropControl: false,
             onParticleEffectChange: { effect in write { screenManager.updateParticleEffect(effect, for: screen) } },
             onParticleDensityChange: { density in write { screenManager.updateParticleDensity(density, for: screen) } },
             onWeatherReactiveChange: { on in write { screenManager.setWeatherReactive(on, for: screen) } },

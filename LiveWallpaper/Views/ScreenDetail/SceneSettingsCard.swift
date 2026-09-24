@@ -10,6 +10,8 @@ struct WPESceneCustomSettingsCard: View {
     var attemptID: UUID?
 
     @Environment(ScreenManager.self) private var screenManager
+    /// Only the Edit Desk provides one; the old detail page records nothing.
+    @Environment(EditDeskUndoStack.self) private var undo: EditDeskUndoStack?
     @AppStorage("Inspector.WPESceneCustomSettingsExpanded") private var isExpanded = true
     @State private var editor = Editor()
     @State private var owner: SceneSettingsOwner?
@@ -59,10 +61,16 @@ struct WPESceneCustomSettingsCard: View {
 
     private func makeOwner() {
         let binding = $descriptor
+        let screen = screen
+        var record: SceneSettingsOwner.UndoableChange?
+        if let undo {
+            record = { action, before, _, flush in undo.recordSceneChange(action, from: before, on: screen, flush: flush) }
+        }
         owner = SceneSettingsOwner(
             screen: screen, screenManager: screenManager, descriptor: descriptor,
             schema: schema, attemptID: attemptID, editor: editor,
-            onDescriptorChange: { binding.wrappedValue = $0 }
+            onDescriptorChange: { binding.wrappedValue = $0 },
+            onUndoableChange: record
         )
     }
 

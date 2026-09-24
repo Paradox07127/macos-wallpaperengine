@@ -55,7 +55,7 @@ struct TopBar<Trailing: View>: View {
             if showsSearch {
                 LibrarySearchField(
                     text: $searchText,
-                    prompt: "Search · Tags · Author",
+                    prompt: workshopAvailable ? "Search by name or tag" : "Search by name",
                     minWidth: budget.searchWidth,
                     idealWidth: budget.searchWidth,
                     maxWidth: budget.searchWidth

@@ -40,6 +40,10 @@ struct SchemeCapturePopover: View {
 
             HStack {
                 Spacer()
+                // In a sheet this is the only way out; ESC reaches it before the window behind.
+                Button("Cancel") { dismiss() }
+                    .adaptiveGlassButton(.regular, size: .small)
+                    .keyboardShortcut(.cancelAction)
                 Button(action: commit) {
                     replacing == nil
                         ? Label("Save", systemImage: "plus")

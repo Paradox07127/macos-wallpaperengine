@@ -63,14 +63,155 @@ struct WorkshopModalTests {
         #expect(!applying.contains(screen), "while the apply runs the button reports progress, not a target")
         #expect(applying != installed)
 
-        // A queued intent keeps offering the same deferred apply; the target can still change.
-        #expect(WorkshopModalContent.primaryActionTitle(installed: false, ticketState: .waiting, screenName: screen) == deferred)
+        // A queued apply says where it will land; the target can still change and the title follows it.
+        let queued = WorkshopModalContent.primaryActionTitle(installed: false, ticketState: .waiting, screenName: screen)
+        #expect(queued.contains(screen))
+        #expect(queued != deferred, "a queued apply reads like an offer to queue one")
         // A settled ticket puts the button back where it started.
         let settled = DeferredApplyCoordinator.State.finished(ApplyReport(outcome: .applied, exitedSpanMode: false))
         #expect(WorkshopModalContent.primaryActionTitle(installed: false, ticketState: settled, screenName: screen) == deferred)
     }
 
+    @Test("While an apply is queued the second button cancels it; otherwise it only saves")
+    func secondaryButtonCancelsTheQueuedApply() {
+        let saveOnly = WorkshopModalContent.secondaryActionTitle(ticketState: nil)
+        let queued = WorkshopModalContent.secondaryActionTitle(ticketState: .waiting)
+        #expect(saveOnly == String(localized: "Save only", bundle: .appLanguage))
+        #expect(queued == String(localized: "Cancel Auto-Apply", bundle: .appLanguage))
+        #expect(queued != saveOnly)
+        let settled = DeferredApplyCoordinator.State.finished(ApplyReport(outcome: .applied, exitedSpanMode: false))
+        #expect(WorkshopModalContent.secondaryActionTitle(ticketState: settled) == saveOnly)
+    }
+
+    @Test("While the apply runs the second button is off: pressing it would drop the apply halfway")
+    func secondaryButtonIsOffWhileTheApplyRuns() {
+        #expect(!WorkshopModalContent.isSecondaryEnabled(ticketState: .applying, isBanned: false, isDownloadReady: true))
+        // Control: a queued apply stays cancellable without a ready setup, and an idle item follows the download gate.
+        #expect(WorkshopModalContent.isSecondaryEnabled(ticketState: .waiting, isBanned: false, isDownloadReady: false))
+        #expect(WorkshopModalContent.isSecondaryEnabled(ticketState: nil, isBanned: false, isDownloadReady: true))
+        #expect(!WorkshopModalContent.isSecondaryEnabled(ticketState: nil, isBanned: false, isDownloadReady: false))
+    }
+
+    @Test("A blocked download names the missing setup step and dims both download buttons")
+    func blockedDownloadSaysWhichStepIsMissing() {
+        let blocker = "Authorize your Steam library folder first."
+        func bar(isInstalled: Bool) -> WorkshopDownloadPresentation {
+            WorkshopDownloadPresentation.make(
+                ticketState: nil, settledScreenName: "", wallpapersOn: true, phase: .idle, isFetchingDependencies: false,
+                fraction: nil, downloadedBytes: nil, totalBytes: nil, bytesPerSecond: nil,
+                isInstalled: isInstalled, unsupportedOrigin: nil, blocker: blocker
+            )
+        }
+        #expect(bar(isInstalled: false).status == blocker)
+        #expect(!WorkshopModalContent.canDownload(isBanned: false, isDownloadReady: false))
+        #expect(WorkshopModalContent.canDownload(isBanned: false, isDownloadReady: true))
+        #expect(!WorkshopModalContent.canDownload(isBanned: true, isDownloadReady: true))
+        // Control: an item already in the library applies without downloading, so the blocker is not its business.
+        #expect(bar(isInstalled: true).status.isEmpty)
+    }
+
+    @Test("While required items download the bar keeps an indeterminate bar and says so; an item that can't run says why")
+    func dependencyStageKeepsShowingProgress() {
+        func bar(
+            _ ticketState: DeferredApplyCoordinator.State?, phase: WorkshopDownloadCoordinator.DownloadPhase, fetching: Bool
+        ) -> WorkshopDownloadPresentation {
+            WorkshopDownloadPresentation.make(
+                ticketState: ticketState, settledScreenName: "", wallpapersOn: true, phase: phase,
+                isFetchingDependencies: fetching, fraction: nil, downloadedBytes: nil, totalBytes: nil,
+                bytesPerSecond: nil, isInstalled: false, unsupportedOrigin: nil, blocker: nil
+            )
+        }
+        let dependencies = bar(.waiting, phase: .importing, fetching: true)
+        #expect(dependencies.progress == .indeterminate)
+        #expect(dependencies.status == String(localized: "Downloading required items…", bundle: .appLanguage))
+        // Control: a finished transfer outside the dependency stage leaves the bar empty.
+        #expect(bar(.waiting, phase: .succeeded, fetching: false) == WorkshopDownloadPresentation())
+
+        let entry = WPEHistoryEntry(origin: WPEOrigin(
+            workshopID: "789", title: "Visualizer", originalType: .scene, sourceFolderBookmark: Data([4]),
+            cacheRelativePath: nil, previewFileName: nil, resourceLocation: .unsupported, requiresWindowsPlugin: true
+        ), importedAt: .distantPast)
+        let reason = String(localized: "This wallpaper only works on Windows", bundle: .appLanguage)
+        let unsupported = bar(.downloadOnly(.unsupported(entry)), phase: .succeeded, fetching: false)
+        #expect(unsupported.status == String(localized: "Can't run on this Mac: \(reason)", bundle: .appLanguage))
+        #expect(unsupported.isFailure)
+    }
+
+    @Test("A later transfer of the same item shows its live progress over the last ticket's result")
+    func liveTransferOutranksASettledTicket() {
+        let entry = WPEHistoryEntry(origin: WPEOrigin(
+            workshopID: "789", title: "Visualizer", originalType: .scene, sourceFolderBookmark: Data([4]),
+            cacheRelativePath: nil, previewFileName: nil, resourceLocation: .unsupported, requiresWindowsPlugin: true
+        ), importedAt: .distantPast)
+        func bar(
+            _ ticketState: DeferredApplyCoordinator.State, phase: WorkshopDownloadCoordinator.DownloadPhase, fetching: Bool
+        ) -> WorkshopDownloadPresentation {
+            WorkshopDownloadPresentation.make(
+                ticketState: ticketState, settledScreenName: "", wallpapersOn: true, phase: phase,
+                isFetchingDependencies: fetching, fraction: 0.25, downloadedBytes: nil, totalBytes: nil,
+                bytesPerSecond: nil, isInstalled: true, unsupportedOrigin: entry.origin, blocker: nil
+            )
+        }
+        let settled = DeferredApplyCoordinator.State.downloadOnly(.unsupported(entry))
+        let downloading = bar(settled, phase: .downloading, fetching: false)
+        #expect(downloading.progress == .fraction(0.25))
+        #expect(downloading.status == String(localized: "Downloading…", bundle: .appLanguage))
+        #expect(!downloading.isFailure)
+        #expect(bar(settled, phase: .importing, fetching: false).status == String(localized: "Importing…", bundle: .appLanguage))
+        #expect(
+            bar(settled, phase: .importing, fetching: true).status
+                == String(localized: "Downloading required items…", bundle: .appLanguage)
+        )
+        let applied = DeferredApplyCoordinator.State.finished(ApplyReport(outcome: .applied, exitedSpanMode: false))
+        #expect(bar(applied, phase: .downloading, fetching: false).progress == .fraction(0.25))
+        // Control: with nothing of the item in flight the bar reports the ticket's result.
+        let reason = String(localized: "This wallpaper only works on Windows", bundle: .appLanguage)
+        #expect(bar(settled, phase: .succeeded, fetching: false).status == String(localized: "Can't run on this Mac: \(reason)", bundle: .appLanguage))
+    }
+
+    @Test("An item already in the library stays installed while it downloads again; its dependency stage does not")
+    func libraryEntryStaysInstalledThroughALaterDownload() {
+        #expect(WorkshopModalContent.isInstalled(hasLibraryEntry: true, isDownloading: true, isFetchingDependencies: false))
+        // Control: this attempt's root joins the library before its parts, so the dependency stage is not installed yet.
+        #expect(!WorkshopModalContent.isInstalled(hasLibraryEntry: true, isDownloading: true, isFetchingDependencies: true))
+        #expect(WorkshopModalContent.isInstalled(hasLibraryEntry: true, isDownloading: false, isFetchingDependencies: false))
+        #expect(!WorkshopModalContent.isInstalled(hasLibraryEntry: false, isDownloading: true, isFetchingDependencies: false))
+    }
+
     // MARK: Targets
+
+    @Test("A reopened modal points at the queued apply's display before the session's own choice")
+    func queuedTicketDecidesTheReopenedTarget() {
+        let left = ModalActions.Display(id: 1, name: "Left", frame: CGRect(x: -1440, y: 0, width: 1440, height: 900))
+        let right = ModalActions.Display(id: 2, name: "Right", frame: CGRect(x: 0, y: 0, width: 1920, height: 1080))
+        let targets = WorkshopModalTargets.make(displays: [left, right], activeOn: [], covers: [:])
+        #expect(WorkshopModalTargets.resolvedTarget(selected: nil, queued: 2, in: targets) == 2)
+        #expect(WorkshopModalTargets.resolvedTarget(selected: 1, queued: 2, in: targets) == 2)
+        // Control: with nothing queued the session's choice wins, then the leftmost display.
+        #expect(WorkshopModalTargets.resolvedTarget(selected: 2, queued: nil, in: targets) == 2)
+        #expect(WorkshopModalTargets.resolvedTarget(selected: nil, queued: nil, in: targets) == 1)
+    }
+
+    @Test("A queued display unplugged mid-download keeps its name and is not swapped for another display")
+    func unpluggedQueuedDisplayIsNotSwappedForAnother() {
+        let left = ModalActions.Display(id: 1, name: "Left", frame: CGRect(x: -1440, y: 0, width: 1440, height: 900))
+        let right = ModalActions.Display(id: 2, name: "Right", frame: CGRect(x: 0, y: 0, width: 1920, height: 1080))
+        let targets = WorkshopModalTargets.make(displays: [left, right], activeOn: [], covers: [:])
+        let unplugged = DeferredWallpaperApplying.makeScreen(id: 3)
+        unplugged.customName = "Studio"
+        let queued = DeferredApplyCoordinator.Target(screen: unplugged, selectionGeneration: 0)
+
+        let resolved = WorkshopModalTargets.resolvedTarget(selected: 1, queued: queued.screenID, in: targets)
+        #expect(resolved == nil, "highlighting another display would say the ticket goes there")
+        let name = WorkshopModalTargets.targetName(queued: queued, resolved: resolved, in: targets)
+        #expect(name == "Studio")
+        #expect(WorkshopModalContent.primaryActionTitle(installed: false, ticketState: .waiting, screenName: name).contains("Studio"))
+
+        // Control: a queued display still connected is highlighted and named as the strip shows it.
+        let connected = DeferredApplyCoordinator.Target(screen: DeferredWallpaperApplying.makeScreen(id: 2), selectionGeneration: 0)
+        #expect(WorkshopModalTargets.resolvedTarget(selected: 1, queued: connected.screenID, in: targets) == 2)
+        #expect(WorkshopModalTargets.targetName(queued: connected, resolved: 2, in: targets) == "Right")
+    }
 
     @Test("Targets and the default stay spatially stable when applied state changes")
     func targetsShareTheLibraryModalsOrdering() {

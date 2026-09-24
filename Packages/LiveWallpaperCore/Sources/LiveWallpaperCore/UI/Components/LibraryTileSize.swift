@@ -18,8 +18,10 @@ public enum LibraryTileSize: String, CaseIterable, Identifiable, Sendable {
     }
 
     public static let preferencesKey = "loomscreen.library.tileSize.v1"
+    /// What every reader of the preference falls back to until the user picks a size.
+    public static let defaultSize: LibraryTileSize = .small
 }
 
 public extension EnvironmentValues {
-    @Entry var libraryTileSize: LibraryTileSize = .medium
+    @Entry var libraryTileSize: LibraryTileSize = .defaultSize
 }

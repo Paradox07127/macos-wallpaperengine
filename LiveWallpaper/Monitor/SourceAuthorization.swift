@@ -64,8 +64,8 @@ final class SourceAuthorization {
             bundle: .appLanguage, comment: "Confirm button in the monitor wallpaper's AI-log folder access panel."
         )
         panel.message = String(
-            localized: "Choose the folder to read agent activity from (read-only, for the monitor wallpaper).",
-            defaultValue: "Choose the folder to read agent activity from (read-only, for the monitor wallpaper).",
+            localized: "Choose the folder to read Agent sessions from (read-only, used by the Agent Session widget).",
+            defaultValue: "Choose the folder to read Agent sessions from (read-only, used by the Agent Session widget).",
             bundle: .appLanguage, comment: "Explanatory message in the monitor wallpaper's AI-log folder access panel."
         )
 
@@ -178,7 +178,7 @@ final class SourceAuthorization {
             bundle: .appLanguage, comment: "Monitor wallpaper AI-log access: title shown when the user grants a folder other than the provider's own root."
         )
         alert.informativeText = String(
-            localized: "Choose your \(provider.defaultDirectoryName) folder in your home directory. A wider folder can't be granted for the monitor wallpaper.",
+            localized: "Choose your \(provider.defaultDirectoryName) folder in your home directory. A wider folder can't be granted for the Agent Session widget.",
             bundle: .appLanguage, comment: "Monitor wallpaper AI-log access: explanation shown when the chosen folder is not the provider root; %@ is a folder name like .claude or .codex."
         )
         alert.addButton(withTitle: String(

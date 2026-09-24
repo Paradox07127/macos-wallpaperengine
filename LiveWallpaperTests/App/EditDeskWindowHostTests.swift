@@ -7,20 +7,24 @@ import Testing
 @Suite("Edit Desk window host", .serialized)
 @MainActor
 struct EditDeskWindowHostTests {
-    @Test("Edit Desk opens the main window for an unhandled tour", arguments: [false, true], [false, true])
+    @Test("First launch on a build opens the legacy tour until it is done, otherwise the main window", arguments: [false, true], [false, true])
     func startupOnboarding(editDeskEnabled: Bool, onboardingCompleted: Bool) {
         let options = AppRuntimeOptions(arguments: [], environment: [:], isXCTestLoaded: false)
-        let plan = AppStartupPlan(
-            runtimeOptions: options,
-            onboardingCompleted: onboardingCompleted,
-            onboardingHandled: onboardingCompleted,
-            editDeskEnabled: editDeskEnabled
-        )
+        for recordedBuild in [nil, "41"] as [String?] {
+            let plan = AppStartupPlan(
+                runtimeOptions: options,
+                onboardingCompleted: onboardingCompleted,
+                startupWindowBuild: recordedBuild,
+                currentBuild: "42",
+                editDeskEnabled: editDeskEnabled
+            )
 
-        #expect(plan.showOnboarding == (!editDeskEnabled && !onboardingCompleted))
-        #expect(plan.screenManagerOptions.restoreSavedWallpapers)
-        #expect(plan.screenManagerOptions.startAutomation)
-        #expect(plan.showSettingsOnLaunch == (editDeskEnabled && !onboardingCompleted))
+            #expect(plan.showOnboarding == (!editDeskEnabled && !onboardingCompleted))
+            #expect(plan.screenManagerOptions.restoreSavedWallpapers)
+            #expect(plan.screenManagerOptions.startAutomation)
+            #expect(plan.showSettingsOnLaunch == (editDeskEnabled || onboardingCompleted))
+            #expect(plan.startupWindowBuildToRecord == "42")
+        }
     }
 
     @Test("Testing still suppresses onboarding", arguments: [false, true])
@@ -29,24 +33,28 @@ struct EditDeskWindowHostTests {
         let plan = AppStartupPlan(
             runtimeOptions: options,
             onboardingCompleted: false,
-            onboardingHandled: false,
+            startupWindowBuild: nil,
+            currentBuild: "42",
             editDeskEnabled: editDeskEnabled
         )
 
         #expect(!plan.showOnboarding)
         #expect(!plan.showSettingsOnLaunch)
+        #expect(plan.startupWindowBuildToRecord == nil)
     }
 
-    @Test("New progress decides startup independently of the legacy flag", arguments: [false, true])
-    func newProgressOverridesLegacy(onboardingHandled: Bool) {
+    @Test("Later launches of the same build open no window", arguments: [false, true])
+    func laterLaunchesOpenNothing(editDeskEnabled: Bool) {
         let plan = AppStartupPlan(
             runtimeOptions: AppRuntimeOptions(arguments: [], environment: [:], isXCTestLoaded: false),
-            onboardingCompleted: !onboardingHandled,
-            onboardingHandled: onboardingHandled,
-            editDeskEnabled: true
+            onboardingCompleted: false,
+            startupWindowBuild: "42",
+            currentBuild: "42",
+            editDeskEnabled: editDeskEnabled
         )
         #expect(!plan.showOnboarding)
-        #expect(plan.showSettingsOnLaunch == !onboardingHandled)
+        #expect(!plan.showSettingsOnLaunch)
+        #expect(plan.startupWindowBuildToRecord == nil)
     }
 
     @Test("The root consumes cold and warm tour requests once", arguments: [false, true])

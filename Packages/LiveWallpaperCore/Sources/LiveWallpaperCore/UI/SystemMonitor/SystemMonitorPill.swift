@@ -95,13 +95,13 @@ public struct SystemMonitorPill: View {
         }
     }
 
-    /// Reuses the already-localized thermal labels so the dot's spoken state
+    /// Reuses the status capsule's already-localized load labels so the dot's spoken state
     /// adds no new catalog strings.
     private var loadDescription: Text {
         switch monitor.loadLevel {
-        case .calm:     return Text("Normal", comment: "Thermal state label.")
-        case .elevated: return Text("Elevated", comment: "Thermal state label.")
-        case .high:     return Text("High", comment: "Thermal state label.")
+        case .calm: Text("Normal", comment: "System load label.")
+        case .elevated: Text("Elevated Load", comment: "System load label.")
+        case .high: Text("High Load", comment: "System load label.")
         }
     }
 }

@@ -120,6 +120,109 @@ struct ShelfGestureControllerTests {
         }
     }
 
+    @Test("A swipe's release already lands it, so its momentum end schedules no snap; a row swipe's still snaps to a card")
+    func momentumEndSnapsOnlyTheRow() throws {
+        let clock = Clock()
+        let gesture = ShelfGestureController(clock: { clock.now })
+        var progress = 1.0
+        _ = gesture.scroll(deltaX: 0, deltaY: 0, progress: progress, phase: .began)
+        for _ in 0 ..< 4 {
+            clock.now += 0.008
+            if let next = gesture.scroll(deltaX: 0, deltaY: -80, progress: progress, phase: .changed) {
+                progress = next
+            }
+        }
+        clock.now += 0.008
+        _ = gesture.scroll(deltaX: 0, deltaY: 0, progress: progress, phase: .ended)
+        try #require(gesture.consumeRelease()?.target == 2)
+        for _ in 0 ..< 5 {
+            clock.now += 0.008
+            _ = gesture.scroll(deltaX: 0, deltaY: -40, progress: progress, phase: .momentum)
+        }
+        clock.now += 0.008
+        _ = gesture.scroll(deltaX: 0, deltaY: 0, progress: progress, phase: .momentumEnded)
+        #expect(gesture.snapDeadline == nil, "the momentum end would land again what the release is already landing")
+
+        let rowClock = Clock()
+        let row = ShelfGestureController(clock: { rowClock.now })
+        row.rowLimits = -1000 ... 0
+        _ = row.scroll(deltaX: 0, deltaY: 0, progress: 1, phase: .began)
+        for _ in 0 ..< 4 {
+            rowClock.now += 0.008
+            _ = row.scroll(deltaX: -40, deltaY: 0, progress: 1, phase: .changed)
+        }
+        rowClock.now += 0.008
+        _ = row.scroll(deltaX: 0, deltaY: 0, progress: 1, phase: .ended)
+        for _ in 0 ..< 5 {
+            rowClock.now += 0.008
+            _ = row.scroll(deltaX: -20, deltaY: 0, progress: 1, phase: .momentum)
+        }
+        rowClock.now += 0.008
+        _ = row.scroll(deltaX: 0, deltaY: 0, progress: 1, phase: .momentumEnded)
+        #expect(
+            row.snapDeadline == rowClock.now + StageGeometry.snapDelay,
+            "the row's momentum end has to schedule the snap onto a whole card"
+        )
+    }
+
+    @Test("A swipe's momentum end leaves nothing behind: the next wheel notch walks back from the state the stage landed on")
+    func wheelAfterASwipeStartsFromTheLanding() {
+        let clock = Clock()
+        let gesture = ShelfGestureController(clock: { clock.now })
+        var progress = 1.0
+        _ = gesture.scroll(deltaX: 0, deltaY: 0, progress: progress, phase: .began)
+        for _ in 0 ..< 4 {
+            clock.now += 0.008
+            if let next = gesture.scroll(deltaX: 0, deltaY: -80, progress: progress, phase: .changed) {
+                progress = next
+            }
+        }
+        clock.now += 0.008
+        _ = gesture.scroll(deltaX: 0, deltaY: 0, progress: progress, phase: .ended)
+        _ = gesture.consumeRelease()
+        clock.now += 0.3
+        _ = gesture.scroll(deltaX: 0, deltaY: 0, progress: progress, phase: .momentumEnded)
+        // Whatever the momentum end scheduled fires, as the stage's snap task would; the landing reaches the grid.
+        clock.now += StageGeometry.snapDelay
+        _ = gesture.consumeSnap(progress: progress)
+        progress = 2
+        clock.now += 1
+        if let next = gesture.scroll(deltaX: 0, deltaY: 24, progress: progress, phase: .changed, precise: false) {
+            progress = next
+        }
+        clock.now += StageGeometry.snapDelay
+        let landed = gesture.consumeSnap(progress: progress)
+        #expect(landed == 1, Comment(rawValue: "one notch down from the grid landed on \(String(describing: landed))"))
+    }
+
+    @Test("A swipe held still before lifting gets no momentum, so its release alone leaves nothing behind for the next wheel notch")
+    func wheelAfterAStillReleaseStartsFromTheLanding() throws {
+        let clock = Clock()
+        let gesture = ShelfGestureController(clock: { clock.now })
+        var progress = 1.0
+        _ = gesture.scroll(deltaX: 0, deltaY: 0, progress: progress, phase: .began)
+        for _ in 0 ..< 4 {
+            clock.now += 0.008
+            if let next = gesture.scroll(deltaX: 0, deltaY: -80, progress: progress, phase: .changed) {
+                progress = next
+            }
+        }
+        // Still for a second before lifting: no speed at the release, so the OS sends no momentum after it.
+        clock.now += 1
+        _ = gesture.scroll(deltaX: 0, deltaY: 0, progress: progress, phase: .ended)
+        let release = try #require(gesture.consumeRelease())
+        try #require(release.target == 2 && abs(release.velocity) < StageGeometry.flickVelocity, Comment(rawValue: "\(release)"))
+        // The landing's spring reaches the grid.
+        progress = 2
+        clock.now += 1
+        if let next = gesture.scroll(deltaX: 0, deltaY: 24, progress: progress, phase: .changed, precise: false) {
+            progress = next
+        }
+        clock.now += StageGeometry.snapDelay
+        let landed = gesture.consumeSnap(progress: progress)
+        #expect(landed == 1, Comment(rawValue: "after the notch progress \(progress); landed on \(String(describing: landed))"))
+    }
+
     @Test("A wheel burst with no phases buys one state and snaps on silence")
     func wheelBurst() {
         var now = 0.0
@@ -317,23 +420,24 @@ struct ShelfGestureControllerTests {
             StageGeometry.cardPlacement(style: .crate, index: $0, count: 14, progress: 2, focus: 0, windowSize: size)
         }
         let cards = placements.map(\.frame)
+        let shapes = cards.map { StageGeometry.CardShape(rect: $0) }
         let order = placements.map(\.depthOrder)
-        #expect(ShelfGestureController.card(at: CGPoint(x: cards[3].midX, y: cards[3].midY), frames: cards, order: order) == 3)
+        #expect(ShelfGestureController.card(at: CGPoint(x: cards[3].midX, y: cards[3].midY), shapes: shapes, order: order) == 3)
         let arrangement = StageGeometry.arrangement(
             frames: [CGRect(x: 0, y: 0, width: 1920, height: 1080)],
             in: StageGeometry.stageRect(windowSize: size)
         )
         let shell = StageGeometry.shellRect(content: arrangement.contentRects[0], isBuiltin: false)
         #expect(ShelfGestureController.display(at: CGPoint(x: shell.midX, y: shell.midY), frames: [(7, shell)]) == 7)
-        #expect(ShelfGestureController.card(at: .zero, frames: cards, order: order) == nil)
+        #expect(ShelfGestureController.card(at: .zero, shapes: shapes, order: order) == nil)
 
         // Tilted row cards overlap; the card to the right lies on top, so the sliver is on the left.
         let row = (0 ..< 14).map {
             StageGeometry.cardPlacement(style: .crate, index: $0, count: 14, progress: 1, focus: 0, windowSize: size)
         }
-        let hits = row.map { StageGeometry.hitRect($0, style: .crate) }
-        let sliver = CGPoint(x: hits[5].minX + 8, y: hits[5].midY)
-        #expect(ShelfGestureController.card(at: sliver, frames: hits, order: row.map(\.depthOrder)) == 5)
+        let hits = row.map { StageGeometry.hitShape($0, style: .crate) }
+        let sliver = CGPoint(x: hits[5].rect.minX + 8, y: hits[5].rect.midY)
+        #expect(ShelfGestureController.card(at: sliver, shapes: hits, order: row.map(\.depthOrder)) == 5)
     }
 
     @Test("A gesture caught mid-snap still decides its axis from the state it came down on")

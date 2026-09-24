@@ -21,6 +21,8 @@ struct WorkshopPage: View {
     private var privateSessionNoticeShown = false
 
     @State private var isShowingWizard = false
+    /// Decided when the wizard opens: recording the step while it is up must not pull its header away.
+    @State private var wizardShowsTourStep = false
     @State private var isShowingPasteSheet = false
     @State private var isShowingKeyEntry = false
     @State private var isShowingInstallConsent = false
@@ -60,16 +62,20 @@ struct WorkshopPage: View {
                 items: session.browse.items,
                 session: session,
                 toasts: toasts,
-                windowSize: stageSize
+                windowSize: stageSize,
+                onConnectSteam: presentWizard
             )
-            EditDeskToastHost(center: toasts)
-                .frame(maxHeight: .infinity, alignment: .bottom)
         }
         // SCREENS.md measures from the window's top edge; the transparent title bar is part of the top bar.
         .ignoresSafeArea()
         .onGeometryChange(for: CGSize.self) { $0.size } action: { stageSize = $0 }
         .task { await session.prepareDownloads() }
         .task { await setupController.loadAccounts() }
+        .onChange(of: router.pendingOnboardingStep, initial: true) { _, step in
+            guard step == .workshop else { return }
+            router.pendingOnboardingStep = nil
+            presentedItemID = nil
+        }
         .modifier(WorkshopPageSheets(page: self))
     }
 
@@ -87,7 +93,7 @@ struct WorkshopPage: View {
             OnboardingCard(page: .workshop) { action in
                 switch action {
                 case .connectSteam:
-                    isShowingWizard = true
+                    presentWizard()
                 case .importLocalLibrary:
                     SteamWizard.importLocalFolder()
                 case .chooseFile, .tryAerials, .importMore, .addClock:
@@ -116,6 +122,10 @@ struct WorkshopPage: View {
             onDownloadByLink: { presentPasteFlow() },
             onEnterAPIKey: { isShowingKeyEntry = true },
             onInstallSteamCMD: { isShowingInstallConsent = true },
+            onLocateSteamCMD: { setupController.autoDetectBinary() },
+            onImportLocalFolder: { SteamWizard.importLocalFolder() },
+            steamCMDReady: doctor.isBinaryPresumedReady,
+            steamCMDBusy: setupController.isSteamCMDBusy,
             showsPrivateSessionNotice: doctor.username != nil && !privateSessionNoticeShown,
             onDismissPrivateSessionNotice: { privateSessionNoticeShown = true }
         )
@@ -132,7 +142,7 @@ struct WorkshopPage: View {
             content
                 .sheet(isPresented: page.$isShowingWizard) {
                     AppLanguageScope(defaults: .appScoped()) {
-                        SteamWizard(progress: page.progress)
+                        SteamWizard(progress: page.wizardShowsTourStep ? page.progress : nil)
                     }
                 }
                 .sheet(isPresented: page.$isShowingPasteSheet) {
@@ -182,7 +192,7 @@ struct WorkshopPage: View {
                 // clears the error runs on *every* dismissal, including the one SwiftUI performs
                 // when "Configure" is tapped — erasing the error on its way to Settings.
                 .onChange(of: page.setupController.setupError) { _, error in
-                    page.isShowingSetupAlert = error != nil
+                    page.isShowingSetupAlert = error != nil && !page.isShowingWizard
                 }
                 .alert("Action needed", isPresented: page.$isShowingSetupAlert) {
                     Button("OK") { page.setupController.setupError = nil }
@@ -196,6 +206,11 @@ struct WorkshopPage: View {
     }
 
     // MARK: Actions
+
+    private func presentWizard() {
+        wizardShowsTourStep = showsOnboardingCard
+        isShowingWizard = true
+    }
 
     private func presentPasteFlow() {
         isShowingPasteSheet = true

@@ -10,9 +10,8 @@ final class OnboardingSignals {
         var wallpapers: @MainActor () -> [CGDirectDisplayID: WallpaperContent] = { [:] }
         var bookmarks: @MainActor () -> [WallpaperBookmark] = { [] }
         var historyIDs: @MainActor () -> Set<String> = { [] }
-        var installWorkshopHooks: @MainActor (
-            @escaping @MainActor () -> Void, @escaping @MainActor (Int) -> Void
-        ) -> Void = { _, _ in }
+        var installWorkshopHooks: @MainActor (@escaping @MainActor (Int) -> Void) -> Void = { _ in }
+        var workshopDownloadConfirmed: @MainActor () -> Bool = { false }
 
         @MainActor
         static func live(screenManager: ScreenManager) -> Inputs {
@@ -34,6 +33,7 @@ final class OnboardingSignals {
     private let inputs: Inputs
     private var baselineWallpapers: [CGDirectDisplayID: WallpaperContent] = [:]
     private var baselineLibrary: Set<String> = []
+    private var wasDownloadConfirmed = false
     private var subscriptions: Set<AnyCancellable> = []
 
     init(progress: OnboardingProgress, inputs: Inputs, notificationCenter: NotificationCenter = .default) {
@@ -53,19 +53,18 @@ final class OnboardingSignals {
             .store(in: &subscriptions)
         #endif
         observeBookmarks()
-        inputs.installWorkshopHooks(
-            { [weak self] in self?.progress.record(.workshop) },
-            { [weak self] count in
-                if count > 0 {
-                    self?.progress.record(.workshop)
-                }
+        observeDownloadConfirmation()
+        inputs.installWorkshopHooks { [weak self] count in
+            if count > 0 {
+                self?.progress.record(.workshop)
             }
-        )
+        }
     }
 
     func rebaseline() {
         baselineWallpapers = inputs.wallpapers()
         baselineLibrary = libraryIdentities()
+        wasDownloadConfirmed = inputs.workshopDownloadConfirmed()
     }
 
     private func recordWallpaperChange() {
@@ -96,6 +95,25 @@ final class OnboardingSignals {
             Task { @MainActor @Sendable [weak self] in
                 self?.recordLibraryGrowth()
                 self?.observeBookmarks()
+            }
+        }
+    }
+
+    private func recordDownloadConfirmation() {
+        let isConfirmed = inputs.workshopDownloadConfirmed()
+        if isConfirmed, !wasDownloadConfirmed {
+            progress.record(.workshop)
+        }
+        wasDownloadConfirmed = isConfirmed
+    }
+
+    private func observeDownloadConfirmation() {
+        withObservationTracking {
+            _ = inputs.workshopDownloadConfirmed()
+        } onChange: { @Sendable [weak self] in
+            Task { @MainActor @Sendable [weak self] in
+                self?.recordDownloadConfirmation()
+                self?.observeDownloadConfirmation()
             }
         }
     }

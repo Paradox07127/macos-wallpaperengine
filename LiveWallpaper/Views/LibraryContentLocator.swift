@@ -23,6 +23,10 @@ enum LibraryContentLocator {
         } ?? .unknown
     }
 
+    static func locate(folderBookmark: Data) async -> LibraryContentLocation {
+        await PreviewWorkGate.shared.runDetached { located(folderBookmark) } ?? .unknown
+    }
+
     static func resolvePreviewBookmark(_ data: Data?) async -> SecurityScopedBookmarkResolver.Resolved? {
         await PreviewWorkGate.shared.runDetached {
             try? SecurityScopedBookmarkResolver.shared.resolve(data, target: .transient).get()

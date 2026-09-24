@@ -316,8 +316,8 @@ enum ProbeFixtures {
 
     static var libraryActions: WallpaperModalActions {
         WallpaperModalActions(
-            applyTo: { _ in }, applyToAllDisplays: {}, togglePlayback: {},
-            addToPlaylist: { _ in }, schedule: {}, showInFinder: {}, openInSteam: {},
+            applyTo: { _ in }, applyToAllDisplays: {},
+            addToPlaylist: { _ in }, showInFinder: {}, openInSteam: {},
             removeFromSaved: {}, checkForUpdate: {}, cancelUpdate: {}, deleteInstalled: {}
         )
     }
@@ -372,6 +372,7 @@ struct S4ModalFidelityTests {
             content: ProbeFixtures.libraryContent(preview: ProbeRenderer.solid(ProbeRenderer.previewRed)),
             targets: ProbeFixtures.targets(thumbnail: nil),
             actions: ProbeFixtures.libraryActions,
+            requestRename: {}, requestDelete: {},
             navigation: ProbeFixtures.navigation,
             windowSize: windowSize,
             titlebarInset: DesignTokens.EditDesk.Spacing.topBar,
@@ -452,7 +453,7 @@ struct S5FloatLayerFidelityTests {
         DisplayFloatLayer(
             targets: ProbeFixtures.targets(thumbnail: ProbeRenderer.solid(ProbeRenderer.thumbnailBlue)),
             mode: mode, highlighted: nil, windowWidth: width,
-            onSelect: { _ in }, onApplyAll: {}, onTargetFrame: { _ in }, onRunFrame: { _ in }
+            onSelect: { _ in }, onTargetFrame: { _ in }, onRunFrame: { _ in }
         )
     }
 
@@ -540,14 +541,15 @@ struct S4S5OverlapTests {
                 WallpaperModal(
                     content: ProbeFixtures.libraryContent(preview: ProbeRenderer.solid(ProbeRenderer.previewRed)),
                     targets: ProbeFixtures.targets(thumbnail: ProbeRenderer.solid(ProbeRenderer.thumbnailBlue)),
-                    actions: ProbeFixtures.libraryActions, navigation: ProbeFixtures.navigation,
+                    actions: ProbeFixtures.libraryActions, requestRename: {}, requestDelete: {},
+                    navigation: ProbeFixtures.navigation,
                     windowSize: size, titlebarInset: DesignTokens.EditDesk.Spacing.topBar,
                     onDismiss: {}, onDrag: { _ in }
                 )
                 DisplayFloatLayer(
                     targets: ProbeFixtures.targets(thumbnail: ProbeRenderer.solid(ProbeRenderer.thumbnailBlue)),
                     mode: .dropTarget, highlighted: nil, windowWidth: size.width,
-                    onSelect: { _ in }, onApplyAll: {}, onTargetFrame: { _ in }, onRunFrame: { _ in }
+                    onSelect: { _ in }, onTargetFrame: { _ in }, onRunFrame: { _ in }
                 )
                 .padding(.top, FloatLayerGeometry.panelTop)
             }
@@ -581,7 +583,7 @@ struct S6DetailFidelityTests {
             ],
             hero: DetailHeroStatus(
                 title: "Painting the Sharks 4K", kindLine: "Scene · auto-detected",
-                isPlaying: true, performanceLine: "▶ 60 FPS · GPU 18%"
+                intendsToPlay: true, performanceLine: "▶ 60 FPS · GPU 18%"
             ),
             heroImage: ProbeRenderer.solid(ProbeRenderer.heroMagenta),
             backdropImage: nil,
@@ -593,6 +595,7 @@ struct S6DetailFidelityTests {
             inspector: { _ in Color(nsColor: ProbeRenderer.inspectorYellow) },
             overlayLogicalSize: CGSize(width: 3840, height: 2160),
             overlayCanvas: { _ in Color.clear },
+            wallpaperStatus: { EmptyView() },
             inspectorVisible: .constant(true), layersVisible: .constant(true),
             inspectorWidth: .constant(372), liveInspectorWidth: .constant(nil)
         )
@@ -898,6 +901,8 @@ struct S8bModalFidelityTests {
             ),
             primaryTitle: "Apply to MPG321CX when done",
             isPrimaryEnabled: true,
+            secondaryTitle: "Save only",
+            isSecondaryEnabled: true,
             isRevealed: false,
             matureReveal: nil,
             windowSize: windowSize,
@@ -987,7 +992,10 @@ struct S8bModalFidelityTests {
         #expect(modalSource.contains("previewSide: CGFloat = 340"))
         #expect(modalSource.contains("bottomBarHeight: CGFloat = 84"))
         #expect(modalSource.contains("buttonHeight: CGFloat = 38"))
-        #expect(modalSource.contains("Save only"))
+        // "Save only" and its queued twin are worded by the contract; the bar draws whichever it is handed.
+        #expect(modalSource.contains("Text(verbatim: secondaryTitle)"))
+        let contractSource = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Workshop/WorkshopModalContract.swift")
+        #expect(contractSource.contains("Save only"))
         #expect(modalSource.contains("Cancel download"))
         #expect(modalSource.contains("Open in Steam"))
         #expect(!modalSource.contains("applyToAllDisplays"), "the Workshop modal offers an apply-to-all it must not have")
@@ -1053,13 +1061,19 @@ struct S8bLocalizationWidthTests {
                 format: NSLocalizedString("Apply to %@ when done", bundle: localized, comment: ""),
                 "MPG321CX OLED"
             )
-            let saveOnly = NSLocalizedString("Save only", bundle: localized, comment: "")
-            let cancel = NSLocalizedString("Cancel download", bundle: localized, comment: "")
-            let total = buttonWidth(primary) + buttonWidth(saveOnly) + buttonWidth(cancel) + 38 + 3 * 12
-            ProbeRenderer.report(
-                "S8b.bar.\(language)",
-                "primary=\(buttonWidth(primary)) saveOnly=\(buttonWidth(saveOnly)) cancel=\(buttonWidth(cancel)) total=\(total) left=\(barWidth - total)"
+            let queued = String(
+                format: NSLocalizedString("Will apply to %@ when done", bundle: localized, comment: ""),
+                "MPG321CX OLED"
             )
+            let saveOnly = NSLocalizedString("Save only", bundle: localized, comment: "")
+            let cancelAutoApply = NSLocalizedString("Cancel Auto-Apply", bundle: localized, comment: "")
+            let cancel = NSLocalizedString("Cancel download", bundle: localized, comment: "")
+            let connect = NSLocalizedString("Connect Steam", bundle: localized, comment: "")
+            // Three bars: downloading, blocked by a setup step, and downloading with an apply queued.
+            let bars = [[primary, saveOnly, cancel], [primary, saveOnly, connect], [queued, cancelAutoApply, cancel]]
+            let totals = bars.map { $0.map(buttonWidth).reduce(0, +) + 38 + 3 * 12 }
+            let total = totals.max() ?? 0
+            ProbeRenderer.report("S8b.bar.\(language)", "totals=\(totals) left=\(barWidth - total)")
             #expect(total <= barWidth, Comment(rawValue: "\(language): the bar needs \(total)pt of \(barWidth)pt"))
         }
     }
@@ -1143,8 +1157,11 @@ struct S9LocalizationWidthTests {
     }
 
     /// SCREENS S9's card: a two-line message in a 460pt box, a 30pt button row, a two-line footnote.
-    @Test("Every onboarding card's message, buttons and footnote fit their S9 boxes in all five languages")
-    func cardChromeFits() throws {
+    @Test(
+        "Every onboarding card's message, buttons and footnote fit their S9 boxes in all five languages",
+        arguments: [true, false]
+    )
+    func cardChromeFits(sceneCapable: Bool) throws {
         // The narrowest the card ever is: the 1040 window minus both gutters and the detail
         // page's 372pt inspector.
         let narrowBox = StageGeometry.minimumWindow.width - 2 * OnboardingCardMetrics.gutter - DetailGeometry.inspectorWidth
@@ -1152,7 +1169,7 @@ struct S9LocalizationWidthTests {
         for language in Self.languages {
             let localized = try bundle(language)
             for page in OnboardingProgress.Page.allCases {
-                let content = OnboardingCardContent.of(page)
+                let content = OnboardingCardContent.of(page, sceneCapable: sceneCapable)
                 let message = NSLocalizedString(content.message.probeKey, bundle: localized, comment: "")
                 let messageLines = lines(
                     message, size: 15, weight: .semibold, boxWidth: OnboardingCardMetrics.messageMaxWidth
@@ -1169,7 +1186,7 @@ struct S9LocalizationWidthTests {
                     footnote, size: 11, boxWidth: narrowBox - skip - DesignTokens.EditDesk.Spacing.s12
                 )
                 ProbeRenderer.report(
-                    "S9.card.\(language).\(page)",
+                    "S9.card.\(sceneCapable ? "pro" : "lite").\(language).\(page)",
                     "messageLines=\(messageLines) buttonRow=\(row) footnoteLines=\(footnoteLines)"
                 )
                 if messageLines > 2 || footnoteLines > 2 || row > narrowBox {
@@ -1206,15 +1223,21 @@ struct S9LocalizationWidthTests {
                 size: 11, boxWidth: column
             )
             // Bordered buttons: the title plus AppKit's own 12pt-a-side padding at the regular size.
-            let footer = ["← Back", "Import a Local Folder", "Sign In →"]
+            // The primary button takes one of four titles, so the footer is measured with the widest.
+            let primary = ["Install SteamCMD", "Choose folder", "Sign In →", "Done"]
                 .map { width(localizedString($0), size: 13) + 24 }
+                .max() ?? 0
+            let footer = ["← Back", "Import a Local Folder"]
+                .map { width(localizedString($0), size: 13) + 24 } + [primary]
             let footerWidth = footer.reduce(0, +) + 2 * DesignTokens.Spacing.md
-            let rows = ["SteamCMD", "Steam Account", "Steam Token (2FA)"].map { key -> CGFloat in
+            let rows = ["SteamCMD", "Steam Library access", "Steam Account", "Steam Token (2FA)"].map { key -> CGFloat in
                 width(localizedString(key), size: 13) + 2 * DesignTokens.EditDesk.Spacing.s8 + 12
             }
             let widestRow = rows.max() ?? 0
+            // The card also carries at most one two-line step note (11pt lines, `sm` below it).
             let columnHeight = CGFloat(title) * 26 + CGFloat(body) * 16 + CGFloat(note) * 14
-                + 3 * (SteamWizardMetrics.fieldRowHeight + DesignTokens.Spacing.md)
+                + 4 * (SteamWizardMetrics.fieldRowHeight + DesignTokens.Spacing.md)
+                + 2 * 14 + DesignTokens.Spacing.sm
                 + 4 * DesignTokens.Spacing.md + 2 * DesignTokens.Spacing.xl + 56
             ProbeRenderer.report(
                 "S9.wizard.\(language)",
@@ -1238,7 +1261,7 @@ struct S9LocalizationWidthTests {
         var failures: [String] = []
         for language in Self.languages {
             let localized = try bundle(language)
-            let choose = NSLocalizedString("Choose File…", bundle: localized, comment: "")
+            let choose = NSLocalizedString("Choose File", bundle: localized, comment: "")
             let paste = NSLocalizedString("Paste URL", bundle: localized, comment: "")
             let hint = NSLocalizedString(
                 "Types are detected automatically · mp4 / mov / html / folder / Wallpaper Engine project",

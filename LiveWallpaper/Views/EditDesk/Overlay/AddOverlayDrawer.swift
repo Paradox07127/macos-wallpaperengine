@@ -10,14 +10,22 @@ struct AddOverlayDrawer: View {
     var horizontal = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ObservedObject private var interaction: InteractionModel
     @State private var category: OverlayAddCategory = .all
     @State private var boardFull = false
-    @State private var noticeGeneration = 0
 
     private static let columns = 4
     private static let cellHeight: CGFloat = 46
     /// SCREENS.md S7 says 22; 26 is the minimum hit target from INTERACTIONS.md.
     private static let chipHeight: CGFloat = 26
+
+    init(session: OverlayEditorSession, isExpanded: Binding<Bool>, height: CGFloat, horizontal: Bool = false) {
+        self.session = session
+        _isExpanded = isExpanded
+        self.height = height
+        self.horizontal = horizontal
+        interaction = session.interaction
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: DesignTokens.EditDesk.Spacing.s8) {
@@ -40,36 +48,36 @@ struct AddOverlayDrawer: View {
         .padding(.horizontal, DesignTokens.EditDesk.Spacing.s12)
         .frame(height: height, alignment: .top)
         .clipped()
-        .task(id: noticeGeneration) {
-            guard boardFull else { return }
-            try? await Task.sleep(for: .seconds(2))
-            boardFull = false
-        }
+        .onChange(of: interaction.placements) { boardFull = false }
+        .onChange(of: session.identity) { boardFull = false }
     }
 
     private var toggleRow: some View {
-        Button {
-            withAnimation(reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.3, dampingFraction: 0.82)) {
-                isExpanded.toggle()
-            }
-        } label: {
-            HStack(spacing: DesignTokens.EditDesk.Spacing.s8) {
-                Text(verbatim: "\(isExpanded ? "−" : "+") \(String(localized: "Add Overlay", bundle: .appLanguage))")
-                    .font(DesignTokens.EditDesk.Typography.body)
-                    .foregroundStyle(DesignTokens.EditDesk.Colors.textPrimary)
-                Spacer(minLength: 0)
-                if boardFull {
-                    Text("Board is full")
-                        .font(DesignTokens.EditDesk.Typography.badgeMono)
-                        .foregroundStyle(DesignTokens.EditDesk.Colors.warning)
+        HStack(spacing: DesignTokens.EditDesk.Spacing.s8) {
+            Button {
+                withAnimation(reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.3, dampingFraction: 0.82)) {
+                    isExpanded.toggle()
                 }
+            } label: {
+                HStack(spacing: DesignTokens.EditDesk.Spacing.s8) {
+                    Text(verbatim: "\(isExpanded ? "−" : "+") \(String(localized: "Add Overlay", bundle: .appLanguage))")
+                        .font(DesignTokens.EditDesk.Typography.body)
+                        .foregroundStyle(DesignTokens.EditDesk.Colors.textPrimary)
+                    Spacer(minLength: 0)
+                }
+                .lineLimit(1)
+                .frame(height: OverlayColumnLayout.drawerCollapsedHeight)
+                .contentShape(Rectangle())
             }
-            .lineLimit(1)
-            .frame(height: OverlayColumnLayout.drawerCollapsedHeight)
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text("Add Overlay"))
+            if boardFull {
+                Text("No room for another widget. Remove a widget or make one smaller, then try again.")
+                    .font(DesignTokens.EditDesk.Typography.footnote)
+                    .foregroundStyle(DesignTokens.EditDesk.Colors.warning)
+                    .lineLimit(2)
+            }
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(Text("Add Overlay"))
     }
 
     private var chips: some View {
@@ -159,7 +167,6 @@ struct AddOverlayDrawer: View {
         case let .widget(kind):
             guard session.addWidget(kind: kind) else {
                 boardFull = true
-                noticeGeneration += 1
                 return
             }
         case .music:

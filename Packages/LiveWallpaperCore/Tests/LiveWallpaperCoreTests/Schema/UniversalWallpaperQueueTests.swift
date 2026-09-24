@@ -13,6 +13,7 @@ struct UniversalWallpaperQueueTests {
         #expect(decoded.effectiveWallpaperQueue.map(\.content.activeVideoBookmarkData) == [Data([2]), Data([1]), Data([3])])
         #expect(decoded.effectiveWallpaperQueue[1].content.packageVideoEntryName == "main.mp4")
         #expect(decoded.playlistCursorIndex == 2)
+        #expect(decoded.scheduleSettledUntil == nil)
         decoded.wallpaperQueue = decoded.effectiveWallpaperQueue
         #expect(try JSONDecoder().decode(ScreenConfiguration.self, from: JSONEncoder().encode(decoded)) == decoded)
     }
@@ -29,6 +30,7 @@ struct UniversalWallpaperQueueTests {
         config.wallpaperQueue = entries
         config.scheduleFallback = entries[0]
         config.scheduleSlots = [ScheduleSlot(startHour: 22, endHour: 6, label: "Night", wallpaper: entries[3])]
+        config.scheduleSettledUntil = Date(timeIntervalSinceReferenceDate: 800_000_000)
         let decoded = try JSONDecoder().decode(ScreenConfiguration.self, from: JSONEncoder().encode(config))
         #expect(decoded == config)
         for entry in entries {
@@ -66,6 +68,21 @@ struct UniversalWallpaperQueueTests {
         let updated = config.withUpdatedActiveBookmark(Data([2]))
         for entry in [updated.wallpaperQueue?.first, updated.scheduleFallback, updated.scheduleSlots?.first?.wallpaper].compactMap(\.self) {
             #expect(entry.content == .video(bookmarkData: Data([2]), packageEntryName: "a.mp4"))
+        }
+    }
+
+    @Test("Refreshing a local web bookmark also refreshes queue, schedule and fallback references")
+    func refreshedWebBookmark() throws {
+        let entry = WallpaperQueueEntry(title: "Page", content: .html(source: .file(bookmarkData: Data([1])), config: .default))
+        var config = ScreenConfiguration(screenID: 1, wallpaper: entry.content)
+        config.wallpaperQueue = [entry]
+        config.scheduleFallback = entry
+        config.scheduleSlots = [ScheduleSlot(startHour: 0, endHour: 24, label: "", wallpaper: entry)]
+        let updated = try #require(config.replacingHTMLBookmark(matching: Data([1]), with: Data([2])))
+        let references = [updated.wallpaperQueue?.first, updated.scheduleFallback, updated.scheduleSlots?.first?.wallpaper]
+        #expect(references.compactMap(\.self).count == 3)
+        for entry in references.compactMap(\.self) {
+            #expect(entry.content == .html(source: .file(bookmarkData: Data([2])), config: .default))
         }
     }
 }

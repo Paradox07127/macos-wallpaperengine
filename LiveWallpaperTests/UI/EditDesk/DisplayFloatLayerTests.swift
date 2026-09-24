@@ -96,6 +96,24 @@ struct DisplayFloatLayerTests {
         #expect(select.lowercased().contains("drop") == false, Comment(rawValue: select))
     }
 
+    @Test("The All Displays tile takes a drop; a thumbnail scrolled out of the run does not")
+    @MainActor
+    func applyAllTileTakesADrop() {
+        let thumbnails: [CGDirectDisplayID: CGRect] = [
+            1: CGRect(x: 100, y: 24, width: 149, height: 84),
+            2: CGRect(x: 520, y: 24, width: 149, height: 84),
+        ]
+        // Display 2 sits past the run's right edge, scrolled out of view.
+        let run = CGRect(x: 90, y: 24, width: 400, height: 84)
+        let applyAll = CGRect(x: 700, y: 51, width: 120, height: 30)
+        func target(_ point: CGPoint) -> ModalDropTarget? {
+            LibraryModalHost.dropTarget(at: point, thumbnails: thumbnails, run: run, applyAll: applyAll)
+        }
+        #expect(target(CGPoint(x: 150, y: 60)) == .display(1))
+        #expect(target(CGPoint(x: 760, y: 66)) == .allDisplays)
+        #expect(target(CGPoint(x: 600, y: 60)) == nil)
+    }
+
     @Test("The view asks the geometry for both mode-dependent affordances instead of branching inline")
     func viewRoutesThroughTheGeometry() throws {
         let source = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Library/DisplayFloatLayer.swift")

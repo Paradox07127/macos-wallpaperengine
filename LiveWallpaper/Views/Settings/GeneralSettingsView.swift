@@ -22,9 +22,11 @@ struct GeneralSettingsView: View {
     }
 
     @Environment(ScreenManager.self) var screenManager
+    /// The Edit Desk's undo history; nil in the old settings window.
+    @Environment(EditDeskUndoStack.self) var undo: EditDeskUndoStack?
     @AppStorage(AppLanguagePreference.storageKey, store: .appScoped()) var appLanguageRawValue = AppLanguagePreference.system.rawValue
     @AppStorage(AppAppearance.defaultsKey, store: .appScoped()) var appearanceRawValue = AppAppearance.system.rawValue
-    @AppStorage(LibraryTileSize.preferencesKey, store: .appScoped()) var libraryTileSizeRaw = LibraryTileSize.medium.rawValue
+    @AppStorage(LibraryTileSize.preferencesKey, store: .appScoped()) var libraryTileSizeRaw = LibraryTileSize.defaultSize.rawValue
     @State var checksUpdatesAtLaunch: Bool = SparkleUpdaterController.shared.automaticallyChecksForUpdates
     @State var globalPauseOnBattery: Bool
     @State var startOnLogin: Bool
@@ -125,6 +127,11 @@ struct GeneralSettingsView: View {
                     pendingImportSource = nil
                 }
                 Button("Import", role: .destructive) { applyPendingImport() }
+                Button("Export Current Configuration First") {
+                    pendingImportBundle = nil
+                    pendingImportSource = nil
+                    beginExportFromAlert()
+                }
             } message: {
                 Text(importConfirmationMessage)
             }
