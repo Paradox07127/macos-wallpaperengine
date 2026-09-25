@@ -438,19 +438,21 @@ struct BrowseCard: View, Equatable {
 
     var accessibilityLabelText: String {
         var parts: [String] = [item.title]
-        if let rating = ratingValue {
+        // The Edit Desk card reads what `editDeskInfoBand` draws, and a blurred card draws no band.
+        let showsMeta = presentation != .editDesk || !shouldBlur
+        if let rating = ratingValue, showsMeta, presentation != .editDesk || cardPreferences.showsRating {
             parts.append(String(localized: "\(rating.formatted(.number.precision(.fractionLength(1)))) stars", bundle: .appLanguage, comment: "Workshop card VoiceOver rating. Placeholder is a number 0–5."))
         }
-        if let type = contentType {
+        if let type = contentType, presentation != .editDesk {
             parts.append(type.displayName)
         }
-        if let resolutionLabel {
+        if let resolutionLabel, showsMeta, presentation != .editDesk || cardPreferences.showsResolution {
             parts.append(resolutionLabel)
         }
-        if let subscriberText {
+        if let subscriberText, showsMeta {
             parts.append(subscriberText)
         }
-        if let size = formattedSize {
+        if let size = formattedSize, showsMeta {
             parts.append(size)
         }
         if presentation == .editDesk ? showsEditDeskInLibraryCheck : isInLibrary {

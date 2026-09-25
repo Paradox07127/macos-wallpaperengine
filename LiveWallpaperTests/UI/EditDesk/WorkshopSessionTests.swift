@@ -101,10 +101,10 @@ struct WorkshopSessionTests {
 @MainActor
 @Suite("Workshop browse card equality")
 struct BrowseCardEqualityTests {
-    private static func item(id: UInt64 = 7, tags: [String] = []) -> WorkshopQueryItem {
+    private static func item(id: UInt64 = 7, tags: [String] = [], rating: WorkshopRating? = nil) -> WorkshopQueryItem {
         WorkshopQueryItem(
             id: id, rawTitle: "Fixture", shortDescription: "", creatorID: nil, previewImageURL: nil,
-            fileSizeBytes: nil, timeUpdated: nil, subscriptionCount: nil, rating: nil, tags: tags,
+            fileSizeBytes: nil, timeUpdated: nil, subscriptionCount: nil, rating: rating, tags: tags,
             visibility: .public, isBanned: false,
             steamCommunityURL: URL(string: "https://steamcommunity.com/sharedfiles/filedetails/?id=\(id)")!
         )
@@ -119,10 +119,10 @@ struct BrowseCardEqualityTests {
     private static func card(
         presentation: BrowsePresentation = .legacy, isRevealed: Bool = false, isInLibrary: Bool = false,
         hasUpdate: Bool = false, inUseBadge: NowPlayingBadge? = nil,
-        preferences: GalleryCardPreferences = GalleryCardPreferences(), tags: [String] = []
+        preferences: GalleryCardPreferences = GalleryCardPreferences(), tags: [String] = [], rating: WorkshopRating? = nil
     ) -> BrowseCard {
         BrowseCard(
-            item: item(tags: tags), isInLibrary: isInLibrary, hasUpdate: hasUpdate, inUseBadge: inUseBadge,
+            item: item(tags: tags, rating: rating), isInLibrary: isInLibrary, hasUpdate: hasUpdate, inUseBadge: inUseBadge,
             cardPreferences: preferences, reduceMotion: false, presentation: presentation, isRevealed: isRevealed
         )
     }
@@ -173,6 +173,29 @@ struct BrowseCardEqualityTests {
 
         let legacy = Self.card(isInLibrary: true).accessibilityLabelText
         #expect(legacy.contains(inLibrary), "the legacy card no longer reads In Library: \(legacy)")
+    }
+
+    @Test("An Edit Desk browse card reads only the metadata its info band draws, and a blurred card only its title")
+    func editDeskCardReadsOnlyDrawnMetadata() throws {
+        let tags = ["Scene", "3840 x 2160"]
+        let rating = WorkshopRating.score(0.9, votesUp: 9, votesDown: 1)
+        let stars = String(localized: "\(4.5.formatted(.number.precision(.fractionLength(1)))) stars", bundle: .appLanguage)
+        let resolution = try #require(BrowseCard.resolutionShortLabel(for: tags))
+        let type = WorkshopContentTypeFilter.scene.displayName
+        let off = GalleryCardPreferences(showsRating: false, showsResolution: false)
+
+        let switchedOff = Self.card(presentation: .editDesk, preferences: off, tags: tags, rating: rating).accessibilityLabelText
+        #expect(!switchedOff.contains(stars), "the rating is read with its switch off: \(switchedOff)")
+        #expect(!switchedOff.contains(resolution), "the resolution is read with its switch off: \(switchedOff)")
+        #expect(!switchedOff.contains(type), "the Edit Desk card draws no type but reads it: \(switchedOff)")
+        let blurred = Self.card(presentation: .editDesk, tags: tags + ["Mature"], rating: rating).accessibilityLabelText
+        #expect(blurred == Self.item().title, "a blurred card draws no info band but reads: \(blurred)")
+
+        // Controls: the legacy card reads as before, and switched on the Edit Desk card reads what it draws.
+        let legacy = Self.card(preferences: off, tags: tags, rating: rating).accessibilityLabelText
+        #expect(legacy.contains(stars) && legacy.contains(type), "the legacy card's reading changed: \(legacy)")
+        let switchedOn = Self.card(presentation: .editDesk, tags: tags, rating: rating).accessibilityLabelText
+        #expect(switchedOn.contains(stars) && switchedOn.contains(resolution), "a drawn rating or resolution is not read: \(switchedOn)")
     }
 }
 #endif

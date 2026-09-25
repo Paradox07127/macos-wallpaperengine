@@ -1101,7 +1101,7 @@ struct S8bLocalizationWidthTests {
             let connect = NSLocalizedString("Connect Steam", bundle: localized, comment: "")
             // Three bars: downloading, blocked by a setup step, and downloading with an apply queued.
             let bars = [[primary, saveOnly, cancel], [primary, saveOnly, connect], [queued, cancelAutoApply, cancel]]
-            let totals = bars.map { $0.map(buttonWidth).reduce(0, +) + 38 + 3 * 12 }
+            let totals: [CGFloat] = bars.map { bar -> CGFloat in bar.map(buttonWidth).reduce(0, +) + 38 + 3 * 12 }
             let total = totals.max() ?? 0
             ProbeRenderer.report("S8b.bar.\(language)", "totals=\(totals) left=\(barWidth - total)")
             #expect(total <= barWidth, Comment(rawValue: "\(language): the bar needs \(total)pt of \(barWidth)pt"))

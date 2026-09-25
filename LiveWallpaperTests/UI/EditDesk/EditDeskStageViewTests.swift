@@ -2143,6 +2143,28 @@ struct EditDeskStageViewTests {
         #expect(labels.contains("Card 4 Meta"), "a card set on no display reads as before")
     }
 
+    @Test("A shelf card reads its status badge as its value, and not the now-playing capsule the badge is drawn in place of")
+    func cardReadsItsStatusBadge() throws {
+        let model = makeModel()
+        let playing = try #require(NowPlayingBadge(on: [1], among: model.displays))
+        model.shelfItems[5].nowPlaying = playing
+        model.shelfItems[5].statusBadge = "File unavailable"
+        model.shelfItems[6].nowPlaying = playing
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        model.setProgress(1, animated: false)
+        let children = try #require(view.accessibilityChildren() as? [NSAccessibilityElement])
+        let badged = try #require(children.first { $0.accessibilityLabel()?.hasPrefix("Card 5 ") == true })
+        let control = try #require(children.first { $0.accessibilityLabel()?.hasPrefix("Card 6 ") == true })
+        #expect(badged.accessibilityValue() as? String == "File unavailable")
+        #expect(badged.accessibilityLabel() == "Card 5 Meta", "the capsule the badge replaces is still read")
+        // Control: without a badge the card still reads where it plays.
+        #expect(control.accessibilityLabel() == "Card 6 Meta, " + playing.accessibilityText)
+        #expect(control.accessibilityValue() as? String == "", "a reused element would keep an old badge")
+    }
+
     @Test("The wave follows the pointer slot by slot instead of sticking to the card it lifted")
     func hoverFollowsThePointerAcrossSlots() {
         let model = makeModel()
@@ -3279,6 +3301,36 @@ struct EditDeskStageViewTests {
 
         show { $0.canTogglePlayback = false }
         #expect(shell.playbackAction(at: centre(0, showsPlaylistControls: false)) == nil)
+    }
+
+    @Test("The shell's state pill, transport capsule and main button round to at most half their size")
+    func shellCapsulesRoundWithinTheirSize() throws {
+        let model = makeModel()
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        let shell = try #require(view.displayLayers[1])
+        var display = model.displays[0]
+        display.state = .paused(reasonText: "Paused")
+        display.showsPlaylistControls = true
+        display.canTogglePlayback = true
+        shell.update(display: display, dropHint: "", increasedContrast: false)
+        shell.layoutContent()
+        shell.setHovered(true, reduceMotion: true)
+        let layout = StageGeometry.playbackLayout(content: shell.content.bounds.size, showsPlaylistControls: true)
+        let pill = try #require(shell.content.sublayers?.first { layer in
+            layer.sublayers?.contains { ($0 as? CATextLayer)?.string as? String == "Paused" } == true
+        })
+        let transport = try #require(shell.content.sublayers?.first { sameRect($0.frame, layout.container) })
+        let mainButton = try #require(transport.sublayers?.first { sameRect($0.frame, layout.buttons[1]) })
+        for (name, layer) in [("state pill", pill), ("transport", transport), ("main button", mainButton)] {
+            try #require(!layer.isHidden && layer.bounds.height > 0, Comment(rawValue: "the \(name) is not laid out"))
+            #expect(
+                layer.cornerRadius <= min(layer.bounds.width, layer.bounds.height) / 2,
+                Comment(rawValue: "the \(name) rounds \(layer.cornerRadius) on \(layer.bounds.size)")
+            )
+        }
     }
 
     @Test("The screen's own two lines stop short of the transport at either capsule width")
