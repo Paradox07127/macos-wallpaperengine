@@ -63,11 +63,13 @@ struct WorkshopTagTaxonomyTests {
     }
 
     /// Xcode omits the `en` entry when the key is the English text itself
-    /// (same rule as `scripts/check_localization_drift.py`).
+    /// (same rule as `scripts/check_localization_drift.py`). A plural reads as its `other` form.
     static func value(_ strings: [String: Any], key: String, locale: String) -> String? {
         guard let entry = strings[key] as? [String: Any] else { return nil }
         let localizations = entry["localizations"] as? [String: Any]
-        let unit = (localizations?[locale] as? [String: Any])?["stringUnit"] as? [String: Any]
+        let localization = localizations?[locale] as? [String: Any]
+        let other = ((localization?["variations"] as? [String: Any])?["plural"] as? [String: Any])?["other"] as? [String: Any]
+        let unit = (localization?["stringUnit"] ?? other?["stringUnit"]) as? [String: Any]
         if let value = unit?["value"] as? String {
             return value
         }

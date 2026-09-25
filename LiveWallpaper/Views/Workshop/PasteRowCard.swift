@@ -440,11 +440,14 @@ enum WorkshopRelativeDateFormatter {
 }
 
 enum WorkshopCountFormatter {
+    /// Below this `compact` is the plain integer, so a count can use the %lld key that picks one/other.
+    static let compactFloor = 1000
+
     static func compact(_ count: Int) -> String {
         if count >= 1_000_000 {
             return String(format: "%.1fM", locale: .current, Double(count) / 1_000_000.0)
         }
-        if count >= 1000 {
+        if count >= compactFloor {
             return String(format: "%.1fK", locale: .current, Double(count) / 1000.0)
         }
         return count.formatted()

@@ -161,7 +161,7 @@ struct WorkshopDetailsContent<Actions: View>: View {
 
     private var commentsTitle: Text {
         if let count = item.commentCount, count > 0 {
-            return Text("\(count.formatted()) comments", comment: "Workshop detail link to the item's comment thread. Placeholder is a formatted count.")
+            return Text("\(count) comments", comment: "Workshop detail link to the item's comment thread. Placeholder is the comment count.")
         }
         return Text("Comments")
     }

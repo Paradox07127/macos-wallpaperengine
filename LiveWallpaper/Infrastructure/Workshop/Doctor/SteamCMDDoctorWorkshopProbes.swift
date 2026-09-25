@@ -50,7 +50,8 @@ extension SteamCMDDoctorService {
             let items = entries.filter { SteamLibraryPaths.isSafeWorkshopID($0) }.count
             setProbe(.workshopContent, status: .green(detail: String(
                 localized: "\(items) Workshop items readable.",
-                bundle: .appLanguage, comment: "Workshop content diagnostic detail; %lld is how many downloaded items were found."
+                bundle: .appLanguage, locale: AppLanguagePreference.current.locale,
+                comment: "Workshop content diagnostic detail; %lld is how many downloaded items were found."
             )))
         } catch {
             setProbe(.workshopContent, status: .red(message: redacted(error.localizedDescription), command: nil))

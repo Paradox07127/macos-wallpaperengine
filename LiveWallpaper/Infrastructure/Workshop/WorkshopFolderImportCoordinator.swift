@@ -252,7 +252,7 @@ final class WorkshopFolderImportCoordinator {
         } else if rejected > 0 {
             String(localized: "Linked \(imported), skipped \(rejected).", bundle: .appLanguage, comment: "Folder-link success summary with skipped count. Placeholders are linked and skipped counts.")
         } else {
-            String(localized: "Linked \(imported) project folders to your library.", bundle: .appLanguage, comment: "Folder-link success summary. Placeholder is the linked project count; source folders remain in place.")
+            String(localized: "Linked \(imported) project folders to your library.", bundle: .appLanguage, locale: AppLanguagePreference.current.locale, comment: "Folder-link success summary. Placeholder is the linked project count; source folders remain in place.")
         }
         WorkshopToastCenter.shared.post(
             headline: String(localized: "Linked", bundle: .appLanguage, comment: "Folder-link success toast headline."),

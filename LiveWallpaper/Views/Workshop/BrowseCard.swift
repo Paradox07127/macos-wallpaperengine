@@ -410,7 +410,9 @@ struct BrowseCard: View, Equatable {
 
     private var subscriberText: String? {
         guard let subs = item.subscriptionCount, subs > 0 else { return nil }
-        return String(localized: "\(WorkshopCountFormatter.compact(subs)) subscribers", bundle: .appLanguage, comment: "Workshop card VoiceOver subscriber count.")
+        return subs < WorkshopCountFormatter.compactFloor
+            ? String(localized: "\(subs) subscribers", bundle: .appLanguage, locale: AppLanguagePreference.current.locale, comment: "Workshop card VoiceOver subscriber count below 1,000.")
+            : String(localized: "\(WorkshopCountFormatter.compact(subs)) subscribers", bundle: .appLanguage, locale: AppLanguagePreference.current.locale, comment: "Workshop card VoiceOver subscriber count.")
     }
 
     private var formattedSize: String? {

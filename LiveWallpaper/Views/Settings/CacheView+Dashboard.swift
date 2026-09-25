@@ -63,10 +63,7 @@ extension WPECacheManagementView {
     }
 
     private var systemWallpaperSubtitle: Text {
-        let count = exportService.items.count
-        return count == 1
-            ? Text("1 video copied for macOS to play")
-            : Text("\(count) videos copied for macOS to play")
+        Text("\(exportService.items.count) videos copied for macOS to play")
     }
 
     private var isAnyLoading: Bool {
@@ -74,10 +71,7 @@ extension WPECacheManagementView {
     }
 
     private var wallpapersSubtitle: Text {
-        let count = inventory?.projects.count ?? 0
-        return count == 1
-            ? Text("1 wallpaper in your Steam library")
-            : Text("\(count) wallpapers in your Steam library")
+        Text("\(inventory?.projects.count ?? 0) wallpapers in your Steam library")
     }
 
     var storageDashboardSection: some View {
@@ -219,12 +213,7 @@ extension WPECacheManagementView {
         if let last = lastVideoFreedBytes, last > 0 {
             return Text("Freed \(Int64(last), format: .byteCount(style: .file)).", comment: "WPE video texture cache footer shown after a purge. Placeholder is the freed byte total.")
         }
-        // Keep singular and plural in separate localization keys.
-        let count = videoStats?.fileCount ?? 0
-        if count == 1 {
-            return Text("Across 1 extracted video file")
-        }
-        return Text("Across \(count) extracted video files")
+        return Text("Across \(videoStats?.fileCount ?? 0) extracted video files")
     }
 
     /// Reveal Steam library files in Finder while holding the library’s security scope.

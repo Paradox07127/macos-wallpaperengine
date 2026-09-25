@@ -135,42 +135,6 @@
         }
       }
     },
-    "%@ comments" : {
-      "comment" : "Workshop detail link to the item's comment thread. Placeholder is a formatted count.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ comments"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ comentarios"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ 件のコメント"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ 条评论"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ 則留言"
-          }
-        }
-      }
-    },
     "%@ did not match the checksum in the manifest." : {
       "comment" : "Managed SteamCMD install error. Placeholder is the package name.",
       "extractionState" : "manual",
@@ -472,42 +436,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%1$@ / %2$@"
-          }
-        }
-      }
-    },
-    "%@ ratings" : {
-      "comment" : "Workshop detail rating count. Placeholder is a formatted number such as 3,094.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ ratings"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ valoraciones"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ 件の評価"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ 个评价"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ 個評價"
           }
         }
       }
@@ -1593,10 +1521,40 @@
     "%lld API requests today" : {
       "comment" : "Workshop header stat: Steam Web API requests issued today.",
       "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld API request today"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld API requests today"
+                }
+              }
+            }
+          }
+        },
         "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld solicitudes de API hoy"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld solicitud de API hoy"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld solicitudes de API hoy"
+                }
+              }
+            }
           }
         },
         "ja" : {
@@ -1623,15 +1581,39 @@
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld Displays Rendering"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld Display Rendering"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld Displays Rendering"
+                }
+              }
+            }
           }
         },
         "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Renderizando %lld pantallas"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Renderizando %lld pantalla"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Renderizando %lld pantallas"
+                }
+              }
+            }
           }
         },
         "ja" : {
@@ -1729,10 +1711,40 @@
       "comment" : "Workshop content diagnostic detail; %lld is how many downloaded items were found.",
       "extractionState" : "manual",
       "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld Workshop item readable."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld Workshop items readable."
+                }
+              }
+            }
+          }
+        },
         "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld elementos de Workshop legibles."
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld elemento de Workshop legible."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld elementos de Workshop legibles."
+                }
+              }
+            }
           }
         },
         "ja" : {
@@ -1824,15 +1836,39 @@
       "comment" : "Library status bar: the number of aerials in the library. %lld is the count.",
       "localizations" : {
         "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld aerials"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld aerial"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld aerials"
+                }
+              }
+            }
           }
         },
         "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld vistas aéreas"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld vista aérea"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld vistas aéreas"
+                }
+              }
+            }
           }
         },
         "ja" : {
@@ -1858,10 +1894,40 @@
     "%lld agents" : {
       "comment" : "Agent Session widget header: number of tracked agent sessions.",
       "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld agent"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld agents"
+                }
+              }
+            }
+          }
+        },
         "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld agentes"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld agente"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld agentes"
+                }
+              }
+            }
           }
         },
         "ja" : {
@@ -1888,15 +1954,39 @@
       "comment" : "Library status bar: the number of saved bookmarks. %lld is the count.",
       "localizations" : {
         "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld bookmarks"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld bookmark"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld bookmarks"
+                }
+              }
+            }
           }
         },
         "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld marcadores"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld marcador"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld marcadores"
+                }
+              }
+            }
           }
         },
         "ja" : {
@@ -1989,6 +2079,66 @@
         }
       }
     },
+    "%lld comments" : {
+      "comment" : "Workshop detail link to the item's comment thread. Placeholder is the comment count.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld comment"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld comments"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld comentario"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld comentarios"
+                }
+              }
+            }
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 件のコメント"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 条评论"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 則留言"
+          }
+        }
+      }
+    },
     "%lld cores" : {
       "comment" : "GPU core count in system overview.",
       "extractionState" : "manual",
@@ -2060,6 +2210,65 @@
         }
       }
     },
+    "%lld favorites" : {
+      "comment" : "Workshop item favorite count below 1,000.",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld favorite"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld favorites"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld favorito"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld favoritos"
+                }
+              }
+            }
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 件のお気に入り"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 次收藏"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 次收藏"
+          }
+        }
+      }
+    },
     "%lld invalid" : {
       "comment" : "Paste queue ingestion summary fragment.",
       "localizations" : {
@@ -2100,15 +2309,39 @@
       "isCommentAutoGenerated" : true,
       "localizations" : {
         "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld minutes"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld minute"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld minutes"
+                }
+              }
+            }
           }
         },
         "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld minutos"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld minuto"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld minutos"
+                }
+              }
+            }
           }
         },
         "ja" : {
@@ -2137,13 +2370,57 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$lld of %2$lld projects"
+            "value" : "%1$lld of %2$#@projects@"
+          },
+          "substitutions" : {
+            "projects" : {
+              "argNum" : 2,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg project"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg projects"
+                    }
+                  }
+                }
+              }
+            }
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$lld de %2$lld proyectos"
+            "value" : "%1$lld de %2$#@projects@"
+          },
+          "substitutions" : {
+            "projects" : {
+              "argNum" : 2,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg proyecto"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg proyectos"
+                    }
+                  }
+                }
+              }
+            }
           }
         },
         "ja" : {
@@ -2342,19 +2619,103 @@
         }
       }
     },
+    "%lld ratings" : {
+      "comment" : "Workshop detail rating count. Placeholder is the number of ratings.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld rating"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld ratings"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld valoración"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld valoraciones"
+                }
+              }
+            }
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 件の評価"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 个评价"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 個評價"
+          }
+        }
+      }
+    },
     "%lld schemes" : {
       "comment" : "Library status bar: the number of saved schemes. %lld is the count.",
       "localizations" : {
         "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld schemes"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld scheme"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld schemes"
+                }
+              }
+            }
           }
         },
         "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld esquemas"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld esquema"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld esquemas"
+                }
+              }
+            }
           }
         },
         "ja" : {
@@ -2381,15 +2742,39 @@
       "comment" : "Workshop item subscriber count.",
       "localizations" : {
         "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld subs"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld sub"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld subs"
+                }
+              }
+            }
           }
         },
         "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld susc."
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld susc."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld susc."
+                }
+              }
+            }
           }
         },
         "ja" : {
@@ -2416,10 +2801,40 @@
       "comment" : "Subscription sync result count; %lld is how many subscribed items are not downloaded.",
       "extractionState" : "manual",
       "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld subscribed wallpaper is missing from this Mac."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld subscribed wallpapers are missing from this Mac."
+                }
+              }
+            }
+          }
+        },
         "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Faltan %lld fondos suscritos en este Mac."
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Falta %lld fondo suscrito en este Mac."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Faltan %lld fondos suscritos en este Mac."
+                }
+              }
+            }
           }
         },
         "ja" : {
@@ -2442,20 +2857,103 @@
         }
       }
     },
+    "%lld subscribers" : {
+      "comment" : "Workshop card VoiceOver subscriber count below 1,000.",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld subscriber"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld subscribers"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld suscriptor"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld suscriptores"
+                }
+              }
+            }
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 人のサブスクライバー"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 名订阅者"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 位訂閱者"
+          }
+        }
+      }
+    },
     "%lld temporary items left in the container by test runs." : {
       "comment" : "Storage tab, debug-only Test Artifacts section subtitle. Placeholder is the number of leftover test temp items.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld temporary items left in the container by test runs."
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld temporary item left in the container by test runs."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld temporary items left in the container by test runs."
+                }
+              }
+            }
           }
         },
         "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld elementos temporales dejados en el contenedor por las ejecuciones de prueba."
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld elemento temporal dejado en el contenedor por las ejecuciones de prueba."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld elementos temporales dejados en el contenedor por las ejecuciones de prueba."
+                }
+              }
+            }
           }
         },
         "ja" : {
@@ -2518,15 +3016,39 @@
       "comment" : "System Wallpaper status bar: the number of videos macOS has a copy of. %lld is the count.",
       "localizations" : {
         "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld videos"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld video"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld videos"
+                }
+              }
+            }
           }
         },
         "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld vídeos"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld vídeo"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld vídeos"
+                }
+              }
+            }
           }
         },
         "ja" : {
@@ -2553,15 +3075,39 @@
       "comment" : "Storage tile subtitle; %lld is the number of videos published to System Wallpaper.",
       "localizations" : {
         "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld videos copied for macOS to play"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld video copied for macOS to play"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld videos copied for macOS to play"
+                }
+              }
+            }
           }
         },
         "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld vídeos copiados para que macOS los reproduzca"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld vídeo copiado para que macOS lo reproduzca"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld vídeos copiados para que macOS los reproduzca"
+                }
+              }
+            }
           }
         },
         "ja" : {
@@ -2584,19 +3130,102 @@
         }
       }
     },
+    "%lld views" : {
+      "comment" : "Workshop item view count below 1,000.",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld view"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld views"
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld visualización"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld visualizaciones"
+                }
+              }
+            }
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 回表示"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 次浏览"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 次瀏覽"
+          }
+        }
+      }
+    },
     "%lld wallpapers" : {
       "comment" : "Library status bar: the number of wallpapers in the library. %lld is the count.",
       "localizations" : {
         "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld wallpapers"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld wallpaper"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld wallpapers"
+                }
+              }
+            }
           }
         },
         "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld fondos de pantalla"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld fondo de pantalla"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld fondos de pantalla"
+                }
+              }
+            }
           }
         },
         "ja" : {
@@ -2624,15 +3253,39 @@
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld wallpapers in your Steam library"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld wallpaper in your Steam library"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld wallpapers in your Steam library"
+                }
+              }
+            }
           }
         },
         "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld fondos de pantalla en tu biblioteca de Steam"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld fondo de pantalla en tu biblioteca de Steam"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld fondos de pantalla en tu biblioteca de Steam"
+                }
+              }
+            }
           }
         },
         "ja" : {
@@ -2966,77 +3619,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "1 行"
-          }
-        }
-      }
-    },
-    "1 video copied for macOS to play" : {
-      "comment" : "Storage tile subtitle when exactly one video is published to System Wallpaper.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1 video copied for macOS to play"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1 vídeo copiado para que macOS lo reproduzca"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "macOS が再生するためにコピーした動画 1 本"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "为 macOS 播放而复制的 1 个视频"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "為 macOS 播放而複製的 1 部影片"
-          }
-        }
-      }
-    },
-    "1 wallpaper in your Steam library" : {
-      "comment" : "Storage tile subtitle, singular.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1 wallpaper in your Steam library"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1 fondo de pantalla en tu biblioteca de Steam"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Steam ライブラリに 1 個の壁紙"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "你的 Steam 库中有 1 个壁纸"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "你的 Steam 收藏庫中有 1 個桌布"
           }
         }
       }
@@ -4147,15 +4729,39 @@
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Across %lld extracted video files"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Across %lld extracted video file"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Across %lld extracted video files"
+                }
+              }
+            }
           }
         },
         "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "En %lld archivos de vídeo extraídos"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "En %lld archivo de vídeo extraído"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "En %lld archivos de vídeo extraídos"
+                }
+              }
+            }
           }
         },
         "ja" : {
@@ -4174,42 +4780,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "共 %lld 個已擷取影片檔案"
-          }
-        }
-      }
-    },
-    "Across 1 extracted video file" : {
-      "comment" : "WPE video texture cache footer, singular count.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Across 1 extracted video file"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "En 1 archivo de vídeo extraído"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "抽出済み動画ファイル 1 件全体"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "共 1 个已提取视频文件"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "共 1 個已擷取影片檔案"
           }
         }
       }
@@ -6233,15 +6803,39 @@
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "All %lld time-based wallpaper rules will be cleared. The current wallpaper stays applied."
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld time-based wallpaper rule will be cleared. The current wallpaper stays applied."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "All %lld time-based wallpaper rules will be cleared. The current wallpaper stays applied."
+                }
+              }
+            }
           }
         },
         "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Se borrarán las %lld reglas de fondo de pantalla basadas en la hora. El fondo de pantalla actual se mantiene."
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Se borrará %lld regla de fondo de pantalla basada en la hora. El fondo de pantalla actual se mantiene."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Se borrarán las %lld reglas de fondo de pantalla basadas en la hora. El fondo de pantalla actual se mantiene."
+                }
+              }
+            }
           }
         },
         "ja" : {
@@ -16449,13 +17043,57 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Copied to %1$lld / %2$lld displays"
+            "value" : "Copied to %1$lld / %2$#@displays@"
+          },
+          "substitutions" : {
+            "displays" : {
+              "argNum" : 2,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg display"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg displays"
+                    }
+                  }
+                }
+              }
+            }
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Copiado a %1$lld / %2$lld pantallas"
+            "value" : "Copiado a %1$lld / %2$#@displays@"
+          },
+          "substitutions" : {
+            "displays" : {
+              "argNum" : 2,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg pantalla"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg pantallas"
+                    }
+                  }
+                }
+              }
+            }
           }
         },
         "ja" : {
@@ -20109,15 +20747,39 @@
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Delete %lld Items"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Delete %lld Item"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Delete %lld Items"
+                }
+              }
+            }
           }
         },
         "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Eliminar %lld elementos"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Eliminar %lld elemento"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Eliminar %lld elementos"
+                }
+              }
+            }
           }
         },
         "ja" : {
@@ -20564,15 +21226,39 @@
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Deletes %lld scratch items · %@ created by test runs in the container's tmp folder. Nothing else reads them."
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Deletes %lld scratch item · %@ created by test runs in the container's tmp folder. Nothing else reads it."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Deletes %lld scratch items · %@ created by test runs in the container's tmp folder. Nothing else reads them."
+                }
+              }
+            }
           }
         },
         "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Elimina %lld elementos temporales · %@ creados por las pruebas en la carpeta tmp del contenedor. Nada más los lee."
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Elimina %lld elemento temporal · %@ creado por las pruebas en la carpeta tmp del contenedor. Nada más lo lee."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Elimina %lld elementos temporales · %@ creados por las pruebas en la carpeta tmp del contenedor. Nada más los lee."
+                }
+              }
+            }
           }
         },
         "ja" : {
@@ -32751,15 +33437,39 @@
       "comment" : "Folder-link success summary. Placeholder is the linked project count; source folders remain in place.",
       "localizations" : {
         "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Linked %lld project folders to your library."
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Linked %lld project folder to your library."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Linked %lld project folders to your library."
+                }
+              }
+            }
           }
         },
         "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Se vincularon %lld carpetas de proyecto a la biblioteca de fondos."
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Se vinculó %lld carpeta de proyecto a la biblioteca de fondos."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Se vincularon %lld carpetas de proyecto a la biblioteca de fondos."
+                }
+              }
+            }
           }
         },
         "ja" : {
@@ -52845,15 +53555,39 @@
       "comment" : "Import success line: how many displays were restored.",
       "localizations" : {
         "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Restored %lld display configurations."
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Restored %lld display configuration."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Restored %lld display configurations."
+                }
+              }
+            }
           }
         },
         "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Se han restaurado %lld configuraciones de pantalla."
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Se ha restaurado %lld configuración de pantalla."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Se han restaurado %lld configuraciones de pantalla."
+                }
+              }
+            }
           }
         },
         "ja" : {
@@ -52880,15 +53614,39 @@
       "comment" : "Import success line: how many bookmarks were restored. xcstrings provides a pluralized variant.",
       "localizations" : {
         "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Restored %lld saved bookmarks."
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Restored %lld saved bookmark."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Restored %lld saved bookmarks."
+                }
+              }
+            }
           }
         },
         "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Se han restaurado %lld marcadores guardados."
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Se ha restaurado %lld marcador guardado."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Se han restaurado %lld marcadores guardados."
+                }
+              }
+            }
           }
         },
         "ja" : {
@@ -52915,15 +53673,39 @@
       "comment" : "Import success line: how many display schemes were restored. xcstrings provides a pluralized variant.",
       "localizations" : {
         "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Restored %lld saved schemes."
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Restored %lld saved scheme."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Restored %lld saved schemes."
+                }
+              }
+            }
           }
         },
         "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Se han restaurado %lld esquemas guardados."
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Se ha restaurado %lld esquema guardado."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Se han restaurado %lld esquemas guardados."
+                }
+              }
+            }
           }
         },
         "ja" : {
@@ -55816,13 +56598,57 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Schedule timeline, %1$lld slots, currently %2$lld:00, active slot: %3$@"
+            "value" : "Schedule timeline, %1$#@slots@, currently %2$lld:00, active slot: %3$@"
+          },
+          "substitutions" : {
+            "slots" : {
+              "argNum" : 1,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg slot"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg slots"
+                    }
+                  }
+                }
+              }
+            }
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Línea de tiempo de programación, %1$lld franjas, ahora %2$lld:00, franja activa: %3$@"
+            "value" : "Línea de tiempo de programación, %1$#@slots@, ahora %2$lld:00, franja activa: %3$@"
+          },
+          "substitutions" : {
+            "slots" : {
+              "argNum" : 1,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg franja"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg franjas"
+                    }
+                  }
+                }
+              }
+            }
           }
         },
         "ja" : {
@@ -69141,15 +69967,39 @@
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "The wallpaper, playlist, schedule, effect layer, and all other settings on %lld other displays are replaced with this display's. Their widget, music, and clock overlays are not changed."
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "The wallpaper, playlist, schedule, effect layer, and all other settings on %lld other display are replaced with this display's. Its widget, music, and clock overlays are not changed."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "The wallpaper, playlist, schedule, effect layer, and all other settings on %lld other displays are replaced with this display's. Their widget, music, and clock overlays are not changed."
+                }
+              }
+            }
           }
         },
         "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "El fondo de pantalla, la playlist, la programación, la capa de efectos y el resto de ajustes de otras %lld pantallas se sustituyen por los de esta. Sus superposiciones de widgets, música y reloj no cambian."
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "El fondo de pantalla, la playlist, la programación, la capa de efectos y el resto de ajustes de %lld pantalla más se sustituyen por los de esta. Sus superposiciones de widgets, música y reloj no cambian."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "El fondo de pantalla, la playlist, la programación, la capa de efectos y el resto de ajustes de otras %lld pantallas se sustituyen por los de esta. Sus superposiciones de widgets, música y reloj no cambian."
+                }
+              }
+            }
           }
         },
         "ja" : {
@@ -70157,20 +71007,64 @@
         }
       }
     },
-    "This replaces the %1$@ overlay on %2$lld other displays. Their wallpapers are left alone." : {
-      "comment" : "Confirmation message. Placeholders are the overlay's name and the number of other displays.",
+    "This replaces the %@ overlay on %lld other displays. Their wallpapers are left alone." : {
+      "comment" : "Destructive confirm message. Placeholders are the overlay's name and the number of other displays.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This replaces the %1$@ overlay on %2$lld other displays. Their wallpapers are left alone."
+            "value" : "This replaces the %1$@ overlay on %2$#@displays@"
+          },
+          "substitutions" : {
+            "displays" : {
+              "argNum" : 2,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg other display. Its wallpaper is left alone."
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg other displays. Their wallpapers are left alone."
+                    }
+                  }
+                }
+              }
+            }
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Esto reemplaza la superposición %1$@ en %2$lld pantallas más. Sus fondos de pantalla no se tocan."
+            "value" : "Esto reemplaza la superposición %1$@ en %2$#@displays@"
+          },
+          "substitutions" : {
+            "displays" : {
+              "argNum" : 2,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg pantalla más. Su fondo de pantalla no se toca."
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg pantallas más. Sus fondos de pantalla no se tocan."
+                    }
+                  }
+                }
+              }
+            }
           }
         },
         "ja" : {
@@ -83674,15 +84568,39 @@
       "comment" : "Import confirmation bullet: how many bookmarks the bundle includes. xcstrings provides a pluralized variant.",
       "localizations" : {
         "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "• %lld saved bookmarks"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "• %lld saved bookmark"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "• %lld saved bookmarks"
+                }
+              }
+            }
           }
         },
         "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "• %lld marcadores guardados"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "• %lld marcador guardado"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "• %lld marcadores guardados"
+                }
+              }
+            }
           }
         },
         "ja" : {
@@ -83709,15 +84627,39 @@
       "comment" : "Import confirmation bullet: how many display schemes the bundle includes. xcstrings provides a pluralized variant.",
       "localizations" : {
         "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "• %lld saved schemes"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "• %lld saved scheme"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "• %lld saved schemes"
+                }
+              }
+            }
           }
         },
         "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "• %lld esquemas guardados"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "• %lld esquema guardado"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "• %lld esquemas guardados"
+                }
+              }
+            }
           }
         },
         "ja" : {
@@ -83744,15 +84686,39 @@
       "comment" : "Import confirmation bullet under Replaces: every current display setup is replaced. Placeholder is how many displays the file includes.",
       "localizations" : {
         "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "• Every display's complete setup, including its wallpaper, playlist, and schedule (%lld displays in the file)"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "• Every display's complete setup, including its wallpaper, playlist, and schedule (%lld display in the file)"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "• Every display's complete setup, including its wallpaper, playlist, and schedule (%lld displays in the file)"
+                }
+              }
+            }
           }
         },
         "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "• La configuración completa de cada pantalla, incluidos el fondo de pantalla, la playlist y la programación (%lld pantallas en el archivo)"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "• La configuración completa de cada pantalla, incluidos el fondo de pantalla, la playlist y la programación (%lld pantalla en el archivo)"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "• La configuración completa de cada pantalla, incluidos el fondo de pantalla, la playlist y la programación (%lld pantallas en el archivo)"
+                }
+              }
+            }
           }
         },
         "ja" : {

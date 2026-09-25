@@ -194,7 +194,8 @@ struct LocalizationCoverageTests {
     func supportedTranslationsPreservePlaceholders() throws {
         for catalogName in ["Localizable.xcstrings", "InfoPlist.xcstrings"] {
             let catalog = try StringCatalog.load(named: catalogName)
-            for locale in Self.requiredLocales {
+            // English too: each of its plural forms has to consume the same arguments.
+            for locale in [catalog.sourceLanguage] + Self.requiredLocales {
                 let mismatches = catalog.placeholderMismatches(for: locale)
 
                 #expect(
@@ -203,6 +204,50 @@ struct LocalizationCoverageTests {
                 )
             }
         }
+    }
+
+    @Test("A key that varies by plural in English has every English form and varies in Spanish too")
+    func pluralKeysVaryInEnglishAndSpanish() throws {
+        let catalog = try StringCatalog.load(named: "Localizable.xcstrings")
+        let plural = catalog.pluralKeys
+        #expect(!plural.isEmpty, "No key varies by plural — the catalog decode stopped seeing variations")
+
+        let english = plural.filter { catalog.strings[$0]?.localizations?[catalog.sourceLanguage]?.isComplete(for: catalog.sourceLanguage) != true }
+        let flatSpanish = plural.filter { catalog.strings[$0]?.localizations?["es"]?.variesByPlural != true }
+        #expect(english.isEmpty, "English plural without a written one and other form: \(english.prefix(20).joined(separator: ", "))")
+        #expect(flatSpanish.isEmpty, "Varies by plural in English but not in Spanish, which would read \"1 fondos\": \(flatSpanish.prefix(20).joined(separator: ", "))")
+    }
+
+    @Test("Plural entries count as written only with every form their language needs")
+    func pluralCoverageHasTeeth() throws {
+        func plural(_ forms: [String: String]) -> String {
+            let variants = forms.map { #""\#($0.key)": {"stringUnit": {"state": "translated", "value": "\#($0.value)"}}"# }
+            return #"{"variations": {"plural": {\#(variants.joined(separator: ", "))}}}"#
+        }
+        func substituted(_ value: String, _ forms: [String: String]) -> String {
+            let variations = plural(forms).dropFirst().dropLast()
+            return #"{"stringUnit": {"state": "translated", "value": "\#(value)"}, "substitutions": {"n": {"formatSpecifier": "lld", \#(variations)}}}"#
+        }
+        let english = plural(["one": "%lld item", "other": "%lld items"])
+        let fixture = #"""
+        {"sourceLanguage": "en", "strings": {
+          "%lld complete": {"localizations": {"en": \#(english), "es": \#(plural(["one": "%lld elemento", "other": "%lld elementos"]))}},
+          "%lld drops the count": {"localizations": {"en": \#(english), "es": \#(plural(["one": "un elemento", "other": "%lld elementos"]))}},
+          "%lld es blank": {"localizations": {"es": \#(plural(["one": "", "other": "%lld elementos"]))}},
+          "%lld es lacks one": {"localizations": {"es": \#(plural(["other": "%lld elementos"]))}},
+          "%lld / %lld substituted": {"localizations": {
+            "en": \#(substituted("%1$lld / %2$#@n@", ["one": "%arg item", "other": "%arg items"])),
+            "es": \#(substituted("%1$lld / %2$#@n@", ["one": "%arg elemento", "other": "%arg elementos"]))}},
+          "%lld / %lld substitution lacks one": {"localizations": {"es": \#(substituted("%lld / %#@n@", ["other": "%arg elementos"]))}}
+        }}
+        """#
+        let catalog = try JSONDecoder().decode(StringCatalog.self, from: Data(fixture.utf8))
+
+        #expect(catalog.keysMissingLocalization("es") == ["%lld / %lld substitution lacks one", "%lld es blank", "%lld es lacks one"])
+        #expect(catalog.placeholderMismatches(for: "es").map { $0.components(separatedBy: " expected").first } == ["%lld drops the count", "%lld es blank"])
+        #expect(catalog.strings["%lld / %lld substituted"]?.localizations?["es"]?.texts == [
+            ["one"]: "%1$lld / %2$lld elemento", ["other"]: "%1$lld / %2$lld elementos",
+        ])
     }
 
     @Test("String catalogs do not localize literal percent signs")
@@ -277,6 +322,40 @@ struct LocalizationCoverageTests {
         #expect(
             offenders.isEmpty,
             "String(localized:) without a bundle: \(offenders.prefix(10).joined(separator: "; "))"
+        )
+    }
+
+    /// The bundle only picks the table; the plural rule comes from the `locale:` argument, which
+    /// defaults to the system language (see AppLanguageRuntimeProbeTests). A literal key without
+    /// interpolation is a raw format for `String(format:)`, which keeps the table's own rule.
+    @Test("String(localized:) of a key that varies by plural passes the app language's locale")
+    func pluralSitesPassTheAppLanguageLocale() throws {
+        let pluralKeys = try StringCatalog.load(named: "Localizable.xcstrings").pluralKeys
+        /// The whole key, not `matchesKey`: that one lets `"\(a): \(b)"` match any key with a colon in it.
+        func isPlural(_ site: InterpolatedLiteralScan.Site) -> Bool {
+            let placeholder = #"%(?:\d+\$)?(?:lld|llu|ld|lu|d|u|@|f)"#
+            let pattern = "^" + site.segments.map(NSRegularExpression.escapedPattern(for:)).joined(separator: placeholder) + "$"
+            guard let key = try? NSRegularExpression(pattern: pattern) else { return false }
+            return pluralKeys.contains { key.firstMatch(in: $0, range: NSRange($0.startIndex..., in: $0)) != nil }
+        }
+        var offenders: [String] = []
+        var checked = 0
+        for path in try Self.projectSwiftFiles(["LiveWallpaper", "Packages"]) {
+            let source = try LocalizedLiteralScan.scannableText(in: String(contentsOfFile: path, encoding: .utf8))
+            for call in Self.stringLocalizedCalls(in: source) {
+                for site in InterpolatedLiteralScan.parse(call, path: path) where isPlural(site) {
+                    checked += 1
+                    if !call.contains("locale: AppLanguagePreference.current.locale") {
+                        offenders.append("\(RepositoryRoot.relativePath(of: URL(fileURLWithPath: path))): \(site.literal.prefix(60))")
+                    }
+                }
+            }
+        }
+
+        #expect(checked > 10, "Only \(checked) plural call sites matched — the scan stopped working")
+        #expect(
+            offenders.isEmpty,
+            "String(localized:) of a plural key without the app language's locale: \(offenders.prefix(10).joined(separator: "; "))"
         )
     }
 
@@ -591,27 +670,29 @@ private struct StringCatalog: Decodable {
             // (brand names like CFBundleDisplayName: the per-SKU Info.plist value
             // must stand, and any catalog override would leak across SKUs).
             guard strings[key]?.shouldTranslate != false else { return false }
-            guard let unit = strings[key]?.localizations?[locale]?.stringUnit else {
+            guard let localization = strings[key]?.localizations?[locale] else {
                 return true
             }
-            return unit.value.isEmpty
+            return !localization.isComplete(for: locale)
         }
+    }
+
+    var pluralKeys: [String] {
+        strings.keys.sorted().filter { strings[$0]?.localizations?[sourceLanguage]?.variesByPlural == true }
     }
 
     func placeholderMismatches(for locale: String) -> [String] {
         strings.keys.sorted().compactMap { key in
-            let sourceValue = strings[key]?.localizations?[sourceLanguage]?.stringUnit?.value ?? key
-            guard let localizedValue = strings[key]?.localizations?[locale]?.stringUnit?.value else {
-                return nil
-            }
-
+            let sourceValue = strings[key]?.localizations?[sourceLanguage]?.otherText ?? key
             let sourcePlaceholders = Self.placeholders(in: sourceValue)
-            let localizedPlaceholders = Self.placeholders(in: localizedValue)
-            guard !Self.placeholdersMatch(sourcePlaceholders, localizedPlaceholders) else {
+            let texts = strings[key]?.localizations?[locale]?.texts ?? [:]
+            guard let drifted = texts.keys.sorted(by: { $0.joined() < $1.joined() })
+                .compactMap({ texts[$0] })
+                .first(where: { !Self.placeholdersMatch(sourcePlaceholders, Self.placeholders(in: $0)) }) else {
                 return nil
             }
 
-            return "\(key) expected \(sourcePlaceholders) but found \(localizedPlaceholders)"
+            return "\(key) expected \(sourcePlaceholders) but found \(Self.placeholders(in: drifted))"
         }
     }
 
@@ -619,8 +700,7 @@ private struct StringCatalog: Decodable {
         strings.keys.sorted().flatMap { key in
             let localizations = strings[key]?.localizations ?? [:]
             return localizations.keys.sorted().compactMap { locale -> String? in
-                guard let value = localizations[locale]?.stringUnit?.value,
-                      Self.containsLiteralPercent(in: value) else {
+                guard localizations[locale]?.texts.values.contains(where: { Self.containsLiteralPercent(in: $0) }) == true else {
                     return nil
                 }
                 return "\(key) [\(locale)]"
@@ -666,13 +746,88 @@ private struct StringCatalog: Decodable {
         let shouldTranslate: Bool?
     }
 
+    /// CLDR plural categories a language cannot do without; a missing `many` in es falls back to `other`.
+    static let pluralCategories = ["en": ["one", "other"], "es": ["one", "other"]]
+
     struct Localization: Decodable {
         let stringUnit: StringUnit?
+        let variations: Variations?
+        let substitutions: [String: Substitution]?
+
+        var variesByPlural: Bool {
+            variations?.plural != nil || !(substitutions ?? [:]).isEmpty
+        }
+
+        /// Each finished text by the plural categories chosen: a plural's variants, or the value with
+        /// every `%#@name@` filled by each variant of that substitution, `%arg` becoming the argument.
+        var texts: [[String]: String] {
+            if let plural = variations?.plural {
+                return plural.reduce(into: [:]) { texts, variant in
+                    if let value = variant.value.stringUnit?.value {
+                        texts[[variant.key]] = value
+                    }
+                }
+            }
+            guard let value = stringUnit?.value else { return [:] }
+            return (substitutions ?? [:]).reduce([[]: value]) { texts, substitution in
+                texts.reduce(into: [:]) { filled, text in
+                    for (category, variant) in substitution.value.variations?.plural ?? [:] {
+                        guard let option = variant.stringUnit?.value else { continue }
+                        filled[text.key + [category]] = StringCatalog.fill(
+                            text.value, substitution: substitution.key, with: option,
+                            specifier: substitution.value.formatSpecifier ?? ""
+                        )
+                    }
+                }
+            }
+        }
+
+        var otherText: String? {
+            texts.first { $0.key.allSatisfy { $0 == "other" } }?.value
+        }
+
+        /// Every text written, and each plural carrying every category `locale` needs.
+        func isComplete(for locale: String) -> Bool {
+            if variations != nil, variations?.plural == nil {
+                return false
+            }
+            guard variations != nil || stringUnit?.value.isEmpty == false else { return false }
+            let required = StringCatalog.pluralCategories[locale] ?? ["other"]
+            let plurals = [variations?.plural].compactMap(\.self) + (substitutions ?? [:]).values.map { $0.variations?.plural ?? [:] }
+            return plurals.allSatisfy { plural in
+                required.allSatisfy { plural[$0] != nil } && plural.values.allSatisfy { $0.stringUnit?.value.isEmpty == false }
+            }
+        }
+    }
+
+    struct Variations: Decodable {
+        let plural: [String: Variant]?
+    }
+
+    struct Variant: Decodable {
+        let stringUnit: StringUnit?
+    }
+
+    struct Substitution: Decodable {
+        let formatSpecifier: String?
+        let variations: Variations?
     }
 
     struct StringUnit: Decodable {
         let state: String?
         let value: String
+    }
+
+    static func fill(_ text: String, substitution name: String, with option: String, specifier: String) -> String {
+        let pattern = #"%(\d+\$)?#@"# + NSRegularExpression.escapedPattern(for: name) + "@"
+        guard let token = try? NSRegularExpression(pattern: pattern) else { return text }
+        var filled = text
+        for match in token.matches(in: text, range: NSRange(text.startIndex..., in: text)).reversed() {
+            guard let range = Range(match.range, in: filled) else { continue }
+            let position = Range(match.range(at: 1), in: text).map { String(text[$0]) } ?? ""
+            filled.replaceSubrange(range, with: option.replacingOccurrences(of: "%arg", with: "%" + position + specifier))
+        }
+        return filled
     }
 }
 
@@ -725,7 +880,7 @@ private enum InterpolatedLiteralScan {
         pattern: #"String\(\s*localized:\s*"((?:[^"\\\n]|\\.)*)""#
     )
 
-    private static func parse(_ source: String, path: String) -> [Site] {
+    static func parse(_ source: String, path: String) -> [Site] {
         guard let pattern else { return [] }
         let range = NSRange(source.startIndex..<source.endIndex, in: source)
         return pattern.matches(in: source, range: range).compactMap { match -> Site? in
