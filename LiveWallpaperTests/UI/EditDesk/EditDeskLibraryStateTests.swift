@@ -218,9 +218,6 @@ struct EditDeskLibraryStateTests {
     /// The app's own Edit Desk window, parked off every display as in `TitleBarStripHitTests`.
     /// `body` also gets whether the nav pill offers Workshop.
     private func withWindow(navigation: Navigation?, _ body: @MainActor (NSWindow, Bool) async throws -> Void) async throws {
-        let frameKey = "NSWindow Frame LiveWallpaperEditDeskWindow"
-        let previousFrame = UserDefaults.standard.object(forKey: frameKey)
-        defer { UserDefaults.standard.set(previousFrame, forKey: frameKey) }
         let manager = ScreenManager(startupOptions: ScreenManagerStartupOptions(
             restoreSavedWallpapers: false,
             startAutomation: false,
@@ -244,7 +241,7 @@ struct EditDeskLibraryStateTests {
         #endif
         let delegate = WindowDelegate()
         let controller = host.makeWindowController(
-            editDeskEnabled: true, initialNavigation: navigation, initialAddWallpaperRequest: nil, delegate: delegate
+            editDeskEnabled: true, initialNavigation: navigation, initialAddWallpaperRequest: nil, savesFrame: false, delegate: delegate
         )
         let window = try #require(controller.window)
         defer {
