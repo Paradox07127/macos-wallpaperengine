@@ -2976,42 +2976,6 @@
         }
       }
     },
-    "%lld video(s) and %@ are deleted from the folder macOS reads. Your originals in Loomscreen are untouched." : {
-      "comment" : "Destructive confirm message for clearing the whole system wallpaper library. Placeholders are the item count and the formatted size on disk.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld video(s) and %@ are deleted from the folder macOS reads. Your originals in Loomscreen are untouched."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Se eliminan %lld vídeo(s) y %@ de la carpeta que lee macOS. Tus originales en Loomscreen permanecen intactos."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "macOS が読み取るフォルダから %lld 本の動画（%@）を削除します。Loomscreen 内の元ファイルはそのまま残ります。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "将从 macOS 读取的文件夹中删除 %lld 个视频（%@）。Loomscreen 里的原始文件不受影响。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "將從 macOS 讀取的資料夾中刪除 %lld 部影片（%@）。Loomscreen 裡的原始檔案不受影響。"
-          }
-        }
-      }
-    },
     "%lld videos" : {
       "comment" : "System Wallpaper status bar: the number of videos macOS has a copy of. %lld is the count.",
       "localizations" : {
@@ -3067,6 +3031,66 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld 部影片"
+          }
+        }
+      }
+    },
+    "%lld videos and %@ are deleted from the folder macOS reads. Your originals in Loomscreen are untouched." : {
+      "comment" : "Destructive confirm message for clearing the whole system wallpaper library. Placeholders are the item count and the formatted size on disk.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld video and %@ are deleted from the folder macOS reads. Your originals in Loomscreen are untouched."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld videos and %@ are deleted from the folder macOS reads. Your originals in Loomscreen are untouched."
+                }
+              }
+            }
+          }
+        },
+        "es" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Se eliminan %lld vídeo y %@ de la carpeta que lee macOS. Tus originales en Loomscreen permanecen intactos."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Se eliminan %lld vídeos y %@ de la carpeta que lee macOS. Tus originales en Loomscreen permanecen intactos."
+                }
+              }
+            }
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS が読み取るフォルダから %lld 本の動画（%@）を削除します。Loomscreen 内の元ファイルはそのまま残ります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将从 macOS 读取的文件夹中删除 %lld 个视频（%@）。Loomscreen 里的原始文件不受影响。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將從 macOS 讀取的資料夾中刪除 %lld 部影片（%@）。Loomscreen 裡的原始檔案不受影響。"
           }
         }
       }
@@ -3344,10 +3368,16 @@
         }
       }
     },
-    "'%1$@' is overwritten with what %2$@ is showing now. The setup saved under that name cannot be recovered." : {
-      "comment" : "Confirm message for overwriting a saved scheme. Placeholders are the scheme name and the source display name.",
+    "'%@' is overwritten with what %@ is showing now. The setup saved under that name cannot be recovered." : {
+      "comment" : "Confirm message for overwriting a saved scheme with a display's current setup. Placeholders are the scheme name and the source display name.",
       "extractionState" : "manual",
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "'%1$@' is overwritten with what %2$@ is showing now. The setup saved under that name cannot be recovered."
+          }
+        },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
@@ -3374,7 +3404,7 @@
         }
       }
     },
-    "'%1$@' replaces the wallpaper, overlay layout, and every setting on %2$@. Save that display's current setup as a scheme first if you want it back." : {
+    "'%@' replaces the wallpaper, overlay layout, and every setting on %@. Save that display's current setup as a scheme first if you want it back." : {
       "comment" : "Confirm message for applying a saved scheme. Placeholders are the scheme name and the target display name.",
       "extractionState" : "manual",
       "localizations" : {
@@ -4825,15 +4855,39 @@
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Active for %lld apps"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Active for %lld app"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Active for %lld apps"
+                }
+              }
+            }
           }
         },
         "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Activo para %lld apps"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Activo para %lld app"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Activo para %lld apps"
+                }
+              }
+            }
           }
         },
         "ja" : {
@@ -4852,42 +4906,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "對 %lld 個 App 啟用"
-          }
-        }
-      }
-    },
-    "Active for 1 app" : {
-      "comment" : "App exceptions subtitle, singular count.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Active for 1 app"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Activo para 1 app"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1 個のアプリで有効"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "对 1 个 App 启用"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "對 1 個 App 啟用"
           }
         }
       }
@@ -37029,15 +37047,39 @@
       "comment" : "Wallpaper Engine fallback warning title. The placeholder is the missing dependency count.",
       "localizations" : {
         "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Missing %lld Workshop dependencies"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Missing %lld Workshop dependency"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Missing %lld Workshop dependencies"
+                }
+              }
+            }
           }
         },
         "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Faltan %lld dependencias de Workshop"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Falta %lld dependencia de Workshop"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Faltan %lld dependencias de Workshop"
+                }
+              }
+            }
           }
         },
         "ja" : {
@@ -37056,41 +37098,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "缺少 %lld 個工作坊相依項目"
-          }
-        }
-      }
-    },
-    "Missing 1 Workshop dependency" : {
-      "comment" : "Wallpaper Engine fallback warning title.",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Missing 1 Workshop dependency"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Falta 1 dependencia de Workshop"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1 件のワークショップ依存関係がありません"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "缺少 1 个 Steam 创意工坊依赖项"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "缺少 1 個工作坊相依項目"
           }
         }
       }

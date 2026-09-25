@@ -178,13 +178,9 @@ extension GeneralSettingsView {
         }
     }
 
-    /// Keep singular and plural in separate localization keys.
     private var appExceptionsSubtitle: LocalizedStringKey {
         if applicationRules.isEmpty {
             return "No apps added"
-        }
-        if applicationRules.count == 1 {
-            return "Active for 1 app"
         }
         return "Active for \(applicationRules.count) apps"
     }
