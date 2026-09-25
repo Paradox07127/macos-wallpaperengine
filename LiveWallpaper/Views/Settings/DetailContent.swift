@@ -77,6 +77,6 @@ struct SettingsDetailContent: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .settingsPageBackground()
+        .contentColumnBackground()
     }
 }

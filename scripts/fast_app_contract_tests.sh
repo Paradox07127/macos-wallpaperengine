@@ -174,6 +174,7 @@ SUITES=(
   EditDeskUndoStackTests
   StatusCapsuleTests
   EditDeskChromeSourceTests
+  EditDeskCanvasOwnershipTests
   DisplayFloatLayerTests
   WallpaperModalTests
   ModalActionsTests

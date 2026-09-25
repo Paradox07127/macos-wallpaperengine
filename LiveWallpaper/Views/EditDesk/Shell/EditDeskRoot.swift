@@ -140,14 +140,9 @@ struct EditDeskRoot: View {
         #endif
         .modifier(UndoCommands(undo: undo, toasts: toasts))
         .environment(\.libraryTileSize, LibraryTileSize(rawValue: libraryTileSizeRaw) ?? .defaultSize)
+        .environment(\.windowPaintsCanvas, true)
         .providesGalleryCardPreferences()
-        .background {
-            if router?.page == .settings {
-                DesignTokens.Colors.pageBackground.ignoresSafeArea()
-            } else {
-                EditDeskBackdrop(frosted: background == .frosted)
-            }
-        }
+        .background { EditDeskBackdrop(frosted: background == .frosted) }
         .frame(minWidth: StageGeometry.minimumWindow.width, minHeight: StageGeometry.minimumWindow.height)
         .onAppear {
             guard router == nil else { return }

@@ -55,8 +55,6 @@ struct HomePage: View {
     @State private var itemNameDraft = ""
     @AppStorage(EditDeskPreferences.shelfStyle, store: .appScoped())
     private var shelfStyleRaw = EditDeskPreferences.shelfStyleDefault.rawValue
-    @AppStorage(EditDeskPreferences.background, store: .appScoped())
-    private var backgroundRaw = EditDeskPreferences.backgroundDefault.rawValue
     @AppStorage(EditDeskPreferences.shelfCapacity, store: .appScoped())
     private var shelfCapacity = EditDeskPreferences.shelfCapacityDefault
     @AppStorage(EditDeskPreferences.statusCapsuleContent, store: .appScoped())
@@ -120,9 +118,6 @@ struct HomePage: View {
                 .onChange(of: page.reduceMotion) { page.stage.reduceMotion = page.reduceMotion }
                 .onChange(of: page.contrast, initial: true) { page.stage.increaseContrast = page.contrast == .increased }
                 .onChange(of: page.shelfStyleRaw) { page.stage.shelfStyle = page.shelfStyle }
-                .onChange(of: page.backgroundRaw) {
-                    page.stage.opaqueBackground = page.backgroundRaw != EditDeskBackground.frosted.rawValue
-                }
                 .onChange(of: page.interactionLock, initial: true) { page.stage.interactionBlocked = page.interactionLock }
                 .onChange(of: page.stageTopInset, initial: true) { page.stage.arrangementTopInset = page.stageTopInset }
                 .modifier(DisplayHooks(page: page))
@@ -313,6 +308,8 @@ struct HomePage: View {
             // leaning or lifting over them is never clipped by a piece of chrome. Landed on the library,
             // the chips go over the grid instead, or it would hide them as a return swipe carries them down.
             libraryBannerMeasure
+            EditDeskDotGrid()
+                .zIndex(-1)
             LibraryPageUnderlay(stage: stage)
                 .zIndex(-1)
             EditDeskShelfScrim(stage: stage)
@@ -375,7 +372,6 @@ struct HomePage: View {
             stage.gridTileSize = tileSize
             stage.reduceMotion = reduceMotion
             stage.shelfStyle = shelfStyle
-            stage.opaqueBackground = backgroundRaw != EditDeskBackground.frosted.rawValue
             stage.dropHintText = String(localized: "Drop to replace", bundle: .appLanguage)
             stage.displayMenu = { displayMenuSections(for: $0) }
             stage.cardMenu = { id in library?.items.first { $0.id == id }.map { [libraryMenu(for: $0)] } ?? [] }

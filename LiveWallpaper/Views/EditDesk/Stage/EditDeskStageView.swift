@@ -32,7 +32,6 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     private static let reserveLimit = 8
     private var shelfStyle = ShelfStyle.crate
     private var highContrast = false
-    private var paintsCanvas = true
     private var dropHint = ""
     private var progress = StageSpring(value: 0, target: 0, parameters: StageSpring.snap)
     private var row = StageSpring(value: 0, target: 0, parameters: StageSpring.row)
@@ -173,7 +172,6 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
             _ = model.interactionBlocked
             _ = model.dropHintText
             _ = model.shelfRenderBudget
-            _ = model.opaqueBackground
             _ = model.arrangementTopInset
             _ = model.gridContentInset
         } onChange: { [weak self] in
@@ -264,10 +262,6 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
             } else {
                 arrangementInset.target = inset
             }
-        }
-        if paintsCanvas != model.opaqueBackground {
-            paintsCanvas = model.opaqueBackground
-            applyPalette()
         }
         if highContrast != model.increaseContrast {
             highContrast = model.increaseContrast

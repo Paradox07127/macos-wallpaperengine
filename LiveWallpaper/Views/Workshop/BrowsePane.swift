@@ -8,7 +8,7 @@ import SwiftUI
 enum BrowsePresentation {
     /// The old Workshop window: grid plus a resizable inspector column.
     case legacy
-    /// SCREENS S8: grid alone, at a fixed six-column preset, items open through `onOpenItem`.
+    /// SCREENS S8: grid alone, its row shared evenly from one preferred column width; items open through `onOpenItem`.
     case editDesk
 }
 
@@ -104,12 +104,12 @@ struct BrowsePane: View {
     }
 
     /// The only place the two presentations differ: whether the grid is wrapped in a split with an
-    /// inspector column, and which page background it sits on.
+    /// inspector column.
     @ViewBuilder
     private var layout: some View {
         if presentation == .editDesk {
             mainColumn
-                .background(DesignTokens.EditDesk.Colors.background)
+                .pageBackground()
         } else {
             InspectorSplit(
                 isMounted: true,
@@ -124,7 +124,7 @@ struct BrowsePane: View {
                 main: { mainColumn },
                 inspector: { width in inspectorColumn(width: width) }
             )
-            .background(DesignTokens.Colors.pageBackground)
+            .pageBackground()
             .toolbar {
                 if selectedID != nil {
                     ToolbarItem(placement: .primaryAction) {
@@ -516,7 +516,7 @@ struct BrowsePane: View {
         }
     }
 
-    /// nil follows the user's tile-size preference; S8 pins the Edit Desk page to six columns.
+    /// nil follows the user's tile-size preference; the Edit Desk page takes one preferred width and shares the row evenly.
     private var gridColumnWidth: CGFloat? {
         presentation == .editDesk ? DesignTokens.LibraryGrid.workshopBrowseColumnWidth : nil
     }
