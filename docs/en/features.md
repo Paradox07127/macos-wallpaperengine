@@ -19,16 +19,18 @@ and the app target's build gates.
 
 | Settings page | Edition | Contents |
 |---|---|---|
-| General | both | Language, login behavior, Dock visibility, lock-screen frame capture, automatic update checks |
-| Display Defaults | both | Playback, frame rate, fit, color and interaction defaults |
-| Performance | both | Pause rules, app exceptions, video preload; Pro adds adaptive scene frame rate and render threads |
-| Audio Response | Pro | System audio capture for scene and music visual effects |
-| Weather | both | Off, system location or manual location |
+| General | both | Language, appearance, library tile size, login behavior, automatic update checks, Dock visibility, lock-screen frame capture, screen-capture visibility |
+| Display Defaults | both | Display arrangement and renaming; playback, frame rate, fit, color and interaction defaults |
 | Shortcuts | both | Master switch and eight bindable actions |
-| Storage | Pro | Downloaded projects, engine assets and caches |
+| Performance | both | Pause rules, app exceptions, video preload; Pro adds adaptive scene frame rate, render threads and, on supported hardware, MetalFX upscaling and HDR output |
+| Integrations | both | Audio Response (Pro): system audio capture for scene and music visual effects; Weather: off, system location or manual location |
+| Overlays | both | Widget tint, opacity and Liquid Glass (macOS 26+) for all widget panels; temperature unit |
+| System Wallpaper | both, macOS 26+ | Video playback mode, extension status, service maintenance, removing all videos from the System Wallpaper library |
+| Workshop | Pro | Steam setup, API key, engine assets, browse preferences, thumbnail badges, diagnostics, privacy and terms |
+| Storage | Pro | Downloaded projects, engine assets, System Wallpaper video copies and caches |
 | Backup & Restore | both | Configuration export/import |
-| Workshop | Pro | Steam setup, API key, engine assets and browse preferences |
-| Advanced / About | both | Diagnostics, maintenance, version, links and updates |
+| Advanced | both | Diagnostic summary and export, bug report, log files, reset all settings |
+| About | both | Version, updates, GitHub and Discussions links, bug report, welcome tour |
 
 ## Wallpaper types
 

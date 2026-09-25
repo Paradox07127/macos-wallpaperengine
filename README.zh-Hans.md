@@ -20,7 +20,7 @@
 
 </div>
 
-> 独立的 Metal 实现，与 Wallpaper Engine 无关联；Workshop 内容通过你自己的 Steam 账号与授权下载。
+> 独立的 Metal 实现，与 Wallpaper Engine 无关联；创意工坊内容通过你自己的 Steam 账号与授权下载。
 
 ![Loomscreen 主界面](docs/images/main.png)
 
@@ -28,7 +28,7 @@
 
 | 类型 | 版本 | 能力 |
 |---|---|---|
-| **Wallpaper Engine 场景** | Pro | 原生 Metal 渲染 `scene.pkg` 项目 —— 粒子、着色器特效、木偶变形动画、音频反应图层、光标特效。支持导入本地项目文件夹，或通过 Steam Workshop 下载场景及社区预设；兼容程度随项目而异。 |
+| **Wallpaper Engine 场景** | Pro | 原生 Metal 渲染 `scene.pkg` 项目 —— 粒子、着色器特效、木偶变形动画、音频反应图层、光标特效。支持导入本地项目文件夹，或通过 Steam 创意工坊下载场景及社区预设；兼容程度随项目而异。 |
 | **视频** | Lite + Pro | `mp4` / `m4v` / `mov` / `avi`，平滑循环，HDR 感知色彩管线，可逐屏播放或跨所有屏幕铺展。 |
 | **网页** | Lite + Pro | 沙盒化 `WKWebView`，支持 JavaScript 开关、跟踪器拦截、自定义 CSS、定时自动刷新。 |
 | **Apple 航拍** | Lite + Pro | 浏览并应用 Mac 上已有的 Apple TV 航拍视频。 |
@@ -38,7 +38,7 @@
 | | |
 |:---:|:---:|
 | ![视频壁纸](docs/images/video.png) **视频** | ![网页壁纸](docs/images/web.png) **网页** |
-| ![Wallpaper Engine 场景](docs/images/scene.png) **场景（Pro）** | ![Steam Workshop](docs/images/workshop.png) **Workshop（Pro）** |
+| ![Wallpaper Engine 场景](docs/images/scene.png) **场景（Pro）** | ![Steam 创意工坊](docs/images/workshop.png) **创意工坊（Pro）** |
 
 ## 不只是播放器
 
