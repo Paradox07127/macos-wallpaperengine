@@ -326,7 +326,6 @@ struct BrowsePane: View {
                                     .id(item.id)
                             }
                         }
-                        .scrollTargetLayout()
                         .padding(.horizontal, DesignTokens.Settings.formHorizontalMargin)
                         .padding(.vertical, DesignTokens.Settings.formVerticalMargin)
                     }
@@ -340,7 +339,6 @@ struct BrowsePane: View {
                         .onTapGesture { session.selectedID = nil }
                 )
             }
-            .scrollPosition(id: $session.scrollID, anchor: .top)
             // Opening the inspector reflows rows and can push the selected tile off-screen — re-center it.
             .onChange(of: session.selectedID) { _, id in
                 guard let id else { return }
@@ -352,7 +350,6 @@ struct BrowsePane: View {
                 }
             }
             .onChange(of: viewModel.pageIndex) { _, _ in
-                session.scrollID = nil
                 proxy.scrollTo(Self.gridTopAnchor, anchor: .top)
             }
         }

@@ -3,12 +3,11 @@ import LiveWallpaperCore
 import SwiftUI
 
 /// Owned by the management window, so sidebar and settings navigation do not
-/// discard the current Workshop query, inspector, or scroll location.
+/// discard the current Workshop query or inspector.
 @MainActor
 @Observable
 final class WorkshopBrowseSession {
     var viewModel: BrowseViewModel?
-    var scrollID: UInt64?
     /// An id, not a value copy: the inspector follows the grid when a page
     /// turn or the persona pass replaces `viewModel.items`.
     var selectedID: UInt64?

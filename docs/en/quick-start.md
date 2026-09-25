@@ -139,4 +139,4 @@ preset keeps your changes.
 - Export a `.lwconfig` backup from **Settings → Backup & Restore**. It saves settings and references, not the media files or secrets. Lite cannot run scene entries from a Pro backup.
 - Hit an edge case? **Settings → About → Report a Bug** pre-fills diagnostics.
 
-The Workshop browser retains its query, filters, page, selected item, and scroll target when switching between pages in the management window, including Settings and Installed. This browsing session ends when the management window is destroyed; it is not persisted across app restarts.
+The Workshop browser retains its query, filters, page, and selected item when switching between pages in the management window, including Settings and Installed. This browsing session ends when the management window is destroyed; it is not persisted across app restarts.

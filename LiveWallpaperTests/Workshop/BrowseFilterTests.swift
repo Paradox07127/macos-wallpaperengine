@@ -1136,6 +1136,61 @@ struct BrowseRequestShapeTests {
         #expect(BrowseReloadStub.requestCount(queryType: "1") >= 1)
     }
 
+    @Test("Returning after the key was rejected off-page rebuilds Browse for the public page")
+    func onAppearReconcilesKeyPathFlippedOffPage() async throws {
+        let suite = try TestScratch.defaultsSuite("workshop.browse.request.onAppearKeyPath")
+        defer { suite.discard() }
+        let services = Self.makeStubbedServices()
+        services.hasWebAPIKey = true
+        let model = BrowseViewModel(
+            services: services, defaults: suite.defaults, loadGlobalSettings: { GlobalSettings() },
+            publicSource: Self.makeStubbedPublicSource()
+        )
+        await model.reload()
+        try #require(model.hasLoadedPage && !model.usesKeylessSearch)
+
+        await services.noteAuthVerdict(accepted: false, keyFingerprint: WorkshopQueryService.keyFingerprint(Self.stubbedKey))
+        try #require(services.isKeyless)
+        model.onAppear()
+        await Task.yield()
+
+        #expect(model.currentRequest.numPerPage == WorkshopPublicBrowseURL.itemsPerPage)
+    }
+
+    @Test("Returning after the presets switch flipped off-page reloads with the new exclusion")
+    func onAppearReconcilesPresetVisibility() async throws {
+        let suite = try TestScratch.defaultsSuite("workshop.browse.request.onAppearPresets")
+        defer { suite.discard() }
+        let store = MutableSettings(defaultSort: "mostPopular")
+        let services = Self.makeStubbedServices()
+        services.hasWebAPIKey = true
+        let model = BrowseViewModel(services: services, defaults: suite.defaults, loadGlobalSettings: { store.settings })
+        await model.reload()
+        try #require(model.hasLoadedPage && model.currentRequest.excludedTags.contains("Preset"))
+
+        store.settings.showsWorkshopPresetsInBrowse = true
+        model.onAppear()
+        await Task.yield()
+
+        #expect(!model.currentRequest.excludedTags.contains("Preset"))
+    }
+
+    @Test("Control: returning with the key path and settings unchanged keeps the loaded page")
+    func onAppearWithNothingChangedKeepsPage() async throws {
+        let suite = try TestScratch.defaultsSuite("workshop.browse.request.onAppearUnchanged")
+        defer { suite.discard() }
+        let services = Self.makeStubbedServices()
+        services.hasWebAPIKey = true
+        let model = BrowseViewModel(services: services, defaults: suite.defaults, loadGlobalSettings: { GlobalSettings() })
+        await model.reload()
+        try #require(model.hasLoadedPage)
+
+        model.onAppear()
+        await Task.yield()
+
+        #expect(!model.isLoading, "a reload was started")
+    }
+
     // MARK: - W4-B: a rejected key browses keyless (D11 / D23)
 
     private static let stubbedKey = String(repeating: "a1b2c3d4", count: 4)

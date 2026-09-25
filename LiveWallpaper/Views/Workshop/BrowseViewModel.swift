@@ -320,6 +320,8 @@ final class BrowseViewModel {
 
     @ObservationIgnored private var inflightFetch: Task<Bool, Never>?
     @ObservationIgnored private var currentRequestToken: UInt64 = 0
+    /// The path the last fetch went to; nil before the first fetch.
+    @ObservationIgnored private var fetchedKeyless: Bool?
     @ObservationIgnored private var autoSearchTask: Task<Void, Never>?
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let loadGlobalSettings: @MainActor () -> GlobalSettings
@@ -367,10 +369,19 @@ final class BrowseViewModel {
         return timeFrame
     }
 
+    /// `BrowsePane`'s key-path and presets observers fire only while it is mounted; what changed off screen is caught here.
     func onAppear() {
-        if applySettingsDefaults() || (!hasLoadedPage && !isLoading && lastError == nil) {
+        let defaultsChanged = applySettingsDefaults()
+        if let fetchedKeyless, fetchedKeyless != usesKeylessSearch {
+            Task { await browsePathChanged() }
+        } else if defaultsChanged || presetVisibilityChanged || (!hasLoadedPage && !isLoading && lastError == nil) {
             Task { await reload() }
         }
+    }
+
+    /// The last request excluded presets while Settings now shows them, or the reverse.
+    private var presetVisibilityChanged: Bool {
+        currentRequest.excludedTags.contains("Preset") == showsWorkshopPresets
     }
 
     private func applySettingsDefaults() -> Bool {
@@ -722,6 +733,7 @@ final class BrowseViewModel {
         // Read once, with the request it shaped: a key rejected while the fetch is in
         // flight must not have the keyed page's metadata read as the public page's.
         let keyless = usesKeylessSearch
+        fetchedKeyless = keyless
         // Safety net under `browsePathChanged`: served by the public creator
         // page this request would be wrong (filters ignored, no total).
         if keyless, request.creatorSteamID != nil {

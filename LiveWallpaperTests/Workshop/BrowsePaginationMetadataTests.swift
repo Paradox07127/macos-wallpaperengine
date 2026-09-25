@@ -1,6 +1,7 @@
 #if !LITE_BUILD
 import Foundation
 @testable import LiveWallpaper
+import LiveWallpaperCore
 import Testing
 
 @Suite("Workshop browse pagination metadata", .serialized)
@@ -35,24 +36,61 @@ struct BrowsePaginationMetadataTests {
         #expect(model.lastFetchedRawItemCount == 50, "Steam sent a full page")
         #expect(model.totalPages == nil, "no total in the response")
         #expect(model.canGoNextPage)
+    }
 
-        // Returning from another sidebar page must keep the active page and
-        // inspector state instead of issuing the initial query again.
-        let browseSession = WorkshopBrowseSession()
-        browseSession.viewModel = model
-        await model.goToPage(2)
-        try #require(model.pageIndex == 2)
-        browseSession.selectedID = model.items.first?.id
-        browseSession.scrollID = model.items.last?.id
-        let previousItems = model.items
+    @Test("Returning to a loaded page the filters emptied keeps that page")
+    func returnKeepsFilteredOutPage() async throws {
+        let (model, cleanup) = try Self.keyedShellModel("return.filteredOut")
+        defer { cleanup() }
+        model.applyPageForTesting(sourceItemCount: 50, totalPages: 3, pageIndex: 2)
+        try #require(model.items.isEmpty && model.hasLoadedPage)
+
         model.onAppear()
         await Task.yield()
-        #expect(model.pageIndex == 2)
-        #expect(model.items == previousItems)
+
+        #expect(model.pageIndex == 2, "a reload restarts from page 1")
         #expect(!model.isLoading)
-        #expect(browseSession.viewModel === model)
-        #expect(browseSession.selectedID == model.items.first?.id)
-        #expect(browseSession.scrollID == model.items.last?.id)
+    }
+
+    @Test("Returning while the first page is still loading does not start a second load")
+    func returnDuringFirstLoadKeepsIt() async throws {
+        let (model, cleanup) = try Self.keyedShellModel("return.loading")
+        defer { cleanup() }
+        let firstLoad = Task { await model.reload() }
+        await Task.yield()
+        try #require(model.isLoading && !model.hasLoadedPage)
+        // Typed during the load: a second reload would fold it into `currentRequest`.
+        model.searchInput = "pending"
+
+        model.onAppear()
+        await Task.yield()
+
+        #expect(model.hasPendingChanges, "a second reload was started")
+        await firstLoad.value
+    }
+
+    /// Keyed, with QueryFiles answered by `KeyedShellPageStub`.
+    private static func keyedShellModel(_ name: String) throws -> (BrowseViewModel, cleanup: () -> Void) {
+        let suite = try TestScratch.defaultsSuite("workshop.browse.pagination.\(name)")
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("workshop-browse-pagination-\(UUID().uuidString)", isDirectory: true)
+        let keychain = WorkshopKeychainStore(
+            directory: directory,
+            slot: WorkshopKeychainSlotSpy(stored: String(repeating: "a1b2c3d4", count: 4)).slot()
+        )
+        let cache = WorkshopQueryCache(directoryURL: directory.appendingPathComponent("cache"))
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [KeyedShellPageStub.self]
+        let service = WorkshopQueryService(
+            keychain: keychain, cache: cache, session: URLSession(configuration: config), countIssuedRequest: {}
+        )
+        let services = WorkshopServices(keychain: keychain, cache: cache, queryService: service)
+        services.hasWebAPIKey = true
+        let model = BrowseViewModel(services: services, defaults: suite.defaults, loadGlobalSettings: { GlobalSettings() })
+        return (model, {
+            suite.discard()
+            try? FileManager.default.removeItem(at: directory)
+        })
     }
 
     @Test("Keyless: the SSR page count drives the pager")

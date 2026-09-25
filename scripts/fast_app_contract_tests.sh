@@ -145,6 +145,10 @@ SUITES=(
   DeferredApplyCoordinatorTests
   CollapsibleDescriptionTests
   WorkshopSessionTests
+  BrowseSelectionTests
+  BrowsePaginationMetadataTests
+  BrowseRequestShapeTests
+  BrowseFilterTests
   BrowseCardEqualityTests
   WorkshopPageSourceTests
   GalleryCardPreferencesTests
