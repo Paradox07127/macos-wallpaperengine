@@ -194,6 +194,27 @@ struct NavigationTests {
         #expect(storageResults.first { $0.destination == .storage }?.anchor == .storageCaches)
     }
 
+    @Test("Workshop search targets follow the page's section order")
+    func workshopSearchTargetsFollowPageOrder() throws {
+        let workshop = try #require(SettingsNavigation.allItems.first { $0.destination == .workshopSetup })
+
+        #expect(workshop.searchTargets(capabilities: .pro.withWorkshopOnline()).map(\.anchor) == [
+            .workshopConnection, .workshopAssets, .workshopSetup, .workshopContent,
+            .workshopBadges, .workshopDiagnostics, .workshopLegal,
+        ])
+    }
+
+    @Test("A query matching several Workshop sections lands on the topmost one")
+    func workshopSearchLandsOnTopmostMatchingSection() {
+        let results = SettingsNavigation.filteredResults(
+            matching: "steam",
+            capabilities: .pro,
+            includeWorkshopOnline: true
+        )
+
+        #expect(results.first { $0.destination == .workshopSetup }?.anchor == .workshopConnection)
+    }
+
     @Test("Search result identity includes anchor")
     func searchResultIdentityIncludesAnchor() {
         let result = SettingsNavigationSearchResult(
