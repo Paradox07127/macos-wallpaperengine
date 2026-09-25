@@ -157,7 +157,7 @@ struct DetailTopBar: View {
             }
         }
         .padding(4)
-        .adaptiveGlassSurface(.capsule, preferMaterial: true)
+        .adaptiveGlassSurface(.capsule)
         .accessibilityElement(children: .contain)
         .fixedSize()
     }

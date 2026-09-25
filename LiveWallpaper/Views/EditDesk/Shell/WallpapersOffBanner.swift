@@ -22,8 +22,7 @@ struct WallpapersOffBanner: View {
             Button(action: turnOn) {
                 Text("Turn Wallpapers On", comment: "Home page banner button that turns the master wallpaper switch back on.")
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.small)
+            .adaptiveGlassButton(.prominent, size: .small)
         }
     }
 }

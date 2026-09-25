@@ -684,12 +684,7 @@ struct HomePage: View {
                     searchText: queryBinding,
                     searchPrompt: featureCatalog.isEnabled(.wpeImport) ? "Search by name or tag" : "Search by name",
                     stage: stage,
-                    sortTitle: Self.sortTitle(library?.sort ?? .recentlyUsed),
-                    sortMenu: {
-                        Button("Recently Used") { library?.sort = .recentlyUsed }
-                        Button("Name") { library?.sort = .name }
-                        Button("Type") { library?.sort = .type }
-                    },
+                    sort: Binding(get: { library?.sort ?? .recentlyUsed }, set: { library?.sort = $0 }),
                     onImport: promptLibraryImport
                 )
                 if library?.chip == .aerials, library?.aerialsStatus.isAuthorized == true {
@@ -768,14 +763,6 @@ struct HomePage: View {
         case .steam: "Steam"
         case .local: "Local"
         case .aerials: "Aerials"
-        }
-    }
-
-    private static func sortTitle(_ sort: SavedLibraryModel.Sort) -> LocalizedStringKey {
-        switch sort {
-        case .recentlyUsed: "Recently Used"
-        case .name: "Name"
-        case .type: "Type"
         }
     }
 

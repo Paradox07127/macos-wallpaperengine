@@ -109,7 +109,6 @@ Fixed-dark tokens for the Edit Desk rebuild (`.notes/design_handoff_loomscreen_r
 | `Colors.tagChipFill` | `rgba(0,0,0,.55)` (fixed) | SCREENS S4 (tag chips) |
 | `Colors.fillSecondaryButton` | white `.10` | SCREENS S4 (secondary apply button) |
 | `Colors.fillTertiaryButton` | white `.06` | SCREENS S4 (＋ / … buttons) |
-| `Colors.fillFloatButton` | white `.08` | SCREENS S5 (⧉ all displays) |
 | `Colors.primaryButtonFill` / `primaryButtonText` | white / black (inverted in light) | SCREENS S4 (primary apply button) |
 | `Corner.content` | 3 | README Tokens #5 |
 | `Corner.badge` | 3 | SCREENS S1 (type badge) |

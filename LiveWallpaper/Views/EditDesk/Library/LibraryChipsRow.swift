@@ -16,16 +16,17 @@ struct LibraryChip: Identifiable, Hashable {
     }
 }
 
-struct LibraryChipsRow<SortMenu: View>: View {
+struct LibraryChipsRow: View {
     let chips: [LibraryChip]
     @Binding var selection: String
     @Binding var searchText: String
     let searchPrompt: LocalizedStringKey
     /// Drives the search field's reveal; the rest of the row rides the shelf in `ShelfChromeRide`.
     let stage: EditDeskStageModel
-    let sortTitle: LocalizedStringKey
-    @ViewBuilder let sortMenu: () -> SortMenu
+    @Binding var sort: SavedLibraryModel.Sort
     let onImport: () -> Void
+
+    @State private var sortPresented = false
 
     var body: some View {
         HStack(spacing: DesignTokens.EditDesk.Spacing.s8) {
@@ -43,31 +44,48 @@ struct LibraryChipsRow<SortMenu: View>: View {
     }
 
     private var sortControl: some View {
-        Menu {
-            sortMenu()
-        } label: {
+        Button { sortPresented.toggle() } label: {
             HStack(spacing: 2) {
-                Text(sortTitle)
+                Text(Self.sortTitle(sort))
                 Text(verbatim: "▾")
             }
+            .font(DesignTokens.EditDesk.Typography.chip)
+            .foregroundStyle(DesignTokens.EditDesk.Colors.textSecondary)
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .font(DesignTokens.EditDesk.Typography.chip)
-        .foregroundStyle(DesignTokens.EditDesk.Colors.textSecondary)
+        .adaptiveGlassButton(.regular, shape: .capsule, size: .regular)
         .fixedSize()
+        .accessibilityLabel(Text("Sort"))
+        .accessibilityValue(Text(Self.sortTitle(sort)))
+        .appLanguagePopover(isPresented: $sortPresented, arrowEdge: .bottom) { sortMenu }
+        .onChange(of: stage.snappedIndex) { sortPresented = false }
+    }
+
+    private var sortMenu: some View {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+            ForEach([SavedLibraryModel.Sort.recentlyUsed, .name, .type], id: \.self) { order in
+                Button(Self.sortTitle(order)) {
+                    sort = order
+                    sortPresented = false
+                }
+            }
+        }
+        .buttonStyle(.borderless)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .settingsPopoverChrome(width: 200)
     }
 
     private var importButton: some View {
-        Button(action: onImport) {
-            Text("+ Import")
-                .font(DesignTokens.EditDesk.Typography.chip)
-                .foregroundStyle(DesignTokens.EditDesk.Colors.textPrimary)
-                .padding(.horizontal, 10)
-                .frame(height: 26)
-                .background(Capsule().fill(DesignTokens.EditDesk.Colors.fillNavPill))
+        GlassIconButton("plus", size: .regular, action: onImport)
+            .help(Text("Add to Library"))
+            .accessibilityLabel(Text("Add to Library"))
+    }
+
+    private static func sortTitle(_ sort: SavedLibraryModel.Sort) -> LocalizedStringKey {
+        switch sort {
+        case .recentlyUsed: "Recently Used"
+        case .name: "Name"
+        case .type: "Type"
         }
-        .buttonStyle(.plain)
     }
 }
 

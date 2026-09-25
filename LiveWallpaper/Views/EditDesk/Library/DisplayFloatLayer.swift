@@ -182,8 +182,10 @@ struct DisplayFloatLayer: View {
         .frame(height: 30)
         .background(
             RoundedRectangle(cornerRadius: DesignTokens.EditDesk.Corner.gridCard)
-                .fill(applyAllHighlighted ? DesignTokens.EditDesk.Colors.dropHighlight : DesignTokens.EditDesk.Colors.fillFloatButton)
+                .fill(DesignTokens.EditDesk.Colors.dropHighlight)
+                .opacity(applyAllHighlighted ? 1 : 0)
         )
+        .adaptiveGlassSurface(.roundedRectangle(DesignTokens.EditDesk.Corner.gridCard))
         .overlay {
             RoundedRectangle(cornerRadius: DesignTokens.EditDesk.Corner.gridCard)
                 .strokeBorder(DesignTokens.EditDesk.Colors.success, lineWidth: 2)
