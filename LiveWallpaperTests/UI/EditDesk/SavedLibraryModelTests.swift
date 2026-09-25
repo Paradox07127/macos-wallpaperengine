@@ -178,6 +178,18 @@ struct SavedLibraryModelTests {
         #expect(model.visibleItems.count == 2)
     }
 
+    @Test("A search finds rows by the whole name of their type")
+    func searchFindsRowsByTheWholeNameOfTheirType() {
+        var web = bookmark("Beta")
+        web.content = .html(source: .url(URL(fileURLWithPath: "/web")), config: .init())
+        let model = SavedLibraryModel(inputs: inputs([bookmark("Alpha"), web]))
+        let name = LibraryItem.Kind.web.localizedName
+        model.query = name
+        #expect(model.visibleItems.map(\.title) == ["Beta"], "the web row is not found by its type's name")
+        model.query = String(name.prefix(1))
+        #expect(model.visibleItems.isEmpty, "the first character of a type's name matched that type's rows")
+    }
+
     @Test func aerialsStatusMirrorsInputsOnRefresh() {
         let scanning = SavedLibraryModel.AerialsState(
             assets: [], isAuthorized: false, lastScanError: "scan failed", isScanning: true
@@ -484,6 +496,22 @@ struct SavedLibraryModelTests {
         #expect(model.visibleItems.isEmpty, "the project matched before its tags were read")
         await model.loadSearchTags()
         #expect(model.visibleItems.map(\.id) == ["workshop:123"], "the project's tags are not searched")
+    }
+
+    @Test("A search finds a Workshop project by its ID")
+    func searchFindsAWorkshopProjectByItsID() {
+        // Not `origin(_:)`: its title contains the ID, so the title alone would match.
+        let sunset = WPEOrigin(
+            workshopID: "2785019345", title: "Sunset", originalType: .scene,
+            sourceFolderBookmark: Data(), cacheRelativePath: nil, previewFileName: nil
+        )
+        var source = inputs()
+        source.history = { [WPEHistoryEntry(origin: sunset, importedAt: .distantPast)] }
+        let model = SavedLibraryModel(inputs: source)
+        model.query = "27850"
+        #expect(model.visibleItems.map(\.id) == ["workshop:2785019345"], "the project is not found by part of its ID")
+        model.query = "99999"
+        #expect(model.visibleItems.isEmpty, "a project matched an ID it does not have")
     }
 
     @Test("Library card badges appear only while their switches are on; other rows keep ON and never need an update")

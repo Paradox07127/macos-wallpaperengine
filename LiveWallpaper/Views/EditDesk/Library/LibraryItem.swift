@@ -3,7 +3,18 @@ import Foundation
 import LiveWallpaperCore
 
 struct LibraryItem: Identifiable, Equatable {
-    enum Kind: Equatable { case video, web, scene, aerial }
+    enum Kind: Equatable {
+        case video, web, scene, aerial
+
+        var localizedName: String {
+            switch self {
+            case .video: String(localized: "Video", bundle: .appLanguage)
+            case .web: String(localized: "Web", bundle: .appLanguage)
+            case .scene: String(localized: "Scene", bundle: .appLanguage)
+            case .aerial: String(localized: "Aerial", bundle: .appLanguage)
+            }
+        }
+    }
 
     enum Source: Equatable {
         case bookmark(WallpaperBookmark)

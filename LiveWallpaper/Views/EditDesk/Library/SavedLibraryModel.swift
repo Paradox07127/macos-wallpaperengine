@@ -202,15 +202,24 @@ final class SavedLibraryModel {
     }
 
     private func matchesQuery(_ item: LibraryItem) -> Bool {
-        if item.title.range(of: query, options: .caseInsensitive) != nil {
+        if item.title.range(of: query, options: .caseInsensitive) != nil || queryIsWhole(item.kind.localizedName) {
             return true
         }
         #if !LITE_BUILD
-        let tags = Self.workshopOrigin(of: item).flatMap { tagsByWorkshopID[$0.workshopID] } ?? []
+        guard let origin = Self.workshopOrigin(of: item) else { return false }
+        if origin.workshopID.range(of: query, options: .caseInsensitive) != nil || queryIsWhole(origin.localizedDisplayTypeName) {
+            return true
+        }
+        let tags = tagsByWorkshopID[origin.workshopID] ?? []
         return tags.contains { $0.range(of: query, options: .caseInsensitive) != nil }
         #else
         return false
         #endif
+    }
+
+    /// Whole name only, ignoring case and diacritics: as a substring, one typed CJK character would list every row of a type.
+    private func queryIsWhole(_ name: String) -> Bool {
+        query.trimmingCharacters(in: .whitespacesAndNewlines).compare(name, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
     }
 
     /// Deliberately not part of `refresh()`: that runs on every store change, this reads the whole
