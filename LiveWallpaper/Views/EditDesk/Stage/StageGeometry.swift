@@ -118,6 +118,19 @@ enum StageGeometry {
     /// read as "the swipe went past and came back".
     static let snapSpring = SpringParameters(response: 0.38, dampingFraction: 0.83)
     static let rowSpring = SpringParameters(response: 0.36, dampingFraction: 0.85)
+    /// Share of the flight to the grid by which a card has lost the shelf's 3D pose.
+    static let flightFlatAt: CGFloat = 0.7
+    /// At or below this opacity a card is not seen: the resting shelf gives it no place to fly from,
+    /// and in flight it has nothing left to land.
+    static let unseenOpacity: CGFloat = 0.05
+    /// A grid card the resting shelf does not show fades in on its tile over this share of the flight,
+    /// growing from `revealScale` to full size.
+    static let revealFade: ClosedRange<CGFloat> = 0.35 ... 0.85
+    static let revealScale: CGFloat = 0.94
+    /// A flying card whose tile lies off the window fades out over this share of the flight.
+    static let offWindowFade: ClosedRange<CGFloat> = 0.6 ... 1
+    /// Share of the deadband's travel paid out on each event once a swipe's axis locks.
+    static let deadbandCatchUp: CGFloat = 0.25
 
     // MARK: Types
 
@@ -158,9 +171,12 @@ enum StageGeometry {
         var scale: CGFloat = 1
         /// Alpha of the black overlay that fakes ambient falloff further back in the stack.
         var dim: CGFloat = 0
-        /// Base `zPosition` before the hover spring adds its bump; monotonic in `index`.
+        /// Base `zPosition` before the hover spring adds its bump; monotonic in `index` among the cards
+        /// that fly, and under all of them for the ones revealed in place.
         var depthOrder: CGFloat = 0
         var anchorX: CGFloat = 0
+        /// How much of the shelf's 3D pose the card still has: 1 on the shelf, 0 flat as a grid tile.
+        var pose: CGFloat = 1
 
         /// Moves the card `lift` points along its own vertical (negative is up), which the fan turns with the card.
         mutating func lift(by lift: CGFloat) {
@@ -714,10 +730,12 @@ enum StageGeometry {
         return min(count, firstRow * columns) ..< min(count, endRow * columns)
     }
 
+    /// `revealedInPlace`: the card has no place on the resting shelf, so past p = 1 it appears on its tile
+    /// instead of flying in from wherever its slot would be.
     static func cardPlacement(
         style: ShelfStyle, index: Int, count: Int, progress: Double, focus: Double, windowSize: CGSize,
         capacity: Int = shelfCapacity, gridSize: LibraryTileSize = .defaultSize,
-        gridContentInset: CGFloat = 0, gridScrollOffset: CGFloat = 0
+        gridContentInset: CGFloat = 0, gridScrollOffset: CGFloat = 0, revealedInPlace: Bool = false
     ) -> CardPlacement {
         let p = clampProgress(progress)
         let (t1, t2) = progressSplit(p)
@@ -730,7 +748,15 @@ enum StageGeometry {
             contentInset: gridContentInset, scrollOffset: gridScrollOffset
         )
         let mix = CGFloat(t2)
-        let flat = 1 - mix
+        if revealedInPlace, mix > 0 {
+            return CardPlacement(
+                frame: grid, rotationYDegrees: 0, opacity: smoothstep(revealFade, mix),
+                scale: revealScale + (1 - revealScale) * smoothstep(revealFade.lowerBound ... 1, mix),
+                depthOrder: CGFloat(index) - 1000, anchorX: 0.5, pose: 0
+            )
+        }
+        let pose = flightPose(mix)
+        let offWindow = grid.minY >= windowSize.height || grid.maxY <= gridTop
         // From the resting row top, not the card's own: measured from the card, the fan's arc flattens.
         let hidden = shelfRowTop(progress: p, windowSize: windowSize) - (windowSize.height - cardRowBottomInset)
         let frame = CGRect(
@@ -756,18 +782,36 @@ enum StageGeometry {
         let parked = style.isCentred
             ? centredOpacity(style: style, index: index, focus: focus, windowSize: windowSize, capacity: capacity) : 1
         let reveal: CGFloat = p < 0.02 ? 0 : min(1, CGFloat(t1) * 1.2)
+        let leaves: CGFloat = offWindow ? 1 - smoothstep(offWindowFade, mix) : 1
         return CardPlacement(
             frame: frame,
-            rotationYDegrees: tilt * flat,
-            rotationZDegrees: (style == .fan ? fanTurn(index: index, focus: focus) : 0) * flat,
-            opacity: reveal * lerp(parked, 1, mix),
-            translateZ: depth * flat,
-            scale: lerp(shelfScale, 1, mix),
-            dim: dim * flat,
+            rotationYDegrees: tilt * pose,
+            rotationZDegrees: (style == .fan ? fanTurn(index: index, focus: focus) : 0) * pose,
+            opacity: reveal * lerp(parked, 1, mix) * leaves,
+            translateZ: depth * pose,
+            scale: lerp(shelfScale, 1, 1 - pose),
+            dim: dim * pose,
             depthOrder: lerp(order, CGFloat(index), mix),
             // The pivot flips sides where the turn is exactly 0, so the switch never shows.
-            anchorX: isFacingIn ? (signed < 0 ? 0 : 1) : m.anchorX
+            anchorX: isFacingIn ? (signed < 0 ? 0 : 1) : m.anchorX,
+            pose: pose
         )
+    }
+
+    /// 1 on the shelf, easing to 0 by `flightFlatAt` of the flight to the grid.
+    static func flightPose(_ mix: CGFloat) -> CGFloat {
+        1 - smoothstep(0 ... flightFlatAt, mix)
+    }
+
+    /// Each card's own spring to the grid: ranked cards respond in 0.34…0.44s, critically damped so none
+    /// swings past its tile into the clamp at p = 2 and stops dead there.
+    static func gridFlightSpring(rank: Int, of count: Int) -> SpringParameters {
+        SpringParameters(response: 0.34 + 0.1 * Double(rank) / Double(max(count - 1, 1)), dampingFraction: 1)
+    }
+
+    private static func smoothstep(_ range: ClosedRange<CGFloat>, _ value: CGFloat) -> CGFloat {
+        let t = min(max((value - range.lowerBound) / (range.upperBound - range.lowerBound), 0), 1)
+        return t * t * (3 - 2 * t)
     }
 
     /// Grabbable footprint: the card's own corners run through the very matrix `ShelfCardLayer`

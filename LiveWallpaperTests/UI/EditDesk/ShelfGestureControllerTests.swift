@@ -30,20 +30,26 @@ struct ShelfGestureControllerTests {
         return (progress, gesture.consumeRelease())
     }
 
-    @Test("The deadband is a 2D radius, and its travel is spent rather than dropped")
+    @Test("The deadband is a 2D radius, and its travel is paid out after the lock rather than dropped")
     func deadZone() {
         var now = 0.0
         let gesture = ShelfGestureController(clock: { now })
         _ = gesture.scroll(deltaX: 0, deltaY: 0, progress: 0, phase: .began)
         now += 0.008
         #expect(gesture.scroll(deltaX: 0, deltaY: -10, progress: 0, phase: .changed) == nil)
-        now += 0.008
-        let admitted = gesture.scroll(deltaX: 0, deltaY: -10, progress: 0, phase: .changed)
-        // 20pt of travel, all of it applied: not just the 4pt past the threshold.
-        #expect(
-            admitted.map { abs($0 - 20 / StageGeometry.scrollPointsPerProgress) < 0.0001 } == true,
-            Comment(rawValue: "\(String(describing: admitted))")
-        )
+        var progress = 0.0
+        var steps: [Double] = []
+        for _ in 0 ..< 20 {
+            now += 0.008
+            let next = gesture.scroll(deltaX: 0, deltaY: -10, progress: progress, phase: .changed) ?? progress
+            steps.append((next - progress) * StageGeometry.scrollPointsPerProgress)
+            progress = next
+        }
+        // The lock applies its own 10pt and part of the deadband's; by the end all 210pt have arrived,
+        // not just the travel past the threshold.
+        #expect(steps[0] > 10 && steps[0] < 20, Comment(rawValue: "the lock applied \(steps[0])pt"))
+        let travelled = progress * StageGeometry.scrollPointsPerProgress
+        #expect(abs(travelled - 210) < 0.001, Comment(rawValue: "\(travelled)pt of a 210pt swipe arrived"))
     }
 
     @Test("Tracking is 1:1 inside the one-state band and the wall gives almost nothing past it")
