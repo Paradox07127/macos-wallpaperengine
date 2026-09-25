@@ -16,7 +16,8 @@ Four failures, in descending severity:
   4. a language is present but not marked translated — it is a placeholder
      someone still has to write
   5. PLURAL: a plural lacks a category its language needs (`PLURAL_CATEGORIES`),
-     or `en` varies by plural and `es` does not — that language shows "1 fondos"
+     one of `en` / `es` varies by plural and the other does not — that language
+     shows "1 fondos" — or a substitution no `%#@name@` in its value refers to
 
 A plural entry (`variations.plural`, or `substitutions` filled into its value)
 is checked form by form: every variant is one more value held to the rules above.
@@ -179,15 +180,15 @@ def signature(text):
 
 
 def forms(localization, lang):
-    """(texts, units, absent) for one language's entry, which must hold a value or a plural.
+    """(texts, units, absent, unused) for one language's entry, which must hold a value or a plural.
 
     `texts` maps the plural categories chosen to each finished text: a plural's variants,
     or the value with every `%#@name@` filled by each variant of that substitution, `%arg`
     becoming the argument. `units` are the stringUnits someone has to write; `absent` the
-    categories `lang` needs that a plural lacks.
+    categories `lang` needs that a plural lacks; `unused` the substitutions the value never names.
     """
     required = PLURAL_CATEGORIES.get(lang, ('other',))
-    units, absent = [], []
+    units, absent, unused = [], [], []
 
     def variants(variations):
         plural = (variations or {}).get('plural') or {}
@@ -197,17 +198,20 @@ def forms(localization, lang):
         return {category: unit.get('value', '') for category, unit in found.items()}
 
     if 'variations' in localization:
-        return {(category,): text for category, text in variants(localization['variations']).items()}, units, absent
+        return {(category,): text for category, text in variants(localization['variations']).items()}, units, absent, unused
     units.append(localization['stringUnit'])
     texts = {(): localization['stringUnit'].get('value', '')}
+    named = {m.group(2) for m in SUBSTITUTION.finditer(texts[()])}
     for name, substitution in (localization.get('substitutions') or {}).items():
+        if name not in named:
+            unused.append(name)
         spec = substitution.get('formatSpecifier', '')
         options = variants(substitution.get('variations'))
         texts = {chosen + (category,): SUBSTITUTION.sub(
                      lambda m: option.replace('%arg', f'%{m.group(1) or ""}{spec}') if m.group(2) == name else m.group(0),
                      text)
                  for chosen, text in texts.items() for category, option in options.items()}
-    return texts, units, absent
+    return texts, units, absent, unused
 
 
 def written(localization):
@@ -240,7 +244,7 @@ def audit(catalog):
             if not written(localization):
                 missing.append((key, lang))
                 continue
-            texts, units, absent = forms(localization, lang)
+            texts, units, absent, unused = forms(localization, lang)
             pending = [unit for unit in units if unit.get('state') != 'translated']
             if pending or not units:
                 untranslated.append((key, lang, pending[0].get('state') if pending else None))
@@ -248,8 +252,12 @@ def audit(catalog):
                 empty.append((key, lang))
             if absent:
                 plural.append((key, lang, 'no ' + ', '.join(absent) + ' form'))
+            if unused:
+                plural.append((key, lang, 'substitution ' + ', '.join(unused) + ' is never used'))
             if lang == 'es' and varies(localizations.get('en')) and not varies(localization):
                 plural.append((key, lang, 'en varies by plural, es does not'))
+            if lang == 'es' and varies(localization) and not varies(localizations.get('en')):
+                plural.append((key, 'en', 'es varies by plural, en does not'))
             found = next((signature(text) for text in texts.values() if signature(text) != base), None)
             if found is not None:
                 mismatch.append((key, lang, base, found))
@@ -406,6 +414,14 @@ def self_test():
         'Playlist of %lld': {'localizations': {
             'en': plural_of(one='%lld playlist', other='%lld playlists'),
             'es': plural_of(one='%lld cola', other='%lld playlists'), **cjk('%lld')}},
+        'substitution never used': {'localizations': {
+            'en': substituted('Copied to %1$lld / %2$#@displays@', '%arg display', '%arg displays'),
+            'es': substituted('Copiado a %1$lld / %2$lld pantallas', '%arg pantalla', '%arg pantallas'),
+            **cjk('%1$lld / %2$lld')}},
+        '%lld items, en absent': {'localizations': {
+            'es': plural_of(one='%lld fondo', other='%lld fondos'), **cjk('%lld')}},
+        '%lld items, en flat': {'localizations': {
+            'en': unit('%lld items'), 'es': plural_of(one='%lld fondo', other='%lld fondos'), **cjk('%lld')}},
     }}
     mismatch, missing, untranslated, empty, plural = audit(broken)
     assert [m[:2] for m in mismatch] == [('es variant blank', 'es'), ('es variant drops the count', 'es')], mismatch
@@ -416,6 +432,9 @@ def self_test():
         ('es not plural', 'es', 'en varies by plural, es does not'),
         ('en lacks one', 'en', 'no one form'),
         ('substitution lacks one', 'es', 'no one form'),
+        ('substitution never used', 'es', 'substitution displays is never used'),
+        ('%lld items, en absent', 'en', 'es varies by plural, en does not'),
+        ('%lld items, en flat', 'en', 'es varies by plural, en does not'),
     ], plural
     assert [t[:3] for t in copy_audit(broken)[0]] == [('Playlist of %lld', 'es', 'playlist')], copy_audit(broken)
 
