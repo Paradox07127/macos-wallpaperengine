@@ -32,6 +32,8 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
     private static let reserveLimit = 8
     private var shelfStyle = ShelfStyle.crate
     private var highContrast = false
+    /// A display's detail page has landed over the stage.
+    private var detailCovering = false
     private var dropHint = ""
     private var progress = StageSpring(value: 0, target: 0, parameters: StageSpring.snap)
     private var row = StageSpring(value: 0, target: 0, parameters: StageSpring.row)
@@ -174,6 +176,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
             _ = model.shelfRenderBudget
             _ = model.arrangementTopInset
             _ = model.gridContentInset
+            _ = model.gridCoversCards
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in
                 self?.observeInputs()
@@ -433,6 +436,8 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
             shell.setDropTarget(model.dropTarget == display.id, reduceMotion: model.reduceMotion)
             shell.layer.opacity = Float(1 - min(1, fade))
         }
+        shelfLayer.opacity = Float(1 - min(1, fade))
+        applyCoverage()
         let count = cards.count
         let style = model.shelfStyle
         if count > 0 {
@@ -783,6 +788,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
                 if model.reduceMotion {
                     StageLayerStyle.fadeOpacity(shell.content, from: 0)
                     StageLayerStyle.fadeOpacity(shell.layer, from: 1)
+                    StageLayerStyle.fadeOpacity(shelfLayer, from: 1)
                 }
             }
             startDisplayLinkIfNeeded()
@@ -828,6 +834,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
                 render()
                 if model.reduceMotion, let shell = displayLayers[display] {
                     StageLayerStyle.fadeOpacity(shell.layer, from: 0)
+                    StageLayerStyle.fadeOpacity(shelfLayer, from: 0)
                 }
             }
             startDisplayLinkIfNeeded()
@@ -847,6 +854,19 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
             displayLayers[display]?.content.removeAnimation(forKey: "opacity")
             displayLayers[display]?.content.opacity = concealed ? 0 : 1
         }
+    }
+
+    func setDetailCovering(_ covering: Bool) {
+        detailCovering = covering
+        withoutActions { applyCoverage() }
+    }
+
+    /// The pages that cover the stage have no fill of their own, so what lies under them is not drawn:
+    /// the whole stage under a landed detail page, the landed cards under the library grid.
+    private func applyCoverage() {
+        arrangementLayer.isHidden = detailCovering
+        flightLayer.isHidden = detailCovering
+        shelfLayer.isHidden = detailCovering || (model.gridCoversCards && model.snappedIndex == 2 && !model.leavingLibrary)
     }
 
     func shake(card: StageCard.ID) {

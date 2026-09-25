@@ -9,6 +9,7 @@ protocol DetailStageFlying: AnyObject {
     func updateFlightDestination(display: CGDirectDisplayID, to rectInWindow: CGRect)
     func returnTile(display: CGDirectDisplayID) async
     func setTileConcealed(display: CGDirectDisplayID, _ concealed: Bool)
+    func setDetailCovering(_ covering: Bool)
 }
 
 extension EditDeskStageModel: DetailStageFlying {}
@@ -119,6 +120,7 @@ final class DetailTransitionCoordinator {
                 phase = .returning
                 heroVisible = false
                 stage.setTileConcealed(display: current, false)
+                stage.setDetailCovering(false)
                 await stage.returnTile(display: current)
                 guard !Task.isCancelled else { return }
                 shownDisplayID = nil
@@ -135,9 +137,10 @@ final class DetailTransitionCoordinator {
             guard let destination = await destination(for: target), !Task.isCancelled else { return }
             await stage.flyTile(display: target, to: destination)
             guard !Task.isCancelled else { return }
-            // Same turn, no animation: the hero appears as the tile disappears.
+            // Same turn, no animation: the hero appears as the tile and the stage under the page disappear.
             heroVisible = true
             stage.setTileConcealed(display: target, true)
+            stage.setDetailCovering(true)
             phase = .shown
         }
     }

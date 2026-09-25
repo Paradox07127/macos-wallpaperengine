@@ -255,6 +255,8 @@ protocol EditDeskStageEngine: AnyObject {
     /// Retargets a flight already in the air; the hero it is flying to moves with the window.
     func updateFlightDestination(display: StageDisplay.ID, to rectInWindow: CGRect)
     func setTileConcealed(display: StageDisplay.ID, _ concealed: Bool)
+    /// True while a display's detail page covers the window: the stage draws nothing under it.
+    func setDetailCovering(_ covering: Bool)
     func returnTile(display: StageDisplay.ID) async
     func crossfadeCover(display: StageDisplay.ID, to image: CGImage, duration: TimeInterval)
     func shake(card: StageCard.ID)
@@ -288,6 +290,8 @@ final class EditDeskStageModel {
     /// How far the mounted grid is scrolled from its top, in points. Not observed: it changes on every
     /// scroll frame, and the stage reads it only as it starts to leave the library.
     @ObservationIgnored var gridScrollOffset: CGFloat = 0
+    /// True once the mounted library grid shows over the landed cards; the stage stops drawing them.
+    var gridCoversCards = false
     /// Localized "drop to replace" label drawn over a display while a card hovers it.
     var dropHintText = ""
     /// How many cards' thumbnails to keep decoded around the visible run.
@@ -379,6 +383,10 @@ final class EditDeskStageModel {
 
     func setTileConcealed(display: StageDisplay.ID, _ concealed: Bool) {
         engine?.setTileConcealed(display: display, concealed)
+    }
+
+    func setDetailCovering(_ covering: Bool) {
+        engine?.setDetailCovering(covering)
     }
 
     func crossfadeCover(display: StageDisplay.ID, to image: CGImage, duration: TimeInterval) {

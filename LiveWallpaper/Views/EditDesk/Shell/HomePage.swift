@@ -296,6 +296,11 @@ struct HomePage: View {
         presentedItemID != nil || router.detailDisplayID != nil || detailBusy
     }
 
+    /// A display's detail page is asked for or up: the overview's own layers go from under it.
+    private var detailCovers: Bool {
+        router.detailDisplayID != nil
+    }
+
     /// Shelf thumbnails are requested at the row card size on a 2× screen; the grid shows them only
     /// until its own size decodes.
     private static let thumbnailPixelSize = CGSize(
@@ -308,21 +313,28 @@ struct HomePage: View {
             // leaning or lifting over them is never clipped by a piece of chrome. Landed on the library,
             // the chips go over the grid instead, or it would hide them as a return swipe carries them down.
             libraryBannerMeasure
-            EditDeskDotGrid()
+            EditDeskDotGrid(stage: stage)
                 .zIndex(-1)
-            LibraryPageUnderlay(stage: stage)
-                .zIndex(-1)
+                .modifier(CoveredByDetail(covered: detailCovers))
             EditDeskShelfScrim(stage: stage)
                 .zIndex(-1)
+                .modifier(CoveredByDetail(covered: detailCovers))
             EditDeskStageRepresentable(model: stage)
             ShelfDropHighlight(stage: stage)
+                .modifier(CoveredByDetail(covered: detailCovers))
             HomeHints(stage: stage)
+                .modifier(CoveredByDetail(covered: detailCovers))
             hoverName
+                .modifier(CoveredByDetail(covered: detailCovers))
             libraryLayer
+                .modifier(CoveredByDetail(covered: detailCovers))
             shelfChrome
                 .zIndex(landedOnLibrary ? 0 : -1)
+                .modifier(CoveredByDetail(covered: detailCovers))
             homeOnboardingCard
+                .modifier(CoveredByDetail(covered: detailCovers))
             wallpapersOffBanner
+                .modifier(CoveredByDetail(covered: detailCovers))
             if router.detailDisplayID == nil, !detailBusy {
                 TopBar(
                     page: pageBinding,
@@ -651,6 +663,21 @@ struct HomePage: View {
         }
         // On this layer only: the top bar changes in the same update and keeps its own transaction.
         .animation(DesignTokens.motion(reduceMotion, .easeOut(duration: Self.libraryFadeDuration)), value: isLibraryOpen)
+        .task(id: isLibraryOpen) { await coverLandedCards(gridOpen: isLibraryOpen) }
+    }
+
+    /// The grid has no fill, so the cards the stage landed under it stop drawing once it has faded in
+    /// over them; the stage itself shows them again the moment a return starts.
+    private func coverLandedCards(gridOpen: Bool) async {
+        guard gridOpen else {
+            stage.gridCoversCards = false
+            return
+        }
+        // A frame past the fade-in: hidden any earlier, the cards would leave the grid translucent.
+        try? await Task.sleep(for: .seconds(reduceMotion ? 0 : Self.libraryFadeDuration + 1.0 / 60))
+        if !Task.isCancelled {
+            stage.gridCoversCards = true
+        }
     }
 
     private var isLibraryOpen: Bool {
@@ -884,7 +911,6 @@ struct HomePage: View {
                 LibraryStatusBar(summary: statusSummary(library))
             }
         }
-        .background(DesignTokens.EditDesk.Colors.background)
     }
 
     private func statusSummary(_ library: SavedLibraryModel) -> Text {
@@ -1502,17 +1528,19 @@ struct HomePage: View {
     }
 }
 
-/// The grid's page colour under the cards, filling in over the flight's last stretch so the grid takes over on it.
-private struct LibraryPageUnderlay: View {
-    /// Read in this `body`: read in `HomePage.body`, progress would re-run the whole page every frame.
-    let stage: EditDeskStageModel
+/// A layer of the overview, gone while a display's detail page is over it: the page has no fill, so
+/// anything left here would show through it.
+private struct CoveredByDetail: ViewModifier {
+    let covered: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    var body: some View {
-        DesignTokens.EditDesk.Colors.background
-            .padding(.top, StageGeometry.gridTop)
-            .opacity(HomeHints.ramp(stage.progress, from: 1.6, to: 2))
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
+    func body(content: Content) -> some View {
+        content
+            .opacity(covered ? 0 : 1)
+            .allowsHitTesting(!covered)
+            .accessibilityHidden(covered)
+            // The curve the detail's own top bar and inspector come in on.
+            .animation(.easeOut(duration: reduceMotion ? 0.12 : 0.24), value: covered)
     }
 }
 

@@ -18,7 +18,6 @@ struct EmptyDisplaySetup: View {
     var body: some View {
         GeometryReader { proxy in
             ZStack {
-                DesignTokens.EditDesk.Colors.background
                 if let wallpaper {
                     Image(decorative: wallpaper, scale: 1)
                         .resizable().scaledToFill()

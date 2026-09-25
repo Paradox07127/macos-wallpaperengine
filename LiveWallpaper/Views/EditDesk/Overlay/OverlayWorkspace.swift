@@ -72,6 +72,7 @@ struct OverlayWorkspace: View {
                                     placements: interaction.placements,
                                     height: editorHeight, width: width)
                         .overlay(alignment: .leading) { Divider() }
+                        .contentColumnBackground()
                 }
             )
             .frame(height: editorHeight)

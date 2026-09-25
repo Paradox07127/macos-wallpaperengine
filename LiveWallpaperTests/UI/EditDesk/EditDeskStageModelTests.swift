@@ -30,6 +30,10 @@ struct EditDeskStageModelTests {
             log.append("conceal \(display) \(concealed)")
         }
 
+        func setDetailCovering(_ covering: Bool) {
+            log.append("cover \(covering)")
+        }
+
         func crossfadeCover(display: StageDisplay.ID, to image: CGImage, duration: TimeInterval) {
             log.append("crossfade \(display) \(image.width)×\(image.height) \(duration)")
         }
