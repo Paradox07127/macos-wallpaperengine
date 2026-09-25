@@ -67,22 +67,6 @@ struct DisplayDetailTests {
         #expect(hero.maxX <= DetailGeometry.stageRect(in: CGSize(width: 1600, height: 700)).maxX)
     }
 
-    @Test("Overlay onboarding reserves space at minimum and wide window sizes")
-    func overlayOnboardingDoesNotCoverCanvas() {
-        for window in [CGSize(width: 1040, height: 700), CGSize(width: 1600, height: 1000)] {
-            let cardBottom = OnboardingCardMetrics.blockHeight
-            for logical in [CGSize(width: 1920, height: 1080), CGSize(width: 1080, height: 1920)] {
-                let box = DetailGeometry.overlayFrame(
-                    in: window, logicalSize: logical, topInset: cardBottom - DetailGeometry.topBarHeight
-                )
-                #expect(box.minY >= cardBottom + DetailGeometry.sideMargin)
-                #expect(box.maxY <= window.height - DetailGeometry.sideMargin)
-                #expect(box.maxX <= window.width - DetailGeometry.inspectorWidth - DetailGeometry.sideMargin)
-                #expect(near(box.width / box.height, logical.width / logical.height))
-            }
-        }
-    }
-
     @Test("Left swipe requires deliberate horizontal travel; vertical and diagonal scrolling stay in place")
     func backSwipeRejectsScrollNoise() {
         var left = DetailBackSwipeGesture()

@@ -3,8 +3,6 @@ import AppKit
 import LiveWallpaperCore
 import Testing
 
-/// The detail hero's HUD writes through the same draft the inspector does; these pin the two ends
-/// of that path — which writer a fill-mode change picks, and what the draft reads back afterwards.
 @MainActor
 @Suite("Display detail host", .serialized)
 struct DisplayDetailHostTests {

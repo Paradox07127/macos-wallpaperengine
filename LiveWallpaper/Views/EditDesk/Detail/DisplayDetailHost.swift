@@ -70,80 +70,7 @@ struct DisplayDetailHost: View {
     var body: some View {
         ZStack {
             if let id = coordinator?.shownDisplayID, let screen = screenManager.screens.first(where: { $0.id == id }) {
-                let status = heroStatus(screen)
-                let preview = previewState(for: screen)
-                DisplayDetail(
-                    displayName: screen.name,
-                    tags: tags(current: id),
-                    hero: status,
-                    heroImage: cover(id),
-                    backdropImage: cover(id),
-                    windowSize: stage.stageSize,
-                    section: sectionBinding,
-                    heroVisible: coordinator?.heroVisible ?? false,
-                    returning: coordinator?.phase == .returning,
-                    actions: actions(for: screen),
-                    hud: { hud(for: screen) },
-                    inspector: { width in inspector(for: screen, width: width) },
-                    overlayLogicalSize: screen.frame.size,
-                    overlayCanvas: { size in
-                        if let overlaySession {
-                            OverlayWorkspace(session: overlaySession, cover: cover(id), screen: screen,
-                                             size: size, layersVisible: $layersVisible,
-                                             inspectorVisible: $overlayInspectorVisible,
-                                             inspectorWidth: $inspectorWidth, liveInspectorWidth: $liveInspectorWidth,
-                                             topInset: showsOverlayOnboarding ? OnboardingCardMetrics.blockHeight - DetailGeometry.topBarHeight : 0,
-                                             recapture: { refreshCover(id); overlaySession.capturePreview() },
-                                             back: router.closeDetail)
-                        }
-                    },
-                    overlayTopInset: 0,
-                    isEmpty: screenManager.getConfiguration(for: screen) == nil && screenManager.inspectedWallpaperAttempt(for: screen) == nil,
-                    preview: preview,
-                    wallpaperStatus: { wallpaperStatus(for: screen, preview: preview) },
-                    emptyScreen: screen, webTransform: webTransform(for: screen),
-                    schedulePausedUntil: draft.schedulePausedUntil,
-                    inspectorVisible: sectionInspectorVisible, layersVisible: $layersVisible,
-                    inspectorWidth: $inspectorWidth, liveInspectorWidth: $liveInspectorWidth
-                )
-                .dropDestination(for: URL.self) { urls, _ in
-                    section == .wallpaper && dropFiles(urls, screen)
-                }
-                .onChange(of: screenManager.inspectedWallpaperAttempt(for: screen)?.id) { reloadDraft(for: screen) }
-                .onChange(of: screenManager.inspectedWallpaperAttempt(for: screen)?.configuration) { reloadDraft(for: screen) }
-                .onChange(of: screenManager.wallpaperSessionStateVersion) { reloadDraft(for: screen) }
-                .onChange(of: screenManager.monitorOverlay(for: screen)) { overlaySession?.refreshAppliedConfiguration() }
-                .onReceive(NotificationCenter.default.publisher(for: .wallpaperConfigurationDidChange)) { notification in
-                    guard notification.userInfo?["screenID"] as? CGDirectDisplayID == screen.id else { return }
-                    reloadDraft(for: screen)
-                }
-                .sheet(isPresented: $showSchemeCapture) {
-                    AppLanguageScope(defaults: .appScoped()) {
-                        SchemeCapturePopover(screen: screen, nameDraft: $schemeNameDraft)
-                            .environment(screenManager)
-                    }
-                }
-                .sheet(isPresented: $showAutomation) {
-                    if let library {
-                        AppLanguageScope(defaults: .appScoped()) {
-                            WallpaperAutomationSheet(screen: screen, library: library)
-                                .environment(screenManager)
-                        }
-                    }
-                }
-                .confirmDestructive($pendingDestructive)
-                .confirmationDialog("Copy overlays to other displays?", isPresented: $confirmsOverlayCopy, titleVisibility: .visible) {
-                    Button("Copy to Other Displays") { copyOverlays(on: screen) }
-                    Button("Cancel", role: .cancel) {}
-                } message: {
-                    Text("This replaces overlays on every other connected display. Effects are skipped on displays without a wallpaper.")
-                }
-                #if !LITE_BUILD
-                .infoOverlay(isPresented: $showsSceneLog) { dismiss in
-                    DetailSceneStatus(screen: screen, configuration: screenManager.getConfiguration(for: screen))?
-                        .logSheet(onDismiss: dismiss)
-                }
-                #endif
+                presentations(refreshes(detail(for: screen, id: id), for: screen), for: screen)
                 if section == .overlay, let overlaySession {
                     // R-27/R-28: the card stays in the canvas column and carries its own STEP line,
                     // because the detail top bar has no room for the capsule.
@@ -200,6 +127,91 @@ struct DisplayDetailHost: View {
             overlaySession?.detach()
             closeShownFailure()
         }
+    }
+
+    private func detail(for screen: Screen, id: CGDirectDisplayID) -> some View {
+        let status = heroStatus(screen)
+        let preview = previewState(for: screen)
+        return DisplayDetail(
+            displayName: screen.name,
+            tags: tags(current: id),
+            hero: status,
+            heroImage: cover(id),
+            backdropImage: cover(id),
+            windowSize: stage.stageSize,
+            section: sectionBinding,
+            heroVisible: coordinator?.heroVisible ?? false,
+            returning: coordinator?.phase == .returning,
+            actions: actions(for: screen),
+            hud: { hud(for: screen) },
+            inspector: { width in inspector(for: screen, width: width) },
+            overlayLogicalSize: screen.frame.size,
+            overlayCanvas: { size in
+                if let overlaySession {
+                    OverlayWorkspace(session: overlaySession, cover: cover(id), screen: screen,
+                                     size: size, layersVisible: $layersVisible,
+                                     inspectorVisible: $overlayInspectorVisible,
+                                     inspectorWidth: $inspectorWidth, liveInspectorWidth: $liveInspectorWidth,
+                                     topInset: showsOverlayOnboarding ? OnboardingCardMetrics.blockHeight - DetailGeometry.topBarHeight : 0,
+                                     recapture: { refreshCover(id); overlaySession.capturePreview() },
+                                     back: router.closeDetail)
+                }
+            },
+            overlayTopInset: 0,
+            isEmpty: screenManager.getConfiguration(for: screen) == nil && screenManager.inspectedWallpaperAttempt(for: screen) == nil,
+            preview: preview,
+            wallpaperStatus: { wallpaperStatus(for: screen, preview: preview) },
+            emptyScreen: screen, webTransform: webTransform(for: screen),
+            schedulePausedUntil: draft.schedulePausedUntil,
+            inspectorVisible: sectionInspectorVisible, layersVisible: $layersVisible,
+            inspectorWidth: $inspectorWidth, liveInspectorWidth: $liveInspectorWidth
+        )
+        .dropDestination(for: URL.self) { urls, _ in
+            section == .wallpaper && dropFiles(urls, screen)
+        }
+    }
+
+    private func refreshes(_ content: some View, for screen: Screen) -> some View {
+        content
+            .onChange(of: screenManager.inspectedWallpaperAttempt(for: screen)?.id) { reloadDraft(for: screen) }
+            .onChange(of: screenManager.inspectedWallpaperAttempt(for: screen)?.configuration) { reloadDraft(for: screen) }
+            .onChange(of: screenManager.wallpaperSessionStateVersion) { reloadDraft(for: screen) }
+            .onChange(of: screenManager.monitorOverlay(for: screen)) { overlaySession?.refreshAppliedConfiguration() }
+            .onReceive(NotificationCenter.default.publisher(for: .wallpaperConfigurationDidChange)) { notification in
+                guard notification.userInfo?["screenID"] as? CGDirectDisplayID == screen.id else { return }
+                reloadDraft(for: screen)
+            }
+    }
+
+    private func presentations(_ content: some View, for screen: Screen) -> some View {
+        content
+            .sheet(isPresented: $showSchemeCapture) {
+                AppLanguageScope(defaults: .appScoped()) {
+                    SchemeCapturePopover(screen: screen, nameDraft: $schemeNameDraft)
+                        .environment(screenManager)
+                }
+            }
+            .sheet(isPresented: $showAutomation) {
+                if let library {
+                    AppLanguageScope(defaults: .appScoped()) {
+                        WallpaperAutomationSheet(screen: screen, library: library)
+                            .environment(screenManager)
+                    }
+                }
+            }
+            .confirmDestructive($pendingDestructive)
+            .confirmationDialog("Copy overlays to other displays?", isPresented: $confirmsOverlayCopy, titleVisibility: .visible) {
+                Button("Copy to Other Displays") { copyOverlays(on: screen) }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This replaces overlays on every other connected display. Effects are skipped on displays without a wallpaper.")
+            }
+            #if !LITE_BUILD
+            .infoOverlay(isPresented: $showsSceneLog) { dismiss in
+                DetailSceneStatus(screen: screen, configuration: screenManager.getConfiguration(for: screen))?
+                    .logSheet(onDismiss: dismiss)
+            }
+            #endif
     }
 
     private func openLibrary(_ handoff: LibraryHandoff) {
