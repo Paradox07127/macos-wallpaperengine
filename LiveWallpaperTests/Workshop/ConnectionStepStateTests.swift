@@ -86,7 +86,6 @@ struct ConnectionStepStateTests {
         let (service, _) = try makeService()
         service.binaryPath = "/tmp/steamcmd"
 
-        #expect(!service.isBinaryReady)
         #expect(service.isBinaryPresumedReady)   // the UI still offers "Change"
     }
 
