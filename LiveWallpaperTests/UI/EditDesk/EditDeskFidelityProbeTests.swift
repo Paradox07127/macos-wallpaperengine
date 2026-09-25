@@ -343,7 +343,7 @@ enum ProbeFixtures {
 
     static var workshopActions: WorkshopModalActions {
         WorkshopModalActions(
-            selectTarget: { _ in }, primary: {}, saveOnly: {}, cancelDownload: {},
+            press: { _ in }, saveOnly: {}, cancelDownload: {}, connectSteam: {},
             openInSteam: {}, reveal: {}, openItem: { _ in }, selectTag: { _ in },
             browseCreator: { _, _ in }
         )
@@ -443,11 +443,10 @@ struct S4ModalFidelityTests {
 @Suite("Fidelity S5 display float layer", .serialized)
 @MainActor
 struct S5FloatLayerFidelityTests {
-    private func layer(mode: FloatLayerMode, width: CGFloat) -> some View {
+    private func layer(width: CGFloat) -> some View {
         DisplayFloatLayer(
             targets: ProbeFixtures.targets(thumbnail: ProbeRenderer.solid(ProbeRenderer.thumbnailBlue)),
-            mode: mode, highlighted: nil, windowWidth: width,
-            onSelect: { _ in }, onTargetFrame: { _ in }, onRunFrame: { _ in }
+            highlighted: nil, windowWidth: width, onTargetFrame: { _ in }, onRunFrame: { _ in }
         )
     }
 
@@ -459,7 +458,7 @@ struct S5FloatLayerFidelityTests {
         let image = await ProbeRenderer.render("S5-1280-dropTarget-dark", size: size) {
             ZStack(alignment: .top) {
                 Color(white: 0.5)
-                layer(mode: .dropTarget, width: 1280).padding(.top, 14)
+                layer(width: 1280).padding(.top, 14)
             }
         }
         let thumbs = image.runs(inRow: 14 + 52) { $0.isBlue }
@@ -480,40 +479,14 @@ struct S5FloatLayerFidelityTests {
         expectClose(FloatLayerGeometry.panelHeight, 104, "S5.panel.h", tolerance: 0)
     }
 
-    /// R-24 ③: the Workshop strip picks one target, so it drops "All Displays" and its rule.
-    @Test("S5 select-target strip drops the All Displays button")
-    func selectTargetHidesApplyAll() async {
-        #expect(FloatLayerGeometry.showsApplyAll(for: .dropTarget))
-        #expect(!FloatLayerGeometry.showsApplyAll(for: .selectTarget))
-
-        let size = CGSize(width: 1280, height: 200)
-        let drop = await ProbeRenderer.render(nil, size: size) {
-            ZStack(alignment: .top) { Color(white: 0.5); layer(mode: .dropTarget, width: 1280).padding(.top, 14) }
-        }
-        let select = await ProbeRenderer.render("S5-1280-selectTarget-dark", size: size) {
-            ZStack(alignment: .top) { Color(white: 0.5); layer(mode: .selectTarget, width: 1280).padding(.top, 14) }
-        }
-        // The strip is the panel's full dark extent across the row; the thumbnails interrupt it, so
-        // the leading-to-trailing extent is the measurement, not the widest single run.
-        let isStrip: (ProbeColor) -> Bool = { $0.r >= 0 && $0.r < 90 && $0.g < 90 && $0.b < 100 }
-        let dropWidth = drop.extent(inRow: 14 + 52, isStrip)?.width ?? 0
-        let selectWidth = select.extent(inRow: 14 + 52, isStrip)?.width ?? 0
-        ProbeRenderer.report("S5.dropStripWidth", dropWidth)
-        ProbeRenderer.report("S5.selectStripWidth", selectWidth)
-        ProbeRenderer.report("S5.applyAllButtonCost", dropWidth - selectWidth)
-        #expect(selectWidth < dropWidth, "the select strip still draws the All Displays button")
-        // Caption 70 + 12 + (149 + 12 + 134) + 2×14 padding = 405 for the button-less strip.
-        expectClose(selectWidth, 405, "S5.selectStripWidth", tolerance: 3)
-    }
-
-    /// The caption box is a fixed 70pt in every language; this frame is the Spanish one.
-    @Test("S5 select-target strip in Spanish renders for the caption check")
+    /// The caption box is a floor the Spanish text pushes; this frame is the Spanish one.
+    @Test("S5 strip in Spanish renders for the caption check")
     func spanishCaption() async {
         let size = CGSize(width: 1280, height: 200)
-        let image = await ProbeRenderer.render("S5-1280-selectTarget-es", size: size) {
+        let image = await ProbeRenderer.render("S5-1280-dropTarget-es", size: size) {
             ZStack(alignment: .top) {
                 Color(white: 0.5)
-                layer(mode: .selectTarget, width: 1280)
+                layer(width: 1280)
                     .padding(.top, 14)
                     .environment(\.locale, Locale(identifier: "es"))
             }
@@ -543,8 +516,7 @@ struct S4S5OverlapTests {
                 )
                 DisplayFloatLayer(
                     targets: ProbeFixtures.targets(thumbnail: ProbeRenderer.solid(ProbeRenderer.thumbnailBlue)),
-                    mode: .dropTarget, highlighted: nil, windowWidth: size.width,
-                    onSelect: { _ in }, onTargetFrame: { _ in }, onRunFrame: { _ in }
+                    highlighted: nil, windowWidth: size.width, onTargetFrame: { _ in }, onRunFrame: { _ in }
                 )
                 .padding(.top, FloatLayerGeometry.panelTop)
             }
@@ -1133,109 +1105,124 @@ struct S8bModalFidelityTests {
     }
 
     private func modal(windowSize: CGSize, doctor: SteamCMDDoctorService) -> some View {
-        WorkshopModal(
-            content: WorkshopModalContent(item: ProbeFixtures.workshopItem(), installed: nil),
+        let item = ProbeFixtures.workshopItem()
+        return WorkshopModal(
+            content: WorkshopModalContent(item: item, installed: nil),
             doctor: doctor,
-            targets: ProbeFixtures.targets(thumbnail: nil),
-            download: WorkshopDownloadPresentation(
-                progress: .fraction(0.64), status: "Downloading · 64%",
-                detail: "264 MB / 412 MB · 12 MB/s", isFailure: false
+            facts: WorkshopModalContent.facts(item: item, importedAt: nil, now: Date(), locale: AppLanguagePreference.current.locale),
+            row: WorkshopModalButtonRow.make(
+                targets: ProbeFixtures.targets(thumbnail: nil), isInstalled: false, canRun: true, ticketState: .waiting,
+                queuedScreenID: 1, isBanned: false, isDownloadReady: true, isBusy: true
             ),
-            primaryTitle: "Apply to MPG321CX when done",
-            isPrimaryEnabled: true,
-            secondaryTitle: "Save only",
-            isSecondaryEnabled: true,
+            download: WorkshopDownloadPresentation(
+                progress: .fraction(0.64), status: "Will apply to MPG321CX when done",
+                detail: "64% · 264 MB / 412 MB · 12 MB/s", isFailure: false
+            ),
+            unsupportedOrigin: nil,
             isRevealed: false,
             matureReveal: nil,
+            navigation: ProbeFixtures.navigation,
             windowSize: windowSize,
             titlebarInset: DesignTokens.EditDesk.Spacing.topBar,
             onDismiss: {}, actions: ProbeFixtures.workshopActions
         )
-        // `WorkshopModal` is documented as value-only, but its details column reaches into the
+        // `WorkshopModal` is documented as value-only, but its author row and presets reach into the
         // environment for `WorkshopServices`; without one the render traps.
         .environment(WorkshopServices())
     }
 
-    /// The 340pt square is the anchor, the way the red preview is in S4: it is a flat fill, it sits
-    /// 12pt inside the panel's body under the title row, and nothing else in that corner shares its colour.
-    /// The panel's own fill shades into its drop shadow, so its edges are reported, not asserted.
-    private func measure(_ image: ProbeImage, seededBy expected: CGRect, label: String) throws -> (panelOrigin: CGPoint, gif: CGRect) {
-        let gifSeed = image.rgb(px: Int((expected.minX + 180) * image.scale), Int((expected.minY + 300) * image.scale))
-        ProbeRenderer.report("\(label).gifSeedColour", "\(gifSeed.r),\(gifSeed.g),\(gifSeed.b)")
-        // Bounded on three sides: the drop shadow outside the corner and a section fill in the
-        // details column (which starts 372pt in) both land on the placeholder's own grey.
-        let corner = CGRect(x: expected.minX + 8, y: expected.minY + ModalGeometry.contentTop + 4, width: 358, height: 352)
-        let gif = try #require(
-            image.boundingBox(in: corner) { $0.matches(gifSeed, tolerance: 3) },
-            "the square preview did not render"
+    /// Where the layout puts the 4:3 preview box: past the side padding and the ← slot, under the title row.
+    static func previewBox(in panel: CGRect) -> CGRect {
+        CGRect(
+            x: panel.minX + ModalGeometry.horizontalPadding + ModalGeometry.iconButtonSize + ModalGeometry.arrowGap,
+            y: panel.minY + ModalGeometry.contentTop,
+            width: ModalGeometry.previewSize.width, height: ModalGeometry.previewSize.height
         )
-        ProbeRenderer.report("\(label).gifRect", gif)
-
-        let panelSeed = image.rgb(px: Int((expected.minX + 6) * image.scale), Int(expected.midY * image.scale))
-        ProbeRenderer.report("\(label).panelSeedColour", "\(panelSeed.r),\(panelSeed.g),\(panelSeed.b)")
-        if let row = image.extent(inRow: expected.midY, { $0.matches(panelSeed, tolerance: 2) }) {
-            ProbeRenderer.report("\(label).panelFillExtent", "x=\(row.x) w=\(row.width)")
-        }
-        return (CGPoint(x: gif.minX - ModalGeometry.previewMargin, y: gif.minY - ModalGeometry.previewMargin - ModalGeometry.contentTop), gif)
     }
 
-    /// The same panel box as S4 (at most 920×680), a 340pt square preview left, 84pt bar. The bar's
-    /// buttons are glass, which an offscreen frame does not draw.
-    @Test("S8b panel origin and 340 square at 1280×820")
-    func panelAt1280() async throws {
-        let size = CGSize(width: 1280, height: 820)
+    /// The GIF placeholder fills the whole box: seeded low on the left, clear of the corner chip and the
+    /// centre glyph, and searched only around the box, so neither the shadow nor the ← button joins it.
+    private func workshopBox(_ image: ProbeImage, around expected: CGRect, label: String) throws -> CGRect {
+        let seed = image.rgb(px: Int((expected.minX + 30) * image.scale), Int((expected.minY + 200) * image.scale))
+        ProbeRenderer.report("\(label).seedColour", "\(seed.r),\(seed.g),\(seed.b)")
+        let fill = try #require(
+            image.boundingBox(in: expected.insetBy(dx: -8, dy: -8)) { $0.matches(seed, tolerance: 3) },
+            "the Workshop preview did not render"
+        )
+        ProbeRenderer.report("\(label).fillRect", fill)
+        // The 1pt stroke over the grey no longer matches the seed, so the fill ends 1pt inside the box;
+        // the red library preview still reads as red under the same stroke.
+        return fill.insetBy(dx: -1, dy: -1)
+    }
+
+    /// SCREENS S4 ≡ S8b: the library modal (a 4:3 red preview, so the red is the whole box) and the
+    /// Workshop modal put the same panel and the same 340×255 box in the same place.
+    @Test(
+        "S8b and S4 draw the same panel and preview box",
+        arguments: [CGSize(width: 1280, height: 820), CGSize(width: 1040, height: 896), CGSize(width: 1040, height: 700)]
+    )
+    func sameBoxAsTheLibrary(window: CGSize) async throws {
+        let tag = "\(Int(window.width))x\(Int(window.height))"
+        let panel = ModalGeometry.panelFrame(in: window)
+        let expected = Self.previewBox(in: panel)
         let service = doctor()
-        let image = await ProbeRenderer.render("S8b-1280-dark", size: size) {
-            ZStack { Color(white: 0.5); modal(windowSize: size, doctor: service) }
+        let workshopImage = await ProbeRenderer.render("S8b-\(tag)-dark", size: window) {
+            ZStack { Color(white: 0.5); modal(windowSize: window, doctor: service) }
         }
-        let contract = ModalGeometry.panelFrame(in: size)
-        let boxes = try measure(image, seededBy: contract, label: "S8b.1280")
-        expectClose(boxes.panelOrigin.x, 180, "S8b.1280.panel.x", tolerance: 3)
-        expectClose(boxes.panelOrigin.y, 72, "S8b.1280.panel.top", tolerance: 3)
-        expectClose(boxes.gif.width, 340, "S8b.1280.gif.w", tolerance: 3)
-        expectClose(boxes.gif.height, 340, "S8b.1280.gif.h", tolerance: 3)
-        // The chrome's own box; the render above proves only its origin.
-        expectClose(contract.width, 920, "S8b.1280.chrome.w", tolerance: 0)
-        expectClose(contract.height, 680, "S8b.1280.chrome.h", tolerance: 0)
+        let workshop = try workshopBox(workshopImage, around: expected, label: "S8b.\(tag)")
+        let libraryImage = await ProbeRenderer.render("S4-\(tag)-4x3-dark", size: window) {
+            ZStack {
+                Color(white: 0.5)
+                WallpaperModal(
+                    content: ProbeFixtures.libraryContent(
+                        preview: ProbeRenderer.solid(ProbeRenderer.previewRed, size: CGSize(width: 64, height: 48))
+                    ),
+                    targets: ProbeFixtures.targets(thumbnail: nil),
+                    actions: ProbeFixtures.libraryActions, requestRename: {}, requestDelete: {},
+                    navigation: ProbeFixtures.navigation,
+                    windowSize: window, titlebarInset: DesignTokens.EditDesk.Spacing.topBar,
+                    onDismiss: {}, onDrag: { _ in }
+                )
+            }
+        }
+        let library = try #require(libraryImage.boundingBox { $0.isRed }, "the library preview did not render")
+        ProbeRenderer.report("S4.\(tag).previewRect", library)
+        ProbeRenderer.report("S8b.\(tag).previewRect", workshop)
+        for (name, measured, reference) in [
+            ("x", workshop.minX, library.minX), ("y", workshop.minY, library.minY),
+            ("w", workshop.width, library.width), ("h", workshop.height, library.height),
+        ] {
+            expectClose(measured, reference, "S8b≡S4.\(tag).preview.\(name)", tolerance: 1)
+        }
+        expectClose(workshop.minX, expected.minX, "S8b.\(tag).preview.x", tolerance: 3)
+        expectClose(workshop.minY, expected.minY, "S8b.\(tag).preview.y", tolerance: 3)
+        expectClose(workshop.width, 340, "S8b.\(tag).preview.w", tolerance: 3)
+        expectClose(workshop.height, 255, "S8b.\(tag).preview.h", tolerance: 3)
+        ProbeRenderer.report("S8b.\(tag).panel", panel)
     }
 
-    @Test("S8b at 1040×700 keeps the 340 square and stops at the 72pt floor")
-    func panelAt1040() async throws {
-        let size = CGSize(width: 1040, height: 700)
-        let service = doctor()
-        let image = await ProbeRenderer.render("S8b-1040-dark", size: size) {
-            ZStack { Color(white: 0.5); modal(windowSize: size, doctor: service) }
-        }
-        let contract = ModalGeometry.panelFrame(in: size)
-        let boxes = try measure(image, seededBy: contract, label: "S8b.1040")
-        expectClose(boxes.panelOrigin.x, 60, "S8b.1040.panel.x", tolerance: 3)
-        expectClose(boxes.panelOrigin.y, 72, "S8b.1040.panel.top", tolerance: 3)
-        expectClose(boxes.gif.width, 340, "S8b.1040.gif.w", tolerance: 3)
-        expectClose(boxes.gif.height, 340, "S8b.1040.gif.h", tolerance: 3)
-    }
-
-    /// R-24 ②③④ and the bar's wording, read off the source: the GIF hero, the two-line description
+    /// R-24 ②③④ and the row's wording, read off the source: the GIF fit, the four-line description
     /// and the mature gate have no measurable colour of their own in an offscreen frame.
-    @Test("S8b source contract: 340 hero, 2/120 description, four bar controls, shared mature gate")
+    @Test("S8b source contract: the shared 4:3 box fitted, a four-line description that grows in place, the shared row, shared mature gate")
     func sourceContract() throws {
         let modalSource = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Workshop/WorkshopModal.swift")
-        #expect(modalSource.contains("descriptionCollapsedLineLimit: 2"))
-        #expect(modalSource.contains("descriptionExpandedMaxHeight: 120"))
-        #expect(modalSource.contains("previewSide: CGFloat = 340"))
-        #expect(modalSource.contains("bottomBarHeight: CGFloat = 84"))
-        // "Save only" and its queued twin are worded by the contract; the bar draws whichever it is handed.
-        #expect(modalSource.contains("Text(verbatim: secondaryTitle)"))
+        #expect(modalSource.contains("collapsedLineLimit: 4"))
+        #expect(!modalSource.contains("expandedMaxHeight"), "the expanded description is still capped")
+        #expect(modalSource.contains("contentMode: .fit"), "the animated preview is still cropped to fill its box")
+        #expect(!modalSource.contains("previewSide"), "the modal sizes its own preview instead of the shared 4:3 box")
+        #expect(!modalSource.contains("bottomBarHeight"), "the modal keeps a fixed-height bar of its own")
+        #expect(modalSource.contains("ModalDisplayButtons("))
+        #expect(!modalSource.contains("applyToAll"), "the Workshop modal offers an apply-to-all it must not have")
+        // The buttons after the displays are worded by the contract; the row draws whichever it is handed.
         let contractSource = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Workshop/WorkshopModalContract.swift")
-        #expect(contractSource.contains("Save only"))
-        #expect(modalSource.contains("Cancel download"))
-        #expect(modalSource.contains("Open in Steam"))
-        #expect(!modalSource.contains("applyToAllDisplays"), "the Workshop modal offers an apply-to-all it must not have")
+        for key in ["Save only", "Cancel Auto-Apply", "Cancel download", "Connect Steam"] {
+            #expect(contractSource.contains("\"\(key)\""), Comment(rawValue: "the contract does not word \(key)"))
+        }
 
-        // The description honours both limits rather than dropping them on the floor.
+        // The line limit folds the description; nothing caps it once it is open.
         let collapsible = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/DetailSheet.swift")
         #expect(collapsible.contains("var collapsedLineLimit: Int?"))
-        #expect(collapsible.contains("var expandedMaxHeight: CGFloat?"))
-        #expect(collapsible.contains("if let expandedMaxHeight, isExpanded"), "the expanded cap is declared but never applied")
+        #expect(!collapsible.contains("expandedMaxHeight"), "the expanded description is still capped")
 
         // The mature gate: every surface reads the same preference and the same age confirmation.
         for path in [
@@ -1275,37 +1262,75 @@ struct S8bLocalizationWidthTests {
         return try #require(Bundle(path: path))
     }
 
-    /// The bar's own font and padding, so the number is a laid-out width, not a character count.
-    private func buttonWidth(_ text: String) -> CGFloat {
-        let font = NSFont.systemFont(ofSize: 15, weight: .bold)
-        return (text as NSString).size(withAttributes: [.font: font]).width + 2 * 14
+    /// Inside the 920pt panel's side padding: all the centred bottom row gets.
+    private static let rowBudget = ModalGeometry.maximumSize.width - 2 * ModalGeometry.horizontalPadding
+    private static let displayName = "MPG321CX OLED"
+
+    /// Laid out by AppKit rather than estimated from a font: the glass button's own control size and padding.
+    private func width(_ view: some View) -> CGFloat {
+        NSHostingView(rootView: view.fixedSize()).fittingSize.width
     }
 
-    /// `LocalizationCoverageTests` only proves a key exists; this asks whether the translated bar
-    /// still fits the 880pt panel.
-    @Test("Every S8b bar button fits the 880pt panel in all five languages")
-    func barFitsInEveryLanguage() throws {
-        let barWidth: CGFloat = 880 - 2 * 20
+    private func button(_ title: String, symbol: String? = nil) -> CGFloat {
+        width(
+            Button {} label: {
+                if let symbol {
+                    Label { Text(verbatim: title) } icon: { Image(systemName: symbol) }
+                } else {
+                    Text(verbatim: title)
+                }
+            }
+            .adaptiveGlassButton(.regular, size: .large)
+        )
+    }
+
+    /// `ModalDisplayButtons`: 8pt between items, 12pt more before the buttons after the displays.
+    private func row(caption: String, displays: Int, symbol: String, trailing: [CGFloat] = [], extras: [String] = []) -> CGFloat {
+        let items = [width(Text(verbatim: caption).font(DesignTokens.EditDesk.Typography.chip))]
+            + Array(repeating: button(Self.displayName, symbol: symbol), count: displays) + trailing
+        var total = items.reduce(0, +) + CGFloat(items.count - 1) * DesignTokens.Spacing.sm
+        if !extras.isEmpty {
+            let buttons = extras.map { button($0) }
+            total += DesignTokens.Spacing.sm + DesignTokens.Spacing.md
+                + buttons.reduce(0, +) + CGFloat(buttons.count - 1) * DesignTokens.Spacing.sm
+        }
+        return total
+    }
+
+    /// `LocalizationCoverageTests` only proves a key exists; this asks whether the translated row
+    /// still fits the panel.
+    @Test("The bottom row fits the 872pt panel in all five languages: three displays and All Displays, two displays and both cancels")
+    func rowFitsInEveryLanguage() throws {
         for language in Self.languages {
             let localized = try bundle(language)
-            let primary = String(
-                format: NSLocalizedString("Apply to %@ when done", bundle: localized, comment: ""),
-                "MPG321CX OLED"
+            func text(_ key: String) -> String {
+                NSLocalizedString(key, bundle: localized, comment: "")
+            }
+            let download = text("Download and apply to")
+            let library = row(
+                caption: text("Apply to"), displays: 3, symbol: "display",
+                trailing: [button(text("All Displays"), symbol: "rectangle.on.rectangle")]
             )
-            let queued = String(
-                format: NSLocalizedString("Will apply to %@ when done", bundle: localized, comment: ""),
-                "MPG321CX OLED"
+            let queued = row(
+                caption: download, displays: 2, symbol: "arrow.down.circle",
+                extras: [text("Cancel Auto-Apply"), text("Cancel download")]
             )
-            let saveOnly = NSLocalizedString("Save only", bundle: localized, comment: "")
-            let cancelAutoApply = NSLocalizedString("Cancel Auto-Apply", bundle: localized, comment: "")
-            let cancel = NSLocalizedString("Cancel download", bundle: localized, comment: "")
-            let connect = NSLocalizedString("Connect Steam", bundle: localized, comment: "")
-            // Three bars: downloading, blocked by a setup step, and downloading with an apply queued.
-            let bars = [[primary, saveOnly, cancel], [primary, saveOnly, connect], [queued, cancelAutoApply, cancel]]
-            let totals: [CGFloat] = bars.map { bar -> CGFloat in bar.map(buttonWidth).reduce(0, +) + 38 + 3 * 12 }
-            let total = totals.max() ?? 0
-            ProbeRenderer.report("S8b.bar.\(language)", "totals=\(totals) left=\(barWidth - total)")
-            #expect(total <= barWidth, Comment(rawValue: "\(language): the bar needs \(total)pt of \(barWidth)pt"))
+            // Reported, not asserted: the same row with a third display, idle, and blocked by a setup step.
+            let queuedThree = row(
+                caption: download, displays: 3, symbol: "arrow.down.circle",
+                extras: [text("Cancel Auto-Apply"), text("Cancel download")]
+            )
+            let idle = row(caption: download, displays: 3, symbol: "arrow.down.circle", extras: [text("Save only")])
+            let blocked = row(
+                caption: download, displays: 3, symbol: "arrow.down.circle", extras: [text("Save only"), text("Connect Steam")]
+            )
+            ProbeRenderer.report(
+                "S8b.row.\(language)",
+                "library=\(library) queued=\(queued) queued3=\(queuedThree) idle3=\(idle) blocked3=\(blocked) budget=\(Self.rowBudget)"
+            )
+            #expect(!download.isEmpty && download != "Download and apply to" || language == "en", "no \(language) translation")
+            #expect(library <= Self.rowBudget, Comment(rawValue: "\(language): the library row needs \(library)pt of \(Self.rowBudget)pt"))
+            #expect(queued <= Self.rowBudget, Comment(rawValue: "\(language): the queued row needs \(queued)pt of \(Self.rowBudget)pt"))
         }
     }
 
@@ -1316,24 +1341,21 @@ struct S8bLocalizationWidthTests {
         let font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
         var overflowing: Set<String> = []
         for language in Self.languages {
-            let localized = try bundle(language)
-            for key in ["Drag to a display\nto apply", "After downloading\napply to"] {
-                let text = NSLocalizedString(key, bundle: localized, comment: "")
-                let widest = text.components(separatedBy: "\n")
-                    .map { ($0 as NSString).size(withAttributes: [.font: font]).width }
-                    .max() ?? 0
-                let box = FloatLayerGeometry.captionWidth(ofCaption: text)
-                ProbeRenderer.report("S5.caption.\(language).\(key.prefix(6))", "text=\(widest) box=\(box)")
-                #expect(widest > 0, "the caption string did not resolve")
-                #expect(box >= FloatLayerGeometry.captionMinWidth, Comment(rawValue: "\(language): box \(box)"))
-                // The strip's run-in is the caption plus its gutters, not the old fixed 120.
-                #expect(
-                    FloatLayerGeometry.stripWidth(count: 5, windowWidth: 4000, captionWidth: box) == 5 * 160 + box + 40,
-                    Comment(rawValue: "\(language): the strip budget dropped the caption")
-                )
-                if widest > box {
-                    overflowing.insert(language)
-                }
+            let text = try NSLocalizedString(FloatLayerGeometry.captionKey, bundle: bundle(language), comment: "")
+            let widest = text.components(separatedBy: "\n")
+                .map { ($0 as NSString).size(withAttributes: [.font: font]).width }
+                .max() ?? 0
+            let box = FloatLayerGeometry.captionWidth(ofCaption: text)
+            ProbeRenderer.report("S5.caption.\(language)", "text=\(widest) box=\(box)")
+            #expect(widest > 0, "the caption string did not resolve")
+            #expect(box >= FloatLayerGeometry.captionMinWidth, Comment(rawValue: "\(language): box \(box)"))
+            // The strip's run-in is the caption plus its gutters, not the old fixed 120.
+            #expect(
+                FloatLayerGeometry.stripWidth(count: 5, windowWidth: 4000, captionWidth: box) == 5 * 160 + box + 40,
+                Comment(rawValue: "\(language): the strip budget dropped the caption")
+            )
+            if widest > box {
+                overflowing.insert(language)
             }
         }
         ProbeRenderer.report("S5.caption.overflowingLanguages", overflowing.sorted())

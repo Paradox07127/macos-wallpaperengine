@@ -69,10 +69,8 @@ struct LibraryModalHost: View {
                 if dragPoint != nil {
                     DisplayFloatLayer(
                         targets: targets,
-                        mode: .dropTarget,
                         highlighted: highlightedDisplay,
                         windowWidth: stage.stageSize.width,
-                        onSelect: { _ in },
                         onTargetFrame: { targetFrames[$0.id] = $0.rect },
                         onRunFrame: { runFrame = $0 },
                         applyAllHighlighted: dropTarget == .allDisplays,

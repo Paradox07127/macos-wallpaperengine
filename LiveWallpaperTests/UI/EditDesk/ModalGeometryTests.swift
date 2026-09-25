@@ -25,18 +25,12 @@ struct ModalGeometryTests {
         #expect(ModalGeometry.previewSize == CGSize(width: 340, height: 255))
     }
 
-    @Test("Both hosts hang the strip from the one geometry constant")
-    func bothHostsShareTheStripTop() throws {
-        for path in [
-            "LiveWallpaper/Views/EditDesk/Library/LibraryModalHost.swift",
-            "LiveWallpaper/Views/EditDesk/Workshop/WorkshopModalHost.swift",
-        ] {
-            let source = try RepositoryRoot.source(path)
-            #expect(
-                !source.contains("floatTop: CGFloat = 14"),
-                Comment(rawValue: "\(path) keeps its own copy of the strip's top")
-            )
-            #expect(source.contains("FloatLayerGeometry.panelTop"), Comment(rawValue: path))
-        }
+    @Test("Only the library hangs the strip, from the one geometry constant; the Workshop modal has none")
+    func onlyTheLibraryHangsTheStrip() throws {
+        let library = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Library/LibraryModalHost.swift")
+        #expect(!library.contains("floatTop: CGFloat = 14"), "the library host keeps its own copy of the strip's top")
+        #expect(library.contains("FloatLayerGeometry.panelTop"))
+        let workshop = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Workshop/WorkshopModalHost.swift")
+        #expect(!workshop.contains("DisplayFloatLayer("), "the Workshop host still hangs a target strip over its modal")
     }
 }

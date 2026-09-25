@@ -51,14 +51,14 @@ struct CollapsibleDescriptionTests {
         ) == nil)
     }
 
-    @Test("The measured height follows the width back down instead of latching at its tallest")
+    @Test("The measured height follows the width back down, and the expanded text grows in place")
     func measuredHeightIsNotLatched() throws {
         let source = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/DetailSheet.swift")
         let component = try #require(source.range(of: "struct CollapsibleDescription: View {"))
         let body = String(source[component.lowerBound...])
         #expect(!body.contains("max(fullHeight,"), "fullHeight still latches at its tallest measurement")
-        #expect(body.contains("expandedMaxHeight"), "the expanded height cap is not wired into the view")
-        #expect(body.contains("ScrollView"), "expandedMaxHeight has no scroller to cap")
+        #expect(!body.contains("expandedMaxHeight"), "the expanded description is still capped")
+        #expect(!body.contains("ScrollView"), "the expanded description scrolls inside a box of its own")
     }
 }
 #endif

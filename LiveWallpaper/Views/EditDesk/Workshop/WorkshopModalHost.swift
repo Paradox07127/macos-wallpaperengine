@@ -1,5 +1,4 @@
 #if !LITE_BUILD
-import AppKit
 import CoreGraphics
 import LiveWallpaperCore
 import SwiftUI
@@ -76,9 +75,8 @@ struct WorkshopModalWiring {
     }
 }
 
-/// SCREENS.md S8b over the Workshop grid: resolves the opened item, owns the float strip's single
-/// target selection and hands `WorkshopModal` everything it draws. The modal, the strip and the
-/// grid share `EditDeskCoordinateSpace`, which this view's root defines.
+/// SCREENS.md S8b over the Workshop grid: resolves the opened item and its neighbours on the page,
+/// turns a display press into an apply or a queued one, and hands `WorkshopModal` everything it draws.
 struct WorkshopModalHost: View {
     @Binding var presentedItemID: UInt64?
     /// The current browse page; the opened item is read from here first so a refreshed persona or
@@ -100,13 +98,8 @@ struct WorkshopModalHost: View {
 
     /// The opened item when it is not on the current page, fetched once.
     @State private var detachedItem: WorkshopQueryItem?
-    @State private var selectedTargetID: CGDirectDisplayID?
     @State private var installedEntry: WPEHistoryEntry?
-    @State private var covers: [CGDirectDisplayID: CGImage] = [:]
     @State private var rateMeter = WorkshopDownloadRateMeter()
-
-    /// SCREENS S5: the strip enters from −130 above its resting top.
-    private static let floatHiddenTop: CGFloat = -130
 
     private var downloads: WorkshopDownloadCoordinator {
         .shared
@@ -120,44 +113,30 @@ struct WorkshopModalHost: View {
     var body: some View {
         ZStack(alignment: .top) {
             if let item {
-                let targets = targets(for: item)
                 WorkshopModal(
                     content: content(for: item),
                     doctor: doctor,
-                    targets: targets,
+                    facts: WorkshopModalContent.facts(
+                        item: item, importedAt: installedExtras(for: item) == nil ? nil : installedEntry?.importedAt,
+                        now: Date(), locale: AppLanguagePreference.current.locale
+                    ),
+                    row: row(for: item),
                     download: presentation(for: item),
-                    primaryTitle: primaryTitle(for: item, targets: targets),
-                    isPrimaryEnabled: isPrimaryEnabled(for: item, targets: targets),
-                    secondaryTitle: WorkshopModalContent.secondaryActionTitle(ticketState: wiring.ticket(for: item.id)?.state),
-                    isSecondaryEnabled: isSecondaryEnabled(for: item),
+                    unsupportedOrigin: unsupportedInstalledOrigin(for: item),
                     isRevealed: session.matureReveal.isRevealed(item.id),
                     matureReveal: session.matureReveal,
+                    navigation: navigation(for: item),
                     windowSize: windowSize,
                     // The whole top bar stays clickable: traffic lights and the window drag region live there.
                     titlebarInset: DesignTokens.EditDesk.Spacing.topBar,
                     onDismiss: { presentedItemID = nil },
                     actions: actions(for: item)
                 )
-                DisplayFloatLayer(
-                    targets: targets,
-                    mode: .selectTarget,
-                    highlighted: resolvedTargetID(for: item, in: targets),
-                    windowWidth: windowSize.width,
-                    onSelect: { select($0, for: item) },
-                    onTargetFrame: { _ in },
-                    onRunFrame: { _ in }
-                )
-                .padding(.top, FloatLayerGeometry.panelTop)
-                .transition(.offset(y: Self.floatHiddenTop - FloatLayerGeometry.panelTop).combined(with: .opacity))
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .coordinateSpace(name: EditDeskCoordinateSpace.name)
         .animation(DesignTokens.motion(reduceMotion, .spring(response: 0.45, dampingFraction: 0.82)), value: presentedItemID != nil)
         .task(id: presentedItemID) { await open() }
-        // Its own task: capturing a still per display takes longer than resolving the item, and the
-        // modal must not wait on the strip's thumbnails to draw.
-        .task(id: presentedItemID) { await loadCovers() }
         .onChange(of: downloadSample) { _, _ in recordRate() }
         .onReceive(NotificationCenter.default.publisher(for: .wpeHistoryDidChange)) { _ in
             refreshInstalledEntry()
@@ -169,7 +148,6 @@ struct WorkshopModalHost: View {
     private func open() async {
         guard let presentedItemID else {
             detachedItem = nil
-            selectedTargetID = nil
             installedEntry = nil
             rateMeter = WorkshopDownloadRateMeter()
             return
@@ -186,18 +164,6 @@ struct WorkshopModalHost: View {
         let workshopID = String(presentedItemID)
         installedEntry = SettingsManager.shared.loadGlobalSettings().recentWPEImports
             .first { $0.origin.workshopID == workshopID }
-    }
-
-    /// Stills of the app's own rendering, the same source the stage uses for its display shells.
-    private func loadCovers() async {
-        guard presentedItemID != nil else { return }
-        for screen in screenManager.screens {
-            guard covers[screen.id] == nil, let configuration = screenManager.getConfiguration(for: screen) else { continue }
-            let image = await WallpaperCoverCapture.captureWallpaper(screen: screen, configuration: configuration)?
-                .cgImage(forProposedRect: nil, context: nil, hints: nil)
-            guard let image else { continue }
-            covers[screen.id] = image
-        }
     }
 
     // MARK: Content
@@ -222,55 +188,38 @@ struct WorkshopModalHost: View {
         let activeOn = Set(screenManager.screens
             .filter { screenManager.getConfiguration(for: $0)?.wpeOrigin?.workshopID == String(item.id) }
             .map(\.id))
-        return WorkshopModalTargets.make(displays: displays, activeOn: activeOn, covers: covers)
+        return WorkshopModalTargets.make(displays: displays, activeOn: activeOn)
     }
 
-    /// The target of a waiting or running apply; nil once it settles.
-    private func queuedTarget(for item: WorkshopQueryItem) -> DeferredApplyCoordinator.Target? {
-        wiring.ticket(for: item.id).flatMap { $0.state == .waiting || $0.state == .applying ? $0.target : nil }
-    }
-
-    private func resolvedTargetID(for item: WorkshopQueryItem, in targets: [ModalDisplayTarget]) -> CGDirectDisplayID? {
-        WorkshopModalTargets.resolvedTarget(selected: selectedTargetID, queued: queuedTarget(for: item)?.screenID, in: targets)
-    }
-
-    private func targetName(for item: WorkshopQueryItem, in targets: [ModalDisplayTarget]) -> String {
-        WorkshopModalTargets.targetName(
-            queued: queuedTarget(for: item), resolved: resolvedTargetID(for: item, in: targets), in: targets
+    /// The loaded page's order; an item opened from a required-items row has no neighbours.
+    private func navigation(for item: WorkshopQueryItem) -> ModalNavigation {
+        let neighbours = WorkshopModalPaging.neighbours(of: item.id, in: items.map(\.id))
+        return ModalNavigation(
+            canGoPrevious: neighbours.previous != nil, canGoNext: neighbours.next != nil,
+            previous: { presentedItemID = neighbours.previous }, next: { presentedItemID = neighbours.next }
         )
     }
 
-    private func primaryTitle(for item: WorkshopQueryItem, targets: [ModalDisplayTarget]) -> String {
-        WorkshopModalContent.primaryActionTitle(
-            installed: installedExtras(for: item) != nil,
-            ticketState: wiring.ticket(for: item.id)?.state,
-            screenName: targetName(for: item, in: targets)
+    // MARK: Bottom
+
+    private func row(for item: WorkshopQueryItem) -> WorkshopModalButtonRow {
+        let ticket = wiring.ticket(for: item.id)
+        return WorkshopModalButtonRow.make(
+            targets: targets(for: item),
+            isInstalled: installedExtras(for: item) != nil,
+            canRun: unsupportedInstalledOrigin(for: item) == nil,
+            ticketState: ticket?.state,
+            queuedScreenID: ticket?.target.screenID,
+            isBanned: item.isBanned,
+            isDownloadReady: doctor.isDownloadReady,
+            isBusy: downloads.isBusy(item.id)
         )
     }
-
-    private func isPrimaryEnabled(for item: WorkshopQueryItem, targets: [ModalDisplayTarget]) -> Bool {
-        guard resolvedTargetID(for: item, in: targets) != nil, !item.isBanned else { return false }
-        switch wiring.ticket(for: item.id)?.state {
-        case .waiting, .applying:
-            return false
-        default:
-            return installedExtras(for: item) != nil
-                || WorkshopModalContent.canDownload(isBanned: item.isBanned, isDownloadReady: doctor.isDownloadReady)
-        }
-    }
-
-    private func isSecondaryEnabled(for item: WorkshopQueryItem) -> Bool {
-        WorkshopModalContent.isSecondaryEnabled(
-            ticketState: wiring.ticket(for: item.id)?.state, isBanned: item.isBanned, isDownloadReady: doctor.isDownloadReady
-        )
-    }
-
-    // MARK: Bottom bar
 
     private func presentation(for item: WorkshopQueryItem) -> WorkshopDownloadPresentation {
         WorkshopDownloadPresentation.make(
             ticketState: wiring.ticket(for: item.id)?.state,
-            settledScreenName: settledScreenName(for: item),
+            screenName: ticketScreenName(for: item),
             wallpapersOn: screenManager.wallpapersGloballyEnabled,
             phase: downloads.phase(for: item.id),
             isFetchingDependencies: downloads.fetchingDependencies.contains(item.id),
@@ -279,7 +228,6 @@ struct WorkshopModalHost: View {
             totalBytes: downloads.progressBytes[item.id]?.total ?? item.fileSizeBytes,
             bytesPerSecond: rateMeter.bytesPerSecond,
             isInstalled: installedExtras(for: item) != nil,
-            unsupportedOrigin: unsupportedInstalledOrigin(for: item),
             blocker: doctor.downloadBlockerMessage
         )
     }
@@ -290,7 +238,7 @@ struct WorkshopModalHost: View {
         return origin
     }
 
-    private func settledScreenName(for item: WorkshopQueryItem) -> String {
+    private func ticketScreenName(for item: WorkshopQueryItem) -> String {
         guard let ticket = wiring.ticket(for: item.id) else { return "" }
         return DeferredApplyToasts.screenName(for: ticket.target, in: screenManager.screens)
     }
@@ -330,20 +278,11 @@ struct WorkshopModalHost: View {
     }
 
     private func actions(for item: WorkshopQueryItem) -> WorkshopModalActions {
-        var cancelDownload: (@MainActor () -> Void)?
-        if downloads.isBusy(item.id) {
-            cancelDownload = { wiring.cancelDownload(itemID: item.id) }
-        }
-        var connectSteam: (@MainActor () -> Void)?
-        if installedExtras(for: item) == nil, doctor.downloadBlocker != nil {
-            connectSteam = { onConnectSteam() }
-        }
-        return WorkshopModalActions(
-            selectTarget: { select($0, for: item) },
-            primary: { runPrimary(for: item) },
+        WorkshopModalActions(
+            press: { press($0, for: item) },
             saveOnly: { wiring.saveOnly(itemID: item.id) },
-            cancelDownload: cancelDownload,
-            connectSteam: connectSteam,
+            cancelDownload: { wiring.cancelDownload(itemID: item.id) },
+            connectSteam: { onConnectSteam() },
             openInSteam: { openURL(item.steamCommunityURL) },
             reveal: { session.matureReveal.reveal(item.id) },
             openItem: { presentedItemID = $0 },
@@ -358,20 +297,22 @@ struct WorkshopModalHost: View {
         )
     }
 
-    private func select(_ screenID: CGDirectDisplayID, for item: WorkshopQueryItem) {
-        guard wiring.ticket(for: item.id)?.state != .applying else { return }
-        selectedTargetID = screenID
-        wiring.retarget(itemID: item.id, to: screenID)
-    }
-
-    private func runPrimary(for item: WorkshopQueryItem) {
-        let targets = targets(for: item)
-        guard let screenID = resolvedTargetID(for: item, in: targets) else { return }
-        if installedExtras(for: item) != nil, let entry = installedEntry {
-            applyNow(entry, to: screenID)
-            return
+    private func press(_ screenID: CGDirectDisplayID, for item: WorkshopQueryItem) {
+        let action = WorkshopModalPress.action(
+            isInstalled: installedExtras(for: item) != nil, ticketState: wiring.ticket(for: item.id)?.state
+        )
+        switch action {
+        case .applyNow:
+            if let entry = installedEntry {
+                applyNow(entry, to: screenID)
+            }
+        case .retarget:
+            wiring.retarget(itemID: item.id, to: screenID)
+        case .applyWhenDownloaded:
+            wiring.applyWhenDownloaded(itemID: item.id, to: screenID)
+        case .ignore:
+            break
         }
-        wiring.applyWhenDownloaded(itemID: item.id, to: screenID)
     }
 
     /// Already in the library: the same route the library modal takes, with no download in between.

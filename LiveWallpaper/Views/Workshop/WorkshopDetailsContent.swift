@@ -2,29 +2,20 @@
 import LiveWallpaperCore
 import SwiftUI
 
-/// The Workshop item write-up the inspector column and the Edit Desk modal both draw: identity,
-/// required items, community presets, tags, description and community links. The preview, the
-/// scrolling and the download or apply controls belong to whichever host is showing it.
+/// The Workshop inspector's write-up: identity, required items, community presets, tags, description
+/// and community links. The preview, the scrolling and the download controls belong to the inspector.
 struct WorkshopDetailsContent<Actions: View>: View {
     let item: WorkshopQueryItem
     let doctor: SteamCMDDoctorService
-    var identityStyle: WorkshopDetailIdentityHeader.Style = .inspector
-    /// nil crops the collapsed description by height; a value truncates it to that many lines.
-    var descriptionCollapsedLineLimit: Int?
-    /// nil lets the expanded description take the height it needs; a value scrolls it inside that box.
-    var descriptionExpandedMaxHeight: CGFloat?
     /// nil disables the author link (plain author text).
     var onBrowseCreator: ((String, String?) -> Void)?
     /// nil → tags render as plain labels.
     var onSelectTag: ((String) -> Void)?
     /// Opens another item (Required items rows); nil hides the section.
     var onOpenItem: ((UInt64) -> Void)?
-    /// The page's reveal set for the rows below; nil leaves each section on its own `@State`.
-    var matureReveal: MatureRevealState?
     /// Drawn between the identity header and the required items — the inspector's download row.
     @ViewBuilder var actions: () -> Actions
 
-    @Environment(\.openURL) private var openURL
     @Environment(WorkshopServices.self) private var services
     @State private var descriptionExpanded = false
 
@@ -46,7 +37,6 @@ struct WorkshopDetailsContent<Actions: View>: View {
         WorkshopDetailIdentityHeader(
             item: item,
             isKeyless: services.isKeyless,
-            style: identityStyle,
             onBrowseCreator: onBrowseCreator
         )
     }
@@ -57,9 +47,7 @@ struct WorkshopDetailsContent<Actions: View>: View {
     private var requiredItemsGroup: some View {
         if !item.requiredItemIDs.isEmpty, let onOpenItem {
             GroupBox {
-                DetailRequiredItemsSection(
-                    itemIDs: item.requiredItemIDs, onOpenItem: onOpenItem, matureReveal: matureReveal
-                )
+                DetailRequiredItemsSection(itemIDs: item.requiredItemIDs, onOpenItem: onOpenItem)
             }
             .groupBoxStyle(ContainerGroupBoxStyle())
         }
@@ -70,8 +58,7 @@ struct WorkshopDetailsContent<Actions: View>: View {
             DetailPresetsSection(
                 wallpaperID: item.id,
                 communityURL: item.steamCommunityURL,
-                doctor: doctor,
-                matureReveal: matureReveal
+                doctor: doctor
             )
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -85,7 +72,7 @@ struct WorkshopDetailsContent<Actions: View>: View {
                     tagsSection
                 }
                 descriptionSection
-                communityLinksRow
+                WorkshopCommunityLinks(itemID: item.id, commentCount: item.commentCount)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -137,31 +124,34 @@ struct WorkshopDetailsContent<Actions: View>: View {
         return VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
             Text("Description")
                 .font(.headline)
-            CollapsibleDescription(
-                text: text.isEmpty ? placeholder : text,
-                isExpanded: $descriptionExpanded,
-                collapsedLineLimit: descriptionCollapsedLineLimit,
-                expandedMaxHeight: descriptionExpandedMaxHeight
-            )
+            CollapsibleDescription(text: text.isEmpty ? placeholder : text, isExpanded: $descriptionExpanded)
         }
     }
 
-    // MARK: - Community
+}
 
-    private var communityLinksRow: some View {
+/// The comments (with their count when known), change notes and collections of a Workshop item, as links
+/// to its Steam pages: the inspector and both detail modals draw this row.
+struct WorkshopCommunityLinks: View {
+    let itemID: UInt64
+    var commentCount: Int?
+
+    @Environment(\.openURL) private var openURL
+
+    var body: some View {
         // Wrapping, not an HStack: three labelled links do not fit the narrow
         // inspector, and squeezed they hyphenate mid-word ("Com-ments").
         WorkshopChipFlow(spacing: DesignTokens.Spacing.md, lineSpacing: DesignTokens.Spacing.xs) {
-            communityLink(commentsTitle, systemImage: "bubble.left", url: WorkshopCommunityURL.comments(itemID: item.id))
-            communityLink(Text("Change Notes"), systemImage: "clock.arrow.circlepath", url: WorkshopCommunityURL.changeNotes(itemID: item.id))
-            communityLink(Text("Collections"), systemImage: "square.stack", url: WorkshopCommunityURL.collections(itemID: item.id))
+            communityLink(commentsTitle, systemImage: "bubble.left", url: WorkshopCommunityURL.comments(itemID: itemID))
+            communityLink(Text("Change Notes"), systemImage: "clock.arrow.circlepath", url: WorkshopCommunityURL.changeNotes(itemID: itemID))
+            communityLink(Text("Collections"), systemImage: "square.stack", url: WorkshopCommunityURL.collections(itemID: itemID))
         }
         .font(DesignTokens.Typography.caption)
     }
 
     private var commentsTitle: Text {
-        if let count = item.commentCount, count > 0 {
-            return Text("\(count) comments", comment: "Workshop detail link to the item's comment thread. Placeholder is the comment count.")
+        if let commentCount, commentCount > 0 {
+            return Text("\(commentCount) comments", comment: "Workshop detail link to the item's comment thread. Placeholder is the comment count.")
         }
         return Text("Comments")
     }
@@ -174,33 +164,6 @@ struct WorkshopDetailsContent<Actions: View>: View {
         }
         .buttonStyle(.link)
         .fixedSize()
-    }
-}
-
-extension WorkshopDetailsContent where Actions == EmptyView {
-    init(
-        item: WorkshopQueryItem,
-        doctor: SteamCMDDoctorService,
-        identityStyle: WorkshopDetailIdentityHeader.Style = .inspector,
-        descriptionCollapsedLineLimit: Int? = nil,
-        descriptionExpandedMaxHeight: CGFloat? = nil,
-        onBrowseCreator: ((String, String?) -> Void)? = nil,
-        onSelectTag: ((String) -> Void)? = nil,
-        onOpenItem: ((UInt64) -> Void)? = nil,
-        matureReveal: MatureRevealState? = nil
-    ) {
-        self.init(
-            item: item,
-            doctor: doctor,
-            identityStyle: identityStyle,
-            descriptionCollapsedLineLimit: descriptionCollapsedLineLimit,
-            descriptionExpandedMaxHeight: descriptionExpandedMaxHeight,
-            onBrowseCreator: onBrowseCreator,
-            onSelectTag: onSelectTag,
-            onOpenItem: onOpenItem,
-            matureReveal: matureReveal,
-            actions: { EmptyView() }
-        )
     }
 }
 #endif

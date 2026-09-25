@@ -5,17 +5,8 @@ import SwiftUI
 /// Layout budget: `Inspector.minWidth` less `Spacing.lg` on each side = 236pt per row.
 /// `WorkshopInspectorHeaderFitTests` checks all five languages against it.
 struct WorkshopDetailIdentityHeader: View {
-    /// Which column the header is drawn in. The two differ only in emphasis; both read the same fields.
-    enum Style: Equatable {
-        /// The Workshop window's 236pt inspector column.
-        case inspector
-        /// SCREENS.md S8b's modal column: a 22pt title, one star with the score, both dates visible.
-        case modal
-    }
-
     let item: WorkshopQueryItem
     let isKeyless: Bool
-    var style: Style = .inspector
     /// nil disables the author link (plain author text).
     var onBrowseCreator: ((String, String?) -> Void)?
 
@@ -25,7 +16,7 @@ struct WorkshopDetailIdentityHeader: View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
             VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
                 Text(item.title)
-                    .font(titleFont)
+                    .font(.title3.weight(.semibold))
                     .fixedSize(horizontal: false, vertical: true)
                 authorLine
             }
@@ -39,13 +30,6 @@ struct WorkshopDetailIdentityHeader: View {
             statusBadge
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var titleFont: Font {
-        switch style {
-        case .inspector: .title3.weight(.semibold)
-        case .modal: DesignTokens.EditDesk.Typography.modalTitle
-        }
     }
 
     // MARK: - Author
@@ -114,27 +98,15 @@ struct WorkshopDetailIdentityHeader: View {
         .modifier(OptionalHelp(text: voteSplitText))
     }
 
-    /// The modal column already carries a 22pt title and two date lines; five glyphs there read as
-    /// a second heading, so it spends one star and lets the number do the work.
-    @ViewBuilder
     private func stars(outOfFive: Double) -> some View {
-        let spoken = Text("\(outOfFive.formatted(.number.precision(.fractionLength(1)))) stars")
-        switch style {
-        case .inspector:
-            HStack(spacing: 1) {
-                ForEach(0 ..< 5, id: \.self) { index in
-                    Image(systemName: Self.starSymbol(for: index, rating: outOfFive))
-                        .foregroundStyle(DesignTokens.Colors.rating)
-                        .font(.system(size: 12))
-                }
+        HStack(spacing: 1) {
+            ForEach(0 ..< 5, id: \.self) { index in
+                Image(systemName: Self.starSymbol(for: index, rating: outOfFive))
+                    .foregroundStyle(DesignTokens.Colors.rating)
+                    .font(.system(size: 12))
             }
-            .accessibilityLabel(spoken)
-        case .modal:
-            Image(systemName: "star.fill")
-                .foregroundStyle(DesignTokens.Colors.rating)
-                .font(.system(size: 12))
-                .accessibilityLabel(spoken)
         }
+        .accessibilityLabel(Text("\(outOfFive.formatted(.number.precision(.fractionLength(1)))) stars"))
     }
 
     private var voteSplitText: Text? {
@@ -161,10 +133,7 @@ struct WorkshopDetailIdentityHeader: View {
         case .none:
             String(localized: "No ratings yet", bundle: .appLanguage, comment: "Workshop detail rating line when the item has no votes.")
         case let .count(votes):
-            // S8b writes the modal column's count as `★ 4.9 (n)` — the star beside it is the noun.
-            style == .modal
-                ? "(\(votes.formatted()))"
-                : String(localized: "\(votes) ratings", bundle: .appLanguage, locale: AppLanguagePreference.current.locale, comment: "Workshop detail rating count. Placeholder is the number of ratings.")
+            String(localized: "\(votes) ratings", bundle: .appLanguage, locale: AppLanguagePreference.current.locale, comment: "Workshop detail rating count. Placeholder is the number of ratings.")
         }
     }
 
@@ -247,27 +216,15 @@ struct WorkshopDetailIdentityHeader: View {
 
     // MARK: - Dates
 
+    /// One line wide enough for one date: the other rides its tooltip.
     @ViewBuilder
     private var dateLine: some View {
-        switch style {
-        case .inspector:
-            // One line wide enough for one date: the other rides its tooltip.
-            if let updatedText {
-                updatedText
-                    .lineLimit(1)
-                    .modifier(OptionalHelp(text: postedText))
-            } else if let postedText {
-                postedText.lineLimit(1)
-            }
-        case .modal:
-            VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
-                if let postedText {
-                    postedText.lineLimit(1)
-                }
-                if let updatedText {
-                    updatedText.lineLimit(1)
-                }
-            }
+        if let updatedText {
+            updatedText
+                .lineLimit(1)
+                .modifier(OptionalHelp(text: postedText))
+        } else if let postedText {
+            postedText.lineLimit(1)
         }
     }
 

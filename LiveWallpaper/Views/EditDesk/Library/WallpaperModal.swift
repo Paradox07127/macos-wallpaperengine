@@ -72,7 +72,6 @@ struct WallpaperModal: View {
                 )
             }
         )
-        .overlay { shortcuts }
     }
 
     // MARK: Preview
@@ -170,7 +169,7 @@ struct WallpaperModal: View {
         }
         if let id = content.workshopID, let doctor {
             DetailPresetsSection(wallpaperID: id, communityURL: WorkshopCommunityURL.item(itemID: id), doctor: doctor)
-            communityLinks(id)
+            WorkshopCommunityLinks(itemID: id)
         }
         #endif
         if !content.fileFacts.isEmpty {
@@ -185,25 +184,6 @@ struct WallpaperModal: View {
     private var requiredItemIDs: [UInt64] {
         guard content.unsupportedOrigin?.missingDependencyIDs.isEmpty ?? true else { return [] }
         return content.dependencyIDs.compactMap(UInt64.init)
-    }
-
-    private func communityLinks(_ id: UInt64) -> some View {
-        WorkshopChipFlow(spacing: DesignTokens.Spacing.md, lineSpacing: DesignTokens.Spacing.xs) {
-            communityLink(Text("Comments"), systemImage: "bubble.left", url: WorkshopCommunityURL.comments(itemID: id))
-            communityLink(Text("Change Notes"), systemImage: "clock.arrow.circlepath", url: WorkshopCommunityURL.changeNotes(itemID: id))
-            communityLink(Text("Collections"), systemImage: "square.stack", url: WorkshopCommunityURL.collections(itemID: id))
-        }
-        .font(DesignTokens.Typography.caption)
-    }
-
-    private func communityLink(_ title: Text, systemImage: String, url: URL) -> some View {
-        Button {
-            openURL(url)
-        } label: {
-            Label { title } icon: { Image(systemName: systemImage) }
-        }
-        .buttonStyle(.link)
-        .fixedSize()
     }
     #endif
 
@@ -226,25 +206,6 @@ struct WallpaperModal: View {
     }
 
     // MARK: Keyboard
-
-    /// ESC and ⌘n belong to the chrome; these are the keys only the library modal answers. They
-    /// ride zero-sized buttons rather than `onKeyPress`: the stage's `NSView` is usually first
-    /// responder and swallows `keyDown` while the modal blocks it.
-    private var shortcuts: some View {
-        ZStack {
-            if navigation.canGoPrevious {
-                Button { navigate(forward: false) } label: { EmptyView() }
-                    .keyboardShortcut(.leftArrow, modifiers: [])
-            }
-            if navigation.canGoNext {
-                Button { navigate(forward: true) } label: { EmptyView() }
-                    .keyboardShortcut(.rightArrow, modifiers: [])
-            }
-        }
-        .opacity(0)
-        .frame(width: 0, height: 0)
-        .accessibilityHidden(true)
-    }
 
     private func applyToShortcut(_ index: Int) {
         guard content.canApply, let target = ModalKeyMap.target(forShortcut: index, in: targets) else { return }

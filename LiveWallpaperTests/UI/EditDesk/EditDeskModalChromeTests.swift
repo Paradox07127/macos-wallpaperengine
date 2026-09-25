@@ -121,9 +121,13 @@ struct EditDeskModalChromeTests {
         #expect(source.contains("ModalKeyMap.target(forShortcut:"))
         #expect(source.contains("onEscape:"))
         #expect(source.contains("onDrag(.cancelled)"))
-        // ← → are the library's own, not the container's; Space must not reach the desktop from the modal.
+        // Space must not reach the desktop from the modal.
         #expect(!source.contains("keyboardShortcut(.space"))
-        #expect(source.contains("keyboardShortcut(.leftArrow"))
+        // ← → belong to the layout both detail modals share, beside the arrows they press; not to the container.
+        let layout = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Library/WallpaperDetailLayout.swift")
+        let chrome = try RepositoryRoot.source(Self.chromePath)
+        #expect(layout.contains("keyboardShortcut(.leftArrow"))
+        #expect(!chrome.contains("keyboardShortcut(.leftArrow"))
     }
 
     @Test("No token-bypass literals in the files this package adds")

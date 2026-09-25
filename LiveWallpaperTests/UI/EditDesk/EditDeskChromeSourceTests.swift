@@ -128,9 +128,11 @@ struct EditDeskChromeSourceTests {
         #expect(buttons.contains("applyButton(target).adaptiveGlassButton(.regular, size: .large)"))
         #expect(!buttons.contains(".tint(target.isPrimary"))
 
+        // The Workshop modal's bottom row is the library's: it styles no button of its own.
         let workshop = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Workshop/WorkshopModal.swift")
-        #expect(workshop.components(separatedBy: ".adaptiveGlassButton(.regular, size: .large)").count - 1 == 3)
-        #expect(workshop.contains(#"GlassIconButton("arrow.up.forward.app", size: .regular, action: actions.openInSteam)"#))
+        #expect(workshop.contains("ModalDisplayButtons("), "the Workshop modal draws its own bottom buttons")
+        #expect(!workshop.contains(".adaptiveGlassButton("), "the Workshop modal styles a button the shared row should draw")
+        #expect(buttons.contains(".adaptiveGlassButton(.regular, size: .large)"))
         #expect(!workshop.contains("WorkshopBarButton"))
         #expect(!workshop.contains("Opacity.dimmedIcon"), "a disabled glass button dims itself")
 
@@ -138,7 +140,7 @@ struct EditDeskChromeSourceTests {
         #expect(banner.contains(".adaptiveGlassButton(.prominent, size: .small)"))
         #expect(!banner.contains(".buttonStyle(.borderedProminent)"))
 
-        for (name, source) in [("ModalDisplayButtons", buttons), ("WorkshopModal", workshop), ("WallpapersOffBanner", banner)] {
+        for (name, source) in [("ModalDisplayButtons", buttons), ("WallpapersOffBanner", banner)] {
             let prominent = source.components(separatedBy: ".adaptiveGlassButton(.prominent").count - 1
             #expect(prominent == 1, Comment(rawValue: "\(name) has \(prominent) prominent buttons"))
         }

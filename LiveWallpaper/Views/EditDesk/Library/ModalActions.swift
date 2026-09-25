@@ -210,10 +210,10 @@ final class ModalActions {
         guard case let .workshop(entry) = item.source, let id = UInt64(entry.origin.workshopID) else { return nil }
         let bytes = inputs.progressBytes(id)
         var status = WorkshopDownloadPresentation.make(
-            ticketState: nil, settledScreenName: "", wallpapersOn: true, phase: inputs.phase(id),
+            ticketState: nil, screenName: "", wallpapersOn: true, phase: inputs.phase(id),
             isFetchingDependencies: inputs.fetchingDependencies(id), fraction: inputs.progress(id),
             downloadedBytes: bytes?.downloaded, totalBytes: bytes?.total, bytesPerSecond: nil,
-            isInstalled: true, unsupportedOrigin: nil, blocker: nil
+            isInstalled: true, blocker: nil
         )
         if status.status.isEmpty, status.progress == .none, updateState(for: entry) == .available {
             status.status = String(
