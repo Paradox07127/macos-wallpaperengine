@@ -137,10 +137,6 @@ public enum DesignTokens {
         public static let code = Font.system(.body, design: .monospaced)
 
         public static let codeCaption = Font.system(.caption, design: .monospaced)
-
-        /// Fixed-size, not text-style based: Edit Desk metadata is laid out at
-        /// literal design px, not Dynamic Type (SCREENS.md tokens).
-        public static let microMono = Font.system(size: 10, design: .monospaced)
     }
 
     public enum LibraryGrid {
@@ -334,7 +330,6 @@ public enum DesignTokens {
         public static let outerPadding: CGFloat = 40
         public static let topSpacerHeight: CGFloat = Spacing.xl
         public static let iconSize: CGFloat = 48
-        public static let featureWidth: CGFloat = 380
         public static let messageWidth: CGFloat = 360
     }
 
@@ -489,12 +484,6 @@ public enum DesignTokens {
                 light: NSColor(red: 200 / 255, green: 54 / 255, blue: 54 / 255, alpha: 1),
                 dark: NSColor(red: 1, green: 128 / 255, blue: 128 / 255, alpha: 1)
             )
-            /// Behind a `danger` glyph, never under a white one (SCREENS.md S6 🗑 `rgba(255,80,80,.15)`).
-            public static let dangerButtonFill = adaptive(
-                "DangerButtonFill",
-                light: NSColor(red: 200 / 255, green: 54 / 255, blue: 54 / 255, alpha: 0.15),
-                dark: NSColor(red: 1, green: 80 / 255, blue: 80 / 255, alpha: 0.15)
-            )
             public static let link = adaptive(
                 "Link",
                 light: NSColor(red: 36 / 255, green: 84 / 255, blue: 214 / 255, alpha: 1),
@@ -527,7 +516,6 @@ public enum DesignTokens {
             public static let strokeBadge = ink("StrokeBadge", 0.25)
             /// SCREENS S9's dashed onboarding card (`1px dashed .3`).
             public static let strokeDashedCard = ink("StrokeDashedCard", 0.30)
-            public static let strokeSelectedChip = ink("StrokeSelectedChip", 0.40)
             public static let strokeHotShell = ink("StrokeHotShell", 0.80)
 
             public static let fillShell = ink("FillShell", 0.02)
@@ -539,9 +527,6 @@ public enum DesignTokens {
             public static let dropHighlightGlow = success.opacity(0.45)
             /// Over a wallpaper thumbnail, so it stays a dark scrim in both appearances.
             public static let playbackControlFill = Color.black.opacity(0.55)
-            /// SCREENS.md S6's HUD transport primary, `❚❚(白圆 32)`; fixed like every on-media colour.
-            public static let hudPrimaryFill = Color.white
-            public static let hudPrimaryGlyph = Color.black
             public static let gradientStageBottom = Color.black.opacity(0.7)
             public static let gradientCardBottom = Color.black.opacity(0.5)
             /// A wallpaper card's inner ring and 1pt top light / bottom shade, drawn over the artwork.
@@ -561,11 +546,6 @@ public enum DesignTokens {
                 "ModalScrim",
                 light: .black.withAlphaComponent(0.32),
                 dark: NSColor(red: 8 / 255, green: 8 / 255, blue: 10 / 255, alpha: 0.62)
-            )
-            public static let modalPanel = adaptive(
-                "ModalPanel",
-                light: NSColor(red: 1, green: 1, blue: 1, alpha: 0.98),
-                dark: NSColor(red: 22 / 255, green: 22 / 255, blue: 26 / 255, alpha: 0.98)
             )
             /// Chips over the modal preview and float thumbnails (`bg .6`); fixed like every on-media colour.
             public static let mediaChipFill = Color.black.opacity(0.6)
@@ -610,7 +590,6 @@ public enum DesignTokens {
             public static let floatPanel: CGFloat = 16
             public static let button: CGFloat = 9
             public static let chip: CGFloat = 5
-            public static let capsule: CGFloat = 99
         }
 
         // MARK: Shadow
@@ -643,8 +622,6 @@ public enum DesignTokens {
             public static let s8: CGFloat = 8
             public static let s12: CGFloat = 12
             public static let s14: CGFloat = 14
-            public static let gridGap: CGFloat = 12
-            public static let workshopGridGap: CGFloat = 14
             public static let gutter: CGFloat = 24
             public static let topBar: CGFloat = 56
             /// S8a's info band is `padding 24 10 10`: the top inset is the gradient's run-up, not

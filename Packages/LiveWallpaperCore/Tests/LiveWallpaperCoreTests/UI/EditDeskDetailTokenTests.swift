@@ -52,19 +52,4 @@ struct EditDeskDetailTokenTests {
             #expect(abs(alpha - want) < 0.001, "\(name) is \(alpha) — expected \(want)")
         }
     }
-
-    @Test("The HUD's primary transport button is a white circle with a dark glyph")
-    func hudPrimaryIsWhiteOnDark() throws {
-        let fill = try Self.channels(DesignTokens.EditDesk.Colors.hudPrimaryFill, .darkAqua)
-        #expect(fill == (255, 255, 255, 1.0), "hudPrimaryFill is \(fill)")
-        let glyph = try Self.channels(DesignTokens.EditDesk.Colors.hudPrimaryGlyph, .darkAqua)
-        #expect(glyph == (0, 0, 0, 1.0), "hudPrimaryGlyph is \(glyph)")
-    }
-
-    @Test("The danger button's fill is the design's 15% red, not a solid one")
-    func dangerButtonFillIsTranslucent() throws {
-        let (r, g, b, alpha) = try Self.channels(DesignTokens.EditDesk.Colors.dangerButtonFill, .darkAqua)
-        #expect((r, g, b) == (255, 80, 80), "dangerButtonFill is \(r),\(g),\(b)")
-        #expect(abs(alpha - 0.15) < 0.001, "dangerButtonFill alpha is \(alpha)")
-    }
 }

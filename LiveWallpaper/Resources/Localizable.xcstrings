@@ -14465,6 +14465,7 @@
       }
     },
     "Clear scene video texture cache?" : {
+      "comment" : "Confirmation dialog title for clearing the scene video texture cache on the Storage tab.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
@@ -20489,6 +20490,7 @@
       }
     },
     "Deletes %@ of extracted scene video files. Scenes re-extract the video textures the next time they render." : {
+      "comment" : "Destructive confirm message. Placeholder is a formatted byte size.",
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
