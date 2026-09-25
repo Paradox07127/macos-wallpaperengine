@@ -147,6 +147,9 @@ struct NowPlayingBadge: Equatable {
     let displayNames: [String]
     /// One of those displays is `.ok`. Paused, off, preparing or failed ones still name themselves.
     let isLive: Bool
+    /// `displayNames` split into the `.ok` displays and the rest, each still leftmost first.
+    private let liveNames: [String]
+    private let idleNames: [String]
 
     /// nil when the wallpaper is set on none of `displays`.
     init?(on ids: [StageDisplay.ID], among displays: [StageDisplay]) {
@@ -154,6 +157,8 @@ struct NowPlayingBadge: Equatable {
         guard !set.isEmpty else { return nil }
         displayNames = set.map(\.name)
         isLive = set.contains { $0.state == .ok }
+        liveNames = set.filter { $0.state == .ok }.map(\.name)
+        idleNames = set.filter { $0.state != .ok }.map(\.name)
     }
 
     var text: String {
@@ -165,16 +170,23 @@ struct NowPlayingBadge: Equatable {
     }
 
     var accessibilityText: String {
-        let names = displayNames.formatted(.list(type: .and).locale(AppLanguagePreference.current.locale))
-        return isLive
-            ? String(
+        let locale = AppLanguagePreference.current.locale
+        var sentences: [String] = []
+        if !liveNames.isEmpty {
+            let names = liveNames.formatted(.list(type: .and).locale(locale))
+            sentences.append(String(
                 localized: "Playing on \(names)", bundle: .appLanguage,
                 comment: "VoiceOver on a wallpaper card: the displays drawing it right now. Placeholder is a list of display names."
-            )
-            : String(
+            ))
+        }
+        if !idleNames.isEmpty {
+            let names = idleNames.formatted(.list(type: .and).locale(locale))
+            sentences.append(String(
                 localized: "In use on \(names)", bundle: .appLanguage,
                 comment: "The displays a wallpaper is set on, drawing it or not: the Workshop inspector, and VoiceOver on a wallpaper card none of them is playing. Placeholder is a list of display names."
-            )
+            ))
+        }
+        return sentences.joined(separator: ", ")
     }
 }
 

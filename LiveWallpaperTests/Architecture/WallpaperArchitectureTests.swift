@@ -1421,10 +1421,22 @@ struct WallpaperAutomationCoordinatorTests {
         let unqueued = ScreenConfiguration(screenID: 1, wallpaper: .html(source: .inline("current"), config: .default))
         let legacy = ScreenConfiguration(screenID: 1, videoBookmarkData: Data([1]), playlistBookmarks: [Data([2]), Data([3])], playlistCursorIndex: 1)
 
-        #expect(WallpaperAutomationSheet.nowPlayingEntryID(in: playlist, insertedCurrent: nil) == queue[2].id)
-        #expect(WallpaperAutomationSheet.nowPlayingEntryID(in: schedule, insertedCurrent: nil) == nil, "a daily schedule marked a playlist row as playing")
-        #expect(WallpaperAutomationSheet.nowPlayingEntryID(in: unqueued, insertedCurrent: "current") == "current", "the current wallpaper put first is not the playing row")
-        #expect(WallpaperAutomationSheet.nowPlayingEntryID(in: legacy, insertedCurrent: nil) == "legacy-video-1", "an old video list's cursor row is not the playing row")
+        #expect(WallpaperAutomationSheet.nowPlayingEntryID(in: playlist, insertedCurrent: nil, previewing: nil) == queue[2].id)
+        #expect(WallpaperAutomationSheet.nowPlayingEntryID(in: schedule, insertedCurrent: nil, previewing: nil) == nil, "a daily schedule marked a playlist row as playing")
+        #expect(WallpaperAutomationSheet.nowPlayingEntryID(in: unqueued, insertedCurrent: "current", previewing: nil) == "current", "the current wallpaper put first is not the playing row")
+        #expect(WallpaperAutomationSheet.nowPlayingEntryID(in: legacy, insertedCurrent: nil, previewing: nil) == "legacy-video-1", "an old video list's cursor row is not the playing row")
+    }
+
+    @Test("A row previewed on the display is the playing row, ahead of the cursor row and the current wallpaper put first")
+    func previewedRowIsThePlayingRow() {
+        let queue = ["A", "B", "C"].map { WallpaperQueueEntry(id: $0, title: $0, content: .html(source: .inline($0), config: .default)) }
+        var playlist = ScreenConfiguration(screenID: 1, wallpaper: queue[2].content)
+        playlist.wallpaperQueue = queue
+        playlist.playlistCursorIndex = 2
+        let unqueued = ScreenConfiguration(screenID: 1, wallpaper: .html(source: .inline("current"), config: .default))
+
+        #expect(WallpaperAutomationSheet.nowPlayingEntryID(in: playlist, insertedCurrent: nil, previewing: queue[0].id) == queue[0].id, "the cursor row stayed marked while another row was previewed")
+        #expect(WallpaperAutomationSheet.nowPlayingEntryID(in: unqueued, insertedCurrent: "current", previewing: queue[1].id) == queue[1].id, "the current wallpaper put first stayed marked while another row was previewed")
     }
 
     @Test("A fallback picked in the panel is saved and fills the unscheduled hours at once")

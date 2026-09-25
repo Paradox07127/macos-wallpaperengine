@@ -1743,7 +1743,7 @@ final class EditDeskStageView: NSView, EditDeskStageEngine {
             element.setAccessibilityValue(display.accessibilityValue)
             element.setAccessibilityParent(self)
             element.displayID = id
-            // The keyboard equivalent of the two buttons drawn inside an empty display.
+            // VoiceOver-only: the stage draws no buttons in an empty display; the visible counterparts are in its detail page's empty state.
             element.setAccessibilityCustomActions(display.state == .empty ? [
                 emptyScreenAction(String(localized: "Choose File", bundle: .appLanguage), on: id, .chooseFile),
                 emptyScreenAction(String(localized: "Paste URL", bundle: .appLanguage), on: id, .pasteURL),
