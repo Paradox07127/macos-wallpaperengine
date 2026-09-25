@@ -21,7 +21,7 @@ struct EditDeskStageViewTests {
             ),
         ]
         model.shelfItems = (0 ..< 14).map {
-            StageCard(id: "card-\($0)", title: "Card \($0)", metaLine: "Meta", thumbnail: nil, onBadge: nil, isDraggable: true)
+            StageCard(id: "card-\($0)", title: "Card \($0)", metaLine: "Meta", thumbnail: nil, nowPlaying: nil, isDraggable: true)
         }
         return model
     }
@@ -172,7 +172,7 @@ struct EditDeskStageViewTests {
     func shelfWindowsTheLibrary() {
         let model = makeModel()
         model.shelfItems = (0 ..< 120).map {
-            StageCard(id: "card-\($0)", title: "Card \($0)", metaLine: "Meta", thumbnail: nil, onBadge: nil, isDraggable: true)
+            StageCard(id: "card-\($0)", title: "Card \($0)", metaLine: "Meta", thumbnail: nil, nowPlaying: nil, isDraggable: true)
         }
         let view = EditDeskStageView(model: model)
         view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
@@ -288,7 +288,7 @@ struct EditDeskStageViewTests {
         // A filter change that happens to keep the count: the window range is identical, so a
         // range-only reconcile would drop every layer and never rebuild.
         model.shelfItems = (0 ..< 14).map {
-            StageCard(id: "other-\($0)", title: "Other \($0)", metaLine: "Meta", thumbnail: nil, onBadge: nil, isDraggable: true)
+            StageCard(id: "other-\($0)", title: "Other \($0)", metaLine: "Meta", thumbnail: nil, nowPlaying: nil, isDraggable: true)
         }
         view.needsLayout = true
         view.layoutSubtreeIfNeeded()
@@ -657,7 +657,7 @@ struct EditDeskStageViewTests {
         let model = makeModel()
         model.reduceMotion = false
         model.shelfItems = (0 ..< 1000).map {
-            StageCard(id: "card-\($0)", title: "Card \($0)", metaLine: "", thumbnail: nil, onBadge: nil, isDraggable: true)
+            StageCard(id: "card-\($0)", title: "Card \($0)", metaLine: "", thumbnail: nil, nowPlaying: nil, isDraggable: true)
         }
         let view = EditDeskStageView(model: model)
         defer { view.detach() }
@@ -1655,7 +1655,7 @@ struct EditDeskStageViewTests {
             var hotColor: NSColor?
             NSAppearance(named: appearance)?.performAsCurrentDrawingAppearance {
                 tile.update(
-                    card: StageCard(id: "a", title: "A", metaLine: "", thumbnail: nil, onBadge: nil, isDraggable: true),
+                    card: StageCard(id: "a", title: "A", metaLine: "", thumbnail: nil, nowPlaying: nil, isDraggable: true),
                     increasedContrast: false
                 )
                 restColor = NSColor(DesignTokens.EditDesk.Shadow.shelfCard.color).usingColorSpace(.sRGB)
@@ -1689,7 +1689,7 @@ struct EditDeskStageViewTests {
     func facingInSpineSitsOnTheOuterEdge() {
         let tile = ShelfCardLayer()
         tile.update(
-            card: StageCard(id: "a", title: "A", metaLine: "", thumbnail: nil, onBadge: nil, isDraggable: true),
+            card: StageCard(id: "a", title: "A", metaLine: "", thumbnail: nil, nowPlaying: nil, isDraggable: true),
             increasedContrast: false
         )
         func place(_ style: ShelfStyle, _ index: Int) -> (spine: CALayer, shadow: CGFloat) {
@@ -1718,7 +1718,7 @@ struct EditDeskStageViewTests {
     func shadowPathTracksTheCardMidFlight() throws {
         let tile = ShelfCardLayer()
         tile.update(
-            card: StageCard(id: "a", title: "A", metaLine: "", thumbnail: nil, onBadge: nil, isDraggable: true),
+            card: StageCard(id: "a", title: "A", metaLine: "", thumbnail: nil, nowPlaying: nil, isDraggable: true),
             increasedContrast: false
         )
         func place(_ progress: Double) -> CGSize {
@@ -1748,7 +1748,7 @@ struct EditDeskStageViewTests {
         let tile = ShelfCardLayer()
         NSAppearance(named: appearance)?.performAsCurrentDrawingAppearance {
             tile.update(
-                card: StageCard(id: "a", title: "A", metaLine: "", thumbnail: nil, onBadge: nil, isDraggable: true),
+                card: StageCard(id: "a", title: "A", metaLine: "", thumbnail: nil, nowPlaying: nil, isDraggable: true),
                 increasedContrast: increasedContrast
             )
         }
@@ -1934,6 +1934,185 @@ struct EditDeskStageViewTests {
         }
     }
 
+    /// "Studio" draws its wallpaper; "MPG" has it set but paused.
+    private static let badgeDisplays = [
+        StageDisplay(
+            id: 1, fingerprint: "Studio", frame: CGRect(x: 0, y: 0, width: 1920, height: 1080), isBuiltin: false,
+            name: "Studio", badgeText: "", statusText: "", cover: nil, state: .ok
+        ),
+        StageDisplay(
+            id: 2, fingerprint: "MPG", frame: CGRect(x: 1920, y: 0, width: 1920, height: 1080), isBuiltin: false,
+            name: "MPG", badgeText: "", statusText: "", cover: nil, state: .paused(reasonText: "Paused")
+        ),
+    ]
+
+    private func badgedCard(on ids: [StageDisplay.ID], status: String? = nil) -> StageCard {
+        StageCard(
+            id: "a", title: "A", metaLine: "", thumbnail: nil,
+            nowPlaying: NowPlayingBadge(on: ids, among: Self.badgeDisplays), isDraggable: true, statusBadge: status
+        )
+    }
+
+    private func badgedTile(on ids: [StageDisplay.ID], status: String? = nil) -> ShelfCardLayer {
+        let tile = ShelfCardLayer()
+        tile.update(card: badgedCard(on: ids, status: status), increasedContrast: false)
+        return tile
+    }
+
+    private func controlPoints(_ function: CAMediaTimingFunction?) -> [Float] {
+        guard let function else { return [] }
+        return (1 ... 2).flatMap { index -> [Float] in
+            var point: [Float] = [0, 0]
+            function.getControlPoint(at: index, values: &point)
+            return point
+        }
+    }
+
+    @Test("The now-playing capsule and the warning badge sit on the side each style leaves showing, and cross a Facing In middle smoothly")
+    func badgesSitOnTheShowingSide() throws {
+        let tile = badgedTile(on: [1])
+        let capsule = try #require(tile.capsule, "a card set on a display draws no capsule")
+        func frame(_ style: ShelfStyle, _ index: Int, focus: Double = 6, progress: Double = 1) -> CGRect {
+            pose(tile, style: style, index: index, focus: focus, progress: progress)
+            return capsule.frame
+        }
+        let right = frame(.facingIn, 8)
+        #expect(
+            right.minY == 8 && right.height == 18 && abs(right.maxX - (StageGeometry.cardSize.width - 8)) < 0.001,
+            Comment(rawValue: "Facing In's right half shows its right side, but the capsule is at \(right)")
+        )
+        // Core Animation does not clamp a radius: past half the height it draws a lens, or nothing.
+        #expect(capsule.cornerRadius * 2 <= right.height, Comment(rawValue: "corner radius \(capsule.cornerRadius) on an \(right.height)pt capsule"))
+        let leftSide: [(String, CGRect)] = [
+            ("crate", frame(.crate, 3, focus: 0)), ("folders", frame(.folders, 3, focus: 0)), ("fan", frame(.fan, 8)),
+            ("focus row", frame(.focusRow, 6)), ("Facing In's left half", frame(.facingIn, 4)),
+            ("Facing In's middle", frame(.facingIn, 6)), ("Facing In's right half in the grid", frame(.facingIn, 8, progress: 2)),
+        ]
+        for (name, rect) in leftSide {
+            #expect(rect.minX == 8 && rect.minY == 8 && rect.width == right.width, Comment(rawValue: "\(name): \(rect)"))
+        }
+        var last: CGFloat?
+        for step in 0 ... 100 {
+            let focus = 5.5 + Double(step) / 100
+            let x = frame(.facingIn, 6, focus: focus).minX
+            if let last {
+                #expect(abs(x - last) <= 3, Comment(rawValue: "the capsule jumped \(last) → \(x) at focus \(focus)"))
+            }
+            last = x
+        }
+        let warned = badgedTile(on: [1], status: "File unavailable")
+        pose(warned, style: .facingIn, index: 8, focus: 6)
+        #expect(
+            abs(warned.badge.frame.maxX - (StageGeometry.cardSize.width - 8)) < 0.001 && warned.capsule?.isHidden != false,
+            Comment(rawValue: "the warning badge is at \(warned.badge.frame); capsule hidden: \(String(describing: warned.capsule?.isHidden))")
+        )
+    }
+
+    @Test("Where the capsule is drawn its card is on top: a Facing In card in the right half and a crate card keep theirs uncovered")
+    func capsuleIsNeverUnderTheNextCard() throws {
+        for (style, index) in [(ShelfStyle.facingIn, 2), (.crate, 3)] {
+            let model = makeModel()
+            model.shelfStyle = style
+            let badge = try #require(NowPlayingBadge(on: [1], among: model.displays))
+            model.shelfItems = model.shelfItems.map { card in
+                var card = card
+                card.nowPlaying = badge
+                return card
+            }
+            let view = EditDeskStageView(model: model)
+            defer { view.detach() }
+            view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+            view.layoutSubtreeIfNeeded()
+            model.setProgress(1, animated: false)
+            let tile = try #require(view.cardLayers["card-\(index)"])
+            let capsule = try #require(tile.capsule)
+            let centre = drawnPoint(tile, CGPoint(x: capsule.frame.midX, y: capsule.frame.midY))
+            let owner = view.cardIndex(at: centre)
+            #expect(owner == index, Comment(rawValue: "\(style): card \(index)'s capsule at \(centre) lies under card \(owner.map { "\($0)" } ?? "none")"))
+        }
+    }
+
+    @Test("The capsule's bars wave while a display draws the wallpaper and the card is on the shelf, and stand still anywhere else")
+    func barsWaveOnlyWhileLive() throws {
+        let rest: [CGFloat] = [5.0 / 9, 1, 6.0 / 9]
+        let tile = badgedTile(on: [1])
+        pose(tile)
+        try #require(tile.waveBars.count == 3, "the capsule has \(tile.waveBars.count) bars")
+        let ease = CAMediaTimingFunction(name: .easeInEaseOut)
+        for (index, bar) in tile.waveBars.enumerated() {
+            let wave = try #require(bar.animation(forKey: "wave") as? CABasicAnimation, "bar \(index) is still on a live card")
+            #expect(
+                wave.keyPath == "transform.scale.y" && wave.fromValue as? Double == 1.0 / 3 && wave.toValue as? Double == 1
+                    && wave.duration == 0.45 && wave.autoreverses && wave.repeatCount == .infinity
+                    && abs(wave.timeOffset - 0.3 * Double(index)) < 1e-9 && controlPoints(wave.timingFunction) == controlPoints(ease),
+                Comment(rawValue: "bar \(index): \(wave)")
+            )
+        }
+        func still(_ situation: String) {
+            for (index, bar) in tile.waveBars.enumerated() {
+                #expect(
+                    bar.animation(forKey: "wave") == nil && abs(bar.transform.m22 - rest[index]) < 1e-9,
+                    Comment(rawValue: "\(situation): bar \(index) waves, or stands at \(bar.transform.m22)")
+                )
+            }
+        }
+        pose(tile, reduceMotion: true)
+        still("Reduce Motion")
+        pose(tile, progress: 2)
+        still("in the grid")
+        pose(tile, progress: 0)
+        still("with the shelf down")
+        pose(tile)
+        #expect(tile.waveBars.allSatisfy { $0.animation(forKey: "wave") != nil }, "back on the shelf the bars stay still")
+        tile.update(card: badgedCard(on: [2]), increasedContrast: false)
+        pose(tile)
+        still("on a paused display")
+    }
+
+    @Test("A shelf of waving bars still lets the display link stop once its springs settle")
+    func waveNeverHoldsTheDisplayLink() throws {
+        let model = makeModel()
+        model.reduceMotion = false
+        let badge = try #require(NowPlayingBadge(on: [1], among: model.displays))
+        model.shelfItems = model.shelfItems.map { card in
+            var card = card
+            card.nowPlaying = badge
+            return card
+        }
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        model.setProgress(1, animated: false)
+        for _ in 0 ..< 240 where view.debugNeedsDisplayLink {
+            view.advance(dt: 1.0 / 60)
+        }
+        #expect(view.cardLayers.values.contains { $0.waveBars.first?.animation(forKey: "wave") != nil }, "no card on the shelf waves")
+        #expect(!view.debugNeedsDisplayLink, "the bars' wave keeps the display link running")
+        // Control: a hover spring in flight does hold it.
+        model.report(hoveredCard: "card-3")
+        view.advance(dt: 1.0 / 60)
+        #expect(view.debugNeedsDisplayLink)
+    }
+
+    @Test("VoiceOver hears where a shelf card's wallpaper plays, or where it is set while no display draws it")
+    func cardReadsWhereItPlays() throws {
+        let model = makeModel()
+        model.displays[1].state = .paused(reasonText: "Paused")
+        model.shelfItems[5].nowPlaying = NowPlayingBadge(on: [1], among: model.displays)
+        model.shelfItems[6].nowPlaying = NowPlayingBadge(on: [2], among: model.displays)
+        let view = EditDeskStageView(model: model)
+        defer { view.detach() }
+        view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
+        view.layoutSubtreeIfNeeded()
+        model.setProgress(1, animated: false)
+        let labels = try #require(view.accessibilityChildren() as? [NSAccessibilityElement]).compactMap { $0.accessibilityLabel() }
+        let playing = "Card 5 Meta, " + String(localized: "Playing on \("External")", bundle: .appLanguage)
+        let inUse = "Card 6 Meta, " + String(localized: "In use on \("Builtin")", bundle: .appLanguage)
+        #expect(labels.contains(playing) && labels.contains(inUse), Comment(rawValue: "\(labels.filter { $0.hasPrefix("Card") })"))
+        #expect(labels.contains("Card 4 Meta"), "a card set on no display reads as before")
+    }
+
     @Test("The wave follows the pointer slot by slot instead of sticking to the card it lifted")
     func hoverFollowsThePointerAcrossSlots() {
         let model = makeModel()
@@ -1968,7 +2147,7 @@ struct EditDeskStageViewTests {
         let model = makeModel()
         model.reduceMotion = false
         model.shelfItems = (0 ..< 60).map {
-            StageCard(id: "card-\($0)", title: "Card \($0)", metaLine: "Meta", thumbnail: nil, onBadge: nil, isDraggable: true)
+            StageCard(id: "card-\($0)", title: "Card \($0)", metaLine: "Meta", thumbnail: nil, nowPlaying: nil, isDraggable: true)
         }
         let view = EditDeskStageView(model: model)
         view.frame = CGRect(origin: .zero, size: StageGeometry.designWindow)
@@ -2196,26 +2375,31 @@ struct EditDeskStageViewTests {
     /// face transform and the host's perspective about its own centre — in stage space, at unit
     /// points (0,0), (1,0), (0,1), (1,1).
     private func drawnCorners(_ tile: ShelfCardLayer) -> [CGPoint] {
+        let size = tile.face.bounds.size
+        return [CGPoint(x: 0, y: 0), CGPoint(x: 1, y: 0), CGPoint(x: 0, y: 1), CGPoint(x: 1, y: 1)].map {
+            drawnPoint(tile, CGPoint(x: $0.x * size.width, y: $0.y * size.height))
+        }
+    }
+
+    /// `point`, in the face's own coordinates, taken to stage space the same way.
+    private func drawnPoint(_ tile: ShelfCardLayer, _ point: CGPoint) -> CGPoint {
         let face = tile.face
         let host = tile.layer
         let t = face.transform
         let p = host.sublayerTransform
         let centre = CGPoint(x: host.bounds.midX, y: host.bounds.midY)
-        let units = [CGPoint(x: 0, y: 0), CGPoint(x: 1, y: 0), CGPoint(x: 0, y: 1), CGPoint(x: 1, y: 1)]
-        return units.map { unit -> CGPoint in
-            // Row vectors, as Core Animation multiplies them.
-            let x = (unit.x - face.anchorPoint.x) * face.bounds.width
-            let y = (unit.y - face.anchorPoint.y) * face.bounds.height
-            let fw = x * t.m14 + y * t.m24 + t.m44
-            let hx = face.position.x + (x * t.m11 + y * t.m21 + t.m41) / fw - centre.x
-            let hy = face.position.y + (x * t.m12 + y * t.m22 + t.m42) / fw - centre.y
-            let hz = (x * t.m13 + y * t.m23 + t.m43) / fw
-            let pw = hx * p.m14 + hy * p.m24 + hz * p.m34 + p.m44
-            return CGPoint(
-                x: host.frame.minX + centre.x + (hx * p.m11 + hy * p.m21 + hz * p.m31 + p.m41) / pw,
-                y: host.frame.minY + centre.y + (hx * p.m12 + hy * p.m22 + hz * p.m32 + p.m42) / pw
-            )
-        }
+        // Row vectors, as Core Animation multiplies them.
+        let x = point.x - face.anchorPoint.x * face.bounds.width
+        let y = point.y - face.anchorPoint.y * face.bounds.height
+        let fw = x * t.m14 + y * t.m24 + t.m44
+        let hx = face.position.x + (x * t.m11 + y * t.m21 + t.m41) / fw - centre.x
+        let hy = face.position.y + (x * t.m12 + y * t.m22 + t.m42) / fw - centre.y
+        let hz = (x * t.m13 + y * t.m23 + t.m43) / fw
+        let pw = hx * p.m14 + hy * p.m24 + hz * p.m34 + p.m44
+        return CGPoint(
+            x: host.frame.minX + centre.x + (hx * p.m11 + hy * p.m21 + hz * p.m31 + p.m41) / pw,
+            y: host.frame.minY + centre.y + (hx * p.m12 + hy * p.m22 + hz * p.m32 + p.m42) / pw
+        )
     }
 
     @Test("The centred styles' hit shapes are the corners their layers actually draw", arguments: [
@@ -2224,7 +2408,7 @@ struct EditDeskStageViewTests {
     func hitRectsMatchTheDrawnCorners(style: ShelfStyle) {
         let tile = ShelfCardLayer()
         tile.update(
-            card: StageCard(id: "a", title: "A", metaLine: "", thumbnail: nil, onBadge: nil, isDraggable: true),
+            card: StageCard(id: "a", title: "A", metaLine: "", thumbnail: nil, nowPlaying: nil, isDraggable: true),
             increasedContrast: false
         )
         for focus in [6.0, 6.4] {
@@ -2361,7 +2545,7 @@ struct EditDeskStageViewTests {
 
     private func bigLibrary(_ count: Int) -> [StageCard] {
         (0 ..< count).map {
-            StageCard(id: "card-\($0)", title: "Card \($0)", metaLine: "", thumbnail: nil, onBadge: nil, isDraggable: true)
+            StageCard(id: "card-\($0)", title: "Card \($0)", metaLine: "", thumbnail: nil, nowPlaying: nil, isDraggable: true)
         }
     }
 

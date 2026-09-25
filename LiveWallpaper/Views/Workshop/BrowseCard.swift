@@ -24,8 +24,8 @@ struct BrowseCard: View, Equatable {
     var isInLibrary: Bool = false
     /// Installed, and Steam's copy changed after it was imported.
     var hasUpdate: Bool = false
-    /// `ON Studio` while the installed project runs on a display; nil otherwise.
-    var inUseBadge: String?
+    /// The displays the installed project is set on; nil when none.
+    var inUseBadge: NowPlayingBadge?
     var isSelected: Bool = false
     /// Read once per pane and handed down, not six `@AppStorage` per tile — see `GalleryCardPreferences`.
     /// Passed in, not read from the environment: `EquatableView` short-circuits `body`,
@@ -182,7 +182,8 @@ struct BrowseCard: View, Equatable {
                 if !shouldBlur, isHovered || showsInUseBadge {
                     HStack(spacing: DesignTokens.Spacing.xs) {
                         if let inUseBadge, showsInUseBadge {
-                            ThumbnailBadge(verbatim: inUseBadge)
+                            // The pane rebuilds these on configuration changes only, so it cannot tell playing from paused.
+                            NowPlayingCapsule(badge: inUseBadge, animates: false)
                         }
                         if isHovered {
                             ThumbnailBadge(verbatim: "GIF", systemImage: "play.fill")

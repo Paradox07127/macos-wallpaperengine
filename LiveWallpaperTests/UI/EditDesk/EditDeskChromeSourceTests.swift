@@ -398,4 +398,19 @@ struct EditDeskChromeSourceTests {
         #expect(source.contains("self.stopDisplayLink()\n                    self.startDisplayLinkIfNeeded()"))
         #expect(source.contains("screenObserver.map(NotificationCenter.default.removeObserver)"))
     }
+
+    @Test("Grid tiles and Workshop cards draw now-playing as the capsule, whose waveform holds still under Reduce Motion")
+    func nowPlayingIsTheCapsuleEverywhere() throws {
+        let capsule = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Library/NowPlayingCapsule.swift")
+        let effect = try #require(capsule.range(of: ".symbolEffect(.variableColor"), "the waveform no longer animates by variable colour")
+        let call = String(capsule[effect.lowerBound...].prefix { $0 != "\n" })
+        #expect(call.contains("isActive:") && call.contains("reduceMotion"), Comment(rawValue: "the waveform ignores Reduce Motion: \(call)"))
+        let home = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Shell/HomePage.swift")
+        let tile = try String(home[#require(home.range(of: "struct LibraryGridTile: View")).lowerBound...])
+        #expect(tile.contains("NowPlayingCapsule(badge: nowPlaying, animates: nowPlaying.isLive)"), "the grid tile draws no capsule")
+        #expect(!tile.contains("ThumbnailBadge(verbatim:"), "the grid tile still draws now-playing as a plain badge")
+        let browse = try RepositoryRoot.source("LiveWallpaper/Views/Workshop/BrowseCard.swift")
+        #expect(browse.contains("NowPlayingCapsule(badge: inUseBadge, animates: false)"), "the Workshop card draws no capsule, or one that moves")
+        #expect(!browse.contains("ThumbnailBadge(verbatim: inUseBadge"), "the Workshop card still draws now-playing as a plain badge")
+    }
 }

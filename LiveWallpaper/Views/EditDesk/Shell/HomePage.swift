@@ -142,6 +142,8 @@ struct HomePage: View {
         func body(content: Content) -> some View {
             content
                 .onChange(of: page.library?.visibleItems) { page.syncShelf() }
+                // State refreshes rewrite `stage.displays` without rebuilding the cards, whose capsules wave by it.
+                .onChange(of: page.drawingDisplayIDs) { page.syncShelf() }
                 // The rename path: a display's drawn name comes out of these rows. Watched on the
                 // whole library rather than the filtered rows, which also change on every keystroke.
                 .onChange(of: page.library?.items) { page.refreshAllStates() }
@@ -475,7 +477,7 @@ struct HomePage: View {
         return [naming, wallpaper]
     }
 
-    /// Neither the stage's name row nor the shelf's ON badges watch the name, so both are redrawn here.
+    /// Neither the stage's name row nor the shelf's now-playing capsules watch the name, so both are redrawn here.
     private func rename(_ id: CGDirectDisplayID) {
         guard let screen = screenManager.screens.first(where: { $0.id == id }) else { return }
         screenManager.setCustomName(renameDraft, for: screen)
@@ -893,6 +895,11 @@ struct HomePage: View {
 
     // MARK: Displays
 
+    /// Its own property: inlined in `LibraryHooks` this filter stops the chain type-checking in time.
+    private var drawingDisplayIDs: [CGDirectDisplayID] {
+        stage.displays.filter { $0.state == .ok }.map(\.id)
+    }
+
     private func syncDisplays() {
         stage.displays = screenManager.screens.map { screen in
             let presentation = ScreenPresentation.presentation(
@@ -915,7 +922,7 @@ struct HomePage: View {
         for display in stage.displays where display.cover == nil && display.state != .empty {
             refreshCover(for: display.id, crossfade: false)
         }
-        // The shelf's ON badges name the leftmost display, so a rename or a new arrangement relabels them.
+        // The shelf's now-playing capsules name the leftmost display, so a rename or a new arrangement relabels them.
         syncShelf()
     }
 
@@ -1051,7 +1058,7 @@ struct HomePage: View {
                 title: item.title,
                 metaLine: metaLine(for: item),
                 thumbnail: item.thumbnail.flatMap { thumbnails.cached($0, pixelSize: Self.thumbnailPixelSize, scale: scale) },
-                onBadge: StageCard.onBadge(on: item.onDisplays, among: stage.displays),
+                nowPlaying: NowPlayingBadge(on: item.onDisplays, among: stage.displays),
                 isDraggable: item.isSupported,
                 statusBadge: item.statusBadge
             )
@@ -1507,8 +1514,8 @@ struct LibraryGridTile: View {
             .padding(DesignTokens.EditDesk.Spacing.s8)
         }
         .overlay(alignment: .topLeading) {
-            if let onBadge = badges.onBadge {
-                ThumbnailBadge(verbatim: onBadge)
+            if let nowPlaying = badges.nowPlaying {
+                NowPlayingCapsule(badge: nowPlaying, animates: nowPlaying.isLive)
                     .padding(DesignTokens.EditDesk.Spacing.s8)
             }
         }

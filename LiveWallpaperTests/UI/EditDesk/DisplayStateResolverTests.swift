@@ -237,8 +237,8 @@ struct DisplayStateResolverTests {
         #expect(rows() == [["\(rename)=true", "\(systemName)=true"], ["\(applyAll)=false", "\(clear)=false"]])
     }
 
-    @Test("A display rename or rearrangement re-labels the shelf's ON badge at once")
-    func onBadgeFollowsTheDisplayName() async throws {
+    @Test("A display rename or rearrangement re-labels the shelf's now-playing badge at once")
+    func nowPlayingFollowsTheDisplayName() async throws {
         let harness = Harness(configured: true)
         let store = BookmarkStore.shared
         let saved = store.add(label: "Badge fixture", content: .html(source: .inline("Test"), config: .default))
@@ -250,12 +250,12 @@ struct DisplayStateResolverTests {
         await harness.waitUntil { harness.state == .ok }
         let stage = try #require(harness.stageView?.model)
         func badge() -> String? {
-            stage.shelfItems.first { $0.id == "bookmark:\(saved.id)" }?.onBadge
+            stage.shelfItems.first { $0.id == "bookmark:\(saved.id)" }?.nowPlaying?.text
         }
-        await harness.waitUntil { badge() == "ON \(harness.screen.systemName)" }
+        await harness.waitUntil { badge() == harness.screen.systemName }
         harness.manager.setCustomName("Desk", for: harness.screen)
         NotificationCenter.default.post(name: .screensRefreshed, object: nil)
-        await harness.waitUntil { badge() == "ON Desk" }
+        await harness.waitUntil { badge() == "Desk" }
     }
 
     private static func failed(_ cause: WallpaperFailureCause) -> StageDisplay.State {

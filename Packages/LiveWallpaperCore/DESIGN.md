@@ -104,6 +104,7 @@ Fixed-dark tokens for the Edit Desk rebuild (`.notes/design_handoff_loomscreen_r
 | `Colors.cardRimRing` / `cardRimRingIncreased` | white `.10`; Increase Contrast → `.35` (fixed) | shelf-lab v3 `.q-refined` (1px inner ring of the shelf card and the library grid tile) |
 | `Colors.cardRimHighlight` | white `.30` (fixed) | shelf-lab v3 `.q-refined` (1px top edge, same two cards) |
 | `Colors.cardRimShade` | black `.35` (fixed) | shelf-lab v3 `.q-refined` (1px bottom edge, same two cards) |
+| `Colors.nowPlayingGlyph` | `#4ade80` (fixed) | shelf-lab v3 `.b-glass` (now-playing capsule: the shelf card's wave bars, the grid and Workshop cards' waveform) |
 | `Colors.dotGrid` | `rgba(255,255,255,.06)` | README Tokens; SCREENS S1 (stage dot grid) |
 | `Colors.modalScrim` | `rgba(8,8,10,.62)`; light `.32` black | SCREENS S4 (modal scrim) |
 | `Colors.modalPanel` | `rgba(22,22,26,.98)` | SCREENS S4 (modal background) |

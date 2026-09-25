@@ -583,6 +583,8 @@ public enum DesignTokens {
             /// S8a's in-library check: an opaque disc over the thumbnail, so both halves are fixed.
             public static let inLibraryBadgeFill = Color(nsColor: NSColor(red: 74 / 255, green: 222 / 255, blue: 128 / 255, alpha: 0.9))
             public static let inLibraryBadgeGlyph = Color.black
+            /// The now-playing capsule's wave, over the artwork like the capsule itself.
+            public static let nowPlayingGlyph = Color(nsColor: NSColor(red: 74 / 255, green: 222 / 255, blue: 128 / 255, alpha: 1))
             /// Content layer of a display with no wallpaper (SCREENS.md S9 `bg .03`).
             public static let fillEmptyScreen = ink("FillEmptyScreen", 0.03)
             /// Placeholder glyph filling an empty display: a background mark, so it stays under the
