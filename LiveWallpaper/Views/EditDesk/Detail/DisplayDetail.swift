@@ -43,6 +43,7 @@ struct DetailActions {
     var switchBackToVideo: (() -> Void)?
     var switchBackToWebPage: (() -> Void)?
     var applyWebSource: (HTMLSource) -> Void = { _ in }
+    var reload: () -> Void = {}
 }
 
 /// One toolbar and one background shared by the wallpaper and overlay workspaces.
