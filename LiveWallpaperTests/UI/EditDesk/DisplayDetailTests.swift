@@ -67,24 +67,63 @@ struct DisplayDetailTests {
         #expect(hero.maxX <= DetailGeometry.stageRect(in: CGSize(width: 1600, height: 700)).maxX)
     }
 
-    @Test("Left swipe requires deliberate horizontal travel; vertical and diagonal scrolling stay in place")
-    func backSwipeRejectsScrollNoise() {
-        var left = DetailBackSwipeGesture()
-        let swipeResult1 = left.update(dx: -50, dy: 3)
-        #expect(!swipeResult1)
-        let swipeResult2 = left.update(dx: -50, dy: 1)
-        #expect(swipeResult2)
-        var vertical = DetailBackSwipeGesture()
-        let swipeResult3 = vertical.update(dx: -5, dy: 30)
-        #expect(!swipeResult3)
-        let swipeResult4 = vertical.update(dx: -120, dy: 0)
-        #expect(!swipeResult4)
-        var right = DetailBackSwipeGesture()
-        let swipeResult5 = right.update(dx: 150, dy: 0)
-        #expect(!swipeResult5)
-        var diagonal = DetailBackSwipeGesture()
-        let swipeResult6 = diagonal.update(dx: -110, dy: 90)
-        #expect(!swipeResult6)
+    @Test("Fingers moving right step back, moving left step forward; vertical and diagonal scrolling stay in place")
+    func swipeStepsByFingerDirection() {
+        var right = DetailSwipeGesture()
+        #expect(right.update(dx: 50, dy: 3) == nil)
+        #expect(right.update(dx: 50, dy: 1) == .previous, "fingers moving right past 96pt step back")
+        var left = DetailSwipeGesture()
+        #expect(left.update(dx: -150, dy: 0) == .next)
+        var vertical = DetailSwipeGesture()
+        #expect(vertical.update(dx: 5, dy: 30) == nil)
+        #expect(vertical.update(dx: 120, dy: 0) == nil, "a gesture that started vertical never steps")
+        var diagonal = DetailSwipeGesture()
+        #expect(diagonal.update(dx: 110, dy: 90) == nil)
+    }
+
+    /// `events` scroll events 10ms apart from `start`; the first one carries `.began` when `began` is set.
+    private func swipe(
+        _ tracker: inout DetailSwipeTracker, dx: CGFloat, events: Int, from start: TimeInterval,
+        began: Bool = true, startsInside: Bool = true
+    ) -> [DetailSwipeStep] {
+        (0 ..< events).compactMap { index in
+            tracker.handle(
+                began: began && index == 0, ended: false, timestamp: start + Double(index) * 0.01,
+                startsInside: startsInside, dx: dx, dy: 0
+            )
+        }
+    }
+
+    @Test("One gesture takes one step, however far it travels; the next gesture takes the next")
+    func swipeStepsOncePerGesture() {
+        var tracker = DetailSwipeTracker()
+        #expect(swipe(&tracker, dx: 20, events: 13, from: 1) == [.previous], "260pt of travel is still one step")
+        _ = tracker.handle(began: false, ended: true, timestamp: 1.2, startsInside: true, dx: 0, dy: 0)
+        #expect(swipe(&tracker, dx: -20, events: 6, from: 2) == [.next])
+    }
+
+    @Test("A gesture that starts outside the canvas never steps")
+    func swipeStartingOutsideIsIgnored() {
+        var tracker = DetailSwipeTracker()
+        #expect(swipe(&tracker, dx: 20, events: 13, from: 1, startsInside: false).isEmpty)
+    }
+
+    @Test("Precise events without a phase split into gestures on 0.25s of silence")
+    func phaselessEventsSplitOnSilence() {
+        var tracker = DetailSwipeTracker()
+        #expect(swipe(&tracker, dx: 20, events: 13, from: 10, began: false) == [.previous])
+        #expect(swipe(&tracker, dx: 20, events: 13, from: 10.2, began: false).isEmpty, "0.08s after the last event is the same gesture")
+        #expect(swipe(&tracker, dx: 20, events: 13, from: 10.7, began: false) == [.previous])
+    }
+
+    @Test("The preview's swipe tracker sits outside the per-display identity, so a switch cannot restart the gesture")
+    func swipeTrackerOutlivesDisplaySwitches() throws {
+        let source = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Detail/DisplayDetail.swift")
+        let start = try #require(source.range(of: "private var wallpaperPreview: some View {"))
+        let preview = try #require(String(source[start.upperBound...]).components(separatedBy: "\n    }").first)
+        let identity = try #require(preview.range(of: ".id("), "the preview lost its per-display identity")
+        let navigator = try #require(preview.range(of: "DetailSwipeNavigator("), "the preview has no swipe navigator")
+        #expect(identity.upperBound <= navigator.lowerBound, "inside `.id` the navigator is rebuilt mid-swipe and steps twice")
     }
 
     @Test("Collapsing or resizing the inspector preserves preview centering and aspect ratio")

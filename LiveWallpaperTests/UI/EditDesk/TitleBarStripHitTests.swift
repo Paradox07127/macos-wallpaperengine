@@ -15,7 +15,7 @@ struct TitleBarStripHitTests {
             window.contentView = NSHostingView(rootView: AppLanguageScope(defaults: .appScoped()) {
                 Self.detail(windowSize: window.frame.size).ignoresSafeArea()
             })
-            // The settings button, last in the bar: 16pt padding, a 22pt glyph.
+            // The settings button, last in the bar: 16pt padding, a 36pt capsule.
             let chain = await Self.hitChain(in: window, x: window.frame.width - 27, yFromTop: 28)
             #expect(!chain.contains { $0 is NSScrollView }, Comment(rawValue: "hit \(chain.map { type(of: $0) })"))
         }
@@ -105,7 +105,7 @@ struct TitleBarStripHitTests {
             },
             overlayCanvas: { _ in Color.clear },
             wallpaperStatus: { EmptyView() },
-            inspectorVisible: .constant(true), layersVisible: .constant(true),
+            inspectorVisible: .constant(true),
             inspectorWidth: .constant(372), liveInspectorWidth: .constant(nil)
         )
     }

@@ -590,7 +590,7 @@ struct S6DetailFidelityTests {
             inspector: { _ in Color(nsColor: ProbeRenderer.inspectorYellow) },
             overlayCanvas: { _ in Color.clear },
             wallpaperStatus: { EmptyView() },
-            inspectorVisible: .constant(true), layersVisible: .constant(true),
+            inspectorVisible: .constant(true),
             inspectorWidth: .constant(372), liveInspectorWidth: .constant(nil)
         )
     }

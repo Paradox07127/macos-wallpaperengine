@@ -178,6 +178,68 @@ struct DisplayDetailHostTests {
         #expect(DisplayDetailHost.switchBackTypes(nil).isEmpty)
     }
 
+    // MARK: Display order and swipes
+
+    /// `frame` in `NSScreen` coordinates: y grows upwards.
+    private func display(_ id: CGDirectDisplayID, _ frame: CGRect) -> StageDisplay {
+        StageDisplay(
+            id: id, fingerprint: "\(id)", frame: frame, isBuiltin: false,
+            name: "\(id)", badgeText: "", statusText: "", cover: nil, state: .ok
+        )
+    }
+
+    @Test("Displays run left to right by left edge; of two stacked on one left edge the upper comes first")
+    func displayOrderFollowsTheArrangement() {
+        let external = CGSize(width: 2560, height: 1440)
+        let laptop = CGSize(width: 1512, height: 982)
+        func order(_ displays: [StageDisplay]) -> [CGDirectDisplayID] {
+            DisplayDetailHost.displayOrder(displays).map(\.id)
+        }
+        let sideBySide = [display(2, CGRect(origin: CGPoint(x: 2560, y: -200), size: laptop)),
+                          display(1, CGRect(origin: .zero, size: external))]
+        #expect(order(sideBySide) == [1, 2])
+        let stacked = [display(1, CGRect(origin: .zero, size: laptop)),
+                       display(2, CGRect(origin: CGPoint(x: 0, y: 982), size: external))]
+        #expect(order(stacked) == [2, 1], "the upper display of a stack comes first")
+        let reachingLeft = [display(1, CGRect(origin: .zero, size: laptop)),
+                            display(2, CGRect(origin: CGPoint(x: -200, y: 982), size: external))]
+        #expect(order(reachingLeft) == [2, 1])
+        let offsetRight = [display(2, CGRect(origin: CGPoint(x: 100, y: 982), size: external)),
+                           display(1, CGRect(origin: .zero, size: laptop))]
+        #expect(order(offsetRight) == [1, 2])
+        let mirrored = [display(7, CGRect(origin: .zero, size: external)), display(3, CGRect(origin: .zero, size: external))]
+        #expect(order(mirrored) == [3, 7], "identical frames fall back to the display ID")
+    }
+
+    @Test("A swipe steps to the neighbour, home from the leftmost, nowhere past the rightmost")
+    func swipeTargetsWalkTheOrder() {
+        let order: [CGDirectDisplayID] = [4, 9, 2]
+        #expect(DisplayDetailHost.swipeTarget(.previous, from: 4, in: order) == .home)
+        #expect(DisplayDetailHost.swipeTarget(.previous, from: 9, in: order) == .display(4))
+        #expect(DisplayDetailHost.swipeTarget(.next, from: 9, in: order) == .display(2))
+        #expect(DisplayDetailHost.swipeTarget(.next, from: 2, in: order) == nil)
+        #expect(DisplayDetailHost.swipeTarget(.next, from: 5, in: order) == nil, "a display that is gone goes nowhere")
+        #expect(DisplayDetailHost.swipeTarget(.previous, from: 1, in: [1]) == .home)
+        #expect(DisplayDetailHost.swipeTarget(.next, from: 1, in: [1]) == nil)
+    }
+
+    @Test("The arriving display enters from its own side of the arrangement")
+    func switchEdgeFollowsTheOrder() {
+        let order: [CGDirectDisplayID] = [4, 9, 2]
+        #expect(DisplayDetailHost.switchEdge(from: 4, to: 2, in: order) == .trailing)
+        #expect(DisplayDetailHost.switchEdge(from: 2, to: 9, in: order) == .leading)
+    }
+
+    @Test("The top bar's tags and ⌘1–9 read the arrangement order the swipe walks")
+    func tagsAndShortcutsReadTheArrangementOrder() throws {
+        let source = try RepositoryRoot.source("LiveWallpaper/Views/EditDesk/Detail/DisplayDetailHost.swift")
+        for signature in ["private func tags(current: CGDirectDisplayID)", "private func shortcuts(for screen: Screen)"] {
+            let start = try #require(source.range(of: signature), Comment(rawValue: "no \(signature)"))
+            let body = try #require(String(source[start.upperBound...]).components(separatedBy: "\n    }").first)
+            #expect(body.contains("Self.displayOrder(stage.displays)"), Comment(rawValue: "\(signature) keeps the system's display order"))
+        }
+    }
+
     @MainActor
     private final class Harness {
         let screen = Screen(nsScreen: DetailHostTestScreen())
