@@ -132,7 +132,7 @@ struct DetailHero<HUD: View>: View {
     private var factsChip: some View {
         if !status.facts.isEmpty {
             chip {
-                Text(Self.factsLine(status.facts))
+                Self.factsLine(status.facts)
                     .font(DesignTokens.EditDesk.Typography.metaMono)
             }
             .accessibilityElement(children: .combine)
@@ -141,17 +141,16 @@ struct DetailHero<HUD: View>: View {
         }
     }
 
-    private static func factsLine(_ facts: [DetailFact]) -> AttributedString {
-        var line = AttributedString()
+    private static func factsLine(_ facts: [DetailFact]) -> Text {
+        var line = Text(verbatim: "")
         for (index, fact) in facts.enumerated() {
-            if index > 0 {
-                line += AttributedString(" · ")
-            }
-            var item = AttributedString(fact.text)
+            var item = Text(verbatim: fact.text)
             if fact.isWarning {
-                item.foregroundColor = DesignTokens.EditDesk.Colors.warning
+                let mark = Text(Image(systemName: "exclamationmark.triangle.fill"))
+                    .foregroundStyle(DesignTokens.EditDesk.Colors.warning)
+                item = mark + Text(verbatim: " ") + item
             }
-            line += item
+            line = index > 0 ? line + Text(verbatim: " · ") + item : item
         }
         return line
     }
