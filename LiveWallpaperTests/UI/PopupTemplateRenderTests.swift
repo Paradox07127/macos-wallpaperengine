@@ -35,7 +35,7 @@ struct PopupTemplateRenderTests {
             title: "Painting the Sharks 4K",
             workshopID: "2468489223",
             displayName: "MPG321CX OLED",
-            stage: "loading",
+            stage: .loading,
             cause: WallpaperFailureCause(
                 code: "scene.metal_unsupported",
                 reason: "this wallpaper uses the legacy MDLV0013 puppet format, which this renderer cannot assemble correctly",

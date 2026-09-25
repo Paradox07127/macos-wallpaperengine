@@ -134,7 +134,7 @@ struct WallpaperFailureView: View {
 
     @ViewBuilder
     private var outcomeSentence: some View {
-        if failure.stage == "runtime" {
+        if failure.stage == .runtime {
             Text("Wallpaper playback stopped because of this error.")
         } else if let previous = failure.previousWallpaper {
             Text("Desktop kept the previous wallpaper: \(previous)")

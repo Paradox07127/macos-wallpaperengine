@@ -17,7 +17,7 @@ extension ScreenManager {
         let outcome = await wpeImportCoordinator.importProject(at: folderURL, for: screen)
         if wallpaperLoads.attempt(for: screen)?.id == id, wallpaperLoads.attempt(for: screen)?.phase == .importing {
             if case .rejected(let reason) = outcome {
-                failWallpaperAttempt(id, for: screen, cause: WallpaperFailureCause(code: "import.rejected", reason: reason), stage: "import")
+                failWallpaperAttempt(id, for: screen, cause: WallpaperFailureCause(code: "import.rejected", reason: reason), stage: .importing)
             } else { wallpaperLoads.clear(for: screen, matching: id) }
         }
         return outcome
@@ -30,7 +30,7 @@ extension ScreenManager {
         await wpeImportCoordinator.activateHistoryEntry(entry, for: screen)
         if wallpaperLoads.attempt(for: screen)?.id == id, wallpaperLoads.attempt(for: screen)?.phase == .importing {
             if let error = wpeImportTracker.error(for: screen.id) {
-                failWallpaperAttempt(id, for: screen, cause: WallpaperFailureCause(code: "import.source", reason: error.localizedDescription), stage: "import")
+                failWallpaperAttempt(id, for: screen, cause: WallpaperFailureCause(code: "import.source", reason: error.localizedDescription), stage: .importing)
             } else { wallpaperLoads.clear(for: screen, matching: id) }
         }
     }
