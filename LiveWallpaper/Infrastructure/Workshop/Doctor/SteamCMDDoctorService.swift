@@ -1416,8 +1416,9 @@ final class SteamCMDDoctorService {
     func updateGreenFingerprint() {
         let contradicted = Self.binaryProbeKinds.contains { kind in
             switch probes[kind]?.status {
-            case .yellow, .red: return true
-            default: return false
+            // Yellow is no verdict, or a signature doubt `canRestoreGreen` refuses anyway; only red overturns the record.
+            case .red: true
+            default: false
             }
         }
         guard !contradicted else {

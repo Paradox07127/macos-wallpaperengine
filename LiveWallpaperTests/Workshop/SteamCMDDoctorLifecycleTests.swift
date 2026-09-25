@@ -230,6 +230,45 @@ struct SteamCMDDoctorLifecycleTests {
         #expect(SteamCMDDoctorService.bindRefusal(for: Self.inspection(sha: "identity-1")) == nil)
     }
 
+    @MainActor
+    @Test("A manual pick the connector never answered is not a refused file")
+    func silentManualBindIsNotARefusedFile() {
+        #expect(
+            WorkshopSetupController.manualBindFailureMessage(for: nil)
+                == SteamCMDDoctorError.connectorUnavailable.localizedDescription
+        )
+
+        // Controls: a refusal shows its own reason, or the refused-file sentence when it names none.
+        let untrusted = SteamCMDManualBindResult(
+            outcome: .untrusted, canonicalPath: "/opt/homebrew/bin/steamcmd",
+            failureReason: "not signed by Valve", failureCode: .signatureNotValve
+        )
+        #expect(
+            WorkshopSetupController.manualBindFailureMessage(for: untrusted)
+                == SteamCMDFailureCode.signatureNotValve.localizedMessage([])
+        )
+        let refused = SteamCMDManualBindResult(outcome: .refused, canonicalPath: nil, failureReason: nil)
+        #expect(
+            WorkshopSetupController.manualBindFailureMessage(for: refused)
+                == SteamCMDDoctorError.binaryResolution.localizedDescription
+        )
+    }
+
+    @MainActor
+    @Test("A locate the connector never answered is not reported as not found")
+    func silentLocateIsNotReportedAsNotFound() {
+        #expect(
+            WorkshopSetupController.autoDetectFailureMessage(for: nil)
+                == SteamCMDDoctorError.connectorUnavailable.localizedDescription
+        )
+
+        // Controls: a diagnosis that carries a remedy is shown as the connector worded it.
+        let notFound = SteamCMDDiagnosis.notFound(resolutionFailure: nil, rejectedExisting: [])
+        #expect(WorkshopSetupController.autoDetectFailureMessage(for: notFound) == notFound.remedy)
+        let queued = SteamCMDDiagnosis.unavailable("queued")
+        #expect(WorkshopSetupController.autoDetectFailureMessage(for: queued) == queued.remedy)
+    }
+
     @Test("A busy or silent connector is no verdict: execution trust keeps the cache and reports why")
     func executionTrustSeparatesNoVerdictFromRefusal() {
         let path = "/opt/homebrew/bin/steamcmd"
@@ -400,7 +439,7 @@ struct SteamCMDDoctorLifecycleTests {
     }
 
     @MainActor
-    @Test("A failed binary probe retires the record; a restored green keeps its earned date")
+    @Test("A red binary probe retires the record; no verdict and a restored green keep it")
     func fingerprintTracksProbeOutcomes() throws {
         let scratch = try TestScratch.defaultsSuite(prefix: "AF12-fingerprint")
         let defaults = scratch.defaults
@@ -421,7 +460,17 @@ struct SteamCMDDoctorLifecycleTests {
             "a restored green must not re-date a check that never ran"
         )
 
-        service.setProbe(.codeSignature, status: .yellow(message: "unverified", command: nil))
+        service.setProbe(
+            .binaryIdentity,
+            status: .yellow(message: SteamCMDDoctorError.connectorBusy.localizedDescription, command: nil)
+        )
+        service.updateGreenFingerprint()
+        #expect(
+            service.greenFingerprint?.recordedAt == earned,
+            "a connector that reached no verdict retired the record"
+        )
+
+        service.setProbe(.binaryIdentity, status: .red(message: "timed out", command: nil))
         service.updateGreenFingerprint()
         #expect(service.greenFingerprint == nil)
     }

@@ -55,7 +55,7 @@ struct WorkshopSteamMenu: View {
             Button("Set Web API key", action: onEnterAPIKey)
             if !steamCMDReady {
                 Divider()
-                Button("Install SteamCMD", action: onInstallSteamCMD)
+                Button("Set up SteamCMD", action: onInstallSteamCMD)
                     .disabled(steamCMDBusy)
                 Button("Locate automatically", action: onLocateSteamCMD)
                     .disabled(steamCMDBusy)

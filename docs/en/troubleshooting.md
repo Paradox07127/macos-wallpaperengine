@@ -39,7 +39,7 @@
 | Problem | Check | Fix |
 |---|---|---|
 | Downloads fail | SteamCMD state, Steam login | Open **Settings → Workshop** — the **Steam connection** section diagnoses the Steam library, SteamCMD, and your account, and can auto-configure. Expand **Diagnostics** in that section for the individual probes |
-| **Install SteamCMD** fails | The failure message identifies manifest, download, checksum or signature validation | Retry; a mismatch can be an incomplete download or trust failure, not proof of a specific cause. Do not bypass verification; use a verified existing install if needed |
+| **Set up SteamCMD** (or **Install SteamCMD** in onboarding) fails | The failure message identifies manifest, download, checksum or signature validation | Retry; a mismatch can be an incomplete download or trust failure, not proof of a specific cause. Do not bypass verification; use a verified existing install if needed |
 | A SteamCMD you picked stops working | It's re-verified on **every** run, not only when you chose it — an upgrade that changed its signature will be rejected | Re-pick it with **Choose SteamCMD**, or switch to a managed install |
 | Browse shows nothing | Filters, connectivity, and API-key status for API-only features | Clear restrictive filters and retry. Public browsing can work without a key; creator/preset/API queries may require one. Presets are hidden from general browse by default |
 | Preset list on a wallpaper is empty | Presets need a Steam Web API key to list, and SteamCMD to download | Add the key first; "No presets have been published for this wallpaper" means exactly that |

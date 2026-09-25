@@ -159,14 +159,14 @@ final class WorkshopSetupController {
             // `!doctor.hasBoundBinary`, not just `!found`: a parallel detect can bind while
             // this one is out, and its late "not found" would overwrite that.
             if !found, !doctor.hasBoundBinary {
-                // The connector's own reason names the copy it tried; the generic sentence is
-                // only right when nothing was found at all.
-                setupError = doctor.lastAutoDetectDiagnosis?.remedy ?? String(
-                    localized: "No SteamCMD found in the usual places. Use Install SteamCMD for Loomscreen's own copy, or Choose SteamCMD to point at one yourself.",
-                    bundle: .appLanguage, comment: "Workshop setup error when auto-detection finds no SteamCMD."
-                )
+                setupError = Self.autoDetectFailureMessage(for: doctor.lastAutoDetectDiagnosis)
             }
         }
+    }
+
+    /// No remedy is not "nothing found": the connector never answered, or answered with a usable copy the bind then refused.
+    static func autoDetectFailureMessage(for diagnosis: SteamCMDDiagnosis?) -> String {
+        diagnosis?.remedy ?? SteamCMDDoctorError.connectorUnavailable.localizedDescription
     }
 
     /// Returns true when a binding was recorded, so the caller can update its hint.
@@ -192,10 +192,7 @@ final class WorkshopSetupController {
             path: url.path(percentEncoded: false)
         )
         guard let result, result.isBound, let canonical = result.canonicalPath else {
-            setupError = result?.localizedFailureReason ?? String(
-                localized: "Loomscreen couldn't use that file as SteamCMD.",
-                bundle: .appLanguage, comment: "Workshop setup error when a manually chosen SteamCMD is refused."
-            )
+            setupError = Self.manualBindFailureMessage(for: result)
             return false
         }
         // Bind through the service so the identity probe re-runs against the
@@ -208,6 +205,12 @@ final class WorkshopSetupController {
             setupError = error.localizedDescription
             return false
         }
+    }
+
+    /// nil means the connector never answered; a refusal always comes back with its reason.
+    static func manualBindFailureMessage(for result: SteamCMDManualBindResult?) -> String {
+        guard let result else { return SteamCMDDoctorError.connectorUnavailable.localizedDescription }
+        return result.localizedFailureReason ?? SteamCMDDoctorError.binaryResolution.localizedDescription
     }
 
     func forgetManualBinary() async {

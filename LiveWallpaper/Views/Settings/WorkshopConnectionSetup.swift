@@ -298,7 +298,8 @@ extension SteamCMDDoctorService {
         guard hasBoundBinary else { return .notStarted }
         switch probes[.binaryIdentity]?.status {
         case .green: return .ready
-        case .red: return .attention
+        // Yellow is a check that ended without a verdict, not one still running.
+        case .red, .yellow: return .attention
         default: return .working
         }
     }
