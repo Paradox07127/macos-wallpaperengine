@@ -194,7 +194,7 @@ struct WorkshopModalTests {
         WorkshopDownloadPresentation.make(
             ticketState: ticketState, screenName: screenName, wallpapersOn: true, phase: phase,
             isFetchingDependencies: fetching, fraction: fraction, downloadedBytes: nil, totalBytes: nil,
-            bytesPerSecond: nil, isInstalled: installed, blocker: blocker
+            bytesPerSecond: nil, isInstalled: installed, reportsSave: true, blocker: blocker
         )
     }
 
@@ -220,6 +220,22 @@ struct WorkshopModalTests {
         #expect(presentation(nil, phase: .succeededAsPreset(baseWorkshopID: "1")).status.isEmpty)
         #expect(presentation(nil, phase: .succeeded, installed: false).status.isEmpty)
         #expect(presentation(.waiting, phase: .succeeded, installed: true).status.isEmpty)
+    }
+
+    @Test("An apply dropped because its display went away or changed says why, as its toast does; Cancel Auto-Apply only reports the save")
+    func droppedApplySaysWhyLikeItsToast() throws {
+        let name = "Studio"
+        for reason: DeferredApplyCoordinator.Invalidation in [.screenUnavailable, .newerSelection] {
+            let toast = try #require(DeferredApplyToasts.messages(for: .invalidated(reason), screenName: name)?.first)
+            let line = presentation(.invalidated(reason), phase: .succeeded, installed: true, screenName: name)
+            #expect(line.status == toast.text)
+            #expect(!line.isFailure, "the line marks as a failure what its toast reports as information")
+        }
+        // Control: Cancel Auto-Apply dropped the apply on purpose, so the line reports only the save.
+        #expect(
+            presentation(.invalidated(.cancelled), phase: .succeeded, installed: true, screenName: name).status
+                == String(localized: "Added to your library.", bundle: .appLanguage)
+        )
     }
 
     @Test("A blocked download names the missing setup step and dims both download buttons")
